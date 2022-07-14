@@ -1,0 +1,29 @@
+name: test-macos-clang
+on:
+  push:
+     branches: [ stable, develop ]
+     
+jobs:
+  build:
+    runs-on: macos-13
+    steps:
+    - name: checkout repository
+      uses: actions/checkout@v2
+      with:
+        submodules: 'recursive'
+    - name: install_eigen
+      run: |
+        brew install eigen
+    - name: run_tests
+      run: |
+        cd test/
+        chmod +x run_tests.sh
+        ./run_tests.sh --compiler clang
+        echo "TEST_RESULT=$(echo $?)" >> $GITHUB_ENV
+    - name: check_tests_passed
+      run: |
+        if [ "$TEST_RESULT" -eq "0" ]; then
+           exit 0
+        else
+           exit 1
+        fi

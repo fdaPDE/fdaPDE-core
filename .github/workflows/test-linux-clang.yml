@@ -1,0 +1,29 @@
+name: test-linux-clang
+on:
+  push:
+     branches: [ stable, develop ]
+     
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: alepalu/fdapde-docker-linux:latest
+    steps:
+    - name: checkout repository
+      uses: actions/checkout@v2
+      with:
+        submodules: 'recursive'
+    - name: run_tests
+      run: |
+        cd test/
+        export Eigen3_DIR=/usr/share/cmake/Modules # reguired to let eigen3 work with CMake in alpine
+        chmod +x run_tests.sh
+        ./run_tests.sh --compiler clang
+        echo "TEST_RESULT=$(echo $?)" >> $GITHUB_ENV
+    - name: check_tests_passed
+      run: |
+        if [ "$TEST_RESULT" -eq "0" ]; then
+           exit 0
+        else
+           exit 1
+        fi

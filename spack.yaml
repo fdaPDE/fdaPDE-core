@@ -1,0 +1,19 @@
+# This is the fdaPDE Spack Environment file.
+#
+# Sets up all necessary dependencies for developing and running fdaPDE 
+# on a system equipped with Spack.
+spack:
+  specs:
+  # minimal build tools
+  - gcc@13.2.0
+  - eigen@3.4.0
+  - cmake
+  # (extra) linear algebra libraries
+  - metis
+  - scotch
+  - parmetis
+  - netlib-lapack
+  - mumps
+  view: true
+  concretizer:
+    unify: true
