@@ -14,7 +14,6 @@ namespace OPT{
   // of the scalar field passed as objective
   template <unsigned int N>
   class NewtonOptimizer{
-
   private:  
     // internal status of the optimizer 
     SVector<N> x_old_{};  // value of the optimization point before the update step

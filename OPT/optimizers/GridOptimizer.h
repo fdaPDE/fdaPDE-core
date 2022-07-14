@@ -14,11 +14,11 @@ namespace OPT{
   // optimize a given scalar field over an N-dimensional grid of equidistant points
   template <int N>
   class GridOptimizer{
-
   private:
     // results of the optimization
     SVector<N> minimumPoint_;
     double objectiveValue_;
+    
   public:
     // constructor
     GridOptimizer() = default;

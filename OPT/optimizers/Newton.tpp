@@ -12,6 +12,7 @@ void NewtonOptimizer<N>::findMinimum(const ScalarField<N>& objective, // objecti
   numIter_ = 0;
   // algorithm initialization
   x_old_ = x0;
+  x_new_ = x_old_; // always guarantee x_new_ in a valid state (if while loop skipped)
   error_ = objective.derive()(x0).norm();
   SVector<N> gradient{};
   SMatrix<N> hessian{};
