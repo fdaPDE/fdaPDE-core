@@ -3,13 +3,13 @@ template <unsigned int N>
 template <typename... Args>
 void BFGSOptimizer<N>::findMinimum(const ScalarField<N>& objective, // objective to optimize
 				   const SVector<N>& x0, // starting point
-				   const Args&... args){
+				   Args&... args){
   // can be set true by some extension to cause a foced stop at any point of the execution
   bool customStop = false; 
   customStop |= Extension::executeInitOptimization(*this, objective, args...);
 
   // clean state of possibly previous execution
-  numIter_ = 0;
+  this->numIter_ = 0;
   
   // algorithm initialization
   x_old_ = x0;
@@ -23,24 +23,24 @@ void BFGSOptimizer<N>::findMinimum(const ScalarField<N>& objective, // objective
   grad_old_ = objective.derive()(x_old_);
   if (grad_old_.isApprox(SVector<N>::Zero())){ // gradient is zero, already at stationary point
     // finalize optimization
-    minimumPoint_ = x_old_;
-    objectiveValue_ = objective(x_old_);
+    this->minimumPoint_ = x_old_;
+    this->objectiveValue_ = objective(x_old_);
     return;
   }
-  error_ = grad_old_.squaredNorm();
+  this->error_ = grad_old_.squaredNorm();
   
-  while(numIter_ < maxIter_ && error_ > tolerance_ && !customStop){
+  while(this->numIter_ < this->maxIter_ && this->error_ > this->tolerance_ && !customStop){
     update_ = hessian_*grad_old_;
     customStop |= Extension::executeInitIteration(*this, objective, args...);
     
     // update along descent direction
-    x_new_ = x_old_ - h_*update_;
+    x_new_ = x_old_ - this->h_*update_;
     // gradient update
     grad_new_ = objective.derive()(x_new_);
     if (grad_new_.isApprox(SVector<N>::Zero())){ // gradient is zero, already at stationary point
       // finalize optimization
-      minimumPoint_ = x_new_;
-      objectiveValue_ = objective(x_new_);
+      this->minimumPoint_ = x_new_;
+      this->objectiveValue_ = objective(x_new_);
       return;
     }
       
@@ -57,17 +57,19 @@ void BFGSOptimizer<N>::findMinimum(const ScalarField<N>& objective, // objective
     hessian_ += U - V; // hessian approximation update
 
     // prepare next iteration
-    error_ = grad_new_.squaredNorm();
+    this->error_ = grad_new_.squaredNorm();
     customStop |= Extension::executeEndIteration(*this, objective, args...);
     // execute custom action before overwriting x_old_
     x_old_ = x_new_;
     grad_old_ = grad_new_;
-    numIter_++;
+    this->numIter_++;
   }
 
   customStop |= Extension::executeEndOptimization(*this, objective, args...);
   // finalize optimization
-  minimumPoint_ = x_new_;
-  objectiveValue_ = objective(x_new_);
+  this->minimumPoint_ = x_new_;
+  this->objectiveValue_ = objective(x_new_);
+  // restore optimizer status if some extension caused a change in its initial configuration
+  this->restore();
   return;  
 }

@@ -28,18 +28,18 @@ namespace OPT{
     void findMinimum(const ScalarField<N>& objective, // objective to optimize
 		     const std::array<std::pair<double,double>, N>& domainLimits, // domain where search for minimum
 		     const std::array<double, N>& stepSizes, // stepSizes for each dimension of the grid
-		     const Args&... args);
+		     Args&... args);
     template <typename... Args>
     void findMinimum(const ScalarField<N>& objective, // objective to optimize
 		     const std::array<std::pair<double,double>, N>& domainLimits, // domain where search for minimum
 		     double stepSize, // use the same step size along all dimensions
-		     const Args&... args);
+		     Args&... args);
     
     // perform the minimum search over a vector of used defined values
     template <typename... Args>
     void findMinimum(const ScalarField<N>& objective, // objective to optimize
 		     const std::vector<SVector<N>>& pointList, // set of pointw where to perform the search
-		     const Args&... args);
+		     Args&... args);
 
     SVector<N> getSolution() const { return minimumPoint_; }
     double getObjValue() const { return objectiveValue_; }    

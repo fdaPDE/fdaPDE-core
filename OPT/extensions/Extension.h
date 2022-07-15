@@ -40,7 +40,7 @@ template <typename Optimizer, // optimization scheme
 	  typename T>         // the actual extension
 typename std::enable_if<has_initOptimization<T, bool(Optimizer&, Objective&)>::value,
 			bool>::type
-inline initOptimizationFunction(Optimizer& opt, Objective& obj, T arg) {
+inline initOptimizationFunction(Optimizer& opt, Objective& obj, T& arg) {
   return arg.initOptimization(opt, obj);
 };
 
@@ -50,7 +50,7 @@ template <typename Optimizer, // optimization scheme
 	  typename T>         // the actual extension
 typename std::enable_if<!has_initOptimization<T, bool(Optimizer&, Objective&)>::value,
 			bool>::type
-inline initOptimizationFunction(Optimizer& opt, Objective& obj, T arg) {
+inline initOptimizationFunction(Optimizer& opt, Objective& obj, T& arg) {
   return false;
 };
 
@@ -63,7 +63,7 @@ template <typename Optimizer, // optimization scheme
 	  typename T>         // the actual extension
 typename std::enable_if<has_initIteration<T, bool(Optimizer&, Objective&)>::value,
 			bool>::type
-inline initIterationFunction(Optimizer& opt, Objective& obj, T arg) {
+inline initIterationFunction(Optimizer& opt, Objective& obj, T& arg) {
   return arg.initIteration(opt, obj);
 };
 
@@ -73,7 +73,7 @@ template <typename Optimizer, // optimization scheme
 	  typename T>         // the actual extension
 typename std::enable_if<!has_initIteration<T, bool(Optimizer&, Objective&)>::value,
 			bool>::type
-inline initIterationFunction(Optimizer& opt, Objective& obj, T arg) {
+inline initIterationFunction(Optimizer& opt, Objective& obj, T& arg) {
   return false;
 };
 
@@ -86,7 +86,7 @@ template <typename Optimizer, // optimization scheme
 	  typename T>         // the actual extension
 typename std::enable_if<has_endIteration<T, bool(Optimizer&, Objective&)>::value,
 			bool>::type
-inline endIterationFunction(Optimizer& opt, Objective& obj, T arg) {
+inline endIterationFunction(Optimizer& opt, Objective& obj, T& arg) {
   return arg.endIteration(opt, obj);
 };
 
@@ -96,7 +96,7 @@ template <typename Optimizer, // optimization scheme
 	  typename T>         // the actual extension
 typename std::enable_if<!has_endIteration<T, bool(Optimizer&, Objective&)>::value,
 			bool>::type
-inline endIterationFunction(Optimizer& opt, Objective& obj, T arg) {
+inline endIterationFunction(Optimizer& opt, Objective& obj, T& arg) {
   return false;
 };
 
@@ -109,7 +109,7 @@ template <typename Optimizer, // optimization scheme
 	  typename T>         // the actual extension
 typename std::enable_if<has_endOptimization<T, bool(Optimizer&, Objective&)>::value,
 			bool>::type
-inline endOptimizationFunction(Optimizer& opt, Objective& obj, T arg) {
+inline endOptimizationFunction(Optimizer& opt, Objective& obj, T& arg) {
   return arg.endOptimization(opt, obj);
 };
 
@@ -119,7 +119,7 @@ template <typename Optimizer, // optimization scheme
 	  typename T>         // the actual extension
 typename std::enable_if<!has_endOptimization<T, bool(Optimizer&, Objective&)>::value,
 			bool>::type
-inline endOptimizationFunction(Optimizer& opt, Objective& obj, T arg) {
+inline endOptimizationFunction(Optimizer& opt, Objective& obj, T& arg) {
   return false;
 };
 
@@ -132,7 +132,7 @@ public:
   template <typename Optimizer, // optimization scheme
 	    typename Objective, // objective function
 	    typename... T>      // extensions
-  static bool executeInitOptimization(Optimizer& opt, Objective& obj, T... args) {
+  static bool executeInitOptimization(Optimizer& opt, Objective& obj, T&... args) {
     bool result = false;
     (void)std::initializer_list<bool>{
       result |= initOptimizationFunction(opt, obj, args)...
@@ -143,7 +143,7 @@ public:
   template <typename Optimizer, // optimization scheme
 	  typename Objective,   // objective function
 	  typename... T>        // extensions
-  static bool executeInitIteration(Optimizer& opt, Objective& obj, T... args) {
+  static bool executeInitIteration(Optimizer& opt, Objective& obj, T&... args) {
     bool result = false;
     (void)std::initializer_list<bool>{
       result |= initIterationFunction(opt, obj, args)...
@@ -154,7 +154,7 @@ public:
   template <typename Optimizer, // optimization scheme
 	  typename Objective,   // objective function
 	  typename... T>        // extensions
-  static bool executeEndIteration(Optimizer& opt, Objective& obj, T... args) {
+  static bool executeEndIteration(Optimizer& opt, Objective& obj, T&... args) {
     bool result = false;
     (void)std::initializer_list<bool>{
       result |= endIterationFunction(opt, obj, args)...
@@ -165,7 +165,7 @@ public:
   template <typename Optimizer, // optimization scheme
 	  typename Objective,   // objective function
 	  typename... T>        // extensions
-  static bool executeEndOptimization(Optimizer& opt, Objective& obj, T... args) {
+  static bool executeEndOptimization(Optimizer& opt, Objective& obj, T&... args) {
     bool result = false;
     (void)std::initializer_list<bool>{
       result |= endOptimizationFunction(opt, obj, args)...

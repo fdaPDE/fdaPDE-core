@@ -3,7 +3,7 @@ template <typename... Args>
 void GridOptimizer<N>::findMinimum(const ScalarField<N>& objective,
 				   const std::array<std::pair<double,double>, N>& domainLimits,
 				   const std::array<double, N>& stepSizes,
-				   const Args&... args){
+				   Args&... args){
   // can be set true by some extension to cause a foced stop at any point of the execution
   bool customStop = false; 
   customStop |= Extension::executeInitOptimization(*this, objective, args...);
@@ -56,9 +56,7 @@ void GridOptimizer<N>::findMinimum(const ScalarField<N>& objective,
     }
     customStop |= Extension::executeEndIteration(*this, objective, args...);
   }
-
   customStop |= Extension::executeEndOptimization(*this, objective, args...);
-
   // finalize optimization
   minimumPoint_ = minPoint;
   objectiveValue_ = minimum;
@@ -70,7 +68,7 @@ template <typename... Args>
 void GridOptimizer<N>::findMinimum(const ScalarField<N>& objective,
 				   const std::array<std::pair<double,double>, N>& domainLimits, 
 				   double stepSize,
-				   const Args&... args){
+				   Args&... args){
   // build stepSizes vector
   std::array<double, N> stepSizes;
   for(std::size_t i = 0; i < N ; ++i){
@@ -86,7 +84,7 @@ template <int N>
 template <typename... Args>
 void GridOptimizer<N>::findMinimum(const ScalarField<N>& objective,
 				   const std::vector<SVector<N>>& pointList,
-				   const Args&... args) {
+				   Args&... args) {
   // can be set true by some extension to cause a foced stop at any point of the execution
   bool customStop = false; 
   customStop |= Extension::executeInitOptimization(*this, objective, args...);
@@ -113,9 +111,7 @@ void GridOptimizer<N>::findMinimum(const ScalarField<N>& objective,
     }
     customStop |= Extension::executeEndIteration(*this, objective, args...);
   }
-
   customStop |= Extension::executeEndOptimization(*this, objective, args...);
-
   // finalize optimization
   minimumPoint_ = minPoint;
   objectiveValue_ = minimum;
