@@ -25,6 +25,8 @@ void BFGSOptimizer<N>::findMinimum(const ScalarField<N>& objective, // objective
     // finalize optimization
     this->minimumPoint_ = x_old_;
     this->objectiveValue_ = objective(x_old_);
+    // restore optimizer status if some extension caused a change in its initial configuration
+    this->restore();
     return;
   }
   this->error_ = grad_old_.squaredNorm();
@@ -41,9 +43,11 @@ void BFGSOptimizer<N>::findMinimum(const ScalarField<N>& objective, // objective
       // finalize optimization
       this->minimumPoint_ = x_new_;
       this->objectiveValue_ = objective(x_new_);
+      // restore optimizer status if some extension caused a change in its initial configuration
+      this->restore();
       return;
     }
-      
+
     // update inverse hessian approximation
     SVector<N> deltaX    = x_new_ - x_old_;
     SVector<N> deltaGrad = grad_new_ - grad_old_;

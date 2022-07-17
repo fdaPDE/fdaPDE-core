@@ -14,8 +14,6 @@ void NewtonOptimizer<N>::findMinimum(const ScalarField<N>& objective, // objecti
   x_old_ = x0;
   x_new_ = x_old_; // always guarantee x_new_ in a valid state (if while loop skipped)
   this->error_ = objective.derive()(x0).norm();
-  SVector<N> gradient{};
-  SMatrix<N> hessian{};
 
   // start loop
   while (this->numIter_ < this->maxIter_ && this->error_ > this->tolerance_ && !customStop){
@@ -23,12 +21,12 @@ void NewtonOptimizer<N>::findMinimum(const ScalarField<N>& objective, // objecti
 
     // compute hessian and gradient either by resorting to a numerical approximation or to their analytical expression
     // depending on the type of the objective
-    gradient = objective.derive()(x_old_);
-    hessian  = objective.deriveTwice()(x_old_);
+    grad_old_ = objective.derive()(x_old_);
+    hessian_  = objective.deriveTwice()(x_old_);
 
     // solve linear system by using an Householder QR decomposition with column-pivoting: A*P = Q*R
-    Eigen::ColPivHouseholderQR<SMatrix<N>> QRdecomposition(hessian);
-    update_ = QRdecomposition.solve(gradient);
+    Eigen::ColPivHouseholderQR<SMatrix<N>> QRdecomposition(hessian_);
+    update_ = QRdecomposition.solve(grad_old_);
 
     // update step
     x_new_ = x_old_ - this->h_*update_;

@@ -24,6 +24,7 @@ protected:
   std::tuple<unsigned int, double, double> initConfiguration_{};
   
 public:
+  IterativeOptimizer() = default;
   IterativeOptimizer(unsigned int maxIter, double tolerance, double h)
     : maxIter_(maxIter), tolerance_(tolerance), h_(h), initConfiguration_(std::make_tuple(maxIter, tolerance, h)) {};
 

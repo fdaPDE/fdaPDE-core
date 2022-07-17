@@ -22,6 +22,7 @@ namespace OPT{
     SVector<N> grad_old_{}; // value of the gradient before the update step
   public:
     // constructor
+    GradientDescentOptimizer() = default;
     GradientDescentOptimizer(unsigned int maxIter, double tolerance, double h)
       : IterativeOptimizer<N>(maxIter, tolerance, h) {};
       

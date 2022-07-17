@@ -24,6 +24,7 @@ namespace OPT{
     
   public:
     // constructor
+    BFGSOptimizer() = default;
     BFGSOptimizer(unsigned int maxIter, double tolerance, double h)
       : IterativeOptimizer<N>(maxIter, tolerance, h) {};
 
