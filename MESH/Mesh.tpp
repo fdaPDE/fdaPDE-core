@@ -53,7 +53,7 @@ std::shared_ptr<Element<M,N>> Mesh<M,N>::requestElementById(unsigned int ID) con
   // prepare element
   std::array<SVector<N>, N_VERTICES(M,N)> coords;
   std::array<std::pair<unsigned, SVector<N>>, N_VERTICES(M,N)> FEsupport;
-  std::array<unsigned int, M+1> neighbors;
+  std::array<int, M+1> neighbors;
   std::array<std::pair<unsigned, unsigned>, N_VERTICES(M,N)> boundaryMarkers;
   
   for(size_t i = 0; i < pointIndexes.size(); ++i){

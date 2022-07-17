@@ -1,7 +1,7 @@
 // constructor
 template <unsigned int M, unsigned int N>
 Element<M,N>::Element(int ID_, std::array<std::pair<unsigned, SVector<N>>, N_VERTICES(M,N)> FEsupport_,
-		      std::array<SVector<N>, N_VERTICES(M,N)> coords_, std::array<unsigned int, M+1> neighbors_,
+		      std::array<SVector<N>, N_VERTICES(M,N)> coords_, std::array<int, M+1> neighbors_,
 		        std::array<std::pair<unsigned, unsigned>, N_VERTICES(M,N)> boundaryMarkers_) :
   ID(ID_), FEsupport(FEsupport_), coords(coords_), neighbors(neighbors_), boundaryMarkers(boundaryMarkers_) {
 
