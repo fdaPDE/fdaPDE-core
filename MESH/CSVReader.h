@@ -7,10 +7,12 @@
 #include <sstream>
 #include <string>
 #include <tuple>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 #include <iostream>
 #include <Eigen/Core>
+#include <Eigen/Sparse>
 #include <set>
 
 template <typename T> using CSVinternal = std::unordered_map<std::string, std::vector<T>>;
@@ -18,30 +20,44 @@ template <typename T> using CSVinternal = std::unordered_map<std::string, std::v
 template <typename T>
 class CSVFile{
 private:
-  
+  CSVinternal<T> parsedFile; // parsed file
+protected:
   std::ifstream file;                     // read only stream
   std::vector<std::string> columnNames_;  // reference to column names for fast access
-
-  CSVinternal<T> parsedFile;              // parsed file
-
+  
 public:
-  CSVFile(const std::string& file_) {
-    file.open(file_);
-  }
-
+  CSVFile() = default;
+  CSVFile(const std::string& file_) { file.open(file_); }
+  
   // output of CSVReader
   void setParsedFile(const CSVinternal<T>& parsedFile_) { parsedFile = parsedFile_; }
-  // close input stream
+  // open and close input stream
+  void openFile(const std::string& file_) { file.open(file_); }
   void closeFile(void) { file.close(); }
   // get input stream
   std::ifstream& getInputStream() { return file; }
 
+  // add new column to parsed csv file
   void addColumnName(std::string name_) { columnNames_.push_back(name_); }
   
-  // an utility for converting parsed file into Eigen matrix
+  // converts the raw parsed file in eigen dense matrix
   Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> toEigen();
   // get raw parsed file
   CSVinternal<T> getRawParsedFile() { return parsedFile; }
+};
+
+template <typename T>
+class CSVSparseFile : public CSVFile<T>{
+private:
+  CSVinternal<std::vector<T>> parsedFile;
+public:
+  // constructor
+  CSVSparseFile() = default;
+  CSVSparseFile(const std::string& file_) : CSVFile<T>(file_) {};
+  
+  void setParsedFile(const CSVinternal<std::vector<T>>& parsedFile_) { parsedFile = parsedFile_; }
+  Eigen::SparseMatrix<T> toEigen();
+  CSVinternal<std::vector<T>> getRawParsedFile() { return parsedFile; }
 };
 
 template <typename T>
@@ -66,6 +82,29 @@ Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> CSVFile<T>::toEigen() {
   return result;
 }
 
+template <typename T>
+Eigen::SparseMatrix<T> CSVSparseFile<T>::toEigen() {
+  // return an adjacency matrix, hence we set as 1 the corresponding entry
+  std::vector<Eigen::Triplet<T>> tripletList;
+  std::size_t n = parsedFile.at(this->columnNames_[0]).size(); // size of matrix
+  tripletList.reserve(n*n);
+
+  for(auto col : parsedFile){
+    for(std::size_t i = 0; i < n; ++i){
+      for(T j : col.second[i]){
+	// we push pair (i, j-1) since j indexes parsed from raw files starts from 1.
+	tripletList.push_back(Eigen::Triplet<T>(i, j-1, 1));
+      }
+    }
+  }
+  // fill sparse matrix
+  Eigen::SparseMatrix<T> result(n, n);
+  result.setFromTriplets(tripletList.begin(), tripletList.end());
+  result.makeCompressed();
+
+  return result;
+}
+
 // a super simple class to parse and read simple .csv files
 // (works with output of write.csv() from R)
 class CSVReader{
@@ -73,14 +112,17 @@ class CSVReader{
  private:
   // split a string in a vector of strings according to a separator
   std::vector<std::string> split(std::string input_, std::string separator);
-  // remove char j from string s
-  std::string remove(std::string s, const char j);
-
+  // remove any char in the supplied vector from string s
+  std::string remove(std::string s, const std::vector<char>& vect) const;
+  // remove a single char from string s
+  std::string remove(std::string s, char j) const;
+  
  public:
   CSVReader() = default;
 
   // parse the file returning a CSVFile whose internal has a vector for each column in the .csv
   template <typename T> CSVFile<T> parseFile(const std::string& file_);
+  template <typename T> CSVSparseFile<T> parseSparseFile(const std::string& file_);
 };
 
 std::vector<std::string> CSVReader::split(std::string input_, std::string separator) {
@@ -98,11 +140,18 @@ std::vector<std::string> CSVReader::split(std::string input_, std::string separa
   return parsedString;
 }
 
-std::string CSVReader::remove(std::string s, const char j) {
+std::string CSVReader::remove(std::string s, const std::vector<char>& vect) const {
   std::string result = "";
   for(char c : s){ 
-    if (c != j) result += c;
+    if (std::find(vect.begin(), vect.end(), c) == vect.end()) // char c is not to be removed
+      result += c;
   }
+  return result;
+}
+
+std::string CSVReader::remove(std::string s, char j) const {
+  std::string result = "";
+  for(char c : s) if (c != j) result += c;
   return result;
 }
 
@@ -152,5 +201,79 @@ CSVFile<T> CSVReader::parseFile(const std::string& file_){
   
   return csv;
 }
+
+template <typename T>
+CSVSparseFile<T> CSVReader::parseSparseFile(const std::string& file_){
+  // create a CSVFile object
+  CSVSparseFile<T> csv(file_);
+  // get input stream
+  std::ifstream& file = csv.getInputStream();
+
+  // internal data structure of CSVFile
+  CSVinternal<std::vector<T>> parsedFile;
+
+    // set column by reading first line
+  std::string line;
+  getline(file, line); // read line from stream
+  std::vector<std::string> columnNames = split(line, ";");
+  
+  // set header
+  for(size_t j = 1; j < columnNames.size(); ++j){
+    std::string c_name = remove(columnNames[j], '\"');
+    csv.addColumnName(c_name);
+    parsedFile[c_name]; // value initialize the column
+  }
+
+  // read file until end line by line
+  while(getline(file, line)){
+    // split CSV line in tokens
+    std::vector<std::string> parsedLine = split(line, ";");;
+
+    // fill data structure (start from j = 1 to skip first column containing row IDs)
+    for(size_t j = 1; j < columnNames.size(); ++j){
+      // perform proper parsing depending on token shape
+      if(parsedLine[j].find("c(") != std::string::npos){
+	// token is of kind c(id1, id2, ..., idn)
+	std::string filteredString = remove(parsedLine[j], {'c', '(', ')'});
+	// filteredString is now a comma separated list of indexes
+	std::vector<std::string> parsedFilteredString = split(filteredString, ",");
+	std::vector<T> data{};
+	for(std::string value : parsedFilteredString){
+	  std::istringstream ss(value);
+	  T dataPoint;
+	  ss >> dataPoint;
+	  // insert value
+	  data.push_back(dataPoint);
+	}
+	// insert value
+	parsedFile[remove(columnNames[j], '\"')].push_back(data);
+      }else{
+	// token is an index range id1:id2
+	std::vector<std::string> parsedIndexRange = split(parsedLine[j], ":");
+	// move id1 and id2 to integers
+	std::vector<int> indexRange{};
+	for(std::string index : parsedIndexRange){
+	  std::istringstream ss(index);
+	  T idx;
+	  ss >> idx;
+	  // insert value
+	  indexRange.push_back(idx);
+	}
+	std::vector<T> data{};
+	for(int i = indexRange[0]; i <= indexRange[1]; ++i){
+	  data.push_back(i);
+	}
+	// insert value
+	parsedFile[remove(columnNames[j], '\"')].push_back(data);
+      }
+    }
+  }
+  // save result
+  csv.setParsedFile(parsedFile);
+  csv.closeFile();
+  
+  return csv;
+}
+
 
 #endif // __CSV_READER_H__

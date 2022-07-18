@@ -1,7 +1,7 @@
 // constructor
 template <unsigned int M, unsigned int N>
 Element<M,N>::Element(int ID_, std::array<std::pair<unsigned, SVector<N>>, N_VERTICES(M,N)> FEsupport_,
-		      std::array<SVector<N>, N_VERTICES(M,N)> coords_, std::array<int, M+1> neighbors_,
+		      std::array<SVector<N>, N_VERTICES(M,N)> coords_, std::vector<int> neighbors_,
 		        std::array<std::pair<unsigned, unsigned>, N_VERTICES(M,N)> boundaryMarkers_) :
   ID(ID_), FEsupport(FEsupport_), coords(coords_), neighbors(neighbors_), boundaryMarkers(boundaryMarkers_) {
 
@@ -89,6 +89,12 @@ Element<M, N>::contains(const SVector<N> &x) const {
 // specialization for 2.5D domains (surfaces)
 template <> 
 Eigen::Matrix<double, 2, 3> SurfaceElement::computeInvBaryMatrix(const Eigen::Matrix<double, 3, 2>& baryMatrix) {
+  // returns the generalized inverse of baryMatrix (which is a rectangular for surface elements)
+  return (baryMatrix.transpose()*baryMatrix).inverse()*baryMatrix.transpose();
+}
+
+template <> 
+Eigen::Matrix<double, 1, 2> NetworkElement::computeInvBaryMatrix(const Eigen::Matrix<double, 2, 1>& baryMatrix) {
   // returns the generalized inverse of baryMatrix (which is a rectangular for surface elements)
   return (baryMatrix.transpose()*baryMatrix).inverse()*baryMatrix.transpose();
 }

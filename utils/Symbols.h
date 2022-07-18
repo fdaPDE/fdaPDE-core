@@ -12,10 +12,10 @@ template <unsigned int N> using SMatrix = Eigen::Matrix<double, N, N>;
 // dynamic size linear algebra structures. Observe that such structures are stored in the heap, always use
 // these if you have to deal with very big matrices or vectors (using statically allocated object can lead to
 // stack overflow). See Eigen documentation for more details.
-using DMatrix = Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic>;
-using DVector = Eigen::Matrix<double, Eigen::Dynamic, 1>;
+template <typename T> using DMatrix = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;
+template <typename T> using DVector = Eigen::Matrix<T, Eigen::Dynamic, 1>;
 
 // sparse structures
-using SpMatrix = Eigen::SparseMatrix<double>;
+template <typename T> using SpMatrix = Eigen::SparseMatrix<T>;
 
 #endif // __SYMBOLS_H__

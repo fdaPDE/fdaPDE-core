@@ -4,6 +4,7 @@
 #include <Eigen/Core>
 #include <Eigen/src/Core/Matrix.h>
 #include <Eigen/src/Core/util/Constants.h>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 #include <memory>
@@ -18,8 +19,22 @@ namespace fdaPDE{
 namespace core{
 namespace MESH{
 
-  template <typename T> using DynamicMatrix = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;
+  // trait to detect if the mesh is a linear network
+  template <unsigned int M, unsigned int N>
+  struct is_linear_network{
+    static constexpr bool value = std::conditional<
+      (M == 1 && N == 2), std::true_type, std::false_type
+      >::type::value;
+  };
 
+  // trait to select a proper neighboring storage structure depending on the type of mesh
+  template <unsigned int M, unsigned int N>
+  struct select_neighboring_structure{
+    using type = typename std::conditional<
+      is_linear_network<M, N>::value, SpMatrix<int>, DMatrix<int>
+      >::type;
+  };
+  
   // this class offers a point of access to mesh information from an high level
   // reasoning, i.e. without considering the internal representation of a mesh in memory.
   // M is the order of the mesh (M = 1 linear network elements, M = 2 surface elements, M = 3 volumetric elemnts),
@@ -28,22 +43,22 @@ namespace MESH{
   class Mesh{
   private:
     // coordinates of points constituting the vertices of mesh elements
-    DynamicMatrix<double> points_;
+    DMatrix<double> points_;
     unsigned int numNodes = 0;
     // matrix of edges. Each row of the matrix contains the row numbers in points_ matrix
     // of the points which form the edge
-    DynamicMatrix<int> edges_;
+    DMatrix<int> edges_;
     // matrix of triangles in the triangulation. Each row of the matrix contains the row
     // numbers in points_ matrix of the points which form the triangle
-    DynamicMatrix<int> triangles_;
+    DMatrix<int> triangles_;
     unsigned int numElements = 0;
     // row i in this matrix contains the indexes as row number in triangles_ matrix of the
     // neighboring triangles to triangle i (all triangles in the triangulation which share an
     // edge with i)
-    DynamicMatrix<int> neighbors_;
+    typename select_neighboring_structure<M, N>::type neighbors_;
     // store boundary informations. This is a vector of binary coefficients such that, if element j is 1
     // then mesh node j is on boundary, otherwise 0
-    DynamicMatrix<int> boundaryMarkers_;
+    DMatrix<int> boundaryMarkers_;
     
     // store min-max values for each dimension of the mesh
     std::array<std::pair<double, double>, N> meshRange;

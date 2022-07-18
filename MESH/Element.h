@@ -29,7 +29,7 @@ namespace MESH{
   private:
     unsigned int ID; // ID of this element
     std::array<SVector<N>, N_VERTICES(M,N)> coords; // coordinates of vertices as N-dimensional points
-    std::array<int, M+1> neighbors; // ID of the neighboring elements
+    std::vector<int> neighbors; // ID of the neighboring elements
 
     // Functional information to assist the FEM module. FEsupport contains pairs <ID, point> where
     //    * ID:    is the global ID of the node in the mesh (as row index in the points_ table)
@@ -56,12 +56,12 @@ namespace MESH{
     Element() = default;
   
     Element(int ID_, std::array<std::pair<unsigned, SVector<N>>, N_VERTICES(M,N)> FEsupport_,
-	    std::array<SVector<N>, N_VERTICES(M,N)> coords_, std::array<int, M+1> neighbors_,
+	    std::array<SVector<N>, N_VERTICES(M,N)> coords_, std::vector<int> neighbors_,
 	    std::array<std::pair<unsigned, unsigned>, N_VERTICES(M,N)> boundaryMarkers_);
     
     // getters
     std::array<SVector<N>, N_VERTICES(M,N)> getCoords() const { return coords; }
-    std::array<int, M+1> getNeighbors() const { return neighbors; }
+    std::vector<int> getNeighbors() const { return neighbors; }
     Eigen::Matrix<double, N, M> getBaryMatrix() const { return baryMatrix; }
     Eigen::Matrix<double, M, N> getInvBaryMatrix() const { return invBaryMatrix; }
     unsigned int getID() const { return ID; }

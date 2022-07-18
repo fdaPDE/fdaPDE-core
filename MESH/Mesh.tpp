@@ -8,7 +8,24 @@ Mesh<M,N>::Mesh(const std::string& pointsFile,    const std::string& edgesFile,
   CSVFile<double> points = reader.parseFile<double>(pointsFile);
   CSVFile<int> edges     = reader.parseFile<int>(edgesFile);
   CSVFile<int> triangles = reader.parseFile<int>(trianglesFile);
-  CSVFile<int> neighbors = reader.parseFile<int>(neighborsFile);
+
+  // load neighboring informations
+  typename std::conditional<
+    !is_linear_network<M, N>::value, CSVFile<int>, CSVSparseFile<int>
+    >::type neighbors;
+  if constexpr(!is_linear_network<M,N>::value){
+    neighbors = reader.parseFile<int>(neighborsFile);
+    // move parsed file to eigen dense matrix, recall that a negative value means no neighbor
+    neighbors_      = neighbors.toEigen();
+    neighbors_      = (neighbors_.array() - 1).matrix();
+  }else{
+    // activate proper parsing to handle sparse matrix storage of neighboring information in case of linear network meshes.
+    // in this case the csv stores a 2 column table where column i contains the list of indexes of neighboring elements attached
+    // to node i of the linear element (a linear element has only 2 nodes)
+    neighbors = reader.parseSparseFile<int>(neighborsFile);
+    neighbors_      = neighbors.toEigen(); // .toEigen() of CSVSparseFile already subtract 1 to index reaglignment
+  }
+  
   CSVFile<int> boundary  = reader.parseFile<int>(boundaryMarkersFile);
   
   // set mesh internal representation to eigen matrix
@@ -32,11 +49,7 @@ Mesh<M,N>::Mesh(const std::string& pointsFile,    const std::string& edgesFile,
   triangles_      = triangles.toEigen();
   triangles_      = (triangles_.array() -1).matrix();
   numElements     = triangles_.rows();
-    
-  // a negative value means no neighbor
-  neighbors_      = neighbors.toEigen();
-  neighbors_      = (neighbors_.array() - 1).matrix();
-
+   
   boundaryMarkers_ = boundary.toEigen();
 }
 
@@ -53,7 +66,11 @@ std::shared_ptr<Element<M,N>> Mesh<M,N>::requestElementById(unsigned int ID) con
   // prepare element
   std::array<SVector<N>, N_VERTICES(M,N)> coords;
   std::array<std::pair<unsigned, SVector<N>>, N_VERTICES(M,N)> FEsupport;
-  std::array<int, M+1> neighbors;
+
+  // number of neighbors may be not known at compile time in case linear network elements are employed, use a dynamic
+  // data structure to handle 1.5D case
+  std::vector<int> neighbors;
+  neighbors.resize(M+1);
   std::array<std::pair<unsigned, unsigned>, N_VERTICES(M,N)> boundaryMarkers;
   
   for(size_t i = 0; i < pointIndexes.size(); ++i){
@@ -61,14 +78,23 @@ std::shared_ptr<Element<M,N>> Mesh<M,N>::requestElementById(unsigned int ID) con
     coords[i] = vertex;
     FEsupport[i] = std::make_pair(pointIndexes[i], vertex);
 
-    // from triangle documentation: The first neighbor of triangle i is opposite the first corner of triangle i, and so on.
-    // by storing neighboring informations as they come from triangle we have that neighbor[0] is the
-    // triangle adjacent to the face opposite to coords[0]
-    neighbors[i] = elementNeighbors[i];
-
+    if constexpr(!is_linear_network<M, N>::value){
+      // from triangle documentation: The first neighbor of triangle i is opposite the first corner of triangle i, and so on.
+      // by storing neighboring informations as they come from triangle we have that neighbor[0] is the
+      // triangle adjacent to the face opposite to coords[0]
+      neighbors[i] = elementNeighbors[i];
+    }
     // store boundary informations
     boundaryMarkers[i] = std::make_pair(pointIndexes[i], boundaryMarkers_(pointIndexes[i]));
   }
-         
+
+  // fill neighboring information for the linear network element case
+  if constexpr(is_linear_network<M, N>::value){
+    auto it = neighbors.begin();
+    for(Eigen::SparseMatrix<int>::InnerIterator SpMat_it(neighbors_, ID); SpMat_it; ++SpMat_it){
+      it = neighbors.insert(it, SpMat_it.value());
+    }
+  }
+  // return shared pointer to the element
   return std::make_shared<Element<M,N>>(ID, FEsupport, coords, neighbors, boundaryMarkers);
 }
