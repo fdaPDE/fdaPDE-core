@@ -87,14 +87,17 @@ Element<M, N>::contains(const SVector<N> &x) const {
 }
 
 // specialization for 2.5D domains (surfaces)
-template <> 
-Eigen::Matrix<double, 2, 3> SurfaceElement::computeInvBaryMatrix(const Eigen::Matrix<double, 3, 2>& baryMatrix) {
-  // returns the generalized inverse of baryMatrix (which is a rectangular for surface elements)
-  return (baryMatrix.transpose()*baryMatrix).inverse()*baryMatrix.transpose();
-}
+template <unsigned int M, unsigned int N>
+template <bool is_manifold>
+typename std::enable_if<!is_manifold, Eigen::Matrix<double, M, N>>::type
+Element<M, N>::computeInvBaryMatrix(const Eigen::Matrix<double, N, M>& baryMatrix) {
+  return baryMatrix.inverse();
+};
 
-template <> 
-Eigen::Matrix<double, 1, 2> NetworkElement::computeInvBaryMatrix(const Eigen::Matrix<double, 2, 1>& baryMatrix) {
+template <unsigned int M, unsigned int N>
+template <bool is_manifold>
+typename std::enable_if<is_manifold, Eigen::Matrix<double, M, N>>::type
+Element<M, N>::computeInvBaryMatrix(const Eigen::Matrix<double, N, M>& baryMatrix) {
   // returns the generalized inverse of baryMatrix (which is a rectangular for surface elements)
   return (baryMatrix.transpose()*baryMatrix).inverse()*baryMatrix.transpose();
 }

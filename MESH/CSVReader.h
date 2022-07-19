@@ -85,15 +85,14 @@ Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> CSVFile<T>::toEigen() {
 template <typename T>
 Eigen::SparseMatrix<T> CSVSparseFile<T>::toEigen() {
   // return an adjacency matrix, hence we set as 1 the corresponding entry
-  std::vector<Eigen::Triplet<T>> tripletList;
+  std::list<Eigen::Triplet<T>> tripletList;
   std::size_t n = parsedFile.at(this->columnNames_[0]).size(); // size of matrix
-  tripletList.reserve(n*n);
 
   for(auto col : parsedFile){
     for(std::size_t i = 0; i < n; ++i){
       for(T j : col.second[i]){
 	// we push pair (i, j-1) since j indexes parsed from raw files starts from 1.
-	tripletList.push_back(Eigen::Triplet<T>(i, j-1, 1));
+	tripletList.push_front(Eigen::Triplet<T>(i, j-1, 1));
       }
     }
   }

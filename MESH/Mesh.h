@@ -2,10 +2,7 @@
 #define __MESH_H__
 
 #include <Eigen/Core>
-#include <Eigen/src/Core/Matrix.h>
-#include <Eigen/src/Core/util/Constants.h>
 #include <type_traits>
-#include <unordered_map>
 #include <vector>
 #include <memory>
 #include <array>
@@ -19,6 +16,26 @@ namespace fdaPDE{
 namespace core{
 namespace MESH{
 
+  // Mesh is the access point to mesh informations (triangulated domains). It offers an abstraction layer allowing to reason
+  // on the mesh from a geometrical perspective, i.e. without considering its internal representation in memory. The class is able to transparently
+  // handle manifold and non manifold meshes, exposing the same interface in any case. Two non-type template parameters are used:
+  //     * M: local dimension of the mesh (dimension of the space to which a mesh element belongs)
+  //     * N: embeddding dimension of the mesh (dimension of the space where the whole mesh lies)
+  // if M != N the mesh is a manifold. Currently are implemented:
+  //     * 1.5D meshes (linear newtorks,    M=1, N=2)
+  //     * 2D meshes   (planar domains,     M=2, N=2)
+  //     * 2.5D meshes (surfaces,           M=2, N=3)
+  //     * 3D meshes   (volumetric domains, M=3, N=3)
+
+  // NB about internal implementaiton: special care is needed in the development of linear networks, since differently from any other case the number
+  // of neighboing elements is not known at compile time. This implies the usage of specialized data structures wrt any other case
+
+  // trait to detect if the mesh is a manifold
+  template <unsigned int M, unsigned int N>
+  struct is_manifold{
+    static constexpr bool value = (M != N);
+  };
+  
   // trait to detect if the mesh is a linear network
   template <unsigned int M, unsigned int N>
   struct is_linear_network{
@@ -27,18 +44,15 @@ namespace MESH{
       >::type::value;
   };
 
-  // trait to select a proper neighboring storage structure depending on the type of mesh
+  // trait to select a proper neighboring storage structure depending on the type of mesh. In case of linear networks this information is stored as
+  // a sparse matrix where entry (i,j) is set to 1 if and only if elements i and j are neighbors
   template <unsigned int M, unsigned int N>
-  struct select_neighboring_structure{
+  struct neighboring_structure{
     using type = typename std::conditional<
       is_linear_network<M, N>::value, SpMatrix<int>, DMatrix<int>
       >::type;
   };
   
-  // this class offers a point of access to mesh information from an high level
-  // reasoning, i.e. without considering the internal representation of a mesh in memory.
-  // M is the order of the mesh (M = 1 linear network elements, M = 2 surface elements, M = 3 volumetric elemnts),
-  // N is the dimension of the space where the mesh is embedded. If N != M the mesh is a manifold
   template <unsigned int M, unsigned int N>
   class Mesh{
   private:
@@ -52,10 +66,10 @@ namespace MESH{
     // numbers in points_ matrix of the points which form the triangle
     DMatrix<int> triangles_;
     unsigned int numElements = 0;
-    // row i in this matrix contains the indexes as row number in triangles_ matrix of the
-    // neighboring triangles to triangle i (all triangles in the triangulation which share an
-    // edge with i)
-    typename select_neighboring_structure<M, N>::type neighbors_;
+    // in case of non linear-networks neighbors_ is a dense matrix where row i contains the indexes as row number in triangles_ matrix of the
+    // neighboring triangles to triangle i (all triangles in the triangulation which share an edge with i). In case of linear-newtorks neighbors_
+    // is a sparse matrix where entry (i,j) is set to 1 iff i and j are neighbors
+    typename neighboring_structure<M, N>::type neighbors_;
     // store boundary informations. This is a vector of binary coefficients such that, if element j is 1
     // then mesh node j is on boundary, otherwise 0
     DMatrix<int> boundaryMarkers_;
@@ -63,21 +77,16 @@ namespace MESH{
     // store min-max values for each dimension of the mesh
     std::array<std::pair<double, double>, N> meshRange;
     // is often required to access just to the minimum value along each dimension and to the quantity
-    // 1/(max[dim] - min[dim]) = 1/(meshRange[dim].second - meshRange[dim].first). Compute here
-    // once and cache results for efficiency
+    // 1/(max[dim] - min[dim]) = 1/(meshRange[dim].second - meshRange[dim].first). Compute here once and cache results for efficiency
     std::array<double, N> minMeshRange;
     std::array<double, N> kMeshRange; // kMeshRange[dim] = 1/(meshRange[dim].second - meshRange[dim].first)
   
   public:
     // constructor from .csv files
-    Mesh(const std::string& pointsFile,    const std::string& edgesFile,
-	 const std::string& trianglesFile, const std::string& neighborsFile,
-	 const std::string& boundaryMarkersFile);
+    Mesh(const std::string& pointsFile,    const std::string& edgesFile, const std::string& trianglesFile,
+	 const std::string& neighborsFile, const std::string& boundaryMarkersFile);
 
-    // get an element object given its ID (its row number in the triangles_ matrix)
-    // this creates an element abstraction only when it is actually needed to avoid waste
-    // of resources. Mesh class does not represent explicitly elements of the mesh,
-    // instead directly manages raw representation built on matrices
+    // construct an element object given its ID (its row number in the triangles_ matrix) from raw (matrix-like) informations
     std::shared_ptr<Element<M,N>> requestElementById(unsigned int ID) const;
 
     // allow range-for loop over mesh elements
@@ -106,26 +115,24 @@ namespace MESH{
       // const version to enable const auto& syntax
       std::shared_ptr<Element<M,N>> operator*() const { return meshContainer->requestElementById(index); }
     };
-
     // provide begin() and end() methods
     iterator begin() const { return iterator(this, 0); }
     iterator end()   const { return iterator(this, triangles_.rows()); }
 
     // getters
-    unsigned int getNumberOfElements()                      const { return numElements;  }
-    unsigned int getNumberOfNodes()                         const { return numNodes;     }
-    std::array<std::pair<double, double>, N> getMeshRange() const { return meshRange;    }
-    std::array<double, N> getMinMeshRange()                 const { return minMeshRange; }
-    std::array<double, N> getKMeshRange()                   const { return kMeshRange;   }
+    unsigned int getNumberOfElements() const { return numElements; }
+    unsigned int getNumberOfNodes() const { return numNodes; }
+    std::array<std::pair<double, double>, N> getMeshRange() const { return meshRange; }
 
     // return true if the given node is on boundary, false otherwise
     bool isOnBoundary(size_t j) const { return boundaryMarkers_(j) == 1; }
   };
 
   // export some aliases
-  using Mesh2D             = Mesh<2,2>;
-  using Mesh3D             = Mesh<3,3>;
-  using SurfaceMesh        = Mesh<2,3>; // manifold cases
+  using Mesh2D = Mesh<2,2>;
+  using Mesh3D = Mesh<3,3>;
+  // manifold cases
+  using SurfaceMesh = Mesh<2,3>;
   using LinearNetworkMesh  = Mesh<1,2>;
 
 #include "Mesh.tpp"

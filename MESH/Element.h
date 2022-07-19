@@ -48,9 +48,13 @@ namespace MESH{
     Eigen::Matrix<double, M, N> invBaryMatrix{};
 
     // compute the inverse of the barycentric matrix. This will be specialized by manifold elements
-    Eigen::Matrix<double, M, N> computeInvBaryMatrix(const Eigen::Matrix<double, N, M>& baryMatrix) {
-      return baryMatrix.inverse();
-    };
+    template <bool is_manifold = (N!=M)>
+    typename std::enable_if<!is_manifold, Eigen::Matrix<double, M, N>>::type
+    computeInvBaryMatrix(const Eigen::Matrix<double, N, M>& baryMatrix);
+
+    template <bool is_manifold = (N!=M)>
+    typename std::enable_if<is_manifold, Eigen::Matrix<double, M, N>>::type
+    computeInvBaryMatrix(const Eigen::Matrix<double, N, M>& baryMatrix);
   
   public:
     Element() = default;
