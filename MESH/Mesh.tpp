@@ -2,12 +2,13 @@
 template <unsigned int M, unsigned int N>
 Mesh<M,N>::Mesh(const std::string& pointsFile,    const std::string& edgesFile, const std::string& trianglesFile,
 		const std::string& neighborsFile, const std::string& boundaryMarkersFile){
+  std::cout << pointsFile << std::endl;
   // open and parse CSV files
   CSVReader reader;
   CSVFile<double> points = reader.parseFile<double>(pointsFile);
   CSVFile<int> edges     = reader.parseFile<int>(edgesFile);
   CSVFile<int> triangles = reader.parseFile<int>(trianglesFile);
-
+  
   // load neighboring informations
   typename std::conditional<
     !is_linear_network<M, N>::value, CSVFile<int>, CSVSparseFile<int>

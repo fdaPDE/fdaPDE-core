@@ -44,6 +44,9 @@ public:
   Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> toEigen();
   // get raw parsed file
   CSVinternal<T> getRawParsedFile() { return parsedFile; }
+
+  std::size_t rows() const { return parsedFile.at(columnNames_[0]).size(); }
+  std::size_t cols() const { return parsedFile.size(); }
 };
 
 template <typename T>

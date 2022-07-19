@@ -82,6 +82,7 @@ namespace MESH{
     std::array<double, N> kMeshRange; // kMeshRange[dim] = 1/(meshRange[dim].second - meshRange[dim].first)
   
   public:
+    Mesh() = default;
     // constructor from .csv files
     Mesh(const std::string& pointsFile,    const std::string& edgesFile, const std::string& trianglesFile,
 	 const std::string& neighborsFile, const std::string& boundaryMarkersFile);
@@ -126,6 +127,11 @@ namespace MESH{
 
     // return true if the given node is on boundary, false otherwise
     bool isOnBoundary(size_t j) const { return boundaryMarkers_(j) == 1; }
+
+    // expose compile time informations to outside
+    static constexpr bool manifold = is_manifold<M, N>::value;
+    static constexpr unsigned int local_dimension = M;
+    static constexpr unsigned int embedding_dimension = N;
   };
 
   // export some aliases
