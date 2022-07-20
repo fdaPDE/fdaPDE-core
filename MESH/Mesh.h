@@ -10,7 +10,6 @@
 #include "Element.h"
 #include "CSVReader.h"
 #include "../utils/Symbols.h"
-#include "MeshUtils.h"
 
 namespace fdaPDE{
 namespace core{
@@ -57,38 +56,43 @@ namespace MESH{
   class Mesh{
   private:
     // coordinates of points constituting the vertices of mesh elements
-    DMatrix<double> points_;
-    unsigned int numNodes = 0;
+    DMatrix<double> points_{};
+    unsigned int numNodes_ = 0;
     // matrix of edges. Each row of the matrix contains the row numbers in points_ matrix
     // of the points which form the edge
-    DMatrix<int> edges_;
+    DMatrix<int> edges_{};
     // matrix of triangles in the triangulation. Each row of the matrix contains the row
     // numbers in points_ matrix of the points which form the triangle
-    DMatrix<int> triangles_;
-    unsigned int numElements = 0;
+    DMatrix<int> elements_{};
+    unsigned int numElements_ = 0;
     // in case of non linear-networks neighbors_ is a dense matrix where row i contains the indexes as row number in triangles_ matrix of the
     // neighboring triangles to triangle i (all triangles in the triangulation which share an edge with i). In case of linear-newtorks neighbors_
     // is a sparse matrix where entry (i,j) is set to 1 iff i and j are neighbors
-    typename neighboring_structure<M, N>::type neighbors_;
+    typename neighboring_structure<M, N>::type neighbors_{};
     // store boundary informations. This is a vector of binary coefficients such that, if element j is 1
     // then mesh node j is on boundary, otherwise 0
-    DMatrix<int> boundaryMarkers_;
+    DMatrix<int> boundary_{};
     
     // store min-max values for each dimension of the mesh
-    std::array<std::pair<double, double>, N> meshRange;
+    std::array<std::pair<double, double>, N> range_{};
     // is often required to access just to the minimum value along each dimension and to the quantity
-    // 1/(max[dim] - min[dim]) = 1/(meshRange[dim].second - meshRange[dim].first). Compute here once and cache results for efficiency
-    std::array<double, N> minMeshRange;
-    std::array<double, N> kMeshRange; // kMeshRange[dim] = 1/(meshRange[dim].second - meshRange[dim].first)
+    // kk_[dim] = 1/(max[dim] - min[dim]) = 1/(meshRange[dim].second - meshRange[dim].first). Compute here once and cache results for efficiency
+    std::array<double, N> minRange_{};
+    std::array<double, N> kk_{}; // kk_[dim] = 1/(range[dim].second - range[dim].first)
   
   public:
     Mesh() = default;
-    // constructor from .csv files
-    Mesh(const std::string& pointsFile,    const std::string& edgesFile, const std::string& trianglesFile,
-	 const std::string& neighborsFile, const std::string& boundaryMarkersFile);
+    // construct from .csv files, strings are names of file where raw data is contained
+    Mesh(const std::string& points,    const std::string& edges, const std::string& triangles,
+	 const std::string& neighbors, const std::string& boundary);
 
+    // construct directly from eigen matrices
+    Mesh(const DMatrix<double>& points, const DMatrix<int>& edges, const DMatrix<int>& elements,
+	 const typename neighboring_structure<M, N>::type& neighbors, const DMatrix<int>& boundary) :
+      points_(points), edges_(edges), elements_(elements), neighbors_(neighbors), boundary_(boundary) {}
+    
     // construct an element object given its ID (its row number in the triangles_ matrix) from raw (matrix-like) informations
-    std::shared_ptr<Element<M,N>> requestElementById(unsigned int ID) const;
+    std::shared_ptr<Element<M,N>> element(unsigned int ID) const;
 
     // allow range-for loop over mesh elements
     struct iterator{
@@ -106,7 +110,7 @@ namespace MESH{
       }
       // dereference the iterator means to create Element object at current index
       std::shared_ptr<Element<M,N>> operator*() {
-	return meshContainer->requestElementById(index);
+	return meshContainer->element(index);
       }
       // two iterators are different when their indexes are different
       friend bool operator!=(const iterator& lhs, const iterator& rhs) {
@@ -114,20 +118,20 @@ namespace MESH{
       }
 
       // const version to enable const auto& syntax
-      std::shared_ptr<Element<M,N>> operator*() const { return meshContainer->requestElementById(index); }
+      std::shared_ptr<Element<M,N>> operator*() const { return meshContainer->element(index); }
     };
     // provide begin() and end() methods
     iterator begin() const { return iterator(this, 0); }
-    iterator end()   const { return iterator(this, triangles_.rows()); }
-
-    // getters
-    unsigned int getNumberOfElements() const { return numElements; }
-    unsigned int getNumberOfNodes() const { return numNodes; }
-    std::array<std::pair<double, double>, N> getMeshRange() const { return meshRange; }
+    iterator end()   const { return iterator(this, elements_.rows()); }
 
     // return true if the given node is on boundary, false otherwise
-    bool isOnBoundary(size_t j) const { return boundaryMarkers_(j) == 1; }
-
+    bool isOnBoundary(size_t j) const { return boundary_(j) == 1; }
+    
+    // getters
+    unsigned int elements() const { return numElements_; }
+    unsigned int nodes() const { return numNodes_; }
+    std::array<std::pair<double, double>, N> range() const { return range_; }
+    
     // expose compile time informations to outside
     static constexpr bool manifold = is_manifold<M, N>::value;
     static constexpr unsigned int local_dimension = M;
@@ -139,7 +143,7 @@ namespace MESH{
   using Mesh3D = Mesh<3,3>;
   // manifold cases
   using SurfaceMesh = Mesh<2,3>;
-  using LinearNetworkMesh  = Mesh<1,2>;
+  using NetworkMesh = Mesh<1,2>;
 
 #include "Mesh.tpp"
 }}}

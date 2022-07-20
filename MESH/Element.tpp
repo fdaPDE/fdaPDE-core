@@ -1,30 +1,32 @@
 // constructor
 template <unsigned int M, unsigned int N>
-Element<M,N>::Element(int ID_, std::array<std::pair<unsigned, SVector<N>>, N_VERTICES(M,N)> FEsupport_,
-		      std::array<SVector<N>, N_VERTICES(M,N)> coords_, std::vector<int> neighbors_,
-		        std::array<std::pair<unsigned, unsigned>, N_VERTICES(M,N)> boundaryMarkers_) :
-  ID(ID_), FEsupport(FEsupport_), coords(coords_), neighbors(neighbors_), boundaryMarkers(boundaryMarkers_) {
+Element<M,N>::Element(std::size_t ID, const std::array<std::size_t, N_VERTICES(M,N)>& nodeIDs, const std::array<SVector<N>, N_VERTICES(M,N)>& coords,
+		      const std::vector<int>& neighbors, const std::array<std::size_t, N_VERTICES(M,N)>& boundary,
+		      const std::array<std::pair<unsigned, SVector<N>>, N_VERTICES(M,N)>& FEsupport) :
+  ID_(ID), nodeIDs_(nodeIDs), coords_(coords), neighbors_(neighbors), boundary_(boundary), FEsupport_(FEsupport) {
 
   // precompute barycentric coordinate matrix for fast access
   // use first point as reference
-  SVector<N> ref = coords[0];
-  for(size_t j = 0; j < M; ++j){
-    baryMatrix.col(j) = coords[j+1] - ref;
+  SVector<N> ref = coords_[0];
+  for(std::size_t j = 0; j < M; ++j){
+    barycentricMatrix_.col(j) = coords_[j+1] - ref;
   }
     
-  // find barycentric coordinates is equivalent to solve a linear system.
-  // for efficiecy reasons caching the inverse of baryMatrix can be usefull
-  // expetially if there is the need to continuously access to barycentric
-  // coordinates. Moreover Eigen inverse() is fast for very small matrices
-  // (at most 4x4). See documentation to learn what system we are trying to solve
-  invBaryMatrix = computeInvBaryMatrix(baryMatrix);
+  // find barycentric coordinates is equivalent to solve a linear system. for efficiecy reasons caching the inverse of the barycentric
+  // matrix can be usefull expetially if there is the need to continuously access to barycentric coordinates.
+  if constexpr(N == M){
+    invBarycentricMatrix_ = barycentricMatrix_.inverse();
+  }else{
+    // returns the generalized inverse of the barycentric matrix (which is a rectangular for manifold elements)
+    invBarycentricMatrix_ = (barycentricMatrix_.transpose()*barycentricMatrix_).inverse()*barycentricMatrix_.transpose();
+  }
 };
 
 // returns the barycentric coordinates of point x with respect to this element
 template <unsigned int M, unsigned int N>
-SVector<M+1> Element<M, N>::computeBarycentricCoordinates(const SVector<N>& x) const {
-  // solve linear system baryMatrix*z = (x - ref) by using the precomputed inverse of baryMatrix
-  SVector<M> z = invBaryMatrix*(x - coords[0]);
+SVector<M+1> Element<M, N>::toBarycentricCoords(const SVector<N>& x) const {
+  // solve linear system barycenitrcMatrix_*z = (x-ref) by using the precomputed inverse of the barycentric matrix
+  SVector<M> z = invBarycentricMatrix_*(x - coords_[0]);
   // compute barycentric coordinate of reference element
   double z0 = 1 - z.sum();
   
@@ -36,19 +38,19 @@ SVector<M+1> Element<M, N>::computeBarycentricCoordinates(const SVector<N>& x) c
 
 // returns the midpoint of the element (dimension of the returned point is the same of the embedding dimension)
 template <unsigned int M, unsigned int N>
-SVector<N> Element<M, N>::computeMidPoint() const {
+SVector<N> Element<M, N>::midPoint() const {
   // a remarkable property of barycentric coordinates is that the center of gravity of an element has all its
   // barycentric coordinates equal to 1/(N+1). In order to compute the midpoint of an element we hence map this
   // point back in cartesian coordinates
   SVector<M> barycentricMidPoint;
   barycentricMidPoint.fill(1/(N+1));
   
-  return baryMatrix*barycentricMidPoint + coords[0];
+  return barycentricMatrix_*barycentricMidPoint + coords_[0];
 }
 
 // returns the bounding box of the element
 template <unsigned int M, unsigned int N>
-std::pair<SVector<N>, SVector<N>> Element<M,N>::computeBoundingBox() const{
+std::pair<SVector<N>, SVector<N>> Element<M,N>::boundingBox() const{
 
   // define lower-left and upper-right corner of bounding box
   SVector<N> ll, ur;
@@ -56,15 +58,15 @@ std::pair<SVector<N>, SVector<N>> Element<M,N>::computeBoundingBox() const{
   // projection of each vertex coordinate on reference axis
   std::array<std::array<double, N_VERTICES(M,N)>, N> projCoords;
   
-  for(size_t j = 0; j < N_VERTICES(M,N); ++j){
-    for(size_t dim = 0; dim < N; ++dim){
-      projCoords[dim][j] = coords[j][dim];
+  for(std::size_t j = 0; j < N_VERTICES(M,N); ++j){
+    for(std::size_t dim = 0; dim < N; ++dim){
+      projCoords[dim][j] = coords_[j][dim];
     }
   }
 
   // take minimum and maximum value along each dimension, those values define the lower-left and
   // upper-right corner of the bounding box
-  for(size_t dim = 0; dim < N; ++dim){
+  for(std::size_t dim = 0; dim < N; ++dim){
     ll[dim] = *std::min_element(projCoords[dim].begin(), projCoords[dim].end());      
     ur[dim] = *std::max_element(projCoords[dim].begin(), projCoords[dim].end());
   }
@@ -86,22 +88,6 @@ Element<M, N>::contains(const SVector<N> &x) const {
   return (baryCoord.array() >= 0).all();
 }
 
-// specialization for 2.5D domains (surfaces)
-template <unsigned int M, unsigned int N>
-template <bool is_manifold>
-typename std::enable_if<!is_manifold, Eigen::Matrix<double, M, N>>::type
-Element<M, N>::computeInvBaryMatrix(const Eigen::Matrix<double, N, M>& baryMatrix) {
-  return baryMatrix.inverse();
-};
-
-template <unsigned int M, unsigned int N>
-template <bool is_manifold>
-typename std::enable_if<is_manifold, Eigen::Matrix<double, M, N>>::type
-Element<M, N>::computeInvBaryMatrix(const Eigen::Matrix<double, N, M>& baryMatrix) {
-  // returns the generalized inverse of baryMatrix (which is a rectangular for surface elements)
-  return (baryMatrix.transpose()*baryMatrix).inverse()*baryMatrix.transpose();
-}
-
 // specialization for manifold elements of contains() routine. 
 template <unsigned int M, unsigned int N>
 template <bool is_manifold>
@@ -115,12 +101,12 @@ Element<M,N>::contains(const SVector<N>& x) const {
   // accepts an offset parameter representing the point the space passes throught
   std::vector<SVector<N>> basis;
   for(size_t i = 0; i < M; ++i){
-    basis.push_back(coords[i+1] - coords[0]);
+    basis.push_back(coords_[i+1] - coords_[0]);
   }
   
   // if the distance between the point projection into the plane and the point itself is larger than 0
   // return false, the point does not belong to the plane and therefore cannot belong to the surface element
-  if(Geometry<N>::getL2Distance(basis, coords[0], x) > std::numeric_limits<double>::epsilon()){
+  if(Geometry<N>::getL2Distance(basis, coords_[0], x) > std::numeric_limits<double>::epsilon()){
     return false;
   }
   
@@ -135,7 +121,17 @@ Element<M,N>::contains(const SVector<N>& x) const {
 template <unsigned int M, unsigned int N>
 bool Element<M,N>::isOnBoundary(void) const{
   for(size_t i = 0; i < N_VERTICES(M,N); ++i){
-    if(boundaryMarkers[i].second == 1) return true;
+    if(boundary_[i] == 1) return true;
   }
   return false;
+}
+
+template <unsigned int M, unsigned int N>
+std::vector<std::pair<std::size_t, SVector<N>>> Element<M,N>::boundaryNodes() const {
+  std::vector<std::pair<std::size_t, SVector<N>>> result{};
+  for(std::size_t i = 0; i < N_VERTICES(M,N); ++i){
+    if(boundary_[i] == 1)
+      result.push_back(std::make_pair(nodeIDs_[i], coords_[i]));
+  }
+  return result;
 }

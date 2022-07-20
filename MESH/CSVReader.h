@@ -43,7 +43,7 @@ public:
   // converts the raw parsed file in eigen dense matrix
   Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> toEigen();
   // get raw parsed file
-  CSVinternal<T> getRawParsedFile() { return parsedFile; }
+  CSVinternal<T> getRawParsedFile() const { return parsedFile; }
 
   std::size_t rows() const { return parsedFile.at(columnNames_[0]).size(); }
   std::size_t cols() const { return parsedFile.size(); }
@@ -60,7 +60,7 @@ public:
   
   void setParsedFile(const CSVinternal<std::vector<T>>& parsedFile_) { parsedFile = parsedFile_; }
   Eigen::SparseMatrix<T> toEigen();
-  CSVinternal<std::vector<T>> getRawParsedFile() { return parsedFile; }
+  CSVinternal<std::vector<T>> getRawParsedFile() const { return parsedFile; }
 };
 
 template <typename T>
