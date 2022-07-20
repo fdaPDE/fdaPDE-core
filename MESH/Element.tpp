@@ -82,7 +82,7 @@ Element<M, N>::contains(const SVector<N> &x) const {
   // you can prove that a point is inside the element if all its barycentric coordinates are positive
   
   // get barycentric coordinates of input point
-  SVector<N+1> baryCoord = computeBarycentricCoordinates(x);
+  SVector<N+1> baryCoord = toBarycentricCoords(x);
 
   // use Eigen visitor to check for positiveness of elements
   return (baryCoord.array() >= 0).all();
@@ -111,7 +111,7 @@ Element<M,N>::contains(const SVector<N>& x) const {
   }
   
   // if the point belongs to the spanned space, check if its barycentric coordinates are all positive
-  SVector<N> baryCoord = computeBarycentricCoordinates(x);
+  SVector<N> baryCoord = toBarycentricCoords(x);
 
   // use Eigen visitor to check for positiveness of elements
   return (baryCoord.array() >= 0).all();
