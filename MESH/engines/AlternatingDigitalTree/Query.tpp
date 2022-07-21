@@ -1,8 +1,7 @@
 template <unsigned int N>
 bool Query<N>::intersect(const rectangle<N> &rect) const {
   // keep track along which dimension query and rect intersects
-  std::array<bool, N> boolVector{};
-  
+  std::array<bool, N> boolVector{};  
   for(size_t dim = 0; dim < N; ++dim){
     // load here once, access it fast
     double qs = queryRange_.second[dim], qf = queryRange_.first[dim];
@@ -16,7 +15,6 @@ bool Query<N>::intersect(const rectangle<N> &rect) const {
       boolVector[dim] = true; // query intersect rectangle along this dimension
     }
   }
-
   // query and rect intersects if and only if they intersects along each dimension
   bool result = true;
   for(bool b : boolVector) result &= b;

@@ -1,7 +1,7 @@
 #ifndef __BARYCENTRIC_WALK_H__
 #define __BARYCENTRIC_WALK_H__
 
-#include "Mesh.h"
+#include "../../Mesh.h"
 #include <random>
 
 namespace fdaPDE{
@@ -27,7 +27,7 @@ namespace MESH{
       rng  = RNG(seed);   // define RNG
     
       // define uniform distribution over the ID space
-      uniform_int = std::uniform_int_distribution<uint32_t>(0, mesh_.getNumberOfElements()-1);
+      uniform_int = std::uniform_int_distribution<uint32_t>(0, mesh_.elements()-1);
     }
   
     // applies a barycentric walk strategy to search for the element containing a given point

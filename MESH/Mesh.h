@@ -131,6 +131,8 @@ namespace MESH{
     unsigned int elements() const { return numElements_; }
     unsigned int nodes() const { return numNodes_; }
     std::array<std::pair<double, double>, N> range() const { return range_; }
+    std::array<double, N> lowerBound() const { return minRange_; }
+    std::array<double, N> kk() const { return kk_; }
     
     // expose compile time informations to outside
     static constexpr bool manifold = is_manifold<M, N>::value;

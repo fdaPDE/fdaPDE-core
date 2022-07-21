@@ -7,6 +7,7 @@ std::shared_ptr<Element<M, N>> BruteForce<M, N>::search(const SVector<N>& point)
       return element;
   }
 
+  std::cout << "NON TROVO ELEMENTO!!" << std::endl;
   // no element in mesh found
-  return std::shared_ptr<Element<M,N>>();
+  return nullptr;
 }

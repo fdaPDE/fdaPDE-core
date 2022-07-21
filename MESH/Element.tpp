@@ -43,6 +43,9 @@ SVector<N> Element<M, N>::midPoint() const {
   // point back in cartesian coordinates
   SVector<M> barycentricMidPoint;
   barycentricMidPoint.fill(1.0/(M+1)); // avoid implicit conversion to int
+
+  std::cout << "in mid point \n" << coords_[0] << "\n ----- \n" << barycentricMatrix_ << std::endl;
+  
   return barycentricMatrix_*barycentricMidPoint + coords_[0];
 }
 

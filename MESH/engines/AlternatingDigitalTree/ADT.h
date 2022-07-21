@@ -20,8 +20,7 @@ namespace MESH{
     unsigned int elementID_;  // the element ID to which this node referes to
     SVector<N> point_;        // the point stored in this node 
     rectangle<N> range_;      // the range in the unit hypercube this node refers to
-  
-    // constructor
+
     ADTnode(unsigned int elementID, const SVector<N>& point, const rectangle<N>& range)
       : elementID_(elementID), point_(point), range_(range) {}
   };
@@ -32,17 +31,12 @@ namespace MESH{
   private:
     Tree<ADTnode<2*N>> tree;
     Mesh<M,N>& mesh_;
-
     // build an Alternating Digital Tree given a set of 2N-dimensional points.
     void init(const std::vector<std::pair<SVector<2*N>, unsigned int>>& data);
-  
     // performs a geometric search returning all points which lie in a given query
     std::list<unsigned int> geometricSearch(const Query<2*N>& query);
-  
   public:
-    // initialize the ADT using informations coming from the mesh
-    ADT(Mesh<M,N>& mesh);
-  
+    ADT(Mesh<M,N>& mesh);  
     // applies the ADT geometric search to return the mesh element containing a given point
     std::shared_ptr<Element<M, N>> search(const SVector<N>& point);
 

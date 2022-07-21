@@ -16,7 +16,6 @@ namespace MESH{
   public:
     // constructor
     Query(const rectangle<N>& queryRange) : queryRange_(queryRange) {}
-
     // returns true if a given point lies inside the query
     bool contains(const SVector<N>& point) const;
     // returns true if the query intersects a given rectangle
