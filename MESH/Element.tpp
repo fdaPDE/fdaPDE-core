@@ -28,8 +28,7 @@ SVector<M+1> Element<M, N>::toBarycentricCoords(const SVector<N>& x) const {
   // solve linear system barycenitrcMatrix_*z = (x-ref) by using the precomputed inverse of the barycentric matrix
   SVector<M> z = invBarycentricMatrix_*(x - coords_[0]);
   // compute barycentric coordinate of reference element
-  double z0 = 1 - z.sum();
-  
+  double z0 = 1 - z.sum();  
   SVector<M+1> result;
   result << SVector<1>(z0), z;
 
@@ -40,22 +39,19 @@ SVector<M+1> Element<M, N>::toBarycentricCoords(const SVector<N>& x) const {
 template <unsigned int M, unsigned int N>
 SVector<N> Element<M, N>::midPoint() const {
   // a remarkable property of barycentric coordinates is that the center of gravity of an element has all its
-  // barycentric coordinates equal to 1/(N+1). In order to compute the midpoint of an element we hence map this
+  // barycentric coordinates equal to 1/(M+1). In order to compute the midpoint of an element we hence map this
   // point back in cartesian coordinates
   SVector<M> barycentricMidPoint;
-  barycentricMidPoint.fill(1/(N+1));
-  
+  barycentricMidPoint.fill(1.0/(M+1)); // avoid implicit conversion to int
   return barycentricMatrix_*barycentricMidPoint + coords_[0];
 }
 
 // returns the bounding box of the element
 template <unsigned int M, unsigned int N>
 std::pair<SVector<N>, SVector<N>> Element<M,N>::boundingBox() const{
-
   // define lower-left and upper-right corner of bounding box
   SVector<N> ll, ur;
-
-  // projection of each vertex coordinate on reference axis
+  // project each vertex coordinate on the reference axis
   std::array<std::array<double, N_VERTICES(M,N)>, N> projCoords;
   
   for(std::size_t j = 0; j < N_VERTICES(M,N); ++j){
@@ -63,7 +59,6 @@ std::pair<SVector<N>, SVector<N>> Element<M,N>::boundingBox() const{
       projCoords[dim][j] = coords_[j][dim];
     }
   }
-
   // take minimum and maximum value along each dimension, those values define the lower-left and
   // upper-right corner of the bounding box
   for(std::size_t dim = 0; dim < N; ++dim){
@@ -83,9 +78,7 @@ Element<M, N>::contains(const SVector<N> &x) const {
   
   // get barycentric coordinates of input point
   SVector<N+1> baryCoord = toBarycentricCoords(x);
-
-  // use Eigen visitor to check for positiveness of elements
-  return (baryCoord.array() >= 0).all();
+  return (baryCoord.array() >= 0).all(); // use Eigen visitor to check for positiveness of elements
 }
 
 // specialization for manifold elements of contains() routine. 
@@ -103,18 +96,14 @@ Element<M,N>::contains(const SVector<N>& x) const {
   for(size_t i = 0; i < M; ++i){
     basis.push_back(coords_[i+1] - coords_[0]);
   }
-  
   // if the distance between the point projection into the plane and the point itself is larger than 0
   // return false, the point does not belong to the plane and therefore cannot belong to the surface element
   if(Geometry<N>::getL2Distance(basis, coords_[0], x) > std::numeric_limits<double>::epsilon()){
     return false;
   }
-  
   // if the point belongs to the spanned space, check if its barycentric coordinates are all positive
   SVector<N> baryCoord = toBarycentricCoords(x);
-
-  // use Eigen visitor to check for positiveness of elements
-  return (baryCoord.array() >= 0).all();
+  return (baryCoord.array() >= 0).all(); // use Eigen visitor to check for positiveness of elements
 }
 
 // return true if the element has at least one vertex on the boundary of the domain
