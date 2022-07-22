@@ -3,6 +3,7 @@
 
 #include "../utils/Symbols.h"
 #include "../NLA/VectorSpace.h"
+using fdaPDE::core::NLA::VectorSpace;
 
 #include <Eigen/LU>
 #include <limits>
@@ -82,7 +83,8 @@ namespace MESH{
     bool isOnBoundary(void) const;
     // returns a vector of pairs: <node id, node coordinates> for any node of the element on the boundary of the mesh
     std::vector<std::pair<std::size_t, SVector<N>>> boundaryNodes() const;
-
+    // returns the vector space passing throught this element
+    VectorSpace<N> spannedSpace() const;
 
     // ?????????????? parte dell'interfaccia ancora da definire, non coperta da tests
     //Eigen::Matrix<double, N, M> getBaryMatrix() const { return baryMatrix; }

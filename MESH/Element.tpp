@@ -17,7 +17,7 @@ Element<M,N>::Element(std::size_t ID, const std::array<std::size_t, N_VERTICES(M
   if constexpr(N == M){
     invBarycentricMatrix_ = barycentricMatrix_.inverse();
   }else{
-    // returns the generalized inverse of the barycentric matrix (which is a rectangular for manifold elements)
+    // returns the generalized inverse of the barycentric matrix (which is a rectangular matrix for manifold meshes)
     invBarycentricMatrix_ = (barycentricMatrix_.transpose()*barycentricMatrix_).inverse()*barycentricMatrix_.transpose();
   }
 };
@@ -44,8 +44,6 @@ SVector<N> Element<M, N>::midPoint() const {
   SVector<M> barycentricMidPoint;
   barycentricMidPoint.fill(1.0/(M+1)); // avoid implicit conversion to int
 
-  std::cout << "in mid point \n" << coords_[0] << "\n ----- \n" << barycentricMatrix_ << std::endl;
-  
   return barycentricMatrix_*barycentricMidPoint + coords_[0];
 }
 
@@ -84,24 +82,26 @@ Element<M, N>::contains(const SVector<N> &x) const {
   return (baryCoord.array() >= 0).all(); // use Eigen visitor to check for positiveness of elements
 }
 
+template <unsigned int M, unsigned int N>
+VectorSpace<N> Element<M, N>::spannedSpace() const {
+  // build a basis for the space containing the element,
+  std::vector<SVector<N>> basis;
+  for(size_t i = 0; i < M; ++i){
+    basis.push_back(coords_[i+1] - coords_[0]);
+  }
+  return VectorSpace<N>(basis, coords_[0]);
+}
+
 // specialization for manifold elements of contains() routine. 
 template <unsigned int M, unsigned int N>
 template <bool is_manifold>
 typename std::enable_if<is_manifold, bool>::type
 Element<M,N>::contains(const SVector<N>& x) const {
   // we start checking if the point is contained in the affine space spanned by the mesh element
-
-  // build a basis for the space containing the element,
-  // Observe that the space spanned by this set of basis is a vector space in the proper sense
-  // (the plane passes throught zero). To cope with affine spaces getL2Distance of class Geometry
-  // accepts an offset parameter representing the point the space passes throught
-  std::vector<SVector<N>> basis;
-  for(size_t i = 0; i < M; ++i){
-    basis.push_back(coords_[i+1] - coords_[0]);
-  }
+  VectorSpace<N> vs = spannedSpace();
   // if the distance between the point projection into the plane and the point itself is larger than 0
   // return false, the point does not belong to the plane and therefore cannot belong to the surface element
-  if(Geometry<N>::getL2Distance(basis, coords_[0], x) > std::numeric_limits<double>::epsilon()){
+  if(vs.distance(x) > std::numeric_limits<double>::epsilon()){
     return false;
   }
   // if the point belongs to the spanned space, check if its barycentric coordinates are all positive
