@@ -101,7 +101,7 @@ Element<M,N>::contains(const SVector<N>& x) const {
   VectorSpace<N> vs = spannedSpace();
   // if the distance between the point projection into the plane and the point itself is larger than 0
   // return false, the point does not belong to the plane and therefore cannot belong to the surface element
-  if(vs.distance(x) > std::numeric_limits<double>::epsilon()){
+  if(vs.distance(x) > 10*std::numeric_limits<double>::epsilon()){
     return false;
   }
   // if the point belongs to the spanned space, check if its barycentric coordinates are all positive

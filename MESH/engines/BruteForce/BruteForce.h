@@ -17,10 +17,10 @@ namespace MESH{
   private:
     Mesh<M,N>& mesh_;
   public:
-    // constructor
     BruteForce(Mesh<M,N>& mesh) : mesh_(mesh) {} ;
     // applies a brute force strategy to search for the element containing a given point
-    std::shared_ptr<Element<M, N>> search(const SVector<N>& point);
+    template <typename... Args>
+    std::shared_ptr<Element<M, N>> search(const SVector<N>& point, Args&... args);
   };
 
 #include "BruteForce.tpp"

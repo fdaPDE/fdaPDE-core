@@ -1,10 +1,21 @@
+template <unsigned int M, unsigned int N>
+BarycentricWalk<M,N>::BarycentricWalk(const Mesh<M,N>& mesh) : mesh_(mesh) {
+  seed = time(NULL);
+  rng  = std::default_random_engine(seed);
+  
+  // define uniform distribution over the ID space
+  uniform_int = std::uniform_int_distribution<uint32_t>(0, mesh_.elements()-1);
+}
+
 // applies a barycentric walk search
 template <unsigned int M, unsigned int N>
-std::shared_ptr<Element<M,N>> BarycentricWalk<M,N>::search(const SVector<N>& point){
+template <typename... Args>
+std::shared_ptr<Element<M,N>> BarycentricWalk<M,N>::search(const SVector<N>& point, Args&... args){
   // start from an element at random
   std::shared_ptr<Element<M,N>> element = mesh_.element(uniform_int(rng)); 
 
   if(element->contains(point)){
+    (args(element, point), ...); // parameter pack expansion to call functor on the pair (element, point).
     return element;
   }
   
@@ -24,5 +35,6 @@ std::shared_ptr<Element<M,N>> BarycentricWalk<M,N>::search(const SVector<N>& poi
     element = mesh_.element(nextID);
   }
   
+  (args(element, point), ...); // parameter pack expansion to call functor on the pair (element, point).
   return element;
 }

@@ -117,7 +117,8 @@ std::list<unsigned int> ADT<M,N>::geometricSearch(const Query<2*N> &query) {
 // once mesh elements are mapped as points in a 2N dimensional space, the problem of searching for the
 // element containing a given point can be solved as a geometric search problem in a 2N dimensional space
 template <unsigned int M, unsigned int N>
-std::shared_ptr<Element<M, N>> ADT<M,N>::search(const SVector<N> &point) {
+template <typename... Args>
+std::shared_ptr<Element<M, N>> ADT<M,N>::search(const SVector<N> &point, Args&... args) {
   // map input point in the unit hypercube (see Mesh.h for definition of methods below)
   std::array<double, N> lowerBound = mesh_.lowerBound();
   std::array<double, N> kk = mesh_.kk();
@@ -145,6 +146,7 @@ std::shared_ptr<Element<M, N>> ADT<M,N>::search(const SVector<N> &point) {
   for(unsigned int ID : searchResult){
     std::shared_ptr<Element<M,N>> element = mesh_.element(ID);
     if(element->contains(point)){
+      (args(element, point), ...); // parameter pack expansion to call functor on the pair (element, point).
       return element;
     }
   }
