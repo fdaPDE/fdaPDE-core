@@ -83,13 +83,13 @@ Element<M, N>::contains(const SVector<N> &x) const {
 }
 
 template <unsigned int M, unsigned int N>
-VectorSpace<N> Element<M, N>::spannedSpace() const {
+VectorSpace<M, N> Element<M, N>::spannedSpace() const {
   // build a basis for the space containing the element,
-  std::vector<SVector<N>> basis;
+  std::array<SVector<N>, M> basis;
   for(size_t i = 0; i < M; ++i){
-    basis.push_back(coords_[i+1] - coords_[0]);
+    basis[i] = (coords_[i+1] - coords_[0]);
   }
-  return VectorSpace<N>(basis, coords_[0]);
+  return VectorSpace<M, N>(basis, coords_[0]);
 }
 
 // specialization for manifold elements of contains() routine. 
@@ -98,7 +98,7 @@ template <bool is_manifold>
 typename std::enable_if<is_manifold, bool>::type
 Element<M,N>::contains(const SVector<N>& x) const {
   // we start checking if the point is contained in the affine space spanned by the mesh element
-  VectorSpace<N> vs = spannedSpace();
+  VectorSpace<M, N> vs = spannedSpace();
   // if the distance between the point projection into the plane and the point itself is larger than 0
   // return false, the point does not belong to the plane and therefore cannot belong to the surface element
   if(vs.distance(x) > 10*std::numeric_limits<double>::epsilon()){
@@ -122,8 +122,9 @@ template <unsigned int M, unsigned int N>
 std::vector<std::pair<std::size_t, SVector<N>>> Element<M,N>::boundaryNodes() const {
   std::vector<std::pair<std::size_t, SVector<N>>> result{};
   for(std::size_t i = 0; i < N_VERTICES(M,N); ++i){
-    if(boundary_[i] == 1)
+    if(boundary_[i] == 1){
       result.push_back(std::make_pair(nodeIDs_[i], coords_[i]));
+    }
   }
   return result;
 }

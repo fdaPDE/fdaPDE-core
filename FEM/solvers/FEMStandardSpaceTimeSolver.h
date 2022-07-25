@@ -25,17 +25,17 @@ void FEMStandardSpaceTimeSolver::solve(const PDE<M, N, E>& pde, const B& basis, 
 
   unsigned int timeSteps = this->forcingVector_.cols(); // number of iterations for the time loop
   
-  this->solution_.resize(pde.getDomain().getNumberOfNodes(), timeSteps-1);
+  this->solution_.resize(pde.getDomain().nodes(), timeSteps-1);
   this->solution_.col(0) = pde.getInitialCondition(); // impose initial condition
   
-  DVector rhs = (this->R0_/deltaT)*pde.getInitialCondition() + this->forcingVector_.col(0);  
+  DVector<double> rhs = (this->R0_/deltaT)*pde.getInitialCondition() + this->forcingVector_.col(0);  
   
   // Observe that K is time invariant only for homogeneous boundary conditions. In general we need to recompute K at each time instant, 
   // anyway we can avoid the recomputation of K at each iteration by just keeping overwriting it at the boundary indexes positions. 
   Eigen::SparseMatrix<double> K = this->R0_/deltaT + this->R1_; // build system matrix
 
   // prepare system matrix to handle dirichlet boundary conditions
-  for(std::size_t j = 0; j < pde.getDomain().getNumberOfNodes(); ++j){
+  for(std::size_t j = 0; j < pde.getDomain().nodes(); ++j){
     if(pde.getDomain().isOnBoundary(j)){
       K.row(j) *= 0;         // zero all entries of this row
       K.coeffRef(j,j) = 1;   // set diagonal element to 1 to impose equation u_j = b_j
@@ -45,7 +45,7 @@ void FEMStandardSpaceTimeSolver::solve(const PDE<M, N, E>& pde, const B& basis, 
   // execute temporal loop to solve ODE system via forward-euler scheme
   for(std::size_t i = 1; i < timeSteps - 1; ++i){
     // impose boundary conditions
-    for(std::size_t j = 0; j < pde.getDomain().getNumberOfNodes(); ++j){
+    for(std::size_t j = 0; j < pde.getDomain().nodes(); ++j){
       if(pde.getDomain().isOnBoundary(j)){
 	// boundaryDatum is a pair (nodeID, boundary time series)
 	rhs[j] = pde.getBoundaryData().at(j)[i];; // impose boundary value
@@ -58,7 +58,7 @@ void FEMStandardSpaceTimeSolver::solve(const PDE<M, N, E>& pde, const B& basis, 
       return;
     }
     
-    DVector u_i = solver.solve(rhs);                               // solve linear system
+    DVector<double> u_i = solver.solve(rhs);                               // solve linear system
     this->solution_.col(i) = u_i;                                  // append time step solution to solution matrix
     rhs = (this->R0_/deltaT)*u_i + this->forcingVector_.col(i+1);  // update rhs for next iteration
   }

@@ -1,9 +1,9 @@
 #ifndef __LAPLACIAN_H__
 #define __LAPLACIAN_H__
 
-#include "../utils/fields/VectorField.h"
+#include "../../utils/fields/VectorField.h"
 using fdaPDE::core::VectorField;
-#include "../MESH/Element.h"
+#include "../../MESH/Element.h"
 using fdaPDE::core::MESH::Element;
 
 #include "BilinearFormExpressions.h"
@@ -34,7 +34,7 @@ public:
     // express gradient of f in terms of gradients of basis functions over reference element.
     // This entails to compute (J^{-1})^T * \Nabla phi_i. In the following we assume basis[i] = phi_i
 
-    Eigen::Matrix<double, N, ORDER> invJ = e.getInvBaryMatrix().transpose();
+    Eigen::Matrix<double, N, ORDER> invJ = e.invBarycentricMatrix().transpose();
     // Given \Nabla phi_i premultiply it by (J^{-1})^T = invJ.
     // NOTE: we assume "basis" to provide functions already defined on the reference element
     VectorField<N> NablaPhi_i = invJ * basis[i].gradient();  

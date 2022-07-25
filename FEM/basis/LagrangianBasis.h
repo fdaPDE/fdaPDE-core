@@ -1,8 +1,8 @@
 #ifndef __LAGRANGIAN_BASIS_H__
 #define __LAGRANGIAN_BASIS_H__
 
-#include "../utils/CompileTime.h"
-#include "../utils/Symbols.h"
+#include "../../utils/CompileTime.h"
+#include "../../utils/Symbols.h"
 #include "MultivariatePolynomial.h"
 #include <array>
 #include <Eigen/QR>

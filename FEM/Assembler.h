@@ -14,6 +14,7 @@ using fdaPDE::core::ScalarField;
 #include "../MESH/Mesh.h"
 #include "../MESH/Element.h"
 using fdaPDE::core::MESH::Element;
+using fdaPDE::core::MESH::N_VERTICES;
 using fdaPDE::core::MESH::Mesh;
 
 // FEM module includes
@@ -52,8 +53,8 @@ Eigen::SparseMatrix<double> Assembler<M, N, B, I>::assemble(const E& bilinearFor
   Eigen::SparseMatrix<double> stiffnessMatrix;      // stiffness matrix is sparse due to the local support of basis functions
 
   // properly preallocate memory to avoid reallocations
-  tripletList.reserve(n_basis*n_basis*mesh_.getNumberOfElements());
-  stiffnessMatrix.resize(mesh_.getNumberOfNodes(), mesh_.getNumberOfNodes());
+  tripletList.reserve(n_basis*n_basis*mesh_.elements());
+  stiffnessMatrix.resize(mesh_.nodes(), mesh_.nodes());
 
   // cycle over all mesh elements
   for(std::shared_ptr<Element<M,N>> e : mesh_){
@@ -94,7 +95,7 @@ template <unsigned int M, unsigned int N, typename B, typename I>
 Eigen::Matrix<double, Eigen::Dynamic, 1> Assembler<M, N, B, I>::forcingTerm(const Eigen::Matrix<double, Eigen::Dynamic, 1>& f) {
 
   Eigen::Matrix<double, Eigen::Dynamic, 1> result{};
-  result.resize(mesh_.getNumberOfNodes(), 1); // there are as many basis functions as number of nodes in the mesh
+  result.resize(mesh_.nodes(), 1); // there are as many basis functions as number of nodes in the mesh
   result.fill(0);                             // init result vector to zero
   
   // build forcing vector
@@ -102,11 +103,12 @@ Eigen::Matrix<double, Eigen::Dynamic, 1> Assembler<M, N, B, I>::forcingTerm(cons
     // build functional basis over the current element e
     B basis(*e);
     // integrate on each node
+    std::array<std::size_t, N_VERTICES(M,N)> nodes = e->nodeIDs();
     for(size_t i = 0; i < n_basis; ++i){
-      if(e->getBoundaryMarkers()[i].second == 0){ // skip computation if node is a boundary node
+      if(!mesh_.isOnBoundary(nodes[i])){ // skip computation if node is a boundary node
 	auto phi_i = basis[i];	                  // basis function
 	// f[e->getID()] is the value of the discretized forcing field (given as datum) over the current element
-	auto functional = f[e->getID()]*phi_i;    // functional to integrate
+	auto functional = f[e->ID()]*phi_i;    // functional to integrate
 	
 	// perform integration and store result exploiting additiviy of the integral
         result[e->getFESupport()[i].first] += integrator_.integrate(*e, functional);

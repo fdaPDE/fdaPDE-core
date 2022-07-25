@@ -1,10 +1,10 @@
 #ifndef __MULTIVARIATE_POLYNOMIAL_H__
 #define __MULTIVARIATE_POLYNOMIAL_H__
 
-#include "../utils/CompileTime.h"
-#include "../utils/Symbols.h"
-#include "../utils/fields/ScalarFieldExpressions.h"
-#include "../utils/fields/VectorField.h"
+#include "../../utils/CompileTime.h"
+#include "../../utils/Symbols.h"
+#include "../../utils/fields/ScalarFieldExpressions.h"
+#include "../../utils/fields/VectorField.h"
 
 using fdaPDE::core::VectorField;
 using fdaPDE::core::FieldExpr;

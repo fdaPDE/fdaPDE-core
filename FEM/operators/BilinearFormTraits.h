@@ -4,10 +4,10 @@
 #include <type_traits>
 #include <tuple>
 
-#include "operators/Gradient.h"
-#include "operators/Identity.h"
-#include "operators/Laplacian.h"
-#include "operators/dT.h"
+#include "Gradient.h"
+#include "Identity.h"
+#include "Laplacian.h"
+#include "dT.h"
 
 // returns true if type T is instance of template E<L> with L some unsigned int.
 template <typename T, template <unsigned int L> typename E>

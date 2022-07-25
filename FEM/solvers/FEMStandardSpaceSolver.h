@@ -21,7 +21,7 @@ void FEMStandardSpaceSolver::solve(const PDE<M, N, E>& pde, const B& basis, cons
   this->init(pde, basis, integrator); // init solver for this PDE
 
   // impose boundary conditions
-  for(std::size_t i = 0; i < pde.getDomain().getNumberOfNodes(); ++i){
+  for(std::size_t i = 0; i < pde.getDomain().nodes(); ++i){
     if(pde.getDomain().isOnBoundary(i)){
       // boundaryDatum is a pair (nodeID, boundary value)
       double boundaryDatum = pde.getBoundaryData().at(i)[0];

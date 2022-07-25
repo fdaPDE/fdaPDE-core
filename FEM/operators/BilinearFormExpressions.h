@@ -1,9 +1,9 @@
 #ifndef __BILINEAR_FORM_EXPRESSIONS_H__
 #define __BILINEAR_FORM_EXPRESSIONS_H__
 
-#include "../MESH/Element.h"
+#include "../../MESH/Element.h"
 using fdaPDE::core::MESH::Element;
-#include "../utils/Symbols.h"
+#include "../../utils/Symbols.h"
 
 #include <tuple>
 

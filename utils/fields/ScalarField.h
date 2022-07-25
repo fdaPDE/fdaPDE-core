@@ -6,11 +6,13 @@
 #include <initializer_list>
 #include "../Symbols.h"
 #include "ScalarFieldExpressions.h"
-#include "VectorField.h"
 
 namespace fdaPDE{
 namespace core{
 
+  // forward declaration
+  template <int N> class VectorField;
+  
   // macro for the definition of application of trascendental functions to ScalarFields
 #define DEF_FIELD_UNARY_FUNCTOR(FUN_NAME)			\
   template <int N>							\

@@ -1,14 +1,14 @@
 #ifndef __INTEGRATOR_H__
 #define __INTEGRATOR_H__
 
-#include "../MESH/Element.h"
+#include "../../MESH/Element.h"
 using fdaPDE::core::MESH::Element;
-#include "../MESH/Mesh.h"
+#include "../../MESH/Mesh.h"
 using fdaPDE::core::MESH::Mesh;
 
-#include "../utils/Symbols.h"
-#include "../utils/CompileTime.h"
-#include "../utils/fields/VectorField.h"
+#include "../../utils/Symbols.h"
+#include "../../utils/CompileTime.h"
+#include "../../utils/fields/VectorField.h"
 using fdaPDE::core::VectorField;
 
 #include "IntegratorTables.h"
@@ -58,7 +58,7 @@ double Integrator<N, K>::integrate(const B& basis, const Element<ORDER, N>& e, i
     value += bilinearForm.integrate(basis, e, i, j, p) * integrationTable_.weights[iq];
   }
   
-  return value * std::abs(e.getBaryMatrix().determinant())/ct_factorial(N);
+  return value * std::abs(e.barycentricMatrix().determinant())/ct_factorial(N);
 }
 
 // integrate a callable F over a mesh element e.
@@ -69,11 +69,11 @@ double Integrator<N, K>::integrate(const Element<ORDER, N> &e, F &f) const {
   // execute quadrature rule
   for(size_t iq = 0; iq < integrationTable_.num_nodes; ++iq){
     // map quadrature point to current element e
-    SVector<N> p = e.getBaryMatrix()*SVector<N>(integrationTable_.nodes[iq].data()) + e.getCoords()[0];
+    SVector<N> p = e.barycentricMatrix()*SVector<N>(integrationTable_.nodes[iq].data()) + e.coords()[0];
     value += f(p)*integrationTable_.weights[iq];
   }
   // correct for measure of domain (element e)
-  return value * (std::abs(e.getBaryMatrix().determinant())/ct_factorial(N));  
+  return value * (std::abs(e.barycentricMatrix().determinant())/ct_factorial(N));  
 }
 
 // integrate a callable F over the entire mesh m.

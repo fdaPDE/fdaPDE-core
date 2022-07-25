@@ -34,12 +34,12 @@ class PDE{
 private:
   const Mesh<M,N>& domain_;     // problem domain
   E bilinearForm_;              // the differential operator of the problem in its weak formulation
-  DMatrix forcingData_{};       // forcing data, a vector is used to handle space-time problems
-  DVector initialCondition_{};  // initial condition, used in space-time problems only
+  DMatrix<double> forcingData_{};       // forcing data, a vector is used to handle space-time problems
+  DVector<double> initialCondition_{};  // initial condition, used in space-time problems only
   
   // memorize boundary data in a sparse structure, by storing the index of the boundary node and the relative boundary value.
   // a vector is used as mapped type to handle both space and space-time problems
-  std::unordered_map<unsigned, DVector> boundaryData_{};
+  std::unordered_map<unsigned, DVector<double>> boundaryData_{};
 
   Solver solver_{}; // the solver used to solve the PDE
 public:
@@ -48,26 +48,26 @@ public:
   static constexpr unsigned N_ = N;
 
   // constructor, a DMatrix is accepted as forcingData to handle also space-time problems
-  PDE(const Mesh<M,N>& domain, E bilinearForm, const DMatrix& forcingData) :
+  PDE(const Mesh<M,N>& domain, E bilinearForm, const DMatrix<double>& forcingData) :
     domain_(domain), bilinearForm_(bilinearForm), forcingData_(forcingData) {};
 
   // setters for boundary and initial conditions
-  void setDirichletBC(const DMatrix& data);
+  void setDirichletBC(const DMatrix<double>& data);
   //void setNeumannBC();
-  void setInitialCondition(const DVector& data) { initialCondition_ = data; };
+  void setInitialCondition(const DVector<double>& data) { initialCondition_ = data; };
   
   // getters
   const Mesh<M, N>& getDomain() const { return domain_; }
   E getBilinearForm() const { return bilinearForm_; }
-  const DMatrix& getForcingData() const { return forcingData_; }
-  const DVector& getInitialCondition() const { return initialCondition_; }
-  const std::unordered_map<unsigned, DVector>& getBoundaryData() const { return boundaryData_; };
+  const DMatrix<double>& getForcingData() const { return forcingData_; }
+  const DVector<double>& getInitialCondition() const { return initialCondition_; }
+  const std::unordered_map<unsigned, DVector<double>>& getBoundaryData() const { return boundaryData_; };
 
   // solution informations produced by call to .solve()
-  const DMatrix  getSolution() const { return solver_.getSolution(); };
-  const DMatrix  getForce() const { return solver_.getForce(); };
-  const SpMatrix getR1() const { return solver_.getR1(); };
-  const SpMatrix getR0() const { return solver_.getR0(); };
+  const DMatrix<double>  getSolution() const { return solver_.getSolution(); };
+  const DMatrix<double>  getForce() const { return solver_.getForce(); };
+  const SpMatrix<double> getR1() const { return solver_.getR1(); };
+  const SpMatrix<double> getR0() const { return solver_.getR0(); };
 
   // entry point for PDE solver.
   template <typename B, typename I, typename... Args>
@@ -76,7 +76,7 @@ public:
 
 // argument deduction rule for PDE object
 template <unsigned int M, unsigned int N, typename E>
-PDE(const Mesh<M,N>& domain, E bilinearForm, const DVector& forcingData) -> PDE<M, N, decltype(bilinearForm)>;
+PDE(const Mesh<M,N>& domain, E bilinearForm, const DVector<double>& forcingData) -> PDE<M, N, decltype(bilinearForm)>;
 
 #include "PDE.tpp"
 

@@ -61,7 +61,10 @@ namespace MESH{
     const std::array<SVector<N>, N_VERTICES(M,N)> coords() const { return coords_; }
     const std::vector<int> neighbors() const { return neighbors_; }
     const unsigned int ID() const { return ID_; }
-
+    Eigen::Matrix<double, N, M> barycentricMatrix() const { return barycentricMatrix_; }
+    Eigen::Matrix<double, M, N> invBarycentricMatrix() const { return invBarycentricMatrix_; }
+    std::array<std::size_t, N_VERTICES(M,N)> nodeIDs() const { return nodeIDs_; }
+    
     // computes the baricentric coordinates of a point with respect to this element
     SVector<M+1> toBarycentricCoords(const SVector<N>& x) const;
     SVector<N> midPoint() const; // computes the midpoint of the element
@@ -84,8 +87,8 @@ namespace MESH{
     // returns a vector of pairs: <node id, node coordinates> for any node of the element on the boundary of the mesh
     std::vector<std::pair<std::size_t, SVector<N>>> boundaryNodes() const;
     // returns the vector space passing throught this element
-    VectorSpace<N> spannedSpace() const;
-
+    VectorSpace<M, N> spannedSpace() const;
+    
     // ?????????????? parte dell'interfaccia ancora da definire, non coperta da tests
     //Eigen::Matrix<double, N, M> getBaryMatrix() const { return baryMatrix; }
     //Eigen::Matrix<double, M, N> getInvBaryMatrix() const { return invBaryMatrix; }
