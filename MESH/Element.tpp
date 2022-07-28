@@ -1,9 +1,8 @@
 // constructor
-template <unsigned int M, unsigned int N>
-Element<M,N>::Element(std::size_t ID, const std::array<std::size_t, N_VERTICES(M,N)>& nodeIDs, const std::array<SVector<N>, N_VERTICES(M,N)>& coords,
-		      const std::vector<int>& neighbors, const std::array<std::size_t, N_VERTICES(M,N)>& boundary,
-		      const std::array<std::pair<unsigned, SVector<N>>, N_VERTICES(M,N)>& FEsupport) :
-  ID_(ID), nodeIDs_(nodeIDs), coords_(coords), neighbors_(neighbors), boundary_(boundary), FEsupport_(FEsupport) {
+template <unsigned int M, unsigned int N, unsigned int R>
+Element<M,N,R>::Element(std::size_t ID, const std::array<std::size_t, ct_nnodes(M,R)>& nodeIDs, const std::array<SVector<N>, ct_nnodes(M,R)>& coords,
+			  const std::vector<int>& neighbors, const std::array<std::size_t, ct_nnodes(M,R)>& boundary) :
+  ID_(ID), nodeIDs_(nodeIDs), coords_(coords), neighbors_(neighbors), boundary_(boundary) {
 
   // precompute barycentric coordinate matrix for fast access
   // use first point as reference
@@ -23,8 +22,8 @@ Element<M,N>::Element(std::size_t ID, const std::array<std::size_t, N_VERTICES(M
 };
 
 // returns the barycentric coordinates of point x with respect to this element
-template <unsigned int M, unsigned int N>
-SVector<M+1> Element<M, N>::toBarycentricCoords(const SVector<N>& x) const {
+template <unsigned int M, unsigned int N, unsigned int R>
+SVector<M+1> Element<M,N,R>::toBarycentricCoords(const SVector<N>& x) const {
   // solve linear system barycenitrcMatrix_*z = (x-ref) by using the precomputed inverse of the barycentric matrix
   SVector<M> z = invBarycentricMatrix_*(x - coords_[0]);
   // compute barycentric coordinate of reference element
@@ -36,8 +35,8 @@ SVector<M+1> Element<M, N>::toBarycentricCoords(const SVector<N>& x) const {
 }
 
 // returns the midpoint of the element (dimension of the returned point is the same of the embedding dimension)
-template <unsigned int M, unsigned int N>
-SVector<N> Element<M, N>::midPoint() const {
+template <unsigned int M, unsigned int N, unsigned int R>
+SVector<N> Element<M,N,R>::midPoint() const {
   // a remarkable property of barycentric coordinates is that the center of gravity of an element has all its
   // barycentric coordinates equal to 1/(M+1). In order to compute the midpoint of an element we hence map this
   // point back in cartesian coordinates
@@ -48,14 +47,14 @@ SVector<N> Element<M, N>::midPoint() const {
 }
 
 // returns the bounding box of the element
-template <unsigned int M, unsigned int N>
-std::pair<SVector<N>, SVector<N>> Element<M,N>::boundingBox() const{
+template <unsigned int M, unsigned int N, unsigned int R>
+std::pair<SVector<N>, SVector<N>> Element<M,N,R>::boundingBox() const{
   // define lower-left and upper-right corner of bounding box
   SVector<N> ll, ur;
   // project each vertex coordinate on the reference axis
-  std::array<std::array<double, N_VERTICES(M,N)>, N> projCoords;
+  std::array<std::array<double, ct_nvertices(M)>, N> projCoords;
   
-  for(std::size_t j = 0; j < N_VERTICES(M,N); ++j){
+  for(std::size_t j = 0; j < ct_nvertices(M); ++j){
     for(std::size_t dim = 0; dim < N; ++dim){
       projCoords[dim][j] = coords_[j][dim];
     }
@@ -71,10 +70,10 @@ std::pair<SVector<N>, SVector<N>> Element<M,N>::boundingBox() const{
 }
 
 // check if a point is contained in the element
-template <unsigned int M, unsigned int N>
+template <unsigned int M, unsigned int N, unsigned int R>
 template <bool is_manifold>
 typename std::enable_if<!is_manifold, bool>::type
-Element<M, N>::contains(const SVector<N> &x) const {
+Element<M,N,R>::contains(const SVector<N> &x) const {
   // you can prove that a point is inside the element if all its barycentric coordinates are positive
   
   // get barycentric coordinates of input point
@@ -82,8 +81,8 @@ Element<M, N>::contains(const SVector<N> &x) const {
   return (baryCoord.array() >= 0).all(); // use Eigen visitor to check for positiveness of elements
 }
 
-template <unsigned int M, unsigned int N>
-VectorSpace<M, N> Element<M, N>::spannedSpace() const {
+template <unsigned int M, unsigned int N, unsigned int R>
+VectorSpace<M, N> Element<M,N,R>::spannedSpace() const {
   // build a basis for the space containing the element,
   std::array<SVector<N>, M> basis;
   for(size_t i = 0; i < M; ++i){
@@ -93,10 +92,10 @@ VectorSpace<M, N> Element<M, N>::spannedSpace() const {
 }
 
 // specialization for manifold elements of contains() routine. 
-template <unsigned int M, unsigned int N>
+template <unsigned int M, unsigned int N, unsigned int R>
 template <bool is_manifold>
 typename std::enable_if<is_manifold, bool>::type
-Element<M,N>::contains(const SVector<N>& x) const {
+  Element<M,N,R>::contains(const SVector<N>& x) const {
   // we start checking if the point is contained in the affine space spanned by the mesh element
   VectorSpace<M, N> vs = spannedSpace();
   // if the distance between the point projection into the plane and the point itself is larger than 0
@@ -110,18 +109,18 @@ Element<M,N>::contains(const SVector<N>& x) const {
 }
 
 // return true if the element has at least one vertex on the boundary of the domain
-template <unsigned int M, unsigned int N>
-bool Element<M,N>::isOnBoundary(void) const{
-  for(size_t i = 0; i < N_VERTICES(M,N); ++i){
+template <unsigned int M, unsigned int N, unsigned int R>
+bool Element<M,N,R>::isOnBoundary(void) const{
+  for(size_t i = 0; i < ct_nvertices(M); ++i){
     if(boundary_[i] == 1) return true;
   }
   return false;
 }
 
-template <unsigned int M, unsigned int N>
-std::vector<std::pair<std::size_t, SVector<N>>> Element<M,N>::boundaryNodes() const {
+template <unsigned int M, unsigned int N, unsigned int R>
+std::vector<std::pair<std::size_t, SVector<N>>> Element<M,N,R>::boundaryNodes() const {
   std::vector<std::pair<std::size_t, SVector<N>>> result{};
-  for(std::size_t i = 0; i < N_VERTICES(M,N); ++i){
+  for(std::size_t i = 0; i < ct_nnodes(M,R); ++i){
     if(boundary_[i] == 1){
       result.push_back(std::make_pair(nodeIDs_[i], coords_[i]));
     }

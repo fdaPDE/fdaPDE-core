@@ -25,7 +25,9 @@ namespace MESH{
   //     * 2D meshes   (planar domains,     M=2, N=2)
   //     * 2.5D meshes (surfaces,           M=2, N=3)
   //     * 3D meshes   (volumetric domains, M=3, N=3)
-
+  // A third non-type template parameter R is used to keep track of the order of the elements contained in the mesh object. Mesh are defaulted to
+  // use finite linear elements (R = 1)
+  
   // NB about internal implementaiton: special care is needed in the development of linear networks, since differently from any other case the number
   // of neighboing elements is not known at compile time. This implies the usage of specialized data structures wrt any other case
 
@@ -52,7 +54,7 @@ namespace MESH{
       >::type;
   };
   
-  template <unsigned int M, unsigned int N>
+  template <unsigned int M, unsigned int N, unsigned int R = 1>
   class Mesh{
   private:
     // coordinates of points constituting the vertices of mesh elements
@@ -92,7 +94,7 @@ namespace MESH{
       points_(points), edges_(edges), elements_(elements), neighbors_(neighbors), boundary_(boundary) {}
     
     // construct an element object given its ID (its row number in the triangles_ matrix) from raw (matrix-like) informations
-    std::shared_ptr<Element<M,N>> element(unsigned int ID) const;
+    std::shared_ptr<Element<M,N,R>> element(unsigned int ID) const;
 
     // allow range-for loop over mesh elements
     struct iterator{
@@ -109,7 +111,7 @@ namespace MESH{
 	return *this;
       }
       // dereference the iterator means to create Element object at current index
-      std::shared_ptr<Element<M,N>> operator*() {
+      std::shared_ptr<Element<M,N,R>> operator*() {
 	return meshContainer->element(index);
       }
       // two iterators are different when their indexes are different
@@ -118,7 +120,7 @@ namespace MESH{
       }
 
       // const version to enable const auto& syntax
-      std::shared_ptr<Element<M,N>> operator*() const { return meshContainer->element(index); }
+      std::shared_ptr<Element<M,N,R>> operator*() const { return meshContainer->element(index); }
     };
     // provide begin() and end() methods
     iterator begin() const { return iterator(this, 0); }
@@ -138,14 +140,15 @@ namespace MESH{
     static constexpr bool manifold = is_manifold<M, N>::value;
     static constexpr unsigned int local_dimension = M;
     static constexpr unsigned int embedding_dimension = N;
+    static constexpr unsigned int order = R;
   };
 
   // export some aliases
-  using Mesh2D = Mesh<2,2>;
-  using Mesh3D = Mesh<3,3>;
+  template <unsigned int R=1> using Mesh2D = Mesh<2,2,R>;
+  template <unsigned int R=1> using Mesh3D = Mesh<3,3,R>;
   // manifold cases
-  using SurfaceMesh = Mesh<2,3>;
-  using NetworkMesh = Mesh<1,2>;
+  template <unsigned int R=1> using SurfaceMesh = Mesh<2,3,R>;
+  template <unsigned int R=1> using NetworkMesh = Mesh<1,2,R>;
 
 #include "Mesh.tpp"
 }}}

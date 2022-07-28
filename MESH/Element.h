@@ -2,7 +2,9 @@
 #define __ELEMENT_H__
 
 #include "../utils/Symbols.h"
+#include "../utils/CompileTime.h"
 #include "../NLA/VectorSpace.h"
+#include <cstddef>
 using fdaPDE::core::NLA::VectorSpace;
 
 #include <Eigen/LU>
@@ -12,58 +14,58 @@ using fdaPDE::core::NLA::VectorSpace;
 namespace fdaPDE{
 namespace core{
 namespace MESH{
-  
-  template <unsigned int M, unsigned int N> class Element; // forward declaration
+
+  // M local dimension, N embedding dimension, R order of the element (defaulted to linear finite elements)
+  template <unsigned int M, unsigned int N, unsigned int R = 1> class Element; // forward declaration
 
   // using declarations for manifold specialization
-  using SurfaceElement = Element<2,3>;
-  using NetworkElement = Element<1,2>;
+  template <unsigned int R> using SurfaceElement = Element<2,3,R>;
+  template <unsigned int R> using NetworkElement = Element<1,2,R>;
 
-  // compile time evaluation of the number of vertices of a given element
-  constexpr unsigned int N_VERTICES(const unsigned int M, const unsigned int N) {
-    return M+1;
+  // compile time evaluation of the number of nodes of a given element given its local dimension and order
+  constexpr unsigned int ct_nnodes(const unsigned int M, const unsigned int R) {
+    return ct_factorial(M+R)/(ct_factorial(M)*ct_factorial(R));
   }
+  // compile time evaluation of the number of vertices of a given element
+  constexpr unsigned int ct_nvertices(const unsigned int M) { return M+1; }
 
-  // A single mesh element
-  template <unsigned int M, unsigned int N>
+  // A single mesh element ( defaulted to linear finite element)
+  // we assume that the first M+1 entries of any internal data structure handled by Element refer to the **vertices** of the element,
+  // any other entry after the first (M+1)s are here to support functional informations, i.e. to build a functional basis of the proper order
+  // over the element. Moreover, observe that the ordering of the vertices is of no importance and we simply adopt the same ordering coming
+  // from mesh data (e.g. informations stored in .csv files or directly coming from front-ends).
+  // Geometrical operations handled by the MESH module are only based on vertex nodes (there is no extra-knowledge from the perspective of the MESH
+  // module in nodes which are not vertices). As such any internal implementation regarding the interface exposed by Element doesn't make
+  // use of any node which is not a vertex one.
+  template <unsigned int M, unsigned int N, unsigned int R>
   class Element{
   private:
     std::size_t ID_; // ID of this element
-    std::array<std::size_t, N_VERTICES(M,N)> nodeIDs_{}; // ID of nodes composing the element
+    std::array<std::size_t, ct_nnodes(M,R)> nodeIDs_{}; // ID of nodes composing the element
     // coordinates of nodes as N-dimensional points. The i-th element in this array refers to node with ID nodeIDs_[i]
-    std::array<SVector<N>,  N_VERTICES(M,N)> coords_{};
+    std::array<SVector<N>,  ct_nnodes(M,R)> coords_{};
     // ID of the neighboring elements, use std::vector since number of neighboring elements is not always known at compile time
     std::vector<int> neighbors_{};
     // boundary informations. boundary_[i] == 1 <-> node with ID nodeIDs_[i] is on boundary
-    std::array<std::size_t, N_VERTICES(M,N)> boundary_{};
-    
-    // Functional information to assist the FEM module. FEsupport contains pairs <ID, point> where
-    //    * ID:    is the global ID of the node in the mesh (as row index in the points_ table)
-    //    * point: are the node's coordinates
-    // Observe that 'FESupport' is different from 'coords' for elements of order greater than one: in this case
-    // the nodes to support a functional basis are more than the geometrical vertices of the element. From here
-    // the need to keep the geometrical informations separate from the functional ones.
-    std::array<std::pair<unsigned, SVector<N>>, N_VERTICES(M,N)> FEsupport_; // *************** ?????
-    
+    std::array<std::size_t, ct_nnodes(M,R)> boundary_{};
+        
     // matrices defining the affine transformation from cartesian to barycentric coordinates and viceversa
     Eigen::Matrix<double, N, M> barycentricMatrix_{};
     Eigen::Matrix<double, M, N> invBarycentricMatrix_{};
 
   public:
-    using FESupport = std::array<std::pair<unsigned, SVector<N>>, N_VERTICES(M,N)>;
-
     // constructor
     Element() = default;  
-    Element(std::size_t ID, const std::array<std::size_t, N_VERTICES(M,N)>& nodeIDs, const std::array<SVector<N>, N_VERTICES(M,N)>& coords,
-	    const std::vector<int>& neighbors, const std::array<std::size_t, N_VERTICES(M,N)>& boundary, const FESupport& FEsupport);
+    Element(std::size_t ID, const std::array<std::size_t, ct_nnodes(M,R)>& nodeIDs, const std::array<SVector<N>, ct_nnodes(M,R)>& coords,
+	    const std::vector<int>& neighbors, const std::array<std::size_t, ct_nnodes(M,R)>& boundary);
     
     // getters (read-only mode)
-    const std::array<SVector<N>, N_VERTICES(M,N)> coords() const { return coords_; }
+    const std::array<SVector<N>, ct_nnodes(M,R)> coords() const { return coords_; }
     const std::vector<int> neighbors() const { return neighbors_; }
     const unsigned int ID() const { return ID_; }
     Eigen::Matrix<double, N, M> barycentricMatrix() const { return barycentricMatrix_; }
     Eigen::Matrix<double, M, N> invBarycentricMatrix() const { return invBarycentricMatrix_; }
-    std::array<std::size_t, N_VERTICES(M,N)> nodeIDs() const { return nodeIDs_; }
+    std::array<std::size_t, ct_nnodes(M,R)> nodeIDs() const { return nodeIDs_; }
     
     // computes the baricentric coordinates of a point with respect to this element
     SVector<M+1> toBarycentricCoords(const SVector<N>& x) const;
@@ -88,12 +90,23 @@ namespace MESH{
     std::vector<std::pair<std::size_t, SVector<N>>> boundaryNodes() const;
     // returns the vector space passing throught this element
     VectorSpace<M, N> spannedSpace() const;
-    
-    // ?????????????? parte dell'interfaccia ancora da definire, non coperta da tests
-    //Eigen::Matrix<double, N, M> getBaryMatrix() const { return baryMatrix; }
-    //Eigen::Matrix<double, M, N> getInvBaryMatrix() const { return invBaryMatrix; }
-    FESupport getFESupport() const { return FEsupport_; }
 
+    // subscript operator
+    SVector<N> operator[](std::size_t i) const {
+      static_assert(i < ct_nnodes(M,R));
+      return coords_[i];
+    };
+    // allow range for over element's coordinates
+    typename std::array<SVector<N>, ct_nnodes(M,R)>::const_iterator begin() const { return coords_.cbegin(); }
+    typename std::array<SVector<N>, ct_nnodes(M,R)>::const_iterator end() const { return coords_.cend(); }
+    
+    // expose compile time informations
+    static constexpr unsigned int nodes = ct_nnodes(M,R);
+    static constexpr unsigned int vertices = ct_nvertices(M);
+    static constexpr unsigned int local_dimension = M;
+    static constexpr unsigned int embedding_dimension = N;
+    static constexpr unsigned int order = R;
+    
   };
 
 #include "Element.tpp"

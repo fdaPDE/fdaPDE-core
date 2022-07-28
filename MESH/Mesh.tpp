@@ -1,7 +1,7 @@
 // construct a mesh from .csv files
-template <unsigned int M, unsigned int N>
-Mesh<M,N>::Mesh(const std::string& points,    const std::string& edges, const std::string& elements,
-		const std::string& neighbors, const std::string& boundary){
+template <unsigned int M, unsigned int N, unsigned int R>
+Mesh<M,N,R>::Mesh(const std::string& points,    const std::string& edges, const std::string& elements,
+		  const std::string& neighbors, const std::string& boundary){
   // open and parse CSV files
   CSVReader reader;
   CSVFile<double> pointsData = reader.parseFile<double>(points);
@@ -52,8 +52,8 @@ Mesh<M,N>::Mesh(const std::string& points,    const std::string& edges, const st
 }
 
 // build and provides a nice abstraction for an element given its ID
-template <unsigned int M, unsigned int N>
-std::shared_ptr<Element<M,N>> Mesh<M,N>::element(unsigned int ID) const {
+template <unsigned int M, unsigned int N, unsigned int R>
+std::shared_ptr<Element<M,N,R>> Mesh<M,N,R>::element(unsigned int ID) const {
   // in the following use auto to take advantage of eigen acceleration
   // get the indexes of vertices from triangles_
   auto pointData = elements_.row(ID);
@@ -61,13 +61,12 @@ std::shared_ptr<Element<M,N>> Mesh<M,N>::element(unsigned int ID) const {
   auto neighboringData = neighbors_.row(ID);
   
   // prepare element
-  std::array<std::size_t, N_VERTICES(M,N)> nodeIDs{};
-  std::array<SVector<N>,  N_VERTICES(M,N)> coords{};
-  std::array<std::pair<unsigned, SVector<N>>, N_VERTICES(M,N)> FEsupport{};
+  std::array<std::size_t, ct_nnodes(M,R)> nodeIDs{};
+  std::array<SVector<N>,  ct_nnodes(M,R)> coords{};
   // number of neighbors may be not known at compile time in case linear network elements are employed, use a dynamic
   // data structure to handle 1.5D case as well transparently
   std::vector<int> neighbors{};
-  std::array<std::size_t, N_VERTICES(M,N)> boundary{};
+  std::array<std::size_t, ct_nnodes(M,R)> boundary{};
   
   for(size_t i = 0; i < pointData.size(); ++i){
     SVector<N> node(points_.row(pointData[i])); // coordinates of node
@@ -76,8 +75,6 @@ std::shared_ptr<Element<M,N>> Mesh<M,N>::element(unsigned int ID) const {
     nodeIDs[i]  = pointData[i];
     // boundary informations, boundary[i] == 1 <-> node with ID pointData[i] is on boundary
     boundary[i] = boundary_(pointData[i]);
-
-    FEsupport[i] = std::make_pair(pointData[i], node); // ????????
 
     if constexpr(!is_linear_network<M, N>::value){
       // from triangle documentation: The first neighbor of triangle i is opposite the first corner of triangle i, and so on.
@@ -93,5 +90,5 @@ std::shared_ptr<Element<M,N>> Mesh<M,N>::element(unsigned int ID) const {
     }
   }
   // return shared pointer to the element
-  return std::make_shared<Element<M,N>>(ID, nodeIDs, coords, neighbors, boundary, FEsupport);
+  return std::make_shared<Element<M,N>>(ID, nodeIDs, coords, neighbors, boundary);
 }
