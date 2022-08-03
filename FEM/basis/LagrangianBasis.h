@@ -54,9 +54,10 @@ namespace FEM{
        {0, 0.5, 0}, {0.5, 0, 0}, {0.5, 0, 0.5}, {0, 0.5, 0.5}, {0, 0, 0.5}}
     };};
   
-  // A class representing a Lagrangian Basis defined over a given set of nodes.
+  // A class representing a Lagrangian Basis of degree R over an M-dimensional space defined over a given set of N-dimensional nodes.
+  // In case M != N this class allows to define a lagrangian basis over a manifold embedded in an N-dimensional space with local dimension M
   // It uses the Vandermonde matrix to compute coefficients of lagrange polynomials
-  template <unsigned int M, unsigned int R>
+  template <unsigned int M, unsigned int N, unsigned int R>
   class LagrangianBasis {
   private:
     // nodes of the lagrangian basis (std::array is constexpr evaluable, use std::array instead of SVector<N>)
@@ -76,9 +77,8 @@ namespace FEM{
       computeCoefficients(nodes_);
     };
     // a Lagrangian basis built over the referece N-dimensional unit simplex
-    LagrangianBasis() : LagrangianBasis<M, R>(ReferenceNodes<M, R>::nodes) {};
-    // construct a Lagrangian basis over a mesh element e, N in this case represents the local dimension of the element
-    template <unsigned int N>
+    LagrangianBasis() : LagrangianBasis<M, N, R>(ReferenceNodes<M, R>::nodes) {};
+    // construct a Lagrangian basis over a mesh element e: N represents the embedded dimension of the mesh
     LagrangianBasis(const Element<M,N,R>& e);
   
     // subscript operator to directly access basis elements
@@ -89,7 +89,7 @@ namespace FEM{
     const_iterator begin() const;
     const_iterator end() const;    
   };
-
+  
   #include "LagrangianBasis.tpp"
 }}}
 

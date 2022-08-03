@@ -157,7 +157,7 @@ struct MonomialSum<0, N, M, P, V> {
   }  
 };
 
-// class representing an N-dimensional multivariate polynomial of degree R
+// class representing a multivariate polynomial of degree R defined over a space of dimension N
 template <unsigned int N, unsigned int R>
 class MultivariatePolynomial : public FieldExpr<MultivariatePolynomial<N, R>> {
 private:
@@ -199,7 +199,7 @@ public:
   };
 
   double operator()(const SVector<N>& point) const;  // evaluate polynomial at point
-  VectorField<N> gradient() const;  // return callable gradient
+  VectorField<N> derive() const;  // return callable gradient
   
   // getter
   std::array<double, MON> getCoeff() const { return coeffVector_; }
@@ -211,7 +211,7 @@ double MultivariatePolynomial<N, R>::operator()(const SVector<N> &point) const {
 }
 
 template <unsigned int N, unsigned int R>
-VectorField<N> MultivariatePolynomial<N, R>::gradient() const {
+VectorField<N> MultivariatePolynomial<N, R>::derive() const {
   return gradient_;
 }
 

@@ -27,7 +27,7 @@ public:
   // for approximating the (i,j)-th element of the stiffness matrix \int_e phi_i * b.dot(\Nabla phi_j)
   // integrate() will be called by Integrator as a result of the expression template expansion of the problem's bilinear form
 
-  // basis: any type compliant with a functional basis behaviour. See LagrangianBasis for an example
+  // basis: any type compliant with a functional basis behaviour. See LagrangianBasis.h for an example
   // e: the element where we are integrating
   // i,j: indexes of the stiffness matrix element we are computing
   // quadrature_point: the point where to evaluate the integrand
@@ -39,7 +39,7 @@ public:
     Eigen::Matrix<double, N, ORDER> invJ = e.invBarycentricMatrix().transpose();
     // Given \Nabla phi_i premultiply it by (J^{-1})^T = invJ.
     // NOTE: we assume "basis" to provide functions already defined on the reference element
-    VectorField<N> NablaPhi_j = invJ * basis[j].gradient();
+    VectorField<N> NablaPhi_j = invJ * basis[j].derive();
     auto phi_i = basis[i];
 
     // for gradient: phi_i * b.dot(NablaPhi_j)
