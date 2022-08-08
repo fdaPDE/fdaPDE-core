@@ -90,7 +90,9 @@ namespace MESH{
     std::vector<std::pair<std::size_t, SVector<N>>> boundaryNodes() const;
     // returns the vector space passing throught this element
     VectorSpace<M, N> spannedSpace() const;
-
+    // returns the measure of the element
+    double measure() const;
+    
     // subscript operator
     SVector<N> operator[](std::size_t i) const {
       static_assert(i < ct_nnodes(M,R));

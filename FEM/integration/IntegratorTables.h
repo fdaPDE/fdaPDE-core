@@ -12,11 +12,24 @@
 // ** "Numerical Models for Differential Problems, Alfio Quarteroni. Second edition"
 // ** "The finite element method: Linear static and dynamic finite element analysis, Thomas J.R. Hughes"
 
-// N dimension of the integration domain, M number of nodes of the formula
-template <unsigned int N, unsigned int M> struct IntegratorTable;
+// N dimension of the integration domain, K number of nodes of the formula
+template <unsigned int N, unsigned int K> struct IntegratorTable;
 
-// tables are exposed via shortnames with the following format T<dimension>D<number_of_nodes>P.
-// For example an integrator over a 2D simplex using 7 nodes is named T2D7P
+// trait for selecting a standard quadrature rule in case K is not defined by the user. Use this in case you do not
+// care much about the numerical precision of the integral approximations. In any case, the standard choice is a good
+// compromise between efficiency and precision, so should work well for any intended case.
+
+template <unsigned int N> struct select_standard_quadrature_rule{
+  static constexpr unsigned int selectK(const unsigned int dim) {
+    switch(dim){
+    case 1: return 3; // 3 point rule
+    case 2: return 6; // 6 point rule
+    case 4: return 4; // 4 point rule
+    default: return 1; // defaulted to mid-point quadrature
+    }
+  }
+  static constexpr unsigned int K = selectK(N);
+};
 
 // 1D linear elements (gaussian integration)
 // reference element: simplex of vertices (0), (1)
@@ -37,7 +50,7 @@ template <> struct IntegratorTable<1, 2> {
   };
 };
 
-// 2 point formula
+// 3 point formula
 template <> struct IntegratorTable<1, 3> {
   // number of nodes
   static constexpr unsigned int num_nodes = 3;

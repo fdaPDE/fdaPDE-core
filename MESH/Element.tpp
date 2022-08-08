@@ -46,6 +46,19 @@ SVector<N> Element<M,N,R>::midPoint() const {
   return barycentricMatrix_*barycentricMidPoint + coords_[0];
 }
 
+// returns measure of the element
+template <unsigned int M, unsigned int N, unsigned int R>
+double Element<M,N,R>::measure() const{
+  if constexpr(M == N){ // non-manifold case
+    return std::abs(barycentricMatrix_.determinant())/(ct_factorial(M));
+  }else{
+    if constexpr(M == 2) // surface element, compute area of 3D triangle
+      return 0.5 * barycentricMatrix_.col(0).cross(barycentricMatrix_.col(1)).norm();
+    if constexpr(M == 1) // linear network, compute length of 2D segment
+      return barycentricMatrix_.col(0).norm();
+  }
+}
+
 // returns the bounding box of the element
 template <unsigned int M, unsigned int N, unsigned int R>
 std::pair<SVector<N>, SVector<N>> Element<M,N,R>::boundingBox() const{

@@ -31,14 +31,18 @@ void VectorSpace<M, N>::orthonormalize(){
 // written as linear combination of the basis vectors
 template <unsigned int M, unsigned int N>
 SVector<M> VectorSpace<M, N>::projectOnto(const SVector<N> &x){
-  // build the projection onto the space spanned by the basis set
-  SVector<M> projection;
+  if constexpr(M == N){ // you are projecting over the same space!
+    return x;
+  }else{
+    // build the projection onto the space spanned by the basis set
+    SVector<M> projection;
 
-  // values of projection[i] are the coefficients of the linear combination of spaceBasis vectors which gives the input vector x
-  for(size_t i = 0; i < basis_.size(); ++i){
-    projection[i] = (x-offset_).dot(basis_[i])/(basis_[i].norm());
+    // values of projection[i] are the coefficients of the linear combination of spaceBasis vectors which gives the input vector x
+    for(size_t i = 0; i < basis_.size(); ++i){
+      projection[i] = (x-offset_).dot(basis_[i])/(basis_[i].norm());
+    }
+    return projection;
   }
-  return projection;
 }
 
 // project an N-dimensional point x into the space
