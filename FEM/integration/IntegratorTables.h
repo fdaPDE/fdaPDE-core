@@ -18,17 +18,16 @@ template <unsigned int N, unsigned int K> struct IntegratorTable;
 // trait for selecting a standard quadrature rule in case K is not defined by the user. Use this in case you do not
 // care much about the numerical precision of the integral approximations. In any case, the standard choice is a good
 // compromise between efficiency and precision, so should work well for any intended case.
-
-template <unsigned int N> struct select_standard_quadrature_rule{
-  static constexpr unsigned int selectK(const unsigned int dim) {
+template <unsigned int N> struct standard_quadrature_rule{
+  static constexpr unsigned int quadrature(const unsigned int dim) {
     switch(dim){
-    case 1: return 3; // 3 point rule
-    case 2: return 6; // 6 point rule
-    case 4: return 4; // 4 point rule
-    default: return 1; // defaulted to mid-point quadrature
+    case 1:  return 3; // 3 point rule
+    case 2:  return 6; // 6 point rule
+    case 3:  return 4; // 4 point rule
+    default: return 1; // default to mid-point quadrature
     }
   }
-  static constexpr unsigned int K = selectK(N);
+  static constexpr unsigned int K = quadrature(N);
 };
 
 // 1D linear elements (gaussian integration)

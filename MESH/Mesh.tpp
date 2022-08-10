@@ -90,5 +90,5 @@ std::shared_ptr<Element<M,N,R>> Mesh<M,N,R>::element(unsigned int ID) const {
     }
   }
   // return shared pointer to the element
-  return std::make_shared<Element<M,N>>(ID, nodeIDs, coords, neighbors, boundary);
+  return std::make_shared<Element<M,N,R>>(ID, nodeIDs, coords, neighbors, boundary);
 }
