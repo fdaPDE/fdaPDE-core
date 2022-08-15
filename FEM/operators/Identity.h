@@ -21,9 +21,9 @@ struct Identity : public BilinearFormExpr<Identity<L>>{
   // basis: any type compliant with a functional basis behaviour. See LagrangianBasis for an example
   // e: the element where we are integrating
   // i,j: indexes of the stiffness matrix's element we are computing
-  // quadrature_point: the point where to evaluate the integrand
-  template <unsigned int N, int M, unsigned int ORDER, typename B>
-  double integrate(const B& basis, const Element<ORDER, N>& e, int i , int j, const SVector<M>& quadrature_point) const{
+  // quadrature_point: the point where to evaluate the integrand (typename Q is an SVector of proper dimensions)
+  template <unsigned int M, unsigned int N, unsigned int R, typename Q, typename B>
+  double integrate(const B& basis, const Element<M, N, R>& e, int i , int j, const Q& quadrature_point) const{
     // NOTE: we assume "basis" to provide functions already defined on the reference element
     auto phi_i = basis[i];  
     auto phi_j = basis[j];

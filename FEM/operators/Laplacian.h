@@ -29,16 +29,15 @@ public:
   // e: the element where we are integrating
   // i,j: indexes of the stiffness matrix element we are computing
   // quadrature_point: the point where to evaluate the integrand
-  template <unsigned int N, int M, unsigned int ORDER, typename B>
-  double integrate(const B& basis, const Element<ORDER, N>& e, int i , int j, const SVector<M>& quadrature_point) const{
+  template <unsigned int M, unsigned int N, unsigned int R, typename Q, typename B>
+  double integrate(const B& basis, const Element<M, N, R>& e, int i , int j, const Q& quadrature_point) const{
     // express gradient of f in terms of gradients of basis functions over reference element.
     // This entails to compute (J^{-1})^T * \Nabla phi_i. In the following we assume basis[i] = phi_i
-
-    Eigen::Matrix<double, N, ORDER> invJ = e.invBarycentricMatrix().transpose();
+    Eigen::Matrix<double, N, M> invJ = e.invBarycentricMatrix().transpose();
     // Given \Nabla phi_i premultiply it by (J^{-1})^T = invJ.
     // NOTE: we assume "basis" to provide functions already defined on the reference element
-    VectorField<N> NablaPhi_i = invJ * basis[i].gradient();  
-    VectorField<N> NablaPhi_j = invJ * basis[j].gradient();
+    VectorField<M,N> NablaPhi_i = invJ * basis[i].derive();  
+    VectorField<M,N> NablaPhi_j = invJ * basis[j].derive();
     
     if constexpr (L == 0) // for isotropic laplacian:         \nabla phi_i.dot(\nabla * phi_j)
       return NablaPhi_i.dot(NablaPhi_j)(quadrature_point);
