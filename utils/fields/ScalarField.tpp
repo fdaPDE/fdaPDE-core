@@ -53,7 +53,7 @@ SMatrix<N> ScalarField<N>::approxHessian(const SVector<N>& x, double step) const
 }
 
 template <int N>
-VectorField<N> ScalarField<N>::derive(double step) const{
+VectorField<N,N> ScalarField<N>::derive(double step) const{
   std::array<std::function<double(SVector<N>)>, N> components;
 
   for(std::size_t i = 0; i < N; ++i){
@@ -63,12 +63,12 @@ VectorField<N> ScalarField<N>::derive(double step) const{
     };
     components[i] = gradientApprox;
   }
-  return VectorField<N>(components);
+  return VectorField<N,N>(components);
 }
 
 // use a standard step value for the approximation
 template <int N>
-VectorField<N>  ScalarField<N>::derive() const{
+VectorField<N,N> ScalarField<N>::derive() const{
   std::array<std::function<double(SVector<N>)>, N> components;
 
   for(std::size_t i = 0; i < N; ++i){
@@ -78,7 +78,7 @@ VectorField<N>  ScalarField<N>::derive() const{
     };
     components[i] = gradientApprox;
   }
-  return VectorField<N>(components);
+  return VectorField<N,N>(components);
 
 }
 

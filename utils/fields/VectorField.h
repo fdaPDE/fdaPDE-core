@@ -11,59 +11,41 @@
 namespace fdaPDE{
 namespace core{
   
-  // template class representing a general vector field. Support expression template arithmetic
-  template <int N>
-  class VectorField : public VectExpr<N, VectorField<N>>{
+  // template class representing a general vector field from an M-dimensional to an N-dimensional space. Support expression template arithmetic.
+  template <int M, int N = M>
+  class VectorField : public VectExpr<M,N, VectorField<M,N>>{
   private:
     // each array element is a lambda which computes the i-th component of the vector
-    std::array<ScalarField<N>, N> field_;
+    std::array<ScalarField<M>, N> field_;
   public:
     // constructor
     VectorField() = default;
-    VectorField(std::array<std::function<double(SVector<N>)>, N> field) {
-      for(std::size_t i = 0; i < N; ++i){
-	field_[i] = ScalarField<N>(field[i]);
-      }
-    }
+    VectorField(std::array<std::function<double(SVector<M>)>, N> field);
     // allow braced-list initialization
-    VectorField(std::initializer_list<std::function<double(SVector<N>)>> field) {
-      std::size_t i = 0;
-      for(auto it = field.begin(); it != field.end(); ++it){
-	field_[i] = ScalarField<N>(*it);
-	i++;
-      }
-    }    
+    VectorField(std::initializer_list<std::function<double(SVector<M>)>> field);
     // allow for the construction of a VectorField from a single vectorial lambda. Observe that by doing so evaluating the
     // field along direction i only still requires the evaluation of all other dimesions. Use with care.
-    VectorField(const std::function<SVector<N>(SVector<N>)>& field) {
-      for(std::size_t i = 0; i < N; ++i){
-	auto fieldExpr = [=](SVector<N> x) -> double { return field(x)[i]; };
-	field_[i] = ScalarField<N>(fieldExpr);
-      }
-    }
-
+    VectorField(const std::function<SVector<N>(SVector<M>)>& field);
     // wrap a VectExpr into a valid VectorField
     template <typename E>
-    VectorField(const VectExpr<N, E>& expr) {
-      for(std::size_t i = 0; i < N; ++i){
-	field_[i] = expr[i];
-      }
-    };
-    
+    VectorField(const VectExpr<M, N, E>& expr);    
     // call operator
-    SVector<N> operator()(const SVector<N>& point) const;
+    SVector<N> operator()(const SVector<M>& point) const;
     // subscript operator
-    const ScalarField<N>& operator[](size_t i) const;
-    ScalarField<N>& operator[](size_t i);
+    const ScalarField<M>& operator[](size_t i) const;
+    ScalarField<M>& operator[](size_t i);
 
     // inner product VectorField.dot(VectorField)
-    DotProduct<VectorField<N>, VectorField<N>> dot(const VectorField<N>& rhs) const;
+    DotProduct<VectorField<M,N>, VectorField<M,N>> dot(const VectorField<M,N>& rhs) const;
     // Inner product VectorField.dot(SVector)
-    ScalarField<N>  dot(const SVector<N>& op) const;
+    ScalarField<M> dot(const SVector<N>& op) const;
+
+    // expose compile time informations
+    static constexpr int size = N;
   };
 
   // template argument deduction guide
-  template <int N> VectorField(std::array<std::function<double(SVector<N>)>, N>) -> VectorField<N>;
+  template <int M, int N> VectorField(std::array<std::function<double(SVector<M>)>, N>) -> VectorField<M,N>;
   
 #include "VectorField.tpp"
 }}

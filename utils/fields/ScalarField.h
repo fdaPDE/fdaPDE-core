@@ -11,7 +11,7 @@ namespace fdaPDE{
 namespace core{
 
   // forward declaration
-  template <int N> class VectorField;
+  template <int M, int N> class VectorField;
   
   // macro for the definition of application of trascendental functions to ScalarFields
 #define DEF_FIELD_UNARY_FUNCTOR(FUN_NAME)			\
@@ -69,8 +69,8 @@ namespace core{
     SVector<N> approxGradient (const SVector<N>& x, double step) const;
     SMatrix<N> approxHessian  (const SVector<N>& x, double step) const;
     
-    VectorField<N> derive(double step) const;
-    virtual VectorField<N> derive() const; // uses the value of step_ as step size in central difference formula
+    VectorField<N, N> derive(double step) const;
+    virtual VectorField<N, N> derive() const; // uses the value of step_ as step size in central difference formula
     
     std::function<SMatrix<N>(SVector<N>)> deriveTwice(double step) const;
     virtual std::function<SMatrix<N>(SVector<N>)> deriveTwice() const; // uses the value of step_ as step size in central difference formula
@@ -91,20 +91,20 @@ namespace core{
   class DifferentiableScalarField : public ScalarField<N> {
   protected:
     // gradient vector of scalar field f
-    VectorField<N> df_{};
+    VectorField<N,N> df_{};
   
   public:
     // constructor
-    DifferentiableScalarField(const std::function<double(SVector<N>)>& f,                         // base function
-			      const std::initializer_list<std::function<double(SVector<N>)>>& df  // gradient function
+    DifferentiableScalarField(const std::function<double(SVector<N>)>& f, // base function
+			      const std::initializer_list<std::function<double(SVector<N>)>>& df // gradient function
 			      ) : ScalarField<N>(f), df_(df) {};
 
     // allow the construction of the gradient VectorField from a single lambda
-    DifferentiableScalarField(const std::function<double(SVector<N>)>& f,      // base function
-			      const std::function<SVector<N>(SVector<N>)>& df  // gradient function
-			      ) : ScalarField<N>(f), df_(VectorField<N>(df)) {};
+    DifferentiableScalarField(const std::function<double(SVector<N>)>& f, // base function
+			      const std::function<SVector<N>(SVector<N>)>& df // gradient function
+			      ) : ScalarField<N>(f), df_(VectorField<N,N>(df)) {};
     
-    VectorField<N> derive() const override { return df_; };
+    VectorField<N,N> derive() const override { return df_; };
   };
 
   template <int N>
@@ -115,15 +115,15 @@ namespace core{
   
   public:
     // constructor
-    TwiceDifferentiableScalarField(const std::function<double(SVector<N>)>& f,                         // base function
+    TwiceDifferentiableScalarField(const std::function<double(SVector<N>)>& f, // base function
 				   const std::initializer_list<std::function<double(SVector<N>)>>& df, // gradient function
-				   const std::function<SMatrix<N>(SVector<N>)>& ddf                    // hessian function
+				   const std::function<SMatrix<N>(SVector<N>)>& ddf // hessian function
 				   ) : DifferentiableScalarField<N>(f, df), ddf_(ddf) {};
 
     // allow the construction of the gradient VectorField from a single lambda
-    TwiceDifferentiableScalarField(const std::function<double(SVector<N>)>& f,       // base function
-			           const std::function<SVector<N>(SVector<N>)>& df,  // gradient function
-				   const std::function<SMatrix<N>(SVector<N>)>& ddf  // hessian function
+    TwiceDifferentiableScalarField(const std::function<double(SVector<N>)>& f, // base function
+			           const std::function<SVector<N>(SVector<N>)>& df, // gradient function
+				   const std::function<SMatrix<N>(SVector<N>)>& ddf // hessian function
 				   ) : DifferentiableScalarField<N>(f, df), ddf_(ddf) {};
     
     std::function<SMatrix<N>(SVector<N>)> deriveTwice() const override { return ddf_; }
