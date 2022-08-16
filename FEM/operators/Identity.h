@@ -5,32 +5,37 @@
 using fdaPDE::core::ScalarField;
 #include "../../MESH/Element.h"
 using fdaPDE::core::MESH::Element;
-
 #include "BilinearFormExpressions.h"
+using fdaPDE::core::FEM::BilinearFormExpr;
 
-// class representing the identity operator (reaction term)
-template <unsigned int L = 0>
-struct Identity : public BilinearFormExpr<Identity<L>>{
+namespace fdaPDE{
+namespace core{
+namespace FEM{
 
-  std::tuple<Identity> getTypeList() const { return std::make_tuple(*this); }
-  
-  // provide the discretization for the identity operator. In particular this method implements the quadrature rule
-  // for approximating the (i,j)-th element of the stiffness matrix \int_e [phi_i * phi_j]
-  // integrate() will be called by Integrator as a result of the expression template expansion of the problem's bilinear form
+  // class representing the identity operator (reaction term)
+  template <unsigned int L = 0>
+  struct Identity : public BilinearFormExpr<Identity<L>>{
+    // constructors
+    Identity() = default;
 
-  // basis: any type compliant with a functional basis behaviour. See LagrangianBasis for an example
-  // e: the element where we are integrating
-  // i,j: indexes of the stiffness matrix's element we are computing
-  // quadrature_point: the point where to evaluate the integrand (typename Q is an SVector of proper dimensions)
-  template <unsigned int M, unsigned int N, unsigned int R, typename Q, typename B>
-  double integrate(const B& basis, const Element<M, N, R>& e, int i , int j, const Q& quadrature_point) const{
-    // NOTE: we assume "basis" to provide functions already defined on the reference element
-    auto phi_i = basis[i];  
-    auto phi_j = basis[j];
-    
-    // for the reaction term: phi_i * phi_j
-    return (phi_i*phi_j)(quadrature_point);
-  }
-};
+    std::tuple<Identity> getTypeList() const { return std::make_tuple(*this); }
 
+    // approximates the contribution to the (i,j)-th element of the discretization matrix given by the transport term:
+    // \int_e phi_i * phi_j
+    // basis: any type compliant with a functional basis behaviour. See LagrangianBasis.h for an example
+    //        NOTE: we assume "basis" to provide functions already defined on the reference element
+    // e: the element on which we are integrating
+    // i,j: indexes of the discretization matrix element we are computing
+    // quadrature_point: the point where to evaluate the integrand
+    template <unsigned int M, unsigned int N, unsigned int R, typename Q, typename B>
+    double integrate(const B& basis, const Element<M, N, R>& e, int i , int j, const Q& quadrature_point) const{
+      auto phi_i = basis[i];  
+      auto phi_j = basis[j];
+
+      // approximation of the (i,j)-th element of identity operator
+      return (phi_i*phi_j)(quadrature_point);
+    }
+  };
+
+}}}
 #endif // __IDENTITY_H__

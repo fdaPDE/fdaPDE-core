@@ -7,6 +7,7 @@
 using fdaPDE::core::MESH::Element;
 using fdaPDE::core::MESH::ct_nnodes;
 #include "MultivariatePolynomial.h"
+using fdaPDE::core::FEM::MultivariatePolynomial;
 #include <array>
 #include <Eigen/QR>
 

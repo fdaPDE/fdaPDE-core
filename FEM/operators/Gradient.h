@@ -6,51 +6,52 @@
 using fdaPDE::core::VectorField;
 #include "../../MESH/Element.h"
 using fdaPDE::core::MESH::Element;
-
 #include "BilinearFormExpressions.h"
+using fdaPDE::core::FEM::BilinearFormExpr;
 
-// class representing the gradient operator (transport term)
-// requires C++17 standard to allow for automatic class template argument deduction
+namespace fdaPDE{
+namespace core{
+namespace FEM{
 
-template <unsigned int L = 0>
-class Gradient : public BilinearFormExpr<Gradient<L>>{
-private:
-  SVector<L> b_;
+  // A class to provide the discretization for the gradient operator (transport term).
+  template <unsigned int L = 0>
+  class Gradient : public BilinearFormExpr<Gradient<L>>{
+  private:
+    SVector<L> b_; // transport vector
+  public:
+    // constructors
+    Gradient() = default;
+    Gradient(const SVector<L>& b) : b_(b) {}
 
-public:
-  Gradient() = default;
-  Gradient(const SVector<L>& b) : b_(b) {}
+    std::tuple<Gradient<L>> getTypeList() const { return std::make_tuple(*this); }
 
-  std::tuple<Gradient<L>> getTypeList() const { return std::make_tuple(*this); }
-  
-  // provide the discretization for the gradient operator. In particular this method implements a custom quadrature rule
-  // for approximating the (i,j)-th element of the stiffness matrix \int_e phi_i * b.dot(\Nabla phi_j)
-  // integrate() will be called by Integrator as a result of the expression template expansion of the problem's bilinear form
+    // approximates the contribution to the (i,j)-th element of the discretization matrix given by the transport term:
+    // \int_e phi_i * b.dot(\Nabla phi_j)
+    // basis: any type compliant with a functional basis behaviour. See LagrangianBasis.h for an example
+    //        NOTE: we assume "basis" to provide functions already defined on the reference element
+    // e: the element on which we are integrating
+    // i,j: indexes of the discretization matrix element we are computing
+    // quadrature_point: the point where to evaluate the integrand
+    template <unsigned int M, unsigned int N, unsigned int R, typename Q, typename B>
+    double integrate(const B& basis, const Element<M, N, R>& e, int i , int j, const Q& quadrature_point) const{
+      // express gradient of basis function over e in terms of gradient of basis function defined over the reference element.
+      // This entails to compute (J^{-1})^T * \Nabla phi_i.
+      Eigen::Matrix<double, N, M> invJ = e.invBarycentricMatrix().transpose(); // (J^{-1})^T = invJ
+      VectorField<M, N> NablaPhi_j = invJ * basis[j].derive();
+      auto phi_i = basis[i];
+      // approximation of the (i,j)-th element of gradient operator
+      return (phi_i * NablaPhi_j.dot(b_))(quadrature_point);
+    }
+  };
 
-  // basis: any type compliant with a functional basis behaviour. See LagrangianBasis.h for an example
-  // e: the element where we are integrating
-  // i,j: indexes of the stiffness matrix element we are computing
-  // quadrature_point: the point where to evaluate the integrand
-  template <unsigned int M, unsigned int N, unsigned int R, typename Q, typename B>
-  double integrate(const B& basis, const Element<M, N, R>& e, int i , int j, const Q& quadrature_point) const{
-    // express gradient of basis function over e in terms of gradients of basis functions over reference element.
-    // This entails to compute (J^{-1})^T * \Nabla phi_i. In the following we assume basis[i] = phi_i
-    Eigen::Matrix<double, N, M> invJ = e.invBarycentricMatrix().transpose();
-    // Given \Nabla phi_i premultiply it by (J^{-1})^T = invJ.
-    // NOTE: we assume "basis" to provide functions already defined on the reference
-    VectorField<M, N> NablaPhi_j = invJ * basis[j].derive();
-    auto phi_i = basis[i];
-    return (phi_i * NablaPhi_j.dot(b_))(quadrature_point);
+  // template argument deduction guide
+  template <int L> Gradient(const SVector<L>&) -> Gradient<L>;
+
+  // out of class definition for dot product, allow for formal syntax dot(b, Gradient()) where b is any vector
+  template <int L>
+  Gradient<L> dot(const SVector<L>& b, const Gradient<0>& g){
+    return Gradient(b);
   }
-};
 
-// template argument deduction guide
-template <int L> Gradient(const SVector<L>&) -> Gradient<L>;
-
-// out of class definition for dot product, allow for formal syntax dot(b, Gradient()) where b is any vector
-template <int L>
-Gradient<L> dot(const SVector<L>& b, const Gradient<0>& g){
-  return Gradient(b);
-}
-
+}}}
 #endif // __GRADIENT_H__
