@@ -1,6 +1,6 @@
 // constructor
 template <unsigned int M, unsigned int N>
-ADT<M,N>::ADT(Mesh<M,N>& mesh) : mesh_(mesh){
+ADT<M,N>::ADT(const Mesh<M,N>& mesh) : mesh_(mesh){
   // move mesh elements to 2N dimensional points
   std::vector<std::pair<SVector<2*N>, unsigned int>> data;
   data.reserve(mesh_.elements()); // avoid useless reallocations at runtime
@@ -87,7 +87,7 @@ void ADT<M,N>::init(const std::vector<std::pair<SVector<2*N>, unsigned int>>& da
 // lower-left corner and b the upper-right corner of the query rectangle. This method find all the points
 // which are contained in a given query
 template <unsigned int M, unsigned int N>
-std::list<unsigned int> ADT<M,N>::geometricSearch(const Query<2*N> &query) {
+std::list<unsigned int> ADT<M,N>::geometricSearch(const Query<2*N> &query) const {
   std::list<unsigned int> searchResult;
   // use a stack to assist the searching process
   std::stack< node_ptr<ADTnode<2*N>> > stack;
@@ -118,7 +118,7 @@ std::list<unsigned int> ADT<M,N>::geometricSearch(const Query<2*N> &query) {
 // element containing a given point can be solved as a geometric search problem in a 2N dimensional space
 template <unsigned int M, unsigned int N>
 template <typename... Args>
-std::shared_ptr<Element<M, N>> ADT<M,N>::search(const SVector<N> &point, Args&... args) {
+std::shared_ptr<Element<M, N>> ADT<M,N>::search(const SVector<N> &point, Args&... args) const {
   // map input point in the unit hypercube (see Mesh.h for definition of methods below)
   std::array<double, N> lowerBound = mesh_.lowerBound();
   std::array<double, N> kk = mesh_.kk();

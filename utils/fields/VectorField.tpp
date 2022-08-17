@@ -56,7 +56,6 @@ ScalarField<M>& VectorField<M,N>::operator[](size_t i) { return field_[i]; }
 // the action of the multiplication between a given matrix and a vector field
 template <int M, int N, int K>
 VectorField<M,K> operator*(const Eigen::Matrix<double,K,N>& op1, const VectorField<M,N>& op2) {
-  std::cout << op1 << std::endl;
   VectorField<M,K> result;
   for(size_t i = 0; i < K; ++i){
     std::function<double(SVector<M>)> f;
