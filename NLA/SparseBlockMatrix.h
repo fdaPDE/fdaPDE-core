@@ -3,8 +3,10 @@
 
 #include <Eigen/Core>
 #include <Eigen/Sparse>
+#include <Eigen/src/Core/util/Meta.h>
 #include <cmath>
 #include <cstddef>
+#include <iostream>
 
 namespace fdaPDE{
 namespace core{
@@ -27,14 +29,17 @@ namespace NLA{
       
       // use C++17 fold expression to loop over the parameter pack and extract the overall size of the new matrix
       std::size_t ctr = 0;
+      Eigen::Index rows, cols;
       ([&] {
-	if(std::floor(ctr/M) == 0) cols_ += m.cols();
-	if(ctr%M == 0) rows_ += m.rows();
+	if(std::floor(ctr/M) == 0) cols += m.cols();
+	if(ctr%M == 0) rows += m.rows();
 	// store row-column information for each block
 	blockRows[ctr] = m.rows();
 	blockCols[ctr] = m.cols();
 	ctr++;
       }(), ...);
+      rows_ = rows;
+      cols_ = cols;
 
       // build new matrix
       m_.resize(rows_, cols_);
@@ -65,6 +70,8 @@ namespace NLA{
     };
     
     Eigen::SparseMatrix<T>& derived() { return m_; }
+    Eigen::Index rows() const { return rows_; }
+    Eigen::Index cols() const { return cols_; }
   };  
   
 }}}

@@ -95,6 +95,8 @@ namespace MESH{
     
     // construct an element object given its ID (its row number in the triangles_ matrix) from raw (matrix-like) informations
     std::shared_ptr<Element<M,N,R>> element(unsigned int ID) const;
+    // return the coordinate of a node given its ID (its row number in the points_matrix)
+    SVector<N> node(unsigned int ID) const;
 
     // allow range-for loop over mesh elements
     struct iterator{

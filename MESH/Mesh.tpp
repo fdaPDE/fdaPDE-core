@@ -92,3 +92,7 @@ std::shared_ptr<Element<M,N,R>> Mesh<M,N,R>::element(unsigned int ID) const {
   // return shared pointer to the element
   return std::make_shared<Element<M,N,R>>(ID, nodeIDs, coords, neighbors, boundary);
 }
+
+// extract from raw information the mesh node with given ID (ID starts from 0)
+template <unsigned int M, unsigned int N, unsigned int R>
+SVector<N> Mesh<M,N,R>::node(unsigned int ID) const { return points_.row(ID); }

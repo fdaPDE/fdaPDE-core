@@ -40,7 +40,7 @@ namespace FEM{
   private:
     const Mesh<M,N,R>& domain_; // problem domain
     E bilinearForm_; // the differential operator of the problem in its weak formulation
-    DMatrix<double> forcingData_{}; // forcing data, a vector is used to handle space-time problems
+    DMatrix<double> forcingData_{}; // forcing data, a matrix is used to handle space-time problems
     DVector<double> initialCondition_{}; // initial condition, used in space-time problems only
   
     // memorize boundary data in a sparse structure, by storing the index of the boundary node and the relative boundary value.
@@ -67,7 +67,7 @@ namespace FEM{
 
     // solution informations produced by call to .solve()
     const DMatrix<double>  solution() const { return solver_.solution(); };
-    const DMatrix<double>  force() const { return solver_.force(); };
+    const DMatrix<double>  force() const { return solver_.force(); }; // rhs of FEM linear system
     const SpMatrix<double> R1() const { return solver_.R1(); };
     const SpMatrix<double> R0() const { return solver_.R0(); };
 
