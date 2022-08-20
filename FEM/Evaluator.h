@@ -39,32 +39,33 @@ namespace FEM{
     // constructor
     Evaluator() = default;
 
-    // produce a raster image of the solution over the PDE domain using the specified resolution h
+    // produce a raster image of a general field written with respect to a LagrangianBasis defined over the given mesh.
+    // the field is passed as the vector of coefficients [w_1 w_2 ... w_n] in the finite expansion \sum_{i=1}^n (w_i*psi_i(x)) which
+    // writes the field as a finite linear combination of basis function.
+    Raster<N> toRaster(const Mesh<M,N,R>& mesh, const DVector<double>& coeff, double h) const;
+    // produce a raster image of the solution of a PDE over its domain using the specified resolution h
     template <typename E>
-    Raster<N> toRaster(const PDE<M, N, R, E>& pde, double h) const;
+    Raster<N> toRaster(const PDE<M,N,R,E>& pde, double h) const;
     
   };
 
+  // produce raster of field written as linear combination of finite element basis functions
   template <unsigned int M, unsigned int N, unsigned int R, typename SearchEngine>
-  template <typename E>
-  Raster<N> Evaluator<M,N,R,SearchEngine>::toRaster(const PDE<M, N, R, E>& pde, double h) const {
-    DVector<double> solution = pde.solution();
+  Raster<N> Evaluator<M,N,R,SearchEngine>::toRaster(const Mesh<M,N,R>& domain, const DVector<double>& coeff, double h) const{
     // build search engine
-    SearchEngine engine(pde.domain());
+    SearchEngine engine(domain);
     // define mesh domain limits
-    std::array<std::pair<double, double>, N> domain = pde.domain().range();
-    // cycle until requested size is not reached
-    std::vector<unsigned> currentSize(N, 0);
-    SVector<N> p{}; // evaluation point and increment vector
-    double totalSize = 1; // total number of pixels
+    std::array<std::pair<double, double>, N> domainRange = domain.range();
+    SVector<N> p{}; // evaluation point
+    double totalSize = 1; // total number of pixels in the raster
     for(std::size_t i = 0; i < N; ++i){
-      p[i] = domain[i].first;
-      totalSize *= std::ceil((domain[i].second - domain[i].first)/h) + 1;
+      p[i] = domainRange[i].first;
+      totalSize *= std::ceil((domainRange[i].second - domainRange[i].first)/h) + 1;
     }
     // preallocate memory to avoid useless reallocations
     std::vector<double> data{};
+    data.resize(totalSize);;
     std::vector<SVector<N>> coords{};
-    data.resize(totalSize);
     coords.resize(totalSize);
     
     // start evaluation
@@ -74,10 +75,10 @@ namespace FEM{
       double v = 0;    
       if(e != nullptr){
 	// build a lagrangian basis over the element
-	LagrangianBasis<2,2,1> basis(*e);
+	LagrangianBasis<M,N,R> basis(*e);
 	// evaluate the solution at point
 	for(size_t j = 0; j < ct_nnodes(M,R); ++j){
-	  v += solution[e->nodeIDs()[j]] * basis[j](p);
+	  v += coeff[e->nodeIDs()[j]] * basis[j](p);
 	}
       }
       // store result
@@ -93,6 +94,13 @@ namespace FEM{
     }
     // return raster image
     return Raster<N>(data, coords, h);
+  }
+
+  // produce raster of PDE solution
+  template <unsigned int M, unsigned int N, unsigned int R, typename SearchEngine>
+  template <typename E>
+  Raster<N> Evaluator<M,N,R,SearchEngine>::toRaster(const PDE<M,N,R,E>& pde, double h) const {
+    return toRaster(pde.domain(), pde.solution(), h);
   }
   
 }}}
