@@ -90,8 +90,7 @@ namespace MESH{
 
     // construct directly from eigen matrices
     Mesh(const DMatrix<double>& points, const DMatrix<int>& edges, const DMatrix<int>& elements,
-	 const typename neighboring_structure<M, N>::type& neighbors, const DMatrix<int>& boundary) :
-      points_(points), edges_(edges), elements_(elements), neighbors_(neighbors), boundary_(boundary) {}
+	 const typename neighboring_structure<M, N>::type& neighbors, const DMatrix<int>& boundary);
     
     // construct an element object given its ID (its row number in the triangles_ matrix) from raw (matrix-like) informations
     std::shared_ptr<Element<M,N,R>> element(unsigned int ID) const;

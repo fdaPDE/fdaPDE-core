@@ -1,3 +1,29 @@
+// construct directly from raw eigen matrix (used from wrappers)
+template <unsigned int M, unsigned int N, unsigned int R>
+Mesh<M,N,R>::Mesh(const DMatrix<double>& points, const DMatrix<int>& edges, const DMatrix<int>& elements,
+		  const typename neighboring_structure<M, N>::type& neighbors, const DMatrix<int>& boundary) :
+points_(points), edges_(edges), elements_(elements), neighbors_(neighbors), boundary_(boundary) {
+  // realign indexes (we assume index coming from mesh generator to be greater or equal to 1, C++ starts count from 0)
+  neighbors_ = (neighbors_.array() - 1).matrix();
+  edges_ = (edges_.array() - 1).matrix();
+  elements_ = (elements_.array() -1).matrix();
+  // store number of nodes and number of elements
+  numNodes_ = points_.rows();
+  numElements_ = elements_.rows();
+
+  // compute mesh limits
+  for(size_t dim = 0; dim < N; ++dim){
+    range_[dim].first  = points_.col(dim).minCoeff();
+    range_[dim].second = points_.col(dim).maxCoeff();
+
+    minRange_[dim] = range_[dim].first;
+    kk_[dim] = 1/(range_[dim].second - range_[dim].first);
+  }
+  // end of initialization
+  return;
+}
+
+
 // construct a mesh from .csv files
 template <unsigned int M, unsigned int N, unsigned int R>
 Mesh<M,N,R>::Mesh(const std::string& points,    const std::string& edges, const std::string& elements,

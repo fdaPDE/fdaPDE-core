@@ -30,6 +30,8 @@ namespace FEM{
     Raster() = default;
     Raster(const std::vector<double>& data, const std::vector<SVector<N>>& coords, double h)
       : data_(data), coords_(coords), h_(h) {};
+    // return size of the image (number of points)
+    std::size_t size() const { return data_.size(); }
   };
   
   // a set of utilities to evaluate a PDE
@@ -87,9 +89,12 @@ namespace FEM{
       // update evaluation point
       for(std::size_t j = 0; j < N; ++j){
 	p[j] += h;
-	if(p[j] > domain[j].second){
-	  p[j] = domain[j].first;
-	}else break;
+	if(p[j] > domainRange[j].second + 0.5*h){
+	  p[j] = domainRange[j].first;
+	}else{
+	  p[j] = std::min(domainRange[j].second, p[j]);
+	  break;
+	};
       }
     }
     // return raster image
