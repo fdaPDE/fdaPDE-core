@@ -28,7 +28,7 @@ namespace FEM{
   void FEMStandardSpaceTimeSolver::solve(const PDE<M, N, R, E>& pde, const B& basis, const I& integrator, double deltaT) {
     this->init(pde, basis, integrator);
     // define eigen system solver, use QR decomposition.
-    Eigen::SparseQR<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int>> solver;
+    Eigen::SparseLU<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int>> solver;
     unsigned int timeSteps = this->forcingVector_.cols(); // number of iterations for the time loop
     
     this->solution_.resize(pde.domain().nodes(), timeSteps-1);

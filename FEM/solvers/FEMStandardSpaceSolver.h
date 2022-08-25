@@ -42,7 +42,7 @@ namespace FEM{
       }
     }
     // define eigen system solver, use QR decomposition.
-    Eigen::SparseQR<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int>> solver;
+    Eigen::SparseLU<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int>> solver;
     solver.compute(this->R1_);
     // stop if something was wrong...
     if(solver.info()!=Eigen::Success) {
