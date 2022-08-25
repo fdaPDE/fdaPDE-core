@@ -1,7 +1,7 @@
 // scans the whole mesh searching for the element containing the given point
 template <unsigned int M, unsigned int N>
 template <typename... Args>
-std::shared_ptr<Element<M, N>> BruteForce<M, N>::search(const SVector<N>& point, Args&... args) {
+std::unique_ptr<Element<M, N>> BruteForce<M, N>::search(const SVector<N>& point, Args&... args) {
   // loop over all mesh
   for(const auto& element : mesh_){
     if(element->contains(point)){

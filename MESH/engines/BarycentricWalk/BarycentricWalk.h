@@ -22,7 +22,7 @@ namespace MESH{
     BarycentricWalk(const Mesh<M,N>& mesh);
     // applies a barycentric walk strategy to search for the element containing a given point
     template <typename... Args>
-    std::shared_ptr<Element<M, N>> search(const SVector<N>& point, Args&... args);
+    std::unique_ptr<Element<M, N>> search(const SVector<N>& point, Args&... args);
   };
 
 #include "BarycentricWalk.tpp"

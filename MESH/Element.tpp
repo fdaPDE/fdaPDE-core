@@ -3,7 +3,6 @@ template <unsigned int M, unsigned int N, unsigned int R>
 Element<M,N,R>::Element(std::size_t ID, const std::array<std::size_t, ct_nnodes(M,R)>& nodeIDs, const std::array<SVector<N>, ct_nnodes(M,R)>& coords,
 			  const std::vector<int>& neighbors, const std::array<std::size_t, ct_nnodes(M,R)>& boundary) :
   ID_(ID), nodeIDs_(nodeIDs), coords_(coords), neighbors_(neighbors), boundary_(boundary) {
-
   // precompute barycentric coordinate matrix for fast access
   // use first point as reference
   SVector<N> ref = coords_[0];
@@ -19,6 +18,17 @@ Element<M,N,R>::Element(std::size_t ID, const std::array<std::size_t, ct_nnodes(
     // returns the generalized inverse of the barycentric matrix (which is a rectangular matrix for manifold meshes)
     invBarycentricMatrix_ = (barycentricMatrix_.transpose()*barycentricMatrix_).inverse()*barycentricMatrix_.transpose();
   }
+
+  // precompute element measure
+  if constexpr(M == N){ // non-manifold case
+    measure_ = std::abs(barycentricMatrix_.determinant())/(ct_factorial(M));
+  }else{
+    if constexpr(M == 2) // surface element, compute area of 3D triangle
+      measure_ = 0.5 * barycentricMatrix_.col(0).cross(barycentricMatrix_.col(1)).norm();
+    if constexpr(M == 1) // linear network, compute length of 2D segment
+      measure_ = barycentricMatrix_.col(0).norm();
+  }
+
 };
 
 // returns the barycentric coordinates of point x with respect to this element
@@ -44,19 +54,6 @@ SVector<N> Element<M,N,R>::midPoint() const {
   barycentricMidPoint.fill(1.0/(M+1)); // avoid implicit conversion to int
 
   return barycentricMatrix_*barycentricMidPoint + coords_[0];
-}
-
-// returns measure of the element
-template <unsigned int M, unsigned int N, unsigned int R>
-double Element<M,N,R>::measure() const{
-  if constexpr(M == N){ // non-manifold case
-    return std::abs(barycentricMatrix_.determinant())/(ct_factorial(M));
-  }else{
-    if constexpr(M == 2) // surface element, compute area of 3D triangle
-      return 0.5 * barycentricMatrix_.col(0).cross(barycentricMatrix_.col(1)).norm();
-    if constexpr(M == 1) // linear network, compute length of 2D segment
-      return barycentricMatrix_.col(0).norm();
-  }
 }
 
 // returns the bounding box of the element

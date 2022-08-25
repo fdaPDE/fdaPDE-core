@@ -39,7 +39,7 @@ namespace MESH{
     ADT(const Mesh<M,N>& mesh);  
     // applies the ADT geometric search to return the mesh element containing a given point
     template <typename... Args>
-    std::shared_ptr<Element<M, N>> search(const SVector<N>& point, Args&... args) const;
+    std::unique_ptr<Element<M, N>> search(const SVector<N>& point, Args&... args) const;
 
     // getter
     Tree<ADTnode<2*N>> getTree() const { return tree; }

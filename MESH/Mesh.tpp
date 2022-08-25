@@ -79,7 +79,7 @@ Mesh<M,N,R>::Mesh(const std::string& points,    const std::string& edges, const 
 
 // build and provides a nice abstraction for an element given its ID
 template <unsigned int M, unsigned int N, unsigned int R>
-std::shared_ptr<Element<M,N,R>> Mesh<M,N,R>::element(unsigned int ID) const {
+std::unique_ptr<Element<M,N,R>> Mesh<M,N,R>::element(unsigned int ID) const {
   // in the following use auto to take advantage of eigen acceleration
   // get the indexes of vertices from triangles_
   auto pointData = elements_.row(ID);
@@ -115,8 +115,8 @@ std::shared_ptr<Element<M,N,R>> Mesh<M,N,R>::element(unsigned int ID) const {
       neighbors.push_back(SpMat_it.row()); // neighbors_ is stored in ColumnMajor mode
     }
   }
-  // return shared pointer to the element
-  return std::make_shared<Element<M,N,R>>(ID, nodeIDs, coords, neighbors, boundary);
+  // return unique pointer to the element
+  return std::make_unique<Element<M,N,R>>(ID, nodeIDs, coords, neighbors, boundary);
 }
 
 // extract from raw information the mesh node with given ID (ID starts from 0)

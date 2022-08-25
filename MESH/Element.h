@@ -52,7 +52,8 @@ namespace MESH{
     // matrices defining the affine transformation from cartesian to barycentric coordinates and viceversa
     Eigen::Matrix<double, N, M> barycentricMatrix_{};
     Eigen::Matrix<double, M, N> invBarycentricMatrix_{};
-
+    // measure of the element (precomputed and cached at construction time)
+    double measure_ = 0;
   public:
     // constructor
     Element() = default;  
@@ -91,7 +92,7 @@ namespace MESH{
     // returns the vector space passing throught this element
     VectorSpace<M, N> spannedSpace() const;
     // returns the measure of the element
-    double measure() const;
+    double measure() const { return measure_; }
     
     // subscript operator
     SVector<N> operator[](std::size_t i) const {

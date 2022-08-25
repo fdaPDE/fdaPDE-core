@@ -23,7 +23,7 @@ namespace MESH{
     // constructor
     StandardQueryRecorder() = default;
 
-    void operator()(const std::shared_ptr<Element<M,N>>& e, const SVector<N>& p){
+    void operator()(const std::unique_ptr<Element<M,N>>& e, const SVector<N>& p){
       result[e->ID()] = e->toBarycentricCoords(p);
     }
   };

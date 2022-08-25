@@ -10,9 +10,9 @@ BarycentricWalk<M,N>::BarycentricWalk(const Mesh<M,N>& mesh) : mesh_(mesh) {
 // applies a barycentric walk search
 template <unsigned int M, unsigned int N>
 template <typename... Args>
-std::shared_ptr<Element<M,N>> BarycentricWalk<M,N>::search(const SVector<N>& point, Args&... args){
+std::unique_ptr<Element<M,N>> BarycentricWalk<M,N>::search(const SVector<N>& point, Args&... args){
   // start from an element at random
-  std::shared_ptr<Element<M,N>> element = mesh_.element(uniform_int(rng)); 
+  std::unique_ptr<Element<M,N>> element = mesh_.element(uniform_int(rng)); 
 
   if(element->contains(point)){
     (args(element, point), ...); // parameter pack expansion to call functor on the pair (element, point).

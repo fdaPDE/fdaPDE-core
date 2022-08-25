@@ -5,7 +5,7 @@ ADT<M,N>::ADT(const Mesh<M,N>& mesh) : mesh_(mesh){
   std::vector<std::pair<SVector<2*N>, unsigned int>> data;
   data.reserve(mesh_.elements()); // avoid useless reallocations at runtime
     
-  for(std::shared_ptr<Element<M,N>> element : mesh_){
+  for(const auto& element : mesh_){
     // compute bounding box
     std::pair<SVector<N>, SVector<N>> boundingBox = element->boundingBox();
     // create 2N dimensional point
@@ -118,7 +118,7 @@ std::list<unsigned int> ADT<M,N>::geometricSearch(const Query<2*N> &query) const
 // element containing a given point can be solved as a geometric search problem in a 2N dimensional space
 template <unsigned int M, unsigned int N>
 template <typename... Args>
-std::shared_ptr<Element<M, N>> ADT<M,N>::search(const SVector<N> &point, Args&... args) const {
+std::unique_ptr<Element<M, N>> ADT<M,N>::search(const SVector<N> &point, Args&... args) const {
   // map input point in the unit hypercube (see Mesh.h for definition of methods below)
   std::array<double, N> lowerBound = mesh_.lowerBound();
   std::array<double, N> kk = mesh_.kk();
@@ -144,7 +144,7 @@ std::shared_ptr<Element<M, N>> ADT<M,N>::search(const SVector<N> &point, Args&..
   std::list<unsigned int> searchResult = geometricSearch(Query<2*N>(query));
   // exhaustively scan the query results to get the searched mesh element
   for(unsigned int ID : searchResult){
-    std::shared_ptr<Element<M,N>> element = mesh_.element(ID);
+    std::unique_ptr<Element<M,N>> element = mesh_.element(ID);
     if(element->contains(point)){
       (args(element, point), ...); // parameter pack expansion to call functor on the pair (element, point).
       return element;
