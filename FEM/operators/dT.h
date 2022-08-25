@@ -16,9 +16,10 @@ namespace FEM{
     dT() = default;
     std::tuple<dT<L>> getTypeList() const { return std::make_tuple(*this); }
 
-    template <unsigned int N, int M, unsigned int ORDER, typename B>
-    double integrate(const B& basis, const Element<ORDER, N>& e, int i , int j, const SVector<M>& quadrature_point) const{
-      return 0; // dirty hack to make dT not contribute in the space discretization of the problem
+    template <unsigned int M, unsigned int N, unsigned int R, typename B>
+    ScalarField<M> integrate(const B& basis, const Element<M, N, R>& e, int i , int j) const{
+      ScalarField<M> f = [](SVector<M> x) -> double { return 0; }
+      return f; // dirty hack to make dT not contribute in the space discretization of the problem
     }
   };
 

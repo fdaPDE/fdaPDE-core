@@ -6,10 +6,11 @@ template <unsigned int N, unsigned int R, typename B, typename F>
 double Integrator<M, K>::integrate(const B& basis, const Element<M, N, R>& e, int i , int j, const F& bilinearForm) const{
   // apply quadrature rule
   double value = 0;
+  // builds the callable to integrate here once from the bilinear form passed as argument
+  ScalarField<M> f = bilinearForm.integrate(basis, e, i, j);
   for(size_t iq = 0; iq < integrationTable_.num_nodes; ++iq){
-    // for a BilinearFormExpr .integrate() is developed in the sum of the single integrals yelding to the discretization of the bilinear form
     SVector<M> p = SVector<M>(integrationTable_.nodes[iq].data());
-    value += bilinearForm.integrate(basis, e, i, j, p) * integrationTable_.weights[iq];
+    value += f(p) * integrationTable_.weights[iq];
   }
   // correct for measure of domain (element e)
   return value * e.measure();
@@ -18,7 +19,7 @@ double Integrator<M, K>::integrate(const B& basis, const Element<M, N, R>& e, in
 // integrate a callable F over a mesh element e.
 template <unsigned int M, unsigned int K>
 template <unsigned int N, unsigned int R, typename F>
-double Integrator<M, K>::integrate(const Element<M, N, R> &e, F &f) const {
+double Integrator<M, K>::integrate(const Element<M, N, R>& e, F &f) const {
   double value = 0;
   // execute quadrature rule
   for(size_t iq = 0; iq < integrationTable_.num_nodes; ++iq){
@@ -34,7 +35,7 @@ double Integrator<M, K>::integrate(const Element<M, N, R> &e, F &f) const {
 // Just exploit linearity of the integral operation to sum the result of the integral of F over each mesh element
 template <unsigned int M, unsigned int K>
 template <unsigned int N, unsigned int R, typename F>
-double Integrator<M, K>::integrate(const Mesh<M, N, R> &m, const F &f) const {
+double Integrator<M, K>::integrate(const Mesh<M, N, R>& m, const F &f) const {
   double value = 0;
   // cycle over all mesh elements
   for(const auto& e : m)

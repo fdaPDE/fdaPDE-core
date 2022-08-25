@@ -11,24 +11,33 @@ Eigen::SparseMatrix<double> Assembler<M, N, R, B, I>::assemble(const E& bilinear
   stiffnessMatrix.resize(mesh_.nodes(), mesh_.nodes());
 
   // cycle over all mesh elements
-  for(std::shared_ptr<Element<M,N>> e : mesh_){
+  for(const auto& e : mesh_){
     // consider all pair of nodes
     for(size_t i = 0; i < n_basis; ++i){
       for(size_t j = 0; j < n_basis; ++j){
-	// any integral computation for the construction of the stiffness matrix is performed on the reference element
-	double value = integrator_.integrate(referenceBasis_, *e, i, j, bilinearForm);
-	
-	// From Eigen doucmentation: The input list of triplets does not have to be sorted, and can contains duplicated elements.
-	// In any case, the result is a sorted and compressed sparse matrix where the duplicates have been summed up.
-	// Linearity of the integral is implicitly used during matrix construction by eigen!
-	tripletList.emplace_back(e->nodeIDs()[i], e->nodeIDs()[j], value);
+	if constexpr(is_symmetric<decltype(bilinearForm)>::value){
+	  // compute only half of the discretization matrix if the operator is symmetric
+	  if(e->nodeIDs()[i] >= e->nodeIDs()[j]){
+	    // any integral computation for the construction of the stiffness matrix is performed on the reference element
+	    double value = integrator_.integrate(referenceBasis_, *e, i, j, bilinearForm);
+	    
+	    // From Eigen doucmentation: The input list of triplets does not have to be sorted, and can contains duplicated elements.
+	    // In any case, the result is a sorted and compressed sparse matrix where the duplicates have been summed up.
+	    // Linearity of the integral is implicitly used during matrix construction by eigen!
+	    tripletList.emplace_back(e->nodeIDs()[i], e->nodeIDs()[j], value);
+	  }
+	}else{
+	  // not any optimization to perform in the general case
+	  double value = integrator_.integrate(referenceBasis_, *e, i, j, bilinearForm);
+	  tripletList.emplace_back(e->nodeIDs()[i], e->nodeIDs()[j], value);
+	}
       }
     }
   }
   // stiff matrix assembled
   stiffnessMatrix.setFromTriplets(tripletList.begin(), tripletList.end());
   stiffnessMatrix.prune(std::numeric_limits<double>::epsilon() * 10); // remove almost zero entries
-
+  
   // impose homogeneous boundary condition to remove not necessary degrees of freedom
   // (otherwise the corresponding linear system is undetermined!)
   for(size_t i = 0; i < stiffnessMatrix.rows(); ++i){
@@ -53,7 +62,7 @@ Eigen::Matrix<double, Eigen::Dynamic, 1> Assembler<M, N, R, B, I>::forcingTerm(c
   result.fill(0); // init result vector to zero
   
   // build forcing vector
-  for(const std::shared_ptr<Element<M,N>>& e : mesh_){
+  for(const auto& e : mesh_){
     // build functional basis over the current element e
     B basis(*e);
     // integrate on each node

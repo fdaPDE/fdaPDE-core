@@ -9,7 +9,7 @@ using fdaPDE::core::MESH::Element;
 namespace fdaPDE{
 namespace core{
 namespace FEM{
-
+  
 #define DEF_BILINEAR_FORM_EXPR_OPERATOR(OPERATOR, FUNCTOR)		\
   template <typename E1, typename E2>					\
   BilinearFormBinOp<E1, E2, FUNCTOR >					\
@@ -21,9 +21,10 @@ namespace FEM{
 
   template <typename E> struct BilinearFormExpr{
     // call integration method on base type
-    template <unsigned int N, int M, unsigned int ORDER, typename B>
-    double integrate(const B& b, const Element<ORDER, N>& e, int i , int j, const SVector<M>& qp) const{
-      return static_cast<const E&>(*this).integrate(b, e, i, j, qp);
+    template <unsigned int M, unsigned int N, unsigned int R, typename B>
+    // b: functional basis, e: mesh element, i.j: indexes of the discretization matrix element to compute
+    ScalarField<M> integrate(const B& b, const Element<M, N, R>& e, int i , int j) const {
+      return static_cast<const E&>(*this).integrate(b, e, i, j);
     }
   
     // get underyling type composing the expression node
@@ -48,9 +49,9 @@ namespace FEM{
     BilinearFormBinOp(const OP1& op1, const OP2& op2, BinaryOperation f) : op1_(op1), op2_(op2), f_(f) { };
 
     // integrate method. Apply the functor f_ to the result of integrate() applied to both operands.
-    template <unsigned int N, int M, unsigned int ORDER, typename B>
-    double integrate(const B& b, const Element<ORDER, N>& e, int i , int j, const SVector<M>& qp) const{
-      return f_(op1_.integrate(b, e, i, j, qp), op2_.integrate(b, e, i, j, qp));
+    template <unsigned int M, unsigned int N, unsigned int R, typename B>
+    ScalarField<M> integrate(const B& b, const Element<M, N, R>& e, int i , int j) const {
+      return f_(op1_.integrate(b, e, i, j), op2_.integrate(b, e, i, j));
     }
 
     auto getTypeList() const { return std::tuple_cat(op1_.getTypeList(), op2_.getTypeList()); }
@@ -65,8 +66,8 @@ namespace FEM{
     BilinearFormScalar(double value) : value_(value) { }
   
     // integrate method. return the stored value
-    template <unsigned int N, int M, unsigned int ORDER, typename B>
-    double integrate(const B& b, const Element<ORDER, N>& e, int i , int j, const SVector<M>& qp) const{
+    template <unsigned int M, unsigned int N, unsigned int R, typename B>
+    ScalarField<M> integrate(const B& b, const Element<M, N, R>& e, int i , int j) const{
       return value_;
     }
 

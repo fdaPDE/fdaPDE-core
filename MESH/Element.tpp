@@ -25,7 +25,7 @@ Element<M,N,R>::Element(std::size_t ID, const std::array<std::size_t, ct_nnodes(
   }else{
     if constexpr(M == 2) // surface element, compute area of 3D triangle
       measure_ = 0.5 * barycentricMatrix_.col(0).cross(barycentricMatrix_.col(1)).norm();
-    if constexpr(M == 1) // linear network, compute length of 2D segment
+    if constexpr(M == 1) // network element, compute length of 2D segment
       measure_ = barycentricMatrix_.col(0).norm();
   }
 
