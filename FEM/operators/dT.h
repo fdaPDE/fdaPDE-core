@@ -18,7 +18,7 @@ namespace FEM{
 
     template <unsigned int M, unsigned int N, unsigned int R, typename B>
     ScalarField<M> integrate(const B& basis, const Element<M, N, R>& e, int i , int j) const{
-      ScalarField<M> f = [](SVector<M> x) -> double { return 0; }
+      ScalarField<M> f = [](SVector<M> x) -> double { return 0; };
       return f; // dirty hack to make dT not contribute in the space discretization of the problem
     }
   };
