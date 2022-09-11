@@ -38,15 +38,6 @@ Eigen::SparseMatrix<double> Assembler<M, N, R, B, I>::assemble(const E& bilinear
   stiffnessMatrix.setFromTriplets(tripletList.begin(), tripletList.end());
   stiffnessMatrix.prune(std::numeric_limits<double>::epsilon() * 10); // remove almost zero entries
   
-  // impose homogeneous boundary condition to remove not necessary degrees of freedom
-  // (otherwise the corresponding linear system is undetermined!)
-  for(size_t i = 0; i < stiffnessMatrix.rows(); ++i){
-    if(mesh_.isOnBoundary(i)){ 
-      stiffnessMatrix.row(i) *= 0;       // zero all entries of this row
-      stiffnessMatrix.coeffRef(i,i) = 1; // set diagonal element to 1 to impose equation u_j = b_j
-    }
-  }
-
   // return just half of the discretization matrix if the form is symmetric (lower triangular part)
   if constexpr(is_symmetric<decltype(bilinearForm)>::value)
     return stiffnessMatrix.selfadjointView<Eigen::Lower>();

@@ -17,13 +17,11 @@ namespace FEM{
     Eigen::SparseMatrix<double> R1_; // result of the discretization of the bilinear form, also known as R1.
     Eigen::SparseMatrix<double> R0_; // mass matrix, needed by components in higher levels of the architecture, known as R0.
 
-    // initializes internal FEM solver status
-    // M, N and E are parameters releated to the PDE, B and I indicates respectively the functional basis and the integrator
-    // to use during the numerical resolution of the problem.
-    template <unsigned int M, unsigned int N, unsigned int R, typename E, typename B, typename I> 
-    void init(const PDE<M, N, R, E>& pde, const B& basis, const I& integrator);
+    // impose boundary conditions
+    template <unsigned int M, unsigned int N, unsigned int R, typename E> 
+    void imposeBoundaryConditions(const PDE<M, N, R, E>& pde);    
   public:
-        // flag used to notify is something was wrong during computation
+    // flag used to notify is something was wrong during computation
     bool success = true;
     // constructor
     FEMBaseSolver() = default;
@@ -32,19 +30,25 @@ namespace FEM{
     DMatrix<double> force() const { return forcingVector_; }
     Eigen::SparseMatrix<double> R1() const { return R1_; }
     Eigen::SparseMatrix<double> R0() const { return R0_; }
+
+    // initializes internal FEM solver status
+    // M, N and E are parameters releated to the PDE, B and I indicates respectively the functional basis and the integrator
+    // to use during the numerical resolution of the problem.
+    template <unsigned int M, unsigned int N, unsigned int R, typename E, typename B, typename I> 
+    void init(const PDE<M, N, R, E>& pde, const B& basis, const I& integrator);
   };
 
   // fill internal data structures required by FEM to solve the problem.
   template <unsigned int M, unsigned int N, unsigned int R, typename E, typename B, typename I>
   void FEMBaseSolver::init(const PDE<M, N, R, E>& pde, const B& basis, const I& integrator) {
     Assembler<M, N, R, B, I> assembler(pde.domain(), basis, integrator); // create assembler object
-    R1_ = assembler.assemble(pde.bilinearForm());       // fill discretization matrix for current operator
-    // SparseQR solver needs its matrix in compressed form (see Eigen documentation for details)
+    // fill discretization matrix for current operator
+    R1_ = assembler.assemble(pde.bilinearForm());
     R1_.makeCompressed();
+    // fill forcing vector
     forcingVector_.resize(pde.domain().nodes(), pde.forcingData().cols());
-
     for(std::size_t i = 0; i < pde.forcingData().cols(); ++i){
-      forcingVector_.col(i) = assembler.forcingTerm(pde.forcingData().col(i)); // fill discretization of rhs for FEM linear system
+      forcingVector_.col(i) = assembler.forcingTerm(pde.forcingData().col(i)); // rhs of FEM linear system
     }
 
     // R0_ is a mass matrix ([R0]_{ij} = \int_{\Omega} \phi_i \phi_j). This quantity can be obtained by computing
@@ -52,6 +56,23 @@ namespace FEM{
     R0_ = assembler.assemble(Identity());
     return;
   }
+
+  template <unsigned int M, unsigned int N, unsigned int R, typename E> 
+  void FEMBaseSolver::imposeBoundaryConditions(const PDE<M, N, R, E>& pde){
+    // impose homogeneous dirichlet boundary condition by default to remove not necessary degrees of freedom from FEM linear system R1_
+    for(size_t i = 0; i < R1_.rows(); ++i){
+      if(pde.domain().isOnBoundary(i)){ 
+	R1_.row(i) *= 0;       // zero all entries of this row
+	R1_.coeffRef(i,i) = 1; // set diagonal element to 1 to impose equation u_j = b_j
+
+	// boundaryDatum is a pair (nodeID, boundary value)
+	double boundaryDatum = pde.boundaryData().empty() ? 0 : pde.boundaryData().at(i)[0];
+	this->forcingVector_(i,0) = boundaryDatum; // impose boundary value
+      }
+    }
+    return;
+  }
+
 
 }}}
 #endif // __FEM_BASE_SOLVER_H__

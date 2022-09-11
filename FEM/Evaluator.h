@@ -2,6 +2,7 @@
 #define __EVALUATOR_H__
 
 #include <cstddef>
+#include <type_traits>
 #include <vector>
 #include "../utils/Symbols.h"
 #include "PDE.h"
@@ -48,9 +49,58 @@ namespace FEM{
     // produce a raster image of the solution of a PDE over its domain using the specified resolution h
     template <typename E>
     Raster<N> toRaster(const PDE<M,N,R,E>& pde, double h) const;
-    
+    // produce a raster image of a callable (assuming the same interface of ScalarField)
+    template <typename F>
+    typename std::enable_if<std::is_invocable<F(SVector<M>)>::value_type, Raster<N>>::type
+    toRaster(const Mesh<M,N,R>& mesh, const F& f, double h) const;
   };
 
+  // produce raster of field written as linear combination of finite element basis functions
+  template <unsigned int M, unsigned int N, unsigned int R, typename SearchEngine>
+  template <typename F>
+  typename std::enable_if<std::is_invocable<F(SVector<M>)>::value_type, Raster<N>>::type
+  Evaluator<M,N,R,SearchEngine>::toRaster(const Mesh<M,N,R>& domain, const F& f, double h) const{
+    // build search engine
+    SearchEngine engine(domain);
+    // define mesh domain limits
+    std::array<std::pair<double, double>, N> domainRange = domain.range();
+    SVector<N> p{}; // evaluation point
+    double totalSize = 1; // total number of pixels in the raster
+    for(std::size_t i = 0; i < N; ++i){
+      p[i] = domainRange[i].first;
+      totalSize *= std::ceil((domainRange[i].second - domainRange[i].first)/h) + 1;
+    }
+    // preallocate memory to avoid useless reallocations
+    std::vector<double> data{};
+    data.resize(totalSize);;
+    std::vector<SVector<N>> coords{};
+    coords.resize(totalSize);
+    
+    // start evaluation
+    for(std::size_t i = 0; i < totalSize; ++i){
+      // search element containing point
+      std::unique_ptr<Element<M,N,R>> e = engine.search(p);
+      double v = std::numeric_limits<double>::quiet_NaN();
+      if(e != nullptr)
+	v = f(p);
+      // store result
+      data[i] = v;
+      coords[i] = p;
+      // update evaluation point
+      for(std::size_t j = 0; j < N; ++j){
+	p[j] += h;
+	if(p[j] > domainRange[j].second + 0.5*h){
+	  p[j] = domainRange[j].first;
+	}else{
+	  p[j] = std::min(domainRange[j].second, p[j]);
+	  break;
+	};
+      }
+    }
+    // return raster image
+    return Raster<N>(data, coords, h);
+  }
+  
   // produce raster of field written as linear combination of finite element basis functions
   template <unsigned int M, unsigned int N, unsigned int R, typename SearchEngine>
   Raster<N> Evaluator<M,N,R,SearchEngine>::toRaster(const Mesh<M,N,R>& domain, const DVector<double>& coeff, double h) const{
@@ -73,9 +123,11 @@ namespace FEM{
     // start evaluation
     for(std::size_t i = 0; i < totalSize; ++i){
       // search element containing point
-      std::shared_ptr<Element<M,N,R>> e = engine.search(p);
-      double v = 0;    
+      std::unique_ptr<Element<M,N,R>> e = engine.search(p);
+      // compute value of field at point
+      double v = std::numeric_limits<double>::quiet_NaN();
       if(e != nullptr){
+	v = 0;
 	// build a lagrangian basis over the element
 	LagrangianBasis<M,N,R> basis(*e);
 	// evaluate the solution at point

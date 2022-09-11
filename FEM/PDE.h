@@ -71,7 +71,12 @@ namespace FEM{
     const SpMatrix<double> R1() const { return solver_.R1(); };
     const SpMatrix<double> R0() const { return solver_.R0(); };
 
-    // entry point for PDE solver.
+    // computes matrices R1, R0 and forcing vector without solving the FEM linear system. Usefull for methods requiring just those quantites
+    // without having the need to solve the pde
+    template <typename B, typename I, typename... Args>
+    void init(const B& base, const I& integrator, Args... args);
+    
+    // entry point for PDE solver. Solves the pde (i.e. after this call solution() will contain valid data)
     template <typename B, typename I, typename... Args>
     void solve(const B& base, const I& integrator, Args... args);
   };

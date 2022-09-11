@@ -13,6 +13,14 @@ void PDE<M, N, R, E, Solver>::setDirichletBC(const DMatrix<double>& data){
 
 template <unsigned int M, unsigned int N, unsigned int R, typename E, typename Solver>
 template <typename B, typename I, typename... Args>
+void PDE<M, N, R, E, Solver>::init(const B &base, const I &integrator, Args... args) {
+  // precomputes some quantites of interest for high level users of FEM. Do not solve the PDE (which means no linear system is solved)
+  solver_.init(*this, base, integrator, args...);
+  return;
+}
+
+template <unsigned int M, unsigned int N, unsigned int R, typename E, typename Solver>
+template <typename B, typename I, typename... Args>
 void PDE<M, N, R, E, Solver>::solve(const B &base, const I &integrator, Args... args) {
   // define solver and call solve method on it
   solver_.solve(*this, base, integrator, args...);
