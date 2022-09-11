@@ -4,8 +4,6 @@
 #include "../../utils/Symbols.h"
 #include "../Assembler.h"
 using fdaPDE::core::FEM::Assembler;
-#include "../PDE.h"
-using fdaPDE::core::FEM::PDE;
 #include "FEMBaseSolver.h"
 using fdaPDE::core::FEM::FEMBaseSolver;
 
@@ -18,14 +16,14 @@ namespace FEM{
     FEMStandardSpaceTimeSolver() = default;
 
     // solves the PDE using a FEM discretization in space and a finite difference discretization in time (forward-euler scheme)
-    template <unsigned int M, unsigned int N, unsigned int R, typename E, typename B, typename I> 
-    void solve(const PDE<M, N, R, E>& pde, const B& basis, const I& integrator, double deltaT);
+    template <unsigned int M, unsigned int N, unsigned int R, typename E, typename S, typename B, typename I> 
+    void solve(const PDE<M, N, R, E, S>& pde, const B& basis, const I& integrator, double deltaT);
   };
 
   // use forward-euler to discretize the time derivative. Under this approximation we get a discretization matrix for the PDE operator
   // equal to K = [M/deltaT + A] (forward Euler scheme)
-  template <unsigned int M, unsigned int N, unsigned int R, typename E, typename B, typename I> 
-  void FEMStandardSpaceTimeSolver::solve(const PDE<M, N, R, E>& pde, const B& basis, const I& integrator, double deltaT) {
+  template <unsigned int M, unsigned int N, unsigned int R, typename E, typename S, typename B, typename I> 
+  void FEMStandardSpaceTimeSolver::solve(const PDE<M, N, R, E, S>& pde, const B& basis, const I& integrator, double deltaT) {
     this->init(pde, basis, integrator);
     // define eigen system solver, use QR decomposition.
     Eigen::SparseLU<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int>> solver;

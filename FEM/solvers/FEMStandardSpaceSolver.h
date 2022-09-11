@@ -4,8 +4,6 @@
 #include "../../utils/Symbols.h"
 #include "../Assembler.h"
 using fdaPDE::core::FEM::Assembler;
-#include "../PDE.h"
-using fdaPDE::core::FEM::PDE;
 #include "FEMBaseSolver.h"
 using fdaPDE::core::FEM::FEMBaseSolver;
 
@@ -19,12 +17,12 @@ namespace FEM{
 
     // solves the PDE using the classical FEM approach: compute the discretization matrix R1_ relative to a bilinear form E using some finite element
     // basis B and the forcing vector b, then solves the linear system R1_*u = b, where u is the searched PDE approximation
-    template <unsigned int M, unsigned int N, unsigned int R, typename E, typename B, typename I> 
-    void solve(const PDE<M, N, R, E>& pde, const B& basis, const I& integrator);
+    template <unsigned int M, unsigned int N, unsigned int R, typename E, typename S, typename B, typename I> 
+    void solve(const PDE<M, N, R, E, S>& pde, const B& basis, const I& integrator);
   };
 
-  template <unsigned int M, unsigned int N, unsigned int R, typename E, typename B, typename I> 
-  void FEMStandardSpaceSolver::solve(const PDE<M, N, R, E>& pde, const B& basis, const I& integrator){
+  template <unsigned int M, unsigned int N, unsigned int R, typename E, typename S, typename B, typename I> 
+  void FEMStandardSpaceSolver::solve(const PDE<M, N, R, E, S>& pde, const B& basis, const I& integrator){
     this->init(pde, basis, integrator);  // init solver for this PDE
     this->imposeBoundaryConditions(pde); // impose boundary conditions on forcing vector and R1_ matrix
     

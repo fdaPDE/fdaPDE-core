@@ -10,6 +10,10 @@ using fdaPDE::core::FEM::is_parabolic;
 using fdaPDE::core::FEM::Assembler;
 #include "operators/Identity.h"
 using fdaPDE::core::FEM::Identity;
+#include "solvers/FEMStandardSpaceSolver.h"
+using fdaPDE::core::FEM::FEMStandardSpaceSolver;
+#include "solvers/FEMStandardSpaceTimeSolver.h"
+using fdaPDE::core::FEM::FEMStandardSpaceTimeSolver;
 #include <type_traits>
 #include <unordered_map>
 #include <vector>
@@ -17,10 +21,6 @@ using fdaPDE::core::FEM::Identity;
 namespace fdaPDE{
 namespace core{
 namespace FEM{
-
-  // forward declarations
-  class FEMStandardSpaceTimeSolver;
-  class FEMStandardSpaceSolver;
 
   // trait to select the space-only or the space-time variant of the PDE standard solver
   template <typename E> struct pde_standard_solver_selector {
