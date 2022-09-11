@@ -105,11 +105,11 @@ template <int M, int N>
 ScalarField<M> VectorField<M, N>::dot(const SVector<N>& op) const {
   std::function<double(SVector<M>)> result;
   // build lambda expressing inner product
-  result = [this, op](const SVector<M>& x) -> double{
+  result = [*this, op](const SVector<M>& x) -> double{
     double y = 0;
     for(std::size_t i = 0; i < N; ++i)
       y += op[i]*operator[](i)(x);
-      
+    
     return y;
   };
   return ScalarField<M>(result);

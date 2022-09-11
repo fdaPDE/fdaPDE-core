@@ -65,9 +65,9 @@ namespace FEM{
     // constructor
     BilinearFormScalar(double value) : value_(value) { }
   
-    // integrate method. return the stored value
+    // integrate method. Just return the stored value
     template <unsigned int M, unsigned int N, unsigned int R, typename B>
-    ScalarField<M> integrate(const B& b, const Element<M, N, R>& e, int i , int j) const{
+    double integrate(const B& b, const Element<M, N, R>& e, int i , int j) const{
       return value_;
     }
 

@@ -156,7 +156,7 @@ namespace core{
   ScalarField<M> VectExpr<M,N, E>::dot(const SVector<N>& op) const {
     std::function<double(SVector<M>)> result;
     // build lambda expressing inner product
-    result = [this, op](const SVector<M>& x) -> double{
+    result = [*this, op](const SVector<M>& x) -> double{
       double y = 0;
       for(size_t i = 0; i < N; ++i)
 	y += op[i]*operator[](i)(x);
