@@ -51,14 +51,14 @@ namespace FEM{
     Raster<N> toRaster(const PDE<M,N,R,E>& pde, double h) const;
     // produce a raster image of a callable (assuming the same interface of ScalarField)
     template <typename F>
-    typename std::enable_if<std::is_invocable<F(SVector<M>)>::value_type, Raster<N>>::type
+    typename std::enable_if<std::is_invocable<F, SVector<M>>::value, Raster<N>>::type
     toRaster(const Mesh<M,N,R>& mesh, const F& f, double h) const;
   };
 
   // produce raster of field written as linear combination of finite element basis functions
   template <unsigned int M, unsigned int N, unsigned int R, typename SearchEngine>
   template <typename F>
-  typename std::enable_if<std::is_invocable<F(SVector<M>)>::value_type, Raster<N>>::type
+  typename std::enable_if<std::is_invocable<F, SVector<M>>::value, Raster<N>>::type
   Evaluator<M,N,R,SearchEngine>::toRaster(const Mesh<M,N,R>& domain, const F& f, double h) const{
     // build search engine
     SearchEngine engine(domain);
