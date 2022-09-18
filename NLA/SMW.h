@@ -2,7 +2,6 @@
 #define __SMW_H__
 
 #include "../utils/Symbols.h"
-#include <Eigen/QR>
 #include <Eigen/SparseLU>
 
 namespace fdaPDE {
@@ -20,7 +19,7 @@ namespace NLA{
   // than computing M^{-1} directly
 
   template <typename SparseSolver = Eigen::SparseLU<SpMatrix<double>, Eigen::COLAMDOrdering<int>>,
-	    typename DenseSolver  = Eigen::ColPivHouseholderQR<DMatrix<double>>>
+	    typename DenseSolver  = Eigen::PartialPivLU<DMatrix<double>>>
   class SMW{
   private:
     SparseSolver sparseSolver_; // store factorization of 2Nx2N sparse matrix A
@@ -33,8 +32,8 @@ namespace NLA{
       A.makeCompressed();
       
       // compute sparse factorization of matrix A and store it for fast reuse
-      sparseSolver_.analyzePattern(A);     // Compute the ordering permutation vector from the structural pattern of A
-      sparseSolver_.factorize(A);          // compute LU factorization of matrix A
+      sparseSolver_.analyzePattern(A); // Compute the ordering permutation vector from the structural pattern of A
+      sparseSolver_.factorize(A);      // compute LU factorization of matrix A
     }
     
     // solves linear system (A + U*C^{-1}*V)x = b, observe that we assume to supply the already computed inversion of the dense matrix C.
@@ -51,9 +50,8 @@ namespace NLA{
       DMatrix<double> Y = sparseSolver_.solve(U);
       // compute dense matrix G = C^{-1} + V*A^{-1}*U = C^{-1} + V*y
       DMatrix<double> G = invC + V*Y;
-
-      denseSolver_.compute(G);              // factorize G
-      DVector<double> t = denseSolver_.solve(V*y);  // solve dense qxq linear system
+      denseSolver_.compute(G); // factorize G
+      DVector<double> t = denseSolver_.solve(V*y); // solve dense qxq linear system
 
       // compute v = A^{-1}*U*t = A^{-1}*U*(C^{-1} + V*A^{-1}*U)^{-1}*V*A^{-1}*b by solving linear system A*v = U*t
       DVector<double> v = sparseSolver_.solve(U*t);

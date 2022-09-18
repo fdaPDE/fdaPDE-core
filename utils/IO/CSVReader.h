@@ -185,11 +185,16 @@ CSVFile<T> CSVReader::parseFile(const std::string& file_){
   while(getline(file, line)){
     // split CSV line in tokens
     std::vector<std::string> parsedLine = split(line, ",");
-
+    
     // fill data structure
+    // the following list removes all listed chars for each parsed line (chars here cause istringstream to
+    // not cast correctly the string into type T, hence must be removed)
+    std::vector<char> filter({' ', '"'});
     for(size_t j = 1; j < columnNames.size(); ++j){
+      // apply filters to parsed string (remove unwanted chars)
+      std::string filtered = remove(parsedLine[j], filter);
       // convert string to type T
-      std::istringstream ss(parsedLine[j]);
+      std::istringstream ss(filtered);
       T dataPoint;
       ss >> dataPoint;
       // insert value
