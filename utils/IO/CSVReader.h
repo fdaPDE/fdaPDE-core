@@ -44,7 +44,16 @@ public:
   Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> toEigen();
   // get raw parsed file
   CSVinternal<T> getRawParsedFile() const { return parsedFile; }
-
+  // get j-th row of file (packed as a std::vector)
+  std::vector<T> row(std::size_t idx) const {
+    std::vector<T> result;
+    // cycle over parsed information
+    for(auto& it : columnNames_){
+      result.push_back(parsedFile.at(it)[idx]);
+    }
+    return result;
+  }
+  
   std::size_t rows() const { return parsedFile.at(columnNames_[0]).size(); }
   std::size_t cols() const { return parsedFile.size(); }
 };
@@ -59,8 +68,20 @@ public:
   CSVSparseFile(const std::string& file_) : CSVFile<T>(file_) {};
   
   void setParsedFile(const CSVinternal<std::vector<T>>& parsedFile_) { parsedFile = parsedFile_; }
+  // converts the raw parsed file in eigen dense matrix
   Eigen::SparseMatrix<T> toEigen();
+  // get raw parsed file
   CSVinternal<std::vector<T>> getRawParsedFile() const { return parsedFile; }
+  // get j-th row of file (packed as a std::vector)
+  std::vector<T> row(std::size_t idx) const {
+    std::vector<T> result;
+    // cycle over parsed information
+    for(auto& it : this->columnNames_){
+      result.insert(result.begin(), parsedFile.at(it)[idx].begin(), parsedFile.at(it)[idx].end());
+    }
+    return result;
+  }
+
 };
 
 template <typename T>
