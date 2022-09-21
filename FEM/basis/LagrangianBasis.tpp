@@ -45,13 +45,13 @@ void LagrangianBasis<M,N,R>::computeCoefficients(const std::array<std::array<dou
  
     // solve system V*a = b with b vector having 1 at position i and 0 everywhere else.
     // Its solution gives the vector of coefficients of the i-th Lagrange polynomial
-    Eigen::ColPivHouseholderQR<SMatrix<n_basis>> QRdecomposition(V);
+    Eigen::PartialPivLU<SMatrix<n_basis>> LUdecomposition(V);
     for(size_t i = 0; i < n_basis; ++i){
       // build rhs vector
       SVector<n_basis> b = Eigen::Matrix<double, n_basis, 1>::Zero();
       b[i] = 1;
       // solve linear system V*a = b
-      SVector<n_basis> coeff = QRdecomposition.solve(b);
+      SVector<n_basis> coeff = LUdecomposition.solve(b);
       // cast to array
       std::array<double, n_basis> coeff_array;
       for(size_t j = 0; j < n_basis; ++j) coeff_array[j] = coeff[j];
