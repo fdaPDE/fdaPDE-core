@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <fstream>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <tuple>
@@ -115,8 +116,10 @@ Eigen::SparseMatrix<T> CSVSparseFile<T>::toEigen() {
   for(auto col : parsedFile){
     for(std::size_t i = 0; i < n; ++i){
       for(T j : col.second[i]){
-	// we push pair (i, j-1) since j indexes parsed from raw files starts from 1.
-	tripletList.push_front(Eigen::Triplet<T>(i, j-1, 1));
+	if(j != std::numeric_limits<T>::quiet_NaN()){ 
+	  // we push pair (i, j-1) since j indexes parsed from raw files starts from 1.
+	  tripletList.push_front(Eigen::Triplet<T>(i, j-1, 1));
+	}
       }
     }
   }
@@ -150,7 +153,6 @@ class CSVReader{
 
 std::vector<std::string> CSVReader::split(std::string input_, std::string separator) {
   std::vector<std::string> parsedString;
-
   // keep string position
   size_t j = 0;
   while(j != std::string::npos){
@@ -255,7 +257,7 @@ CSVSparseFile<T> CSVReader::parseSparseFile(const std::string& file_){
   // read file until end line by line
   while(getline(file, line)){
     // split CSV line in tokens
-    std::vector<std::string> parsedLine = split(line, ";");;
+    std::vector<std::string> parsedLine = split(line, ";");
 
     // fill data structure (start from j = 1 to skip first column containing row IDs)
     for(size_t j = 1; j < columnNames.size(); ++j){
@@ -266,12 +268,18 @@ CSVSparseFile<T> CSVReader::parseSparseFile(const std::string& file_){
 	// filteredString is now a comma separated list of indexes
 	std::vector<std::string> parsedFilteredString = split(filteredString, ",");
 	std::vector<T> data{};
-	for(std::string value : parsedFilteredString){
-	  std::istringstream ss(value);
-	  T dataPoint;
-	  ss >> dataPoint;
-	  // insert value
-	  data.push_back(dataPoint);
+	if(parsedFilteredString.empty()){
+	  data.push_back(std::numeric_limits<T>::quiet_NaN()); // if list is empty (token of kind c()) signal to skip this row by inserting NaN
+	}else{
+	  for(std::string value : parsedFilteredString){
+	    if(value != ""){ // skip possible empty substrings coming from filtering
+	      std::istringstream ss(value);
+	      T dataPoint;
+	      ss >> dataPoint;
+	      // insert value
+	      data.push_back(dataPoint);
+	    }
+	  }
 	}
 	// insert value
 	parsedFile[remove(columnNames[j], '\"')].push_back(data);

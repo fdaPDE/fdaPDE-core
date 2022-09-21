@@ -10,7 +10,9 @@ bool Query<N>::intersect(const rectangle<N> &rect) const {
     if(// partially overlapping sides
        (qs > rf && rs > qf) || (rs > qf && qs > rf) ||
        // queryRange_ contained into rect or viceversa 
-       (rf < qf && qs < rs) || (qf < rf && rs < rs)){
+       (rf < qf && qs < rs) || (qf < rf && rs < rs) ||
+       // degenerate case
+       (qs == qf && qs <= rs)){
 
       boolVector[dim] = true; // query intersect rectangle along this dimension
     }
