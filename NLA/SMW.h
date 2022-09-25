@@ -3,6 +3,7 @@
 
 #include "../utils/Symbols.h"
 #include <Eigen/SparseLU>
+#include <Eigen/LU>
 
 namespace fdaPDE {
 namespace core{
@@ -41,21 +42,19 @@ namespace NLA{
     // this is not possible, you can find the inverse of C and then call this .solve() method.
     // A 2Nx2N sparse matrix, U 2Nxq sparse matrix, invC qxq dense matrix, V qx2N sparse matrix, b 2Nx1 vector.
     // In a regression model q is the number of covariates. This method must be executed after call to .compute()
-    DVector<double> solve(const DMatrix<double>& U, const DMatrix<double>& invC, const DMatrix<double>& V, const DVector<double>& b){
+    DMatrix<double> solve(const DMatrix<double>& U, const DMatrix<double>& invC, const DMatrix<double>& V, const DMatrix<double>& b){
       // split the solution of the linear system (A + U*C^{-1}*V)x = b in the solution of 3 computationally simpler linear systems
 
       // compute y = A^{-1}b
-      DVector<double> y = sparseSolver_.solve(b);  
+      DMatrix<double> y = sparseSolver_.solve(b);
       // compute Y = A^{-1}U. Heavy step of the method. SMW is more and more efficient as q gets smaller and smaller
       DMatrix<double> Y = sparseSolver_.solve(U);
       // compute dense matrix G = C^{-1} + V*A^{-1}*U = C^{-1} + V*y
       DMatrix<double> G = invC + V*Y;
       denseSolver_.compute(G); // factorize G
-      DVector<double> t = denseSolver_.solve(V*y); // solve dense qxq linear system
-
+      DMatrix<double> t = denseSolver_.solve(V*y); // solve dense qxq linear system
       // compute v = A^{-1}*U*t = A^{-1}*U*(C^{-1} + V*A^{-1}*U)^{-1}*V*A^{-1}*b by solving linear system A*v = U*t
-      DVector<double> v = sparseSolver_.solve(U*t);
-
+      DMatrix<double> v = sparseSolver_.solve(U*t);
       // return system solution
       return y - v;
     }

@@ -3,6 +3,7 @@
 
 #include <list>
 #include <stack>
+#include <set>
 
 #include "../../../utils/Symbols.h"
 #include "../../../utils/DataStructures/Tree.h"
