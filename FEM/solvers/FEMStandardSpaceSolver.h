@@ -15,8 +15,13 @@ namespace FEM{
     // constructor
     FEMStandardSpaceSolver() = default;
 
-    // solves the PDE using the classical FEM approach: compute the discretization matrix R1_ relative to a bilinear form E using some finite element
-    // basis B and the forcing vector b, then solves the linear system R1_*u = b, where u is the searched PDE approximation
+    // solves the PDE using the classical FEM approach:
+    //    * compute the discretization matrix R1_ relative to a bilinear form E using:
+    //      - some finite element basis B
+    //      - the integrator I for numerical approximation of integrals
+    //    * compute the discretization of the forcing vector b
+    //    * solve the linear system R1_*u = b
+    // at the end u is the searched PDE approximation
     template <unsigned int M, unsigned int N, unsigned int R, typename E, typename S, typename B, typename I> 
     void solve(const PDE<M, N, R, E, S>& pde, const B& basis, const I& integrator);
   };
@@ -28,14 +33,14 @@ namespace FEM{
     
     // define eigen system solver, use sparse LU decomposition.
     Eigen::SparseLU<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int>> solver;
-    solver.compute(this->R1_);
+    solver.compute(*this->R1_);
     // stop if something was wrong...
     if(solver.info()!=Eigen::Success) {
       this->success = false;
       return;
     }
     // solve FEM linear system: R1_*solution_ = forcingVector_;
-    this->solution_ = solver.solve(this->forcingVector_);  
+    this->solution_ = std::make_shared<DMatrix<double>>( solver.solve(*this->forcingVector_) );
     return;
   }
 

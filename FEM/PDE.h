@@ -66,10 +66,10 @@ namespace FEM{
     const std::unordered_map<unsigned, DVector<double>>& boundaryData() const { return boundaryData_; };
 
     // solution informations produced by call to .solve()
-    const DMatrix<double>  solution() const { return solver_.solution(); };
-    const DMatrix<double>  force() const { return solver_.force(); }; // rhs of FEM linear system
-    const SpMatrix<double> R1() const { return solver_.R1(); };
-    const SpMatrix<double> R0() const { return solver_.R0(); };
+    std::shared_ptr<DMatrix<double>>  solution() const { return solver_.solution(); };
+    std::shared_ptr<DMatrix<double>>  force() const { return solver_.force(); }; // rhs of FEM linear system
+    std::shared_ptr<SpMatrix<double>> R1() const { return solver_.R1(); };
+    std::shared_ptr<SpMatrix<double>> R0() const { return solver_.R0(); };
 
     // computes matrices R1, R0 and forcing vector without solving the FEM linear system. Usefull for methods requiring just those quantites
     // without having the need to solve the pde

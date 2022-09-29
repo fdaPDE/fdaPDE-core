@@ -27,15 +27,16 @@ namespace FEM{
     this->init(pde, basis, integrator);
     // define eigen system solver, use QR decomposition.
     Eigen::SparseLU<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int>> solver;
-    unsigned int timeSteps = this->forcingVector_.cols(); // number of iterations for the time loop
-    
-    this->solution_.resize(pde.domain().nodes(), timeSteps-1);
-    this->solution_.col(0) = pde.initialCondition(); // impose initial condition
-    DVector<double> rhs = (this->R0_/deltaT)*pde.initialCondition() + this->forcingVector_.col(0);  
+    unsigned int timeSteps = this->forcingVector_->cols(); // number of iterations for the time loop
+
+    this->solution_ = std::make_shared<DMatrix<double>>();
+    this->solution_->resize(pde.domain().nodes(), timeSteps-1);
+    this->solution_->col(0) = pde.initialCondition(); // impose initial condition
+    DVector<double> rhs = (*(this->R0_)/deltaT)*pde.initialCondition() + this->forcingVector_->col(0);  
   
     // Observe that K is time invariant only for homogeneous boundary conditions. In general we need to recompute K at each time instant,
     // anyway we can avoid the recomputation of K at each iteration by just keeping overwriting it at the boundary indexes positions.
-    Eigen::SparseMatrix<double> K = this->R0_/deltaT + this->R1_; // build system matrix
+    Eigen::SparseMatrix<double> K = (*this->R0_)/deltaT + (*this->R1_); // build system matrix
 
     // prepare system matrix to handle dirichlet boundary conditions
     for(std::size_t j = 0; j < pde.domain().nodes(); ++j){
@@ -59,8 +60,8 @@ namespace FEM{
 	return;
       }
       DVector<double> u_i = solver.solve(rhs); // solve linear system
-      this->solution_.col(i) = u_i; // append time step solution to solution matrix
-      rhs = (this->R0_/deltaT)*u_i + this->forcingVector_.col(i+1); // update rhs for next iteration
+      this->solution_->col(i) = u_i; // append time step solution to solution matrix
+      rhs = ((*this->R0_)/deltaT)*u_i + this->forcingVector_->col(i+1); // update rhs for next iteration
     }
     return;
   }
