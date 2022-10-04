@@ -81,7 +81,10 @@ namespace MESH{
     // kk_[dim] = 1/(max[dim] - min[dim]) = 1/(meshRange[dim].second - meshRange[dim].first). Compute here once and cache results for efficiency
     std::array<double, N> minRange_{};
     std::array<double, N> kk_{}; // kk_[dim] = 1/(range[dim].second - range[dim].first)
-  
+
+    // elements informations are computed once and cached here for fast re-access
+    std::vector<std::shared_ptr<Element<M,N,R>>> cache_{};
+    void fill_cache();
   public:
     Mesh() = default;
     // construct from .csv files, strings are names of file where raw data is contained
@@ -92,8 +95,8 @@ namespace MESH{
     Mesh(const DMatrix<double>& points, const DMatrix<int>& edges, const DMatrix<int>& elements,
 	 const typename neighboring_structure<M, N>::type& neighbors, const DMatrix<int>& boundary);
     
-    // construct an element object given its ID (its row number in the triangles_ matrix) from raw (matrix-like) informations
-    std::unique_ptr<Element<M,N,R>> element(unsigned int ID) const;
+    // returns an element object given its ID (its row number in the triangles_ matrix) from raw (matrix-like) informations
+    std::shared_ptr<Element<M,N,R>> element(unsigned int ID) const;
     // return the coordinate of a node given its ID (its row number in the points_matrix)
     SVector<N> node(unsigned int ID) const;
 
@@ -112,7 +115,7 @@ namespace MESH{
 	return *this;
       }
       // dereference the iterator means to create Element object at current index
-      std::unique_ptr<Element<M,N,R>> operator*() {
+      std::shared_ptr<Element<M,N,R>> operator*() {
 	return meshContainer->element(index);
       }
       // two iterators are different when their indexes are different
@@ -121,7 +124,7 @@ namespace MESH{
       }
 
       // const version to enable const auto& syntax
-      std::unique_ptr<Element<M,N,R>> operator*() const { return meshContainer->element(index); }
+      std::shared_ptr<Element<M,N,R>> operator*() const { return meshContainer->element(index); }
     };
     // provide begin() and end() methods
     iterator begin() const { return iterator(this, 0); }
