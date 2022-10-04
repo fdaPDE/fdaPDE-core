@@ -16,23 +16,25 @@ namespace FEM{
     FEMStandardSpaceTimeSolver() = default;
 
     // solves the PDE using a FEM discretization in space and a finite difference discretization in time (forward-euler scheme)
-    template <unsigned int M, unsigned int N, unsigned int R, typename E, typename S, typename B, typename I> 
-    void solve(const PDE<M, N, R, E, S>& pde, const B& basis, const I& integrator, double deltaT);
+    template <unsigned int M, unsigned int N, unsigned int R, typename E, typename B, typename S, typename I> 
+    void solve(const PDE<M, N, R, E, B, S>& pde, const std::vector<std::shared_ptr<B>>& basis,
+	       const I& integrator, double deltaT);
   };
 
   // use forward-euler to discretize the time derivative. Under this approximation we get a discretization matrix for the PDE operator
   // equal to K = [M/deltaT + A] (forward Euler scheme)
-  template <unsigned int M, unsigned int N, unsigned int R, typename E, typename S, typename B, typename I> 
-  void FEMStandardSpaceTimeSolver::solve(const PDE<M, N, R, E, S>& pde, const B& basis, const I& integrator, double deltaT) {
+  template <unsigned int M, unsigned int N, unsigned int R, typename E, typename B, typename S, typename I> 
+  void FEMStandardSpaceTimeSolver::solve(const PDE<M, N, R, E, B, S>& pde, const std::vector<std::shared_ptr<B>>& basis,
+					 const I& integrator, double deltaT) {
     this->init(pde, basis, integrator);
     // define eigen system solver, use QR decomposition.
     Eigen::SparseLU<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int>> solver;
-    unsigned int timeSteps = this->forcingVector_->cols(); // number of iterations for the time loop
+    unsigned int timeSteps = this->force_->cols(); // number of iterations for the time loop
 
     this->solution_ = std::make_shared<DMatrix<double>>();
     this->solution_->resize(pde.domain().nodes(), timeSteps-1);
     this->solution_->col(0) = pde.initialCondition(); // impose initial condition
-    DVector<double> rhs = (*(this->R0_)/deltaT)*pde.initialCondition() + this->forcingVector_->col(0);  
+    DVector<double> rhs = (*(this->R0_)/deltaT)*pde.initialCondition() + this->force_->col(0);  
   
     // Observe that K is time invariant only for homogeneous boundary conditions. In general we need to recompute K at each time instant,
     // anyway we can avoid the recomputation of K at each iteration by just keeping overwriting it at the boundary indexes positions.
@@ -61,7 +63,7 @@ namespace FEM{
       }
       DVector<double> u_i = solver.solve(rhs); // solve linear system
       this->solution_->col(i) = u_i; // append time step solution to solution matrix
-      rhs = ((*this->R0_)/deltaT)*u_i + this->forcingVector_->col(i+1); // update rhs for next iteration
+      rhs = ((*this->R0_)/deltaT)*u_i + this->force_->col(i+1); // update rhs for next iteration
     }
     return;
   }

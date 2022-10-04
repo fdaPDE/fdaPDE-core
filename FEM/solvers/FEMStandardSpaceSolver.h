@@ -23,11 +23,11 @@ namespace FEM{
     //    * solve the linear system R1_*u = b
     // at the end u is the searched PDE approximation
     template <unsigned int M, unsigned int N, unsigned int R, typename E, typename S, typename B, typename I> 
-    void solve(const PDE<M, N, R, E, S>& pde, const B& basis, const I& integrator);
+    void solve(const PDE<M, N, R, E, B, S>& pde, const std::vector<std::shared_ptr<B>>& basis, const I& integrator);
   };
 
   template <unsigned int M, unsigned int N, unsigned int R, typename E, typename S, typename B, typename I> 
-  void FEMStandardSpaceSolver::solve(const PDE<M, N, R, E, S>& pde, const B& basis, const I& integrator){
+  void FEMStandardSpaceSolver::solve(const PDE<M, N, R, E, B, S>& pde, const std::vector<std::shared_ptr<B>>& basis, const I& integrator){
     this->init(pde, basis, integrator);  // init solver for this PDE
     this->imposeBoundaryConditions(pde); // impose boundary conditions on forcing vector and R1_ matrix
     
@@ -39,8 +39,8 @@ namespace FEM{
       this->success = false;
       return;
     }
-    // solve FEM linear system: R1_*solution_ = forcingVector_;
-    this->solution_ = std::make_shared<DMatrix<double>>( solver.solve(*this->forcingVector_) );
+    // solve FEM linear system: R1_*solution_ = force_;
+    this->solution_ = std::make_shared<DMatrix<double>>( solver.solve(*this->force_) );
     return;
   }
 

@@ -63,9 +63,10 @@ namespace FEM{
   private:
     // nodes of the lagrangian basis (std::array is constexpr evaluable, use std::array instead of SVector<N>)
     std::array<std::array<double, M>, ct_binomial_coefficient(M+R,R)> nodes_;
-    // a Lagrangian basis is just a collection of properly defined polynomials
-    std::array<MultivariatePolynomial<M,R>, ct_binomial_coefficient(M+R,R)> basis_;
-    // computes coefficients of polynomials compising the basis by solution of linear system
+    // for a basis defined over a mesh element, nodeIDs_[i] is the mesh node where the i-th element of the basis is 1
+    std::array<std::size_t, ct_binomial_coefficient(M+R,R)> nodeIDs_;
+    std::array<MultivariatePolynomial<M,R>, ct_binomial_coefficient(M+R,R)> basis_; // the actual basis
+    // computes coefficients of polynomials composing the basis by solution of linear system
     void computeCoefficients(const std::array<std::array<double, M>, ct_binomial_coefficient(M+R,R)>& nodes);
   
   public:
@@ -79,7 +80,7 @@ namespace FEM{
     };
     // a Lagrangian basis built over the referece N-dimensional unit simplex
     LagrangianBasis() : LagrangianBasis<M, N, R>(ReferenceNodes<M, R>::nodes) {};
-    // construct a Lagrangian basis over a mesh element e: N represents the embedded dimension of the mesh
+    // construct a Lagrangian basis over a mesh element e: N represents the embedding dimension of the mesh
     LagrangianBasis(const Element<M,N,R>& e);
   
     // subscript operator to directly access basis elements
@@ -88,7 +89,9 @@ namespace FEM{
     int size() const { return basis_.size(); }
     // allow range-for over basis elements
     const_iterator begin() const;
-    const_iterator end() const;    
+    const_iterator end() const;
+    // return mesh nodes where basis is defined
+    std::array<std::size_t, ct_binomial_coefficient(M+R,R)> nodes() const { return nodeIDs_; }
   };
   
   #include "LagrangianBasis.tpp"

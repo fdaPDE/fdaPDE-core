@@ -38,11 +38,12 @@ namespace FEM{
     constexpr static unsigned n_basis = ct_nnodes(M,R);
     const Mesh<M, N, R>& mesh_; // mesh
     const I& integrator_; // quadrature rule to approximate integrals
-    const B& referenceBasis_; // functional basis over reference N-dimensional unit simplex
-  
+    B referenceBasis_{}; // functional basis over reference N-dimensional unit simplex
+    const std::vector<std::shared_ptr<B>>& basis_; // basis system over the entire domain
+    
   public:
-    Assembler(const Mesh<M, N, R>& mesh, const B& referenceBasis, const I& integrator) :
-      mesh_(mesh), referenceBasis_(referenceBasis), integrator_(integrator) {};
+    Assembler(const Mesh<M, N, R>& mesh, const std::vector<std::shared_ptr<B>>& basis, const I& integrator) :
+      mesh_(mesh), basis_(basis), integrator_(integrator) {};
     // assemble discretization matrix
     template <typename E>
     Eigen::SparseMatrix<double> assemble(const E& bilinearForm);

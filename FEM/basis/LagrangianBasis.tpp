@@ -14,10 +14,12 @@ LagrangianBasis<M,N,R>::LagrangianBasis(const Element<M,N,R>& e){
 	// store projected coordinates
 	elementNodes[i][j] = projectedPoint[j];
       }
+      nodeIDs_[i] = e.nodeIDs()[i]; // store ID of node
     }
   }else{
     // otherwise just keep coordinates as they are.
     for(std::size_t i = 0; i < ct_nnodes(M, R); ++i){
+      nodeIDs_[i] = e.nodeIDs()[i]; // store ID of node
       for(std::size_t j = 0; j < M; ++j){
 	elementNodes[i][j] = e.coords()[i][j];
       }

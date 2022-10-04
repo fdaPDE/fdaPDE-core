@@ -54,13 +54,11 @@ Eigen::Matrix<double, Eigen::Dynamic, 1> Assembler<M, N, R, B, I>::forcingTerm(c
   
   // build forcing vector
   for(const auto& e : mesh_){
-    // build functional basis over the current element e
-    B basis(*e);
     // integrate on each node
     std::array<std::size_t, ct_nnodes(M,R)> nodes = e->nodeIDs();
     for(size_t i = 0; i < n_basis; ++i){
       if(!mesh_.isOnBoundary(nodes[i])){ // skip computation if node is a boundary node
-	auto phi_i = basis[i];
+	auto phi_i = (*basis_[e->ID()])[i];
 	// f[e->ID()] is the value of the discretized forcing field (given as datum) over the current element
 	auto functional = f[e->ID()]*phi_i; // functional to integrate
 	
