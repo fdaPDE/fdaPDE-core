@@ -27,20 +27,20 @@ namespace MESH{
   };
 
   // Alternating Digital Tree implementation for tree-based search of elements over an unstructured mesh
-  template <unsigned int M, unsigned int N>
+  template <unsigned int M, unsigned int N, unsigned int R>
   class ADT{
   private:
     Tree<ADTnode<2*N>> tree;
-    const Mesh<M,N>& mesh_;
+    const Mesh<M,N,R>& mesh_;
     // build an Alternating Digital Tree given a set of 2N-dimensional points.
     void init(const std::vector<std::pair<SVector<2*N>, unsigned int>>& data);
     // performs a geometric search returning all points which lie in a given query
     std::list<unsigned int> geometricSearch(const Query<2*N>& query) const;
   public:
-    ADT(const Mesh<M,N>& mesh);  
+    ADT(const Mesh<M,N,R>& mesh);  
     // applies the ADT geometric search to return the mesh element containing a given point
     template <typename... Args>
-    std::unique_ptr<Element<M, N>> search(const SVector<N>& point, Args&... args) const;
+    std::shared_ptr<Element<M,N,R>> search(const SVector<N>& point, Args&... args) const;
 
     // getter
     Tree<ADTnode<2*N>> getTree() const { return tree; }

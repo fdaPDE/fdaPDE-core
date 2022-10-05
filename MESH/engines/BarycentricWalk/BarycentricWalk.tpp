@@ -1,18 +1,13 @@
-template <unsigned int M, unsigned int N>
-BarycentricWalk<M,N>::BarycentricWalk(const Mesh<M,N>& mesh) : mesh_(mesh) {
-  seed = time(NULL);
-  rng  = std::default_random_engine(seed);
-  
-  // define uniform distribution over the ID space
-  uniform_int = std::uniform_int_distribution<uint32_t>(0, mesh_.elements()-1);
-}
-
 // applies a barycentric walk search
-template <unsigned int M, unsigned int N>
+template <unsigned int M, unsigned int N, unsigned int R>
 template <typename... Args>
-std::unique_ptr<Element<M,N>> BarycentricWalk<M,N>::search(const SVector<N>& point, Args&... args){
+std::shared_ptr<Element<M,N,R>> BarycentricWalk<M,N,R>::search(const SVector<N>& point, Args&... args) const {
+  // define uniform distribution over the ID space
+  std::random_device rng{};
+  std::uniform_int_distribution<uint32_t> uniform_int = std::uniform_int_distribution<uint32_t>(0, mesh_.elements()-1);;
+  
   // start from an element at random
-  std::unique_ptr<Element<M,N>> element = mesh_.element(uniform_int(rng)); 
+  std::shared_ptr<Element<M,N,R>> element = mesh_.element(uniform_int(rng)); 
 
   if(element->contains(point)){
     (args(element, point), ...); // parameter pack expansion to call functor on the pair (element, point).

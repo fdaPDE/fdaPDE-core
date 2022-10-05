@@ -9,20 +9,15 @@ namespace core{
 namespace MESH{
 
   // implementation of a barycentric walk strategy for mesh elements. Does not work for manifold meshes.
-  template <unsigned int M, unsigned int N>
+  template <unsigned int M, unsigned int N, unsigned int R>
   class BarycentricWalk{
   private:
-    const Mesh<M,N>& mesh_;
-    // a random number generator is used as part of the initialization procedure of the walking algorithm
-    uint32_t seed;
-    std::default_random_engine rng;
-    std::uniform_int_distribution<uint32_t> uniform_int;
- 
+    const Mesh<M,N,R>& mesh_; 
   public:
-    BarycentricWalk(const Mesh<M,N>& mesh);
+    BarycentricWalk(const Mesh<M,N,R>& mesh) : mesh_(mesh) {};
     // applies a barycentric walk strategy to search for the element containing a given point
     template <typename... Args>
-    std::unique_ptr<Element<M, N>> search(const SVector<N>& point, Args&... args);
+    std::shared_ptr<Element<M,N,R>> search(const SVector<N>& point, Args&... args) const;
   };
 
 #include "BarycentricWalk.tpp"
