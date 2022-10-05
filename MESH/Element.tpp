@@ -85,10 +85,13 @@ template <bool is_manifold>
 typename std::enable_if<!is_manifold, bool>::type
 Element<M,N,R>::contains(const SVector<N> &x) const {
   // you can prove that a point is inside the element if all its barycentric coordinates are positive
+  // if the point is on the boundary of the element it might happen that some barycentric coordinate is negative by some
+  // really small value. This is the reason why we don't check for exactly zero positive entries but allow for a small tolerance
   
   // get barycentric coordinates of input point
   SVector<N+1> baryCoord = toBarycentricCoords(x);
-  return (baryCoord.array() >= 0).all(); // use Eigen visitor to check for positiveness of elements
+  // use Eigen visitor to check for positiveness of elements
+  return (baryCoord.array() >= -10*std::numeric_limits<double>::epsilon()).all();
 }
 
 template <unsigned int M, unsigned int N, unsigned int R>
