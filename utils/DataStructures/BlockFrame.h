@@ -1,12 +1,14 @@
 #ifndef __BLOCK_FRAME_H__
 #define __BLOCK_FRAME_H__
 
-#include "../core/utils/Symbols.h"
+#include "../Symbols.h"
 #include <cstddef>
 #include <tuple>
 #include <type_traits>
 #include <unordered_map>
 #include <string>
+#include <algorithm>
+#include <stdexcept>
 
 // forward declaration: a view to a portion of a BlockFrame
 enum ViewType { Row, Range, Sparse };
@@ -43,7 +45,7 @@ public:
   static constexpr int index = find_idx(std::index_sequence_for<Ts...>{});
 };
 
-// says if a type is contained in a tuple by checking if the index_of the type in the tuple is not -1
+// trait to detect if a type is contained in a tuple by checking if the index_of the type in the tuple is not -1
 template <typename T, typename tuple> struct has_type;
 template <typename T, typename... Ts> struct has_type<T, std::tuple<Ts...>> {
   static constexpr bool value = index_of<T, std::tuple<Ts...>>::index != -1;
@@ -52,7 +54,7 @@ template <typename T, typename... Ts> struct has_type<T, std::tuple<Ts...>> {
 // avoid to compile if the user asks for the insertion of a datatype for which the BlockFrame was not instantiated
 #define BLOCK_FRAME_CHECK_TYPE						\
   static_assert(has_type<T, types_>::value,				\
-		"you asked for a type not handled by this BlockFrame"); \
+		"you asked for a type not handled by this BlockFrame");
 
 // a data structure for handling numerical dataframes. Need to supply beforeahead all intended types to process
 template <typename... Ts>
@@ -61,24 +63,38 @@ class BlockFrame{
 private:
   // BlockFrame main storage structure
   std::tuple<std::unordered_map<std::string, DMatrix<Ts>> ...> data_{};
-
+  
   // metadata
-  typedef std::tuple<Ts...> types_;     // list of types
-  std::vector<std::string> columns_ {}; // column names  
+  typedef std::tuple<Ts...> types_;    // list of types
+  std::vector<std::string> columns_{}; // column names
+  std::size_t rows_ = 0;
 public:
+  
   // constructor
-  BlockFrame() {};
+  BlockFrame() = default;
+  
   // getter to raw data
   const std::tuple<std::unordered_map<std::string, DMatrix<Ts>> ...>& data() const { return data_; }
+  std::size_t rows() const { return rows_; }
+  
+  // tests if BlockFrame contains block named "key"
+  bool hasBlock(const std::string& key) const {
+    return std::find(columns_.cbegin(), columns_.cend(), key) != columns_.cend();
+  }
   
   // insert new block
   template <typename T>
   void insert(const std::string& key, const DMatrix<T>& data){
     BLOCK_FRAME_CHECK_TYPE;
+    // check number of rows to insert equals BlockFrame size
+    if(rows_ != 0 && data.rows() != rows_)
+      throw std::length_error("data to insert has a different number of rows");
+    
     // store data
     std::get<index_of<T, types_>::index>(data_)[key] = data;
     // update metadata
     columns_.push_back(key);
+    if(rows_ == 0) rows_ = data.rows();
     return;
   }
 
@@ -88,6 +104,8 @@ public:
   template <typename T>
   const DMatrix<T>& get(const std::string& key) const {
     BLOCK_FRAME_CHECK_TYPE;
+    // throw expection if key not in BlockFrame
+    if(!hasBlock(key)) throw std::out_of_range("key not found");
     return std::get<index_of<T, types_>::index>(data_).at(key);
   }  
   // return a single row of the dataframe
@@ -113,6 +131,18 @@ private:
   typedef std::tuple<Ts...> types_; // list of types
   
   std::vector<std::size_t> idx_;
+
+  // extract all blocks of type T from this view and store it in BlockFrame frame
+  template <typename T>
+  void extract_(BlockFrame<Ts...>& frame) const{
+    // cycle on all (key, blocks) pair for this type T
+    for(const auto& v : std::get<index_of<T, types_>::index>(frame_.data())){
+      DMatrix<T> block = get<T>(v.first); // extract block from view
+      frame.insert(v.first, block);       // move block to frame
+    }
+    return;
+  }
+  
 public:
   // constructor for row access
   BlockView(const BlockFrame<Ts...>& frame, std::size_t row)
@@ -128,6 +158,8 @@ public:
   template <typename T>
   DMatrix<T> get(const std::string& key) const {
     BLOCK_FRAME_CHECK_TYPE;
+    if(!frame_.hasBlock(key)) throw std::out_of_range("key not found");
+
     if constexpr(S == ViewType::Row)
       // return single row
       return std::get<index_of<T, types_>::index>(frame_.data()).at(key).row(idx_[0]);
@@ -180,6 +212,18 @@ public:
     }(), ...);
     
     return result;
+  }
+
+  // convert this BlockView into an independent BlockFrame (requires copy data into a new BlockFrame)
+  BlockFrame<Ts...> extract() const {
+    BlockFrame<Ts...> result;
+
+    // cycle on all types and extract all blocks type by type from this view to the blockframe
+    std::apply([&](Ts... args){
+      ((extract_<Ts>(result)), ...);
+    }, types_());
+    
+    return result; // let NRVO
   }
   
 };

@@ -36,7 +36,7 @@ namespace FEM{
   };
   
   // a set of utilities to evaluate a PDE
-  template <unsigned int M, unsigned int N, unsigned int R, typename SearchEngine = ADT<M,N>>
+  template <unsigned int M, unsigned int N, unsigned int R, typename SearchEngine = ADT<M,N,R>>
   class Evaluator{
   public:
     // constructor
