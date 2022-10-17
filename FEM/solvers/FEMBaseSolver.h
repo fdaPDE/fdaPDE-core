@@ -36,13 +36,13 @@ namespace FEM{
     // M, N and E are parameters releated to the PDE, B and I indicates respectively the functional basis and the integrator
     // to use during the numerical resolution of the problem.
     template <unsigned int M, unsigned int N, unsigned int R, typename E, typename B, typename S, typename I> 
-    void init(const PDE<M, N, R, E, B, S>& pde, const std::vector<std::shared_ptr<B>>& basis, const I& integrator);
+    void init(const PDE<M, N, R, E, B, S>& pde, const I& integrator);
   };
 
   // fill internal data structures required by FEM to solve the problem.
   template <unsigned int M, unsigned int N, unsigned int R, typename E, typename B, typename S, typename I>
-  void FEMBaseSolver::init(const PDE<M, N, R, E, B, S>& pde, const std::vector<std::shared_ptr<B>>& basis, const I& integrator) {
-    Assembler<M, N, R, B, I> assembler(pde.domain(), basis, integrator); // create assembler object
+  void FEMBaseSolver::init(const PDE<M, N, R, E, B, S>& pde, const I& integrator) {
+    Assembler<M, N, R, B, I> assembler(pde.domain(), pde.basis(), integrator); // create assembler object
     // fill discretization matrix for current operator
     R1_ = std::make_shared<SpMatrix<double>>( assembler.assemble(pde.bilinearForm()) );
     R1_->makeCompressed();

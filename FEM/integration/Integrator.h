@@ -12,6 +12,8 @@ using fdaPDE::core::VectorField;
 #include "IntegratorTables.h"
 using fdaPDE::core::FEM::IntegratorTable;
 using fdaPDE::core::FEM::standard_quadrature_rule;
+#include "../basis/LagrangianBasis.h"
+using fdaPDE::core::FEM::LagrangianBasis;
 
 namespace fdaPDE{
 namespace core{
@@ -34,13 +36,18 @@ namespace FEM{
     Integrator() : integrationTable_(IntegratorTable<M, K>()) {};
     // integrate a callable F over a mesh element e
     template <unsigned int N, unsigned int R, typename F>
-    double integrate(const Element<M, N, R>& e, F& f) const;
+    double integrate(const Element<M, N, R>& e, const F& f) const;
     // integrate a callable F over the entire mesh m
     template <unsigned int N, unsigned int R, typename F>
     double integrate(const Mesh<M, N, R>& m, const F& f) const;
     // integrate a BilinearFormExpr to produce the (i,j)-th element of its discretization
     template <unsigned int N, unsigned int R, typename B, typename F>
     double integrate(const B& basis, const Element<M, N, R>& e, int i , int j, const F& bilinearForm) const;
+    // computes \int_e [f * \phi] where \phi is a LagrangianBasis object defined over the *reference element*. Use this
+    // method to compute *this* specific form of integral (very common in FEM approximations) because it doesn't require
+    // an explicit construction of the basis over the element e.
+    template <unsigned int N, unsigned int R, typename F>
+    double integrate(const Element<M, N, R>& e, const F& f, const typename LagrangianBasis<M, N, R>::element_type& phi) const;
   };
 
 #include "Integrator.tpp"

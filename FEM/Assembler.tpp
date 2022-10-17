@@ -1,14 +1,14 @@
-// stiff matrix for laplacian operator
+// assembly for the discretization matrix of a general bilinear form L
 template <unsigned int M, unsigned int N, unsigned int R, typename B, typename I>
 template <typename E>
 Eigen::SparseMatrix<double> Assembler<M, N, R, B, I>::assemble(const E& bilinearForm) {
 
   std::vector<Eigen::Triplet<double>> tripletList;  // store triplets (node_i, node_j, integral_value)
-  Eigen::SparseMatrix<double> stiffnessMatrix;      // stiffness matrix is sparse due to the local support of basis functions
+  Eigen::SparseMatrix<double> discretizationMatrix; // discretization matrix is sparse due to the local support of basis functions
 
   // properly preallocate memory to avoid reallocations
   tripletList.reserve(n_basis*n_basis*mesh_.elements());
-  stiffnessMatrix.resize(mesh_.nodes(), mesh_.nodes());
+  discretizationMatrix.resize(mesh_.nodes(), mesh_.nodes());
 
   // cycle over all mesh elements
   for(const auto& e : mesh_){
@@ -34,15 +34,15 @@ Eigen::SparseMatrix<double> Assembler<M, N, R, B, I>::assemble(const E& bilinear
       }
     }
   }
-  // stiff matrix assembled
-  stiffnessMatrix.setFromTriplets(tripletList.begin(), tripletList.end());
-  stiffnessMatrix.prune(std::numeric_limits<double>::epsilon() * 10); // remove almost zero entries
+  // matrix assembled
+  discretizationMatrix.setFromTriplets(tripletList.begin(), tripletList.end());
+  discretizationMatrix.makeCompressed();
   
   // return just half of the discretization matrix if the form is symmetric (lower triangular part)
   if constexpr(is_symmetric<decltype(bilinearForm)>::value)
-    return stiffnessMatrix.selfadjointView<Eigen::Lower>();
+    return discretizationMatrix.selfadjointView<Eigen::Lower>();
   else
-    return stiffnessMatrix;
+    return discretizationMatrix;
 };
 
 template <unsigned int M, unsigned int N, unsigned int R, typename B, typename I>
@@ -58,14 +58,10 @@ Eigen::Matrix<double, Eigen::Dynamic, 1> Assembler<M, N, R, B, I>::forcingTerm(c
     std::array<std::size_t, ct_nnodes(M,R)> nodes = e->nodeIDs();
     for(size_t i = 0; i < n_basis; ++i){
       if(!mesh_.isOnBoundary(nodes[i])){ // skip computation if node is a boundary node
-	auto phi_i = (*basis_[e->ID()])[i];
-	// f[e->ID()] is the value of the discretized forcing field (given as datum) over the current element
-	auto functional = f[e->ID()]*phi_i; // functional to integrate
-	
-	// perform integration and store result exploiting additiviy of the integral
-	result[e->nodeIDs()[i]] += integrator_.integrate(*e, functional);
+	// perform integration on reference element and store result exploiting additiviy of the integral
+	result[e->nodeIDs()[i]] += integrator_.integrate(*e, f, referenceBasis_[i]); // \int_e [f*\psi]
       }else{
-	result[e->nodeIDs()[i]] += 0;
+	result[e->nodeIDs()[i]] += 0;	// implicitly force homogeneous boundary conditions
       }
     }
   }

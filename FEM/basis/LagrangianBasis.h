@@ -72,6 +72,7 @@ namespace FEM{
   public:
     // expose basis order
     static constexpr unsigned int order = R;
+    typedef MultivariatePolynomial<M,R> element_type;
     using const_iterator = typename std::array<MultivariatePolynomial<M,R>, ct_binomial_coefficient(M+R,R)>::const_iterator;
     
     // a Lagrangian basis built over a given set of nodes

@@ -3,14 +3,9 @@
 
 #include "../utils/Symbols.h"
 #include "../MESH/Mesh.h"
-#include "basis/LagrangianBasis.h"
 using fdaPDE::core::MESH::Mesh;
-#include "operators/BilinearFormTraits.h"
-using fdaPDE::core::FEM::is_parabolic;
-#include "Assembler.h"
-using fdaPDE::core::FEM::Assembler;
-#include "operators/Identity.h"
-using fdaPDE::core::FEM::Identity;
+#include "basis/LagrangianBasis.h"
+using fdaPDE::core::FEM::LagrangianBasis;
 #include "solvers/FEMStandardSpaceSolver.h"
 using fdaPDE::core::FEM::FEMStandardSpaceSolver;
 #include "solvers/FEMStandardSpaceTimeSolver.h"
@@ -28,6 +23,10 @@ namespace FEM{
     using type = typename std::conditional<is_parabolic<E>::value,
 					   FEMStandardSpaceTimeSolver, FEMStandardSpaceSolver>::type;
   };
+
+  // data structure used as cache for basis elements built over the PDE's domain.
+  // the i-th element of this cache returns the basis built over the i-th element of the mesh
+  template <unsigned int N> using BASIS_TABLE = std::vector<std::vector<ScalarField<static_cast<int>(N)>>>;
   
   // top level class to describe a partial differential equation.
   // N and M are the problem dimensions: these informations are strictly releated to the mesh used for domain discretization.
@@ -46,17 +45,20 @@ namespace FEM{
     DVector<double> initialCondition_{}; // initial condition, used in space-time problems only
     
     // memorize boundary data in a sparse structure, by storing the index of the boundary node and the relative boundary value.
-    // a vector is used as mapped type to handle both space and space-time problems
+    // a vector is used as value type to handle both space and space-time problems
     std::unordered_map<unsigned, DVector<double>> boundaryData_{};
 
-    // cache basis built over domain_ and expose publicly for reuse.
-    // The i-th element of this vector returns a pointer to the basis B built over the i-th element of mesh
-    std::vector<std::shared_ptr<B>> basis_{};
+    B referenceBasis_{}; // basis defined over the reference unit simplex
+    BASIS_TABLE<N> basis_{}; // basis built over the whole domain_
+    void buildBasis_();
     
     Solver solver_{}; // the solver used to solve the PDE
   public:
-    // constructor, a DMatrix is accepted as forcingData to handle also space-time problems
+    // minimal constructor, use defaulted template parameters, a DMatrix is accepted as forcingData to handle also space-time problems
+    PDE(const Mesh<M,N,R>& domain, E bilinearForm, const DMatrix<double>& forcingData);
+    // derive template parameters from constructor arguments
     PDE(const Mesh<M,N,R>& domain, E bilinearForm, const B& basis, const DMatrix<double>& forcingData);
+    
     // setters for boundary and initial conditions
     void setDirichletBC(const DMatrix<double>& data);
     //void setNeumannBC();
@@ -74,7 +76,7 @@ namespace FEM{
     std::shared_ptr<DMatrix<double>>  force() const { return solver_.force(); }; // rhs of FEM linear system
     std::shared_ptr<SpMatrix<double>> R1() const { return solver_.R1(); };
     std::shared_ptr<SpMatrix<double>> R0() const { return solver_.R0(); };
-    const std::vector<std::shared_ptr<B>>& basis() const { return basis_; }
+    const BASIS_TABLE<N>& basis() const { return basis_; }
     
     // computes matrices R1, R0 and forcing vector without solving the FEM linear system. Usefull for methods requiring just those quantites
     // without having the need to solve the pde

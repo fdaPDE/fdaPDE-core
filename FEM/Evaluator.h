@@ -79,7 +79,7 @@ namespace FEM{
     // start evaluation
     for(std::size_t i = 0; i < totalSize; ++i){
       // search element containing point
-      std::unique_ptr<Element<M,N,R>> e = engine.search(p);
+      std::shared_ptr<Element<M,N,R>> e = engine.search(p);
       double v = std::numeric_limits<double>::quiet_NaN();
       if(e != nullptr)
 	v = f(p);
@@ -123,7 +123,7 @@ namespace FEM{
     // start evaluation
     for(std::size_t i = 0; i < totalSize; ++i){
       // search element containing point
-      std::unique_ptr<Element<M,N,R>> e = engine.search(p);
+      std::shared_ptr<Element<M,N,R>> e = engine.search(p);
       // compute value of field at point
       double v = std::numeric_limits<double>::quiet_NaN();
       if(e != nullptr){
