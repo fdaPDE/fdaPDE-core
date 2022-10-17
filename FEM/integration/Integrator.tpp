@@ -28,9 +28,9 @@ double Integrator<M, K>::integrate(const Element<M, N, R>& e, const F& f, const 
   // execute quadrature rule.
   for(size_t iq = 0; iq < integrationTable_.num_nodes; ++iq){
     SVector<M> p = SVector<M>(integrationTable_.nodes[iq].data());
-    if constexpr(std::is_base_of<F, FieldExpr<F>>::value){
+    if constexpr(std::is_base_of<FieldExpr<F>, F>::value){
       // functor f is evaluable at any point. This is the case if the integrand f is given by
-      // its analytical expression, i.e. can be invoked using an SVector<N> as argument
+      // its analytical expression. Observe that all and only field expressions are accepted.
       SVector<N> Jp = e.barycentricMatrix()*p + e.coords()[0]; // map quadrature point on physical element e
       value += (f(Jp)*Phi(p))*integrationTable_.weights[iq];
     }else{
