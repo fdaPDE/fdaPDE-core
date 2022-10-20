@@ -20,18 +20,42 @@ namespace FEM{
   template <unsigned int N, unsigned int K> struct IntegratorTable;
 
   // trait for selecting a standard quadrature rule in case K is not defined by the user. Use this in case you do not
-  // care much about the numerical precision of the integral approximations. In any case, the standard choice is a good
-  // compromise between efficiency and precision, so should work well for any intended case (under linear finite elements).
-  template <unsigned int N> struct standard_quadrature_rule{
-    static constexpr unsigned int quadrature(const unsigned int dim) {
+  // care much about the numerical precision of the integral approximations. In any case, the standard choice is an exact
+  // formula for order 1 and order 2 elements, for higher orders fallbacks to a good compromise between precision and computational effort
+  template <unsigned int N, unsigned int R> struct standard_quadrature_rule{
+    static constexpr unsigned int quadrature(const unsigned int dim, const unsigned int order) {
       switch(dim){
-      case 1:  return 2; // 2 point rule
-      case 2:  return 3; // 3 point rule
-      case 3:  return 4; // 4 point rule
-      default: return 1; // default to mid-point quadrature
+      case 1: // 1D elements
+	switch(order){
+	case 1: // linear elements
+	  return 2; // 2 point rule
+	case 2: // quadratic elements
+	  return 3; // 3 point rule
+	default:
+	  return 3;
+	}
+      case 2: // 2D elements
+	switch(order){
+	case 1: // linear elements
+	  return 3; // 3 point rule
+	case 2: // quadratic elements
+	  return 6; // 6 point rule
+	default:
+	  return 12;
+	}
+      case 3: // 3D elements
+	switch(order){
+	case 1: // linear elements
+	  return 4; // 4 point rule
+	case 2: // quadratic elements
+	  return 5; // 5 point rule
+	default:
+	  return 5;
+	}
       }
+      return 0; // error
     }
-    static constexpr unsigned int K = quadrature(N);
+    static constexpr unsigned int K = quadrature(N,R);
   };
 
   // 1D linear elements (gaussian integration)
@@ -70,7 +94,7 @@ namespace FEM{
        0.277777777777778}
     };
   };
-
+  
   // 2D triangular elements
   // reference element: simplex of vertices (0,0), (1,0), (0,1)
 

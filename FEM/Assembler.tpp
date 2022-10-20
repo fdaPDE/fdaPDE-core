@@ -46,7 +46,8 @@ Eigen::SparseMatrix<double> Assembler<M, N, R, B, I>::assemble(const E& bilinear
 };
 
 template <unsigned int M, unsigned int N, unsigned int R, typename B, typename I>
-Eigen::Matrix<double, Eigen::Dynamic, 1> Assembler<M, N, R, B, I>::forcingTerm(const Eigen::Matrix<double, Eigen::Dynamic, 1>& f) {
+template <typename F>
+Eigen::Matrix<double, Eigen::Dynamic, 1> Assembler<M, N, R, B, I>::forcingTerm(const F& f) {
 
   Eigen::Matrix<double, Eigen::Dynamic, 1> result{};
   result.resize(mesh_.nodes(), 1); // there are as many basis functions as number of nodes in the mesh
@@ -57,12 +58,8 @@ Eigen::Matrix<double, Eigen::Dynamic, 1> Assembler<M, N, R, B, I>::forcingTerm(c
     // integrate on each node
     std::array<std::size_t, ct_nnodes(M,R)> nodes = e->nodeIDs();
     for(size_t i = 0; i < n_basis; ++i){
-      if(!mesh_.isOnBoundary(nodes[i])){ // skip computation if node is a boundary node
-	// perform integration on reference element and store result exploiting additiviy of the integral
-	result[e->nodeIDs()[i]] += integrator_.integrate(*e, f, referenceBasis_[i]); // \int_e [f*\psi]
-      }else{
-	result[e->nodeIDs()[i]] += 0;	// implicitly force homogeneous boundary conditions
-      }
+      // perform integration on reference element and store result exploiting additiviy of the integral
+      result[e->nodeIDs()[i]] += integrator_.integrate(*e, f, referenceBasis_[i]); // \int_e [f*\psi]
     }
   }
   return result;

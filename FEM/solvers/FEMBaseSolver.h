@@ -8,7 +8,7 @@ namespace core{
 namespace FEM{
 
   // forward declaration
-  template <unsigned int M, unsigned int N, unsigned int R, typename E, typename B, typename S> class PDE;
+  template <unsigned int M, unsigned int N, unsigned int R, typename E, typename F, typename B, typename I, typename S> class PDE;
   
   // base class for the definition of a general solver based on the Finite Element Method
   class FEMBaseSolver{
@@ -19,8 +19,8 @@ namespace FEM{
     std::shared_ptr<SpMatrix<double>> R0_; // mass matrix, needed by components in higher levels of the architecture
 
     // impose boundary conditions
-    template <unsigned int M, unsigned int N, unsigned int R, typename E, typename B, typename S> 
-    void imposeBoundaryConditions(const PDE<M, N, R, E, B, S>& pde);    
+    template <unsigned int M, unsigned int N, unsigned int R, typename E, typename F, typename B, typename I, typename S>
+    void imposeBoundaryConditions(const PDE<M,N,R,E,F,B,I,S>& pde);    
   public:
     // flag used to notify is something was wrong during computation
     bool success = true;
@@ -35,14 +35,14 @@ namespace FEM{
     // initializes internal FEM solver status
     // M, N and E are parameters releated to the PDE, B and I indicates respectively the functional basis and the integrator
     // to use during the numerical resolution of the problem.
-    template <unsigned int M, unsigned int N, unsigned int R, typename E, typename B, typename S, typename I> 
-    void init(const PDE<M, N, R, E, B, S>& pde, const I& integrator);
+    template <unsigned int M, unsigned int N, unsigned int R, typename E, typename F, typename B, typename I, typename S>
+    void init(const PDE<M,N,R,E,F,B,I,S>& pde);
   };
 
   // fill internal data structures required by FEM to solve the problem.
-  template <unsigned int M, unsigned int N, unsigned int R, typename E, typename B, typename S, typename I>
-  void FEMBaseSolver::init(const PDE<M, N, R, E, B, S>& pde, const I& integrator) {
-    Assembler<M, N, R, B, I> assembler(pde.domain(), pde.basis(), integrator); // create assembler object
+  template <unsigned int M, unsigned int N, unsigned int R, typename E, typename F, typename B, typename I, typename S>
+  void FEMBaseSolver::init(const PDE<M,N,R,E,F,B,I,S>& pde) {
+    Assembler<M, N, R, B, I> assembler(pde.domain(), pde.basis(), pde.integrator()); // create assembler object
     // fill discretization matrix for current operator
     R1_ = std::make_shared<SpMatrix<double>>( assembler.assemble(pde.bilinearForm()) );
     R1_->makeCompressed();
@@ -59,8 +59,8 @@ namespace FEM{
     return;
   }
 
-  template <unsigned int M, unsigned int N, unsigned int R, typename E, typename B, typename S> 
-  void FEMBaseSolver::imposeBoundaryConditions(const PDE<M, N, R, E, B, S>& pde){
+  template <unsigned int M, unsigned int N, unsigned int R, typename E, typename F, typename B, typename I, typename S>
+  void FEMBaseSolver::imposeBoundaryConditions(const PDE<M,N,R,E,F,B,I,S>& pde){
     // impose homogeneous dirichlet boundary condition by default to remove not necessary degrees of freedom from FEM linear system R1_
     for(size_t i = 0; i < R1_->rows(); ++i){
       if(pde.domain().isOnBoundary(i)){ 
@@ -69,7 +69,7 @@ namespace FEM{
 
 	// boundaryDatum is a pair (nodeID, boundary value)
 	double boundaryDatum = pde.boundaryData().empty() ? 0 : pde.boundaryData().at(i)[0];
-	force_->coeffRef(i,0) = boundaryDatum; // impose boundary value
+	force_->coeffRef(i,0) = boundaryDatum; // impose boundary value (fallback to homogenenous dirichlet)
       }
     }
     return;

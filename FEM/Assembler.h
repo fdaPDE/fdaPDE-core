@@ -31,7 +31,6 @@ namespace fdaPDE{
 namespace core{
 namespace FEM{
 
-  // to be moved away from here!
   template <unsigned int N> using BASIS_TABLE = std::vector<std::vector<ScalarField<static_cast<int>(N)>>>;
   
   // FEM assembler. M local dimension, N embedding dimension, B basis function, I integrator
@@ -51,7 +50,8 @@ namespace FEM{
     template <typename E>
     Eigen::SparseMatrix<double> assemble(const E& bilinearForm);
     // assemble forcing vector
-    Eigen::Matrix<double, Eigen::Dynamic, 1> forcingTerm(const Eigen::Matrix<double, Eigen::Dynamic, 1>& f);
+    template <typename F>
+    Eigen::Matrix<double, Eigen::Dynamic, 1> forcingTerm(const F& f);
   };
 
 #include "Assembler.tpp"

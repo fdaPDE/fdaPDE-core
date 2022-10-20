@@ -22,13 +22,13 @@ namespace FEM{
     //    * compute the discretization of the forcing vector b
     //    * solve the linear system R1_*u = b
     // at the end u is the searched PDE approximation
-    template <unsigned int M, unsigned int N, unsigned int R, typename E, typename S, typename B, typename I> 
-    void solve(const PDE<M, N, R, E, B, S>& pde, const I& integrator);
+    template <unsigned int M, unsigned int N, unsigned int R, typename E, typename F, typename B, typename I, typename S>
+    void solve(const PDE<M,N,R,E,F,B,I,S>& pde);
   };
 
-  template <unsigned int M, unsigned int N, unsigned int R, typename E, typename S, typename B, typename I> 
-  void FEMStandardSpaceSolver::solve(const PDE<M, N, R, E, B, S>& pde, const I& integrator){
-    this->init(pde, integrator);  // init solver for this PDE
+  template <unsigned int M, unsigned int N, unsigned int R, typename E, typename F, typename B, typename I, typename S>
+  void FEMStandardSpaceSolver::solve(const PDE<M,N,R,E,F,B,I,S>& pde){
+    this->init(pde); // init solver for this PDE
     this->imposeBoundaryConditions(pde); // impose boundary conditions on forcing vector and R1_ matrix
     
     // define eigen system solver, use sparse LU decomposition.

@@ -1,6 +1,6 @@
 // basis table cache initialization
-template <unsigned int M, unsigned int N, unsigned int R, typename E, typename B, typename Solver>
-void PDE<M, N, R, E, B, Solver>::buildBasis_() {
+template <unsigned int M, unsigned int N, unsigned int R, typename E, typename F, typename B, typename I, typename S>
+void PDE<M,N,R,E,F,B,I,S>::buildBasis_() {
   // preallocate memory for functional basis
   basis_.resize(domain_.elements());
   for(const auto& e : domain_){ // fill basisTable_
@@ -20,23 +20,23 @@ void PDE<M, N, R, E, B, Solver>::buildBasis_() {
 }
 
 // constructors
-template <unsigned int M, unsigned int N, unsigned int R, typename E, typename B, typename Solver>
-PDE<M, N, R, E, B, Solver>::PDE(const Mesh<M,N,R>& domain, E bilinearForm,  const DMatrix<double>& forcingData) :
+template <unsigned int M, unsigned int N, unsigned int R, typename E, typename F, typename B, typename I, typename S>
+PDE<M,N,R,E,F,B,I,S>::PDE(const Mesh<M,N,R>& domain, E bilinearForm, const F& forcingData) :
   domain_(domain), bilinearForm_(bilinearForm), forcingData_(forcingData) {
   // prepare basis cache
   buildBasis_();
 }
-template <unsigned int M, unsigned int N, unsigned int R, typename E, typename B, typename Solver>
-PDE<M, N, R, E, B, Solver>::PDE(const Mesh<M,N,R>& domain, E bilinearForm, const B& basis, const DMatrix<double>& forcingData) :
-  domain_(domain), referenceBasis_(basis), bilinearForm_(bilinearForm), forcingData_(forcingData) {
+template <unsigned int M, unsigned int N, unsigned int R, typename E, typename F, typename B, typename I, typename S>
+PDE<M,N,R,E,F,B,I,S>::PDE(const Mesh<M,N,R>& domain, E bilinearForm, const F& forcingData, const B& basis, const I& integrator) :
+  domain_(domain), bilinearForm_(bilinearForm), forcingData_(forcingData), referenceBasis_(basis), integrator_(integrator) {
   // prepare basis cache
   buildBasis_();
 }
 
 // store in the format (boundaryID, { ... }) the dirichlet boundary conditions, where { ... } is the time series of the
 // data at boundary for boundary node boundaryID
-template <unsigned int M, unsigned int N, unsigned int R, typename E, typename B, typename Solver>
-void PDE<M, N, R, E, B, Solver>::setDirichletBC(const DMatrix<double>& data){
+template <unsigned int M, unsigned int N, unsigned int R, typename E, typename F, typename B, typename I, typename S>
+void PDE<M,N,R,E,F,B,I,S>::setDirichletBC(const DMatrix<double>& data){
  for(size_t j = 0; j < domain_.nodes(); ++j){
     // if j is a node on the domain boundary store the pair (node ID - boundary value)
     if(domain_.isOnBoundary(j)){
@@ -46,18 +46,17 @@ void PDE<M, N, R, E, B, Solver>::setDirichletBC(const DMatrix<double>& data){
   return;
 }
 
-template <unsigned int M, unsigned int N, unsigned int R, typename E, typename B, typename Solver>
-template <typename I, typename... Args>
-void PDE<M, N, R, E, B, Solver>::init(const I &integrator, Args... args) {
-  // precomputes some quantites of interest for high level users of FEM. Do not solve the PDE (which means no linear system is solved)
-  solver_.init(*this, integrator, args...);
+template <unsigned int M, unsigned int N, unsigned int R, typename E, typename F, typename B, typename I, typename S>
+void PDE<M,N,R,E,F,B,I,S>::init() {
+  // precomputes some quantites of interest for high level users of FEM.
+  // Do not solve the PDE (which means no linear system is solved) for a lower computational cost.
+  solver_.init(*this);
   return;
 }
 
-template <unsigned int M, unsigned int N, unsigned int R, typename E, typename B, typename Solver>
-template <typename I, typename... Args>
-void PDE<M, N, R, E, B, Solver>::solve(const I &integrator, Args... args) {
+template <unsigned int M, unsigned int N, unsigned int R, typename E, typename F, typename B, typename I, typename S>
+void PDE<M,N,R,E,F,B,I,S>::solve() {
   // define solver and call solve method on it
-  solver_.solve(*this, integrator, args...);
+  solver_.solve(*this);
   return;
 }

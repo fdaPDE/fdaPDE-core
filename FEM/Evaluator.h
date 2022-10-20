@@ -47,8 +47,8 @@ namespace FEM{
     // writes the field as a finite linear combination of basis function.
     Raster<N> toRaster(const Mesh<M,N,R>& mesh, const DVector<double>& coeff, double h) const;
     // produce a raster image of the solution of a PDE over its domain using the specified resolution h
-    template <typename E>
-    Raster<N> toRaster(const PDE<M,N,R,E>& pde, double h) const;
+    template <typename E, typename F, typename B, typename I, typename S>
+    Raster<N> toRaster(const PDE<M,N,R,E,F,B,I,S>& pde, double h) const;
     // produce a raster image of a callable (assuming the same interface of ScalarField)
     template <typename F>
     typename std::enable_if<std::is_invocable<F, SVector<M>>::value, Raster<N>>::type
@@ -155,8 +155,8 @@ namespace FEM{
 
   // produce raster of PDE solution
   template <unsigned int M, unsigned int N, unsigned int R, typename SearchEngine>
-  template <typename E>
-  Raster<N> Evaluator<M,N,R,SearchEngine>::toRaster(const PDE<M,N,R,E>& pde, double h) const {
+  template <typename E, typename F, typename B, typename I, typename S>
+  Raster<N> Evaluator<M,N,R,SearchEngine>::toRaster(const PDE<M,N,R,E,F,B,I,S>& pde, double h) const {
     return toRaster(pde.domain(), pde.solution(), h);
   }
   

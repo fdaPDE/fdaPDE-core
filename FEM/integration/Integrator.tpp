@@ -1,9 +1,9 @@
 // integrate a BilinearFormExpr over mesh element e using basis B. The pair (i,j) indicates the element position of the produced
 // value in the matrix discretizing the form. This method is used as part of the assembly loop in the computation of the
 // discretization matrix of the differential operator L
-template <unsigned int M, unsigned int K>
-template <unsigned int N, unsigned int R, typename B, typename F>
-double Integrator<M, K>::integrate(const B& basis, const Element<M, N, R>& e, int i , int j, const F& bilinearForm) const{
+template <unsigned int M, unsigned int R, unsigned int K>
+template <unsigned int N, typename B, typename F>
+double Integrator<M,R,K>::integrate(const B& basis, const Element<M, N, R>& e, int i , int j, const F& bilinearForm) const{
   // apply quadrature rule
   double value = 0;
   // builds the callable to integrate here from the bilinear form passed as argument
@@ -21,9 +21,9 @@ double Integrator<M, K>::integrate(const B& basis, const Element<M, N, R>& e, in
 // and the change of variables formula: \int_e [f(x) * \phi(x)] = \int_{E} [f(J(X)) * \Phi(X)] |detJ|
 // where J is the affine mapping from the reference element E to the physical element e
 // this overload is specialized for the assembly of the PDE's forcing term
-template <unsigned int M, unsigned int K>
-template <unsigned int N, unsigned int R, typename F>
-double Integrator<M, K>::integrate(const Element<M, N, R>& e, const F& f, const typename LagrangianBasis<M, N, R>::element_type& Phi) const{
+template <unsigned int M, unsigned int R, unsigned int K>
+template <unsigned int N, typename F>
+double Integrator<M,R,K>::integrate(const Element<M, N, R>& e, const F& f, const typename LagrangianBasis<M, N, R>::element_type& Phi) const{
   double value = 0;
   // execute quadrature rule.
   for(size_t iq = 0; iq < integrationTable_.num_nodes; ++iq){
@@ -44,9 +44,9 @@ double Integrator<M, K>::integrate(const Element<M, N, R>& e, const F& f, const 
 }
 
 // integrate a callable F over a mesh element e. This quadrature rule is for fields f without any particular structure
-template <unsigned int M, unsigned int K>
-template <unsigned int N, unsigned int R, typename F>
-double Integrator<M, K>::integrate(const Element<M, N, R>& e, const F &f) const {
+template <unsigned int M, unsigned int R, unsigned int K>
+template <unsigned int N, typename F>
+double Integrator<M,R,K>::integrate(const Element<M, N, R>& e, const F &f) const {
   double value = 0;
   // execute quadrature rule
   for(size_t iq = 0; iq < integrationTable_.num_nodes; ++iq){
@@ -67,9 +67,9 @@ double Integrator<M, K>::integrate(const Element<M, N, R>& e, const F &f) const 
 
 // integrate a callable F over the entire mesh m.
 // Just exploit linearity of the integral operation to sum the result of the integral of F over each mesh element
-template <unsigned int M, unsigned int K>
-template <unsigned int N, unsigned int R, typename F>
-double Integrator<M, K>::integrate(const Mesh<M, N, R>& m, const F &f) const {
+template <unsigned int M, unsigned int R, unsigned int K>
+template <unsigned int N, typename F>
+double Integrator<M,R,K>::integrate(const Mesh<M, N, R>& m, const F &f) const {
   double value = 0;
   // cycle over all mesh elements
   for(const auto& e : m)

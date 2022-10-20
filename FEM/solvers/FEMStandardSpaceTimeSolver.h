@@ -16,15 +16,15 @@ namespace FEM{
     FEMStandardSpaceTimeSolver() = default;
 
     // solves the PDE using a FEM discretization in space and a finite difference discretization in time (forward-euler scheme)
-    template <unsigned int M, unsigned int N, unsigned int R, typename E, typename B, typename S, typename I> 
-    void solve(const PDE<M, N, R, E, B, S>& pde, const I& integrator, double deltaT);
+    template <unsigned int M, unsigned int N, unsigned int R, typename E, typename F, typename B, typename I, typename S>
+    void solve(const PDE<M,N,R,E,F,B,I,S>& pde, double deltaT);
   };
 
   // use forward-euler to discretize the time derivative. Under this approximation we get a discretization matrix for the PDE operator
   // equal to K = [M/deltaT + A] (forward Euler scheme)
-  template <unsigned int M, unsigned int N, unsigned int R, typename E, typename B, typename S, typename I> 
-  void FEMStandardSpaceTimeSolver::solve(const PDE<M, N, R, E, B, S>& pde, const I& integrator, double deltaT) {
-    this->init(pde, integrator);
+  template <unsigned int M, unsigned int N, unsigned int R, typename E, typename F, typename B, typename I, typename S>
+  void FEMStandardSpaceTimeSolver::solve(const PDE<M,N,R,E,F,B,I,S>& pde, double deltaT) {
+    this->init(pde);
     // define eigen system solver, use QR decomposition.
     Eigen::SparseLU<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int>> solver;
     unsigned int timeSteps = this->force_->cols(); // number of iterations for the time loop
