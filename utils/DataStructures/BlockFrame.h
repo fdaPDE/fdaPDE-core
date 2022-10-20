@@ -120,6 +120,21 @@ public:
   BlockView<Sparse, Ts...> operator()(const std::vector<std::size_t>& idxs) const {
     return BlockView<Sparse, Ts...>(*this, idxs);
   }
+
+  // perform a shuffling of the BlockFrame rows returning a new BlockFrame
+  BlockFrame<Ts...> shuffle() const {
+    std::vector<std::size_t> random_idxs;
+    random_idxs.resize(rows_);
+    // fill vector with integers from 0 to model.obs() - 1
+    for(std::size_t i = 0; i < rows_; ++i) random_idxs[i] = i;
+    // shuffle vector of indexes
+    std::random_device rd{};
+    std::default_random_engine rng(rd());
+    std::shuffle(random_idxs.begin(), random_idxs.end(), rng);
+
+    // extract the blockframe from the view obtained by using random_idxs as set of indexes
+    return BlockView<Sparse, Ts...>(*this, random_idxs).extract();
+  }
   
 };
 
