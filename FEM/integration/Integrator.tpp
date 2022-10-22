@@ -36,7 +36,7 @@ double Integrator<M,R,K>::integrate(const Element<M, N, R>& e, const F& f, const
     }else{
       // as a fallback we assume f given as vector of values with the assumption that f[e.ID()+iq] equals the value of the
       // discretized field at the iq-th quadrature node.
-      value += (f[e.ID()+iq]*Phi(p))*integrationTable_.weights[iq];
+      value += (f(e.ID()+iq,0)*Phi(p))*integrationTable_.weights[iq];
     }
   }
   // correct for measure of domain (element e)
@@ -58,7 +58,7 @@ double Integrator<M,R,K>::integrate(const Element<M, N, R>& e, const F &f) const
     }else{
       // as a fallback we assume f given as vector of values with the assumption that f[e->ID()+iq] equals the value of the
       // discretized field at the iq-th quadrature node.
-      value += f[e->ID()+iq]*integrationTable_.weights[iq];
+      value += f(e->ID()+iq,0)*integrationTable_.weights[iq];
     }
   }
   // correct for measure of domain (element e)

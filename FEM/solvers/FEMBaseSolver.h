@@ -1,15 +1,30 @@
 #ifndef __FEM_BASE_SOLVER_H__
 #define __FEM_BASE_SOLVER_H__
 
+#include <memory>
 #include "../../utils/Symbols.h"
+#include "../Assembler.h"
+using fdaPDE::core::FEM::Assembler;
+#include "../basis/LagrangianBasis.h"
+using fdaPDE::core::FEM::LagrangianBasis;
+#include "../integration/Integrator.h"
+using fdaPDE::core::FEM::Integrator;
 
 namespace fdaPDE{
 namespace core{
 namespace FEM{
 
-  // forward declaration
+  // forward declarations
+  struct FEMStandardSpaceSolver;
+  struct FEMStandardSpaceTimeSolver;
+  // trait to select the space-only or the space-time version of the PDE standard solver
+  template <typename E> struct pde_standard_solver_selector {
+    using type = typename std::conditional<is_parabolic<E>::value,
+					   FEMStandardSpaceTimeSolver, FEMStandardSpaceSolver>::type;
+  };
+  // PDE forward declaration
   template <unsigned int M, unsigned int N, unsigned int R, typename E, typename F, typename B, typename I, typename S> class PDE;
-  
+
   // base class for the definition of a general solver based on the Finite Element Method
   class FEMBaseSolver{
   protected:
@@ -48,10 +63,14 @@ namespace FEM{
     R1_->makeCompressed();
     // fill forcing vector
     force_ = std::make_shared<DMatrix<double>>();
-    force_->resize(pde.domain().nodes(), pde.forcingData().cols());
-    for(std::size_t i = 0; i < pde.forcingData().cols(); ++i){
-      force_->col(i) = assembler.forcingTerm(pde.forcingData().col(i)); // rhs of FEM linear system
-    }
+    force_->resize(pde.domain().nodes(), 1); //pde.forcingData().cols());
+    force_->col(0) = assembler.forcingTerm(pde.forcingData());
+
+    // SPACE-TIME PROBLEMS CURRENTLY NOT SUPPORTED DUE TO THE FACT WE NOW ACCEPT ALSO CALLABLE AS FORCING
+    
+    // for(std::size_t i = 0; i < pde.forcingData().cols(); ++i){
+    //   force_->col(i) = assembler.forcingTerm(pde.forcingData().col(i)); // rhs of FEM linear system
+    // }
 
     // R0_ is a mass matrix ([R0]_{ij} = \int_{\Omega} \phi_i \phi_j). This quantity can be obtained by computing
     // the discretization of the Identity() operator

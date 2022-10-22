@@ -9,6 +9,7 @@
 #include <string>
 #include <algorithm>
 #include <stdexcept>
+#include <random>
 
 // forward declaration: a view to a portion of a BlockFrame
 enum ViewType { Row, Range, Sparse };

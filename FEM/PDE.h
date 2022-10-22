@@ -6,10 +6,8 @@
 using fdaPDE::core::MESH::Mesh;
 #include "basis/LagrangianBasis.h"
 using fdaPDE::core::FEM::LagrangianBasis;
-#include "solvers/FEMStandardSpaceSolver.h"
-using fdaPDE::core::FEM::FEMStandardSpaceSolver;
-#include "solvers/FEMStandardSpaceTimeSolver.h"
-using fdaPDE::core::FEM::FEMStandardSpaceTimeSolver;
+#include "solvers/FEMBaseSolver.h"
+using fdaPDE::core::FEM::pde_standard_solver_selector;
 #include "integration/Integrator.h"
 using fdaPDE::core::FEM::Integrator;
 #include <type_traits>
@@ -19,12 +17,6 @@ using fdaPDE::core::FEM::Integrator;
 namespace fdaPDE{
 namespace core{
 namespace FEM{
-
-  // trait to select the space-only or the space-time version of the PDE standard solver
-  template <typename E> struct pde_standard_solver_selector {
-    using type = typename std::conditional<is_parabolic<E>::value,
-					   FEMStandardSpaceTimeSolver, FEMStandardSpaceSolver>::type;
-  };
 
   // data structure used as cache for basis elements built over the PDE's domain.
   // the i-th element of this cache returns the basis built over the i-th element of the mesh
@@ -75,7 +67,7 @@ namespace FEM{
     // getters
     const Mesh<M, N>& domain() const { return domain_; }
     E bilinearForm() const { return bilinearForm_; }
-    const DMatrix<double>& forcingData() const { return forcingData_; }
+    const F& forcingData() const { return forcingData_; }
     const DVector<double>& initialCondition() const { return initialCondition_; }
     const boundary_map& boundaryData() const { return boundaryData_; };
     const I& integrator() const { return integrator_; }
