@@ -31,7 +31,5 @@ namespace FEM{
     const_iterator end() const;
   };
 
-#include "SplineBasis.tpp"
-
 }}}
 #endif // __SPLINE_BASIS_H__

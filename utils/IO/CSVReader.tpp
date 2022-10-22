@@ -1,5 +1,6 @@
 // split a string in a vector of substrings, using "separator" as delimiter
-std::vector<std::string> CSVReader::split(std::string input_, std::string separator) {
+template <typename T>
+std::vector<std::string> CSVReader<T>::split(std::string input_, std::string separator) {
   std::vector<std::string> parsedString;
   // keep string position
   size_t j = 0;
@@ -14,7 +15,8 @@ std::vector<std::string> CSVReader::split(std::string input_, std::string separa
 }
 
 // remove from a given string s all occurencies of strings matching vect
-std::string CSVReader::remove(std::string s, const std::vector<char>& vect) const {
+template <typename T>
+std::string CSVReader<T>::remove(std::string s, const std::vector<char>& vect) const {
   std::string result = "";
   for(char c : s){ 
     if (std::find(vect.begin(), vect.end(), c) == vect.end()) // char c is not to be removed
@@ -24,7 +26,8 @@ std::string CSVReader::remove(std::string s, const std::vector<char>& vect) cons
 }
 
 // remove from a given string s all chars j
-std::string CSVReader::remove(std::string s, char j) const {
+template <typename T>
+std::string CSVReader<T>::remove(std::string s, char j) const {
   std::string result = "";
   for(char c : s) if (c != j) result += c;
   return result;
@@ -56,7 +59,7 @@ Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> CSVFile<T>::toEigen() {
 // parse a file by casting its entries to type T
 // Observe that the produced map can contain only entries of the specified type (not allowed to parse non-homogeneous files)
 template <typename T>
-CSVFile<T> CSVReader::parseFile(const std::string& file_){
+CSVFile<T> CSVReader<T>::parseFile(const std::string& file_){
   // create a CSVFile object
   CSVFile<T> csv(file_);
   // get input stream
@@ -131,7 +134,7 @@ Eigen::SparseMatrix<T> CSVSparseFile<T>::toEigen() {
 
 // parse a file which encodes some sparse structure. Usefull if you later want to move the .csv into an Eigen::SparseMatrix<T>
 template <typename T>
-CSVSparseFile<T> CSVReader::parseSparseFile(const std::string& file_){
+CSVSparseFile<T> CSVReader<T>::parseSparseFile(const std::string& file_){
   // create a CSVFile object
   CSVSparseFile<T> csv(file_);
   // get input stream

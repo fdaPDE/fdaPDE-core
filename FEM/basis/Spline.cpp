@@ -1,3 +1,5 @@
+#include "Spline.h" // implementation of Spline.h
+
 // a node of a spline tree (an N_ij object in the above schema)
 class SplineNode {
  private:
@@ -7,7 +9,7 @@ class SplineNode {
  public:
   // constructor
   SplineNode() = default;
- SplineNode(double k1, double k2) : k1_(k1), k2_(k2), d1_(1/(k2_ - k1_)){ }
+  SplineNode(double k1, double k2) : k1_(k1), k2_(k2), d1_(1/(k2_ - k1_)){ }
 
   // for a spline of order j get the knot span [u_i, u_i+j)
   std::pair<double, double> getKnotSpan() const {
@@ -30,9 +32,9 @@ struct SplineEvaluator{
   double partialProduct_ = 1;
   double inputPoint_;
     
-SplineEvaluator(const node_ptr<SplineNode>& root_ptr, double inputPoint) : inputPoint_(inputPoint) {
-  partialMap_[root_ptr->getKey()] = 1;
-};
+  SplineEvaluator(const node_ptr<SplineNode>& root_ptr, double inputPoint) : inputPoint_(inputPoint) {
+    partialMap_[root_ptr->getKey()] = 1;
+  };
 
   // add result only if N_i0(x) = 1, that is if x is contained in the knot span [u_i, u_i+1)
   void leafAction(const node_ptr<SplineNode>& currentNode) {
@@ -92,9 +94,7 @@ Spline::Spline(const std::vector<double>& knotVector, int i, int j) : knotVector
     // build left spline node
     SplineNode leftNode  = SplineNode(knotVector[currentPair.first],
 				      knotVector[currentPair.first + currentPair.second]);
-
     auto left_ptr = splineTree.insert(leftNode, nodeID, LinkDirection::LEFT);
-
     
     // build right spline node
     SplineNode rightNode = SplineNode(knotVector[currentPair.first + 1 + currentPair.second],

@@ -80,7 +80,8 @@ public:
 
 };
 
-// a simple utility class to parse simple .csv files
+// a simple utility class to parse simple .csv files of type T
+template <typename T>
 class CSVReader{
  private:
   // split a string in a vector of strings according to a separator
@@ -94,8 +95,8 @@ class CSVReader{
   CSVReader() = default;
 
   // parse the file returning a CSVFile whose internal has a vector for each column in the .csv
-  template <typename T> CSVFile<T> parseFile(const std::string& file_);
-  template <typename T> CSVSparseFile<T> parseSparseFile(const std::string& file_);
+  CSVFile<T> parseFile(const std::string& file_);
+  CSVSparseFile<T> parseSparseFile(const std::string& file_);
 };
 
 #include "CSVReader.tpp"
@@ -104,10 +105,10 @@ class CSVReader{
 template <typename T>
 void readCSV(DMatrix<T>& buff, const std::string& file_name){
   // define csv parser
-  CSVReader reader{};
+  CSVReader<T> reader{};
   // define parsed file and parse input
-  CSVFile<double> parsed_file;
-  parsed_file = reader.parseFile<T>(file_name);
+  CSVFile<T> parsed_file;
+  parsed_file = reader.parseFile(file_name);
   buff = parsed_file.toEigen(); // write to destination
   return;
 }
@@ -115,10 +116,10 @@ void readCSV(DMatrix<T>& buff, const std::string& file_name){
 template <typename T>
 void readCSV(SpMatrix<T>& buff, const std::string& file_name){
   // define csv parser
-  CSVReader reader{};
+  CSVReader<T> reader{};
   // define parsed file and parse input
-  CSVFile<double> parsed_file;
-  parsed_file = reader.parseSparseFile<T>(file_name);
+  CSVFile<T> parsed_file;
+  parsed_file = reader.parseSparseFile(file_name);
   buff = parsed_file.toEigen(); // write to destination
   return;
 }

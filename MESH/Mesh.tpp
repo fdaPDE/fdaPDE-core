@@ -32,18 +32,18 @@ template <unsigned int M, unsigned int N, unsigned int R>
 Mesh<M,N,R>::Mesh(const std::string& points,    const std::string& edges, const std::string& elements,
 		  const std::string& neighbors, const std::string& boundary){
   // open and parse CSV files
-  CSVReader reader;
-  CSVFile<double> pointsData = reader.parseFile<double>(points);
-  CSVFile<int> edgesData = reader.parseFile<int>(edges);
-  CSVFile<int> elementsData = reader.parseFile<int>(elements);
-  CSVFile<int> boundaryData = reader.parseFile<int>(boundary);
+  CSVReader<double> Dreader; CSVReader<int> Ireader;
+  CSVFile<double> pointsData = Dreader.parseFile(points);
+  CSVFile<int> edgesData = Ireader.parseFile(edges);
+  CSVFile<int> elementsData = Ireader.parseFile(elements);
+  CSVFile<int> boundaryData = Ireader.parseFile(boundary);
   
   // load neighboring informations
   typename std::conditional<
     !is_linear_network<M, N>::value, CSVFile<int>, CSVSparseFile<int>
     >::type neighborsData;
   if constexpr(!is_linear_network<M,N>::value){
-    neighborsData = reader.parseFile<int>(neighbors);
+    neighborsData = Ireader.parseFile(neighbors);
     // move parsed file to eigen dense matrix, recall that a negative value means no neighbor
     neighbors_ = neighborsData.toEigen();
     neighbors_ = (neighbors_.array() - 1).matrix();
@@ -51,7 +51,7 @@ Mesh<M,N,R>::Mesh(const std::string& points,    const std::string& edges, const 
     // activate proper parsing to handle sparse matrix storage of neighboring information in case of linear network meshes.
     // in this case the csv stores a 2 column table where column i contains the list of indexes of neighboring elements attached
     // to node i of the linear element (a linear element has only 2 nodes)
-    neighborsData = reader.parseSparseFile<int>(neighbors);
+    neighborsData = Ireader.parseSparseFile(neighbors);
     neighbors_ = neighborsData.toEigen(); // .toEigen() of CSVSparseFile already subtract 1 to indexes for reaglignment
   }  
   

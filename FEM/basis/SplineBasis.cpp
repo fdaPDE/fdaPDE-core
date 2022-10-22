@@ -1,3 +1,5 @@
+#include "SplineBasis.h" // implementation of SplineBasis.h
+
 SplineBasis::SplineBasis(const std::vector<double>& knotsVector, int order){
   // pad the knot vector to obtain a full basis for the whole knot span [u_0, u_n]
   for(std::size_t i = 0; i < order; ++i) 

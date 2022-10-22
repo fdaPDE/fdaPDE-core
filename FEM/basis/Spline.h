@@ -59,7 +59,5 @@ namespace FEM{
     Spline gradient() const;         // compute derivative of spline as another spline object
   };
 
-#include "Spline.tpp"
-
 }}}
 #endif // __SPLINE_H__
