@@ -8,6 +8,10 @@ using fdaPDE::core::MESH::Mesh;
 using fdaPDE::core::FEM::LagrangianBasis;
 #include "solvers/FEMBaseSolver.h"
 using fdaPDE::core::FEM::pde_standard_solver_selector;
+#include "solvers/FEMStandardSpaceSolver.h"
+using fdaPDE::core::FEM::FEMStandardSpaceSolver;
+#include "solvers/FEMStandardSpaceTimeSolver.h"
+using fdaPDE::core::FEM::FEMStandardSpaceTimeSolver;
 #include "integration/Integrator.h"
 using fdaPDE::core::FEM::Integrator;
 #include <type_traits>
