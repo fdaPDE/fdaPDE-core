@@ -48,12 +48,20 @@ namespace FEM{
       VectorField<M,N> NablaPhi_j = invJ * basis[j].derive();
      
       if constexpr(std::is_same<NullaryOperator, T>::value){
-	// for isotropic laplacian (K_ is the identity matrix): \Nabla phi_i.dot(\Nabla * phi_j)
+	// for isotropic laplacian fallback to K_ = I: \Nabla phi_i.dot(\Nabla * phi_j)
 	return NablaPhi_i.dot(NablaPhi_j);
       }else{
 	// for anisotropic diffusion: (\Nabla phi_i)^T * K * \Nabla * phi_j
-	// MatrixField arithmetic handles the case of both constant non-constant coefficient
-	return NablaPhi_i.dot(K_*NablaPhi_j);
+	if constexpr(std::is_base_of<MatrixBase, T>::value){
+	  std::function<SMatrix<N>(SVector<M>)> K = [this, e](const SVector<M>& p) -> double {
+	    // when the bilinear form is integrated it gets quadrature nodes defined over the reference element.
+	    // we need to map the quadrature point on the physical element e to get a correct evaluation of the non-constant field K_
+	    return K_(e.barycentricMatrix()*p + e.coords()[0]);
+	  };
+	  return NablaPhi_i.dot(K *NablaPhi_j);
+	}else{
+	  return NablaPhi_i.dot(K_*NablaPhi_j);
+	}
       }
     }
   };

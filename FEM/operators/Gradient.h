@@ -56,10 +56,20 @@ namespace FEM{
       auto phi_i = basis[i];
       // approximation of the (i,j)-th element of gradient operator
       if constexpr(std::is_same<NullaryOperator, T>::value){
-	return phi_i * NablaPhi_j.dot(SVector<N>::Ones());
+	return phi_i * NablaPhi_j.dot(SVector<N>::Ones()); // fallback to b_ = 1 if no b_ is provided
       }else{
 	// VectorField arithmetic supports natively dot product with both SVector and VectorField objects
-	return phi_i * NablaPhi_j.dot(b_);
+	if constexpr(std::is_base_of<VectBase, T>::value){
+	  std::function<SVector<N>(SVector<M>)> b = [this, e](const SVector<M>& p) -> SVector<N> {
+	    // when the bilinear form is integrated it gets quadrature nodes defined over the reference element.
+	    // we need to map the quadrature point on the physical element e to get a correct evaluation of the non-constant field b_
+	    return b_(e.barycentricMatrix()*p + e.coords()[0]);
+	  };
+	  return phi_i * NablaPhi_j.dot(b);
+	}else{
+	  // velocity field is constant over the whole domain
+	  return phi_i * NablaPhi_j.dot(b_);
+	}
       }
     }
   };  

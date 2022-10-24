@@ -41,10 +41,19 @@ namespace FEM{
       auto phi_j = basis[j];
       // approximation of the (i,j)-th element of identity operator
       if constexpr(std::is_same<NullaryOperator, T>::value){
-	return (phi_i*phi_j);
+	// fallback to c_ = 1
+	return phi_i * phi_j;
       }else{
-	// ScalarField arithmetic handles both constant and non-constant coefficients
-	return c_*(phi_i*phi_j);
+	if constexpr(std::is_base_of<ScalarBase, T>::value){
+	  std::function<double(SVector<M>)> c = [this, e](const SVector<M>& p) -> double {
+	    // when the bilinear form is integrated it gets quadrature nodes defined over the reference element.
+	    // we need to map the quadrature point on the physical element e to get a correct evaluation of the non-constant field c_
+	    return c_(e.barycentricMatrix()*p + e.coords()[0]);
+	  };
+	  return c *(phi_i*phi_j);
+	}else{
+	  return c_*(phi_i*phi_j);
+	}
       }
     }
   };
