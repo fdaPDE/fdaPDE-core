@@ -16,11 +16,11 @@ namespace fdaPDE{
 namespace core{
 namespace FEM{
 
-  // returns true if type T is instance of template E<L> with L some unsigned int.
-  template <typename T, template <unsigned int L> typename E>
+  // returns true if type T is instance of template E<F> with F some type.
+  template <typename T, template <typename> typename E>
   struct is_instance_of : std::false_type {};
-  template <template<unsigned int> typename E, unsigned int L> // valid match
-  struct is_instance_of<E<L>, E> : std::true_type {};
+  template <template<typename> typename E, typename F> // valid match
+  struct is_instance_of<E<F>, E> : std::true_type {};
 
   // returns std::true_type if tuple contains type T
   template <typename T, typename Tuple> struct has_type {};
@@ -35,27 +35,26 @@ namespace FEM{
   struct has_type<T, std::tuple<T, Args...>>
     : std::true_type {};
 
-  // returns std::true_type if tuple contains an instantiation of template E<L>
-  template <template <unsigned int L> typename E, typename Tuple> struct has_instance_of {};
-
-  template <template <unsigned int L> typename E> // empty tuple cannot contain anything
+  // returns std::true_type if tuple contains an instantiation of template E<F>
+  template <template <typename F> typename E, typename Tuple> struct has_instance_of {};
+  
+  template <template <typename F> typename E> // empty tuple cannot contain anything
   struct has_instance_of<E, std::tuple<>> {
     using type = std::false_type;
   };
 
-  template <unsigned int L, template <unsigned int> typename E, typename... Tail> // type found, stop recursion
-  struct has_instance_of<E, std::tuple<E<L>, Tail...>> {
+  template <typename F, template <typename> typename E, typename... Tail> // type found, stop recursion
+  struct has_instance_of<E, std::tuple<E<F>, Tail...>> {
     using type = std::true_type;
   };
 
-  template <typename U, template <unsigned int L> typename E, typename... Tail>   // recursive step
+  template <typename U, template <typename> typename E, typename... Tail>   // recursive step
   struct has_instance_of<E, std::tuple<U, Tail...>> {
     using type = typename has_instance_of<E, std::tuple<Tail...>>::type;
   };
 
   // trait to detect if the bilinear form is symmetric. 
   template <typename E> struct is_symmetric {
-  public:
     // returns false if an instantiation of Gradient<> is contained in the typelist of the bilinar form
     static constexpr bool value = !has_instance_of<Gradient, decltype(std::declval<E>().getTypeList())>::type::value;
   };
@@ -72,7 +71,6 @@ namespace FEM{
 
   // trait to detect if the bilinear form denotes a parabolic PDE.
   template <typename E> struct is_parabolic {
-  public:
     // returns true if the time derivative operator dT() is detected in the expression
     static constexpr bool value = has_instance_of<dT, decltype(std::declval<E>().getTypeList())>::type::value;  
   };

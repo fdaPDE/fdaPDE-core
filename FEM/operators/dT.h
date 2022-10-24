@@ -7,19 +7,18 @@ using fdaPDE::core::FEM::BilinearFormExpr;
 namespace fdaPDE{
 namespace core{
 namespace FEM{
-
+  
   // class representing the time derivative operator.
   // This operator just acts as a tag in a bilinear form expression to activate the time loop in the assembler phase. See
   // is_parabolic<> trait in BilinearFormTraits.h
-  template <unsigned int L = 0> struct dT : public BilinearFormExpr<dT<L>> {
+  template <typename T = NullaryOperator> struct dT : public BilinearFormExpr<dT<T>> {
     // constructor
     dT() = default;
-    std::tuple<dT<L>> getTypeList() const { return std::make_tuple(*this); }
+    std::tuple<dT<T>> getTypeList() const { return std::make_tuple(*this); }
 
     template <unsigned int M, unsigned int N, unsigned int R, typename B>
     ScalarField<M> integrate(const B& basis, const Element<M, N, R>& e, int i , int j) const{
-      ScalarField<M> f = [](SVector<M> x) -> double { return 0; };
-      return f; // dirty hack to make dT not contribute in the space discretization of the problem
+      return ScalarField<M>::Zero();
     }
   };
 

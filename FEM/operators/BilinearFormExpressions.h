@@ -9,6 +9,9 @@ using fdaPDE::core::MESH::Element;
 namespace fdaPDE{
 namespace core{
 namespace FEM{
+
+  // type defined as default template paramter of operators to allow argument deduction guide
+  struct NullaryOperator {};
   
 #define DEF_BILINEAR_FORM_EXPR_OPERATOR(OPERATOR, FUNCTOR)		\
   template <typename E1, typename E2>					\
