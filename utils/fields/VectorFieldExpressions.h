@@ -33,19 +33,22 @@ namespace core{
         op1.get(), VectConst<M,N>(op2), VectFunctorOP<M,N, FUNCTOR>(FUNCTOR())); \
   }                                                                              \
 
+  // Base class for any VectorField type
+  struct VectBase {};
+  
   // Base class for vectorial expressions
   // M dimension of the space where the field is defined, N dimension of the arriving space
-  template <int M, int N, typename E> struct VectExpr {
+  template <int M, int N, typename E> struct VectExpr : public VectBase {
     // call operator[] on the base type E
     ScalarField<M> operator[](size_t i) const {
       return static_cast<const E&>(*this)[i];
     }
-
+    
     // get underyling type composing the expression node
     const E& get() const { return static_cast<const E&>(*this); }
 
     // evaluate the expression at point p
-    SVector<N> operator()(const SVector<M>& p) const{
+    SVector<N> operator()(const SVector<M>& p) const {
       SVector<N> result;
       for(size_t i = 0; i < N; ++i){
 	// trigger evaluation, call subscript of the underyling type. This will produce along the dimension i
@@ -84,7 +87,6 @@ namespace core{
     typename std::remove_reference<OP1>::type op1_;   // first  operand
     typename std::remove_reference<OP2>::type op2_;   // second operand
     BinaryOperation f_;                               // operation to apply
-
   public:
     // constructor
     VectBinOp(const OP1& op1, const OP2& op2, BinaryOperation f) : op1_(op1), op2_(op2), f_(f) { };
@@ -99,7 +101,6 @@ namespace core{
   template <int M, int N, typename OP> class VectFunctorOP {
   private:
     OP oper_;
-
   public:
     // constructor
     VectFunctorOP(const OP& oper) : oper_(oper) {}

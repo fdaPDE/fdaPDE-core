@@ -61,6 +61,9 @@ namespace core{
       f_ = lambda;
       return *this;
     }
+
+    // initializer for a zero field
+    static ScalarField<N> Zero() { return ScalarField<N>([](SVector<N>) -> double { return 0; }); }
     
     // preserve std::function syntax for evaluating a function at point, required for expression templates
     double operator()(const SVector<N>& x) const { return f_(x); };
