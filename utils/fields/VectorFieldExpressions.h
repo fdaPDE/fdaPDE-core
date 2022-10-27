@@ -7,46 +7,44 @@
 namespace fdaPDE{
 namespace core{
 
-  // forward declaration
-  template <int N> class ScalarField;
+  // forward declarations
+  template <typename T1, typename T2> class DotProduct;
+  template <unsigned int M, unsigned int N> class VectConst;
   
-// macro for the definition of standard operations between vector fields
-#define DEF_VECT_EXPR_OPERATOR(OPERATOR, FUNCTOR)                                \
-  template <int M, int N, typename E1, typename E2>			         \
-  VectBinOp<M,N, E1, E2, VectFunctorOP<M,N, FUNCTOR>> OPERATOR(	                 \
-      const VectExpr<M,N, E1> &op1, const VectExpr<M,N, E2> &op2) {              \
-  return VectBinOp<M,N, E1, E2, VectFunctorOP<M,N, FUNCTOR>>(		         \
-	op1.get(), op2.get(), VectFunctorOP<M,N, FUNCTOR>(FUNCTOR()));           \
-  }                                                                              \
-                                                                                 \
-  template <int M, int N, typename E>					         \
-  VectBinOp<M,N, VectConst<M,N>, E, VectFunctorOP<M,N, FUNCTOR>> OPERATOR(       \
-      SVector<N> op1, const VectExpr<M, N, E> &op2) {                            \
-  return VectBinOp<M,N, VectConst<M,N>, E, VectFunctorOP<M,N, FUNCTOR>>(         \
-	VectConst<M,N>(op1), op2.get(), VectFunctorOP<M,N, FUNCTOR>(FUNCTOR())); \
-  }                                                                              \
-  									         \
-  template <int M, int N, typename E>					         \
-  VectBinOp<M,N, E, VectConst<M,N>, VectFunctorOP<M,N, FUNCTOR>> OPERATOR(       \
-      const VectExpr<M,N, E> &op1, SVector<N> op2) {                             \
-  return VectBinOp<M,N, E, VectConst<M,N>, VectFunctorOP<M,N, FUNCTOR>>(         \
-        op1.get(), VectConst<M,N>(op2), VectFunctorOP<M,N, FUNCTOR>(FUNCTOR())); \
-  }                                                                              \
-
   // Base class for any VectorField type
   struct VectBase {};
+  
+#define DEF_VECT_EXPR_OPERATOR(OPERATOR, FUNCTOR)			\
+  template <int M, int N, typename E1, typename E2>			\
+  VectBinOp<M,N, E1, E2, FUNCTOR> OPERATOR(				\
+      const VectExpr<M,N, E1> &op1, const VectExpr<M,N, E2> &op2) {     \
+  return VectBinOp<M,N, E1, E2, FUNCTOR>(		                \
+	op1.get(), op2.get(), FUNCTOR());                               \
+  }									\
+  									\
+  template <int M, int N, typename E>					\
+  VectBinOp<M,N, VectConst<M,N>, E, FUNCTOR> OPERATOR(			\
+      SVector<N> op1, const VectExpr<M, N, E> &op2) {                   \
+  return VectBinOp<M,N, VectConst<M,N>, E, FUNCTOR>(                    \
+	VectConst<M,N>(op1), op2.get(), FUNCTOR());                     \
+  }									\
+  									\
+  template <int M, int N, typename E>					\
+  VectBinOp<M,N, E, VectConst<M,N>, FUNCTOR> OPERATOR(			\
+      const VectExpr<M,N, E> &op1, SVector<N> op2) {                    \
+  return VectBinOp<M,N, E, VectConst<M,N>, FUNCTOR>(                    \
+        op1.get(), VectConst<M,N>(op2), FUNCTOR());                     \
+  }                                                                     \
   
   // Base class for vectorial expressions
   // M dimension of the space where the field is defined, N dimension of the arriving space
   template <int M, int N, typename E> struct VectExpr : public VectBase {
     // call operator[] on the base type E
-    ScalarField<M> operator[](size_t i) const {
+    auto operator[](std::size_t i) const {
       return static_cast<const E&>(*this)[i];
     }
-    
     // get underyling type composing the expression node
     const E& get() const { return static_cast<const E&>(*this); }
-
     // evaluate the expression at point p
     SVector<N> operator()(const SVector<M>& p) const {
       SVector<N> result;
@@ -57,9 +55,13 @@ namespace core{
       }
       return result;
     }
-
     // dot product between VectExpr and SVector
-    virtual ScalarField<M> dot(const SVector<N>& op) const;
+    virtual DotProduct<E, VectConst<M,N>> dot(const SVector<N>& op) const;
+    // evaluate parametric nodes in the expression, does nothing if not redefined in derived classes
+    template <typename T> void eval_parameters(T i) const { return; }
+    // expose compile time informations
+    static constexpr int rows = N;
+    static constexpr int cols = 1;
   };
 
   // an expression node representing a constant vector
@@ -69,15 +71,23 @@ namespace core{
     SVector<N> value_;
   public:
     VectConst(SVector<N> value) : value_(value) { }
-  
-    // subsript operator, returns a fake lambda just to provide a call operator
-    ScalarField<M> operator[](size_t i) const {
-      std::function<double(SVector<M>)> lambda;
-      lambda = [*this, i](const SVector<M>& p) -> double {
-	return value_[i];
-      };
-      return ScalarField<M>(lambda); 
-    }
+    // return the stored value along direction i
+    double operator[](std::size_t i) const { return value_[i]; }
+  };
+
+  // a parameter node
+  template <unsigned int M, unsigned int N, typename T>
+  class VectParam : public VectExpr<M,N, VectParam<M,N,T>> {
+  private:
+    const std::function<SVector<N>(T)>& f_;
+    SVector<N> value_;
+  public:
+    // default constructor
+    VectParam() = default;
+    VectParam(const std::function<SVector<N>(T)>& f) : f_(f) {};
+    double operator[](std::size_t i) const { return value_[i]; }
+    // evaluating the parameter makes a parametric node to act as a VectConst
+    void eval_parameters(T i) { value_ = f_(i); }
   };
   
   // a generic binary operation node
@@ -90,81 +100,45 @@ namespace core{
   public:
     // constructor
     VectBinOp(const OP1& op1, const OP2& op2, BinaryOperation f) : op1_(op1), op2_(op2), f_(f) { };
-
-    // subscript operator. Apply the functor to each subscripted operand. This returns a callable object
-    ScalarField<M> operator[](size_t i) const{
-      return f_(op1_[i], op2_[i]); // converting constructor ScalarField(std::function<double(SVector<N>)>) called
+    // subscript operator. Let compiler to infer the return type (generally a FieldExpr)
+    auto operator[](std::size_t i) const{
+      return f_(op1_[i], op2_[i]);
     }
-  };
-
-  // functor returning a callable representing the action of OP on two callable operands
-  template <int M, int N, typename OP> class VectFunctorOP {
-  private:
-    OP oper_;
-  public:
-    // constructor
-    VectFunctorOP(const OP& oper) : oper_(oper) {}
-  
-    // call operator
-    ScalarField<M> operator()(const ScalarField<M>& op1, const ScalarField<M>& op2) const{
-      std::function<double(SVector<M>)> lambda;
-      // build a lambda expression which return the evaluation of the functional op1 OP op2 at point p
-      lambda = [*this, op1, op2](const SVector<M>& p) -> double{
-	return oper_(op1(p),op2(p));
-      };
-      return ScalarField<M>(lambda);
+    // call parameter evaluation on operands
+    template <typename T> const VectBinOp<M, N, OP1, OP2, BinaryOperation>& eval_parameters(T i) {
+      op1_.eval_parameters(i); op2_.eval_parameters(i);
+      return *this;
     }
-  };
-
+  };  
   DEF_VECT_EXPR_OPERATOR(operator+, std::plus<> )
   DEF_VECT_EXPR_OPERATOR(operator-, std::minus<>)
 
-  // special logic to handle double*VectExpr operation. The application of operator* between a double and a
-  // VectExpr results in the multiplication of the double value to each dimension of the VectExpr
-
-  // class to represent a single scalar in an expression.
-  template <unsigned int M, unsigned int N>
+  // support for double*VectExpr: multiplies each element of VectExpr by the scalar
+  template <unsigned int M, unsigned int N> // represent a single scalar node in a vectorial expression.
   class VectScalar : public VectExpr<M,N, VectScalar<M,N>>{
   private:
     double value_;
   public:
     VectScalar(double value) : value_(value) { }
-
-    // fake subsript operator, returns always the stored value_
-    std::function<double(SVector<M>)> operator[](size_t i) const {
-      std::function<double(SVector<M>)> lambda;
-      lambda = [*this](const SVector<M>& p) -> double { return value_; };
-      return lambda; 
-    }
+    double operator[](size_t i) const { return value_; }
   };
-
   template <int M, int N, typename E>
-  VectBinOp<M,N, VectScalar<M,N>, E, VectFunctorOP<M,N, std::multiplies<>> >
+  VectBinOp<M,N, VectScalar<M,N>, E, std::multiplies<> >
   operator*(double op1, const VectExpr<M,N, E> &op2) {
-    return VectBinOp<M,N, VectScalar<M,N>, E, VectFunctorOP<M,N, std::multiplies<>> >
-      (VectScalar<M,N>(op1), op2.get(), VectFunctorOP<M,N, std::multiplies<>>(std::multiplies<>()));
+    return VectBinOp<M,N, VectScalar<M,N>, E, std::multiplies<> >
+      (VectScalar<M,N>(op1), op2.get(), std::multiplies<>());
   }  
-
   template <int M, int N, typename E>
-  VectBinOp<M,N, E, VectScalar<M,N>, VectFunctorOP<M,N, std::multiplies<>> >
+  VectBinOp<M,N, E, VectScalar<M,N>, std::multiplies<> >
   operator*(const VectExpr<M,N, E> &op1, double op2) {
-    return VectBinOp<M,N, E, VectScalar<M,N>, VectFunctorOP<M,N, std::multiplies<>> >
-      (op1.get(), VectScalar<M,N>(op2), VectFunctorOP<M,N, std::multiplies<>>(std::multiplies<>()));
+    return VectBinOp<M,N, E, VectScalar<M,N>, std::multiplies<> >
+      (op1.get(), VectScalar<M,N>(op2), std::multiplies<>());
   }
 
   // allow dot product between a VectExpr and an (eigen) SVector.
   template <int M, int N, typename E>
-  ScalarField<M> VectExpr<M,N, E>::dot(const SVector<N>& op) const {
-    std::function<double(SVector<M>)> result;
-    // build lambda expressing inner product
-    result = [*this, op](const SVector<M>& x) -> double{
-      double y = 0;
-      for(size_t i = 0; i < N; ++i)
-	y += op[i]*operator[](i)(x);
-      
-      return y;
-    };
-    return ScalarField<M>(result);
+  DotProduct<E, VectConst<M,N>> VectExpr<M,N, E>::dot(const SVector<N>& op) const {
+    return DotProduct<E, VectConst<M,N>>(this->get(), VectConst<M,N>(op));
   }
 }}
 

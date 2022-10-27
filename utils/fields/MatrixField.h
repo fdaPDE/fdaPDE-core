@@ -3,7 +3,7 @@
 
 #include <array>
 #include <cstddef>
-#include <initializer_list>
+#include <type_traits>
 #include "../Symbols.h"
 #include "ScalarField.h"
 using fdaPDE::core::ScalarField;
@@ -14,34 +14,32 @@ using fdaPDE::core::VectorField;
 namespace fdaPDE{
 namespace core {
 
-  // forward declarations
-  template <int N> class ScalarField;
-  template <int N, int M> class VectorField;
-
   // a template class for handling matrix field. A matrix field is a function mapping N-dimensional points to M x K dimensional
   // matrices. Supports expression template arithmetic
-  template <int N, int M = N, int K = N>
-  class MatrixField : public MatrixExpr<N,M,K, MatrixField<N,M,K>> {
+  template <int N, int M = N, int K = N, typename F = std::function<double(SVector<N>)>>
+  class MatrixField : public MatrixExpr<N,M,K, MatrixField<N,M,K,F>> {
+    static_assert(std::is_invocable<F, SVector<N>>::value &&		   
+		  std::is_same<typename std::invoke_result<F,SVector<N>>::type,
+		                 double>::value);
   private:
     // an M dimensional array of K dimensional array of N dimensional ScalarField
-    std::array<std::array<ScalarField<N>, K>, M> field_;
+    std::array<std::array<ScalarField<N,F>, K>, M> field_;
   public:
     // constructors
     MatrixField() = default;
-    MatrixField(std::array<std::array<std::function<double(SVector<N>)>, K>, M> field);
-    // allow braced-list initialization. ScalarFields are given row-wise (each list refers to a MatrixField row)
-    MatrixField(std::initializer_list<std::initializer_list<std::function<double(SVector<N>)>>> field);
-
+    MatrixField(std::array<std::array<F,K>,M> field) {
+      for(std::size_t i = 0; i < M; ++i){
+	for(std::size_t j = 0; j < K; ++j){
+	  field_[i][j] = ScalarField<N,F>(field[i][j]);
+	}
+      }
+    };
     // call operator
     SMatrix<M, K> operator()(const SVector<N>& point) const;
     // access operator
-    const ScalarField<N>& operator()(std::size_t i, std::size_t j) const;
-    const ScalarField<N>& coeff(std::size_t i, std::size_t j) const; // required by MatrixExpr
-    ScalarField<N>& operator()(std::size_t i, std::size_t j); // non-const version
-
-    // block access
-    VectorField<N, K> row(std::size_t i) const;
-    VectorField<N, M> col(std::size_t i) const;
+    const ScalarField<N,F>& operator()(std::size_t i, std::size_t j) const;
+    const ScalarField<N,F>& coeff(std::size_t i, std::size_t j) const; // required by MatrixExpr
+    ScalarField<N,F>& operator()(std::size_t i, std::size_t j); // non-const version
   };
   
 #include "MatrixField.tpp"

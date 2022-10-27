@@ -2,136 +2,151 @@
 #define __SCALAR_FIELD_H__
 
 #include <cmath>
-#include <functional>
-#include <initializer_list>
+#include <type_traits>
 #include "../Symbols.h"
 #include "ScalarFieldExpressions.h"
+//#include "MatrixField.h"
 
 namespace fdaPDE{
 namespace core{
 
   // forward declaration
-  template <int M, int N> class VectorField;
-  
-  // macro for the definition of application of trascendental functions to ScalarFields
-#define DEF_FIELD_UNARY_FUNCTOR(FUN_NAME)			\
-  template <int N>							\
-  ScalarField<N> FUN_NAME(const ScalarField<N>& op){			\
-    std::function<double(SVector<N>)> result =				\
-    [=](SVector<N> x) -> double {					\
-       return std::FUN_NAME(op(x));					\
-    };									\
-									\
-    return ScalarField<N>(result);					\
-  }									\
-  
-  // a template class for handling general scalar fields. A field wrapped by this template doesn't guarantee any regularity condition.
-  // N is the domain dimension. The wrapped field must be encoded in a lambda expression receiving an SVector<N> in input and returning a double
-  // extend FieldExpr to allow for expression templates
+  template <int M, int N, typename F> class VectorField;
+
+  // a functor representing a zero field
   template <int N>
-  class ScalarField : public FieldExpr<ScalarField<N>> {
+  struct ZeroField { 
+    inline double operator()(const SVector<N>& p) const { return 0; }
+  };
+  // a functor representing a constant field
+  template <int N>
+  class ConstantField {
   private:
+    double c_;
+  public:
+    ConstantField(double c) : c_(c) {};
+    inline double operator()(const SVector<N>& p) const { return c_; }
+  };
+  
+  // a template class for handling general scalar fields. A ScalarFiels is a wrapper for a generic callable F having an implementation for
+  // double operator()(const SVector<N>&)
+  
+  // In general using F = std::function<double(SVector<N>)> is fine but must be avoided at any performance-critical point of the library
+  // (any point inside the core). Indeed std::function is an highly polymorphic type with a non-zero run-time cost.
+  template <int N, typename F = std::function<double(SVector<N>)>>
+  class ScalarField : public FieldExpr<ScalarField<N,F>> {
+    static_assert(std::is_invocable<F, SVector<N>>::value &&		   
+		  std::is_same<typename std::invoke_result<F,SVector<N>>::type, 
+		                 double>::value);				   
+    private:
     // approximation of first and second derivative using central differences
     double approxFirstDerivative (const SVector<N>& x, std::size_t i, double step) const;
     double approxSecondDerivative(const SVector<N>& x, std::size_t i, std::size_t j, double step) const;
-    
   protected:
-    std::function<double(SVector<N>)> f_{}; // the function this class wraps
+    F f_{}; // the function this class wraps
     double step_ = 0.001; // the step size used in the approximation of derivatives in .derive() and .deriveTwice() method
-    
   public:
     // default constructor
     ScalarField() = default;
     // construct a scalar field from a std::function object
-    ScalarField(const std::function<double(SVector<N>)>& f) : f_(f) {};
-    // converting constructor from field expression to ScalarField
-    template <typename E>
+    ScalarField(const F& f) : f_(f) {};
+    // assignement and constructor from a FieldExpr requires the base type F to be a std::function for type erasure
+    template <typename E, typename U = F,
+              typename std::enable_if<
+		std::is_same<U, std::function<double(SVector<N>)>>::value,
+		int>::type = 0>
     ScalarField(const FieldExpr<E>& f) {
       // wraps field expression in lambda
       E op = f.get();
       std::function<double(SVector<N>)> fieldExpr = [op](SVector<N> x) -> double {
 	return op(x);
       };
-      f_ = fieldExpr;
+      f_ = fieldExpr;      
     };
-
-    // assignment from lambda expression
-    template <typename L>
-    ScalarField& operator=(const L& lambda) {
+    template <typename E, typename U = F>
+    typename std::enable_if<
+      std::is_same<U, std::function<double(SVector<N>)>>::value,
+      ScalarField<N>&>::type
+    operator=(const FieldExpr<E>& f) {
+      // wraps field expression in lambda
+      E op = f.get();
+      std::function<double(SVector<N>)> fieldExpr = [op](SVector<N> x) -> double {
+	return op(x);
+      };
+      f_ = fieldExpr;
+      return *this;
+    };
+    // assignment from lambda expression. Be carefull of the fact that the lambda will be wrapped in a std::function object, which has
+    // NOT zero run-time cost. Use this only if strictly necessary.
+    template <typename L, typename U = F>
+    typename std::enable_if<
+      std::is_same<U, std::function<double(SVector<N>)>>::value,
+      ScalarField<N>&>::type
+    operator=(const L& lambda) {
+      // assign lambda to std::function object
       f_ = lambda;
       return *this;
     }
-
     // initializer for a zero field
-    static ScalarField<N> Zero() { return ScalarField<N>([](SVector<N>) -> double { return 0; }); }
+    static ScalarField<N, ZeroField<N>> Zero() { return ScalarField<N, ZeroField<N>>(ZeroField<N>()); }
+    // initializer for a constant field
+    static ScalarField<N, ConstantField<N>> Const(double c) {
+      return ScalarField<N, ConstantField<N>>(ConstantField<N>(c));
+    }
     
-    // preserve std::function syntax for evaluating a function at point, required for expression templates
-    double operator()(const SVector<N>& x) const { return f_(x); };
-
+    // preserve callable syntax for evaluating a function at point
+    inline double operator()(const SVector<N>& x) const { return f_(x); };
     // approximation of gradient vector and hessian matrix without construction of a VectorField object
+    void setStep(double step) { step_ = step; } // set step size used for numerical approximations
     SVector<N> approxGradient (const SVector<N>& x, double step) const;
     SMatrix<N> approxHessian  (const SVector<N>& x, double step) const;
     
-    VectorField<N, N> derive(double step) const;
-    virtual VectorField<N, N> derive() const; // uses the value of step_ as step size in central difference formula
-    
+    // gradient objects
+    VectorField<N,N,std::function<double(SVector<N>)>> derive(double step) const;
+    virtual VectorField<N,N,std::function<double(SVector<N>)>> derive() const; // uses stored step_ value
+    // hessian objects
     std::function<SMatrix<N>(SVector<N>)> deriveTwice(double step) const;
-    virtual std::function<SMatrix<N>(SVector<N>)> deriveTwice() const; // uses the value of step_ as step size in central difference formula
-
-    void setStep(double step) { step_ = step; }
+    virtual std::function<SMatrix<N>(SVector<N>)> deriveTwice() const;// uses stored step_ value
   };
-
-  // definition of most common mathematical functions. This allows, e.g. sin(ScalarField)
-  DEF_FIELD_UNARY_FUNCTOR(sin);
-  DEF_FIELD_UNARY_FUNCTOR(cos);
-  DEF_FIELD_UNARY_FUNCTOR(tan);
-  DEF_FIELD_UNARY_FUNCTOR(exp);
-  DEF_FIELD_UNARY_FUNCTOR(log);
+  // template argument deduction rule for the special case F = std::function<double(SVector<N>)>
+  template <int N> ScalarField(const std::function<double(SVector<N>)>&)
+    -> ScalarField<N, std::function<double(SVector<N>)>>;
   
-  // the following classes can be used to force particular regularity conditions on the field which might be required for some numerical methods.
-  // i.e. Using a DifferentiableScalarfield as argument for a function forces to define an analytical expression for the gradient vector
-  template <int N>
-  class DifferentiableScalarField : public ScalarField<N> {
+  // The following classes can be used to force particular regularity conditions on the field.
+  template <int N, typename F1 = std::function<double(SVector<N>)>, typename F2 = F1>
+  class DifferentiableScalarField : public ScalarField<N,F1> {
   protected:
     // gradient vector of scalar field f
-    VectorField<N,N> df_{};
-  
+    VectorField<N,N,F2> df_{};
   public:
-    // constructor
-    DifferentiableScalarField(const std::function<double(SVector<N>)>& f, // base function
-			      const std::initializer_list<std::function<double(SVector<N>)>>& df // gradient function
-			      ) : ScalarField<N>(f), df_(df) {};
-
-    // allow the construction of the gradient VectorField from a single lambda
-    DifferentiableScalarField(const std::function<double(SVector<N>)>& f, // base function
-			      const std::function<SVector<N>(SVector<N>)>& df // gradient function
-			      ) : ScalarField<N>(f), df_(VectorField<N,N>(df)) {};
-    
-    VectorField<N,N> derive() const override { return df_; };
+    // constructors (f: expression of the field, df: expression of its gradient)
+    DifferentiableScalarField
+    (const F1& f, const VectorField<N,N,F2>& df)
+      : ScalarField<N,F1>(f), df_(df) {};
+    DifferentiableScalarField
+    (const F1& f, const std::array<F2,N>& df)
+      : ScalarField<N,F1>(f), df_(VectorField<N,N,F2>(df)) {};
+    // return analytical gradient
+    VectorField<N,N,F2> derive() const override { return df_; };
   };
-
-  template <int N>
-  class TwiceDifferentiableScalarField : public DifferentiableScalarField<N> {
+  
+  template <int N, typename F1 = std::function<double(SVector<N>)>, typename F2 = F1>
+  class TwiceDifferentiableScalarField : public DifferentiableScalarField<N,F1,F2> {
   protected:
     // hessian matrix of scalar field f
     std::function<SMatrix<N>(SVector<N>)> ddf_{};
-  
   public:
-    // constructor
-    TwiceDifferentiableScalarField(const std::function<double(SVector<N>)>& f, // base function
-				   const std::initializer_list<std::function<double(SVector<N>)>>& df, // gradient function
-				   const std::function<SMatrix<N>(SVector<N>)>& ddf // hessian function
-				   ) : DifferentiableScalarField<N>(f, df), ddf_(ddf) {};
-
-    // allow the construction of the gradient VectorField from a single lambda
-    TwiceDifferentiableScalarField(const std::function<double(SVector<N>)>& f, // base function
-			           const std::function<SVector<N>(SVector<N>)>& df, // gradient function
-				   const std::function<SMatrix<N>(SVector<N>)>& ddf // hessian function
-				   ) : DifferentiableScalarField<N>(f, df), ddf_(ddf) {};
-    
+    // constructors (f: expression of the field, df: expression of its gradient, ddf: expression of its hessian)
+    TwiceDifferentiableScalarField
+    (const F1& f, const VectorField<N,N,F2>& df, const std::function<SMatrix<N>(SVector<N>)>& ddf)
+      : DifferentiableScalarField<N,F1,F2>(f, df), ddf_(ddf) {};
+    TwiceDifferentiableScalarField
+    (const F1& f, const std::array<F2,N>& df, const std::function<SMatrix<N>(SVector<N>)>& ddf)
+      : DifferentiableScalarField<N,F1,F2>(f, df), ddf_(ddf) {};
+    // return analytical hessian
     std::function<SMatrix<N>(SVector<N>)> deriveTwice() const override { return ddf_; }
-  };
-  
+    };
+
 #include "ScalarField.tpp"
 }}
   
