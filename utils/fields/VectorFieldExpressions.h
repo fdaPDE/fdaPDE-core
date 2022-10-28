@@ -57,6 +57,9 @@ namespace core{
     }
     // dot product between VectExpr and SVector
     virtual DotProduct<E, VectConst<M,N>> dot(const SVector<N>& op) const;
+    // VectExpr - VectExpr dot product
+    template <typename F>
+    DotProduct<E,F> dot(const VectExpr<M,N,F>& op) const;
     // evaluate parametric nodes in the expression, does nothing if not redefined in derived classes
     template <typename T> void eval_parameters(T i) const { return; }
     // expose compile time informations
@@ -139,6 +142,12 @@ namespace core{
   template <int M, int N, typename E>
   DotProduct<E, VectConst<M,N>> VectExpr<M,N, E>::dot(const SVector<N>& op) const {
     return DotProduct<E, VectConst<M,N>>(this->get(), VectConst<M,N>(op));
+  }
+  // dot product between a VectExpr and a VectExpr
+  template <int M, int N, typename E>
+  template <typename F>
+  DotProduct<E,F> VectExpr<M,N, E>::dot(const VectExpr<M,N,F>& op) const {
+    return DotProduct<E,F>(this->get(), op.get());
   }
 }}
 

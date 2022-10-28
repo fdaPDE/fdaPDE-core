@@ -18,7 +18,7 @@ namespace FEM{
     static constexpr bool is_space_varying = false; // dT() does not affect the space-variability properties of the PDE
 
     // NOTE: is important to use auto return type to let the compiler return the whole expression template produced by this
-    // operator avoiding both type erause (e.g. by casting to some ScalarField object) as welle as the creation of temporaries
+    // operator avoiding both type erause (e.g. by casting to some ScalarField object) as well as the creation of temporaries
     template <unsigned int M, unsigned int N, unsigned int R, typename B>
     auto integrate(const B& basis, const Element<M, N, R>& e, int i , int j) const{
       return ScalarField<M>::Zero();
