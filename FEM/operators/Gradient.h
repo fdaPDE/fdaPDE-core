@@ -29,8 +29,8 @@ namespace FEM{
   template <typename T>
   class Gradient : public BilinearFormExpr<Gradient<T>>{
     // perform compile-time sanity checks
-    static_assert(std::is_invocable<T, std::size_t>::value || // space-varying
-		  is_eigen_vector<T>()); // constant coefficient
+    static_assert(std::is_invocable<T, std::size_t>::value || // space-varying case
+		  is_eigen_vector<T>());                      // constant coefficient case
   private:
     T b_; // transport vector (either constant or space-varying)
   public:
@@ -47,6 +47,9 @@ namespace FEM{
     //        NOTE: we assume "basis" to provide functions already defined on the reference element
     // e: the pyhsical element on which we are integrating
     // i,j: indexes of the discretization matrix entry we are computing
+
+    // NOTE: is important to use auto return type to let the compiler return the whole expression template produced by this
+    // operator avoiding both type erause (e.g. by casting to some ScalarField object) as welle as the creation of temporaries
     template <unsigned int M, unsigned int N, unsigned int R, typename B>
     auto integrate(const B& basis, const Element<M, N, R>& e, int i , int j) const{
       // express gradient of basis function over e in terms of gradient of basis function defined over the reference element.
@@ -55,14 +58,7 @@ namespace FEM{
       auto NablaPhi_j = invJ * basis[j].derive(); // let compiler deduce the expression type
       auto phi_i = basis[i];
       // approximation of the (i,j)-th element of gradient operator
-      // if constexpr(std::is_invocable<T, std::size_t>::value){
-      // 	// space-varying case: we assume b_ a callable object returing the evaluation of the field at the
-      // 	// iq-th quadrature node of physical element e. pass b_ as parameter to the field expression, Integrator.h will do the rest
-      // 	return phi_i * NablaPhi_j.dot(FieldParam<std::size_t, SVector<N>>(b_));
-      // }else{
-      // 	// field b_ is constant over the whole domain
       return phi_i * NablaPhi_j.dot(b_);
-	//}
     }
   };  
   // template argument deduction guide

@@ -20,12 +20,11 @@ namespace FEM{
   template <typename T = DefaultOperator>
   class Laplacian : public BilinearFormExpr<Laplacian<T>>{
     // perform compile-time sanity checks
-    static_assert(std::is_same<DefaultOperator, T>::value || // implicitly set K_ = I
-		  std::is_base_of<MatrixBase, T>::value || // space-varying case
+    static_assert(std::is_same<DefaultOperator, T>::value ||        // implicitly set K_ = I
+		  std::is_base_of<MatrixBase, T>::value ||          // space-varying case
 		  std::is_base_of<Eigen::MatrixBase<T>, T>::value); // constant coefficient case
   private:
     T K_; // diffusion tensor (either constant or space-varying)
-
   public: 
     // constructors
     Laplacian() = default; // use default constructor for isotropic diffusion
@@ -40,6 +39,9 @@ namespace FEM{
     //        NOTE: we assume "basis" to provide functions already defined on the reference element
     // e: the element on which we are integrating
     // i,j: indexes of the discretization matrix element we are computing
+
+    // NOTE: is important to use auto return type to let the compiler return the whole expression template produced by this
+    // operator avoiding both type erause (e.g. by casting to some ScalarField object) as welle as the creation of temporaries
     template <unsigned int M, unsigned int N, unsigned int R, typename B>
     auto integrate(const B& basis, const Element<M, N, R>& e, int i , int j) const{
       // express gradient of basis function over e in terms of gradient of basis function defined over the reference element.
