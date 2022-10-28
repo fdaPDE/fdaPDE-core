@@ -26,61 +26,47 @@ namespace FEM{
   };
   
   // A class to provide the discretization for the gradient operator (transport term).
-  template <typename T = NullaryOperator>
+  template <typename T>
   class Gradient : public BilinearFormExpr<Gradient<T>>{
     // perform compile-time sanity checks
-    static_assert(std::is_same<NullaryOperator, T>::value || // support for dot(b, Gradient())
-		  std::is_base_of<VectBase, T>::value || // space-varying case
-		  is_eigen_vector<T>()); // constant coefficient case
+    static_assert(std::is_invocable<T, std::size_t>::value || // space-varying
+		  is_eigen_vector<T>()); // constant coefficient
   private:
     T b_; // transport vector (either constant or space-varying)
   public:
     // constructors
-    Gradient() = default;
     Gradient(const T& b) : b_(b) {}
 
+    // compile time informations
     std::tuple<Gradient<T>> getTypeList() const { return std::make_tuple(*this); }
-
+    static constexpr bool is_space_varying = std::is_invocable<T, std::size_t>::value;
+    
     // approximates the contribution to the (i,j)-th element of the discretization matrix given by the transport term:
     // \int_e phi_i * b.dot(\Nabla phi_j)
     // basis: any type compliant with a functional basis behaviour. See LagrangianBasis.h for an example
     //        NOTE: we assume "basis" to provide functions already defined on the reference element
-    // e: the element on which we are integrating
-    // i,j: indexes of the discretization matrix element we are computing
+    // e: the pyhsical element on which we are integrating
+    // i,j: indexes of the discretization matrix entry we are computing
     template <unsigned int M, unsigned int N, unsigned int R, typename B>
-    ScalarField<M> integrate(const B& basis, const Element<M, N, R>& e, int i , int j) const{
+    auto integrate(const B& basis, const Element<M, N, R>& e, int i , int j) const{
       // express gradient of basis function over e in terms of gradient of basis function defined over the reference element.
       // This entails to compute (J^{-1})^T * \Nabla phi_i.
       Eigen::Matrix<double, N, M> invJ = e.invBarycentricMatrix().transpose(); // (J^{-1})^T = invJ
-      VectorField<M, N> NablaPhi_j = invJ * basis[j].derive();
+      auto NablaPhi_j = invJ * basis[j].derive(); // let compiler deduce the expression type
       auto phi_i = basis[i];
       // approximation of the (i,j)-th element of gradient operator
-      if constexpr(std::is_same<NullaryOperator, T>::value){
-	return phi_i * NablaPhi_j.dot(SVector<N>::Ones()); // fallback to b_ = 1 if no b_ is provided
-      }else{
-	// VectorField arithmetic supports natively dot product with both SVector and VectorField objects
-	if constexpr(std::is_base_of<VectBase, T>::value){
-	  std::function<SVector<N>(SVector<M>)> b = [this, e](const SVector<M>& p) -> SVector<N> {
-	    // when the bilinear form is integrated it gets quadrature nodes defined over the reference element.
-	    // we need to map the quadrature point on the physical element e to get a correct evaluation of the non-constant field b_
-	    return b_(e.barycentricMatrix()*p + e.coords()[0]);
-	  };
-	  return phi_i * NablaPhi_j.dot(b);
-	}else{
-	  // velocity field is constant over the whole domain
-	  return phi_i * NablaPhi_j.dot(b_);
-	}
-      }
+      // if constexpr(std::is_invocable<T, std::size_t>::value){
+      // 	// space-varying case: we assume b_ a callable object returing the evaluation of the field at the
+      // 	// iq-th quadrature node of physical element e. pass b_ as parameter to the field expression, Integrator.h will do the rest
+      // 	return phi_i * NablaPhi_j.dot(FieldParam<std::size_t, SVector<N>>(b_));
+      // }else{
+      // 	// field b_ is constant over the whole domain
+      return phi_i * NablaPhi_j.dot(b_);
+	//}
     }
   };  
   // template argument deduction guide
   template <typename T> Gradient(const T&) -> Gradient<T>;
-
-  // out of class definition for dot product, allow for formal syntax dot(b, Gradient()) where b is any vector
-  template <typename T>
-  Gradient<T> dot(const T& b, const Gradient<NullaryOperator>& g){
-    return Gradient(b);
-  }
   
 }}}
 #endif // __GRADIENT_H__

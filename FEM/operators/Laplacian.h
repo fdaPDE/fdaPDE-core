@@ -17,14 +17,14 @@ namespace core{
 namespace FEM{
 
   // class representing the laplacian operator (isotropic and anisotropic diffusion)
-  template <typename T = NullaryOperator>
+  template <typename T = DefaultOperator>
   class Laplacian : public BilinearFormExpr<Laplacian<T>>{
     // perform compile-time sanity checks
-    static_assert(std::is_same<NullaryOperator, T>::value || // support for dot(b, Gradient())
+    static_assert(std::is_same<DefaultOperator, T>::value || // implicitly set K_ = I
 		  std::is_base_of<MatrixBase, T>::value || // space-varying case
 		  std::is_base_of<Eigen::MatrixBase<T>, T>::value); // constant coefficient case
   private:
-    T K_{}; // diffusion tensor (either constant or space-varying)
+    T K_; // diffusion tensor (either constant or space-varying)
 
   public: 
     // constructors
@@ -32,6 +32,7 @@ namespace FEM{
     Laplacian(const T& K) : K_(K) {}
 
     std::tuple<Laplacian<T>> getTypeList() const { return std::make_tuple(*this); }
+    static constexpr bool is_space_varying = std::is_invocable<T, std::size_t>::value;
     
     // approximates the contribution to the (i,j)-th element of the discretization matrix given by the transport term:
     // \int_e \Nabla phi_i.dot(\Nabla phi_j)
@@ -40,29 +41,19 @@ namespace FEM{
     // e: the element on which we are integrating
     // i,j: indexes of the discretization matrix element we are computing
     template <unsigned int M, unsigned int N, unsigned int R, typename B>
-    ScalarField<M> integrate(const B& basis, const Element<M, N, R>& e, int i , int j) const{
+    auto integrate(const B& basis, const Element<M, N, R>& e, int i , int j) const{
       // express gradient of basis function over e in terms of gradient of basis function defined over the reference element.
       // This entails to compute (J^{-1})^T * \Nabla phi_i.
       Eigen::Matrix<double, N, M> invJ = e.invBarycentricMatrix().transpose(); // (J^{-1})^T = invJ
       VectorField<M,N> NablaPhi_i = invJ * basis[i].derive(); 
       VectorField<M,N> NablaPhi_j = invJ * basis[j].derive();
      
-      if constexpr(std::is_same<NullaryOperator, T>::value){
-	// for isotropic laplacian fallback to K_ = I: \Nabla phi_i.dot(\Nabla * phi_j)
+      if constexpr(std::is_same<DefaultOperator, T>::value)
+	// isotropic unitary diffusion fallback to K_ = I: \Nabla phi_i.dot(\Nabla * phi_j)
 	return NablaPhi_i.dot(NablaPhi_j);
-      }else{
-	// for anisotropic diffusion: (\Nabla phi_i)^T * K * \Nabla * phi_j
-	if constexpr(std::is_base_of<MatrixBase, T>::value){
-	  std::function<SMatrix<N>(SVector<M>)> K = [this, e](const SVector<M>& p) -> double {
-	    // when the bilinear form is integrated it gets quadrature nodes defined over the reference element.
-	    // we need to map the quadrature point on the physical element e to get a correct evaluation of the non-constant field K_
-	    return K_(e.barycentricMatrix()*p + e.coords()[0]);
-	  };
-	  return NablaPhi_i.dot(K *NablaPhi_j);
-	}else{
-	  return NablaPhi_i.dot(K_*NablaPhi_j);
-	}
-      }
+      else
+	// anisotropic diffusion: (\Nabla phi_i)^T * K * \Nabla * phi_j
+	return NablaPhi_i.dot(K_*NablaPhi_j);
     }
   };
   

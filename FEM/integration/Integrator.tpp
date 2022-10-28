@@ -7,10 +7,12 @@ double Integrator<M,R,K>::integrate(const B& basis, const Element<M, N, R>& e, i
   // apply quadrature rule
   double value = 0;
   // builds the callable to integrate here from the bilinear form passed as argument
-  ScalarField<M> f = bilinearForm.integrate(basis, e, i, j);
+  auto f = bilinearForm.integrate(basis, e, i, j); // let the compiler deduce the type of the expression template!
   for(size_t iq = 0; iq < integrationTable_.num_nodes; ++iq){
     // the field produced by a bilinear form is by construction evaluable at any spatial point
     SVector<M> p = SVector<M>(integrationTable_.nodes[iq].data());
+    // space-varying case: evaluate coefficients at the quadrature node
+    if constexpr(F::is_space_varying) bilinearForm.eval_parameters(e.ID() + iq);
     value += f(p) * integrationTable_.weights[iq];
   }
   // correct for measure of domain (element e)
