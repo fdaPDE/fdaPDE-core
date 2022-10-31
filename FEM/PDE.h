@@ -25,19 +25,22 @@ namespace FEM{
   // data structure used as cache for basis elements built over the PDE's domain.
   // the i-th element of this cache returns the basis built over the i-th element of the mesh
   template <unsigned int N> using BASIS_TABLE = std::vector<std::vector<ScalarField<static_cast<int>(N)>>>;
+
+  // base class for any PDE object (used as tag in higher components of the architecture)
+  struct PDEBase {};
   
   // top level class to describe a partial differential equation Lf = u.
   // N and M are the problem dimensions: these informations are strictly releated to the mesh used for domain discretization.
   // In particular N is the dimension of the problem domain, M is the local dimension of the manifold describing the domain.
-  template <unsigned int M,  // local dimension of the mesh 
-	    unsigned int N,  // dimension of the mesh embedding space
-	    unsigned int R,  // order of the mesh
+  template <unsigned int M, // local dimension of the mesh 
+	    unsigned int N, // dimension of the mesh embedding space
+	    unsigned int R, // order of the mesh
 	    typename E, // differential operator L
 	    typename F, // forcing term u
 	    typename B = LagrangianBasis<M,N,R>, // functional basis
 	    typename I = Integrator<M,R>, // quadrature rule used for approximation of integrals
 	    typename S = typename pde_standard_solver_selector<E>::type>
-  class PDE{
+  class PDE : public PDEBase {
   private:
     const Mesh<M,N,R>& domain_; // problem domain
     E bilinearForm_; // the differential operator of the problem in its weak formulation
@@ -85,6 +88,11 @@ namespace FEM{
     
     void init();  // computes matrices R1, R0 and forcing vector without solving the FEM linear system.
     void solve(); // entry point for PDE solver. Solves the pde (i.e. after this call solution() will contain valid data)
+
+    // expose compile time informations
+    static constexpr std::size_t local_dimension = M;
+    static constexpr std::size_t embedding_dimension = N;
+    static constexpr std::size_t basis_order = R;
   };
 
   // argument deduction rule for PDE object

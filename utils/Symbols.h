@@ -18,4 +18,24 @@ template <typename T> using DVector = Eigen::Matrix<T, Eigen::Dynamic, 1>;
 // sparse structures
 template <typename T> using SpMatrix = Eigen::SparseMatrix<T>;
 
+namespace fdaPDE {
+  // a Triplet type (almost identical with respect to Eigen::Triplet<T>) but allowing for non const access to stored value
+  // this is compatible to Eigen::setFromTriplets() method used for the construction of sparse matrices
+  template <typename T>
+  class Triplet {
+  private:
+    Eigen::Index row_, col_;
+    T value_;
+  public:
+    Triplet() = default;
+    Triplet(const Eigen::Index& row, const Eigen::Index& col, const T& value)
+      : row_(row), col_(col), value_(value) {};
+    
+    const Eigen::Index& row() const { return row_; }
+    const Eigen::Index& col() const { return col_; }
+    const T& value() const { return value_; }
+    T& value() { return value_; } // allow for modifications of stored value, this not allowed by Eigen::Triplet
+  };
+}
+
 #endif // __SYMBOLS_H__
