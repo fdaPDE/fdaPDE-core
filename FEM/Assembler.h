@@ -24,14 +24,14 @@ using fdaPDE::core::FEM::Integrator;
 #include "basis/MultivariatePolynomial.h"
 using fdaPDE::core::FEM::LagrangianBasis;
 using fdaPDE::core::FEM::MultivariatePolynomial;
+#include "basis/BasisTable.h"
+using fdaPDE::core::FEM::BASIS_TABLE;
 #include "operators/BilinearFormTraits.h"
 using fdaPDE::core::FEM::is_symmetric;
 
 namespace fdaPDE{
 namespace core{
 namespace FEM{
-
-  template <unsigned int N> using BASIS_TABLE = std::vector<std::vector<ScalarField<static_cast<int>(N)>>>;
   
   // FEM assembler. M local dimension, N embedding dimension, B basis function, I integrator
   template <unsigned int M, unsigned int N, unsigned int R, typename B, typename I>
@@ -41,10 +41,10 @@ namespace FEM{
     const Mesh<M, N, R>& mesh_; // mesh
     const I& integrator_; // quadrature rule to approximate integrals
     B referenceBasis_{}; // functional basis over reference N-dimensional unit simplex
-    const BASIS_TABLE<N>& basis_; // basis system over the entire domain
+    const BASIS_TABLE<M,N,R,B>& basis_; // basis system over the entire domain
     
   public:
-    Assembler(const Mesh<M, N, R>& mesh, const BASIS_TABLE<N>& basis, const I& integrator) :
+    Assembler(const Mesh<M,N,R>& mesh, const BASIS_TABLE<M,N,R,B>& basis, const I& integrator) :
       mesh_(mesh), basis_(basis), integrator_(integrator) {};
     // assemble discretization matrix
     template <typename E>

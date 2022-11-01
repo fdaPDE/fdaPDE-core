@@ -6,6 +6,8 @@
 using fdaPDE::core::MESH::Mesh;
 #include "basis/LagrangianBasis.h"
 using fdaPDE::core::FEM::LagrangianBasis;
+#include "basis/BasisTable.h"
+using fdaPDE::core::FEM::BASIS_TABLE;
 #include "solvers/FEMBaseSolver.h"
 #include "solvers/FEMStandardSpaceSolver.h"
 #include "solvers/FEMStandardSpaceTimeSolver.h"
@@ -21,10 +23,6 @@ using fdaPDE::core::FEM::Integrator;
 namespace fdaPDE{
 namespace core{
 namespace FEM{
-
-  // data structure used as cache for basis elements built over the PDE's domain.
-  // the i-th element of this cache returns the basis built over the i-th element of the mesh
-  template <unsigned int N> using BASIS_TABLE = std::vector<std::vector<ScalarField<static_cast<int>(N)>>>;
 
   // base class for any PDE object (used as tag in higher components of the architecture)
   struct PDEBase {};
@@ -56,7 +54,7 @@ namespace FEM{
 
     I integrator_{}; // integrator used for approximation of integrals
     B referenceBasis_{}; // basis defined over the reference unit simplex
-    BASIS_TABLE<N> basis_{}; // basis built over the whole domain_
+    BASIS_TABLE<M,N,R,B> basis_{}; // basis built over the whole domain_
     S solver_{}; // numerical scheme used to find a solution to this PDE
 
     void buildBasis_(); // initializes BASIS_TABLE
@@ -84,7 +82,7 @@ namespace FEM{
     std::shared_ptr<DMatrix<double>>  force() const { return solver_.force(); }; // rhs of FEM linear system
     std::shared_ptr<SpMatrix<double>> R1() const { return solver_.R1(); };
     std::shared_ptr<SpMatrix<double>> R0() const { return solver_.R0(); };
-    const BASIS_TABLE<N>& basis() const { return basis_; }
+    const BASIS_TABLE<M,N,R,B>& basis() const { return basis_; }
     
     void init();  // computes matrices R1, R0 and forcing vector without solving the FEM linear system.
     void solve(); // entry point for PDE solver. Solves the pde (i.e. after this call solution() will contain valid data)
