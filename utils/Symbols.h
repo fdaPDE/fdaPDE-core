@@ -14,6 +14,7 @@ template <unsigned int N, unsigned int M = N> using SMatrix = Eigen::Matrix<doub
 // stack overflow). See Eigen documentation for more details.
 template <typename T> using DMatrix = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;
 template <typename T> using DVector = Eigen::Matrix<T, Eigen::Dynamic, 1>;
+template <typename T> using DiagMatrix = Eigen::DiagonalMatrix<double, Eigen::Dynamic, Eigen::Dynamic>;
 
 // sparse structures
 template <typename T> using SpMatrix = Eigen::SparseMatrix<T>;
