@@ -28,7 +28,7 @@ namespace FEM{
     Identity(const T& c) : c_(c) {};
 
     std::tuple<Identity<T>> getTypeList() const { return std::make_tuple(*this); }
-    static constexpr bool is_space_varying = std::is_invocable<T, std::size_t>::value;
+    static constexpr bool is_space_varying = std::is_base_of<ScalarBase, T>::value;
 
     // approximates the contribution to the (i,j)-th element of the discretization matrix given by the transport term:
     // \int_e phi_i * phi_j

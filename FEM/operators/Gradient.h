@@ -29,8 +29,8 @@ namespace FEM{
   template <typename T>
   class Gradient : public BilinearFormExpr<Gradient<T>>{
     // perform compile-time sanity checks
-    static_assert(std::is_invocable<T, std::size_t>::value || // space-varying case
-		  is_eigen_vector<T>());                      // constant coefficient case
+    static_assert(std::is_base_of<VectBase, T>::value || // space-varying case
+		  is_eigen_vector<T>());                 // constant coefficient case
   private:
     T b_; // transport vector (either constant or space-varying)
   public:
@@ -39,7 +39,7 @@ namespace FEM{
 
     // compile time informations
     std::tuple<Gradient<T>> getTypeList() const { return std::make_tuple(*this); }
-    static constexpr bool is_space_varying = std::is_invocable<T, std::size_t>::value;
+    static constexpr bool is_space_varying = std::is_base_of<VectBase, T>::value;
     
     // approximates the contribution to the (i,j)-th element of the discretization matrix given by the transport term:
     // \int_e phi_i * b.dot(\Nabla phi_j)

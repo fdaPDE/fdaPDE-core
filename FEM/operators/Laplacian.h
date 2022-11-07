@@ -31,7 +31,7 @@ namespace FEM{
     Laplacian(const T& K) : K_(K) {}
 
     std::tuple<Laplacian<T>> getTypeList() const { return std::make_tuple(*this); }
-    static constexpr bool is_space_varying = std::is_invocable<T, std::size_t>::value;
+    static constexpr bool is_space_varying = std::is_base_of<MatrixBase, T>::value;
     
     // approximates the contribution to the (i,j)-th element of the discretization matrix given by the transport term:
     // \int_e \Nabla phi_i.dot(\Nabla phi_j)
