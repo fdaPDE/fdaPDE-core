@@ -36,18 +36,24 @@ namespace FEM{
     Integrator() : integrationTable_(IntegratorTable<M, K>()) {};
     // integrate a callable F over a mesh element e
     template <unsigned int N, typename F>
-    double integrate(const Element<M, N, R>& e, const F& f) const;
+    double integrate(const Element<M,N,R>& e, const F& f) const;
     // integrate a callable F over the entire mesh m
     template <unsigned int N, typename F>
-    double integrate(const Mesh<M, N, R>& m, const F& f) const;
+    double integrate(const Mesh<M,N,R>& m, const F& f) const;
     // integrate a BilinearFormExpr to produce the (i,j)-th element of its discretization
     template <unsigned int N, typename B, typename F>
-    double integrate(const B& basis, const Element<M, N, R>& e, int i , int j, const F& bilinearForm) const;
+    double integrate(const B& basis, const Element<M,N,R>& e, int i , int j, const F& bilinearForm) const;
     // computes \int_e [f * \phi] where \phi is a LagrangianBasis object defined over the *reference element*. Use this
     // method to compute *this* specific form of integral (very common in FEM approximations) because it doesn't require
     // an explicit construction of the basis over the element e.
     template <unsigned int N, typename F>
-    double integrate(const Element<M, N, R>& e, const F& f, const typename LagrangianBasis<M, N, R>::element_type& phi) const;
+    double integrate(const Element<M,N,R>& e, const F& f, const typename LagrangianBasis<M,N,R>::element_type& phi) const;
+
+    // returns all the quadrature nodes used by this specific integrator
+    template <unsigned int N>
+    DMatrix<double> quadratureNodes(const Mesh<M,N,R>& m) const;
+    // returns number of nodes in the quadrature formula
+    std::size_t numNodes() const { return integrationTable_.num_nodes; }
   };
 
 #include "Integrator.tpp"

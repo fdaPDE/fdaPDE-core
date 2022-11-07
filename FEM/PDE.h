@@ -59,23 +59,23 @@ namespace FEM{
 
     void buildBasis_(); // initializes BASIS_TABLE
   public:
-    // minimal constructor, use defaulted template parameters, a DMatrix is accepted as forcingData to handle also space-time problems
+    // constructor
     PDE(const Mesh<M,N,R>& domain, E bilinearForm, const F& forcingData);
-    // derive template parameters from constructor arguments
     PDE(const Mesh<M,N,R>& domain, E bilinearForm, const F& forcingData, const B& basis, const I& integrator);
     
-    // setters for boundary and initial conditions
+    // setters for boundary conditions
     void setDirichletBC(const DMatrix<double>& data);
     //void setNeumannBC();
     void setInitialCondition(const DVector<double>& data) { initialCondition_ = data; };
   
     // getters
-    const Mesh<M, N>& domain() const { return domain_; }
+    const Mesh<M,N,R>& domain() const { return domain_; }
     E bilinearForm() const { return bilinearForm_; }
     const F& forcingData() const { return forcingData_; }
     const DVector<double>& initialCondition() const { return initialCondition_; }
     const boundary_map& boundaryData() const { return boundaryData_; };
     const I& integrator() const { return integrator_; }
+    DMatrix<double> quadratureNodes() const { return integrator_.quadratureNodes(domain_); }; // returns all quadrature nodes on the mesh
     
     // solution informations produced by call to .solve()
     std::shared_ptr<DMatrix<double>>  solution() const { return solver_.solution(); };

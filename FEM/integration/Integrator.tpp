@@ -3,7 +3,7 @@
 // discretization matrix of the differential operator L
 template <unsigned int M, unsigned int R, unsigned int K>
 template <unsigned int N, typename B, typename F>
-double Integrator<M,R,K>::integrate(const B& basis, const Element<M, N, R>& e, int i , int j, const F& bilinearForm) const{
+double Integrator<M,R,K>::integrate(const B& basis, const Element<M,N,R>& e, int i , int j, const F& bilinearForm) const{
   // apply quadrature rule
   double value = 0;
   // builds the callable to integrate here from the bilinear form passed as argument
@@ -12,7 +12,8 @@ double Integrator<M,R,K>::integrate(const B& basis, const Element<M, N, R>& e, i
     // the field produced by a bilinear form is by construction evaluable at any spatial point
     SVector<M> p = SVector<M>(integrationTable_.nodes[iq].data());
     // space-varying case: evaluate coefficients at the quadrature node
-    if constexpr(F::is_space_varying) bilinearForm.eval_parameters(e.ID() + iq);
+    if constexpr(F::is_space_varying)
+      f.eval_parameters(integrationTable_.num_nodes*e.ID() + iq);
     value += f(p) * integrationTable_.weights[iq];
   }
   // correct for measure of domain (element e)
@@ -25,7 +26,7 @@ double Integrator<M,R,K>::integrate(const B& basis, const Element<M, N, R>& e, i
 // this overload is specialized for the assembly of the PDE's forcing term
 template <unsigned int M, unsigned int R, unsigned int K>
 template <unsigned int N, typename F>
-double Integrator<M,R,K>::integrate(const Element<M, N, R>& e, const F& f, const typename LagrangianBasis<M, N, R>::element_type& Phi) const{
+double Integrator<M,R,K>::integrate(const Element<M,N,R>& e, const F& f, const typename LagrangianBasis<M,N,R>::element_type& Phi) const{
   double value = 0;
   // execute quadrature rule.
   for(size_t iq = 0; iq < integrationTable_.num_nodes; ++iq){
@@ -48,7 +49,7 @@ double Integrator<M,R,K>::integrate(const Element<M, N, R>& e, const F& f, const
 // integrate a callable F over a mesh element e. This quadrature rule is for fields f without any particular structure
 template <unsigned int M, unsigned int R, unsigned int K>
 template <unsigned int N, typename F>
-double Integrator<M,R,K>::integrate(const Element<M, N, R>& e, const F &f) const {
+double Integrator<M,R,K>::integrate(const Element<M,N,R>& e, const F &f) const {
   double value = 0;
   // execute quadrature rule
   for(size_t iq = 0; iq < integrationTable_.num_nodes; ++iq){
@@ -71,10 +72,28 @@ double Integrator<M,R,K>::integrate(const Element<M, N, R>& e, const F &f) const
 // Just exploit linearity of the integral operation to sum the result of the integral of F over each mesh element
 template <unsigned int M, unsigned int R, unsigned int K>
 template <unsigned int N, typename F>
-double Integrator<M,R,K>::integrate(const Mesh<M, N, R>& m, const F &f) const {
+double Integrator<M,R,K>::integrate(const Mesh<M,N,R>& m, const F &f) const {
   double value = 0;
   // cycle over all mesh elements
   for(const auto& e : m)
     value += integrate(*e, f);
   return value;
+}
+
+// returns all quadrature points on the mesh
+template <unsigned int M, unsigned int R, unsigned int K>
+template <unsigned int N>
+DMatrix<double> Integrator<M,R,K>::quadratureNodes(const Mesh<M,N,R>& m) const {
+  // reserve space
+  DMatrix<double> nodes;
+  nodes.resize(m.elements()*integrationTable_.num_nodes, N);
+  // cycle over all mesh elements
+  for(const auto& e : m){
+    // for each quadrature node, map it onto the physical element e and store it
+    for(size_t iq = 0; iq < integrationTable_.num_nodes; ++iq){
+      nodes.row(integrationTable_.num_nodes*e->ID()+iq) =
+	e->barycentricMatrix()*SVector<M>(integrationTable_.nodes[iq].data()) + e->coords()[0];
+    }
+  }
+  return nodes;
 }
