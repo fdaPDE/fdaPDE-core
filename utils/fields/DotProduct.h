@@ -39,7 +39,7 @@ namespace core{
       double result = 0;
       for(size_t i = 0; i < ct_rows(); ++i){ // compiler should unroll this loop
 	if constexpr(!RETURN_SCALAR(T1) && !RETURN_SCALAR(T2))
-	  result += op1_[i](x)*op2_[i](x); // op1_[i] and op2_[i] possibly inlined
+	  result += (op1_[i]*op2_[i])(x); // op1_[i] and op2_[i] possibly inlined
 	else{
 	  if constexpr(RETURN_SCALAR(T1) && !RETURN_SCALAR(T2))
 	    result += op1_[i]*op2_[i](x);
