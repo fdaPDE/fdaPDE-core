@@ -180,15 +180,17 @@ namespace core{
   };
 
   // a parameter node
-  template <unsigned int N, unsigned int M, unsigned int K, typename T>
-  class MatrixParam : public MatrixExpr<N,M,K, MatrixParam<N,M,K,T>> {
+  template <unsigned int N, unsigned int M, unsigned int K, typename F, typename T>
+  class MatrixParam : public MatrixExpr<N,M,K, MatrixParam<N,M,K,F,T>> {
+    // check F is callable with type T and returns an SMatrix<M,K>
+    static_assert(std::is_same<decltype(std::declval<F>().operator()(T())), SMatrix<M,K>>::value);
   private:
-    const std::function<SMatrix<M,K>(T)>& f_;
+    const F& f_;
     SMatrix<M,K> value_;
   public:
     // default constructor
     MatrixParam() = default;
-    MatrixParam(const std::function<SMatrix<M,K>(T)>& f) : f_(f) {};
+    MatrixParam(const F& f) : f_(f) {};
     double coeff(std::size_t i, std::size_t j) const { return value_(i,j); }
     // evaluating the parameter makes a parametric node to act as a VectConst
     void eval_parameters(T i) { value_ = f_(i); }

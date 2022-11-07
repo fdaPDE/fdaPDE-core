@@ -79,15 +79,17 @@ namespace core{
   };
 
   // a parameter node
-  template <unsigned int M, unsigned int N, typename T>
-  class VectParam : public VectExpr<M,N, VectParam<M,N,T>> {
+  template <unsigned int M, unsigned int N, typename F, typename T>
+  class VectParam : public VectExpr<M,N, VectParam<M,N,F,T>> {
+    // check F is callable with type T and returns an SVector<N>
+    static_assert(std::is_same<decltype(std::declval<F>().operator()(T())), SVector<N>>::value);
   private:
-    const std::function<SVector<N>(T)>& f_;
+    const F& f_;
     SVector<N> value_;
   public:
     // default constructor
     VectParam() = default;
-    VectParam(const std::function<SVector<N>(T)>& f) : f_(f) {};
+    VectParam(const F& f) : f_(f) {};
     double operator[](std::size_t i) const { return value_[i]; }
     // evaluating the parameter makes a parametric node to act as a VectConst
     void eval_parameters(T i) { value_ = f_(i); }

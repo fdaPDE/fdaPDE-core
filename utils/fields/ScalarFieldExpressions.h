@@ -74,15 +74,17 @@ namespace core{
   };
 
   // a parameter node
-  template <typename T>
-  class FieldParam : public FieldExpr<FieldParam<T>> {
+  template <typename F, typename T>
+  class FieldParam : public FieldExpr<FieldParam<F,T>> {
+    // check F is callable with type T and returns a double
+    static_assert(std::is_same<decltype(std::declval<F>().operator()(T())), double>::value);
   private:
-    const std::function<double(T)>& f_;
+    const F& f_;
     double value_;
   public:
     // default constructor
     FieldParam() = default;
-    FieldParam(const std::function<double(T)>& f) : f_(f) {};
+    FieldParam(const F& f) : f_(f) {};
     // call operator, match with any possible set of arguments
     template <typename... Args>
     double operator()(Args... args) const { return value_; }
