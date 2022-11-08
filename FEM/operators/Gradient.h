@@ -55,10 +55,7 @@ namespace FEM{
       // express gradient of basis function over e in terms of gradient of basis function defined over the reference element.
       // This entails to compute (J^{-1})^T * \Nabla phi_i.
       Eigen::Matrix<double, N, M> invJ = e.invBarycentricMatrix().transpose(); // (J^{-1})^T = invJ
-      auto NablaPhi_j = invJ * basis[j].derive(); // let compiler deduce the expression type
-      auto phi_i = basis[i];
-      // approximation of the (i,j)-th element of gradient operator
-      return phi_i * NablaPhi_j.dot(b_);
+      return basis[i]*(invJ*basis[j].derive()).dot(b_);
     }
   };  
   // template argument deduction guide

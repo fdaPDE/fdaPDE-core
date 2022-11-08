@@ -41,14 +41,10 @@ namespace FEM{
     // operator avoiding both type erause (e.g. by casting to some ScalarField object) as well as the creation of temporaries
     template <unsigned int M, unsigned int N, unsigned int R, typename B>
     auto integrate(const B& basis, const Element<M, N, R>& e, int i , int j) const{
-      auto phi_i = basis[i];  
-      auto phi_j = basis[j];
-      // approximation of the (i,j)-th element of identity operator
       if constexpr(std::is_same<DefaultOperator, T>::value)
-	// fallback to c_ = 1
-	return phi_i*phi_j;
+	return basis[i]*basis[j];
       else
-	return c_*phi_i*phi_j;
+	return c_*basis[i]*basis[j];
     }
   };
   // template argument deduction guide
