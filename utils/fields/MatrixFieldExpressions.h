@@ -156,6 +156,7 @@ namespace core{
     // expose compile time informations
     static constexpr int rows = M;
     static constexpr int cols = K;
+    static constexpr int base = N; // dimensionality of base space
   };
 
   // access i-th row of MatrixExpr
@@ -175,8 +176,15 @@ namespace core{
   private:
     SMatrix<M,K> value_;
   public:
+    // constructor
+    MatrixConst() = default;
     MatrixConst(SMatrix<M,K> value) : value_(value) { }  
     double coeff(std::size_t i, std::size_t j) const { return value_(i,j); }
+    // assignment operator
+    MatrixConst<N,M,K>& operator=(const SMatrix<M,K>& value) {
+      value_ = value;
+      return *this;
+    }
   };
 
   // a parameter node
@@ -266,6 +274,25 @@ namespace core{
   operator*(const MatrixExpr<N,M,K, E1>& op1, const MatrixExpr<N,K,H, E2>& op2){
     return MatrixMatrixProduct<N,M,H, E1, E2>(op1.get(), op2.get());
   }
+
+  // allows for changes in the operands of an expression while keeping the same expression tree structure
+  template <typename E> class MatrixPtr : public MatrixExpr<E::base, E::rows, E::cols, MatrixPtr<E>> {
+    static_assert(std::is_base_of<MatrixBase, E>::value);
+  private:
+    typename std::remove_reference<E>::type* ptr_;
+  public:
+    MatrixPtr(E* ptr) : ptr_(ptr) {};
+    // delegate to pointed memory location
+    auto coeff(std::size_t i, std::size_t j) const {
+      return ptr_->coeff(i,j);
+    }
+    // delegate to pointed memory location
+    template <typename T>
+    void eval_parameters(T i) { ptr_->eval_parameters(i); }
+
+    E* operator->() { return ptr_; }
+  };
+  
 }};
 
 #endif // __MATRIX_FIELD_EXPRESSIONS_H__

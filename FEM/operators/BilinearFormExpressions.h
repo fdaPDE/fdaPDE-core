@@ -24,10 +24,9 @@ namespace FEM{
 
   template <typename E> struct BilinearFormExpr{
     // call integration method on base type
-    template <unsigned int M, unsigned int N, unsigned int R, typename B>
-    // b: functional basis, e: mesh element, i.j: indexes of the discretization matrix element to compute
-    auto integrate(const B& b, const Element<M, N, R>& e, int i , int j) const {
-      return static_cast<const E&>(*this).integrate(b, e, i, j);
+    template <typename... Args>
+    auto integrate(const std::tuple<Args...>& mem_buffer) const {
+      return static_cast<const E&>(*this).integrate(mem_buffer);
     }
     // get underyling type composing the expression node
     const E& get() const { return static_cast<const E&>(*this); }
@@ -51,9 +50,9 @@ namespace FEM{
     BilinearFormBinOp(const OP1& op1, const OP2& op2, BinaryOperation f)
       : op1_(op1), op2_(op2), f_(f) { };
     // integrate method. Apply the functor f_ to the result of integrate() applied to both operands.
-    template <unsigned int M, unsigned int N, unsigned int R, typename B>
-    auto integrate(const B& b, const Element<M, N, R>& e, int i , int j) const {
-      return f_(op1_.integrate(b, e, i, j), op2_.integrate(b, e, i, j));
+    template <typename... Args>
+    auto integrate(const std::tuple<Args...>& mem_buffer) const {
+      return f_(op1_.integrate(mem_buffer), op2_.integrate(mem_buffer));
     }
     auto getTypeList() const { return std::tuple_cat(op1_.getTypeList(), op2_.getTypeList()); }
     static constexpr bool is_space_varying = OP1::is_space_varying || OP2::is_space_varying;
@@ -69,8 +68,8 @@ namespace FEM{
     // constructor
     BilinearFormScalar(double value) : value_(value) { }
     // integrate method. Just return the stored value
-    template <unsigned int M, unsigned int N, unsigned int R, typename B>
-    double integrate(const B& b, const Element<M, N, R>& e, int i , int j) const{
+    template <typename... Args>
+    auto integrate(const std::tuple<Args...>& mem_buffer) const {
       return value_;
     }
     std::tuple<BilinearFormScalar> getTypeList() const { return std::make_tuple(*this); }
@@ -84,5 +83,16 @@ namespace FEM{
       (BilinearFormScalar(op1), op2.get(), std::multiplies<>());
   }  
 
+  // utility macro to import symbols from memory buffer passed to operators
+#define IMPORT_MEM_BUFFER_SYMBOLS(mem_buff)	    \
+  /* pair of basis functions \psi_i, \psi_j*/	    \
+  auto psi_i = std::get<0>(mem_buff);		    \
+  auto psi_j = std::get<1>(mem_buff);		    \
+  /* gradient of \psi_i, \psi_j */		    \
+  auto NablaPsi_i = std::get<2>(mem_buff);	    \
+  auto NablaPsi_j = std::get<3>(mem_buff);	    \
+  /* affine map to reference element */		    \
+  auto invJ = std::get<4>(mem_buff);		    \
+  
 }}}
 #endif // __BILINEAR_FORM_EXPRESSIONS_H__

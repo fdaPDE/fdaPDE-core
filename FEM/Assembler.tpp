@@ -10,16 +10,32 @@ Eigen::SparseMatrix<double> Assembler<M, N, R, B, I>::assemble(const E& bilinear
   tripletList.reserve(n_basis*n_basis*mesh_.elements());
   discretizationMatrix.resize(mesh_.nodes(), mesh_.nodes());
 
+  // prepare space for bilinear form components
+  using basis_type = typename B::element_type;
+  using nabla_type = decltype(std::declval<basis_type>().derive());
+  basis_type buff_psi_i, buff_psi_j; // basis functions \psi_i, \psi_j
+  nabla_type buff_NablaPsi_i, buff_NablaPsi_j; // gradient of basis functions \nabla \psi_i, \nabla \psi_j
+  MatrixConst<M,N,M> buff_invJ; // (J^{-1})^T, being J the inverse of the barycentric matrix relative to element e
+  // prepare buffer to be sent to bilinear form
+  auto mem_buffer = std::make_tuple
+    (FieldPtr(&buff_psi_i), FieldPtr(&buff_psi_j), VectPtr(&buff_NablaPsi_i), VectPtr(&buff_NablaPsi_j), MatrixPtr(&buff_invJ));
+    
+  // develop bilinear form expression in an integrable field here once
+  auto f = bilinearForm.integrate(mem_buffer); // let the compiler deduce the type of the expression template!
+  
   // cycle over all mesh elements
   for(const auto& e : mesh_){
+    // update linear map from physical element e to reference element
+    buff_invJ = e->invBarycentricMatrix().transpose();
     // consider all pair of nodes
     for(size_t i = 0; i < n_basis; ++i){
+      buff_psi_i = referenceBasis_[i]; buff_NablaPsi_i = buff_psi_i.derive(); // update buffers content
       for(size_t j = 0; j < n_basis; ++j){
+	buff_psi_j = referenceBasis_[j]; buff_NablaPsi_j = buff_psi_j.derive(); // update buffers content
 	if constexpr(is_symmetric<decltype(bilinearForm)>::value){
 	  // compute only half of the discretization matrix if the operator is symmetric
 	  if(e->nodeIDs()[i] >= e->nodeIDs()[j]){
-	    // any integral computation for the construction of the stiffness matrix is performed on the reference element
-	    double value = integrator_.integrate(referenceBasis_, *e, i, j, bilinearForm);
+	    double value = integrator_.template integrate<decltype(bilinearForm)>(*e, f); // perform integration of bilinear form
 	    
 	    // From Eigen doucmentation: The input list of triplets does not have to be sorted, and can contains duplicated elements.
 	    // In any case, the result is a sorted and compressed sparse matrix where the duplicates have been summed up.
@@ -28,7 +44,7 @@ Eigen::SparseMatrix<double> Assembler<M, N, R, B, I>::assemble(const E& bilinear
 	  }
 	}else{
 	  // not any optimization to perform in the general case
-	  double value = integrator_.integrate(referenceBasis_, *e, i, j, bilinearForm);
+	  double value = integrator_.template integrate<decltype(bilinearForm)>(*e, f);
 	  tripletList.emplace_back(e->nodeIDs()[i], e->nodeIDs()[j], value);
 	}
       }

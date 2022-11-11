@@ -48,7 +48,7 @@ namespace core{
     return FieldUnOp<E1, std::function<double(double)> >		\
       {op1.get(), OPERATOR_};						\
   }									\
-
+  
   // Base class for scalar field expressions
   template <typename E> struct FieldExpr : public ScalarBase {
     // call operator() on the base type E
@@ -137,6 +137,27 @@ namespace core{
   DEF_FIELD_UNARY_OPERATOR(tan, std::tan)
   DEF_FIELD_UNARY_OPERATOR(exp, std::exp)
   DEF_FIELD_UNARY_OPERATOR(log, std::log)
+
+  // allows for changes in the operands of an expression while keeping the same expression tree structure
+  template <typename E> class FieldPtr : public FieldExpr<FieldPtr<E>> {
+    static_assert(std::is_base_of<ScalarBase, E>::value);
+  private:
+    typename std::remove_reference<E>::type* ptr_;
+  public:
+    FieldPtr(E* ptr) : ptr_(ptr) {};
+    // delegate to pointed memory location
+    template <int N>
+    double operator()(const SVector<N>& p) const{
+      return ptr_->operator()(p);
+    }
+    // delegate to pointed memory location
+    template <typename T> void eval_parameters(T i) {
+      ptr_->eval_parameters(i);
+      return;
+    }
+
+    E* operator->() { return ptr_; }
+  };
   
 }}
 

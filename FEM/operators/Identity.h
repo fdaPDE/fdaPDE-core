@@ -30,21 +30,17 @@ namespace FEM{
     std::tuple<Identity<T>> getTypeList() const { return std::make_tuple(*this); }
     static constexpr bool is_space_varying = std::is_base_of<ScalarBase, T>::value;
 
-    // approximates the contribution to the (i,j)-th element of the discretization matrix given by the transport term:
-    // \int_e phi_i * phi_j
-    // basis: any type compliant with a functional basis behaviour. See LagrangianBasis.h for an example
-    //        NOTE: we assume "basis" to provide functions already defined on the reference element
-    // e: the element on which we are integrating
-    // i,j: indexes of the discretization matrix element we are computing
+    // approximates the contribution to the (i,j)-th element of the discretization matrix given by the reaction term:
 
     // NOTE: is important to use auto return type to let the compiler return the whole expression template produced by this
     // operator avoiding both type erause (e.g. by casting to some ScalarField object) as well as the creation of temporaries
-    template <unsigned int M, unsigned int N, unsigned int R, typename B>
-    auto integrate(const B& basis, const Element<M, N, R>& e, int i , int j) const{
+    template <typename... Args>
+    auto integrate(const std::tuple<Args...>& mem_buffer) const {
+      IMPORT_MEM_BUFFER_SYMBOLS(mem_buffer);
       if constexpr(std::is_same<DefaultOperator, T>::value)
-	return basis[i]*basis[j];
+	return psi_i*psi_j;
       else
-	return c_*basis[i]*basis[j];
+	return c_*psi_i*psi_j;
     }
   };
   // template argument deduction guide

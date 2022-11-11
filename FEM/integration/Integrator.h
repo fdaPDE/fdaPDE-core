@@ -41,8 +41,8 @@ namespace FEM{
     template <unsigned int N, typename F>
     double integrate(const Mesh<M,N,R>& m, const F& f) const;
     // integrate a BilinearFormExpr to produce the (i,j)-th element of its discretization
-    template <unsigned int N, typename B, typename F>
-    double integrate(const B& basis, const Element<M,N,R>& e, int i , int j, const F& bilinearForm) const;
+    template <typename F, unsigned int N, typename E>
+    double integrate(const Element<M,N,R>& e, E& f) const;
     // computes \int_e [f * \phi] where \phi is a LagrangianBasis object defined over the *reference element*. Use this
     // method to compute *this* specific form of integral (very common in FEM approximations) because it doesn't require
     // an explicit construction of the basis over the element e.

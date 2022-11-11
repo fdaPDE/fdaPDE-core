@@ -65,6 +65,7 @@ namespace core{
     // expose compile time informations
     static constexpr int rows = N;
     static constexpr int cols = 1;
+    static constexpr int base = M; // dimensionality of base space
   };
 
   // an expression node representing a constant vector
@@ -140,7 +141,7 @@ namespace core{
       (op1.get(), VectScalar<M,N>(op2), std::multiplies<>());
   }
 
-  // allow dot product between a VectExpr and an (eigen) SVector.
+  // dot product between a VectExpr and an (eigen) SVector.
   template <int M, int N, typename E>
   DotProduct<E, VectConst<M,N>> VectExpr<M,N, E>::dot(const SVector<N>& op) const {
     return DotProduct<E, VectConst<M,N>>(this->get(), VectConst<M,N>(op));
@@ -151,6 +152,25 @@ namespace core{
   DotProduct<E,F> VectExpr<M,N, E>::dot(const VectExpr<M,N,F>& op) const {
     return DotProduct<E,F>(this->get(), op.get());
   }
+
+  // allows for changes in the operands of an expression while keeping the same expression tree structure
+  template <typename E> class VectPtr : public VectExpr<E::base, E::rows, VectPtr<E>> {
+    static_assert(std::is_base_of<VectBase, E>::value);
+  private:
+    typename std::remove_reference<E>::type* ptr_;
+  public:
+    VectPtr(E* ptr) : ptr_(ptr) {};
+    // delegate to pointed memory location
+    auto operator[](std::size_t i) const{
+      return ptr_->operator[](i);
+    }
+    // delegate to pointed memory location
+    template <typename T> void eval_parameters(T i) {
+      ptr_->eval_parameters(i);
+      return;
+    }
+  };
+
 }}
 
 #endif // __VECTOR_FIELD_EXPRESSIONS_H__
