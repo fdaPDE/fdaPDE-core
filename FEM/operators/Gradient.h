@@ -1,10 +1,10 @@
 #ifndef __GRADIENT_H__
 #define __GRADIENT_H__
 
-#include "../../utils/Symbols.h"
-#include "../../utils/fields/VectorField.h"
 #include <cstddef>
 #include <type_traits>
+#include "../../utils/Symbols.h"
+#include "../../utils/fields/VectorField.h"
 using fdaPDE::core::VectorField;
 #include "../../MESH/Element.h"
 using fdaPDE::core::MESH::Element;
@@ -29,7 +29,7 @@ namespace FEM{
   template <typename T>
   class Gradient : public BilinearFormExpr<Gradient<T>>{
     // perform compile-time sanity checks
-    static_assert(std::is_base_of<VectBase, T>::value || // space-varying case
+    static_assert(std::is_base_of<VectorBase, T>::value || // space-varying case
 		  is_eigen_vector<T>());                 // constant coefficient case
   private:
     T b_; // transport vector (either constant or space-varying)
@@ -39,7 +39,7 @@ namespace FEM{
 
     // compile time informations
     std::tuple<Gradient<T>> getTypeList() const { return std::make_tuple(*this); }
-    static constexpr bool is_space_varying = std::is_base_of<VectBase, T>::value;
+    static constexpr bool is_space_varying = std::is_base_of<VectorBase, T>::value;
     
     // approximates the contribution of this operator to the (i,j)-th element of the discretization matrix
     // NOTE: is important to use auto return type to let the compiler return the whole expression template produced by this

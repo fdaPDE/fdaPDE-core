@@ -26,9 +26,9 @@ const ScalarField<N,F>& MatrixField<N,M,K,F>::coeff(std::size_t i, std::size_t j
 // out of class definitions of MatrixField arithmetic
 // rhs multiplication by SVector
 template <int N, int M, int K, typename F>
-MatrixVectorProduct<N,M,K, MatrixField<N,M,K,F>, VectConst<N,K>>
+MatrixVectorProduct<N,M,K, MatrixField<N,M,K,F>, VectorConst<N,K>>
 operator*(const MatrixField<N,M,K,F>& op1, const SVector<K>& op2){
-  return MatrixVectorProduct<N,M,K, MatrixField<N,M,K,F>, VectConst<N,K>>(op1, VectConst<N,K>(op2));
+  return MatrixVectorProduct<N,M,K, MatrixField<N,M,K,F>, VectorConst<N,K>>(op1, VectorConst<N,K>(op2));
 }
 // rhs multiplication by VectorField
 template <int N, int M, int K, typename F1, typename F2>

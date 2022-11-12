@@ -1,7 +1,7 @@
-#ifndef __SCALAR_FIELD_EXPRESSIONS_H__
-#define __SCALAR_FIELD_EXPRESSIONS_H__
+#ifndef __SCALAR_EXPRESSIONS_H__
+#define __SCALAR_EXPRESSIONS_H__
 
-#include "../Symbols.h"
+#include "../../Symbols.h"
 
 #include <cstddef>
 #include <cmath>
@@ -15,42 +15,42 @@ namespace core{
   struct ScalarBase {};
   
 // macro to define an arithmetic operator between scalar fields.
-#define DEF_FIELD_EXPR_OPERATOR(OPERATOR, FUNCTOR)			\
+#define DEF_SCALAR_EXPR_OPERATOR(OPERATOR, FUNCTOR)			\
   template <typename E1, typename E2>					\
-  FieldBinOp<E1, E2, FUNCTOR>						\
-  OPERATOR(const FieldExpr<E1>& op1, const FieldExpr<E2>& op2) {	\
-    return FieldBinOp<E1, E2, FUNCTOR>					\
+  ScalarBinOp<E1, E2, FUNCTOR>						\
+  OPERATOR(const ScalarExpr<E1>& op1, const ScalarExpr<E2>& op2) {	\
+    return ScalarBinOp<E1, E2, FUNCTOR>					\
       {op1.get(), op2.get(), FUNCTOR()};				\
   }									\
   									\
   template <typename E>							\
-  FieldBinOp<E, FieldScalar, FUNCTOR>					\
-  OPERATOR(const FieldExpr<E>& op1, double op2) {			\
-  return FieldBinOp<E, FieldScalar, FUNCTOR>				\
-      (op1.get(), FieldScalar(op2), FUNCTOR());				\
+  ScalarBinOp<E, Scalar, FUNCTOR>					\
+  OPERATOR(const ScalarExpr<E>& op1, double op2) {			\
+  return ScalarBinOp<E, Scalar, FUNCTOR>				\
+      (op1.get(), Scalar(op2), FUNCTOR());				\
   }									\
   									\
   template <typename E>							\
-  FieldBinOp<FieldScalar, E, FUNCTOR>					\
-  OPERATOR(double op1, const FieldExpr<E>& op2) {			\
-    return FieldBinOp<FieldScalar, E, FUNCTOR>				\
-      {FieldScalar(op1), op2.get(), FUNCTOR()};				\
+  ScalarBinOp<Scalar, E, FUNCTOR>					\
+  OPERATOR(double op1, const ScalarExpr<E>& op2) {			\
+    return ScalarBinOp<Scalar, E, FUNCTOR>				\
+      {Scalar(op1), op2.get(), FUNCTOR()};				\
   }									\
 // macro for the definition of unary operations. FUNCTION must accept a double and return a double. Internally FUNCTION
 // is wrapped by a lambda expression to make it callable (std::sin, std::cos, std::exp, ... are indeed not functor)
-#define DEF_FIELD_UNARY_OPERATOR(OPERATOR, FUNCTION)			\
+#define DEF_SCALAR_UNARY_OPERATOR(OPERATOR, FUNCTION)			\
   template <typename E1>						\
-  FieldUnOp<E1, std::function<double(double)> >				\
-  OPERATOR(const FieldExpr<E1>& op1) {					\
+  ScalarUnOp<E1, std::function<double(double)> >				\
+  OPERATOR(const ScalarExpr<E1>& op1) {					\
     std::function<double(double)> OPERATOR_ =				\
       [](double x) -> double { return FUNCTION(x); };			\
 									\
-    return FieldUnOp<E1, std::function<double(double)> >		\
+    return ScalarUnOp<E1, std::function<double(double)> >		\
       {op1.get(), OPERATOR_};						\
   }									\
   
   // Base class for scalar field expressions
-  template <typename E> struct FieldExpr : public ScalarBase {
+  template <typename E> struct ScalarExpr : public ScalarBase {
     // call operator() on the base type E
     template <int N>
     inline double operator()(const SVector<N>& p) const {
@@ -63,11 +63,11 @@ namespace core{
   };
     
   // an expression node representing a scalar value
-  class FieldScalar : public FieldExpr<FieldScalar> {
+  class Scalar : public ScalarExpr<Scalar> {
   private:
     double value_;
   public:
-    FieldScalar(double value) : value_(value) { }
+    Scalar(double value) : value_(value) { }
     // call operator, return always the stored value
     template <int N>
     inline double operator()(const SVector<N>& p) const { return value_; };
@@ -75,7 +75,7 @@ namespace core{
 
   // a parameter node
   template <typename F, typename T>
-  class FieldParam : public FieldExpr<FieldParam<F,T>> {
+  class ScalarParam : public ScalarExpr<ScalarParam<F,T>> {
     // check F is callable with type T and returns a double
     static_assert(std::is_same<decltype(std::declval<F>().operator()(T())), double>::value);
   private:
@@ -83,8 +83,8 @@ namespace core{
     double value_;
   public:
     // default constructor
-    FieldParam() = default;
-    FieldParam(const F& f) : f_(f) {};
+    ScalarParam() = default;
+    ScalarParam(const F& f) : f_(f) {};
     // call operator, match with any possible set of arguments
     template <typename... Args>
     double operator()(Args... args) const { return value_; }
@@ -93,72 +93,51 @@ namespace core{
   
   // expression template based arithmetic
   template <typename OP1, typename OP2, typename BinaryOperation>
-  class FieldBinOp : public FieldExpr<FieldBinOp<OP1, OP2, BinaryOperation>> {
+  class ScalarBinOp : public ScalarExpr<ScalarBinOp<OP1, OP2, BinaryOperation>> {
   private:
     typename std::remove_reference<OP1>::type op1_;   // first  operand
     typename std::remove_reference<OP2>::type op2_;   // second operand
     BinaryOperation f_;                               // operation to apply
   public:
     // constructor
-    FieldBinOp(const OP1& op1, const OP2& op2, BinaryOperation f) : op1_(op1), op2_(op2), f_(f) { };
+    ScalarBinOp(const OP1& op1, const OP2& op2, BinaryOperation f) : op1_(op1), op2_(op2), f_(f) { };
     // call operator, performs the expression evaluation
     template <int N>
     double operator()(const SVector<N>& p) const{
       return f_(op1_(p), op2_(p));
     }
     // call parameter evaluation on operands
-    template <typename T> const FieldBinOp<OP1, OP2, BinaryOperation>& eval_parameters(T i) {
+    template <typename T> const ScalarBinOp<OP1, OP2, BinaryOperation>& eval_parameters(T i) {
       op1_.eval_parameters(i); op2_.eval_parameters(i);
       return *this;
     }
   };
-  DEF_FIELD_EXPR_OPERATOR(operator+, std::plus<>      )
-  DEF_FIELD_EXPR_OPERATOR(operator-, std::minus<>     )
-  DEF_FIELD_EXPR_OPERATOR(operator*, std::multiplies<>)
-  DEF_FIELD_EXPR_OPERATOR(operator/, std::divides<>   )
+  DEF_SCALAR_EXPR_OPERATOR(operator+, std::plus<>      )
+  DEF_SCALAR_EXPR_OPERATOR(operator-, std::minus<>     )
+  DEF_SCALAR_EXPR_OPERATOR(operator*, std::multiplies<>)
+  DEF_SCALAR_EXPR_OPERATOR(operator/, std::divides<>   )
   
   // definition of unary operation nodes
   template <typename OP1, typename UnaryOperation>
-  class FieldUnOp : public FieldExpr<FieldUnOp<OP1, UnaryOperation>> {
+  class ScalarUnOp : public ScalarExpr<ScalarUnOp<OP1, UnaryOperation>> {
   private:
     typename std::remove_reference<OP1>::type op1_; // operand
     UnaryOperation f_; // operation to apply
   public:
     // constructor
-    FieldUnOp(const OP1& op1, UnaryOperation f) : op1_(op1), f_(f) { };
+    ScalarUnOp(const OP1& op1, UnaryOperation f) : op1_(op1), f_(f) { };
     // call operator, performs the expression evaluation
     template <int N>
     double operator()(const SVector<N>& p) const{
       return f_(op1_(p));
     }    
   };
-  DEF_FIELD_UNARY_OPERATOR(sin, std::sin)
-  DEF_FIELD_UNARY_OPERATOR(cos, std::cos)
-  DEF_FIELD_UNARY_OPERATOR(tan, std::tan)
-  DEF_FIELD_UNARY_OPERATOR(exp, std::exp)
-  DEF_FIELD_UNARY_OPERATOR(log, std::log)
-
-  // allows for changes in the operands of an expression while keeping the same expression tree structure
-  template <typename E> class FieldPtr : public FieldExpr<FieldPtr<E>> {
-    static_assert(std::is_base_of<ScalarBase, E>::value);
-  private:
-    typename std::remove_reference<E>::type* ptr_;
-  public:
-    FieldPtr(E* ptr) : ptr_(ptr) {};
-    // delegate to pointed memory location
-    template <int N>
-    double operator()(const SVector<N>& p) const{
-      return ptr_->operator()(p);
-    }
-    // delegate to pointed memory location
-    template <typename T> void eval_parameters(T i) {
-      ptr_->eval_parameters(i);
-      return;
-    }
-
-    E* operator->() { return ptr_; }
-  };
+  DEF_SCALAR_UNARY_OPERATOR(sin, std::sin)
+  DEF_SCALAR_UNARY_OPERATOR(cos, std::cos)
+  DEF_SCALAR_UNARY_OPERATOR(tan, std::tan)
+  DEF_SCALAR_UNARY_OPERATOR(exp, std::exp)
+  DEF_SCALAR_UNARY_OPERATOR(log, std::log)
   
 }}
 
-#endif // __SCALAR_FIELD_EXPRESSIONS_H__
+#endif // __SCALAR_EXPRESSIONS_H__

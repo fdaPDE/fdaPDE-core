@@ -4,8 +4,8 @@
 #include <cmath>
 #include <type_traits>
 #include "../Symbols.h"
-#include "ScalarFieldExpressions.h"
-//#include "MatrixField.h"
+#include "expressions/ScalarExpressions.h"
+using fdaPDE::core::ScalarExpr;
 
 namespace fdaPDE{
 namespace core{
@@ -34,7 +34,7 @@ namespace core{
   // In general using F = std::function<double(SVector<N>)> is fine but must be avoided at any performance-critical point of the library
   // (any point inside the core). Indeed std::function is an highly polymorphic type with a non-zero run-time cost.
   template <int N, typename F = std::function<double(SVector<N>)>>
-  class ScalarField : public FieldExpr<ScalarField<N,F>> {
+  class ScalarField : public ScalarExpr<ScalarField<N,F>> {
     static_assert(std::is_invocable<F, SVector<N>>::value &&		   
 		  std::is_same<typename std::invoke_result<F,SVector<N>>::type, 
 		                 double>::value);				   
@@ -50,12 +50,12 @@ namespace core{
     ScalarField() = default;
     // construct a scalar field from a std::function object
     ScalarField(const F& f) : f_(f) {};
-    // assignement and constructor from a FieldExpr requires the base type F to be a std::function for type erasure
+    // assignement and constructor from a ScalarExpr requires the base type F to be a std::function for type erasure
     template <typename E, typename U = F,
               typename std::enable_if<
 		std::is_same<U, std::function<double(SVector<N>)>>::value,
 		int>::type = 0>
-    ScalarField(const FieldExpr<E>& f) {
+    ScalarField(const ScalarExpr<E>& f) {
       // wraps field expression in lambda
       E op = f.get();
       std::function<double(SVector<N>)> fieldExpr = [op](SVector<N> x) -> double {
@@ -67,7 +67,7 @@ namespace core{
     typename std::enable_if<
       std::is_same<U, std::function<double(SVector<N>)>>::value,
       ScalarField<N>&>::type
-    operator=(const FieldExpr<E>& f) {
+    operator=(const ScalarExpr<E>& f) {
       // wraps field expression in lambda
       E op = f.get();
       std::function<double(SVector<N>)> fieldExpr = [op](SVector<N> x) -> double {

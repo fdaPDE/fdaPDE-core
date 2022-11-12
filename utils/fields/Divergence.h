@@ -1,7 +1,7 @@
 #ifndef __DIVERGENCE_H__
 #define __DIVERGENCE_H__
 
-#include "ScalarFieldExpressions.h"
+#include "expressions/ScalarExpressions.h"
 #include "VectorField.h"
 #include <cstddef>
 #include <functional>
@@ -11,7 +11,7 @@ namespace core{
 
   // a functor representing the divergence of a VectorField<N>
   template <int N>
-  class Divergence : public FieldExpr<Divergence<N>>{
+  class Divergence : public ScalarExpr<Divergence<N>>{
   private:
     // the function encoding the divergence operator
     std::function<double(SVector<N>)> div_;

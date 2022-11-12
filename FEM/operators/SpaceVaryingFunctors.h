@@ -2,9 +2,7 @@
 #define __SPACE_VARYING_FUNCTORS_H__
 
 // include expression templates engine
-#include "../../utils/fields/ScalarFieldExpressions.h"
-#include "../../utils/fields/VectorFieldExpressions.h"
-#include "../../utils/fields/MatrixFieldExpressions.h"
+#include "../../utils/fields/expressions/Expressions.h"
 
 namespace fdaPDE {
 namespace core {
@@ -59,8 +57,8 @@ namespace FEM {
       return coeff_.block<1,N>(i,0);
     }
     // return this object as compatible with the expression template mechanism of parametric expressions
-    VectParam<M,N, SpaceVaryingAdvection<M,N>,std::size_t> asParameter() const {
-      return VectParam<M,N, SpaceVaryingAdvection<M,N>,std::size_t>(*this);
+    VectorParam<M,N, SpaceVaryingAdvection<M,N>,std::size_t> asParameter() const {
+      return VectorParam<M,N, SpaceVaryingAdvection<M,N>,std::size_t>(*this);
     }
   };
 
@@ -79,8 +77,8 @@ namespace FEM {
       return coeff_(i,0);
     }
     // return this object as compatible with the expression template mechanism of parametric expressions
-    FieldParam<SpaceVaryingReaction,std::size_t> asParameter() const {
-      return FieldParam<SpaceVaryingReaction,std::size_t>(*this);
+    ScalarParam<SpaceVaryingReaction,std::size_t> asParameter() const {
+      return ScalarParam<SpaceVaryingReaction,std::size_t>(*this);
     }
   };
   

@@ -44,7 +44,7 @@ namespace FEM{
     E bilinearForm_; // the differential operator of the problem in its weak formulation
     static_assert(std::is_base_of<BilinearFormExpr<E>, E>::value);
     F forcingData_; // forcing data
-    static_assert(std::is_same<DMatrix<double>, F>::value || std::is_base_of<FieldExpr<F>, F>::value);
+    static_assert(std::is_same<DMatrix<double>, F>::value || std::is_base_of<ScalarExpr<F>, F>::value);
     DVector<double> initialCondition_{}; // initial condition, used in space-time problems only
     
     // memorize boundary data in a sparse structure, by storing the index of the boundary node and the relative boundary value.

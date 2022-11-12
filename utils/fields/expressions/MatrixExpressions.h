@@ -1,13 +1,13 @@
-#ifndef __MATRIX_FIELD_EXPRESSIONS_H__
-#define __MATRIX_FIELD_EXPRESSIONS_H__
+#ifndef __MATRIX_EXPRESSIONS_H__
+#define __MATRIX_EXPRESSIONS_H__
 
-#include "../Symbols.h"
-#include "ScalarField.h"
-#include "VectorFieldExpressions.h"
 #include <cstddef>
 #include <type_traits>
+#include "../../Symbols.h"
+#include "../ScalarField.h"
 using fdaPDE::core::ScalarField;
-using fdaPDE::core::VectBase;
+#include "VectorExpressions.h"
+using fdaPDE::core::VectorBase;
 
 namespace fdaPDE{
 namespace core{
@@ -21,8 +21,8 @@ namespace core{
   
   // an expression node representing a matrix*vector operation
   template <int M, int N, int K, typename T1, typename T2>
-  class MatrixVectorProduct : public VectExpr<M,N, MatrixVectorProduct<M,N,K,T1,T2>>{
-    static_assert(std::is_base_of<MatrixBase, T1>::value && std::is_base_of<VectBase, T2>::value);
+  class MatrixVectorProduct : public VectorExpr<M,N, MatrixVectorProduct<M,N,K,T1,T2>>{
+    static_assert(std::is_base_of<MatrixBase, T1>::value && std::is_base_of<VectorBase, T2>::value);
   private:
     T1 op1_; T2 op2_;
   public:
@@ -64,7 +64,7 @@ namespace core{
 
   // a node representing a single row of a matrix expression
   template <int N, int M, int K, typename E>
-  class MatrixRow : public VectExpr<N,M, MatrixRow<N,M,K,E>> {
+  class MatrixRow : public VectorExpr<N,M, MatrixRow<N,M,K,E>> {
   private:
     E expr_; std::size_t row_;
   public:
@@ -82,7 +82,7 @@ namespace core{
   };
   // a node representing a single column of a matrix expression
   template <int N, int M, int K, typename E>
-  class MatrixCol : public VectExpr<N,M, MatrixCol<N,M,K,E>> {
+  class MatrixCol : public VectorExpr<N,M, MatrixCol<N,M,K,E>> {
   private:
     E expr_; std::size_t col_;
   public:
@@ -148,9 +148,9 @@ namespace core{
     MatrixCol<N,M,K,E> col(std::size_t i) const;
     // allow rhs multiplication by a VectorExpr
     template <typename F>
-    MatrixVectorProduct<N,M,K,E,F> operator*(const VectExpr<N,K,F>& op) const;
+    MatrixVectorProduct<N,M,K,E,F> operator*(const VectorExpr<N,K,F>& op) const;
     // allow rhs multiplication by constant SVector
-    MatrixVectorProduct<N,M,K,E,VectConst<N,K>> operator*(const SVector<K>& op) const;
+    MatrixVectorProduct<N,M,K,E,VectorConst<N,K>> operator*(const SVector<K>& op) const;
     // evaluate parametric nodes in the expression, does nothing if not redefined in derived classes
     template <typename T> void eval_parameters(T i) const { return; }
     // expose compile time informations
@@ -200,7 +200,7 @@ namespace core{
     MatrixParam() = default;
     MatrixParam(const F& f) : f_(f) {};
     double coeff(std::size_t i, std::size_t j) const { return value_(i,j); }
-    // evaluating the parameter makes a parametric node to act as a VectConst
+    // evaluating the parameter makes a parametric node to act as a VectorConst
     void eval_parameters(T i) { value_ = f_(i); }
   };
   
@@ -227,22 +227,22 @@ namespace core{
   DEF_MATRIX_EXPR_OPERATOR(operator+, std::plus<> )
   DEF_MATRIX_EXPR_OPERATOR(operator-, std::minus<>)
   
-  // MatrixExpr<N,M,K> times VectExpr<N,K>
+  // MatrixExpr<N,M,K> times VectorExpr<N,K>
   template <int N, int M, int K, typename E>
   template <typename F>
-  MatrixVectorProduct<N,M,K,E,F> MatrixExpr<N,M,K, E>::operator*(const VectExpr<N,K,F>& op) const {
+  MatrixVectorProduct<N,M,K,E,F> MatrixExpr<N,M,K, E>::operator*(const VectorExpr<N,K,F>& op) const {
     return MatrixVectorProduct<N,M,K,E,F>(this->get(), op.get());
   }
-  // SMatrix<M,K> times VectExpr<N,K>
+  // SMatrix<M,K> times VectorExpr<N,K>
   template <int N, int M, int K, typename F>
   MatrixVectorProduct<N,M,K, MatrixConst<N,M,K>, F>
-  operator*(const Eigen::Matrix<double,M,K>& op1, const VectExpr<N,K,F>& op2) {
+  operator*(const Eigen::Matrix<double,M,K>& op1, const VectorExpr<N,K,F>& op2) {
     return MatrixVectorProduct<N,M,K,MatrixConst<N,M,K>,F>(MatrixConst<N,M,K>(op1), op2.get());
   }
   // MatrixExpr<N,M,K> times SVector<K>
   template <int N, int M, int K, typename E>
-  MatrixVectorProduct<N,M,K, E, VectConst<N,K>> MatrixExpr<N,M,K, E>::operator*(const SVector<K>& op) const {
-    return MatrixVectorProduct<N,M,K,E,VectConst<N,K>>(this->get(), VectConst<N,K>(op));
+  MatrixVectorProduct<N,M,K, E, VectorConst<N,K>> MatrixExpr<N,M,K, E>::operator*(const SVector<K>& op) const {
+    return MatrixVectorProduct<N,M,K,E,VectorConst<N,K>>(this->get(), VectorConst<N,K>(op));
   }
 
   // element wise multiplication of MatrixExpr by scalar
@@ -274,25 +274,7 @@ namespace core{
   operator*(const MatrixExpr<N,M,K, E1>& op1, const MatrixExpr<N,K,H, E2>& op2){
     return MatrixMatrixProduct<N,M,H, E1, E2>(op1.get(), op2.get());
   }
-
-  // allows for changes in the operands of an expression while keeping the same expression tree structure
-  template <typename E> class MatrixPtr : public MatrixExpr<E::base, E::rows, E::cols, MatrixPtr<E>> {
-    static_assert(std::is_base_of<MatrixBase, E>::value);
-  private:
-    typename std::remove_reference<E>::type* ptr_;
-  public:
-    MatrixPtr(E* ptr) : ptr_(ptr) {};
-    // delegate to pointed memory location
-    auto coeff(std::size_t i, std::size_t j) const {
-      return ptr_->coeff(i,j);
-    }
-    // delegate to pointed memory location
-    template <typename T>
-    void eval_parameters(T i) { ptr_->eval_parameters(i); }
-
-    E* operator->() { return ptr_; }
-  };
   
 }};
 
-#endif // __MATRIX_FIELD_EXPRESSIONS_H__
+#endif // __MATRIX_EXPRESSIONS_H__

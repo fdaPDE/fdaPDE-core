@@ -3,7 +3,7 @@
 
 #include <type_traits>
 #include "../Symbols.h"
-#include "ScalarFieldExpressions.h"
+#include "expressions/ScalarExpressions.h"
 #include <iostream>
 
 namespace fdaPDE{
@@ -17,7 +17,7 @@ namespace core{
   // A functor to represent an inner product. T1 and T2 must provide a subscript operator []. The result of applying
   // [] to an object of type T1 or T2 must return a callable (must provide an implementation for operator()) taking an SVector as argument
   template <typename T1, typename T2>
-  class DotProduct : public FieldExpr<DotProduct<T1, T2>> {
+  class DotProduct : public ScalarExpr<DotProduct<T1, T2>> {
   private:
     T1 op1_; T2 op2_; // operands of inner product
 

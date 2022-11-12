@@ -3,10 +3,10 @@
 
 #include "../../utils/CompileTime.h"
 #include "../../utils/Symbols.h"
-#include "../../utils/fields/ScalarFieldExpressions.h"
+#include "../../utils/fields/expressions/ScalarExpressions.h"
+using fdaPDE::core::ScalarExpr;
 #include "../../utils/fields/VectorField.h"
 using fdaPDE::core::VectorField;
-using fdaPDE::core::FieldExpr;
 #include <cstddef>
 #include <functional>
 #include <array>
@@ -162,7 +162,7 @@ namespace FEM{
 
   // functor implementing the derivative of a multivariate N-dimensional polynomial of degree R along a given direction
   template <unsigned int N, unsigned int R>
-  class PolynomialDerivative : public VectExpr<N,N, PolynomialDerivative<N,R>>{
+  class PolynomialDerivative : public VectorExpr<N,N, PolynomialDerivative<N,R>>{
   private:
     // compile time informations
     static const constexpr unsigned MON = ct_binomial_coefficient(R+N, R);
@@ -192,7 +192,7 @@ namespace FEM{
   
   // class representing a multivariate polynomial of degree R defined over a space of dimension N
   template <unsigned int N, unsigned int R>
-  class MultivariatePolynomial : public FieldExpr<MultivariatePolynomial<N, R>> {
+  class MultivariatePolynomial : public ScalarExpr<MultivariatePolynomial<N, R>> {
   private:
     // vector of coefficients
     static const constexpr unsigned MON = ct_binomial_coefficient(R+N, R);

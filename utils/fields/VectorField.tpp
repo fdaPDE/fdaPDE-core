@@ -19,14 +19,14 @@ ScalarField<M,F>& VectorField<M,N,F>::operator[](size_t i) { return field_[i]; }
 template <unsigned int N, unsigned int M, unsigned int K> class MatrixConst;
 // VectorField-VectorField inner product
 template <int M, int N, typename F>
-DotProduct<VectorField<M,N,F>, VectConst<M,N>>
+DotProduct<VectorField<M,N,F>, VectorConst<M,N>>
 VectorField<M,N,F>::dot(const SVector<N>& rhs) const {  
-  return DotProduct<VectorField<M,N,F>, VectConst<M,N>>(*this, VectConst<M,N>(rhs));
+  return DotProduct<VectorField<M,N,F>, VectorConst<M,N>>(*this, VectorConst<M,N>(rhs));
 }
-// VectorField-VectExpr inner product
+// VectorField-VectorExpr inner product
 template <int M, int N, typename F>
 template <typename E>
 DotProduct<VectorField<M,N,F>, E>
-VectorField<M,N,F>::dot(const VectExpr<M,N,E> &rhs) const {  
+VectorField<M,N,F>::dot(const VectorExpr<M,N,E> &rhs) const {  
   return DotProduct<VectorField<M,N,F>, E>(*this, rhs.get());
 }    

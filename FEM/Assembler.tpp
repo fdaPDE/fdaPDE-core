@@ -18,7 +18,8 @@ Eigen::SparseMatrix<double> Assembler<M, N, R, B, I>::assemble(const E& bilinear
   MatrixConst<M,N,M> buff_invJ; // (J^{-1})^T, being J the inverse of the barycentric matrix relative to element e
   // prepare buffer to be sent to bilinear form
   auto mem_buffer = std::make_tuple
-    (FieldPtr(&buff_psi_i), FieldPtr(&buff_psi_j), VectPtr(&buff_NablaPsi_i), VectPtr(&buff_NablaPsi_j), MatrixPtr(&buff_invJ));
+    (ScalarPtr(&buff_psi_i), ScalarPtr(&buff_psi_j), VectorPtr(&buff_NablaPsi_i),
+     VectorPtr(&buff_NablaPsi_j), MatrixPtr(&buff_invJ));
     
   // develop bilinear form expression in an integrable field here once
   auto f = bilinearForm.integrate(mem_buffer); // let the compiler deduce the type of the expression template!

@@ -7,7 +7,7 @@
 #include "ScalarField.h"
 using fdaPDE::core::ScalarField;
 using fdaPDE::core::ZeroField;
-#include "VectorFieldExpressions.h"
+#include "expressions/VectorExpressions.h"
 #include "DotProduct.h"
 //#include "MatrixFieldExpressions.h"
 
@@ -16,7 +16,7 @@ namespace core{
   
   // template class representing a general vector field from an M-dimensional to an N-dimensional space. Support expression template arithmetic.
   template <int M, int N = M, typename F = std::function<double(SVector<M>)>>
-  class VectorField : public VectExpr<M,N, VectorField<M,N,F>>{
+  class VectorField : public VectorExpr<M,N, VectorField<M,N,F>>{
     static_assert(std::is_invocable<F, SVector<N>>::value &&		   
 		  std::is_same<typename std::invoke_result<F,SVector<N>>::type,
 		                 double>::value);				   
@@ -34,12 +34,12 @@ namespace core{
       for(std::size_t i = 0; i < N; ++i) // assign a ScalarField to each component of the VectorField
 	field_[i] = ScalarField<M,F>(field[i]);
     }
-    // wrap a VectExpr into a valid VectorField
+    // wrap a VectorExpr into a valid VectorField
     template <typename E, typename U = F,
               typename std::enable_if<
 		std::is_same<U, std::function<double(SVector<N>)>>::value,
 		int>::type = 0>
-    VectorField(const VectExpr<M,N,E>& expr){
+    VectorField(const VectorExpr<M,N,E>& expr){
       for(std::size_t i = 0; i < N; ++i)
 	field_[i] = expr[i];
     }
@@ -54,10 +54,10 @@ namespace core{
     inline ScalarField<M,F>& operator[](size_t i);
 
     // inner product VectorField.dot(VectorField)
-    DotProduct<VectorField<M,N,F>, VectConst<M,N>> dot(const SVector<N>& rhs) const;
-    // Inner product VectorField.dot(VectExpr)
+    DotProduct<VectorField<M,N,F>, VectorConst<M,N>> dot(const SVector<N>& rhs) const;
+    // Inner product VectorField.dot(VectorExpr)
     template <typename E>
-    DotProduct<VectorField<M,N,F>, E> dot(const VectExpr<M,N,E>& expr) const;
+    DotProduct<VectorField<M,N,F>, E> dot(const VectorExpr<M,N,E>& expr) const;
   };
 
 #include "VectorField.tpp"

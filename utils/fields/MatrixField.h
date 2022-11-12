@@ -9,7 +9,7 @@
 using fdaPDE::core::ScalarField;
 #include "VectorField.h"
 using fdaPDE::core::VectorField;
-#include "MatrixFieldExpressions.h"
+#include "expressions/MatrixExpressions.h"
 
 namespace fdaPDE{
 namespace core {

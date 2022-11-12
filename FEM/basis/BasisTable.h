@@ -1,9 +1,6 @@
 #ifndef __BASIS_TABLE_H__
 #define __BASIS_TABLE_H__
 
-#include "../../utils/fields/ScalarFieldExpressions.h"
-using fdaPDE::core::FieldExpr;
-
 namespace fdaPDE {
 namespace core {
 namespace FEM {

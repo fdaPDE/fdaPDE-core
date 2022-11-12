@@ -12,6 +12,10 @@
 using fdaPDE::core::VectorField;
 #include "../utils/fields/ScalarField.h"
 using fdaPDE::core::ScalarField;
+#include "../utils/fields/FieldPtrs.h"
+using fdaPDE::core::ScalarPtr;
+using fdaPDE::core::VectorPtr;
+using fdaPDE::core::MatrixPtr;
 #include "../MESH/Mesh.h"
 using fdaPDE::core::MESH::Mesh;
 #include "../MESH/Element.h"
