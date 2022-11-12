@@ -41,9 +41,9 @@ namespace FEM{
     std::tuple<Gradient<T>> getTypeList() const { return std::make_tuple(*this); }
     static constexpr bool is_space_varying = std::is_base_of<VectorBase, T>::value;
     
-    // approximates the contribution of this operator to the (i,j)-th element of the discretization matrix
-    // NOTE: is important to use auto return type to let the compiler return the whole expression template produced by this
-    // operator avoiding both type erause (e.g. by casting to some ScalarField object) as well as the creation of temporaries
+    // approximates the contribution of this operator for the (i,j)-th element of the discretization matrix
+    // IMPORT_MEM_BUFFER_SYMBOLS makes the proper unpack of the mem_buffer tuple by introducing a set of symbols,
+    // symbols are set via field pointers by the assembly loop. See BilinearFormExpressions.h for its definition
     template <typename... Args>
     auto integrate(const std::tuple<Args...>& mem_buffer) const {
       IMPORT_MEM_BUFFER_SYMBOLS(mem_buffer);

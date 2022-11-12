@@ -33,20 +33,17 @@ namespace FEM{
     std::tuple<Laplacian<T>> getTypeList() const { return std::make_tuple(*this); }
     static constexpr bool is_space_varying = std::is_base_of<MatrixBase, T>::value;
     
-    // approximates the contribution to the (i,j)-th element of the discretization matrix given by the diffusion term:
-
-    // NOTE: is important to use auto return type to let the compiler return the whole expression template produced by this
-    // operator avoiding both type erause (e.g. by casting to some ScalarField object) as well as the creation of temporaries
+    // approximates the contribution of this operator for the (i,j)-th element of the discretization matrix
+    // IMPORT_MEM_BUFFER_SYMBOLS makes the proper unpack of the mem_buffer tuple by introducing a set of symbols,
+    // symbols are set via field pointers by the assembly loop. See BilinearFormExpressions.h for its definition
     template <typename... Args>
     auto integrate(const std::tuple<Args...>& mem_buffer) const {
       IMPORT_MEM_BUFFER_SYMBOLS(mem_buffer);
-      // express gradient of basis function over e in terms of gradient of basis function defined over the reference element.
-      // This entails to compute (J^{-1})^T * \Nabla phi_i.
       if constexpr(std::is_same<DefaultOperator, T>::value)
-	// isotropic unitary diffusion fallback to K_ = I: \Nabla phi_i.dot(\Nabla * phi_j)
+	// isotropic unitary diffusion fallback to K_ = I: (\Nabla psi_i).dot(\Nabla psi_j)
 	return (invJ*NablaPsi_i).dot(invJ*NablaPsi_j);
       else
-	// anisotropic diffusion: (\Nabla phi_i)^T * K * \Nabla * phi_j
+	// non unitary or anisotropic diffusion: (\Nabla psi_i)^T*K*(\Nabla \psi_j)
 	return (invJ*NablaPsi_i).dot(K_*(invJ*NablaPsi_j));
     }
   };
