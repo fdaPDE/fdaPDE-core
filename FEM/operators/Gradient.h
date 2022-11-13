@@ -35,6 +35,7 @@ namespace FEM{
     T b_; // transport vector (either constant or space-varying)
   public:
     // constructors
+    Gradient() = default;
     Gradient(const T& b) : b_(b) {}
 
     // compile time informations
