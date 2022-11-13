@@ -47,6 +47,7 @@ namespace FEM{
     BinaryOperation f_;                               // operation to apply
   public:
     // constructor
+    BilinearFormBinOp() = default; // let default constructible to allow assignment
     BilinearFormBinOp(const OP1& op1, const OP2& op2, BinaryOperation f)
       : op1_(op1), op2_(op2), f_(f) { };
     // integrate method. Apply the functor f_ to the result of integrate() applied to both operands.

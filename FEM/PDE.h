@@ -59,7 +59,11 @@ namespace FEM{
 
     void buildBasis_(); // initializes BASIS_TABLE
   public:
-    // constructor
+    // minimal constructor, use below setters to complete the construction of a PDE object
+    PDE(const Mesh<M,N,R>& domain) : domain_(domain) { buildBasis_(); }
+    void setForcing(const F& forcingData) { forcingData_ = forcingData; }
+    void setBilinearForm(E bilinearForm) { bilinearForm_ = bilinearForm; }
+    // full constructors
     PDE(const Mesh<M,N,R>& domain, E bilinearForm, const F& forcingData);
     PDE(const Mesh<M,N,R>& domain, E bilinearForm, const F& forcingData, const B& basis, const I& integrator);
     

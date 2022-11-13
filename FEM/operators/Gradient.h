@@ -30,7 +30,7 @@ namespace FEM{
   class Gradient : public BilinearFormExpr<Gradient<T>>{
     // perform compile-time sanity checks
     static_assert(std::is_base_of<VectorBase, T>::value || // space-varying case
-		  is_eigen_vector<T>());                 // constant coefficient case
+		  is_eigen_vector<T>());                   // constant coefficient case
   private:
     T b_; // transport vector (either constant or space-varying)
   public:
