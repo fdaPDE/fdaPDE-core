@@ -36,9 +36,9 @@ double Integrator<M,R,K>::integrate(const Element<M,N,R>& e, const F& f, const t
       SVector<N> Jp = e.barycentricMatrix()*p + e.coords()[0]; // map quadrature point on physical element e
       value += (f(Jp)*Phi(p))*integrationTable_.weights[iq];
     }else{
-      // as a fallback we assume f given as vector of values with the assumption that f[e.ID()+iq] equals the value of the
-      // discretized field at the iq-th quadrature node.
-      value += (f(e.ID()+iq,0)*Phi(p))*integrationTable_.weights[iq];
+      // as a fallback we assume f given as vector of values with the assumption that f[integrationTable_.num_nodes*e.ID() + iq]
+      // equals the value of the discretized field at the iq-th quadrature node.
+      value += (f(integrationTable_.num_nodes*e.ID() + iq,0)*Phi(p))*integrationTable_.weights[iq];
     }
   }
   // correct for measure of domain (element e)
@@ -58,9 +58,9 @@ double Integrator<M,R,K>::integrate(const Element<M,N,R>& e, const F &f) const {
       SVector<N> p = e.barycentricMatrix()*SVector<M>(integrationTable_.nodes[iq].data()) + e.coords()[0]; // map quadrature point onto e
       value += f(p)*integrationTable_.weights[iq];
     }else{
-      // as a fallback we assume f given as vector of values with the assumption that f[e->ID()+iq] equals the value of the
-      // discretized field at the iq-th quadrature node.
-      value += f(e->ID()+iq,0)*integrationTable_.weights[iq];
+      // as a fallback we assume f given as vector of values with the assumption that f[integrationTable_.num_nodes*e.ID() + iq]
+      // equals the value of the discretized field at the iq-th quadrature node.
+      value += f(integrationTable_.num_nodes*e.ID() + iq,0)*integrationTable_.weights[iq];
     }
   }
   // correct for measure of domain (element e)
