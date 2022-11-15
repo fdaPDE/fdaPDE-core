@@ -14,7 +14,7 @@ namespace FEM{
 
   // Tables and theory for the derivation of both weights and nodes can be found in:
   // ** "Numerical Models for Differential Problems, Alfio Quarteroni. Second edition"
-  // ** "The finite element method: Linear static and dynamic finite element analysis, Thomas J.R. Hughes"
+  // ** "https://people.sc.fsu.edu/~jburkardt/datasets/datasets.html"
 
   // N dimension of the integration domain, K number of nodes of the formula
   template <unsigned int N, unsigned int K> struct IntegratorTable;
@@ -112,7 +112,7 @@ namespace FEM{
     };
   };
 
-  // 3 point formula, degree of precision 3
+  // 3 point formula, degree of precision 2
   template <> struct IntegratorTable<2, 3> {
     // number of nodes
     static constexpr unsigned int num_nodes = 3;
@@ -130,7 +130,7 @@ namespace FEM{
     };  
   };
 
-  // 6 point formula, degree of precision 4
+  // 6 point formula, degree of precision 3
   template <> struct IntegratorTable<2, 6> {
     // number of nodes
     static constexpr unsigned int num_nodes = 6;
@@ -154,7 +154,7 @@ namespace FEM{
     };  
   };
 
-  // 7 point formula, degree of precision 5
+  // 7 point formula, degree of precision 4
   template <> struct IntegratorTable<2, 7> {
     // number of nodes
     static constexpr unsigned int num_nodes = 7;
@@ -186,17 +186,17 @@ namespace FEM{
     static constexpr unsigned int num_nodes = 12;
     // position of nodes (in barycentric coordinates)
     static constexpr std::array<std::array<double, 2>, 12> nodes = {
-      {{0.873821971016996, 0.063089017791802},
-       {0.063089017791802, 0.873821971016996},
-       {0.063089017791802, 0.063089017791802},
+      {{0.873821971016996, 0.063089014491502},
+       {0.063089014491502, 0.873821971016996},
+       {0.063089014491502, 0.063089014491502},
        {0.501426509658179, 0.249286745170910},
        {0.249286745170910, 0.501426509658179},
        {0.249286745170910, 0.249286745170910},
        {0.636502499121399, 0.310352451033785},
-       {0.310352451033785, 0.636502499121399},
        {0.636502499121399, 0.053145049844816},
-       {0.053145049844816, 0.636502499121399},
+       {0.310352451033785, 0.636502499121399},
        {0.310352451033785, 0.053145049844816},
+       {0.053145049844816, 0.636502499121399},
        {0.053145049844816, 0.310352451033785}}
     };
     // weights of the quadrature rule
@@ -204,16 +204,16 @@ namespace FEM{
       {0.050844906370207,
        0.050844906370207,
        0.050844906370207,
-       0.116786275726397,
-       0.116786275726397,
-       0.116786275726397,
+       0.116786275726379,
+       0.116786275726379,
+       0.116786275726379,
        0.082851075618374,
        0.082851075618374,
        0.082851075618374,
        0.082851075618374,
        0.082851075618374,
        0.082851075618374}
-    };  
+    };
   };
 
   // 3D tetrahedric elements
@@ -233,7 +233,7 @@ namespace FEM{
     };
   };
 
-  // 4 point formula, degree of precision 3
+  // 4 point formula, degree of precision 2
   template <> struct IntegratorTable<3, 4> {
     // number of nodes
     static constexpr unsigned int num_nodes = 4;
@@ -253,7 +253,7 @@ namespace FEM{
     };
   };
 
-  // 5 point formula, degree of precision 4
+  // 5 point formula, degree of precision 3
   template <> struct IntegratorTable<3, 5> {
     // number of nodes
     static constexpr unsigned int num_nodes = 5;
@@ -275,5 +275,39 @@ namespace FEM{
     };
   };
 
+  // 5 point formula, degree of precision 4
+  template <> struct IntegratorTable<3, 11> {
+    // number of nodes
+    static constexpr unsigned int num_nodes = 11;
+    // position of nodes (in barycentric coordinates)
+    static constexpr std::array<std::array<double, 3>, 11> nodes = {
+      {{0.2500000000000000, 0.2500000000000000, 0.2500000000000000},
+       {0.7857142857142857, 0.0714285714285714, 0.0714285714285714},
+       {0.0714285714285714, 0.0714285714285714, 0.0714285714285714},
+       {0.0714285714285714, 0.0714285714285714, 0.7857142857142857},
+       {0.0714285714285714, 0.7857142857142857, 0.0714285714285714},
+       {0.1005964238332008, 0.3994035761667992, 0.3994035761667992},
+       {0.3994035761667992, 0.1005964238332008, 0.3994035761667992},
+       {0.3994035761667992, 0.3994035761667992, 0.1005964238332008},
+       {0.3994035761667992, 0.1005964238332008, 0.1005964238332008},
+       {0.1005964238332008, 0.3994035761667992, 0.1005964238332008},
+       {0.1005964238332008, 0.1005964238332008, 0.3994035761667992}}
+    };
+    // weights of the quadrature rule
+    static constexpr std::array<double, 11> weights = {
+      {-0.0789333333333333,
+       0.0457333333333333,
+       0.0457333333333333,
+       0.0457333333333333,
+       0.0457333333333333,
+       0.1493333333333333,
+       0.1493333333333333,
+       0.1493333333333333,
+       0.1493333333333333,
+       0.1493333333333333,
+       0.1493333333333333}
+    };
+  };
+  
 }}}
 #endif // __INTEGRATOR_TABLES_H__
