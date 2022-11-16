@@ -115,10 +115,13 @@ void Mesh<M,N,R>::fill_cache() {
       boundary[i] = boundary_(pointData[i]);
 
       if constexpr(!is_linear_network<M, N>::value){
-	// from triangle documentation: The first neighbor of triangle i is opposite the first corner of triangle i, and so on.
-	// by storing neighboring informations as they come from triangle we have that neighbor[0] is the
-	// triangle adjacent to the face opposite to coords[0]. This is true for any mesh different from a network mesh
-	neighbors.push_back(neighboringData[i]);
+	// non-geometrical nodes (nodes which are for the support of a basis function only) don't carry neighboring informations
+	if(i < ct_nvertices(M)){	
+	  // from triangle documentation: The first neighbor of triangle i is opposite the first corner of triangle i, and so on.
+	  // by storing neighboring informations as they come from triangle we have that neighbor[0] is the
+	  // triangle adjacent to the face opposite to coords[0]. This is true for any mesh different from a network mesh
+	  neighbors.push_back(neighboringData[i]);
+	}
       }
     }
     // fill neighboring information for the linear network element case

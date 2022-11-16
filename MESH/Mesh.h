@@ -8,6 +8,7 @@
 #include <array>
 
 #include "Element.h"
+using fdaPDE::core::MESH::ct_nvertices;
 #include "../utils/IO/CSVReader.h"
 #include "../utils/Symbols.h"
 
