@@ -105,7 +105,7 @@ public:
   template <typename T>
   const DMatrix<T>& get(const std::string& key) const {
     BLOCK_FRAME_CHECK_TYPE;
-    // throw expection if key not in BlockFrame
+    // throw exeption if key not in BlockFrame
     if(!hasBlock(key)) throw std::out_of_range("key not found");
     return std::get<index_of<T, types_>::index>(data_).at(key);
   }  
@@ -121,7 +121,17 @@ public:
   BlockView<Sparse, Ts...> operator()(const std::vector<std::size_t>& idxs) const {
     return BlockView<Sparse, Ts...>(*this, idxs);
   }
-
+  // return column block
+  template <typename T>
+  auto col(const std::string& key, std::size_t idx) const {
+    BLOCK_FRAME_CHECK_TYPE;
+    // this will throw an exeption if key cannot be found
+    const DMatrix<T>& block = get<T>(key);
+    // throw exeption if block has more than one column
+    if(block.cols() < idx) throw std::out_of_range("index out of range");
+    return block.col(idx);
+  }
+  
   // perform a shuffling of the BlockFrame rows returning a new BlockFrame
   BlockFrame<Ts...> shuffle() const {
     std::vector<std::size_t> random_idxs;
