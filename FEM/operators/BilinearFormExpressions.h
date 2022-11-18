@@ -67,6 +67,7 @@ namespace FEM{
     double value_;
   public:
     // constructor
+    BilinearFormScalar() = default;
     BilinearFormScalar(double value) : value_(value) { }
     // integrate method. Just return the stored value
     template <typename... Args>
