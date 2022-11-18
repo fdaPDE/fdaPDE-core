@@ -1,7 +1,7 @@
 // constructor
 template <unsigned int M, unsigned int N, unsigned int R>
-Element<M,N,R>::Element(std::size_t ID, const std::array<std::size_t, ct_nnodes(M,R)>& nodeIDs, const std::array<SVector<N>, ct_nnodes(M,R)>& coords,
-			  const std::vector<int>& neighbors, const std::array<std::size_t, ct_nnodes(M,R)>& boundary) :
+Element<M,N,R>::Element(std::size_t ID, const std::array<std::size_t, ct_nvertices(M)>& nodeIDs, const std::array<SVector<N>, ct_nvertices(M)>& coords,
+			  const std::vector<int>& neighbors, const std::array<std::size_t, ct_nvertices(M)>& boundary) :
   ID_(ID), nodeIDs_(nodeIDs), coords_(coords), neighbors_(neighbors), boundary_(boundary) {
   // precompute barycentric coordinate matrix for fast access
   // use first point as reference
@@ -133,7 +133,7 @@ bool Element<M,N,R>::isOnBoundary(void) const{
 template <unsigned int M, unsigned int N, unsigned int R>
 std::vector<std::pair<std::size_t, SVector<N>>> Element<M,N,R>::boundaryNodes() const {
   std::vector<std::pair<std::size_t, SVector<N>>> result{};
-  for(std::size_t i = 0; i < ct_nnodes(M,R); ++i){
+  for(std::size_t i = 0; i < ct_nvertices(M); ++i){
     if(boundary_[i] == 1){
       result.push_back(std::make_pair(nodeIDs_[i], coords_[i]));
     }

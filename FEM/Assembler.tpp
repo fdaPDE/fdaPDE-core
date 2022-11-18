@@ -8,7 +8,7 @@ Eigen::SparseMatrix<double> Assembler<M, N, R, B, I>::assemble(const E& bilinear
 
   // properly preallocate memory to avoid reallocations
   tripletList.reserve(n_basis*n_basis*mesh_.elements());
-  discretizationMatrix.resize(mesh_.nodes(), mesh_.nodes());
+  discretizationMatrix.resize(dof_, dof_);
 
   // prepare space for bilinear form components
   using basis_type = typename B::element_type;
@@ -24,10 +24,12 @@ Eigen::SparseMatrix<double> Assembler<M, N, R, B, I>::assemble(const E& bilinear
   // develop bilinear form expression in an integrable field here once
   auto f = bilinearForm.integrate(mem_buffer); // let the compiler deduce the type of the expression template!
   
+  std::size_t currentID;
   // cycle over all mesh elements
   for(const auto& e : mesh_){
-    // update linear map from physical element e to reference element
+    // update elements related informations: current ID and the affine map from current element to reference element
     buff_invJ = e->invBarycentricMatrix().transpose();
+    currentID = e->ID();
     // consider all pair of nodes
     for(size_t i = 0; i < n_basis; ++i){
       buff_psi_i = referenceBasis_[i]; buff_NablaPsi_i = buff_psi_i.derive(); // update buffers content
@@ -35,18 +37,18 @@ Eigen::SparseMatrix<double> Assembler<M, N, R, B, I>::assemble(const E& bilinear
 	buff_psi_j = referenceBasis_[j]; buff_NablaPsi_j = buff_psi_j.derive(); // update buffers content
 	if constexpr(is_symmetric<decltype(bilinearForm)>::value){
 	  // compute only half of the discretization matrix if the operator is symmetric
-	  if(e->nodeIDs()[i] >= e->nodeIDs()[j]){
+	  if(dof_table_(currentID,i) >= dof_table_(currentID,j)){
 	    double value = integrator_.template integrate<decltype(bilinearForm)>(*e, f); // perform integration of bilinear form
 	    
 	    // From Eigen doucmentation: The input list of triplets does not have to be sorted, and can contains duplicated elements.
 	    // In any case, the result is a sorted and compressed sparse matrix where the duplicates have been summed up.
 	    // Linearity of the integral is implicitly used during matrix construction by eigen!
-	    tripletList.emplace_back(e->nodeIDs()[i], e->nodeIDs()[j], value);
+	    tripletList.emplace_back(dof_table_(currentID,i), dof_table_(currentID,j), value);
 	  }
 	}else{
 	  // not any optimization to perform in the general case
 	  double value = integrator_.template integrate<decltype(bilinearForm)>(*e, f);
-	  tripletList.emplace_back(e->nodeIDs()[i], e->nodeIDs()[j], value);
+	  tripletList.emplace_back(dof_table_(currentID,i), dof_table_(currentID,j), value);
 	}
       }
     }
@@ -67,17 +69,16 @@ template <typename F>
 Eigen::Matrix<double, Eigen::Dynamic, 1> Assembler<M, N, R, B, I>::forcingTerm(const F& f) {
 
   Eigen::Matrix<double, Eigen::Dynamic, 1> result{};
-  result.resize(mesh_.nodes(), 1); // there are as many basis functions as number of nodes in the mesh
+  result.resize(dof_, 1); // there are as many basis functions as number of nodes in the mesh
   result.fill(0); // init result vector to zero
   
   // build forcing vector
   for(const auto& e : mesh_){
     // integrate on each node
-    std::array<std::size_t, ct_nnodes(M,R)> nodes = e->nodeIDs();
     for(size_t i = 0; i < n_basis; ++i){
       // perform integration on reference element and store result exploiting additiviy of the integral
-      result[e->nodeIDs()[i]] += integrator_.integrate(*e, f, referenceBasis_[i]); // \int_e [f*\psi]
+      result[dof_table_(e->ID(),i)] += integrator_.integrate(*e, f, referenceBasis_[i]); // \int_e [f*\psi]
     }
-  }
+  }  
   return result;
 }

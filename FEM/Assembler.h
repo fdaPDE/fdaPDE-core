@@ -46,16 +46,21 @@ namespace FEM{
     const I& integrator_; // quadrature rule to approximate integrals
     B referenceBasis_{}; // functional basis over reference N-dimensional unit simplex
     const BASIS_TABLE<M,N,R,B>& basis_; // basis system over the entire domain
+    std::size_t dof_;
+    const DMatrix<int>& dof_table_;
     
   public:
     Assembler(const Mesh<M,N,R>& mesh, const BASIS_TABLE<M,N,R,B>& basis, const I& integrator) :
-      mesh_(mesh), basis_(basis), integrator_(integrator) {};
+      mesh_(mesh), basis_(basis), integrator_(integrator), dof_(mesh_.dof()), dof_table_(mesh.dof_table()) {};
     // assemble discretization matrix
     template <typename E>
     Eigen::SparseMatrix<double> assemble(const E& bilinearForm);
     // assemble forcing vector
     template <typename F>
     Eigen::Matrix<double, Eigen::Dynamic, 1> forcingTerm(const F& f);
+
+    std::size_t dof() const { return dof_; }
+    
   };
 
 #include "Assembler.tpp"

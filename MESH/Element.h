@@ -41,13 +41,13 @@ namespace MESH{
   class Element{
   private:
     std::size_t ID_; // ID of this element
-    std::array<std::size_t, ct_nnodes(M,R)> nodeIDs_{}; // ID of nodes composing the element
+    std::array<std::size_t, ct_nvertices(M)> nodeIDs_{}; // ID of nodes composing the element
     // coordinates of nodes as N-dimensional points. The i-th element in this array refers to node with ID nodeIDs_[i]
-    std::array<SVector<N>,  ct_nnodes(M,R)> coords_{};
+    std::array<SVector<N>,  ct_nvertices(M)> coords_{};
     // ID of the neighboring elements, use std::vector since number of neighboring elements is not always known at compile time
     std::vector<int> neighbors_{};
     // boundary informations. boundary_[i] == 1 <-> node with ID nodeIDs_[i] is on boundary
-    std::array<std::size_t, ct_nnodes(M,R)> boundary_{};
+    std::array<std::size_t, ct_nvertices(M)> boundary_{};
         
     // matrices defining the affine transformation from cartesian to barycentric coordinates and viceversa
     Eigen::Matrix<double, N, M> barycentricMatrix_{};
@@ -57,16 +57,16 @@ namespace MESH{
   public:
     // constructor
     Element() = default;  
-    Element(std::size_t ID, const std::array<std::size_t, ct_nnodes(M,R)>& nodeIDs, const std::array<SVector<N>, ct_nnodes(M,R)>& coords,
-	    const std::vector<int>& neighbors, const std::array<std::size_t, ct_nnodes(M,R)>& boundary);
+    Element(std::size_t ID, const std::array<std::size_t, ct_nvertices(M)>& nodeIDs, const std::array<SVector<N>, ct_nvertices(M)>& coords,
+	    const std::vector<int>& neighbors, const std::array<std::size_t, ct_nvertices(M)>& boundary);
     
     // getters (read-only mode)
-    const std::array<SVector<N>, ct_nnodes(M,R)> coords() const { return coords_; }
+    const std::array<SVector<N>, ct_nvertices(M)> coords() const { return coords_; }
     const std::vector<int> neighbors() const { return neighbors_; }
     const unsigned int ID() const { return ID_; }
     Eigen::Matrix<double, N, M> barycentricMatrix() const { return barycentricMatrix_; }
     Eigen::Matrix<double, M, N> invBarycentricMatrix() const { return invBarycentricMatrix_; }
-    std::array<std::size_t, ct_nnodes(M,R)> nodeIDs() const { return nodeIDs_; }
+    std::array<std::size_t, ct_nvertices(M)> nodeIDs() const { return nodeIDs_; }
     
     // computes the baricentric coordinates of a point with respect to this element
     SVector<M+1> toBarycentricCoords(const SVector<N>& x) const;
@@ -96,12 +96,12 @@ namespace MESH{
     
     // subscript operator
     SVector<N> operator[](std::size_t i) const {
-      static_assert(i < ct_nnodes(M,R));
+      static_assert(i < ct_nvertices(M));
       return coords_[i];
     };
     // allow range for over element's coordinates
-    typename std::array<SVector<N>, ct_nnodes(M,R)>::const_iterator begin() const { return coords_.cbegin(); }
-    typename std::array<SVector<N>, ct_nnodes(M,R)>::const_iterator end() const { return coords_.cend(); }
+    typename std::array<SVector<N>, ct_nvertices(M)>::const_iterator begin() const { return coords_.cbegin(); }
+    typename std::array<SVector<N>, ct_nvertices(M)>::const_iterator end() const { return coords_.cend(); }
     
     // expose compile time informations
     static constexpr unsigned int nodes = ct_nnodes(M,R);

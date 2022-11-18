@@ -86,6 +86,9 @@ namespace MESH{
     // elements informations are computed once and cached here for fast re-access
     std::vector<std::shared_ptr<Element<M,N,R>>> cache_{};
     void fill_cache();
+
+    // degrees of freedom
+    std::size_t dof_;
   public:
     Mesh() = default;
     // construct from .csv files, strings are names of file where raw data is contained
@@ -140,6 +143,10 @@ namespace MESH{
     std::array<std::pair<double, double>, N> range() const { return range_; }
     std::array<double, N> lowerBound() const { return minRange_; }
     std::array<double, N> kk() const { return kk_; }
+
+    void compute_basis_support(const DMatrix<int>& boundary);
+    std::size_t dof() const { return dof_; }
+    const DMatrix<int>& dof_table() const { return elements_; }
     
     // expose compile time informations to outside
     static constexpr bool manifold = is_manifold<M, N>::value;

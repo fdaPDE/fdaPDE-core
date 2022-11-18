@@ -63,7 +63,7 @@ namespace FEM{
     R1_->makeCompressed();
     // fill forcing vector
     force_ = std::make_shared<DMatrix<double>>();
-    force_->resize(pde.domain().nodes(), 1); //pde.forcingData().cols());
+    force_->resize(assembler.dof(), 1); //pde.forcingData().cols());
     force_->col(0) = assembler.forcingTerm(pde.forcingData());
 
     // SPACE-TIME PROBLEMS CURRENTLY NOT SUPPORTED DUE TO THE FACT WE NOW ACCEPT ALSO CALLABLE AS FORCING

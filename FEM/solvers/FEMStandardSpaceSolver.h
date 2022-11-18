@@ -30,7 +30,7 @@ namespace FEM{
   void FEMStandardSpaceSolver::solve(const PDE<M,N,R,E,F,B,I,S>& pde){
     this->init(pde); // init solver for this PDE
     this->imposeBoundaryConditions(pde); // impose boundary conditions on forcing vector and R1_ matrix
-    
+
     // define eigen system solver, use sparse LU decomposition.
     Eigen::SparseLU<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int>> solver;
     solver.compute(*this->R1_);
