@@ -18,19 +18,18 @@ namespace MESH{
 
   // Mesh is the access point to mesh informations (triangulated domains). It offers an abstraction layer allowing to reason
   // on the mesh from a geometrical perspective, i.e. without considering its internal representation in memory. The class is able to transparently
-  // handle manifold and non manifold meshes, exposing the same interface in any case. Two non-type template parameters are used:
+  // handle manifold and non manifold meshes, exposing the same interface in any case. Three non-type template parameters are used:
   //     * M: local dimension of the mesh (dimension of the space to which a mesh element belongs)
   //     * N: embeddding dimension of the mesh (dimension of the space where the whole mesh lies)
+  //     * R: mesh order, the order of a finite element basis function which can be defined on the mesh
   // if M != N the mesh is a manifold. Currently are implemented:
   //     * 1.5D meshes (linear newtorks,    M=1, N=2)
   //     * 2D meshes   (planar domains,     M=2, N=2)
   //     * 2.5D meshes (surfaces,           M=2, N=3)
   //     * 3D meshes   (volumetric domains, M=3, N=3)
-  // A third non-type template parameter R is used to keep track of the order of the elements contained in the mesh object. Mesh are defaulted to
-  // use finite linear elements (R = 1)
   
-  // NB about internal implementaiton: special care is needed in the development of linear networks, since differently from any other case the number
-  // of neighboing elements is not known at compile time. This implies the usage of specialized data structures wrt any other case
+  // NB about internal implementaiton: special care is needed in the development of linear networks, since differently from other cases the number
+  // of neighboing elements is not known at compile time. This implies the usage of specialized data structures
 
   // trait to detect if the mesh is a manifold
   template <unsigned int M, unsigned int N>
@@ -61,20 +60,33 @@ namespace MESH{
     // coordinates of points constituting the vertices of mesh elements
     DMatrix<double> points_{};
     unsigned int numNodes_ = 0;
-    // matrix of edges. Each row of the matrix contains the row numbers in points_ matrix
-    // of the points which form the edge
-    DMatrix<int> edges_{};
-    // matrix of triangles in the triangulation. Each row of the matrix contains the row
-    // numbers in points_ matrix of the points which form the triangle
+    // matrix of elements in the triangulation. Each row of the matrix contains the points which made the triangle as row number in the points_
+    // matrix. For a mesh of order 1 this matrix coincides with the element matrix passed as input.
+    // For higher order meshes this matrix assumes the following format:
+    // 
+    //    | ----- M + 1 columns ----- | ---- ct_nnodes(M,R) - (M+1) columns ---- |
+    //    |            ...            |                    ...                   | dof_table
+    //    | ------------------------- | ---------------------------------------- |
+    //                                 ct_nnodes(M,R)
+    //
+    // * the first M+1 columns contain geometrical informations required to define an Element objects, i.e. the vertices of the element itself
+    // * the next (ct_nnodes(M,R)-(M+1)) columns contain the ID of nodes required for the definition of a finite element basis of order R, i.e.
+    //   are the extra degrees of freedom needed for the support of a functional basis of order higher than 1. Observe that:
+    //     * for mesh of order 1 this portion of the elements_ table is absent
+    //     * in case R>1, MESH will not pyhsically create nodes supporting the functional basis. Only an enumeration of those nodes
+    //       coherent with the mesh topology is generated at construction time.
     DMatrix<int> elements_{};
     unsigned int numElements_ = 0;
+    // store boundary informations. This is a vector of binary coefficients such that, boundary_[j] = 1 \iff node j is on boundary 
+    DMatrix<int> boundary_{};
+    std::size_t dof_; // degrees of freedom, i.e. the maximmum ID in the dof_table
+    // build an enumeration of nodes coherent with the mesh topology, update the boundary structure and dof_ to reflect the enumeration
+    void compute_basis_support(const DMatrix<int>& boundary);
+    
     // in case of non linear-networks neighbors_ is a dense matrix where row i contains the indexes as row number in triangles_ matrix of the
     // neighboring triangles to triangle i (all triangles in the triangulation which share an edge with i). In case of linear-newtorks neighbors_
     // is a sparse matrix where entry (i,j) is set to 1 iff i and j are neighbors
     typename neighboring_structure<M, N>::type neighbors_{};
-    // store boundary informations. This is a vector of binary coefficients such that, if element j is 1
-    // then mesh node j is on boundary, otherwise 0
-    DMatrix<int> boundary_{};
     
     // store min-max values for each dimension of the mesh
     std::array<std::pair<double, double>, N> range_{};
@@ -86,9 +98,6 @@ namespace MESH{
     // elements informations are computed once and cached here for fast re-access
     std::vector<std::shared_ptr<Element<M,N,R>>> cache_{};
     void fill_cache();
-
-    // degrees of freedom
-    std::size_t dof_;
   public:
     Mesh() = default;
     // construct from .csv files, strings are names of file where raw data is contained
@@ -144,7 +153,6 @@ namespace MESH{
     std::array<double, N> lowerBound() const { return minRange_; }
     std::array<double, N> kk() const { return kk_; }
 
-    void compute_basis_support(const DMatrix<int>& boundary);
     std::size_t dof() const { return dof_; }
     const DMatrix<int>& dof_table() const { return elements_; }
     

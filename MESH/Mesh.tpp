@@ -4,9 +4,9 @@ template <unsigned int M, unsigned int N, unsigned int R>
 void Mesh<M,N,R>::compute_basis_support(const DMatrix<int>& boundary) {
   // algorithm initialization
   int next = numNodes_; // next valid ID to assign
-  std::unordered_map<int, int> assigned; // map of already assigned IDs
+  std::unordered_map<std::pair<int, int>, int, fdaPDE::pair_hash> assigned; // map of already assigned IDs
   std::size_t col = 0; // column of the elements_ table to change
-  std::vector<bool> onBoundary(numNodes_, false);
+  std::vector<bool> onBoundary(R*numNodes_, false);
   
   // start enumeration
   for(std::size_t elem = 0; elem < elements_.rows(); ++elem){
@@ -17,14 +17,13 @@ void Mesh<M,N,R>::compute_basis_support(const DMatrix<int>& boundary) {
 	std::pair<int, int> edge = std::minmax(elements_(elem,i), elements_(elem,j));
 	
 	// map edge to a unique index: (l,h) -> l*numNodes_ + h;
-	int z = edge.first*numNodes_ + edge.second;
-	auto it = assigned.find(z);
+	auto it = assigned.find(edge);
 	if(it != assigned.end()){ // there is an already assigned index
 	  elements_(elem, M+1+col) = it->second;
 	  assigned.erase(it); // free space, an order 2 node cannot be shared more than 2 times!
 	}else{
 	  elements_(elem, M+1+col) = next;
-	  assigned[z] = next;
+	  assigned[edge] = next;
 	  // new node is on boundary iff both endpoints of its edge are on boundary
 	  if(boundary(edge.first,0) && boundary(edge.second,0)) onBoundary.emplace_back(true);
 	  next++; // increase next ID to assign
@@ -34,17 +33,14 @@ void Mesh<M,N,R>::compute_basis_support(const DMatrix<int>& boundary) {
     }
     col = 0; // reset column counter
   }
-  
+  dof_ = next; // store degrees of freedom
   // adjust boundary informations
-  boundary_.resize(next,1);
+  boundary_.resize(dof_,1);
   boundary_.topRows(boundary.rows()) = boundary;
-  for(std::size_t i = numNodes_; i < next; ++i){
+  for(std::size_t i = numNodes_; i < dof_; ++i){ // adjust for new nodes of the enumeration
     if(onBoundary[i-numNodes_]) boundary_(i,0) = 1;
     else boundary_(i,0) = 0;
-  }
-  // store degrees of freedom
-  dof_ = next;
-  
+  }  
   return;
 }
 
@@ -56,29 +52,19 @@ Mesh<M,N,R>::Mesh(const DMatrix<double>& points, const DMatrix<int>& edges, cons
   // realign indexes (we assume index coming from mesh generator to be greater or equal to 1, C++ starts count from 0)
   neighbors_ = (neighbors_.array() - 1).matrix();
 
-  // elements_ is used also to support the strucural information required for the definition of a finite element
-  // basis of order R on this mesh. In particular the elements_ matrix has the following data layout
-  // 
-  //    | ----- M + 1 columns ----- | ---- ct_nnodes(M,R) - (M+1) columns ---- |
-  //    |                           |                                          |
-  //    |  elements' vertices. MESH |   extra nodes needed for the definition  |
-  //    |    will mainly use this   |   of a finite elements basis of order R  |
-  //    |    portion of the table   |                                          |
-  //    | ------------------------- | ---------------------------------------- |
-  //
-  // keep in mind that nodes which are not vertices are not stored inside the mesh object but only an enumeration
-  // of them coherent with the mesh topology is built. Nor Element objects produced by a call to element() will contain
-  // such informations.
+  // compute dof_table
   elements_.resize(elements.rows(), ct_nnodes(M,R));
   elements_.leftCols(elements_.cols()) = (elements.array() -1).matrix();
-
   // store number of nodes and number of elements
   numNodes_ = points_.rows();
   numElements_ = elements_.rows();
-  
-  // for order 1 meshes the functional basis is built over the same vertices which define the mesh geometry, nothing to do
   if constexpr(R > 1) compute_basis_support(boundary);
-  else boundary_ = boundary;
+  else{
+    // for order 1 meshes the functional basis is built over the same vertices which define the mesh geometry, nothing to do
+    // set boundary structure as coming from data and dof as number of mesh nodes
+    boundary_ = boundary;
+    dof_ = numNodes_;
+  }
     
   // compute mesh limits
   for(size_t dim = 0; dim < N; ++dim){
@@ -105,6 +91,7 @@ Mesh<M,N,R>::Mesh(const std::string& points,    const std::string& edges, const 
   CSVFile<int> edgesData = Ireader.parseFile(edges);
   CSVFile<int> elementsData = Ireader.parseFile(elements);
   CSVFile<int> boundaryData = Ireader.parseFile(boundary);
+  // in the following subtract 1 for index realignment
   
   // load neighboring informations
   typename std::conditional<
@@ -134,17 +121,19 @@ Mesh<M,N,R>::Mesh(const std::string& points,    const std::string& edges, const 
     minRange_[dim] = range_[dim].first;
     kk_[dim] = 1/(range_[dim].second - range_[dim].first);
   }
-    
-  // need to subtract 1 from all indexes since triangle indexes start from 1
-  // C++ start counting from 0 instead
+
+  // compute dof_table
   elements_.resize(elementsData.rows(), ct_nnodes(M,R));
-  elements_.leftCols(elementsData.cols()) = (elementsData.toEigen().array() -1).matrix();
-  numElements_ = elements_.rows();
-  
-  // for order 1 meshes the functional basis is built over the same vertices which define the mesh geometry, nothing to do
+  elements_.leftCols(elementsData.cols()) = (elementsData.toEigen().array() - 1).matrix();
+  // store number of elements
+  numElements_ = elements_.rows();  
   if constexpr(R > 1) compute_basis_support(boundaryData.toEigen());
-  else boundary_ = boundaryData.toEigen();
-  
+  else{
+    // for order 1 meshes the functional basis is built over the same vertices which define the mesh geometry, nothing to do
+    // set boundary structure as coming from data and dof as number of mesh nodes
+    boundary_ = boundaryData.toEigen();
+    dof_ = numNodes_;
+  }
   // scan the whole mesh and precompute here once all elements' abstractions for fast access
   fill_cache();
   // end of initialization

@@ -37,6 +37,17 @@ namespace fdaPDE {
     const T& value() const { return value_; }
     T& value() { return value_; } // allow for modifications of stored value, this not allowed by Eigen::Triplet
   };
+
+  // hash function for std::pair (allow pairs as key of unordered_map). inspired from boost::hash
+  struct pair_hash{
+    template <typename T1, typename T2>
+    std::size_t operator()(const std::pair<T1,T2>& pair) const {
+      std::size_t hash = 0;
+      hash ^= std::hash<T1>()(pair.first)  + 0x9e3779b9 + (hash<<6) + (hash>>2);
+      hash ^= std::hash<T2>()(pair.second) + 0x9e3779b9 + (hash<<6) + (hash>>2);
+      return hash;
+    }
+  };
 }
 
 #endif // __SYMBOLS_H__
