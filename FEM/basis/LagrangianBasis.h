@@ -40,7 +40,7 @@ namespace FEM{
   template<> // 2D second order basis
   struct ReferenceNodes<2,2>{
     static constexpr point_list<2,6> nodes  = {
-      {{0, 0}, {1, 0}, {0, 1}, {0.5, 0.5}, {0, 0.5}, {0.5, 0}}
+      {{0, 0}, {1, 0}, {0, 1}, {0, 0.5}, {0.5, 0}, {0.5, 0.5}}
     };};
 
   template<> // 3D first order basis
@@ -81,8 +81,6 @@ namespace FEM{
     };
     // a Lagrangian basis built over the referece N-dimensional unit simplex
     LagrangianBasis() : LagrangianBasis<M, N, R>(ReferenceNodes<M, R>::nodes) {};
-    // construct a Lagrangian basis over a mesh element e: N represents the embedding dimension of the mesh
-    LagrangianBasis(const Element<M,N,R>& e);
   
     // subscript operator to directly access basis elements
     const MultivariatePolynomial<M, R>& operator[](size_t i) const { return basis_[i]; }

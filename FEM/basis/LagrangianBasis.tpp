@@ -1,35 +1,3 @@
-// constructor from mesh element
-template <unsigned int M, unsigned int N, unsigned int R>
-LagrangianBasis<M,N,R>::LagrangianBasis(const Element<M,N,R>& e){
-  // collect nodes from mesh element .
-  std::array<std::array<double, M>, ct_nnodes(M, R)> elementNodes{};
-  if constexpr(N != M){
-    // in case of manifold meshes we consider the projetion of the vertices onto the space spanned by the element
-    // consider the vector space spanned by the element
-    VectorSpace<M, N> s = e.spannedSpace();
-    for(std::size_t i = 0; i < ct_nnodes(M, R); ++i){
-      // project N-dimensional point on M-dimensional linear space
-      SVector<M> projectedPoint = s.projectOnto(e.coords()[i]);
-      for(std::size_t j = 0; j < M; ++j){
-	// store projected coordinates
-	elementNodes[i][j] = projectedPoint[j];
-      }
-      nodeIDs_[i] = e.nodeIDs()[i]; // store ID of node
-    }
-  }else{
-    // otherwise just keep coordinates as they are.
-    for(std::size_t i = 0; i < ct_nnodes(M, R); ++i){
-      nodeIDs_[i] = e.nodeIDs()[i]; // store ID of node
-      for(std::size_t j = 0; j < M; ++j){
-	elementNodes[i][j] = e.coords()[i][j];
-      }
-    }
-  }
-  nodes_ = elementNodes; // store nodes on which the base is defined
-  computeCoefficients(elementNodes); // compute coefficients
-  return;
-}
-
 // compute coefficients via Vandermonde matrix
 template <unsigned int M, unsigned int N, unsigned int R>
 void LagrangianBasis<M,N,R>::computeCoefficients(const std::array<std::array<double, M>, ct_binomial_coefficient(M+R,R)>& nodes){

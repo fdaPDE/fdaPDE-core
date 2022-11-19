@@ -54,7 +54,7 @@ Mesh<M,N,R>::Mesh(const DMatrix<double>& points, const DMatrix<int>& edges, cons
 
   // compute dof_table
   elements_.resize(elements.rows(), ct_nnodes(M,R));
-  elements_.leftCols(elements_.cols()) = (elements.array() -1).matrix();
+  elements_.leftCols(elements.cols()) = (elements.array() -1).matrix();
   // store number of nodes and number of elements
   numNodes_ = points_.rows();
   numElements_ = elements_.rows();
@@ -188,12 +188,9 @@ void Mesh<M,N,R>::fill_cache() {
   }
 }
 
-// provides the element abstraction given its ID
+// provides the element abstraction given its ID (returns cached pointer to the element)
 template <unsigned int M, unsigned int N, unsigned int R>
-std::shared_ptr<Element<M,N,R>> Mesh<M,N,R>::element(unsigned int ID) const {
-  // return cached pointer to the element
-  return cache_[ID];
-}
+std::shared_ptr<Element<M,N,R>> Mesh<M,N,R>::element(unsigned int ID) const { return cache_[ID]; }
 
 // extract from raw information the mesh node with given ID (ID starts from 0)
 template <unsigned int M, unsigned int N, unsigned int R>
