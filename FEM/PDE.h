@@ -4,6 +4,7 @@
 #include "../utils/Symbols.h"
 #include "../MESH/Mesh.h"
 using fdaPDE::core::MESH::Mesh;
+using fdaPDE::core::MESH::ct_nnodes;
 #include "basis/LagrangianBasis.h"
 using fdaPDE::core::FEM::LagrangianBasis;
 #include "basis/BasisTable.h"

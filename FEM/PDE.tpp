@@ -4,12 +4,12 @@ template <unsigned int M, unsigned int N, unsigned int R, typename E,
 void PDE<M,N,R,E,F,B,I,S>::buildBasis_() {
   // preallocate memory for functional basis
   basis_.resize(domain_.elements());
-  for(const auto& e : domain_){ // fill basisTable_
-    // build base over the element and store pointer to it. Observe that the basis is built as function of the reference basis
-    // (i.e. no explicit construction on element e is performed)
-    basis_[e->ID()].reserve(ct_binomial_coefficient(M+R,R)); // reserve space for basis elements
-    for(std::size_t i = 0; i < ct_binomial_coefficient(M+R,R); ++i){
-      basis_[e->ID()].emplace_back(e->nodeIDs()[i], *e, referenceBasis_[i]);
+  for(std::size_t i = 0; i < domain_.elements(); ++i){ // fill basisTable_
+    // build base over the element as function of the reference basis and store pointer to it.
+    basis_[i].reserve(ct_nnodes(M,R)); // reserve space for basis elements
+    for(std::size_t j = 0; j < ct_nnodes(M,R); ++j){
+      // there must be a 1-1 correspondance between the j-th physical dof and the j-th dof on the reference element
+      basis_[i].emplace_back(domain_.dof_table()(i,j), *domain_.element(i), referenceBasis_[j]);
     }
   }
   return;
