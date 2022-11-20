@@ -148,11 +148,9 @@ void Mesh<M,N,R>::fill_cache() {
   
   // cycle over all possible elements' ID
   for(std::size_t ID = 0; ID < numElements_; ++ID){
-    // in the following use auto to take advantage of eigen acceleration
-    // get the indexes of vertices from triangles_
+    // degrees of freedom associated with this element
     auto pointData = elements_.row(ID);
-    // get neighbors information
-    auto neighboringData = neighbors_.row(ID);
+    auto neighboringData = neighbors_.row(ID); // neighboring structure
   
     // prepare element
     std::array<std::size_t, ct_nvertices(M)> nodeIDs{};
@@ -183,6 +181,7 @@ void Mesh<M,N,R>::fill_cache() {
 	neighbors.push_back(SpMat_it.row()); // neighbors_ is stored in ColumnMajor mode
       }
     }
+    
     // cache constructed element
     cache_[ID] = std::make_shared<Element<M,N,R>>(ID, nodeIDs, coords, neighbors, boundary);
   }
@@ -195,3 +194,35 @@ std::shared_ptr<Element<M,N,R>> Mesh<M,N,R>::element(unsigned int ID) const { re
 // extract from raw information the mesh node with given ID (ID starts from 0)
 template <unsigned int M, unsigned int N, unsigned int R>
 SVector<N> Mesh<M,N,R>::node(unsigned int ID) const { return points_.row(ID); }
+
+// produce the matrix of dof coordinates
+template <unsigned int M, unsigned int N, unsigned int R>
+DMatrix<double> Mesh<M,N,R>::dofCoords() const {
+  if constexpr (R == 1)
+    return points_; // for order 1 meshes dofs coincide with vertices
+  else {
+    // allocate space
+    DMatrix<double> coords;
+    coords.resize(dof_, N);
+    coords.topRows(numNodes_) = points_; // copy coordinates of elements' vertices
+    std::unordered_set<std::size_t> visited; // set of already visited dofs
+    // define reference element
+    std::array<SVector<M+1>, ct_nnodes(M,R)> refCoords = ReferenceElement<M,R>().bary_coords;
+
+    // cycle over all mesh elements
+    for(std::size_t i = 0; i < elements_.rows(); ++i){
+      // extract dofs related to element with ID i
+      auto dofs = elements_.row(i);
+      auto e = *cache_[i]; // take pointer to current physical element
+      for(std::size_t j = ct_nvertices(M); j < ct_nnodes(M,R); ++j){ // cycle only on non-vertex points
+	if(visited.find(dofs[j]) == visited.end()){ // not yet mapped dof
+	  // map points from reference to physical element and store
+	  coords.row(dofs[j]) = e.barycentricMatrix()*refCoords[j].template tail<M>() + e.coords()[0];
+	  visited.insert(dofs[j]);
+	}
+      }
+    }
+    return coords;
+  }
+}
+

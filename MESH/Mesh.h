@@ -6,9 +6,12 @@
 #include <vector>
 #include <memory>
 #include <array>
+#include <unordered_set>
 
 #include "Element.h"
 using fdaPDE::core::MESH::ct_nvertices;
+#include "ReferenceElement.h"
+using fdaPDE::core::MESH::ReferenceElement;
 #include "../utils/IO/CSVReader.h"
 #include "../utils/Symbols.h"
 
@@ -153,8 +156,11 @@ namespace MESH{
     std::array<double, N> lowerBound() const { return minRange_; }
     std::array<double, N> kk() const { return kk_; }
 
-    std::size_t dof() const { return dof_; }
+    // support for the definition of finite element basis over a mesh object
+    std::size_t dof() const { return dof_; } // number of degrees of freedom
     const DMatrix<int>& dof_table() const { return elements_; }
+    // coordinates of points supporting a finite element basis
+    DMatrix<double> dofCoords() const; 
     
     // expose compile time informations to outside
     static constexpr bool manifold = is_manifold<M, N>::value;
