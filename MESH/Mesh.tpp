@@ -6,7 +6,7 @@ void Mesh<M,N,R>::compute_basis_support(const DMatrix<int>& boundary) {
   int next = numNodes_; // next valid ID to assign
   std::unordered_map<std::pair<int, int>, int, fdaPDE::pair_hash> assigned; // map of already assigned IDs
   std::size_t col = 0; // column of the elements_ table to change
-  std::vector<bool> onBoundary(R*numNodes_, false);
+  std::vector<bool> onBoundary(ct_nnodes(M,R)*numNodes_, false);
   
   // start enumeration
   for(std::size_t elem = 0; elem < elements_.rows(); ++elem){
@@ -25,7 +25,7 @@ void Mesh<M,N,R>::compute_basis_support(const DMatrix<int>& boundary) {
 	  elements_(elem, M+1+col) = next;
 	  assigned[edge] = next;
 	  // new node is on boundary iff both endpoints of its edge are on boundary
-	  if(boundary(edge.first,0) && boundary(edge.second,0)) onBoundary.emplace_back(true);
+	  if(boundary(edge.first,0) && boundary(edge.second,0)) onBoundary[next] = true;
 	  next++; // increase next ID to assign
 	}
 	col++;
@@ -38,7 +38,7 @@ void Mesh<M,N,R>::compute_basis_support(const DMatrix<int>& boundary) {
   boundary_.resize(dof_,1);
   boundary_.topRows(boundary.rows()) = boundary;
   for(std::size_t i = numNodes_; i < dof_; ++i){ // adjust for new nodes of the enumeration
-    if(onBoundary[i-numNodes_]) boundary_(i,0) = 1;
+    if(onBoundary[i]) boundary_(i,0) = 1;
     else boundary_(i,0) = 0;
   }  
   return;

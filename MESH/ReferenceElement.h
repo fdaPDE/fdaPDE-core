@@ -37,7 +37,7 @@ namespace MESH {
   template<> // 2D second order basis
   struct ReferenceElement<2,2>{
     static constexpr point_list<2,6> nodes  = {
-      {{0, 0}, {1, 0}, {0, 1}, {0, 0.5}, {0.5, 0}, {0.5, 0.5}}
+      {{0, 0}, {1, 0}, {0, 1}, {0.5, 0}, {0, 0.5}, {0.5, 0.5}}
     };
     const std::array<SVector<3>,6> bary_coords = {
       SVector<3>(1,0,0),     SVector<3>(0,1,0),     SVector<3>(0,0,1),
