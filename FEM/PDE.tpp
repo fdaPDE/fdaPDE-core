@@ -38,7 +38,7 @@ PDE<M,N,R,E,F,B,I,S>::PDE(const Mesh<M,N,R>& domain, E bilinearForm, const F& fo
 template <unsigned int M, unsigned int N, unsigned int R, typename E,
 	  typename F, typename B, typename I, typename S>
 void PDE<M,N,R,E,F,B,I,S>::setDirichletBC(const DMatrix<double>& data){
- for(size_t j = 0; j < domain_.nodes(); ++j){
+ for(size_t j = 0; j < domain_.dof(); ++j){
     // if j is a node on the domain boundary store the pair (node ID - boundary value)
     if(domain_.isOnBoundary(j)){
       boundaryData_[j] = data.row(j); // O(1) complexity
