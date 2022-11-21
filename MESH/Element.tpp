@@ -1,7 +1,7 @@
 // constructor
 template <unsigned int M, unsigned int N, unsigned int R>
 Element<M,N,R>::Element(std::size_t ID, const std::array<std::size_t, ct_nvertices(M)>& nodeIDs, const std::array<SVector<N>, ct_nvertices(M)>& coords,
-			  const std::vector<int>& neighbors, const std::array<std::size_t, ct_nvertices(M)>& boundary) :
+			  const std::vector<int>& neighbors, bool boundary) :
   ID_(ID), nodeIDs_(nodeIDs), coords_(coords), neighbors_(neighbors), boundary_(boundary) {
   // precompute barycentric coordinate matrix for fast access
   // use first point as reference
@@ -119,24 +119,4 @@ typename std::enable_if<is_manifold, bool>::type
   // if the point belongs to the spanned space, check if its barycentric coordinates are all positive
   SVector<N> baryCoord = toBarycentricCoords(x);
   return (baryCoord.array() >= 0).all(); // use Eigen visitor to check for positiveness of elements
-}
-
-// return true if the element has at least one vertex on the boundary of the domain
-template <unsigned int M, unsigned int N, unsigned int R>
-bool Element<M,N,R>::isOnBoundary(void) const{
-  for(size_t i = 0; i < ct_nvertices(M); ++i){
-    if(boundary_[i] == 1) return true;
-  }
-  return false;
-}
-
-template <unsigned int M, unsigned int N, unsigned int R>
-std::vector<std::pair<std::size_t, SVector<N>>> Element<M,N,R>::boundaryNodes() const {
-  std::vector<std::pair<std::size_t, SVector<N>>> result{};
-  for(std::size_t i = 0; i < ct_nvertices(M); ++i){
-    if(boundary_[i] == 1){
-      result.push_back(std::make_pair(nodeIDs_[i], coords_[i]));
-    }
-  }
-  return result;
 }

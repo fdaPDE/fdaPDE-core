@@ -43,15 +43,14 @@ namespace FEM{
   private:
     constexpr static unsigned n_basis = ct_nnodes(M,R);
     const Mesh<M, N, R>& mesh_; // mesh
-    const I& integrator_; // quadrature rule to approximate integrals
+    const I& integrator_; // quadrature rule used in integrals approzimation
     B referenceBasis_{}; // functional basis over reference N-dimensional unit simplex
-    const BASIS_TABLE<M,N,R,B>& basis_; // basis system over the entire domain
-    std::size_t dof_;
-    const DMatrix<int>& dof_table_;
+    std::size_t dof_; // overall number of unknowns in the FEM linear system
+    const DMatrix<int>& dof_table_; // for each element the associated degrees of freedom
     
   public:
-    Assembler(const Mesh<M,N,R>& mesh, const BASIS_TABLE<M,N,R,B>& basis, const I& integrator) :
-      mesh_(mesh), basis_(basis), integrator_(integrator), dof_(mesh_.dof()), dof_table_(mesh.dof_table()) {};
+    Assembler(const Mesh<M,N,R>& mesh, const I& integrator) :
+      mesh_(mesh), integrator_(integrator), dof_(mesh_.dof()), dof_table_(mesh.dof_table()) {};
     // assemble discretization matrix
     template <typename E>
     Eigen::SparseMatrix<double> assemble(const E& bilinearForm);

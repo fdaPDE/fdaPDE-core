@@ -46,8 +46,7 @@ namespace MESH{
     std::array<SVector<N>,  ct_nvertices(M)> coords_{};
     // ID of the neighboring elements, use std::vector since number of neighboring elements is not always known at compile time
     std::vector<int> neighbors_{};
-    // boundary informations. boundary_[i] == 1 <-> node with ID nodeIDs_[i] is on boundary
-    std::array<std::size_t, ct_nvertices(M)> boundary_{};
+    bool boundary_; // true if the element has at least one vertex on the boundary
         
     // matrices defining the affine transformation from cartesian to barycentric coordinates and viceversa
     Eigen::Matrix<double, N, M> barycentricMatrix_{};
@@ -58,7 +57,7 @@ namespace MESH{
     // constructor
     Element() = default;  
     Element(std::size_t ID, const std::array<std::size_t, ct_nvertices(M)>& nodeIDs, const std::array<SVector<N>, ct_nvertices(M)>& coords,
-	    const std::vector<int>& neighbors, const std::array<std::size_t, ct_nvertices(M)>& boundary);
+	    const std::vector<int>& neighbors, bool boundary);
     
     // getters (read-only mode)
     const std::array<SVector<N>, ct_nvertices(M)> coords() const { return coords_; }
@@ -84,15 +83,9 @@ namespace MESH{
     // compute bounding box of this element. A bounding box is the smallest rectangle containing the element
     // this construction is usefull in searching problems.
     std::pair<SVector<N>, SVector<N>> boundingBox() const;
-
-    // returns true if the element has at least one node on the boundary
-    bool isOnBoundary(void) const;
-    // returns a vector of pairs: <node id, node coordinates> for any node of the element on the boundary of the mesh
-    std::vector<std::pair<std::size_t, SVector<N>>> boundaryNodes() const;
-    // returns the vector space passing throught this element
-    VectorSpace<M, N> spannedSpace() const;
-    // returns the measure of the element
-    double measure() const { return measure_; }
+    bool isOnBoundary() const { return boundary_; } // true if the element has at least one node on the boundary
+    VectorSpace<M, N> spannedSpace() const; // vector space passing throught this element
+    double measure() const { return measure_; } // measure of the element
     
     // subscript operator
     SVector<N> operator[](std::size_t i) const {

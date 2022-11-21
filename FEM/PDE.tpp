@@ -8,7 +8,7 @@ void PDE<M,N,R,E,F,B,I,S>::buildBasis_() {
     // build base over the element as function of the reference basis and store pointer to it.
     basis_[i].reserve(ct_nnodes(M,R)); // reserve space for basis elements
     for(std::size_t j = 0; j < ct_nnodes(M,R); ++j){
-      // there must be a 1-1 correspondance between the j-th physical dof and the j-th dof on the reference element
+      // store basis with id dof_table()(i,j) over element i written in terms of the j-th basis over reference element
       basis_[i].emplace_back(domain_.dof_table()(i,j), *domain_.element(i), referenceBasis_[j]);
     }
   }
@@ -38,11 +38,8 @@ PDE<M,N,R,E,F,B,I,S>::PDE(const Mesh<M,N,R>& domain, E bilinearForm, const F& fo
 template <unsigned int M, unsigned int N, unsigned int R, typename E,
 	  typename F, typename B, typename I, typename S>
 void PDE<M,N,R,E,F,B,I,S>::setDirichletBC(const DMatrix<double>& data){
- for(size_t j = 0; j < domain_.dof(); ++j){
-    // if j is a node on the domain boundary store the pair (node ID - boundary value)
-    if(domain_.isOnBoundary(j)){
-      boundaryData_[j] = data.row(j); // O(1) complexity
-    }
+  for(auto it = domain_.boundary_begin(); it != domain_.boundary_end(); ++it){
+    boundaryData_[*it] = data.row(*it); // O(1) complexity
   }
   return;
 }

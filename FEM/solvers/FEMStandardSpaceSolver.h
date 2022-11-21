@@ -22,25 +22,27 @@ namespace FEM{
     //    * compute the discretization of the forcing vector b
     //    * solve the linear system R1_*u = b
     // at the end u is the searched PDE approximation
-    template <unsigned int M, unsigned int N, unsigned int R, typename E, typename F, typename B, typename I, typename S>
+    template <unsigned int M, unsigned int N, unsigned int R, typename E,
+	      typename F, typename B, typename I, typename S>
     void solve(const PDE<M,N,R,E,F,B,I,S>& pde);
   };
 
-  template <unsigned int M, unsigned int N, unsigned int R, typename E, typename F, typename B, typename I, typename S>
+  template <unsigned int M, unsigned int N, unsigned int R, typename E,
+	    typename F, typename B, typename I, typename S>
   void FEMStandardSpaceSolver::solve(const PDE<M,N,R,E,F,B,I,S>& pde){
     this->init(pde); // init solver for this PDE
     this->imposeBoundaryConditions(pde); // impose boundary conditions on forcing vector and R1_ matrix
 
     // define eigen system solver, use sparse LU decomposition.
     Eigen::SparseLU<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int>> solver;
-    solver.compute(*this->R1_);
+    solver.compute(this->R1_);
     // stop if something was wrong...
-    if(solver.info()!=Eigen::Success) {
+    if(solver.info()!=Eigen::Success){
       this->success = false;
       return;
     }
     // solve FEM linear system: R1_*solution_ = force_;
-    this->solution_ = std::make_shared<DMatrix<double>>( solver.solve(*this->force_) );
+    this->solution_ = solver.solve(this->force_);
     return;
   }
 

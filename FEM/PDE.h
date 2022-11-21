@@ -83,10 +83,10 @@ namespace FEM{
     DMatrix<double> quadratureNodes() const { return integrator_.quadratureNodes(domain_); }; // returns all quadrature nodes on the mesh
     
     // solution informations produced by call to .solve()
-    std::shared_ptr<DMatrix<double>>  solution() const { return solver_.solution(); };
-    std::shared_ptr<DMatrix<double>>  force() const { return solver_.force(); }; // rhs of FEM linear system
-    std::shared_ptr<SpMatrix<double>> R1() const { return solver_.R1(); };
-    std::shared_ptr<SpMatrix<double>> R0() const { return solver_.R0(); };
+    const DMatrix<double>&  solution() const { return solver_.solution(); };
+    const DMatrix<double>&  force() const { return solver_.force(); }; // rhs of FEM linear system
+    const SpMatrix<double>& R1() const { return solver_.R1(); };
+    const SpMatrix<double>& R0() const { return solver_.R0(); };
     const BASIS_TABLE<M,N,R,B>& basis() const { return basis_; }
     
     void init();  // computes matrices R1, R0 and forcing vector without solving the FEM linear system.

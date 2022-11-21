@@ -60,7 +60,7 @@ namespace MESH{
   template <unsigned int M, unsigned int N, unsigned int R = 1>
   class Mesh{
   private:
-    // coordinates of points constituting the vertices of mesh elements
+    // coordinates of points costituting the vertices of mesh elements
     DMatrix<double> points_{};
     unsigned int numNodes_ = 0;
     // matrix of elements in the triangulation. Each row of the matrix contains the points which made the triangle as row number in the points_
@@ -120,32 +120,64 @@ namespace MESH{
     struct iterator{
     private:
       friend Mesh;
-      const Mesh* meshContainer; // pointer to mesh object
-      int index;           // keep track of current iteration during for-loop
+      const Mesh* meshContainer_; // pointer to mesh object
+      int index_; // keep track of current iteration during for-loop
       // constructor
-      iterator(const Mesh* container_, int index_) : meshContainer(container_), index(index_) {}; 
+      iterator(const Mesh* container, int index)
+	: meshContainer_(container), index_(index) {}; 
     public:
       // just increment the current iteration and return this iterator
       iterator& operator++() {
-	++index;
+	++index_;
 	return *this;
       }
       // dereference the iterator means to create Element object at current index
       std::shared_ptr<Element<M,N,R>> operator*() {
-	return meshContainer->element(index);
+	return meshContainer_->element(index_);
       }
       // two iterators are different when their indexes are different
       friend bool operator!=(const iterator& lhs, const iterator& rhs) {
-	return lhs.index != rhs.index;
+	return lhs.index_ != rhs.index_;
       }
-
       // const version to enable const auto& syntax
-      std::shared_ptr<Element<M,N,R>> operator*() const { return meshContainer->element(index); }
+      std::shared_ptr<Element<M,N,R>> operator*() const {
+	return meshContainer_->element(index_);
+      }
     };
     // provide begin() and end() methods
     iterator begin() const { return iterator(this, 0); }
     iterator end()   const { return iterator(this, elements_.rows()); }
 
+    // iterator allowing to loop on the boundary IDs only
+    struct boundary_iterator{
+    private:
+      friend Mesh;
+      const Mesh* meshContainer_;
+      int index_; // current boundary node
+      // constructor
+      boundary_iterator(const Mesh* container, int index)
+	: meshContainer_(container), index_(index) {};
+    public:
+      // fetch next boundary node
+      boundary_iterator& operator++() {
+	index_++;
+	// scan until all nodes have been visited or a boundary node is not found
+	for(; index_ < meshContainer_->dof_ && meshContainer_->isOnBoundary(index_) != true; ++index_);
+	return *this;
+      }
+      // dereference returns a pair containing the ID of the boundary node and its physical coordinate
+      int operator*() const {
+	return index_;
+      }
+      // two iterators are different when their indexes are different
+      friend bool operator!=(const boundary_iterator& lhs, const boundary_iterator& rhs) {
+	return lhs.index_ != rhs.index_;
+      }
+    };
+    // access to boundary iterators
+    boundary_iterator boundary_begin() const { return boundary_iterator(this, 0); }
+    boundary_iterator boundary_end()   const { return boundary_iterator(this, dof_); }
+    
     // return true if the given node is on boundary, false otherwise
     bool isOnBoundary(size_t j) const { return boundary_(j) == 1; }
     
