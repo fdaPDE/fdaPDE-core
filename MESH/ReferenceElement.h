@@ -44,7 +44,17 @@ namespace MESH {
       SVector<3>(0.5,0.5,0), SVector<3>(0.5,0,0.5), SVector<3>(0,0.5,0.5)
     };
   };
-
+  template<> // 2D third order basis
+  struct ReferenceElement<2,3>{
+    static constexpr point_list<2,10> nodes  = {
+      {{0, 0}, {1, 0}, {0, 1}, {1./3, 0}, {2./3, 0}, {0, 1./3}, {0, 2./3}, {2./3, 1./3}, {1./3, 2./3}, {1./3, 1./3}}
+    };
+    const std::array<SVector<3>,10> bary_coords = {
+      SVector<3>(1,0,0),       SVector<3>(0,1,0),       SVector<3>(0,0,1),       SVector<3>(2./3,1./3,0), SVector<3>(1./3,2./3,0),
+      SVector<3>(2./3,0,1./3), SVector<3>(1./3,0,2./3), SVector<3>(0,2./3,1./3), SVector<3>(0,1./3,2./3), SVector<3>(1./3,1./3,1./3)   
+    };
+  };
+  
   template<> // 3D first order basis
   struct ReferenceElement<3,1>{
     static constexpr point_list<3,4> nodes  = {

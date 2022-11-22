@@ -60,6 +60,13 @@ namespace MESH{
   template <unsigned int M, unsigned int N, unsigned int R = 1>
   class Mesh{
   private:
+    // structural informations related to the construction of a mesh of order R
+    static constexpr unsigned int n_vertices = ct_nvertices(M);
+    static constexpr unsigned int n_edges = ct_nedges(M);
+    static constexpr unsigned int n_dof_per_element = ct_nnodes(M,R);
+    static constexpr unsigned int n_dof_per_edge = R-1;
+    static constexpr unsigned int n_dof_internal = n_dof_per_element - (M+1) - n_edges*(R-1); // > 0 \iff R > 1
+    
     // coordinates of points costituting the vertices of mesh elements
     DMatrix<double> points_{};
     unsigned int numNodes_ = 0;

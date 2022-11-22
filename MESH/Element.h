@@ -22,21 +22,17 @@ namespace MESH{
   template <unsigned int R> using SurfaceElement = Element<2,3,R>;
   template <unsigned int R> using NetworkElement = Element<1,2,R>;
 
-  // compile time evaluation of the number of nodes of a given element given its local dimension and order
+  // compile time evaluation of the number of degrees of freedom associated to an element of dimension M and order R
   constexpr unsigned int ct_nnodes(const unsigned int M, const unsigned int R) {
     return ct_factorial(M+R)/(ct_factorial(M)*ct_factorial(R));
   }
-  // compile time evaluation of the number of vertices of a given element
+  // number of vertices of an M-dimensional simplex
   constexpr unsigned int ct_nvertices(const unsigned int M) { return M+1; }
-
-  // A single mesh element ( defaulted to linear finite element)
-  // we assume that the first M+1 entries of any internal data structure handled by Element refer to the **vertices** of the element,
-  // any other entry after the first (M+1)s are here to support functional informations, i.e. to build a functional basis of the proper order
-  // over the element. Moreover, observe that the ordering of the vertices is of no importance and we simply adopt the same ordering coming
-  // from mesh data (e.g. informations stored in .csv files or directly coming from front-ends).
-  // Geometrical operations handled by the MESH module are only based on vertex nodes (there is no extra-knowledge from the perspective of the MESH
-  // module in nodes which are not vertices). As such any internal implementation regarding the interface exposed by Element doesn't make
-  // use of any node which is not a vertex one.
+  // number of edges of an M-dimensional simplex
+  constexpr unsigned int ct_nedges(const unsigned int M) { return (M*(M+1))/2; }
+  
+  // A single mesh element. This object represents the main **geometrical** abstraction of a physical element.
+  // No functional information is carried by instances of this object.
   template <unsigned int M, unsigned int N, unsigned int R>
   class Element{
   private:
