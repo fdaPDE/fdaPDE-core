@@ -2,6 +2,7 @@
 #define __FEM_BASE_SOLVER_H__
 
 #include <memory>
+#include <stdexcept>
 #include "../../utils/Symbols.h"
 #include "../Assembler.h"
 using fdaPDE::core::FEM::Assembler;
@@ -28,14 +29,16 @@ namespace FEM{
   // base class for the definition of a general solver based on the Finite Element Method
   class FEMBaseSolver{
   protected:
-    DMatrix<double> solution_; // vector of coefficients of the approximate solution written in terms of the chosen basis
-    DMatrix<double> force_; // right-hand side of the linear system giving the FEM solution
+    DMatrix<double> solution_; // vector of coefficients of the approximate solution 
+    DMatrix<double> force_; // right-hand side of the FEM linear system
     SpMatrix<double> R1_; // result of the discretization of the bilinear form
     SpMatrix<double> R0_; // mass matrix, i.e. discretization of the identity operator
-
+    
     // impose boundary conditions
     template <unsigned int M, unsigned int N, unsigned int R, typename E, typename F, typename B, typename I, typename S>
-    void imposeBoundaryConditions(const PDE<M,N,R,E,F,B,I,S>& pde);    
+    void imposeBoundaryConditions(const PDE<M,N,R,E,F,B,I,S>& pde);
+
+    bool init_ = false; // set to true by init() at the end of solver initialization
   public:
     // flag used to notify is something was wrong during computation
     bool success = true;
@@ -74,11 +77,13 @@ namespace FEM{
     // R0_ is a mass matrix ([R0]_{ij} = \int_{\Omega} \phi_i \phi_j). This quantity can be obtained by computing
     // the discretization of the Identity() operator
     R0_ = assembler.assemble(Identity());
+    init_ = true;
     return;
   }
 
   template <unsigned int M, unsigned int N, unsigned int R, typename E, typename F, typename B, typename I, typename S>
   void FEMBaseSolver::imposeBoundaryConditions(const PDE<M,N,R,E,F,B,I,S>& pde){
+    if(!init_) throw std::runtime_error("solver must be initialized first!");
     // impose homogeneous dirichlet boundary condition by default to remove not necessary degrees of freedom from FEM linear system R1_
     for(auto it = pde.domain().boundary_begin(); it != pde.domain().boundary_end(); ++it){
       R1_.row(*it) *= 0; // zero all entries of this row

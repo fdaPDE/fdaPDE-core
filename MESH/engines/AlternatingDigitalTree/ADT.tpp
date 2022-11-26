@@ -4,7 +4,11 @@ ADT<M,N,R>::ADT(const Mesh<M,N,R>& mesh) : mesh_(mesh){
   // move mesh elements to 2N dimensional points
   std::vector<std::pair<SVector<2*N>, unsigned int>> data;
   data.reserve(mesh_.elements()); // avoid useless reallocations at runtime
-    
+  // computation of normalization constants
+  for(std::size_t dim = 0; dim < N; ++dim){
+    normalization_[dim] = 1.0/(mesh_.range()[dim].second - mesh_.range()[dim].first);
+  }
+  
   for(const auto& element : mesh_){
     // compute bounding box
     std::pair<SVector<N>, SVector<N>> boundingBox = element->boundingBox();
@@ -14,14 +18,9 @@ ADT<M,N,R>::ADT(const Mesh<M,N,R>& mesh) : mesh_(mesh){
     // scale dimensions in the unit hypercube
     // point scaling means to apply the following linear transformation to each dimension of the point
     // scaledPoint[dim] = (point[dim] - meshRange[dim].first)/(meshRange[dim].second - meshRange[dim].first)
-    // we can use cached results to speed up the computation and compute
-    // scaledPoint[dim] = (point[dim] - lowerBound[dim])*kk[dim]   
-    std::array<double, N> lowerBound = mesh_.lowerBound();
-    std::array<double, N> kk = mesh_.kk();
-
     for(size_t dim = 0; dim < N; ++dim){
-      boundingBox.first[dim]  = (boundingBox.first[dim]  - lowerBound[dim])*kk[dim];
-      boundingBox.second[dim] = (boundingBox.second[dim] - lowerBound[dim])*kk[dim];
+      boundingBox.first[dim]  = (boundingBox.first[dim]  - mesh_.range()[dim].first)*normalization_[dim];
+      boundingBox.second[dim] = (boundingBox.second[dim] - mesh_.range()[dim].first)*normalization_[dim];
     }
     elementToPoint << boundingBox.first, boundingBox.second;
     data.push_back(std::make_pair(elementToPoint, element->ID()));
@@ -118,18 +117,12 @@ std::list<unsigned int> ADT<M,N,R>::geometricSearch(const Query<2*N> &query) con
 // element containing a given point can be solved as a geometric search problem in a 2N dimensional space
 template <unsigned int M, unsigned int N, unsigned int R>
 template <typename... Args>
-std::shared_ptr<Element<M,N,R>> ADT<M,N,R>::search(const SVector<N> &point, Args&... args) const {
-  // map input point in the unit hypercube (see Mesh.h for definition of methods below)
-  std::array<double, N> lowerBound = mesh_.lowerBound();
-  std::array<double, N> kk = mesh_.kk();
-  
+std::shared_ptr<Element<M,N,R>> ADT<M,N,R>::search(const SVector<N> &point, Args&... args) const {  
   // point scaling means to apply the following linear transformation to each dimension of the point
   // scaledPoint[dim] = (point[dim] - meshRange[dim].first)/(meshRange[dim].second - meshRange[dim].first)
-  // we can use cached results to speed up the computation and compute
-  // scaledPoint[dim] = (point[dim] - minMeshRange[dim])*kMeshRange[dim]
   SVector<N> scaledPoint;
   for(size_t dim = 0; dim < N; ++dim){
-    scaledPoint[dim] = (point[dim] - lowerBound[dim])*kk[dim];
+    scaledPoint[dim] = (point[dim] - mesh_.range()[dim].first)*normalization_[dim];
   }
   // build search query
   SVector<2*N> lower, upper;

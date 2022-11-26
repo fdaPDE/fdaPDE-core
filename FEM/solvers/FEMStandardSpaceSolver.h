@@ -1,6 +1,7 @@
 #ifndef __FEM_STANDARD_SPACE_SOLVER_H__
 #define __FEM_STANDARD_SPACE_SOLVER_H__
 
+#include <stdexcept>
 #include "../../utils/Symbols.h"
 #include "../Assembler.h"
 using fdaPDE::core::FEM::Assembler;
@@ -30,9 +31,10 @@ namespace FEM{
   template <unsigned int M, unsigned int N, unsigned int R, typename E,
 	    typename F, typename B, typename I, typename S>
   void FEMStandardSpaceSolver::solve(const PDE<M,N,R,E,F,B,I,S>& pde){
-    this->init(pde); // init solver for this PDE
-    this->imposeBoundaryConditions(pde); // impose boundary conditions on forcing vector and R1_ matrix
-
+    if(!init_) throw std::runtime_error("solver must be initialized first!");
+    
+    // impose boundary conditions on forcing vector and R1_ matrix
+    this->imposeBoundaryConditions(pde); 
     // define eigen system solver, use sparse LU decomposition.
     Eigen::SparseLU<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int>> solver;
     solver.compute(this->R1_);

@@ -1,6 +1,7 @@
 #ifndef __FEM_STANDARD_SPACE_TIME_SOLVER_H__
 #define __FEM_STANDARD_SPACE_TIME_SOLVER_H__
 
+#include <stdexcept>
 #include "../../utils/Symbols.h"
 #include "../Assembler.h"
 using fdaPDE::core::FEM::Assembler;
@@ -26,8 +27,9 @@ namespace FEM{
   template <unsigned int M, unsigned int N, unsigned int R, typename E,
 	    typename F, typename B, typename I, typename S>
   void FEMStandardSpaceTimeSolver::solve(const PDE<M,N,R,E,F,B,I,S>& pde, double deltaT) {
-    this->init(pde);
-    // define eigen system solver, use QR decomposition.
+    if(!init_) throw std::runtime_error("solver must be initialized first!");
+    
+    // define eigen system solver, use SparseLU decomposition.
     Eigen::SparseLU<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int>> solver;
     unsigned int timeSteps = this->force_.cols(); // number of iterations for the time loop
 
@@ -41,8 +43,8 @@ namespace FEM{
 
     // prepare system matrix to handle dirichlet boundary conditions
     for(auto it = pde.domain().boundary_begin(); it != pde.domain().boundary_end(); ++it){
-      K.row(*it) *= 0;         // zero all entries of this row
-      K.coeffRef(*it,*it) = 1;   // set diagonal element to 1 to impose equation u_j = b_j
+      K.row(*it) *= 0; // zero all entries of this row
+      K.coeffRef(*it,*it) = 1; // set diagonal element to 1 to impose equation u_j = b_j
     }
     // execute temporal loop to solve ODE system via forward-euler scheme
     for(std::size_t i = 1; i < timeSteps - 1; ++i){

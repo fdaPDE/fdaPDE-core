@@ -46,7 +46,7 @@ namespace FEM{
     const I& integrator_; // quadrature rule used in integrals approzimation
     B referenceBasis_{}; // functional basis over reference N-dimensional unit simplex
     std::size_t dof_; // overall number of unknowns in the FEM linear system
-    const DMatrix<int>& dof_table_; // for each element the associated degrees of freedom
+    const Eigen::Matrix<int, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>& dof_table_; // for each element the associated degrees of freedom
     
   public:
     Assembler(const Mesh<M,N,R>& mesh, const I& integrator) :

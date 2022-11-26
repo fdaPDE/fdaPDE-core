@@ -1,7 +1,7 @@
 // builds a node enumeration for the support of a basis of order R. This fills both the elements_ table
 // and recompute the boundary informations. (support only for order 2 basis)
 template <unsigned int M, unsigned int N, unsigned int R>
-void Mesh<M,N,R>::compute_basis_support(const DMatrix<int>& boundary) {
+void Mesh<M,N,R>::DOFenumerate(const DMatrix<int>& boundary) {
   // algorithm initialization
   int next = numNodes_; // next valid ID to assign
   // map of already assigned IDs
@@ -21,7 +21,6 @@ void Mesh<M,N,R>::compute_basis_support(const DMatrix<int>& boundary) {
 	  for(std::size_t z = 0; z < n_dof_per_edge; ++z, ++col){
 	    elements_(elem, M+1+col) = it->second[z];
 	  }
-	  assigned.erase(it); // free space, an order R>1 node cannot be shared more than 2 times!
 	}else{
 	  for(std::size_t z = 0; z < n_dof_per_edge; ++z, ++col, ++next){
 	    elements_(elem, M+1+col) = next;
@@ -63,7 +62,7 @@ Mesh<M,N,R>::Mesh(const DMatrix<double>& points, const DMatrix<int>& edges, cons
   // store number of nodes and number of elements
   numNodes_ = points_.rows();
   numElements_ = elements_.rows();
-  if constexpr(R > 1) compute_basis_support(boundary);
+  if constexpr(R > 1) DOFenumerate(boundary);
   else{
     // for order 1 meshes the functional basis is built over the same vertices which define the mesh geometry, nothing to do
     // set boundary structure as coming from data and dof as number of mesh nodes
@@ -75,11 +74,7 @@ Mesh<M,N,R>::Mesh(const DMatrix<double>& points, const DMatrix<int>& edges, cons
   for(size_t dim = 0; dim < N; ++dim){
     range_[dim].first  = points_.col(dim).minCoeff();
     range_[dim].second = points_.col(dim).maxCoeff();
-
-    minRange_[dim] = range_[dim].first;
-    kk_[dim] = 1/(range_[dim].second - range_[dim].first);
   }
-
   // scan the whole mesh and precompute here once all elements' abstractions for fast access
   fill_cache();
   // end of initialization
@@ -122,9 +117,6 @@ Mesh<M,N,R>::Mesh(const std::string& points,    const std::string& edges, const 
   for(size_t dim = 0; dim < N; ++dim){
     range_[dim].first  = points_.col(dim).minCoeff();
     range_[dim].second = points_.col(dim).maxCoeff();
-
-    minRange_[dim] = range_[dim].first;
-    kk_[dim] = 1/(range_[dim].second - range_[dim].first);
   }
 
   // compute dof_table
@@ -132,7 +124,7 @@ Mesh<M,N,R>::Mesh(const std::string& points,    const std::string& edges, const 
   elements_.leftCols(elementsData.cols()) = (elementsData.toEigen().array() - 1).matrix();
   // store number of elements
   numElements_ = elements_.rows();  
-  if constexpr(R > 1) compute_basis_support(boundaryData.toEigen());
+  if constexpr(R > 1) DOFenumerate(boundaryData.toEigen());
   else{
     // for order 1 meshes the functional basis is built over the same vertices which define the mesh geometry, nothing to do
     // set boundary structure as coming from data and dof as number of mesh nodes

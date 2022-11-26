@@ -18,10 +18,10 @@ namespace MESH{
   // a specific node data structure for easy management of the ADT during element search
   template <unsigned int N>
   struct ADTnode {
-    unsigned int elementID_;  // the element ID to which this node referes to
-    SVector<N> point_;        // the point stored in this node 
-    rectangle<N> range_;      // the range in the unit hypercube this node refers to
-
+    unsigned int elementID_; // the element ID to which this node referes to
+    SVector<N> point_; // the point stored in this node 
+    rectangle<N> range_; // the range in the unit hypercube this node refers to
+    
     ADTnode(unsigned int elementID, const SVector<N>& point, const rectangle<N>& range)
       : elementID_(elementID), point_(point), range_(range) {}
   };
@@ -30,8 +30,10 @@ namespace MESH{
   template <unsigned int M, unsigned int N, unsigned int R>
   class ADT{
   private:
-    Tree<ADTnode<2*N>> tree;
-    const Mesh<M,N,R>& mesh_;
+    Tree<ADTnode<2*N>> tree; // tree data structure to support ADT
+    const Mesh<M,N,R>& mesh_; // domain over which build the ADT
+    std::array<double, N> normalization_; // vector of range-normalization constants
+
     // build an Alternating Digital Tree given a set of 2N-dimensional points.
     void init(const std::vector<std::pair<SVector<2*N>, unsigned int>>& data);
     // performs a geometric search returning all points which lie in a given query

@@ -85,13 +85,13 @@ namespace MESH{
     //     * for mesh of order 1 this portion of the elements_ table is absent
     //     * in case R>1, MESH will not pyhsically create nodes supporting the functional basis. Only an enumeration of those nodes
     //       coherent with the mesh topology is generated at construction time.
-    DMatrix<int> elements_{};
+    Eigen::Matrix<int, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> elements_{};
     unsigned int numElements_ = 0;
     // store boundary informations. This is a vector of binary coefficients such that, boundary_[j] = 1 \iff node j is on boundary 
     DMatrix<int> boundary_{};
     std::size_t dof_; // degrees of freedom, i.e. the maximmum ID in the dof_table
     // build an enumeration of nodes coherent with the mesh topology, update the boundary structure and dof_ to reflect the enumeration
-    void compute_basis_support(const DMatrix<int>& boundary);
+    void DOFenumerate(const DMatrix<int>& boundary);
     
     // in case of non linear-networks neighbors_ is a dense matrix where row i contains the indexes as row number in triangles_ matrix of the
     // neighboring triangles to triangle i (all triangles in the triangulation which share an edge with i). In case of linear-newtorks neighbors_
@@ -100,10 +100,6 @@ namespace MESH{
     
     // store min-max values for each dimension of the mesh
     std::array<std::pair<double, double>, N> range_{};
-    // is often required to access just to the minimum value along each dimension and to the quantity
-    // kk_[dim] = 1/(max[dim] - min[dim]) = 1/(meshRange[dim].second - meshRange[dim].first). Compute here once and cache results for efficiency
-    std::array<double, N> minRange_{};
-    std::array<double, N> kk_{}; // kk_[dim] = 1/(range[dim].second - range[dim].first)
 
     // elements informations are computed once and cached here for fast re-access
     std::vector<std::shared_ptr<Element<M,N,R>>> cache_{};
@@ -118,73 +114,10 @@ namespace MESH{
     Mesh(const DMatrix<double>& points, const DMatrix<int>& edges, const DMatrix<int>& elements,
 	 const typename neighboring_structure<M, N>::type& neighbors, const DMatrix<int>& boundary);
     
-    // returns an element object given its ID (its row number in the triangles_ matrix) from raw (matrix-like) informations
+    // returns an element object given its ID (its row number in the elements_ matrix) from raw (matrix-like) informations
     std::shared_ptr<Element<M,N,R>> element(unsigned int ID) const;
-    // return the coordinate of a node given its ID (its row number in the points_matrix)
+    // return the coordinate of a node given its ID (its row number in the points_ matrix)
     SVector<N> node(unsigned int ID) const;
-
-    // allow range-for loop over mesh elements
-    struct iterator{
-    private:
-      friend Mesh;
-      const Mesh* meshContainer_; // pointer to mesh object
-      int index_; // keep track of current iteration during for-loop
-      // constructor
-      iterator(const Mesh* container, int index)
-	: meshContainer_(container), index_(index) {}; 
-    public:
-      // just increment the current iteration and return this iterator
-      iterator& operator++() {
-	++index_;
-	return *this;
-      }
-      // dereference the iterator means to create Element object at current index
-      std::shared_ptr<Element<M,N,R>> operator*() {
-	return meshContainer_->element(index_);
-      }
-      // two iterators are different when their indexes are different
-      friend bool operator!=(const iterator& lhs, const iterator& rhs) {
-	return lhs.index_ != rhs.index_;
-      }
-      // const version to enable const auto& syntax
-      std::shared_ptr<Element<M,N,R>> operator*() const {
-	return meshContainer_->element(index_);
-      }
-    };
-    // provide begin() and end() methods
-    iterator begin() const { return iterator(this, 0); }
-    iterator end()   const { return iterator(this, elements_.rows()); }
-
-    // iterator allowing to loop on the boundary IDs only
-    struct boundary_iterator{
-    private:
-      friend Mesh;
-      const Mesh* meshContainer_;
-      int index_; // current boundary node
-      // constructor
-      boundary_iterator(const Mesh* container, int index)
-	: meshContainer_(container), index_(index) {};
-    public:
-      // fetch next boundary node
-      boundary_iterator& operator++() {
-	index_++;
-	// scan until all nodes have been visited or a boundary node is not found
-	for(; index_ < meshContainer_->dof_ && meshContainer_->isOnBoundary(index_) != true; ++index_);
-	return *this;
-      }
-      // dereference returns a pair containing the ID of the boundary node and its physical coordinate
-      int operator*() const {
-	return index_;
-      }
-      // two iterators are different when their indexes are different
-      friend bool operator!=(const boundary_iterator& lhs, const boundary_iterator& rhs) {
-	return lhs.index_ != rhs.index_;
-      }
-    };
-    // access to boundary iterators
-    boundary_iterator boundary_begin() const { return boundary_iterator(this, 0); }
-    boundary_iterator boundary_end()   const { return boundary_iterator(this, dof_); }
-    
     // return true if the given node is on boundary, false otherwise
     bool isOnBoundary(size_t j) const { return boundary_(j) == 1; }
     
@@ -192,14 +125,21 @@ namespace MESH{
     unsigned int elements() const { return numElements_; }
     unsigned int nodes() const { return numNodes_; }
     std::array<std::pair<double, double>, N> range() const { return range_; }
-    std::array<double, N> lowerBound() const { return minRange_; }
-    std::array<double, N> kk() const { return kk_; }
 
     // support for the definition of finite element basis over a mesh object
     std::size_t dof() const { return dof_; } // number of degrees of freedom
-    const DMatrix<int>& dof_table() const { return elements_; }
+    const Eigen::Matrix<int, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>& dof_table() const { return elements_; }
     // coordinates of points supporting a finite element basis
     DMatrix<double> dofCoords() const; 
+
+    // iterators support
+    #include "MeshIterators.h"
+    // provide begin() and end() methods
+    iterator begin() const { return iterator(this, 0); }
+    iterator end()   const { return iterator(this, elements_.rows()); }
+    // access to boundary iterators
+    boundary_iterator boundary_begin() const { return boundary_iterator(this, 0); }
+    boundary_iterator boundary_end()   const { return boundary_iterator(this, dof_); }
     
     // expose compile time informations to outside
     static constexpr bool manifold = is_manifold<M, N>::value;
