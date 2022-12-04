@@ -14,63 +14,72 @@ namespace fdaPDE {
 namespace core {
 namespace NLA {
 
-  // definition of the dense-dense Kronecker product as a node in an eigen expression-tree
-  template <typename Lhs_, typename Rhs_>
-  struct KroneckerProduct : public Eigen::MatrixBase<KroneckerProduct<Lhs_, Rhs_>> {
+  // define symbols for storage type
+  struct SparseStorage {}; struct DenseStorage {};
+  
+  // base class for any kronecker product implementation
+  template <typename Derived>
+  struct KroneckerProductBase {
     // typedefs expected by eigen internals
-    typedef Lhs_ Lhs;
-    typedef Rhs_ Rhs;  
+    typedef typename Eigen::internal::traits<Derived>::Lhs Lhs;
+    typedef typename Eigen::internal::traits<Derived>::Rhs Rhs;
     typedef typename Eigen::internal::ref_selector<Lhs>::type LhsNested;
     typedef typename Eigen::internal::ref_selector<Rhs>::type RhsNested;
     // required to let KroneckerProduct integration with Eigen expression templates
-    typedef typename Eigen::internal::ref_selector<KroneckerProduct>::type Nested;
-  
+    typedef typename Eigen::internal::ref_selector<Derived>::type Nested;
+    
     // expression operands
     LhsNested lhs_;
     RhsNested rhs_;
     // constructor
-    KroneckerProduct(const Lhs& lhs, const Rhs& rhs)
+    KroneckerProductBase(const Lhs& lhs, const Rhs& rhs)
       : lhs_(lhs), rhs_(rhs) {};
     // dimensions of the resulting kronecker product
     inline Eigen::Index rows() const { return lhs_.rows()*rhs_.rows(); }
     inline Eigen::Index cols() const { return lhs_.cols()*rhs_.cols(); }
   };
-
-  // definition of the sparse-sparse Kronecker product as a node in an eigen expression-tree
-  template <typename Lhs_, typename Rhs_>
-  struct SparseKroneckerProduct : public Eigen::SparseMatrixBase<SparseKroneckerProduct<Lhs_, Rhs_>>{
-    // typedefs expected by eigen internals
-    typedef Lhs_ Lhs;
-    typedef Rhs_ Rhs;  
-    typedef typename Eigen::internal::ref_selector<Lhs>::type LhsNested;
-    typedef typename Eigen::internal::ref_selector<Rhs>::type RhsNested;
-    // required to let KroneckerProduct integration with Eigen expression templates
-    typedef typename Eigen::internal::ref_selector<SparseKroneckerProduct>::type Nested;
   
-    // expression operands
-    LhsNested lhs_;
-    RhsNested rhs_;  
+  // definition of the dense-dense Kronecker product as a node in an eigen expression-tree
+  template <typename Lhs_, typename Rhs_>
+  struct KroneckerProduct
+    : public KroneckerProductBase<KroneckerProduct<Lhs_, Rhs_>>,
+      public Eigen::MatrixBase<KroneckerProduct<Lhs_, Rhs_>> {
+    // avoid ambigous calls, refers to expected Kronecker product sizes
+    using KroneckerProductBase<KroneckerProduct<Lhs_, Rhs_>>::rows;
+    using KroneckerProductBase<KroneckerProduct<Lhs_, Rhs_>>::cols;
     // constructor
-    SparseKroneckerProduct(const Lhs& lhs, const Rhs& rhs) : lhs_(lhs), rhs_(rhs) {};
-    // dimensions of the resulting kronecker product
-    inline Eigen::Index rows() const { return lhs_.rows()*rhs_.rows(); }
-    inline Eigen::Index cols() const { return lhs_.cols()*rhs_.cols(); }
+    KroneckerProduct(const Lhs_& lhs, const Rhs_& rhs)
+      : KroneckerProductBase<KroneckerProduct<Lhs_, Rhs_>>(lhs, rhs) {};
   };
 
-  // returns the kronecker product between lhs and rhs as an eigen expression (dense version)
+  // definition of the sparse-sparse Kronecker product as a node in an eigen expression-tree. This class handles
+  // also the case in which one of the two operands is a dense expression.
+  template <typename Lhs_, typename Rhs_, typename LhsStorage, typename RhsStorage>
+  struct SparseKroneckerProduct
+    : public KroneckerProductBase<SparseKroneckerProduct<Lhs_, Rhs_, LhsStorage, RhsStorage>>,
+      public Eigen::SparseMatrixBase<SparseKroneckerProduct<Lhs_, Rhs_, LhsStorage, RhsStorage>>{
+    // avoid ambigous calls, refers to expected Kronecker product sizes
+    using KroneckerProductBase<SparseKroneckerProduct<Lhs_, Rhs_, LhsStorage, RhsStorage>>::rows;
+    using KroneckerProductBase<SparseKroneckerProduct<Lhs_, Rhs_, LhsStorage, RhsStorage>>::cols;
+    // constructor
+    SparseKroneckerProduct(const Lhs_& lhs, const Rhs_& rhs)
+      : KroneckerProductBase<SparseKroneckerProduct<Lhs_, Rhs_, LhsStorage, RhsStorage>>(lhs, rhs) {};
+  };
+  
+  // returns the kronecker product between lhs and rhs as an eigen expression (dense-dense version)
   template <typename Lhs, typename Rhs>
   KroneckerProduct<Lhs, Rhs> Kronecker
   (const Eigen::MatrixBase<Lhs> &lhs, const Eigen::MatrixBase<Rhs>& rhs) {
     return KroneckerProduct<Lhs, Rhs>(lhs.derived(), rhs.derived());
   }
 
-  // returns the kronecker product between lhs and rhs as an eigen expression (sparse version)
+  // returns the kronecker product between lhs and rhs as an eigen expression (sparse-sparse version)
   template <typename Lhs, typename Rhs>
-  SparseKroneckerProduct<Lhs, Rhs> Kronecker
+  SparseKroneckerProduct<Lhs, Rhs, SparseStorage, SparseStorage> Kronecker
   (const Eigen::SparseMatrixBase<Lhs> &lhs, const Eigen::SparseMatrixBase<Rhs>& rhs) {
-    return SparseKroneckerProduct<Lhs, Rhs>(lhs.derived(), rhs.derived());
+    return SparseKroneckerProduct<Lhs, Rhs, SparseStorage, SparseStorage>(lhs.derived(), rhs.derived());
   }
-
+  
 }}}
       
 // definition of proper symbols in Eigen::internal namespace
@@ -79,6 +88,7 @@ namespace internal{
   // import symbols from fdaPDE namespace
   using fdaPDE::core::NLA::KroneckerProduct;
   using fdaPDE::core::NLA::SparseKroneckerProduct;
+  using fdaPDE::core::NLA::SparseStorage;
   
   // template specialization for KroneckerProduct traits (required by Eigen).
   template <typename Lhs_, typename Rhs_>
@@ -118,8 +128,8 @@ namespace internal{
   };
 
   // trait specialization for the sparse-sparse version
-  template <typename Lhs, typename Rhs>
-  struct traits<SparseKroneckerProduct<Lhs, Rhs>> : public traits<KroneckerProduct<Lhs, Rhs>>{};
+  template <typename Lhs, typename Rhs, typename LhsStorage, typename RhsStorage>
+  struct traits<SparseKroneckerProduct<Lhs, Rhs, LhsStorage, RhsStorage>> : public traits<KroneckerProduct<Lhs, Rhs>>{};
 
   // Eigen requires a specialization of the evaluator template for each expression type. An evaluator is
   // responsible for the computation of the entries of the result matrix. For dense operations we need to provide
@@ -134,19 +144,18 @@ namespace internal{
     typedef KroneckerProduct<Lhs_, Rhs_> XprType; 
     // only one access to each nested evaluator is required (meaning of 1 in nested_eval<> below) to evaluate this evaluator
     typedef typename nested_eval<Lhs_, 1>::type LhsNested;
-    typedef typename std::decay<LhsNested>::type LhsNestedCleaned;
     typedef typename nested_eval<Rhs_, 1>::type RhsNested; 
-    typedef typename std::decay<RhsNested>::type RhsNestedCleaned;
     // type of coefficient returned by a single access to the evaluator
     typedef typename XprType::CoeffReturnType CoeffReturnType; 
 
     enum { // required compile time constants
-      CoeffReadCost = evaluator<LhsNestedCleaned>::CoeffReadCost + evaluator<RhsNestedCleaned>::CoeffReadCost,
+      CoeffReadCost = evaluator<typename std::decay<LhsNested>::type>::CoeffReadCost +
+                      evaluator<typename std::decay<RhsNested>::type>::CoeffReadCost,
       Flags = Eigen::ColMajor // only ColMajor storage orders accepted
     };
     // Kronecker product operands
-    evaluator<LhsNestedCleaned> lhs_;
-    evaluator<RhsNestedCleaned> rhs_;
+    evaluator<typename std::decay<LhsNested>::type> lhs_;
+    evaluator<typename std::decay<RhsNested>::type> rhs_;
     
     // constructor
     evaluator(const KroneckerProduct<Lhs_, Rhs_>& xpr) : xpr_(xpr), lhs_(xpr.lhs_), rhs_(xpr.rhs_) {};
@@ -161,13 +170,13 @@ namespace internal{
   // of the result matrix. For matrices in column major order an inner iterator must be able to iterate over the rows of the
   // result once fixed a column (outer dimension).
   template <typename Lhs_, typename Rhs_>
-  class evaluator<SparseKroneckerProduct<Lhs_, Rhs_>>
-    : public evaluator_base<SparseKroneckerProduct<Lhs_, Rhs_>> {
+  class evaluator<SparseKroneckerProduct<Lhs_, Rhs_, SparseStorage, SparseStorage>>
+    : public evaluator_base<SparseKroneckerProduct<Lhs_, Rhs_, SparseStorage, SparseStorage>> {
   private:
-    const SparseKroneckerProduct<Lhs_, Rhs_>& xpr_;
+    const SparseKroneckerProduct<Lhs_, Rhs_, SparseStorage, SparseStorage>& xpr_;
   public:    
     // typedefs expected by eigen internals
-    typedef SparseKroneckerProduct<Lhs_, Rhs_> XprType; 
+    typedef SparseKroneckerProduct<Lhs_, Rhs_, SparseStorage, SparseStorage> XprType; 
     typedef typename evaluator<Lhs_>::InnerIterator LhsIterator;
     typedef typename evaluator<Rhs_>::InnerIterator RhsIterator;
     
@@ -178,32 +187,34 @@ namespace internal{
     // Kronecker product operands
     evaluator<Lhs_> lhs_;
     evaluator<Rhs_> rhs_;
+    // rhs sizes
+    Index rhs_outer_, rhs_inner_;
 
     // Definition of InnerIterator providing the kronecker tensor product of the operands.
-    class InnerIterator { 
+    class InnerIterator {
     public:
       // usefull typedefs
       typedef typename traits<XprType>::Scalar Scalar;
       typedef typename traits<XprType>::StorageIndex StorageIndex;
       // costructor (outer is the index of the column over which we are iterating).
-      InnerIterator(const evaluator<XprType>& m, Index outer)
-	: lhs_it(m.lhs_, outer / m.xpr_.rhs_.outerSize()),
-	  rhs_it(m.rhs_, outer % m.xpr_.rhs_.outerSize()), 
-	  m_index(lhs_it.index()*m.xpr_.rhs_.innerSize() - 1),
-	  outer_(outer), m_(m) {
+      InnerIterator(const evaluator<XprType>& eval, Index outer)
+	: lhs_it(eval.lhs_, outer / eval.rhs_outer_),
+	  rhs_it(eval.rhs_, outer % eval.rhs_outer_), 
+	  m_index(lhs_it.index() * eval.rhs_inner_  - 1),
+	  outer_(outer), eval_(eval) {
 	// init iterator
 	this->operator++();
       };
 
       InnerIterator& operator++() {
 	if(rhs_it && lhs_it){ 
-	  m_index = lhs_it.index()*m_.xpr_.rhs_.innerSize() + rhs_it.index();;
+	  m_index = lhs_it.index()*eval_.rhs_inner_ + rhs_it.index();;
 	  // (i,j)-th kronecker product value
 	  m_value = lhs_it.value() * rhs_it.value();
 	  ++rhs_it;
 	}else if(!rhs_it && ++lhs_it){ // start new block a_{ij}*B[,j]
-	  rhs_it = RhsIterator(m_.rhs_, outer_ % m_.xpr_.rhs_.outerSize());
-	  m_index = lhs_it.index()*m_.xpr_.rhs_.innerSize() + rhs_it.index();
+	  rhs_it = RhsIterator(eval_.rhs_, outer_ % eval_.rhs_outer_);
+	  m_index = lhs_it.index()*eval_.rhs_inner_ + rhs_it.index();
 	  // (i,j)-th kronecker product value
 	  m_value = lhs_it.value() * rhs_it.value();
 	  ++rhs_it;	
@@ -225,16 +236,16 @@ namespace internal{
       // reference to operands' iterators
       LhsIterator lhs_it;
       RhsIterator rhs_it;
-      const evaluator<XprType>& m_;
+      const evaluator<XprType>& eval_;
       Scalar m_value; // the value pointed by the iterator
-      StorageIndex m_index; // current inner index      
+      StorageIndex m_index; // current inner index
       Index outer_; // outer index as received from the constructor
     }; 
     // constructor
-    evaluator(const SparseKroneckerProduct<Lhs_, Rhs_>& xpr)
-      : xpr_(xpr), lhs_(xpr.lhs_), rhs_(xpr.rhs_) {};
-  };
-  
+    evaluator(const XprType& xpr)
+      : xpr_(xpr), lhs_(xpr.lhs_), rhs_(xpr.rhs_),
+	rhs_outer_(xpr.rhs_.outerSize()), rhs_inner_(xpr.rhs_.innerSize()) {};
+  };  
 }}
   
 #endif // __KRONECKER_PRODUCT_H__
