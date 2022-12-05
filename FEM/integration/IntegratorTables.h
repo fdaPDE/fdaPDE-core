@@ -16,8 +16,9 @@ namespace FEM{
   // ** "Numerical Models for Differential Problems, Alfio Quarteroni. Second edition"
   // ** "https://people.sc.fsu.edu/~jburkardt/datasets/datasets.html"
 
-  // N dimension of the integration domain, K number of nodes of the formula
-  template <unsigned int N, unsigned int K> struct IntegratorTable;
+  // N dimension of the integration domain, K number of nodes of the formula. Args works as selector for type of quadrature
+  template <unsigned int N, unsigned int K, typename... Args> struct IntegratorTable;
+  struct GaussLegendre {}; // tag used for quadrature rules
 
   // trait for selecting a standard quadrature rule in case K is not defined by the user. Use this in case you do not
   // care much about the numerical precision of the integral approximations. In any case, the standard choice is an exact
@@ -94,6 +95,24 @@ namespace FEM{
        0.277777777777778}
     };
   };
+
+  // 3 point formula, Gauss-Legendre rule on interval [-1,1]. degree of precision 5
+  template <> struct IntegratorTable<1, 3, GaussLegendre> {
+    // number of nodes
+    static constexpr unsigned int num_nodes = 3;
+    // position of nodes (in barycentric coordinates)
+    static constexpr std::array<std::array<double, 1>, 3> nodes = {
+     {-0.774596669241483,
+       0.000000000000000,
+       0.774596669241483}
+    };
+    // weights of the quadrature rule
+    static constexpr std::array<double, 3> weights = {
+      {0.555555555555555,
+       0.888888888888888,
+       0.555555555555555}
+    };
+  }; 
   
   // 2D triangular elements
   // reference element: simplex of vertices (0,0), (1,0), (0,1)
