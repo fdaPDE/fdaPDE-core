@@ -15,12 +15,12 @@ namespace core{
 
   // a functor representing a zero field
   template <int N>
-  struct ZeroField { 
+  struct ZeroField : public ScalarExpr<ZeroField<N>> { 
     inline double operator()(const SVector<N>& p) const { return 0; }
   };
   // a functor representing a constant field
   template <int N>
-  class ConstantField {
+  class ConstantField : public ScalarExpr<ConstantField<N>> {
   private:
     double c_;
   public:
