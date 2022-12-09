@@ -54,7 +54,8 @@ namespace NLA {
 
   // definition of the sparse-sparse Kronecker product as a node in an eigen expression-tree. This class handles
   // also the case in which one of the two operands is a dense expression.
-  template <typename Lhs_, typename Rhs_, typename LhsStorage, typename RhsStorage>
+  template <typename Lhs_ = SpMatrix<double>, typename Rhs_ = SpMatrix<double>,
+	    typename LhsStorage = SparseStorage, typename RhsStorage = SparseStorage>
   struct SparseKroneckerProduct
     : public KroneckerProductBase<SparseKroneckerProduct<Lhs_, Rhs_, LhsStorage, RhsStorage>>,
       public Eigen::SparseMatrixBase<SparseKroneckerProduct<Lhs_, Rhs_, LhsStorage, RhsStorage>>{
