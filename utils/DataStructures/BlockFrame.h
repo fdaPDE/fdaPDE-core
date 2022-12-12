@@ -90,7 +90,6 @@ public:
     // check number of rows to insert equals BlockFrame size
     if(rows_ != 0 && data.rows() != rows_)
       throw std::length_error("data to insert has a different number of rows");
-    
     // store data
     std::get<index_of<T, types_>::index>(data_)[key] = data;
     // update metadata
@@ -98,7 +97,41 @@ public:
     if(rows_ == 0) rows_ = data.rows();
     return;
   }
-
+  // insert new block in stacked mode: given an n x m block this function inserts a vector block of (n x m) rows
+  template <typename T>
+  void stack(const std::string& key, const DMatrix<T>& data){
+    BLOCK_FRAME_CHECK_TYPE;
+    // compute dimensions
+    std::size_t n = data.rows();
+    std::size_t m = data.cols();
+    // prepare new block to insert
+    DMatrix<T> stacked_data;
+    stacked_data.resize(n*m, 1);
+    for(std::size_t i = 0; i < m; ++i) stacked_data.block(i*n, 0, n,1) = data.col(i);
+    // store data
+    insert(key, stacked_data);
+    return;
+  }
+  // insert new block obtained by the repetition of data (row x col) times
+  template <typename T>
+  void repeat(const std::string& key, const DMatrix<T>& data, std::size_t row, std::size_t col){
+    BLOCK_FRAME_CHECK_TYPE;
+    // compute dimensions
+    std::size_t n = data.rows();
+    std::size_t m = data.cols();
+    // prepare new block to insert
+    DMatrix<T> new_data;
+    new_data.resize(n*row, m*col);
+    for(std::size_t i = 0; i < row; ++i){
+      for(std::size_t j = 0; j < col; ++j){
+	new_data.block(i*n, j*m, n,m) = data;
+      }
+    }
+    // store data
+    insert(key, new_data);
+    return;    
+  }
+  
   // access operations
   
   // return const reference to block given its key
