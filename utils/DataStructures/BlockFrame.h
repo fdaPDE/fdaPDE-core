@@ -3,6 +3,7 @@
 
 #include "../Symbols.h"
 #include <cstddef>
+#include <exception>
 #include <tuple>
 #include <type_traits>
 #include <unordered_map>
@@ -112,26 +113,7 @@ public:
     insert(key, stacked_data);
     return;
   }
-  // insert new block obtained by the repetition of data (row x col) times
-  template <typename T>
-  void repeat(const std::string& key, const DMatrix<T>& data, std::size_t row, std::size_t col){
-    BLOCK_FRAME_CHECK_TYPE;
-    // compute dimensions
-    std::size_t n = data.rows();
-    std::size_t m = data.cols();
-    // prepare new block to insert
-    DMatrix<T> new_data;
-    new_data.resize(n*row, m*col);
-    for(std::size_t i = 0; i < row; ++i){
-      for(std::size_t j = 0; j < col; ++j){
-	new_data.block(i*n, j*m, n,m) = data;
-      }
-    }
-    // store data
-    insert(key, new_data);
-    return;    
-  }
-  
+
   // access operations
   
   // return const reference to block given its key
@@ -179,7 +161,15 @@ public:
     // extract the blockframe from the view obtained by using random_idxs as set of indexes
     return BlockView<Sparse, Ts...>(*this, random_idxs).extract();
   }
-  
+
+  // remove block
+  template <typename T>
+  void remove(const std::string& key) {
+    BLOCK_FRAME_CHECK_TYPE;
+    // remove block
+    std::get<index_of<T, types_>::index>(data_).erase(key);
+    return;
+  }
 };
 
 // a view of a BlockFrame. No operation is made until an operation is requested
@@ -242,6 +232,21 @@ public:
     }
   }
 
+  // returns an eigen block for read-write access to portions of this view (only range views)
+  template <typename T>
+  auto block(const std::string& key) const {
+    BLOCK_FRAME_CHECK_TYPE;
+    if(!frame_.hasBlock(key)) throw std::out_of_range("key not found");
+
+    if constexpr(S == ViewType::Range){
+      // return block of this view
+      return std::get<index_of<T, types_>::index>(frame_.data()).at(key)
+	.middleRows(idx_[0], idx_[1] - idx_[0] + 1);
+    }else{
+      throw std::out_of_range("block operations allowed only on Range views");
+    }
+  }
+  
   // returns a block given by the copy of all blocks identified by "keys"
   template <typename T, typename... Args>
   typename std::enable_if<sizeof...(Args) >= 2, DMatrix<T>>::type
