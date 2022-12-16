@@ -20,14 +20,16 @@ namespace FEM{
   struct FEMStandardSpaceTimeSolver;
   // trait to select the space-only or the space-time version of the PDE standard solver
   template <typename E> struct pde_standard_solver_selector {
-    using type = typename std::conditional<is_parabolic<E>::value,
-					   FEMStandardSpaceTimeSolver, FEMStandardSpaceSolver>::type;
+    using type = typename std::conditional<
+      is_parabolic<E>::value, FEMStandardSpaceTimeSolver, FEMStandardSpaceSolver>::type;
   };
   // PDE forward declaration
-  template <unsigned int M, unsigned int N, unsigned int R, typename E, typename F, typename B, typename I, typename S> class PDE;
+  template <unsigned int M, unsigned int N, unsigned int R, typename E,
+	    typename F, typename B, typename I, typename S>
+  class PDE;
 
   // base class for the definition of a general solver based on the Finite Element Method
-  class FEMBaseSolver{
+  class FEMBaseSolver {
   protected:
     DMatrix<double> solution_; // vector of coefficients of the approximate solution 
     DMatrix<double> force_; // right-hand side of the FEM linear system
@@ -35,7 +37,8 @@ namespace FEM{
     SpMatrix<double> R0_; // mass matrix, i.e. discretization of the identity operator
     
     // impose boundary conditions
-    template <unsigned int M, unsigned int N, unsigned int R, typename E, typename F, typename B, typename I, typename S>
+    template <unsigned int M, unsigned int N, unsigned int R, typename E,
+	      typename F, typename B, typename I, typename S>
     void imposeBoundaryConditions(const PDE<M,N,R,E,F,B,I,S>& pde);
 
     bool init_ = false; // set to true by init() at the end of solver initialization
@@ -51,37 +54,40 @@ namespace FEM{
     const SpMatrix<double>& R0() const { return R0_; }
 
     // initializes internal FEM solver status
-    // M, N and E are parameters releated to the PDE, B and I indicates respectively the functional basis and the integrator
-    // to use during the numerical resolution of the problem.
-    template <unsigned int M, unsigned int N, unsigned int R, typename E, typename F, typename B, typename I, typename S>
+    template <unsigned int M, unsigned int N, unsigned int R, typename E,
+	      typename F, typename B, typename I, typename S>
     void init(const PDE<M,N,R,E,F,B,I,S>& pde);
   };
 
   // fill internal data structures required by FEM to solve the problem.
-  template <unsigned int M, unsigned int N, unsigned int R, typename E, typename F, typename B, typename I, typename S>
+  template <unsigned int M, unsigned int N, unsigned int R, typename E,
+	    typename F, typename B, typename I, typename S>
   void FEMBaseSolver::init(const PDE<M,N,R,E,F,B,I,S>& pde) {
     Assembler<M, N, R, B, I> assembler(pde.domain(), pde.integrator()); // create assembler object
     // fill discretization matrix for current operator
     R1_ = assembler.assemble(pde.bilinearForm());
     R1_.makeCompressed();
-    // fill forcing vector
-    force_.resize(assembler.dof(), 1); //pde.forcingData().cols());
-    force_.col(0) = assembler.forcingTerm(pde.forcingData());
-
-    // SPACE-TIME PROBLEMS CURRENTLY NOT SUPPORTED DUE TO THE FACT WE NOW ACCEPT ALSO CALLABLE AS FORCING
     
-    // for(std::size_t i = 0; i < pde.forcingData().cols(); ++i){
-    //   force_->col(i) = assembler.forcingTerm(pde.forcingData().col(i)); // rhs of FEM linear system
-    // }
+    // fill forcing vector
+    std::size_t n = pde.domain().dof(); // degrees of freedom in space
+    std::size_t m = pde.forcingData().cols(); // number of time points
+    force_.resize(n*m, 1);
+    force_.col(0) = assembler.forcingTerm(pde.forcingData().col(0));
+    // iterate over time steps if a space-time PDE is supplied
+    if constexpr(is_parabolic<E>::value){
+      for(std::size_t i = 1; i < m; ++i){
+	force_.block(n*i,0, n,1) = assembler.forcingTerm(pde.forcingData().col(i));
+      }
+    }
 
-    // R0_ is a mass matrix ([R0]_{ij} = \int_{\Omega} \phi_i \phi_j). This quantity can be obtained by computing
-    // the discretization of the Identity() operator
+    // compute mass matrix [R0]_{ij} = \int_{\Omega} \phi_i \phi_j by discretization of the identity operator
     R0_ = assembler.assemble(Identity());
     init_ = true;
     return;
   }
 
-  template <unsigned int M, unsigned int N, unsigned int R, typename E, typename F, typename B, typename I, typename S>
+  template <unsigned int M, unsigned int N, unsigned int R, typename E,
+	    typename F, typename B, typename I, typename S>
   void FEMBaseSolver::imposeBoundaryConditions(const PDE<M,N,R,E,F,B,I,S>& pde){
     if(!init_) throw std::runtime_error("solver must be initialized first!");
     // impose homogeneous dirichlet boundary condition by default to remove not necessary degrees of freedom from FEM linear system R1_
