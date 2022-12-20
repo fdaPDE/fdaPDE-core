@@ -204,8 +204,10 @@ namespace FEM{
 
   public:
     // compute this at compile time once, let public access
-    static const constexpr expTable<N, R> expTable_ = ct_poly_exp<N,R>();
-  
+    static constexpr expTable<N, R> expTable_ = ct_poly_exp<N,R>();
+    static constexpr unsigned int order = R;  // order of polynomial
+    static constexpr unsigned int domain = N; // dimension of domain
+    
     // constructor
     MultivariatePolynomial() = default;
     MultivariatePolynomial(const std::array<double, MON>& coeffVector) : coeffVector_(coeffVector) {

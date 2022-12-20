@@ -96,6 +96,7 @@ namespace FEM{
     static constexpr std::size_t local_dimension = M;
     static constexpr std::size_t embedding_dimension = N;
     static constexpr std::size_t basis_order = R;
+    typedef E BilinearFormType;
   };
 
   // argument deduction rule for PDE object

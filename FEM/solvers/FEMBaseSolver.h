@@ -71,10 +71,11 @@ namespace FEM{
     // fill forcing vector
     std::size_t n = pde.domain().dof(); // degrees of freedom in space
     std::size_t m; // number of time points
+
     if constexpr(!std::is_base_of<ScalarBase, F>::value){
       m = pde.forcingData().cols();
       force_.resize(n*m, 1);
-      force_.col(0) = assembler.forcingTerm(pde.forcingData().col(0));
+      force_.block(0,0, n,1) = assembler.forcingTerm(pde.forcingData().col(0));
     }else{
       // TODO: find a way to allow for space-time callable forcing. We cannot deduce the number of time points
       // from a ScalarField<> object, have to request an additional parameter which contains the number of time points m
@@ -82,12 +83,12 @@ namespace FEM{
       // solver during its operations... maybe a TimeField<> specialization of ScalarField<> ?? )
       m = 1;
       force_.resize(n*m, 1);
-      force_.col(0) = assembler.forcingTerm(pde.forcingData());
+      force_.block(0,0, n,1) = assembler.forcingTerm(pde.forcingData());
     }
     // iterate over time steps if a space-time PDE is supplied
     if constexpr(is_parabolic<E>::value){
       for(std::size_t i = 1; i < m; ++i){
-	  force_.block(n*i,0, n,1) = assembler.forcingTerm(pde.forcingData().col(i));
+	force_.block(n*i,0, n,1) = assembler.forcingTerm(pde.forcingData().col(i));
       }
     }
 

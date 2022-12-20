@@ -18,9 +18,11 @@ namespace FEM{
     static constexpr bool is_space_varying = false; // dT() does not affect the space-variability properties of the PDE
 
     // return zero field
-    template <unsigned int M, unsigned int N, unsigned int R, typename B>
-    auto integrate(const B& basis, const Element<M, N, R>& e, int i , int j) const{
-      return ScalarField<M>::Zero();
+    template <typename... Args>
+    auto integrate(const std::tuple<Args...>& mem_buffer) const {
+      IMPORT_MEM_BUFFER_SYMBOLS(mem_buffer);
+      // recover dimensionality of weak formulation from \psi_i
+      return ScalarField<decltype(psi_i)::PtrType::domain>::Zero();
     }
   };
 

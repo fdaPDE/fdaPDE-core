@@ -32,6 +32,7 @@ namespace core{
     }
     // access to pointed element
     E* operator->() { return ptr_; }
+    typedef E PtrType; // expose wrapped type
   };
 
   // basic pointer type for vectorial expressions
@@ -53,6 +54,7 @@ namespace core{
     }
     // access to pointed element
     E* operator->() { return ptr_; }
+    typedef E PtrType; // expose wrapped type
   };
 
   // basic pointer type for matrix expressions
@@ -72,6 +74,7 @@ namespace core{
     void eval_parameters(T i) { ptr_->eval_parameters(i); }
     // access to pointed element
     E* operator->() { return ptr_; }
+    typedef E PtrType; // expose wrapped type
   };
   
 }}
