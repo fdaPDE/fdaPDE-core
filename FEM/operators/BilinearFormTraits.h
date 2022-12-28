@@ -3,6 +3,7 @@
 
 #include <type_traits>
 #include <tuple>
+#include "../../utils/Traits.h"
 #include "Gradient.h"
 using fdaPDE::core::FEM::Gradient;
 #include "Identity.h"
@@ -15,43 +16,6 @@ using fdaPDE::core::FEM::dT;
 namespace fdaPDE{
 namespace core{
 namespace FEM{
-
-  // returns true if type T is instance of template E<F> with F some type.
-  template <typename T, template <typename> typename E>
-  struct is_instance_of : std::false_type {};
-  template <template<typename> typename E, typename F> // valid match
-  struct is_instance_of<E<F>, E> : std::true_type {};
-
-  // returns std::true_type if tuple contains type T
-  template <typename T, typename Tuple> struct has_type {};
-  // an empty tuple cannot contain T, return false
-  template <typename T> struct has_type<T, std::tuple<>>
-    : std::false_type {};
-  // if the head of the tuple is not of type T, go on recursively on the remaining types
-  template <typename T, typename U, typename... Args>
-  struct has_type<T, std::tuple<U, Args...>> : has_type<T, std::tuple<Args...>> {};
-  // in case the head of the tuple is type T, end of recursion and return true
-  template <typename T, typename... Args>
-  struct has_type<T, std::tuple<T, Args...>>
-    : std::true_type {};
-
-  // returns std::true_type if tuple contains an instantiation of template E<F>
-  template <template <typename F> typename E, typename Tuple> struct has_instance_of {};
-  
-  template <template <typename F> typename E> // empty tuple cannot contain anything
-  struct has_instance_of<E, std::tuple<>> {
-    using type = std::false_type;
-  };
-
-  template <typename F, template <typename> typename E, typename... Tail> // type found, stop recursion
-  struct has_instance_of<E, std::tuple<E<F>, Tail...>> {
-    using type = std::true_type;
-  };
-
-  template <typename U, template <typename> typename E, typename... Tail>   // recursive step
-  struct has_instance_of<E, std::tuple<U, Tail...>> {
-    using type = typename has_instance_of<E, std::tuple<Tail...>>::type;
-  };
 
   // trait to detect if the bilinear form is symmetric. 
   template <typename E> struct is_symmetric {

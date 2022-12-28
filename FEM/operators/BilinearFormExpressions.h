@@ -1,6 +1,7 @@
 #ifndef __BILINEAR_FORM_EXPRESSIONS_H__
 #define __BILINEAR_FORM_EXPRESSIONS_H__
 
+#include "../../utils/Traits.h"
 #include "../../MESH/Element.h"
 using fdaPDE::core::MESH::Element;
 #include "../../utils/Symbols.h"
@@ -31,9 +32,7 @@ namespace FEM{
     // get underyling type composing the expression node
     const E& get() const { return static_cast<const E&>(*this); }
     // returns the set of types associated with this expression
-    auto getTypeList() const {
-      return static_cast<const E&>(*this).getTypeList();
-    }
+    auto getTypeList() const { return static_cast<const E&>(*this).getTypeList(); }
     // query the bilinear form to check if it has some non-constant coefficients
     static constexpr bool is_space_varying = E::is_space_varying;
   };
@@ -42,9 +41,11 @@ namespace FEM{
   template <typename OP1, typename OP2, typename BinaryOperation>
   class BilinearFormBinOp : public BilinearFormExpr<BilinearFormBinOp<OP1, OP2, BinaryOperation>> {
   private:
-    typename std::remove_reference<OP1>::type op1_;   // first  operand
-    typename std::remove_reference<OP2>::type op2_;   // second operand
-    BinaryOperation f_;                               // operation to apply
+    typedef typename std::remove_reference<OP1>::type OP1_;
+    typedef typename std::remove_reference<OP2>::type OP2_;
+    OP1_ op1_; // first  operand
+    OP2_ op2_; // second operand
+    BinaryOperation f_; // operation to apply
   public:
     // constructor
     BilinearFormBinOp() = default; // let default constructible to allow assignment
@@ -56,6 +57,24 @@ namespace FEM{
       return f_(op1_.integrate(mem_buffer), op2_.integrate(mem_buffer));
     }
     auto getTypeList() const { return std::tuple_cat(op1_.getTypeList(), op2_.getTypeList()); }
+
+    // returns a bilinear form obtained from this one by removing the effect of operator T
+    template <template<typename> typename T>
+    auto remove_operator() const {
+      // if the bilinear form has no operator T, return a reference to this form as it is
+      if constexpr(!has_instance_of<T, decltype(getTypeList())>::value) return *this;
+      // end of recursion (leafs of the expression tree reached)
+      else if constexpr(is_instance_of<OP1_, T>::value) return op2_;
+      else if constexpr(is_instance_of<OP2_, T>::value) return op1_;
+      // only one of the two operands is an internal expression node
+      else if constexpr( is_instance_of<OP1_, BilinearFormBinOp>::value && !is_instance_of<OP2_, BilinearFormBinOp>::value)
+	return f_(op1_.template remove<T>(), op2_);
+      else if constexpr(!is_instance_of<OP1_, BilinearFormBinOp>::value &&  is_instance_of<OP2_, BilinearFormBinOp>::value)
+	return f_(op1_, op2_.template remove<T>());
+      else // both operands are expression nodes
+	return f_(op1_.template remove<T>(), op2_.template remove<T>());
+    }
+    
     static constexpr bool is_space_varying = OP1::is_space_varying || OP2::is_space_varying;
   };
   DEF_BILINEAR_FORM_EXPR_OPERATOR(operator+, std::plus<>)
