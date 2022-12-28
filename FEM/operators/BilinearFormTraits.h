@@ -20,7 +20,7 @@ namespace FEM{
   // trait to detect if the bilinear form is symmetric. 
   template <typename E> struct is_symmetric {
     // returns false if an instantiation of Gradient<> is contained in the typelist of the bilinar form
-    static constexpr bool value = !has_instance_of<Gradient, decltype(std::declval<E>().getTypeList())>::type::value;
+    static constexpr bool value = !has_instance_of<Gradient, decltype(std::declval<E>().getTypeList())>::value;
   };
 
   // trait to detect if the bilinear form denotes an elliptic operator.
@@ -28,15 +28,15 @@ namespace FEM{
   public:
     // returns true if an instantiation of Gradient<> is not contained in the typelist of the bilinar form
     static constexpr bool value =
-      has_instance_of<Laplacian, decltype(std::declval<E>().getTypeList())>::type::value ||
-      has_instance_of<Identity,  decltype(std::declval<E>().getTypeList())>::type::value ||
-      has_instance_of<Gradient,  decltype(std::declval<E>().getTypeList())>::type::value;
+      has_instance_of<Laplacian, decltype(std::declval<E>().getTypeList())>::value ||
+      has_instance_of<Identity,  decltype(std::declval<E>().getTypeList())>::value ||
+      has_instance_of<Gradient,  decltype(std::declval<E>().getTypeList())>::value;
   };
 
   // trait to detect if the bilinear form denotes a parabolic PDE.
   template <typename E> struct is_parabolic {
     // returns true if the time derivative operator dT() is detected in the expression
-    static constexpr bool value = has_instance_of<dT, decltype(std::declval<E>().getTypeList())>::type::value;  
+    static constexpr bool value = has_instance_of<dT, decltype(std::declval<E>().getTypeList())>::value;  
   };
 
 }}}

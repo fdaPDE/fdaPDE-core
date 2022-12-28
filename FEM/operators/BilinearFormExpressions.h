@@ -68,11 +68,11 @@ namespace FEM{
       else if constexpr(is_instance_of<OP2_, T>::value) return op1_;
       // only one of the two operands is an internal expression node
       else if constexpr( is_instance_of<OP1_, BilinearFormBinOp>::value && !is_instance_of<OP2_, BilinearFormBinOp>::value)
-	return f_(op1_.template remove<T>(), op2_);
+	return f_(op1_.template remove_operator<T>(), op2_);
       else if constexpr(!is_instance_of<OP1_, BilinearFormBinOp>::value &&  is_instance_of<OP2_, BilinearFormBinOp>::value)
-	return f_(op1_, op2_.template remove<T>());
+	return f_(op1_, op2_.template remove_operator<T>());
       else // both operands are expression nodes
-	return f_(op1_.template remove<T>(), op2_.template remove<T>());
+	return f_(op1_.template remove_operator<T>(), op2_.template remove_operator<T>());
     }
     
     static constexpr bool is_space_varying = OP1::is_space_varying || OP2::is_space_varying;

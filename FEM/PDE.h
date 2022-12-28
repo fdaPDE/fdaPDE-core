@@ -102,7 +102,7 @@ namespace FEM{
   // argument deduction rule for PDE object
   template <unsigned int M, unsigned int N, unsigned int R, typename E, typename F, typename B, typename I>
   PDE(const Mesh<M,N,R>& domain, E bilinearForm, const F& forcing, const B& basis, const I& integrator)
-    -> PDE<M, N, R, decltype(bilinearForm), F, I, B>;
+    -> PDE<M, N, R, decltype(bilinearForm), F, B, I>;
 
 #include "PDE.tpp"
 
