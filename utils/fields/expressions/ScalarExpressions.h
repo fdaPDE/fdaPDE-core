@@ -79,16 +79,17 @@ namespace core{
     // check F is callable with type T and returns a double
     static_assert(std::is_same<decltype(std::declval<F>().operator()(T())), double>::value);
   private:
-    const F& f_;
+    // be sure that data pointed by this parameter are alive for the whole life of this object
+    const typename std::remove_reference<F>::type* f_;
     double value_;
   public:
     // default constructor
     ScalarParam() = default;
-    ScalarParam(const F& f) : f_(f) {};
+    ScalarParam(const F& f) : f_(&f) {};
     // call operator, match with any possible set of arguments
     template <typename... Args>
     double operator()(Args... args) const { return value_; }
-    void eval_parameters(T i) { value_ = f_(i); }
+    void eval_parameters(T i) { value_ = f_->operator()(i); }
   };
   
   // expression template based arithmetic

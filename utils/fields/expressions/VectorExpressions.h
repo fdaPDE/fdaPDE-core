@@ -85,15 +85,15 @@ namespace core{
     // check F is callable with type T and returns an SVector<N>
     static_assert(std::is_same<decltype(std::declval<F>().operator()(T())), SVector<N>>::value);
   private:
-    const F& f_;
+    // be sure that data pointed by this parameter are alive for the whole life of this object
+    const typename std::remove_reference<F>::type* f_;
     SVector<N> value_;
   public:
     // default constructor
     VectorParam() = default;
-    VectorParam(const F& f) : f_(f) {};
+    VectorParam(const F& f) : f_(&f) {};
     double operator[](std::size_t i) const { return value_[i]; }
-    // evaluating the parameter makes a parametric node to act as a VectorConst
-    void eval_parameters(T i) { value_ = f_(i); }
+    void eval_parameters(T i) { value_ = f_->operator()(i); }
   };
   
   // a generic binary operation node
