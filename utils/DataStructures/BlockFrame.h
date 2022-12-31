@@ -146,6 +146,10 @@ public:
     if(block.cols() < idx) throw std::out_of_range("index out of range");
     return block.col(idx);
   }
+  // return view to last n rows of the blockframe
+  BlockView<Range, Ts...> tail(std::size_t begin) const { return BlockView<Range, Ts...>(*this, begin, rows_-1); }
+  // return view to first n rows of the blockframe
+  BlockView<Range, Ts...> head(std::size_t end) const { return BlockView<Range, Ts...>(*this, 0, end); }
   
   // perform a shuffling of the BlockFrame rows returning a new BlockFrame
   BlockFrame<Ts...> shuffle() const {
