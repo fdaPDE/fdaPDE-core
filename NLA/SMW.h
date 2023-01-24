@@ -28,10 +28,7 @@ namespace NLA{
   public:
     SMW() = default;
     
-    void compute(SpMatrix<double>& A){
-      // bring A in compressed format
-      A.makeCompressed();
-      
+    void compute(const SpMatrix<double>& A){
       // compute sparse factorization of matrix A and store it for fast reuse
       sparseSolver_.analyzePattern(A); // Compute the ordering permutation vector from the structural pattern of A
       sparseSolver_.factorize(A);      // compute LU factorization of matrix A
