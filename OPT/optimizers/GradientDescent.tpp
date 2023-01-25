@@ -16,14 +16,17 @@ void GradientDescentOptimizer<N>::findMinimum(const ScalarField<N>& objective, /
   x_new_ = x_old_; // always guarantee x_new_ in a valid state (if while loop skipped)
   
   // standard termination criteria based on l^2 norm of the gradient
-  this->error_ = objective.derive()(x_old_).squaredNorm();
   grad_old_ = objective.derive()(x_old_);
+  this->error_ = grad_old_.squaredNorm();
   update_ = grad_old_;
   
   while (this->numIter_ < this->maxIter_ && this->error_ > this->tolerance_ && !customStop){
     customStop |= Extension::executeInitIteration(*this, objective, args...);
 
-    // compute exact gradient
+    std::cout << "lambda-" << this->numIter_ << ": " << x_old_ << std::endl;
+    std::cout << "error: " << this->error_ << std::endl;
+    
+    // compute gradient
     grad_old_ = objective.derive()(x_old_);
     update_ = grad_old_;
     // update step    
@@ -36,6 +39,9 @@ void GradientDescentOptimizer<N>::findMinimum(const ScalarField<N>& objective, /
     x_old_ = x_new_;    
     this->numIter_++;
   }
+
+  std::cout << "lambda-" << this->numIter_ << ": " << x_old_ << std::endl;
+  std::cout << "error: " << this->error_ << std::endl;
   
   customStop |= Extension::executeEndOptimization(*this, objective, args...);
   // finalize optimization

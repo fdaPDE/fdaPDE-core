@@ -21,45 +21,25 @@ namespace NLA{
 
   template <typename SparseSolver = Eigen::SparseLU<SpMatrix<double>, Eigen::COLAMDOrdering<int>>,
 	    typename DenseSolver  = Eigen::PartialPivLU<DMatrix<double>>>
-  class SMW{
-  private:
-    SparseSolver sparseSolver_; // store factorization of 2Nx2N sparse matrix A
-    DenseSolver  denseSolver_;  // store factorization of dense matrix G = C^{-1} + V*A^{-1}*U
-  public:
+  struct SMW{
+    // constructor
     SMW() = default;
     
-    void compute(const SpMatrix<double>& A){
-      // compute sparse factorization of matrix A and store it for fast reuse
-      sparseSolver_.analyzePattern(A); // Compute the ordering permutation vector from the structural pattern of A
-      sparseSolver_.factorize(A);      // compute LU factorization of matrix A
-    }
-    
-    // solves linear system (A + U*C^{-1}*V)x = b, observe that we assume to supply the already computed inversion of the dense matrix C.
-    // Indeed in some cases the inverse of C can be directly computed from known quantites without performing any inversion. In the case
-    // this is not possible, you can find the inverse of C and then call this .solve() method.
-    // A 2Nx2N sparse matrix, U 2Nxq sparse matrix, invC qxq dense matrix, V qx2N sparse matrix, b 2Nx1 vector.
-    // In a regression model q is the number of covariates. This method must be executed after call to .compute()
-    DMatrix<double> solve(const DMatrix<double>& U, const DMatrix<double>& invC, const DMatrix<double>& V, const DMatrix<double>& b){
-      // split the solution of the linear system (A + U*C^{-1}*V)x = b in the solution of 3 computationally simpler linear systems
-
-      // compute y = A^{-1}b
-      DMatrix<double> y = sparseSolver_.solve(b);
-      // compute Y = A^{-1}U. Heavy step of the method. SMW is more and more efficient as q gets smaller and smaller
-      DMatrix<double> Y = sparseSolver_.solve(U);
+    // solves linear system (A + U*C^{-1}*V)x = b, assume to supply the already computed inversion of the dense matrix C.
+    // This method must be executed after call to .compute()
+    DMatrix<double> solve(const SparseSolver& invA, const DMatrix<double>& U, const DMatrix<double>& invC,
+			  const DMatrix<double>& V, const DMatrix<double>& b){
+      DMatrix<double> y = invA.solve(b); // y = A^{-1}b
+      // Y = A^{-1}U. Heavy step of the method. SMW is more and more efficient as q gets smaller and smaller
+      DMatrix<double> Y = invA.solve(U);
       // compute dense matrix G = C^{-1} + V*A^{-1}*U = C^{-1} + V*y
       DMatrix<double> G = invC + V*Y;
-      denseSolver_.compute(G); // factorize G
-      DMatrix<double> t = denseSolver_.solve(V*y); // solve dense qxq linear system
-      // compute v = A^{-1}*U*t = A^{-1}*U*(C^{-1} + V*A^{-1}*U)^{-1}*V*A^{-1}*b by solving linear system A*v = U*t
-      DMatrix<double> v = sparseSolver_.solve(U*t);
-      // return system solution
-      return y - v;
+      DenseSolver invG; invG.compute(G); // factorize qxq dense matrix G
+      DMatrix<double> t = invG.solve(V*y);
+      // v = A^{-1}*U*t = A^{-1}*U*(C^{-1} + V*A^{-1}*U)^{-1}*V*A^{-1}*b by solving linear system A*v = U*t
+      DMatrix<double> v = invA.solve(U*t);
+      return y - v; // return system solution
     }
-
-    // getters
-    const SparseSolver& getSparseSolver() const { return sparseSolver_; }
-    const DenseSolver&  getDenseSolver()  const { return denseSolver_;  }
-  
   };
 
 }}}

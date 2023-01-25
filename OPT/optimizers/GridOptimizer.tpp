@@ -1,9 +1,7 @@
 template <int N>
-template <typename... Args>
-void GridOptimizer<N>::findMinimum(const ScalarField<N>& objective,
-				   const std::array<std::pair<double,double>, N>& domainLimits,
-				   const std::array<double, N>& stepSizes,
-				   Args&... args){
+template <typename F, typename... Args>
+void GridOptimizer<N>::findMinimum(ScalarField<N,F>& objective, const std::array<std::pair<double,double>, N>& domainLimits,
+				   const std::array<double, N>& stepSizes, Args&... args){
   // can be set true by some extension to cause a foced stop at any point of the execution
   bool customStop = false; 
   customStop |= Extension::executeInitOptimization(*this, objective, args...);
@@ -22,6 +20,7 @@ void GridOptimizer<N>::findMinimum(const ScalarField<N>& objective,
   // initial minimum
   double minimum = objective(gridPoint);
   SVector<N> minPoint = gridPoint;
+  x_old_ = gridPoint;
   
   // counter to keep track of iterations executed
   // this is a vector of N elements started at [0, 0, ..., 0]. The algorithms always increments the vector at
@@ -37,6 +36,7 @@ void GridOptimizer<N>::findMinimum(const ScalarField<N>& objective,
     gridPoint[0] += stepSizes[0];
     double x = objective(gridPoint);
 
+    x_old_ = gridPoint; // update current point
     // update minimum
     if(x < minimum){
       minimum = x;
@@ -64,11 +64,9 @@ void GridOptimizer<N>::findMinimum(const ScalarField<N>& objective,
 }
 
 template <int N>
-template <typename... Args>
-void GridOptimizer<N>::findMinimum(const ScalarField<N>& objective,
-				   const std::array<std::pair<double,double>, N>& domainLimits, 
-				   double stepSize,
-				   Args&... args){
+template <typename F, typename... Args>
+void GridOptimizer<N>::findMinimum(ScalarField<N,F>& objective, const std::array<std::pair<double,double>, N>& domainLimits, 
+				     double stepSize, Args&... args){
   // build stepSizes vector
   std::array<double, N> stepSizes;
   for(std::size_t i = 0; i < N ; ++i){
@@ -81,29 +79,28 @@ void GridOptimizer<N>::findMinimum(const ScalarField<N>& objective,
 
 
 template <int N>
-template <typename... Args>
-void GridOptimizer<N>::findMinimum(const ScalarField<N>& objective,
-				   const std::vector<SVector<N>>& pointList,
-				   Args&... args) {
+template <typename F, typename... Args>
+void GridOptimizer<N>::findMinimum(ScalarField<N,F>& objective, const std::vector<SVector<N>>& pointList, Args&... args) {
   // can be set true by some extension to cause a foced stop at any point of the execution
   bool customStop = false; 
-  customStop |= Extension::executeInitOptimization(*this, objective, args...);
-
-  // prepare data structure to execute the N-dimensional scan
+  // prepare data structure to execute optimization
   SVector<N> gridPoint;
   gridPoint = pointList[0]; // init point
-  
+  x_old_ = gridPoint;
+
+  customStop |= Extension::executeInitOptimization(*this, objective, args...);  
   // initial minimum
   double minimum = objective(gridPoint);
   SVector<N> minPoint = gridPoint;
 
   for(std::size_t i = 1; i < pointList.size() && !customStop; ++i){ // loop until all supplied points have not been used
+    x_old_ = pointList[i]; // update current point
     customStop |= Extension::executeInitIteration(*this, objective, args...);
 
     // evaluate function at current point
     gridPoint = pointList[i];
     double x = objective(gridPoint);
-
+    
     // update minimum if necessary
     if(x < minimum){
       minimum = x;

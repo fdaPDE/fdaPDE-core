@@ -40,8 +40,8 @@ namespace core{
 		                 double>::value);				   
     private:
     // approximation of first and second derivative using central differences
-    double approxFirstDerivative (const SVector<N>& x, std::size_t i, double step) const;
-    double approxSecondDerivative(const SVector<N>& x, std::size_t i, std::size_t j, double step) const;
+    double approxFirstDerivative (const SVector<N>& x, std::size_t i, double step);
+    double approxSecondDerivative(const SVector<N>& x, std::size_t i, std::size_t j, double step);
   protected:
     F f_{}; // the function this class wraps
     double step_ = 0.001; // the step size used in the approximation of derivatives in .derive() and .deriveTwice() method
@@ -96,17 +96,18 @@ namespace core{
     
     // preserve callable syntax for evaluating a function at point
     inline double operator()(const SVector<N>& x) const { return f_(x); };
+    inline double operator()(const SVector<N>& x) { return f_(x); };
     // approximation of gradient vector and hessian matrix without construction of a VectorField object
     void setStep(double step) { step_ = step; } // set step size used for numerical approximations
-    SVector<N> approxGradient (const SVector<N>& x, double step) const;
-    SMatrix<N> approxHessian  (const SVector<N>& x, double step) const;
+    SVector<N> approxGradient (const SVector<N>& x, double step);
+    SMatrix<N> approxHessian  (const SVector<N>& x, double step);
     
     // gradient objects
-    VectorField<N,N,std::function<double(SVector<N>)>> derive(double step) const;
-    virtual VectorField<N,N,std::function<double(SVector<N>)>> derive() const; // uses stored step_ value
+    VectorField<N,N,std::function<double(SVector<N>)>> derive(double step);
+    virtual VectorField<N,N,std::function<double(SVector<N>)>> derive(); // uses stored step_ value
     // hessian objects
-    std::function<SMatrix<N>(SVector<N>)> deriveTwice(double step) const;
-    virtual std::function<SMatrix<N>(SVector<N>)> deriveTwice() const;// uses stored step_ value
+    std::function<SMatrix<N>(SVector<N>)> deriveTwice(double step);
+    virtual std::function<SMatrix<N>(SVector<N>)> deriveTwice(); // uses stored step_ value
   };
   // template argument deduction rule for the special case F = std::function<double(SVector<N>)>
   template <int N> ScalarField(const std::function<double(SVector<N>)>&)
