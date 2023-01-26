@@ -1,9 +1,7 @@
 // newton optimization routine
-template <unsigned int N>
-template <typename... Args>
-void NewtonOptimizer<N>::findMinimum(const ScalarField<N>& objective, // objective to optimize
-				     const SVector<N>& x0, // starting point
-				     Args&... args) {
+template <unsigned int N_>
+template <typename F, typename... Args>
+void NewtonOptimizer<N_>::findMinimum(F& objective, const SVector<N_>& x0, Args&... args) {
   // can be set true by some extension to cause a foced stop at any point of the execution
   bool customStop = false; 
   customStop |= Extension::executeInitOptimization(*this, objective, args...);
@@ -24,18 +22,16 @@ void NewtonOptimizer<N>::findMinimum(const ScalarField<N>& objective, // objecti
     grad_old_ = objective.derive()(x_old_);
     hessian_  = objective.deriveTwice()(x_old_);
 
-    // solve linear system by using an Householder QR decomposition with column-pivoting: A*P = Q*R
-    Eigen::ColPivHouseholderQR<SMatrix<N>> QRdecomposition(hessian_);
-    update_ = QRdecomposition.solve(grad_old_);
-
     // update step
+    Eigen::PartialPivLU<SMatrix<N>> invHessian(hessian_);
+    update_ = invHessian.solve(grad_old_);
     x_new_ = x_old_ - this->h_*update_;
     // compute new error (L2 norm of gradient vector)
     this->error_ = objective.derive()(x_new_).norm();
 
     customStop |= Extension::executeEndIteration(*this, objective, args...);
     // prepare next iteration
-    x_old_ = x_new_;    
+    x_old_ = x_new_;
     this->numIter_++;
   }
   
