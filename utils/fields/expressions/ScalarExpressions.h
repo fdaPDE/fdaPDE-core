@@ -96,15 +96,15 @@ namespace core{
   template <typename OP1, typename OP2, typename BinaryOperation>
   class ScalarBinOp : public ScalarExpr<ScalarBinOp<OP1, OP2, BinaryOperation>> {
   private:
-    typename std::remove_reference<OP1>::type op1_;   // first  operand
-    typename std::remove_reference<OP2>::type op2_;   // second operand
+    typename std::decay<OP1>::type op1_;   // first  operand
+    typename std::decay<OP2>::type op2_;   // second operand
     BinaryOperation f_;                               // operation to apply
   public:
     // constructor
     ScalarBinOp(const OP1& op1, const OP2& op2, BinaryOperation f) : op1_(op1), op2_(op2), f_(f) { };
     // call operator, performs the expression evaluation
     template <int N>
-    double operator()(const SVector<N>& p) const{
+    double operator()(const SVector<N>& p) const {
       return f_(op1_(p), op2_(p));
     }
     // call parameter evaluation on operands
@@ -129,7 +129,7 @@ namespace core{
     ScalarUnOp(const OP1& op1, UnaryOperation f) : op1_(op1), f_(f) { };
     // call operator, performs the expression evaluation
     template <int N>
-    double operator()(const SVector<N>& p) const{
+    double operator()(const SVector<N>& p) const {
       return f_(op1_(p));
     }    
   };

@@ -128,7 +128,8 @@ namespace core{
     (const F1& f, const std::array<F2,N>& df)
       : ScalarField<N,F1>(f), df_(VectorField<N,N,F2>(df)) {};
     // return analytical gradient
-    VectorField<N,N,F2> derive() const override { return df_; };
+    //VectorField<N,N,F2> derive() override { return df_; };
+    VectorField<N,N,F2> derive() override { return df_; }
   };
   
   template <int N, typename F1 = std::function<double(SVector<N>)>, typename F2 = F1>
@@ -145,7 +146,8 @@ namespace core{
     (const F1& f, const std::array<F2,N>& df, const std::function<SMatrix<N>(SVector<N>)>& ddf)
       : DifferentiableScalarField<N,F1,F2>(f, df), ddf_(ddf) {};
     // return analytical hessian
-    std::function<SMatrix<N>(SVector<N>)> deriveTwice() const override { return ddf_; }
+    //std::function<SMatrix<N>(SVector<N>)> deriveTwice() override { return ddf_; }
+    std::function<SMatrix<N>(SVector<N>)> deriveTwice() override { return ddf_; }
     };
 
 #include "ScalarField.tpp"
