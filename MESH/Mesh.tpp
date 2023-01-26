@@ -54,8 +54,11 @@ Mesh<M,N,R>::Mesh(const DMatrix<double>& points, const DMatrix<int>& edges, cons
 		  const typename neighboring_structure<M, N>::type& neighbors, const DMatrix<int>& boundary) :
   points_(points), neighbors_(neighbors) {
   // realign indexes (we assume index coming from mesh generator to be greater or equal to 1, C++ starts count from 0)
-  neighbors_ = (neighbors_.array() - 1).matrix();
-
+  if constexpr(!is_linear_network<M,N>::value)
+    neighbors_ = (neighbors_.array() - 1).matrix();
+  else
+    neighbors_ = neighbors; // adjacency matrix is directly given as input as sparse matrix
+  
   // compute dof_table
   elements_.resize(elements.rows(), ct_nnodes(M,R));
   elements_.leftCols(elements.cols()) = (elements.array() -1).matrix();
