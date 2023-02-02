@@ -84,7 +84,7 @@ public:
     return std::find(columns_.cbegin(), columns_.cend(), key) != columns_.cend();
   }
   
-  // insert new block
+  // insert new block, if the key is already present insert will overwrite the existing data
   template <typename T>
   void insert(const std::string& key, const DMatrix<T>& data){
     BLOCK_FRAME_CHECK_TYPE;
@@ -94,7 +94,7 @@ public:
     // store data
     std::get<index_of<T, types_>::index>(data_)[key] = data;
     // update metadata
-    columns_.push_back(key);
+    if(!hasBlock(key)) columns_.push_back(key);
     if(rows_ == 0) rows_ = data.rows();
     return;
   }
@@ -172,6 +172,8 @@ public:
     BLOCK_FRAME_CHECK_TYPE;
     // remove block
     std::get<index_of<T, types_>::index>(data_).erase(key);
+    // update metadata
+    columns_.erase(std::find(columns_.begin(), columns_.end(), key));
     return;
   }
 };
