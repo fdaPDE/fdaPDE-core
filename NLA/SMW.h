@@ -19,7 +19,7 @@ namespace NLA{
   // In case A is a sparse matrix and C a small dense matrix, computing M^{-1} using the above decomposition is much more efficient
   // than computing M^{-1} directly
 
-  template <typename SparseSolver = Eigen::SparseLU<SpMatrix<double>, Eigen::COLAMDOrdering<int>>,
+  template <typename SparseSolver = fdaPDE::SparseLU<SpMatrix<double>>,
 	    typename DenseSolver  = Eigen::PartialPivLU<DMatrix<double>>>
   struct SMW{
     // constructor

@@ -2,6 +2,7 @@
 #define __SYMBOLS_H__
 
 // Common symbols and data types used in the Core library
+#include <memory>
 #include <Eigen/Core>
 #include <Eigen/Sparse>
 
@@ -46,6 +47,28 @@ namespace fdaPDE {
       hash ^= std::hash<T1>()(pair.first)  + 0x9e3779b9 + (hash<<6) + (hash>>2);
       hash ^= std::hash<T2>()(pair.second) + 0x9e3779b9 + (hash<<6) + (hash>>2);
       return hash;
+    }
+  };
+
+  // a movable wrapper for Eigen::SparseLU (Eigen::SparseLU has a deleted copy and assignment operator)
+  template <typename T>
+  class SparseLU {
+  private:
+    typedef Eigen::SparseLU<T, Eigen::COLAMDOrdering<int>> SparseLU_;
+    std::shared_ptr<SparseLU_> solver_; // wrap Eigen::SparseLU into a movable object
+  public:
+    // default constructor
+    SparseLU() = default;
+    // we expose only the compute and solve methods of Eigen::SparseLU
+    void compute(const T& matrix){
+      // initialize pointer
+      solver_ = std::make_shared<SparseLU_>();
+      solver_->compute(matrix);
+    }
+    // solve method
+    template <typename Rhs>
+    const Eigen::Solve<SparseLU_, Rhs> solve(const Eigen::MatrixBase<Rhs>& b) const {
+      return solver_->solve(b);
     }
   };
 }
