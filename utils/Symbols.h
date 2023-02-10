@@ -65,9 +65,15 @@ namespace fdaPDE {
       solver_ = std::make_shared<SparseLU_>();
       solver_->compute(matrix);
     }
-    // solve method
+    // solve method, dense rhs operand
     template <typename Rhs>
-    const Eigen::Solve<SparseLU_, Rhs> solve(const Eigen::MatrixBase<Rhs>& b) const {
+    const Eigen::Solve<SparseLU_, Rhs>
+    solve(const Eigen::MatrixBase<Rhs>& b) const { 
+      return solver_->solve(b);
+    }
+    template <typename Rhs> // sparse rhs operand
+    const Eigen::Solve<SparseLU_, Rhs>
+    solve(const Eigen::SparseMatrixBase<Rhs>& b) const { 
       return solver_->solve(b);
     }
   };
