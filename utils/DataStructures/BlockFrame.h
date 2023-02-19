@@ -56,7 +56,7 @@ template <typename T, typename... Ts> struct has_type<T, std::tuple<Ts...>> {
 // avoid to compile if the user asks for the insertion of a datatype for which the BlockFrame was not instantiated
 #define BLOCK_FRAME_CHECK_TYPE						\
   static_assert(has_type<T, types_>::value,				\
-		"you asked for a type not handled by this BlockFrame");
+		"you asked for a type not handled by this BlockFrame"); \
 
 // a data structure for handling numerical dataframes. Need to supply beforeahead all intended types to process
 template <typename... Ts>
@@ -74,6 +74,7 @@ public:
   
   // constructor
   BlockFrame() = default;
+  BlockFrame(std::size_t rows) : rows_(rows) {}; // create empty BlockFrame with specified dimensions
   
   // getter to raw data
   const std::tuple<std::unordered_map<std::string, DMatrix<Ts>> ...>& data() const { return data_; }
@@ -123,7 +124,15 @@ public:
     // throw exeption if key not in BlockFrame
     if(!hasBlock(key)) throw std::out_of_range("key not found");
     return std::get<index_of<T, types_>::index>(data_).at(key);
-  }  
+  }
+  // non-const access
+  template <typename T>
+  DMatrix<T>& get(const std::string& key) {
+    BLOCK_FRAME_CHECK_TYPE;
+    // throw exeption if key not in BlockFrame
+    if(!hasBlock(key)) throw std::out_of_range("key not found");
+    return std::get<index_of<T, types_>::index>(data_).at(key);
+  }
   // return a single row of the dataframe
   BlockView<Row, Ts...> operator()(std::size_t idx) const {
     return BlockView<Row, Ts...>(*this, idx);

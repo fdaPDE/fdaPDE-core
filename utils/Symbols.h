@@ -50,6 +50,18 @@ namespace fdaPDE {
     }
   };
 
+  // oredering relation for SVector<N>, allows SVector<N> to be keys of std::map
+  template <unsigned int N>
+  struct SVectorCompare{
+    bool operator()(const SVector<N>& lhs, const SVector<N>& rhs) const {
+      for(std::size_t i = 0; i < N; ++i){
+	if(lhs[i] < rhs[i]) return true;
+	if(lhs[i] > rhs[i]) return false;
+      }
+      return false;
+    };
+  };
+  
   // a movable wrapper for Eigen::SparseLU (Eigen::SparseLU has a deleted copy and assignment operator)
   template <typename T>
   class SparseLU {

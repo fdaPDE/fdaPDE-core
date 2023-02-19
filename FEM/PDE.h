@@ -80,6 +80,7 @@ namespace FEM{
     const DVector<double>& initialCondition() const { return initialCondition_; }
     const boundary_map& boundaryData() const { return boundaryData_; };
     const I& integrator() const { return integrator_; }
+    const B& reference_basis() const { return referenceBasis_; }
     DMatrix<double> quadratureNodes() const { return integrator_.quadratureNodes(domain_); }; // returns all quadrature nodes on the mesh
     
     // solution informations produced by call to .solve()
@@ -97,6 +98,7 @@ namespace FEM{
     static constexpr std::size_t embedding_dimension = N;
     static constexpr std::size_t basis_order = R;
     typedef E BilinearFormType;
+    typedef B BasisType;
   };
 
   // argument deduction rule for PDE object
