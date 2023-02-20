@@ -25,10 +25,10 @@ namespace MESH {
   template<> // 1D second order basis
   struct ReferenceElement<1,2>{
     static constexpr point_list<1,3> nodes  = {
-      {{0}, {0.5}, {1}}
+      {{0}, {1}, {0.5}}
     };
     const std::array<SVector<2>,3> bary_coords = {
-      SVector<2>(1,0), SVector<2>(0.5,0.5), SVector<2>(0,1)
+      SVector<2>(1,0), SVector<2>(0,1), SVector<2>(0.5,0.5)
     };
   };
 
