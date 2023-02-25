@@ -190,7 +190,8 @@ namespace internal{
     evaluator<Rhs_> rhs_;
     // rhs sizes
     Index rhs_outer_, rhs_inner_;
-
+    inline Index nonZerosEstimate() const { return lhs_.nonZerosEstimate() * rhs_.nonZerosEstimate(); }
+    
     // Definition of InnerIterator providing the kronecker tensor product of the operands.
     class InnerIterator {
     public:
@@ -232,7 +233,7 @@ namespace internal{
       inline Index outer() const { return outer_; } // outer index
       inline StorageIndex index() const { return m_index; } // inner index
       operator bool() const { return m_index >= 0; } // false when the iterator is over
-
+      
     protected:
       // reference to operands' iterators
       LhsIterator lhs_it;
@@ -246,7 +247,8 @@ namespace internal{
     evaluator(const XprType& xpr)
       : xpr_(xpr), lhs_(xpr.lhs_), rhs_(xpr.rhs_),
 	rhs_outer_(xpr.rhs_.outerSize()), rhs_inner_(xpr.rhs_.innerSize()) {};
-  };  
+  };
+
 }}
   
 #endif // __KRONECKER_PRODUCT_H__
