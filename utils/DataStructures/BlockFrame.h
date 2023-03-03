@@ -133,6 +133,30 @@ public:
     if(!hasBlock(key)) throw std::out_of_range("key not found");
     return std::get<index_of<T, types_>::index>(data_).at(key);
   }
+  // extract all unqique rows from a block
+  template <typename T>
+  DMatrix<T> extract_unique(const std::string& key) const {
+    BLOCK_FRAME_CHECK_TYPE;
+    // throw exeption if key not in BlockFrame
+    if(!hasBlock(key)) throw std::out_of_range("key not found");
+    DMatrix<T> result;
+    // get unique values from block with given key
+    const DMatrix<T>& block = std::get<index_of<T, types_>::index>(data_).at(key);
+    std::unordered_set<DMatrix<T>, fdaPDE::matrix_hash> uniques;
+    for(auto row : block.rowwise())
+      // cycle row by row, duplicates are filtered by std::unordered_set
+      uniques.insert(row);
+    
+    // copy unique rows in result
+    result.resize(uniques.size(), block.cols());
+    std::size_t i = 0; // row count
+    for(const DMatrix<T>& r : uniques){
+      result.row(i) = r;
+      i++;
+    }
+    return result; 
+  }
+  
   // return a single row of the dataframe
   BlockView<Row, Ts...> operator()(std::size_t idx) const {
     return BlockView<Row, Ts...>(*this, idx);

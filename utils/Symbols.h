@@ -49,16 +49,23 @@ namespace fdaPDE {
       return hash;
     }
   };
+  // hash function for DMatrix<T>, allows DMatrix<T> as key in an unordered map.
+  struct matrix_hash {
+    template <typename T>
+    std::size_t operator()(const DMatrix<T>& matrix) const {
+      std::size_t hash = 0;
+      for(std::size_t i = 0; i < matrix.rows(); ++i)
+	for(std::size_t j = 0; j < matrix.cols(); ++j)
+	  hash ^= std::hash<T>()(matrix(i,j))  + 0x9e3779b9 + (hash<<6) + (hash>>2);
+      return hash;
+    };
+  };
 
   // oredering relation for SVector<N>, allows SVector<N> to be keys of std::map
   template <unsigned int N>
-  struct SVectorCompare{
+  struct s_vector_compare {
     bool operator()(const SVector<N>& lhs, const SVector<N>& rhs) const {
-      for(std::size_t i = 0; i < N; ++i){
-	if(lhs[i] < rhs[i]) return true;
-	if(lhs[i] > rhs[i]) return false;
-      }
-      return false;
+      return std::lexicographical_compare(lhs.begin(),lhs.end(), rhs.begin(),rhs.end());
     };
   };
   
