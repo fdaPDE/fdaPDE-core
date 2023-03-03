@@ -71,7 +71,7 @@ Eigen::Matrix<double, Eigen::Dynamic, 1> Assembler<M,N,R,B,I>::forcingTerm(const
   Eigen::Matrix<double, Eigen::Dynamic, 1> result{};
   result.resize(dof_, 1); // there are as many basis functions as degrees of freedom on the mesh
   result.fill(0); // init result vector to zero
-  
+
   // build forcing vector
   for(const auto& e : mesh_){
     for(size_t i = 0; i < n_basis; ++i){

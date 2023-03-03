@@ -32,16 +32,15 @@ namespace FEM{
   class FEMBaseSolver {
   protected:
     DMatrix<double> solution_; // vector of coefficients of the approximate solution 
-    DMatrix<double> force_; // right-hand side of the FEM linear system
-    SpMatrix<double> R1_; // result of the discretization of the bilinear form
-    SpMatrix<double> R0_; // mass matrix, i.e. discretization of the identity operator
+    DMatrix<double> force_;    // right-hand side of the FEM linear system
+    SpMatrix<double> R1_;      // result of the discretization of the bilinear form
+    SpMatrix<double> R0_;      // mass matrix, i.e. discretization of the identity operator
+    bool init_ = false;        // set to true by init() at the end of solver initialization
     
     // impose boundary conditions
     template <unsigned int M, unsigned int N, unsigned int R, typename E,
 	      typename F, typename B, typename I, typename S>
     void imposeBoundaryConditions(const PDE<M,N,R,E,F,B,I,S>& pde);
-
-    bool init_ = false; // set to true by init() at the end of solver initialization
   public:
     // flag used to notify is something was wrong during computation
     bool success = true;
@@ -64,14 +63,14 @@ namespace FEM{
 	    typename F, typename B, typename I, typename S>
   void FEMBaseSolver::init(const PDE<M,N,R,E,F,B,I,S>& pde) {
     Assembler<M, N, R, B, I> assembler(pde.domain(), pde.integrator()); // create assembler object
-    // fill discretization matrix for current operator
+        // fill discretization matrix for current operator
     R1_ = assembler.assemble(pde.bilinearForm());
     R1_.makeCompressed();
     
     // fill forcing vector
     std::size_t n = pde.domain().dof(); // degrees of freedom in space
     std::size_t m; // number of time points
-
+    
     if constexpr(!std::is_base_of<ScalarBase, F>::value){
       m = pde.forcingData().cols();
       force_.resize(n*m, 1);

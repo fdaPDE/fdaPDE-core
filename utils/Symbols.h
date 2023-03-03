@@ -88,7 +88,23 @@ namespace fdaPDE {
     solve(const Eigen::SparseMatrixBase<Rhs>& b) const { 
       return solver_->solve(b);
     }
+    // direct access to Eigen::SparseLU
+    std::shared_ptr<SparseLU_> operator->() { return solver_; }
   };
+
+  // test for floating point equality based on relative error.
+  const double DOUBLE_TOLERANCE = 50*std::numeric_limits<double>::epsilon(); // approx 10^-14
+  template <typename T>
+  typename std::enable_if<!std::numeric_limits<T>::is_integer, bool>::type
+  almost_equal(T a, T b, T epsilon){
+    return std::fabs(a-b) < epsilon ||
+      std::fabs(a-b) < ((std::fabs(a) < std::fabs(b) ? std::fabs(b) : std::fabs(a)) * epsilon);
+  }
+  // default to DOUBLE_TOLERANCE
+  template <typename T>
+  typename std::enable_if<!std::numeric_limits<T>::is_integer, bool>::type
+  almost_equal(T a, T b){ return almost_equal(a,b, DOUBLE_TOLERANCE); }
+
 }
 
 #endif // __SYMBOLS_H__
