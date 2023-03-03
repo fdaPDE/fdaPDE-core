@@ -142,18 +142,18 @@ public:
     DMatrix<T> result;
     // get unique values from block with given key
     const DMatrix<T>& block = std::get<index_of<T, types_>::index>(data_).at(key);
-    std::unordered_set<DMatrix<T>, fdaPDE::matrix_hash> uniques;
-    for(auto row : block.rowwise())
+    std::unordered_map<DMatrix<T>, int, fdaPDE::matrix_hash> row_map; // preserve row ordering
+    std::unordered_set<DMatrix<T>, fdaPDE::matrix_hash> uniques; // stores unique rows
+    std::size_t i = 0; // last inserted row index
+    for(auto row : block.rowwise()){
       // cycle row by row, duplicates are filtered by std::unordered_set
-      uniques.insert(row);
-    
+      auto result = uniques.insert(row);
+      if(result.second) row_map[row] = i++;
+    }
     // copy unique rows in result
     result.resize(uniques.size(), block.cols());
-    std::size_t i = 0; // row count
-    for(const DMatrix<T>& r : uniques){
-      result.row(i) = r;
-      i++;
-    }
+    for(const DMatrix<T>& r : uniques)
+      result.row(row_map.at(r)) = r;
     return result; 
   }
   
