@@ -56,6 +56,8 @@ void PDE<M,N,R,E,F,B,I,S>::init() {
 template <unsigned int M, unsigned int N, unsigned int R, typename E,
 	  typename F, typename B, typename I, typename S>
 void PDE<M,N,R,E,F,B,I,S>::solve() {
+  // impose dirichlet boundary conditions
+  if(!boundaryData_.empty()) solver_.imposeDirichletBC(*this);
   // define solver and call solve method on it
   solver_.solve(*this);
   return;

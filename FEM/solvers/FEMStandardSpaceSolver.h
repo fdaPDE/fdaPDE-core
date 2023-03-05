@@ -32,9 +32,6 @@ namespace FEM{
 	    typename F, typename B, typename I, typename S>
   void FEMStandardSpaceSolver::solve(const PDE<M,N,R,E,F,B,I,S>& pde){
     if(!init_) throw std::runtime_error("solver must be initialized first!");
-    
-    // impose boundary conditions on forcing vector and R1_ matrix
-    this->imposeBoundaryConditions(pde); 
     // define eigen system solver, use sparse LU decomposition.
     Eigen::SparseLU<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int>> solver;
     solver.compute(this->R1_);
