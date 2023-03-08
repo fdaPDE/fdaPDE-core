@@ -40,11 +40,10 @@ Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> CSVFile<T>::toEigen() {
   unsigned int numColumns = parsedFile.size();
   // get number of rows (equal for every column)
   unsigned int numRows = parsedFile.at(columnNames_[0]).size();
-  
+
+  // fill eigen matrix
   Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> result;
   result.resize(numRows, numColumns);
-  
-  // fill eigen matrix
   size_t i = 0;
   for(std::string key : columnNames_){
     for(size_t j = 0; j < parsedFile.at(key).size(); ++j){
@@ -52,7 +51,6 @@ Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> CSVFile<T>::toEigen() {
     }
     ++i;
   }
-  
   return result;
 }
 
@@ -78,23 +76,28 @@ CSVFile<T> CSVReader<T>::parseFile(const std::string& file_){
     csv.addColumnName(c_name);
     parsedFile[c_name]; // value initialize the column
   }
+  // strings parsed as NaN values
+  std::vector<std::string> NaN_values = {"NA", "NaN", "nan"};
+  // chars in the following list are removed from each parsed line
+  std::vector<char> filter({' ', '"'});
   
   // read file until end line by line
   while(getline(file, line)){
     // split CSV line in tokens
     std::vector<std::string> parsedLine = split(line, ",");
-    
-    // fill data structure
-    // the following list removes all listed chars for each parsed line (chars here cause istringstream to
-    // not cast correctly the string into type T, hence must be removed)
-    std::vector<char> filter({' ', '"'});
+    // parse
     for(size_t j = 1; j < columnNames.size(); ++j){
       // apply filters to parsed string (remove unwanted chars)
       std::string filtered = remove(parsedLine[j], filter);
-      // convert string to type T
-      std::istringstream ss(filtered);
       T dataPoint;
-      ss >> dataPoint;
+      // proper import of missing data
+      if(std::find(NaN_values.begin(), NaN_values.end(), filtered) != NaN_values.end())
+	dataPoint = std::numeric_limits<T>::quiet_NaN();
+      else{
+	// convert string to type T
+	std::istringstream ss(filtered);
+	ss >> dataPoint;
+      }
       // insert value
       parsedFile[remove(columnNames[j], '\"')].push_back(dataPoint);
     }
