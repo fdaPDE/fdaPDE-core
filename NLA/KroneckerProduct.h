@@ -204,11 +204,13 @@ namespace internal{
 	  rhs_it(eval.rhs_, outer % eval.rhs_outer_), 
 	  m_index(lhs_it.index() * eval.rhs_inner_  - 1),
 	  outer_(outer), eval_(eval) {
-	// init iterator
-	this->operator++();
+	// column of rhs detected empty, operator++ immediately returns end of iterator
+	if(!rhs_it) rhs_empty = true;
+        this->operator++(); // init iterator
       };
 
       InnerIterator& operator++() {
+	if(rhs_empty){ m_index = -1; return *this; } 
 	if(rhs_it && lhs_it){ 
 	  m_index = lhs_it.index()*eval_.rhs_inner_ + rhs_it.index();;
 	  // (i,j)-th kronecker product value
@@ -242,6 +244,10 @@ namespace internal{
       Scalar m_value; // the value pointed by the iterator
       StorageIndex m_index; // current inner index
       Index outer_; // outer index as received from the constructor
+    private:
+      // this flag is set whenever the currently considered column of rhs is detected empty from the
+      // very beginning. In this case operator++ immediately returns end-of-iterator.
+      bool rhs_empty = false; 
     }; 
     // constructor
     evaluator(const XprType& xpr)
