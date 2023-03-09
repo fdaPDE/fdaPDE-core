@@ -220,13 +220,35 @@ private:
   
   std::vector<std::size_t> idx_;
 
-  // extract all blocks of type T from this view and store it in BlockFrame frame
+  // extract all blocks of type T from this view and store it in BlockFrame frame.
   template <typename T>
-  void extract_(BlockFrame<Ts...>& frame) const{
+  void extract_(BlockFrame<Ts...>& frame) const {
     // cycle on all (key, blocks) pair for this type T
     for(const auto& v : std::get<index_of<T, types_>::index>(frame_.data())){
       DMatrix<T> block = get<T>(v.first); // extract block from view
-      frame.insert(v.first, block);       // move block to frame
+      frame.insert(v.first, block);       // move block to frame with given key
+    }
+    return;
+  }
+
+  // extrude all blocks of type T from this view and store it in BlockFrame frame.
+  template <typename T>
+  void extrude_(BlockFrame<Ts...>& frame) const {
+    // cycle on all (key, blocks) pair for this type T
+    for(const auto& v : std::get<index_of<T, types_>::index>(frame_.data())){
+      // initialize block to NaN (take care that NaN is defined only for floating-point types)
+      DMatrix<T> block = DMatrix<T>::Constant(frame_.rows(), v.second.cols(), std::numeric_limits<T>::quiet_NaN());
+      // fill block according to ViewType
+      if constexpr(S == ViewType::Row)
+	block.row(idx_[0]) = v.second.row(idx_[0]);
+      if constexpr(S == ViewType::Range) 
+	block.middleRows(idx_[0], idx_[1] - idx_[0] + 1) = v.second.middleRows(idx_[0], idx_[1] - idx_[0] + 1);
+      else{
+	for(std::size_t i = 0; i < idx_.size(); i++)
+	  // copy rows from BlockFrame to output block at idx_[i] location
+	  block.row(idx_[i]) = v.second.row(idx_[i]);
+      }
+      frame.insert(v.first, block); // move block to frame with given key
     }
     return;
   }
@@ -320,15 +342,24 @@ public:
   // convert this BlockView into an independent BlockFrame (requires copy data into a new BlockFrame)
   BlockFrame<Ts...> extract() const {
     BlockFrame<Ts...> result;
-
-    // cycle on all types and extract all blocks type by type from this view to the blockframe
-    std::apply([&](Ts... args){
+    std::apply([&](Ts... args){ // cycle on types
       ((extract_<Ts>(result)), ...);
-    }, types_());
-    
+    }, types_());    
     return result; // let NRVO
   }
+
+  // returns a BlockFrame with the same shape of the frame to which this view refers to but where all
+  // rows not in idx_ are set to quiet_NaN
+  BlockFrame<Ts...> extrude() const {
+    BlockFrame<Ts...> result;
+    std::apply([&](Ts... args){ // cycle on types
+      ((extrude_<Ts>(result)), ...);
+    }, types_());    
+    return result; // let NRVO    
+  }
   
+  // return stored vector of indexes
+  const std::vector<std::size_t> idx() const { return idx_; }
 };
 
 #endif // __DATA_FRAME_H__
