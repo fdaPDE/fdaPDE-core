@@ -145,10 +145,10 @@ public:
     std::unordered_map<DMatrix<T>, int, fdaPDE::matrix_hash> row_map; // preserve row ordering
     std::unordered_set<DMatrix<T>, fdaPDE::matrix_hash> uniques; // stores unique rows
     std::size_t i = 0; // last inserted row index
-    for(auto row : block.rowwise()){
+    for(std::size_t r = 0; r < block.rows(); ++r){
       // cycle row by row, duplicates are filtered by std::unordered_set
-      auto result = uniques.insert(row);
-      if(result.second) row_map[row] = i++;
+      auto result = uniques.insert(block.row(r));
+      if(result.second) row_map[block.row(r)] = i++;
     }
     // copy unique rows in result
     result.resize(uniques.size(), block.cols());

@@ -65,7 +65,7 @@ namespace fdaPDE {
   template <unsigned int N>
   struct s_vector_compare {
     bool operator()(const SVector<N>& lhs, const SVector<N>& rhs) const {
-      return std::lexicographical_compare(lhs.begin(),lhs.end(), rhs.begin(),rhs.end());
+      return std::lexicographical_compare(lhs.data(),lhs.data()+lhs.size(), rhs.data(),rhs.data()+rhs.size());
     };
   };
   
