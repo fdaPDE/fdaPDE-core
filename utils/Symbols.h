@@ -84,19 +84,20 @@ namespace fdaPDE {
       solver_ = std::make_shared<SparseLU_>();
       solver_->compute(matrix);
     }
-    // solve method, dense rhs operand
-    template <typename Rhs>
+    
+    template <typename Rhs> // solve method, dense rhs operand
     const Eigen::Solve<SparseLU_, Rhs>
     solve(const Eigen::MatrixBase<Rhs>& b) const { 
       return solver_->solve(b);
     }
-    template <typename Rhs> // sparse rhs operand
+    template <typename Rhs> // solve method, sparse rhs operand
     const Eigen::Solve<SparseLU_, Rhs>
     solve(const Eigen::SparseMatrixBase<Rhs>& b) const { 
       return solver_->solve(b);
     }
     // direct access to Eigen::SparseLU
     std::shared_ptr<SparseLU_> operator->() { return solver_; }
+    Eigen::ComputationInfo info() const { return solver_->info(); }
   };
 
   // test for floating point equality based on relative error.
@@ -112,6 +113,10 @@ namespace fdaPDE {
   typename std::enable_if<!std::numeric_limits<T>::is_integer, bool>::type
   almost_equal(T a, T b){ return almost_equal(a,b, DOUBLE_TOLERANCE); }
 
+  // test if an Eigen matrix is empty
+  template <typename Derived>
+  bool is_empty(const Eigen::EigenBase<Derived>& matrix) { return matrix.size() == 0; }
+  
 }
 
 #endif // __SYMBOLS_H__
