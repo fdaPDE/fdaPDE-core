@@ -217,7 +217,7 @@ namespace internal{
 	  m_value = lhs_it.value() * rhs_it.value();
 	  ++rhs_it;
 	}else if(!rhs_it && ++lhs_it){ // start new block a_{ij}*B[,j]
-	  rhs_it = RhsIterator(eval_.rhs_, outer_ % eval_.rhs_outer_);
+	  rhs_it = RhsIterator(eval_.rhs_, outer_ % eval_.rhs_outer_); // reset rhs iterator
 	  m_index = lhs_it.index()*eval_.rhs_inner_ + rhs_it.index();
 	  // (i,j)-th kronecker product value
 	  m_value = lhs_it.value() * rhs_it.value();
