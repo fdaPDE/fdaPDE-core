@@ -1,11 +1,27 @@
+// This file is part of fdaPDE, a C++ library for physics-informed
+// spatial and functional data analysis.
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 #ifndef __VECTOR_EXPRESSIONS_H__
 #define __VECTOR_EXPRESSIONS_H__
 
-#include "../../Symbols.h"
 #include <functional>
+#include "../utils/symbols.h"
 
-namespace fdaPDE{
-namespace core{
+namespace fdapde {
+namespace core {
 
   // forward declarations
   template <typename T1, typename T2> class DotProduct;
@@ -14,23 +30,23 @@ namespace core{
   // Base class for any VectorField type
   struct VectorBase {};
   
-#define DEF_VECT_EXPR_OPERATOR(OPERATOR, FUNCTOR)			\
-  template <int M, int N, typename E1, typename E2>			\
-  VectorBinOp<M,N, E1, E2, FUNCTOR> OPERATOR(				\
+#define DEF_VECT_EXPR_OPERATOR(OPERATOR, FUNCTOR)                       \
+  template <int M, int N, typename E1, typename E2>                     \
+  VectorBinOp<M,N, E1, E2, FUNCTOR> OPERATOR(                           \
       const VectorExpr<M,N, E1> &op1, const VectorExpr<M,N, E2> &op2) { \
-  return VectorBinOp<M,N, E1, E2, FUNCTOR>(		                \
-	op1.get(), op2.get(), FUNCTOR());                               \
-  }									\
-  									\
-  template <int M, int N, typename E>					\
-  VectorBinOp<M,N, VectorConst<M,N>, E, FUNCTOR> OPERATOR(		\
+  return VectorBinOp<M,N, E1, E2, FUNCTOR>(                             \
+        op1.get(), op2.get(), FUNCTOR());                               \
+  }                                                                     \
+                                                                        \
+  template <int M, int N, typename E>                                   \
+  VectorBinOp<M,N, VectorConst<M,N>, E, FUNCTOR> OPERATOR(              \
       SVector<N> op1, const VectorExpr<M, N, E> &op2) {                 \
   return VectorBinOp<M,N, VectorConst<M,N>, E, FUNCTOR>(                \
-	VectorConst<M,N>(op1), op2.get(), FUNCTOR());                   \
-  }									\
-  									\
-  template <int M, int N, typename E>					\
-  VectorBinOp<M,N, E, VectorConst<M,N>, FUNCTOR> OPERATOR(		\
+        VectorConst<M,N>(op1), op2.get(), FUNCTOR());                   \
+  }                                                                     \
+                                                                        \
+  template <int M, int N, typename E>                                   \
+  VectorBinOp<M,N, E, VectorConst<M,N>, FUNCTOR> OPERATOR(              \
       const VectorExpr<M,N, E> &op1, SVector<N> op2) {                  \
   return VectorBinOp<M,N, E, VectorConst<M,N>, FUNCTOR>(                \
         op1.get(), VectorConst<M,N>(op2), FUNCTOR());                   \
@@ -40,15 +56,13 @@ namespace core{
   // M dimension of the space where the field is defined, N dimension of the arriving space
   template <int M, int N, typename E> struct VectorExpr : public VectorBase {
     // call operator[] on the base type E
-    auto operator[](std::size_t i) const {
-      return static_cast<const E&>(*this)[i];
-    }
+    auto operator[](std::size_t i) const { return static_cast<const E&>(*this)[i]; }
     // get underyling type composing the expression node
     const E& get() const { return static_cast<const E&>(*this); }
     // evaluate the expression at point p
     SVector<N> operator()(const SVector<M>& p) const {
       SVector<N> result;
-      for(size_t i = 0; i < N; ++i){
+      for(size_t i = 0; i < N; ++i) {
 	// trigger evaluation, call subscript of the underyling type. This will produce along the dimension i
 	// a callable object, evaluate this passing the point p to get a double
 	result[i] = operator[](i)(p);
@@ -74,7 +88,7 @@ namespace core{
   private:
     SVector<N> value_;
   public:
-    VectorConst(SVector<N> value) : value_(value) { }
+    VectorConst(SVector<N> value) : value_(value) {};
     // return the stored value along direction i
     double operator[](std::size_t i) const { return value_[i]; }
   };
@@ -105,11 +119,9 @@ namespace core{
     BinaryOperation f_;                               // operation to apply
   public:
     // constructor
-    VectorBinOp(const OP1& op1, const OP2& op2, BinaryOperation f) : op1_(op1), op2_(op2), f_(f) { };
+    VectorBinOp(const OP1& op1, const OP2& op2, BinaryOperation f) : op1_(op1), op2_(op2), f_(f) {};
     // subscript operator. Let compiler to infer the return type (generally a FieldExpr)
-    auto operator[](std::size_t i) const{
-      return f_(op1_[i], op2_[i]);
-    }
+    auto operator[](std::size_t i) const { return f_(op1_[i], op2_[i]); }
     // call parameter evaluation on operands
     template <typename T> const VectorBinOp<M, N, OP1, OP2, BinaryOperation>& eval_parameters(T i) {
       op1_.eval_parameters(i); op2_.eval_parameters(i);
@@ -120,12 +132,13 @@ namespace core{
   DEF_VECT_EXPR_OPERATOR(operator-, std::minus<>)
 
   // support for double*VectorExpr: multiplies each element of VectorExpr by the scalar
-  template <unsigned int M, unsigned int N> // represent a single scalar node in a vectorial expression.
-  class VectorScalar : public VectorExpr<M,N, VectorScalar<M,N>>{
+  // node representing a scalar value in a vectorial expression.
+  template <unsigned int M, unsigned int N> 
+  class VectorScalar : public VectorExpr<M,N, VectorScalar<M,N>> {
   private:
     double value_;
   public:
-    VectorScalar(double value) : value_(value) { }
+    VectorScalar(double value) : value_(value) {};
     double operator[](size_t i) const { return value_; }
   };
   template <int M, int N, typename E>

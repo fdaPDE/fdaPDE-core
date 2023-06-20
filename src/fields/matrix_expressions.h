@@ -1,16 +1,29 @@
+// This file is part of fdaPDE, a C++ library for physics-informed
+// spatial and functional data analysis.
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 #ifndef __MATRIX_EXPRESSIONS_H__
 #define __MATRIX_EXPRESSIONS_H__
 
-#include <cstddef>
 #include <type_traits>
-#include "../../Symbols.h"
-#include "../ScalarField.h"
-using fdaPDE::core::ScalarField;
-#include "VectorExpressions.h"
-using fdaPDE::core::VectorBase;
+#include "../utils/symbols.h"
+#include "scalar_field.h"
+#include "vector_expressions.h"
 
-namespace fdaPDE{
-namespace core{
+namespace fdapde {
+namespace core {
 
   // forward declarations
   template <int N, int M, int K, typename F> class MatrixField;
@@ -21,7 +34,7 @@ namespace core{
   
   // an expression node representing a matrix*vector operation
   template <int M, int N, int K, typename T1, typename T2>
-  class MatrixVectorProduct : public VectorExpr<M,N, MatrixVectorProduct<M,N,K,T1,T2>>{
+  class MatrixVectorProduct : public VectorExpr<M,N, MatrixVectorProduct<M,N,K,T1,T2>> {
     static_assert(std::is_base_of<MatrixBase, T1>::value && std::is_base_of<VectorBase, T2>::value);
   private:
     T1 op1_; T2 op2_;
@@ -42,7 +55,7 @@ namespace core{
 
   // an expression node representing a matrix*matrix operation
   template <int M, int N, int K, typename T1, typename T2>
-  class MatrixMatrixProduct : public MatrixExpr<M,N,K, MatrixMatrixProduct<M,N,K,T1,T2>>{
+  class MatrixMatrixProduct : public MatrixExpr<M,N,K, MatrixMatrixProduct<M,N,K,T1,T2>> {
     static_assert(std::is_base_of<MatrixBase, T1>::value && std::is_base_of<MatrixBase, T2>::value);
   private:
     T1 op1_; T2 op2_;
@@ -126,18 +139,16 @@ namespace core{
   // base class for matrix expressions
   template <int N, int M, int K, typename E> struct MatrixExpr : public MatrixBase {
     // access operator on (i,j)-th element on the base type E
-    auto coeff(std::size_t i, std::size_t j) const {
-      return static_cast<const E&>(*this).coeff(i,j);
-    }
+    auto coeff(std::size_t i, std::size_t j) const { return static_cast<const E&>(*this).coeff(i,j); }
     // get underyling type composing the expression node
     const E& get() const { return static_cast<const E&>(*this); }
     // evaluate the expression at point p
-    SMatrix<M, K> operator()(const SVector<N>& p) const{
+    SMatrix<M, K> operator()(const SVector<N>& p) const {
       SMatrix<M, K> result;
       for(std::size_t i = 0; i < M; ++i){
 	for(std::size_t j = 0; j < K; ++j){
-	  // trigger evaluation on each element of the expression template. This will produce for the (i,j)-th element
-	  // a callable object, evaluate this passing p
+	  // trigger evaluation on each element of the expression template.
+	  // This will produce for the (i,j)-th element a callable object, evaluate it on p
 	  result(i,j) = coeff(i,j)(p);
 	}
       }
@@ -213,11 +224,9 @@ namespace core{
     BinaryOperation f_;                               // operation to apply
   public:
     // constructor
-    MatrixBinOp(const OP1& op1, const OP2& op2, BinaryOperation f) : op1_(op1), op2_(op2), f_(f) { };
+    MatrixBinOp(const OP1& op1, const OP2& op2, BinaryOperation f) : op1_(op1), op2_(op2), f_(f) {};
     // access operator. Apply the functor to each accessed element. This returns a callable object
-    auto coeff(std::size_t i, std::size_t j) const{
-      return f_(op1_.coeff(i,j), op2_.coeff(i,j));
-    }
+    auto coeff(std::size_t i, std::size_t j) const { return f_(op1_.coeff(i,j), op2_.coeff(i,j)); }
     // call parameter evaluation on operands
     template <typename T> const MatrixBinOp<N,M,K,OP1,OP2,BinaryOperation>& eval_parameters(T i) {
       op1_.eval_parameters(i); op2_.eval_parameters(i);
@@ -248,7 +257,7 @@ namespace core{
   // element wise multiplication of MatrixExpr by scalar
   // class to represent a single scalar node in an MatrixExpr.
   template <int N, int M, int K>
-  class MatrixScalar : public MatrixExpr<N,M,K, MatrixScalar<N,M,K>>{
+  class MatrixScalar : public MatrixExpr<N,M,K, MatrixScalar<N,M,K>> {
   private:
     double value_;
   public:
@@ -275,6 +284,6 @@ namespace core{
     return MatrixMatrixProduct<N,M,H, E1, E2>(op1.get(), op2.get());
   }
   
-}};
+}}
 
 #endif // __MATRIX_EXPRESSIONS_H__
