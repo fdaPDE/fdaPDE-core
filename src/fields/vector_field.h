@@ -18,90 +18,84 @@
 #define __VECTOR_FIELD_H__
 
 #include <type_traits>
+
 #include "../utils/symbols.h"
+#include "dot_product.h"
 #include "scalar_field.h"
 #include "vector_expressions.h"
-#include "dot_product.h"
 
 namespace fdapde {
 namespace core {
-  
-  // template class representing a general vector field from an M-dimensional to an N-dimensional space.
-  // Support expression template arithmetic.
-  template <int M, int N = M, typename F = std::function<double(SVector<M>)>>
-  class VectorField : public VectorExpr<M,N, VectorField<M,N,F>>{
-    static_assert(std::is_invocable<F, SVector<N>>::value &&		   
-		  std::is_same<typename std::invoke_result<F,SVector<N>>::type,
-		                 double>::value);				   
-  private:
+
+// template class representing a general vector field from an M-dimensional to an N-dimensional space.
+// Support expression template arithmetic.
+template <int M, int N = M, typename F = std::function<double(SVector<M>)>>
+class VectorField : public VectorExpr<M, N, VectorField<M, N, F>> {
+    static_assert(std::is_invocable<F, SVector<N>>::value &&
+                  std::is_same<typename std::invoke_result<F, SVector<N>>::type, double>::value);
+   private:
     // each array element is a functor which computes the i-th component of the vector
-    std::array<ScalarField<M,F>,N> field_;
-  public:
+    std::array<ScalarField<M, F>, N> field_;
+   public:
     // expose compile time informations
     static constexpr int rows = N;
     static constexpr int cols = 1;
     // constructor
     VectorField() = default;
-    VectorField(const std::array<F,N>& field) {
-      for(std::size_t i = 0; i < N; ++i) { // assign a ScalarField to each component of the VectorField
-	field_[i] = ScalarField<M,F>(field[i]);
-      }
+    VectorField(const std::array<F, N>& field) {
+        for (std::size_t i = 0; i < N; ++i) {   // assign a ScalarField to each component of the VectorField
+            field_[i] = ScalarField<M, F>(field[i]);
+        }
     }
     // wrap a VectorExpr into a valid VectorField
     template <typename E, typename U = F,
-              typename std::enable_if<
-		std::is_same<U, std::function<double(SVector<N>)>>::value,
-		int>::type = 0>
-    VectorField(const VectorExpr<M,N,E>& expr) {
-      for(std::size_t i = 0; i < N; ++i) {
-	field_[i] = expr[i];
-      }
+              typename std::enable_if<std::is_same<U, std::function<double(SVector<N>)>>::value, int>::type = 0>
+    VectorField(const VectorExpr<M, N, E>& expr) {
+        for (std::size_t i = 0; i < N; ++i) { field_[i] = expr[i]; }
     }
     // initializer for a zero field
-    static VectorField<N,N,ZeroField<N>> Zero() {
-      return VectorField<N,N,ZeroField<N>>(std::array<ZeroField<N>, N>{});
+    static VectorField<N, N, ZeroField<N>> Zero() {
+        return VectorField<N, N, ZeroField<N>>(std::array<ZeroField<N>, N> {});
     }
     // call operator
     inline SVector<N> operator()(const SVector<M>& point) const;
     // subscript operator
-    inline const ScalarField<M,F>& operator[](size_t i) const { return field_[i]; } // const access to i-th element
-    inline ScalarField<M,F>& operator[](size_t i) { return field_[i]; } // non-const access to i-th element
+    inline const ScalarField<M, F>& operator[](size_t i) const { return field_[i]; }   // const access to i-th element
+    inline ScalarField<M, F>& operator[](size_t i) { return field_[i]; }   // non-const access to i-th element
 
     // inner product VectorField.dot(VectorField)
-    DotProduct<VectorField<M,N,F>, VectorConst<M,N>> dot(const SVector<N>& rhs) const;
+    DotProduct<VectorField<M, N, F>, VectorConst<M, N>> dot(const SVector<N>& rhs) const;
     // Inner product VectorField.dot(VectorExpr)
-    template <typename E> DotProduct<VectorField<M,N,F>, E> dot(const VectorExpr<M,N,E>& expr) const;
-  };
+    template <typename E> DotProduct<VectorField<M, N, F>, E> dot(const VectorExpr<M, N, E>& expr) const;
+};
 
-  // implementation details
-  
-  template <int M, int N, typename F>
-  SVector<N> VectorField<M,N,F>::operator()(const SVector<M>& point) const {
+// implementation details
+
+template <int M, int N, typename F> SVector<N> VectorField<M, N, F>::operator()(const SVector<M>& point) const {
     SVector<N> result;
-    for(size_t i = 0; i < N; ++i) {
-      // call callable for each dimension of the vector field
-      result[i] = field_[i](point);
+    for (size_t i = 0; i < N; ++i) {
+        // call callable for each dimension of the vector field
+        result[i] = field_[i](point);
     }
     return result;
-  }
+}
 
-  // out of class definitions of VectorField arithmetic
-  // forward declaration
-  template <unsigned int N, unsigned int M, unsigned int K> class MatrixConst;
-  // VectorField-VectorField inner product
-  template <int M, int N, typename F>
-  DotProduct<VectorField<M,N,F>, VectorConst<M,N>>
-  VectorField<M,N,F>::dot(const SVector<N>& rhs) const {  
-    return DotProduct<VectorField<M,N,F>, VectorConst<M,N>>(*this, VectorConst<M,N>(rhs));
-  }
-  // VectorField-VectorExpr inner product
-  template <int M, int N, typename F>
-  template <typename E>
-  DotProduct<VectorField<M,N,F>, E>
-  VectorField<M,N,F>::dot(const VectorExpr<M,N,E> &rhs) const {  
-    return DotProduct<VectorField<M,N,F>, E>(*this, rhs.get());
-  }    
-  
-}}
+// out of class definitions of VectorField arithmetic
+// forward declaration
+template <unsigned int N, unsigned int M, unsigned int K> class MatrixConst;
+// VectorField-VectorField inner product
+template <int M, int N, typename F>
+DotProduct<VectorField<M, N, F>, VectorConst<M, N>> VectorField<M, N, F>::dot(const SVector<N>& rhs) const {
+    return DotProduct<VectorField<M, N, F>, VectorConst<M, N>>(*this, VectorConst<M, N>(rhs));
+}
+// VectorField-VectorExpr inner product
+template <int M, int N, typename F>
+template <typename E>
+DotProduct<VectorField<M, N, F>, E> VectorField<M, N, F>::dot(const VectorExpr<M, N, E>& rhs) const {
+    return DotProduct<VectorField<M, N, F>, E>(*this, rhs.get());
+}
 
-#endif // __VECTOR_FIELD_H__
+}   // namespace core
+}   // namespace fdapde
+
+#endif   // __VECTOR_FIELD_H__

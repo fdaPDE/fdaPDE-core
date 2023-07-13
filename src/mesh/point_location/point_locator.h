@@ -14,15 +14,22 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_MESH_MOUDLE_H__
-#define __FDAPDE_MESH_MOUDLE_H__
+#ifndef __POINT_LOCATOR_H__
+#define __POINT_LOCATOR_H__
 
-#include "mesh/mesh.h"
-#include "mesh/element.h"
-#include "mesh/reference_element.h"
-#include "mesh/point_location/point_locator.h"
-#include "mesh/point_location/naive_search.h"
-#include "mesh/point_location/barycentric_walk.h"
-#include "mesh/point_location/adt.h"
+#include "../../utils/symbols.h"
+#include "../element.h"
 
-#endif   // __FDAPDE_MESH_MOUDLE_H__
+namespace fdapde {
+namespace core {
+
+// interface for point locations algorithms
+template <unsigned int M, unsigned int N, unsigned int R> struct PointLocator {
+    // solves the point location problem. returns nullptr if p is not found
+    virtual const Element<M, N, R>* locate(const SVector<N>& p) const = 0;
+};
+
+}   // namespace core
+}   // namespace fdapde
+
+#endif   // __POINT_LOCATOR_H__

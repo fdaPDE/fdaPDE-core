@@ -1,0 +1,229 @@
+---
+Language: Cpp
+Standard: Auto
+BasedOnStyle: ''
+DisableFormat: false
+# do not indent modifiers, i.e., public,protected,private,...
+AccessModifierOffset: -1
+# maximum number of columns per line
+ColumnLimit : 120
+
+AlignAfterOpenBracket: Align
+AlignArrayOfStructures: Left
+
+# do not align consecutive assignments
+AlignConsecutiveAssignments: None
+
+# align macros definition
+AlignConsecutiveMacros: AcrossEmptyLinesAndComments
+
+# do not align consecutive declarations
+AlignConsecutiveDeclarations: None
+
+# aligning backslashes in escaped newlines
+AlignEscapedNewlines: Right
+
+# align operands of expressions that need to split over multiple lines
+AlignOperands: Align
+
+# align trailing comments, stop to align if there are more than 1 empty line
+AlignTrailingComments: true
+
+# do not put each argument of a function call on a separate line
+AllowAllArgumentsOnNextLine: true
+
+# do not put each parameter of a function declaration on a separate line
+AllowAllParametersOfDeclarationOnNextLine: true
+
+# contract on a single lines the following
+AllowShortBlocksOnASingleLine: Always
+AllowShortEnumsOnASingleLine: true
+AllowShortFunctionsOnASingleLine: All
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLambdasOnASingleLine: All
+AllowShortLoopsOnASingleLine: true
+
+# do not contract switch case statments
+AllowShortCaseLabelsOnASingleLine: false
+
+AlwaysBreakAfterReturnType: None
+# go to newline after template declaration only if it cannot fit one line
+AlwaysBreakTemplateDeclarations: MultiLine
+
+AttributeMacros: ['__capability']
+
+# put function call's arguments and function declaration's parameters all on the same line
+BinPackArguments: true
+BinPackParameters: true
+
+# add one space on each side of : in a bit field
+BitFieldColonSpacing: Both
+
+# control of individual brace wrapping cases
+BreakBeforeBraces: Custom # brace breaking style
+BraceWrapping:
+   AfterCaseLabel:        false
+   AfterClass:            false
+   AfterControlStatement: Never
+   AfterEnum:             false
+   AfterFunction:         false
+   AfterNamespace:        false
+   AfterStruct:           false
+   AfterUnion:            false
+   AfterExternBlock:      false
+   BeforeCatch:           false
+   BeforeElse:            false
+   BeforeLambdaBody:      false
+   BeforeWhile:           false
+   IndentBraces:          false
+
+# other breaking rules
+BreakBeforeBinaryOperators: None
+BreakBeforeConceptDeclarations: Always
+BreakBeforeInheritanceComma: false
+BreakInheritanceList: AfterColon
+BreakBeforeTernaryOperators: false
+BreakConstructorInitializers: AfterColon
+BreakStringLiterals: true
+
+# a regular expression that describes comments with special meaning, which should not be split into lines or otherwise changed.
+CommentPragmas:  '^ fdaPDE pragma:'
+
+QualifierAlignment: Leave
+
+# put each namespace on its line
+CompactNamespaces: false
+# number of characters to use for indentation of constructor initializer lists as well as inheritance lists.
+ConstructorInitializerIndentWidth: 4
+ConstructorInitializerAllOnOneLineOrOnePerLine: false
+# if constructor initializers do not fit current line, try to fit them on the next line
+PackConstructorInitializers: NextLine
+
+# indent with for all continuations
+ContinuationIndentWidth: 2
+
+# use c++11 braced list style: No spaces inside the braced list, no line break before the closing brace, indentation with the continuation indent
+Cpp11BracedListStyle: true
+
+# never put an empty line after and before public, protected, private
+EmptyLineAfterAccessModifier: Never
+EmptyLineBeforeAccessModifier: Never
+
+# add a namespace foo at closing namespace brace
+FixNamespaceComments: true
+
+# put first system includes starting with <, then internal includes
+IncludeBlocks:   Regroup
+IncludeCategories:
+   - Regex:           '^<.*\.h>'
+     Priority:        1
+     CaseSensitive:   false
+   - Regex:           '^<.*'
+     Priority:        2
+     CaseSensitive:   false
+   - Regex:           '.*'
+     Priority:        3
+     CaseSensitive:   false
+SortIncludes: CaseSensitive
+SortUsingDeclarations: true
+
+# indentation rules
+IndentAccessModifiers: false
+IndentCaseLabels: true
+IndentCaseBlocks: false
+IndentGotoLabels: true
+IndentPPDirectives: AfterHash
+IndentExternBlock: AfterExternBlock
+IndentRequiresClause: true
+IndentWrappedFunctionNames: false
+
+# indentation with
+IndentWidth: 4  
+TabWidth: 4
+
+# always insert braces after control statments
+InsertBraces: false
+InsertTrailingCommas: None
+
+# remove empty lines at start of new block
+KeepEmptyLinesAtTheStartOfBlocks: false
+
+# align lambda body relative to the lambda signature
+LambdaBodyIndentation: Signature
+
+MacroBlockBegin: ''
+MacroBlockEnd:   ''
+
+# do not keep more than one empty line
+MaxEmptyLinesToKeep: 1
+
+# indent namespaces, but only the inner block is indented
+NamespaceIndentation: None
+
+# align pointer * to left, i.e., int* a instead of int *a. references follows same style
+PointerAlignment: Left
+ReferenceAlignment: Pointer
+
+# do not format comments
+ReflowComments: true
+RemoveBracesLLVM: false
+
+RequiresClausePosition: OwnLine
+
+SeparateDefinitionBlocks: Leave
+ShortNamespaceLines: 1
+
+SpaceAfterCStyleCast: false
+SpaceAfterLogicalNot: false
+
+# insert a space after template keyword
+SpaceAfterTemplateKeyword: true
+# insert a space before assignment operator
+SpaceBeforeAssignmentOperators: true
+# no space before a case colon
+SpaceBeforeCaseColon: false
+# insert a space before braced list
+SpaceBeforeCpp11BracedList: true
+# insert a space after colon constructor initializer list
+SpaceBeforeCtorInitializerColon: true
+# insert a space after colon inheritance list
+SpaceBeforeInheritanceColon: true
+# insert a space before every control statment: if, for, while, ...
+SpaceBeforeParens: ControlStatements
+
+# other spacing definition
+SpaceBeforeParens: Custom
+SpaceBeforeParensOptions:
+   AfterControlStatements: true
+   AfterFunctionDefinitionName: false
+   AfterFunctionDeclarationName: false
+   AfterIfMacros:   true
+   AfterOverloadedOperator: false
+   AfterRequiresInClause: false
+   AfterRequiresInExpression: false
+   BeforeNonEmptyParentheses: false
+
+SpaceAroundPointerQualifiers: Default
+SpaceBeforeRangeBasedForLoopColon: true
+SpaceInEmptyBlock: true
+SpaceInEmptyParentheses: false
+
+SpacesBeforeTrailingComments: 3
+# never put spaces in template parameter lists
+SpacesInAngles: Never
+# never put spaces in conditional statments
+SpacesInConditionalStatement: false
+SpacesInContainerLiterals: false
+SpacesInCStyleCastParentheses: false
+# one space is forced after // start of comment, but more are possible
+SpacesInLineCommentPrefix:
+   Minimum:         1
+   Maximum:         -1
+
+# no spaces after and before round or square brakets
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+SpaceBeforeSquareBrackets: false
+
+# never use tab, always replace them with spaces
+UseTab: Never

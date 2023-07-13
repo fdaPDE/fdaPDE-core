@@ -17,14 +17,14 @@
 #ifndef __FDAPDE_FIELDS_MOUDLE_H__
 #define __FDAPDE_FIELDS_MOUDLE_H__
 
-#include "fields/scalar_field.h"
 #include "fields/differentiable_field.h"
-#include "fields/vector_field.h"
-#include "fields/matrix_field.h"
 #include "fields/dot_product.h"
 #include "fields/field_ptrs.h"
-#include "fields/scalar_expressions.h"
-#include "fields/vector_expressions.h"
 #include "fields/matrix_expressions.h"
+#include "fields/matrix_field.h"
+#include "fields/scalar_expressions.h"
+#include "fields/scalar_field.h"
+#include "fields/vector_expressions.h"
+#include "fields/vector_field.h"
 
-#endif // __FDAPDE_FIELDS_MOUDLE_H__
+#endif   // __FDAPDE_FIELDS_MOUDLE_H__
