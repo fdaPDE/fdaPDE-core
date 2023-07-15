@@ -29,6 +29,7 @@ namespace core {
 // forward declarations
 template <int N, int M, int K, typename F> class MatrixField;
 template <int N, int M, int K, typename E> struct MatrixExpr;
+template <int N, int M, int K, typename E> class MatrixNegationOp;
 
 // Base class for any MatrixField type
 struct MatrixBase { };
@@ -67,8 +68,8 @@ class MatrixMatrixProduct : public MatrixExpr<M, N, K, MatrixMatrixProduct<M, N,
     // the j-th column of T2
     inline DotProduct<decltype(op1_.row(std::size_t())), decltype(op2_.col(std::size_t()))>
     operator()(std::size_t i, std::size_t j) const {
-        return DotProduct<decltype(op1_.row(std::size_t())), decltype(op2_.col(std::size_t()))>(op1_.row(i),
-                                                                                                op2_.col(j));
+        return DotProduct<decltype(op1_.row(std::size_t())), decltype(op2_.col(std::size_t()))>(
+          op1_.row(i), op2_.col(j));
     }
     // call parameter evaluation on operands
     template <typename T> const MatrixMatrixProduct<M, N, K, T1, T2>& eval_parameters(T i) {
@@ -119,23 +120,23 @@ template <int N, int M, int K, typename E> class MatrixCol : public VectorExpr<N
 // macro for the definition of standard operations between matrix fields
 #define DEF_MATRIX_EXPR_OPERATOR(OPERATOR, FUNCTOR)                                                                    \
     template <int N, int M, int K, typename E1, typename E2>                                                           \
-    MatrixBinOp<N, M, K, E1, E2, FUNCTOR> OPERATOR(const MatrixExpr<N, M, K, E1>& op1,                                 \
-                                                   const MatrixExpr<N, M, K, E2>& op2) {                               \
+    MatrixBinOp<N, M, K, E1, E2, FUNCTOR> OPERATOR(                                                                    \
+      const MatrixExpr<N, M, K, E1>& op1, const MatrixExpr<N, M, K, E2>& op2) {                                        \
         return MatrixBinOp<N, M, K, E1, E2, FUNCTOR>(op1.get(), op2.get(), FUNCTOR());                                 \
     }                                                                                                                  \
                                                                                                                        \
     template <int N, int M, int K, typename E>                                                                         \
-    MatrixBinOp<N, M, K, MatrixConst<N, M, K>, E, FUNCTOR> OPERATOR(SMatrix<M, K> op1,                                 \
-                                                                    const MatrixExpr<N, M, K, E>& op2) {               \
-        return MatrixBinOp<N, M, K, MatrixConst<N, M, K>, E, FUNCTOR>(MatrixConst<N, M, K>(op1), op2.get(),            \
-                                                                      FUNCTOR());                                      \
+    MatrixBinOp<N, M, K, MatrixConst<N, M, K>, E, FUNCTOR> OPERATOR(                                                   \
+      SMatrix<M, K> op1, const MatrixExpr<N, M, K, E>& op2) {                                                          \
+        return MatrixBinOp<N, M, K, MatrixConst<N, M, K>, E, FUNCTOR>(                                                 \
+          MatrixConst<N, M, K>(op1), op2.get(), FUNCTOR());                                                            \
     }                                                                                                                  \
                                                                                                                        \
     template <int N, int M, int K, typename E>                                                                         \
-    MatrixBinOp<N, M, K, E, MatrixConst<N, M, K>, FUNCTOR> OPERATOR(const MatrixExpr<N, M, K, E>& op1,                 \
-                                                                    SMatrix<M, K> op2) {                               \
-        return MatrixBinOp<N, M, K, E, MatrixConst<N, M, K>, FUNCTOR>(op1.get(), MatrixConst<N, M, K>(op2),            \
-                                                                      FUNCTOR());                                      \
+    MatrixBinOp<N, M, K, E, MatrixConst<N, M, K>, FUNCTOR> OPERATOR(                                                   \
+      const MatrixExpr<N, M, K, E>& op1, SMatrix<M, K> op2) {                                                          \
+        return MatrixBinOp<N, M, K, E, MatrixConst<N, M, K>, FUNCTOR>(                                                 \
+          op1.get(), MatrixConst<N, M, K>(op2), FUNCTOR());                                                            \
     }
 
 // base class for matrix expressions
@@ -165,6 +166,9 @@ template <int N, int M, int K, typename E> struct MatrixExpr : public MatrixBase
     MatrixVectorProduct<N, M, K, E, VectorConst<N, K>> operator*(const SVector<K>& op) const;
     // evaluate parametric nodes in the expression, does nothing if not redefined in derived classes
     template <typename T> void eval_parameters(T i) const { return; }
+    // map unary operator- to a MatrixNegationOp expression node
+    MatrixNegationOp<M, N, K, E> operator-() const { return MatrixNegationOp<M, N, K, E>(get()); }
+
     // expose compile time informations
     static constexpr int rows = M;
     static constexpr int cols = K;
@@ -244,8 +248,8 @@ MatrixVectorProduct<N, M, K, E, F> MatrixExpr<N, M, K, E>::operator*(const Vecto
 }
 // SMatrix<M,K> times VectorExpr<N,K>
 template <int N, int M, int K, typename F>
-MatrixVectorProduct<N, M, K, MatrixConst<N, M, K>, F> operator*(const Eigen::Matrix<double, M, K>& op1,
-                                                                const VectorExpr<N, K, F>& op2) {
+MatrixVectorProduct<N, M, K, MatrixConst<N, M, K>, F>
+operator*(const Eigen::Matrix<double, M, K>& op1, const VectorExpr<N, K, F>& op2) {
     return MatrixVectorProduct<N, M, K, MatrixConst<N, M, K>, F>(MatrixConst<N, M, K>(op1), op2.get());
 }
 // MatrixExpr<N,M,K> times SVector<K>
@@ -264,16 +268,16 @@ template <int N, int M, int K> class MatrixScalar : public MatrixExpr<N, M, K, M
     double coeff(std::size_t i, std::size_t j) const { return value_; }
 };
 template <int N, int M, int K, typename E>
-MatrixBinOp<N, M, K, MatrixScalar<N, M, K>, E, std::multiplies<>> operator*(double op1,
-                                                                            const MatrixExpr<N, M, K, E>& op2) {
-    return MatrixBinOp<N, M, K, MatrixScalar<N, M, K>, E, std::multiplies<>>(MatrixScalar<N, M, K>(op1), op2.get(),
-                                                                             std::multiplies<>());
+MatrixBinOp<N, M, K, MatrixScalar<N, M, K>, E, std::multiplies<>>
+operator*(double op1, const MatrixExpr<N, M, K, E>& op2) {
+    return MatrixBinOp<N, M, K, MatrixScalar<N, M, K>, E, std::multiplies<>>(
+      MatrixScalar<N, M, K>(op1), op2.get(), std::multiplies<>());
 }
 template <int N, int M, int K, typename E>
-MatrixBinOp<N, M, K, E, MatrixScalar<N, M, K>, std::multiplies<>> operator*(const MatrixExpr<N, M, K, E>& op1,
-                                                                            double op2) {
-    return MatrixBinOp<N, M, K, E, MatrixScalar<N, M, K>, std::multiplies<>>(op1.get(), MatrixScalar<N, M, K>(op2),
-                                                                             std::multiplies<>());
+MatrixBinOp<N, M, K, E, MatrixScalar<N, M, K>, std::multiplies<>>
+operator*(const MatrixExpr<N, M, K, E>& op1, double op2) {
+    return MatrixBinOp<N, M, K, E, MatrixScalar<N, M, K>, std::multiplies<>>(
+      op1.get(), MatrixScalar<N, M, K>(op2), std::multiplies<>());
 }
 
 // MatrixExpr * MatrixExpr
@@ -281,6 +285,22 @@ template <int N, int M, int K, int H, typename E1, typename E2>
 MatrixMatrixProduct<N, M, H, E1, E2> operator*(const MatrixExpr<N, M, K, E1>& op1, const MatrixExpr<N, K, H, E2>& op2) {
     return MatrixMatrixProduct<N, M, H, E1, E2>(op1.get(), op2.get());
 }
+
+// unary negation operation
+template <int M, int N, int K, typename E>
+class MatrixNegationOp : public MatrixExpr<M, N, K, MatrixNegationOp<M, N, K, E>> {
+   private:
+    typename std::remove_reference<E>::type op_;
+   public:
+    // constructor
+    MatrixNegationOp(const E& op) : op_(op) {};
+    auto coeff(std::size_t i, std::size_t j) const { return -(op_.coeff(i, j)); }
+    // call parameter evaluation on operands
+    template <typename T> const MatrixNegationOp<N, M, K, E>& eval_parameters(T i) {
+        op_.eval_parameters(i);
+        return *this;
+    }
+};
 
 }   // namespace core
 }   // namespace fdapde

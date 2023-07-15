@@ -69,7 +69,7 @@ template <unsigned int M, unsigned int N, unsigned int R> class Element {
     // constructor
     Element() = default;
     Element(std::size_t ID, const std::array<std::size_t, ct_nvertices(M)>& node_ids,
-            const std::array<SVector<N>, ct_nvertices(M)>& coords, const std::vector<int>& neighbors, bool boundary);
+	    const std::array<SVector<N>, ct_nvertices(M)>& coords, const std::vector<int>& neighbors, bool boundary);
 
     // getters
     const std::array<SVector<N>, ct_nvertices(M)> coords() const { return coords_; }
@@ -100,9 +100,9 @@ template <unsigned int M, unsigned int N, unsigned int R> class Element {
 // implementation details
 
 template <unsigned int M, unsigned int N, unsigned int R>
-Element<M, N, R>::Element(std::size_t ID, const std::array<std::size_t, ct_nvertices(M)>& node_ids,
-                          const std::array<SVector<N>, ct_nvertices(M)>& coords, const std::vector<int>& neighbors,
-                          bool boundary) :
+Element<M, N, R>::Element(
+  std::size_t ID, const std::array<std::size_t, ct_nvertices(M)>& node_ids,
+  const std::array<SVector<N>, ct_nvertices(M)>& coords, const std::vector<int>& neighbors, bool boundary) :
     ID_(ID), node_ids_(node_ids), coords_(coords), neighbors_(neighbors), boundary_(boundary) {
     // precompute barycentric coordinate matrix for fast access
     // use first point as reference

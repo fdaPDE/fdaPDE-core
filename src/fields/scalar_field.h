@@ -46,12 +46,13 @@ template <int N> class ConstantField : public ScalarExpr<ConstantField<N>> {
 // In general using F = std::function<double(SVector<N>)> is fine, but it must be avoided at any
 // performance-critical point of the library due to its non-zero run-time cost.
 template <int N,   // input space dimension
-          typename F = std::function<double(SVector<N>)>,
-          typename G = VectorField<N, N, std::function<double(SVector<N>)>>,
-          typename H = MatrixField<N, N, N, std::function<double(SVector<N>)>>>
+	  typename F = std::function<double(SVector<N>)>,
+	  typename G = VectorField<N, N, std::function<double(SVector<N>)>>,
+	  typename H = MatrixField<N, N, N, std::function<double(SVector<N>)>>>
 class ScalarField : public ScalarExpr<ScalarField<N, F, G, H>> {
-    static_assert(std::is_invocable<F, SVector<N>>::value &&
-                  std::is_same<typename std::invoke_result<F, SVector<N>>::type, double>::value);
+    static_assert(
+      std::is_invocable<F, SVector<N>>::value &&
+      std::is_same<typename std::invoke_result<F, SVector<N>>::type, double>::value);
    public:
     typedef F FieldType;      // type of wrapped functor
     typedef G GradientType;   // return type of approximated gradient vector
@@ -63,8 +64,9 @@ class ScalarField : public ScalarExpr<ScalarField<N, F, G, H>> {
 
     // assignement and constructor from a ScalarExpr requires the base type
     // F to be a std::function for type erasure
-    template <typename E, typename U = FieldType,
-              typename std::enable_if<std::is_same<U, std::function<double(SVector<N>)>>::value, int>::type = 0>
+    template <
+      typename E, typename U = FieldType,
+      typename std::enable_if<std::is_same<U, std::function<double(SVector<N>)>>::value, int>::type = 0>
     ScalarField(const ScalarExpr<E>& f) {
         // wraps field expression in lambda
         E op = f.get();
@@ -80,8 +82,7 @@ class ScalarField : public ScalarExpr<ScalarField<N, F, G, H>> {
         f_ = fieldExpr;
         return *this;
     };
-    // assignment from lambda expression. Note: the lambda expression get's
-    // wrapped in a std::function object, with a NOT zero run-time cost.
+    // assignment from lambda expression
     template <typename L, typename U = FieldType>
     typename std::enable_if<std::is_same<U, std::function<double(SVector<N>)>>::value, ScalarField<N>&>::type
     operator=(const L& lambda) {
@@ -99,83 +100,82 @@ class ScalarField : public ScalarExpr<ScalarField<N, F, G, H>> {
     inline double operator()(const SVector<N>& x) const { return f_(x); };
     inline double operator()(const SVector<N>& x) { return f_(x); };
     // approximation of gradient vector and hessian matrix
-    void set_step(double step) { step_ = step; }   // set step size used for numerical approximations
-    SVector<N> approx_gradient(const SVector<N>& x, double step);
-    SMatrix<N> approx_hessian(const SVector<N>& x, double step);
+    void set_step(double h) { h_ = h; }   // set step size used for numerical approximations
+    SVector<N> approx_gradient(const SVector<N>& x, double h);
+    SMatrix<N> approx_hessian(const SVector<N>& x, double h);
 
     // approximate gradient vector
     template <typename U = GradientType>
-    typename std::enable_if<std::is_constructible<U, std::array<std::function<double(SVector<N>)>, N>>::value,
-                            GradientType>::type
-    derive(double step);
-    GradientType derive() { return derive(step_); };
+    typename std::enable_if<
+      std::is_constructible<U, std::array<std::function<double(SVector<N>)>, N>>::value, GradientType>::type
+    derive(double h);
+    GradientType derive() { return derive(h_); };
     // approximate hessian matrix
     template <typename U = HessianType>
     typename std::enable_if<
       std::is_constructible<U, std::array<std::array<std::function<double(SVector<N>)>, N>, N>>::value,
       HessianType>::type
-    derive_twice(double step);
-    HessianType derive_twice() { return derive_twice(step_); };
+    derive_twice(double h);
+    HessianType derive_twice() { return derive_twice(h_); };
    private:
-    // approximation of df(x_1, x_2, ... x_N)/dx_i
-    double approx_first_derivative(const SVector<N>& x, std::size_t i, double step);
-    // approximation of df^2(x_1, x_2, ... x_N)/(dx_i*dx_j)
-    double approx_second_derivative(const SVector<N>& x, std::size_t i, std::size_t j, double step);
+    // approximation of df(x_1, x_2, ... x_N)/dx_i using step h
+    double approx_first_derivative(const SVector<N>& x, std::size_t i, double h);
+    // approximation of df^2(x_1, x_2, ... x_N)/(dx_i*dx_j) using step h
+    double approx_second_derivative(const SVector<N>& x, std::size_t i, std::size_t j, double h);
    protected:
     FieldType f_ {};
-    double step_ = 0.001;   // step size used in derivative approximation
+    double h_ = 0.001;   // h size used in derivative approximation
 };
-// template argument deduction rule for the special case F =
-// std::function<double(SVector<N>)>
+// template argument deduction rule for the special case F = std::function<double(SVector<N>)>
 template <int N>
 ScalarField(const std::function<double(SVector<N>)>&) -> ScalarField<N, std::function<double(SVector<N>)>>;
 
 // implementation details
 
 template <int N, typename F, typename G, typename H>
-double ScalarField<N, F, G, H>::approx_first_derivative(const SVector<N>& x, std::size_t i, double step) {
+double ScalarField<N, F, G, H>::approx_first_derivative(const SVector<N>& x, std::size_t i, double h) {
     // variation around point x along direction i
-    SVector<N> h = SVector<N>::Zero();
-    h[i] = step;
-    return (f_(x + h) - f_(x - h)) / (2 * step);
+    SVector<N> h_i = SVector<N>::Zero();
+    h_i[i] = h;
+    return (f_(x + h_i) - f_(x - h_i)) / (2 * h);
 }
 
 template <int N, typename F, typename G, typename H>
-double ScalarField<N, F, G, H>::approx_second_derivative(const SVector<N>& x, std::size_t i, std::size_t j,
-                                                         double step) {
+double ScalarField<N, F, G, H>::approx_second_derivative(const SVector<N>& x, std::size_t i, std::size_t j, double h) {
     SVector<N> h_i = SVector<N>::Zero();
-    h_i[i] = step;   // variation along i-th direction
+    h_i[i] = h;   // variation along i-th direction
     if (i == j) {
         return (-f_(x + 2 * h_i) + 16 * f_(x + h_i) - 30 * f_(x) + 16 * f_(x - h_i) - f_(x - 2 * h_i)) /
-               (12 * pow(step, 2));
+               (12 * pow(h, 2));
     } else {
         SVector<N> h_j = SVector<N>::Zero();
-        h_j[j] = step;   // variation along j-th direction
-        return (f_(x + h_i + h_j) - f_(x + h_i - h_j) - f_(x - h_i + h_j) + f_(x - h_i - h_j)) / (4 * pow(step, 2));
+        h_j[j] = h;   // variation along j-th direction
+        return (f_(x + h_i + h_j) - f_(x + h_i - h_j) - f_(x - h_i + h_j) + f_(x - h_i - h_j)) / (4 * pow(h, 2));
     }
 }
 
 // gradient vector computation
 // approximate computation of gradient via central finite differences
 template <int N, typename F, typename G, typename H>
-SVector<N> ScalarField<N, F, G, H>::approx_gradient(const SVector<N>& x, double step) {
+SVector<N> ScalarField<N, F, G, H>::approx_gradient(const SVector<N>& x, double h) {
     SVector<N> gradient;
     for (size_t i = 0; i < N; ++i) {
         // approximation of i-th partial derivative at point x
-        gradient[i] = approx_first_derivative(x, i, step);
+        gradient[i] = approx_first_derivative(x, i, h);
     }
     return gradient;
 }
 // return gradient as callable object
 template <int N, typename F, typename G, typename H>
 template <typename U>
-typename std::enable_if<std::is_constructible<U, std::array<std::function<double(SVector<N>)>, N>>::value,
-                        typename ScalarField<N, F, G, H>::GradientType>::type
-ScalarField<N, F, G, H>::derive(double step) {
+typename std::enable_if<
+  std::is_constructible<U, std::array<std::function<double(SVector<N>)>, N>>::value,
+  typename ScalarField<N, F, G, H>::GradientType>::type
+ScalarField<N, F, G, H>::derive(double h) {
     std::array<std::function<double(SVector<N>)>, N> components;
     for (std::size_t i = 0; i < N; ++i) {
         std::function<double(SVector<N>)> gradient_approx = [=](SVector<N> x) -> double {
-            return approx_first_derivative(x, i, step);
+            return approx_first_derivative(x, i, h);
         };
         components[i] = gradient_approx;
     }
@@ -185,13 +185,13 @@ ScalarField<N, F, G, H>::derive(double step) {
 // hessian matrix computation
 // approximate computation of hessian matrix via central finite differences
 template <int N, typename F, typename G, typename H>
-SMatrix<N> ScalarField<N, F, G, H>::approx_hessian(const SVector<N>& x, double step) {
+SMatrix<N> ScalarField<N, F, G, H>::approx_hessian(const SVector<N>& x, double h) {
     SMatrix<N> hessian = SMatrix<N>::Zero();
     // hessian matrix is symmetric, compute just the lower triangular part
     for (size_t i = 0; i < N; ++i) {
         for (size_t j = 0; j <= i; ++j) {
             // approximation of (i,j)-th partial derivative at point x
-            hessian(i, j) = approx_second_derivative(x, i, j, step);
+            hessian(i, j) = approx_second_derivative(x, i, j, h);
             hessian(j, i) = hessian(i, j);   // exploit symmetry of hessian matrix
         }
     }
@@ -203,12 +203,12 @@ template <typename U>
 typename std::enable_if<
   std::is_constructible<U, std::array<std::array<std::function<double(SVector<N>)>, N>, N>>::value,
   typename ScalarField<N, F, G, H>::HessianType>::type
-ScalarField<N, F, G, H>::derive_twice(double step) {
+ScalarField<N, F, G, H>::derive_twice(double h) {
     std::array<std::array<std::function<double(SVector<N>)>, N>, N> components;
     for (std::size_t i = 0; i < N; ++i) {
         for (std::size_t j = 0; j < N; ++j) {
             std::function<double(SVector<N>)> hessian_approx = [=](SVector<N> x) -> double {
-                return approx_second_derivative(x, i, j, step);
+                return approx_second_derivative(x, i, j, h);
             };
             components[i][j] = hessian_approx;
         }

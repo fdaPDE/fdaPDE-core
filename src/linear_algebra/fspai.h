@@ -73,8 +73,9 @@ class FSPAI {
     // build system matrix A(p1, p2) given sparsity patterns p1 and p2. The result is a |p1| x |p2| dense matrix
     void extractSystem(const column_sparsity_pattern& p1, const column_sparsity_pattern& p2, const Eigen::Index& k);
     // update approximate inverse of column k
-    void updateApproximateInverse(const Eigen::Index& k, const DVector<double>& bk, const DVector<double>& yk,
-                                  const column_sparsity_pattern& tildeJk);
+    void updateApproximateInverse(
+      const Eigen::Index& k, const DVector<double>& bk, const DVector<double>& yk,
+      const column_sparsity_pattern& tildeJk);
     // select candidate indexes for sparsity pattern update for column k (this reflects in a modification to the hatJk_
     // structure)
     void selectCandidates(const Eigen::Index& k);
@@ -111,8 +112,8 @@ void FSPAI::extractSystem(const column_sparsity_pattern& p1, const column_sparsi
 }
 
 // update approximate inverse of column k
-void FSPAI::updateApproximateInverse(const Eigen::Index& k, const DVector<double>& bk, const DVector<double>& yk,
-                                     const column_sparsity_pattern& tildeJk) {
+void FSPAI::updateApproximateInverse(
+  const Eigen::Index& k, const DVector<double>& bk, const DVector<double>& yk, const column_sparsity_pattern& tildeJk) {
     // compute diagonal entry l_kk
     double l_kk = 1.0 / (std::sqrt(A_.coeff(k, k) - bk.transpose().dot(yk)));
     Lk_[k] = l_kk;

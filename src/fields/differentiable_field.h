@@ -34,9 +34,9 @@ template <int M, int N, int K, typename F> class MatrixField;
 // respectively, do not expect derive() and derive_twice() to be accepted by the field arithmetic
 
 template <int N,   // input space dimension
-          typename F = std::function<double(SVector<N>)>,
-          typename G = VectorField<N, N, std::function<double(SVector<N>)>>,
-          typename H = MatrixField<N, N, N, std::function<double(SVector<N>)>>>
+	  typename F = std::function<double(SVector<N>)>,
+	  typename G = VectorField<N, N, std::function<double(SVector<N>)>>,
+	  typename H = MatrixField<N, N, N, std::function<double(SVector<N>)>>>
 class DifferentiableScalarField : public ScalarField<N, F, G, H> {
    protected:
     typedef F FieldType;
@@ -55,9 +55,9 @@ class DifferentiableScalarField : public ScalarField<N, F, G, H> {
 };
 
 template <int N,   // input space dimension
-          typename F = std::function<double(SVector<N>)>,
-          typename G = VectorField<N, N, std::function<double(SVector<N>)>>,
-          typename H = MatrixField<N, N, N, std::function<double(SVector<N>)>>>
+	  typename F = std::function<double(SVector<N>)>,
+	  typename G = VectorField<N, N, std::function<double(SVector<N>)>>,
+	  typename H = MatrixField<N, N, N, std::function<double(SVector<N>)>>>
 class TwiceDifferentiableScalarField : public DifferentiableScalarField<N, F, G, H> {
    protected:
     typedef F FieldType;

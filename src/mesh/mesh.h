@@ -24,12 +24,10 @@
 #include <unordered_set>
 #include <vector>
 
-#include "element.h"
-using fdapde::core::ct_nvertices;
-#include "reference_element.h"
-using fdapde::core::ReferenceElement;
 #include "../utils/IO/CSVReader.h"
 #include "../utils/symbols.h"
+#include "element.h"
+#include "reference_element.h"
 
 namespace fdapde {
 namespace core {
@@ -81,11 +79,11 @@ template <unsigned int M, unsigned int N, unsigned int R = 1> class Mesh {
     Mesh() = default;
     // construct from .csv files, strings are names of file where raw data is contained
     Mesh(const std::string& points, const std::string& triangles, const std::string& neighbors,
-         const std::string& boundary);
+	 const std::string& boundary);
 
     // construct directly from eigen matrices
     Mesh(const DMatrix<double>& points, const DMatrix<int>& elements,
-         const typename neighboring_structure<M, N>::type& neighbors, const DMatrix<int>& boundary);
+	 const typename neighboring_structure<M, N>::type& neighbors, const DMatrix<int>& boundary);
 
     // getters
     const Element<M, N, R>& element(unsigned int ID) const { return cache_[ID]; }
@@ -134,7 +132,8 @@ template <unsigned int M, unsigned int N, unsigned int R = 1> class Mesh {
         boundary_iterator& operator++() {
             index_++;
             // scan until all nodes have been visited or a boundary node is not found
-            for (; index_ < mesh_container_->dof_ && mesh_container_->is_on_boundary(index_) != true; ++index_);
+            for (; index_ < mesh_container_->dof_ && mesh_container_->is_on_boundary(index_) != true; ++index_)
+                ;
             return *this;
         }
         int operator*() const { return index_; }
@@ -215,8 +214,9 @@ void Mesh<M, N, R>::dof_enumerate(const DMatrix<int>& boundary) {
 
 // construct directly from raw eigen matrix (used from wrappers)
 template <unsigned int M, unsigned int N, unsigned int R>
-Mesh<M, N, R>::Mesh(const DMatrix<double>& points, const DMatrix<int>& elements,
-                    const typename neighboring_structure<M, N>::type& neighbors, const DMatrix<int>& boundary) :
+Mesh<M, N, R>::Mesh(
+  const DMatrix<double>& points, const DMatrix<int>& elements,
+  const typename neighboring_structure<M, N>::type& neighbors, const DMatrix<int>& boundary) :
     points_(points) {
     // realign indexes (we assume index coming from mesh generator to be greater or equal to 1, C++ starts count from 0)
     if constexpr (!is_linear_network<M, N>::value)
@@ -252,8 +252,8 @@ Mesh<M, N, R>::Mesh(const DMatrix<double>& points, const DMatrix<int>& elements,
 
 // construct a mesh from .csv files
 template <unsigned int M, unsigned int N, unsigned int R>
-Mesh<M, N, R>::Mesh(const std::string& points, const std::string& elements, const std::string& neighbors,
-                    const std::string& boundary) {
+Mesh<M, N, R>::Mesh(
+  const std::string& points, const std::string& elements, const std::string& neighbors, const std::string& boundary) {
     // open and parse CSV files
     CSVReader<double> d_reader;
     CSVReader<int> i_reader;
@@ -358,7 +358,7 @@ template <unsigned int M, unsigned int N, unsigned int R> DMatrix<double> Mesh<M
         // allocate space
         DMatrix<double> coords;
         coords.resize(dof_, N);
-        coords.topRows(num_nodes_) = points_;       // copy coordinates of elements' vertices
+        coords.topRows(num_nodes_) = points_;      // copy coordinates of elements' vertices
         std::unordered_set<std::size_t> visited;   // set of already visited dofs
         // define reference element
         std::array<SVector<M + 1>, ct_nnodes(M, R)> ref_coords = ReferenceElement<M, R>().bary_coords;
@@ -367,7 +367,7 @@ template <unsigned int M, unsigned int N, unsigned int R> DMatrix<double> Mesh<M
         for (std::size_t i = 0; i < elements_.rows(); ++i) {
             // extract dofs related to element with ID i
             auto dofs = elements_.row(i);
-            auto e = *cache_[i];   // take pointer to current physical element
+            auto e = cache_[i];   // take reference to current physical element
             for (std::size_t j = ct_nvertices(M); j < ct_nnodes(M, R); ++j) {   // cycle only on non-vertex points
                 if (visited.find(dofs[j]) == visited.end()) {                   // not yet mapped dof
                     // map points from reference to physical element

@@ -22,24 +22,31 @@
 namespace fdapde {
 namespace core {
 
-  // compile time evaluation of the factorial function
-  constexpr std::size_t ct_factorial(const std::size_t n) {
-    return n ? (n * ct_factorial(n - 1)) : 1;
-  }
+// compile time evaluation of the factorial function
+constexpr std::size_t ct_factorial(const std::size_t n) { return n ? (n * ct_factorial(n - 1)) : 1; }
 
-  // compile time evaluation of binomial coefficient
-  constexpr std::size_t ct_binomial_coefficient(const std::size_t N, const std::size_t M) {
-    return ct_factorial(N)/(ct_factorial(M)*ct_factorial(N - M));
-  }
+// compile time evaluation of binomial coefficient
+constexpr std::size_t ct_binomial_coefficient(const std::size_t N, const std::size_t M) {
+    return ct_factorial(N) / (ct_factorial(M) * ct_factorial(N - M));
+}
 
-  // compile time computation of the sum of elements in array
-  template <typename T, std::size_t N>
-  constexpr typename std::enable_if<std::is_arithmetic<T>::value, T>::type ct_array_sum(std::array<T, N> A) {
+// compile time computation of the sum of elements in array
+template <typename T, std::size_t N>
+constexpr typename std::enable_if<std::is_arithmetic<T>::value, T>::type ct_array_sum(std::array<T, N> A) {
     T result = 0;
-    for(int j = 0; j < N; ++j) result += A[j];
+    for (int j = 0; j < N; ++j) result += A[j];
     return result;
-  }
+}
 
-}}
+// constexpr function to detect if T is an Eigen vector
+template <typename T> bool constexpr is_eigen_vector() {
+    if constexpr (std::is_base_of<Eigen::MatrixBase<T>, T>::value) {   // check if T is an eigen matrix
+        return T::ColsAtCompileTime == 1;                              // has T exactly one column?
+    }
+    return false;
+}
 
-#endif // __COMPILE_TIME_H__
+}   // namespace core
+}   // namespace fdapde
+
+#endif   // __COMPILE_TIME_H__

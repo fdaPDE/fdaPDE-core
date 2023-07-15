@@ -8,7 +8,7 @@ AccessModifierOffset: -1
 # maximum number of columns per line
 ColumnLimit : 120
 
-AlignAfterOpenBracket: Align
+AlignAfterOpenBracket: AlwaysBreak
 AlignArrayOfStructures: Left
 
 # do not align consecutive assignments
@@ -129,7 +129,7 @@ SortUsingDeclarations: true
 
 # indentation rules
 IndentAccessModifiers: false
-IndentCaseLabels: true
+IndentCaseLabels: false
 IndentCaseBlocks: false
 IndentGotoLabels: true
 IndentPPDirectives: AfterHash

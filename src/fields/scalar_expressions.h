@@ -48,14 +48,18 @@ struct ScalarBase { };
         return ScalarUnOp<E1, std::function<double(double)>> {op1.get(), OPERATOR_};                                   \
     }
 
+// forward declaration
+template <typename E> class ScalarNegationOp;
+
 // Base class for scalar field expressions
 template <typename E> struct ScalarExpr : public ScalarBase {
     // call operator() on the base type E
     template <int N> inline double operator()(const SVector<N>& p) const { return static_cast<const E&>(*this)(p); }
-    // get underyling type composing the expression node
     const E& get() const { return static_cast<const E&>(*this); }
     // evaluate parametric nodes in the expression, does nothing if not redefined in derived classes
     template <typename T> void eval_parameters(T i) const { return; }
+    // map unary operator- to a ScalarNegationOp expression node
+    ScalarNegationOp<E> operator-() const { return ScalarNegationOp<E>(get()); }
 };
 
 // an expression node representing a scalar value
@@ -125,6 +129,21 @@ DEF_SCALAR_UNARY_OPERATOR(cos, std::cos)
 DEF_SCALAR_UNARY_OPERATOR(tan, std::tan)
 DEF_SCALAR_UNARY_OPERATOR(exp, std::exp)
 DEF_SCALAR_UNARY_OPERATOR(log, std::log)
+
+// unary negation operation
+template <typename OP> class ScalarNegationOp : public ScalarExpr<ScalarNegationOp<OP>> {
+   private:
+    typename std::remove_reference<OP>::type op_;
+   public:
+    // constructor
+    ScalarNegationOp(const OP& op) : op_(op) {};
+    template <int N> double operator()(const SVector<N>& p) const { return -op_(p); }
+    // call parameter evaluation on stored operand
+    template <typename T> const ScalarNegationOp<OP>& eval_parameters(T i) const {
+      op_.eval_parameters(i);
+      return *this;
+    }
+};
 
 }   // namespace core
 }   // namespace fdapde

@@ -14,14 +14,31 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_CORE_MOUDLE_H__
-#define __FDAPDE_CORE_MOUDLE_H__
+#ifndef __DT_H__
+#define __DT_H__
 
-#include "fields.h"
-#include "mesh.h"
-#include "linear_algebra.h"
-#include "optimization.h"
-#include "finite_elements.h"
-#include "multithreading.h"
+#include "bilinear_form_expressions.h"
 
-#endif   // __FDAPDE_CORE_MOUDLE_H__
+namespace fdapde {
+namespace core {
+
+// time derivative operator.
+struct dT : public BilinearFormExpr<dT> {
+    std::tuple<dT> get_operator_type() const { return std::make_tuple(*this); }
+    enum {
+      is_space_varying = false,
+      is_symmetric = true
+    };
+
+    // return zero field
+    template <typename... Args> auto integrate(const std::tuple<Args...>& mem_buffer) const {
+        IMPORT_MEM_BUFFER_SYMBOLS(mem_buffer);
+        // recover dimensionality of weak formulation from \psi_i
+        return ScalarField<decltype(psi_i)::PtrType::input_space_dimension>::Zero();
+    }
+};
+
+}   // namespace core
+}   // namespace fdapde
+
+#endif   // __DT_H__

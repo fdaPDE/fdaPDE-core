@@ -64,8 +64,10 @@ struct KroneckerProduct :
 };
 
 // sparse-sparse Kronecker tensor product.
-template <typename Lhs_ = SpMatrix<double>, typename Rhs_ = SpMatrix<double>,
-          typename LhsStorage = internal::SparseStorage, typename RhsStorage = internal::SparseStorage>
+template <typename Lhs_ = SpMatrix<double>,
+	  typename Rhs_ = SpMatrix<double>,
+	  typename LhsStorage = internal::SparseStorage,
+	  typename RhsStorage = internal::SparseStorage>
 struct SparseKroneckerProduct :
     public KroneckerProductBase<SparseKroneckerProduct<Lhs_, Rhs_, LhsStorage, RhsStorage>>,
     public Eigen::SparseMatrixBase<SparseKroneckerProduct<Lhs_, Rhs_, LhsStorage, RhsStorage>> {
@@ -87,8 +89,8 @@ KroneckerProduct<Lhs, Rhs> Kronecker(const Eigen::MatrixBase<Lhs>& lhs, const Ei
 template <typename Lhs, typename Rhs>
 SparseKroneckerProduct<Lhs, Rhs, internal::SparseStorage, internal::SparseStorage>
 Kronecker(const Eigen::SparseMatrixBase<Lhs>& lhs, const Eigen::SparseMatrixBase<Rhs>& rhs) {
-    return SparseKroneckerProduct<Lhs, Rhs, internal::SparseStorage, internal::SparseStorage>(lhs.derived(),
-                                                                                              rhs.derived());
+    return SparseKroneckerProduct<Lhs, Rhs, internal::SparseStorage, internal::SparseStorage>(
+      lhs.derived(), rhs.derived());
 }
 
 }   // namespace core
@@ -115,22 +117,23 @@ template <typename Lhs_, typename Rhs_> struct traits<KroneckerProduct<Lhs_, Rhs
 
     typedef Eigen::MatrixXpr XprKind;   // expression type (matrix-expression)
     // type of coefficients handled by this operator
-    typedef typename ScalarBinaryOpTraits<typename traits<LhsCleaned>::Scalar,
-                                          typename traits<RhsCleaned>::Scalar>::ReturnType Scalar;
+    typedef typename ScalarBinaryOpTraits<
+      typename traits<LhsCleaned>::Scalar, typename traits<RhsCleaned>::Scalar>::ReturnType Scalar;
     // storage informations
-    typedef typename product_promote_storage_type<typename LhsTraits::StorageKind, typename RhsTraits::StorageKind,
-                                                  internal::product_type<Lhs, Rhs>::ret>::ret StorageKind;
+    typedef typename product_promote_storage_type<
+      typename LhsTraits::StorageKind, typename RhsTraits::StorageKind, internal::product_type<Lhs, Rhs>::ret>::ret
+      StorageKind;
     typedef typename promote_index_type<typename LhsTraits::StorageIndex, typename RhsTraits::StorageIndex>::type
       StorageIndex;
 
     enum {   // definition of required compile time informations
-        Flags = Eigen::ColMajor,
-        RowsAtCompileTime = (Lhs::RowsAtCompileTime == Dynamic || Rhs::RowsAtCompileTime == Dynamic) ?
-                              Dynamic :
-                              Lhs::RowsAtCompileTime * Rhs::RowsAtCompileTime,
-        ColsAtCompileTime = (Lhs::ColsAtCompileTime == Dynamic || Rhs::ColsAtCompileTime == Dynamic) ?
-                              Dynamic :
-                              Lhs::ColsAtCompileTime * Rhs::ColsAtCompileTime,
+        Flags                = Eigen::ColMajor,
+        RowsAtCompileTime    = (Lhs::RowsAtCompileTime == Dynamic || Rhs::RowsAtCompileTime == Dynamic) ?
+                                 Dynamic :
+                                 Lhs::RowsAtCompileTime * Rhs::RowsAtCompileTime,
+        ColsAtCompileTime    = (Lhs::ColsAtCompileTime == Dynamic || Rhs::ColsAtCompileTime == Dynamic) ?
+                                 Dynamic :
+                                 Lhs::ColsAtCompileTime * Rhs::ColsAtCompileTime,
         MaxRowsAtCompileTime = (Lhs::MaxRowsAtCompileTime == Dynamic || Rhs::MaxRowsAtCompileTime == Dynamic) ?
                                  Dynamic :
                                  Lhs::MaxRowsAtCompileTime * Rhs::MaxRowsAtCompileTime,
@@ -188,7 +191,7 @@ class evaluator<SparseKroneckerProduct<Lhs_, Rhs_, SparseStorage, SparseStorage>
 
     enum {   // required compile time constants
         CoeffReadCost = evaluator<Lhs_>::CoeffReadCost + evaluator<Rhs_>::CoeffReadCost,
-        Flags = Eigen::ColMajor   // only ColMajor storage orders accepted
+        Flags         = Eigen::ColMajor   // only ColMajor storage orders accepted
     };
     // Kronecker product operands
     evaluator<Lhs_> lhs_;
@@ -222,12 +225,11 @@ class evaluator<SparseKroneckerProduct<Lhs_, Rhs_, SparseStorage, SparseStorage>
             }
             if (rhs_it && lhs_it) {
                 m_index = lhs_it.index() * eval_.rhs_inner_ + rhs_it.index();
-                ;
                 // (i,j)-th kronecker product value
                 m_value = lhs_it.value() * rhs_it.value();
                 ++rhs_it;
-            } else if (!rhs_it && ++lhs_it) {                                  // start new block a_{ij}*B[,j]
-                rhs_it = RhsIterator(eval_.rhs_, outer_ % eval_.rhs_outer_);   // reset rhs iterator
+            } else if (!rhs_it && ++lhs_it) {                                   // start new block a_{ij}*B[,j]
+                rhs_it  = RhsIterator(eval_.rhs_, outer_ % eval_.rhs_outer_);   // reset rhs iterator
                 m_index = lhs_it.index() * eval_.rhs_inner_ + rhs_it.index();
                 // (i,j)-th kronecker product value
                 m_value = lhs_it.value() * rhs_it.value();

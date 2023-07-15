@@ -32,8 +32,9 @@ namespace core {
 // M x K dimensional matrices. Supports expression template arithmetic
 template <int N, int M = N, int K = N, typename F = std::function<double(SVector<N>)>>
 class MatrixField : public MatrixExpr<N, M, K, MatrixField<N, M, K, F>> {
-    static_assert(std::is_invocable<F, SVector<N>>::value &&
-                  std::is_same<typename std::invoke_result<F, SVector<N>>::type, double>::value);
+    static_assert(
+      std::is_invocable<F, SVector<N>>::value &&
+      std::is_same<typename std::invoke_result<F, SVector<N>>::type, double>::value);
    private:
     // an M dimensional array of K dimensional array of N dimensional ScalarField
     std::array<std::array<ScalarField<N, F>, K>, M> field_;
@@ -67,8 +68,8 @@ SMatrix<M, K> MatrixField<N, M, K, F>::operator()(const SVector<N>& point) const
 // out of class definitions of MatrixField arithmetic
 // rhs multiplication by SVector
 template <int N, int M, int K, typename F>
-MatrixVectorProduct<N, M, K, MatrixField<N, M, K, F>, VectorConst<N, K>> operator*(const MatrixField<N, M, K, F>& op1,
-                                                                                   const SVector<K>& op2) {
+MatrixVectorProduct<N, M, K, MatrixField<N, M, K, F>, VectorConst<N, K>>
+operator*(const MatrixField<N, M, K, F>& op1, const SVector<K>& op2) {
     return MatrixVectorProduct<N, M, K, MatrixField<N, M, K, F>, VectorConst<N, K>>(op1, VectorConst<N, K>(op2));
 }
 // rhs multiplication by VectorField

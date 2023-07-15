@@ -56,8 +56,8 @@ template <typename T1, typename T2> constexpr std::size_t DotProduct<T1, T2>::ct
 
 template <typename T1, typename T2> template <int N> double DotProduct<T1, T2>::operator()(const SVector<N>& x) const {
     // check operands dimensions are correct
-    static_assert(((T1::cols == T2::cols == 1) && (T1::rows == T2::rows)) || (T1::cols == T2::rows) ||
-                  (T1::rows == T2::cols));
+    static_assert(
+      ((T1::cols == T2::cols == 1) && (T1::rows == T2::rows)) || (T1::cols == T2::rows) || (T1::rows == T2::cols));
     // implementation of the scalar product operation
     double result = 0;
     for (size_t i = 0; i < ct_rows(); ++i) {

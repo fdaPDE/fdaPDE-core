@@ -43,12 +43,11 @@ template <unsigned int N> struct ADTnode {
 };
 
 // An N-dimensional rectangle described by its left-lower corner and upper-right corner.
-template <unsigned int N> class Query {
+template <unsigned int N> class ADTQuery {
    private:
     std::pair<SVector<N>, SVector<N>> query_range_;   // (left_lower_corner, right_upper_corner)
    public:
-    // constructor
-    Query(const std::pair<SVector<N>, SVector<N>>& query_range) : query_range_(query_range) { }
+    ADTQuery(const std::pair<SVector<N>, SVector<N>>& query_range) : query_range_(query_range) { }
     // returns true if a given point lies inside the query
     bool contains(const SVector<N>& point) const {
         for (size_t dim = 0; dim < N; ++dim) {
@@ -136,7 +135,7 @@ template <unsigned int N> class Query {
     }
 
     // performs a geometric search returning all points which lie in a given query
-    std::list<std::size_t> geometric_search(const Query<2 * N>& query) const {
+    std::list<std::size_t> geometric_search(const ADTQuery<2 * N>& query) const {
         std::list<std::size_t> found;
         std::stack<node_ptr<ADTnode<2 * N>>> stack;
         stack.push(tree.getNode(0));   // start from root
@@ -190,8 +189,7 @@ template <unsigned int N> class Query {
     }
     // solves the point location problem
     const Element<M, N, R>* locate(const SVector<N>& p) const {
-        // point scaling means to apply the following linear transformation to each dimension of the point
-        // scaledPoint[dim] = (point[dim] - meshRange[dim].first)/(meshRange[dim].second - meshRange[dim].first)
+        // scale point p in the unit hypercube
         SVector<N> scaled_point;
         for (size_t dim = 0; dim < N; ++dim) {
             scaled_point[dim] = (p[dim] - mesh_.range()[dim].first) * normalization_[dim];
@@ -202,11 +200,9 @@ template <unsigned int N> class Query {
         ur << scaled_point, SVector<N>::Ones();
         std::pair<SVector<2 * N>, SVector<2 * N>> query = std::make_pair(ll, ur);
 
-        // perform search (now the problem has been transformed to the one of searching for the set
-        // of points contained in the range of the query. See "(J. Bonet, J. Peraire) 1991
-        // An alternating digital tree (ADT) algorithm for 3D geometric searching and intersection problems"
-        // for details)
-        std::list<std::size_t> found = geometric_search(Query<2 * N>(query));
+        // perform search (See "J. Bonet, J. Peraire (1991), An alternating digital tree (ADT) algorithm for 3D
+        // geometric searching and intersection problems" for details)
+        std::list<std::size_t> found = geometric_search(ADTQuery<2 * N>(query));
         // exhaustively scan the query results to get the searched mesh element
         for (std::size_t ID : found) {
             auto element = mesh_.element(ID);

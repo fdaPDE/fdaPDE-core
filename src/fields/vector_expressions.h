@@ -24,10 +24,6 @@
 namespace fdapde {
 namespace core {
 
-// forward declarations
-template <typename T1, typename T2> class DotProduct;
-template <unsigned int M, unsigned int N> class VectorConst;
-
 // Base class for any VectorField type
 struct VectorBase { };
 
@@ -47,12 +43,16 @@ struct VectorBase { };
         return VectorBinOp<M, N, E, VectorConst<M, N>, FUNCTOR>(op1.get(), VectorConst<M, N>(op2), FUNCTOR());         \
     }
 
+// forward declarations
+template <typename T1, typename T2> class DotProduct;
+template <int M, int N> class VectorConst;
+template <int M, int N, typename E> class VectorNegationOp;
+
 // Base class for vectorial expressions
 // M dimension of the space where the field is defined, N dimension of the arriving space
 template <int M, int N, typename E> struct VectorExpr : public VectorBase {
     // call operator[] on the base type E
     auto operator[](std::size_t i) const { return static_cast<const E&>(*this)[i]; }
-    // get underyling type composing the expression node
     const E& get() const { return static_cast<const E&>(*this); }
     // evaluate the expression at point p
     SVector<N> operator()(const SVector<M>& p) const {
@@ -70,6 +70,9 @@ template <int M, int N, typename E> struct VectorExpr : public VectorBase {
     template <typename F> DotProduct<E, F> dot(const VectorExpr<M, N, F>& op) const;
     // evaluate parametric nodes in the expression, does nothing if not redefined in derived classes
     template <typename T> void eval_parameters(T i) const { return; }
+    // map unary operator- to a VectorNegationOp expression node
+    VectorNegationOp<M, N, E> operator-() const { return VectorNegationOp<M, N, E>(get()); }
+
     // expose compile time informations
     static constexpr int rows = N;
     static constexpr int cols = 1;
@@ -77,7 +80,7 @@ template <int M, int N, typename E> struct VectorExpr : public VectorBase {
 };
 
 // an expression node representing a constant vector
-template <unsigned int M, unsigned int N> class VectorConst : public VectorExpr<M, N, VectorConst<M, N>> {
+template <int M, int N> class VectorConst : public VectorExpr<M, N, VectorConst<M, N>> {
    private:
     SVector<N> value_;
    public:
@@ -87,7 +90,7 @@ template <unsigned int M, unsigned int N> class VectorConst : public VectorExpr<
 };
 
 // a parameter node
-template <unsigned int M, unsigned int N, typename F, typename T>
+template <int M, int N, typename F, typename T>
 class VectorParam : public VectorExpr<M, N, VectorParam<M, N, F, T>> {
     // check F is callable with type T and returns an SVector<N>
     static_assert(std::is_same<decltype(std::declval<F>().operator()(T())), SVector<N>>::value);
@@ -127,7 +130,7 @@ DEF_VECT_EXPR_OPERATOR(operator-, std::minus<>)
 
 // support for double*VectorExpr: multiplies each element of VectorExpr by the scalar
 // node representing a scalar value in a vectorial expression.
-template <unsigned int M, unsigned int N> class VectorScalar : public VectorExpr<M, N, VectorScalar<M, N>> {
+template <int M, int N> class VectorScalar : public VectorExpr<M, N, VectorScalar<M, N>> {
    private:
     double value_;
    public:
@@ -136,13 +139,13 @@ template <unsigned int M, unsigned int N> class VectorScalar : public VectorExpr
 };
 template <int M, int N, typename E>
 VectorBinOp<M, N, VectorScalar<M, N>, E, std::multiplies<>> operator*(double op1, const VectorExpr<M, N, E>& op2) {
-    return VectorBinOp<M, N, VectorScalar<M, N>, E, std::multiplies<>>(VectorScalar<M, N>(op1), op2.get(),
-                                                                       std::multiplies<>());
+    return VectorBinOp<M, N, VectorScalar<M, N>, E, std::multiplies<>>(
+      VectorScalar<M, N>(op1), op2.get(), std::multiplies<>());
 }
 template <int M, int N, typename E>
 VectorBinOp<M, N, E, VectorScalar<M, N>, std::multiplies<>> operator*(const VectorExpr<M, N, E>& op1, double op2) {
-    return VectorBinOp<M, N, E, VectorScalar<M, N>, std::multiplies<>>(op1.get(), VectorScalar<M, N>(op2),
-                                                                       std::multiplies<>());
+    return VectorBinOp<M, N, E, VectorScalar<M, N>, std::multiplies<>>(
+      op1.get(), VectorScalar<M, N>(op2), std::multiplies<>());
 }
 
 // dot product between a VectorExpr and an (eigen) SVector.
@@ -156,6 +159,22 @@ template <typename F>
 DotProduct<E, F> VectorExpr<M, N, E>::dot(const VectorExpr<M, N, F>& op) const {
     return DotProduct<E, F>(this->get(), op.get());
 }
+
+// unary negation operation
+template <int M, int N, typename E> class VectorNegationOp : public VectorExpr<M, N, VectorNegationOp<M, N, E>> {
+   private:
+    typename std::remove_reference<E>::type op_;
+   public:
+    // constructor
+    VectorNegationOp(const E& op) : op_(op) {};
+    // subscript operator
+    auto operator[](std::size_t i) const { return -(op_[i]); }
+    // call parameter evaluation on stored operand
+    template <typename T> const VectorNegationOp<M, N, E>& eval_parameters(T i) {
+        op_.eval_parameters(i);
+        return *this;
+    }
+};
 
 }   // namespace core
 }   // namespace fdapde

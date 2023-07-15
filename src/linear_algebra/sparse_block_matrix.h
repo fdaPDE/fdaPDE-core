@@ -128,13 +128,11 @@ struct SparseBlockMatrix :
 
     // the outer block index where i belongs to
     inline Eigen::Index outerBlockIndex(Eigen::Index i) const {
-        return std::distance(outer_offset_.begin(), std::upper_bound(outer_offset_.begin(), outer_offset_.end(), i)) -
-               1;
+        return std::distance(outer_offset_.begin(), std::upper_bound(outer_offset_.begin(), outer_offset_.end(), i)) - 1;
     }
     // the inner block index where i belongs to
     inline Eigen::Index innerBlockIndex(Eigen::Index i) const {
-        return std::distance(inner_offset_.begin(), std::upper_bound(inner_offset_.begin(), inner_offset_.end(), i)) -
-               1;
+        return std::distance(inner_offset_.begin(), std::upper_bound(inner_offset_.begin(), inner_offset_.end(), i)) - 1;
     }
 
     // the outer index relative to the block where i belongs to
@@ -175,14 +173,14 @@ struct traits<SparseBlockMatrix<Scalar_, Rows_, Cols_, Options_, StorageIndex_>>
     enum {
         // we know the number of blocks at compile time, but the number of rows and cols
         // of the overall matrix is unknown at compile time
-        RowsAtCompileTime = Dynamic,
-        ColsAtCompileTime = Dynamic,
-        MaxRowsAtCompileTime = Dynamic,
-        MaxColsAtCompileTime = Dynamic,
-        Flags = Options_ |   // inherits supplied stoarge mode, defaulted to ColMajor storage
-                LvalueBit,   // the expression has a coeffRef() method, i.e. it is writable
+        RowsAtCompileTime     = Dynamic,
+        ColsAtCompileTime     = Dynamic,
+        MaxRowsAtCompileTime  = Dynamic,
+        MaxColsAtCompileTime  = Dynamic,
+        Flags                 = Options_ |   // inherits supplied stoarge mode, defaulted to ColMajor storage
+	                        LvalueBit,   // the expression has a coeffRef() method, i.e. it is writable
         IsVectorAtCompileTime = 0,
-        IsColMajor = Options_ & Eigen::RowMajorBit ? 0 : 1
+        IsColMajor            = Options_ & Eigen::RowMajorBit ? 0 : 1
     };
 };
 
@@ -195,7 +193,7 @@ struct evaluator<SparseBlockMatrix<Scalar_, Rows_, Cols_, Options_, StorageIndex
     typedef Scalar_ Scalar;
     enum {   // required compile time constants
         CoeffReadCost = NumTraits<Scalar_>::ReadCost,
-        Flags = Options_ | LvalueBit
+        Flags         = Options_ | LvalueBit
     };
 
     // InnerIterator defines the SparseBlockMatrix itself

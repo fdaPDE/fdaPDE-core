@@ -36,14 +36,15 @@ namespace core {
 // than computing M^{-1} directly
 
 template <typename SparseSolver = fdaPDE::SparseLU<SpMatrix<double>>,
-          typename DenseSolver = Eigen::PartialPivLU<DMatrix<double>>>
+	  typename DenseSolver = Eigen::PartialPivLU<DMatrix<double>>>
 struct SMW {
     // constructor
     SMW() = default;
 
     // solves linear system (A + U*C^{-1}*V)x = b, assume to supply the already computed inversion of the dense matrix C
-    DMatrix<double> solve(const SparseSolver& invA, const DMatrix<double>& U, const DMatrix<double>& invC,
-                          const DMatrix<double>& V, const DMatrix<double>& b) {
+    DMatrix<double> solve(
+      const SparseSolver& invA, const DMatrix<double>& U, const DMatrix<double>& invC, const DMatrix<double>& V,
+      const DMatrix<double>& b) {
         DMatrix<double> y = invA.solve(b);   // y = A^{-1}b
         // Y = A^{-1}U. Heavy step of the method. SMW is more and more efficient as q gets smaller and smaller
         DMatrix<double> Y = invA.solve(U);
