@@ -38,9 +38,6 @@ class VectorField : public VectorExpr<M, N, VectorField<M, N, F>> {
     // each array element is a functor which computes the i-th component of the vector
     std::array<ScalarField<M, F>, N> field_;
    public:
-    // expose compile time informations
-    static constexpr int rows = N;
-    static constexpr int cols = 1;
     // constructor
     VectorField() = default;
     VectorField(const std::array<F, N>& field) {
@@ -66,9 +63,9 @@ class VectorField : public VectorExpr<M, N, VectorField<M, N, F>> {
     inline ScalarField<M, F>& operator[](size_t i) { return field_[i]; }   // non-const access to i-th element
 
     // inner product VectorField.dot(VectorField)
-    DotProduct<VectorField<M, N, F>, VectorConst<M, N>> dot(const SVector<N>& rhs) const;
+    DotProduct<M, VectorField<M, N, F>, VectorConst<M, N>> dot(const SVector<N>& rhs) const;
     // Inner product VectorField.dot(VectorExpr)
-    template <typename E> DotProduct<VectorField<M, N, F>, E> dot(const VectorExpr<M, N, E>& expr) const;
+    template <typename E> DotProduct<M, VectorField<M, N, F>, E> dot(const VectorExpr<M, N, E>& expr) const;
 };
 
 // implementation details
@@ -87,14 +84,14 @@ template <int M, int N, typename F> SVector<N> VectorField<M, N, F>::operator()(
 template <unsigned int N, unsigned int M, unsigned int K> class MatrixConst;
 // VectorField-VectorField inner product
 template <int M, int N, typename F>
-DotProduct<VectorField<M, N, F>, VectorConst<M, N>> VectorField<M, N, F>::dot(const SVector<N>& rhs) const {
-    return DotProduct<VectorField<M, N, F>, VectorConst<M, N>>(*this, VectorConst<M, N>(rhs));
+DotProduct<M, VectorField<M, N, F>, VectorConst<M, N>> VectorField<M, N, F>::dot(const SVector<N>& rhs) const {
+    return DotProduct<M, VectorField<M, N, F>, VectorConst<M, N>>(*this, VectorConst<M, N>(rhs));
 }
 // VectorField-VectorExpr inner product
 template <int M, int N, typename F>
 template <typename E>
-DotProduct<VectorField<M, N, F>, E> VectorField<M, N, F>::dot(const VectorExpr<M, N, E>& rhs) const {
-    return DotProduct<VectorField<M, N, F>, E>(*this, rhs.get());
+DotProduct<M, VectorField<M, N, F>, E> VectorField<M, N, F>::dot(const VectorExpr<M, N, E>& rhs) const {
+    return DotProduct<M, VectorField<M, N, F>, E>(*this, rhs.get());
 }
 
 }   // namespace core

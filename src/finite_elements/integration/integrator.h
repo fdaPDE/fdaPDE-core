@@ -83,7 +83,7 @@ double Integrator<M, R, K>::integrate(
     double value = 0;
     for (size_t iq = 0; iq < integration_table_.num_nodes; ++iq) {
         SVector<M> p = SVector<M>(integration_table_.nodes[iq].data());
-        if constexpr (std::is_base_of<ScalarExpr<F>, F>::value) {
+        if constexpr (std::is_base_of<ScalarExpr<N, F>, F>::value) {
             // functor f is evaluable at any point.
             SVector<N> Jp = e.barycentric_matrix() * p + e.coords()[0];   // map quadrature point on physical element e
             value += (f(Jp) * Phi(p)) * integration_table_.weights[iq];

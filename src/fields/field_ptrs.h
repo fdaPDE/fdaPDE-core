@@ -25,7 +25,7 @@ namespace fdapde {
 namespace core {
 
 // basic pointer type for scalar expressions
-template <typename E> class ScalarPtr : public ScalarExpr<ScalarPtr<E>> {
+  template <typename E> class ScalarPtr : public ScalarExpr<E::base, ScalarPtr<E>> {
     static_assert(std::is_base_of<ScalarBase, E>::value);
    private:
     typename std::remove_reference<E>::type* ptr_;
@@ -33,7 +33,7 @@ template <typename E> class ScalarPtr : public ScalarExpr<ScalarPtr<E>> {
     // constructor
     ScalarPtr(E* ptr) : ptr_(ptr) {};
     // delegate to pointed memory location
-    template <int N> double operator()(const SVector<N>& p) const { return ptr_->operator()(p); }
+    double operator()(const SVector<E::base>& p) const { return ptr_->operator()(p); }
     template <typename T> void eval_parameters(T i) { ptr_->eval_parameters(i); }
     // access to pointed element
     E* operator->() { return ptr_; }

@@ -26,7 +26,7 @@ namespace core {
 
 // A functor to represent an inner product. T1 and T2 must provide a subscript operator []. The result of applying
 // [] to an object of type T1 or T2 must return a callable accepting an SVector<N> as argument
-template <typename T1, typename T2> class DotProduct : public ScalarExpr<DotProduct<T1, T2>> {
+template <int N, typename T1, typename T2> class DotProduct : public ScalarExpr<N, DotProduct<N, T1, T2>> {
    private:
     T1 op1_;
     T2 op2_;   // operands of inner product
@@ -40,13 +40,14 @@ template <typename T1, typename T2> class DotProduct : public ScalarExpr<DotProd
    public:
     // constructor
     DotProduct(const T1& op1, const T2& op2) : op1_(op1), op2_(op2) { }
-    template <int N> inline double operator()(const SVector<N>& x) const;   // evaluate dot(op1, op2) at point x
-    template <typename T> const DotProduct<T1, T2>& eval_parameters(T i);   // triggers parameter evaluation on operands
+    inline double operator()(const SVector<N>& x) const;   // evaluate dot(op1, op2) at point x
+    template <typename T>
+    const DotProduct<N, T1, T2>& eval_parameters(T i);   // triggers parameter evaluation on operands
 };
 
 // implementation details
 
-template <typename T1, typename T2> constexpr std::size_t DotProduct<T1, T2>::ct_rows() {
+  template <int N, typename T1, typename T2> constexpr std::size_t DotProduct<N, T1, T2>::ct_rows() {
     if ((T1::cols == T2::cols == 1)) {
         return T1::rows;
     } else {
@@ -54,7 +55,7 @@ template <typename T1, typename T2> constexpr std::size_t DotProduct<T1, T2>::ct
     }
 }
 
-template <typename T1, typename T2> template <int N> double DotProduct<T1, T2>::operator()(const SVector<N>& x) const {
+template <int N, typename T1, typename T2> double DotProduct<N, T1, T2>::operator()(const SVector<N>& x) const {
     // check operands dimensions are correct
     static_assert(
       ((T1::cols == T2::cols == 1) && (T1::rows == T2::rows)) || (T1::cols == T2::rows) || (T1::rows == T2::cols));
@@ -74,9 +75,9 @@ template <typename T1, typename T2> template <int N> double DotProduct<T1, T2>::
     return result;
 }
 
-template <typename T1, typename T2>
+template <int N, typename T1, typename T2>
 template <typename T>
-const DotProduct<T1, T2>& DotProduct<T1, T2>::eval_parameters(T i) {
+const DotProduct<N, T1, T2>& DotProduct<N, T1, T2>::eval_parameters(T i) {
     op1_.eval_parameters(i);
     op2_.eval_parameters(i);
     return *this;

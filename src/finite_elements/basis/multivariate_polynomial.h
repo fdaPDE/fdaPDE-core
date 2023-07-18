@@ -185,7 +185,7 @@ class PolynomialDerivative : public VectorExpr<N, N, PolynomialDerivative<N, R>>
 
 // class representing a multivariate polynomial of degree R defined over a space of dimension N
 template <unsigned int N, unsigned int R>
-class MultivariatePolynomial : public ScalarExpr<MultivariatePolynomial<N, R>> {
+class MultivariatePolynomial : public ScalarExpr<N, MultivariatePolynomial<N, R>> {
    private:
     static const constexpr unsigned MON = ct_binomial_coefficient(R + N, R);
     std::array<double, MON> coeff_vector_;   // vector of coefficients

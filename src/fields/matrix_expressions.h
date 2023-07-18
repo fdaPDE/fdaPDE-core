@@ -35,8 +35,8 @@ template <int N, int M, int K, typename E> class MatrixNegationOp;
 struct MatrixBase { };
 
 // an expression node representing a matrix*vector operation
-template <int M, int N, int K, typename T1, typename T2>
-class MatrixVectorProduct : public VectorExpr<M, N, MatrixVectorProduct<M, N, K, T1, T2>> {
+template <int N, int M, int K, typename T1, typename T2>
+class MatrixVectorProduct : public VectorExpr<N, M, MatrixVectorProduct<N, M, K, T1, T2>> {
     static_assert(std::is_base_of<MatrixBase, T1>::value && std::is_base_of<VectorBase, T2>::value);
    private:
     T1 op1_;
@@ -44,11 +44,11 @@ class MatrixVectorProduct : public VectorExpr<M, N, MatrixVectorProduct<M, N, K,
    public:
     MatrixVectorProduct(const T1& op1, const T2& op2) : op1_(op1), op2_(op2) {};
     // the i-th element of the vector is given as the dot product of the i-th column of T1 and T2
-    inline DotProduct<decltype(op1_.row(std::size_t())), T2> operator[](std::size_t i) const {
-        return DotProduct<decltype(op1_.row(std::size_t())), T2>(op1_.row(i), op2_);
+    inline DotProduct<N, decltype(op1_.row(std::size_t())), T2> operator[](std::size_t i) const {
+        return DotProduct<N, decltype(op1_.row(std::size_t())), T2>(op1_.row(i), op2_);
     }
     // call parameter evaluation on operands
-    template <typename T> const MatrixVectorProduct<M, N, K, T1, T2>& eval_parameters(T i) {
+    template <typename T> const MatrixVectorProduct<N, M, K, T1, T2>& eval_parameters(T i) {
         op1_.eval_parameters(i);
         op2_.eval_parameters(i);
         return *this;
@@ -56,8 +56,8 @@ class MatrixVectorProduct : public VectorExpr<M, N, MatrixVectorProduct<M, N, K,
 };
 
 // an expression node representing a matrix*matrix operation
-template <int M, int N, int K, typename T1, typename T2>
-class MatrixMatrixProduct : public MatrixExpr<M, N, K, MatrixMatrixProduct<M, N, K, T1, T2>> {
+template <int N, int M, int K, typename T1, typename T2>
+class MatrixMatrixProduct : public MatrixExpr<N, M, K, MatrixMatrixProduct<N, M, K, T1, T2>> {
     static_assert(std::is_base_of<MatrixBase, T1>::value && std::is_base_of<MatrixBase, T2>::value);
    private:
     T1 op1_;
@@ -66,13 +66,13 @@ class MatrixMatrixProduct : public MatrixExpr<M, N, K, MatrixMatrixProduct<M, N,
     MatrixMatrixProduct(const T1& op1, const T2& op2) : op1_(op1), op2_(op2) {};
     // the (i,j)-th element of the resulting matrix is given by the dot product of the i-th column of T1 and
     // the j-th column of T2
-    inline DotProduct<decltype(op1_.row(std::size_t())), decltype(op2_.col(std::size_t()))>
+    inline DotProduct<N, decltype(op1_.row(std::size_t())), decltype(op2_.col(std::size_t()))>
     operator()(std::size_t i, std::size_t j) const {
-        return DotProduct<decltype(op1_.row(std::size_t())), decltype(op2_.col(std::size_t()))>(
+        return DotProduct<N, decltype(op1_.row(std::size_t())), decltype(op2_.col(std::size_t()))>(
           op1_.row(i), op2_.col(j));
     }
     // call parameter evaluation on operands
-    template <typename T> const MatrixMatrixProduct<M, N, K, T1, T2>& eval_parameters(T i) {
+    template <typename T> const MatrixMatrixProduct<N, M, K, T1, T2>& eval_parameters(T i) {
         op1_.eval_parameters(i);
         op2_.eval_parameters(i);
         return *this;
@@ -207,7 +207,7 @@ class MatrixParam : public MatrixExpr<N, M, K, MatrixParam<N, M, K, F, T>> {
     // check F is callable with type T and returns an SMatrix<M,K>
     static_assert(std::is_same<decltype(std::declval<F>().operator()(T())), SMatrix<M, K>>::value);
    private:
-    // be sure that data pointed by this parameter are alive for the whole life of this object
+    // be sure that pointed data are alive for the whole life of this object
     const typename std::remove_reference<F>::type* f_;
     SMatrix<M, K> value_;
    public:

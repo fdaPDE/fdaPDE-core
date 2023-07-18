@@ -49,7 +49,7 @@ template <typename T> class Gradient : public BilinearFormExpr<Gradient<T>> {
     // provides the operator's weak form
     template <typename... Args> auto integrate(const std::tuple<Args...>& mem_buffer) const {
         IMPORT_MEM_BUFFER_SYMBOLS(mem_buffer);
-        return psi_i * (invJ * NablaPsi_j).dot(b_);   // \psi_i*b.dot(\nabla \psi_j)
+        return psi_i * (invJ * nabla_psi_j).dot(b_);   // \psi_i*b.dot(\nabla \psi_j)
     }
 };
 // template argument deduction rule

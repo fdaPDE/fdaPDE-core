@@ -49,7 +49,7 @@ template <typename T> class Divergence : public BilinearFormExpr<Divergence<T>> 
     template <typename... Args> auto integrate(const std::tuple<Args...>& mem_buffer) const {
         IMPORT_MEM_BUFFER_SYMBOLS(mem_buffer);
 	// non unitary or anisotropic diffusion: (\Nabla psi_i)^T*K*(\Nabla \psi_j)
-	return -(invJ * NablaPsi_i).dot(K_ * (invJ * NablaPsi_j));
+	return -(invJ * nabla_psi_i).dot(K_ * (invJ * nabla_psi_j));
     }
 };
 

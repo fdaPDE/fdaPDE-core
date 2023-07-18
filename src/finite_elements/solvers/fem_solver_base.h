@@ -20,6 +20,7 @@
 #include <exception>
 
 #include "../../utils/symbols.h"
+#include "../../utils/traits.h"
 #include "../assembler.h"
 #include "../basis/lagrangian_basis.h"
 #include "../integration/integrator.h"
@@ -28,19 +29,8 @@ namespace fdapde {
 namespace core {
 
 // forward declarations
-struct FEMStandardSpaceSolver;
-struct FEMStandardSpaceTimeSolver;
-// PDE forward declaration
-template <unsigned int M, unsigned int N, unsigned int R, typename E,
-	  typename F, typename B, typename I, typename S>
-class PDE;
-
-// trait to select the space-only or the space-time version of the PDE FEM standard solver
-template <typename E> struct pde_fem_standard_solver_selector {
-    using type =
-      typename std::conditional<is_parabolic<E>::value, FEMStandardSpaceTimeSolver, FEMStandardSpaceSolver>::type;
-};
-
+template <typename E> struct is_pde;
+  
 // base class for the definition of a general solver based on the Finite Element Method
 class FEMSolverBase {
    protected:
@@ -61,45 +51,48 @@ class FEMSolverBase {
     const SpMatrix<double>& R0() const { return R0_; }
 
     // initializes internal FEM solver status
-    template <
-      unsigned int M, unsigned int N, unsigned int R, typename E, typename F, typename B, typename I, typename S>
-    void init(const PDE<M, N, R, E, F, B, I, S>& pde) {
-        Assembler<M, N, R, B, I> assembler(pde.domain(), pde.integrator());   // create assembler object
+    template <typename E>
+    void init(const E& pde) {
+        static_assert(is_pde<E>::value, "pde is not a valid PDE object");
+        Assembler<E::M, E::N, E::R, typename E::BasisType, typename E::IntegratorType> assembler(
+          pde.domain(), pde.integrator());
         // fill discretization matrix for current operator
-        R1_ = assembler.discretize_bilinear_form(pde.bilinear_form());
+        R1_ = assembler.discretize_operator(pde.differential_operator());
         R1_.makeCompressed();
 
         // fill forcing vector
         std::size_t n = pde.domain().dof();   // degrees of freedom in space
         std::size_t m;                        // number of time points
 
-        if constexpr (!std::is_base_of<ScalarBase, F>::value) {
+        if constexpr (!std::is_base_of<ScalarBase, typename E::ForcingType>::value) {
             m = pde.forcing_data().cols();
             force_.resize(n * m, 1);
             force_.block(0, 0, n, 1) = assembler.discretize_forcing(pde.forcing_data().col(0));
+
+            // iterate over time steps if a space-time PDE is supplied
+            if constexpr (is_parabolic<typename E::OperatorType>::value) {
+                for (std::size_t i = 1; i < m; ++i) {
+                    force_.block(n * i, 0, n, 1) = assembler.discretize_forcing(pde.forcing_data().col(i));
+                }
+            }
         } else {
             // TODO: support space-time callable forcing for parabolic problems
             m = 1;
             force_.resize(n * m, 1);
             force_.block(0, 0, n, 1) = assembler.discretize_forcing(pde.forcing_data());
         }
-        // iterate over time steps if a space-time PDE is supplied
-        if constexpr (is_parabolic<E>::value) {
-            for (std::size_t i = 1; i < m; ++i) {
-                force_.block(n * i, 0, n, 1) = assembler.discretize_forcing(pde.forcing_data().col(i));
-            }
-        }
 
         // compute mass matrix [R0]_{ij} = \int_{\Omega} \phi_i \phi_j by discretization of the identity operator
-        R0_ = assembler.discretize_bilinear_form(Identity(1.0));
+        R0_ = assembler.discretize_operator(Identity(1.0));
         init_ = true;
         return;
     }
 
     // impose dirichlet boundary conditions
-    template <
-      unsigned int M, unsigned int N, unsigned int R, typename E, typename F, typename B, typename I, typename S>
-    void set_dirichlet_bc(const PDE<M, N, R, E, F, B, I, S>& pde) {
+    template <typename E>
+    void set_dirichlet_bc(const E& pde) {
+        static_assert(is_pde<E>::value, "pde is not a valid PDE object");
+	
         if (!init_) throw std::runtime_error("solver must be initialized first!");
         for (auto it = pde.domain().boundary_begin(); it != pde.domain().boundary_end(); ++it) {
             R1_.row(*it) *= 0;            // zero all entries of this row

@@ -38,8 +38,8 @@ namespace core {
     auto psi_i = std::get<0>(mem_buff);                                                                                \
     auto psi_j = std::get<1>(mem_buff);                                                                                \
     /* gradient of \psi_i, \psi_j */                                                                                   \
-    auto NablaPsi_i = std::get<2>(mem_buff);                                                                           \
-    auto NablaPsi_j = std::get<3>(mem_buff);                                                                           \
+    auto nabla_psi_i = std::get<2>(mem_buff);                                                                          \
+    auto nabla_psi_j = std::get<3>(mem_buff);                                                                          \
     /* affine map to reference element */                                                                              \
     auto invJ = std::get<4>(mem_buff);
 

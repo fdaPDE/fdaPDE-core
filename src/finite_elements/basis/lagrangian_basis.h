@@ -73,12 +73,12 @@ void LagrangianBasis<M, R>::compute_coefficients_(
     }
 
     // solve the vandermonde system V*a = b with b vector having 1 at position i and 0 everywhere else.
-    Eigen::PartialPivLU<SMatrix<n_basis>> LUdecomposition(V);
+    Eigen::PartialPivLU<SMatrix<n_basis>> invV(V);
     SVector<n_basis> b = Eigen::Matrix<double, n_basis, 1>::Zero(); // rhs of linear system
     for (size_t i = 0; i < n_basis; ++i) {
         b[i] = 1;
 	// solve linear system V*a = b
-        SVector<n_basis> a = LUdecomposition.solve(b);
+        SVector<n_basis> a = invV.solve(b);
 	// store basis
         std::array<double, n_basis> coeff;
         std::copy(a.data(), a.data() + n_basis, coeff.begin());

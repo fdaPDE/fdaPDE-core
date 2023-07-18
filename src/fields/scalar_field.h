@@ -30,11 +30,11 @@ template <int M, int N, typename F> class VectorField;
 template <int M, int N, int K, typename F> class MatrixField;
 
 // a functor representing a zero field
-template <int N> struct ZeroField : public ScalarExpr<ZeroField<N>> {
+template <int N> struct ZeroField : public ScalarExpr<N, ZeroField<N>> {
     inline double operator()(const SVector<N>& p) const { return 0; }
 };
 // a functor representing a constant field
-template <int N> class ConstantField : public ScalarExpr<ConstantField<N>> {
+template <int N> class ConstantField : public ScalarExpr<N, ConstantField<N>> {
    private:
     double c_;
    public:
@@ -49,7 +49,7 @@ template <int N,   // input space dimension
 	  typename F = std::function<double(SVector<N>)>,
 	  typename G = VectorField<N, N, std::function<double(SVector<N>)>>,
 	  typename H = MatrixField<N, N, N, std::function<double(SVector<N>)>>>
-class ScalarField : public ScalarExpr<ScalarField<N, F, G, H>> {
+class ScalarField : public ScalarExpr<N, ScalarField<N, F, G, H>> {
     static_assert(
       std::is_invocable<F, SVector<N>>::value &&
       std::is_same<typename std::invoke_result<F, SVector<N>>::type, double>::value);
@@ -67,15 +67,16 @@ class ScalarField : public ScalarExpr<ScalarField<N, F, G, H>> {
     template <
       typename E, typename U = FieldType,
       typename std::enable_if<std::is_same<U, std::function<double(SVector<N>)>>::value, int>::type = 0>
-    ScalarField(const ScalarExpr<E>& f) {
+    ScalarField(const ScalarExpr<N, E>& f) {
         // wraps field expression in lambda
         E op = f.get();
         std::function<double(SVector<N>)> fieldExpr = [op](SVector<N> x) -> double { return op(x); };
         f_ = fieldExpr;
     };
-    template <typename E, typename U = FieldType>
-    typename std::enable_if<std::is_same<U, std::function<double(SVector<N>)>>::value, ScalarField<N>&>::type
-    operator=(const ScalarExpr<E>& f) {
+    template <
+      typename E, typename U = FieldType>
+      typename std::enable_if<std::is_same<U, std::function<double(SVector<N>)>>::value, ScalarField<N>&>::type
+    operator=(const ScalarExpr<N, E>& f) {
         // wraps field expression in lambda
         E op = f.get();
         std::function<double(SVector<N>)> fieldExpr = [op](SVector<N> x) -> double { return op(x); };

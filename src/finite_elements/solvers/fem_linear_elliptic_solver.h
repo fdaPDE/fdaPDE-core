@@ -14,8 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FEM_STANDARD_SPACE_SOLVER_H__
-#define __FEM_STANDARD_SPACE_SOLVER_H__
+#ifndef __FEM_LINEAR_ELLIPTIC_SOLVER_H__
+#define __FEM_LINEAR_ELLIPTIC_SOLVER_H__
 
 #include <exception>
 
@@ -26,33 +26,30 @@
 namespace fdapde {
 namespace core {
 
-struct FEMStandardSpaceSolver : public FEMSolverBase {
-    // constructor
-    FEMStandardSpaceSolver() = default;
-
+struct FEMLinearEllipticSolver : public FEMSolverBase {
     // solves linear system R1_*u = b, where R1_ : stiff matrix, b : forcing term discretization
-    template <
-      unsigned int M, unsigned int N, unsigned int R, typename E, typename F, typename B, typename I, typename S>
-    void solve(const PDE<M, N, R, E, F, B, I, S>& pde);
-};
+    template <typename E>
+    void solve(const E& pde) {
+      static_assert(is_pde<E>::value, "pde is not a valid PDE object");
 
-template <unsigned int M, unsigned int N, unsigned int R, typename E, typename F, typename B, typename I, typename S>
-void FEMStandardSpaceSolver::solve(const PDE<M, N, R, E, F, B, I, S>& pde) {
-    if (!init_) throw std::runtime_error("solver must be initialized first!");
-    // define eigen system solver, use sparse LU decomposition.
-    Eigen::SparseLU<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int>> solver;
-    solver.compute(this->R1_);
-    // stop if something was wrong...
-    if (solver.info() != Eigen::Success) {
+      if (!init_) throw std::runtime_error("solver must be initialized first!");
+      // define eigen system solver, exploit spd of operator if possible
+      typedef Eigen::SparseLU<SpMatrix<double>, Eigen::COLAMDOrdering<int>> SolverType;
+      SolverType solver;
+      solver.compute(this->R1_);
+      // stop if something was wrong...
+      if (solver.info() != Eigen::Success) {
         this->success = false;
         return;
+      }
+      // solve FEM linear system: R1_*solution_ = force_;
+      this->solution_ = solver.solve(this->force_);
+      return;
+
     }
-    // solve FEM linear system: R1_*solution_ = force_;
-    this->solution_ = solver.solve(this->force_);
-    return;
-}
+};
 
 }   // namespace core
 }   // namespace fdapde
 
-#endif   // __SPACE_SOLVER_H__
+#endif   // __FEM_LINEAR_ELLIPTIC_SOLVER_H__

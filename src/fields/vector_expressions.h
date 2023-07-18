@@ -44,12 +44,12 @@ struct VectorBase { };
     }
 
 // forward declarations
-template <typename T1, typename T2> class DotProduct;
+template <int M, typename T1, typename T2> class DotProduct;
 template <int M, int N> class VectorConst;
 template <int M, int N, typename E> class VectorNegationOp;
 
 // Base class for vectorial expressions
-// M dimension of the space where the field is defined, N dimension of the arriving space
+// M: input space dimension, N x 1: output dimension
 template <int M, int N, typename E> struct VectorExpr : public VectorBase {
     // call operator[] on the base type E
     auto operator[](std::size_t i) const { return static_cast<const E&>(*this)[i]; }
@@ -65,9 +65,9 @@ template <int M, int N, typename E> struct VectorExpr : public VectorBase {
         return result;
     }
     // dot product between VectorExpr and SVector
-    virtual DotProduct<E, VectorConst<M, N>> dot(const SVector<N>& op) const;
+    virtual DotProduct<M, E, VectorConst<M, N>> dot(const SVector<N>& op) const;
     // VectorExpr - VectorExpr dot product
-    template <typename F> DotProduct<E, F> dot(const VectorExpr<M, N, F>& op) const;
+    template <typename F> DotProduct<M, E, F> dot(const VectorExpr<M, N, F>& op) const;
     // evaluate parametric nodes in the expression, does nothing if not redefined in derived classes
     template <typename T> void eval_parameters(T i) const { return; }
     // map unary operator- to a VectorNegationOp expression node
@@ -150,14 +150,14 @@ VectorBinOp<M, N, E, VectorScalar<M, N>, std::multiplies<>> operator*(const Vect
 
 // dot product between a VectorExpr and an (eigen) SVector.
 template <int M, int N, typename E>
-DotProduct<E, VectorConst<M, N>> VectorExpr<M, N, E>::dot(const SVector<N>& op) const {
-    return DotProduct<E, VectorConst<M, N>>(this->get(), VectorConst<M, N>(op));
+DotProduct<M, E, VectorConst<M, N>> VectorExpr<M, N, E>::dot(const SVector<N>& op) const {
+    return DotProduct<M, E, VectorConst<M, N>>(this->get(), VectorConst<M, N>(op));
 }
 // dot product between a VectorExpr and a VectorExpr
 template <int M, int N, typename E>
 template <typename F>
-DotProduct<E, F> VectorExpr<M, N, E>::dot(const VectorExpr<M, N, F>& op) const {
-    return DotProduct<E, F>(this->get(), op.get());
+DotProduct<M, E, F> VectorExpr<M, N, E>::dot(const VectorExpr<M, N, F>& op) const {
+    return DotProduct<M, E, F>(this->get(), op.get());
 }
 
 // unary negation operation

@@ -1,87 +1,88 @@
-#ifndef __SPACE_VARYING_FUNCTORS_H__
-#define __SPACE_VARYING_FUNCTORS_H__
+// This file is part of fdaPDE, a C++ library for physics-informed
+// spatial and functional data analysis.
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// include expression templates engine
-#include "../../utils/fields/expressions/Expressions.h"
+#ifndef __SPACE_VARYING_H__
+#define __SPACE_VARYING_H__
 
-namespace fdaPDE {
+#include "../../fields/matrix_expressions.h"
+#include "../../fields/scalar_expressions.h"
+#include "../../fields/vector_expressions.h"
+
+namespace fdapde {
 namespace core {
-namespace FEM {
-
-  // a set of functors to implement non-constant coefficients PDEs.
-  // non-constant coefficients are given as matrices. evaluating one of the following functors at index i, returns
-  // the value of the coefficient at the i-th quadrature node.
-
-  // in the following M is dimension of the space where the expression of which a functor is part of is evaluated (you can
-  // think of it as the dimension of the reference element where finite elements integral are evaluated)
   
-  // N x K: dimension of the returned diffusion tensor.
-  template <unsigned int M, unsigned int N = M, unsigned int K = M>
-  class SpaceVaryingDiffusion {
-  private:
-    // coeff is a matrix (num_elements*num_nodes) x (N*K). This means that a row of this matrix corresponds to a 1D expansion
-    // of the N x K diffusion tensor.
+// M: input space dimension, N x K: dimension of the returned diffusion tensor.
+template <int M, int N = M, int K = M> class NonConstantDiffusionWrapper {
+   private:
+    // coeff is a matrix (num_elements*num_nodes) x (N*K), i.e., a row of this matrix corresponds to a 1D
+    // expansion of the N x K diffusion tensor.
     DMatrix<double> coeff_;
-  public:
+   public:
     // constructor
-    SpaceVaryingDiffusion() = default;
-    SpaceVaryingDiffusion(const DMatrix<double>& coeff) : coeff_(coeff) {}
+    NonConstantDiffusionWrapper() = default;
+    NonConstantDiffusionWrapper(const DMatrix<double>& coeff) : coeff_(coeff) { }
     // set data (allow to set the coefficient after the expression template has been built)
-    void setData(const DMatrix<double>& coeff) { coeff_ = coeff; }
+    void set_coefficient(const DMatrix<double>& coeff) { coeff_ = coeff; }
     // call operator, handles the conversion from 1D expansion to N x K matrix
-    inline SMatrix<N,K> operator()(std::size_t i) const {
-      SMatrix<N,K> result;
-      for(std::size_t j = 0; j < N; ++j)
-	result.row(j) = coeff_.row(i).segment<K>(j*K);
-      return result;
+    inline SMatrix<N, K> operator()(std::size_t i) const {
+        SMatrix<N, K> result;
+        for (std::size_t j = 0; j < N; ++j) result.row(j) = coeff_.row(i).segment<K>(j * K);
+        return result;
     }
-    // return this object as compatible with the expression template mechanism of parametric expressions
-    MatrixParam<M,N,K, SpaceVaryingDiffusion<M,N,K>,std::size_t> asParameter() const {
-      return MatrixParam<M,N,K, SpaceVaryingDiffusion<M,N,K>,std::size_t>(*this);
+    // convert 
+    MatrixParam<M, N, K, NonConstantDiffusionWrapper<M, N, K>, std::size_t> to_expr() const {
+        return MatrixParam<M, N, K, NonConstantDiffusionWrapper<M, N, K>, std::size_t>(*this);
     }
-  };
+};
 
-  // N : dimension of the returned advection vector.
-  template <unsigned int M, unsigned int N = M>
-  class SpaceVaryingAdvection {
-  private:
+// M: input space dimension, N x 1 : dimension of the returned transport vector.
+template <int M, int N = M> class NonConstantAdvectionWrapper {
+   private:
     DMatrix<double> coeff_;
-  public:
+   public:
     // constructor
-    SpaceVaryingAdvection() = default;
-    SpaceVaryingAdvection(const DMatrix<double>& coeff) : coeff_(coeff) {}
+    NonConstantAdvectionWrapper() = default;
+    NonConstantAdvectionWrapper(const DMatrix<double>& coeff) : coeff_(coeff) { }
     // set data (allow to set the coefficient after the expression template has been built)
-    void setData(const DMatrix<double>& coeff) { coeff_ = coeff; }
-    // call operator
-    inline SVector<N> operator()(std::size_t i) const {
-      return coeff_.block<1,N>(i,0);
-    }
+    void set_coefficient(const DMatrix<double>& coeff) { coeff_ = coeff; }
+    inline SVector<N> operator()(std::size_t i) const { return coeff_.block<1, N>(i, 0); }
     // return this object as compatible with the expression template mechanism of parametric expressions
-    VectorParam<M,N, SpaceVaryingAdvection<M,N>,std::size_t> asParameter() const {
-      return VectorParam<M,N, SpaceVaryingAdvection<M,N>,std::size_t>(*this);
+    VectorParam<M, N, NonConstantAdvectionWrapper<M, N>, std::size_t> to_expr() const {
+        return VectorParam<M, N, NonConstantAdvectionWrapper<M, N>, std::size_t>(*this);
     }
-  };
+};
 
-  class SpaceVaryingReaction {
-  private:
+// M : input space dimension
+template <int M> class NonConstantReactionWrapper {
+   private:
     DMatrix<double> coeff_;
-  public:
+   public:
     // constructor
-    SpaceVaryingReaction() = default;
-    SpaceVaryingReaction(const DMatrix<double>& coeff) : coeff_(coeff) {}
+    NonConstantReactionWrapper() = default;
+    NonConstantReactionWrapper(const DMatrix<double>& coeff) : coeff_(coeff) { }
     // set data (allow to set the coefficient after the expression template has been built)
-    void setData(const DMatrix<double>& coeff) { coeff_ = coeff; }
-
-    // call operator
-    inline double operator()(std::size_t i) const {
-      return coeff_(i,0);
-    }
+    void set_coefficient(const DMatrix<double>& coeff) { coeff_ = coeff; }
+    inline double operator()(std::size_t i) const { return coeff_(i, 0); }
     // return this object as compatible with the expression template mechanism of parametric expressions
-    ScalarParam<SpaceVaryingReaction,std::size_t> asParameter() const {
-      return ScalarParam<SpaceVaryingReaction,std::size_t>(*this);
+    ScalarParam<M, NonConstantReactionWrapper<M>, std::size_t> to_expr() const {
+        return ScalarParam<M, NonConstantReactionWrapper<M>, std::size_t>(*this);
     }
-  };
-  
-}}}
+};
 
-#endif // __SPACE_VARYING_FUNCTORS_H__
+}   // namespace core
+}   // namespace fdapde
+
+#endif   // __SPACE_VARYING_H__

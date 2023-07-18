@@ -40,7 +40,7 @@ struct Laplacian : public BilinearFormExpr<Laplacian> {
     template <typename... Args> auto integrate(const std::tuple<Args...>& mem_buffer) const {
         IMPORT_MEM_BUFFER_SYMBOLS(mem_buffer);
 	// isotropic unitary diffusion: -(\Nabla psi_i).dot(\Nabla psi_j)
-	return -(invJ * NablaPsi_i).dot(invJ * NablaPsi_j);
+	return -(invJ * nabla_psi_i).dot(invJ * nabla_psi_j);
     }
 };
 

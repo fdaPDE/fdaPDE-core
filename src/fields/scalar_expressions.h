@@ -29,51 +29,59 @@ struct ScalarBase { };
 
 // macro for the definition of binary arithmetic operators between scalar fields
 #define DEF_SCALAR_EXPR_OPERATOR(OPERATOR, FUNCTOR)                                                                    \
-    template <typename E1, typename E2>                                                                                \
-    ScalarBinOp<E1, E2, FUNCTOR> OPERATOR(const ScalarExpr<E1>& op1, const ScalarExpr<E2>& op2) {                      \
-        return ScalarBinOp<E1, E2, FUNCTOR> {op1.get(), op2.get(), FUNCTOR()};                                         \
+    template <int N, typename E1, typename E2>                                                                         \
+    ScalarBinOp<N, E1, E2, FUNCTOR> OPERATOR(const ScalarExpr<N, E1>& op1, const ScalarExpr<N, E2>& op2) {             \
+        return ScalarBinOp<N, E1, E2, FUNCTOR> {op1.get(), op2.get(), FUNCTOR()};                                      \
     }                                                                                                                  \
                                                                                                                        \
-    template <typename E> ScalarBinOp<E, Scalar, FUNCTOR> OPERATOR(const ScalarExpr<E>& op1, double op2) {             \
-        return ScalarBinOp<E, Scalar, FUNCTOR>(op1.get(), Scalar(op2), FUNCTOR());                                     \
+    template <int N, typename E>                                                                                       \
+    ScalarBinOp<N, E, Scalar<N>, FUNCTOR> OPERATOR(const ScalarExpr<N, E>& op1, double op2) {                          \
+        return ScalarBinOp<N, E, Scalar<N>, FUNCTOR>(op1.get(), Scalar<N>(op2), FUNCTOR());                            \
     }                                                                                                                  \
                                                                                                                        \
-    template <typename E> ScalarBinOp<Scalar, E, FUNCTOR> OPERATOR(double op1, const ScalarExpr<E>& op2) {             \
-        return ScalarBinOp<Scalar, E, FUNCTOR> {Scalar(op1), op2.get(), FUNCTOR()};                                    \
+    template <int N, typename E>                                                                                       \
+    ScalarBinOp<N, Scalar<N>, E, FUNCTOR> OPERATOR(double op1, const ScalarExpr<N, E>& op2) {                          \
+        return ScalarBinOp<N, Scalar<N>, E, FUNCTOR> {Scalar<N>(op1), op2.get(), FUNCTOR()};                           \
     }                                                                                                                  \
 // macro for the definition of unary operators on scalar fields
 #define DEF_SCALAR_UNARY_OPERATOR(OPERATOR, FUNCTION)                                                                  \
-    template <typename E1> ScalarUnOp<E1, std::function<double(double)>> OPERATOR(const ScalarExpr<E1>& op1) {         \
+    template <int N, typename E1>                                                                                      \
+    ScalarUnOp<N, E1, std::function<double(double)>> OPERATOR(const ScalarExpr<N, E1>& op1) {                          \
         std::function<double(double)> OPERATOR_ = [](double x) -> double { return FUNCTION(x); };                      \
-        return ScalarUnOp<E1, std::function<double(double)>> {op1.get(), OPERATOR_};                                   \
+        return ScalarUnOp<N, E1, std::function<double(double)>> {op1.get(), OPERATOR_};                                \
     }
 
 // forward declaration
-template <typename E> class ScalarNegationOp;
+template <int N, typename E> class ScalarNegationOp;
 
 // Base class for scalar field expressions
-template <typename E> struct ScalarExpr : public ScalarBase {
+template <int N, typename E> struct ScalarExpr : public ScalarBase {
     // call operator() on the base type E
-    template <int N> inline double operator()(const SVector<N>& p) const { return static_cast<const E&>(*this)(p); }
+    inline double operator()(const SVector<N>& p) const { return static_cast<const E&>(*this)(p); }
     const E& get() const { return static_cast<const E&>(*this); }
     // evaluate parametric nodes in the expression, does nothing if not redefined in derived classes
     template <typename T> void eval_parameters(T i) const { return; }
     // map unary operator- to a ScalarNegationOp expression node
-    ScalarNegationOp<E> operator-() const { return ScalarNegationOp<E>(get()); }
+    ScalarNegationOp<N, E> operator-() const { return ScalarNegationOp<N, E>(get()); }
+
+    // expose compile time informations
+    static constexpr int rows = 1;
+    static constexpr int cols = 1;
+    static constexpr int base = N;   // dimensionality of base space
 };
 
 // an expression node representing a scalar value
-class Scalar : public ScalarExpr<Scalar> {
+template <int N> class Scalar : public ScalarExpr<N, Scalar<N>> {
    private:
     double value_;
    public:
     Scalar(double value) : value_(value) { }
     // call operator, return always the stored value
-    template <int N> inline double operator()(const SVector<N>& p) const { return value_; };
+    inline double operator()(const SVector<N>& p) const { return value_; };
 };
 
 // a parameter node
-template <typename F, typename T> class ScalarParam : public ScalarExpr<ScalarParam<F, T>> {
+template <int N, typename F, typename T> class ScalarParam : public ScalarExpr<N, ScalarParam<N, F, T>> {
     // check F is callable with type T and returns a double
     static_assert(std::is_same<decltype(std::declval<F>().operator()(T())), double>::value);
    private:
@@ -90,8 +98,8 @@ template <typename F, typename T> class ScalarParam : public ScalarExpr<ScalarPa
 };
 
 // expression template based arithmetic
-template <typename OP1, typename OP2, typename BinaryOperation>
-class ScalarBinOp : public ScalarExpr<ScalarBinOp<OP1, OP2, BinaryOperation>> {
+template <int N, typename OP1, typename OP2, typename BinaryOperation>
+class ScalarBinOp : public ScalarExpr<N, ScalarBinOp<N, OP1, OP2, BinaryOperation>> {
    private:
     typename std::decay<OP1>::type op1_;   // first  operand
     typename std::decay<OP2>::type op2_;   // second operand
@@ -100,9 +108,9 @@ class ScalarBinOp : public ScalarExpr<ScalarBinOp<OP1, OP2, BinaryOperation>> {
     // constructor
     ScalarBinOp(const OP1& op1, const OP2& op2, BinaryOperation f) : op1_(op1), op2_(op2), f_(f) {};
     // call operator, performs the expression evaluation
-    template <int N> double operator()(const SVector<N>& p) const { return f_(op1_(p), op2_(p)); }
+    double operator()(const SVector<N>& p) const { return f_(op1_(p), op2_(p)); }
     // call parameter evaluation on operands
-    template <typename T> const ScalarBinOp<OP1, OP2, BinaryOperation>& eval_parameters(T i) {
+    template <typename T> const ScalarBinOp<N, OP1, OP2, BinaryOperation>& eval_parameters(T i) {
         op1_.eval_parameters(i);
         op2_.eval_parameters(i);
         return *this;
@@ -114,7 +122,8 @@ DEF_SCALAR_EXPR_OPERATOR(operator*, std::multiplies<>)
 DEF_SCALAR_EXPR_OPERATOR(operator/, std::divides<>)
 
 // definition of unary operation nodes
-template <typename OP1, typename UnaryOperation> class ScalarUnOp : public ScalarExpr<ScalarUnOp<OP1, UnaryOperation>> {
+template <int N, typename OP1, typename UnaryOperation>
+class ScalarUnOp : public ScalarExpr<N, ScalarUnOp<N, OP1, UnaryOperation>> {
    private:
     typename std::remove_reference<OP1>::type op1_;   // operand
     UnaryOperation f_;                                // operation to apply
@@ -122,7 +131,7 @@ template <typename OP1, typename UnaryOperation> class ScalarUnOp : public Scala
     // constructor
     ScalarUnOp(const OP1& op1, UnaryOperation f) : op1_(op1), f_(f) {};
     // call operator, performs the expression evaluation
-    template <int N> double operator()(const SVector<N>& p) const { return f_(op1_(p)); }
+    double operator()(const SVector<N>& p) const { return f_(op1_(p)); }
 };
 DEF_SCALAR_UNARY_OPERATOR(sin, std::sin)
 DEF_SCALAR_UNARY_OPERATOR(cos, std::cos)
@@ -131,17 +140,17 @@ DEF_SCALAR_UNARY_OPERATOR(exp, std::exp)
 DEF_SCALAR_UNARY_OPERATOR(log, std::log)
 
 // unary negation operation
-template <typename OP> class ScalarNegationOp : public ScalarExpr<ScalarNegationOp<OP>> {
+template <int N, typename OP> class ScalarNegationOp : public ScalarExpr<N, ScalarNegationOp<N, OP>> {
    private:
     typename std::remove_reference<OP>::type op_;
    public:
     // constructor
     ScalarNegationOp(const OP& op) : op_(op) {};
-    template <int N> double operator()(const SVector<N>& p) const { return -op_(p); }
+    double operator()(const SVector<N>& p) const { return -op_(p); }
     // call parameter evaluation on stored operand
-    template <typename T> const ScalarNegationOp<OP>& eval_parameters(T i) const {
-      op_.eval_parameters(i);
-      return *this;
+    template <typename T> const ScalarNegationOp<N, OP>& eval_parameters(T i) const {
+        op_.eval_parameters(i);
+        return *this;
     }
 };
 

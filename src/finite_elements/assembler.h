@@ -49,8 +49,8 @@ template <unsigned int M, unsigned int N, unsigned int R, typename B, typename I
         mesh_(mesh), integrator_(integrator), dof_(mesh_.dof()), dof_table_(mesh.dof_table()) {};
 
     // discretization methods
-    template <typename E> Eigen::SparseMatrix<double> discretize_bilinear_form(const E& bilinear_form);
-    template <typename F> Eigen::Matrix<double, Eigen::Dynamic, 1> discretize_forcing(const F& force);
+    template <typename E> SpMatrix<double> discretize_operator(const E& op);
+    template <typename F> DVector<double>  discretize_forcing (const F& force);
 };
 
 // implementative details
@@ -58,7 +58,7 @@ template <unsigned int M, unsigned int N, unsigned int R, typename B, typename I
 // assembly for the discretization matrix of a general bilinear form L
 template <unsigned int M, unsigned int N, unsigned int R, typename B, typename I>
 template <typename E>
-Eigen::SparseMatrix<double> Assembler<M, N, R, B, I>::discretize_bilinear_form(const E& bilinear_form) {
+SpMatrix<double> Assembler<M, N, R, B, I>::discretize_operator(const E& op) {
     std::vector<Eigen::Triplet<double>> triplet_list;   // store triplets (node_i, node_j, integral_value)
     SpMatrix<double> discretization_matrix;
 
@@ -78,7 +78,7 @@ Eigen::SparseMatrix<double> Assembler<M, N, R, B, I>::discretize_bilinear_form(c
       MatrixPtr(&buff_invJ));
 
     // develop bilinear form expression in an integrable field here once
-    auto f = bilinear_form.integrate(mem_buffer);   // let the compiler deduce the type of the expression template!
+    auto f = op.integrate(mem_buffer);   // let the compiler deduce the type of the expression template!
 
     std::size_t current_id;
     // cycle over all mesh elements
@@ -93,10 +93,10 @@ Eigen::SparseMatrix<double> Assembler<M, N, R, B, I>::discretize_bilinear_form(c
             for (size_t j = 0; j < n_basis; ++j) {
                 buff_psi_j = reference_basis_[j];
                 buff_nabla_psi_j = buff_psi_j.derive();   // update buffers content
-                if constexpr (is_symmetric<decltype(bilinear_form)>::value) {
+                if constexpr (is_symmetric<decltype(op)>::value) {
                     // compute only half of the discretization matrix if the operator is symmetric
                     if (dof_table_(current_id, i) >= dof_table_(current_id, j)) {
-                        double value = integrator_.template integrate<decltype(bilinear_form)>(e, f);
+                        double value = integrator_.template integrate<decltype(op)>(e, f);
 			
                         // linearity of the integral is implicitlu used during matrix construction, since duplicated
                         // triplets are summed up, see Eigen docs for more details
@@ -104,7 +104,7 @@ Eigen::SparseMatrix<double> Assembler<M, N, R, B, I>::discretize_bilinear_form(c
                     }
                 } else {
                     // not any optimization to perform in the general case
-                    double value = integrator_.template integrate<decltype(bilinear_form)>(e, f);
+                    double value = integrator_.template integrate<decltype(op)>(e, f);
                     triplet_list.emplace_back(dof_table_(current_id, i), dof_table_(current_id, j), value);
                 }
             }
@@ -115,7 +115,7 @@ Eigen::SparseMatrix<double> Assembler<M, N, R, B, I>::discretize_bilinear_form(c
     discretization_matrix.makeCompressed();
 
     // return just half of the discretization matrix if the form is symmetric (lower triangular part)
-    if constexpr (is_symmetric<decltype(bilinear_form)>::value)
+    if constexpr (is_symmetric<decltype(op)>::value)
         return discretization_matrix.selfadjointView<Eigen::Lower>();
     else
         return discretization_matrix;
@@ -123,7 +123,7 @@ Eigen::SparseMatrix<double> Assembler<M, N, R, B, I>::discretize_bilinear_form(c
 
 template <unsigned int M, unsigned int N, unsigned int R, typename B, typename I>
 template <typename F>
-Eigen::Matrix<double, Eigen::Dynamic, 1> Assembler<M, N, R, B, I>::discretize_forcing(const F& f) {
+DVector<double> Assembler<M, N, R, B, I>::discretize_forcing(const F& f) {
     // allocate space for result vector
     DVector<double> discretization_vector {};
     discretization_vector.resize(dof_, 1);   // there are as many basis functions as degrees of freedom on the mesh
@@ -140,6 +140,6 @@ Eigen::Matrix<double, Eigen::Dynamic, 1> Assembler<M, N, R, B, I>::discretize_fo
 }
 
 }   // namespace core
-}   // namespace fdaPDE
+}   // namespace fdapde
 
 #endif   // __ASSEMBLER_H__
