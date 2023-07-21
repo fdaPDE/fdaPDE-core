@@ -14,8 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __COMPILE_TIME_H__
-#define __COMPILE_TIME_H__
+#ifndef __FDAPDE_COMPILE_TIME_H__
+#define __FDAPDE_COMPILE_TIME_H__
 
 #include <array>
 
@@ -49,4 +49,4 @@ template <typename T> bool constexpr is_eigen_vector() {
 }   // namespace core
 }   // namespace fdapde
 
-#endif   // __COMPILE_TIME_H__
+#endif   // __FDAPDE_COMPILE_TIME_H__

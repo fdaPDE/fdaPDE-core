@@ -169,7 +169,7 @@ void Mesh<M, N, R>::dof_enumerate(const DMatrix<int>& boundary) {
     // algorithm initialization
     int next = num_nodes_;   // next valid ID to assign
     // map of already assigned IDs
-    std::unordered_map<std::pair<int, int>, std::array<int, n_dof_per_edge>, fdaPDE::pair_hash> assigned;
+    std::unordered_map<std::pair<int, int>, std::array<int, n_dof_per_edge>, fdapde::pair_hash> assigned;
     std::size_t col = 0;   // current column of the elements_ table to change
     std::vector<bool> on_boundary(ct_nnodes(M, R) * num_nodes_, false);
 

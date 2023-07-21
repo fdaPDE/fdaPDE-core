@@ -25,8 +25,9 @@
 #include "finite_elements/integration/integrator.h"
 #include "finite_elements/integration/integrator_tables.h"
 #include "finite_elements/solvers/fem_solver_base.h"
-#include "finite_elements/solvers/fem_standard_space_solver.h"
-#include "finite_elements/solvers/fem_standard_spacetime_solver.h"
+#include "finite_elements/solvers/fem_solver_selector.h"
+#include "finite_elements/solvers/fem_linear_elliptic_solver.h"
+#include "finite_elements/solvers/fem_linear_parabolic_solver.h"
 #include "finite_elements/operators/bilinear_form_expressions.h"
 #include "finite_elements/operators/bilinear_form_traits.h"
 #include "finite_elements/operators/laplacian.h"
@@ -34,5 +35,6 @@
 #include "finite_elements/operators/gradient.h"
 #include "finite_elements/operators/identity.h"
 #include "finite_elements/operators/dt.h"
+#include "finite_elements/operators/space_varying.h"
 
 #endif   // __FDAPDE_FINITE_ELEMENTS_MOUDLE_H__
