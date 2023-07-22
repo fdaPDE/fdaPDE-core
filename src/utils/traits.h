@@ -121,6 +121,20 @@ template <typename Head> struct switch_type<Head> {   // end of recursion
     using type = typename Head::type;
 };
 
+  // macro for the definition of has_x detection idiom traits
+#define define_has(METHOD)                                                                                             \
+    template <typename T, typename sig, typename = void> struct has_##METHOD : std::false_type { };                    \
+    template <typename T, typename... Args>                                                                            \
+    struct has_##METHOD<T, void(Args...), std::void_t<decltype(std::declval<T>().METHOD(std::declval<Args>()...))>> :  \
+        std::true_type { };                                                                                            \
+    template <typename T, typename R, typename... Args>                                                                \
+    struct has_##METHOD<                                                                                               \
+      T, R(Args...),                                                                                                   \
+      typename std::enable_if<                                                                                         \
+        !std::is_void<R>::value &&                                                                                     \
+        std::is_convertible<decltype(std::declval<T>().METHOD(std::declval<Args>()...)), R>::value>::type> :           \
+        std::true_type { };
+
 }   // namespace fdapde
 
 #endif   // __FDAPDE_TRAITS_H__
