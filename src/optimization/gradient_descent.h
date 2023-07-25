@@ -17,9 +17,9 @@
 #ifndef __GRADIENT_DESCENT__
 #define __GRADIENT_DESCENT__
 
-#include "../../fields.h"
-#include "../../utils/symbols.h"
-#include "../extensions/extensions.h"
+#include "../fields.h"
+#include "../utils/symbols.h"
+#include "callbacks/callbacks.h"
 
 namespace fdapde {
 namespace core {
@@ -42,7 +42,7 @@ template <unsigned int N> class GradientDescent {
     GradientDescent() = default;
     GradientDescent(std::size_t max_iter, double tol, double step) : max_iter_(max_iter), tol_(tol), step_(step) {};
 
-    template <typename F, typename... Args> void optimize(F& objective, const SVector<N>& x0, Args&... args) {
+    template <typename F, typename... Args> void optimize(F& objective, const SVector<N>& x0, Args... args) {
         static_assert(
           std::is_same<decltype(std::declval<F>().operator()(SVector<N>())), double>::value,
           "cannot find definition for F.operator()(const SVector<N>&)");
@@ -54,20 +54,18 @@ template <unsigned int N> class GradientDescent {
 
         x_old = x0;
         x_new = x0;
-
         grad_old = objective.derive()(x_old);
-        error = grad_old.squaredNorm();
 
-        while (n_iter < max_iter_ && error > tol && !stop) {
+        while (n_iter < max_iter_ && error > tol_ && !stop) {
             update = -grad_old;
             stop |= execute_pre_update_step(*this, objective, args...);
-
+	    
             // update along descent direction
             x_new = x_old + h * update;
             grad_new = objective.derive()(x_new);
 
             // prepare next iteration
-            error = grad_new.squaredNorm();
+            error = grad_new.norm();
             stop |= execute_post_update_step(*this, objective, args...);
             x_old = x_new;
             grad_old = grad_new;
@@ -77,6 +75,10 @@ template <unsigned int N> class GradientDescent {
         value_ = objective(optimum_);
         return;
     }
+
+    // getters
+    SVector<N> optimum() const { return optimum_; }
+    double value() const { return value_; }
 };
 
 }   // namespace core

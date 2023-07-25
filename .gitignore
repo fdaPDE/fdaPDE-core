@@ -17,8 +17,8 @@
 !src/utils/
 !src/utils/*
 !src/utils/fields/*
-!src/optimization/extensions/
-!src/optimization/extensions/*
+!src/optimization/callbacks/
+!src/optimization/callbacks/*
 !src/optimization/optimizers/
 !src/optimization/optimizers/*
 !src/mesh/

@@ -17,15 +17,15 @@
 #ifndef __GRID_H__
 #define __GRID_H__
 
-#include "../../fields.h"
-#include "../../utils/symbols.h"
-#include "../extensions/extensionx.h"
+#include "../fields.h"
+#include "../utils/symbols.h"
+#include "callbacks/callbacks.h"
 
 namespace fdapde {
 namespace core {
 
 // optimize ScalarField<N,F> over an N-dimensional grid of points
-template <int N> class GridOptimizer {
+template <int N> class Grid {
    private:
     SVector<N> optimum_;
     double value_;   // objective value at optimum
@@ -33,7 +33,7 @@ template <int N> class GridOptimizer {
     SVector<N> x_current;
 
     // constructor
-    GridOptimizer() = default;
+    Grid() = default;
 
     template <typename F, typename... Args>
     void optimize(F& objective, const std::vector<SVector<N>>& grid, Args&... args) {
@@ -57,6 +57,10 @@ template <int N> class GridOptimizer {
         }
         return;
     }
+  
+    // getters
+    SVector<N> optimum() const { return optimum_; }
+    double value() const { return value_; }
 };
 
 }   // namespace core

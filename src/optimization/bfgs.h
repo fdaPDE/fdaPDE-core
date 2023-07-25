@@ -18,7 +18,7 @@
 #define __BFGS_H__
 
 #include "../utils/symbols.h"
-#include "extensions/extensions.h"
+#include "callbacks/callbacks.h"
 #include "../fields.h"
 
 namespace fdapde {
@@ -58,7 +58,7 @@ template <int N> class BFGS {
 
         grad_old = objective.derive()(x_old);
         if (grad_old.isApprox(SVector<N>::Zero())) stop = true;   // already at stationary point
-        error = grad_old.squaredNorm();
+        error = grad_old.norm();
 
         while (n_iter < max_iter_ && error > tol_ && !stop) {
             // compute update direction
@@ -85,7 +85,7 @@ template <int N> class BFGS {
             inv_hessian += (U - V);
 	    
             // prepare next iteration
-            error = grad_new.squaredNorm();
+            error = grad_new.norm();
 	    stop |= execute_post_update_step(*this, objective, args...);
             x_old = x_new;
             grad_old = grad_new;

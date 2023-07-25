@@ -25,8 +25,8 @@ namespace core {
 // implementation of the backatracking line search method for step selection
 class BacktrackingLineSearch {
    private:
+    double alpha_ = 2.0;
     double beta_  = 0.5;
-    double alpha_ = 1.0/beta_;
     double gamma_ = 0.5;
    public:
     // constructors
@@ -35,11 +35,13 @@ class BacktrackingLineSearch {
 
     // backtracking based step search
     template <typename Opt, typename Obj> bool pre_update_step(Opt& opt, Obj& obj) {
-        // line search
-        do {
-            alpha_ *= beta_;
-        } while (obj(opt.x_old - alpha_ * opt.grad_old) >   // Armijo–Goldstein condition
-                 obj(opt.x_old) + gamma_ * alpha_ * (opt.grad_old.dot(opt.update)));
+        double m = opt.grad_old.dot(opt.update);
+        if (m < 0) {                                                       // descent direction
+            while (obj(opt.x_old) - obj(opt.x_old + alpha_ * opt.update)   // Armijo–Goldstein condition
+		   + gamma_ * alpha_ * m < 0) {
+                alpha_ *= beta_;
+            }
+        }
 
         opt.h = alpha_;
         return false;
