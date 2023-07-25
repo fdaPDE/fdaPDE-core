@@ -24,7 +24,7 @@
 namespace fdapde {
 namespace core {
 
-// optimize ScalarField<N,F> over an N-dimensional grid of points
+// searches for the point in a given grid minimizing a given nonlinear objective
 template <int N> class Grid {
    private:
     SVector<N> optimum_;
@@ -57,7 +57,7 @@ template <int N> class Grid {
         }
         return;
     }
-  
+
     // getters
     SVector<N> optimum() const { return optimum_; }
     double value() const { return value_; }

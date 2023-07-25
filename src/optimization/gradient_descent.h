@@ -24,7 +24,7 @@
 namespace fdapde {
 namespace core {
 
-// gradient descent method
+// implementation of the gradient descent method for unconstrained nonlinear optimization
 template <unsigned int N> class GradientDescent {
    private:
     std::size_t max_iter_;   // maximum number of iterations before forced stop
@@ -59,7 +59,7 @@ template <unsigned int N> class GradientDescent {
         while (n_iter < max_iter_ && error > tol_ && !stop) {
             update = -grad_old;
             stop |= execute_pre_update_step(*this, objective, args...);
-	    
+
             // update along descent direction
             x_new = x_old + h * update;
             grad_new = objective.derive()(x_new);

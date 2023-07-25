@@ -17,18 +17,18 @@
 #ifndef __BFGS_H__
 #define __BFGS_H__
 
+#include "../fields.h"
 #include "../utils/symbols.h"
 #include "callbacks/callbacks.h"
-#include "../fields.h"
 
 namespace fdapde {
 namespace core {
 
-// implementation of the BFGS optimizer
+// implementation of the Broyden–Fletcher–Goldfarb–Shanno algorithm for unconstrained nonlinear optimization
 template <int N> class BFGS {
    private:
     std::size_t max_iter_;   // maximum number of iterations before forced stop
-    double tol_;             // tolerance on error before forced stop 
+    double tol_;             // tolerance on error before forced stop
     double step_;            // update step
 
     SVector<N> optimum_;
@@ -37,7 +37,7 @@ template <int N> class BFGS {
     SVector<N> x_old, x_new, update, grad_old, grad_new;
     SMatrix<N> inv_hessian;
     double h;
-  
+
     // constructor
     BFGS() = default;
     BFGS(std::size_t max_iter, double tol, double step) : max_iter_(max_iter), tol_(tol), step_(step) {};
@@ -63,7 +63,7 @@ template <int N> class BFGS {
         while (n_iter < max_iter_ && error > tol_ && !stop) {
             // compute update direction
             update = -inv_hessian * grad_old;
-	    stop |= execute_pre_update_step(*this, objective, args...);
+            stop |= execute_pre_update_step(*this, objective, args...);
 
             // update along descent direction
             x_new = x_old + h * update;
@@ -74,7 +74,7 @@ template <int N> class BFGS {
                 return;
             }
 
-            // update inverse inv_hessian approximation
+            // update inverse hessian approximation
             SVector<N> delta_x = x_new - x_old;
             SVector<N> delta_grad = grad_new - grad_old;
             double xg = delta_x.dot(delta_grad);
@@ -83,23 +83,23 @@ template <int N> class BFGS {
             SMatrix<N> U = (1 + (delta_grad.dot(hx)) / xg) * ((delta_x * delta_x.transpose()) / xg);
             SMatrix<N> V = ((hx * delta_x.transpose() + delta_x * hx.transpose())) / xg;
             inv_hessian += (U - V);
-	    
+
             // prepare next iteration
             error = grad_new.norm();
-	    stop |= execute_post_update_step(*this, objective, args...);
+            stop |= execute_post_update_step(*this, objective, args...);
             x_old = x_new;
             grad_old = grad_new;
             n_iter++;
         }
-	
+
         optimum_ = x_old;
         value_ = objective(optimum_);
-	return;
+        return;
     }
 
-  // getters
-  SVector<N> optimum() const { return optimum_; }
-  double value() const { return value_; }
+    // getters
+    SVector<N> optimum() const { return optimum_; }
+    double value() const { return value_; }
 };
 
 }   // namespace core

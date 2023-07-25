@@ -22,7 +22,7 @@
 namespace fdapde {
 namespace core {
 
-// implementation of the Wolfe line search method for step selection (satisfies first and second Wolfe conditions)
+// implementation of the Wolfe line search method for step selection
 class WolfeLineSearch {
    private:
     double alpha_ = 1.0;
@@ -33,7 +33,7 @@ class WolfeLineSearch {
     WolfeLineSearch() = default;
     WolfeLineSearch(double alpha, double c1, double c2) : alpha_(alpha), c1_(c1), c2_(c2) {};
 
-    // backtracking based step search
+    // search step size so to satisfy first and second Wolfe conditions
     template <typename Opt, typename Obj> bool pre_update_step(Opt& opt, Obj& obj) {
         // restore to initial value
         double alpha = alpha_;
