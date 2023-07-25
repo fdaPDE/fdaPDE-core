@@ -35,15 +35,15 @@ class BacktrackingLineSearch {
 
     // backtracking based step search
     template <typename Opt, typename Obj> bool pre_update_step(Opt& opt, Obj& obj) {
+        double alpha = alpha_;   // restore to user defined settings
         double m = opt.grad_old.dot(opt.update);
-        if (m < 0) {                                                       // descent direction
-            while (obj(opt.x_old) - obj(opt.x_old + alpha_ * opt.update)   // Armijo–Goldstein condition
-		   + gamma_ * alpha_ * m < 0) {
-                alpha_ *= beta_;
+        if (m < 0) {                                                      // descent direction
+            while (obj(opt.x_old) - obj(opt.x_old + alpha * opt.update)   // Armijo–Goldstein condition
+		   + gamma_ * alpha * m < 0) {
+                alpha *= beta_;
             }
         }
-
-        opt.h = alpha_;
+        opt.h = alpha;
         return false;
     }
 };

@@ -56,7 +56,6 @@ class WolfeLineSearch {
                 stop = true;
             }
         }
-
         opt.h = alpha;
         return false;
     }
