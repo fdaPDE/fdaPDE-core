@@ -23,6 +23,7 @@ namespace fdapde {
 namespace core {
 
 // implementation of the Wolfe line search method for step selection
+// check "Jorge Nocedal, Stephen J. Wright (2006), Numerical Optimization"
 class WolfeLineSearch {
    private:
     double alpha_ = 1.0;
@@ -33,7 +34,7 @@ class WolfeLineSearch {
     WolfeLineSearch() = default;
     WolfeLineSearch(double alpha, double c1, double c2) : alpha_(alpha), c1_(c1), c2_(c2) {};
 
-    // search step size so to satisfy first and second Wolfe conditions
+    // bisection method for the weak Wolfe conditions
     template <typename Opt, typename Obj> bool pre_update_step(Opt& opt, Obj& obj) {
         // restore to initial value
         double alpha = alpha_;
@@ -44,8 +45,9 @@ class WolfeLineSearch {
         bool stop = false;
         double m = opt.grad_old.dot(opt.update);
         while (!stop) {
-            if (obj(opt.x_old) - obj(opt.x_old + alpha_ * opt.update)   // Armijo–Goldstein condition
-                + c1 * alpha_ * m < 0) {
+            if (obj(opt.x_old) - obj(opt.x_old + alpha * opt.update)   // Armijo–Goldstein condition
+                + c1 * alpha * m < 0) {
+                alpha_max = alpha;
                 alpha = (alpha_min + alpha_max) * 0.5;
             } else if (obj.derive()(opt.x_old + alpha * opt.update).dot(opt.update) < c2 * m) {   // curvature condition
                 alpha_min = alpha;
