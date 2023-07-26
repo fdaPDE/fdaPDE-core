@@ -47,14 +47,8 @@
 !test/data/mesh/surface/*
 !test/data/mesh/network/
 !test/data/mesh/network/*
-!test/core/
-!test/core/*
-!test/core/MESH/
-!test/core/MESH/*
-!test/core/NLA/
-!test/core/NLA/*
-!test/core/FEM/
-!test/core/FEM/*
+!test/src/
+!test/src/*
 !.github/
 !.github/*
 !.github/workflows/
