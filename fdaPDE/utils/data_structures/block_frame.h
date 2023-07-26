@@ -23,6 +23,7 @@
 #include <string>
 #include <tuple>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "../symbols.h"
 #include "../traits.h"
@@ -115,8 +116,8 @@ template <typename... Ts> class BlockFrame {
         DMatrix<T> result;
         // get unique values from block with given key
         const DMatrix<T>& block = std::get<index_of<T, types_>::index>(data_).at(key);
-        std::unordered_map<DMatrix<T>, int, fdaPDE::matrix_hash> row_map;   // preserve row ordering
-        std::unordered_set<DMatrix<T>, fdaPDE::matrix_hash> uniques;        // stores unique rows
+        std::unordered_map<DMatrix<T>, int, fdapde::matrix_hash> row_map;   // preserve row ordering
+        std::unordered_set<DMatrix<T>, fdapde::matrix_hash> uniques;        // stores unique rows
         std::size_t i = 0;                                                  // last inserted row index
         for (std::size_t r = 0; r < block.rows(); ++r) {
             // cycle row by row, duplicates are filtered by std::unordered_set

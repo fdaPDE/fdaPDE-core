@@ -17,6 +17,7 @@
 #ifndef __FDAPDE_CORE_MOUDLE_H__
 #define __FDAPDE_CORE_MOUDLE_H__
 
+#include "utils.h"
 #include "fields.h"
 #include "mesh.h"
 #include "linear_algebra.h"

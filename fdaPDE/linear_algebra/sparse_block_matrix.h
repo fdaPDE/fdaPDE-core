@@ -161,7 +161,7 @@ struct SparseBlockMatrix :
 namespace Eigen {
 namespace internal {
 // import symbols from fdapde namespace
-using fdaPDE::core::SparseBlockMatrix;
+using fdapde::core::SparseBlockMatrix;
 
 // trait definition
 template <typename Scalar_, int Rows_, int Cols_, int Options_, typename StorageIndex_>

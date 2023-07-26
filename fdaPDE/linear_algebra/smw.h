@@ -35,8 +35,8 @@ namespace core {
 // If A is sparse and C a small dense matrix, computing M^{-1} using the above decomposition is much more efficient
 // than computing M^{-1} directly
 
-template <typename SparseSolver = fdaPDE::SparseLU<SpMatrix<double>>,
-	  typename DenseSolver = Eigen::PartialPivLU<DMatrix<double>>>
+template <typename SparseSolver = fdapde::SparseLU<SpMatrix<double>>,
+	  typename DenseSolver  = Eigen::PartialPivLU<DMatrix<double>>>
 struct SMW {
     // constructor
     SMW() = default;
