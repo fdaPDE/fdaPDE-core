@@ -14,38 +14,37 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __ASSEMBLER_H__
-#define __ASSEMBLER_H__
+#ifndef __FEM_ASSEMBLER_H__
+#define __FEM_ASSEMBLER_H__
 
 #include <memory>
 
-#include "../utils/symbols.h"
-#include "../utils/compile_time.h"
-#include "../fields/vector_field.h"
-#include "../fields/scalar_field.h"
 #include "../fields/field_ptrs.h"
-#include "../mesh/mesh.h"
+#include "../fields/scalar_field.h"
+#include "../fields/vector_field.h"
 #include "../mesh/element.h"
-#include "integration/integrator.h"
-#include "basis/lagrangian_basis.h"
+#include "../mesh/mesh.h"
+#include "../pde/assembler.h"
+#include "../utils/compile_time.h"
+#include "../utils/integration/integrator.h"
+#include "../utils/symbols.h"
 #include "basis/multivariate_polynomial.h"
-#include "basis/basis_cache.h"
-#include "operators/bilinear_form_traits.h"
+#include "fem_symbols.h"
 
 namespace fdapde {
 namespace core {
 
-// finite element method assembly loop
-template <unsigned int M, unsigned int N, unsigned int R, typename B, typename I> class Assembler {
+// finite element method assembler
+template <typename D, typename B, typename I> class Assembler<FEM, D, B, I> {
    private:
-    constexpr static unsigned n_basis = ct_nnodes(M, R);
-    const Mesh<M, N, R>& mesh_;   // mesh
-    const I& integrator_;         // quadrature rule used in integrals approzimation
-    B reference_basis_ {};        // functional basis over reference N-dimensional unit simplex
-    std::size_t dof_;             // overall number of unknowns in the FEM linear system
+    static constexpr std::size_t n_basis = D::n_dof_per_element;
+    const D& mesh_;          // triangulated problem domain
+    const I& integrator_;    // quadrature rule 
+    B reference_basis_ {};   // functional basis over reference unit simplex
+    std::size_t dof_;        // overall number of unknowns in FEM linear system
     const Eigen::Matrix<int, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>& dof_table_;
    public:
-    Assembler(const Mesh<M, N, R>& mesh, const I& integrator) :
+    Assembler(const D& mesh, const I& integrator) :
         mesh_(mesh), integrator_(integrator), dof_(mesh_.dof()), dof_table_(mesh.dof_table()) {};
 
     // discretization methods
@@ -56,9 +55,11 @@ template <unsigned int M, unsigned int N, unsigned int R, typename B, typename I
 // implementative details
   
 // assembly for the discretization matrix of a general bilinear form L
-template <unsigned int M, unsigned int N, unsigned int R, typename B, typename I>
+template <typename D, typename B, typename I>
 template <typename E>
-SpMatrix<double> Assembler<M, N, R, B, I>::discretize_operator(const E& op) {
+SpMatrix<double> Assembler<FEM, D, B, I>::discretize_operator(const E& op) {
+    constexpr std::size_t M = D::local_dimension;
+    constexpr std::size_t N = D::embedding_dimension;
     std::vector<Eigen::Triplet<double>> triplet_list;   // store triplets (node_i, node_j, integral_value)
     SpMatrix<double> discretization_matrix;
 
@@ -121,9 +122,9 @@ SpMatrix<double> Assembler<M, N, R, B, I>::discretize_operator(const E& op) {
         return discretization_matrix;
 };
 
-template <unsigned int M, unsigned int N, unsigned int R, typename B, typename I>
+template <typename D, typename B, typename I>
 template <typename F>
-DVector<double> Assembler<M, N, R, B, I>::discretize_forcing(const F& f) {
+DVector<double> Assembler<FEM, D, B, I>::discretize_forcing(const F& f) {
     // allocate space for result vector
     DVector<double> discretization_vector {};
     discretization_vector.resize(dof_, 1);   // there are as many basis functions as degrees of freedom on the mesh
@@ -142,4 +143,4 @@ DVector<double> Assembler<M, N, R, B, I>::discretize_forcing(const F& f) {
 }   // namespace core
 }   // namespace fdapde
 
-#endif   // __ASSEMBLER_H__
+#endif   // __FEM_ASSEMBLER_H__

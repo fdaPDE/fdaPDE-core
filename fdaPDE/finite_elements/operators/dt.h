@@ -14,25 +14,26 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __DT_H__
-#define __DT_H__
+#ifndef __FEM_DT_H__
+#define __FEM_DT_H__
 
-#include "bilinear_form_expressions.h"
+#include "../../pde/differential_expressions.h"
+#include "../../pde/differential_operators.h"
+#include "../fem_symbols.h"
 
 namespace fdapde {
 namespace core {
 
 // time derivative operator.
-struct dT : public BilinearFormExpr<dT> {
-    std::tuple<dT> get_operator_type() const { return std::make_tuple(*this); }
+template <> struct dT<FEM> : public DifferentialExpr<dT<FEM>> {
     enum {
-      is_space_varying = false,
-      is_symmetric = true
+        is_space_varying = false,
+        is_symmetric = true
     };
 
     // return zero field
     template <typename... Args> auto integrate(const std::tuple<Args...>& mem_buffer) const {
-        IMPORT_MEM_BUFFER_SYMBOLS(mem_buffer);
+        IMPORT_FEM_MEM_BUFFER_SYMBOLS(mem_buffer);
         // recover dimensionality of weak formulation from \psi_i
         return ScalarField<decltype(psi_i)::PtrType::input_space_dimension>::Zero();
     }
@@ -41,4 +42,4 @@ struct dT : public BilinearFormExpr<dT> {
 }   // namespace core
 }   // namespace fdapde
 
-#endif   // __DT_H__
+#endif   // __FEM_DT_H__

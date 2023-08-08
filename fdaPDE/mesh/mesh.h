@@ -51,13 +51,6 @@ template <unsigned int M, unsigned int N> struct neighboring_structure {
 // access to domain's triangulation, M: tangent space dimension, N: embedding space dimension, R: FEM mesh order
 template <unsigned int M, unsigned int N, unsigned int R = 1> class Mesh {
    private:
-    // structural informations related to the construction of a mesh of order R
-    static constexpr unsigned int n_vertices = ct_nvertices(M);
-    static constexpr unsigned int n_edges = ct_nedges(M);
-    static constexpr unsigned int n_dof_per_element = ct_nnodes(M, R);
-    static constexpr unsigned int n_dof_per_edge = R - 1;
-    static constexpr unsigned int n_dof_internal = n_dof_per_element - (M + 1) - n_edges * (R - 1);   // > 0 \iff R > 1
-
     // coordinates of points costituting the vertices of mesh elements
     DMatrix<double> points_ {};
     unsigned int num_nodes_ = 0;
@@ -79,11 +72,11 @@ template <unsigned int M, unsigned int N, unsigned int R = 1> class Mesh {
     Mesh() = default;
     // construct from .csv files, strings are names of file where raw data is contained
     Mesh(const std::string& points, const std::string& triangles, const std::string& neighbors,
-	 const std::string& boundary);
+         const std::string& boundary);
 
     // construct directly from eigen matrices
     Mesh(const DMatrix<double>& points, const DMatrix<int>& elements,
-	 const typename neighboring_structure<M, N>::type& neighbors, const DMatrix<int>& boundary);
+         const typename neighboring_structure<M, N>::type& neighbors, const DMatrix<int>& boundary);
 
     // getters
     const Element<M, N, R>& element(unsigned int ID) const { return cache_[ID]; }
@@ -94,7 +87,7 @@ template <unsigned int M, unsigned int N, unsigned int R = 1> class Mesh {
     unsigned int nodes() const { return num_nodes_; }
     std::array<std::pair<double, double>, N> range() const { return range_; }
 
-    // support for the definition of finite element basis over a mesh object
+    // support for the definition of a finite element basis
     std::size_t dof() const { return dof_; }   // number of degrees of freedom
     const Eigen::Matrix<int, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>& dof_table() const { return elements_; }
     DMatrix<double> dof_coords() const;   // coordinates of points supporting a finite element basis
@@ -146,11 +139,18 @@ template <unsigned int M, unsigned int N, unsigned int R = 1> class Mesh {
     boundary_iterator boundary_begin() const { return boundary_iterator(this, 0); }
     boundary_iterator boundary_end() const { return boundary_iterator(this, dof_); }
 
-    // expose compile time informations to outside
-    static constexpr bool manifold = is_manifold<M, N>::value;
-    static constexpr unsigned int local_dimension = M;
-    static constexpr unsigned int embedding_dimension = N;
-    static constexpr unsigned int order = R;
+    // compile time informations
+    static constexpr bool is_manifold = is_manifold<M, N>::value;
+    enum {
+        local_dimension = M,
+        embedding_dimension = N,
+        order = R,
+        n_vertices = ct_nvertices(M),
+        n_edges = ct_nedges(M),
+        n_dof_per_element = ct_nnodes(M, R),
+        n_dof_per_edge = R - 1,
+        n_dof_internal = n_dof_per_element - (M + 1) - n_edges * (R - 1)   // > 0 \iff R > 2
+    };
 };
 
 // alias exports

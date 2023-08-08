@@ -14,34 +14,17 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __BILINEAR_FORM_TRAITS_H__
-#define __BILINEAR_FORM_TRAITS_H__
-
-#include <tuple>
-#include <type_traits>
-
-#include "../../utils/traits.h"
-#include "dt.h"
-#include "gradient.h"
-#include "identity.h"
-#include "laplacian.h"
+#ifndef __PDE_ASSEMBLER_H__
+#define __PDE_ASSEMBLER_H__
 
 namespace fdapde {
 namespace core {
 
-// trait to detect if the bilinear form is symmetric.
-template <typename E> struct is_symmetric {
-    static constexpr bool value = std::decay<E>::type::is_symmetric;
-};
-
-// trait to detect if the bilinear form denotes a parabolic PDE.
-template <typename E_> struct is_parabolic {
-    typedef typename std::decay<E_>::type E;
-    // returns true if the time derivative operator dT() is detected in the expression
-    static constexpr bool value = has_type<dT, decltype(std::declval<E>().get_operator_type())>::value;
-};
+// generic algorithm for the assembly of the discretization matrix of a differential operator
+//to be partially specialized with respect to T
+template <typename T, typename... Ts> class Assembler { };
 
 }   // namespace core
 }   // namespace fdapde
 
-#endif   // __BILINEAR_FORM_TRAITS_H__
+#endif   // __PDE_ASSEMBLER_H__

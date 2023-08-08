@@ -26,7 +26,7 @@
 #include <fdaPDE/linear_algebra.h>
 #include <fdaPDE/finite_elements.h>
 using fdapde::core::ct_binomial_coefficient;
-using fdapde::core::LagrangianBasis;
+using fdapde::core::LagrangianElement;
 using fdapde::core::MultivariatePolynomial;
 using fdapde::core::point_list;
 using fdapde::core::ReferenceElement;
@@ -73,7 +73,7 @@ TYPED_TEST_SUITE(lagrangian_basis_test, pairs);
 // tests a Lagrangian basis can be successfully built over the reference unit simplex
 TYPED_TEST(lagrangian_basis_test, reference_element_support) {
     // create lagrangian basis over unit dimensional simplex
-    LagrangianBasis<TestFixture::N, TestFixture::R> basis {};
+    LagrangianElement<TestFixture::N, TestFixture::R> basis {};
 
     // expect correct number of basis functions
     EXPECT_EQ(basis.size(), TestFixture::n_basis);
@@ -97,7 +97,7 @@ TYPED_TEST(lagrangian_basis_test, reference_element_support) {
 // test linear elements behave correctly on reference element
 TEST(lagrangian_basis_test, order1_reference_element) {
     // create finite linear elements over unit reference simplex
-    LagrangianBasis<2, 1> basis {};
+    LagrangianElement<2, 1> basis {};
     SVector<2> p(0, 0);   // define evaluation point
 
     // basis functions are defined in counterclockwise order starting from node (0,0)
@@ -117,7 +117,7 @@ TEST(lagrangian_basis_test, order1_reference_element) {
 // test quadratic elements behave correctly on reference element
 TEST(lagrangian_basis_test, order2_reference_element) {
     // create finite linear elements over unit reference simplex
-    LagrangianBasis<2, 2> basis {};
+    LagrangianElement<2, 2> basis {};
     SVector<2> p(0.5, 0.5);   // define evaluation point
 
     // basis functions are defined following the enumeration:
@@ -155,7 +155,7 @@ TEST(lagrangian_basis_test, order1_physical_element) {
        SVector<2>(-0.9937417999542519,  4.7916671954122458)});
     // use the barycentric matrix of e and the basis defined over the reference element
     Eigen::Matrix<double, 2, 2> invJ = e.inv_barycentric_matrix().transpose();
-    LagrangianBasis<2, 1> refBasis {};
+    LagrangianElement<2, 1> refBasis {};
 
     for (std::size_t i = 0; i < refBasis.size(); ++i) {
         VectorField<2, 2> grad = invJ * refBasis[i].derive();
@@ -180,7 +180,7 @@ TEST(lagrangian_basis_test, order2_phyiscal_element) {
        SVector<2>(-9.8048064747509027, -4.3298093852388320), SVector<2>( 9.3751005233316018,  6.4017841287628112)});
     // use the barycentric matrix of e and the basis defined over the reference element
     Eigen::Matrix<double, 2, 2> invJ = e.inv_barycentric_matrix().transpose();
-    LagrangianBasis<2, 2> refBasis {};
+    LagrangianElement<2, 2> refBasis {};
 
     for (std::size_t i = 0; i < refBasis.size(); ++i) {
         VectorField<2, 2> grad = invJ * refBasis[i].derive();

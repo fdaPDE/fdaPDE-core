@@ -14,8 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __LAGRANGIAN_BASIS_H__
-#define __LAGRANGIAN_BASIS_H__
+#ifndef __LAGRANGIAN_ELEMENT_H__
+#define __LAGRANGIAN_ELEMENT_H__
 
 #include "../../mesh/element.h"
 #include "../../mesh/reference_element.h"
@@ -26,27 +26,28 @@
 namespace fdapde {
 namespace core {
 
-// A Lagrangian basis of degree R over an M-dimensional space
-template <unsigned int M, unsigned int R> class LagrangianBasis {
+// A Lagrangian basis of degree R over an M-dimensional element
+template <unsigned int M_, unsigned int R_> class LagrangianElement {
    private:
-    std::array<std::array<double, M>, ct_binomial_coefficient(M + R, R)> nodes_;   // nodes of the Lagrangian basis
-    std::array<MultivariatePolynomial<M, R>, ct_binomial_coefficient(M + R, R)> basis_;
+    std::array<std::array<double, M_>, ct_binomial_coefficient(M_ + R_, R_)> nodes_;   // nodes of the Lagrangian basis
+    std::array<MultivariatePolynomial<M_, R_>, ct_binomial_coefficient(M_ + R_, R_)> basis_;
     // solves the Vandermonde system for the computation of polynomial coefficients
-    void compute_coefficients_(const std::array<std::array<double, M>, ct_binomial_coefficient(M + R, R)>& nodes);
+    void compute_coefficients_(const std::array<std::array<double, M_>, ct_binomial_coefficient(M_ + R_, R_)>& nodes);
    public:
-    // expose basis order
-    static constexpr unsigned int order = R;
+    // compile time informations
+    static constexpr unsigned int R = R_; // basis order
+    static constexpr unsigned int M = M_; // input space dimension
+    static constexpr unsigned int n_basis = ct_binomial_coefficient(M + R, R);
     typedef MultivariatePolynomial<M, R> ElementType;
-    typedef typename std::array<MultivariatePolynomial<M, R>, ct_binomial_coefficient(M + R, R)>::const_iterator
-      const_iterator;
+    typedef typename std::array<MultivariatePolynomial<M, R>, n_basis>::const_iterator const_iterator;
 
     // construct from a given set of nodes
-    LagrangianBasis(const std::array<std::array<double, M>, ct_binomial_coefficient(M + R, R)>& nodes)
+    LagrangianElement(const std::array<std::array<double, M>, n_basis>& nodes)
       : nodes_(nodes) {
         compute_coefficients_(nodes_);
     };
     // construct over the referece M-dimensional unit simplex
-    LagrangianBasis() : LagrangianBasis<M, R>(ReferenceElement<M, R>::nodes) {};
+    LagrangianElement() : LagrangianElement<M, R>(ReferenceElement<M, R>::nodes) {};
 
     // getters
     const MultivariatePolynomial<M, R>& operator[](size_t i) const { return basis_[i]; }
@@ -54,14 +55,16 @@ template <unsigned int M, unsigned int R> class LagrangianBasis {
     const_iterator begin() const { return basis_.cbegin(); }
     const_iterator end() const { return basis_.cend(); }
 };
-
+  
+// implementative details
+  
 // compute coefficients via Vandermonde matrix
-template <unsigned int M, unsigned int R>
-void LagrangianBasis<M, R>::compute_coefficients_(
-  const std::array<std::array<double, M>, ct_binomial_coefficient(M + R, R)>& nodes) {
+template <unsigned int M_, unsigned int R_>
+void LagrangianElement<M_, R_>::compute_coefficients_(
+  const std::array<std::array<double, M_>, ct_binomial_coefficient(M_ + R_, R_)>& nodes) {
     // build vandermonde matrix
-    constexpr unsigned int n_basis = ct_binomial_coefficient(M + R, R);
-    constexpr std::array<std::array<unsigned, M>, n_basis> poly_table = MultivariatePolynomial<M, R>::poly_table;
+    constexpr unsigned int n_basis = ct_binomial_coefficient(M_ + R_, R_);
+    constexpr std::array<std::array<unsigned, M_>, n_basis> poly_table = MultivariatePolynomial<M, R>::poly_table;
 
     // Vandermonde matrix construction
     SMatrix<n_basis> V = Eigen::Matrix<double, n_basis, n_basis>::Ones();
@@ -87,8 +90,8 @@ void LagrangianBasis<M, R>::compute_coefficients_(
         b[i] = 0;
     }
 }
-
+  
 }   // namespace core
 }   // namespace fdapde
 
-#endif   // __LAGRANGIAN_BASIS_H__
+#endif   // __LAGRANGIAN_ELEMENT_H__

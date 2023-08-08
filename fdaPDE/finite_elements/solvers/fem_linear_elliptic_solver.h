@@ -20,32 +20,31 @@
 #include <exception>
 
 #include "../../utils/symbols.h"
-#include "../assembler.h"
 #include "fem_solver_base.h"
 
 namespace fdapde {
 namespace core {
+  
+template <typename D, typename E, typename F>
+struct FEMLinearEllipticSolver : public FEMSolverBase<D, E, F> {
+    // solves linear system R1_*u = b, where R1_ : stiff matrix, b : discretized force
+    template <typename PDE> void solve(const PDE& pde) {
+        static_assert(is_pde<PDE>::value, "pde is not a valid PDE object");
 
-struct FEMLinearEllipticSolver : public FEMSolverBase {
-    // solves linear system R1_*u = b, where R1_ : stiff matrix, b : forcing term discretization
-    template <typename E>
-    void solve(const E& pde) {
-      static_assert(is_pde<E>::value, "pde is not a valid PDE object");
-
-      if (!init_) throw std::runtime_error("solver must be initialized first!");
-      // define eigen system solver, exploit spd of operator if possible
-      typedef Eigen::SparseLU<SpMatrix<double>, Eigen::COLAMDOrdering<int>> SolverType;
-      SolverType solver;
-      solver.compute(this->R1_);
-      // stop if something was wrong...
-      if (solver.info() != Eigen::Success) {
-        this->success = false;
+        if (!this->is_init) throw std::runtime_error("solver must be initialized first!");
+        // define eigen system solver, exploit spd of operator if possible
+        typedef Eigen::SparseLU<SpMatrix<double>, Eigen::COLAMDOrdering<int>> SystemSolverType;
+        SystemSolverType solver;
+        solver.compute(this->R1_);
+        // stop if something was wrong
+        if (solver.info() != Eigen::Success) {
+            this->success = false;
+            return;
+        }
+        // solve FEM linear system: R1_*solution_ = force_;
+        this->solution_ = solver.solve(this->force_);
+        this->success = true;
         return;
-      }
-      // solve FEM linear system: R1_*solution_ = force_;
-      this->solution_ = solver.solve(this->force_);
-      return;
-
     }
 };
 

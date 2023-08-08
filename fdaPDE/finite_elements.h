@@ -17,23 +17,26 @@
 #ifndef __FDAPDE_FINITE_ELEMENTS_MOUDLE_H__
 #define __FDAPDE_FINITE_ELEMENTS_MOUDLE_H__
 
-#include "finite_elements/pde.h"
-#include "finite_elements/assembler.h"
+#include "pde/differential_operators.h"
+#include "pde/differential_expressions.h"
+#include "pde/pde.h"
+
+#include "utils/integration/integrator.h"
+#include "utils/integration/integrator_tables.h"
+
+#include "finite_elements/fem_symbols.h"
+#include "finite_elements/fem_assembler.h"
 #include "finite_elements/basis/multivariate_polynomial.h"
-#include "finite_elements/basis/lagrangian_basis.h"
-#include "finite_elements/basis/basis_cache.h"
-#include "finite_elements/integration/integrator.h"
-#include "finite_elements/integration/integrator_tables.h"
+#include "finite_elements/basis/lagrangian_element.h"
+#include "finite_elements/basis/finite_element_basis.h"
 #include "finite_elements/solvers/fem_solver_base.h"
 #include "finite_elements/solvers/fem_solver_selector.h"
 #include "finite_elements/solvers/fem_linear_elliptic_solver.h"
 #include "finite_elements/solvers/fem_linear_parabolic_solver.h"
-#include "finite_elements/operators/bilinear_form_expressions.h"
-#include "finite_elements/operators/bilinear_form_traits.h"
 #include "finite_elements/operators/laplacian.h"
-#include "finite_elements/operators/divergence.h"
-#include "finite_elements/operators/gradient.h"
-#include "finite_elements/operators/identity.h"
+#include "finite_elements/operators/diffusion.h"
+#include "finite_elements/operators/advection.h"
+#include "finite_elements/operators/reaction.h"
 #include "finite_elements/operators/dt.h"
 #include "finite_elements/operators/space_varying.h"
 

@@ -14,13 +14,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FEM_LAPLACIAN_H__
-#define __FEM_LAPLACIAN_H__
+#ifndef __FEM_REACTION_H__
+#define __FEM_REACTION_H__
 
 #include <type_traits>
 
-#include "../../utils/symbols.h"
-#include "../../fields/matrix_field.h"
+#include "../../fields/scalar_field.h"
+#include "../../mesh/element.h"
 #include "../../pde/differential_expressions.h"
 #include "../../pde/differential_operators.h"
 #include "../fem_symbols.h"
@@ -28,22 +28,31 @@
 namespace fdapde {
 namespace core {
 
-// laplacian operator (isotropic and stationary diffusion)
-template <> struct Laplacian<FEM> : public DifferentialExpr<Laplacian<FEM>> {
+// reaction operator
+template <typename T> class Reaction<FEM, T> : public DifferentialExpr<Reaction<FEM, T>> {
+    // perform compile-time sanity checks
+    static_assert(
+      std::is_base_of<ScalarBase, T>::value ||   // space-varying case
+      std::is_floating_point<T>::value);         // constant coefficient case
+   private:
+    T c_;   // reaction term
+   public:
     enum {
-        is_space_varying = false,
+        is_space_varying = std::is_base_of<ScalarBase, T> ::value,
         is_symmetric = true
     };
 
+    // constructors
+    Reaction() = default;
+    Reaction(const T& c) : c_(c) {};
     // provides the operator's weak form
     template <typename... Args> auto integrate(const std::tuple<Args...>& mem_buffer) const {
         IMPORT_FEM_MEM_BUFFER_SYMBOLS(mem_buffer);
-        // isotropic unitary diffusion: -(\Nabla psi_i).dot(\Nabla psi_j)
-        return -(invJ * nabla_psi_i).dot(invJ * nabla_psi_j);
+	return c_ * psi_i * psi_j;   // c*\psi_i*\psi_j
     }
 };
-
+  
 }   // namespace core
 }   // namespace fdapde
 
-#endif   // __FEM_LAPLACIAN_H__
+#endif   // __FEM_REACTION_H__

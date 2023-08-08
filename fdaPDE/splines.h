@@ -14,15 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_ASSERT_H__
-#define __FDAPDE_ASSERT_H__
+#ifndef __FDAPDE_SPLINES_MOUDLE_H__
+#define __FDAPDE_SPLINES_MOUDLE_H__
 
-namespace fdapde {
-  
-// throw an exception if condition is not met
-#define fdapde_assert(condition)                                                                                       \
-    if (!(condition)) throw std::runtime_error("Condition " #condition " failed");
-  
-}   // namespace fdapde
 
-#endif   // __FDAPDE_ASSERT_H__
+#endif   // __FDAPDE_SPLINES_MOUDLE_H__
