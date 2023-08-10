@@ -34,6 +34,8 @@
 !fdaPDE/linear_algebra/*
 !fdaPDE/multithreading/
 !fdaPDE/multithreading/*
+!fdaPDE/splines/
+!fdaPDE/splines/*
 !test/
 !test/*
 !test/data/
