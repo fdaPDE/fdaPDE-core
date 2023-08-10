@@ -20,22 +20,22 @@
 #include <Eigen/Sparse>
 
 // fields
-// #include "src/scalar_field_test.cpp"
-// #include "src/vector_field_test.cpp"
-// // mesh
-// #include "src/element_test.cpp"
-// #include "src/mesh_test.cpp"
-// #include "src/point_location_test.cpp"
-// // linear_algebra
-// #include "src/kronecker_product_test.cpp"
-// #include "src/vector_space_test.cpp"
-// // finite_elements
-// #include "src/fem_operators_test.cpp"
-// #include "src/fem_pde_test.cpp"
-// #include "src/integration_test.cpp"
-// #include "src/lagrangian_basis_test.cpp"
-// // optimization
-// #include "src/optimization_test.cpp"
+#include "src/scalar_field_test.cpp"
+#include "src/vector_field_test.cpp"
+// mesh
+#include "src/element_test.cpp"
+#include "src/mesh_test.cpp"
+#include "src/point_location_test.cpp"
+// linear_algebra
+#include "src/kronecker_product_test.cpp"
+#include "src/vector_space_test.cpp"
+// finite_elements
+#include "src/fem_operators_test.cpp"
+#include "src/fem_pde_test.cpp"
+#include "src/integration_test.cpp"
+#include "src/lagrangian_basis_test.cpp"
+// optimization
+#include "src/optimization_test.cpp"
 //splines
 #include "src/spline_test.cpp"
 

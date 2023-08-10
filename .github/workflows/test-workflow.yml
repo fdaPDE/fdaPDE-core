@@ -1,7 +1,7 @@
 name: test-workflow
 on:
   push:
-     branches: [ stable ]
+     branches: [ stable, develop ]
      
 jobs:
   build:
