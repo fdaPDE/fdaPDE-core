@@ -22,8 +22,8 @@
 #include <memory>
 
 // static structures, allocated on stack at compile time.
-template <unsigned int N> using SVector = Eigen::Matrix<double, N, 1>;
-template <unsigned int N, unsigned int M = N> using SMatrix = Eigen::Matrix<double, N, M>;
+template <int N> using SVector = Eigen::Matrix<double, N, 1>;
+template <int N, int M = N> using SMatrix = Eigen::Matrix<double, N, M>;
 
 // dynamic size, head-appocated, structures.
 template <typename T> using DMatrix    = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;
@@ -72,7 +72,7 @@ struct matrix_hash {
 };
 
 // oredering relation for SVector<N>, allows SVector<N> to be keys of std::map
-template <unsigned int N> struct s_vector_compare {
+template <int N> struct s_vector_compare {
     bool operator()(const SVector<N>& lhs, const SVector<N>& rhs) const {
         return std::lexicographical_compare(lhs.data(), lhs.data() + lhs.size(), rhs.data(), rhs.data() + rhs.size());
     };

@@ -29,24 +29,24 @@ namespace fdapde {
 namespace core {
 
 // M local dimension, N embedding dimension, R order of the element (defaulted to linear finite elements)
-template <unsigned int M, unsigned int N, unsigned int R = 1> class Element;   // forward declaration
+template <int M, int N, int R = 1> class Element;   // forward declaration
 
 // using declarations for manifold specialization
-template <unsigned int R> using SurfaceElement = Element<2, 3, R>;
-template <unsigned int R> using NetworkElement = Element<1, 2, R>;
+template <int R> using SurfaceElement = Element<2, 3, R>;
+template <int R> using NetworkElement = Element<1, 2, R>;
 
 // number of degrees of freedom associated to an M-dimensional element of degree R
-constexpr unsigned int ct_nnodes(const unsigned int M, const unsigned int R) {
+constexpr int ct_nnodes(const int M, const int R) {
     return ct_factorial(M + R) / (ct_factorial(M) * ct_factorial(R));
 }
 // number of vertices of an M-dimensional element
-constexpr unsigned int ct_nvertices(const unsigned int M) { return M + 1; }
+constexpr int ct_nvertices(const int M) { return M + 1; }
 // number of edges of an M-dimensional element
-constexpr unsigned int ct_nedges(const unsigned int M) { return (M * (M + 1)) / 2; }
+constexpr int ct_nedges(const int M) { return (M * (M + 1)) / 2; }
 
 // A single mesh element. This object represents the main **geometrical** abstraction of a physical element.
 // No functional information is carried by instances of this object.
-template <unsigned int M, unsigned int N, unsigned int R> class Element {
+template <int M, int N, int R> class Element {
    private:
     std::size_t ID_;                                         // ID of this element
     std::array<std::size_t, ct_nvertices(M)> node_ids_ {};   // ID of nodes composing the element
@@ -60,11 +60,11 @@ template <unsigned int M, unsigned int N, unsigned int R> class Element {
     SMatrix<N, M> J_;       // [J_]_ij = (coords_[j][i] - coords_[0][i])
     SMatrix<M, N> inv_J_;   // J^{-1} (Penrose pseudo-inverse for manifold elements)
    public:
-    static constexpr unsigned int nodes = ct_nnodes(M, R);
-    static constexpr unsigned int vertices = ct_nvertices(M);
-    static constexpr unsigned int local_dimension = M;
-    static constexpr unsigned int embedding_dimension = N;
-    static constexpr unsigned int order = R;
+    static constexpr int nodes = ct_nnodes(M, R);
+    static constexpr int vertices = ct_nvertices(M);
+    static constexpr int local_dimension = M;
+    static constexpr int embedding_dimension = N;
+    static constexpr int order = R;
 
     // constructor
     Element() = default;
@@ -74,7 +74,7 @@ template <unsigned int M, unsigned int N, unsigned int R> class Element {
     // getters
     const std::array<SVector<N>, ct_nvertices(M)> coords() const { return coords_; }
     const std::vector<int> neighbors() const { return neighbors_; }
-    const unsigned int ID() const { return ID_; }
+    const int ID() const { return ID_; }
     Eigen::Matrix<double, N, M> barycentric_matrix() const { return J_; }
     Eigen::Matrix<double, M, N> inv_barycentric_matrix() const { return inv_J_; }
     std::array<std::size_t, ct_nvertices(M)> node_ids() const { return node_ids_; }
@@ -99,7 +99,7 @@ template <unsigned int M, unsigned int N, unsigned int R> class Element {
 
 // implementation details
 
-template <unsigned int M, unsigned int N, unsigned int R>
+template <int M, int N, int R>
 Element<M, N, R>::Element(
   std::size_t ID, const std::array<std::size_t, ct_nvertices(M)>& node_ids,
   const std::array<SVector<N>, ct_nvertices(M)>& coords, const std::vector<int>& neighbors, bool boundary) :
@@ -127,7 +127,7 @@ Element<M, N, R>::Element(
     }
 }
 
-template <unsigned int M, unsigned int N, unsigned int R>
+template <int M, int N, int R>
 SVector<M + 1> Element<M, N, R>::to_barycentric_coords(const SVector<N>& x) const {
     // solve: barycenitrc_matrix_*z = (x-ref)
     SVector<M> z = inv_J_ * (x - coords_[0]);
@@ -137,7 +137,7 @@ SVector<M + 1> Element<M, N, R>::to_barycentric_coords(const SVector<N>& x) cons
     return result;
 }
 
-template <unsigned int M, unsigned int N, unsigned int R> SVector<N> Element<M, N, R>::mid_point() const {
+template <int M, int N, int R> SVector<N> Element<M, N, R>::mid_point() const {
     // The center of gravity of an element has all its barycentric coordinates equal to 1/(M+1).
     // The midpoint of an element can be computed by mapping it to a cartesian reference system
     SVector<M> barycentric_mid_point;
@@ -145,7 +145,7 @@ template <unsigned int M, unsigned int N, unsigned int R> SVector<N> Element<M, 
     return J_ * barycentric_mid_point + coords_[0];
 }
 
-template <unsigned int M, unsigned int N, unsigned int R>
+template <int M, int N, int R>
 std::pair<SVector<N>, SVector<N>> Element<M, N, R>::bounding_box() const {
     // define lower-left and upper-right corner of bounding box
     SVector<N> ll, ur;
@@ -164,14 +164,14 @@ std::pair<SVector<N>, SVector<N>> Element<M, N, R>::bounding_box() const {
 }
 
 // check if a point is contained in the element
-template <unsigned int M, unsigned int N, unsigned int R>
+template <int M, int N, int R>
 template <bool is_manifold>
 typename std::enable_if<!is_manifold, bool>::type Element<M, N, R>::contains(const SVector<N>& x) const {
     // A point is inside the element if all its barycentric coordinates are positive
     return (to_barycentric_coords(x).array() >= -10 * std::numeric_limits<double>::epsilon()).all();
 }
 
-template <unsigned int M, unsigned int N, unsigned int R> VectorSpace<M, N> Element<M, N, R>::spanned_space() const {
+template <int M, int N, int R> VectorSpace<M, N> Element<M, N, R>::spanned_space() const {
     // build a basis for the space containing the element
     std::array<SVector<N>, M> basis;
     for (size_t i = 0; i < M; ++i) { basis[i] = (coords_[i + 1] - coords_[0]); }
@@ -179,7 +179,7 @@ template <unsigned int M, unsigned int N, unsigned int R> VectorSpace<M, N> Elem
 }
 
 // specialization for manifold elements of contains() routine.
-template <unsigned int M, unsigned int N, unsigned int R>
+template <int M, int N, int R>
 template <bool is_manifold>
 typename std::enable_if<is_manifold, bool>::type Element<M, N, R>::contains(const SVector<N>& x) const {
     // check if the point is contained in the affine space spanned by the element

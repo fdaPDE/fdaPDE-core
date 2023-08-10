@@ -29,32 +29,32 @@ namespace core {
 
 // A set of utilities to perform numerical integration
 // M: dimension of the domain of integration, R finite element order, K number of quadrature nodes
-template <unsigned int M, unsigned int R, unsigned int K = standard_fem_quadrature_rule<M, R>::K> class Integrator {
+template <int M, int R, int K = standard_fem_quadrature_rule<M, R>::K> class Integrator {
    private:
     IntegratorTable<M, K> integration_table_;
    public:
     Integrator() : integration_table_(IntegratorTable<M, K>()) {};
 
     // integrate a callable F over a mesh element e
-    template <unsigned int N, typename F> double integrate(const Element<M, N, R>& e, const F& f) const;
+    template <int N, typename F> double integrate(const Element<M, N, R>& e, const F& f) const;
     // integrate a callable F over a triangualtion m
-    template <unsigned int N, typename F> double integrate(const Mesh<M, N, R>& m, const F& f) const;
+    template <int N, typename F> double integrate(const Mesh<M, N, R>& m, const F& f) const;
     // computes \int_e [f * \phi] where \phi is a basis function over the *reference element*.
-    template <unsigned int N, typename F, typename B>
+    template <int N, typename F, typename B>
     double integrate(const Element<M, N, R>& e, const F& f, const B& phi) const;
     // integrate the weak form of operator L to produce its (i,j)-th discretization matrix element
-    template <typename L, unsigned int N, typename F> double integrate(const Element<M, N, R>& e, F& f) const;
+    template <typename L, int N, typename F> double integrate(const Element<M, N, R>& e, F& f) const;
 
     // getters
-    template <unsigned int N> DMatrix<double> quadrature_nodes(const Mesh<M, N, R>& m) const;
+    template <int N> DMatrix<double> quadrature_nodes(const Mesh<M, N, R>& m) const;
     std::size_t num_nodes() const { return integration_table_.num_nodes; }
 };
 
 // implementative details
 
 // integration of bilinear form
-template <unsigned int M, unsigned int R, unsigned int K>
-template <typename L, unsigned int N, typename F>
+template <int M, int R, int K>
+template <typename L, int N, typename F>
 double Integrator<M, R, K>::integrate(const Element<M, N, R>& e, F& f) const {
     // apply quadrature rule
     double value = 0;
@@ -73,8 +73,8 @@ double Integrator<M, R, K>::integrate(const Element<M, N, R>& e, F& f) const {
 // perform integration of \int_e [f * \phi] using a basis system defined over the reference element and the change of
 // variables formula: \int_e [f(x) * \phi(x)] = \int_{E} [f(J(X)) * \Phi(X)] |detJ|
 // where J is the affine mapping from the reference element E to the physical element e
-template <unsigned int M, unsigned int R, unsigned int K>
-template <unsigned int N, typename F, typename B>
+template <int M, int R, int K>
+template <int N, typename F, typename B>
 double Integrator<M, R, K>::integrate(const Element<M, N, R>& e, const F& f, const B& Phi) const {
     double value = 0;
     for (size_t iq = 0; iq < integration_table_.num_nodes; ++iq) {
@@ -94,8 +94,8 @@ double Integrator<M, R, K>::integrate(const Element<M, N, R>& e, const F& f, con
 }
 
 // integrate a callable F over a mesh element e. Do not require any particular structure for F
-template <unsigned int M, unsigned int R, unsigned int K>
-template <unsigned int N, typename F>
+template <int M, int R, int K>
+template <int N, typename F>
 double Integrator<M, R, K>::integrate(const Element<M, N, R>& e, const F& f) const {
     double value = 0;
     for (size_t iq = 0; iq < integration_table_.num_nodes; ++iq) {
@@ -115,8 +115,8 @@ double Integrator<M, R, K>::integrate(const Element<M, N, R>& e, const F& f) con
 }
 
 // integrate a callable F over the entire mesh m.
-template <unsigned int M, unsigned int R, unsigned int K>
-template <unsigned int N, typename F>
+template <int M, int R, int K>
+template <int N, typename F>
 double Integrator<M, R, K>::integrate(const Mesh<M, N, R>& m, const F& f) const {
     double value = 0;
     // cycle over all mesh elements
@@ -125,8 +125,8 @@ double Integrator<M, R, K>::integrate(const Mesh<M, N, R>& m, const F& f) const 
 }
 
 // returns all quadrature points on the mesh
-template <unsigned int M, unsigned int R, unsigned int K>
-template <unsigned int N>
+template <int M, int R, int K>
+template <int N>
 DMatrix<double> Integrator<M, R, K>::quadrature_nodes(const Mesh<M, N, R>& m) const {
     DMatrix<double> quadrature_nodes;
     quadrature_nodes.resize(m.elements() * integration_table_.num_nodes, N);

@@ -25,7 +25,7 @@ namespace fdapde {
 namespace core {
 
 // implementation of the gradient descent method for unconstrained nonlinear optimization
-template <unsigned int N> class GradientDescent {
+template <int N> class GradientDescent {
    private:
     std::size_t max_iter_;   // maximum number of iterations before forced stop
     double tol_;             // tolerance on error before forced stop

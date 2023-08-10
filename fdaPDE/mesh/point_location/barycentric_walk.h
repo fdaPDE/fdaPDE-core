@@ -26,7 +26,7 @@ namespace fdapde {
 namespace core {
 
 // barycentric walk strategy for point location problem, works only for 2D and 3D *convex* triangualtions
-template <unsigned int M, unsigned int N, unsigned int R> class BarycentricWalk : public PointLocator<M, N, R> {
+template <int M, int N, int R> class BarycentricWalk : public PointLocator<M, N, R> {
     static_assert(M == N, "barycentric walk cannot be applied to manifold domains");
    private:
     const Mesh<M, N, R>& mesh_;

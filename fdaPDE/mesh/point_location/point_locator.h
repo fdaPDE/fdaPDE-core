@@ -27,7 +27,7 @@ namespace fdapde {
 namespace core {
 
 // interface for point locations algorithms
-template <unsigned int M, unsigned int N, unsigned int R> struct PointLocator {
+template <int M, int N, int R> struct PointLocator {
     // solves the point location problem. returns nullptr if p is not found
     virtual const Element<M, N, R>* locate(const SVector<N>& p) const = 0;
 

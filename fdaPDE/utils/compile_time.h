@@ -23,15 +23,15 @@ namespace fdapde {
 namespace core {
 
 // compile time evaluation of the factorial function
-constexpr std::size_t ct_factorial(const std::size_t n) { return n ? (n * ct_factorial(n - 1)) : 1; }
+constexpr int ct_factorial(const int n) { return n ? (n * ct_factorial(n - 1)) : 1; }
 
 // compile time evaluation of binomial coefficient
-constexpr std::size_t ct_binomial_coefficient(const std::size_t N, const std::size_t M) {
+constexpr int ct_binomial_coefficient(const int N, const int M) {
     return ct_factorial(N) / (ct_factorial(M) * ct_factorial(N - M));
 }
 
 // compile time computation of the sum of elements in array
-template <typename T, std::size_t N>
+template <typename T, int N>
 constexpr typename std::enable_if<std::is_arithmetic<T>::value, T>::type ct_array_sum(std::array<T, N> A) {
     T result = 0;
     for (int j = 0; j < N; ++j) result += A[j];

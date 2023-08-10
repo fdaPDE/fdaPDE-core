@@ -33,30 +33,30 @@ namespace fdapde {
 namespace core {
 
 // trait to detect if the mesh is a manifold
-template <unsigned int M, unsigned int N> struct is_manifold {
+template <int M, int N> struct is_manifold {
     static constexpr bool value = (M != N);
 };
 
 // trait to detect if the mesh is a linear network
-template <unsigned int M, unsigned int N> struct is_linear_network {
+template <int M, int N> struct is_linear_network {
     static constexpr bool value = std::conditional<(M == 1 && N == 2), std::true_type, std::false_type>::type::value;
 };
 
 // trait to select a proper neighboring storage structure depending on the type of mesh. In case of linear networks this
 // information is stored as a sparse matrix where entry (i,j) is set to 1 if and only if elements i and j are neighbors
-template <unsigned int M, unsigned int N> struct neighboring_structure {
+template <int M, int N> struct neighboring_structure {
     using type = typename std::conditional<is_linear_network<M, N>::value, SpMatrix<int>, DMatrix<int>>::type;
 };
 
 // access to domain's triangulation, M: tangent space dimension, N: embedding space dimension, R: FEM mesh order
-template <unsigned int M, unsigned int N, unsigned int R = 1> class Mesh {
+template <int M, int N, int R = 1> class Mesh {
    private:
     // coordinates of points costituting the vertices of mesh elements
     DMatrix<double> points_ {};
-    unsigned int num_nodes_ = 0;
+    int num_nodes_ = 0;
     // identifiers of points (as row indexes in points_ matrix) composing each element, by row
     Eigen::Matrix<int, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> elements_ {};
-    unsigned int num_elements_ = 0;
+    int num_elements_ = 0;
     // vector of binary coefficients such that, boundary_[j] = 1 \iff node j is on boundary
     DMatrix<int> boundary_ {};
     std::size_t dof_;   // degrees of freedom, i.e. the maximmum ID in the dof_table
@@ -79,12 +79,12 @@ template <unsigned int M, unsigned int N, unsigned int R = 1> class Mesh {
          const typename neighboring_structure<M, N>::type& neighbors, const DMatrix<int>& boundary);
 
     // getters
-    const Element<M, N, R>& element(unsigned int ID) const { return cache_[ID]; }
-    Element<M, N, R>& element(unsigned int ID) { return cache_[ID]; }
-    SVector<N> node(unsigned int ID) const { return points_.row(ID); }
+    const Element<M, N, R>& element(int ID) const { return cache_[ID]; }
+    Element<M, N, R>& element(int ID) { return cache_[ID]; }
+    SVector<N> node(int ID) const { return points_.row(ID); }
     bool is_on_boundary(size_t j) const { return boundary_(j) == 1; }
-    unsigned int elements() const { return num_elements_; }
-    unsigned int nodes() const { return num_nodes_; }
+    int elements() const { return num_elements_; }
+    int nodes() const { return num_nodes_; }
     std::array<std::pair<double, double>, N> range() const { return range_; }
 
     // support for the definition of a finite element basis
@@ -154,17 +154,17 @@ template <unsigned int M, unsigned int N, unsigned int R = 1> class Mesh {
 };
 
 // alias exports
-template <unsigned int R = 1> using Mesh2D = Mesh<2, 2, R>;
-template <unsigned int R = 1> using Mesh3D = Mesh<3, 3, R>;
+template <int R = 1> using Mesh2D = Mesh<2, 2, R>;
+template <int R = 1> using Mesh3D = Mesh<3, 3, R>;
 // manifold cases
-template <unsigned int R = 1> using SurfaceMesh = Mesh<2, 3, R>;
-template <unsigned int R = 1> using NetworkMesh = Mesh<1, 2, R>;
+template <int R = 1> using SurfaceMesh = Mesh<2, 3, R>;
+template <int R = 1> using NetworkMesh = Mesh<1, 2, R>;
 
 // implementative details
 
 // builds a node enumeration for the support of a basis of order R. This fills both the elements_ table
 // and recompute the boundary informations. (support only for order 2 basis)
-template <unsigned int M, unsigned int N, unsigned int R>
+template <int M, int N, int R>
 void Mesh<M, N, R>::dof_enumerate(const DMatrix<int>& boundary) {
     // algorithm initialization
     int next = num_nodes_;   // next valid ID to assign
@@ -213,7 +213,7 @@ void Mesh<M, N, R>::dof_enumerate(const DMatrix<int>& boundary) {
 }
 
 // construct directly from raw eigen matrix (used from wrappers)
-template <unsigned int M, unsigned int N, unsigned int R>
+template <int M, int N, int R>
 Mesh<M, N, R>::Mesh(
   const DMatrix<double>& points, const DMatrix<int>& elements,
   const typename neighboring_structure<M, N>::type& neighbors, const DMatrix<int>& boundary) :
@@ -251,7 +251,7 @@ Mesh<M, N, R>::Mesh(
 }
 
 // construct a mesh from .csv files
-template <unsigned int M, unsigned int N, unsigned int R>
+template <int M, int N, int R>
 Mesh<M, N, R>::Mesh(
   const std::string& points, const std::string& elements, const std::string& neighbors, const std::string& boundary) {
     // open and parse CSV files
@@ -305,7 +305,7 @@ Mesh<M, N, R>::Mesh(
 }
 
 // fill the cache_ data structure with pointers to element objects
-template <unsigned int M, unsigned int N, unsigned int R> void Mesh<M, N, R>::fill_cache() {
+template <int M, int N, int R> void Mesh<M, N, R>::fill_cache() {
     // reserve space for cache
     cache_.reserve(num_elements_);
 
@@ -351,7 +351,7 @@ template <unsigned int M, unsigned int N, unsigned int R> void Mesh<M, N, R>::fi
 }
 
 // produce the matrix of dof coordinates
-template <unsigned int M, unsigned int N, unsigned int R> DMatrix<double> Mesh<M, N, R>::dof_coords() const {
+template <int M, int N, int R> DMatrix<double> Mesh<M, N, R>::dof_coords() const {
     if constexpr (R == 1)
         return points_;   // for order 1 meshes dofs coincide with vertices
     else {

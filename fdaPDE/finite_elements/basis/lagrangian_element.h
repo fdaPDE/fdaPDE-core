@@ -27,7 +27,7 @@ namespace fdapde {
 namespace core {
 
 // A Lagrangian basis of degree R over an M-dimensional element
-template <unsigned int M_, unsigned int R_> class LagrangianElement {
+template <int M_, int R_> class LagrangianElement {
    private:
     std::array<std::array<double, M_>, ct_binomial_coefficient(M_ + R_, R_)> nodes_;   // nodes of the Lagrangian basis
     std::array<MultivariatePolynomial<M_, R_>, ct_binomial_coefficient(M_ + R_, R_)> basis_;
@@ -35,9 +35,9 @@ template <unsigned int M_, unsigned int R_> class LagrangianElement {
     void compute_coefficients_(const std::array<std::array<double, M_>, ct_binomial_coefficient(M_ + R_, R_)>& nodes);
    public:
     // compile time informations
-    static constexpr unsigned int R = R_; // basis order
-    static constexpr unsigned int M = M_; // input space dimension
-    static constexpr unsigned int n_basis = ct_binomial_coefficient(M + R, R);
+    static constexpr int R = R_; // basis order
+    static constexpr int M = M_; // input space dimension
+    static constexpr int n_basis = ct_binomial_coefficient(M + R, R);
     typedef MultivariatePolynomial<M, R> ElementType;
     typedef typename std::array<MultivariatePolynomial<M, R>, n_basis>::const_iterator const_iterator;
 
@@ -59,11 +59,11 @@ template <unsigned int M_, unsigned int R_> class LagrangianElement {
 // implementative details
   
 // compute coefficients via Vandermonde matrix
-template <unsigned int M_, unsigned int R_>
+template <int M_, int R_>
 void LagrangianElement<M_, R_>::compute_coefficients_(
   const std::array<std::array<double, M_>, ct_binomial_coefficient(M_ + R_, R_)>& nodes) {
     // build vandermonde matrix
-    constexpr unsigned int n_basis = ct_binomial_coefficient(M_ + R_, R_);
+    constexpr int n_basis = ct_binomial_coefficient(M_ + R_, R_);
     constexpr std::array<std::array<unsigned, M_>, n_basis> poly_table = MultivariatePolynomial<M, R>::poly_table;
 
     // Vandermonde matrix construction

@@ -32,7 +32,7 @@ namespace core {
 
 // A spline of order R centered in knot u_i.
 // Template parameter M is used to keep track of the order of the spline while developing the Cox-DeBoor recursion.
-template <unsigned int R, unsigned int M = R> class Spline : public ScalarExpr<1, Spline<R>> {
+template <int R, int M = R> class Spline : public ScalarExpr<1, Spline<R>> {
    private:
     DVector<double> knots_;
     std::size_t i_;   // knot index where this basis is centered
@@ -57,7 +57,7 @@ template <unsigned int R, unsigned int M = R> class Spline : public ScalarExpr<1
     // compute derivative of order K as a ScalarExpr
     // d^K/dx^K N_ij(x) = j/(u_i+j - u_i)*[d^{K-1}/dx^{K-1} N_i,j-1(x)]  - j/(u_i+j+1 - u_i+1)*
     // [d^{K-1}/dx^{K-1} N_i+1,j-1(x)]
-    template <unsigned int K> auto derive() const {
+    template <int K> auto derive() const {
         if constexpr (K == 1)   // end of recursion
             return (R * a_) * Spline<R - 1, M>(knots_, i_) - (R * b_) * Spline<R - 1, M>(knots_, i_ + 1);
         else   // exploit Cox-DeBoor recursive formula
@@ -67,7 +67,7 @@ template <unsigned int R, unsigned int M = R> class Spline : public ScalarExpr<1
 };
 
 // partial template specialization for order 0 splines (end of recursion)
-template <unsigned int M> class Spline<0, M> : public ScalarExpr<1, Spline<0>> {
+template <int M> class Spline<0, M> : public ScalarExpr<1, Spline<0>> {
    private:
     DVector<double> knots_;
     std::size_t i_;   // knot index where this basis is centered

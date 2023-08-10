@@ -27,7 +27,7 @@ namespace core {
 
 // a template class to perform geometric operations in general vector and affine spaces.
 // M is the vector space dimension, N is the dimension of the embedding space
-template <unsigned int M, unsigned int N> class VectorSpace {
+template <int M, int N> class VectorSpace {
    private:
     std::array<SVector<N>, M> basis_ {};   // the set of vectors generating the vector space
     SVector<N> offset_ {};   // a point throught which the vector space passes. (offset_ \neq 0 \implies affine space)
@@ -51,12 +51,12 @@ template <unsigned int M, unsigned int N> class VectorSpace {
 
 // implementation details
 
-template <unsigned int M, unsigned int N>
+template <int M, int N>
 SVector<N> VectorSpace<M, N>::orthogonal_project(const SVector<N>& u, const SVector<N>& v) const {
     return ((v.dot(u) / u.squaredNorm()) * (u.array())).matrix();
 }
 
-template <unsigned int M, unsigned int N> void VectorSpace<M, N>::orthonormalize() {
+template <int M, int N> void VectorSpace<M, N>::orthonormalize() {
     std::array<SVector<N>, M> orthonormal_basis;
     orthonormal_basis[0] = basis_[0] / basis_[0].norm();
     // implementation of the modified Gram-Schmidt method, see theory for details
@@ -70,7 +70,7 @@ template <unsigned int M, unsigned int N> void VectorSpace<M, N>::orthonormalize
 }
 
 // projects the point x onto the space.
-template <unsigned int M, unsigned int N> SVector<M> VectorSpace<M, N>::project_onto(const SVector<N>& x) {
+template <int M, int N> SVector<M> VectorSpace<M, N>::project_onto(const SVector<N>& x) {
     if constexpr (M == N) {   // you are projecting over the same space!
         return x;
     } else {
@@ -82,7 +82,7 @@ template <unsigned int M, unsigned int N> SVector<M> VectorSpace<M, N>::project_
 }
 
 // project the point x into the space
-template <unsigned int M, unsigned int N> SVector<N> VectorSpace<M, N>::project_into(const SVector<N>& x) {
+template <int M, int N> SVector<N> VectorSpace<M, N>::project_into(const SVector<N>& x) {
     // build the projection operator on the space spanned by the basis
     Eigen::Matrix<double, N, Eigen::Dynamic> A;
     A.resize(N, basis_.size());
@@ -93,12 +93,12 @@ template <unsigned int M, unsigned int N> SVector<N> VectorSpace<M, N>::project_
 }
 
 // euclidean distance from x
-template <unsigned int M, unsigned int N> double VectorSpace<M, N>::distance(const SVector<N>& x) {
+template <int M, int N> double VectorSpace<M, N>::distance(const SVector<N>& x) {
     return (x - project_into(x)).squaredNorm();
 }
 
 // develops the linear combination of basis vectors with respect to the given vector of coefficients.
-template <unsigned int M, unsigned int N>
+template <int M, int N>
 SVector<N> VectorSpace<M, N>::operator()(const std::array<double, M>& coeffs) const {
     SVector<N> result = offset_;
     for (std::size_t i = 0; i < M; ++i) result += coeffs[i] * basis_[i];

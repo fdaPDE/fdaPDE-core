@@ -25,7 +25,7 @@ namespace fdapde {
 namespace core {
 
 // implementation of the newton method for unconstrained nonlinear optimization
-template <unsigned int N> class Newton {
+template <int N> class Newton {
    private:
     std::size_t max_iter_;   // maximum number of iterations before forced stop
     double tol_;             // tolerance on error before forced stop

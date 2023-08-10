@@ -25,8 +25,8 @@ namespace fdapde {
 namespace core {
 
 // Definition of the M-dimensional unit reference simplices of order R.
-template <unsigned int M, unsigned int R> struct ReferenceElement;
-template <unsigned int M, unsigned int R> using point_list = std::array<std::array<double, M>, R>;
+template <int M, int R> struct ReferenceElement;
+template <int M, int R> using point_list = std::array<std::array<double, M>, R>;
 
 template <>   // 1D first order basis
 struct ReferenceElement<1, 1> {

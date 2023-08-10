@@ -24,7 +24,7 @@ namespace fdapde {
 namespace core {
 
 // a spline basis of order R built over a given set of knots
-template <unsigned int R> class SplineBasis {
+template <int R> class SplineBasis {
    private:
     DVector<double> knots_ {};   // vector of knots
     std::vector<Spline<R>> basis_ {};

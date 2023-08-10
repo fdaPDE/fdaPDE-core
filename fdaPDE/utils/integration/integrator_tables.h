@@ -13,15 +13,15 @@ namespace core {
 // ** "https://people.sc.fsu.edu/~jburkardt/datasets/datasets.html"
 
 // N: dimension of the integration domain, K: number of nodes of the formula. Args: type of quadrature formula
-template <unsigned int N, unsigned int K, typename... Args> struct IntegratorTable;
+template <int N, int K, typename... Args> struct IntegratorTable;
 // identification tags for quadrature rules
 struct NewtonCotes { };
 struct GaussLegendre { };
 
 // trait for selecting a standard quadrature rule for finite elements, in case K is not supplied
-template <unsigned int N, unsigned int R>
+template <int N, int R>
 struct standard_fem_quadrature_rule {
-    static constexpr unsigned int quadrature(const unsigned int dim, const unsigned int order) {
+    static constexpr int quadrature(const int dim, const int order) {
         switch (dim) {
         case 1:   // 1D elements
             switch (order) {
@@ -53,7 +53,7 @@ struct standard_fem_quadrature_rule {
         }
         return 0;   // error
     }
-    static constexpr unsigned int K = quadrature(N, R);
+    static constexpr int K = quadrature(N, R);
 };
 
 // 1D linear elements (gaussian integration)
