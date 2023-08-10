@@ -22,11 +22,12 @@
 #include <fdaPDE/mesh.h>
 #include <fdaPDE/finite_elements.h>
 using fdapde::core::Element;
-using fdapde::core::LagrangianBasis;
-using fdapde::core::Gradient;
-using fdapde::core::Laplacian;
+using fdapde::core::LagrangianElement;
 using fdapde::core::PDE;
 using fdapde::core::ScalarField;
+using fdapde::core::advection;
+using fdapde::core::laplacian;
+using fdapde::core::FEM;
 
 #include "utils/mesh_loader.h"
 using fdapde::testing::MeshLoader;
@@ -42,8 +43,8 @@ TEST(fem_pde_test, laplacian_isotropic_order1) {
     auto solutionExpr = [](SVector<2> x) -> double { return x[0] + x[1]; };
     
     MeshLoader<Mesh2D<>> unit_square("unit_square");
-    auto L = -Laplacian();
-    PDE<2, 2, 1, decltype(L), DMatrix<double>> pde_(unit_square.mesh);
+    auto L = -laplacian<FEM>();
+    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM> pde_(unit_square.mesh);
     pde_.set_differential_operator(L);
 
     // compute boundary condition and exact solution
@@ -81,9 +82,9 @@ TEST(fem_pde_test, laplacian_isotropic_order2_callable_force) {
     ScalarField<2> forcing(forcingExpr);   // wrap lambda expression in ScalarField object
 
     MeshLoader<Mesh2D<2>> unit_square("unit_square");
-    auto L = -1.0 * Laplacian();
+    auto L = -laplacian<FEM>();
     // initialize PDE with callable forcing term
-    PDE<2, 2, 2, decltype(L), ScalarField<2>> pde_(unit_square.mesh, L, forcing);
+    PDE<decltype(unit_square.mesh), decltype(L), ScalarField<2>, FEM> pde_(unit_square.mesh, L, forcing);
 
     // compute boundary condition and exact solution
     DMatrix<double> nodes_ = unit_square.mesh.dof_coords();
@@ -134,10 +135,10 @@ TEST(fem_pde_test, advection_diffusion_isotropic_order1) {
     // differential operator
     SVector<2> beta_;
     beta_ << -alpha_, 0.;
-    auto L = -1.0 * Laplacian() + Gradient(beta_);
+    auto L = -laplacian<FEM>() + advection<FEM>(beta_);
     // load sample mesh for order 1 basis
     MeshLoader<Mesh2D<>> unit_square("unit_square");
-    PDE<2, 2, 1, decltype(L), DMatrix<double>> pde_(unit_square.mesh);
+    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM> pde_(unit_square.mesh);
     pde_.set_differential_operator(L);
 
     // compute boundary condition and exact solution
@@ -194,11 +195,11 @@ TEST(fem_pde_test, advection_diffusion_isotropic_order2) {
     // differential operator
     SVector<2> beta_;
     beta_ << -alpha_, 0.;
-    auto L = -Laplacian() + Gradient(beta_);
+    auto L = -laplacian<FEM>() + advection<FEM>(beta_); // -\Delta + dot(beta_, \nabla)
     // load sample mesh for order 1 basis
     MeshLoader<Mesh2D<2>> unit_square("unit_square");
 
-    PDE<2, 2, 2, decltype(L), ScalarField<2>> pde_(unit_square.mesh, L, forcing);
+    PDE<decltype(unit_square.mesh), decltype(L), ScalarField<2>, FEM> pde_(unit_square.mesh, L, forcing);
 
     // compute boundary condition and exact solution
     DMatrix<double> nodes_ = unit_square.mesh.dof_coords();

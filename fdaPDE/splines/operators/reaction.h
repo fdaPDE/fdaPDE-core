@@ -14,20 +14,21 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __IDENTITY_H__
-#define __IDENTITY_H__
+#ifndef __SPLINE_REACTION_H__
+#define __SPLINE_REACTION_H__
 
 #include <type_traits>
 
 #include "../../fields/scalar_field.h"
-#include "../../mesh/element.h"
-#include "bilinear_form_expressions.h"
+#include "../../pde/differential_expressions.h"
+#include "../../pde/differential_operators.h"
+#include "../spline_symbols.h"
 
 namespace fdapde {
 namespace core {
 
-// Identity operator (reaction term)
-template <typename T> class Identity : public BilinearFormExpr<Identity<T>> {
+// reaction operator
+template <typename T> class Reaction<SPLINE, T> : public DifferentialExpr<Reaction<SPLINE, T>> {
     // perform compile-time sanity checks
     static_assert(
       std::is_base_of<ScalarBase, T>::value ||   // space-varying case
@@ -35,29 +36,22 @@ template <typename T> class Identity : public BilinearFormExpr<Identity<T>> {
    private:
     T c_;   // reaction term
    public:
-    // constructors
-    Identity() = default;
-    Identity(const T& c) : c_(c) {};
-
-    std::tuple<Identity<T>> get_operator_type() const { return std::make_tuple(*this); }
     enum {
-      is_space_varying = std::is_base_of<ScalarBase, T>::value,
-      is_symmetric = true
+        is_space_varying = std::is_base_of<ScalarBase, T> ::value,
+        is_symmetric = true
     };
 
+    // constructors
+    Reaction() = default;
+    Reaction(const T& c) : c_(c) {};
     // provides the operator's weak form
     template <typename... Args> auto integrate(const std::tuple<Args...>& mem_buffer) const {
-        IMPORT_MEM_BUFFER_SYMBOLS(mem_buffer);
+        IMPORT_SPLINE_MEM_BUFFER_SYMBOLS(mem_buffer);
 	return c_ * psi_i * psi_j;   // c*\psi_i*\psi_j
     }
 };
   
-// template argument deduction guide
-template <typename T> Identity(const T&) -> Identity<T>;
-// factory method
-template <typename T> Identity<T> I(const T& t) { return Identity<T>(t); }  
-  
 }   // namespace core
 }   // namespace fdapde
 
-#endif   // __IDENTITY_H__
+#endif   // __SPLINE_REACTION_H__

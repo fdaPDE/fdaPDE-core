@@ -14,34 +14,33 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __BILINEAR_FORM_TRAITS_H__
-#define __BILINEAR_FORM_TRAITS_H__
+#ifndef __SPLINE_BILAPLACIAN_H__
+#define __SPLINE_BILAPLACIAN_H__
 
-#include <tuple>
 #include <type_traits>
 
-#include "../../utils/traits.h"
-#include "dt.h"
-#include "gradient.h"
-#include "identity.h"
-#include "laplacian.h"
+#include "../../pde/differential_expressions.h"
+#include "../../pde/differential_operators.h"
+#include "../spline_symbols.h"
 
 namespace fdapde {
 namespace core {
 
-// trait to detect if the bilinear form is symmetric.
-template <typename E> struct is_symmetric {
-    static constexpr bool value = std::decay<E>::type::is_symmetric;
-};
+// bilaplacian operator in one dimension (d^4/dt^4 f = d^2/dt^2(d^2/dt^2 f))
+template <> struct BiLaplacian<SPLINE> : public DifferentialExpr<BiLaplacian<SPLINE>> {
+    enum {
+        is_space_varying = false,
+        is_symmetric = true
+    };
 
-// trait to detect if the bilinear form denotes a parabolic PDE.
-template <typename E_> struct is_parabolic {
-    typedef typename std::decay<E_>::type E;
-    // returns true if the time derivative operator dT() is detected in the expression
-    static constexpr bool value = has_type<dT, decltype(std::declval<E>().get_operator_type())>::value;
+    // provides the operator's weak form: (\psi_i)_tt * (\psi_j)_tt
+    template <typename... Args> auto integrate(const std::tuple<Args...>& mem_buffer) const {
+        IMPORT_SPLINE_MEM_BUFFER_SYMBOLS(mem_buffer);
+        return -(psi_i->template derive<2>() * psi_j->template derive<2>());
+    }
 };
 
 }   // namespace core
 }   // namespace fdapde
 
-#endif   // __BILINEAR_FORM_TRAITS_H__
+#endif   // __SPLINE_BILAPLACIAN_H__

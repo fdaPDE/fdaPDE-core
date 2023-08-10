@@ -100,6 +100,29 @@ template <typename T, typename... Ts> struct has_type<T, std::tuple<Ts...>> {
     static constexpr bool value = index_of<T, std::tuple<Ts...>>::index != -1;
 };
 
+// split std::tuple<> in two sub-tuples at given index N
+template <std::size_t N> class split_tuple_at_index {
+   private:
+    // extract from tuple all elements in the range (1 ... Ns) + M
+    template <std::size_t M, std::size_t... Ns, typename... Ts>
+    constexpr auto get_(std::index_sequence<Ns...>, std::tuple<Ts...> t) {
+        return std::make_tuple(std::get<M + Ns>(t)...);
+    }
+   public:
+    template <typename... Ts> constexpr auto head(std::tuple<Ts...> t) {
+      return get_<0>(std::make_index_sequence<N>(), t);
+    }
+    template <typename... Ts> constexpr auto tail(std::tuple<Ts...> t) {
+        return get_<N>(std::make_index_sequence<sizeof...(Ts) - N>(), t);
+    }
+};
+
+// get head and tail of std::tuple<>
+template <typename T, typename... Ts> T tuple_head(std::tuple<T, Ts...> t) { return std::get<0>(t); }
+template <typename T, typename... Ts> auto tuple_tail(std::tuple<T, Ts...> t) {
+    return split_tuple_at_index<1>().tail(t);
+}
+
 // evaluate metafunction based on condition
 template <bool b, typename T, typename F> struct eval_if {
     using type = typename T::type;

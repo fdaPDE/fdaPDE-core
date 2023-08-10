@@ -18,17 +18,18 @@
 #define __FEM_SOLVER_SELECTOR_H__
 
 #include "../../utils/traits.h"
+#include "../fem_symbols.h"
 #include "fem_linear_elliptic_solver.h"
 #include "fem_linear_parabolic_solver.h"
 
 namespace fdapde {
 namespace core {
 
-// selects solver type depending on operator properties
-template <typename E> struct pde_fem_solver_selector {
+// selects solver type depending on properties of operator E, carries domain D and forcing F to solver
+template <typename D, typename E, typename F> struct pde_solver_selector<FEM, D, E, F> {
     using type = typename switch_type<
-      switch_type_case<!is_parabolic<E>::value, FEMLinearEllipticSolver>,
-      switch_type_case< is_parabolic<E>::value, FEMLinearParabolicSolver> >::type;
+      switch_type_case<!is_parabolic<E>::value, FEMLinearEllipticSolver <D, E, F>>,
+      switch_type_case< is_parabolic<E>::value, FEMLinearParabolicSolver<D, E, F>> >::type;
 };
 
 }   // namespace core

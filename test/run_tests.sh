@@ -13,3 +13,5 @@ fi
 cmake -Wno-dev ../CMakeLists.txt
 make
 ./fdapde_test
+
+rm fdapde_test

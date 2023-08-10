@@ -101,9 +101,9 @@ template <int N, typename F, typename T> class ScalarParam : public ScalarExpr<N
 template <int N, typename OP1, typename OP2, typename BinaryOperation>
 class ScalarBinOp : public ScalarExpr<N, ScalarBinOp<N, OP1, OP2, BinaryOperation>> {
    private:
-    typename std::decay<OP1>::type op1_;   // first  operand
-    typename std::decay<OP2>::type op2_;   // second operand
-    BinaryOperation f_;                    // operation to apply
+    typename std::remove_reference<OP1>::type op1_;   // first  operand
+    typename std::remove_reference<OP2>::type op2_;   // second operand
+    BinaryOperation f_;                               // operation to apply
    public:
     // constructor
     ScalarBinOp(const OP1& op1, const OP2& op2, BinaryOperation f) : op1_(op1), op2_(op2), f_(f) {};

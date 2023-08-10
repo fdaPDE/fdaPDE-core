@@ -14,15 +14,22 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_ASSERT_H__
-#define __FDAPDE_ASSERT_H__
+#ifndef __SPLINE_SYMBOLS_H__
+#define __SPLINE_SYMBOLS_H__
 
 namespace fdapde {
-  
-// throw an exception if condition is not met
-#define fdapde_assert(condition)                                                                                       \
-    if (!(condition)) throw std::runtime_error("Condition " #condition " failed");
-  
+namespace core {
+
+// spline-based discretization strategy tag for PDE discretization
+struct SPLINE { };
+
+// utility macro to import symbols from memory buffer recived from assembly loop to spline operators
+#define IMPORT_SPLINE_MEM_BUFFER_SYMBOLS(mem_buff)                                                                     \
+    /* pair of basis functions \psi_i, \psi_j */                                                                       \
+    auto psi_i = std::get<0>(mem_buff);                                                                                \
+    auto psi_j = std::get<1>(mem_buff);
+
+}   // namespace core
 }   // namespace fdapde
 
-#endif   // __FDAPDE_ASSERT_H__
+#endif   // __SPLINE_SYMBOLS_H__

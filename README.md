@@ -4,7 +4,7 @@
 
 ![test-linux-gcc](https://img.shields.io/github/actions/workflow/status/fdaPDE/fdaPDE-core/test-workflow.yml?branch=stable&label=test-linux-gcc)
 
-This repository contains the C++, header-only, core library system for the fdaPDE library, providing basic functionalities like a finite element solver for second-order linear elliptic boundary value problems, nonlinear unconstrained optimization algorithms, linear and non-linear system solvers, multithreading support, and more.
+This repository contains the C++, header-only, core library system for the fdaPDE project, providing basic functionalities like a finite element solver for second-order linear elliptic boundary value problems, nonlinear unconstrained optimization algorithms, linear and non-linear system solvers, multithreading support, and more.
 
 ## Documentation
 Documentation can be found on our [documentation site](https://fdapde.github.io/)

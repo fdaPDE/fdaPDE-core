@@ -14,50 +14,46 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __GRADIENT_H__
-#define __GRADIENT_H__
+#ifndef __FEM_DIFFUSION_H__
+#define __FEM_DIFFUSION_H__
 
 #include <type_traits>
 
 #include "../../utils/symbols.h"
-#include "../../utils/compile_time.h"
-#include "../../fields/vector_field.h"
-#include "bilinear_form_expressions.h"
+#include "../../fields/matrix_field.h"
+#include "../../pde/differential_expressions.h"
+#include "../../pde/differential_operators.h"
+#include "../fem_symbols.h"
 
 namespace fdapde {
 namespace core {
 
-// gradient operator (transport term).
-template <typename T> class Gradient : public BilinearFormExpr<Gradient<T>> {
+// diffusion operator -div(K*grad(.)) (anisotropic and non-stationary diffusion)
+template <typename T> class Diffusion<FEM, T> : public DifferentialExpr<Diffusion<FEM, T>> {
     // perform compile-time sanity checks
     static_assert(
-      std::is_base_of<VectorBase, T>::value ||   // space-varying case
-      is_eigen_vector<T>());                     // constant coefficient case
+      std::is_base_of<MatrixBase, T>::value ||            // space-varying case
+      std::is_base_of<Eigen::MatrixBase<T>, T>::value);   // constant coefficient case
    private:
-    T b_;   // transport vector (either constant or space-varying)
+    T K_;   // diffusion tensor (either constant or space-varying)
    public:
-    // constructor
-    Gradient() = default;
-    explicit Gradient(const T& b) : b_(b) { }
-
-    std::tuple<Gradient<T>> get_operator_type() const { return std::make_tuple(*this); }
     enum {
-      is_space_varying = std::is_base_of<VectorBase, T>::value,
-      is_symmetric = false
+        is_space_varying = std::is_base_of<MatrixBase, T> ::value,
+        is_symmetric = true
     };
 
+    // constructor
+    Diffusion() = default;
+    explicit Diffusion(const T& K) : K_(K) { }
     // provides the operator's weak form
     template <typename... Args> auto integrate(const std::tuple<Args...>& mem_buffer) const {
-        IMPORT_MEM_BUFFER_SYMBOLS(mem_buffer);
-        return psi_i * (invJ * nabla_psi_j).dot(b_);   // \psi_i*b.dot(\nabla \psi_j)
+        IMPORT_FEM_MEM_BUFFER_SYMBOLS(mem_buffer);
+	// non unitary or anisotropic diffusion: (\Nabla psi_i)^T*K*(\Nabla \psi_j)
+	return -(invJ * nabla_psi_i).dot(K_ * (invJ * nabla_psi_j));
     }
 };
-// template argument deduction rule
-template <typename T> Gradient(const T&) -> Gradient<T>;
-// factory method
-template <typename T> Gradient<T> grad(const T& t) { return Gradient<T>(t); }
   
 }   // namespace core
 }   // namespace fdapde
 
-#endif   // __GRADIENT_H__
+#endif   // __FEM_DIFFUSION_H__

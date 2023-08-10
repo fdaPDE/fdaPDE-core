@@ -14,15 +14,18 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_ASSERT_H__
-#define __FDAPDE_ASSERT_H__
+#ifndef __FDAPDE_PDE_MODULE_H__
+#define __FDAPDE_PDE_MODULE_H__
 
-namespace fdapde {
-  
-// throw an exception if condition is not met
-#define fdapde_assert(condition)                                                                                       \
-    if (!(condition)) throw std::runtime_error("Condition " #condition " failed");
-  
-}   // namespace fdapde
+#include "pde/pde.h"
+#include "pde/differential_operators.h"
+#include "pde/differential_expressions.h"
+#include "pde/non_constant_coefficients.h"
 
-#endif   // __FDAPDE_ASSERT_H__
+#include "utils/integration/integrator.h"
+#include "utils/integration/integrator_tables.h"
+
+#include "finite_elements.h"
+#include "splines.h"
+
+#endif   // __FDAPDE_PDE_MODULE_H__

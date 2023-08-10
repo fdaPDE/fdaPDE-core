@@ -17,9 +17,9 @@
 #ifndef __SPACE_VARYING_H__
 #define __SPACE_VARYING_H__
 
-#include "../../fields/matrix_expressions.h"
-#include "../../fields/scalar_expressions.h"
-#include "../../fields/vector_expressions.h"
+#include "../fields/matrix_expressions.h"
+#include "../fields/scalar_expressions.h"
+#include "../fields/vector_expressions.h"
 
 namespace fdapde {
 namespace core {

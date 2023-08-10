@@ -14,15 +14,17 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_ASSERT_H__
-#define __FDAPDE_ASSERT_H__
+#ifndef __PDE_ASSEMBLER_H__
+#define __PDE_ASSEMBLER_H__
 
 namespace fdapde {
-  
-// throw an exception if condition is not met
-#define fdapde_assert(condition)                                                                                       \
-    if (!(condition)) throw std::runtime_error("Condition " #condition " failed");
-  
+namespace core {
+
+// generic algorithm for the assembly of the discretization matrix of a differential operator
+// to be partially specialized with respect to T
+template <typename T, typename... Ts> class Assembler { };
+
+}   // namespace core
 }   // namespace fdapde
 
-#endif   // __FDAPDE_ASSERT_H__
+#endif   // __PDE_ASSEMBLER_H__

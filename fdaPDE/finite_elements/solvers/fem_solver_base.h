@@ -19,92 +19,109 @@
 
 #include <exception>
 
+#include "../../utils/integration/integrator.h"
 #include "../../utils/symbols.h"
 #include "../../utils/traits.h"
-#include "../assembler.h"
-#include "../basis/lagrangian_basis.h"
-#include "../integration/integrator.h"
+#include "../basis/finite_element_basis.h"
+#include "../basis/lagrangian_element.h"
+#include "../fem_assembler.h"
+#include "../fem_symbols.h"
+#include "../operators/reaction.h"   // for mass-matrix computation
 
 namespace fdapde {
 namespace core {
 
-// forward declarations
-template <typename E> struct is_pde;
+// forward declaration
+template <typename PDE> struct is_pde;
   
 // base class for the definition of a general solver based on the Finite Element Method
-class FEMSolverBase {
-   protected:
-    DMatrix<double> solution_;   // vector of coefficients of the approximate solution
-    DMatrix<double> force_;      // right-hand side of the FEM linear system
-    SpMatrix<double> R1_;        // result of the discretization of the bilinear form
-    SpMatrix<double> R0_;        // mass matrix, i.e. discretization of the identity operator
-    bool init_ = false;          // set to true by init() at the end of solver initialization
+template <typename D, typename E, typename F> class FEMSolverBase {
    public:
-    // flag used to notify is something was wrong during computation
-    bool success = true;
+    typedef Integrator<D::local_dimension, D::order> QuadratureRule;
+    typedef LagrangianElement<D::local_dimension, D::order> FunctionSpace;
+    typedef FiniteElementBasis<FunctionSpace> FunctionBasis;
+
     // constructor
     FEMSolverBase() = default;
+
     // getters
     const DMatrix<double>& solution() const { return solution_; }
     const DMatrix<double>& force() const { return force_; }
     const SpMatrix<double>& R1() const { return R1_; }
     const SpMatrix<double>& R0() const { return R0_; }
+    const QuadratureRule& integrator() const { return integrator_; }
+    const FunctionSpace& reference_basis() const { return reference_basis; }
+    FunctionBasis& basis() const { return fe_basis_; }
+    // flags
+    bool is_init = false;   // notified true if initialization occurred with no errors
+    bool success = false;   // notified true if problem solved with no errors
 
-    // initializes internal FEM solver status
-    template <typename E>
-    void init(const E& pde) {
-        static_assert(is_pde<E>::value, "pde is not a valid PDE object");
-        Assembler<E::M, E::N, E::R, typename E::BasisType, typename E::IntegratorType> assembler(
-          pde.domain(), pde.integrator());
-        // fill discretization matrix for current operator
-        R1_ = assembler.discretize_operator(pde.differential_operator());
-        R1_.makeCompressed();
-
-        // fill forcing vector
-        std::size_t n = pde.domain().dof();   // degrees of freedom in space
-        std::size_t m;                        // number of time points
-
-        if constexpr (!std::is_base_of<ScalarBase, typename E::ForcingType>::value) {
-            m = pde.forcing_data().cols();
-            force_.resize(n * m, 1);
-            force_.block(0, 0, n, 1) = assembler.discretize_forcing(pde.forcing_data().col(0));
-
-            // iterate over time steps if a space-time PDE is supplied
-            if constexpr (is_parabolic<typename E::OperatorType>::value) {
-                for (std::size_t i = 1; i < m; ++i) {
-                    force_.block(n * i, 0, n, 1) = assembler.discretize_forcing(pde.forcing_data().col(i));
-                }
-            }
-        } else {
-            // TODO: support space-time callable forcing for parabolic problems
-            m = 1;
-            force_.resize(n * m, 1);
-            force_.block(0, 0, n, 1) = assembler.discretize_forcing(pde.forcing_data());
-        }
-
-        // compute mass matrix [R0]_{ij} = \int_{\Omega} \phi_i \phi_j by discretization of the identity operator
-        R0_ = assembler.discretize_operator(Identity(1.0));
-        init_ = true;
-        return;
-    }
-
-    // impose dirichlet boundary conditions
-    template <typename E>
-    void set_dirichlet_bc(const E& pde) {
-        static_assert(is_pde<E>::value, "pde is not a valid PDE object");
-	
-        if (!init_) throw std::runtime_error("solver must be initialized first!");
-        for (auto it = pde.domain().boundary_begin(); it != pde.domain().boundary_end(); ++it) {
-            R1_.row(*it) *= 0;            // zero all entries of this row
-            R1_.coeffRef(*it, *it) = 1;   // set diagonal element to 1 to impose equation u_j = b_j
-
-            // boundaryData is a map (nodeID, boundary value).
-            // TODO: currently only space-only case supported (reason of [0] below)
-            force_.coeffRef(*it, 0) = pde.boundary_data().at(*it)[0];   // impose boundary value on forcing term
-        }
-        return;
-    };
+    template <typename PDE> void init(const PDE& pde);
+    template <typename PDE> void set_dirichlet_bc(const PDE& pde);
+  
+   protected:
+    QuadratureRule integrator_ {};       // default to a quadrature rule which is exact for the considered FEM order
+    FunctionSpace reference_basis_ {};   // function basis on the reference unit simplex
+    FunctionBasis fe_basis_ {};          // basis over the whole domain
+    DMatrix<double> solution_;           // vector of coefficients of the approximate solution
+    DMatrix<double> force_;              // discretized force [u]_i = \int_D f*\psi_i
+    SpMatrix<double> R1_;   // [R1_]_{ij} = a(\psi_i, \psi_j), being a(.,.) the bilinear form of the problem
+    SpMatrix<double> R0_;   // mass matrix
 };
+
+// implementative details
+
+// initialize solver
+template <typename D, typename E, typename F>
+template <typename PDE>
+void FEMSolverBase<D, E, F>::init(const PDE& pde) {
+    static_assert(is_pde<PDE>::value, "not a valid PDE");
+    Assembler<FEM, D, FunctionSpace, QuadratureRule> assembler(pde.domain(), integrator_);
+    // assemble discretization matrix for given operator
+    R1_ = assembler.discretize_operator(pde.differential_operator());
+    R1_.makeCompressed();
+    // assemble forcing vector
+    std::size_t n = pde.domain().dof();   // degrees of freedom in space
+    std::size_t m;                        // number of time points
+    if constexpr (!std::is_base_of<ScalarBase, F>::value) {
+        m = pde.forcing_data().cols();
+        force_.resize(n * m, 1);
+        force_.block(0, 0, n, 1) = assembler.discretize_forcing(pde.forcing_data().col(0));
+
+        // iterate over time steps if a space-time PDE is supplied
+        if constexpr (is_parabolic<E>::value) {
+            for (std::size_t i = 1; i < m; ++i) {
+                force_.block(n * i, 0, n, 1) = assembler.discretize_forcing(pde.forcing_data().col(i));
+            }
+        }
+    } else {
+        // TODO: support space-time callable forcing for parabolic problems
+        m = 1;
+        force_.resize(n * m, 1);
+        force_.block(0, 0, n, 1) = assembler.discretize_forcing(pde.forcing_data());
+    }
+    // compute mass matrix [R0]_{ij} = \int_{\Omega} \phi_i \phi_j
+    R0_ = assembler.discretize_operator(Reaction<FEM, double>(1.0));
+    is_init = true;
+    return;
+}
+
+// impose dirichlet boundary conditions
+template <typename D, typename E, typename F>
+template <typename PDE>
+void FEMSolverBase<D, E, F>::set_dirichlet_bc(const PDE& pde) {
+    static_assert(is_pde<PDE>::value, "not a valid PDE");
+    if (!is_init) throw std::runtime_error("solver must be initialized first!");
+    for (auto it = pde.domain().boundary_begin(); it != pde.domain().boundary_end(); ++it) {
+        R1_.row(*it) *= 0;            // zero all entries of this row
+        R1_.coeffRef(*it, *it) = 1;   // set diagonal element to 1 to impose equation u_j = b_j
+
+        // boundaryData is a map (nodeID, boundary value).
+        // TODO: currently only space-only case supported (reason of [0] below)
+        force_.coeffRef(*it, 0) = pde.boundary_data().at(*it)[0];   // impose boundary value on forcing term
+    }
+    return;
+}
 
 }   // namespace core
 }   // namespace fdapde

@@ -14,9 +14,13 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FEM_DT_H__
-#define __FEM_DT_H__
+#ifndef __FEM_REACTION_H__
+#define __FEM_REACTION_H__
 
+#include <type_traits>
+
+#include "../../fields/scalar_field.h"
+#include "../../mesh/element.h"
 #include "../../pde/differential_expressions.h"
 #include "../../pde/differential_operators.h"
 #include "../fem_symbols.h"
@@ -24,22 +28,31 @@
 namespace fdapde {
 namespace core {
 
-// time derivative operator.
-template <> struct dT<FEM> : public DifferentialExpr<dT<FEM>> {
+// reaction operator
+template <typename T> class Reaction<FEM, T> : public DifferentialExpr<Reaction<FEM, T>> {
+    // perform compile-time sanity checks
+    static_assert(
+      std::is_base_of<ScalarBase, T>::value ||   // space-varying case
+      std::is_floating_point<T>::value);         // constant coefficient case
+   private:
+    T c_;   // reaction term
+   public:
     enum {
-        is_space_varying = false,
+        is_space_varying = std::is_base_of<ScalarBase, T> ::value,
         is_symmetric = true
     };
 
-    // return zero field
+    // constructors
+    Reaction() = default;
+    Reaction(const T& c) : c_(c) {};
+    // provides the operator's weak form
     template <typename... Args> auto integrate(const std::tuple<Args...>& mem_buffer) const {
         IMPORT_FEM_MEM_BUFFER_SYMBOLS(mem_buffer);
-        // recover dimensionality of weak formulation from \psi_i
-        return ScalarField<decltype(psi_i)::PtrType::input_space_dimension>::Zero();
+	return c_ * psi_i * psi_j;   // c*\psi_i*\psi_j
     }
 };
-
+  
 }   // namespace core
 }   // namespace fdapde
 
-#endif   // __FEM_DT_H__
+#endif   // __FEM_REACTION_H__

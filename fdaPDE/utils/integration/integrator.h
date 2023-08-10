@@ -19,11 +19,9 @@
 
 #include "../../mesh/element.h"
 #include "../../mesh/mesh.h"
-#include "../../utils/compile_time.h"
-#include "../../utils/symbols.h"
-#include "../../fields/vector_field.h"
-#include "../basis/lagrangian_basis.h"
-#include "../operators/bilinear_form_expressions.h"
+#include "../../fields/scalar_expressions.h"
+#include "../compile_time.h"
+#include "../symbols.h"
 #include "integrator_tables.h"
 
 namespace fdapde {
@@ -41,9 +39,9 @@ template <unsigned int M, unsigned int R, unsigned int K = standard_fem_quadratu
     template <unsigned int N, typename F> double integrate(const Element<M, N, R>& e, const F& f) const;
     // integrate a callable F over a triangualtion m
     template <unsigned int N, typename F> double integrate(const Mesh<M, N, R>& m, const F& f) const;
-    // computes \int_e [f * \phi] where \phi is a Lagrangian basis function over the *reference element*.
-    template <unsigned int N, typename F> double integrate(const Element<M, N, R>& e, const F& f,
-      const typename LagrangianBasis<M, R>::ElementType& phi) const;
+    // computes \int_e [f * \phi] where \phi is a basis function over the *reference element*.
+    template <unsigned int N, typename F, typename B>
+    double integrate(const Element<M, N, R>& e, const F& f, const B& phi) const;
     // integrate the weak form of operator L to produce its (i,j)-th discretization matrix element
     template <typename L, unsigned int N, typename F> double integrate(const Element<M, N, R>& e, F& f) const;
 
@@ -61,8 +59,7 @@ double Integrator<M, R, K>::integrate(const Element<M, N, R>& e, F& f) const {
     // apply quadrature rule
     double value = 0;
     for (size_t iq = 0; iq < integration_table_.num_nodes; ++iq) {
-        // wrap quadrature point (stored as std::array<>) to an M-dimensional SVector
-        SVector<M> p = SVector<M>(integration_table_.nodes[iq].data());
+        const SVector<M>& p = integration_table_.nodes[iq];
         if constexpr (std::remove_reference<L>::type::is_space_varying) {
             // space-varying case: evaluate coefficients at the quadrature nodes
             f.eval_parameters(integration_table_.num_nodes * e.ID() + iq);
@@ -77,12 +74,11 @@ double Integrator<M, R, K>::integrate(const Element<M, N, R>& e, F& f) const {
 // variables formula: \int_e [f(x) * \phi(x)] = \int_{E} [f(J(X)) * \Phi(X)] |detJ|
 // where J is the affine mapping from the reference element E to the physical element e
 template <unsigned int M, unsigned int R, unsigned int K>
-template <unsigned int N, typename F>
-double Integrator<M, R, K>::integrate(
-  const Element<M, N, R>& e, const F& f, const typename LagrangianBasis<M, R>::ElementType& Phi) const {
+template <unsigned int N, typename F, typename B>
+double Integrator<M, R, K>::integrate(const Element<M, N, R>& e, const F& f, const B& Phi) const {
     double value = 0;
     for (size_t iq = 0; iq < integration_table_.num_nodes; ++iq) {
-        SVector<M> p = SVector<M>(integration_table_.nodes[iq].data());
+        const SVector<M>& p = integration_table_.nodes[iq];
         if constexpr (std::is_base_of<ScalarExpr<N, F>, F>::value) {
             // functor f is evaluable at any point.
             SVector<N> Jp = e.barycentric_matrix() * p + e.coords()[0];   // map quadrature point on physical element e
@@ -105,8 +101,8 @@ double Integrator<M, R, K>::integrate(const Element<M, N, R>& e, const F& f) con
     for (size_t iq = 0; iq < integration_table_.num_nodes; ++iq) {
         if constexpr (std::is_invocable<F, SVector<N>>::value) {
             // functor f is evaluable at any point
-            SVector<N> p = e.barycentric_matrix() * SVector<M>(integration_table_.nodes[iq].data()) +
-                           e.coords()[0];   // map quadrature point onto e
+            SVector<N> p =
+              e.barycentric_matrix() * integration_table_.nodes[iq] + e.coords()[0];   // map quadrature point onto e
             value += f(p) * integration_table_.weights[iq];
         } else {
             // as a fallback we assume f given as vector of values with the assumption that
@@ -143,6 +139,19 @@ DMatrix<double> Integrator<M, R, K>::quadrature_nodes(const Mesh<M, N, R>& m) co
         }
     }
     return quadrature_nodes;
+}
+
+// integration of f() over 1D segments of type [a,b], using formula
+// \int_{[a,b]} f(x) -> (b-a)/2 * \sum_{iq} w_{iq} * f((b-a)/2*x + (b+a)/2)
+// and quadrature rule T
+template <typename F, typename T> double integrate_1D(double a, double b, const F& f, const T& t) {
+    static_assert(T::input_dim == 1, "quadrature rule input_dim != 1");
+    double value = 0;
+    for (std::size_t iq = 0; iq < t.num_nodes; ++iq) {
+        value += f(SVector<1>(((b - a) / 2) * t.nodes[iq][0] + (b + a) / 2)) * t.weights[iq];
+    }
+    // correct for measure of interval
+    return (b - a) / 2 * value;
 }
 
 }   // namespace core

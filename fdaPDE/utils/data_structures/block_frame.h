@@ -60,7 +60,7 @@ template <typename... Ts> class BlockFrame {
     std::size_t rows() const { return rows_; }
 
     // tests if BlockFrame contains block named "key"
-    bool hasBlock(const std::string& key) const {
+    bool has_block(const std::string& key) const {
         return std::find(columns_.cbegin(), columns_.cend(), key) != columns_.cend();
     }
 
@@ -73,7 +73,7 @@ template <typename... Ts> class BlockFrame {
         // store data
         std::get<index_of<T, types_>::index>(data_)[key] = data;
         // update metadata
-        if (!hasBlock(key)) columns_.push_back(key);
+        if (!has_block(key)) columns_.push_back(key);
         if (rows_ == 0) rows_ = data.rows();
         return;
     }
@@ -98,21 +98,21 @@ template <typename... Ts> class BlockFrame {
     template <typename T> const DMatrix<T>& get(const std::string& key) const {
         BLOCK_FRAME_CHECK_TYPE;
         // throw exeption if key not in BlockFrame
-        if (!hasBlock(key)) throw std::out_of_range("key not found");
+        if (!has_block(key)) throw std::out_of_range("key not found");
         return std::get<index_of<T, types_>::index>(data_).at(key);
     }
     // non-const access
     template <typename T> DMatrix<T>& get(const std::string& key) {
         BLOCK_FRAME_CHECK_TYPE;
         // throw exeption if key not in BlockFrame
-        if (!hasBlock(key)) throw std::out_of_range("key not found");
+        if (!has_block(key)) throw std::out_of_range("key not found");
         return std::get<index_of<T, types_>::index>(data_).at(key);
     }
     // extract all unqique rows from a block
     template <typename T> DMatrix<T> extract_unique(const std::string& key) const {
         BLOCK_FRAME_CHECK_TYPE;
         // throw exeption if key not in BlockFrame
-        if (!hasBlock(key)) throw std::out_of_range("key not found");
+        if (!has_block(key)) throw std::out_of_range("key not found");
         DMatrix<T> result;
         // get unique values from block with given key
         const DMatrix<T>& block = std::get<index_of<T, types_>::index>(data_).at(key);
@@ -211,7 +211,7 @@ template <ViewType S, typename... Ts> class BlockView {
     // returns a copy of the values stored under block with ID key along row row_
     template <typename T> DMatrix<T> get(const std::string& key) const {
         BLOCK_FRAME_CHECK_TYPE;
-        if (!frame_.hasBlock(key)) throw std::out_of_range("key not found");
+        if (!frame_.has_block(key)) throw std::out_of_range("key not found");
 
         if constexpr (S == ViewType::Row)
             // return single row
@@ -238,7 +238,7 @@ template <ViewType S, typename... Ts> class BlockView {
     // returns an eigen block for read-write access to portions of this view (only range views)
     template <typename T> auto block(const std::string& key) const {
         BLOCK_FRAME_CHECK_TYPE;
-        if (!frame_.hasBlock(key)) throw std::out_of_range("key not found");
+        if (!frame_.has_block(key)) throw std::out_of_range("key not found");
 
         if constexpr (S == ViewType::Range) {
             // return block of this view

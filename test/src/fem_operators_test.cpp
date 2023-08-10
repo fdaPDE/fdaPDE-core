@@ -23,14 +23,13 @@
 #include <fdaPDE/finite_elements.h>
 using fdapde::core::Element;
 using fdapde::core::Integrator;
-using fdapde::core::LagrangianBasis;
-using fdapde::core::Laplacian;
+using fdapde::core::LagrangianElement;
+using fdapde::core::FEM;
+using fdapde::core::laplacian;
 using fdapde::core::MatrixConst;
 using fdapde::core::MatrixPtr;
 using fdapde::core::ScalarPtr;
 using fdapde::core::VectorPtr;
-using fdapde::core::div;
-using fdapde::core::Divergence;
 
 #include "utils/mesh_loader.h"
 using fdapde::testing::MESH_TYPE_LIST;
@@ -38,7 +37,7 @@ using fdapde::testing::MeshLoader;
 #include "utils/utils.h"
 using fdapde::testing::almost_equal;
 
-// test integration of Laplacian weak form for a LagrangianBasis of order 2
+// test integration of Laplacian weak form for a LagrangianElement of order 2
 TEST(fem_operators_test, laplacian_order_2) {
     // load sample mesh, request an order 2 basis support
     MeshLoader<Mesh2D<2>> CShaped("c_shaped");
@@ -46,11 +45,11 @@ TEST(fem_operators_test, laplacian_order_2) {
     Integrator<2, 2> integrator {};
 
     // define differential operator
-    auto L = -Laplacian();
+    auto L = -laplacian<FEM>();
     // define functional space
-    LagrangianBasis<2, 2> basis {};
+    LagrangianElement<2, 2> basis {};
 
-    using BasisType = typename LagrangianBasis<2, 2>::ElementType;
+    using BasisType = typename LagrangianElement<2, 2>::ElementType;
     using NablaType = decltype(std::declval<BasisType>().derive());
     BasisType buff_psi_i, buff_psi_j;               // basis functions \psi_i, \psi_j
     NablaType buff_nabla_psi_i, buff_nabla_psi_j;   // gradient of basis functions \nabla \psi_i, \nabla \psi_j
