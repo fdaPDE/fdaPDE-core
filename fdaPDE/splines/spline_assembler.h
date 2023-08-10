@@ -45,7 +45,7 @@ template <typename D, typename B, typename I> class Assembler<SPLINE, D, B, I> {
 template <typename D, typename B, typename I>
 template <typename E>
 SpMatrix<double> Assembler<SPLINE, D, B, I>::discretize_operator(const E& op) {
-    constexpr std::size_t R = B::order;
+    constexpr int R = B::order;
     std::size_t M = basis_.size();
     std::vector<fdapde::Triplet<double>> triplet_list;
     SpMatrix<double> discretization_matrix;

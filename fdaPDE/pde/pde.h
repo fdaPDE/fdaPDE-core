@@ -53,9 +53,9 @@ template <typename D,   // triangulated problem domain
 class PDE : public PDEBase {
    public:
     typedef D DomainType;   // triangulated domain
-    static constexpr std::size_t M = DomainType::local_dimension;
-    static constexpr std::size_t N = DomainType::embedding_dimension;
-    static constexpr std::size_t R = DomainType::order;
+    static constexpr int M = DomainType::local_dimension;
+    static constexpr int N = DomainType::embedding_dimension;
+    static constexpr int R = DomainType::order;
     typedef E OperatorType;   // differential operator in its strong-formulation
     static_assert(
       std::is_base_of<DifferentialExpr<OperatorType>, OperatorType>::value, "E is not a valid differential operator");

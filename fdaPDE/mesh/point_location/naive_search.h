@@ -27,7 +27,7 @@ namespace fdapde {
 namespace core {
 
 // naive search strategy for point location problem
-template <unsigned int M, unsigned int N, unsigned int R> class NaiveSearch : public PointLocator<M, N, R> {
+template <int M, int N, int R> class NaiveSearch : public PointLocator<M, N, R> {
    private:
     const Mesh<M, N, R>& mesh_;
    public:

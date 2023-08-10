@@ -14,8 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_UTILS_MOUDLE_H__
-#define __FDAPDE_UTILS_MOUDLE_H__
+#ifndef __FDAPDE_UTILS_MODULE_H__
+#define __FDAPDE_UTILS_MODULE_H__
 
 #include "utils/assert.h"
 #include "utils/compile_time.h"
@@ -27,4 +27,4 @@
 #include "utils/integration/integrator.h"
 #include "utils/integration/integrator_tables.h"
 
-#endif   // __FDAPDE_UTILS_MOUDLE_H__
+#endif   // __FDAPDE_UTILS_MODULE_H__

@@ -14,8 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_CORE_MOUDLE_H__
-#define __FDAPDE_CORE_MOUDLE_H__
+#ifndef __FDAPDE_CORE_MODULE_H__
+#define __FDAPDE_CORE_MODULE_H__
 
 #include "utils.h"
 #include "fields.h"
@@ -26,4 +26,4 @@
 #include "splines.h"
 #include "multithreading.h"
 
-#endif   // __FDAPDE_CORE_MOUDLE_H__
+#endif   // __FDAPDE_CORE_MODULE_H__

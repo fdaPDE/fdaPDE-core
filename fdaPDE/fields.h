@@ -14,8 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_FIELDS_MOUDLE_H__
-#define __FDAPDE_FIELDS_MOUDLE_H__
+#ifndef __FDAPDE_FIELDS_MODULE_H__
+#define __FDAPDE_FIELDS_MODULE_H__
 
 #include "fields/differentiable_field.h"
 #include "fields/dot_product.h"
@@ -27,4 +27,4 @@
 #include "fields/vector_expressions.h"
 #include "fields/vector_field.h"
 
-#endif   // __FDAPDE_FIELDS_MOUDLE_H__
+#endif   // __FDAPDE_FIELDS_MODULE_H__

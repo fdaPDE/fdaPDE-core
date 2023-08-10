@@ -14,12 +14,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_LINEAR_ALGEBRA_MOUDLE_H__
-#define __FDAPDE_LINEAR_ALGEBRA_MOUDLE_H__
+#ifndef __FDAPDE_LINEAR_ALGEBRA_MODULE_H__
+#define __FDAPDE_LINEAR_ALGEBRA_MODULE_H__
 
 #include "linear_algebra/kronecker_product.h"
 #include "linear_algebra/smw.h"
 #include "linear_algebra/sparse_block_matrix.h"
 #include "linear_algebra/vector_space.h"
 
-#endif   // __FDAPDE_LINEAR_ALGEBRA_MOUDLE_H__
+#endif   // __FDAPDE_LINEAR_ALGEBRA_MODULE_H__

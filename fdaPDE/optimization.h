@@ -14,8 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_OPTIMIZATION_MOUDLE_H__
-#define __FDAPDE_OPTIMIZATION_MOUDLE_H__
+#ifndef __FDAPDE_OPTIMIZATION_MODULE_H__
+#define __FDAPDE_OPTIMIZATION_MODULE_H__
 
 #include "optimization/grid.h"
 #include "optimization/newton.h"
@@ -25,4 +25,4 @@
 #include "optimization/callbacks/backtracking_line_search.h"
 #include "optimization/callbacks/wolfe_line_search.h"
 
-#endif   // __FDAPDE_OPTIMIZATION_MOUDLE_H__
+#endif   // __FDAPDE_OPTIMIZATION_MODULE_H__
