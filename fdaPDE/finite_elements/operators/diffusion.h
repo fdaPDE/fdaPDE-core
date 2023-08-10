@@ -28,7 +28,7 @@
 namespace fdapde {
 namespace core {
 
-// diffusion operator -div(K*grad(.)) (isotropic and stationary diffusion)
+// diffusion operator -div(K*grad(.)) (anisotropic and non-stationary diffusion)
 template <typename T> class Diffusion<FEM, T> : public DifferentialExpr<Diffusion<FEM, T>> {
     // perform compile-time sanity checks
     static_assert(

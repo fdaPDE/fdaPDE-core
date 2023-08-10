@@ -10,6 +10,7 @@
 !*.hpp
 !*.md
 !*.yml
+!*.mtx
 !fdaPDE/
 !fdaPDE/*
 !fdaPDE/
@@ -49,6 +50,8 @@
 !test/data/mesh/network/*
 !test/src/
 !test/src/*
+!test/mtx/
+!text/mtx/*
 !.github/
 !.github/*
 !.github/workflows/

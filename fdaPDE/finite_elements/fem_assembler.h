@@ -53,8 +53,8 @@ template <typename D, typename B, typename I> class Assembler<FEM, D, B, I> {
 };
 
 // implementative details
-  
-// assembly for the discretization matrix of a general bilinear form L
+
+// assembly for the discretization matrix of a general operator L  
 template <typename D, typename B, typename I>
 template <typename E>
 SpMatrix<double> Assembler<FEM, D, B, I>::discretize_operator(const E& op) {

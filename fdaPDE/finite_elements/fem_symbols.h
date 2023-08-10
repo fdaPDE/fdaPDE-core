@@ -23,7 +23,7 @@ namespace core {
 // finite element strategy tag for PDE discretization
 struct FEM { };
 
-  // utility macro to import symbols from memory buffer passed from fem assembly to fem operators
+// utility macro to import symbols from memory buffer recived from assembly loop to fe operators
 #define IMPORT_FEM_MEM_BUFFER_SYMBOLS(mem_buff)                                                                        \
     /* pair of basis functions \psi_i, \psi_j*/                                                                        \
     auto psi_i = std::get<0>(mem_buff);                                                                                \

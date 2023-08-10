@@ -59,7 +59,6 @@ double Integrator<M, R, K>::integrate(const Element<M, N, R>& e, F& f) const {
     // apply quadrature rule
     double value = 0;
     for (size_t iq = 0; iq < integration_table_.num_nodes; ++iq) {
-        // wrap quadrature point (stored as std::array<>) to an M-dimensional SVector
         const SVector<M>& p = integration_table_.nodes[iq];
         if constexpr (std::remove_reference<L>::type::is_space_varying) {
             // space-varying case: evaluate coefficients at the quadrature nodes
@@ -146,7 +145,7 @@ DMatrix<double> Integrator<M, R, K>::quadrature_nodes(const Mesh<M, N, R>& m) co
 // \int_{[a,b]} f(x) -> (b-a)/2 * \sum_{iq} w_{iq} * f((b-a)/2*x + (b+a)/2)
 // and quadrature rule T
 template <typename F, typename T> double integrate_1D(double a, double b, const F& f, const T& t) {
-    static_assert(T::input_dim == 1, "quadrature rule is not for 1D spaces");
+    static_assert(T::input_dim == 1, "quadrature rule input_dim != 1");
     double value = 0;
     for (std::size_t iq = 0; iq < t.num_nodes; ++iq) {
         value += f(SVector<1>(((b - a) / 2) * t.nodes[iq][0] + (b + a) / 2)) * t.weights[iq];

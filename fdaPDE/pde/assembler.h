@@ -21,7 +21,7 @@ namespace fdapde {
 namespace core {
 
 // generic algorithm for the assembly of the discretization matrix of a differential operator
-//to be partially specialized with respect to T
+// to be partially specialized with respect to T
 template <typename T, typename... Ts> class Assembler { };
 
 }   // namespace core

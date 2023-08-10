@@ -19,8 +19,6 @@
 
 #include <type_traits>
 
-#include "../../utils/symbols.h"
-#include "../../fields/matrix_field.h"
 #include "../../pde/differential_expressions.h"
 #include "../../pde/differential_operators.h"
 #include "../fem_symbols.h"

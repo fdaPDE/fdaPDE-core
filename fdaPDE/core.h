@@ -23,6 +23,7 @@
 #include "linear_algebra.h"
 #include "optimization.h"
 #include "finite_elements.h"
+#include "splines.h"
 #include "multithreading.h"
 
 #endif   // __FDAPDE_CORE_MOUDLE_H__

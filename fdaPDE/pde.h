@@ -14,9 +14,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_SPLINES_MODULE_H__
-#define __FDAPDE_SPLINES_MODULE_H__
-
 #ifndef __FDAPDE_PDE_MODULE_H__
 #define __FDAPDE_PDE_MODULE_H__
 
@@ -28,13 +25,7 @@
 #include "utils/integration/integrator.h"
 #include "utils/integration/integrator_tables.h"
 
-#endif
+#include "finite_elements.h"
+#include "splines.h"
 
-#include "splines/spline_symbols.h"
-#include "splines/spline_assembler.h"
-#include "splines/basis/spline.h"
-#include "splines/basis/spline_basis.h"
-#include "splines/operators/reaction.h"
-#include "splines/operators/bilaplacian.h"
-
-#endif   // __FDAPDE_SPLINES_MODULE_H__
+#endif   // __FDAPDE_PDE_MODULE_H__

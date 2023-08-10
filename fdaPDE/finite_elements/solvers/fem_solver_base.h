@@ -111,7 +111,6 @@ template <typename D, typename E, typename F>
 template <typename PDE>
 void FEMSolverBase<D, E, F>::set_dirichlet_bc(const PDE& pde) {
     static_assert(is_pde<PDE>::value, "not a valid PDE");
-
     if (!is_init) throw std::runtime_error("solver must be initialized first!");
     for (auto it = pde.domain().boundary_begin(); it != pde.domain().boundary_end(); ++it) {
         R1_.row(*it) *= 0;            // zero all entries of this row

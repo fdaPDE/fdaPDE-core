@@ -14,15 +14,21 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_FINITE_ELEMENTS_MOUDLE_H__
-#define __FDAPDE_FINITE_ELEMENTS_MOUDLE_H__
+#ifndef __FDAPDE_FINITE_ELEMENTS_MODULE_H__
+#define __FDAPDE_FINITE_ELEMENTS_MODULE_H__
 
+#ifndef __FDAPDE_PDE_MODULE_H__
+#define __FDAPDE_PDE_MODULE_H__
+
+#include "pde/pde.h"
 #include "pde/differential_operators.h"
 #include "pde/differential_expressions.h"
-#include "pde/pde.h"
+#include "pde/non_constant_coefficients.h"
 
 #include "utils/integration/integrator.h"
 #include "utils/integration/integrator_tables.h"
+
+#endif
 
 #include "finite_elements/fem_symbols.h"
 #include "finite_elements/fem_assembler.h"
@@ -38,6 +44,5 @@
 #include "finite_elements/operators/advection.h"
 #include "finite_elements/operators/reaction.h"
 #include "finite_elements/operators/dt.h"
-#include "finite_elements/operators/space_varying.h"
 
-#endif   // __FDAPDE_FINITE_ELEMENTS_MOUDLE_H__
+#endif   // __FDAPDE_FINITE_ELEMENTS_MODULE_H__
