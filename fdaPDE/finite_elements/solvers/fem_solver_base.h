@@ -51,7 +51,7 @@ template <typename D, typename E, typename F> class FEMSolverBase {
     const SpMatrix<double>& R0() const { return R0_; }
     const QuadratureRule& integrator() const { return integrator_; }
     const FunctionSpace& reference_basis() const { return reference_basis; }
-    FunctionBasis& basis() const { return fe_basis_; }
+    const FunctionBasis& basis() const { return fe_basis_; }
     // flags
     bool is_init = false;   // notified true if initialization occurred with no errors
     bool success = false;   // notified true if problem solved with no errors
