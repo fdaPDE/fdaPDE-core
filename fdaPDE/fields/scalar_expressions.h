@@ -59,8 +59,8 @@ template <int N, typename E> struct ScalarExpr : public ScalarBase {
     // call operator() on the base type E
     inline double operator()(const SVector<N>& p) const { return static_cast<const E&>(*this)(p); }
     const E& get() const { return static_cast<const E&>(*this); }
-    // evaluate parametric nodes in the expression, does nothing if not redefined in derived classes
-    template <typename T> void eval_parameters(T i) const { return; }
+    // forward i to all nodes of the expression. Does nothing if not redefined in E
+    template <typename T> void forward(T i) const { return; }
     // map unary operator- to a ScalarNegationOp expression node
     ScalarNegationOp<N, E> operator-() const { return ScalarNegationOp<N, E>(get()); }
 
@@ -80,21 +80,16 @@ template <int N> class Scalar : public ScalarExpr<N, Scalar<N>> {
     inline double operator()(const SVector<N>& p) const { return value_; };
 };
 
-// a parameter node
-template <int N, typename F, typename T> class ScalarParam : public ScalarExpr<N, ScalarParam<N, F, T>> {
-    // check F is callable with type T and returns a double
-    static_assert(std::is_same<decltype(std::declval<F>().operator()(T())), double>::value);
+// wraps an n_rows x 1 vector of data, acts as a double once forwarded the matrix row
+template <int N> class ScalarDataWrapper : public ScalarExpr<N, ScalarDataWrapper<N>> {
    private:
-    // be sure that data pointed by this parameter are alive for the whole life of this object
-    const typename std::remove_reference<F>::type* f_;
+    DMatrix<double> data_;
     double value_;
    public:
-    // default constructor
-    ScalarParam() = default;
-    ScalarParam(const F& f) : f_(&f) {};
-    // call operator, match with any possible set of arguments
-    template <typename... Args> double operator()(Args... args) const { return value_; }
-    void eval_parameters(T i) { value_ = f_->operator()(i); }
+    ScalarDataWrapper() = default;
+    ScalarDataWrapper(const DMatrix<double>& data) : data_(data) {};
+    double operator()(const SVector<N>& p) const { return value_; }
+    void forward(std::size_t i) { value_ = data_(i, 0); }   // fix value_ to the i-th coefficient of data_
 };
 
 // expression template based arithmetic
@@ -110,9 +105,9 @@ class ScalarBinOp : public ScalarExpr<N, ScalarBinOp<N, OP1, OP2, BinaryOperatio
     // call operator, performs the expression evaluation
     double operator()(const SVector<N>& p) const { return f_(op1_(p), op2_(p)); }
     // call parameter evaluation on operands
-    template <typename T> const ScalarBinOp<N, OP1, OP2, BinaryOperation>& eval_parameters(T i) {
-        op1_.eval_parameters(i);
-        op2_.eval_parameters(i);
+    template <typename T> const ScalarBinOp<N, OP1, OP2, BinaryOperation>& forward(T i) {
+        op1_.forward(i);
+        op2_.forward(i);
         return *this;
     }
 };
@@ -148,8 +143,8 @@ template <int N, typename OP> class ScalarNegationOp : public ScalarExpr<N, Scal
     ScalarNegationOp(const OP& op) : op_(op) {};
     double operator()(const SVector<N>& p) const { return -op_(p); }
     // call parameter evaluation on stored operand
-    template <typename T> const ScalarNegationOp<N, OP>& eval_parameters(T i) const {
-        op_.eval_parameters(i);
+    template <typename T> const ScalarNegationOp<N, OP>& forward(T i) const {
+        op_.forward(i);
         return *this;
     }
 };

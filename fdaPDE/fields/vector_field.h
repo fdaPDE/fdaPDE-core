@@ -81,7 +81,7 @@ template <int M, int N, typename F> SVector<N> VectorField<M, N, F>::operator()(
 
 // out of class definitions of VectorField arithmetic
 // forward declaration
-template <unsigned int N, unsigned int M, unsigned int K> class MatrixConst;
+template <int N, int M, int K> class MatrixConst;
 // VectorField-VectorField inner product
 template <int M, int N, typename F>
 DotProduct<M, VectorField<M, N, F>, VectorConst<M, N>> VectorField<M, N, F>::dot(const SVector<N>& rhs) const {

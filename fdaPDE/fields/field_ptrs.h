@@ -34,7 +34,7 @@ namespace core {
     ScalarPtr(E* ptr) : ptr_(ptr) {};
     // delegate to pointed memory location
     double operator()(const SVector<E::base>& p) const { return ptr_->operator()(p); }
-    template <typename T> void eval_parameters(T i) { ptr_->eval_parameters(i); }
+    template <typename T> void forward(T i) { ptr_->forward(i); }
     // access to pointed element
     E* operator->() { return ptr_; }
     typedef E PtrType;   // expose wrapped type
@@ -49,7 +49,7 @@ template <typename E> class VectorPtr : public VectorExpr<E::base, E::rows, Vect
     VectorPtr(E* ptr) : ptr_(ptr) {};
     // delegate to pointed memory location
     auto operator[](std::size_t i) const { return ptr_->operator[](i); }
-    template <typename T> void eval_parameters(T i) { ptr_->eval_parameters(i); }
+    template <typename T> void forward(T i) { ptr_->forward(i); }
     // access to pointed element
     E* operator->() { return ptr_; }
     typedef E PtrType;   // expose wrapped type
@@ -64,7 +64,7 @@ template <typename E> class MatrixPtr : public MatrixExpr<E::base, E::rows, E::c
     MatrixPtr(E* ptr) : ptr_(ptr) {};
     // delegate to pointed memory location
     auto coeff(std::size_t i, std::size_t j) const { return ptr_->coeff(i, j); }
-    template <typename T> void eval_parameters(T i) { ptr_->eval_parameters(i); }
+    template <typename T> void forward(T i) { ptr_->forward(i); }
     // access to pointed element
     E* operator->() { return ptr_; }
     typedef E PtrType;   // expose wrapped type

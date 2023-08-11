@@ -14,6 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include "fdaPDE/fields/scalar_expressions.h"
 #include <gtest/gtest.h>   // testing framework
 #include <functional>
 #include <vector>
@@ -24,6 +25,7 @@ using fdapde::core::DifferentiableScalarField;
 using fdapde::core::ScalarField;
 using fdapde::core::TwiceDifferentiableScalarField;
 using fdapde::core::VectorField;
+using fdapde::core::ScalarDataWrapper;
 
 #include "utils/constants.h"
 using fdapde::testing::DOUBLE_TOLERANCE;
@@ -275,4 +277,25 @@ TEST(scalar_field_test, twice_differentiable_field) {
     hessian << 6, 0, 0, 0;
     // check exact hessian is actually called
     ASSERT_TRUE((tdf.derive_twice()(p) - hessian).norm() < DOUBLE_TOLERANCE);
+}
+
+TEST(scalar_field_test, scalar_data_wrapper) {
+  // define a scalar field
+  ScalarField<2> f;
+  f = [](SVector<2> x) -> double { return x[0] + x[1]; };
+
+  // define vector of data
+  DMatrix<double> data;
+  data.resize(10,1);
+  for(std::size_t i = 0; i < 10; i++) { data(i,0) = i; }
+  // wrap data into a field 
+  ScalarDataWrapper<2> k(data);
+  
+  auto sf = f + k;
+  sf.forward(4); // k = 4
+  // define evaluation point
+  SVector<2> p(1,1);
+  double eval = sf(p);
+
+  EXPECT_EQ(eval, 6.0);
 }
