@@ -91,19 +91,20 @@ template <int M, int N> class VectorConst : public VectorExpr<M, N, VectorConst<
 
 // wraps a n_rows x N matrix of data, acts as an SVector<N> once fixed the matrix row, assuming each row contains
 // the vector to map
-template <int M, int N = M> class VectorDataWrapper : public VectorExpr<M, N, VectorDataWrapper<M, N>> {
+template <int M, int N> class VectorDataWrapper : public VectorExpr<M, N, VectorDataWrapper<M, N>> {
    private:
-    Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> data_;
+    typedef Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> DataType;
+    DataType* data_;
     Eigen::Map<SVector<N>> value_;
    public:
     VectorDataWrapper() : value_(NULL) {};
-    VectorDataWrapper(const DMatrix<double>& data) : data_(data), value_(NULL) {};
+    VectorDataWrapper(DataType& data) : data_(&data), value_(NULL) {};
     double operator[](std::size_t i) const { return value_[i]; }
     void forward(std::size_t i) {
-        new (&value_) Eigen::Map<SVector<M>>(data_.data() + (i * N));   // construct map in place
+        new (&value_) Eigen::Map<SVector<M>>(data_->data() + (i * N));   // construct map in place
     }
 };
-
+  
 // a generic binary operation node
 template <int M, int N, typename OP1, typename OP2, typename BinaryOperation>
 class VectorBinOp : public VectorExpr<M, N, VectorBinOp<M, N, OP1, OP2, BinaryOperation>> {

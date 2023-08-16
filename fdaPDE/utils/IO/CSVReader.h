@@ -103,25 +103,11 @@ class CSVReader{
 
 // utility functions to import .csv into Eigen dynamic matrices without the burden of defining CSV objects
 template <typename T>
-void readCSV(DMatrix<T>& buff, const std::string& file_name){
-  // define csv parser
+DMatrix<T> read_csv(const std::string& file_name){
   CSVReader<T> reader{};
-  // define parsed file and parse input
   CSVFile<T> parsed_file;
   parsed_file = reader.parseFile(file_name);
-  buff = parsed_file.toEigen(); // write to destination
-  return;
-}
-
-template <typename T>
-void readCSV(SpMatrix<T>& buff, const std::string& file_name){
-  // define csv parser
-  CSVReader<T> reader{};
-  // define parsed file and parse input
-  CSVFile<T> parsed_file;
-  parsed_file = reader.parseSparseFile(file_name);
-  buff = parsed_file.toEigen(); // write to destination
-  return;
+  return parsed_file.toEigen();
 }
 
 #endif // __CSV_READER_H__

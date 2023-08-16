@@ -26,7 +26,8 @@ template <int N> using SVector = Eigen::Matrix<double, N, 1>;
 template <int N, int M = N> using SMatrix = Eigen::Matrix<double, N, M>;
 
 // dynamic size, head-appocated, structures.
-template <typename T> using DMatrix    = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;
+template <typename T, int Options_ = Eigen::ColMajor>
+using DMatrix = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Options_>;
 template <typename T> using DVector    = Eigen::Matrix<T, Eigen::Dynamic, 1>;
 template <typename T> using DiagMatrix = Eigen::DiagonalMatrix<double, Eigen::Dynamic, Eigen::Dynamic>;
 
@@ -88,7 +89,6 @@ template <typename T> class SparseLU {
     SparseLU() = default;
     // we expose only the compute and solve methods of Eigen::SparseLU
     void compute(const T& matrix) {
-        // initialize pointer
         solver_ = std::make_shared<SparseLU_>();
         solver_->compute(matrix);
     }

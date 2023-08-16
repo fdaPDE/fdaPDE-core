@@ -83,13 +83,14 @@ template <int N> class Scalar : public ScalarExpr<N, Scalar<N>> {
 // wraps an n_rows x 1 vector of data, acts as a double once forwarded the matrix row
 template <int N> class ScalarDataWrapper : public ScalarExpr<N, ScalarDataWrapper<N>> {
    private:
-    DMatrix<double> data_;
+    typedef Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> DataType;
+    DataType* data_;
     double value_;
    public:
     ScalarDataWrapper() = default;
-    ScalarDataWrapper(const DMatrix<double>& data) : data_(data) {};
+    ScalarDataWrapper(DataType& data) : data_(&data) {};
     double operator()(const SVector<N>& p) const { return value_; }
-    void forward(std::size_t i) { value_ = data_(i, 0); }   // fix value_ to the i-th coefficient of data_
+    void forward(std::size_t i) { value_ = data_->operator()(i, 0); }   // fix value_ to the i-th coefficient of data_
 };
 
 // expression template based arithmetic
@@ -143,7 +144,7 @@ template <int N, typename OP> class ScalarNegationOp : public ScalarExpr<N, Scal
     ScalarNegationOp(const OP& op) : op_(op) {};
     double operator()(const SVector<N>& p) const { return -op_(p); }
     // call parameter evaluation on stored operand
-    template <typename T> const ScalarNegationOp<N, OP>& forward(T i) const {
+    template <typename T> const ScalarNegationOp<N, OP>& forward(T i) {
         op_.forward(i);
         return *this;
     }
