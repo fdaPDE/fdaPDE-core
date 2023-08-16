@@ -300,14 +300,14 @@ TEST(vector_field_test, vector_data_wrapper) {
     vf[1] = [](SVector<2> x) -> double { return 2 * x[0] + x[1]; };         // 2*x + y
 
     // define vector of data
-    DMatrix<double> data;
+    DMatrix<double, Eigen::RowMajor> data;
     data.resize(10, 2);
     for (std::size_t i = 0; i < 10; i++) {
         data(i, 0) = i;
         data(i, 1) = i;
     }
     // wrap data into a field
-    VectorDataWrapper<2> k(data);
+    VectorDataWrapper<2,2> k(data);
 
     auto vf_1 = vf + k;
     vf_1.forward(4);   // k = 4

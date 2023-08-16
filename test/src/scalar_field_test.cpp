@@ -284,7 +284,7 @@ TEST(scalar_field_test, scalar_data_wrapper) {
     f = [](SVector<2> x) -> double { return x[0] + x[1]; };
 
     // define vector of data
-    DMatrix<double> data;
+    DMatrix<double, Eigen::RowMajor> data;
     data.resize(10, 1);
     for (std::size_t i = 0; i < 10; i++) { data(i, 0) = i; }
     // wrap data into a field
