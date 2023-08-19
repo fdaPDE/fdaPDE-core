@@ -27,26 +27,28 @@ namespace core {
 // implementation of the newton method for unconstrained nonlinear optimization
 template <int N> class Newton {
    private:
+    typedef typename std::conditional<N == Dynamic, DVector<double>, SVector<N>>::type VectorType;
+    typedef typename std::conditional<N == Dynamic, DMatrix<double>, SMatrix<N>>::type MatrixType;
     std::size_t max_iter_;   // maximum number of iterations before forced stop
     double tol_;             // tolerance on error before forced stop
     double step_;            // update step
 
-    SVector<N> optimum_;
+    VectorType optimum_;
     double value_;   // objective value at optimum
    public:
-    SVector<N> x_old, x_new, update, grad_old, grad_new;
-    SMatrix<N> hessian;
-    Eigen::PartialPivLU<SMatrix<N>> inv_hessian;
+    VectorType x_old, x_new, update, grad_old, grad_new;
+    MatrixType hessian;
+    Eigen::PartialPivLU<MatrixType> inv_hessian;
     double h;
 
     // constructor
     Newton() = default;
     Newton(std::size_t max_iter, double tol, double step) : max_iter_(max_iter), tol_(tol), step_(step) {};
 
-    template <typename F, typename... Args> void optimize(F& objective, const SVector<N>& x0, Args... args) {
+    template <typename F, typename... Args> void optimize(F& objective, const VectorType& x0, Args... args) {
         static_assert(
-          std::is_same<decltype(std::declval<F>().operator()(SVector<N>())), double>::value,
-          "cannot find definition for F.operator()(const SVector<N>&)");
+          std::is_same<decltype(std::declval<F>().operator()(VectorType())), double>::value,
+          "cannot find definition for F.operator()(const VectorType&)");
 
         bool stop = false;   // asserted true in case of forced stop
         std::size_t n_iter = 0;
@@ -81,7 +83,7 @@ template <int N> class Newton {
     }
 
     // getters
-    SVector<N> optimum() const { return optimum_; }
+    VectorType optimum() const { return optimum_; }
     double value() const { return value_; }
 };
 
