@@ -35,7 +35,10 @@ template <typename T> using DiagMatrix = Eigen::DiagonalMatrix<double, Eigen::Dy
 template <typename T> using SpMatrix = Eigen::SparseMatrix<T>;
 
 namespace fdapde {
-  
+
+const int dynamic = -1;       // used when the size of a vector or matrix is not known at compile time
+const int random_seed = -1;   // signals that a random seed is used somewhere
+
 // a Triplet type (almost identical with respect to Eigen::Triplet<T>) but allowing for non-const access to stored value
 // this is compatible to Eigen::setFromTriplets() method used for the sparse matrix construction
 template <typename T> class Triplet {

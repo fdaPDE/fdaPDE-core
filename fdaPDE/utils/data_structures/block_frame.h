@@ -155,19 +155,18 @@ template <typename... Ts> class BlockFrame {
     BlockView<Range, Ts...> head(std::size_t end) const { return BlockView<Range, Ts...>(*this, 0, end); }
 
     // perform a shuffling of the BlockFrame rows returning a new BlockFrame
-    BlockFrame<Ts...> shuffle() const {
+    BlockFrame<Ts...> shuffle(std::size_t seed) const {
         std::vector<std::size_t> random_idxs;
         random_idxs.resize(rows_);
         // fill vector with integers from 0 to model.obs() - 1
         for (std::size_t i = 0; i < rows_; ++i) random_idxs[i] = i;
         // shuffle vector of indexes
-        std::random_device rd {};
-        std::default_random_engine rng(rd());
+        std::default_random_engine rng(seed);
         std::shuffle(random_idxs.begin(), random_idxs.end(), rng);
-
         // extract the blockframe from the view obtained by using random_idxs as set of indexes
         return BlockView<Sparse, Ts...>(*this, random_idxs).extract();
     }
+    BlockFrame<Ts...> shuffle() const { return shuffle(std::random_device()()); }   // uses random seed
 
     // remove block
     template <typename T> void remove(const std::string& key) {
