@@ -18,6 +18,7 @@
 #define __BARYCENTRIC_WALK_H__
 
 #include <random>
+#include <set>
 
 #include "../mesh.h"
 #include "point_locator.h"
