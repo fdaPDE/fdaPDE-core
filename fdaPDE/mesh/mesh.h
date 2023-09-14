@@ -220,7 +220,7 @@ Mesh<M, N, R>::Mesh(
     points_(points) {
     // realign indexes (we assume index coming from mesh generator to be greater or equal to 1, C++ starts count from 0)
     if constexpr (!is_linear_network<M, N>::value)
-        neighbors_ = (neighbors_.array() - 1).matrix();
+        neighbors_ = (neighbors.array() - 1).matrix();
     else
         neighbors_ = neighbors;   // adjacency matrix is directly given as input as sparse matrix
 
