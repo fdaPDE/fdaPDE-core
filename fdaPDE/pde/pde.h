@@ -42,6 +42,7 @@ struct PDEBase {
     virtual DMatrix<double> quadrature_nodes() const = 0;
     virtual void init()                              = 0;
     virtual void solve()                             = 0;
+    virtual void set_dirichlet_bc(const DMatrix<double>&) = 0;
 };
 typedef std::shared_ptr<PDEBase> pde_ptr;
 
@@ -70,6 +71,7 @@ class PDE : public PDEBase {
 
     // minimal constructor, use below setters to complete the construction of a PDE object
     PDE(const D& domain) : domain_(domain) { }
+    PDE(const D& domain, E diff_op) : domain_(domain), diff_op_(diff_op) { };
     void set_forcing(const F& forcing_data) { forcing_data_ = forcing_data; }
     void set_differential_operator(E diff_op) { diff_op_ = diff_op; }
     // full constructors
@@ -77,7 +79,7 @@ class PDE : public PDEBase {
         domain_(domain), diff_op_(diff_op), forcing_data_(forcing_data) { }
 
     // setters
-    void set_dirichlet_bc(const DMatrix<double>& data) {
+    virtual void set_dirichlet_bc(const DMatrix<double>& data) {
         for (auto it = domain_.boundary_begin(); it != domain_.boundary_end(); ++it) {
             boundary_data_[*it] = data.row(*it);   // O(1) complexity
         }
