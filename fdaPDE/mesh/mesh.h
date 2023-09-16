@@ -52,7 +52,7 @@ template <int M, int N> struct neighboring_structure {
 template <int M, int N, int R = 1> class Mesh {
    private:
     // coordinates of points costituting the vertices of mesh elements
-    DMatrix<double> points_ {};
+    DMatrix<double> nodes_ {};
     int num_nodes_ = 0;
     // identifiers of points (as row indexes in points_ matrix) composing each element, by row
     Eigen::Matrix<int, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> elements_ {};
@@ -71,20 +71,42 @@ template <int M, int N, int R = 1> class Mesh {
    public:
     Mesh() = default;
     // construct from .csv files, strings are names of file where raw data is contained
-    Mesh(const std::string& points, const std::string& triangles, const std::string& neighbors,
-         const std::string& boundary);
-
+    Mesh(const std::string& nodes, const std::string& elements, const std::string& neighbors,
+	 const std::string& boundary);
     // construct directly from eigen matrices
-    Mesh(const DMatrix<double>& points, const DMatrix<int>& elements,
-         const typename neighboring_structure<M, N>::type& neighbors, const DMatrix<int>& boundary);
+    Mesh(const DMatrix<double>& nodes, const DMatrix<int>& elements,
+	 const typename neighboring_structure<M, N>::type& neighbors, const DMatrix<int>& boundary);
+    // assign from a simple triangulation (order 1 mesh)
+    Mesh<M, N, R>& operator=(const Mesh<M, N, 1>& mesh) {
+        nodes_ = mesh.nodes();
+        num_nodes_ = nodes_.rows();
+        neighbors_ = mesh.neighbors();
+        elements_.resize(mesh.elements().rows(), ct_nnodes(M, R));
+        elements_.leftCols(mesh.elements().cols()) = mesh.elements();
+        num_elements_ = elements_.rows();
+        // perform dof enumeration if assigning to an higher order mesh
+        if constexpr (R > 1) {
+            dof_enumerate(mesh.boundary());
+        } else {
+            boundary_ = mesh.boundary();
+            dof_ = num_nodes_;
+        }
+        range_ = mesh.range();
+        fill_cache();
+        return *this;
+    }
 
     // getters
     const Element<M, N, R>& element(int ID) const { return cache_[ID]; }
     Element<M, N, R>& element(int ID) { return cache_[ID]; }
-    SVector<N> node(int ID) const { return points_.row(ID); }
+    SVector<N> node(int ID) const { return nodes_.row(ID); }
     bool is_on_boundary(size_t j) const { return boundary_(j) == 1; }
-    int elements() const { return num_elements_; }
-    int nodes() const { return num_nodes_; }
+    const DMatrix<double>& nodes() const { return nodes_; }
+    const Eigen::Matrix<int, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>& elements() const { return elements_; }
+    const typename neighboring_structure<M, N>::type& neighbors() const { return neighbors_; }
+    const DMatrix<int>& boundary() const { return boundary_; }
+    int n_elements() const { return num_elements_; }
+    int n_nodes() const { return num_nodes_; }
     std::array<std::pair<double, double>, N> range() const { return range_; }
 
     // support for the definition of a finite element basis
@@ -164,8 +186,7 @@ template <int R = 1> using NetworkMesh = Mesh<1, 2, R>;
 
 // builds a node enumeration for the support of a basis of order R. This fills both the elements_ table
 // and recompute the boundary informations. (support only for order 2 basis)
-template <int M, int N, int R>
-void Mesh<M, N, R>::dof_enumerate(const DMatrix<int>& boundary) {
+template <int M, int N, int R> void Mesh<M, N, R>::dof_enumerate(const DMatrix<int>& boundary) {
     // algorithm initialization
     int next = num_nodes_;   // next valid ID to assign
     // map of already assigned IDs
@@ -215,9 +236,9 @@ void Mesh<M, N, R>::dof_enumerate(const DMatrix<int>& boundary) {
 // construct directly from raw eigen matrix (used from wrappers)
 template <int M, int N, int R>
 Mesh<M, N, R>::Mesh(
-  const DMatrix<double>& points, const DMatrix<int>& elements,
+  const DMatrix<double>& nodes, const DMatrix<int>& elements,
   const typename neighboring_structure<M, N>::type& neighbors, const DMatrix<int>& boundary) :
-    points_(points) {
+    nodes_(nodes) {
     // realign indexes (we assume index coming from mesh generator to be greater or equal to 1, C++ starts count from 0)
     if constexpr (!is_linear_network<M, N>::value)
         neighbors_ = (neighbors.array() - 1).matrix();
@@ -228,7 +249,7 @@ Mesh<M, N, R>::Mesh(
     elements_.resize(elements.rows(), ct_nnodes(M, R));
     elements_.leftCols(elements.cols()) = (elements.array() - 1).matrix();
     // store number of nodes and number of elements
-    num_nodes_ = points_.rows();
+    num_nodes_ = nodes_.rows();
     num_elements_ = elements_.rows();
     if constexpr (R > 1)
         dof_enumerate(boundary);
@@ -241,8 +262,8 @@ Mesh<M, N, R>::Mesh(
 
     // compute mesh limits
     for (size_t dim = 0; dim < N; ++dim) {
-        range_[dim].first = points_.col(dim).minCoeff();
-        range_[dim].second = points_.col(dim).maxCoeff();
+        range_[dim].first = nodes_.col(dim).minCoeff();
+        range_[dim].second = nodes_.col(dim).maxCoeff();
     }
     // scan the whole mesh and precompute here once all elements' abstractions for fast access
     fill_cache();
@@ -257,7 +278,7 @@ Mesh<M, N, R>::Mesh(
     // open and parse CSV files
     CSVReader<double> d_reader;
     CSVReader<int> i_reader;
-    CSVFile<double> points_data = d_reader.parseFile(points);
+    CSVFile<double> nodes_data = d_reader.parseFile(points);
     CSVFile<int> elements_data = i_reader.parseFile(elements);
     CSVFile<int> boundary_data = i_reader.parseFile(boundary);
     // in the following subtract 1 for index realignment
@@ -277,12 +298,12 @@ Mesh<M, N, R>::Mesh(
     }
 
     // bring parsed informations to matrix-like structures
-    points_ = points_data.toEigen();
-    num_nodes_ = points_.rows();
+    nodes_ = nodes_data.toEigen();
+    num_nodes_ = nodes_.rows();
     // compute mesh range
     for (size_t dim = 0; dim < N; ++dim) {
-        range_[dim].first = points_.col(dim).minCoeff();
-        range_[dim].second = points_.col(dim).maxCoeff();
+        range_[dim].first = nodes_.col(dim).minCoeff();
+        range_[dim].second = nodes_.col(dim).maxCoeff();
     }
 
     // compute dof_table
@@ -325,7 +346,7 @@ template <int M, int N, int R> void Mesh<M, N, R>::fill_cache() {
         bool boundary = false;
 
         for (size_t i = 0; i < ct_nvertices(M); ++i) {
-            SVector<N> node(points_.row(point_data[i]));   // coordinates of node
+            SVector<N> node(nodes_.row(point_data[i]));   // coordinates of node
             coords[i] = node;
             // global ID of the node in the mesh
             node_ids[i] = point_data[i];
@@ -353,12 +374,12 @@ template <int M, int N, int R> void Mesh<M, N, R>::fill_cache() {
 // produce the matrix of dof coordinates
 template <int M, int N, int R> DMatrix<double> Mesh<M, N, R>::dof_coords() const {
     if constexpr (R == 1)
-        return points_;   // for order 1 meshes dofs coincide with vertices
+        return nodes_;   // for order 1 meshes dofs coincide with vertices
     else {
         // allocate space
         DMatrix<double> coords;
         coords.resize(dof_, N);
-        coords.topRows(num_nodes_) = points_;      // copy coordinates of elements' vertices
+        coords.topRows(num_nodes_) = nodes_;       // copy coordinates of elements' vertices
         std::unordered_set<std::size_t> visited;   // set of already visited dofs
         // define reference element
         std::array<SVector<M + 1>, ct_nnodes(M, R)> ref_coords = ReferenceElement<M, R>().bary_coords;

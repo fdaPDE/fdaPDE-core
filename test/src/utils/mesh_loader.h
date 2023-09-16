@@ -99,7 +99,7 @@ namespace testing {
   template <typename E>
   const Element<E::local_dimension, E::embedding_dimension, E::order>&
   MeshLoader<E>::generateRandomElement() {
-    std::uniform_int_distribution<int> randomID(0, mesh.elements()-1);
+    std::uniform_int_distribution<int> randomID(0, mesh.n_elements()-1);
     int ID = randomID(rng);  
     return mesh.element(ID);
   }

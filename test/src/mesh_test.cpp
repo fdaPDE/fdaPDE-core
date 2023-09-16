@@ -42,7 +42,7 @@ TYPED_TEST_SUITE(mesh_test, MESH_TYPE_LIST);
 
 // check points' coordinate embedded in an element are loaded correctly
 TYPED_TEST(mesh_test, element_construction) {
-    for (std::size_t i = 0; i < this->meshLoader.mesh.elements(); ++i) {
+    for (std::size_t i = 0; i < this->meshLoader.mesh.n_elements(); ++i) {
         // request element with ID i
         auto e = this->meshLoader.mesh.element(i);
 
@@ -63,7 +63,7 @@ TYPED_TEST(mesh_test, element_construction) {
 
 // check neighboring identifiers embedded in an element are loaded correctly
 TYPED_TEST(mesh_test, neighboring_information) {
-    for (std::size_t i = 0; i < this->meshLoader.mesh.elements(); ++i) {
+    for (std::size_t i = 0; i < this->meshLoader.mesh.n_elements(); ++i) {
         auto e = this->meshLoader.mesh.element(i);
         // request data from raw file
         std::vector<int> neigh = this->meshLoader.neighCSV.row(i);
@@ -84,7 +84,7 @@ TYPED_TEST(mesh_test, neighboring_information) {
 // performs some checks on the mesh topology, e.g. checks that stated neighbors shares exactly M points
 TYPED_TEST(mesh_test, boundary_checks) {
     // cycle over all mesh elements
-    for (std::size_t i = 0; i < this->meshLoader.mesh.elements(); ++i) {
+    for (std::size_t i = 0; i < this->meshLoader.mesh.n_elements(); ++i) {
         auto e = this->meshLoader.mesh.element(i);
         // check that neighboing elements have always M points in common
         for (int neighID : e.neighbors()) {
@@ -122,7 +122,7 @@ TYPED_TEST(mesh_test, boundary_checks) {
 TYPED_TEST(mesh_test, range_for) {
     // prepare set with all indexes of IDs to touch
     std::unordered_set<int> meshIDs {};
-    for (int i = 0; i < this->meshLoader.mesh.elements(); ++i) meshIDs.insert(i);
+    for (int i = 0; i < this->meshLoader.mesh.n_elements(); ++i) meshIDs.insert(i);
 
     // range-for over all elements removing the element's ID from the above set when the element is visited
     for (const auto& e : this->meshLoader.mesh) {

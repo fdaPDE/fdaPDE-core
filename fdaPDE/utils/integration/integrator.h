@@ -129,7 +129,7 @@ template <int M, int R, int K>
 template <int N>
 DMatrix<double> Integrator<M, R, K>::quadrature_nodes(const Mesh<M, N, R>& m) const {
     DMatrix<double> quadrature_nodes;
-    quadrature_nodes.resize(m.elements() * integration_table_.num_nodes, N);
+    quadrature_nodes.resize(m.n_elements() * integration_table_.num_nodes, N);
     // cycle over all mesh elements
     for (const auto& e : m) {
         // for each quadrature node, map it onto the physical element e and store it
