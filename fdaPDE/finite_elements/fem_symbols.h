@@ -32,7 +32,9 @@ struct FEM { };
     auto nabla_psi_i = std::get<2>(mem_buff);                                                                          \
     auto nabla_psi_j = std::get<3>(mem_buff);                                                                          \
     /* affine map to reference element */                                                                              \
-    auto invJ = std::get<4>(mem_buff);
+    auto invJ = std::get<4>(mem_buff);                                                                                 \
+    /* for non-linear operators, the current approximated solution */                                                  \
+    auto f = *std::get<5>(mem_buff);
 
 }   // namespace core
 }   // namespace fdapde

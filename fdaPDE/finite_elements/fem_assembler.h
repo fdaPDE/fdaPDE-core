@@ -43,10 +43,13 @@ template <typename D, typename B, typename I> class Assembler<FEM, D, B, I> {
     B reference_basis_ {};   // functional basis over reference unit simplex
     std::size_t dof_;        // overall number of unknowns in FEM linear system
     const Eigen::Matrix<int, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>& dof_table_;
+    DVector<double> f_;   // for non-linear operators, the estimate of the approximated solution 
    public:
     Assembler(const D& mesh, const I& integrator) :
-        mesh_(mesh), integrator_(integrator), dof_(mesh_.dof()), dof_table_(mesh.dof_table()) {};
-
+      mesh_(mesh), integrator_(integrator), dof_(mesh_.dof()), dof_table_(mesh.dof_table()) {};
+  Assembler(const D& mesh, const I& integrator, const DVector<double>& f) :
+    mesh_(mesh), integrator_(integrator), dof_(mesh_.dof()), dof_table_(mesh.dof_table()), f_(f) {};
+  
     // discretization methods
     template <typename E> SpMatrix<double> discretize_operator(const E& op);
     template <typename F> DVector<double>  discretize_forcing (const F& force);
@@ -73,20 +76,25 @@ SpMatrix<double> Assembler<FEM, D, B, I>::discretize_operator(const E& op) {
     BasisType buff_psi_i, buff_psi_j;               // basis functions \psi_i, \psi_j
     NablaType buff_nabla_psi_i, buff_nabla_psi_j;   // gradient of basis functions \nabla \psi_i, \nabla \psi_j
     MatrixConst<M, N, M> buff_invJ;   // (J^{-1})^T, being J the inverse of the barycentric matrix relative to element e
+    DVector<double> f(D::n_dof_per_element);  // active solution coefficients on current element e
     // prepare buffer to be sent to bilinear form
     auto mem_buffer = std::make_tuple(
       ScalarPtr(&buff_psi_i), ScalarPtr(&buff_psi_j), VectorPtr(&buff_nabla_psi_i), VectorPtr(&buff_nabla_psi_j),
-      MatrixPtr(&buff_invJ));
+      MatrixPtr(&buff_invJ), &f); 
 
     // develop bilinear form expression in an integrable field here once
-    auto f = op.integrate(mem_buffer);   // let the compiler deduce the type of the expression template!
+    auto weak_form = op.integrate(mem_buffer);   // let the compiler deduce the type of the expression template!
 
     std::size_t current_id;
     // cycle over all mesh elements
     for (const auto& e : mesh_) {
-        // update elements related informations: current ID and the affine map from current element to reference element
-        buff_invJ = e.inv_barycentric_matrix().transpose();
-        current_id = e.ID();
+        // update elements related informations
+      buff_invJ = e.inv_barycentric_matrix().transpose(); // affine map from current element to reference element
+      current_id = e.ID(); // element ID
+      
+      if(!is_empty(f_)) // should be bypassed in case of linear operators via an if constexpr!!!
+	for(std::size_t dof = 0; dof < D::n_dof_per_element; dof++) { f[dof] = f_[dof_table_(current_id,dof)]; } 
+
         // consider all pair of nodes
         for (size_t i = 0; i < n_basis; ++i) {
             buff_psi_i = reference_basis_[i];
@@ -97,7 +105,7 @@ SpMatrix<double> Assembler<FEM, D, B, I>::discretize_operator(const E& op) {
                 if constexpr (is_symmetric<decltype(op)>::value) {
                     // compute only half of the discretization matrix if the operator is symmetric
                     if (dof_table_(current_id, i) >= dof_table_(current_id, j)) {
-                        double value = integrator_.template integrate<decltype(op)>(e, f);
+                        double value = integrator_.template integrate<decltype(op)>(e, weak_form);
 			
                         // linearity of the integral is implicitlu used during matrix construction, since duplicated
                         // triplets are summed up, see Eigen docs for more details
@@ -105,7 +113,7 @@ SpMatrix<double> Assembler<FEM, D, B, I>::discretize_operator(const E& op) {
                     }
                 } else {
                     // not any optimization to perform in the general case
-                    double value = integrator_.template integrate<decltype(op)>(e, f);
+                    double value = integrator_.template integrate<decltype(op)>(e, weak_form);
                     triplet_list.emplace_back(dof_table_(current_id, i), dof_table_(current_id, j), value);
                 }
             }

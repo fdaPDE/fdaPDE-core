@@ -54,13 +54,14 @@ TEST(fem_operators_test, laplacian_order_2) {
     BasisType buff_psi_i, buff_psi_j;               // basis functions \psi_i, \psi_j
     NablaType buff_nabla_psi_i, buff_nabla_psi_j;   // gradient of basis functions \nabla \psi_i, \nabla \psi_j
     MatrixConst<2, 2, 2> buff_invJ;   // (J^{-1})^T, being J the inverse of the barycentric matrix relative to element e
+    DVector<double> f(Mesh2D<2>::n_dof_per_element);   // active solution coefficients on current element e
     // prepare buffer to be sent to bilinear form
     auto mem_buffer = std::make_tuple(
       ScalarPtr(&buff_psi_i), ScalarPtr(&buff_psi_j), VectorPtr(&buff_nabla_psi_i), VectorPtr(&buff_nabla_psi_j),
-      MatrixPtr(&buff_invJ));
+      MatrixPtr(&buff_invJ), &f);
 
     // develop bilinear form expression in an integrable field
-    auto f = L.integrate(mem_buffer);
+    auto weak_form = L.integrate(mem_buffer);
     buff_invJ = e.inv_barycentric_matrix().transpose();
 
     std::vector<double> integrals;
@@ -71,7 +72,7 @@ TEST(fem_operators_test, laplacian_order_2) {
         for (size_t j = 0; j < basis.size(); ++j) {
             buff_psi_j = basis[j];
             buff_nabla_psi_j = buff_psi_j.derive();
-            double value = integrator.template integrate<decltype(L)>(e, f);   // perform integration of bilinear form
+            double value = integrator.template integrate<decltype(L)>(e, weak_form);
             integrals.push_back(value);
         }
     }
