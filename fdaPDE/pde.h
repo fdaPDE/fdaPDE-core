@@ -20,7 +20,6 @@
 #include "pde/pde.h"
 #include "pde/differential_operators.h"
 #include "pde/differential_expressions.h"
-#include "pde/non_constant_coefficients.h"
 
 #include "utils/integration/integrator.h"
 #include "utils/integration/integrator_tables.h"

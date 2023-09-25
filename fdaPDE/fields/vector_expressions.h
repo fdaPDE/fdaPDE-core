@@ -69,7 +69,7 @@ template <int M, int N, typename E> struct VectorExpr : public VectorBase {
     // VectorExpr - VectorExpr dot product
     template <typename F> DotProduct<M, E, F> dot(const VectorExpr<M, N, F>& op) const;
     // evaluate parametric nodes in the expression, does nothing if not redefined in derived classes
-    template <typename T> void eval_parameters(T i) const { return; }
+    template <typename T> void forward(T i) const { return; }
     // map unary operator- to a VectorNegationOp expression node
     VectorNegationOp<M, N, E> operator-() const { return VectorNegationOp<M, N, E>(get()); }
 
@@ -89,21 +89,19 @@ template <int M, int N> class VectorConst : public VectorExpr<M, N, VectorConst<
     double operator[](std::size_t i) const { return value_[i]; }
 };
 
-// a parameter node
-template <int M, int N, typename F, typename T>
-class VectorParam : public VectorExpr<M, N, VectorParam<M, N, F, T>> {
-    // check F is callable with type T and returns an SVector<N>
-    static_assert(std::is_same<decltype(std::declval<F>().operator()(T())), SVector<N>>::value);
+// wraps a n_rows x N matrix of data, acts as an SVector<N> once fixed the matrix row, assuming each row contains
+// the vector to map
+template <int M, int N = M> class VectorDataWrapper : public VectorExpr<M, N, VectorDataWrapper<M, N>> {
    private:
-    // be sure that data pointed by this parameter are alive for the whole life of this object
-    const typename std::remove_reference<F>::type* f_;
-    SVector<N> value_;
+    Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> data_;
+    Eigen::Map<SVector<N>> value_;
    public:
-    // default constructor
-    VectorParam() = default;
-    VectorParam(const F& f) : f_(&f) {};
+    VectorDataWrapper() : value_(NULL) {};
+    VectorDataWrapper(const DMatrix<double>& data) : data_(data), value_(NULL) {};
     double operator[](std::size_t i) const { return value_[i]; }
-    void eval_parameters(T i) { value_ = f_->operator()(i); }
+    void forward(std::size_t i) {
+        new (&value_) Eigen::Map<SVector<M>>(data_.data() + (i * N));   // construct map in place
+    }
 };
 
 // a generic binary operation node
@@ -119,9 +117,9 @@ class VectorBinOp : public VectorExpr<M, N, VectorBinOp<M, N, OP1, OP2, BinaryOp
     // subscript operator. Let compiler to infer the return type (generally a FieldExpr)
     auto operator[](std::size_t i) const { return f_(op1_[i], op2_[i]); }
     // call parameter evaluation on operands
-    template <typename T> const VectorBinOp<M, N, OP1, OP2, BinaryOperation>& eval_parameters(T i) {
-        op1_.eval_parameters(i);
-        op2_.eval_parameters(i);
+    template <typename T> const VectorBinOp<M, N, OP1, OP2, BinaryOperation>& forward(T i) {
+        op1_.forward(i);
+        op2_.forward(i);
         return *this;
     }
 };
@@ -170,8 +168,8 @@ template <int M, int N, typename E> class VectorNegationOp : public VectorExpr<M
     // subscript operator
     auto operator[](std::size_t i) const { return -(op_[i]); }
     // call parameter evaluation on stored operand
-    template <typename T> const VectorNegationOp<M, N, E>& eval_parameters(T i) {
-        op_.eval_parameters(i);
+    template <typename T> const VectorNegationOp<M, N, E>& forward(T i) {
+        op_.forward(i);
         return *this;
     }
 };

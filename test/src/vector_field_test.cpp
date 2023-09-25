@@ -23,6 +23,7 @@
 using fdapde::core::DotProduct;
 using fdapde::core::ScalarField;
 using fdapde::core::VectorField;
+using fdapde::core::VectorDataWrapper;
 
 // test different constructors of VectorField
 TEST(vector_field_test, define_from_lambda) {
@@ -290,4 +291,27 @@ TEST(vector_field_test, unary_negation) {
 
     SVector<2> res_2 = (-vf_2)(p);
     for (std::size_t i = 0; i < 2; ++i) EXPECT_DOUBLE_EQ(res_2[i], -(2 * vf_p[i]));
+}
+
+TEST(vector_field_test, vector_data_wrapper) {
+    // define some field expression
+    VectorField<2> vf;
+    vf[0] = [](SVector<2> x) -> double { return std::pow(x[0], 2) + 1; };   // x^2 + 1
+    vf[1] = [](SVector<2> x) -> double { return 2 * x[0] + x[1]; };         // 2*x + y
+
+  // define vector of data
+  DMatrix<double> data;
+  data.resize(10,2);
+  for(std::size_t i = 0; i < 10; i++) { data(i,0) = i; data(i,1) = i; }
+  // wrap data into a field 
+  VectorDataWrapper<2> k(data);
+  
+  auto vf_1 = vf + k;
+  vf_1.forward(4); // k = 4
+  // define evaluation point
+  SVector<2> p(1,1);
+  SVector<2> eval = vf_1(p);
+
+  EXPECT_DOUBLE_EQ(eval[0], 6.0);
+  EXPECT_DOUBLE_EQ(eval[1], 7.0);
 }

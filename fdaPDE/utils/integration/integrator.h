@@ -61,8 +61,8 @@ double Integrator<M, R, K>::integrate(const Element<M, N, R>& e, F& f) const {
     for (size_t iq = 0; iq < integration_table_.num_nodes; ++iq) {
         const SVector<M>& p = integration_table_.nodes[iq];
         if constexpr (std::remove_reference<L>::type::is_space_varying) {
-            // space-varying case: evaluate coefficients at the quadrature nodes
-            f.eval_parameters(integration_table_.num_nodes * e.ID() + iq);
+            // space-varying case: forward the quadrature node index to non constant coefficients
+            f.forward(integration_table_.num_nodes * e.ID() + iq);
         }
         value += f(p) * integration_table_.weights[iq];
     }

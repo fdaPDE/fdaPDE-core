@@ -48,9 +48,9 @@ class MatrixVectorProduct : public VectorExpr<N, M, MatrixVectorProduct<N, M, K,
         return DotProduct<N, decltype(op1_.row(std::size_t())), T2>(op1_.row(i), op2_);
     }
     // call parameter evaluation on operands
-    template <typename T> const MatrixVectorProduct<N, M, K, T1, T2>& eval_parameters(T i) {
-        op1_.eval_parameters(i);
-        op2_.eval_parameters(i);
+    template <typename T> const MatrixVectorProduct<N, M, K, T1, T2>& forward(T i) {
+        op1_.forward(i);
+        op2_.forward(i);
         return *this;
     }
 };
@@ -72,9 +72,9 @@ class MatrixMatrixProduct : public MatrixExpr<N, M, K, MatrixMatrixProduct<N, M,
           op1_.row(i), op2_.col(j));
     }
     // call parameter evaluation on operands
-    template <typename T> const MatrixMatrixProduct<N, M, K, T1, T2>& eval_parameters(T i) {
-        op1_.eval_parameters(i);
-        op2_.eval_parameters(i);
+    template <typename T> const MatrixMatrixProduct<N, M, K, T1, T2>& forward(T i) {
+        op1_.forward(i);
+        op2_.forward(i);
         return *this;
     }
 };
@@ -89,8 +89,8 @@ template <int N, int M, int K, typename E> class MatrixRow : public VectorExpr<N
     // subscripting the i-th element of a row triggers evaluation of the expression
     auto operator[](std::size_t i) const { return expr_.coeff(row_, i); }
     // call parameter evaluation on stored expression
-    template <typename T> const MatrixRow<N, M, K, E>& eval_parameters(T i) {
-        expr_.eval_parameters(i);
+    template <typename T> const MatrixRow<N, M, K, E>& forward(T i) {
+        expr_.forward(i);
         return *this;
     }
     // expose number of rows and columns
@@ -107,8 +107,8 @@ template <int N, int M, int K, typename E> class MatrixCol : public VectorExpr<N
     // subscripting the i-th element of a column triggers evaluation of the expression
     auto operator[](std::size_t i) const { return expr_.coeff(i, col_); }
     // call parameter evaluation on stored expression
-    template <typename T> const MatrixCol<N, M, K, E>& eval_parameters(T i) {
-        expr_.eval_parameters(i);
+    template <typename T> const MatrixCol<N, M, K, E>& forward(T i) {
+        expr_.forward(i);
         return *this;
     }
     // expose number of rows and columns
@@ -165,7 +165,7 @@ template <int N, int M, int K, typename E> struct MatrixExpr : public MatrixBase
     // allow rhs multiplication by constant SVector
     MatrixVectorProduct<N, M, K, E, VectorConst<N, K>> operator*(const SVector<K>& op) const;
     // evaluate parametric nodes in the expression, does nothing if not redefined in derived classes
-    template <typename T> void eval_parameters(T i) const { return; }
+    template <typename T> void forward(T i) const { return; }
     // map unary operator- to a MatrixNegationOp expression node
     MatrixNegationOp<M, N, K, E> operator-() const { return MatrixNegationOp<M, N, K, E>(get()); }
 
@@ -185,7 +185,7 @@ template <int N, int M, int K, typename E> MatrixCol<N, M, K, E> MatrixExpr<N, M
 }
 
 // an expression node representing a constant matrix
-template <unsigned int N, unsigned int M, unsigned int K>
+template <int N, int M, int K>
 class MatrixConst : public MatrixExpr<N, M, K, MatrixConst<N, M, K>> {
    private:
     SMatrix<M, K> value_;
@@ -201,21 +201,19 @@ class MatrixConst : public MatrixExpr<N, M, K, MatrixConst<N, M, K>> {
     }
 };
 
-// a parameter node
-template <unsigned int N, unsigned int M, unsigned int K, typename F, typename T>
-class MatrixParam : public MatrixExpr<N, M, K, MatrixParam<N, M, K, F, T>> {
-    // check F is callable with type T and returns an SMatrix<M,K>
-    static_assert(std::is_same<decltype(std::declval<F>().operator()(T())), SMatrix<M, K>>::value);
+// wraps an n_rows x (M*K) matrix of data, acts as an SMatrix<M, K> once fixed the matrix row, assuming each row 
+// contains the 1D expansion of a M*K matrix
+template <int N, int M, int K> class MatrixDataWrapper : public MatrixExpr<N, M, K, MatrixDataWrapper<N, M, K>> {
    private:
-    // be sure that pointed data are alive for the whole life of this object
-    const typename std::remove_reference<F>::type* f_;
-    SMatrix<M, K> value_;
+    Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> data_;
+    Eigen::Map<SMatrix<M, K>> value_;
    public:
-    // default constructor
-    MatrixParam() = default;
-    MatrixParam(const F& f) : f_(&f) {};
+    MatrixDataWrapper() : value_(NULL) {};
+    MatrixDataWrapper(const DMatrix<double>& data) : data_(data), value_(NULL) {};
     double coeff(std::size_t i, std::size_t j) const { return value_(i, j); }
-    void eval_parameters(T i) { value_ = f_->operator()(i); }
+    void forward(std::size_t i) {
+        new (&value_) Eigen::Map<SMatrix<M, K>>(data_.data() + (i * M * K));   // construct map in place
+    }
 };
 
 // a generic binary operation node
@@ -231,9 +229,9 @@ class MatrixBinOp : public MatrixExpr<N, M, K, MatrixBinOp<N, M, K, OP1, OP2, Bi
     // access operator. Apply the functor to each accessed element. This returns a callable object
     auto coeff(std::size_t i, std::size_t j) const { return f_(op1_.coeff(i, j), op2_.coeff(i, j)); }
     // call parameter evaluation on operands
-    template <typename T> const MatrixBinOp<N, M, K, OP1, OP2, BinaryOperation>& eval_parameters(T i) {
-        op1_.eval_parameters(i);
-        op2_.eval_parameters(i);
+    template <typename T> const MatrixBinOp<N, M, K, OP1, OP2, BinaryOperation>& forward(T i) {
+        op1_.forward(i);
+        op2_.forward(i);
         return *this;
     }
 };
@@ -296,8 +294,8 @@ class MatrixNegationOp : public MatrixExpr<M, N, K, MatrixNegationOp<M, N, K, E>
     MatrixNegationOp(const E& op) : op_(op) {};
     auto coeff(std::size_t i, std::size_t j) const { return -(op_.coeff(i, j)); }
     // call parameter evaluation on operands
-    template <typename T> const MatrixNegationOp<N, M, K, E>& eval_parameters(T i) {
-        op_.eval_parameters(i);
+    template <typename T> const MatrixNegationOp<N, M, K, E>& forward(T i) {
+        op_.forward(i);
         return *this;
     }
 };

@@ -42,7 +42,7 @@ template <int N, typename T1, typename T2> class DotProduct : public ScalarExpr<
     DotProduct(const T1& op1, const T2& op2) : op1_(op1), op2_(op2) { }
     inline double operator()(const SVector<N>& x) const;   // evaluate dot(op1, op2) at point x
     template <typename T>
-    const DotProduct<N, T1, T2>& eval_parameters(T i);   // triggers parameter evaluation on operands
+    const DotProduct<N, T1, T2>& forward(T i);   // triggers parameter evaluation on operands
 };
 
 // implementation details
@@ -77,9 +77,9 @@ template <int N, typename T1, typename T2> double DotProduct<N, T1, T2>::operato
 
 template <int N, typename T1, typename T2>
 template <typename T>
-const DotProduct<N, T1, T2>& DotProduct<N, T1, T2>::eval_parameters(T i) {
-    op1_.eval_parameters(i);
-    op2_.eval_parameters(i);
+const DotProduct<N, T1, T2>& DotProduct<N, T1, T2>::forward(T i) {
+    op1_.forward(i);
+    op2_.forward(i);
     return *this;
 }
 
