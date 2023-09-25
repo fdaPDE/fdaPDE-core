@@ -28,7 +28,6 @@
 using fdapde::core::ct_binomial_coefficient;
 using fdapde::core::LagrangianElement;
 using fdapde::core::MultivariatePolynomial;
-using fdapde::core::point_list;
 using fdapde::core::ReferenceElement;
 using fdapde::core::Integrator;
 using fdapde::core::VectorField;
@@ -44,6 +43,9 @@ template <int i, int j> struct int_pair {
     static constexpr int first = std::integral_constant<int, i>::value;
     static constexpr int second = std::integral_constant<int, j>::value;
 };
+
+// a type representing a (compile-time evaluable) list of M dimensional points
+template <int M, int R> using point_list = std::array<std::array<double, M>, R>;
 
 template <typename E> class lagrangian_basis_test : public ::testing::Test {
    public:

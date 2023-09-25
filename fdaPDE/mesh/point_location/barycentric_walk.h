@@ -18,6 +18,7 @@
 #define __BARYCENTRIC_WALK_H__
 
 #include <random>
+#include <set>
 
 #include "../mesh.h"
 #include "point_locator.h"
@@ -37,7 +38,7 @@ template <int M, int N, int R> class BarycentricWalk : public PointLocator<M, N,
         // define uniform distribution over the ID space
         typedef std::uniform_int_distribution<std::size_t> Distribution;
         std::random_device rng {};
-        Distribution uniform_int = Distribution(0, mesh_.elements() - 1);
+        Distribution uniform_int = Distribution(0, mesh_.n_elements() - 1);
         // start from an element at random
         std::size_t next_id = uniform_int(rng);
 

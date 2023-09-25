@@ -27,18 +27,22 @@ namespace core {
 // searches for the point in a given grid minimizing a given nonlinear objective
 template <int N> class Grid {
    private:
-    SVector<N> optimum_;
+    typedef typename std::conditional<N == Dynamic, DVector<double>, SVector<N>>::type VectorType;
+    VectorType optimum_;
     double value_;   // objective value at optimum
    public:
-    SVector<N> x_current;
+    VectorType x_current;
 
     // constructor
     Grid() = default;
 
     template <typename F, typename... Args>
-    void optimize(F& objective, const std::vector<SVector<N>>& grid, Args&... args) {
-        // can be set true by some extension to cause a foced stop at any point of the execution
-        bool stop = false;
+    void optimize(F& objective, const std::vector<VectorType>& grid, Args&... args) {
+        static_assert(
+          std::is_same<decltype(std::declval<F>().operator()(VectorType())), double>::value,
+          "cannot find definition for F.operator()(const VectorType&)");
+
+        bool stop = false;   // asserted true in case of forced stop
         // algorithm initialization
         x_current = grid[0];
         value_ = objective(x_current);
@@ -59,7 +63,7 @@ template <int N> class Grid {
     }
 
     // getters
-    SVector<N> optimum() const { return optimum_; }
+    VectorType optimum() const { return optimum_; }
     double value() const { return value_; }
 };
 

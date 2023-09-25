@@ -17,9 +17,9 @@
 #ifndef __FDAPDE_UTILS_MODULE_H__
 #define __FDAPDE_UTILS_MODULE_H__
 
+#include "utils/symbols.h"
 #include "utils/assert.h"
 #include "utils/compile_time.h"
-#include "utils/symbols.h"
 #include "utils/traits.h"
 #include "utils/data_structures/binary_tree.h"
 #include "utils/data_structures/block_frame.h"

@@ -39,7 +39,7 @@ template <typename D, typename B, typename I> class Assembler<FEM, D, B, I> {
    private:
     static constexpr std::size_t n_basis = D::n_dof_per_element;
     const D& mesh_;          // triangulated problem domain
-    const I& integrator_;    // quadrature rule 
+    const I& integrator_;    // quadrature rule
     B reference_basis_ {};   // functional basis over reference unit simplex
     std::size_t dof_;        // overall number of unknowns in FEM linear system
     const Eigen::Matrix<int, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>& dof_table_;
@@ -52,12 +52,12 @@ template <typename D, typename B, typename I> class Assembler<FEM, D, B, I> {
   
     // discretization methods
     template <typename E> SpMatrix<double> discretize_operator(const E& op);
-    template <typename F> DVector<double>  discretize_forcing (const F& force);
+    template <typename F> DVector<double> discretize_forcing(const F& force);
 };
 
 // implementative details
 
-// assembly for the discretization matrix of a general operator L  
+// assembly for the discretization matrix of a general operator L
 template <typename D, typename B, typename I>
 template <typename E>
 SpMatrix<double> Assembler<FEM, D, B, I>::discretize_operator(const E& op) {
@@ -67,7 +67,7 @@ SpMatrix<double> Assembler<FEM, D, B, I>::discretize_operator(const E& op) {
     SpMatrix<double> discretization_matrix;
 
     // properly preallocate memory to avoid reallocations
-    triplet_list.reserve(n_basis * mesh_.elements());
+    triplet_list.reserve(n_basis * mesh_.n_elements());
     discretization_matrix.resize(dof_, dof_);
 
     // prepare space for bilinear form components
@@ -106,8 +106,8 @@ SpMatrix<double> Assembler<FEM, D, B, I>::discretize_operator(const E& op) {
                     // compute only half of the discretization matrix if the operator is symmetric
                     if (dof_table_(current_id, i) >= dof_table_(current_id, j)) {
                         double value = integrator_.template integrate<decltype(op)>(e, weak_form);
-			
-                        // linearity of the integral is implicitlu used during matrix construction, since duplicated
+
+			// linearity of the integral is implicitly used during matrix construction, since duplicated
                         // triplets are summed up, see Eigen docs for more details
                         triplet_list.emplace_back(dof_table_(current_id, i), dof_table_(current_id, j), value);
                     }
@@ -142,7 +142,7 @@ DVector<double> Assembler<FEM, D, B, I>::discretize_forcing(const F& f) {
     for (const auto& e : mesh_) {
         for (size_t i = 0; i < n_basis; ++i) {
             // integrate \int_e [f*\psi], exploit integral linearity
-            discretization_vector[dof_table_(e.ID(), i)] += integrator_.integrate(e, f, reference_basis_[i]); 
+            discretization_vector[dof_table_(e.ID(), i)] += integrator_.integrate(e, f, reference_basis_[i]);
         }
     }
     return discretization_vector;

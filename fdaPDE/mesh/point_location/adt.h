@@ -163,7 +163,7 @@ template <int M, int N, int R> class ADT : public PointLocator<M, N, R> {
     ADT(const Mesh<M, N, R>& mesh) : mesh_(mesh) {
         // move mesh elements to 2N dimensional points
         std::vector<std::pair<SVector<2 * N>, Index>> data;
-        data.reserve(mesh_.elements());   // avoid useless reallocations at runtime
+        data.reserve(mesh_.n_elements());   // avoid useless reallocations at runtime
         // computation of normalization constants
         for (std::size_t dim = 0; dim < N; ++dim) {
             normalization_[dim] = 1.0 / (mesh_.range()[dim].second - mesh_.range()[dim].first);

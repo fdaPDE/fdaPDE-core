@@ -39,9 +39,18 @@ constexpr typename std::enable_if<std::is_arithmetic<T>::value, T>::type ct_arra
 }
 
 // trait to detect if T is an Eigen vector
-template <typename T> struct is_eigen_vector {
+template <typename T> class is_eigen_vector {
+   private:
+    static constexpr bool check_() {
+        if constexpr (std::is_base_of<Eigen::MatrixBase<T>, T>::value) {
+            if constexpr (T::ColsAtCompileTime == 1) return true;
+            return false;
+        }
+        return false;
+    }
+   public:
     // check if T is an eigen matrix and if it has exactly one column, otherwise return false
-    static constexpr bool value = std::is_base_of<Eigen::MatrixBase<T>, T>::value ? T::ColsAtCompileTime == 1 : false;
+    static constexpr bool value = check_();
 };
 
 }   // namespace core

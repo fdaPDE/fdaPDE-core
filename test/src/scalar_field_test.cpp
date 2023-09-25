@@ -14,7 +14,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include "fdaPDE/fields/scalar_expressions.h"
 #include <gtest/gtest.h>   // testing framework
 #include <functional>
 #include <vector>
@@ -280,22 +279,22 @@ TEST(scalar_field_test, twice_differentiable_field) {
 }
 
 TEST(scalar_field_test, scalar_data_wrapper) {
-  // define a scalar field
-  ScalarField<2> f;
-  f = [](SVector<2> x) -> double { return x[0] + x[1]; };
+    // define a scalar field
+    ScalarField<2> f;
+    f = [](SVector<2> x) -> double { return x[0] + x[1]; };
 
-  // define vector of data
-  DMatrix<double> data;
-  data.resize(10,1);
-  for(std::size_t i = 0; i < 10; i++) { data(i,0) = i; }
-  // wrap data into a field 
-  ScalarDataWrapper<2> k(data);
-  
-  auto sf = f + k;
-  sf.forward(4); // k = 4
-  // define evaluation point
-  SVector<2> p(1,1);
-  double eval = sf(p);
+    // define vector of data
+    DMatrix<double, Eigen::RowMajor> data;
+    data.resize(10, 1);
+    for (std::size_t i = 0; i < 10; i++) { data(i, 0) = i; }
+    // wrap data into a field
+    ScalarDataWrapper<2> k(data);
 
-  EXPECT_EQ(eval, 6.0);
+    auto sf = f + k;
+    sf.forward(4);   // k = 4
+    // define evaluation point
+    SVector<2> p(1, 1);
+    double eval = sf(p);
+
+    EXPECT_EQ(eval, 6.0);
 }

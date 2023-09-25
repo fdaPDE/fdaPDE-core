@@ -205,17 +205,18 @@ class MatrixConst : public MatrixExpr<N, M, K, MatrixConst<N, M, K>> {
 // contains the 1D expansion of a M*K matrix
 template <int N, int M, int K> class MatrixDataWrapper : public MatrixExpr<N, M, K, MatrixDataWrapper<N, M, K>> {
    private:
-    Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> data_;
+    typedef Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> DataType;
+    DataType* data_;
     Eigen::Map<SMatrix<M, K>> value_;
    public:
     MatrixDataWrapper() : value_(NULL) {};
-    MatrixDataWrapper(const DMatrix<double>& data) : data_(data), value_(NULL) {};
+    MatrixDataWrapper(DataType& data) : data_(&data), value_(NULL) {};
     double coeff(std::size_t i, std::size_t j) const { return value_(i, j); }
     void forward(std::size_t i) {
-        new (&value_) Eigen::Map<SMatrix<M, K>>(data_.data() + (i * M * K));   // construct map in place
+        new (&value_) Eigen::Map<SMatrix<M, K>>(data_->data() + (i * M * K));   // construct map in place
     }
 };
-
+  
 // a generic binary operation node
 template <int N, int M, int K, typename OP1, typename OP2, typename BinaryOperation>
 class MatrixBinOp : public MatrixExpr<N, M, K, MatrixBinOp<N, M, K, OP1, OP2, BinaryOperation>> {
