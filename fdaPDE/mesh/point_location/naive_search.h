@@ -27,13 +27,13 @@ namespace fdapde {
 namespace core {
 
 // naive search strategy for point location problem
-template <int M, int N, int R> class NaiveSearch : public PointLocator<M, N, R> {
+template <int M, int N> class NaiveSearch : public PointLocator<M, N> {
    private:
-    const Mesh<M, N, R>& mesh_;
+    const Mesh<M, N>& mesh_;
    public:
-    NaiveSearch(const Mesh<M, N, R>& mesh) : mesh_(mesh) {};
+    NaiveSearch(const Mesh<M, N>& mesh) : mesh_(mesh) {};
     // solves the point location problem
-    virtual const Element<M, N, R>* locate(const SVector<N>& p) const {
+    virtual const Element<M, N>* locate(const SVector<N>& p) const {
         // loop over all mesh elements
         for (const auto& element : mesh_) {
             if (element.contains(p)) { return &element; }

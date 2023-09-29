@@ -77,14 +77,14 @@ template <int N> class ADTQuery {
 };
 
 // Alternating Digital Tree implementation for tree-based point location problems
-template <int M, int N, int R> class ADT : public PointLocator<M, N, R> {
+template <int M, int N> class ADT : public PointLocator<M, N> {
    private:
     typedef ADTNode<2 * N> NodeDataType;
     typedef BinaryNode<NodeDataType> NodeType;
     typedef std::size_t Index;
 
     BinaryTree<NodeDataType> tree;          // tree data structure to support ADT
-    const Mesh<M, N, R>& mesh_;             // domain over which build the ADT
+    const Mesh<M, N>& mesh_;             // domain over which build the ADT
     std::array<double, N> normalization_;   // vector of range-normalization constants
 
     // build the ADT structure given a set of 2N-dimensional points.
@@ -160,7 +160,7 @@ template <int M, int N, int R> class ADT : public PointLocator<M, N, R> {
         return found;
     }
    public:
-    ADT(const Mesh<M, N, R>& mesh) : mesh_(mesh) {
+    ADT(const Mesh<M, N>& mesh) : mesh_(mesh) {
         // move mesh elements to 2N dimensional points
         std::vector<std::pair<SVector<2 * N>, Index>> data;
         data.reserve(mesh_.n_elements());   // avoid useless reallocations at runtime
@@ -189,7 +189,7 @@ template <int M, int N, int R> class ADT : public PointLocator<M, N, R> {
         init(data);
     }
     // solves the point location problem
-    const Element<M, N, R>* locate(const SVector<N>& p) const {
+    const Element<M, N>* locate(const SVector<N>& p) const {
         // scale point p in the unit hypercube
         SVector<N> scaled_point;
         for (size_t dim = 0; dim < N; ++dim) {

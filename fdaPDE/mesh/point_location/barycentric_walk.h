@@ -27,14 +27,14 @@ namespace fdapde {
 namespace core {
 
 // barycentric walk strategy for point location problem, works only for 2D and 3D *convex* triangualtions
-template <int M, int N, int R> class BarycentricWalk : public PointLocator<M, N, R> {
+template <int M, int N> class BarycentricWalk : public PointLocator<M, N> {
     static_assert(M == N, "barycentric walk cannot be applied to manifold domains");
    private:
-    const Mesh<M, N, R>& mesh_;
+    const Mesh<M, N>& mesh_;
    public:
-    BarycentricWalk(const Mesh<M, N, R>& mesh) : mesh_(mesh) {};
+    BarycentricWalk(const Mesh<M, N>& mesh) : mesh_(mesh) {};
     // solves the point location problem
-    virtual const Element<M, N, R>* locate(const SVector<N>& p) const {
+    virtual const Element<M, N>* locate(const SVector<N>& p) const {
         // define uniform distribution over the ID space
         typedef std::uniform_int_distribution<std::size_t> Distribution;
         std::random_device rng {};

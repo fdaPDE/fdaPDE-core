@@ -27,15 +27,15 @@ namespace fdapde {
 namespace core {
 
 // interface for point locations algorithms
-template <int M, int N, int R> struct PointLocator {
+template <int M, int N> struct PointLocator {
     // solves the point location problem. returns nullptr if p is not found
-    virtual const Element<M, N, R>* locate(const SVector<N>& p) const = 0;
+    virtual const Element<M, N>* locate(const SVector<N>& p) const = 0;
 
     // solves the point location problem for a set of points
-    std::vector<const Element<M, N, R>*> locate(const DMatrix<double>& points) const {
+    std::vector<const Element<M, N>*> locate(const DMatrix<double>& points) const {
         fdapde_assert(points.cols() == N);
 
-        std::vector<const Element<M, N, R>*> elements;
+        std::vector<const Element<M, N>*> elements;
         elements.reserve(points.rows());
         // solve point location for each given point
         for (std::size_t i = 0; i < points.rows(); ++i) { elements.emplace_back(this->locate(points.row(i))); }

@@ -19,136 +19,109 @@
 
 #include <Eigen/Core>
 #include <array>
-#include <memory>
 #include <type_traits>
-#include <unordered_set>
+#include <unordered_map>
 #include <vector>
 
-#include "../utils/IO/CSVReader.h"
+#include "../utils/combinatorics.h"
 #include "../utils/symbols.h"
 #include "element.h"
+#include "edge.h"
 #include "reference_element.h"
 
 namespace fdapde {
 namespace core {
 
-// trait to detect if the mesh is a manifold
+// trait to detect if a mesh is a manifold
 template <int M, int N> struct is_manifold {
     static constexpr bool value = (M != N);
 };
 
-// trait to detect if the mesh is a linear network
+// trait to detect if a mesh is a linear network
 template <int M, int N> struct is_linear_network {
     static constexpr bool value = std::conditional<(M == 1 && N == 2), std::true_type, std::false_type>::type::value;
 };
 
-// trait to select a proper neighboring storage structure depending on the type of mesh. In case of linear networks this
-// information is stored as a sparse matrix where entry (i,j) is set to 1 if and only if elements i and j are neighbors
+// trait to select a proper neighboring storage structure depending on mesh type.
+// use a sparse matrix for storage of adjacency matrix for linear networks
 template <int M, int N> struct neighboring_structure {
     using type = typename std::conditional<is_linear_network<M, N>::value, SpMatrix<int>, DMatrix<int>>::type;
 };
-
-// access to domain's triangulation, M: tangent space dimension, N: embedding space dimension, R: FEM mesh order
-template <int M, int N, int R = 1> class Mesh {
+  
+// access to domain's triangulation, M: tangent space dimension, N: embedding space dimension
+template <int M, int N> class Mesh {
    private:
     // coordinates of points costituting the vertices of mesh elements
     DMatrix<double> nodes_ {};
-    int num_nodes_ = 0;
+    int n_nodes_ = 0;
     // identifiers of points (as row indexes in points_ matrix) composing each element, by row
-    Eigen::Matrix<int, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> elements_ {};
-    int num_elements_ = 0;
+    DMatrix<int, Eigen::RowMajor> elements_ {};
+    int n_elements_ = 0;
     // vector of binary coefficients such that, boundary_[j] = 1 \iff node j is on boundary
     DMatrix<int> boundary_ {};
-    std::size_t dof_;   // degrees of freedom, i.e. the maximmum ID in the dof_table
-    // build an enumeration of nodes coherent with the mesh topology, update the boundary structure and elements_ table
-    void dof_enumerate(const DMatrix<int>& boundary);
     typename neighboring_structure<M, N>::type neighbors_ {};
     std::array<std::pair<double, double>, N> range_ {};   // mesh bounding box
-
-    // elements informations are computed once and cached here for fast re-access
-    std::vector<Element<M, N, R>> cache_ {};
+    // identifiers of points composing each edge of the mesh (linearly stored in a row-major format)
+    std::vector<int> edges_ {};
+    std::vector<int> edge_map_ {};   // the i-th row refers to the elements' identifiers insisting on the i-th edge
+    int n_edges_ = 0;
+  
+    // precomputed set of elements (cached for fast access)
+    std::vector<Element<M, N>> cache_ {};
     void fill_cache();
    public:
     Mesh() = default;
-    // construct from .csv files, strings are names of file where raw data is contained
-    Mesh(const std::string& nodes, const std::string& elements, const std::string& neighbors,
-	 const std::string& boundary);
-    // construct directly from eigen matrices
     Mesh(const DMatrix<double>& nodes, const DMatrix<int>& elements,
 	 const typename neighboring_structure<M, N>::type& neighbors, const DMatrix<int>& boundary);
-    // assign from a simple triangulation (order 1 mesh)
-    Mesh<M, N, R>& operator=(const Mesh<M, N, 1>& mesh) {
-        nodes_ = mesh.nodes();
-        num_nodes_ = nodes_.rows();
-        neighbors_ = mesh.neighbors();
-        elements_.resize(mesh.elements().rows(), ct_nnodes(M, R));
-        elements_.leftCols(mesh.elements().cols()) = mesh.elements();
-        num_elements_ = elements_.rows();
-        // perform dof enumeration if assigning to an higher order mesh
-        if constexpr (R > 1) {
-            dof_enumerate(mesh.boundary());
-        } else {
-            boundary_ = mesh.boundary();
-            dof_ = num_nodes_;
-        }
-        range_ = mesh.range();
-        fill_cache();
-        return *this;
-    }
 
     // getters
-    const Element<M, N, R>& element(int ID) const { return cache_[ID]; }
-    Element<M, N, R>& element(int ID) { return cache_[ID]; }
+    const Element<M, N>& element(int ID) const { return cache_[ID]; }
+    Element<M, N>& element(int ID) { return cache_[ID]; }
     SVector<N> node(int ID) const { return nodes_.row(ID); }
     bool is_on_boundary(size_t j) const { return boundary_(j) == 1; }
     const DMatrix<double>& nodes() const { return nodes_; }
-    const Eigen::Matrix<int, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>& elements() const { return elements_; }
+    const DMatrix<int, Eigen::RowMajor>& elements() const { return elements_; }
     const typename neighboring_structure<M, N>::type& neighbors() const { return neighbors_; }
     const DMatrix<int>& boundary() const { return boundary_; }
-    int n_elements() const { return num_elements_; }
-    int n_nodes() const { return num_nodes_; }
+    int n_elements() const { return n_elements_; }
+    int n_nodes() const { return n_nodes_; }
     std::array<std::pair<double, double>, N> range() const { return range_; }
-
-    // support for the definition of a finite element basis
-    std::size_t dof() const { return dof_; }   // number of degrees of freedom
-    const Eigen::Matrix<int, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>& dof_table() const { return elements_; }
-    DMatrix<double> dof_coords() const;   // coordinates of points supporting a finite element basis
-
+    Eigen::Map<const DMatrix<int, Eigen::RowMajor>> edges() const {
+        return Eigen::Map<const DMatrix<int, Eigen::RowMajor>>(edges_.data(), n_edges_, n_vertices_per_edge);
+    }
+    int n_edges() const { return n_edges_; }
+    Edge<M, N> edge(int ID) const;
+  
     // iterators support
     struct iterator {   // range-for loop over mesh elements
        private:
         friend Mesh;
-        const Mesh* mesh_container_;   // pointer to mesh object
-        int index_;                    // keep track of current iteration during for-loop
-
-        // constructor
-        iterator(const Mesh* container, int index) : mesh_container_(container), index_(index) {};
+        const Mesh* mesh_;
+        int index_;   // current element
+        iterator(const Mesh* mesh, int index) : mesh_(mesh), index_(index) {};
        public:
-        // just increment the current iteration and return this iterator
+        // increment current iteration index and return this iterator
         iterator& operator++() {
             ++index_;
             return *this;
         }
-        const Element<M, N, R>& operator*() { return mesh_container_->element(index_); }
+        const Element<M, N>& operator*() { return mesh_->element(index_); }
         friend bool operator!=(const iterator& lhs, const iterator& rhs) { return lhs.index_ != rhs.index_; }
-        const Element<M, N, R>& operator*() const { return mesh_container_->element(index_); }
+        const Element<M, N>& operator*() const { return mesh_->element(index_); }
     };
 
     struct boundary_iterator {   // range-for loop over boundary nodes
        private:
         friend Mesh;
-        const Mesh* mesh_container_;
+        const Mesh* mesh_;
         int index_;   // current boundary node
-
-        // constructor
-        boundary_iterator(const Mesh* container, int index) : mesh_container_(container), index_(index) {};
+        boundary_iterator(const Mesh* mesh, int index) : mesh_(mesh), index_(index) {};
        public:
         // fetch next boundary node
         boundary_iterator& operator++() {
             index_++;
             // scan until all nodes have been visited or a boundary node is not found
-            for (; index_ < mesh_container_->dof_ && mesh_container_->is_on_boundary(index_) != true; ++index_)
-                ;
+            for (; index_ < mesh_->n_nodes_ && mesh_->is_on_boundary(index_) != true; ++index_);
             return *this;
         }
         int operator*() const { return index_; }
@@ -156,186 +129,102 @@ template <int M, int N, int R = 1> class Mesh {
             return lhs.index_ != rhs.index_;
         }
     };
+
+    struct edge_iterator {   // range-for over edges
+       private:
+        friend Mesh;
+        const Mesh* mesh_;
+        int index_;
+        edge_iterator(const Mesh* mesh, int index) : mesh_(mesh), index_(index) {};
+       public:
+        // increment current iteration index and return this iterator
+        edge_iterator& operator++() {
+            ++index_;
+            return *this;
+        }
+        Edge<M, N> operator*() { return mesh_->edge(index_); }
+        friend bool operator!=(const edge_iterator& lhs, const edge_iterator& rhs) { return lhs.index_ != rhs.index_; }
+        Edge<M, N> operator*() const { return mesh_->edge(index_); }
+    };
+
     iterator begin() const { return iterator(this, 0); }
     iterator end() const { return iterator(this, elements_.rows()); }
     boundary_iterator boundary_begin() const { return boundary_iterator(this, 0); }
-    boundary_iterator boundary_end() const { return boundary_iterator(this, dof_); }
-
+    boundary_iterator boundary_end() const { return boundary_iterator(this, n_nodes_); }
+    edge_iterator edge_begin() const { return edge_iterator(this, 0); }
+    edge_iterator edge_end() const { return edge_iterator(this, n_edges_); }
+  
     // compile time informations
     static constexpr bool is_manifold = is_manifold<M, N>::value;
     enum {
         local_dimension = M,
         embedding_dimension = N,
-        order = R,
         n_vertices = ct_nvertices(M),
-        n_edges = ct_nedges(M),
-        n_dof_per_element = ct_nnodes(M, R),
-        n_dof_per_edge = R - 1,
-        n_dof_internal = n_dof_per_element - (M + 1) - n_edges * (R - 1)   // > 0 \iff R > 2
+        n_edges_per_element = ct_nedges(M),
+        n_neighbors = ct_nedges(M),
+        n_vertices_per_edge = M, // generalize wrt other dimensionalities
+	n_elements_per_edge = 2  // same here...
     };
 };
 
-// alias exports
-template <int R = 1> using Mesh2D = Mesh<2, 2, R>;
-template <int R = 1> using Mesh3D = Mesh<3, 3, R>;
-// manifold cases
-template <int R = 1> using SurfaceMesh = Mesh<2, 3, R>;
-template <int R = 1> using NetworkMesh = Mesh<1, 2, R>;
-
 // implementative details
 
-// builds a node enumeration for the support of a basis of order R. This fills both the elements_ table
-// and recompute the boundary informations. (support only for order 2 basis)
-template <int M, int N, int R> void Mesh<M, N, R>::dof_enumerate(const DMatrix<int>& boundary) {
-    // algorithm initialization
-    int next = num_nodes_;   // next valid ID to assign
-    // map of already assigned IDs
-    std::unordered_map<std::pair<int, int>, std::array<int, n_dof_per_edge>, fdapde::pair_hash> assigned;
-    std::size_t col = 0;   // current column of the elements_ table to change
-    std::vector<bool> on_boundary(ct_nnodes(M, R) * num_nodes_, false);
-
-    // start enumeration
-    for (std::size_t elem = 0; elem < elements_.rows(); ++elem) {
-        // consider all pairs of nodes (all edges)
-        for (std::size_t i = 0; i < n_vertices; ++i) {
-            for (std::size_t j = i + 1; j < n_vertices; ++j) {
-                // check if edge (elements_[i], elements_[j]) has an already assigned number
-                std::pair<int, int> edge = std::minmax(elements_(elem, i), elements_(elem, j));
-                auto it = assigned.find(edge);
-                if (it != assigned.end()) {   // there is an already assigned index
-                    for (std::size_t z = 0; z < n_dof_per_edge; ++z, ++col) {
-                        elements_(elem, M + 1 + col) = it->second[z];
-                    }
-                } else {
-                    for (std::size_t z = 0; z < n_dof_per_edge; ++z, ++col, ++next) {
-                        elements_(elem, M + 1 + col) = next;
-                        assigned[edge][z] = next;
-                        // new node is on boundary iff both endpoints of its edge are on boundary
-                        if (boundary(edge.first, 0) && boundary(edge.second, 0)) on_boundary[next] = true;
-                    }
-                }
-            }
-        }
-        // insert not-shared dofs if required (nodes internal to the current element)
-        for (std::size_t i = 0; i < n_dof_internal; ++i, ++col, ++next) { elements_(elem, M + 1 + col) = next; }
-        col = 0;   // reset column counter
-    }
-    dof_ = next;   // store degrees of freedom
-    // adjust boundary informations
-    boundary_.resize(dof_, 1);
-    boundary_.topRows(boundary.rows()) = boundary;
-    for (std::size_t i = num_nodes_; i < dof_; ++i) {   // adjust for new nodes of the enumeration
-        if (on_boundary[i])
-            boundary_(i, 0) = 1;
-        else
-            boundary_(i, 0) = 0;
-    }
-    return;
-}
-
-// construct directly from raw eigen matrix (used from wrappers)
-template <int M, int N, int R>
-Mesh<M, N, R>::Mesh(
+// construct from raw matrices (NB: matrix enumeration is assumed to start from 0)
+template <int M, int N>
+Mesh<M, N>::Mesh(
   const DMatrix<double>& nodes, const DMatrix<int>& elements,
   const typename neighboring_structure<M, N>::type& neighbors, const DMatrix<int>& boundary) :
-    nodes_(nodes) {
-    // realign indexes (we assume index coming from mesh generator to be greater or equal to 1, C++ starts count from 0)
-    if constexpr (!is_linear_network<M, N>::value)
-        neighbors_ = (neighbors.array() - 1).matrix();
-    else
-        neighbors_ = neighbors;   // adjacency matrix is directly given as input as sparse matrix
-
-    // compute dof_table
-    elements_.resize(elements.rows(), ct_nnodes(M, R));
-    elements_.leftCols(elements.cols()) = (elements.array() - 1).matrix();
+    nodes_(nodes), neighbors_(neighbors), elements_(elements), boundary_(boundary) {
     // store number of nodes and number of elements
-    num_nodes_ = nodes_.rows();
-    num_elements_ = elements_.rows();
-    if constexpr (R > 1)
-        dof_enumerate(boundary);
-    else {
-        // for order 1 meshes the functional basis is built over the same vertices which define the mesh geometry,
-        // nothing to do set boundary structure as coming from data and dof as number of mesh nodes
-        boundary_ = boundary;
-        dof_ = num_nodes_;
-    }
+    n_nodes_ = nodes_.rows();
+    n_elements_ = elements_.rows();
 
     // compute mesh limits
     for (size_t dim = 0; dim < N; ++dim) {
         range_[dim].first = nodes_.col(dim).minCoeff();
         range_[dim].second = nodes_.col(dim).maxCoeff();
     }
-    // scan the whole mesh and precompute here once all elements' abstractions for fast access
+    // scan the whole mesh and precompute elements informations for fast access
     fill_cache();
-    // end of initialization
-    return;
-}
 
-// construct a mesh from .csv files
-template <int M, int N, int R>
-Mesh<M, N, R>::Mesh(
-  const std::string& points, const std::string& elements, const std::string& neighbors, const std::string& boundary) {
-    // open and parse CSV files
-    CSVReader<double> d_reader;
-    CSVReader<int> i_reader;
-    CSVFile<double> nodes_data = d_reader.parseFile(points);
-    CSVFile<int> elements_data = i_reader.parseFile(elements);
-    CSVFile<int> boundary_data = i_reader.parseFile(boundary);
-    // in the following subtract 1 for index realignment
+    // compute edges informations
+    // edges_ are contigously stored in memory as a std::vector<int>, in a row major format
+    auto edge_pattern = combinations<n_vertices_per_edge, n_vertices>();
+    std::unordered_map<std::array<int, n_vertices_per_edge>, int, std_array_hash<int, n_vertices_per_edge>> visited;
 
-    // load neighboring informations
-    typename std::conditional<!is_linear_network<M, N>::value, CSVFile<int>, CSVSparseFile<int>>::type neighbors_data;
-    if constexpr (!is_linear_network<M, N>::value) {
-        neighbors_data = i_reader.parseFile(neighbors);
-        // move parsed file to eigen dense matrix, recall that a negative value means no neighbor
-        neighbors_ = neighbors_data.toEigen();
-        neighbors_ = (neighbors_.array() - 1).matrix();
-    } else {
-        // handle sparse matrix storage of neighboring information in case of linear network
-        neighbors_data = i_reader.parseSparseFile(neighbors);
-        neighbors_ =
-          neighbors_data.toEigen();   // .toEigen() of CSVSparseFile already subtract 1 to indexes for reaglignment
+    std::array<int, n_vertices_per_edge> edge;
+    for (int i = 0; i < n_elements_; ++i) {
+        for (int j = 0; j < edge_pattern.rows(); ++j) {
+            // construct edge
+            for (int k = 0; k < n_vertices_per_edge; ++k) { edge[k] = elements_(i, edge_pattern(j, k)); }
+            // check if edge already processed
+            std::sort(edge.begin(), edge.end());
+            auto it = visited.find(edge);
+            if (it != visited.end()) {
+                // free memory (only two elements share the same edge) and update edge to element structure
+                *(edge_map_.begin() + 2 * (it->second) + 1) = i;
+                visited.erase(it);
+            } else {
+                // store edge and update edge to element information
+                for (int k = 0; k < n_vertices_per_edge; ++k) { edges_.emplace_back(edge[k]); }
+                visited.insert({edge, n_edges_});
+                n_edges_++;
+                edge_map_.insert(edge_map_.end(), {i, -1});   // -1 flags no incident element at edge
+            }
+        }
     }
-
-    // bring parsed informations to matrix-like structures
-    nodes_ = nodes_data.toEigen();
-    num_nodes_ = nodes_.rows();
-    // compute mesh range
-    for (size_t dim = 0; dim < N; ++dim) {
-        range_[dim].first = nodes_.col(dim).minCoeff();
-        range_[dim].second = nodes_.col(dim).maxCoeff();
-    }
-
-    // compute dof_table
-    elements_.resize(elements_data.rows(), ct_nnodes(M, R));
-    elements_.leftCols(elements_data.cols()) = (elements_data.toEigen().array() - 1).matrix();
-    // store number of elements
-    num_elements_ = elements_.rows();
-    if constexpr (R > 1)
-        dof_enumerate(boundary_data.toEigen());
-    else {
-        // for order 1 meshes the functional basis is built over the same vertices which define the mesh geometry,
-        // nothing to do set boundary structure as coming from data and dof as number of mesh nodes
-        boundary_ = boundary_data.toEigen();
-        dof_ = num_nodes_;
-    }
-    // scan the whole mesh and precompute here once all elements' abstractions for fast access
-    fill_cache();
-    // end of initialization
     return;
 }
 
 // fill the cache_ data structure with pointers to element objects
-template <int M, int N, int R> void Mesh<M, N, R>::fill_cache() {
+template <int M, int N> void Mesh<M, N>::fill_cache() {
     // reserve space for cache
-    cache_.reserve(num_elements_);
+    cache_.reserve(n_elements_);
 
     // cycle over all possible elements' ID
-    for (std::size_t ID = 0; ID < num_elements_; ++ID) {
-        // degrees of freedom associated with this element
+    for (std::size_t ID = 0; ID < n_elements_; ++ID) {
         auto point_data = elements_.row(ID);
-        auto neighboring_data = neighbors_.row(ID);   // neighboring structure
-
+        auto neighboring_data = neighbors_.row(ID);
         // prepare element
         std::array<std::size_t, ct_nvertices(M)> node_ids {};
         std::array<SVector<N>, ct_nvertices(M)> coords {};
@@ -351,12 +240,8 @@ template <int M, int N, int R> void Mesh<M, N, R>::fill_cache() {
             // global ID of the node in the mesh
             node_ids[i] = point_data[i];
             boundary |= (boundary_(point_data[i]) == 1);
-
             if constexpr (!is_linear_network<M, N>::value) {
-                // from triangle documentation: The first neighbor of triangle i is opposite the first corner of
-                // triangle i, and so on. by storing neighboring informations as they come from triangle we have that
-                // neighbor[0] is the triangle adjacent to the face opposite to coords[0]. This is true for any mesh
-                // different from a network mesh
+                // the first neighbor of triangle i is opposite the first corner of triangle i, and so on
                 neighbors.push_back(neighboring_data[i]);
             }
         }
@@ -371,36 +256,27 @@ template <int M, int N, int R> void Mesh<M, N, R>::fill_cache() {
     }
 }
 
-// produce the matrix of dof coordinates
-template <int M, int N, int R> DMatrix<double> Mesh<M, N, R>::dof_coords() const {
-    if constexpr (R == 1)
-        return nodes_;   // for order 1 meshes dofs coincide with vertices
-    else {
-        // allocate space
-        DMatrix<double> coords;
-        coords.resize(dof_, N);
-        coords.topRows(num_nodes_) = nodes_;       // copy coordinates of elements' vertices
-        std::unordered_set<std::size_t> visited;   // set of already visited dofs
-        // define reference element
-        std::array<SVector<M + 1>, ct_nnodes(M, R)> ref_coords = ReferenceElement<M, R>().bary_coords;
-
-        // cycle over all mesh elements
-        for (std::size_t i = 0; i < elements_.rows(); ++i) {
-            // extract dofs related to element with ID i
-            auto dofs = elements_.row(i);
-            auto e = cache_[i];   // take reference to current physical element
-            for (std::size_t j = ct_nvertices(M); j < ct_nnodes(M, R); ++j) {   // cycle only on non-vertex points
-                if (visited.find(dofs[j]) == visited.end()) {                   // not yet mapped dof
-                    // map points from reference to physical element
-                    coords.row(dofs[j]) = e.barycentric_matrix() * ref_coords[j].template tail<M>() + e.coords()[0];
-                    visited.insert(dofs[j]);
-                }
-            }
-        }
-        return coords;
+template <int M, int N> Edge<M, N> Mesh<M, N>::edge(int ID) const {
+    // fetch nodes informations
+    std::array<SVector<N>, n_vertices_per_edge> coords {}; 
+    std::array<int, n_vertices_per_edge> node_ids {};
+    bool on_boundary = true;
+    for (std::size_t i = 0; i < n_vertices_per_edge; ++i) {
+        coords[i] = SVector<N>(nodes_.row(i));
+        node_ids[i] = *(edges_.begin() + ID * n_vertices_per_edge + i);
+	on_boundary &= is_on_boundary(node_ids[i]);
     }
+    // elements adjacent to this edge
+    std::array<int, 2> elements_ids {*(edge_map_.begin() + 2 * ID), *(edge_map_.begin() + 2 * ID + 1)};
+    return Edge<M, N>(ID, node_ids, coords, elements_ids, on_boundary);
 }
 
+// alias exports
+using Mesh2D = Mesh<2, 2>;
+using Mesh3D = Mesh<3, 3>;
+using SurfaceMesh = Mesh<2, 3>;
+using NetworkMesh = Mesh<1, 2>;
+  
 }   // namespace core
 }   // namespace fdapde
 
