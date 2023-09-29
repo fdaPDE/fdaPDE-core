@@ -36,17 +36,17 @@ template <int M, int R, int K = standard_fem_quadrature_rule<M, R>::K> class Int
     Integrator() : integration_table_(IntegratorTable<M, K>()) {};
 
     // integrate a callable F over a mesh element e
-    template <int N, typename F> double integrate(const Element<M, N, R>& e, const F& f) const;
+    template <int N, typename F> double integrate(const Element<M, N>& e, const F& f) const;
     // integrate a callable F over a triangualtion m
-    template <int N, typename F> double integrate(const Mesh<M, N, R>& m, const F& f) const;
+    template <int N, typename F> double integrate(const Mesh<M, N>& m, const F& f) const;
     // computes \int_e [f * \phi] where \phi is a basis function over the *reference element*.
     template <int N, typename F, typename B>
-    double integrate(const Element<M, N, R>& e, const F& f, const B& phi) const;
+    double integrate(const Element<M, N>& e, const F& f, const B& phi) const;
     // integrate the weak form of operator L to produce its (i,j)-th discretization matrix element
-    template <typename L, int N, typename F> double integrate(const Element<M, N, R>& e, F& f) const;
+    template <typename L, int N, typename F> double integrate(const Element<M, N>& e, F& f) const;
 
     // getters
-    template <int N> DMatrix<double> quadrature_nodes(const Mesh<M, N, R>& m) const;
+    template <int N> DMatrix<double> quadrature_nodes(const Mesh<M, N>& m) const;
     std::size_t num_nodes() const { return integration_table_.num_nodes; }
 };
 
@@ -55,7 +55,7 @@ template <int M, int R, int K = standard_fem_quadrature_rule<M, R>::K> class Int
 // integration of bilinear form
 template <int M, int R, int K>
 template <typename L, int N, typename F>
-double Integrator<M, R, K>::integrate(const Element<M, N, R>& e, F& f) const {
+double Integrator<M, R, K>::integrate(const Element<M, N>& e, F& f) const {
     // apply quadrature rule
     double value = 0;
     for (size_t iq = 0; iq < integration_table_.num_nodes; ++iq) {
@@ -75,7 +75,7 @@ double Integrator<M, R, K>::integrate(const Element<M, N, R>& e, F& f) const {
 // where J is the affine mapping from the reference element E to the physical element e
 template <int M, int R, int K>
 template <int N, typename F, typename B>
-double Integrator<M, R, K>::integrate(const Element<M, N, R>& e, const F& f, const B& Phi) const {
+double Integrator<M, R, K>::integrate(const Element<M, N>& e, const F& f, const B& Phi) const {
     double value = 0;
     for (size_t iq = 0; iq < integration_table_.num_nodes; ++iq) {
         const SVector<M>& p = integration_table_.nodes[iq];
@@ -96,7 +96,7 @@ double Integrator<M, R, K>::integrate(const Element<M, N, R>& e, const F& f, con
 // integrate a callable F over a mesh element e. Do not require any particular structure for F
 template <int M, int R, int K>
 template <int N, typename F>
-double Integrator<M, R, K>::integrate(const Element<M, N, R>& e, const F& f) const {
+double Integrator<M, R, K>::integrate(const Element<M, N>& e, const F& f) const {
     double value = 0;
     for (size_t iq = 0; iq < integration_table_.num_nodes; ++iq) {
         if constexpr (std::is_invocable<F, SVector<N>>::value) {
@@ -117,7 +117,7 @@ double Integrator<M, R, K>::integrate(const Element<M, N, R>& e, const F& f) con
 // integrate a callable F over the entire mesh m.
 template <int M, int R, int K>
 template <int N, typename F>
-double Integrator<M, R, K>::integrate(const Mesh<M, N, R>& m, const F& f) const {
+double Integrator<M, R, K>::integrate(const Mesh<M, N>& m, const F& f) const {
     double value = 0;
     // cycle over all mesh elements
     for (const auto& e : m) value += integrate(e, f);
@@ -127,7 +127,7 @@ double Integrator<M, R, K>::integrate(const Mesh<M, N, R>& m, const F& f) const 
 // returns all quadrature points on the mesh
 template <int M, int R, int K>
 template <int N>
-DMatrix<double> Integrator<M, R, K>::quadrature_nodes(const Mesh<M, N, R>& m) const {
+DMatrix<double> Integrator<M, R, K>::quadrature_nodes(const Mesh<M, N>& m) const {
     DMatrix<double> quadrature_nodes;
     quadrature_nodes.resize(m.n_elements() * integration_table_.num_nodes, N);
     // cycle over all mesh elements

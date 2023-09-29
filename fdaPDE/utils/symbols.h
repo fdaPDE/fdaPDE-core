@@ -23,7 +23,7 @@
 
 // static structures, allocated on stack at compile time.
 template <int N> using SVector = Eigen::Matrix<double, N, 1>;
-template <int N, int M = N> using SMatrix = Eigen::Matrix<double, N, M>;
+template <int N, int M = N, typename T = double> using SMatrix = Eigen::Matrix<T, N, M>;
 
 // dynamic size, head-appocated, structures.
 template <typename T, int Options_ = Eigen::ColMajor>
@@ -39,6 +39,12 @@ namespace fdapde {
 const int Dynamic = -1;       // used when the size of a vector or matrix is not known at compile time
 const int random_seed = -1;   // signals that a random seed is used somewhere
 
+namespace internal {
+// define symbols for storage type
+struct SparseStorage { };
+struct DenseStorage { };
+}   // namespace internal
+  
 // a Triplet type (almost identical with respect to Eigen::Triplet<T>) but allowing for non-const access to stored value
 // this is compatible to Eigen::setFromTriplets() method used for the sparse matrix construction
 template <typename T> class Triplet {
@@ -68,13 +74,33 @@ struct pair_hash {
 struct matrix_hash {
     template <typename T> std::size_t operator()(const DMatrix<T>& matrix) const {
         std::size_t hash = 0;
-        for (std::size_t i = 0; i < matrix.rows(); ++i)
-            for (std::size_t j = 0; j < matrix.cols(); ++j)
+        for (std::size_t i = 0; i < matrix.rows(); ++i) {
+            for (std::size_t j = 0; j < matrix.cols(); ++j) {
                 hash ^= std::hash<T>()(matrix(i, j)) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+            }
+        }
         return hash;
     };
 };
-
+  
+// hash function for an standard container's iterator range
+template <typename T>
+struct std_container_hash {
+  std::size_t operator()(const typename T::const_iterator& begin, const typename T::const_iterator& end) const {
+    std::size_t hash = 0;
+    for(auto it = begin; it != end; ++it) {
+      hash ^= std::hash<typename T::value_type>()(*it) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+    }
+    return hash;
+  }
+};
+// hash function for std::array<T, N>
+template <typename T, int N> struct std_array_hash {
+    std::size_t operator()(const std::array<T, N>& array) const {
+      return std_container_hash<std::array<T, N>>()(array.begin(), array.end());
+    };
+};
+  
 // oredering relation for SVector<N>, allows SVector<N> to be keys of std::map
 template <int N> struct s_vector_compare {
     bool operator()(const SVector<N>& lhs, const SVector<N>& rhs) const {

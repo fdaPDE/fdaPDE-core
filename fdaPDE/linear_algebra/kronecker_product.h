@@ -21,15 +21,11 @@
 #include <type_traits>
 
 #include "../utils/symbols.h"
+using fdapde::internal::SparseStorage;
+using fdapde::internal::DenseStorage;
 
 namespace fdapde {
 namespace core {
-
-namespace internal {
-// define symbols for storage type
-struct SparseStorage { };
-struct DenseStorage { };
-}   // namespace internal
 
 // Eigen-compatible implementation of the Kronecker tensor product between matrices. Use Eigen naming conventions
 template <typename Derived> struct KroneckerTensorProductBase {
@@ -103,7 +99,7 @@ namespace internal {
 // import symbols from fdapde namespace
 using fdapde::core::KroneckerTensorProduct;
 using fdapde::core::SparseKroneckerTensorProduct;
-using fdapde::core::internal::SparseStorage;
+using fdapde::internal::SparseStorage;
 
 // template specialization for KroneckerProduct traits (required by Eigen).
 template <typename Lhs_, typename Rhs_> struct traits<KroneckerTensorProduct<Lhs_, Rhs_>> {
