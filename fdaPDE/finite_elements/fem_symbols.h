@@ -36,6 +36,11 @@ struct FEM { };
     /* for non-linear operators, the current approximated solution */                                                  \
     auto f = *std::get<5>(mem_buff);
 
+// finite element order type (just a type wrapper around an int)
+template <int R> struct fem_order {
+    static constexpr int value = R;
+};
+
 }   // namespace core
 }   // namespace fdapde
 

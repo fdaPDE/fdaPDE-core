@@ -37,18 +37,18 @@ namespace core {
 // finite element method assembler
 template <typename D, typename B, typename I> class Assembler<FEM, D, B, I> {
    private:
-    static constexpr std::size_t n_basis = D::n_dof_per_element;
+    static constexpr std::size_t n_basis = B::n_basis;
     const D& mesh_;          // triangulated problem domain
     const I& integrator_;    // quadrature rule
     B reference_basis_ {};   // functional basis over reference unit simplex
-    std::size_t dof_;        // overall number of unknowns in FEM linear system
-    const Eigen::Matrix<int, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>& dof_table_;
+    int dof_;        // overall number of unknowns in FEM linear system
+    const DMatrix<int>& dof_table_;
     DVector<double> f_;   // for non-linear operators, the estimate of the approximated solution 
    public:
-    Assembler(const D& mesh, const I& integrator) :
-      mesh_(mesh), integrator_(integrator), dof_(mesh_.dof()), dof_table_(mesh.dof_table()) {};
-  Assembler(const D& mesh, const I& integrator, const DVector<double>& f) :
-    mesh_(mesh), integrator_(integrator), dof_(mesh_.dof()), dof_table_(mesh.dof_table()), f_(f) {};
+    Assembler(const D& mesh, const I& integrator, int n_dofs, const DMatrix<int>& dofs) :
+      mesh_(mesh), integrator_(integrator), dof_(n_dofs), dof_table_(dofs) {};
+    Assembler(const D& mesh, const I& integrator, int n_dofs, const DMatrix<int>& dofs, const DVector<double>& f) :
+      mesh_(mesh), integrator_(integrator), dof_(n_dofs), dof_table_(dofs), f_(f) {};
   
     // discretization methods
     template <typename E> SpMatrix<double> discretize_operator(const E& op);
@@ -76,7 +76,7 @@ SpMatrix<double> Assembler<FEM, D, B, I>::discretize_operator(const E& op) {
     BasisType buff_psi_i, buff_psi_j;               // basis functions \psi_i, \psi_j
     NablaType buff_nabla_psi_i, buff_nabla_psi_j;   // gradient of basis functions \nabla \psi_i, \nabla \psi_j
     MatrixConst<M, N, M> buff_invJ;   // (J^{-1})^T, being J the inverse of the barycentric matrix relative to element e
-    DVector<double> f(D::n_dof_per_element);  // active solution coefficients on current element e
+    DVector<double> f(n_basis);       // active solution coefficients on current element e
     // prepare buffer to be sent to bilinear form
     auto mem_buffer = std::make_tuple(
       ScalarPtr(&buff_psi_i), ScalarPtr(&buff_psi_j), VectorPtr(&buff_nabla_psi_i), VectorPtr(&buff_nabla_psi_j),
@@ -88,12 +88,12 @@ SpMatrix<double> Assembler<FEM, D, B, I>::discretize_operator(const E& op) {
     std::size_t current_id;
     // cycle over all mesh elements
     for (const auto& e : mesh_) {
-        // update elements related informations
+      // update elements related informations
       buff_invJ = e.inv_barycentric_matrix().transpose(); // affine map from current element to reference element
       current_id = e.ID(); // element ID
       
       if(!is_empty(f_)) // should be bypassed in case of linear operators via an if constexpr!!!
-	for(std::size_t dof = 0; dof < D::n_dof_per_element; dof++) { f[dof] = f_[dof_table_(current_id,dof)]; } 
+	for(std::size_t dof = 0; dof < n_basis; dof++) { f[dof] = f_[dof_table_(current_id, dof)]; } 
 
         // consider all pair of nodes
         for (size_t i = 0; i < n_basis; ++i) {
@@ -122,7 +122,7 @@ SpMatrix<double> Assembler<FEM, D, B, I>::discretize_operator(const E& op) {
     // matrix assembled
     discretization_matrix.setFromTriplets(triplet_list.begin(), triplet_list.end());
     discretization_matrix.makeCompressed();
-
+    
     // return just half of the discretization matrix if the form is symmetric (lower triangular part)
     if constexpr (is_symmetric<decltype(op)>::value)
         return discretization_matrix.selfadjointView<Eigen::Lower>();

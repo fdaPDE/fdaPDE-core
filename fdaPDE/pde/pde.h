@@ -30,7 +30,7 @@ namespace core {
 
 // for a given resolution strategy S and operator E, selects a proper solver.
 // to be partially specialized with respect to S
-template <typename T, typename D, typename E, typename F> struct pde_solver_selector { };
+template <typename S, typename D, typename E, typename F, typename... Ts> struct pde_solver_selector { };
 
 // PDEs base class (used as tag in higher components, allow run-time polymorphism)
 // abstract PDEs interface accessible throught a pointer to PDE
@@ -47,10 +47,11 @@ struct PDEBase {
 typedef std::shared_ptr<PDEBase> pde_ptr;
 
 // Description of a Partial Differential Equation Lf = u solved with strategy S
-template <typename D,   // triangulated problem domain
-          typename E,   // differential operator L
-          typename F,   // forcing term u
-          typename S>   // resolution strategy
+template <typename D,     // domain's triangulation
+          typename E,     // differential operator L
+          typename F,     // forcing term u
+          typename S,     // resolution strategy
+          typename... Ts> // parameters forwarded to S
 class PDE : public PDEBase {
    public:
     typedef D DomainType;   // triangulated domain
@@ -64,7 +65,7 @@ class PDE : public PDEBase {
     static_assert(
       std::is_same<DMatrix<double>, F>::value || std::is_base_of<ScalarExpr<D::embedding_dimension, F>, F>::value,
       "forcing is not a matrix or a scalar expression || N != F::base");
-    typedef typename pde_solver_selector<S, D, E, F>::type SolverType;   // resolution strategy
+    typedef typename pde_solver_selector<S, D, E, F, Ts...>::type SolverType;
     typedef typename SolverType::FunctionSpace FunctionSpace;     // function space approximating the solution space
     typedef typename SolverType::FunctionBasis FunctionBasis;     // basis defined on the overall domain
     typedef typename SolverType::QuadratureRule QuadratureRule;   // quadrature for numerical integral approximations
@@ -79,11 +80,7 @@ class PDE : public PDEBase {
         domain_(domain), diff_op_(diff_op), forcing_data_(forcing_data) { }
 
     // setters
-    virtual void set_dirichlet_bc(const DMatrix<double>& data) {
-        for (auto it = domain_.boundary_begin(); it != domain_.boundary_end(); ++it) {
-            boundary_data_[*it] = data.row(*it);   // O(1) complexity
-        }
-    };
+    virtual void set_dirichlet_bc(const DMatrix<double>& data) { boundary_data_ = data; }
     void set_initial_condition(const DVector<double>& data) { initial_condition_ = data; };
 
     // getters
@@ -91,12 +88,14 @@ class PDE : public PDEBase {
     OperatorType differential_operator() const { return diff_op_; }
     const ForcingType& forcing_data() const { return forcing_data_; }
     const DVector<double>& initial_condition() const { return initial_condition_; }
-    const std::unordered_map<std::size_t, DVector<double>>& boundary_data() const { return boundary_data_; };
+    const DMatrix<double>& boundary_data() const { return boundary_data_; };
     const QuadratureRule& integrator() const { return solver_.integrator(); }
     const FunctionSpace& reference_basis() const { return solver_.reference_basis(); }
     const FunctionBasis& basis() const { return solver_.basis(); }
+    DMatrix<double> dof_coords() { return solver_.dofs_coords(domain_); }
+  
 
-    // pde_ptr accessible interface
+  // pde_ptr accessible interface
     virtual const DMatrix<double>& solution() const { return solver_.solution(); };   // PDE solution
     virtual const DMatrix<double>& force() const { return solver_.force(); };         // rhs of discrete linear system
     virtual const SpMatrix<double>& R1() const { return solver_.R1(); };              // stiff matrix
@@ -104,7 +103,7 @@ class PDE : public PDEBase {
     virtual DMatrix<double> quadrature_nodes() const { return integrator().quadrature_nodes(domain_); };
     virtual void init() { solver_.init(*this); };   // initializes the solver
     virtual void solve() {                          // solves the PDE
-        if (!boundary_data_.empty()) solver_.set_dirichlet_bc(*this);
+        if (!is_empty(boundary_data_)) solver_.set_dirichlet_bc(*this);
         solver_.solve(*this);
     }
 
@@ -114,7 +113,7 @@ class PDE : public PDEBase {
     ForcingType forcing_data_;               // forcing data
     DVector<double> initial_condition_ {};   // initial condition, (for space-time problems only)
     SolverType solver_ {};                   // problem solver
-    std::unordered_map<std::size_t, DVector<double>> boundary_data_ {};   // (node_id, boundary_value) map
+    DMatrix<double> boundary_data_;          // boundary conditions
 };
 
 // factory for pde_ptr objects

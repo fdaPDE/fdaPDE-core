@@ -25,12 +25,11 @@
 namespace fdapde {
 namespace core {
   
-template <typename D, typename E, typename F>
-struct FEMLinearEllipticSolver : public FEMSolverBase<D, E, F> {
+template <typename D, typename E, typename F, typename... Ts>
+struct FEMLinearEllipticSolver : public FEMSolverBase<D, E, F, Ts...> {
     // solves linear system R1_*u = b, where R1_ : stiff matrix, b : discretized force
     template <typename PDE> void solve(const PDE& pde) {
         static_assert(is_pde<PDE>::value, "pde is not a valid PDE object");
-
         if (!this->is_init) throw std::runtime_error("solver must be initialized first!");
         // define eigen system solver, exploit spd of operator if possible
         typedef Eigen::SparseLU<SpMatrix<double>, Eigen::COLAMDOrdering<int>> SystemSolverType;
@@ -42,7 +41,7 @@ struct FEMLinearEllipticSolver : public FEMSolverBase<D, E, F> {
             return;
         }
         // solve FEM linear system: R1_*solution_ = force_;
-        this->solution_ = solver.solve(this->force_);
+        this->solution_ = solver.solve(this->force_);        
         this->success = true;
         return;
     }

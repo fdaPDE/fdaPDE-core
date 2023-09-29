@@ -14,25 +14,36 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FEM_SOLVER_SELECTOR_H__
-#define __FEM_SOLVER_SELECTOR_H__
+#ifndef __COMBINATORICS_H__
+#define __COMBINATORICS_H__
 
-#include "../../utils/traits.h"
-#include "../fem_symbols.h"
-#include "fem_linear_elliptic_solver.h"
-#include "fem_linear_parabolic_solver.h"
+#include "compile_time.h"
+#include "symbols.h"
 
 namespace fdapde {
 namespace core {
 
-// selects solver type depending on properties of operator E, carries domain D and forcing F to solver
-template <typename D, typename E, typename F, typename... Ts> struct pde_solver_selector<FEM, D, E, F, Ts...> {
-    using type = typename switch_type<
-      switch_type_case<!is_parabolic<E>::value, FEMLinearEllipticSolver <D, E, F, Ts...>>,
-      switch_type_case< is_parabolic<E>::value, FEMLinearParabolicSolver<D, E, F, Ts...>> >::type;
-};
+  // a set of utilities for combinatoric calculus
 
-}   // namespace core
-}   // namespace fdapde
+// all combinations of k elements from a set of n
+template <int K, int N> SMatrix<ct_binomial_coefficient(N, K), K, int> combinations() {
+    std::vector<bool> bitmask(K, 1);
+    bitmask.resize(N, 0);
 
-#endif   // __FEM_SOLVER_SELECTOR_H__
+    SMatrix<ct_binomial_coefficient(N, K), K, int> result;
+
+    int j = 0;
+    do {
+        int k = 0;
+        for (int i = 0; i < N; ++i) {
+            if (bitmask[i]) result(j, k++) = i;
+        }
+        j++;
+    } while (std::prev_permutation(bitmask.begin(), bitmask.end()));
+
+    return result;
+}
+ 
+}}
+
+#endif // _COMBINATORICS_H__

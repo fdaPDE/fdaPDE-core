@@ -25,8 +25,8 @@
 namespace fdapde {
 namespace core {
 
-template <typename D, typename E, typename F>
-class FEMLinearParabolicSolver : public FEMSolverBase<D, E, F> {
+template <typename D, typename E, typename F, typename... Ts>
+class FEMLinearParabolicSolver : public FEMSolverBase<D, E, F, Ts...> {
    private:
     double deltaT_ = 1e-2;
    public:

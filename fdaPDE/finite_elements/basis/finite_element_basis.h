@@ -25,12 +25,12 @@ namespace core {
 
 // Given an element e, a point x \in e and a functor F, this functor computes F(P(x)), where P(.) is the bijection
 // which maps e into the reference M-dimensional element \hat e. F is intended to be a basis function over \hat e
-template <int M, int N, int R, typename F> class FiniteElement {
+template <int M, int N, typename F> class FiniteElement {
    private:
-    const Element<M, N, R>& e_;
+    const Element<M, N>& e_;
     const F& f_;
    public:
-    FiniteElement(const Element<M, N, R>& e, const F& f) : e_(e), f_(f) {};
+    FiniteElement(const Element<M, N>& e, const F& f) : e_(e), f_(f) {};
 
     // computes F(P(x))
     inline double operator()(const SVector<N>& x) const {
@@ -46,9 +46,9 @@ template <typename B> class FiniteElementBasis {
     FiniteElementBasis() = default;
 
     // returns the j-th basis function over e. Basis ordering follows the one defined on the reference element
-    template <int N, int M, int R>
-    FiniteElement<M, N, R, typename B::ElementType> operator()(const Element<M, N, R>& e, std::size_t j) const {
-        return FiniteElement<M, N, R, typename B::ElementType>(e, ref_basis_[j]);
+    template <int N, int M>
+    FiniteElement<M, N, typename B::ElementType> operator()(const Element<M, N>& e, std::size_t j) const {
+        return FiniteElement<M, N, typename B::ElementType>(e, ref_basis_[j]);
     }
    private:
     BasisType ref_basis_ {};   // reference basis over M-dimensional simplex
