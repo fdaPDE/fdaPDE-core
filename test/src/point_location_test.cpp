@@ -33,13 +33,12 @@ template <typename E> struct point_location_test : public ::testing::Test {
     MeshLoader<E> meshLoader {};   // use default mesh
     static constexpr unsigned int M = MeshLoader<E>::M;
     static constexpr unsigned int N = MeshLoader<E>::N;
-    static constexpr unsigned int R = MeshLoader<E>::R;
 };
 TYPED_TEST_SUITE(point_location_test, MESH_TYPE_LIST);
 
 TYPED_TEST(point_location_test, naive_search) {
     // build search engine
-    NaiveSearch<TestFixture::M, TestFixture::N, TestFixture::R> engine(this->meshLoader.mesh);
+    NaiveSearch<TestFixture::M, TestFixture::N> engine(this->meshLoader.mesh);
     // build test set
     std::vector<std::pair<std::size_t, SVector<TestFixture::N>>> testSet = this->meshLoader.sample(100);
     // test all queries in test set
@@ -53,7 +52,7 @@ TYPED_TEST(point_location_test, naive_search) {
 
 TYPED_TEST(point_location_test, alternating_digital_tree) {
     // build search engine
-    ADT<TestFixture::M, TestFixture::N, TestFixture::R> engine(this->meshLoader.mesh);
+    ADT<TestFixture::M, TestFixture::N> engine(this->meshLoader.mesh);
     // build test set
     std::vector<std::pair<std::size_t, SVector<TestFixture::N>>> testSet = this->meshLoader.sample(100);
     // test all queries in test set
@@ -68,7 +67,7 @@ TYPED_TEST(point_location_test, alternating_digital_tree) {
 // barycentric walk cannot be applied to manifold mesh, filter out manifold cases at compile time
 TYPED_TEST(point_location_test, barycentric_walk) {
     if constexpr (TestFixture::N == TestFixture::M) {
-        BarycentricWalk<TestFixture::M, TestFixture::N, TestFixture::R> engine(this->meshLoader.mesh);
+        BarycentricWalk<TestFixture::M, TestFixture::N> engine(this->meshLoader.mesh);
         // build test set
         std::vector<std::pair<std::size_t, SVector<TestFixture::N>>> testSet = this->meshLoader.sample(100);
         // test all queries in test set

@@ -20,6 +20,7 @@
 #include <fdaPDE/utils.h>
 #include <fdaPDE/mesh.h>
 #include <fdaPDE/linear_algebra.h>
+#include <fdaPDE/finite_elements.h>
 using fdapde::core::Element;
 using fdapde::core::Integrator;
 using fdapde::core::IntegratorTable;
@@ -42,7 +43,7 @@ TYPED_TEST_SUITE(integration_test, MESH_TYPE_LIST);
 // tests if the integration of the constant field 1 over an element equals its measure
 TYPED_TEST(integration_test, constant_unitary_field) {
     // generate random element from mesh
-    auto e = this->meshLoader.generateRandomElement();
+    auto e = this->meshLoader.generate_random_element();
     Integrator<TestFixture::M, 1> integrator;   // define integrator
     // the integral of the constant field 1 over the mesh element equals its measure
     std::function<double(SVector<TestFixture::N>)> f = [](SVector<TestFixture::N> x) -> double { return 1; };
@@ -54,7 +55,7 @@ TYPED_TEST(integration_test, constant_unitary_field) {
 //     e.measure()*(h1 + h2 + ... hm)/m
 TYPED_TEST(integration_test, linear_field) {
     // generate random element from mesh
-    auto e = this->meshLoader.generateRandomElement();
+    auto e = this->meshLoader.generate_random_element();
     Integrator<TestFixture::M, 1> integrator;   // define integrator
     // a linear function over an element e defines a truncated prism over e
     std::function<double(SVector<TestFixture::N>)> f = [](SVector<TestFixture::N> x) -> double { return x[0] + x[1]; };
@@ -69,7 +70,7 @@ TYPED_TEST(integration_test, linear_field) {
 // test if is possible to integrate a field over the entire mesh
 TEST(integration_test, integrate_over_triangulation) {
     // load sample mesh
-    MeshLoader<Mesh2D<>> CShaped("unit_square");
+    MeshLoader<Mesh2D> CShaped("unit_square");
     Integrator<2, 1> integrator {};
     // define field to integrate
     std::function<double(SVector<2>)> f = [](SVector<2> x) -> double { return 1; };

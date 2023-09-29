@@ -67,8 +67,7 @@ template <typename E> class lagrangian_basis_test : public ::testing::Test {
 
 // pair format: <x,y> : x dimension of space, y order of mesh
 using pairs = ::testing::Types<
-  int_pair<1, 1>, int_pair<2, 1>, int_pair<3, 1>   // order 1 elements (linear finite elements)
-  ,
+  int_pair<1, 1>, int_pair<2, 1>, int_pair<3, 1>,    // order 1 elements (linear finite elements)
   int_pair<1, 2>, int_pair<2, 2>, int_pair<3, 2>>;   // order 2 elements (quadratic finite elements)
 TYPED_TEST_SUITE(lagrangian_basis_test, pairs);
 
@@ -144,7 +143,7 @@ TEST(lagrangian_basis_test, order2_reference_element) {
 
 // test linear elements behave correctly on generic mesh elements
 TEST(lagrangian_basis_test, order1_physical_element) {
-    MeshLoader<Mesh2D<>> CShaped("c_shaped");
+    MeshLoader<Mesh2D> CShaped("c_shaped");
     auto e = CShaped.mesh.element(175);   // reference element for this test
     // get quadrature nodes over the mesh to define an evaluation point
     IntegratorTable<2, 6> integrator {};
@@ -167,7 +166,7 @@ TEST(lagrangian_basis_test, order1_physical_element) {
 
 // test quadratic elements behave correctly on generic mesh elements
 TEST(lagrangian_basis_test, order2_phyiscal_element) {
-    MeshLoader<Mesh2D<2>> CShaped("c_shaped");
+    MeshLoader<Mesh2D> CShaped("c_shaped");
     auto e = CShaped.mesh.element(175);   // reference element for this test
     // get quadrature nodes over the mesh to define an evaluation point
     IntegratorTable<2, 6> integrator {};

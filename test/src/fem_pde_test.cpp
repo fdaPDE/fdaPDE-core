@@ -28,6 +28,7 @@ using fdapde::core::ScalarField;
 using fdapde::core::advection;
 using fdapde::core::laplacian;
 using fdapde::core::FEM;
+using fdapde::core::fem_order;
 
 #include "utils/mesh_loader.h"
 using fdapde::testing::MeshLoader;
@@ -40,25 +41,25 @@ using fdapde::testing::DOUBLE_TOLERANCE;
 // check error of approximated solution by an order 1 FEM within theoretical expectations
 TEST(fem_pde_test, laplacian_isotropic_order1) {
     // exact solution
-    auto solutionExpr = [](SVector<2> x) -> double { return x[0] + x[1]; };
+    auto solution_expr = [](SVector<2> x) -> double { return x[0] + x[1]; };
     
-    MeshLoader<Mesh2D<>> unit_square("unit_square");
+    MeshLoader<Mesh2D> unit_square("unit_square");
     auto L = -laplacian<FEM>();
-    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM> pde_(unit_square.mesh);
+    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_square.mesh);
     pde_.set_differential_operator(L);
 
     // compute boundary condition and exact solution
-    DMatrix<double> nodes_ = unit_square.mesh.dof_coords();
-    DMatrix<double> dirichletBC(nodes_.rows(), 1);
-    DMatrix<double> solution_ex(nodes_.rows(), 1);
-
+    DMatrix<double> nodes_ = pde_.dof_coords();
+    DMatrix<double> dirichlet_bc(nodes_.rows(), 1);
+    DMatrix<double> solution_ex (nodes_.rows(), 1);
+    
     for (int i = 0; i < nodes_.rows(); ++i) {
-        dirichletBC(i) = solutionExpr(nodes_.row(i));
-        solution_ex(i) = solutionExpr(nodes_.row(i));
+        dirichlet_bc(i) = solution_expr(nodes_.row(i));
+        solution_ex(i)  = solution_expr(nodes_.row(i));
     }
     // set dirichlet conditions
-    pde_.set_dirichlet_bc(dirichletBC);
-
+    pde_.set_dirichlet_bc(dirichlet_bc);
+    
     // request quadrature nodes and evaluate forcing on them
     DMatrix<double> quadrature_nodes = pde_.integrator().quadrature_nodes(unit_square.mesh);
     DMatrix<double> f = DMatrix<double>::Zero(quadrature_nodes.rows(), 1);
@@ -66,8 +67,7 @@ TEST(fem_pde_test, laplacian_isotropic_order1) {
     // init solver and solve differential problem
     pde_.init();
     pde_.solve();
-
-    // check computed error within theoretical expectations
+    // check computed error within theoretical expectations    
     DMatrix<double> error_ = solution_ex - pde_.solution();
     double error_L2 = (pde_.R0() * error_.cwiseProduct(error_)).sum();
     EXPECT_TRUE(error_L2 < DOUBLE_TOLERANCE);
@@ -76,31 +76,29 @@ TEST(fem_pde_test, laplacian_isotropic_order1) {
 // check error of approximated solution by an order 2 FEM within theoretical expectations
 TEST(fem_pde_test, laplacian_isotropic_order2_callable_force) {
     // exact solution
-    auto solutionExpr = [](SVector<2> x) -> double { return 1. - x[0] * x[0] - x[1] * x[1]; };
+    auto solution_expr = [](SVector<2> x) -> double { return 1. - x[0] * x[0] - x[1] * x[1]; };
     // non-zero forcing term
-    auto forcingExpr = [](SVector<2> x) -> double { return 4.0; };
-    ScalarField<2> forcing(forcingExpr);   // wrap lambda expression in ScalarField object
+    auto forcing_expr = [](SVector<2> x) -> double { return 4.0; };
+    ScalarField<2> forcing(forcing_expr);   // wrap lambda expression in ScalarField object
 
-    MeshLoader<Mesh2D<2>> unit_square("unit_square");
+    MeshLoader<Mesh2D> unit_square("unit_square");
     auto L = -laplacian<FEM>();
     // initialize PDE with callable forcing term
-    PDE<decltype(unit_square.mesh), decltype(L), ScalarField<2>, FEM> pde_(unit_square.mesh, L, forcing);
-
+    PDE<decltype(unit_square.mesh), decltype(L), ScalarField<2>, FEM, fem_order<2>> pde_(unit_square.mesh, L, forcing);
     // compute boundary condition and exact solution
-    DMatrix<double> nodes_ = unit_square.mesh.dof_coords();
-    DMatrix<double> dirichletBC(nodes_.rows(), 1);
-    DMatrix<double> solution_ex(nodes_.rows(), 1);
+    DMatrix<double> nodes_ = pde_.dof_coords();
+    DMatrix<double> dirichlet_bc(nodes_.rows(), 1);
+    DMatrix<double> solution_ex (nodes_.rows(), 1);
 
     for (int i = 0; i < nodes_.rows(); ++i) {
-        dirichletBC(i) = solutionExpr(nodes_.row(i));
-        solution_ex(i) = solutionExpr(nodes_.row(i));
+        dirichlet_bc(i) = solution_expr(nodes_.row(i));
+        solution_ex(i)  = solution_expr(nodes_.row(i));
     }
     // set dirichlet conditions
-    pde_.set_dirichlet_bc(dirichletBC);
+    pde_.set_dirichlet_bc(dirichlet_bc);
     // init solver and solve differential problem
     pde_.init();
     pde_.solve();
-
     // check computed error within theoretical expectations
     DMatrix<double> error_ = solution_ex - pde_.solution();
     double error_L2 = (pde_.R0() * error_.cwiseProduct(error_)).sum();
@@ -137,12 +135,12 @@ TEST(fem_pde_test, advection_diffusion_isotropic_order1) {
     beta_ << -alpha_, 0.;
     auto L = -laplacian<FEM>() + advection<FEM>(beta_);
     // load sample mesh for order 1 basis
-    MeshLoader<Mesh2D<>> unit_square("unit_square");
-    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM> pde_(unit_square.mesh);
+    MeshLoader<Mesh2D> unit_square("unit_square");
+    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_square.mesh);
     pde_.set_differential_operator(L);
 
     // compute boundary condition and exact solution
-    DMatrix<double> nodes_ = unit_square.mesh.dof_coords();
+    DMatrix<double> nodes_ = pde_.dof_coords();
     DMatrix<double> solution_ex(nodes_.rows(), 1);
 
     for (int i = 0; i < nodes_.rows(); ++i) { solution_ex(i) = solutionExpr(nodes_.row(i)); }
@@ -197,12 +195,12 @@ TEST(fem_pde_test, advection_diffusion_isotropic_order2) {
     beta_ << -alpha_, 0.;
     auto L = -laplacian<FEM>() + advection<FEM>(beta_); // -\Delta + dot(beta_, \nabla)
     // load sample mesh for order 1 basis
-    MeshLoader<Mesh2D<2>> unit_square("unit_square");
+    MeshLoader<Mesh2D> unit_square("unit_square");
 
-    PDE<decltype(unit_square.mesh), decltype(L), ScalarField<2>, FEM> pde_(unit_square.mesh, L, forcing);
+    PDE<decltype(unit_square.mesh), decltype(L), ScalarField<2>, FEM, fem_order<2>> pde_(unit_square.mesh, L, forcing);
 
     // compute boundary condition and exact solution
-    DMatrix<double> nodes_ = unit_square.mesh.dof_coords();
+    DMatrix<double> nodes_ = pde_.dof_coords();
     DMatrix<double> solution_ex(nodes_.rows(), 1);
 
     for (int i = 0; i < nodes_.rows(); ++i) { solution_ex(i) = solutionExpr(nodes_.row(i)); }

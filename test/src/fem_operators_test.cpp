@@ -40,7 +40,7 @@ using fdapde::testing::almost_equal;
 // test integration of Laplacian weak form for a LagrangianElement of order 2
 TEST(fem_operators_test, laplacian_order_2) {
     // load sample mesh, request an order 2 basis support
-    MeshLoader<Mesh2D<2>> CShaped("c_shaped");
+    MeshLoader<Mesh2D> CShaped("c_shaped");
     auto e = CShaped.mesh.element(175);   // reference element for this test
     Integrator<2, 2> integrator {};
 
@@ -54,7 +54,7 @@ TEST(fem_operators_test, laplacian_order_2) {
     BasisType buff_psi_i, buff_psi_j;               // basis functions \psi_i, \psi_j
     NablaType buff_nabla_psi_i, buff_nabla_psi_j;   // gradient of basis functions \nabla \psi_i, \nabla \psi_j
     MatrixConst<2, 2, 2> buff_invJ;   // (J^{-1})^T, being J the inverse of the barycentric matrix relative to element e
-    DVector<double> f(Mesh2D<2>::n_dof_per_element);   // active solution coefficients on current element e
+    DVector<double> f(ct_nnodes(Mesh2D::local_dimension, 2));   // active solution coefficients on current element e
     // prepare buffer to be sent to bilinear form
     auto mem_buffer = std::make_tuple(
       ScalarPtr(&buff_psi_i), ScalarPtr(&buff_psi_j), VectorPtr(&buff_nabla_psi_i), VectorPtr(&buff_nabla_psi_j),
