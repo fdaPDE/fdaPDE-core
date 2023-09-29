@@ -22,7 +22,7 @@
 #include <fdaPDE/linear_algebra.h>
 using fdapde::core::Element;
 using fdapde::core::VectorSpace;
-using fdapde::core::circumcenter;
+//using fdapde::core::circumcenter;
 
 #include "utils/mesh_loader.h"
 #include "utils/constants.h"
