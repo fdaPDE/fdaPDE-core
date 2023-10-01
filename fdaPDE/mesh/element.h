@@ -43,6 +43,8 @@ constexpr int ct_nnodes(const int M, const int R) {
 constexpr int ct_nvertices(const int M) { return M + 1; }
 // number of edges of an M-dimensional element
 constexpr int ct_nedges(const int M) { return (M * (M + 1)) / 2; }
+// number of faces of an M-dimensional element
+constexpr int ct_nneighbors(const int M) { return (M == 1) ? fdapde::Dynamic : (M + 1); }
 
 // A single mesh element. This object represents the main **geometrical** abstraction of a physical element.
 // No functional information is carried by instances of this object.

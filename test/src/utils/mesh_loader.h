@@ -81,18 +81,17 @@ template <typename E> struct MeshLoader {
 	points_ = double_reader.parse_file<DenseStorage>(points_file);
         // realign indexes to 0, if requested
         elements_ = (int_reader.parse_file<DenseStorage>(elements_file).array() - 1).matrix();
-        edges_ = (int_reader.parse_file<DenseStorage>(edges_file).array() - 1).matrix();
+        edges_ = (int_reader.parse_file<DenseStorage>(edges_file).array() > 0)
+	    .select(int_reader.parse_file<DenseStorage>(edges_file).array()-1, -1).matrix();
         boundary_ = int_reader.parse_file<DenseStorage>(boundary_file);
 	if constexpr (!is_linear_network<M, N>::value)
-            neighbors_ = (int_reader.parse_file<DenseStorage>(neighbors_file).array() - 1).matrix();
+	    neighbors_ = (int_reader.parse_file<DenseStorage>(neighbors_file).array() > 0)
+	      .select(int_reader.parse_file<DenseStorage>(neighbors_file).array()-1, -1).matrix();
         else {
             neighbors_ = int_reader.parse_file<SparseStorage>(neighbors_file);
-            for (int k = 0; k < neighbors_.outerSize(); ++k) {
-                for (SpMatrix<int>::InnerIterator it(neighbors_, k); it; ++it) { it.valueRef() = it.value() - 1; }
-            }
         }
         // initialize mesh
-        mesh = E(points_, elements_, neighbors_, boundary_);
+	mesh = E(points_, elements_, boundary_);
     }
     // load default mesh according to dimensionality
     MeshLoader() : MeshLoader(standard_mesh_selector(E::local_dimension, E::embedding_dimension)) {};

@@ -51,7 +51,7 @@ template <int M, int N> struct neighboring_structure {
 // access to domain's triangulation, M: tangent space dimension, N: embedding space dimension
 template <int M, int N> class Mesh {
    private:
-    // coordinates of points costituting the vertices of mesh elements
+    // coordinates of points making the vertices of mesh elements
     DMatrix<double> nodes_ {};
     int n_nodes_ = 0;
     // identifiers of points (as row indexes in points_ matrix) composing each element, by row
@@ -65,14 +65,13 @@ template <int M, int N> class Mesh {
     std::vector<int> edges_ {};
     std::vector<int> edge_map_ {};   // the i-th row refers to the elements' identifiers insisting on the i-th edge
     int n_edges_ = 0;
-  
+
     // precomputed set of elements (cached for fast access)
     std::vector<Element<M, N>> cache_ {};
     void fill_cache();
    public:
     Mesh() = default;
-    Mesh(const DMatrix<double>& nodes, const DMatrix<int>& elements,
-	 const typename neighboring_structure<M, N>::type& neighbors, const DMatrix<int>& boundary);
+    Mesh(const DMatrix<double>& nodes, const DMatrix<int>& elements, const DMatrix<int>& boundary);
 
     // getters
     const Element<M, N>& element(int ID) const { return cache_[ID]; }
@@ -161,59 +160,103 @@ template <int M, int N> class Mesh {
         embedding_dimension = N,
         n_vertices = ct_nvertices(M),
         n_edges_per_element = ct_nedges(M),
-        n_neighbors = ct_nedges(M),
-        n_vertices_per_edge = M, // generalize wrt other dimensionalities
-	n_elements_per_edge = 2  // same here...
+        n_neighbors_per_element = ct_nneighbors(M),
+        n_vertices_per_edge = M,
+	n_elements_per_edge = 2  // is n_elements_per_face, change
     };
 };
 
 // implementative details
 
-// construct from raw matrices (NB: matrix enumeration is assumed to start from 0)
 template <int M, int N>
-Mesh<M, N>::Mesh(
-  const DMatrix<double>& nodes, const DMatrix<int>& elements,
-  const typename neighboring_structure<M, N>::type& neighbors, const DMatrix<int>& boundary) :
-    nodes_(nodes), neighbors_(neighbors), elements_(elements), boundary_(boundary) {
-    // store number of nodes and number of elements
-    n_nodes_ = nodes_.rows();
-    n_elements_ = elements_.rows();
+Mesh<M, N>::Mesh(const DMatrix<double>& nodes, const DMatrix<int>& elements, const DMatrix<int>& boundary) :
+  nodes_(nodes), elements_(elements), boundary_(boundary) {
+  // store number of nodes and number of elements
+  n_nodes_ = nodes_.rows();
+  n_elements_ = elements_.rows();
 
-    // compute mesh limits
-    for (size_t dim = 0; dim < N; ++dim) {
-        range_[dim].first = nodes_.col(dim).minCoeff();
-        range_[dim].second = nodes_.col(dim).maxCoeff();
-    }
-    // scan the whole mesh and precompute elements informations for fast access
-    fill_cache();
+  // compute mesh limits
+  for (size_t dim = 0; dim < N; ++dim) {
+    range_[dim].first = nodes_.col(dim).minCoeff();
+    range_[dim].second = nodes_.col(dim).maxCoeff();
+  }
 
     // compute edges informations
-    // edges_ are contigously stored in memory as a std::vector<int>, in a row major format
     auto edge_pattern = combinations<n_vertices_per_edge, n_vertices>();
     std::unordered_map<std::array<int, n_vertices_per_edge>, int, std_array_hash<int, n_vertices_per_edge>> visited;
-
     std::array<int, n_vertices_per_edge> edge;
+    // cycle over all elements
     for (int i = 0; i < n_elements_; ++i) {
-        for (int j = 0; j < edge_pattern.rows(); ++j) {
-            // construct edge
-            for (int k = 0; k < n_vertices_per_edge; ++k) { edge[k] = elements_(i, edge_pattern(j, k)); }
-            // check if edge already processed
-            std::sort(edge.begin(), edge.end());
-            auto it = visited.find(edge);
-            if (it != visited.end()) {
-                // free memory (only two elements share the same edge) and update edge to element structure
-                *(edge_map_.begin() + 2 * (it->second) + 1) = i;
-                visited.erase(it);
-            } else {
-                // store edge and update edge to element information
-                for (int k = 0; k < n_vertices_per_edge; ++k) { edges_.emplace_back(edge[k]); }
-                visited.insert({edge, n_edges_});
-                n_edges_++;
-                edge_map_.insert(edge_map_.end(), {i, -1});   // -1 flags no incident element at edge
-            }
-        }
+      for (int j = 0; j < edge_pattern.rows(); ++j) {
+	// construct edge
+	for (int k = 0; k < n_vertices_per_edge; ++k) { edge[k] = elements_(i, edge_pattern(j, k)); }
+	std::sort(edge.begin(), edge.end());    // normalize wrt node ordering
+	auto it = visited.find(edge);
+	if (it != visited.end()) {
+	  // free memory (two, and only two, elements share the same face) and update face to element bounding
+	  *(edge_map_.begin() + n_elements_per_edge * (it->second) + 1) = i;
+	  visited.erase(it);
+	} else {
+	  // store edge and update face to element bounding
+	  for (int k = 0; k < n_vertices_per_edge; ++k) { edges_.emplace_back(edge[k]); }
+	  visited.insert({edge, n_edges_});
+	  edge_map_.insert(edge_map_.end(), {i, -1});   // -1 flags no incident element at edge
+	  n_edges_++;
+	}
+      }
     }
-    return;
+
+  
+  if constexpr (!is_linear_network<M, N>::value) {  
+    neighbors_ = DMatrix<int>::Constant(n_elements_, n_neighbors_per_element, -1);
+    
+    // compute neighboring informations, such that the neighbor indexed i lies opposite to vertex i
+    for (auto it = edge_begin(); it != edge_end(); ++it) {
+      for (int i = 0; i < n_elements_per_edge; ++i) {   // each face is shared by two, and only two, adjacent elements
+	int element_id = (*it).adjacent_elements()[i];
+	if (element_id >= 0) {   // not a boundary face
+	  // search point opposite to this face (the j-th node which is not a node of this face)
+	  int j = 0;
+	  for (; j < n_vertices; ++j) {
+	    bool found = false;
+	    for (int k = 0; k < n_vertices_per_edge; ++k) {
+	      if ((*it).node_ids()[k] == elements_(element_id, j)) { found = true; }
+	    }
+	    if (!found) break;
+	  }
+	  neighbors_(element_id, j) = (*it).adjacent_elements()[(i + 1) % 2];
+	}
+      }
+    }
+
+    // for 3D need to compute faces
+
+  } else { // linear network specialization
+    std::map<int, std::vector<int>> adjacent; // for each node, the elements insisting on it
+
+    for (std::size_t i = 0; i < n_elements_; ++i) {
+      adjacent[elements_(i,0)].push_back(i);
+      adjacent[elements_(i,1)].push_back(i);
+    }
+
+    // recover adjacency matrix
+    std::vector<Eigen::Triplet<int>> triplet_list;
+    for(const auto& node : adjacent) {
+      for(std::size_t i = 0; i < node.second.size(); ++i) {
+	for(std::size_t j = i+1; j < node.second.size(); ++j) {
+	  triplet_list.emplace_back(node.second[i], node.second[j], 1);
+	  triplet_list.emplace_back(node.second[j], node.second[i], 1);  // adjacency relation is symmetric
+	}
+      }
+    }
+    neighbors_.resize(n_elements_, n_elements_);
+    neighbors_.setFromTriplets(triplet_list.begin(), triplet_list.end());
+    neighbors_.makeCompressed();
+  }
+  
+  // precompute elements informations for fast access
+  fill_cache();
+  return;
 }
 
 // fill the cache_ data structure with pointers to element objects

@@ -14,23 +14,23 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <fdaPDE/utils.h>
 #include <fdaPDE/mesh.h>
+#include <fdaPDE/utils.h>
 #include <gtest/gtest.h>   // testing framework
 
 #include <memory>
 #include <random>
-#include <unordered_set>
 #include <set>
+#include <unordered_set>
 #include <vector>
 using fdapde::core::Element;
 using fdapde::core::Mesh;
 
 #include "utils/mesh_loader.h"
 #include "utils/utils.h"
+using fdapde::testing::almost_equal;
 using fdapde::testing::MESH_TYPE_LIST;
 using fdapde::testing::MeshLoader;
-using fdapde::testing::almost_equal;
 
 // test suite for testing both non-manifold meshes (2D/3D) and manifold mesh (2.5D/1.5D)
 template <typename E> struct mesh_test : public ::testing::Test {
@@ -48,15 +48,13 @@ TYPED_TEST(mesh_test, elements_construction) {
         auto e = this->mesh_loader.mesh.element(i);
         // check coordinates stored in element built from Mesh object match raw informations
         int j = 0;
-	auto raw_elements = this->mesh_loader.elements_.row(i);
-	auto raw_points = this->mesh_loader.points_;
+        auto raw_elements = this->mesh_loader.elements_.row(i);
+        auto raw_points = this->mesh_loader.points_;
         for (int k = 0; k < raw_elements.size(); ++k) {
             int nodeID = raw_elements[k];
-	    auto p = raw_points.row(nodeID);
+            auto p = raw_points.row(nodeID);
             SVector<TestFixture::N> ePoint = e.coords()[j];
-            for (std::size_t idx = 0; idx < TestFixture::N; ++idx) {
-                EXPECT_TRUE(almost_equal(p[idx], ePoint[idx]));
-            }
+            for (std::size_t idx = 0; idx < TestFixture::N; ++idx) { EXPECT_TRUE(almost_equal(p[idx], ePoint[idx])); }
             j++;
         }
     }
@@ -73,24 +71,51 @@ TYPED_TEST(mesh_test, edges_construction) {
         std::sort(e.begin(), e.end());   // normalize wrt ordering of edge's nodes
         expected_edge_set.push_back(e);
     }
-    // load mesh edges and compute set difference
+    // load mesh edges and compute mask
     std::vector<std::vector<int>> mesh_edge_set;
     std::vector<bool> edge_mask(expected_edge_set.size(), false);
     for (auto it = this->mesh_loader.mesh.edge_begin(); it != this->mesh_loader.mesh.edge_end(); ++it) {
         std::vector<int> e {};
-	for (std::size_t j = 0; j < K; ++j) { e.push_back((*it).node_ids()[j]); }
+        for (std::size_t j = 0; j < K; ++j) { e.push_back((*it).node_ids()[j]); }
         std::sort(e.begin(), e.end());   // normalize wrt ordering of edge's node
 
-	// find this edge in expected set
-	auto search_it = std::find(expected_edge_set.begin(), expected_edge_set.end(), e);
-	if(search_it != expected_edge_set.end()) {
-	  edge_mask[std::distance(expected_edge_set.begin(), search_it)] = true;
-	}
-    }; 
+        // find this edge in expected set
+        auto search_it = std::find(expected_edge_set.begin(), expected_edge_set.end(), e);
+        if (search_it != expected_edge_set.end()) {
+            edge_mask[std::distance(expected_edge_set.begin(), search_it)] = true;
+        }
+    };
     // check all expected edges are indeed computed
     bool result = true;
-    for(bool b : edge_mask) { result &= b; }
+    for (bool b : edge_mask) { result &= b; }
     EXPECT_TRUE(result == true);
+}
+
+// check neighbors informations are computed correctly (up to a permutation of the elements)
+TYPED_TEST(mesh_test, neighbors_construction) {
+    // same number of elements
+    EXPECT_TRUE(this->mesh_loader.neighbors_.size() == this->mesh_loader.mesh.neighbors().size());
+
+    if constexpr (!fdapde::core::is_linear_network<TestFixture::M, TestFixture::N>::value) {
+        bool result = true;
+	int n_row = this->mesh_loader.neighbors_.rows();
+	int n_col = this->mesh_loader.neighbors_.cols();
+	for(std::size_t i = 0; i < n_row; ++i) {
+	  for(std::size_t j = 0; j < n_col; ++j){
+	    if(this->mesh_loader.neighbors_(i,j) != this->mesh_loader.mesh.neighbors()(i,j)) { result = false; }
+	  }
+	}
+        EXPECT_TRUE(result == true);
+    } else {
+      // for linear networks, neighbors are stored as a sparse adjacency matrix
+      bool result = true;
+      for (int k = 0; k < this->mesh_loader.neighbors_.outerSize(); ++k) {
+	for (SpMatrix<int>::InnerIterator it(this->mesh_loader.neighbors_,k); it; ++it) {
+	  if(it.value() != this->mesh_loader.mesh.neighbors().coeff(it.row(), it.col())) { result = false; }
+	}
+      }
+      EXPECT_TRUE(result == true);
+    }
 }
 
 // performs some checks on the mesh topology, e.g. checks that stated neighbors shares exactly M points
