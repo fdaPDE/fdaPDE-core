@@ -84,8 +84,8 @@ template <int M, int N> class ADT : public PointLocator<M, N> {
     typedef std::size_t Index;
 
     BinaryTree<NodeDataType> tree;          // tree data structure to support ADT
-    const Mesh<M, N>& mesh_;             // domain over which build the ADT
-    std::array<double, N> normalization_;   // vector of range-normalization constants
+    const Mesh<M, N>& mesh_;                // domain over which build the ADT
+    SVector<N> normalization_;              // vector of range-normalization constants
 
     // build the ADT structure given a set of 2N-dimensional points.
     void init(const std::vector<std::pair<SVector<2 * N>, Index>>& data) {
@@ -166,7 +166,7 @@ template <int M, int N> class ADT : public PointLocator<M, N> {
         data.reserve(mesh_.n_elements());   // avoid useless reallocations at runtime
         // computation of normalization constants
         for (std::size_t dim = 0; dim < N; ++dim) {
-            normalization_[dim] = 1.0 / (mesh_.range()[dim].second - mesh_.range()[dim].first);
+	  normalization_[dim] = 1.0 / (mesh_.range()(1,dim) - mesh_.range()(0,dim));
         }
 
         for (const auto& element : mesh_) {
@@ -179,8 +179,8 @@ template <int M, int N> class ADT : public PointLocator<M, N> {
             // point scaling means to apply the following linear transformation to each dimension of the point
             // scaledPoint[dim] = (point[dim] - meshRange[dim].first)/(meshRange[dim].second - meshRange[dim].first)
             for (size_t dim = 0; dim < N; ++dim) {
-                bounding_box.first[dim]  = (bounding_box.first [dim] - mesh_.range()[dim].first) * normalization_[dim];
-                bounding_box.second[dim] = (bounding_box.second[dim] - mesh_.range()[dim].first) * normalization_[dim];
+	      bounding_box.first[dim]  = (bounding_box.first [dim] - mesh_.range()(0,dim)) * normalization_[dim];
+	      bounding_box.second[dim] = (bounding_box.second[dim] - mesh_.range()(0,dim)) * normalization_[dim];
             }
             element_to_point << bounding_box.first, bounding_box.second;
             data.emplace_back(element_to_point, element.ID());
@@ -193,7 +193,7 @@ template <int M, int N> class ADT : public PointLocator<M, N> {
         // scale point p in the unit hypercube
         SVector<N> scaled_point;
         for (size_t dim = 0; dim < N; ++dim) {
-            scaled_point[dim] = (p[dim] - mesh_.range()[dim].first) * normalization_[dim];
+	  scaled_point[dim] = (p[dim] - mesh_.range()(0,dim)) * normalization_[dim];
         }
         // build search query
         SVector<2 * N> ll, ur;

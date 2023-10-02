@@ -62,7 +62,7 @@ TYPED_TEST(mesh_test, elements_construction) {
 
 // check edges informations are computed correctly (up to an ordering of the nodes)
 TYPED_TEST(mesh_test, edges_construction) {
-    constexpr int K = TestFixture::MeshType::n_vertices_per_edge;
+    constexpr int K = TestFixture::MeshType::n_vertices_per_facet;
     // load raw edges
     std::vector<std::vector<int>> expected_edge_set;
     for (std::size_t i = 0; i < this->mesh_loader.edges_.rows(); ++i) {
@@ -74,7 +74,7 @@ TYPED_TEST(mesh_test, edges_construction) {
     // load mesh edges and compute mask
     std::vector<std::vector<int>> mesh_edge_set;
     std::vector<bool> edge_mask(expected_edge_set.size(), false);
-    for (auto it = this->mesh_loader.mesh.edge_begin(); it != this->mesh_loader.mesh.edge_end(); ++it) {
+    for (auto it = this->mesh_loader.mesh.facet_begin(); it != this->mesh_loader.mesh.facet_end(); ++it) {
         std::vector<int> e {};
         for (std::size_t j = 0; j < K; ++j) { e.push_back((*it).node_ids()[j]); }
         std::sort(e.begin(), e.end());   // normalize wrt ordering of edge's node
@@ -96,7 +96,7 @@ TYPED_TEST(mesh_test, neighbors_construction) {
     // same number of elements
     EXPECT_TRUE(this->mesh_loader.neighbors_.size() == this->mesh_loader.mesh.neighbors().size());
 
-    if constexpr (!fdapde::core::is_linear_network<TestFixture::M, TestFixture::N>::value) {
+    if constexpr (!fdapde::core::is_network<TestFixture::M, TestFixture::N>::value) {
         bool result = true;
 	int n_row = this->mesh_loader.neighbors_.rows();
 	int n_col = this->mesh_loader.neighbors_.cols();
@@ -139,7 +139,7 @@ TYPED_TEST(mesh_test, boundary_checks) {
                 for (SVector<TestFixture::N> p : eList) {
                     if (std::find(nList.begin(), nList.end(), p) != nList.end()) matches++;
                 }
-                EXPECT_TRUE(matches == TestFixture::M);
+		EXPECT_TRUE(matches == TestFixture::M);
             } else {
                 // check that at least one vertex of e is detected as boundary point
                 bool element_on_boundary = false;

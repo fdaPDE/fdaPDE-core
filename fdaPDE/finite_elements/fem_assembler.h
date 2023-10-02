@@ -41,7 +41,7 @@ template <typename D, typename B, typename I> class Assembler<FEM, D, B, I> {
     const D& mesh_;          // triangulated problem domain
     const I& integrator_;    // quadrature rule
     B reference_basis_ {};   // functional basis over reference unit simplex
-    int dof_;        // overall number of unknowns in FEM linear system
+    int dof_;                // overall number of unknowns in FEM linear system
     const DMatrix<int>& dof_table_;
     DVector<double> f_;   // for non-linear operators, the estimate of the approximated solution 
    public:

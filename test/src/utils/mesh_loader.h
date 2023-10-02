@@ -24,7 +24,7 @@
 #include <random>
 using fdapde::core::CSVReader;
 using fdapde::core::Element;
-using fdapde::core::is_linear_network;
+using fdapde::core::is_network;
 using fdapde::core::is_manifold;
 using fdapde::core::Mesh2D;
 using fdapde::core::Mesh3D;
@@ -64,7 +64,7 @@ template <typename E> struct MeshLoader {
     // raw files
     DMatrix<double> points_{};
     DMatrix<int> elements_{}, edges_{}, boundary_{};
-    typename std::conditional<!is_linear_network<M, N>::value, DMatrix<int>, SpMatrix<int>>::type neighbors_;
+    typename std::conditional<!is_network<M, N>::value, DMatrix<int>, SpMatrix<int>>::type neighbors_;
 
     // RNG for generation of random elements and points in mesh
     std::random_device rng;
@@ -84,7 +84,7 @@ template <typename E> struct MeshLoader {
         edges_ = (int_reader.parse_file<DenseStorage>(edges_file).array() > 0)
 	    .select(int_reader.parse_file<DenseStorage>(edges_file).array()-1, -1).matrix();
         boundary_ = int_reader.parse_file<DenseStorage>(boundary_file);
-	if constexpr (!is_linear_network<M, N>::value)
+	if constexpr (!is_network<M, N>::value)
 	    neighbors_ = (int_reader.parse_file<DenseStorage>(neighbors_file).array() > 0)
 	      .select(int_reader.parse_file<DenseStorage>(neighbors_file).array()-1, -1).matrix();
         else {

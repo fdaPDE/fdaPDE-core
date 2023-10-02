@@ -24,6 +24,7 @@
 #include "../utils/assert.h"
 #include "../utils/compile_time.h"
 #include "../utils/symbols.h"
+#include "geometric_entities.h"
 
 namespace fdapde {
 namespace core {
@@ -35,25 +36,17 @@ template <int M, int N> class Element;   // forward declaration
 using SurfaceElement = Element<2, 3>;
 using NetworkElement = Element<1, 2>;
 
-// number of degrees of freedom associated to an M-dimensional element of degree R
-constexpr int ct_nnodes(const int M, const int R) {
-    return ct_factorial(M + R) / (ct_factorial(M) * ct_factorial(R));
-}
-// number of vertices of an M-dimensional element
-constexpr int ct_nvertices(const int M) { return M + 1; }
-// number of edges of an M-dimensional element
-constexpr int ct_nedges(const int M) { return (M * (M + 1)) / 2; }
-// number of faces of an M-dimensional element
-constexpr int ct_nneighbors(const int M) { return (M == 1) ? fdapde::Dynamic : (M + 1); }
-
 // A single mesh element. This object represents the main **geometrical** abstraction of a physical element.
 // No functional information is carried by instances of this object.
 template <int M, int N> class Element {
    private:
-    std::size_t ID_;                                         // ID of this element
-    std::array<std::size_t, ct_nvertices(M)> node_ids_ {};   // ID of nodes composing the element
+    typedef typename std::conditional<M == 1 && N == 2, std::vector<int>, std::array<int, ct_nneighbors(M)>>::type
+      NeighborsContainer;
+
+    int ID_;                                         // ID of this element
+    std::array<int, ct_nvertices(M)> node_ids_ {};   // ID of nodes composing the element
     std::array<SVector<N>, ct_nvertices(M)> coords_ {};      // nodes coordinates (1-1 mapped with node_ids_)
-    std::vector<int> neighbors_ {};                          // ID of neighboring elements
+    NeighborsContainer neighbors_ {};                        // ID of neighboring elements
     bool boundary_;        // true if the element has at least one vertex on the boundary
     double measure_ = 0;   // measure of the element
 
@@ -61,24 +54,22 @@ template <int M, int N> class Element {
     SMatrix<N, M> J_;       // [J_]_ij = (coords_[j][i] - coords_[0][i])
     SMatrix<M, N> inv_J_;   // J^{-1} (Penrose pseudo-inverse for manifold elements)
    public:
-  //static constexpr int nodes = ct_nnodes(M, R);
     static constexpr int vertices = ct_nvertices(M);
     static constexpr int local_dimension = M;
     static constexpr int embedding_dimension = N;
-  //static constexpr int order = R;
 
     // constructor
     Element() = default;
-    Element(std::size_t ID, const std::array<std::size_t, ct_nvertices(M)>& node_ids,
-	    const std::array<SVector<N>, ct_nvertices(M)>& coords, const std::vector<int>& neighbors, bool boundary);
+    Element(int ID, const std::array<int, ct_nvertices(M)>& node_ids,
+	    const std::array<SVector<N>, ct_nvertices(M)>& coords, const NeighborsContainer& neighbors, bool boundary);
 
     // getters
     const std::array<SVector<N>, ct_nvertices(M)>& coords() const { return coords_; }
-    const std::vector<int>& neighbors() const { return neighbors_; }
+    const NeighborsContainer& neighbors() const { return neighbors_; }
     const int ID() const { return ID_; }
     Eigen::Matrix<double, N, M> barycentric_matrix() const { return J_; }
     Eigen::Matrix<double, M, N> inv_barycentric_matrix() const { return inv_J_; }
-    std::array<std::size_t, ct_nvertices(M)> node_ids() const { return node_ids_; }
+    std::array<int, ct_nvertices(M)> node_ids() const { return node_ids_; }
     double measure() const { return measure_; }   // measure of the element
 
     // check if x is contained in the element
@@ -102,8 +93,8 @@ template <int M, int N> class Element {
 
 template <int M, int N>
 Element<M, N>::Element(
-  std::size_t ID, const std::array<std::size_t, ct_nvertices(M)>& node_ids,
-  const std::array<SVector<N>, ct_nvertices(M)>& coords, const std::vector<int>& neighbors, bool boundary) :
+  int ID, const std::array<int, ct_nvertices(M)>& node_ids, const std::array<SVector<N>, ct_nvertices(M)>& coords,
+  const NeighborsContainer& neighbors, bool boundary) :
     ID_(ID), node_ids_(node_ids), coords_(coords), neighbors_(neighbors), boundary_(boundary) {
     // precompute barycentric coordinate matrix for fast access
     // use first point as reference

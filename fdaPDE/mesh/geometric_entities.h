@@ -14,13 +14,27 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __EDGE_H__
-#define __EDGE_H__
+#ifndef __GEOMETRIC_ENTITIES_H__
+#define __GEOMETRIC_ENTITIES_H__
+
+#include "../utils/symbols.h"
+#include "../utils/combinatorics.h"
 
 namespace fdapde {
 namespace core {
 
-template <int M, int N> class Edge {
+// number of degrees of freedom associated to an M-dimensional element of degree R
+constexpr int ct_nnodes(const int M, const int R) {
+    return ct_factorial(M + R) / (ct_factorial(M) * ct_factorial(R));
+}
+// number of vertices of an M-dimensional element
+constexpr int ct_nvertices(const int M) { return M + 1; }
+// number of edges of an M-dimensional element
+constexpr int ct_nfacets(const int M) { return (M * (M + 1)) / 2; }
+// number of faces of an M-dimensional element
+constexpr int ct_nneighbors(const int M) { return (M == 1) ? fdapde::Dynamic : (M + 1); }
+  
+template <int M, int N> class Facet {
    private:
     std::size_t ID_;
     std::array<int, 2> elements_;        // elements insisting on the edge
@@ -28,8 +42,8 @@ template <int M, int N> class Edge {
     std::array<SVector<N>, M> coords_;   // pyhisical coordinates of the nodes composing the edge
     bool boundary_; // asserted true if the edge is on boundary, i.e. all its nodes are boundary nodes
    public:
-    Edge(std::size_t ID, const std::array<int, M>& node_ids, const std::array<SVector<N>, M>& coords,
-	 const std::array<int, 2>& elements, bool boundary) :
+    Facet(std::size_t ID, const std::array<int, M>& node_ids, const std::array<SVector<N>, M>& coords,
+	  const std::array<int, 2>& elements, bool boundary) :
       ID_(ID), node_ids_(node_ids), coords_(coords), elements_(elements), boundary_(boundary) {};
 
     // getters
@@ -43,4 +57,4 @@ template <int M, int N> class Edge {
 }   // namespace core
 }   // namespace fdapde
 
-#endif   // __EDGE_H__
+#endif   // __GEOMETRIC_ENTITIES_H__

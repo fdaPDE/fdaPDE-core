@@ -44,7 +44,7 @@ template <typename D, typename E, typename F, typename... Ts> class FEMSolverBas
         n_dof_per_element = ct_nnodes(D::local_dimension, fem_order),
         n_dof_per_edge = fem_order - 1,
         n_dof_internal =
-          n_dof_per_element - (D::local_dimension + 1) - D::n_edges_per_element * (fem_order - 1)   // > 0 \iff R > 2
+          n_dof_per_element - (D::local_dimension + 1) - D::n_facets_per_element * (fem_order - 1)   // > 0 \iff R > 2
     };
     typedef D DomainType;
     typedef Integrator<DomainType::local_dimension, fem_order> QuadratureRule;
@@ -184,8 +184,8 @@ void FEMSolverBase<D, E, F, Ts...>::enumerate_dofs(const D& mesh) {
     std::set<int> boundary_set;
     
     // cycle over mesh edges
-    for(auto edge = mesh.edge_begin(); edge != mesh.edge_end(); ++edge) {
-      for(std::size_t i = 0; i < D::n_elements_per_edge; ++i) {
+    for(auto edge = mesh.facet_begin(); edge != mesh.facet_end(); ++edge) {
+      for(std::size_t i = 0; i < D::n_elements_per_facet; ++i) {
 	int element_id = (*edge).adjacent_elements()[i];
 	if(element_id >= 0) {
 	  // search for dof insertion point

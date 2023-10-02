@@ -23,8 +23,16 @@
 namespace fdapde {
 namespace core {
 
-  // a set of utilities for combinatoric calculus
+// a set of utilities for combinatoric calculus
 
+// compile time evaluation of the factorial function
+constexpr int ct_factorial(const int n) { return n ? (n * ct_factorial(n - 1)) : 1; }
+
+// compile time evaluation of the binomial coefficient N over M
+constexpr int ct_binomial_coefficient(const int N, const int M) {
+    return ct_factorial(N) / (ct_factorial(M) * ct_factorial(N - M));
+}
+  
 // all combinations of k elements from a set of n
 template <int K, int N> SMatrix<ct_binomial_coefficient(N, K), K, int> combinations() {
     std::vector<bool> bitmask(K, 1);
