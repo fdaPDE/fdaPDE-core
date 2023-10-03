@@ -26,7 +26,7 @@
 #include "../utils/combinatorics.h"
 #include "../utils/symbols.h"
 #include "element.h"
-#include "geometric_entities.h"
+#include "mesh_utils.h"
 #include "reference_element.h"
 
 namespace fdapde {
@@ -50,19 +50,9 @@ DEFINE_MESH_TYPE_DETECTION_TRAIT(2, 3, surface);
 DEFINE_MESH_TYPE_DETECTION_TRAIT(3, 3, 3d);
 
 // trait to select a proper neighboring storage structure depending on mesh type.
-// use a sparse matrix for storage of adjacency matrix for linear networks
 template <int M, int N> struct neighboring_structure {
     using type = typename std::conditional<is_network<M, N>::value, SpMatrix<int>, DMatrix<int>>::type;
 };
-
-// forward declaration
-template <int M, int N> class Mesh;
-
-// alias exports
-typedef Mesh<2, 2> Mesh2D;
-typedef Mesh<3, 3> Mesh3D;
-typedef Mesh<2, 3> SurfaceMesh;
-typedef Mesh<1, 2> NetworkMesh;
 
 template <int M, int N> class Mesh {
    protected:
@@ -109,15 +99,20 @@ template <int M, int N> class Mesh {
     int n_facets() const { return n_facets_; }
     Facet<M, N> facet(int ID) const;
 
-    int n_edges() const { return is_3d<M, N>::value ? n_facets_ : n_edges_; }
+    int n_edges() const {
+      static_assert(!is_network<M, N>::value);
+      return is_3d<M, N>::value ? n_facets_ : n_edges_;
+    }
     Eigen::Map<const DMatrix<int, Eigen::RowMajor>> edges() const {
+      static_assert(!is_network<M, N>::value);
         if constexpr (is_3d<M, N>::value) {
             return Eigen::Map<const DMatrix<int, Eigen::RowMajor>>(edges_.data(), n_edges_, n_vertices_per_edge);
         } else {
             return facets();
         }
     }
-
+  // getter and iterator on edges
+  
     // iterators support
     struct iterator {   // range-for loop over mesh elements
        private:
@@ -359,15 +354,15 @@ template <int M, int N> Facet<M, N> Mesh<M, N>::facet(int ID) const {
         node_ids[i] = *(facets_.begin() + ID * n_vertices_per_facet + i);
         on_boundary &= is_on_boundary(node_ids[i]);
     }
-    // elements adjacent to this facet
-    typedef typename std::conditional<
-      is_network<M, N>::value,
-      std::vector<int>, std::array<int, n_elements_per_facet>>::type NeighborsContainer;
-    
-    std::array<int, n_elements_per_facet> adjacent_elements {facet_to_element_.at(ID)[0], facet_to_element_.at(ID)[1]};
-    return Facet<M, N>(ID, node_ids, coords, adjacent_elements, on_boundary);
+    return Facet<M, N>(ID, node_ids, coords, facet_to_element_.at(ID), on_boundary);
 }
 
+// alias exports
+typedef Mesh<2, 2> Mesh2D;
+typedef Mesh<3, 3> Mesh3D;
+typedef Mesh<2, 3> SurfaceMesh;
+typedef Mesh<1, 2> NetworkMesh;
+  
 }   // namespace core
 }   // namespace fdapde
 

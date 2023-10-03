@@ -24,7 +24,7 @@
 #include "../utils/assert.h"
 #include "../utils/compile_time.h"
 #include "../utils/symbols.h"
-#include "geometric_entities.h"
+#include "mesh_utils.h"
 
 namespace fdapde {
 namespace core {
@@ -32,12 +32,7 @@ namespace core {
 // M local dimension, N embedding dimension, R order of the element (defaulted to linear finite elements)
 template <int M, int N> class Element;   // forward declaration
 
-// using declarations for manifold specialization
-using SurfaceElement = Element<2, 3>;
-using NetworkElement = Element<1, 2>;
-
-// A single mesh element. This object represents the main **geometrical** abstraction of a physical element.
-// No functional information is carried by instances of this object.
+// A mesh element. M: local dimension, N: embedding dimension
 template <int M, int N> class Element {
    private:
     typedef typename std::conditional<M == 1 && N == 2, std::vector<int>, std::array<int, ct_nneighbors(M)>>::type
@@ -54,10 +49,6 @@ template <int M, int N> class Element {
     SMatrix<N, M> J_;       // [J_]_ij = (coords_[j][i] - coords_[0][i])
     SMatrix<M, N> inv_J_;   // J^{-1} (Penrose pseudo-inverse for manifold elements)
    public:
-    static constexpr int vertices = ct_nvertices(M);
-    static constexpr int local_dimension = M;
-    static constexpr int embedding_dimension = N;
-
     // constructor
     Element() = default;
     Element(int ID, const std::array<int, ct_nvertices(M)>& node_ids,
@@ -87,6 +78,13 @@ template <int M, int N> class Element {
     // allow range for over element's coordinates
     typename std::array<SVector<N>, ct_nvertices(M)>::const_iterator begin() const { return coords_.cbegin(); }
     typename std::array<SVector<N>, ct_nvertices(M)>::const_iterator end() const { return coords_.cend(); }
+
+    // compile time constants
+    enum {
+        n_vertices = ct_nvertices(M),
+	local_dimension = M,
+	embedding_dimension = N
+    };
 };
 
 // implementation details
