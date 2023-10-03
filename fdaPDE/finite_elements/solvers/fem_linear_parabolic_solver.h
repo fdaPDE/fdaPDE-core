@@ -40,33 +40,38 @@ class FEMLinearParabolicSolver : public FEMSolverBase<D, E, F, Ts...> {
         if (!this->is_init) throw std::runtime_error("solver must be initialized first!");
         // define eigen system solver, use SparseLU decomposition.
         Eigen::SparseLU<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int>> solver;
-        std::size_t n = pde.domain().dof();          // degrees of freedom in space
+        std::size_t n = this->n_dofs();          // degrees of freedom in space
         std::size_t m = pde.forcing_data().cols();   // number of iterations for time loop
 
-        this->solution_.resize(pde.domain().dof(), m - 1);
+        this->solution_.resize(this->n_dofs(), m);
         this->solution_.col(0) = pde.initial_condition();   // impose initial condition
-        DVector<double> rhs = ((this->R0_) / deltaT_) * pde.initial_condition() + this->force_.block(0, 0, n, 1);
-        Eigen::SparseMatrix<double> K = (this->R0_) / deltaT_ + this->R1_;   // build system matrix
-
+        DVector<double> rhs(n,1);
+        SpMatrix<double> K = (this->R0_) / deltaT_ + this->R1_;   // build system matrix
+            
         // set dirichlet boundary conditions
-        for (auto it = pde.domain().boundary_begin(); it != pde.domain().boundary_end(); ++it) {
+        for (auto it = this->boundary_dofs_begin(); it != this->boundary_dofs_end(); ++it) {
             K.row(*it) *= 0;            // zero all entries of this row
             K.coeffRef(*it, *it) = 1;   // set diagonal element to 1 to impose equation u_j = b_j
         }
-        // execute temporal loop to solve ODE system via forward-euler scheme
-        for (std::size_t i = 1; i < m - 1; ++i) {
-            // impose boundary conditions
-            for (auto it = pde.domain().boundary_begin(); it != pde.domain().boundary_end(); ++it) {
-                rhs[*it] = pde.boundary_data().at(*it)[i];
-            }
-            solver.compute(K);                       // prepare solver
+        
+        K.makeCompressed();
+        
+        solver.compute(K);                           // prepare solver
             if (solver.info() != Eigen::Success) {   // stop if something was wrong...
                 this->success = false;
                 return;
+        }
+        
+        // execute temporal loop to solve ODE system via forward-euler scheme
+        for (std::size_t i = 0; i < m - 1; ++i) {
+            rhs = ((this->R0_) / deltaT_) * this->solution_.col(i) + this->force_.block(n*(i+1), 0, n, 1);  
+            // impose boundary conditions
+            for (auto it = this->boundary_dofs_begin(); it != this->boundary_dofs_end(); ++it) {
+                rhs[*it] = pde.boundary_data()(*it,i+1);
             }
-            DVector<double> u_i = solver.solve(rhs);   // solve linear system
-            this->solution_.col(i) = u_i;              // append time step solution to solution matrix
-            rhs = ((this->R0_) / deltaT_) * u_i + this->force_.block(n * i, 0, n, 1);   // update rhs for next iteration
+            
+            this->solution_.col(i+1) = solver.solve(rhs); // append time step solution to solution matrix
+            
         }
 	this->success = true;
         return;

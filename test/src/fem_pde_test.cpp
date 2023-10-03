@@ -27,6 +27,7 @@ using fdapde::core::PDE;
 using fdapde::core::ScalarField;
 using fdapde::core::advection;
 using fdapde::core::laplacian;
+using fdapde::core::dt;
 using fdapde::core::FEM;
 using fdapde::core::fem_order;
 
@@ -216,4 +217,163 @@ TEST(fem_pde_test, advection_diffusion_isotropic_order2) {
     DMatrix<double> error_ = solution_ex - pde_.solution();
     double error_L2 = (pde_.R0() * error_.cwiseProduct(error_)).sum();
     EXPECT_TRUE(error_L2 < 1e-7);
+}
+
+// check error of approximated solution by an order 2 FEM for the parabolic problem
+//   dt(u) -\Laplacian(u) = f(x,t)   in \Omega
+//   u = g                           on boundary
+//   u0 = h                          in \Omega at times t0
+// where \Omega is the [0,1] x [0,1] 2D unit square, f(x,t) = (8*pi*pi-1.)*sin(2*pi*x[0])*sin(2*pi*x[1])*exp(-t)
+//                                                   g(x,t) = sin(2*pi*x[0])*sin(2*pi*x[1])*std::exp(-t)
+//                                                   h(x)   = sin(2*pi*x[0])*sin(2*pi*x[1])*std::exp(-t)
+TEST(fem_pde_test, parabolic_isotropic_order2) {
+    // exact solution
+    constexpr double pi = 3.14159265358979323846;
+    int M = 101;
+    DMatrix<double> times(M,1);
+    double time_max = 1.;
+    for(int j = 0; j < M; ++j){
+      times(j) = time_max/(M-1) * j;
+    }
+    
+    int num_refinements = 1;
+    DMatrix<double> error_L2 = DMatrix<double>::Zero(M,num_refinements);
+    
+    auto solution_expr = [](SVector<2> x, double t) -> double { return std::sin(2*pi*x[0])*std::sin(2*pi*x[1])*std::exp(-t); };
+    auto forcing_expr  = [](SVector<2> x, double t) -> double { return (8*pi*pi-1.)*std::sin(2*pi*x[0])*std::sin(2*pi*x[1])*std::exp(-t); };
+      
+    MeshLoader<Mesh2D> unit_square("unit_square");
+    auto L = dt<FEM>() -laplacian<FEM>();
+    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<2>> pde_(unit_square.mesh);
+    pde_.set_differential_operator(L);
+ 
+    // compute boundary condition and exact solution
+    DMatrix<double> nodes_ = pde_.dof_coords();
+    DMatrix<double> dirichlet_bc(nodes_.rows(), M);
+    DMatrix<double> solution_ex (nodes_.rows(), M);
+    DMatrix<double> initial_condition(nodes_.rows(),1);
+      
+    for (int i = 0; i < nodes_.rows(); ++i) {
+      for(int j = 0; j < M; ++j){
+        dirichlet_bc(i,j) = solution_expr(nodes_.row(i),times(j));
+        solution_ex(i,j)  = solution_expr(nodes_.row(i),times(j));
+      }
+    }
+    //dirichlet_bc = DMatrix<double>::Zero(nodes_.rows(),M);
+      
+    for(int i = 0; i < nodes_.rows(); ++i){
+      initial_condition(i) = solution_expr(nodes_.row(i),times(0));
+    }
+    // set dirichlet conditions
+    pde_.set_dirichlet_bc(dirichlet_bc);
+      
+    // set initial condition
+    pde_.set_initial_condition(initial_condition);
+      
+    // request quadrature nodes and evaluate forcing on them
+    DMatrix<double> quadrature_nodes = pde_.integrator().quadrature_nodes(unit_square.mesh);
+    DMatrix<double> f(quadrature_nodes.rows(), M);
+    for (int i = 0; i < quadrature_nodes.rows(); ++i) {
+      for(int j = 0; j < M; ++j){
+        f(i,j) = forcing_expr(quadrature_nodes.row(i), times(j));
+      }
+    }
+    pde_.set_forcing(f);
+    // init solver and solve differential problem
+    pde_.init();
+    pde_.solve();
+    
+    // check computed error within theoretical expectations  
+    DMatrix<double> error_(nodes_.rows(),1);
+    for(int j = 0; j < M; ++j){
+      error_ = solution_ex.col(j) - pde_.solution().col(j);
+      error_L2(j,0) = (pde_.R0() * error_.cwiseProduct(error_)).sum();
+    }
+    
+    EXPECT_TRUE(error_L2.maxCoeff() < 1e-7);
+}
+
+// check the convergence rate (fixed time step, FEM order 1) for the parabolic problem
+//   dt(u) -\Laplacian(u) = f(x,t)   in \Omega
+//   u = g                           on boundary
+//   u0 = h                          in \Omega at times t0
+// where \Omega is the [0,1] x [0,1] 2D unit square, f(x,t) = (8*pi*pi-1.)*sin(2*pi*x[0])*sin(2*pi*x[1])*exp(-t)
+//                                                   g(x,t) = sin(2*pi*x[0])*sin(2*pi*x[1])*std::exp(-t)
+//                                                   h(x)   = sin(2*pi*x[0])*sin(2*pi*x[1])*std::exp(-t)
+TEST(fem_pde_test, parabolic_isotropic_order1_convergence) {
+    // exact solution
+    constexpr double pi = 3.14159265358979323846;
+    int M = 101;
+    DMatrix<double> times(M,1);
+    double time_max = 1.;
+    for(int j = 0; j < M; ++j){
+      times(j) = time_max/(M-1) * j;
+    }
+    
+    int num_refinements = 4;
+    DMatrix<int> N(num_refinements, 1); // number of refinements
+    N << 16, 32, 64, 128;
+    DMatrix<double> order(num_refinements-1,1);
+    DMatrix<double> error_L2 = DMatrix<double>::Zero(M,num_refinements);
+    
+    auto solution_expr = [](SVector<2> x, double t) -> double { return std::sin(2*pi*x[0])*std::sin(2*pi*x[1])*std::exp(-t); };
+    auto forcing_expr  = [](SVector<2> x, double t) -> double { return (8*pi*pi-1.)*std::sin(2*pi*x[0])*std::sin(2*pi*x[1])*std::exp(-t); };
+    
+    for( int n = 0; n < num_refinements; ++n){
+      std::string domain_name = "unit_square_" + std::to_string(N(n));    
+      MeshLoader<Mesh2D> unit_square(domain_name);
+      auto L = dt<FEM>() -laplacian<FEM>();
+      PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_square.mesh);
+      pde_.set_differential_operator(L);
+ 
+      // compute boundary condition and exact solution
+      DMatrix<double> nodes_ = pde_.dof_coords();
+      DMatrix<double> dirichlet_bc(nodes_.rows(), M);
+      DMatrix<double> solution_ex (nodes_.rows(), M);
+      DMatrix<double> initial_condition(nodes_.rows(),1);
+      
+      for (int i = 0; i < nodes_.rows(); ++i) {
+        for(int j = 0; j < M; ++j){
+          dirichlet_bc(i,j) = solution_expr(nodes_.row(i),times(j));
+          solution_ex(i,j)  = solution_expr(nodes_.row(i),times(j));
+        }
+      }
+      //dirichlet_bc = DMatrix<double>::Zero(nodes_.rows(),M);
+      
+      for(int i = 0; i < nodes_.rows(); ++i){
+        initial_condition(i) = solution_expr(nodes_.row(i),times(0));
+      }
+      // set dirichlet conditions
+      pde_.set_dirichlet_bc(dirichlet_bc);
+      
+      // set initial condition
+      pde_.set_initial_condition(initial_condition);
+      
+      // request quadrature nodes and evaluate forcing on them
+      DMatrix<double> quadrature_nodes = pde_.integrator().quadrature_nodes(unit_square.mesh);
+      DMatrix<double> f(quadrature_nodes.rows(), M);
+      for (int i = 0; i < quadrature_nodes.rows(); ++i) {
+        for(int j = 0; j < M; ++j){
+          f(i,j) = forcing_expr(quadrature_nodes.row(i), times(j));
+        }
+      }
+      pde_.set_forcing(f);
+      // init solver and solve differential problem
+      pde_.init();
+      pde_.solve();
+      
+      // check computed error within theoretical expectations  
+      DMatrix<double> error_(nodes_.rows(),1);
+      for(int j = 0; j < M; ++j){
+        error_ = solution_ex.col(j) - pde_.solution().col(j);
+        error_L2(j,n) = std::sqrt( (pde_.R0() * error_.cwiseProduct(error_)).sum());
+      } 
+      
+    }
+    
+    // check estimated convergence rate
+    for(int n = 1; n < num_refinements; ++n){
+      order(n-1) = std::log2(error_L2(M-1,n-1)/error_L2(M-1,n));
+      EXPECT_TRUE(floor(order(n-1)) == 2);
+    }
 }
