@@ -43,6 +43,8 @@ struct PDEBase {
     virtual void init()                              = 0;
     virtual void solve()                             = 0;
     virtual void set_dirichlet_bc(const DMatrix<double>&) = 0;
+    virtual DMatrix<double> dof_coords()  = 0;
+    virtual void set_initial_condition(const DVector<double>& data) = 0;
 };
 typedef std::shared_ptr<PDEBase> pde_ptr;
 
@@ -81,7 +83,7 @@ class PDE : public PDEBase {
 
     // setters
     virtual void set_dirichlet_bc(const DMatrix<double>& data) { boundary_data_ = data; }
-    void set_initial_condition(const DVector<double>& data) { initial_condition_ = data; };
+    virtual void set_initial_condition(const DVector<double>& data) { initial_condition_ = data; };
 
     // getters
     const DomainType& domain() const { return domain_; }
@@ -92,7 +94,7 @@ class PDE : public PDEBase {
     const QuadratureRule& integrator() const { return solver_.integrator(); }
     const FunctionSpace& reference_basis() const { return solver_.reference_basis(); }
     const FunctionBasis& basis() const { return solver_.basis(); }
-    DMatrix<double> dof_coords() { return solver_.dofs_coords(domain_); }
+    virtual DMatrix<double> dof_coords() { return solver_.dofs_coords(domain_); }
   
 
   // pde_ptr accessible interface

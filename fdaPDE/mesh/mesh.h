@@ -294,7 +294,7 @@ Mesh<M, N>::Mesh(const DMatrix<double>& nodes, const DMatrix<int>& elements, con
 
 // constructor specialization for linear networks (1.5D domains)
 template <>
-Mesh<1, 2>::Mesh(const DMatrix<double>& nodes, const DMatrix<int>& elements, const DMatrix<int>& boundary) :
+inline Mesh<1, 2>::Mesh(const DMatrix<double>& nodes, const DMatrix<int>& elements, const DMatrix<int>& boundary) :
     nodes_(nodes), elements_(elements), boundary_(boundary) {
     // store number of nodes and number of elements
     n_nodes_ = nodes_.rows();
