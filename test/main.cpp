@@ -29,7 +29,7 @@
 // linear_algebra
 #include "src/kronecker_product_test.cpp"
 #include "src/vector_space_test.cpp"
-// // finite_elements
+// finite_elements
 #include "src/fem_operators_test.cpp"
 #include "src/fem_pde_test.cpp"
 #include "src/integration_test.cpp"

@@ -157,22 +157,22 @@ template <int N, int R>
 class PolynomialDerivative : public VectorExpr<N, N, PolynomialDerivative<N, R>> {
    private:
     // compile time informations
-    static const constexpr unsigned MON = ct_binomial_coefficient(R + N, R);
+    static const constexpr unsigned n_monomials = ct_binomial_coefficient(R + N, R);
     static const constexpr PolyTable<N, R> poly_table_ = ct_poly_exp<N, R>();
     static const constexpr PolyGradTable<N, R> poly_grad_table_ = ct_grad_exp<N, R>(poly_table_);
 
-    std::size_t i_;                          // direction along which the derivative is computed
-    std::array<double, MON> coeff_vector_;   // coefficients of the polynomial whose derivative must be computed
+    std::size_t i_;                                  // direction along which the derivative is computed
+    std::array<double, n_monomials> coeff_vector_;   // coefficients of the polynomial whose derivative must be computed
    public:
     // constructor
     PolynomialDerivative() = default;
-    PolynomialDerivative(const std::array<double, MON>& coeff_vector, std::size_t i) :
+    PolynomialDerivative(const std::array<double, n_monomials>& coeff_vector, std::size_t i) :
         coeff_vector_(coeff_vector), i_(i) {};
     // call operator
     inline double operator()(const SVector<N>& p) const {
         double value = 0;
         // cycle over monomials
-        for (size_t m = 0; m < MON; ++m) {
+        for (size_t m = 0; m < n_monomials; ++m) {
             if (poly_table_[m][i_] != 0)   // skip powers of zero, their derivative is zero
                 value +=
                   coeff_vector_[m] * poly_table_[m][i_] *
@@ -186,8 +186,8 @@ class PolynomialDerivative : public VectorExpr<N, N, PolynomialDerivative<N, R>>
 template <int N, int R>
 class MultivariatePolynomial : public ScalarExpr<N, MultivariatePolynomial<N, R>> {
    private:
-    static const constexpr int MON = ct_binomial_coefficient(R + N, R);
-    std::array<double, MON> coeff_vector_;   // vector of coefficients
+    static const constexpr int n_monomials = ct_binomial_coefficient(R + N, R);
+    std::array<double, n_monomials> coeff_vector_;   // vector of coefficients
     VectorField<N, N, PolynomialDerivative<N, R>> gradient_;
    public:
     // compute this at compile time once, let public access
@@ -197,20 +197,22 @@ class MultivariatePolynomial : public ScalarExpr<N, MultivariatePolynomial<N, R>
 
     // constructor
     MultivariatePolynomial() = default;
-    MultivariatePolynomial(const std::array<double, MON>& coeff_vector) : coeff_vector_(coeff_vector) {
+    MultivariatePolynomial(const std::array<double, n_monomials>& coeff_vector) : coeff_vector_(coeff_vector) {
         // prepare gradient vector
-        std::array<PolynomialDerivative<N, R>, N> gradient;
+        std::vector<PolynomialDerivative<N, R>> gradient;
+	gradient.reserve(N);
         // define i-th element of gradient field
-        for (std::size_t i = 0; i < N; ++i) { gradient[i] = PolynomialDerivative<N, R>(coeff_vector, i); }
+        for (std::size_t i = 0; i < N; ++i) { gradient.emplace_back(coeff_vector, i); }
         gradient_ = VectorField<N, N, PolynomialDerivative<N, R>>(gradient);
     };
     // evaluate polynomial at point
     double operator()(const SVector<N>& point) const {
-        return MonomialSum<MON - 1, MON, N, SVector<N>, std::array<std::array<unsigned, N>, MON>>::unfold(
-          coeff_vector_, point, poly_table);
+        return MonomialSum<
+          n_monomials - 1, n_monomials, N, SVector<N>,
+          std::array<std::array<unsigned, N>, n_monomials>>::unfold(coeff_vector_, point, poly_table);
     };
     VectorField<N, N, PolynomialDerivative<N, R>> derive() const { return gradient_; };   // return callable gradient
-    std::array<double, MON> getCoeff() const { return coeff_vector_; }
+    std::array<double, n_monomials> getCoeff() const { return coeff_vector_; }
 };
 
 }   // namespace core

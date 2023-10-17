@@ -31,6 +31,7 @@ using fdapde::core::MultivariatePolynomial;
 using fdapde::core::ReferenceElement;
 using fdapde::core::Integrator;
 using fdapde::core::VectorField;
+using fdapde::core::IntegratorTable;
 
 #include "utils/constants.h"
 using fdapde::testing::DOUBLE_TOLERANCE;

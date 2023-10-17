@@ -20,12 +20,13 @@
 #include <Eigen/Core>
 #include <Eigen/Sparse>
 #include <memory>
+#include "traits.h"
 
 // static structures, allocated on stack at compile time.
-template <int N> using SVector = Eigen::Matrix<double, N, 1>;
+template <int N, typename T = double> using SVector = Eigen::Matrix<T, N, 1>;
 template <int N, int M = N, typename T = double> using SMatrix = Eigen::Matrix<T, N, M>;
 
-// dynamic size, head-appocated, structures.
+// dynamic size, heap-appocated, structures.
 template <typename T, int Options_ = Eigen::ColMajor>
 using DMatrix = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Options_>;
 template <typename T> using DVector    = Eigen::Matrix<T, Eigen::Dynamic, 1>;
@@ -38,6 +39,22 @@ namespace fdapde {
 
 const int Dynamic = -1;       // used when the size of a vector or matrix is not known at compile time
 const int random_seed = -1;   // signals that a random seed is used somewhere
+
+template <int N, typename T = double> struct static_dynamic_vector_selector {
+    using type = typename std::conditional<N == Dynamic, DVector<T>, SVector<N, T>>::type;
+};
+template <int N, typename T = double>
+using static_dynamic_vector_selector_t = typename static_dynamic_vector_selector<N, T>::type;
+
+template <int N, int M, typename T = double> struct static_dynamic_matrix_selector {
+    using type = typename switch_type<
+      switch_type_case<N == Dynamic && M == Dynamic, DMatrix<T>>,
+      switch_type_case<N == Dynamic && M != Dynamic, Eigen::Matrix<T, N, Eigen::Dynamic>>,
+      switch_type_case<N != Dynamic && M == Dynamic, Eigen::Matrix<T, Eigen::Dynamic, M>>,
+      switch_type_case<N != Dynamic && M != Dynamic, SMatrix<N, M, T>>>::type;
+};
+template <int N, int M, typename T = double>
+using static_dynamic_matrix_selector_t = typename static_dynamic_matrix_selector<N, M, T>::type;
 
 namespace internal {
 // define symbols for storage type
