@@ -19,6 +19,7 @@
 
 #include "fields/differentiable_field.h"
 #include "fields/dot_product.h"
+#include "fields/field_derivatives.h"
 #include "fields/field_ptrs.h"
 #include "fields/matrix_expressions.h"
 #include "fields/matrix_field.h"

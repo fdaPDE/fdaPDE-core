@@ -38,8 +38,8 @@ TEST(vector_field_test, define_from_lambda) {
     for (std::size_t i = 0; i < 2; ++i) EXPECT_DOUBLE_EQ(field1(p)[i], trueEvaluation[i]);
 
     // define vector field explicitly declaring an array of lambdas
-    std::array<std::function<double(SVector<2>)>, 2> comp_array = {x_comp, y_comp};
-    VectorField<2> field2(comp_array);
+    std::vector<std::function<double(SVector<2>)>> comp_vect({x_comp, y_comp});
+    VectorField<2> field2(comp_vect);
     for (std::size_t i = 0; i < 2; ++i) EXPECT_DOUBLE_EQ(field2(p)[i], trueEvaluation[i]);
 
     // if all asserts are verified by transitivity all the definitions give origin to the same object

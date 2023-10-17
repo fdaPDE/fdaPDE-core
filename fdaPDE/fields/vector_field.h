@@ -20,6 +20,7 @@
 #include <type_traits>
 
 #include "../utils/symbols.h"
+#include "../utils/assert.h"
 #include "dot_product.h"
 #include "scalar_field.h"
 #include "vector_expressions.h"
@@ -27,34 +28,37 @@
 namespace fdapde {
 namespace core {
 
+template <typename T, typename std::enable_if<T::value, int>::type = 0>
+struct enable_constructor_if {};
+  
 // template class representing a general vector field from an M-dimensional to an N-dimensional space.
 // Support expression template arithmetic.
 template <int M, int N = M, typename F = std::function<double(SVector<M>)>>
 class VectorField : public VectorExpr<M, N, VectorField<M, N, F>> {
     static_assert(
-      std::is_invocable<F, SVector<N>>::value &&
-      std::is_same<typename std::invoke_result<F, SVector<N>>::type, double>::value);
+      std::is_invocable<F, SVector<M>>::value &&
+      std::is_same<typename std::invoke_result<F, SVector<M>>::type, double>::value);
    private:
     // each array element is a functor which computes the i-th component of the vector
-    std::array<ScalarField<M, F>, N> field_;
+    std::vector<ScalarField<M, F>> field_ {};
    public:
     // constructor
-    VectorField() = default;
-    VectorField(const std::array<F, N>& field) {
-        for (std::size_t i = 0; i < N; ++i) {   // assign a ScalarField to each component of the VectorField
-            field_[i] = ScalarField<M, F>(field[i]);
-        }
+    VectorField() { field_.resize(N); };
+    VectorField(const std::vector<F>& components) {
+        field_.reserve(components.size());
+        for (std::size_t i = 0; i < components.size(); ++i) { field_.emplace_back(components[i]); }
     }
     // wrap a VectorExpr into a valid VectorField
     template <
       typename E, typename U = F,
       typename std::enable_if<std::is_same<U, std::function<double(SVector<N>)>>::value, int>::type = 0>
     VectorField(const VectorExpr<M, N, E>& expr) {
-        for (std::size_t i = 0; i < N; ++i) { field_[i] = expr[i]; }
+      field_.resize(N);
+      for (std::size_t i = 0; i < field_.size(); ++i) { field_[i] = expr[i]; }
     }
     // initializer for a zero field
     static VectorField<N, N, ZeroField<N>> Zero() {
-        return VectorField<N, N, ZeroField<N>>(std::array<ZeroField<N>, N> {});
+      return VectorField<N, N, ZeroField<N>>(std::vector<ZeroField<N>>(N));
     }
     // call operator
     inline SVector<N> operator()(const SVector<M>& point) const;
@@ -72,7 +76,7 @@ class VectorField : public VectorExpr<M, N, VectorField<M, N, F>> {
 
 template <int M, int N, typename F> SVector<N> VectorField<M, N, F>::operator()(const SVector<M>& point) const {
     SVector<N> result;
-    for (size_t i = 0; i < N; ++i) {
+    for (std::size_t i = 0; i < result.rows(); ++i) {
         // call callable for each dimension of the vector field
         result[i] = field_[i](point);
     }

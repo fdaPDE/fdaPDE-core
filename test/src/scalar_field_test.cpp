@@ -24,7 +24,9 @@ using fdapde::core::DifferentiableScalarField;
 using fdapde::core::ScalarField;
 using fdapde::core::TwiceDifferentiableScalarField;
 using fdapde::core::VectorField;
+using fdapde::core::MatrixField;
 using fdapde::core::ScalarDataWrapper;
+using fdapde::Dynamic;
 
 #include "utils/constants.h"
 using fdapde::testing::DOUBLE_TOLERANCE;
@@ -57,8 +59,9 @@ TEST(scalar_field_test, gradient_approximation) {
     };
     // build the ScalarField object
     ScalarField<2> field(fieldExpr);
+    field.set_step(0.01);
     // get the gradient function
-    VectorField<2> grad = field.derive(0.01);
+    auto grad = field.derive();
     // define evaluation point and true gradient vector
     SVector<2> p(1, 1);
     SVector<2> gradient = SVector<2>(std::exp(3), std::exp(3));
@@ -66,7 +69,7 @@ TEST(scalar_field_test, gradient_approximation) {
     EXPECT_TRUE((grad(p) - gradient).squaredNorm() < std::pow(0.01, 2));
 
     // access to gradient approximation directly, without passing to a VectorField object
-    SVector<2> approxGradient = field.approx_gradient(p, 0.01);
+    SVector<2> approxGradient = field.derive()(p);
     EXPECT_TRUE((approxGradient - gradient).squaredNorm() < std::pow(0.01, 2));
 }
 
@@ -77,8 +80,9 @@ TEST(scalar_field_test, hessian_approximation) {
     };
     // build the ScalarField object
     ScalarField<2> field(fieldExpr);
+    field.set_step(0.01);
     // get the hessian function
-    ScalarField<2>::HessianType hess = field.derive_twice(0.01);
+    auto hess = field.derive_twice();
     // define evaluation point and true hessian matrix
     SVector<2> p(1, 1);
     SMatrix<2> hessian;
@@ -97,6 +101,7 @@ TEST(scalar_field_test, discontinuous_field) {
 
     // build the ScalarField object
     ScalarField<2> field(fieldExpr);
+    field.set_step(0.01);
     // test if the ScalarField wraps correctly the lambda
     SVector<2> p(1, 1);
     double result = 1;
@@ -104,14 +109,14 @@ TEST(scalar_field_test, discontinuous_field) {
     // expect equality
     EXPECT_EQ(field(p), result);
 
-    ScalarField<2>::GradientType grad = field.derive(0.01);
+    auto grad = field.derive();
     // define true gradient vector
     SVector<2> gradient = SVector<2>(0, 0);
     // test if the obtained gradient is approximated correctly (truncation error is of order O(h^2), h is the step size)
     EXPECT_TRUE((grad(p) - gradient).squaredNorm() < std::pow(0.01, 2));
 
     // get the hessian function
-    ScalarField<2>::HessianType hess = field.derive_twice(0.01);
+    auto hess = field.derive_twice();
     SMatrix<2> hessian;
     hessian << 0, 0, 0, 0;
     // test if the obtained gradient is approximated correctly (truncation error is of order O(h^2), h is the step size)
@@ -119,7 +124,7 @@ TEST(scalar_field_test, discontinuous_field) {
 }
 
 // check expression template mechanism for ScalarField
-TEST(scalar_field_test, expressions) {
+TEST(scalar_field_test, static_expressions) {
     // define two scalar fields sf1 and sf2
     auto fieldExpr1 = [](SVector<2> x) -> double {   // x^3 + y
         return std::pow(x[0], 3) + x[1];
@@ -181,12 +186,13 @@ TEST(scalar_field_test, define_from_expression) {
     // wrap sf3 in a scalar field
     auto fieldExpr3 = [=](SVector<2> x) -> double { return sf3(x); };
     ScalarField<2> sf4(fieldExpr3);
-
+    sf4.set_step(1e-2);
+    
     // check expression is wrapped correctly
     SVector<2> p(1, 1);
     EXPECT_EQ(sf4(p), sf1(p) + sf2(p) / sf1(p));
 
-    VectorField<2> grad = sf4.derive(0.01);
+    VectorField<2> grad = sf4.derive();
     // exact gradient evaluated at p
     SVector<2> gradient = SVector<2>(3 - 0.25 * std::exp(3), 1 + 0.25 * std::exp(3));
     EXPECT_TRUE((grad(p) - gradient).squaredNorm() < std::pow(0.01, 2));
@@ -236,11 +242,11 @@ TEST(scalar_field_test, differentiable_field) {
         return std::pow(x[0], 3) + x[1];
     };
     // wrap baseField into a scalar field
-    ScalarField sf(baseField);
+    ScalarField<2> sf(baseField);
     // build explicitly the gradient field using list initialization
     std::function<double(SVector<2>)> dx = [](SVector<2> x) -> double { return 3 * std::pow(x[0], 2); };
     std::function<double(SVector<2>)> dy = [](SVector<2> x) -> double { return 1; };
-    DifferentiableScalarField<2> df_(baseField, std::array<decltype(dx), 2> {dx, dy});
+    DifferentiableScalarField<2> df_(baseField, std::vector<decltype(dx)> {dx, dy});
 
     // define evaluation point
     SVector<2> p(1, 1);
@@ -259,17 +265,15 @@ TEST(scalar_field_test, twice_differentiable_field) {
     };
     std::function<double(SVector<2>)> dx = [](SVector<2> x) -> double { return 3 * std::pow(x[0], 2); };
     std::function<double(SVector<2>)> dy = [](SVector<2> x) -> double { return 1; };
-    std::function<SMatrix<2>(SVector<2>)> hess = [](SVector<2> x) -> SMatrix<2> {
-        SMatrix<2> H;
-        H << 6 * x[0], 0, 0, 0;
-        return H;
-    };
-
+    MatrixField<2> hess;
+    hess(0,0) = [](SVector<2> x) -> double { return 6 * x[0]; };
+    hess(1,0) = [](SVector<2> x) -> double { return 0; };
+    hess(0,1) = [](SVector<2> x) -> double { return 0; };
+    hess(1,1) = [](SVector<2> x) -> double { return 0; };
+    
     // wrap all in a twice differentiable scalar field
     ScalarField<2> sf(baseField);
-    TwiceDifferentiableScalarField<
-      2, decltype(baseField), VectorField<2, 2, std::function<double(SVector<2>)>>, decltype(hess)>
-      tdf(baseField, std::array<decltype(dx), 2> {dx, dy}, hess);
+    TwiceDifferentiableScalarField<2> tdf(baseField, std::vector<decltype(dx)> {dx, dy}, hess);
     // define evaluation point
     SVector<2> p(1, 1);
     SMatrix<2> hessian;
@@ -297,4 +301,48 @@ TEST(scalar_field_test, scalar_data_wrapper) {
     double eval = sf(p);
 
     EXPECT_EQ(eval, 6.0);
+}
+
+TEST(scalar_field_test, dynamic_expressions) {
+    // define dynamic scalar fields
+    ScalarField<Dynamic> f(4);
+    f = [](DVector<double> x) -> double { return x[0] + x[1]; };
+    ScalarField<Dynamic> g(4);
+    g = [](DVector<double> x) -> double {   // implements \sum_i x_i
+        double value = 0;
+        for (int i = 0; i < x.rows(); ++i) { value += x[i]; }
+        return value;
+    };
+    // evaluation point
+    DVector<double> p(4);
+    p << 1, 1, 2, 2;
+    // build various expressions and test for equality
+    auto h1 = f + 2 * g + 5;
+    EXPECT_DOUBLE_EQ(h1(p), 19.0);
+    auto h2 = sin(h1) / 2;
+    EXPECT_DOUBLE_EQ(h2(p), std::sin(19) / 2);
+    auto h3 = -h2;
+    EXPECT_DOUBLE_EQ(h3(p), -std::sin(19) / 2);
+    auto h4 = h1 - h2 + h3;
+    EXPECT_DOUBLE_EQ(h4(p), 19.0 - std::sin(19));
+}
+
+TEST(scalar_field_test, expression_differentials_approximation) {
+    // define scalar expression and extract its gradient and hessian
+    ScalarField<2> f;
+    f = [](SVector<2> x) -> double { return x[0] + x[1]; };
+    auto expr = sin(f) + 2 * f;
+    expr.set_step(1e-4);
+    auto grad = expr.derive();
+    auto hess = expr.derive_twice();
+    // evaluation point
+    SVector<2> p(1,1);
+
+    SVector<2> gradient;
+    gradient << std::cos(2) + 2, std::cos(2) + 2;
+    ASSERT_TRUE((grad(p) - gradient).norm() < DOUBLE_TOLERANCE);
+
+    SMatrix<2> hessian;
+    hessian << -std::sin(2), -std::sin(2), -std::sin(2), -std::sin(2);
+    ASSERT_TRUE((hess(p) - hessian).norm() < DOUBLE_TOLERANCE);
 }

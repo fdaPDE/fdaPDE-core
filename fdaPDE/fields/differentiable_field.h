@@ -29,50 +29,45 @@ namespace core {
 template <int M, int N, typename F> class VectorField;
 template <int M, int N, int K, typename F> class MatrixField;
 
-// The following classes can be used to force particular regularity conditions on a scalar field
-// If GradientType_ and HessianType_ do not expose an interface compatible with VectorField and MatrixField
-// respectively, do not expect derive() and derive_twice() to be accepted by the field arithmetic
-
 template <int N,   // input space dimension
-	  typename F = std::function<double(SVector<N>)>,
-	  typename G = VectorField<N, N, std::function<double(SVector<N>)>>,
-	  typename H = MatrixField<N, N, N, std::function<double(SVector<N>)>>>
-class DifferentiableScalarField : public ScalarField<N, F, G, H> {
+	  typename F = std::function<double(static_dynamic_vector_selector_t<N>)>,
+	  typename G = std::function<double(static_dynamic_vector_selector_t<N>)>>
+class DifferentiableScalarField : public ScalarField<N, F> {
    protected:
+    typedef ScalarField<N, F> Base;
     typedef F FieldType;
-    typedef G GradientType;
-    typedef H HessianType;
-    typedef ScalarField<N, F, G, H> Base;
+    typedef VectorField<N, N, G> GradientType;
+    typedef typename static_dynamic_vector_selector<N>::type VectorType;
+    static_assert(std::is_invocable<G, VectorType>::value);
 
     GradientType df_ {};   // gradient vector of scalar field f
    public:
-    // constructors (f: expression of the field, df: expression of its gradient)
     DifferentiableScalarField(const FieldType& f, const GradientType& df) : Base(f), df_(df) {};
-    // require array-initialization of GradientType with elements of type Args
     template <typename Args>
-    DifferentiableScalarField(const FieldType& f, const std::array<Args, N>& df) : Base(f), df_(GradientType(df)) {};
+    DifferentiableScalarField(const FieldType& f, const std::vector<Args>& df) : Base(f), df_(GradientType(df)) {};
     GradientType derive() { return df_; }   // return analytical gradient
 };
 
 template <int N,   // input space dimension
-	  typename F = std::function<double(SVector<N>)>,
-	  typename G = VectorField<N, N, std::function<double(SVector<N>)>>,
-	  typename H = MatrixField<N, N, N, std::function<double(SVector<N>)>>>
-class TwiceDifferentiableScalarField : public DifferentiableScalarField<N, F, G, H> {
+	  typename F = std::function<double(static_dynamic_vector_selector_t<N>)>,
+	  typename G = std::function<double(static_dynamic_vector_selector_t<N>)>,
+	  typename H = std::function<double(static_dynamic_vector_selector_t<N>)>>
+class TwiceDifferentiableScalarField : public DifferentiableScalarField<N, F, G> {
    protected:
+    typedef DifferentiableScalarField<N, F, G> Base;
     typedef F FieldType;
-    typedef G GradientType;
-    typedef H HessianType;
-    typedef DifferentiableScalarField<N, F, G, H> Base;
+    typedef VectorField<N, N, G> GradientType;
+    typedef MatrixField<N, N, N, H> HessianType;
+    typedef typename static_dynamic_vector_selector<N>::type VectorType;
+    typedef typename static_dynamic_matrix_selector<N, N>::type MatrixType;
+    static_assert(std::is_invocable<H, VectorType>::value);
 
     HessianType ddf_ {};   // hessian matrix of scalar field f
    public:
-    // constructors (f: expression of the field, df: expression of its gradient, ddf: expression of its hessian)
     TwiceDifferentiableScalarField(const FieldType& f, const GradientType& df, const HessianType& ddf) :
         Base(f, df), ddf_(ddf) {};
-    // require array-initialization of GradientType with elements of type Args
     template <typename Args>
-    TwiceDifferentiableScalarField(const FieldType& f, const std::array<Args, N>& df, const HessianType& ddf) :
+    TwiceDifferentiableScalarField(const FieldType& f, const std::vector<Args>& df, const HessianType& ddf) :
         Base(f, df), ddf_(ddf) {};
     HessianType derive_twice() { return ddf_; }   // return analytical hessian
 };
