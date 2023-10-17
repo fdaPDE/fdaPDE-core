@@ -44,10 +44,10 @@ template <int M, int N> struct is_manifold {
           std::conditional<(M == M_ && N == N_), std::true_type, std::false_type>::type::value;                        \
     };
 
-DEFINE_MESH_TYPE_DETECTION_TRAIT(1, 2, network);
-DEFINE_MESH_TYPE_DETECTION_TRAIT(2, 2, 2d);
-DEFINE_MESH_TYPE_DETECTION_TRAIT(2, 3, surface);
-DEFINE_MESH_TYPE_DETECTION_TRAIT(3, 3, 3d);
+DEFINE_MESH_TYPE_DETECTION_TRAIT(1, 2, network);   // is_network<M, N>
+DEFINE_MESH_TYPE_DETECTION_TRAIT(2, 2, 2d);        // is_2d<M, N>
+DEFINE_MESH_TYPE_DETECTION_TRAIT(2, 3, surface);   // is_surface<M, N>
+DEFINE_MESH_TYPE_DETECTION_TRAIT(3, 3, 3d);        // is_3d<M, N>
 
 // trait to select a proper neighboring storage structure depending on mesh type.
 template <int M, int N> struct neighboring_structure {
@@ -79,8 +79,15 @@ template <int M, int N> class Mesh {
     std::vector<Element<M, N>> elements_cache_ {};
    public:
     Mesh() = default;
+    // 2D, 2.5D, 3D constructor
+    template <int M_ = M, int N_ = N,
+	      typename std::enable_if<!is_network<M_, N_>::value, int>::type = 0>
     Mesh(const DMatrix<double>& nodes, const DMatrix<int>& elements, const DMatrix<int>& boundary);
-
+    // linear network (1.5D) specialized constructor
+    template <int M_ = M, int N_ = N,
+	      typename std::enable_if< is_network<M_, N_>::value, int>::type = 0>
+    Mesh(const DMatrix<double>& nodes, const DMatrix<int>& elements, const DMatrix<int>& boundary);
+  
     // getters
     const Element<M, N>& element(int ID) const { return elements_cache_[ID]; }
     Element<M, N>& element(int ID) { return elements_cache_[ID]; }
@@ -111,7 +118,7 @@ template <int M, int N> class Mesh {
             return facets();
         }
     }
-  // getter and iterator on edges
+    // getter and iterator on edges
   
     // iterators support
     struct iterator {   // range-for loop over mesh elements
@@ -194,6 +201,7 @@ template <int M, int N> class Mesh {
 // implementative details
 
 template <int M, int N>
+template <int M_, int N_, typename std::enable_if<!is_network<M_, N_>::value, int>::type>
 Mesh<M, N>::Mesh(const DMatrix<double>& nodes, const DMatrix<int>& elements, const DMatrix<int>& boundary) :
     nodes_(nodes), elements_(elements), boundary_(boundary) {
     // store number of nodes and number of elements
@@ -280,7 +288,7 @@ Mesh<M, N>::Mesh(const DMatrix<double>& nodes, const DMatrix<int>& elements, con
         bool boundary = false;   // element on boundary \iff at least one of its nodes is on boundary
         for (int j = 0; j < ct_nvertices(M); ++j) {
             int node_id = elements_(i, j);
-            SVector<N> node(nodes_.row(node_id));   // physical coordinate of the node
+            SVector<N> node(nodes_.row(node_id));    // physical coordinate of the node
             coords[j] = node;
             node_ids[j] = node_id;                   // global id of node in the mesh
             boundary |= (boundary_(node_id) == 1);   // boundary status
@@ -293,8 +301,9 @@ Mesh<M, N>::Mesh(const DMatrix<double>& nodes, const DMatrix<int>& elements, con
 }
 
 // constructor specialization for linear networks (1.5D domains)
-template <>
-inline Mesh<1, 2>::Mesh(const DMatrix<double>& nodes, const DMatrix<int>& elements, const DMatrix<int>& boundary) :
+template <int M, int N>
+template <int M_, int N_, typename std::enable_if< is_network<M_, N_>::value, int>::type>
+Mesh<M, N>::Mesh(const DMatrix<double>& nodes, const DMatrix<int>& elements, const DMatrix<int>& boundary) :
     nodes_(nodes), elements_(elements), boundary_(boundary) {
     // store number of nodes and number of elements
     n_nodes_ = nodes_.rows();
@@ -331,7 +340,7 @@ inline Mesh<1, 2>::Mesh(const DMatrix<double>& nodes, const DMatrix<int>& elemen
         bool boundary = false;   // element on boundary \iff at least one of its nodes is on boundary
         for (int j = 0; j < ct_nvertices(1); ++j) {
             int node_id = elements_(i, j);
-            SVector<2> node(nodes_.row(node_id));   // physical coordinate of the node
+            SVector<2> node(nodes_.row(node_id));    // physical coordinate of the node
             coords[j] = node;
             node_ids[j] = node_id;                   // global id of node in the mesh
             boundary |= (boundary_(node_id) == 1);   // boundary status
