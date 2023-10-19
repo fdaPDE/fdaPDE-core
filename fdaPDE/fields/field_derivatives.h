@@ -35,11 +35,12 @@ template <int N, typename OP>
 class FieldPartialDerivative<N, 1, OP> : public ScalarExpr<N, FieldPartialDerivative<N, 1, OP>> {
    private:
     typedef typename static_dynamic_vector_selector<N>::type VectorType;
+    typedef ScalarExpr<N, FieldPartialDerivative<N, 1, OP>> Base;
     typename std::remove_reference<OP>::type op_;
     int i_ = 0;
     double h_;
    public:
-    FieldPartialDerivative(const OP& op, int i, double h) : op_(op), i_(i), h_(h) {}
+    FieldPartialDerivative(const OP& op, int i, double h, int inner_size) : Base(inner_size), op_(op), i_(i), h_(h) {}
     inline double operator()(VectorType x) const {   // must pass by copy
         double result;
         x[i_] = x[i_] + h_;
@@ -55,6 +56,7 @@ template <int N, typename OP>
 class FieldPartialDerivative<N, 2, OP> : public ScalarExpr<N, FieldPartialDerivative<N, 2, OP>> {
    private:
     typedef typename static_dynamic_vector_selector<N>::type VectorType;
+    typedef ScalarExpr<N, FieldPartialDerivative<N, 2, OP>> Base;
     typename std::remove_reference<OP>::type op_;
     int i_ = 0, j_ = 0;
     double h_;
@@ -93,12 +95,15 @@ class FieldPartialDerivative<N, 2, OP> : public ScalarExpr<N, FieldPartialDeriva
 // vectorial expression encoding the gradient of a scalar expression
 template <int N, typename OP> class ScalarExprGradient : public VectorExpr<N, N, ScalarExprGradient<N, OP>> {
    public:
+    typedef VectorExpr<N, N, ScalarExprGradient<N, OP>> Base;
     typename std::remove_reference<OP>::type op_;
     double h_ = 1e-3;   // step size used in central finite differences
-    ScalarExprGradient(const OP& op) : op_(op) { }
-    ScalarExprGradient(const OP& op, double h) : op_(op), h_(h) { }
-    // return first order partial derivative functor for d^1(op_)/dx_i
-    FieldPartialDerivative<N, 1, OP> operator[](int i) const { return FieldPartialDerivative<N, 1, OP>(op_, i, h_); }
+    ScalarExprGradient(const OP& op) : Base(op.inner_size(), op.inner_size()), op_(op) { }
+    ScalarExprGradient(const OP& op, double h) : Base(op.inner_size(), op.inner_size()), op_(op), h_(h) { }
+    // laxy evaluation for d^1(op_)/dx_i
+    FieldPartialDerivative<N, 1, OP> operator[](int i) const {
+        return FieldPartialDerivative<N, 1, OP>(op_, i, h_, op_.inner_size());
+    }
 };
 
 // matrix expression encoding the hessian of a scalar expression

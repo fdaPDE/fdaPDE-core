@@ -144,7 +144,7 @@ TEST(vector_field_test, matrix_vector_field_product) {
 }
 
 // check expression template mechanism for VectorField
-TEST(vector_field_test, expressions) {
+TEST(vector_field_test, static_expressions) {
     // create vector field from assignment operator
     VectorField<2> vf1;
     vf1[0] = [](SVector<2> x) -> double { return std::pow(x[0], 2) + 1; };   // x^2 + 1
@@ -317,4 +317,52 @@ TEST(vector_field_test, vector_data_wrapper) {
 
     EXPECT_DOUBLE_EQ(eval[0], 6.0);
     EXPECT_DOUBLE_EQ(eval[1], 7.0);
+}
+
+TEST(vector_field_test, dynamic_inner_outer_size) {
+    // define dynamic vector field from \mathbb{R}^3 to \mathbb{R}^3
+    VectorField<Dynamic> vf(3, 3);
+    vf[0] = [](DVector<double> x) -> double { return std::pow(x[0], 2) + 1; };   // x^2 + 1
+    vf[1] = [](DVector<double> x) -> double { return 2 * x[0] + x[1]; };         // 2*x + y
+    vf[2] = [](DVector<double> x) -> double { return std::exp(x[0] * x[2]); };   // e^{xz}
+
+    // define evaluation point
+    DVector<double> p(3);
+    p << 1, 1, 1;
+    SVector<3> vf_eval(2, 3, std::exp(1));
+    for (std::size_t i = 0; i < 3; ++i) { EXPECT_DOUBLE_EQ(vf(p)[i], vf_eval[i]); }
+}
+
+TEST(vector_field_test, dynamic_expressions) {
+    // define two dynamic vector fields from \mathbb{R}^2 to \mathbb{R}^3
+    VectorField<Dynamic> vf1(2, 3);
+    vf1[0] = [](DVector<double> x) -> double { return std::pow(x[0], 2) + 1; };   // x^2 + 1
+    vf1[1] = [](DVector<double> x) -> double { return 2 * x[0] + x[1]; };         // 2*x + y
+    vf1[2] = [](DVector<double> x) -> double { return x[0]; };                    // x
+
+    VectorField<Dynamic> vf2(2, 3);
+    vf2[0] = [](DVector<double> x) -> double { return 3 * x[0]; };                   // 3*x
+    vf2[1] = [](DVector<double> x) -> double { return std::pow(x[1], 3) + x[1]; };   // y^3 + y
+    vf2[2] = [](DVector<double> x) -> double { return x[0] * x[1]; };                // x*y
+
+    // define evaluation point
+    DVector<double> p(2);
+    p << 1, 1;
+    // build various expressions and test for equality
+    auto vf3 = vf1 + vf2;
+    SVector<3> vf3_eval(5, 5, 2);
+    for (std::size_t i = 0; i < 3; ++i) { EXPECT_DOUBLE_EQ(vf3(p)[i], vf3_eval[i]); }
+    auto vf4 = vf1 + 4*vf2;
+    SVector<3> vf4_eval(14, 11, 5);
+    for (std::size_t i = 0; i < 3; ++i) { EXPECT_DOUBLE_EQ(vf4(p)[i], vf4_eval[i]); }
+    auto dot_product = vf1.dot(vf2);
+    EXPECT_DOUBLE_EQ(dot_product(p), 13);
+    ScalarField<Dynamic> f(2);
+    f = [](DVector<double> x) -> double { return x[0] + x[1]; };
+    VectorField<Dynamic> vf5(2,2);
+    vf5[0] = vf1[0];
+    vf5[1] = vf1[1];
+    auto vf6 = vf5 + f.derive();
+    SVector<2> vf6_eval(3, 4);
+    for (std::size_t i = 0; i < 2; ++i) { EXPECT_DOUBLE_EQ(vf6(p)[i], vf6_eval[i]); }
 }

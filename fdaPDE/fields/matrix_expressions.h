@@ -172,7 +172,7 @@ template <int N, int M, int K, typename E> struct MatrixExpr : public MatrixBase
     // expose compile time informations
     static constexpr int rows = M;
     static constexpr int cols = K;
-    static constexpr int base = N;   // dimensionality of base space
+    static constexpr int static_inner_size = N;   // dimensionality of base space
 };
 
 // access i-th row of MatrixExpr

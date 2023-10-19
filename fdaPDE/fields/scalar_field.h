@@ -25,17 +25,16 @@
 namespace fdapde {
 namespace core {
   
-// a functor representing a zero field
-template <int N> struct ZeroField : public ScalarExpr<N, ZeroField<N>> {
-    inline double operator()(const SVector<N>& p) const { return 0; }
-};
 // a functor representing a constant field
 template <int N> class ConstantField : public ScalarExpr<N, ConstantField<N>> {
-   private:
     double c_;
    public:
     ConstantField(double c) : c_(c) {};
-    inline double operator()(const SVector<N>& p) const { return c_; }
+    inline double operator()(const typename static_dynamic_vector_selector<N>::type& p) const { return c_; }
+};
+// a functor representing a zero field
+template <int N> struct ZeroField : public ConstantField<N> {
+    ZeroField() : ConstantField<N>(0) {};
 };
   
 // a template class for handling general scalar fields.
@@ -47,7 +46,6 @@ class ScalarField : public ScalarExpr<N, ScalarField<N, F>> {
     typedef typename static_dynamic_vector_selector<N>::type VectorType;
     typedef typename static_dynamic_matrix_selector<N, N>::type MatrixType;
     typedef ScalarExpr<N, ScalarField<N, F>> Base;
-    using Base::base_size;   // run-time base space dimension
     static_assert(
       std::is_invocable<F, VectorType>::value &&
       std::is_same<typename std::invoke_result<F, VectorType>::type, double>::value);

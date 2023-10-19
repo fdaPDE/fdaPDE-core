@@ -24,64 +24,59 @@
 namespace fdapde {
 namespace core {
 
-// A functor to represent an inner product. T1 and T2 must provide a subscript operator []. The result of applying
-// [] to an object of type T1 or T2 must return a callable accepting an SVector<N> as argument
+// A functor to represent an inner product between two vector expressions T1 and T2.
 template <int N, typename T1, typename T2> class DotProduct : public ScalarExpr<N, DotProduct<N, T1, T2>> {
    private:
-    T1 op1_;
-    T2 op2_;   // operands of inner product
+    T1 op1_; T2 op2_;
+    typedef typename static_dynamic_vector_selector<N>::type InnerVectorType;
+    static_assert(
+      // both are dynamic expressions
+      (T1::static_inner_size == Dynamic && T2::static_inner_size == Dynamic) ||
+      // or they are both static and have the same number of rows
+      (T1::static_inner_size != Dynamic && T2::static_inner_size != Dynamic) &&
+      ((T1::cols == T2::cols == 1) && (T1::rows == T2::rows)) || (T1::cols == T2::rows) || (T1::rows == T2::cols));
 
-    // number of single additions involved in the dot product
-    static constexpr std::size_t ct_rows();
-    // trait returning true if T.operator[](std::size_t) returns a double
+    int dot_product_outer_size() const {
+        if (N == Dynamic) return op1_.outer_size();
+        if (T1::cols == T2::cols == 1) {
+            return T1::rows;
+        } else {
+            return (T1::cols == T2::rows) ? T1::cols : T1::rows;
+        }
+    };
+    // value evaluates to true if T.operator[](std::size_t) returns a double
     template <typename T> struct subscript_to_double {
         static constexpr bool value = std::is_same<typename subscript_result_of<T, std::size_t>::type, double>::value;
     };
    public:
     // constructor
     DotProduct(const T1& op1, const T2& op2) : op1_(op1), op2_(op2) { }
-    inline double operator()(const SVector<N>& x) const;   // evaluate dot(op1, op2) at point x
-    template <typename T>
-    const DotProduct<N, T1, T2>& forward(T i);   // triggers parameter evaluation on operands
-};
-
-// implementation details
-
-  template <int N, typename T1, typename T2> constexpr std::size_t DotProduct<N, T1, T2>::ct_rows() {
-    if ((T1::cols == T2::cols == 1)) {
-        return T1::rows;
-    } else {
-        return (T1::cols == T2::rows) ? T1::cols : T1::rows;
-    }
-}
-
-template <int N, typename T1, typename T2> double DotProduct<N, T1, T2>::operator()(const SVector<N>& x) const {
-    // check operands dimensions are correct
-    static_assert(
-      ((T1::cols == T2::cols == 1) && (T1::rows == T2::rows)) || (T1::cols == T2::rows) || (T1::rows == T2::cols));
-    // implementation of the scalar product operation
-    double result = 0;
-    for (size_t i = 0; i < ct_rows(); ++i) {
-        if constexpr (!subscript_to_double<T1>::value && !subscript_to_double<T2>::value) {
-            result += (op1_[i] * op2_[i])(x);
-        } else {
-            if constexpr (subscript_to_double<T1>::value && !subscript_to_double<T2>::value) {
-                result += op1_[i] * op2_[i](x);
+    inline double operator()(const InnerVectorType& x) const {
+        if constexpr (N == Dynamic) {
+            fdapde_assert(
+              (x.rows() == op1_.inner_size() && x.rows() == op2_.inner_size() &&
+               op1_.outer_size() == op2_.outer_size()));
+        }
+        double result = 0;
+        for (int i = 0; i < dot_product_outer_size(); ++i) {
+            if constexpr (!subscript_to_double<T1>::value && !subscript_to_double<T2>::value) {
+                result += (op1_[i] * op2_[i])(x);
             } else {
-                result += op1_[i](x) * op2_[i];
+                if constexpr (subscript_to_double<T1>::value && !subscript_to_double<T2>::value) {
+                    result += op1_[i] * op2_[i](x);
+                } else {
+                    result += op1_[i](x) * op2_[i];
+                }
             }
         }
+        return result;
     }
-    return result;
-}
-
-template <int N, typename T1, typename T2>
-template <typename T>
-const DotProduct<N, T1, T2>& DotProduct<N, T1, T2>::forward(T i) {
-    op1_.forward(i);
-    op2_.forward(i);
-    return *this;
-}
+    template <typename T> const DotProduct<N, T1, T2>& forward(T i) {
+        op1_.forward(i);
+        op2_.forward(i);
+        return *this;
+    }
+};
 
 }   // namespace core
 }   // namespace fdapde

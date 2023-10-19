@@ -25,7 +25,7 @@ namespace fdapde {
 namespace core {
 
 // basic pointer type for scalar expressions
-template <typename E> class ScalarPtr : public ScalarExpr<E::static_base_size, ScalarPtr<E>> {
+template <typename E> class ScalarPtr : public ScalarExpr<E::static_inner_size, ScalarPtr<E>> {
     static_assert(std::is_base_of<ScalarBase, E>::value);
    private:
     typename std::remove_reference<E>::type* ptr_;
@@ -33,7 +33,7 @@ template <typename E> class ScalarPtr : public ScalarExpr<E::static_base_size, S
     // constructor
     ScalarPtr(E* ptr) : ptr_(ptr) {};
     // delegate to pointed memory location
-    double operator()(const SVector<E::static_base_size>& p) const { return ptr_->operator()(p); }
+    double operator()(const SVector<E::static_inner_size>& p) const { return ptr_->operator()(p); }
     template <typename T> void forward(T i) { ptr_->forward(i); }
     // access to pointed element
     E* operator->() { return ptr_; }
@@ -41,7 +41,7 @@ template <typename E> class ScalarPtr : public ScalarExpr<E::static_base_size, S
 };
 
 // basic pointer type for vectorial expressions
-template <typename E> class VectorPtr : public VectorExpr<E::base, E::rows, VectorPtr<E>> {
+template <typename E> class VectorPtr : public VectorExpr<E::static_inner_size, E::rows, VectorPtr<E>> {
     static_assert(std::is_base_of<VectorBase, E>::value);
    private:
     typename std::remove_reference<E>::type* ptr_;
@@ -56,7 +56,7 @@ template <typename E> class VectorPtr : public VectorExpr<E::base, E::rows, Vect
 };
 
 // basic pointer type for matrix expressions
-template <typename E> class MatrixPtr : public MatrixExpr<E::base, E::rows, E::cols, MatrixPtr<E>> {
+template <typename E> class MatrixPtr : public MatrixExpr<E::static_inner_size, E::rows, E::cols, MatrixPtr<E>> {
     static_assert(std::is_base_of<MatrixBase, E>::value);
    private:
     typename std::remove_reference<E>::type* ptr_;
