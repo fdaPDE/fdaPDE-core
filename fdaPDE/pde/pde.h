@@ -59,7 +59,6 @@ class PDE : public PDEBase {
     typedef D DomainType;   // triangulated domain
     static constexpr int M = DomainType::local_dimension;
     static constexpr int N = DomainType::embedding_dimension;
-    static constexpr int R = DomainType::order;
     typedef E OperatorType;   // differential operator in its strong-formulation
     static_assert(
       std::is_base_of<DifferentialExpr<OperatorType>, OperatorType>::value, "E is not a valid differential operator");
@@ -94,14 +93,14 @@ class PDE : public PDEBase {
     const QuadratureRule& integrator() const { return solver_.integrator(); }
     const FunctionSpace& reference_basis() const { return solver_.reference_basis(); }
     const FunctionBasis& basis() const { return solver_.basis(); }
-    virtual DMatrix<double> dof_coords() { return solver_.dofs_coords(domain_); }
+    std::size_t n_dofs() const { return solver_.n_dofs(); }
   
-
-  // pde_ptr accessible interface
+    // pde_ptr accessible interface
     virtual const DMatrix<double>& solution() const { return solver_.solution(); };   // PDE solution
     virtual const DMatrix<double>& force() const { return solver_.force(); };         // rhs of discrete linear system
     virtual const SpMatrix<double>& R1() const { return solver_.R1(); };              // stiff matrix
     virtual const SpMatrix<double>& R0() const { return solver_.R0(); };              // mass matrix
+    virtual DMatrix<double> dof_coords() { return solver_.dofs_coords(domain_); }
     virtual DMatrix<double> quadrature_nodes() const { return integrator().quadrature_nodes(domain_); };
     virtual void init() { solver_.init(*this); };   // initializes the solver
     virtual void solve() {                          // solves the PDE
