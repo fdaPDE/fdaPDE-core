@@ -19,9 +19,10 @@
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
 
-// fields
+// utils
 #include "src/scalar_field_test.cpp"
 #include "src/vector_field_test.cpp"
+#include "src/type_erasure_test.cpp"
 // mesh
 #include "src/element_test.cpp"
 #include "src/mesh_test.cpp"

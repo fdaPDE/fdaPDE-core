@@ -21,6 +21,7 @@
 #include "utils/assert.h"
 #include "utils/compile_time.h"
 #include "utils/traits.h"
+#include "utils/type_erasure.h"
 #include "utils/combinatorics.h"
 #include "utils/data_structures/binary_tree.h"
 #include "utils/data_structures/block_frame.h"
