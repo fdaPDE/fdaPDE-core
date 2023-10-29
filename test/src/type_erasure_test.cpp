@@ -24,15 +24,14 @@ using fdapde::method_signature;
 using fdapde::TypeErasure;
 
 // define interface of an abstract shape concept
-struct Shapable {
-    // function pointer bindings to assigned type T
-    template <typename T> using Bindings = BindingsList<&T::area>;
+struct Shapable : public interface_signature<
+    method_signature<double(void)>   // area method signature
+  > {
+  // function pointer bindings to assigned type T
+  template <typename T> using Bindings = BindingsList<&T::area>;
 
-    struct Interface : public interface_signature<
-      method_signature<double(void)>   // area method signature
-      > {
-        double area() { return fdapde::invoke<0>(*this); }   // forward to T::area
-    };
+  // interface
+  double area() { return fdapde::invoke<0>(*this); }   // forward to T::area
 };
 // define type to which arbitrary types implementing the Shapable concept can be assigned
 using Shape = TypeErasure<Shapable>;
@@ -42,17 +41,36 @@ int compute_area(Shape s) { return s.area(); }
 // implementations of shapable concept (no inheritance!)
 struct Square {
     double l_ = 0;
+    Square() = default;
     Square(double l) : l_(l) {};
-    int area() { return l_ * l_; }
+    int area() const { return l_ * l_; }
 };
 struct Triangle {
-    double b_ = 0;
-    double h_ = 0;
+    double b_ = 0, h_ = 0;
+    Triangle() = default;
     Triangle(double b, double h) : b_(b), h_(h) {};
-    int area() { return b_ * h_ / 2; }
+    int area() const { return b_ * h_ / 2; }
 };
 
-TEST(type_erasure_test, basics) {
+TEST(type_erasure_test, basic_polymorphism) {
     EXPECT_TRUE(compute_area(Square(2))     == 4);
     EXPECT_TRUE(compute_area(Triangle(2,2)) == 2);
+}
+
+TEST(type_erasure_test, container) {
+  // create a container of shapes
+  std::vector<Shape> shape_vector(2);
+  shape_vector[0] = Square(2);
+  shape_vector[1] = Triangle(2,2);
+
+  EXPECT_TRUE(compute_area(shape_vector[0]) == 4);
+  EXPECT_TRUE(compute_area(shape_vector[1]) == 2);
+}
+
+TEST(type_erasure_test, copy_assign) {
+  Shape s1 = Square(2);
+  Shape s2 = Triangle(4,4);
+  EXPECT_TRUE(compute_area(s1) != compute_area(s2));
+  s2 = s1;
+  EXPECT_TRUE(compute_area(s1) == compute_area(s2));
 }
