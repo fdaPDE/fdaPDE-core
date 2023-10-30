@@ -52,7 +52,7 @@ template <typename... Ts> constexpr int size(TypeList<Ts...>) { return sizeof...
 template <typename... Ts> struct interface_signature {
     using Signature = TypeList<Ts...>;
 };
-  
+
 template <typename... T> struct method_signature { };
 template <typename R, typename... Args> struct method_signature<R(Args...)> {
     using RetType = R;                                // return type
@@ -67,6 +67,7 @@ template <typename... Ts> struct tuplify<TypeList<Ts...>> {
     using type = std::tuple<typename Ts::FuncPtrType...>;
 };
 
+// register method signature in virtual table
 template <typename T, typename Signature, auto FuncPtr, std::size_t... Is>
 auto load_method(std::index_sequence<Is...>) {
     using ArgsTuple = typename Signature::ArgsType;
@@ -76,22 +77,22 @@ auto load_method(std::index_sequence<Is...>) {
       }));
 }
 
+// recursively initializes virtual table
 template <int N, typename T, typename I, auto FuncPtr, auto... Vs> auto init_vtable(ValueList<FuncPtr, Vs...>) {
     using MethodSignature = typename get<N, typename I::Signature>::type;
     return std::tuple_cat(
       load_method<T, MethodSignature, FuncPtr>(std::make_index_sequence<MethodSignature::n_args> {}),
       init_vtable<N + 1, T, I, Vs...>(ValueList<Vs...>()));
 }
-
-template <int N, typename T, typename I, auto FuncPtr> auto init_vtable(ValueList<FuncPtr> list) {
+template <int N, typename T, typename I, auto FuncPtr> auto init_vtable(ValueList<FuncPtr> list) {   // end of recursion
     using MethodSignature = typename get<N, typename I::Signature>::type;
     return load_method<T, MethodSignature, FuncPtr>(std::make_index_sequence<MethodSignature::n_args> {});
 }
 
 namespace internals {
+// implementation of different storage strategies for the holded type erased object
 // inspired from boost.te (https://github.com/boost-ext/te)
 
-// shallow-copy semantic
 struct shared_storage {
     std::shared_ptr<void> ptr_ = nullptr;
     void* ptr() const { return ptr_.get(); }
@@ -108,7 +109,7 @@ struct heap_storage {
     heap_storage() = default;
     template <typename T> heap_storage(const T& obj) : ptr_(new T {obj}) {
         // store delete and copy function pointers
-        del = [](void* ptr) { delete reinterpret_cast<T*>(ptr); };
+        del  = [](void* ptr) { delete reinterpret_cast<T*>(ptr); };
         copy = [](const void* ptr) -> void* { return new T(*reinterpret_cast<const T*>(ptr)); };
     };
     // copy construct/assign
@@ -117,7 +118,7 @@ struct heap_storage {
     heap_storage& operator=(const heap_storage& other) {
         // free memory
         if (ptr_) del(ptr_);
-        // deep copy
+        // deep copy data from other
         ptr_ = other.ptr_ == nullptr ? nullptr : other.copy(other.ptr_);
         del = other.del;
         copy = other.copy;
@@ -144,26 +145,28 @@ struct heap_storage {
         if (ptr_) del(ptr_);
         ptr_ = nullptr;
     }
-  
 };
 
 }   // namespace internals
 
-struct TypeErasureBase {
-    void* vtable_ = nullptr;   // pointer to virtual table
-    virtual void* data() const = 0;
+struct vtable_handler {
+    internals::heap_storage vtable_;   // heap-allocated virtual table
+    void* vtable() const { return vtable_.ptr(); }
+    virtual void* data() const = 0;    // pointer to stored object
 };
 
-template <typename I, typename StorageType = internals::heap_storage> class TypeErasure : TypeErasureBase, public I {
+template <typename I, typename StorageType = internals::heap_storage> class TypeErasure : vtable_handler, public I {
+    // initializes virtual table
     template <typename T> void init(const T& obj) {
         typedef typename std::decay<T>::type T_;
-        typedef std::add_pointer_t<decltype(init_vtable<0, T_, I>(typename I::Bindings<T_>()))> VTableType;
+        typedef decltype(init_vtable<0, T_, I>(typename I::Bindings<T_>())) VTableType;
+        typedef std::add_pointer_t<VTableType> VTablePtrType;
         static_assert(size(typename I::Bindings<T_>()) == size(typename I::Signature()));
         static_assert(
           std::is_destructible<T_>::value &&
           (std::is_copy_constructible<T_>::value || std::is_move_constructible<T_>::value));
-
-        vtable_ = new auto(init_vtable<0, T, I>(typename I::Bindings<T_>()));
+	// assign virtual table
+        vtable_ = internals::heap_storage(init_vtable<0, T_, I>(typename I::Bindings<T_>()));
     }
    public:
     TypeErasure() = default;
@@ -174,20 +177,17 @@ template <typename I, typename StorageType = internals::heap_storage> class Type
         init(obj);
         return *this;
     }
-    explicit operator bool() const { return vtable_ == nullptr; }
-    // getters
-    void* vtable() { return vtable_; }
     virtual void* data() const override { return data_.ptr(); }
 
-    ~TypeErasure() = default;
+    virtual ~TypeErasure() = default;
    private:
     StorageType data_ {};   // pointer to holded object
 };
 
-template <int N, typename T, typename... Args> auto invoke(T&& t, Args... args) {
-    typedef typename tuplify<typename std::decay_t<T>::Signature>::type* VTablePtrType;
-    return std::get<N>(*reinterpret_cast<VTablePtrType>(reinterpret_cast<const TypeErasureBase&>(t).vtable_))(
-      reinterpret_cast<const TypeErasureBase&>(t).data(), args...);
+template <int N, typename T, typename... Args> auto invoke(T&& obj, Args... args) {
+    typedef typename tuplify<typename std::decay_t<T>::Signature>::type* VTableType;
+    return std::get<N>(*reinterpret_cast<VTableType>(reinterpret_cast<const vtable_handler&>(obj).vtable()))(
+      reinterpret_cast<const vtable_handler&>(obj).data(), args...);
 }
 
 }   // namespace fdapde
