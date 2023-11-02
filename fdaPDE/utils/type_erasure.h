@@ -17,18 +17,14 @@
 #ifndef __TYPE_ERASURE_H__
 #define __TYPE_ERASURE_H__
 
+#include "assert.h"
+
 namespace fdapde {
 
 // a set of utilities for generating type-erasing polymorphic object wrappers, supporting different storage schemes
 
-// heterogeneous value list
+// heterogeneous type and value list
 template <auto... Vs> struct ValueList { };
-template <auto... Vs> using BindingsList = ValueList<Vs...>;
-
-// size of value list
-template <auto... Vs> constexpr int size(ValueList<Vs...>) { return sizeof...(Vs); }
-
-// heterogeneous type list
 template <typename... Ts> struct TypeList { };
 
 // get I-th type from TypeList
@@ -47,46 +43,51 @@ template <int I, typename... Ts> struct get<I, TypeList<Ts...>> {
 };
 
 // size of TypeList
-template <typename... Ts> constexpr int size(TypeList<Ts...>) { return sizeof...(Ts); }
-
-template <typename... Ts> struct interface_signature {
-    using Signature = TypeList<Ts...>;
+template <typename T> struct size { };
+template <typename... Ts> struct size<TypeList<Ts...>> {
+    static constexpr int value = sizeof...(Ts);
+};
+template <auto... Vs> struct size<ValueList<Vs...>> {
+    static constexpr int value = sizeof...(Vs);
 };
 
-template <typename... T> struct method_signature { };
-template <typename R, typename... Args> struct method_signature<R(Args...)> {
-    using RetType = R;                                // return type
-    using ArgsType = std::tuple<Args...>;             // arguments parameter pack
-    typedef RetType (*FuncPtrType)(void*, Args...);   // void* requested by vtable
+// usefull member function pointers trait
+template <typename F> struct fn_ptr_traits_base { };
+template <typename R, typename T, typename... Args> struct fn_ptr_traits_base<R (T::*)(Args...)> {
+    using RetType = R;
+    using ArgsType = std::tuple<Args...>;
     static constexpr int n_args = sizeof...(Args);
+    using ClassType = T;
+    using FnPtrType = R (*)(void*, Args...);
 };
-
-// transform a TypeList into a std::tuple
-template <typename T> struct tuplify { };
-template <typename... Ts> struct tuplify<TypeList<Ts...>> {
-    using type = std::tuple<typename Ts::FuncPtrType...>;
+template <typename F> struct fn_ptr_traits_impl { };
+template <typename R, typename T, typename... Args>
+struct fn_ptr_traits_impl<R (T::*)(Args...)> : public fn_ptr_traits_base<R (T::*)(Args...)> {
+    using MemFnPtrType = R (T::*)(void*, Args...);
 };
+template <typename R, typename T, typename... Args>
+struct fn_ptr_traits_impl<R (T::*)(Args...) const> : public fn_ptr_traits_base<R (T::*)(Args...)> {
+    using MemFnPtrType = R (T::*)(void*, Args...) const;
+};
+template <auto FnPtr> struct fn_ptr_traits : public fn_ptr_traits_impl<decltype(FnPtr)> { };
 
 // register method signature in virtual table
-template <typename T, typename Signature, auto FuncPtr, std::size_t... Is>
-auto load_method(std::index_sequence<Is...>) {
-    using ArgsTuple = typename Signature::ArgsType;
-    return std::make_tuple(static_cast<typename Signature::FuncPtrType>(
-      [](void* obj, std::tuple_element_t<Is, ArgsTuple>... args) -> typename Signature::RetType {
+template <typename T, auto FuncPtr, std::size_t... Is> auto load_method(std::index_sequence<Is...>) {
+    using Signature = fn_ptr_traits<FuncPtr>;
+    return static_cast<typename Signature::FnPtrType>(
+      [](void* obj, std::tuple_element_t<Is, typename Signature::ArgsType>... args) -> typename Signature::RetType {
           return std::mem_fn(FuncPtr)(*reinterpret_cast<T*>(obj), args...);   // cast to pointer to T done here
-      }));
+      });
 }
-
 // recursively initializes virtual table
-template <int N, typename T, typename I, auto FuncPtr, auto... Vs> auto init_vtable(ValueList<FuncPtr, Vs...>) {
-    using MethodSignature = typename get<N, typename I::Signature>::type;
-    return std::tuple_cat(
-      load_method<T, MethodSignature, FuncPtr>(std::make_index_sequence<MethodSignature::n_args> {}),
-      init_vtable<N + 1, T, I, Vs...>(ValueList<Vs...>()));
+template <int N, typename T, auto FuncPtr, auto... Vs> void init_vtable(ValueList<FuncPtr, Vs...>, void** vtable) {
+    vtable[N] =
+      reinterpret_cast<void*>(load_method<T, FuncPtr>(std::make_index_sequence<fn_ptr_traits<FuncPtr>::n_args> {}));
+    init_vtable<N + 1, T, Vs...>(ValueList<Vs...>(), vtable);
 }
-template <int N, typename T, typename I, auto FuncPtr> auto init_vtable(ValueList<FuncPtr> list) {   // end of recursion
-    using MethodSignature = typename get<N, typename I::Signature>::type;
-    return load_method<T, MethodSignature, FuncPtr>(std::make_index_sequence<MethodSignature::n_args> {});
+template <int N, typename T, auto FuncPtr> void init_vtable(ValueList<FuncPtr>, void** vtable) {   // end of recursion
+    vtable[N] =
+      reinterpret_cast<void*>(load_method<T, FuncPtr>(std::make_index_sequence<fn_ptr_traits<FuncPtr>::n_args> {}));
 }
 
 namespace internals {
@@ -109,7 +110,7 @@ struct heap_storage {
     heap_storage() = default;
     template <typename T> heap_storage(const T& obj) : ptr_(new T {obj}) {
         // store delete and copy function pointers
-        del  = [](void* ptr) { delete reinterpret_cast<T*>(ptr); };
+        del = [](void* ptr) { delete reinterpret_cast<T*>(ptr); };
         copy = [](const void* ptr) -> void* { return new T(*reinterpret_cast<const T*>(ptr)); };
     };
     // copy construct/assign
@@ -133,13 +134,13 @@ struct heap_storage {
         if (ptr_) del(ptr_);
         // move data from other to this
         ptr_ = std::exchange(other.ptr_, nullptr);
-        del  = std::exchange(other.del , nullptr);
+        del  = std::exchange(other.del,  nullptr);
         copy = std::exchange(other.copy, nullptr);
         return *this;
     }
     // getter to holded data
     void* ptr() const { return ptr_; };
-  
+
     ~heap_storage() {
         // free memory and restore status
         if (ptr_) del(ptr_);
@@ -150,46 +151,87 @@ struct heap_storage {
 }   // namespace internals
 
 struct vtable_handler {
-    internals::heap_storage vtable_;   // heap-allocated virtual table
-    void* vtable() const { return vtable_.ptr(); }
-    virtual void* data() const = 0;    // pointer to stored object
-};
+    void** vtable_ = nullptr;
+    int size_ = 0;
 
-template <typename I, typename StorageType = internals::heap_storage> class TypeErasure : vtable_handler, public I {
+    // copies virtual table vt1 into vt2
+    void** vtable_copy(const vtable_handler& vt1, vtable_handler& vt2) {
+        // free second memory and allocate new memory
+        if (vt2.vtable_ == nullptr) delete[] vt2.vtable_;
+        vt2.vtable_ = nullptr;
+        vt2.vtable_ = new void*[vt1.size_];
+        // copy
+        vt2.size_ = vt1.size_;
+        for (std::size_t i = 0; i < vt2.size_; ++i) { vt2.vtable_[i] = vt1.vtable_[i]; }
+        return vt2.vtable_;
+    }
+
+    vtable_handler() = default;
+    // copy construct/assign
+    vtable_handler(const vtable_handler& other) :
+        vtable_(other.vtable_ == nullptr ? nullptr : vtable_copy(other, *this)) {};
+    vtable_handler& operator=(const vtable_handler& other) {
+        if (vtable_ == nullptr) delete[] vtable_;
+        vtable_copy(other, *this);
+        return *this;
+    }
+    // move semantic
+    vtable_handler(vtable_handler&& other) :
+        vtable_(std::exchange(other.vtable_, nullptr)), size_(std::exchange(other.size_, 0)) {};
+    vtable_handler& operator=(vtable_handler&& other) {
+        if (vtable_ == nullptr) delete[] vtable_;
+        // move data from other to this
+        vtable_ = std::exchange(other.vtable_, nullptr);
+        size_ = std::exchange(other.size_, 0);
+        return *this;
+    }
+
+    ~vtable_handler() {
+        if (vtable_ == nullptr) delete[] vtable_;
+        vtable_ = nullptr;
+    }
+
+    virtual void* data() const = 0;   // pointer to stored object
+};
+  
+template <typename I, typename StorageType = internals::heap_storage> class erase : vtable_handler, public I {
     // initializes virtual table
-    template <typename T> void init(const T& obj) {
+    template <typename T> void _vtable_init(const T& obj) {
         typedef typename std::decay<T>::type T_;
-        typedef decltype(init_vtable<0, T_, I>(typename I::Bindings<T_>())) VTableType;
-        typedef std::add_pointer_t<VTableType> VTablePtrType;
-        static_assert(size(typename I::Bindings<T_>()) == size(typename I::Signature()));
         static_assert(
           std::is_destructible<T_>::value &&
           (std::is_copy_constructible<T_>::value || std::is_move_constructible<T_>::value));
-	// assign virtual table
-        vtable_ = internals::heap_storage(init_vtable<0, T_, I>(typename I::Bindings<T_>()));
+        // assign virtual table
+        vtable_ = new void*[size<typename I::fn_ptrs<T_>>::value];
+        size_ = size<typename I::fn_ptrs<T_>>::value;
+        init_vtable<0, T_>(typename I::fn_ptrs<T_>(), vtable_);
     }
    public:
-    TypeErasure() = default;
+    erase() = default;
     // constructor and assignment from arbitrary type T
-    template <typename T> TypeErasure(const T& obj) : data_(obj) { init(obj); }
-    template <typename T> TypeErasure& operator=(const T& obj) {
+    template <typename T> erase(const T& obj) : data_(obj) { _vtable_init(obj); }
+    template <typename T> erase& operator=(const T& obj) {
         data_ = StorageType(obj);
-        init(obj);
+        _vtable_init(obj);
         return *this;
     }
     virtual void* data() const override { return data_.ptr(); }
 
-    virtual ~TypeErasure() = default;
+    virtual ~erase() = default;
    private:
     StorageType data_ {};   // pointer to holded object
 };
 
-template <int N, typename T, typename... Args> auto invoke(T&& obj, Args... args) {
-    typedef typename tuplify<typename std::decay_t<T>::Signature>::type* VTableType;
-    return std::get<N>(*reinterpret_cast<VTableType>(reinterpret_cast<const vtable_handler&>(obj).vtable()))(
+// invoke function pointer
+template <typename RetType, int N, typename T, typename... Args> RetType invoke(T&& obj, Args... args) {
+    fdapde_assert(N < reinterpret_cast<const vtable_handler&>(obj).size_ + 1);
+    return reinterpret_cast<RetType (*)(void*, Args...)>(reinterpret_cast<const vtable_handler&>(obj).vtable_[N])(
       reinterpret_cast<const vtable_handler&>(obj).data(), args...);
 }
 
+// alias for function member pointers
+template <auto... Vs> using mem_fn_ptrs = ValueList<Vs...>;
+  
 }   // namespace fdapde
 
 #endif   // __TYPE_ERASURE_H__
