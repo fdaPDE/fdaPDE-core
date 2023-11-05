@@ -144,7 +144,7 @@ template <typename Head> struct switch_type<Head> {   // end of recursion
     using type = typename Head::type;
 };
 
-  // macro for the definition of has_x detection idiom traits
+// macro for the definition of has_x detection idiom traits
 #define define_has(METHOD)                                                                                             \
     template <typename T, typename sig, typename = void> struct has_##METHOD : std::false_type { };                    \
     template <typename T, typename... Args>                                                                            \
@@ -158,6 +158,26 @@ template <typename Head> struct switch_type<Head> {   // end of recursion
         std::is_convertible<decltype(std::declval<T>().METHOD(std::declval<Args>()...)), R>::value>::type> :           \
         std::true_type { };
 
+// usefull member function pointers trait
+template <typename F> struct fn_ptr_traits_base { };
+template <typename R, typename T, typename... Args> struct fn_ptr_traits_base<R (T::*)(Args...)> {
+    using RetType = R;
+    using ArgsType = std::tuple<Args...>;
+    static constexpr int n_args = sizeof...(Args);
+    using ClassType = T;
+    using FnPtrType = R (*)(void*, Args...);    // void* is the pointer to the object instance
+};
+template <typename F> struct fn_ptr_traits_impl { };
+template <typename R, typename T, typename... Args>
+struct fn_ptr_traits_impl<R (T::*)(Args...)> : public fn_ptr_traits_base<R (T::*)(Args...)> {
+    using MemFnPtrType = R (T::*)(Args...);
+};
+template <typename R, typename T, typename... Args>
+struct fn_ptr_traits_impl<R (T::*)(Args...) const> : public fn_ptr_traits_base<R (T::*)(Args...)> {
+    using MemFnPtrType = R (T::*)(Args...) const;
+};
+template <auto FnPtr> struct fn_ptr_traits : public fn_ptr_traits_impl<decltype(FnPtr)> { };
+  
 }   // namespace fdapde
 
 #endif   // __FDAPDE_TRAITS_H__

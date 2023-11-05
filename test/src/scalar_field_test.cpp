@@ -346,3 +346,44 @@ TEST(scalar_field_test, expression_differentials_approximation) {
     hessian << -std::sin(2), -std::sin(2), -std::sin(2), -std::sin(2);
     ASSERT_TRUE((hess(p) - hessian).norm() < DOUBLE_TOLERANCE);
 }
+
+double f_impl(SVector<2> x) { return x[0]; }
+
+struct g_container { int i = 0; };
+struct g_struct {
+private:
+    g_container& c_;
+public:
+    g_struct(g_container& c) : c_(c) {};
+    double g_impl(SVector<2> x) {
+        c_.i++;
+        return 1 + x[1] + c_.i;
+    }
+    double g_impl_const(SVector<2> x) const { return 1 + x[1]; }
+};
+
+TEST(scalar_field_test, free_and_member_function_pointers) {
+    // construct from a free function pointer
+    ScalarField<2, double (*)(SVector<2>)> f(&f_impl);
+    // evaluation point
+    SVector<2> p(1, 1);
+    EXPECT_DOUBLE_EQ(f(p), 1);
+    auto g = 2 * f + f;
+    EXPECT_DOUBLE_EQ(g(p), 3);
+
+    // construct from a non-const member function pointer
+    g_container c;
+    g_struct h_obj(c);
+    ScalarField<2, double (g_struct::*)(SVector<2>)> h(&h_obj, &g_struct::g_impl);
+    EXPECT_DOUBLE_EQ(h(p), 3);
+    // state of h_obj changes between function calls (pointer to non-const member function)
+    EXPECT_DOUBLE_EQ(h(p), 4);
+    // construct from a const member function pointer
+    ScalarField<2, double (g_struct::*)(SVector<2>) const> h_const(&h_obj, &g_struct::g_impl_const);
+    EXPECT_DOUBLE_EQ(h_const(p), 2);
+
+    // check approximated derivatives
+    auto dh = h_const.derive();
+    EXPECT_DOUBLE_EQ(dh(p)[0], 0);
+    EXPECT_DOUBLE_EQ(dh(p)[1], 1);
+}

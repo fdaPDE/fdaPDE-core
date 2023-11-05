@@ -24,7 +24,7 @@
 
 namespace fdapde {
 namespace core {
-  
+
 // a functor representing a constant field
 template <int N> class ConstantField : public ScalarExpr<N, ConstantField<N>> {
     double c_;
@@ -36,13 +36,14 @@ template <int N> class ConstantField : public ScalarExpr<N, ConstantField<N>> {
 template <int N> struct ZeroField : public ConstantField<N> {
     ZeroField() : ConstantField<N>(0) {};
 };
-  
+
 // a template class for handling general scalar fields.
-template <int N,   // input space dimension (fdapde::Dynamic accepted)
-	  typename F = std::function<double(static_dynamic_vector_selector_t<N>)>>
+template <
+  int N,   // input space dimension (fdapde::Dynamic accepted)
+  typename F = std::function<double(static_dynamic_vector_selector_t<N>)>>
 class ScalarField : public ScalarExpr<N, ScalarField<N, F>> {
    public:
-    typedef F FieldType;      // type of wrapped functor
+    typedef F FieldType;   // type of wrapped functor
     typedef typename static_dynamic_vector_selector<N>::type VectorType;
     typedef typename static_dynamic_matrix_selector<N, N>::type MatrixType;
     typedef ScalarExpr<N, ScalarField<N, F>> Base;
@@ -88,6 +89,42 @@ class ScalarField : public ScalarExpr<N, ScalarField<N, F>> {
     inline double operator()(const VectorType& x) { return f_(x); };
    protected:
     FieldType f_ {};
+};
+
+// specialization for member function pointers
+template <int N, typename MemFnPtr_> struct ScalarField_MemFnBase : public ScalarExpr<N, ScalarField<N, MemFnPtr_>> {
+    using MemFnPtr = fn_ptr_traits_impl<MemFnPtr_>;
+    using ClassPtrType_ = std::add_pointer_t<typename MemFnPtr::ClassType>;
+    using VectorType_ = typename std::tuple_element<0, typename MemFnPtr::ArgsType>::type;
+    using RetType_    = typename MemFnPtr::RetType;
+    using FieldType_  = typename MemFnPtr::MemFnPtrType;
+    typedef typename static_dynamic_vector_selector<N>::type VectorType;
+    static_assert(std::is_same<VectorType, typename std::decay<VectorType_>::type>::value);
+    // constructor
+    ScalarField_MemFnBase() = default;
+    ScalarField_MemFnBase(ClassPtrType_ c, FieldType_ f) : c_(c), f_(f) {};
+    // evaluation at point
+    inline RetType_ operator()(const VectorType_& x) { return (c_->*f_)(x); };
+    inline RetType_ operator()(const VectorType_& x) const { return (c_->*f_)(x); };
+   protected:
+    ClassPtrType_ c_ = nullptr;
+    FieldType_ f_ = nullptr;
+};
+template <int N, typename RetType_, typename ClassType_, typename VectorType_>
+struct ScalarField<N, RetType_ (ClassType_::*)(VectorType_)> :    // non-const member function pointers
+    public ScalarField_MemFnBase<N, RetType_ (ClassType_::*)(VectorType_)> {
+    using Base = ScalarField_MemFnBase<N, RetType_ (ClassType_::*)(VectorType_)>;
+    // constructors
+    ScalarField() = default;
+    ScalarField(typename Base::ClassPtrType_ c, typename Base::FieldType_ f) : Base(c, f) {};
+};
+template <int N, typename RetType_, typename ClassType_, typename VectorType_>
+struct ScalarField<N, RetType_ (ClassType_::*)(VectorType_) const> :    // non-const member function pointers
+    public ScalarField_MemFnBase<N, RetType_ (ClassType_::*)(VectorType_) const> {
+    using Base = ScalarField_MemFnBase<N, RetType_ (ClassType_::*)(VectorType_) const>;
+    // constructors
+    ScalarField() = default;
+    ScalarField(typename Base::ClassPtrType_ c, typename Base::FieldType_ f) : Base(c, f) {};
 };
 
 }   // namespace core

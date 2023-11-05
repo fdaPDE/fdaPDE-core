@@ -18,6 +18,7 @@
 #define __TYPE_ERASURE_H__
 
 #include "assert.h"
+#include "traits.h"
 
 namespace fdapde {
 
@@ -50,26 +51,6 @@ template <typename... Ts> struct size<TypeList<Ts...>> {
 template <auto... Vs> struct size<ValueList<Vs...>> {
     static constexpr int value = sizeof...(Vs);
 };
-
-// usefull member function pointers trait
-template <typename F> struct fn_ptr_traits_base { };
-template <typename R, typename T, typename... Args> struct fn_ptr_traits_base<R (T::*)(Args...)> {
-    using RetType = R;
-    using ArgsType = std::tuple<Args...>;
-    static constexpr int n_args = sizeof...(Args);
-    using ClassType = T;
-    using FnPtrType = R (*)(void*, Args...);
-};
-template <typename F> struct fn_ptr_traits_impl { };
-template <typename R, typename T, typename... Args>
-struct fn_ptr_traits_impl<R (T::*)(Args...)> : public fn_ptr_traits_base<R (T::*)(Args...)> {
-    using MemFnPtrType = R (T::*)(void*, Args...);
-};
-template <typename R, typename T, typename... Args>
-struct fn_ptr_traits_impl<R (T::*)(Args...) const> : public fn_ptr_traits_base<R (T::*)(Args...)> {
-    using MemFnPtrType = R (T::*)(void*, Args...) const;
-};
-template <auto FnPtr> struct fn_ptr_traits : public fn_ptr_traits_impl<decltype(FnPtr)> { };
 
 // register method signature in virtual table
 template <typename T, auto FuncPtr, std::size_t... Is> auto load_method(std::index_sequence<Is...>) {
@@ -108,7 +89,7 @@ struct heap_storage {
     void* (*copy)(const void*) = nullptr;
 
     heap_storage() = default;
-    template <typename T> heap_storage(const T& obj) : ptr_(new T {obj}) {
+    template <typename T> heap_storage(const T& obj) : ptr_(new T(obj)) {
         // store delete and copy function pointers
         del = [](void* ptr) { delete reinterpret_cast<T*>(ptr); };
         copy = [](const void* ptr) -> void* { return new T(*reinterpret_cast<const T*>(ptr)); };
