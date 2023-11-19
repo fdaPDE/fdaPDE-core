@@ -23,8 +23,7 @@
 #include "../../utils/symbols.h"
 #include "../../utils/traits.h"
 #include "../../utils/combinatorics.h"
-#include "../basis/finite_element_basis.h"
-#include "../basis/lagrangian_element.h"
+#include "../basis/lagrangian_basis.h"
 #include "../fem_assembler.h"
 #include "../fem_symbols.h"
 #include "../operators/reaction.h"   // for mass-matrix computation
@@ -40,32 +39,29 @@ template <typename D, typename E, typename F, typename... Ts> class FEMSolverBas
    public:
     typedef std::tuple<Ts...> SolverArgs;
     enum {
-        fem_order = std::tuple_element <0, SolverArgs>::type::value,
+        fem_order = std::tuple_element<0, SolverArgs>::type::value,
         n_dof_per_element = ct_nnodes(D::local_dimension, fem_order),
         n_dof_per_edge = fem_order - 1,
         n_dof_internal =
           n_dof_per_element - (D::local_dimension + 1) - D::n_facets_per_element * (fem_order - 1)   // > 0 \iff R > 2
     };
-    typedef D DomainType;
-    typedef Integrator<DomainType::local_dimension, fem_order> QuadratureRule;
-    typedef LagrangianElement<DomainType::local_dimension, fem_order> FunctionSpace;
-    typedef FiniteElementBasis<FunctionSpace> FunctionBasis;
-
+    using DomainType = D;
+    using FunctionalBasis = LagrangianBasis<DomainType, fem_order>;
+    using ReferenceBasis = typename FunctionalBasis::ReferenceBasis;
+    using Quadrature = typename ReferenceBasis::Quadrature;
     // constructor
     FEMSolverBase() = default;
-
     // getters
     const DMatrix<double>& solution() const { return solution_; }
     const DMatrix<double>& force() const { return force_; }
     const SpMatrix<double>& R1() const { return R1_; }
     const SpMatrix<double>& R0() const { return R0_; }
-    const QuadratureRule& integrator() const { return integrator_; }
-    const FunctionSpace& reference_basis() const { return reference_basis; }
-    const FunctionBasis& basis() const { return fe_basis_; }
+    const Quadrature& integrator() const { return integrator_; }
+    const ReferenceBasis& reference_basis() const { return reference_basis_; }
+    const FunctionalBasis& basis() const { return basis_; }
     std::size_t n_dofs() const { return n_dofs_; }   // number of degrees of freedom (FEM linear system's unknowns)
     const DMatrix<int>& dofs() const { return dofs_; }
     DMatrix<double> dofs_coords(const DomainType& mesh);   // computes the physical coordinates of dofs
-
     // flags
     bool is_init = false;   // notified true if initialization occurred with no errors
     bool success = false;   // notified true if problem solved with no errors
@@ -96,13 +92,13 @@ template <typename D, typename E, typename F, typename... Ts> class FEMSolverBas
     boundary_dofs_iterator boundary_dofs_end() const { return boundary_dofs_iterator(this, n_dofs_); }
   
    protected:
-    QuadratureRule integrator_ {};       // default to a quadrature rule which is exact for the considered FEM order
-    FunctionSpace reference_basis_ {};   // function basis on the reference unit simplex
-    FunctionBasis fe_basis_ {};          // basis over the whole domain
-    DMatrix<double> solution_;           // vector of coefficients of the approximate solution
-    DMatrix<double> force_;              // discretized force [u]_i = \int_D f*\psi_i
-    SpMatrix<double> R1_;   // [R1_]_{ij} = a(\psi_i, \psi_j), being a(.,.) the bilinear form of the problem
-    SpMatrix<double> R0_;   // mass matrix, [R0_]_{ij} = \int_D (\psi_i * \psi_j)
+    Quadrature integrator_ {};            // default to a quadrature rule which is exact for the considered FEM order
+    FunctionalBasis basis_ {};            // basis system defined over the pyhisical domain
+    ReferenceBasis reference_basis_ {};   // function basis on the reference unit simplex
+    DMatrix<double> solution_;            // vector of coefficients of the approximate solution
+    DMatrix<double> force_;               // discretized force [u]_i = \int_D f*\psi_i
+    SpMatrix<double> R1_;                 // [R1_]_{ij} = a(\psi_i, \psi_j), being a(.,.) the bilinear form
+    SpMatrix<double> R0_;                 // mass matrix, [R0_]_{ij} = \int_D (\psi_i * \psi_j)
 
     std::size_t n_dofs_ = 0;        // degrees of freedom, i.e. the maximum ID in the dof_table_
     DMatrix<int> dofs_;             // for each element, the degrees of freedom associated to it
@@ -121,8 +117,9 @@ void FEMSolverBase<D, E, F, Ts...>::init(const PDE& pde) {
     static_assert(is_pde<PDE>::value, "not a valid PDE");
     // enumerate linear system unknowns
     enumerate_dofs(pde.domain());
+    basis_ = FunctionalBasis(pde.domain(), n_dofs_);
     // assemble discretization matrix for given operator    
-    Assembler<FEM, D, FunctionSpace, QuadratureRule> assembler(pde.domain(), integrator_, n_dofs_, dofs_);
+    Assembler<FEM, DomainType, ReferenceBasis, Quadrature> assembler(pde.domain(), integrator_, n_dofs_, dofs_);
     R1_ = assembler.discretize_operator(pde.differential_operator());
     R1_.makeCompressed();
     // assemble forcing vector
