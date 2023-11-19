@@ -37,7 +37,7 @@ template <ViewType S, typename... Ts> class BlockView;
 
 // avoid to compile if the user asks for the insertion of a datatype for which the BlockFrame was not instantiated
 #define BLOCK_FRAME_CHECK_TYPE                                                                                         \
-    static_assert(has_type<T, types_>::value, "you asked for a type not handled by this BlockFrame");
+    static_assert(has_type<T, types_>::value, "you asked for a type not in the BlockFrame's type list");
 
 // a data structure for handling numerical dataframes. Need to supply beforeahead all intended types to process
 template <typename... Ts> class BlockFrame {
@@ -50,6 +50,7 @@ template <typename... Ts> class BlockFrame {
     typedef std::tuple<Ts...> types_;       // list of types
     std::vector<std::string> columns_ {};   // column names
     std::size_t rows_ = 0;
+    std::vector<bool> dirty_bits_ {};   // asserted true if the i-th column contains modified data
    public:
     // constructor
     BlockFrame() = default;
@@ -58,14 +59,33 @@ template <typename... Ts> class BlockFrame {
     // getter to raw data
     const std::tuple<std::unordered_map<std::string, DMatrix<Ts>>...>& data() const { return data_; }
     std::size_t rows() const { return rows_; }
-
+    // return the names of columns corresponding to modified data
+    std::vector<std::string> dirty_cols() const {
+        std::vector<std::string> result;
+        result.reserve(columns_.size());
+        for (std::size_t i = 0; i < dirty_bits_.size(); ++i) {
+            if (dirty_bits_[i]) { result.emplace_back(columns_[i]); }
+        }
+        return result;
+    }  
     // tests if BlockFrame contains block named "key"
     bool has_block(const std::string& key) const {
         return std::find(columns_.cbegin(), columns_.cend(), key) != columns_.cend();
     }
 
+    // clear specified dirty bit
+    void clear_dirty_bit(const std::string& key) {
+        if (!has_block(key)) return; // does nothing if queried for a non-inserted block
+        dirty_bits_[std::distance(columns_.begin(), std::find(columns_.begin(), columns_.end(), key))] = false;
+    }
+    // true if block named key as dirty bit set
+    bool is_dirty(const std::string& key) const {
+        if (!has_block(key)) throw std::out_of_range("key not found");
+        return dirty_bits_[std::distance(columns_.begin(), std::find(columns_.begin(), columns_.end(), key))];
+    }
+
     // insert new block, if the key is already present insert will overwrite the existing data
-    template <typename T> void insert(const std::string& key, const DMatrix<T>& data) {
+    template <typename T> void insert(const std::string& key, const DMatrix<T>& data, bool dirty_bit = true) {
         BLOCK_FRAME_CHECK_TYPE;
         // check number of rows to insert equals BlockFrame size
         if (rows_ != 0 && data.rows() != rows_)
@@ -73,7 +93,13 @@ template <typename... Ts> class BlockFrame {
         // store data
         std::get<index_of<T, types_>::index>(data_)[key] = data;
         // update metadata
-        if (!has_block(key)) columns_.push_back(key);
+        if (!has_block(key)) {
+            columns_.push_back(key);
+            dirty_bits_.push_back(dirty_bit);
+        } else {
+            auto key_position = std::find(columns_.begin(), columns_.end(), key);
+            dirty_bits_[std::distance(columns_.begin(), key_position)] = dirty_bit;
+        }
         if (rows_ == 0) rows_ = data.rows();
         return;
     }
@@ -101,7 +127,7 @@ template <typename... Ts> class BlockFrame {
         if (!has_block(key)) throw std::out_of_range("key not found");
         return std::get<index_of<T, types_>::index>(data_).at(key);
     }
-    // non-const access
+    // non-const access (potential modifications are not recorded in dirty_bits_)
     template <typename T> DMatrix<T>& get(const std::string& key) {
         BLOCK_FRAME_CHECK_TYPE;
         // throw exeption if key not in BlockFrame
@@ -174,7 +200,9 @@ template <typename... Ts> class BlockFrame {
         // remove block
         std::get<index_of<T, types_>::index>(data_).erase(key);
         // update metadata
-        columns_.erase(std::find(columns_.begin(), columns_.end(), key));
+	auto key_position = std::find(columns_.begin(), columns_.end(), key);
+	columns_.erase(key_position);
+	dirty_bits_.erase(dirty_bits_.begin() + std::distance(columns_.begin(), key_position));
         return;
     }
 };
