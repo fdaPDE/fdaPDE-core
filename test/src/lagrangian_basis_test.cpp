@@ -26,7 +26,7 @@
 #include <fdaPDE/linear_algebra.h>
 #include <fdaPDE/finite_elements.h>
 using fdapde::core::ct_binomial_coefficient;
-using fdapde::core::LagrangianElement;
+using fdapde::core::LagrangianBasis;
 using fdapde::core::MultivariatePolynomial;
 using fdapde::core::ReferenceElement;
 using fdapde::core::Integrator;
@@ -38,6 +38,8 @@ using fdapde::testing::DOUBLE_TOLERANCE;
 #include "utils/mesh_loader.h"
 using fdapde::testing::MESH_TYPE_LIST;
 using fdapde::testing::MeshLoader;
+#include "utils/utils.h"
+using fdapde::testing::read_csv;
 
 // a type representing a compile time pair of integer values
 template <int i, int j> struct int_pair {
@@ -75,7 +77,7 @@ TYPED_TEST_SUITE(lagrangian_basis_test, pairs);
 // tests a Lagrangian basis can be successfully built over the reference unit simplex
 TYPED_TEST(lagrangian_basis_test, reference_element_support) {
     // create lagrangian basis over unit dimensional simplex
-    LagrangianElement<TestFixture::N, TestFixture::R> basis {};
+    auto basis = LagrangianBasis<Mesh<TestFixture::N, TestFixture::N>, TestFixture::R>::ref_basis();
 
     // expect correct number of basis functions
     EXPECT_EQ(basis.size(), TestFixture::n_basis);
@@ -99,7 +101,7 @@ TYPED_TEST(lagrangian_basis_test, reference_element_support) {
 // test linear elements behave correctly on reference element
 TEST(lagrangian_basis_test, order1_reference_element) {
     // create finite linear elements over unit reference simplex
-    LagrangianElement<2, 1> basis {};
+    auto basis = LagrangianBasis<Mesh<2, 2>, 1>::ref_basis();
     SVector<2> p(0, 0);   // define evaluation point
 
     // basis functions are defined in counterclockwise order starting from node (0,0)
@@ -119,7 +121,7 @@ TEST(lagrangian_basis_test, order1_reference_element) {
 // test quadratic elements behave correctly on reference element
 TEST(lagrangian_basis_test, order2_reference_element) {
     // create finite linear elements over unit reference simplex
-    LagrangianElement<2, 2> basis {};
+    auto basis = LagrangianBasis<Mesh<2, 2>, 2>::ref_basis();
     SVector<2> p(0.5, 0.5);   // define evaluation point
 
     // basis functions are defined following the enumeration:
@@ -143,7 +145,7 @@ TEST(lagrangian_basis_test, order2_reference_element) {
 }
 
 // test linear elements behave correctly on generic mesh elements
-TEST(lagrangian_basis_test, order1_physical_element) {
+TEST(lagrangian_basis_test, order1_pyhsical_element) {
     MeshLoader<Mesh2D> CShaped("c_shaped");
     auto e = CShaped.mesh.element(175);   // reference element for this test
     // get quadrature nodes over the mesh to define an evaluation point
@@ -157,16 +159,17 @@ TEST(lagrangian_basis_test, order1_physical_element) {
        SVector<2>(-0.9937417999542519,  4.7916671954122458)});
     // use the barycentric matrix of e and the basis defined over the reference element
     Eigen::Matrix<double, 2, 2> invJ = e.inv_barycentric_matrix().transpose();
-    LagrangianElement<2, 1> refBasis {};
+    LagrangianBasis<Mesh2D, 1> basis(CShaped.mesh, CShaped.mesh.n_nodes());
+    auto ref_basis = basis.ref_basis();
 
-    for (std::size_t i = 0; i < refBasis.size(); ++i) {
-        VectorField<2, 2> grad = invJ * refBasis[i].derive();
+    for (std::size_t i = 0; i < ref_basis.size(); ++i) {
+        VectorField<2, 2> grad = invJ * ref_basis[i].derive();
         for (std::size_t j = 0; j < 2; ++j) EXPECT_TRUE(almost_equal(grad(p)[j], gradients[i][j]));
     }
 }
 
 // test quadratic elements behave correctly on generic mesh elements
-TEST(lagrangian_basis_test, order2_phyiscal_element) {
+TEST(lagrangian_basis_test, order2_pyhiscal_element) {
     MeshLoader<Mesh2D> CShaped("c_shaped");
     auto e = CShaped.mesh.element(175);   // reference element for this test
     // get quadrature nodes over the mesh to define an evaluation point
@@ -182,10 +185,34 @@ TEST(lagrangian_basis_test, order2_phyiscal_element) {
        SVector<2>(-9.8048064747509027, -4.3298093852388320), SVector<2>( 9.3751005233316018,  6.4017841287628112)});
     // use the barycentric matrix of e and the basis defined over the reference element
     Eigen::Matrix<double, 2, 2> invJ = e.inv_barycentric_matrix().transpose();
-    LagrangianElement<2, 2> refBasis {};
-
-    for (std::size_t i = 0; i < refBasis.size(); ++i) {
-        VectorField<2, 2> grad = invJ * refBasis[i].derive();
+    LagrangianBasis<Mesh2D, 2> basis(CShaped.mesh, CShaped.mesh.n_nodes());
+    auto ref_basis = basis.ref_basis();
+    
+    for (std::size_t i = 0; i < ref_basis.size(); ++i) {
+        VectorField<2, 2> grad = invJ * ref_basis[i].derive();
         for (std::size_t j = 0; j < 2; ++j) EXPECT_TRUE(almost_equal(grad(p)[j], gradients[i][j]));
     }
+}
+
+// pointwise evaluate a lagrangian basis over a given set of nodes
+TEST(lagrangian_basis_test, order1_pointwise_evaluation) {
+    MeshLoader<Mesh2D> domain("c_shaped");
+    // create lagrangian basis over domain
+    LagrangianBasis<Mesh2D, 1> basis(domain.mesh, domain.mesh.n_nodes());
+    // load matrix of locations and evaluate
+    DMatrix<double> locs = read_csv<double>("../data/mesh/c_shaped/locs.csv");
+    auto res = basis.eval<fdapde::core::pointwise_evaluation>(locs);   // \Psi matrix computation
+    EXPECT_TRUE(almost_equal(res.first, "../data/mtx/lagrangian_pointwise_eval_order1.mtx"));
+}
+
+// areal evaluate a lagrangian basis over a given set of nodes
+TEST(lagrangian_basis_test, order1_areal_evaluation) {
+    MeshLoader<Mesh2D> domain("quasi_circle");
+    domain.mesh.set_point_location_policy<BarycentricWalk>();
+    // create lagrangian basis over domain
+    LagrangianBasis<Mesh2D, 1> basis(domain.mesh, domain.mesh.n_nodes());
+    // load matrix of locations and evaluate
+    DMatrix<double> subdomains = read_csv<double>("../data/mesh/quasi_circle/incidence_matrix.csv");
+    auto res = basis.eval<fdapde::core::areal_evaluation>(subdomains);   // \Psi matrix computation
+    EXPECT_TRUE(almost_equal(res.first, "../data/mtx/lagrangian_areal_eval_order1.mtx"));
 }

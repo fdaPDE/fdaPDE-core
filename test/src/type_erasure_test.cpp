@@ -26,7 +26,7 @@ struct IShape {
     int area() const { return fdapde::invoke<int, 0>(*this); }   // forward to T::area
 };
 // define type to which arbitrary types implementing the Shapable concept can be assigned
-using Shape = fdapde::erase<IShape>;
+using Shape = fdapde::erase<fdapde::heap_storage, IShape>;
 // define function which takes Shape objects in input
 int compute_area(Shape s) { return s.area(); }
 
@@ -36,12 +36,14 @@ struct Square {
     Square() = default;
     Square(double l) : l_(l) {};
     int area() const { return l_ * l_; }
+    std::string draw() const { return "square"; }
 };
 struct Triangle {
     double b_ = 0, h_ = 0;
     Triangle() = default;
     Triangle(double b, double h) : b_(b), h_(h) {};
     int area() const { return b_ * h_ / 2; }
+    std::string draw() const { return "triangle"; }
 };
 
 TEST(type_erasure_test, basics) {
@@ -64,4 +66,52 @@ TEST(type_erasure_test, copy_assign) {
     EXPECT_TRUE(compute_area(s1) != compute_area(s2));
     s2 = s1;
     EXPECT_TRUE(compute_area(s1) == compute_area(s2));
+}
+
+// interface of something which can be draw
+struct IDrawable {
+    // function pointer bindings to assigned type T
+    template <typename T> using fn_ptrs = fdapde::mem_fn_ptrs<&T::draw>;
+
+    // interface
+    std::string draw() const { return fdapde::invoke<std::string, 0>(*this); }
+};
+using DrawableShape = fdapde::erase<fdapde::heap_storage, IShape, IDrawable>;   // a shape which can be draw
+TEST(type_erasure_test, inheritance) {
+    DrawableShape d = Square(2);
+    EXPECT_TRUE(d.area() == 4);          // d exposes the IShape interface, and correctly forward to its implementation
+    EXPECT_TRUE(d.draw() == "square");   // d also exposes the IDrawable interface
+
+    d = Triangle(4, 4);   // triangle is also a shape, which can be draw
+    EXPECT_TRUE(d.area() == 8);
+    EXPECT_TRUE(d.draw() == "triangle");
+}
+
+// test order of interfaces doesn't matter
+using DrawableShape_Reversed = fdapde::erase<fdapde::heap_storage, IDrawable, IShape>;
+TEST(type_erasure_test, inheritance_order_does_not_matter) {
+    DrawableShape_Reversed d = Square(2);
+    EXPECT_TRUE(d.area() == 4);
+    EXPECT_TRUE(d.draw() == "square");
+
+    d = Triangle(4, 4);
+    EXPECT_TRUE(d.area() == 8);
+    EXPECT_TRUE(d.draw() == "triangle");
+}
+
+// test composability of interfaces
+using Draw = fdapde::erase<fdapde::heap_storage, IDrawable>; // something which can be draw
+
+struct Composed {
+  Composed(const Shape& s) : s_(s) { }
+  Shape s_ {};
+
+  std::string draw() const { return std::to_string(s_.area()); }
+};
+
+TEST(type_erasure_test, composition) {
+  Shape s1 = Square(2);
+
+  Draw d = Composed(s1);  // store s1 inside d
+  EXPECT_TRUE(d.draw() == "4");
 }

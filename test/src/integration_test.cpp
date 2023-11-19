@@ -24,7 +24,7 @@
 using fdapde::core::Element;
 using fdapde::core::Integrator;
 using fdapde::core::IntegratorTable;
-using fdapde::core::LagrangianElement;
+using fdapde::core::LagrangianBasis;
 
 #include "utils/mesh_loader.h"
 using fdapde::testing::MESH_TYPE_LIST;
@@ -109,7 +109,7 @@ void compute_quadrature(const F& f, const I& integratorTable, std::vector<double
 // test if integration works on linear fields, expect all results equal
 TYPED_TEST(quadrature_rules_test, check_correctness) {
     // define lagrangian basis on reference element
-    LagrangianElement<TestFixture::M, 1> b {};
+    auto b = LagrangianBasis<Mesh<TestFixture::M, TestFixture::M>, 1>::ref_basis();
     // space where results will be stored
     std::vector<double> results;
     // perform integration

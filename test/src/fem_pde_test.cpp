@@ -22,7 +22,6 @@
 #include <fdaPDE/mesh.h>
 #include <fdaPDE/finite_elements.h>
 using fdapde::core::Element;
-using fdapde::core::LagrangianElement;
 using fdapde::core::PDE;
 using fdapde::core::ScalarField;
 using fdapde::core::advection;
@@ -30,6 +29,7 @@ using fdapde::core::laplacian;
 using fdapde::core::dt;
 using fdapde::core::FEM;
 using fdapde::core::fem_order;
+using fdapde::core::make_pde;
 
 #include "utils/mesh_loader.h"
 using fdapde::testing::MeshLoader;
@@ -46,9 +46,10 @@ TEST(fem_pde_test, laplacian_isotropic_order1) {
     
     MeshLoader<Mesh2D> unit_square("unit_square");
     auto L = -laplacian<FEM>();
-    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_square.mesh);
+    // instantiate a type-erased wrapper for this pde
+    auto pde_ = make_pde<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>>(unit_square.mesh);
     pde_.set_differential_operator(L);
-
+    
     // compute boundary condition and exact solution
     DMatrix<double> nodes_ = pde_.dof_coords();
     DMatrix<double> dirichlet_bc(nodes_.rows(), 1);
@@ -62,7 +63,7 @@ TEST(fem_pde_test, laplacian_isotropic_order1) {
     pde_.set_dirichlet_bc(dirichlet_bc);
     
     // request quadrature nodes and evaluate forcing on them
-    DMatrix<double> quadrature_nodes = pde_.integrator().quadrature_nodes(unit_square.mesh);
+    DMatrix<double> quadrature_nodes = pde_.quadrature_nodes();
     DMatrix<double> f = DMatrix<double>::Zero(quadrature_nodes.rows(), 1);
     pde_.set_forcing(f);
     // init solver and solve differential problem
@@ -150,7 +151,7 @@ TEST(fem_pde_test, advection_diffusion_isotropic_order1) {
     pde_.set_dirichlet_bc(dirichletBC);
 
     // request quadrature nodes and evaluate forcing on them
-    DMatrix<double> quadrature_nodes = pde_.integrator().quadrature_nodes(unit_square.mesh);
+    DMatrix<double> quadrature_nodes = pde_.quadrature_nodes();
     DMatrix<double> f = DMatrix<double>::Zero(quadrature_nodes.rows(), 1);
     for (int i = 0; i < quadrature_nodes.rows(); ++i) { f(i) = forcingExpr(quadrature_nodes.row(i)); }
     pde_.set_forcing(f);
@@ -271,7 +272,7 @@ TEST(fem_pde_test, parabolic_isotropic_order2) {
     pde_.set_initial_condition(initial_condition);
       
     // request quadrature nodes and evaluate forcing on them
-    DMatrix<double> quadrature_nodes = pde_.integrator().quadrature_nodes(unit_square.mesh);
+    DMatrix<double> quadrature_nodes = pde_.quadrature_nodes();
     DMatrix<double> f(quadrature_nodes.rows(), M);
     for (int i = 0; i < quadrature_nodes.rows(); ++i) {
       for(int j = 0; j < M; ++j){
@@ -350,7 +351,7 @@ TEST(fem_pde_test, parabolic_isotropic_order1_convergence) {
       pde_.set_initial_condition(initial_condition);
       
       // request quadrature nodes and evaluate forcing on them
-      DMatrix<double> quadrature_nodes = pde_.integrator().quadrature_nodes(unit_square.mesh);
+      DMatrix<double> quadrature_nodes = pde_.quadrature_nodes();
       DMatrix<double> f(quadrature_nodes.rows(), M);
       for (int i = 0; i < quadrature_nodes.rows(); ++i) {
         for(int j = 0; j < M; ++j){

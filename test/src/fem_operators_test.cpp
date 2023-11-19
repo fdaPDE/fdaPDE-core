@@ -23,7 +23,7 @@
 #include <fdaPDE/finite_elements.h>
 using fdapde::core::Element;
 using fdapde::core::Integrator;
-using fdapde::core::LagrangianElement;
+using fdapde::core::LagrangianBasis;
 using fdapde::core::FEM;
 using fdapde::core::laplacian;
 using fdapde::core::MatrixConst;
@@ -47,9 +47,9 @@ TEST(fem_operators_test, laplacian_order_2) {
     // define differential operator
     auto L = -laplacian<FEM>();
     // define functional space
-    LagrangianElement<2, 2> basis {};
+    auto basis = LagrangianBasis<Mesh2D, 2>::ref_basis();
 
-    using BasisType = typename LagrangianElement<2, 2>::ElementType;
+    using BasisType = typename LagrangianBasis<Mesh2D, 2>::ReferenceBasis::ElementType;
     using NablaType = decltype(std::declval<BasisType>().derive());
     BasisType buff_psi_i, buff_psi_j;               // basis functions \psi_i, \psi_j
     NablaType buff_nabla_psi_i, buff_nabla_psi_j;   // gradient of basis functions \nabla \psi_i, \nabla \psi_j
