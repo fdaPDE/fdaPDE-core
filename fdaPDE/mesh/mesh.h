@@ -28,6 +28,8 @@
 #include "element.h"
 #include "mesh_utils.h"
 #include "reference_element.h"
+#include "point_location/point_location_base.h"
+#include "point_location/adt.h"
 
 namespace fdapde {
 namespace core {
@@ -77,6 +79,8 @@ template <int M, int N> class Mesh {
 
     // precomputed set of elements
     std::vector<Element<M, N>> elements_cache_ {};
+    mutable std::shared_ptr<PointLocationBase<M, N>> point_location_ = nullptr;
+    using DefaultLocationPolicy = ADT<M, N>;
    public:
     Mesh() = default;
     // 2D, 2.5D, 3D constructor
@@ -118,8 +122,12 @@ template <int M, int N> class Mesh {
             return facets();
         }
     }
+    DVector<int> locate(const DMatrix<double>& points) const {
+        if (point_location_ == nullptr) point_location_ = std::make_shared<DefaultLocationPolicy>(*this);
+        return point_location_->locate(points);
+    }
     // getter and iterator on edges
-  
+
     // iterators support
     struct iterator {   // range-for loop over mesh elements
        private:
@@ -184,6 +192,12 @@ template <int M, int N> class Mesh {
     facet_iterator facet_begin() const { return facet_iterator(this, 0); }
     facet_iterator facet_end() const { return facet_iterator(this, n_facets_); }
 
+    // setters
+    template <template <int, int> typename PointLocationPolicy_>
+    void set_point_location_policy() {
+        point_location_ = std::make_shared<PointLocationPolicy_<M, N>>(*this);
+    }
+  
     // compile time informations
     static constexpr bool is_manifold = is_manifold<M, N>::value;
     enum {

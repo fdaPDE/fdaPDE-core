@@ -23,12 +23,11 @@
 
 #include "../../utils/data_structures/binary_tree.h"
 #include "../../utils/symbols.h"
-#include "../mesh.h"
-#include "point_locator.h"
+#include "point_location_base.h"
 
 namespace fdapde {
 namespace core {
-
+  
 // a specific node data structure for easy management of the ADT during element search
 template <int N> struct ADTNode {
     std::size_t elementID_;                     // the element ID to which this node referes to
@@ -77,7 +76,7 @@ template <int N> class ADTQuery {
 };
 
 // Alternating Digital Tree implementation for tree-based point location problems
-template <int M, int N> class ADT : public PointLocator<M, N> {
+template <int M, int N> class ADT : public PointLocationBase<M, N> {
    private:
     typedef ADTNode<2 * N> NodeDataType;
     typedef BinaryNode<NodeDataType> NodeType;

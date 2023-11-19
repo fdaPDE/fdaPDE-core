@@ -20,14 +20,13 @@
 #include <random>
 #include <set>
 
-#include "../mesh.h"
-#include "point_locator.h"
+#include "point_location_base.h"
 
 namespace fdapde {
 namespace core {
 
 // barycentric walk strategy for point location problem, works only for 2D and 3D *convex* triangualtions
-template <int M, int N> class BarycentricWalk : public PointLocator<M, N> {
+template <int M, int N> class BarycentricWalk : public PointLocationBase<M, N> {
     static_assert(M == N, "barycentric walk cannot be applied to manifold domains");
    private:
     const Mesh<M, N>& mesh_;

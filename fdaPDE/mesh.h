@@ -20,7 +20,7 @@
 #include "mesh/mesh.h"
 #include "mesh/element.h"
 #include "mesh/reference_element.h"
-#include "mesh/point_location/point_locator.h"
+#include "mesh/point_location/point_location_base.h"
 #include "mesh/point_location/naive_search.h"
 #include "mesh/point_location/barycentric_walk.h"
 #include "mesh/point_location/adt.h"

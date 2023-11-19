@@ -21,13 +21,13 @@
 
 #include "../element.h"
 #include "../mesh.h"
-#include "point_locator.h"
+#include "point_location_base.h"
 
 namespace fdapde {
 namespace core {
 
 // naive search strategy for point location problem
-template <int M, int N> class NaiveSearch : public PointLocator<M, N> {
+template <int M, int N> class NaiveSearch : public PointLocationBase<M, N> {
    private:
     const Mesh<M, N>& mesh_;
    public:

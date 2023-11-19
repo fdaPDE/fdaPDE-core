@@ -26,19 +26,22 @@
 namespace fdapde {
 namespace core {
 
+// forward declaration
+template <int M, int N> class Mesh;
+  
 // interface for point locations algorithms
-template <int M, int N> struct PointLocator {
+template <int M, int N> struct PointLocationBase {
     // solves the point location problem. returns nullptr if p is not found
     virtual const Element<M, N>* locate(const SVector<N>& p) const = 0;
 
     // solves the point location problem for a set of points
-    std::vector<const Element<M, N>*> locate(const DMatrix<double>& points) const {
+    DVector<int> locate(const DMatrix<double>& points) const {
         fdapde_assert(points.cols() == N);
 
-        std::vector<const Element<M, N>*> elements;
-        elements.reserve(points.rows());
+        DVector<int> elements;
+        elements.resize(points.rows());
         // solve point location for each given point
-        for (std::size_t i = 0; i < points.rows(); ++i) { elements.emplace_back(this->locate(points.row(i))); }
+        for (std::size_t i = 0; i < points.rows(); ++i) { elements[i] = this->locate(SVector<N>(points.row(i)))->ID(); }
         return elements;
     }
 };
