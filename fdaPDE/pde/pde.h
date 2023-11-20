@@ -75,13 +75,14 @@ class PDE : public PDEBase {
     PDE(const D& domain) : domain_(domain) { }
     PDE(const D& domain, const DVector<double>& time) : domain_(domain), time_(time) { };
     PDE(const D& domain, E diff_op) : domain_(domain), diff_op_(diff_op) { };
-    PDE(const D& domain, E diff_op, const DVector<double>& time) : domain_(domain), diff_op_(diff_op), time_(time) { };
+    PDE(const D& domain, const DVector<double>& time, E diff_op) : domain_(domain), time_(time), diff_op_(diff_op) { };
     void set_forcing(const F& forcing_data) { forcing_data_ = forcing_data; }
     void set_differential_operator(E diff_op) { diff_op_ = diff_op; }
     // full constructors
     PDE(const D& domain, E diff_op, const F& forcing_data) :
         domain_(domain), diff_op_(diff_op), forcing_data_(forcing_data) { }
-
+    PDE(const D& domain, const DVector<double>& time, E diff_op, const F& forcing_data) :
+        domain_(domain), time_(time), diff_op_(diff_op), forcing_data_(forcing_data) { }
     // setters
     virtual void set_dirichlet_bc(const DMatrix<double>& data) { boundary_data_ = data; }
     virtual void set_initial_condition(const DVector<double>& data) { initial_condition_ = data; };
