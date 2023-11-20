@@ -73,7 +73,9 @@ class PDE : public PDEBase {
 
     // minimal constructor, use below setters to complete the construction of a PDE object
     PDE(const D& domain) : domain_(domain) { }
+    PDE(const D& domain, const DVector<double>& time) : domain_(domain), time_(time) { };
     PDE(const D& domain, E diff_op) : domain_(domain), diff_op_(diff_op) { };
+    PDE(const D& domain, E diff_op, const DVector<double>& time) : domain_(domain), diff_op_(diff_op), time_(time) { };
     void set_forcing(const F& forcing_data) { forcing_data_ = forcing_data; }
     void set_differential_operator(E diff_op) { diff_op_ = diff_op; }
     // full constructors
@@ -86,6 +88,7 @@ class PDE : public PDEBase {
 
     // getters
     const DomainType& domain() const { return domain_; }
+    const DVector<double>& time() const {return time_;}
     OperatorType differential_operator() const { return diff_op_; }
     const ForcingType& forcing_data() const { return forcing_data_; }
     const DVector<double>& initial_condition() const { return initial_condition_; }
@@ -110,6 +113,7 @@ class PDE : public PDEBase {
 
    private:
     const DomainType& domain_;               // triangulated problem domain
+    const DVector<double> time_;
     OperatorType diff_op_;                   // differential operator in its strong formulation
     ForcingType forcing_data_;               // forcing data
     DVector<double> initial_condition_ {};   // initial condition, (for space-time problems only)

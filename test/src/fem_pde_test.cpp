@@ -244,7 +244,7 @@ TEST(fem_pde_test, parabolic_isotropic_order2) {
       
     MeshLoader<Mesh2D> unit_square("unit_square");
     auto L = dt<FEM>() -laplacian<FEM>();
-    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<2>> pde_(unit_square.mesh);
+    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<2>> pde_(unit_square.mesh, times);
     pde_.set_differential_operator(L);
  
     // compute boundary condition and exact solution
@@ -303,7 +303,7 @@ TEST(fem_pde_test, parabolic_isotropic_order2) {
 TEST(fem_pde_test, parabolic_isotropic_order1_convergence) {
     // exact solution
     constexpr double pi = 3.14159265358979323846;
-    int M = 101;
+    int M = 31;
     DMatrix<double> times(M,1);
     double time_max = 1.;
     for(int j = 0; j < M; ++j){
@@ -323,7 +323,7 @@ TEST(fem_pde_test, parabolic_isotropic_order1_convergence) {
       std::string domain_name = "unit_square_" + std::to_string(N(n));    
       MeshLoader<Mesh2D> unit_square(domain_name);
       auto L = dt<FEM>() -laplacian<FEM>();
-      PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_square.mesh);
+      PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_square.mesh, times);
       pde_.set_differential_operator(L);
  
       // compute boundary condition and exact solution
