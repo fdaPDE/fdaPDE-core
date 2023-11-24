@@ -37,6 +37,7 @@ struct Square {
     Square(double l) : l_(l) {};
     int area() const { return l_ * l_; }
     std::string draw() const { return "square"; }
+    std::string print() const { return std::to_string(area()); }
 };
 struct Triangle {
     double b_ = 0, h_ = 0;
@@ -44,6 +45,7 @@ struct Triangle {
     Triangle(double b, double h) : b_(b), h_(h) {};
     int area() const { return b_ * h_ / 2; }
     std::string draw() const { return "triangle"; }
+    std::string print() const { return std::to_string(area()); }
 };
 
 TEST(type_erasure_test, basics) {
@@ -71,10 +73,10 @@ TEST(type_erasure_test, copy_assign) {
 // interface of something which can be draw
 struct IDrawable {
     // function pointer bindings to assigned type T
-    template <typename T> using fn_ptrs = fdapde::mem_fn_ptrs<&T::draw>;
-
+    template <typename T> using fn_ptrs = fdapde::mem_fn_ptrs<&T::draw, &T::print>;
     // interface
-    std::string draw() const { return fdapde::invoke<std::string, 0>(*this); }
+    std::string draw()  const { return fdapde::invoke<std::string, 0>(*this); }
+    std::string print() const { return fdapde::invoke<std::string, 1>(*this); }
 };
 using DrawableShape = fdapde::erase<fdapde::heap_storage, IShape, IDrawable>;   // a shape which can be draw
 TEST(type_erasure_test, inheritance) {
@@ -106,7 +108,8 @@ struct Composed {
   Composed(const Shape& s) : s_(s) { }
   Shape s_ {};
 
-  std::string draw() const { return std::to_string(s_.area()); }
+  std::string draw()  const { return std::to_string(s_.area()); }
+  std::string print() const { return std::to_string(s_.area() + 2); } // something useless
 };
 
 TEST(type_erasure_test, composition) {
@@ -114,4 +117,16 @@ TEST(type_erasure_test, composition) {
 
   Draw d = Composed(s1);  // store s1 inside d
   EXPECT_TRUE(d.draw() == "4");
+}
+
+TEST(type_erasure_test, non_owning_storage) {
+  using NonOwningDrawable = fdapde::erase<fdapde::non_owning_storage, IDrawable>;
+  
+  Shape s1 = Square(2);
+  Draw d = Composed(s1);
+  NonOwningDrawable non_owning_d = d;
+  EXPECT_TRUE(non_owning_d.draw() == "4");
+  // copy a non_owning object
+  NonOwningDrawable non_owning_d2 = non_owning_d;
+  EXPECT_TRUE(non_owning_d2.draw() == "4");
 }

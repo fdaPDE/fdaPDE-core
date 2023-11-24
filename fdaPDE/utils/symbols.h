@@ -124,6 +124,12 @@ template <int N> struct s_vector_compare {
         return std::lexicographical_compare(lhs.data(), lhs.data() + lhs.size(), rhs.data(), rhs.data() + rhs.size());
     };
 };
+// ordering relation for DVector<T>
+template <typename T> struct d_vector_compare {
+    bool operator()(const DVector<T>& lhs, const DVector<T>& rhs) const {
+        return std::lexicographical_compare(lhs.data(), lhs.data() + lhs.size(), rhs.data(), rhs.data() + rhs.size());
+    }
+};
 
 // a movable wrapper for Eigen::SparseLU (Eigen::SparseLU has a deleted copy and assignment operator)
 template <typename T> class SparseLU {

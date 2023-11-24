@@ -80,7 +80,7 @@ template <typename... Ts> class BlockFrame {
     }
     // true if block named key as dirty bit set
     bool is_dirty(const std::string& key) const {
-        if (!has_block(key)) throw std::out_of_range("key not found");
+      if (!has_block(key)) return false; // a block which is not present is assumed clean
         return dirty_bits_[std::distance(columns_.begin(), std::find(columns_.begin(), columns_.end(), key))];
     }
 

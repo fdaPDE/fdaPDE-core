@@ -93,7 +93,8 @@ template <int N, typename T, auto FuncPtr> void init_vtable(ValueList<FuncPtr>, 
 
 struct shared_storage {
     std::shared_ptr<void> ptr_ = nullptr;
-    void* ptr() const { return ptr_.get(); }
+    void* ptr() { return ptr_.get(); }
+    const void* ptr() const { return ptr_.get(); }
     operator bool() const { return ptr_ == nullptr; }
 
     shared_storage() = default;
@@ -101,12 +102,20 @@ struct shared_storage {
 };
 
 struct non_owning_storage {
-    void* ptr_ = nullptr;
-    void* ptr() const { return ptr_; }
+    const void* ptr_ = nullptr;
+    void* ptr() { return const_cast<void*>(ptr_); }
+    const void* ptr() const { return ptr_; }
     operator bool() const { return ptr_ == nullptr; }
 
     non_owning_storage() = default;
+    template <typename T> non_owning_storage(T& obj) : ptr_(&obj) {};
     template <typename T> non_owning_storage(const T& obj) : ptr_(&obj) {};
+    // copy construct/assign
+    non_owning_storage(const non_owning_storage& other) : ptr_(other.ptr_) { }
+    non_owning_storage& operator=(const non_owning_storage& other) {
+        ptr_ = other.ptr_;
+        return *this;
+    }
 };
 
 struct heap_storage {
@@ -146,7 +155,8 @@ struct heap_storage {
         return *this;
     }
     // getter to holded data
-    void* ptr() const { return ptr_; };
+    void* ptr() { return ptr_; };
+    const void* ptr() const { return ptr_; }
     operator bool() const { return ptr_ != nullptr; }
   
     ~heap_storage() {
@@ -197,7 +207,8 @@ struct vtable_handler {
         vtable_ = nullptr;
     }
 
-    virtual void* __data() const = 0;   // pointer to stored object
+    virtual void* __data() = 0;   // pointer to stored object
+    virtual const void* __data() const = 0;
 };
   
 template <typename StorageType, typename... I> class erase : vtable_handler, public I... {
@@ -241,7 +252,9 @@ template <typename StorageType, typename... I> class erase : vtable_handler, pub
         _vtable_init(obj);
         return *this;
     }
-    virtual void* __data() const override { return data_.ptr(); }
+
+    virtual void* __data() override { return data_.ptr(); }
+    virtual const void* __data() const override { return data_.ptr(); }
     operator bool() const { return data_.operator bool(); }
     
     virtual ~erase() = default;
@@ -250,10 +263,10 @@ template <typename StorageType, typename... I> class erase : vtable_handler, pub
 };
 
 // invoke function pointer (T is deduced to the type of the interface)
-template <typename RetType, int N, typename T, typename... Args> RetType invoke(T&& obj, Args... args) {
+template <typename RetType, int N, typename T, typename... Args> RetType invoke(const T& obj, Args... args) {
     auto& vtable = reinterpret_cast<const vtable_handler&>(obj);
     short offset = vtable.offset_table_.at(typeid(std::decay_t<T>)) + N;
-    return reinterpret_cast<RetType (*)(void*, Args...)>(vtable.vtable_[offset])(vtable.__data(), args...);
+    return reinterpret_cast<RetType (*)(const void*, Args...)>(vtable.vtable_[offset])(vtable.__data(), args...);
 }
 
 // alias for function member pointers
