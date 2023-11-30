@@ -164,59 +164,56 @@ void FEMSolverBase<D, E, F, Ts...>::set_dirichlet_bc(const PDE& pde) {
     return;
 }
   
-// builds a node enumeration for the support of a basis of order R. Specialization for 2D domains
+// builds a node enumeration for the support of a basis of order R. Specialization for 2D domains (check)
 template <typename D, typename E, typename F, typename... Ts>
 void FEMSolverBase<D, E, F, Ts...>::enumerate_dofs(const D& mesh) {
-  if(n_dofs_ != 0) return; // return early if dofs already computed
-  if constexpr (fem_order == 1) {
-    n_dofs_ = mesh.n_nodes();
-    dofs_ = mesh.elements();
-    boundary_dofs_ = mesh.boundary(); 
-  } else {
-    dofs_.resize(mesh.n_elements(), n_dof_per_element);
-    dofs_.leftCols(D::n_vertices) = mesh.elements(); // copy dofs associated to geometric vertices
+    if (n_dofs_ != 0) return;   // return early if dofs already computed
+    if constexpr (fem_order == 1) {
+      n_dofs_ = mesh.n_nodes();
+      dofs_ = mesh.elements();
+      boundary_dofs_ = mesh.boundary();
+    } else {
+      dofs_.resize(mesh.n_elements(), n_dof_per_element);
+      dofs_.leftCols(D::n_vertices) = mesh.elements();   // copy dofs associated to geometric vertices
 
-    int next = mesh.n_nodes();   // next valid ID to assign
-    auto edge_pattern = combinations<D::n_vertices_per_edge, D::n_vertices>();
-    std::set<int> boundary_set;
-    
-    // cycle over mesh edges
-    for(auto edge = mesh.facet_begin(); edge != mesh.facet_end(); ++edge) {
-      for(std::size_t i = 0; i < D::n_elements_per_facet; ++i) {
-	int element_id = (*edge).adjacent_elements()[i];
-	if(element_id >= 0) {
-	  // search for dof insertion point
-	  std::size_t j = 0;
-	  for(; j < edge_pattern.rows(); ++j) {
-	    std::array<int, D::n_vertices_per_edge> e {};
-	    for(std::size_t k = 0; k < D::n_vertices_per_edge; ++k) {
-	      e[k] = mesh.elements()(element_id, edge_pattern(j,k));
-	    }
-	    std::sort(e.begin(), e.end()); // normalize edge ordering
-	    if((*edge).node_ids() == e) break;
-	  }
-	  dofs_(element_id, D::n_vertices + j) = next;
-	  if((*edge).on_boundary()) boundary_set.insert(next);
+      int next = mesh.n_nodes();   // next valid ID to assign
+      auto edge_pattern = combinations<D::n_vertices_per_edge, D::n_vertices>();
+      std::set<int> boundary_set;
 
-	  // insert any internal dofs, if any (for cubic or higher order) + insert n_dof_per_edge dofs (for cubic or hiher)
-	}	
+      // cycle over mesh edges
+      for (auto edge = mesh.facet_begin(); edge != mesh.facet_end(); ++edge) {
+            for (std::size_t i = 0; i < D::n_elements_per_facet; ++i) {
+                int element_id = (*edge).adjacent_elements()[i];
+                if (element_id >= 0) {
+                    // search for dof insertion point
+                    std::size_t j = 0;
+                    for (; j < edge_pattern.rows(); ++j) {
+                        std::array<int, D::n_vertices_per_edge> e {};
+                        for (std::size_t k = 0; k < D::n_vertices_per_edge; ++k) {
+                            e[k] = mesh.elements()(element_id, edge_pattern(j, k));
+                        }
+                        std::sort(e.begin(), e.end());   // normalize edge ordering
+                        if ((*edge).node_ids() == e) break;
+                    }
+                    dofs_(element_id, D::n_vertices + j) = next;
+                    if ((*edge).on_boundary()) boundary_set.insert(next);
+
+                    // insert any internal dofs, if any (for cubic or higher order) + insert n_dof_per_edge dofs (for
+                    // cubic or higher)
+                }
+            }
+            next++;
       }
-      next++;
-    }
 
-    n_dofs_ = next;   // store number of unknowns
-    // update boundary
-    boundary_dofs_ = DMatrix<int>::Zero(n_dofs_, 1);
-    boundary_dofs_.topRows(mesh.boundary().rows()) = mesh.boundary();
-    for (auto it = boundary_set.begin(); it != boundary_set.end(); ++it) {
-        boundary_dofs_(*it, 0) = 1;
+      n_dofs_ = next;   // store number of unknowns
+      // update boundary
+      boundary_dofs_ = DMatrix<int>::Zero(n_dofs_, 1);
+      boundary_dofs_.topRows(mesh.boundary().rows()) = mesh.boundary();
+      for (auto it = boundary_set.begin(); it != boundary_set.end(); ++it) { boundary_dofs_(*it, 0) = 1; }
     }
-  }
-  return;
+    return;
 }
 
-
-  
 // produce the matrix of dof coordinates
 template <typename D, typename E, typename F, typename... Ts>
 DMatrix<double> FEMSolverBase<D, E, F, Ts...>::dofs_coords(const D& mesh) {

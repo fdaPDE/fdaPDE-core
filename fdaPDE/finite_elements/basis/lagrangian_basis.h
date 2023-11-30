@@ -96,8 +96,8 @@ template <typename DomainType, int order> class LagrangianBasis {
     using ReferenceBasis = LagrangianElement<M, R>;
     // constructor
     LagrangianBasis() = default;
-    LagrangianBasis(const DomainType& domain, std::size_t size) : domain_(&domain), size_(size) {};
-
+  LagrangianBasis(const DomainType& domain, std::size_t size) : domain_(&domain), size_(size) { };
+  
     // returns a pair of matrices (\Psi, D) where: \Psi is the matrix of basis functions evaluations according
     // to the given policy, D is a policy-dependent vector (see the specific policy for details)
     template <template <typename> typename EvaluationPolicy>
@@ -115,9 +115,9 @@ template <typename DomainType, int order> class LagrangianBasis {
         for (std::size_t i = 0; i < locs.rows(); ++i) {
             auto e = domain_->element(element_ids[i]);
             // evaluate basis expansion \sum_{i=1}^size_ c_i \psi_i(x) at p
+	    SVector<DomainType::embedding_dimension> p(locs.row(i));
             for (std::size_t h = 0; h < ref_basis_.size(); ++h) {
-                result[i] +=
-                  c[e.node_ids()[h]] * ref_basis_[h](e.inv_barycentric_matrix() * (locs.row(i) - e.coords()[0]));
+                result[i] += c[e.node_ids()[h]] * ref_basis_[h](e.inv_barycentric_matrix() * (p - e.coords()[0]));
             }
         }
         return result;
@@ -139,7 +139,7 @@ template <typename DomainType, int order> struct pointwise_evaluation<Lagrangian
         // locate points
         DVector<int> element_ids = domain.locate(locs);
         // build \Psi matrix
-        for (std::size_t i = 0, n = locs.rows(); i < n; ++i) {
+        for (std::size_t i = 0, n = locs.rows(); i < n; ++i) {	
             SVector<N> p_i(locs.row(i));
             auto e = domain.element(element_ids[i]);
             // update \Psi matrix
