@@ -61,7 +61,8 @@ class FieldPartialDerivative<N, 2, OP> : public ScalarExpr<N, FieldPartialDeriva
     int i_ = 0, j_ = 0;
     double h_;
    public:
-    FieldPartialDerivative(const OP& op, int i, int j, double h) : op_(op), i_(i), j_(j), h_(h) { }
+    FieldPartialDerivative(const OP& op, int i, int j, double h, int inner_size) :
+        Base(inner_size), op_(op), i_(i), j_(j), h_(h) { }
     inline double operator()(VectorType x) const {   // must pass by copy
         double result;
         if (i_ != j_) {   // df^2/(dx_i dx_j)
@@ -109,13 +110,15 @@ template <int N, typename OP> class ScalarExprGradient : public VectorExpr<N, N,
 // matrix expression encoding the hessian of a scalar expression
 template <int N, typename OP> class ScalarExprHessian : public MatrixExpr<N, N, N, ScalarExprHessian<N, OP>> {
    public:
+    typedef MatrixExpr<N, N, N, ScalarExprHessian<N, OP>> Base;
     typename std::remove_reference<OP>::type op_;
     double h_ = 1e-3;   // step size used in central finite differences
-    ScalarExprHessian(const OP& op) : op_(op) { }
-    ScalarExprHessian(const OP& op, double h) : op_(op), h_(h) { }
+    ScalarExprHessian(const OP& op) : Base(op.inner_size(), op.inner_size(), op.inner_size()), op_(op) { }
+    ScalarExprHessian(const OP& op, double h) :
+        Base(op.inner_size(), op.inner_size(), op.inner_size()), op_(op), h_(h) { }
     // return second order partial derivative functor for d^2(op_)/(dx_i dx_j)
     FieldPartialDerivative<N, 2, OP> coeff(int i, int j) const {
-      return FieldPartialDerivative<N, 2, OP>(op_, i, j, h_);
+        return FieldPartialDerivative<N, 2, OP>(op_, i, j, h_, op_.inner_size());
     }
 };
 

@@ -140,16 +140,36 @@ template <int N, int M, int K, typename E> class MatrixCol : public VectorExpr<N
     }
 
 // base class for matrix expressions
-template <int N, int M, int K, typename E> struct MatrixExpr : public MatrixBase {
+template <int M, int N, int K, typename E> struct MatrixExpr : public MatrixBase {
+   protected:
+    int inner_size_ = M;       // \mathbb{R}^M
+    int outer_size_ = N * K;   // \mathbb{R}^{N \times K}
+    int outer_rows_ = N, outer_cols_ = K;
+   public:
+    typedef typename static_dynamic_vector_selector<M>::type InnerVectorType;
+    typedef typename static_dynamic_matrix_selector<N, K>::type OuterMatrixType;
+    static constexpr int rows = N;
+    static constexpr int cols = K;
+    static constexpr int static_inner_size = M;   // dimensionality of base space
+
+    MatrixExpr() = default;
+    MatrixExpr(int inner_size, int outer_rows, int outer_cols) :
+        inner_size_(inner_size), outer_rows_(outer_rows), outer_cols_(outer_cols),
+	outer_size_(outer_rows * outer_cols) {};
+
     // access operator on (i,j)-th element on the base type E
     auto coeff(std::size_t i, std::size_t j) const { return static_cast<const E&>(*this).coeff(i, j); }
-    // get underyling type composing the expression node
     const E& get() const { return static_cast<const E&>(*this); }
+    inline constexpr int inner_size() const { return (M == Dynamic) ? inner_size_ : static_inner_size; }
+    inline constexpr int outer_cols() const { return (K == Dynamic) ? outer_cols_ : cols; }
+    inline constexpr int outer_rows() const { return (N == Dynamic) ? outer_rows_ : rows; }
+    inline constexpr int outer_size() const { return outer_cols() * outer_rows(); }
     // evaluate the expression at point p
-    SMatrix<M, K> operator()(const SVector<N>& p) const {
-        SMatrix<M, K> result;
-        for (std::size_t i = 0; i < M; ++i) {
-            for (std::size_t j = 0; j < K; ++j) {
+    OuterMatrixType operator()(const InnerVectorType& p) const {
+        OuterMatrixType result;
+	if constexpr(N == Dynamic || K == Dynamic) result.resize(outer_rows(), outer_cols());
+        for (std::size_t i = 0; i < outer_rows(); ++i) {
+           for (std::size_t j = 0; j < outer_cols(); ++j) {
                 // trigger evaluation on each element of the expression template.
                 // This will produce for the (i,j)-th element a callable object, evaluate it on p
                 result(i, j) = coeff(i, j)(p);
@@ -158,21 +178,16 @@ template <int N, int M, int K, typename E> struct MatrixExpr : public MatrixBase
         return result;
     }
     // block access to i-th row/column of MatrixExpr
-    MatrixRow<N, M, K, E> row(std::size_t i) const;
-    MatrixCol<N, M, K, E> col(std::size_t i) const;
+    MatrixRow<M, N, K, E> row(std::size_t i) const;
+    MatrixCol<M, N, K, E> col(std::size_t i) const;
     // allow rhs multiplication by a VectorExpr
-    template <typename F> MatrixVectorProduct<N, M, K, E, F> operator*(const VectorExpr<N, K, F>& op) const;
+    template <typename F> MatrixVectorProduct<M, N, K, E, F> operator*(const VectorExpr<M, K, F>& op) const;
     // allow rhs multiplication by constant SVector
-    MatrixVectorProduct<N, M, K, E, VectorConst<N, K>> operator*(const SVector<K>& op) const;
+    MatrixVectorProduct<M, N, K, E, VectorConst<M, K>> operator*(const SVector<K>& op) const;
     // evaluate parametric nodes in the expression, does nothing if not redefined in derived classes
     template <typename T> void forward(T i) const { return; }
     // map unary operator- to a MatrixNegationOp expression node
     MatrixNegationOp<M, N, K, E> operator-() const { return MatrixNegationOp<M, N, K, E>(get()); }
-
-    // expose compile time informations
-    static constexpr int rows = M;
-    static constexpr int cols = K;
-    static constexpr int static_inner_size = N;   // dimensionality of base space
 };
 
 // access i-th row of MatrixExpr

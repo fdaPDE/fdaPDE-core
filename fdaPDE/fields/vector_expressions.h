@@ -67,7 +67,7 @@ template <int M, int N, typename E> class VectorExpr : public VectorBase {
     // call operator[] on the base type E
     auto operator[](std::size_t i) const { return static_cast<const E&>(*this)[i]; }
     const E& get() const { return static_cast<const E&>(*this); }
-    inline constexpr int inner_size() const { return (N == Dynamic) ? inner_size_ : static_inner_size; }
+    inline constexpr int inner_size() const { return (M == Dynamic) ? inner_size_ : static_inner_size; }
     inline constexpr int outer_size() const { return (N == Dynamic) ? outer_size_ : rows; }
     // evaluate the expression at point x
     OuterVectorType operator()(const InnerVectorType& x) const {
@@ -96,7 +96,7 @@ template <int M, int N> class VectorConst : public VectorExpr<M, N, VectorConst<
     typedef VectorExpr<M, N, VectorConst<M, N>> Base;
     typename Base::OuterVectorType value_;
    public:
-    VectorConst(const typename Base::OuterVectorType& value, int m, int n) : Base(m,n), value_(value) {};
+    VectorConst(const typename Base::OuterVectorType& value, int m, int n) : Base(m, n), value_(value) {};
     double operator[](std::size_t i) const { return value_[i]; }
 };
 

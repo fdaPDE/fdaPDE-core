@@ -61,8 +61,8 @@ TEST(vector_field_test, const_subscript_operator) {
     EXPECT_DOUBLE_EQ(x_comp(p), x_extracted(p));
 }
 
-// check if a vector field can be assigned using the subscript operator and any FieldExpr on the rhs
-TEST(vector_field_test, non_const_subscript_operator) {
+// check if a vector field component can be assigned to any ScalarExpr on the rhs
+TEST(vector_field_test, assign_scalar_expr_rhs) {
     // define an empty vector field
     VectorField<2> v_field;
     // define a lambda expression valid to be wrapped by a ScalarField
@@ -99,7 +99,6 @@ TEST(vector_field_test, dot_product_with_vector_field) {
     // dot product functor evaluates same as dot product of evaluated fields
     EXPECT_DOUBLE_EQ(dotProduct(p), v_field1(p).dot(v_field2(p)));
 
-    // dot product evaluates correctly
     // dotProduct encodes the scalar field of equation: (x^2 + 1)*(x*2 + 3) + 2*e^{xy}*(x^2 + 1)*e^{xy}
     // dotProduct evaluates at p: (2)*(4) + 2*e^{2}*2 = 8 + 4*e^{2}
     EXPECT_DOUBLE_EQ(dotProduct(p), 8 + 4 * std::exp(2));
