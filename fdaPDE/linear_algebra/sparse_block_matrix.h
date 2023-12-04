@@ -44,7 +44,7 @@ struct SparseBlockMatrix :
     template <typename... E, typename std::enable_if<(sizeof...(E) > 1), int>::type = 0>
     SparseBlockMatrix(const E&... m) {
         // compile time checks
-        static_assert((std::is_same<typename E::Scalar, Scalar_>::value, ...), "blocks with different scalar type");
+        static_assert((std::is_same<typename E::Scalar, Scalar_>::value && ...), "blocks with different scalar type");
         static_assert(sizeof...(E) == Rows_ * Cols_, "supplied blocks < Rows_*Cols_");
 
         // unfold parameter pack and extract size of blocks and overall matrix size
