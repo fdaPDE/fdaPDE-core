@@ -1,4 +1,4 @@
-name: test-workflow
+name: test-linux-gcc
 on:
   push:
      branches: [ stable, develop ]

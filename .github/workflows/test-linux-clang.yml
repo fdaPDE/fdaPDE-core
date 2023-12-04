@@ -1,4 +1,4 @@
-name: test-workflow
+name: test-linux-clang
 on:
   push:
      branches: [ stable, develop ]
