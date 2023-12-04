@@ -7,7 +7,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: alepalu/fdapde-docker-image:latest
+      image: alepalu/fdapde-docker-linux:latest
     steps:
     - uses: actions/checkout@v2
     - name: run_tests
