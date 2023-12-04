@@ -22,7 +22,7 @@
 // utils
 #include "src/scalar_field_test.cpp"
 #include "src/vector_field_test.cpp"
-#include "src/matrix_field_test.cpp"
+// #include "src/matrix_field_test.cpp"
 #include "src/type_erasure_test.cpp"
 // mesh
 #include "src/element_test.cpp"

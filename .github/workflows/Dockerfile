@@ -6,6 +6,7 @@ FROM alpine:latest
 # base system dependencies
 RUN apk --no-cache add --update \
     g++ \
+    clang \
     libstdc++ \
     cmake \
     git \

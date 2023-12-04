@@ -23,6 +23,23 @@
 namespace fdapde {
 namespace core {
 
+// trait to detect if a mesh is a manifold
+template <int M, int N> struct is_manifold {
+    static constexpr bool value = (M != N);
+};
+
+// macro for the definition of mesh type detection
+#define DEFINE_MESH_TYPE_DETECTION_TRAIT(M_, N_, name)                                                                 \
+    template <int M, int N> struct is_##name {                                                                         \
+        static constexpr bool value =                                                                                  \
+          std::conditional<(M == M_ && N == N_), std::true_type, std::false_type>::type::value;                        \
+    };
+
+DEFINE_MESH_TYPE_DETECTION_TRAIT(1, 2, network);   // is_network<M, N>
+DEFINE_MESH_TYPE_DETECTION_TRAIT(2, 2, 2d);        // is_2d<M, N>
+DEFINE_MESH_TYPE_DETECTION_TRAIT(2, 3, surface);   // is_surface<M, N>
+DEFINE_MESH_TYPE_DETECTION_TRAIT(3, 3, 3d);        // is_3d<M, N>
+  
 // number of degrees of freedom associated to an M-dimensional element of degree R
 constexpr int ct_nnodes(const int M, const int R) {
     return ct_factorial(M + R) / (ct_factorial(M) * ct_factorial(R));

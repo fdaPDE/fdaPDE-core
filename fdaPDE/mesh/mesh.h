@@ -34,23 +34,6 @@
 namespace fdapde {
 namespace core {
 
-// trait to detect if a mesh is a manifold
-template <int M, int N> struct is_manifold {
-    static constexpr bool value = (M != N);
-};
-
-// macro for the definition of mesh type detection
-#define DEFINE_MESH_TYPE_DETECTION_TRAIT(M_, N_, name)                                                                 \
-    template <int M, int N> struct is_##name {                                                                         \
-        static constexpr bool value =                                                                                  \
-          std::conditional<(M == M_ && N == N_), std::true_type, std::false_type>::type::value;                        \
-    };
-
-DEFINE_MESH_TYPE_DETECTION_TRAIT(1, 2, network);   // is_network<M, N>
-DEFINE_MESH_TYPE_DETECTION_TRAIT(2, 2, 2d);        // is_2d<M, N>
-DEFINE_MESH_TYPE_DETECTION_TRAIT(2, 3, surface);   // is_surface<M, N>
-DEFINE_MESH_TYPE_DETECTION_TRAIT(3, 3, 3d);        // is_3d<M, N>
-
 // trait to select a proper neighboring storage structure depending on mesh type.
 template <int M, int N> struct neighboring_structure {
     using type = typename std::conditional<is_network<M, N>::value, SpMatrix<int>, DMatrix<int>>::type;
@@ -199,7 +182,7 @@ template <int M, int N> class Mesh {
     }
   
     // compile time informations
-    static constexpr bool is_manifold = is_manifold<M, N>::value;
+    static constexpr bool is_manifold = (M != N);
     enum {
         local_dimension = M,
         embedding_dimension = N,

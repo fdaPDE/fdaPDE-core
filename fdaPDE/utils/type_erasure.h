@@ -78,10 +78,11 @@ template <typename T, auto FuncPtr, std::size_t... Is> auto load_method(std::ind
       });
 }
 // recursively initializes virtual table
-template <int N, typename T, auto FuncPtr, auto... Vs> void init_vtable(ValueList<FuncPtr, Vs...>, void** vtable) {
+template <int N, typename T, auto FuncPtr, auto V, auto... Vs>
+void init_vtable(ValueList<FuncPtr, V, Vs...>, void** vtable) {
     vtable[N] =
       reinterpret_cast<void*>(load_method<T, FuncPtr>(std::make_index_sequence<fn_ptr_traits<FuncPtr>::n_args> {}));
-    init_vtable<N + 1, T, Vs...>(ValueList<Vs...>(), vtable);
+    init_vtable<N + 1, T, V, Vs...>(ValueList<V, Vs...>(), vtable);
 }
 template <int N, typename T, auto FuncPtr> void init_vtable(ValueList<FuncPtr>, void** vtable) {   // end of recursion
     vtable[N] =
@@ -219,15 +220,15 @@ template <typename StorageType, typename... I> class erase : vtable_handler, pub
           std::is_destructible<T_>::value &&
           (std::is_copy_constructible<T_>::value || std::is_move_constructible<T_>::value));
         // assign virtual table
-	size_ = (size<typename I::fn_ptrs<T_>>::value + ...);
+	size_ = (size<typename I::template fn_ptrs<T_>>::value + ...);
 	delete[] vtable_;
         vtable_ = new void*[size_];
-        init_vtable<0, T_>(typename merge<typename I::fn_ptrs<T_>...>::type(), vtable_);
+        init_vtable<0, T_>(typename merge<typename I::template fn_ptrs<T_>...>::type(), vtable_);
 	// initialize offset table
         int base_ = 0;
         auto load_offset = [this, &base_](const auto& i) -> void {
             offset_table_[typeid(std::decay_t<decltype(i)>)] = base_;
-            base_ += size<typename std::decay<decltype(i)>::type::fn_ptrs<T_>>::value;
+            base_ += size<typename std::decay<decltype(i)>::type::template fn_ptrs<T_>>::value;
         };
         std::apply([load_offset](const auto&... type) { (load_offset(type), ...); }, std::tuple<I...>());
     }

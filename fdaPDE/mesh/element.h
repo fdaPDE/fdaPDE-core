@@ -35,7 +35,7 @@ template <int M, int N> class Element;   // forward declaration
 // A mesh element. M: local dimension, N: embedding dimension
 template <int M, int N> class Element {
    private:
-    typedef typename std::conditional<M == 1 && N == 2, std::vector<int>, std::array<int, ct_nneighbors(M)>>::type
+  typedef typename std::conditional<is_network<M, N>::value, std::vector<int>, std::array<int, M + 1>>::type
       NeighborsContainer;
 
     int ID_;                                         // ID of this element

@@ -15,4 +15,4 @@ jobs:
         cd test/
         export Eigen3_DIR=/usr/share/cmake/Modules # reguired to let eigen3 work with CMake in alpine
         chmod +x run_tests.sh
-        ./run_tests.sh
+        ./run_tests.sh --compiler clang

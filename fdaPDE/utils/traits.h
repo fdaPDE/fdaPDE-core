@@ -55,12 +55,12 @@ struct has_type<T, std::tuple<U, Args...>> : has_type<T, std::tuple<Args...>> { 
 template <typename T, typename... Args> struct has_type<T, std::tuple<T, Args...>> : std::true_type { };
 
 // returns std::true_type if tuple contains an instantiation of template E<F>
-template <template <typename F> typename E, typename Tuple> struct has_instance_of { };
-template <template <typename F> typename E>   // empty tuple cannot contain anything
+template <template <typename, typename...> typename E, typename Tuple> struct has_instance_of { };
+template <template <typename, typename...> typename E>   // empty tuple cannot contain anything
 struct has_instance_of<E, std::tuple<>> : std::false_type { };
-template <typename F, template <typename> typename E, typename... Tail>   // type found, stop recursion
+template <typename F, template <typename, typename...> typename E, typename... Tail>   // type found, stop recursion
 struct has_instance_of<E, std::tuple<E<F>, Tail...>> : std::true_type { };
-template <typename U, template <typename> typename E, typename... Tail>   // recursive step
+template <typename U, template <typename, typename...> typename E, typename... Tail>   // recursive step
 struct has_instance_of<E, std::tuple<U, Tail...>> {
     static constexpr bool value = has_instance_of<E, std::tuple<Tail...>>::value;
 };
