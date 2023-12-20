@@ -35,15 +35,15 @@ template <int M, int N> class Element;   // forward declaration
 // A mesh element. M: local dimension, N: embedding dimension
 template <int M, int N> class Element {
    private:
-  typedef typename std::conditional<is_network<M, N>::value, std::vector<int>, std::array<int, M + 1>>::type
+    typedef typename std::conditional<is_network<M, N>::value, std::vector<int>, std::array<int, M + 1>>::type
       NeighborsContainer;
 
-    int ID_;                                         // ID of this element
-    std::array<int, ct_nvertices(M)> node_ids_ {};   // ID of nodes composing the element
-    std::array<SVector<N>, ct_nvertices(M)> coords_ {};      // nodes coordinates (1-1 mapped with node_ids_)
-    NeighborsContainer neighbors_ {};                        // ID of neighboring elements
-    bool boundary_;        // true if the element has at least one vertex on the boundary
-    double measure_ = 0;   // measure of the element
+    int ID_;                                              // ID of this element
+    std::array<int, ct_nvertices(M)> node_ids_ {};        // ID of nodes composing the element
+    std::array<SVector<N>, ct_nvertices(M)> coords_ {};   // nodes coordinates (1-1 mapped with node_ids_)
+    NeighborsContainer neighbors_ {};                     // ID of neighboring elements
+    bool boundary_;                                       // true if the element has at least one vertex on the boundary
+    double measure_ = 0;                                  // measure of the element
 
     // affine transformations from cartesian to barycentric coordinates and viceversa
     SMatrix<N, M> J_;       // [J_]_ij = (coords_[j][i] - coords_[0][i])

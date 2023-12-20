@@ -94,11 +94,11 @@ template <int M, int N> class Mesh {
     Facet<M, N> facet(int ID) const;
 
     int n_edges() const {
-      static_assert(!is_network<M, N>::value);
-      return is_3d<M, N>::value ? n_facets_ : n_edges_;
+        static_assert(!is_network<M, N>::value);
+        return is_3d<M, N>::value ? n_facets_ : n_edges_;
     }
     Eigen::Map<const DMatrix<int, Eigen::RowMajor>> edges() const {
-      static_assert(!is_network<M, N>::value);
+        static_assert(!is_network<M, N>::value);
         if constexpr (is_3d<M, N>::value) {
             return Eigen::Map<const DMatrix<int, Eigen::RowMajor>>(edges_.data(), n_edges_, n_vertices_per_edge);
         } else {
@@ -363,7 +363,132 @@ template <int M, int N> Facet<M, N> Mesh<M, N>::facet(int ID) const {
     return Facet<M, N>(ID, node_ids, coords, facet_to_element_.at(ID), on_boundary);
 }
 
+// template specialization for 1D meshes (bounded intervals)
+template <> class Mesh<1, 1> {
+   protected:
+    // pyhisical coordinates of nodes on the line
+    DVector<double> nodes_;
+    int n_nodes_ = 0;
+    // identifiers of nodes (as row indexes in nodes_ matrix) composing each element, in a RowMajor format
+    DMatrix<int, Eigen::RowMajor> elements_ {};
+    int n_elements_ = 0;
+    SVector<2> range_ {};   // mesh bounding box (minimum and maximum coordinates of interval)
+    DMatrix<int> neighbors_ {};
+
+    // precomputed set of elements
+    std::vector<Element<1, 1>> elements_cache_ {};
+   public:
+    Mesh() = default;
+    Mesh(const DVector<double>& nodes) : nodes_(nodes) {
+        // store number of nodes and elements
+        n_nodes_ = nodes_.rows();
+        n_elements_ = n_nodes_ - 1;
+        // compute mesh limits
+        range_[0] = nodes_[0];
+        range_[1] = nodes_[n_nodes_ - 1];
+
+        // build elements and neighboring structure
+        elements_.resize(n_elements_, 2);
+        for (std::size_t i = 0; i < n_nodes_ - 1; ++i) {
+            elements_(i, 0) = i;
+            elements_(i, 1) = i + 1;
+        }
+        neighbors_ = DMatrix<int>::Constant(n_elements_, n_neighbors_per_element, -1);
+        neighbors_(0, 1) = 1;
+        for (std::size_t i = 1; i < n_elements_ - 1; ++i) {
+            neighbors_(i, 0) = i - 1;
+            neighbors_(i, 1) = i + 1;
+        }
+        neighbors_(n_elements_ - 1, 0) = n_elements_ - 2;
+
+        // precompute elements informations for fast access
+        elements_cache_.reserve(n_elements_);
+        for (int i = 0; i < n_elements_; ++i) {
+            bool boundary = i == 0 || i == (n_elements_ - 1);   // element on boundary \iff its ID is 0 or n_elements_-1
+            elements_cache_.emplace_back(
+              i, std::array<int, 2> {i, i + 1}, std::array<SVector<1>, 2> {node(i), node(i + 1)},
+              std::array<int, 2> {neighbors_(i, 0), neighbors_(i, 1)}, boundary);
+        }
+        return;
+    };
+    // construct from interval's bounds [a, b] and the number of subintervals n into which split [a, b]
+    Mesh(double a, double b, std::size_t n) : Mesh(DVector<double>::LinSpaced(n + 1, a, b)) { }
+
+    // getters
+    const Element<1, 1>& element(int ID) const { return elements_cache_[ID]; }
+    Element<1, 1>& element(int ID) { return elements_cache_[ID]; }
+    SVector<1> node(int ID) const { return SVector<1>(nodes_[ID]); }
+    bool is_on_boundary(int ID) const { return (ID == 0 || ID == (n_nodes_ - 1)); }
+    const DVector<double>& nodes() const { return nodes_; }
+    const DMatrix<int, Eigen::RowMajor>& elements() const { return elements_; }
+    const DMatrix<int>& neighbors() const { return neighbors_; }
+    int n_elements() const { return n_elements_; }
+    int n_nodes() const { return n_nodes_; }
+    SVector<2> range() const { return range_; }
+
+    // iterators support
+    struct iterator {   // range-for loop over mesh elements
+       private:
+        friend Mesh;
+        const Mesh* mesh_;
+        int index_;   // current element
+        iterator(const Mesh* mesh, int index) : mesh_(mesh), index_(index) {};
+       public:
+        // increment current iteration index and return this iterator
+        iterator& operator++() {
+            ++index_;
+            return *this;
+        }
+        const Element<1, 1>& operator*() { return mesh_->element(index_); }
+        friend bool operator!=(const iterator& lhs, const iterator& rhs) { return lhs.index_ != rhs.index_; }
+        const Element<1, 1>& operator*() const { return mesh_->element(index_); }
+    };
+    iterator begin() const { return iterator(this, 0); }
+    iterator end() const { return iterator(this, elements_.rows()); }
+
+    // localize element containing point using a O(log(n)) time-complexity binary search strategy
+    DVector<int> locate(const DVector<double>& points) const {
+        // allocate space
+        DVector<int> result;
+        result.resize(points.rows());
+        // start search
+        for (std::size_t i = 0; i < points.rows(); ++i) {
+            // check if point is inside
+            if (points[i] < range_[0] || points[i] > range_[1]) {
+                result[i] = -1;
+            } else {
+                // search by binary search strategy
+                int h_min = 0, h_max = n_nodes_;
+                while (true) {
+                    int j = h_min + std::floor((h_max - h_min) / 2);
+                    if (points[i] >= nodes_[j] && points[i] < nodes_[j + 1]) {
+                        result[i] = j;
+                        break;
+                    } else {
+                        if (points[i] < nodes_[j]) {
+                            h_max = j;   // search on the left
+                        } else {
+                            h_min = j;   // search on the right
+                        }
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
+    // compile time informations
+    static constexpr bool is_manifold = false;
+    enum {
+        local_dimension = 1,
+        embedding_dimension = 1,
+        n_vertices = 2,
+        n_neighbors_per_element = 2
+    };
+};
+
 // alias exports
+typedef Mesh<1, 1> Mesh1D;
 typedef Mesh<2, 2> Mesh2D;
 typedef Mesh<3, 3> Mesh3D;
 typedef Mesh<2, 3> SurfaceMesh;

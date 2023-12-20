@@ -124,10 +124,10 @@ TYPED_TEST(mesh_test, boundary_checks) {
     for (std::size_t i = 0; i < this->mesh_loader.mesh.n_elements(); ++i) {
         auto e = this->mesh_loader.mesh.element(i);
         // check that neighboing elements have always M points in common
-        for (int neighID : e.neighbors()) {
+        for (int neigh_id : e.neighbors()) {
             if (!e.is_on_boundary()) {
                 // request neighboring element from mesh
-                auto n = this->mesh_loader.mesh.element(neighID);
+                auto n = this->mesh_loader.mesh.element(neigh_id);
                 // take nodes of both elements
                 std::array<SVector<TestFixture::N>, TestFixture::M + 1> eList, nList;
                 for (std::size_t j = 0; j < TestFixture::M + 1; ++j) {
@@ -158,15 +158,37 @@ TYPED_TEST(mesh_test, boundary_checks) {
 // check the range for loop scans the whole mesh element by element
 TYPED_TEST(mesh_test, range_for) {
     // prepare set with all indexes of IDs to touch
-    std::unordered_set<int> meshIDs {};
-    for (int i = 0; i < this->mesh_loader.mesh.n_elements(); ++i) meshIDs.insert(i);
+    std::unordered_set<int> mesh_ids {};
+    for (int i = 0; i < this->mesh_loader.mesh.n_elements(); ++i) mesh_ids.insert(i);
 
     // range-for over all elements removing the element's ID from the above set when the element is visited
     for (const auto& e : this->mesh_loader.mesh) {
         // check element ID still present in the IDs set (ID not visisted by means of a different element)
-        EXPECT_TRUE(meshIDs.find(e.ID()) != meshIDs.end());
-        meshIDs.erase(e.ID());
+        EXPECT_TRUE(mesh_ids.find(e.ID()) != mesh_ids.end());
+        mesh_ids.erase(e.ID());
     }
     // check that no ID is left in the initial set
-    EXPECT_TRUE(meshIDs.empty());
+    EXPECT_TRUE(mesh_ids.empty());
+}
+
+TEST(mesh_test, 1D_interval) {
+    // create unit interval (nodes evenly distributed)
+    Mesh<1, 1> unit_interval(0, 1, 10);
+
+    std::unordered_set<int> mesh_ids {};
+    for (int i = 0; i < unit_interval.n_elements(); ++i) { mesh_ids.insert(i); }
+    for (const auto& e : unit_interval) {
+        // check element ID still present in the IDs set (ID not visisted by means of a different element)
+        EXPECT_TRUE(mesh_ids.find(e.ID()) != mesh_ids.end());
+        mesh_ids.erase(e.ID());
+
+	// boundary checks
+        if (e.ID() == 0 || e.ID() == unit_interval.n_elements()-1) {
+            EXPECT_TRUE(e.is_on_boundary());
+        } else {
+	    EXPECT_TRUE(!e.is_on_boundary());
+        }
+    }
+    // check that no ID is left in the initial set
+    EXPECT_TRUE(mesh_ids.empty());   
 }
