@@ -38,7 +38,6 @@ template <typename D, typename E, typename F, typename... Ts> class SplineSolver
     };
     using DomainType = D;
     using FunctionalBasis = SplineBasis<spline_order>;
-    using ReferenceBasis = SplineBasis<spline_order>;
     using Quadrature = typename FunctionalBasis::Quadrature;
     // constructor
     SplineSolverBase() = default;

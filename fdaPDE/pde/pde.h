@@ -54,8 +54,8 @@ class PDE {
       std::is_same<DMatrix<double>, F>::value || std::is_base_of<ScalarExpr<D::embedding_dimension, F>, F>::value,
       "forcing is not a matrix or a scalar expression || N != F::base");
     typedef typename pde_solver_selector<S, D, E, F, Ts...>::type SolverType;
-    typedef typename SolverType::ReferenceBasis ReferenceBasis;   // function space approximating the solution space
-    typedef typename SolverType::Quadrature Quadrature;           // quadrature for numerical integral approximations
+    typedef typename SolverType::FunctionalBasis FunctionalBasis;   // function space approximating the solution space
+    typedef typename SolverType::Quadrature Quadrature;             // quadrature for numerical integral approximations
 
     // minimal constructor, use below setters to complete the construction of a PDE object
     PDE(const D& domain) : domain_(domain) { }
@@ -83,8 +83,8 @@ class PDE {
     const DVector<double>& initial_condition() const { return initial_condition_; }
     const DMatrix<double>& boundary_data() const { return boundary_data_; };
     const Quadrature& integrator() const { return solver_.integrator(); }
-    const ReferenceBasis& reference_basis() const { return solver_.reference_basis(); }
-
+    const FunctionalBasis& basis() const { return solver_.basis(); }
+  
     template <template <typename> typename EvaluationPolicy>
     std::pair<SpMatrix<double>, DVector<double>> eval_functional_basis(const DMatrix<double>& locs) const {
         return solver_.basis().template eval<EvaluationPolicy>(locs);
