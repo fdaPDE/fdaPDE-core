@@ -36,7 +36,7 @@ namespace core {
 template <typename S, typename D, typename E, typename F, typename... Ts> struct pde_solver_selector { };
 
 // Description of a Partial Differential Equation Lf = u solved with strategy S
-template <typename D,     // domain's triangulation
+template <typename D,     // problem domain
           typename E,     // differential operator L
           typename F,     // forcing term u
           typename S,     // resolution strategy
@@ -69,7 +69,7 @@ class PDE {
     PDE(const D& domain, E diff_op, const F& forcing_data) :
         domain_(domain), diff_op_(diff_op), forcing_data_(forcing_data) { }
     fdapde_enable_constructor_if(is_parabolic, E)
-      PDE(const D& domain, const DVector<double>& time, E diff_op, const F& forcing_data) :
+    PDE(const D& domain, const DVector<double>& time, E diff_op, const F& forcing_data) :
         domain_(domain), time_(time), diff_op_(diff_op), forcing_data_(forcing_data) { }
     // setters
     void set_dirichlet_bc(const DMatrix<double>& data) { boundary_data_ = data; }
@@ -92,8 +92,8 @@ class PDE {
     std::size_t n_dofs() const { return solver_.n_dofs(); }
     const DMatrix<double>& solution() const { return solver_.solution(); };   // PDE solution
     const DMatrix<double>& force() const { return solver_.force(); };         // rhs of discrete linear system
-    const SpMatrix<double>& R1() const { return solver_.R1(); };              // stiff matrix
-    const SpMatrix<double>& R0() const { return solver_.R0(); };              // mass matrix
+    const SpMatrix<double>& stiff() const { return solver_.stiff(); };        // stiff matrix
+    const SpMatrix<double>& mass() const { return solver_.mass(); };          // mass matrix
     DMatrix<double> dof_coords() { return solver_.dofs_coords(domain_); }
     DMatrix<double> quadrature_nodes() const { return integrator().quadrature_nodes(domain_); };
     void init() { solver_.init(*this); };   // initializes the solver
@@ -127,8 +127,8 @@ struct I_PDE {
     // getters
     decltype(auto) solution()         const { return invoke<const DMatrix<double>& , 2>(*this); }
     decltype(auto) force()            const { return invoke<const DMatrix<double>& , 3>(*this); }
-    decltype(auto) R1()               const { return invoke<const SpMatrix<double>&, 4>(*this); }
-    decltype(auto) R0()               const { return invoke<const SpMatrix<double>&, 5>(*this); }
+    decltype(auto) stiff()            const { return invoke<const SpMatrix<double>&, 4>(*this); }
+    decltype(auto) mass()             const { return invoke<const SpMatrix<double>&, 5>(*this); }
     decltype(auto) quadrature_nodes() const { return invoke<DMatrix<double>        , 6>(*this); }
     decltype(auto) n_dofs()           const { return invoke<std::size_t            , 7>(*this); }
     decltype(auto) dof_coords()       const { return invoke<DMatrix<double>        , 8>(*this); }
@@ -156,7 +156,7 @@ struct I_PDE {
     using fn_ptrs = fdapde::mem_fn_ptrs<
       &T::init, &T::solve,   // initialization and pde solution
       // getters
-      &T::solution, &T::force, &T::R1, &T::R0, &T::quadrature_nodes, &T::n_dofs, &T::dof_coords, &T::forcing_data,
+      &T::solution, &T::force, &T::stiff, &T::mass, &T::quadrature_nodes, &T::n_dofs, &T::dof_coords, &T::forcing_data,
       &T::template eval_functional_basis<pointwise_evaluation>, &T::template eval_functional_basis<areal_evaluation>,
       // setters
       &T::set_forcing, &T::set_dirichlet_bc, &T::set_initial_condition, &T::set_differential_operator>;

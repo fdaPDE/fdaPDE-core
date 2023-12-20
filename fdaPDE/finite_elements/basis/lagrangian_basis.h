@@ -19,6 +19,7 @@
 
 #include "../../mesh/element.h"
 #include "../../mesh/reference_element.h"
+#include "../../pde/symbols.h"
 #include "../../utils/compile_time.h"
 #include "../../utils/symbols.h"
 #include "multivariate_polynomial.h"
@@ -96,7 +97,7 @@ template <typename DomainType, int order> class LagrangianBasis {
     using ReferenceBasis = LagrangianElement<M, R>;
     // constructor
     LagrangianBasis() = default;
-  LagrangianBasis(const DomainType& domain, std::size_t size) : domain_(&domain), size_(size) { };
+    LagrangianBasis(const DomainType& domain, std::size_t size) : domain_(&domain), size_(size) { };
   
     // returns a pair of matrices (\Psi, D) where: \Psi is the matrix of basis functions evaluations according
     // to the given policy, D is a policy-dependent vector (see the specific policy for details)
@@ -124,7 +125,6 @@ template <typename DomainType, int order> class LagrangianBasis {
     }
 };
 
-template <typename T> struct pointwise_evaluation;
 template <typename DomainType, int order> struct pointwise_evaluation<LagrangianBasis<DomainType, order>> {
     using BasisType = typename LagrangianBasis<DomainType, order>::ReferenceBasis;
     static constexpr int N = DomainType::embedding_dimension;
@@ -156,7 +156,6 @@ template <typename DomainType, int order> struct pointwise_evaluation<Lagrangian
     }
 };
 
-template <typename T> struct areal_evaluation;
 template <typename DomainType, int order> struct areal_evaluation<LagrangianBasis<DomainType, order>> {
     using BasisType = typename LagrangianBasis<DomainType, order>::ReferenceBasis;
     static constexpr int N = DomainType::embedding_dimension;

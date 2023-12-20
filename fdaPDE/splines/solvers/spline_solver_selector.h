@@ -14,27 +14,24 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __SPLINE_SYMBOLS_H__
-#define __SPLINE_SYMBOLS_H__
+#ifndef __SPLINE_SOLVER_SELECTOR_H__
+#define __SPLINE_SOLVER_SELECTOR_H__
+
+#include "../../utils/traits.h"
+#include "../spline_symbols.h"
+#include "spline_linear_elliptic_solver.h"
 
 namespace fdapde {
 namespace core {
 
-// spline-based discretization strategy tag for PDE discretization
-struct SPLINE { };
-
-// utility macro to import symbols from memory buffer recived from assembly loop to spline operators
-#define IMPORT_SPLINE_MEM_BUFFER_SYMBOLS(mem_buff)                                                                     \
-    /* pair of basis functions \psi_i, \psi_j */                                                                       \
-    auto psi_i = std::get<0>(mem_buff);                                                                                \
-    auto psi_j = std::get<1>(mem_buff);
-
-// spline order type (just a type wrapper around an int)
-template <int R> struct spline_order {
-    static constexpr int value = R;
+// selects solver type depending on properties of operator E, carries domain D and forcing F to solver
+template <typename D, typename E, typename F, typename... Ts> struct pde_solver_selector<SPLINE, D, E, F, Ts...> {
+    using type = typename switch_type<
+      switch_type_case<!is_parabolic<E>::value, SplineLinearEllipticSolver <D, E, F, Ts...>>
+      >::type;
 };
-  
+
 }   // namespace core
 }   // namespace fdapde
 
-#endif   // __SPLINE_SYMBOLS_H__
+#endif   // __SPLINE_SOLVER_SELECTOR_H__

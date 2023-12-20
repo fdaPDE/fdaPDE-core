@@ -33,6 +33,9 @@
 #include "splines/spline_assembler.h"
 #include "splines/basis/spline.h"
 #include "splines/basis/spline_basis.h"
+#include "splines/solvers/spline_solver_base.h"
+#include "splines/solvers/spline_solver_selector.h"
+#include "splines/solvers/spline_linear_elliptic_solver.h"
 #include "splines/operators/reaction.h"
 #include "splines/operators/bilaplacian.h"
 

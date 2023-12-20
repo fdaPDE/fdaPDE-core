@@ -14,18 +14,19 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <gtest/gtest.h>   // testing framework
-#include <unsupported/Eigen/SparseExtra>
-
-#include <fdaPDE/utils.h>
 #include <fdaPDE/splines.h>
-using fdapde::core::SplineBasis;
-using fdapde::core::reaction;
-using fdapde::core::bilaplacian;
-using fdapde::core::SPLINE;
-using fdapde::core::IntegratorTable;
-using fdapde::core::GaussLegendre;
+#include <fdaPDE/utils.h>
+#include <gtest/gtest.h>   // testing framework
+
+#include <unsupported/Eigen/SparseExtra>
 using fdapde::core::Assembler;
+using fdapde::core::bilaplacian;
+using fdapde::core::GaussLegendre;
+using fdapde::core::IntegratorTable;
+using fdapde::core::reaction;
+using fdapde::core::SPLINE;
+using fdapde::core::SplineBasis;
+using fdapde::core::spline_order;
 
 #include "utils/utils.h"
 using fdapde::testing::almost_equal;
@@ -55,7 +56,7 @@ TEST(spline_test, cox_de_boor_definition) {
 }
 
 // test definition of spline basis derivative
-TEST(spline_test, second_derivative) {
+TEST(spline_test, cubic_spline_second_derivative) {
     // define vector of equidistant knots on unit interval [0,1]
     DVector<double> knots;
     knots.resize(11);
@@ -79,45 +80,27 @@ TEST(spline_test, second_derivative) {
 }
 
 TEST(spline_test, cubic_spline_reaction_operator) {
-    // define time domain
-    DVector<double> time;
-    time.resize(11);
-    std::size_t i = 0;
-    for (double x = 0; x <= 2; x += 0.2, ++i) { time[i] = x; }
-
+    Mesh<1, 1> unit_interval(0, 2, 10);
+    // define PDE
     auto L = reaction<SPLINE>(1.0);
-    SplineBasis<3> basis(time);
-    IntegratorTable<1, 3, GaussLegendre> quadrature;
-
-    Assembler<SPLINE, DVector<double>, SplineBasis<3>, decltype(quadrature)> assembler(time, quadrature);
-    SpMatrix<double> computed = assembler.discretize_operator(L);
-
+    PDE<Mesh<1, 1>, decltype(L), DMatrix<double>, SPLINE, spline_order<3>> pde_(unit_interval, L);
+    pde_.init();
     // load expected data from file
     SpMatrix<double> expected;
     Eigen::loadMarket(expected, "../data/mtx/spline_test_3.mtx");
-
-    // check for equality under DOUBLE_TOLERANCE
-    EXPECT_TRUE(almost_equal(expected, computed));
+    EXPECT_TRUE(almost_equal(expected, pde_.stiff()));
 }
 
 TEST(spline_test, cubic_spline_bilaplacian_operator) {
-    // define time domain
-    DVector<double> time;
-    time.resize(11);
-    std::size_t i = 0;
-    for (double x = 0; x <= 2; x += 0.2, ++i) { time[i] = x; }
-
+    Mesh<1, 1> unit_interval(0, 2, 10);
+    // define PDE
     auto L = -bilaplacian<SPLINE>();
-    SplineBasis<3> basis(time);
-    IntegratorTable<1, 3, GaussLegendre> quadrature;
-
-    Assembler<SPLINE, DVector<double>, SplineBasis<3>, decltype(quadrature)> assembler(time, quadrature);
-    SpMatrix<double> computed = assembler.discretize_operator(L);
-
+    PDE<Mesh<1, 1>, decltype(L), DMatrix<double>, SPLINE, spline_order<3>> pde_(unit_interval, L);
+    pde_.init();
     // load expected data from file
     SpMatrix<double> expected;
     Eigen::loadMarket(expected, "../data/mtx/spline_test_4.mtx");
-
-    // check for equality under DOUBLE_TOLERANCE
-    EXPECT_TRUE(almost_equal(expected, computed));
+    EXPECT_TRUE(almost_equal(expected, pde_.stiff()));
 }
+
+

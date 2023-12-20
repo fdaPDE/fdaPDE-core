@@ -14,20 +14,20 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FEM_LINEAR_ELLIPTIC_SOLVER_H__
-#define __FEM_LINEAR_ELLIPTIC_SOLVER_H__
+#ifndef __SPLINE_LINEAR_ELLIPTIC_SOLVER_H__
+#define __SPLINE_LINEAR_ELLIPTIC_SOLVER_H__
 
 #include <exception>
 
 #include "../../utils/symbols.h"
-#include "fem_solver_base.h"
+#include "spline_solver_base.h"
 
 namespace fdapde {
 namespace core {
   
 template <typename D, typename E, typename F, typename... Ts>
-struct FEMLinearEllipticSolver : public FEMSolverBase<D, E, F, Ts...> {
-    // solves linear system stiff_*u = force_
+struct SplineLinearEllipticSolver : public SplineSolverBase<D, E, F, Ts...> {
+    // solves linear system R1_*u = b, where R1_ : stiff matrix, b : discretized force
     template <typename PDE> void solve(const PDE& pde) {
         static_assert(is_pde<PDE>::value, "pde is not a valid PDE object");
         if (!this->is_init) throw std::runtime_error("solver must be initialized first!");
@@ -40,7 +40,7 @@ struct FEMLinearEllipticSolver : public FEMSolverBase<D, E, F, Ts...> {
             this->success = false;
             return;
         }
-        // solve FEM linear system: stiff_*solution_ = force_;
+        // solve FEM linear system: R1_*solution_ = force_;
         this->solution_ = solver.solve(this->force_);        
         this->success = true;
         return;
@@ -50,4 +50,4 @@ struct FEMLinearEllipticSolver : public FEMSolverBase<D, E, F, Ts...> {
 }   // namespace core
 }   // namespace fdapde
 
-#endif   // __FEM_LINEAR_ELLIPTIC_SOLVER_H__
+#endif   // __SPLINE_LINEAR_ELLIPTIC_SOLVER_H__

@@ -33,56 +33,49 @@ template <typename D, typename B, typename I> class Assembler<SPLINE, D, B, I> {
     const I& integrator_;   // quadrature rule
     B basis_;               // spline basis over mesh_
    public:
-    Assembler(const D& mesh, const I& integrator) : mesh_(mesh), integrator_(integrator), basis_(mesh) {};
+    Assembler(const D& mesh, const I& integrator) : mesh_(mesh), integrator_(integrator), basis_(mesh.nodes()) {};
 
     // discretization methods
-    template <typename E> SpMatrix<double> discretize_operator(const E& op);
-};
+    template <typename E> SpMatrix<double> discretize_operator(const E& op) {
+        constexpr int R = B::order;
+        std::size_t M = basis_.size();
+        std::vector<fdapde::Triplet<double>> triplet_list;
+        SpMatrix<double> discretization_matrix;
 
-// implementative details
+        // properly preallocate memory to avoid reallocations
+        triplet_list.reserve(M * M);
+        discretization_matrix.resize(M, M);
 
-// assembly for the discretization matrix of a general operator L
-template <typename D, typename B, typename I>
-template <typename E>
-SpMatrix<double> Assembler<SPLINE, D, B, I>::discretize_operator(const E& op) {
-    constexpr int R = B::order;
-    std::size_t M = basis_.size();
-    std::vector<fdapde::Triplet<double>> triplet_list;
-    SpMatrix<double> discretization_matrix;
+        // prepare space for bilinear form components
+        using BasisType = typename B::ElementType;
+        BasisType buff_psi_i, buff_psi_j;   // basis functions \psi_i, \psi_j
+        // prepare buffer to be sent to bilinear form
+        auto mem_buffer = std::make_tuple(ScalarPtr(&buff_psi_i), ScalarPtr(&buff_psi_j));
 
-    // properly preallocate memory to avoid reallocations
-    triplet_list.reserve(M * M);
-    discretization_matrix.resize(M, M);
-    
-    // prepare space for bilinear form components
-    using BasisType = typename B::ElementType;
-    BasisType buff_psi_i, buff_psi_j;   // basis functions \psi_i, \psi_j
-    // prepare buffer to be sent to bilinear form
-    auto mem_buffer = std::make_tuple(ScalarPtr(&buff_psi_i), ScalarPtr(&buff_psi_j));
+        // start assembly loop (exploit local support of spline basis)
+        for (std::size_t i = 0; i < M; ++i) {
+            buff_psi_i = basis_[i];
+            for (std::size_t j = 0; j <= (E::is_symmetric ? i : M); ++j) {
+                buff_psi_j = basis_[j];
+                auto f = op.integrate(mem_buffer);   // let the compiler deduce the type of the expression template!
 
-    // start assembly loop (exploit local support of spline basis)
-    for (std::size_t i = 0; i < M; ++i) {
-        buff_psi_i = basis_[i];
-        for (std::size_t j = 0; j <= (E::is_symmetric ? i : M); ++j) {
-            buff_psi_j = basis_[j];
-	    auto f = op.integrate(mem_buffer);   // let the compiler deduce the type of the expression template!
-
-            // perform integration of f over interval [knots[j], knots[i+R+1]]
-            double value = 0;
-            for (std::size_t k = j; k <= i + R; ++k) {
-                value += integrate_1D(basis_.knots()[k], basis_.knots()[k + 1], f, integrator_);
+                // perform integration of f over interval [knots[j], knots[i+R+1]]
+                double value = 0;
+                for (std::size_t k = j; k <= i + R; ++k) {
+                    value += integrate_1D(basis_.knots()[k], basis_.knots()[k + 1], f, integrator_);
+                }
+                triplet_list.emplace_back(i, j, value);
             }
-            triplet_list.emplace_back(i, j, value);
         }
+        // finalize construction
+        discretization_matrix.setFromTriplets(triplet_list.begin(), triplet_list.end());
+        discretization_matrix.makeCompressed();
+
+        if constexpr (E::is_symmetric)
+            return discretization_matrix.selfadjointView<Eigen::Lower>();
+        else
+            return discretization_matrix;
     }
-    // finalize construction
-    discretization_matrix.setFromTriplets(triplet_list.begin(), triplet_list.end());
-    discretization_matrix.makeCompressed();
- 
-    if constexpr (E::is_symmetric)
-        return discretization_matrix.selfadjointView<Eigen::Lower>();
-    else
-        return discretization_matrix;
 };
 
 }   // namespace core

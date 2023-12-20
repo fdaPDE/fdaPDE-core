@@ -47,7 +47,7 @@ class FEMLinearParabolicSolver : public FEMSolverBase<D, E, F, Ts...> {
         this->solution_.resize(this->n_dofs(), m);
         this->solution_.col(0) = pde.initial_condition();   // impose initial condition
         DVector<double> rhs(n,1);
-        SpMatrix<double> K = (this->R0_) / deltaT_ + this->R1_;   // build system matrix
+        SpMatrix<double> K = (this->mass_) / deltaT_ + this->stiff_;   // build system matrix
             
         // set dirichlet boundary conditions
         for (auto it = this->boundary_dofs_begin(); it != this->boundary_dofs_end(); ++it) {
@@ -65,7 +65,7 @@ class FEMLinearParabolicSolver : public FEMSolverBase<D, E, F, Ts...> {
         
         // execute temporal loop to solve ODE system via forward-euler scheme
         for (std::size_t i = 0; i < m - 1; ++i) {
-            rhs = ((this->R0_) / deltaT_) * this->solution_.col(i) + this->force_.block(n*(i+1), 0, n, 1);  
+            rhs = ((this->mass_) / deltaT_) * this->solution_.col(i) + this->force_.block(n*(i+1), 0, n, 1);  
             // impose boundary conditions
             for (auto it = this->boundary_dofs_begin(); it != this->boundary_dofs_end(); ++it) {
                 rhs[*it] = pde.boundary_data()(*it,i+1);

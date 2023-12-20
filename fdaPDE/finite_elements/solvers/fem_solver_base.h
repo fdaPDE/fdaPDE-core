@@ -54,8 +54,8 @@ template <typename D, typename E, typename F, typename... Ts> class FEMSolverBas
     // getters
     const DMatrix<double>& solution() const { return solution_; }
     const DMatrix<double>& force() const { return force_; }
-    const SpMatrix<double>& R1() const { return R1_; }
-    const SpMatrix<double>& R0() const { return R0_; }
+    const SpMatrix<double>& stiff() const { return stiff_; }
+    const SpMatrix<double>& mass() const { return mass_; }
     const Quadrature& integrator() const { return integrator_; }
     const ReferenceBasis& reference_basis() const { return reference_basis_; }
     const FunctionalBasis& basis() const { return basis_; }
@@ -97,8 +97,8 @@ template <typename D, typename E, typename F, typename... Ts> class FEMSolverBas
     ReferenceBasis reference_basis_ {};   // function basis on the reference unit simplex
     DMatrix<double> solution_;            // vector of coefficients of the approximate solution
     DMatrix<double> force_;               // discretized force [u]_i = \int_D f*\psi_i
-    SpMatrix<double> R1_;                 // [R1_]_{ij} = a(\psi_i, \psi_j), being a(.,.) the bilinear form
-    SpMatrix<double> R0_;                 // mass matrix, [R0_]_{ij} = \int_D (\psi_i * \psi_j)
+    SpMatrix<double> stiff_;                 // [stiff_]_{ij} = a(\psi_i, \psi_j), being a(.,.) the bilinear form
+    SpMatrix<double> mass_;                 // mass matrix, [mass_]_{ij} = \int_D (\psi_i * \psi_j)
 
     std::size_t n_dofs_ = 0;        // degrees of freedom, i.e. the maximum ID in the dof_table_
     DMatrix<int> dofs_;             // for each element, the degrees of freedom associated to it
@@ -120,8 +120,8 @@ void FEMSolverBase<D, E, F, Ts...>::init(const PDE& pde) {
     basis_ = FunctionalBasis(pde.domain(), n_dofs_);
     // assemble discretization matrix for given operator    
     Assembler<FEM, DomainType, ReferenceBasis, Quadrature> assembler(pde.domain(), integrator_, n_dofs_, dofs_);
-    R1_ = assembler.discretize_operator(pde.differential_operator());
-    R1_.makeCompressed();
+    stiff_ = assembler.discretize_operator(pde.differential_operator());
+    stiff_.makeCompressed();
     // assemble forcing vector
     std::size_t n = n_dofs_;   // degrees of freedom in space
     std::size_t m;             // number of time points
@@ -142,8 +142,8 @@ void FEMSolverBase<D, E, F, Ts...>::init(const PDE& pde) {
         force_.resize(n * m, 1);
         force_.block(0, 0, n, 1) = assembler.discretize_forcing(pde.forcing_data());
     }
-    // compute mass matrix [R0]_{ij} = \int_{\Omega} \phi_i \phi_j
-    R0_ = assembler.discretize_operator(Reaction<FEM, double>(1.0));
+    // compute mass matrix [mass]_{ij} = \int_{\Omega} \phi_i \phi_j
+    mass_ = assembler.discretize_operator(Reaction<FEM, double>(1.0));
     is_init = true;
     return;
 }
@@ -155,8 +155,8 @@ void FEMSolverBase<D, E, F, Ts...>::set_dirichlet_bc(const PDE& pde) {
     static_assert(is_pde<PDE>::value, "not a valid PDE");
     if (!is_init) throw std::runtime_error("solver must be initialized first!");
     for (auto it = boundary_dofs_begin(); it != boundary_dofs_end(); ++it) {
-      R1_.row(*it) *= 0;            // zero all entries of this row
-      R1_.coeffRef(*it, *it) = 1;   // set diagonal element to 1 to impose equation u_j = b_j
+      stiff_.row(*it) *= 0;            // zero all entries of this row
+      stiff_.coeffRef(*it, *it) = 1;   // set diagonal element to 1 to impose equation u_j = b_j
 	
       // TODO: currently only space-only case supported (reason of [0] below)
       force_.coeffRef(*it, 0) = pde.boundary_data()(*it, 0);   // impose boundary value on forcing term

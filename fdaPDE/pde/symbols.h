@@ -14,27 +14,17 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __SPLINE_SYMBOLS_H__
-#define __SPLINE_SYMBOLS_H__
+#ifndef __PDE_SYMBOLS_H__
+#define __PDE_SYMBOLS_H__
 
 namespace fdapde {
 namespace core {
 
-// spline-based discretization strategy tag for PDE discretization
-struct SPLINE { };
-
-// utility macro to import symbols from memory buffer recived from assembly loop to spline operators
-#define IMPORT_SPLINE_MEM_BUFFER_SYMBOLS(mem_buff)                                                                     \
-    /* pair of basis functions \psi_i, \psi_j */                                                                       \
-    auto psi_i = std::get<0>(mem_buff);                                                                                \
-    auto psi_j = std::get<1>(mem_buff);
-
-// spline order type (just a type wrapper around an int)
-template <int R> struct spline_order {
-    static constexpr int value = R;
-};
+// possible sampling strategies for basis functions
+template <typename T> struct pointwise_evaluation;
+template <typename T> struct areal_evaluation;
   
 }   // namespace core
 }   // namespace fdapde
 
-#endif   // __SPLINE_SYMBOLS_H__
+#endif   // __PDE_SYMBOLS_H__

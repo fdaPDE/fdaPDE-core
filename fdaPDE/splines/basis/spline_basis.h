@@ -18,6 +18,7 @@
 #define __SPLINE_BASIS_H__
 
 #include "../../utils/symbols.h"
+#include "../../utils/integration/integrator_tables.h"
 #include "spline.h"
 
 namespace fdapde {
@@ -29,10 +30,9 @@ template <int R> class SplineBasis {
     DVector<double> knots_ {};   // vector of knots
     std::vector<Spline<R>> basis_ {};
    public:
-    using const_iterator = typename std::vector<Spline<R>>::const_iterator;
     static constexpr std::size_t order = R;
     typedef Spline<R> ElementType;
-
+    typedef IntegratorTable<1, 3, GaussLegendre> Quadrature; // quadrature rule to integrate the elements of this basis
     // constructor
     SplineBasis() = default;
     SplineBasis(const DVector<double>& knots) : knots_(knots) {
@@ -58,14 +58,46 @@ template <int R> class SplineBasis {
         }
     }
 
-    // getters
+    // returns the matrix \Phi of basis functions evaluations at the given locations
+    template <template <typename> typename EvaluationPolicy>
+    SpMatrix<double> eval(const DVector<double>& locs) const {
+        return EvaluationPolicy<SplineBasis<R>>::eval(basis_, locs, basis_.size());
+    }
     const Spline<R>& operator[](std::size_t i) const { return basis_[i]; }
     int size() const { return basis_.size(); }
     const DVector<double>& knots() const { return knots_; }
+    // given a coefficient vector c \in \mathbb{R}^size_, evaluates the corresponding basis expansion at locs
+    DVector<double> operator()(const DVector<double>& c, const DVector<double>& locs) const {
+        fdapde_assert(c.rows() == size() && locs.cols() != 0);
+        DVector<double> result = DVector<double>::Zero(locs.rows());
+        for (std::size_t i = 0; i < locs.rows(); ++i) {
+            // evaluate basis expansion \sum_{i=1}^size_ c_i \phi_i(x) at p
+            SVector<1> p(locs[i]);
+            for (std::size_t h = 0; h < basis_.size(); ++h) { result[i] += c[h] * basis_[h](p); }
+        }
+        return result;
+    }
+};
 
-    // iterators
-    const_iterator begin() const { return basis_.cbegin(); }
-    const_iterator end() const { return basis_.cend(); }
+template <int R> struct pointwise_evaluation<SplineBasis<R>> {
+    using BasisType = SplineBasis<R>;
+    // computes a matrix \Phi such that [\Phi]_{ij} = \phi_j(t_i)
+    static SpMatrix<double> eval(const BasisType& basis, const DVector<double>& locs, std::size_t n_basis) {
+        fdapde_assert(locs.size() != 0);
+        // preallocate space
+        SpMatrix<double> Phi(locs.rows(), n_basis);
+        std::vector<fdapde::Triplet<double>> triplet_list;
+        triplet_list.reserve(locs.rows() * (R + 1));
+        // build \Phi matrix
+        for (int i = 0; i < n_basis; ++i) {
+            for (int j = 0; j < locs.rows(); ++j) { triplet_list.emplace_back(j, i, basis[i](SVector<1>(locs[j]))); }
+        }
+        // finalize construction
+        Phi.setFromTriplets(triplet_list.begin(), triplet_list.end());
+        Phi.prune(0.0);   // remove zeros
+        Phi.makeCompressed();
+        return Phi;
+    }
 };
 
 }   // namespace core
