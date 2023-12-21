@@ -32,7 +32,7 @@ template <int R> class SplineBasis {
    public:
     static constexpr std::size_t order = R;
     typedef Spline<R> ElementType;
-    typedef IntegratorTable<1, 3, GaussLegendre> Quadrature; // quadrature rule to integrate the elements of this basis
+    typedef Integrator<SPLINE, 1, order> Quadrature;
     // constructor
     SplineBasis() = default;
     SplineBasis(const DVector<double>& knots) : knots_(knots) {
@@ -60,7 +60,7 @@ template <int R> class SplineBasis {
 
     // returns the matrix \Phi of basis functions evaluations at the given locations
     template <template <typename> typename EvaluationPolicy>
-    SpMatrix<double> eval(const DVector<double>& locs) const {
+    std::pair<SpMatrix<double>, DVector<double>> eval(const DVector<double>& locs) const {
         return EvaluationPolicy<SplineBasis<R>>::eval(basis_, locs, basis_.size());
     }
     const Spline<R>& operator[](std::size_t i) const { return basis_[i]; }
@@ -82,7 +82,8 @@ template <int R> class SplineBasis {
 template <int R> struct pointwise_evaluation<SplineBasis<R>> {
     using BasisType = SplineBasis<R>;
     // computes a matrix \Phi such that [\Phi]_{ij} = \phi_j(t_i)
-    static SpMatrix<double> eval(const BasisType& basis, const DVector<double>& locs, std::size_t n_basis) {
+    static std::pair<SpMatrix<double>, DVector<double>>
+    eval(const BasisType& basis, const DVector<double>& locs, std::size_t n_basis) {
         fdapde_assert(locs.size() != 0);
         // preallocate space
         SpMatrix<double> Phi(locs.rows(), n_basis);
@@ -96,7 +97,7 @@ template <int R> struct pointwise_evaluation<SplineBasis<R>> {
         Phi.setFromTriplets(triplet_list.begin(), triplet_list.end());
         Phi.prune(0.0);   // remove zeros
         Phi.makeCompressed();
-        return Phi;
+        return std::pair(std::move(Phi), DVector<double>::Ones(locs.rows()));;
     }
 };
 

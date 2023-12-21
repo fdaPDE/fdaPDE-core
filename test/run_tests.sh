@@ -67,7 +67,7 @@ fi
 # cd into build directory
 if [ -d "$BUILD_DIR" ];
 then
-    #clean_build_dir
+    clean_build_dir
     cd build/
 else
     mkdir build/

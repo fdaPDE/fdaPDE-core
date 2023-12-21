@@ -17,10 +17,13 @@
 #ifndef __PDE_SYMBOLS_H__
 #define __PDE_SYMBOLS_H__
 
+#include "../splines/spline_symbols.h"
+#include "../finite_elements/fem_symbols.h"
+
 namespace fdapde {
 namespace core {
 
-// possible sampling strategies for basis functions
+// possible strategies for functional basis evaluation
 template <typename T> struct pointwise_evaluation;
 template <typename T> struct areal_evaluation;
   

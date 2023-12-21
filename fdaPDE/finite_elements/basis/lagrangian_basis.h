@@ -41,7 +41,7 @@ template <typename DomainType, int order> class LagrangianBasis {
         static constexpr int n_basis = ct_binomial_coefficient(M + R, R);
         typedef MultivariatePolynomial<M, R> ElementType;
         typedef typename std::array<MultivariatePolynomial<M, R>, n_basis>::const_iterator const_iterator;
-        typedef Integrator<M, R> Quadrature;   // a quadrature rule which exactly integrates the elements of this basis
+        typedef Integrator<FEM, M, R> Quadrature;
 
         // construct from a given set of nodes
         LagrangianElement(const std::array<std::array<double, M>, n_basis>& nodes) : nodes_(nodes) {

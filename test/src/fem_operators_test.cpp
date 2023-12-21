@@ -42,7 +42,7 @@ TEST(fem_operators_test, laplacian_order_2) {
     // load sample mesh, request an order 2 basis support
     MeshLoader<Mesh2D> CShaped("c_shaped");
     auto e = CShaped.mesh.element(175);   // reference element for this test
-    Integrator<2, 2> integrator {};
+    Integrator<FEM, 2, 2> integrator {};
 
     // define differential operator
     auto L = -laplacian<FEM>();

@@ -25,6 +25,7 @@ using fdapde::core::Element;
 using fdapde::core::Integrator;
 using fdapde::core::IntegratorTable;
 using fdapde::core::LagrangianBasis;
+using fdapde::core::FEM;
 
 #include "utils/mesh_loader.h"
 using fdapde::testing::MESH_TYPE_LIST;
@@ -44,7 +45,7 @@ TYPED_TEST_SUITE(integration_test, MESH_TYPE_LIST);
 TYPED_TEST(integration_test, constant_unitary_field) {
     // generate random element from mesh
     auto e = this->meshLoader.generate_random_element();
-    Integrator<TestFixture::M, 1> integrator;   // define integrator
+    Integrator<FEM, TestFixture::M, 1> integrator;   // define integrator
     // the integral of the constant field 1 over the mesh element equals its measure
     std::function<double(SVector<TestFixture::N>)> f = [](SVector<TestFixture::N> x) -> double { return 1; };
     EXPECT_TRUE(almost_equal(e.measure(), integrator.integrate(e, f)));
@@ -56,7 +57,7 @@ TYPED_TEST(integration_test, constant_unitary_field) {
 TYPED_TEST(integration_test, linear_field) {
     // generate random element from mesh
     auto e = this->meshLoader.generate_random_element();
-    Integrator<TestFixture::M, 1> integrator;   // define integrator
+    Integrator<FEM, TestFixture::M, 1> integrator;   // define integrator
     // a linear function over an element e defines a truncated prism over e
     std::function<double(SVector<TestFixture::N>)> f = [](SVector<TestFixture::N> x) -> double { return x[0] + x[1]; };
     // compute volume of truncated rectangular prism: 1/(M+1)*V*(h1 + h2 + ... + hM), where V is the element's measure
@@ -71,7 +72,7 @@ TYPED_TEST(integration_test, linear_field) {
 TEST(integration_test, integrate_over_triangulation) {
     // load sample mesh
     MeshLoader<Mesh2D> CShaped("unit_square");
-    Integrator<2, 1> integrator {};
+    Integrator<FEM, 2, 1> integrator {};
     // define field to integrate
     std::function<double(SVector<2>)> f = [](SVector<2> x) -> double { return 1; };
     EXPECT_TRUE(almost_equal(1.0, integrator.integrate(CShaped.mesh, f)));

@@ -48,6 +48,7 @@ template <typename D, typename E, typename F, typename... Ts> class SplineSolver
     const Quadrature& integrator() const { return integrator_; }
     const FunctionalBasis& basis() const { return basis_; }
     std::size_t n_dofs() const { return basis_.size(); }   // number of degrees of freedom (linear system's unknowns)
+    const DMatrix<double>& dofs_coords(const DomainType& mesh) { return mesh.nodes(); };
     const SpMatrix<double>& stiff() const { return stiff_; }
 
     // flags
@@ -69,7 +70,7 @@ template <typename D, typename E, typename F, typename... Ts> class SplineSolver
         is_init = true;
         return;
     }
-    // template <typename PDE> void set_dirichlet_bc(const PDE& pde); TODO
+    template <typename PDE> void set_dirichlet_bc(const PDE& pde) { return; }; // TODO
    protected:
     Quadrature integrator_ {};   // default to a quadrature rule which is exact for the considered spline order
     FunctionalBasis basis_ {};   // basis system defined over the domain of definition

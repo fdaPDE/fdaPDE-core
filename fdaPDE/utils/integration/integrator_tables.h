@@ -35,9 +35,9 @@ struct standard_fem_quadrature_rule {
         case 2:   // 2D elements
             switch (order) {
             case 1:         // linear elements
-                return 3;   // 3 point rule
+                return 1;   // 3 point rule
             case 2:         // quadratic elements
-                return 6;   // 6 point rule
+                return 3;   // 6 point rule
             default:
                 return 12;
             }

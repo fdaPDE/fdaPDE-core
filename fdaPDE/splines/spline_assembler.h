@@ -62,7 +62,7 @@ template <typename D, typename B, typename I> class Assembler<SPLINE, D, B, I> {
                 // perform integration of f over interval [knots[j], knots[i+R+1]]
                 double value = 0;
                 for (std::size_t k = j; k <= i + R; ++k) {
-                    value += integrate_1D(basis_.knots()[k], basis_.knots()[k + 1], f, integrator_);
+                    value += integrator_.template integrate<decltype(f)>(basis_.knots()[k], basis_.knots()[k + 1], f);
                 }
                 triplet_list.emplace_back(i, j, value);
             }
