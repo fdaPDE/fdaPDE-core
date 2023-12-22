@@ -48,7 +48,7 @@ template <typename D, typename E, typename F, typename... Ts> class SplineSolver
     const Quadrature& integrator() const { return integrator_; }
     const FunctionalBasis& basis() const { return basis_; }
     std::size_t n_dofs() const { return basis_.size(); }   // number of degrees of freedom (linear system's unknowns)
-    const DMatrix<double>& dofs_coords(const DomainType& mesh) { return mesh.nodes(); };
+    DMatrix<double> dofs_coords(const DomainType& mesh) { return mesh.nodes(); };
     const SpMatrix<double>& stiff() const { return stiff_; }
 
     // flags

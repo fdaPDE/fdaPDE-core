@@ -61,7 +61,7 @@ template <int R> class SplineBasis {
     // returns the matrix \Phi of basis functions evaluations at the given locations
     template <template <typename> typename EvaluationPolicy>
     std::pair<SpMatrix<double>, DVector<double>> eval(const DVector<double>& locs) const {
-        return EvaluationPolicy<SplineBasis<R>>::eval(basis_, locs, basis_.size());
+        return EvaluationPolicy<SplineBasis<R>>::eval(*this, locs, basis_.size());
     }
     const Spline<R>& operator[](std::size_t i) const { return basis_[i]; }
     int size() const { return basis_.size(); }
@@ -101,6 +101,16 @@ template <int R> struct pointwise_evaluation<SplineBasis<R>> {
     }
 };
 
+  template <int R> struct areal_evaluation<SplineBasis<R>> {
+    using BasisType = SplineBasis<R>;
+    // computes a matrix \Phi such that [\Phi]_{ij} = \phi_j(t_i)
+    static std::pair<SpMatrix<double>, DVector<double>>
+    eval(const BasisType& basis, const DVector<double>& locs, std::size_t n_basis) {
+      // TODO
+      return std::make_pair(SpMatrix<double>{}, DVector<double>::Ones(locs.rows()));
+    }
+};
+  
 }   // namespace core
 }   // namespace fdapde
 
