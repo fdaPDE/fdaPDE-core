@@ -18,7 +18,8 @@ template <int N, int K, typename... Args> struct IntegratorTable;
 struct NewtonCotes { };
 struct GaussLegendre { };
 
-// trait for selecting a standard quadrature rule for finite elements, in case K is not supplied
+// trait for selecting a standard quadrature rule for finite elements, the rules are exact for polynomials of degree 2,
+// since we might have the need to integrate products of order 1 polynomials (see the weak form of a reaction operator)
 template <int N, int R>
 struct standard_fem_quadrature_rule {
     static constexpr int quadrature(const int dim, const int order) {
@@ -35,9 +36,9 @@ struct standard_fem_quadrature_rule {
         case 2:   // 2D elements
             switch (order) {
             case 1:         // linear elements
-                return 1;   // 3 point rule
+                return 3;   // 3 point rule
             case 2:         // quadratic elements
-                return 3;   // 6 point rule
+                return 6;   // 6 point rule
             default:
                 return 12;
             }
