@@ -27,6 +27,9 @@ namespace core {
   
 template <typename D, typename E, typename F, typename... Ts>
 struct SplineLinearEllipticSolver : public SplineSolverBase<D, E, F, Ts...> {
+
+    SplineLinearEllipticSolver(const D& domain) : SplineSolverBase<D, E, F, Ts...>::SplineSolverBase(domain) { }
+    
     // solves linear system R1_*u = b, where R1_ : stiff matrix, b : discretized force
     template <typename PDE> void solve(const PDE& pde) {
         static_assert(is_pde<PDE>::value, "pde is not a valid PDE object");

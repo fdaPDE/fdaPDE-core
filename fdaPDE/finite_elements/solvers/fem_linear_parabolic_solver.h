@@ -30,6 +30,7 @@ class FEMLinearParabolicSolver : public FEMSolverBase<D, E, F, Ts...> {
    private:
     double deltaT_ = 1e-2;
    public:
+    FEMLinearParabolicSolver(const D& domain) : FEMSolverBase<D, E, F, Ts...>::FEMSolverBase(domain){ }
     void set_deltaT(double deltaT) { deltaT_ = deltaT; }
 
     // solves the PDE using a forward-euler scheme

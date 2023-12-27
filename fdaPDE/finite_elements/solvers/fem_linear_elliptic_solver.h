@@ -27,6 +27,9 @@ namespace core {
   
 template <typename D, typename E, typename F, typename... Ts>
 struct FEMLinearEllipticSolver : public FEMSolverBase<D, E, F, Ts...> {
+    
+    FEMLinearEllipticSolver(const D& domain) : FEMSolverBase<D, E, F, Ts...>::FEMSolverBase(domain){ }
+
     // solves linear system stiff_*u = force_
     template <typename PDE> void solve(const PDE& pde) {
         static_assert(is_pde<PDE>::value, "pde is not a valid PDE object");

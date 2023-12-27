@@ -41,6 +41,7 @@ template <typename D, typename E, typename F, typename... Ts> class SplineSolver
     using Quadrature = typename FunctionalBasis::Quadrature;
     // constructor
     SplineSolverBase() = default;
+    SplineSolverBase(const DomainType& domain) : domain_(&domain), basis_(FunctionalBasis(domain.nodes())){};
     // getters
     const DMatrix<double>& solution() const { return solution_; }
     const DMatrix<double>& force() const { return force_; }
@@ -48,7 +49,7 @@ template <typename D, typename E, typename F, typename... Ts> class SplineSolver
     const Quadrature& integrator() const { return integrator_; }
     const FunctionalBasis& basis() const { return basis_; }
     std::size_t n_dofs() const { return basis_.size(); }   // number of degrees of freedom (linear system's unknowns)
-    DMatrix<double> dofs_coords(const DomainType& mesh) { return mesh.nodes(); };
+    DMatrix<double> dofs_coords() { return domain_->nodes(); };
     const SpMatrix<double>& stiff() const { return stiff_; }
 
     // flags
@@ -56,8 +57,7 @@ template <typename D, typename E, typename F, typename... Ts> class SplineSolver
     bool success = false;   // notified true if problem solved with no errors
 
     template <typename PDE> void init(const PDE& pde) {
-        // define basis system over domain
-        basis_ = FunctionalBasis(pde.domain().nodes());
+        
         // assemble discretization matrix for given operator
         Assembler<SPLINE, DomainType, FunctionalBasis, Quadrature> assembler(pde.domain(), integrator_);
         stiff_ = assembler.discretize_operator(pde.differential_operator());
@@ -72,6 +72,7 @@ template <typename D, typename E, typename F, typename... Ts> class SplineSolver
     }
     template <typename PDE> void set_dirichlet_bc(const PDE& pde) { return; }; // TODO
    protected:
+    const DomainType* domain_;
     Quadrature integrator_ {};   // default to a quadrature rule which is exact for the considered spline order
     FunctionalBasis basis_ {};   // basis system defined over the domain of definition
     DMatrix<double> solution_;   // vector of coefficients of the approximate solution
