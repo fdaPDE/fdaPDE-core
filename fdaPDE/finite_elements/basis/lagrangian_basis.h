@@ -299,7 +299,6 @@ template <typename DomainType, int order> struct areal_evaluation<LagrangianBasi
             tail += head;
         }
         // finalize construction
-        std::cout<< triplet_list.size() << std::endl;
         Psi.setFromTriplets(triplet_list.begin(), triplet_list.end());
         Psi.makeCompressed();
         return std::make_pair(std::move(Psi), std::move(D));
