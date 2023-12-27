@@ -148,7 +148,7 @@ template <typename DomainType, int order> class LagrangianBasis {
 template <typename DomainType, int order> 
 void LagrangianBasis<DomainType, order>::enumerate_dofs() {
     if (size_ != 0) return;   // return early if dofs already computed
-    if constexpr (this->R == 1) {
+    if constexpr (R == 1) {
       size_ = domain_->n_nodes();
       dofs_ = domain_->elements();
       boundary_dofs_ = domain_->boundary();
