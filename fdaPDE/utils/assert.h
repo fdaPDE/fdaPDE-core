@@ -22,7 +22,10 @@ namespace fdapde {
 // throw an exception if condition is not met
 #define fdapde_assert(condition)                                                                                       \
     if (!(condition)) throw std::runtime_error("Condition " #condition " failed");
-  
+
+// static assert with message
+#define fdapde_static_assert(condition, message) static_assert(condition, #message);
+
 }   // namespace fdapde
 
 #endif   // __FDAPDE_ASSERT_H__
