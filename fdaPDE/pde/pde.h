@@ -58,19 +58,19 @@ class PDE {
     typedef typename SolverType::Quadrature Quadrature;             // quadrature for numerical integral approximations
 
     // minimal constructor, use below setters to complete the construction of a PDE object
-    PDE(const D& domain) : domain_(domain) { }
-    PDE(const D& domain, const DVector<double>& time) : domain_(domain), time_(time) { };
-    PDE(const D& domain, E diff_op) : domain_(domain), diff_op_(diff_op) { };
+    PDE(const D& domain) : domain_(domain), solver_(SolverType(domain)) { }
+    PDE(const D& domain, const DVector<double>& time) : domain_(domain), time_(time), solver_(SolverType(domain)) { }
+    PDE(const D& domain, E diff_op) : domain_(domain), diff_op_(diff_op), solver_(SolverType(domain)) { }
     fdapde_enable_constructor_if(is_parabolic, E) PDE(const D& domain, const DVector<double>& time, E diff_op) :
-        domain_(domain), time_(time), diff_op_(diff_op) {};
+        domain_(domain), time_(time), diff_op_(diff_op), solver_(SolverType(domain)) { }
     void set_forcing(const F& forcing_data) { forcing_data_ = forcing_data; }
     void set_differential_operator(E diff_op) { diff_op_ = diff_op; }
     // full constructors
     PDE(const D& domain, E diff_op, const F& forcing_data) :
-        domain_(domain), diff_op_(diff_op), forcing_data_(forcing_data) { }
+        domain_(domain), diff_op_(diff_op), forcing_data_(forcing_data), solver_(SolverType(domain)) { }
     fdapde_enable_constructor_if(is_parabolic, E)
     PDE(const D& domain, const DVector<double>& time, E diff_op, const F& forcing_data) :
-        domain_(domain), time_(time), diff_op_(diff_op), forcing_data_(forcing_data) { }
+        domain_(domain), time_(time), diff_op_(diff_op), forcing_data_(forcing_data), solver_(SolverType(domain)) { }
     // setters
     void set_dirichlet_bc(const DMatrix<double>& data) { boundary_data_ = data; }
     void set_initial_condition(const DVector<double>& data) { initial_condition_ = data; };
@@ -94,7 +94,7 @@ class PDE {
     const DMatrix<double>& force() const { return solver_.force(); };         // rhs of discrete linear system
     const SpMatrix<double>& stiff() const { return solver_.stiff(); };        // stiff matrix
     const SpMatrix<double>& mass() const { return solver_.mass(); };          // mass matrix
-    DMatrix<double> dof_coords() { return solver_.dofs_coords(domain_); }
+    DMatrix<double> dof_coords() { return solver_.dofs_coords(); }
     DMatrix<double> quadrature_nodes() const { return integrator().quadrature_nodes(domain_); };
     void init() { solver_.init(*this); };   // initializes the solver
     void solve() {                          // solves the PDE

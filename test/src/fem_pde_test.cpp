@@ -47,9 +47,8 @@ TEST(fem_pde_test, laplacian_isotropic_order1) {
     MeshLoader<Mesh2D> unit_square("unit_square");
     auto L = -laplacian<FEM>();
     // instantiate a type-erased wrapper for this pde
-    auto pde_ = make_pde<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>>(unit_square.mesh);
-    pde_.set_differential_operator(L);
-
+    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_square.mesh, L);
+    
     // compute boundary condition and exact solution
     DMatrix<double> nodes_ = pde_.dof_coords();
     DMatrix<double> dirichlet_bc(nodes_.rows(), 1);
