@@ -27,14 +27,14 @@ namespace core {
   
 template <typename D, typename E, typename F, typename... Ts>
 struct SplineLinearEllipticSolver : public SplineSolverBase<D, E, F, Ts...> {
-
-    SplineLinearEllipticSolver(const D& domain) : SplineSolverBase<D, E, F, Ts...>::SplineSolverBase(domain) { }
+    using Base = SplineSolverBase<D, E, F, Ts...>;
+    SplineLinearEllipticSolver(const D& domain) : Base(domain) { }
     
     // solves linear system R1_*u = b, where R1_ : stiff matrix, b : discretized force
     template <typename PDE> void solve(const PDE& pde) {
-        static_assert(is_pde<PDE>::value, "pde is not a valid PDE object");
+        fdapde_static_assert(is_pde<PDE>::value, THIS_METHOD_IS_FOR_PDE_ONLY);
         if (!this->is_init) throw std::runtime_error("solver must be initialized first!");
-        // define eigen system solver
+
         typedef Eigen::SparseLU<SpMatrix<double>, Eigen::COLAMDOrdering<int>> SystemSolverType;
         SystemSolverType solver;
         solver.compute(this->stiff_);
@@ -43,7 +43,7 @@ struct SplineLinearEllipticSolver : public SplineSolverBase<D, E, F, Ts...> {
             this->success = false;
             return;
         }
-        // solve FEM linear system: R1_*solution_ = force_;
+        // solve linear system: R1_*solution_ = force_;
         this->solution_ = solver.solve(this->force_);        
         this->success = true;
         return;

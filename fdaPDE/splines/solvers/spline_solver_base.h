@@ -41,7 +41,7 @@ template <typename D, typename E, typename F, typename... Ts> class SplineSolver
     using Quadrature = typename FunctionalBasis::Quadrature;
     // constructor
     SplineSolverBase() = default;
-    SplineSolverBase(const DomainType& domain) : domain_(&domain), basis_(FunctionalBasis(domain.nodes())){};
+    SplineSolverBase(const DomainType& domain) : domain_(&domain), basis_(domain.nodes()) {};
     // getters
     const DMatrix<double>& solution() const { return solution_; }
     const DMatrix<double>& force() const { return force_; }
@@ -57,7 +57,7 @@ template <typename D, typename E, typename F, typename... Ts> class SplineSolver
     bool success = false;   // notified true if problem solved with no errors
 
     template <typename PDE> void init(const PDE& pde) {
-        
+        fdapde_static_assert(is_pde<PDE>::value, THIS_METHOD_IS_FOR_PDE_ONLY);
         // assemble discretization matrix for given operator
         Assembler<SPLINE, DomainType, FunctionalBasis, Quadrature> assembler(pde.domain(), integrator_);
         stiff_ = assembler.discretize_operator(pde.differential_operator());

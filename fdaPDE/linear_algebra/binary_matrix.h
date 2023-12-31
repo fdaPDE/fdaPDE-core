@@ -17,10 +17,10 @@
 #ifndef __BINARY_MATRIX_H__
 #define __BINARY_MATRIX_H__
 
-#include "../utils/symbols.h"
-#include "../utils/assert.h"
-
 #include <bitset>
+
+#include "../utils/assert.h"
+#include "../utils/symbols.h"
 
 namespace fdapde {
 namespace core {
@@ -28,16 +28,24 @@ namespace core {
 // forward declarations
 template <int Rows, int Cols, typename E> class BinMtxBase;
 
+namespace internals {
+template <typename XprType> struct ref_select {
+    using type = typename std::conditional<
+      XprType::NestAsRef == 0, std::remove_reference_t<XprType>, std::add_lvalue_reference_t<XprType>>::type;
+};
+}   // namespace internals
+
 // a space-time efficient implementation for a dense-storage matrix type holding binary values
 template <int Rows, int Cols = Rows> class BinaryMatrix : public BinMtxBase<Rows, Cols, BinaryMatrix<Rows, Cols>> {
    public:
     using This = BinaryMatrix<Rows, Cols>;
     using Base = BinMtxBase<Rows, Cols, This>;
     using BitPackType = std::uintmax_t;
-    static constexpr std::size_t PackSize = sizeof(std::uintmax_t) * 8; // number of bits in a packet
+    static constexpr std::size_t PackSize = sizeof(std::uintmax_t) * 8;   // number of bits in a packet
+    static constexpr int NestAsRef = 1;   // whether to store this node by reference or by copy in an expression
     static constexpr int ct_rows = Rows;
     static constexpr int ct_cols = Cols;
-  
+
     template <typename T> struct is_dynamic_sized {
         static constexpr bool value = (T::ct_rows == Dynamic || T::ct_cols == Dynamic);
     };
@@ -45,7 +53,7 @@ template <int Rows, int Cols = Rows> class BinaryMatrix : public BinMtxBase<Rows
       is_dynamic_sized<This>::value, std::vector<BitPackType>,
       std::array<BitPackType, 1 + (Rows * Cols) / PackSize>>::type;
     using Base::n_cols_;
-    using Base::n_rows_;  
+    using Base::n_rows_;
     // static default constructor
     fdapde_enable_constructor_if(!is_dynamic_sized, This) BinaryMatrix() : Base(Rows, Cols) {
         std::fill_n(data_.begin(), data_.size(), 0);
@@ -61,49 +69,100 @@ template <int Rows, int Cols = Rows> class BinaryMatrix : public BinMtxBase<Rows
         fdapde_static_assert(Rows == Dynamic && Cols == 1, THIS_METHOD_IS_ONLY_FOR_VECTORS);
     }
 
+    // construct from expression
+    template <int Rows_, int Cols_, typename Rhs_> BinaryMatrix(const BinMtxBase<Rows_, Cols_, Rhs_>& rhs) {
+        // !is_dynamic_sized \implies (Rows == Rows_ && Cols == Cols_)
+        fdapde_static_assert(
+          is_dynamic_sized<This>::value || (Rows == Rows_ && Cols == Cols_) ||
+            (Cols == 1 && (Rows_ == 1 || Cols_ == 1)),
+          INVALID_MATRIX_ASSIGNMENT);
+        // perform assignment
+        if constexpr (Cols == 1 && (Rows_ == 1 || Cols_ == 1)) {   // assignment to vector
+            n_rows_ = Rows_ == 1 ? rhs.cols() : rhs.rows();
+        } else {
+            n_rows_ = rhs.rows();
+        }
+        n_cols_ = Cols == 1 ? 1 : rhs.cols();
+        Base::n_bitpacks_ = rhs.bitpacks();
+        if constexpr (is_dynamic_sized<This>::value) data_.resize(Base::n_bitpacks_, 0);
+        for (std::size_t i = 0; i < rhs.bitpacks(); ++i) { data_[i] = rhs.bitpack(i); }
+    }
+
+    // constructs a matrix of ones
+    static BinaryMatrix<Rows, Cols> Ones(std::size_t i, std::size_t j) {
+        BinaryMatrix<Rows, Cols> result;
+        result.resize(i, j);
+        for (std::size_t k = 0; k < result.bitpacks(); ++k) { result.bitpack(k) = -1; }
+        return result;
+    }
+    static BinaryMatrix<Rows, Cols> Ones() {   // static-sized factory
+        fdapde_static_assert(Rows != Dynamic && Cols != Dynamic, THIS_METHOD_IS_ONLY_FOR_STATIC_SIZED_MATRICES);
+        return Ones(Rows, Cols);
+    }
+    static BinaryMatrix<Rows, Cols> Ones(std::size_t i) {   // vector-like factory
+        fdapde_static_assert(Rows == Dynamic && Cols == 1, THIS_METHOD_IS_ONLY_FOR_VECTORS);
+        BinaryMatrix<Rows, 1> result(i);
+        for (std::size_t k = 0; k < result.bitpacks(); ++k) { result.bitpack(k) = -1; }
+        return result;
+    }
+
     template <int Rows_ = Rows, int Cols_ = Cols>
-    typename std::enable_if<Rows_ == Dynamic || Cols_ == Dynamic, void>::type
+    typename std::enable_if<Rows_ == Dynamic && Cols_ == Dynamic, void>::type
     resize(std::size_t rows, std::size_t cols) {
         n_rows_ = rows;
         n_cols_ = cols;
-        data_ = std::vector<BitPackType>(1 + std::ceil((n_rows_ * n_cols_) / PackSize), 0);
+	Base::n_bitpacks_ = 1 + std::ceil((n_rows_ * n_cols_) / PackSize);
+        data_ = std::vector<BitPackType>(Base::n_bitpacks_, 0);
+    }
+    template <int Rows_ = Rows, int Cols_ = Cols>   // vector-like resizing
+    typename std::enable_if<Rows_ == Dynamic && Cols_ == 1, void>::type resize(std::size_t rows) {
+        n_rows_ = rows;
+        n_cols_ = 1;
+	Base::n_bitpacks_ = 1 + std::ceil(n_rows_ / PackSize);
+        data_ = std::vector<BitPackType>(Base::n_bitpacks_, 0);
     }
 
     // getters
     bool operator()(std::size_t i, std::size_t j) const {   // access to (i,j)-th element
         return (data_[pack_of(i, j)] & BitPackType(1) << ((i * Base::n_cols_ + j) % PackSize)) != 0;
     }
-    template <int Rows_ = Rows, int Cols_ = Cols>   // vector-like (subscript) access
-    typename std::enable_if<Rows_ == Dynamic && Cols_ == 1, bool>::type operator[](std::size_t i) const {
+    template <int Cols_ = Cols>   // vector-like (subscript) access
+    typename std::enable_if<Cols_ == 1, bool>::type operator[](std::size_t i) const {
         return operator()(i, 0);
     }
     BitPackType bitpack(std::size_t i) const { return data_[i]; }
+    BitPackType& bitpack(std::size_t i) { return data_[i]; }   // non-const access to i-th bitpack
     // setters
     void set(std::size_t i, std::size_t j) {   // set (i,j)-th bit
         fdapde_assert(i < n_rows_ && j < n_cols_);
         data_[pack_of(i, j)] |= (BitPackType(1) << ((i * Base::n_cols_ + j) % PackSize));
     }
     void set(std::size_t i) {
-        fdapde_static_assert(Rows == Dynamic && Cols == 1, THIS_METHOD_IS_ONLY_FOR_VECTORS);
-        fdapde_assert(i < n_rows_);
-	set(i, 0);
-    }  
+        fdapde_static_assert(Cols == 1, THIS_METHOD_IS_ONLY_FOR_VECTORS);
+        set(i, 0);
+    }
     void clear(std::size_t i, std::size_t j) {   // clear (i,j)-th bit (sets to 0)
         fdapde_assert(i < n_rows_ && j < n_cols_);
         data_[pack_of(i, j)] &= ~(BitPackType(1) << ((i * Base::n_cols_ + j) % PackSize));
     }
     void clear(std::size_t i) {
-        fdapde_static_assert(Rows == Dynamic && Cols == 1, THIS_METHOD_IS_ONLY_FOR_VECTORS);
-        fdapde_assert(i < n_rows_);
-	clear(i, 0);
-    }  
+        fdapde_static_assert(Cols == 1, THIS_METHOD_IS_ONLY_FOR_VECTORS);
+        clear(i, 0);
+    }
     // fast bitwise assignment from binary expression
     template <int Rows_, int Cols_, typename Rhs_> BinaryMatrix& operator=(const BinMtxBase<Rows_, Cols_, Rhs_>& rhs) {
         // !is_dynamic_sized \implies (Rows == Rows_ && Cols == Cols_)
-        static_assert(is_dynamic_sized<This>::value || (Rows == Rows_ && Cols == Cols_));
-	// perform assignment
-        n_rows_ = rhs.rows();
-        n_cols_ = rhs.cols();
+        fdapde_static_assert(
+          is_dynamic_sized<This>::value || (Rows == Rows_ && Cols == Cols_) ||
+            (Cols == 1 && (Rows_ == 1 || Cols_ == 1)),
+          INVALID_MATRIX_ASSIGNMENT);
+        // perform assignment
+        if constexpr (Cols == 1 && (Rows_ == 1 || Cols_ == 1)) {   // row/column block assignment to vector
+            n_rows_ = Rows_ == 1 ? rhs.cols() : rhs.rows();
+        } else {
+            n_rows_ = rhs.rows();
+        }
+        n_cols_ = Cols == 1 ? 1 : rhs.cols();
         Base::n_bitpacks_ = rhs.bitpacks();
         if constexpr (is_dynamic_sized<This>::value) data_.resize(Base::n_bitpacks_, 0);
         for (std::size_t i = 0; i < rhs.bitpacks(); ++i) { data_[i] = rhs.bitpack(i); }
@@ -121,7 +180,8 @@ struct BinMtxNegationOp : public BinMtxBase<Rows, Cols, BinMtxNegationOp<Rows, C
     using XprType = BinMtxNegationOp<Rows, Cols, XprTypeNested>;
     using Base = BinMtxBase<Rows, Cols, XprType>;
     using BitPackType = typename Base::BitPackType;
-    const XprTypeNested& op_;
+    static constexpr int NestAsRef = 0;   // whether to store this node by reference or by copy in an expression
+    typename internals::ref_select<const XprTypeNested>::type op_;
 
     BinMtxNegationOp(const XprTypeNested& op, int rows, int cols) : Base(rows, cols), op_(op) {};
     bool operator()(std::size_t i, std::size_t j) const { return !op_(i, j); }
@@ -134,8 +194,9 @@ struct BinMtxBinOp : public BinMtxBase<Rows, Cols, BinMtxBinOp<Rows, Cols, Lhs, 
     using XprType = BinMtxBinOp<Rows, Cols, Lhs, Rhs, BinaryOperation>;
     using Base = BinMtxBase<Rows, Cols, XprType>;
     using BitPackType = typename Base::BitPackType;
-    const Lhs& op1_;
-    const Rhs& op2_;
+    static constexpr int NestAsRef = 0;   // whether to store this node by reference or by copy in an expression
+    typename internals::ref_select<const Lhs>::type op1_;
+    typename internals::ref_select<const Rhs>::type op2_;
     BinaryOperation f_;
 
     BinMtxBinOp(const Lhs& op1, const Rhs& op2, BinaryOperation f) :
@@ -154,23 +215,20 @@ struct BinMtxBinOp : public BinMtxBase<Rows, Cols, BinMtxBinOp<Rows, Cols, Lhs, 
     }
 
 DEFINE_BITWISE_BINMTX_OPERATOR(operator&, std::bit_and<>)   // m1 & m2
-DEFINE_BITWISE_BINMTX_OPERATOR(operator|, std::bit_or<> )   // m1 | m2
+DEFINE_BITWISE_BINMTX_OPERATOR(operator|, std::bit_or<>)    // m1 | m2
 DEFINE_BITWISE_BINMTX_OPERATOR(operator^, std::bit_xor<>)   // m1 ^ m2
 
 // dense-block of binary matrix
 template <int BlockRows, int BlockCols, typename XprTypeNested>
 class BinMtxBlock : public BinMtxBase<BlockRows, BlockCols, BinMtxBlock<BlockRows, BlockCols, XprTypeNested>> {
-   private:
+   public:
     using XprType = BinMtxBlock<BlockRows, BlockCols, XprTypeNested>;
     using Base = BinMtxBase<BlockRows, BlockCols, XprType>;
     using BitPackType = typename Base::BitPackType;
     static constexpr std::size_t PackSize = Base::PackSize;   // number of bits in a packet
+    static constexpr int NestAsRef = 0;   // whether to store this node by reference or by copy in an expression
     using Base::n_cols_;
     using Base::n_rows_;
-    // internal data
-    std::size_t start_row_, start_col_;
-    XprTypeNested& xpr_;
-   public:
     // row/column constructor
     BinMtxBlock(XprTypeNested& xpr, std::size_t i) :
         Base(BlockRows == 1 ? 1 : xpr.rows(), BlockCols == 1 ? 1 : xpr.cols()),
@@ -199,27 +257,28 @@ class BinMtxBlock : public BinMtxBase<BlockRows, BlockCols, BinMtxBlock<BlockRow
           start_col_ + block_cols <= xpr_.cols());
     }
 
-    bool operator()(std::size_t i, std::size_t j) const { return xpr_(i + start_row_, j + start_col_); }
+    bool operator()(std::size_t i, std::size_t j) const {
+        fdapde_assert(i < n_rows_ && j < n_cols_);
+        return xpr_(i + start_row_, j + start_col_);
+    }
     void set(std::size_t i, std::size_t j) { xpr_.set(i + start_row_, j + start_col_); }
     void clear(std::size_t i, std::size_t j) { xpr_.clear(i + start_row_, j + start_col_); }
     BitPackType bitpack(std::size_t i) const {
-        BitPackType in = xpr_.bitpack(i);   // evaluate bitpack in a temporary
-        BitPackType out = 0x0;
-        // bitpack column offset
-        std::size_t offset =
-          start_row_ * xpr_.cols() + start_col_ * xpr_.rows() +        // bitpack offset
-          (i == 0 ? 0 : xpr_.cols() - (i * PackSize % xpr_.cols()));   // possible bitpack misalignment offset
-        std::size_t block_stride = xpr_.cols() - n_cols_;
-	std::size_t base_offset = start_row_ * xpr_.cols();
-        // extract bits from in packet according to block bit pattern
+        BitPackType out = 0x0;   // output bitpack
+	// compute first (row,column) index of the bitpack
+        std::size_t col_offset_ = start_col_ + (i == 0 ? 0 : (n_cols_ - (n_cols_ - ((i * PackSize) % n_cols_))));
+        std::size_t row_offset_ = start_row_ + (std::floor(i * (PackSize / (double)n_cols_)));
+	// assembly block bitpack
         BitPackType mask = 0x1;
-        for (std::size_t i = 0; i < n_rows_; i++) {
-            for (std::size_t j = 0; j < n_cols_; j++) {
-                out |= (in & (mask << (offset + i * xpr_.cols() + j))) >> (base_offset + i * block_stride);
-            }
+        for (std::size_t j = 0; j < PackSize && i * PackSize + j < Base::size(); ++j) {
+	  out |= (mask & xpr_(row_offset_ + (j / n_cols_), col_offset_ + (j % n_cols_))) << j;
         }
         return out;
     }
+   private:
+    // internal data
+    std::size_t start_row_, start_col_;
+    typename internals::ref_select<const XprTypeNested>::type xpr_;
 };
 
 // visitors
@@ -236,7 +295,7 @@ template <typename XprType, typename Visitor> struct bitpack_visit {
         std::size_t k = 0, i = 0;   // k: current bitpack, i: maximum coefficient index processed
         for (; i + PackSize - 1 < size; i += PackSize) {
             visitor.bitpack(xpr.bitpack(k));
-	    if(visitor) return;
+            if (visitor) return;
             k++;
         }
         if (i < size) visitor.bitpack(xpr.bitpack(k), size - i);
@@ -247,18 +306,20 @@ template <typename XprType, typename Visitor> struct bitpack_visit {
 // evaluates true if all coefficients in the binary expression are true
 template <typename XprType> struct bitpack_all_visitor {
     using BitPackType = typename XprType::BitPackType;
+    static constexpr std::size_t PackSize = XprType::PackSize;   // number of bits in a packet
     bool res = true;
     inline void bitpack(BitPackType b) { res &= (~b == 0); }
-    inline void bitpack(BitPackType b, std::size_t size) { res &= (~((((BitPackType)1 << size) - 1) | b) == 0); }
+    inline void bitpack(BitPackType b, std::size_t size) { res &= (~((((BitPackType)1 << (size - 1)) - 1) | b) == 0); }
     operator bool() const { return res == false; }   // stop if already false
 };
 
 // evaluates true if at least one coefficient in the binary expression is true
 template <typename XprType> struct bitpack_any_visitor {
     using BitPackType = typename XprType::BitPackType;
+    static constexpr std::size_t PackSize = XprType::PackSize;   // number of bits in a packet  
     bool res = false;
     inline void bitpack(BitPackType b) { res |= (b != 0); }
-    inline void bitpack(BitPackType b, std::size_t size) { res |= (((~(BitPackType)0 >> size) & b) != 0); }
+    inline void bitpack(BitPackType b, std::size_t size) { res |= (((~(BitPackType)0 >> (PackSize - size)) & b) != 0); }
     operator bool() const { return res == true; }   // stop if already true
 };
 
@@ -268,8 +329,8 @@ template <int Rows, int Cols, typename XprType> class BinMtxBase {
     std::size_t n_bitpacks_ = 0;   // number of required bitpacks
    public:
     using BitPackType = std::uintmax_t;
-    static constexpr std::size_t PackSize = sizeof(BitPackType) * 8; // number of bits in a packet
-  
+    static constexpr std::size_t PackSize = sizeof(BitPackType) * 8;   // number of bits in a packet
+
     BinMtxBase() = default;
     BinMtxBase(std::size_t n_rows, std::size_t n_cols) :
         n_rows_(n_rows), n_cols_(n_cols), n_bitpacks_(1 + std::ceil((n_rows_ * n_cols_) / PackSize)) {};
@@ -289,10 +350,10 @@ template <int Rows, int Cols, typename XprType> class BinMtxBase {
     BitPackType bitpack(std::size_t i) const { return get().bitpack(i); }
     // send matrix to out stream
     friend std::ostream& operator<<(std::ostream& out, const BinMtxBase& m) {
-      // assign to temporary (triggers fast bitwise evaluation)
-      BinaryMatrix<Rows, Cols> tmp;
-      tmp = m;
-      for (std::size_t i = 0; i < tmp.rows() - 1; ++i) {
+        // assign to temporary (triggers fast bitwise evaluation)
+        BinaryMatrix<Rows, Cols> tmp;
+        tmp = m;
+        for (std::size_t i = 0; i < tmp.rows() - 1; ++i) {
             for (std::size_t j = 0; j < tmp.cols(); ++j) { out << tmp(i, j); }
             out << "\n";
         }
@@ -332,11 +393,34 @@ template <int Rows, int Cols, typename XprType> class BinMtxBase {
     }
 };
 
+// comparison operator
+template <int Rows1, int Cols1, typename XprType1, int Rows2, int Cols2, typename XprType2>
+bool operator==(const BinMtxBase<Rows1, Cols1, XprType1>& op1, const BinMtxBase<Rows2, Cols2, XprType2>& op2) {
+    fdapde_static_assert(
+      !(Rows1 != Dynamic && Cols1 != Dynamic && Rows2 != Dynamic && Cols2 != Dynamic) ||
+        (Rows1 == Cols1 && Rows2 == Cols2),
+      YOU_MIXED_MATRICES_OF_DIFFERENT_SIZE);
+    fdapde_assert(op1.rows() == op2.rows() && op1.cols() == op2.cols());
+    bool result = true;
+    for (std::size_t i = 0; i < op1.bitpacks() && result; i++) { result &= (op1.bitpack(i) == op2.bitpack(i)); }
+    return result;
+}
+template <int Rows1, int Cols1, typename XprType1, int Rows2, int Cols2, typename XprType2>
+bool operator!=(const BinMtxBase<Rows1, Cols1, XprType1>& op1, const BinMtxBase<Rows2, Cols2, XprType2>& op2) {
+    fdapde_static_assert(
+      !(Rows1 != Dynamic && Cols1 != Dynamic && Rows2 != Dynamic && Cols2 != Dynamic) ||
+        (Rows1 == Cols1 && Rows2 == Cols2),
+      YOU_MIXED_MATRICES_OF_DIFFERENT_SIZE);
+    fdapde_assert(op1.rows() == op2.rows() && op1.cols() == op2.cols());
+    bool result = false;
+    for (std::size_t i = 0; i < op1.bitpacks() && !result; i++) { result |= (op1.bitpack(i) != op2.bitpack(i)); }
+    return result;
+}
+
 // alias export for binary vectors
 template <int Rows> using BinaryVector = BinaryMatrix<Rows, 1>;
-  
+
 }   // namespace core
 }   // namespace fdapde
-
 
 #endif   // __BINARY_MATRIX_H__

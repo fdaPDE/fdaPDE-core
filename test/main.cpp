@@ -31,6 +31,7 @@
 // linear_algebra
 #include "src/kronecker_product_test.cpp"
 #include "src/vector_space_test.cpp"
+#include "src/binary_matrix_test.cpp"
 // finite_elements
 #include "src/fem_operators_test.cpp"
 #include "src/fem_pde_test.cpp"

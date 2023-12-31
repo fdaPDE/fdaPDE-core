@@ -27,13 +27,10 @@
 #include "differential_expressions.h"
 #include "../utils/type_erasure.h"
 #include "differential_operators.h"
+#include "symbols.h"
 
 namespace fdapde {
 namespace core {
-
-// for a given resolution strategy S and operator E, selects a proper solver.
-// to be partially specialized with respect to S
-template <typename S, typename D, typename E, typename F, typename... Ts> struct pde_solver_selector { };
 
 // Description of a Partial Differential Equation Lf = u solved with strategy S
 template <typename D,     // problem domain
@@ -58,19 +55,19 @@ class PDE {
     typedef typename SolverType::Quadrature Quadrature;             // quadrature for numerical integral approximations
 
     // minimal constructor, use below setters to complete the construction of a PDE object
-    PDE(const D& domain) : domain_(domain), solver_(SolverType(domain)) { }
-    PDE(const D& domain, const DVector<double>& time) : domain_(domain), time_(time), solver_(SolverType(domain)) { }
-    PDE(const D& domain, E diff_op) : domain_(domain), diff_op_(diff_op), solver_(SolverType(domain)) { }
+    PDE(const D& domain) : domain_(domain), solver_(domain) { }
+    PDE(const D& domain, const DVector<double>& time) : domain_(domain), time_(time), solver_(domain) { }
+    PDE(const D& domain, E diff_op) : domain_(domain), diff_op_(diff_op), solver_(domain) { }
     fdapde_enable_constructor_if(is_parabolic, E) PDE(const D& domain, const DVector<double>& time, E diff_op) :
-        domain_(domain), time_(time), diff_op_(diff_op), solver_(SolverType(domain)) { }
+        domain_(domain), time_(time), diff_op_(diff_op), solver_(domain) { }
     void set_forcing(const F& forcing_data) { forcing_data_ = forcing_data; }
     void set_differential_operator(E diff_op) { diff_op_ = diff_op; }
     // full constructors
     PDE(const D& domain, E diff_op, const F& forcing_data) :
-        domain_(domain), diff_op_(diff_op), forcing_data_(forcing_data), solver_(SolverType(domain)) { }
+        domain_(domain), diff_op_(diff_op), forcing_data_(forcing_data), solver_(domain) { }
     fdapde_enable_constructor_if(is_parabolic, E)
     PDE(const D& domain, const DVector<double>& time, E diff_op, const F& forcing_data) :
-        domain_(domain), time_(time), diff_op_(diff_op), forcing_data_(forcing_data), solver_(SolverType(domain)) { }
+        domain_(domain), time_(time), diff_op_(diff_op), forcing_data_(forcing_data), solver_(domain) { }
     // setters
     void set_dirichlet_bc(const DMatrix<double>& data) { boundary_data_ = data; }
     void set_initial_condition(const DVector<double>& data) { initial_condition_ = data; };
@@ -110,15 +107,6 @@ class PDE {
     SolverType solver_ {};                   // problem solver
     DMatrix<double> boundary_data_;          // boundary conditions
 };
-
-// PDE-detection type trait
-template <typename T> struct is_pde {
-    static constexpr bool value = fdapde::is_instance_of<T, PDE>::value;
-};
-
-enum eval { pointwise, areal };
-template <typename T> struct pointwise_evaluation;
-template <typename T> struct areal_evaluation;
 
 // type-erasure wrapper (forcing type must be convertible to a DMatrix<double>)
 struct I_PDE {
