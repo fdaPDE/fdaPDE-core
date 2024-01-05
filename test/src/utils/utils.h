@@ -21,6 +21,7 @@
 #include <unsupported/Eigen/SparseExtra>
 #include <string>
 #include "constants.h"
+using fdapde::core::CSVReader;
 
 // a set of usefull utilities
 namespace fdapde {
@@ -86,7 +87,7 @@ namespace testing {
   template <typename T>
   DMatrix<T> read_csv(const std::string& file_name) {
     CSVReader<T> reader {};
-    return reader.template parse_file<DenseStorage>(file_name);
+    return reader.template parse_file<Eigen::Dense>(file_name);
   }
   
 }}

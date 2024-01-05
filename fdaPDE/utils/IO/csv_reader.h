@@ -24,10 +24,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include "../symbols.h"
-using fdapde::internal::DenseStorage;
-using fdapde::internal::SparseStorage;
-
 namespace fdapde{
 namespace core{
 
@@ -77,7 +73,7 @@ class CSVReader{
 
   // parse files with a dense structure
   template <typename U>
-  typename std::enable_if<std::is_same<U, DenseStorage>::value, DMatrix<T>>::type
+  typename std::enable_if<std::is_same<U, Eigen::Dense>::value, DMatrix<T>>::type
   parse_file(const std::string& file) const {
     // open file
     std::ifstream file_stream;
@@ -123,7 +119,7 @@ class CSVReader{
 
   // parse files with a 3-column (row,col,value) sparse format structure
   template <typename U>
-  typename std::enable_if<std::is_same<U, SparseStorage>::value, SpMatrix<T>>::type
+  typename std::enable_if<std::is_same<U, Eigen::Sparse>::value, SpMatrix<T>>::type
   parse_file(const std::string& file) const {
     // open file
     std::ifstream file_stream;
