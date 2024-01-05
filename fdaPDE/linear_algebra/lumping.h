@@ -14,8 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __MASS_LUMPING_H__
-#define __MASS_LUMPING_H__
+#ifndef __LUMPING_H__
+#define __LUMPING_H__
 
 #include <Eigen/Core>
 #include <Eigen/Sparse>
@@ -33,9 +33,8 @@ template <typename ExprType> SpMatrix<typename ExprType::Scalar> lump(const Eige
     // reserve space for triplets
     std::vector<fdapde::Triplet<Scalar_>> triplet_list;
     triplet_list.reserve(expr.rows());
-    for (std::size_t i = 0; i < expr.rows(); ++i) { triplet_list.emplace_back(i, i, 1 / expr.row(i).sum()); }
-
-    // construct lumped matrix and return
+    for (std::size_t i = 0; i < expr.rows(); ++i) { triplet_list.emplace_back(i, i, expr.row(i).sum()); }
+    // matrix lumping
     SpMatrix<Scalar_> lumped_matrix(expr.rows(), expr.rows());
     lumped_matrix.setFromTriplets(triplet_list.begin(), triplet_list.end());
     lumped_matrix.makeCompressed();
@@ -46,12 +45,12 @@ template <typename ExprType> SpMatrix<typename ExprType::Scalar> lump(const Eige
 template <typename ExprType> DiagMatrix<typename ExprType::Scalar> lump(const Eigen::MatrixBase<ExprType>& expr) {
     fdapde_assert(expr.rows() == expr.cols());   // stop if not square
     using Scalar_ = typename ExprType::Scalar;
-    // lump matrix
-    DVector<Scalar_> lumped_matrix = expr.array().rowwise().sum().inverse();
+    // matrix lumping
+    DVector<Scalar_> lumped_matrix = expr.array().rowwise().sum();
     return lumped_matrix.asDiagonal();
 }
 
 }   // namespace core
 }   // namespace fdapde
 
-#endif   // __MASS_LUMPING_H__
+#endif   // __LUMPING_H__
