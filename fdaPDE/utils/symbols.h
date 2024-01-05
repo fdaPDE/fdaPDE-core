@@ -30,7 +30,7 @@ template <int N, int M = N, typename T = double> using SMatrix = Eigen::Matrix<T
 template <typename T, int Options_ = Eigen::ColMajor>
 using DMatrix = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, Options_>;
 template <typename T> using DVector    = Eigen::Matrix<T, Eigen::Dynamic, 1>;
-template <typename T> using DiagMatrix = Eigen::DiagonalMatrix<double, Eigen::Dynamic, Eigen::Dynamic>;
+template <typename T> using DiagMatrix = Eigen::DiagonalMatrix<T, Eigen::Dynamic, Eigen::Dynamic>;
 
 // sparse matrix structures
 template <typename T> using SpMatrix = Eigen::SparseMatrix<T>;
@@ -55,12 +55,6 @@ template <int N, int M, typename T = double> struct static_dynamic_matrix_select
 };
 template <int N, int M, typename T = double>
 using static_dynamic_matrix_selector_t = typename static_dynamic_matrix_selector<N, M, T>::type;
-
-namespace internal {
-// define symbols for storage type
-struct SparseStorage { };
-struct DenseStorage { };
-}   // namespace internal
   
 // a Triplet type (almost identical with respect to Eigen::Triplet<T>) but allowing for non-const access to stored value
 // this is compatible to Eigen::setFromTriplets() method used for the sparse matrix construction
