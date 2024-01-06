@@ -130,6 +130,7 @@ template <typename T> class SparseLU {
    private:
     typedef Eigen::SparseLU<T, Eigen::COLAMDOrdering<int>> SparseLU_;
     std::shared_ptr<SparseLU_> solver_;   // wrap Eigen::SparseLU into a movable object
+    bool computed_ = false;               // asserted true if factorization is successfully computed
    public:
     // default constructor
     SparseLU() = default;
@@ -137,6 +138,7 @@ template <typename T> class SparseLU {
     void compute(const T& matrix) {
         solver_ = std::make_shared<SparseLU_>();
         solver_->compute(matrix);
+	if (solver_->info() == Eigen::Success) { computed_ = true; }  
     }
 
     template <typename Rhs>   // solve method, dense rhs operand
@@ -150,6 +152,7 @@ template <typename T> class SparseLU {
     // direct access to Eigen::SparseLU
     std::shared_ptr<SparseLU_> operator->() { return solver_; }
     Eigen::ComputationInfo info() const { return solver_->info(); }
+    operator bool() const { return computed_; }  
 };
 
 // test for floating point equality based on relative error.
