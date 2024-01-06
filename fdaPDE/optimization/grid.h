@@ -37,7 +37,7 @@ template <int N> class Grid {
     Grid() = default;
 
     template <typename F, typename... Args>
-    void optimize(F& objective, const std::vector<VectorType>& grid, Args&... args) {
+    VectorType optimize(F& objective, const std::vector<VectorType>& grid, Args&... args) {
         static_assert(
           std::is_same<decltype(std::declval<F>().operator()(VectorType())), double>::value,
           "cannot find definition for F.operator()(const VectorType&)");
@@ -59,7 +59,7 @@ template <int N> class Grid {
                 optimum_ = x_current;
             }
         }
-        return;
+        return optimum_;
     }
 
     // getters

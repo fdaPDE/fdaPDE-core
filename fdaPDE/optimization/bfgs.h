@@ -44,7 +44,7 @@ template <int N> class BFGS {
     BFGS() = default;
     BFGS(std::size_t max_iter, double tol, double step) : max_iter_(max_iter), tol_(tol), step_(step) {};
 
-    template <typename F, typename... Args> void optimize(F& objective, const VectorType& x0, Args... args) {
+    template <typename F, typename... Args> VectorType optimize(F& objective, const VectorType& x0, Args... args) {
         static_assert(
           std::is_same<decltype(std::declval<F>().operator()(VectorType())), double>::value,
           "cannot find definition for F.operator()(const VectorType&)");
@@ -80,7 +80,7 @@ template <int N> class BFGS {
             if (grad_new.isApprox(zero)) {   // already at stationary point
                 optimum_ = x_old;
                 value_ = objective(optimum_);
-                return;
+                return optimum_;
             }
 
             // update inverse hessian approximation
@@ -103,7 +103,7 @@ template <int N> class BFGS {
 
         optimum_ = x_old;
         value_ = objective(optimum_);
-        return;
+        return optimum_;
     }
 
     // getters
