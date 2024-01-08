@@ -17,9 +17,9 @@
 #include <fdaPDE/linear_algebra.h>
 #include <fdaPDE/utils.h>
 #include <gtest/gtest.h>   // testing framework
+using fdapde::Dynamic;
 using fdapde::core::BinaryMatrix;
 using fdapde::core::BinaryVector;
-using fdapde::Dynamic;
 
 #include <bitset>
 
@@ -50,7 +50,7 @@ TEST(binary_matrix_test, static_sized_matrix) {
     m.clear(3, 1);
     for (std::size_t i = 0; i < m.rows(); ++i) {
         for (std::size_t j = 0; j < m.cols(); ++j) { EXPECT_TRUE(m(i, j) == false); }
-    }    
+    }
 }
 
 TEST(binary_matrix_test, dynamic_sized_matrix) {
@@ -81,7 +81,7 @@ TEST(binary_matrix_test, dynamic_sized_matrix) {
         for (std::size_t j = 0; j < m.cols(); ++j) { EXPECT_TRUE(m(i, j) == false); }
     }
     // resize matrix and check dimensionalities
-    m.set(0,0);
+    m.set(0, 0);
     m.resize(20, 20);
     EXPECT_TRUE(m.rows() == 20);
     EXPECT_TRUE(m.cols() == 20);
@@ -113,7 +113,7 @@ TEST(binary_matrix_test, binary_vector) {
     EXPECT_TRUE(s.rows() == 100);
     EXPECT_TRUE(s.cols() == 1);
     EXPECT_TRUE(s.size() == 100);
-    
+
     s.set(10);
     s.set(70);
     for (std::size_t i = 0; i < s.size(); ++i) {
@@ -144,7 +144,7 @@ TEST(binary_matrix_test, block_operations) {
         }
     }
     // assign row to vector
-    BinaryVector<Dynamic> v1 = r;    
+    BinaryVector<Dynamic> v1 = r;
     EXPECT_TRUE(v1[40] == true);
 
     // extract a column
@@ -164,77 +164,105 @@ TEST(binary_matrix_test, block_operations) {
     EXPECT_TRUE(v2[4] == true);
 
     // extract a generic block
-    auto block = m.block(2,40,3,30);
+    auto block = m.block(2, 40, 3, 30);
     // assign to binarymatrix
     BinaryMatrix<Dynamic> bm = block;
     // check dimensionalities
     EXPECT_TRUE(bm.rows() == 3);
     EXPECT_TRUE(bm.cols() == 30);
     EXPECT_TRUE(bm.size() == 90);
-    EXPECT_TRUE(bm(1,0) == true && bm(2,20) == true);
+    EXPECT_TRUE(bm(1, 0) == true && bm(2, 20) == true);
 
     // static sized block
     auto static_block = m.block<3, 30>(2, 40);
     EXPECT_TRUE(block == static_block);
 }
 
-
 TEST(binary_matrix_test, binary_expresssions) {
-  // define two binary matrices (dynamic-sized)
-  BinaryMatrix<Dynamic> m1(4,5);
-  m1.set(3,3);
-  BinaryMatrix<Dynamic> m2(4,5);
-  m2.set(2,2);
-  m2.set(3,3);
-  // test some expressions
-  EXPECT_TRUE((m1 | ~m1) == BinaryMatrix<Dynamic>::Ones(4,5));
-  EXPECT_TRUE((m1 & ~m1) == BinaryMatrix<Dynamic>(4,5));
-  auto e1 = m1 | m2;
-  EXPECT_TRUE(e1(3,3) && e1(2,2));
-  auto e2 = m1 & m2;
-  EXPECT_TRUE(e2(3,3));
-  auto e3 = m1 ^ m2;
-  EXPECT_TRUE(e3(2,2));
-  auto e4 = ((m1 ^ m2) | e2);
-  EXPECT_TRUE(e4 == m2);
+    // define two binary matrices (dynamic-sized)
+    BinaryMatrix<Dynamic> m1(4, 5);
+    m1.set(3, 3);
+    BinaryMatrix<Dynamic> m2(4, 5);
+    m2.set(2, 2);
+    m2.set(3, 3);
+    // test some expressions
+    EXPECT_TRUE((m1 | ~m1) == BinaryMatrix<Dynamic>::Ones(4, 5));
+    EXPECT_TRUE((m1 & ~m1) == BinaryMatrix<Dynamic>(4, 5));
+    auto e1 = m1 | m2;
+    EXPECT_TRUE(e1(3, 3) && e1(2, 2));
+    auto e2 = m1 & m2;
+    EXPECT_TRUE(e2(3, 3));
+    auto e3 = m1 ^ m2;
+    EXPECT_TRUE(e3(2, 2));
+    auto e4 = ((m1 ^ m2) | e2);
+    EXPECT_TRUE(e4 == m2);
 
-  // block expressions
-  EXPECT_TRUE(e1.row(0) == e2.row(0));
+    // block expressions
+    EXPECT_TRUE(e1.row(0) == e2.row(0));
 
-  BinaryMatrix<Dynamic> I = BinaryMatrix<Dynamic>::Ones(2,2);
-  EXPECT_TRUE((m1.block(2,3, 2,2) & I) == m1.block(2,3, 2,2));
+    BinaryMatrix<Dynamic> I = BinaryMatrix<Dynamic>::Ones(2, 2);
+    EXPECT_TRUE((m1.block(2, 3, 2, 2) & I) == m1.block(2, 3, 2, 2));
 }
 
 TEST(binary_matrix_test, visitors) {
-  // define a matrix of all ones
-  BinaryMatrix<Dynamic> m1 = BinaryMatrix<Dynamic>::Ones(150, 4);
-  // all() must return true
-  EXPECT_TRUE(m1.all());
-  // test for zero in different bitpack positions (first, middle, last)
-  m1.clear(0,0);
-  EXPECT_FALSE(m1.all());
-  m1.set(0,0);
-  m1.clear(100, 2);
-  EXPECT_FALSE(m1.all());
-  m1.set(100, 2);
-  m1.clear(149, 3);
-  EXPECT_FALSE(m1.all());
-  // test with a vector
-  BinaryVector<Dynamic> v1 = BinaryVector<Dynamic>::Ones(500);
-  EXPECT_TRUE(v1.all());
-  v1.clear(0,0);
-  EXPECT_FALSE(v1.all());
+    // define a matrix of all ones
+    BinaryMatrix<Dynamic> m1 = BinaryMatrix<Dynamic>::Ones(150, 4);
+    // all() must return true
+    EXPECT_TRUE(m1.all());
+    EXPECT_TRUE(m1.count() == m1.size());
+    // test for zero in different bitpack positions (first, middle, last)
+    m1.clear(0, 0);
+    EXPECT_FALSE(m1.all());
+    EXPECT_TRUE(m1.count() == (m1.size() - 1));
+    m1.set(0, 0);
+    m1.clear(100, 2);
+    EXPECT_FALSE(m1.all());
+    m1.set(100, 2);
+    m1.clear(149, 3);
+    EXPECT_FALSE(m1.all());
+    // test with a vector
+    BinaryVector<Dynamic> v1 = BinaryVector<Dynamic>::Ones(500);
+    EXPECT_TRUE(v1.all());
+    EXPECT_TRUE(v1.count() == v1.size());
+    v1.clear(0, 0);
+    EXPECT_FALSE(v1.all());
+    EXPECT_TRUE(v1.count() == (v1.size() - 1));
+    v1.clear(200, 0);
+    EXPECT_TRUE(v1.count() == (v1.size() - 2));
+    
+    BinaryVector<Dynamic> v2(500);
+    // v2 is a vector of 0, any() must return false
+    EXPECT_FALSE(v2.any());
+    EXPECT_TRUE(v2.count() == 0);
+    // test for one in different bitpack posistions (first, middle, last)
+    v2.set(0);
+    EXPECT_TRUE(v2.any());
+    v2.clear(0);
+    v2.set(300);
+    EXPECT_TRUE(v2.any());
+    v2.clear(300);
+    v2.set(499);
+    EXPECT_TRUE(v2.any());
+}
 
-  BinaryVector<Dynamic> v2(500);
-  // v2 is a vector of 0, any() must return false
-  EXPECT_FALSE(v2.any());
-  // test for one in different bitpack posistions (first, middle, last)
-  v2.set(0);
-  EXPECT_TRUE(v2.any());
-  v2.clear(0);
-  v2.set(300);
-  EXPECT_TRUE(v2.any());
-  v2.clear(300);
-  v2.set(499);
-  EXPECT_TRUE(v2.any());
+TEST(binary_matrix_test, block_repeat) {
+    BinaryMatrix<Dynamic> m1 = BinaryMatrix<Dynamic>::Ones(3, 4);
+    m1.row(1).clear();
+    m1.set(1, 1);
+    BinaryMatrix<Dynamic> m2 = m1.blk_repeat(2, 4);
+    EXPECT_TRUE(m2.rows() == 6);
+    EXPECT_TRUE(m2.cols() == 16);
+    // check equality
+    BinaryMatrix<Dynamic> res = BinaryMatrix<Dynamic>::Ones(6, 16);
+    res.row(1).clear();
+    res.row(4).clear();
+    res.set(1, 1);
+    res.set(1, 5);
+    res.set(1, 9);
+    res.set(1, 13);
+    res.set(4, 1);
+    res.set(4, 5);
+    res.set(4, 9);
+    res.set(4, 13);
+    EXPECT_TRUE(m2 == res);
 }
