@@ -265,4 +265,10 @@ TEST(binary_matrix_test, block_repeat) {
     res.set(4, 9);
     res.set(4, 13);
     EXPECT_TRUE(m2 == res);
+
+    BinaryVector<Dynamic> v1(10);
+    v1.set(4);
+    BinaryMatrix<Dynamic> res2(10,10);
+    res2.row(4).set();
+    EXPECT_TRUE(v1.blk_repeat(1, 10) == res2);
 }

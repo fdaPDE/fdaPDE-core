@@ -489,8 +489,8 @@ template <int Rows, int Cols, typename XprType> class BinMtxBase {
         return std::move(masked_mtx);
     }
     // block-repeat operation
-    BinMtxBlockRepeatOp<Rows, Cols, XprType> blk_repeat(std::size_t rep_row, std::size_t rep_col) const {
-        return BinMtxBlockRepeatOp<Rows, Cols, XprType>(get(), rep_row, rep_col);
+    BinMtxBlockRepeatOp<Dynamic, Dynamic, XprType> blk_repeat(std::size_t rep_row, std::size_t rep_col) const {
+        return BinMtxBlockRepeatOp<Dynamic, Dynamic, XprType>(get(), rep_row, rep_col);
     }
    private:
     template <typename Visitor, template <typename, typename> typename VisitStrategy> inline auto visit_apply_() const {
