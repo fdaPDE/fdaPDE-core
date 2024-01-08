@@ -173,18 +173,21 @@ template <int Rows, int Cols = Rows> class BinaryMatrix : public BinMtxBase<Rows
 };
 
 // unary bitwise operation of binary expressions
-template <int Rows, int Cols, typename XprTypeNested, typename UnaryOperation>
-struct BinMtxUnaryOp : public BinMtxBase<Rows, Cols, BinMtxUnaryOp<Rows, Cols, XprTypeNested, UnaryOperation>> {
-    using XprType = BinMtxUnaryOp<Rows, Cols, XprTypeNested, UnaryOperation>;
+template <int Rows, int Cols, typename XprTypeNested, typename UnaryBitwiseOp, typename UnaryLogicalOp>
+struct BinMtxUnaryOp :
+    public BinMtxBase<Rows, Cols, BinMtxUnaryOp<Rows, Cols, XprTypeNested, UnaryBitwiseOp, UnaryLogicalOp>> {
+    using XprType = BinMtxUnaryOp<Rows, Cols, XprTypeNested, UnaryBitwiseOp, UnaryLogicalOp>;
     using Base = BinMtxBase<Rows, Cols, XprType>;
     using BitPackType = typename Base::BitPackType;
     static constexpr int NestAsRef = 0;   // whether to store this node by reference or by copy in an expression
     typename internals::ref_select<const XprTypeNested>::type op_;
-    UnaryOperation f_;
+    UnaryBitwiseOp f_bitwise_;
+    UnaryLogicalOp f_logical_;
 
-    BinMtxUnaryOp(const XprTypeNested& op, UnaryOperation f) : Base(op.rows(), op.cols()), op_(op), f_(f) {};
-    bool operator()(std::size_t i, std::size_t j) const { return f_(op_(i, j)); }
-    BitPackType bitpack(std::size_t i) const { return f_(op_.bitpack(i)); }
+    BinMtxUnaryOp(const XprTypeNested& op, UnaryBitwiseOp f_bitwise, UnaryLogicalOp f_logical) :
+        Base(op.rows(), op.cols()), op_(op), f_bitwise_(f_bitwise), f_logical_(f_logical) {};
+    bool operator()(std::size_t i, std::size_t j) const { return f_logical_(op_(i, j)); }
+    BitPackType bitpack(std::size_t i) const { return f_bitwise_(op_.bitpack(i)); }
 };
 
 // binary bitwise operations between binary expression
@@ -441,8 +444,9 @@ template <int Rows, int Cols, typename XprType> class BinMtxBase {
         return out;
     }
     // expression bitwise NOT
-    BinMtxUnaryOp<Rows, Cols, XprType, std::bit_not<>> operator~() const {
-        return BinMtxUnaryOp<Rows, Cols, XprType, std::bit_not<>>(get(), std::bit_not<>());
+    BinMtxUnaryOp<Rows, Cols, XprType, std::bit_not<>, std::logical_not<>> operator~() const {
+        return BinMtxUnaryOp<Rows, Cols, XprType, std::bit_not<>, std::logical_not<>>(
+          get(), std::bit_not<>(), std::logical_not<>());
     }
     // block-type indexing
     BinMtxBlock<1, Cols, XprType> row(std::size_t row) { return BinMtxBlock<1, Cols, XprType>(get(), row); }
