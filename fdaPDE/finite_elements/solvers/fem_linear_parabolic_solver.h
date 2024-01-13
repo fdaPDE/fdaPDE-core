@@ -39,7 +39,7 @@ class FEMLinearParabolicSolver : public FEMSolverBase<D, E, F, Ts...> {
         if (!this->is_init) throw std::runtime_error("solver must be initialized first!");
 
         Eigen::SparseLU<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int>> solver;
-        this->set_deltaT((pde.time()[1] - pde.time()[0]));
+        this->set_deltaT((pde.time_domain()[1] - pde.time_domain()[0]));
         std::size_t n = this->n_dofs();              // degrees of freedom in space
         std::size_t m = pde.forcing_data().cols();   // number of iterations for time loop
 

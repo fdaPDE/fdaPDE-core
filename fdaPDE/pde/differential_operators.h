@@ -40,12 +40,15 @@ FDAPDE_DEFINE_DIFFERENTIAL_OPERATOR(BiLaplacian, bilaplacian);
 template <typename E> struct is_symmetric {
     static constexpr bool value = std::decay<E>::type::is_symmetric;
 };
-
 // trait to detect if the differential operator denotes a parabolic problem.
 template <typename E_> struct is_parabolic {
     typedef typename std::decay<E_>::type E;
-    // returns true if the time derivative operator dT() is detected in the expression
     static constexpr bool value = has_instance_of<dT, decltype(std::declval<E>().get_operator_type())>::value;
+};
+// detects if the problem is stationary (does not involve time)
+template <typename E_> struct is_stationary {
+    typedef typename std::decay<E_>::type E;
+    static constexpr bool value = !has_instance_of<dT, decltype(std::declval<E>().get_operator_type())>::value;
 };
   
 }   // namespace core
