@@ -94,13 +94,13 @@ template <int N> class Scalar : public ScalarExpr<N, Scalar<N>> {
 };
 
 // wraps an n_rows x 1 vector of data, acts as a double once forwarded the matrix row
-template <int N> class ScalarDataWrapper : public ScalarExpr<N, ScalarDataWrapper<N>> {
+template <int N> class DiscretizedScalarField : public ScalarExpr<N, DiscretizedScalarField<N>> {
    private:
     DMatrix<double, Eigen::RowMajor>* data_;
     double value_;
    public:
-    ScalarDataWrapper() = default;
-    ScalarDataWrapper(DMatrix<double, Eigen::RowMajor>& data) : data_(&data) {};
+    DiscretizedScalarField() = default;
+    DiscretizedScalarField(DMatrix<double, Eigen::RowMajor>& data) : data_(&data) {};
     double operator()(const SVector<N>& p) const { return value_; }
     void forward(Eigen::Index i) { value_ = data_->operator()(i, 0); }   // fix value_ to the i-th coefficient of data_
 };

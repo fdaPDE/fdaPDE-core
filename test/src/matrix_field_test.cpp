@@ -91,3 +91,64 @@ TEST(matrix_field_test, product_with_svector) {
     for (std::size_t i = 0; i < 2; ++i) { EXPECT_DOUBLE_EQ(f(p)[i], expected[i]); }
 }
 
+// check if the product between a matrix field and a vector field is correct
+TEST(matrix_field_test, product_with_vector_field) {
+    // define matrix field
+    std::function<double(SVector<2>)> comp = [](SVector<2> x) -> double { return 4 * x[0]; };
+    MatrixField<2> m_field({comp, comp, comp, comp});
+    // define vector field
+    VectorField<2> v_field;
+    v_field[0] = [](SVector<2> x) -> double { return std::pow(x[0], 2) + 1; };
+    v_field[1] = [](SVector<2> x) -> double { return std::exp(x[0] * x[1]); };
+    // build a functor representing the product between m_field and v_field
+    auto f = m_field * v_field;
+    // evaluation point
+    SVector<2> p(1, 1);
+    SVector<2> expected(8 + 4*std::exp(1), 8 + 4*std::exp(1)); // evulation of field f at p: (8+4*e, 8+4*e)
+    for (std::size_t i = 0; i < 2; ++i) { EXPECT_DOUBLE_EQ(f(p)[i], expected[i]); }
+}
+
+// check matrix-matrix product
+// TEST(matrix_field_test, matrix_matrix_product) {
+//     // define matrix field
+//     std::function<double(SVector<2>)> comp1 = [](SVector<2> x) -> double { return 4 * x[0]; };
+//     MatrixField<2> field1({comp1, comp1, comp1, comp1});
+//     // define constant matrix
+//     SMatrix<2> M;
+//     M << 1, 2, 3, 4;
+//     // define evaluation point
+//     SVector<2> p(1, 1);
+
+//     // define different product expressions and check for correctness
+//     auto f1 = field1 * M;
+//     SMatrix<2> expected1;
+//     expected1 << 16, 24, 16, 24;
+//     for (std::size_t i = 0; i < 2; ++i) {
+//       for (std::size_t j = 0; j < 2; ++j) { EXPECT_DOUBLE_EQ(f1(p)(i, j), expected1(i, j)); }
+//     }
+//     auto f2 = M * field1;
+//     SMatrix<2> expected2;
+//     expected2 << 12, 12, 28, 28;
+//     for (std::size_t i = 0; i < 2; ++i) {
+//       for (std::size_t j = 0; j < 2; ++j) { EXPECT_DOUBLE_EQ(f2(p)(i, j), expected2(i, j)); }
+//     }
+
+//     // MatrixField - MatrixField product
+//     std::function<double(SVector<2>)> comp2 = [](SVector<2> x) -> double { return 5 * x[0]; };
+//     std::function<double(SVector<2>)> comp3 = [](SVector<2> x) -> double { return 7 * x[0]; };
+//     MatrixField<2> field2({comp3, comp3, comp2, comp2});
+//     field1(0, 0) = comp2;
+
+//     auto f3 = field1 * field2;
+//     SMatrix<2> expected3;
+//     expected3 << 55, 55, 48, 48;
+//     for (std::size_t i = 0; i < 2; ++i) {
+//       for (std::size_t j = 0; j < 2; ++j) { EXPECT_DOUBLE_EQ(f3(p)(i, j), expected3(i, j)); }
+//     }
+//     auto f4 = field2 * field1;
+//     SMatrix<2> expected4;
+//     expected4 << 63, 56, 45, 45;
+//     for (std::size_t i = 0; i < 2; ++i) {
+//       for (std::size_t j = 0; j < 2; ++j) { EXPECT_DOUBLE_EQ(f4(p)(i, j), expected4(i, j)); }
+//     }
+// }

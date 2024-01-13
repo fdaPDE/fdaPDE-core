@@ -25,7 +25,7 @@ using fdapde::core::ScalarField;
 using fdapde::core::TwiceDifferentiableScalarField;
 using fdapde::core::VectorField;
 using fdapde::core::MatrixField;
-using fdapde::core::ScalarDataWrapper;
+using fdapde::core::DiscretizedScalarField;
 using fdapde::Dynamic;
 
 #include "utils/constants.h"
@@ -282,7 +282,7 @@ TEST(scalar_field_test, twice_differentiable_field) {
     ASSERT_TRUE((tdf.derive_twice()(p) - hessian).norm() < DOUBLE_TOLERANCE);
 }
 
-TEST(scalar_field_test, scalar_data_wrapper) {
+TEST(scalar_field_test, discretized_scalar_field) {
     // define a scalar field
     ScalarField<2> f;
     f = [](SVector<2> x) -> double { return x[0] + x[1]; };
@@ -292,7 +292,7 @@ TEST(scalar_field_test, scalar_data_wrapper) {
     data.resize(10, 1);
     for (std::size_t i = 0; i < 10; i++) { data(i, 0) = i; }
     // wrap data into a field
-    ScalarDataWrapper<2> k(data);
+    DiscretizedScalarField<2> k(data);
 
     auto sf = f + k;
     sf.forward(4);   // k = 4
