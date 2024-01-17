@@ -26,6 +26,7 @@ using fdapde::core::Grid;
 using fdapde::core::Newton;
 using fdapde::core::BacktrackingLineSearch;
 using fdapde::core::WolfeLineSearch;
+using fdapde::core::Broyden;
 using fdapde::core::ScalarField;
 using fdapde::core::VectorField;
 
@@ -104,4 +105,119 @@ TEST(optimization_test, bfgs_wolfe_line_search) {
     SVector<2> expected(-0.6690718221499544, 0);
     double L2_error = (opt.optimum() - expected).norm();
     EXPECT_TRUE(L2_error < 1e-6);
+}
+
+TEST(fem_pde_test, Broyden_2D){
+    // define the vector field
+    VectorField<Dynamic> F(2,2);
+    F[0] = [](DVector<double> x) -> double { return atan(x(0)*x(1)); };
+    F[1] = [](DVector<double> x) -> double { return x(0)-5*x(1); };
+    // F[0] = [](DVector<double> x) -> double { return x(0)*x(0); };
+    // F[1] = [](DVector<double> x) -> double { return x(1)*x(1); };
+    // Solution: x = 0., 0.
+
+    // initial point
+    DVector<double> x0(2);
+    x0 << 7., 7.;
+
+    Broyden<Dynamic> br(80, 1e-12);
+    auto solution = br.solve(F, x0);
+    std::cout << "solution: \n" << solution << std::endl;
+
+    // exact solution
+    DVector<double> exact_sol(2);
+    exact_sol << 0., 0.;
+
+    EXPECT_TRUE((exact_sol - solution).norm() < 1e-5);
+}
+
+TEST(fem_pde_test, GlobalBroyden_2D){
+    // define the vector field
+    VectorField<Dynamic> F(2,2);
+    F[0] = [](DVector<double> x) -> double { return atan(x(0)*x(1)); };
+    F[1] = [](DVector<double> x) -> double { return x(0)-5*x(1); };
+
+    // initial point
+    DVector<double> x0(2);
+    x0 << 10., 70.;
+
+    Broyden<Dynamic> br(100, 1e-12);
+    // auto solution = br.solveArmijo(F, x0);
+    auto solution = br.solve_modified(F, x0);
+    // auto solution = br.solve_modified_inv(F, x0);
+    std::cout << "solution: \n" << solution << std::endl;
+
+    // exact solution
+    DVector<double> exact_sol(2);
+    exact_sol << 0., 0.;
+
+    EXPECT_TRUE((exact_sol - solution).norm() < 1e-5);
+}
+
+// test bfgs on the norm of an operator F: Rn -> Rn
+TEST(fem_pde_test, bfgs){
+    VectorField<Dynamic> F(2,2);
+    F[0] = [](SVector<2> x) -> double { return atan(x(0)*x(1)); };
+    F[1] = [](SVector<2> x) -> double { return x(0)-x(1); };
+    // F[0] = [](DVector<double> x) -> double { return x(0)*x(0); };
+    // F[1] = [](DVector<double> x) -> double { return x(1)*x(1); };
+    // Solution: x = 0., 0.
+
+    ScalarField<2> f;
+    f = [&](SVector<2> x) -> double {
+        return F(x).squaredNorm();
+    };
+
+    // initial point
+    SVector<2> x0(7.,7.);
+
+    BFGS<2> opt(1000, 1e-15, 1);
+    opt.optimize(f, x0, WolfeLineSearch());
+
+    // expected solution
+    SVector<2> expected(0., 0.);
+    std::cout << opt.optimum() << std::endl;
+    std::cout << opt.optimum().norm() << std::endl;
+    double L2_error = (opt.optimum() - expected).norm();
+    EXPECT_TRUE(L2_error < 1e-5);
+}
+
+// test Broyden on a grid of initial points
+TEST(fem_pde_test, Broyden_2D_on_a_grid){
+    // define the vector field
+    VectorField<Dynamic> F(2,2);
+    F[0] = [](DVector<double> x) -> double { return atan(x(0)*x(1)); };
+    F[1] = [](DVector<double> x) -> double { return x(0)-5*x(1); };
+    // F[0] = [](DVector<double> x) -> double { return x(0)*x(0); };
+    // F[1] = [](DVector<double> x) -> double { return x(1)*x(1); };
+    // Solution: x = 0., 0.
+
+    // initial point
+    DVector<double> x0(2);
+    x0 << 0.01, 0.01;
+
+    // grid of initial point
+    const int n = 10; // number of initial points
+    DMatrix<double> S(2,n);
+    for (size_t i=0; i<2; ++i)
+        for (size_t j=0; j<n; j++)
+            S(i,j) = x0(i) + 0.1*i + 0.1*j;
+
+    // solve F = 0 with Broyden
+    Broyden<Dynamic> br(80, 1e-6);
+    DVector<double> solution(2);
+
+    for (size_t j=0; j<n; ++j){
+        DVector<double> x1(2);
+        x1 << S(0,j), S(1,j);
+        solution = br.solve(F, x1);
+        // solution = br.solveArmijo(F, x1);
+    }
+    std::cout << "solution: \n" << solution << std::endl;
+
+    // exact solution
+    DVector<double> exact_sol(2);
+    exact_sol << 0., 0.;
+
+    EXPECT_TRUE((exact_sol - solution).norm() < 1e-5);
 }

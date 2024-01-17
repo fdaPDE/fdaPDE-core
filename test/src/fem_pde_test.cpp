@@ -374,3 +374,311 @@ TEST(fem_pde_test, parabolic_isotropic_order1_convergence) {
         EXPECT_TRUE(floor(order(n - 1)) == 2);
     }
 }
+
+// Solve a PDE with a full elliptic operator (non-isotropic diffusion + advection + reaction)
+TEST(fem_pde_test, advection_diffusion_reaction_non_isotropic_order_2) {
+
+    // define exact solution
+    auto solutionExpr = [](SVector<2> x) -> double { return 3*x[0]*x[0] + 2*x[1]*x[1]; };
+
+    // non-zero forcing term
+    auto forcingExpr = [](SVector<2> x) -> double { return 6*x[0]*x[0] + 12*x[0] + 4*x[1]*x[1] - 4*x[1] - 6; };
+    ScalarField<2> forcing(forcingExpr);   // wrap lambda expression in ScalarField object
+
+    // differential operator
+    SVector<2> b_;
+    b_ << 2., -1.;
+    SMatrix<2,2> K_{{1., -1.},{2., 0.}};
+    double c_ = 2;
+    auto L = -diffusion<FEM>(K_) + advection<FEM>(b_) + reaction<FEM>(c_);
+    // load sample mesh for order 1 basis
+    MeshLoader<Mesh2D> unit_square("unit_square");
+
+    PDE<decltype(unit_square.mesh), decltype(L), ScalarField<2>, FEM, fem_order<2>> pde_(unit_square.mesh, L, forcing);
+
+    // compute boundary condition and exact solution
+    DMatrix<double> nodes_ = pde_.dof_coords(); // unit_square.mesh.dof_coords();
+    DMatrix<double> dirichletBC(nodes_.rows(), 1);
+    DMatrix<double> solution_ex(nodes_.rows(), 1);
+
+    // set exact sol & dirichlet conditions
+    for (int i = 0; i < nodes_.rows(); ++i) {
+        solution_ex(i) = solutionExpr(nodes_.row(i));
+        dirichletBC(i) = solutionExpr(nodes_.row(i));
+    }
+    pde_.set_dirichlet_bc(dirichletBC);
+
+    // init solver and solve differential problem
+    pde_.init();
+    pde_.solve();
+
+    // check computed error
+    DMatrix<double> error_ = solution_ex - pde_.solution();
+    double error_L2 = (pde_.mass() * error_.cwiseProduct(error_)).sum();
+    EXPECT_TRUE(error_L2 < 1e-7);
+}
+
+// ADDED TEST (NonLinear PDE)
+// Solve a PDE with a non-linear operator
+TEST(fem_pde_test, non_linear_2) {
+
+    // define exact solution
+    auto solutionExpr = [](SVector<2> x) -> double { return 3*x[0]*x[0] + 2*x[1]*x[1]; };
+
+    double nu = 1;
+
+    // non-zero forcing term
+    auto forcingExpr = [&](SVector<2> x) -> double {
+        // NON-LINEARITY h(x) = 1 - f(x)
+        // f = -9*x^4 - 12*x^2*y^2 + 3*x^2 - 4*y^4 + 2*y^2 - 10
+        return -9*x[0]*x[0]*x[0]*x[0] - 12*x[0]*x[0]*x[1]*x[1] + 3*x[0]*x[0] - 4*x[1]*x[1]*x[1]*x[1] + 2*x[1]*x[1] - 10*nu;
+    };
+    ScalarField<2> forcing(forcingExpr);   // wrap lambda expression in ScalarField object
+
+    // load sample mesh for order 1 basis
+    MeshLoader<Mesh2D> unit_square("unit_square_32");
+
+    // non-linearity is defined inside class h
+    // build the non-linearity object # N=2
+    NonLinearReaction<2, LagrangianBasis<decltype(unit_square.mesh),2>::ReferenceBasis> h;
+
+    // differential operator
+    auto L = -nu*laplacian<FEM>() + non_linear_op<FEM>(h);
+
+    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<2>> pde_(unit_square.mesh);
+    pde_.set_differential_operator(L);
+
+    // compute boundary condition and exact solution
+    DMatrix<double> nodes_ = pde_.dof_coords();
+    DMatrix<double> solution_ex(nodes_.rows(), 1);
+    DMatrix<double> dirichletBC(nodes_.rows(), 1);
+    // set exact sol & dirichlet conditions
+    for (int i = 0; i < nodes_.rows(); ++i) {
+        solution_ex(i) = solutionExpr(nodes_.row(i));
+        dirichletBC(i) = solutionExpr(nodes_.row(i));
+    }
+    pde_.set_dirichlet_bc(dirichletBC);
+
+    // init solver and solve differential problem
+    // request quadrature nodes and evaluate forcing on them
+    DMatrix<double> quadrature_nodes = pde_.integrator().quadrature_nodes(unit_square.mesh);
+    DMatrix<double> u(quadrature_nodes.rows(), 1);
+    for (int i = 0; i < quadrature_nodes.rows(); ++i) {
+        u(i) = forcingExpr(quadrature_nodes.row(i));
+    }
+    pde_.set_forcing(u);
+
+    DMatrix<double> initial_guess = DMatrix<double>::Zero(nodes_.rows(),1);
+    pde_.set_dirichlet_bc(dirichletBC);
+    pde_.set_initial_condition(initial_guess);
+
+    pde_.init(); 
+    pde_.solve();
+
+    // check computed error
+    DMatrix<double> error_ = solution_ex - pde_.solution();
+    double error_L2 = (pde_.mass() * error_.cwiseProduct(error_)).sum();
+    EXPECT_TRUE(error_L2 < 1e-7);
+
+    // std::cout << std::setprecision(17);
+    std::cout << "error_L2 = " << error_L2 << std::endl;
+
+    //storing solution
+    std::ofstream file("solution_nonlinear_P2.txt");    //it will be exported in the current build directory
+    if (file.is_open()){
+        for(int i = 0; i < pde_.solution().rows(); ++i)
+            file << pde_.solution()(i) << '\n';
+        file.close();
+    } else {
+        std::cerr << "nonlinear test unable to save solution" << std::endl;
+    }
+}
+
+// ADDED TEST (NonLinear PDE)
+// Solve a PDE with a non-linear operator
+TEST(fem_pde_test, non_linear_1) {
+
+    // define exact solution
+    auto solutionExpr = [](SVector<2> x) -> double { return 3*x[0]*x[0] + 2*x[1]*x[1]; };
+
+    double nu = 1;
+
+    // non-zero forcing term
+    auto forcingExpr = [&](SVector<2> x) -> double {
+        // NON-LINEARITY h(x) = 1 - f(x)
+        // f = -9*x^4 - 12*x^2*y^2 + 3*x^2 - 4*y^4 + 2*y^2 - 10
+        return -9*x[0]*x[0]*x[0]*x[0] - 12*x[0]*x[0]*x[1]*x[1] + 3*x[0]*x[0] - 4*x[1]*x[1]*x[1]*x[1] + 2*x[1]*x[1] - 10*nu;
+    };
+    ScalarField<2> forcing(forcingExpr);   // wrap lambda expression in ScalarField object
+
+    // load sample mesh for order 1 basis
+    MeshLoader<Mesh2D> unit_square("unit_square_32");
+
+    // define the nonlinearity
+    NonLinearReaction<2, LagrangianBasis<decltype(unit_square.mesh),1>::ReferenceBasis> h;
+
+    // differential operator
+    auto L = -nu*laplacian<FEM>() + non_linear_op<FEM>(h);
+
+    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_square.mesh);
+    pde_.set_differential_operator(L);
+    
+    // compute boundary condition and exact solution
+    DMatrix<double> nodes_ = pde_.dof_coords();
+    DMatrix<double> solution_ex(nodes_.rows(), 1);
+    DMatrix<double> dirichletBC(nodes_.rows(), 1);
+
+    // set exact sol & dirichlet conditions
+    for (int i = 0; i < nodes_.rows(); ++i) {
+        solution_ex(i) = solutionExpr(nodes_.row(i));
+        dirichletBC(i) = solutionExpr(nodes_.row(i));
+    }
+    
+    // init solver and solve differential problem
+    // request quadrature nodes and evaluate forcing on them
+    DMatrix<double> quadrature_nodes = pde_.integrator().quadrature_nodes(unit_square.mesh);
+    DMatrix<double> u(quadrature_nodes.rows(), 1);
+    for (int i = 0; i < quadrature_nodes.rows(); ++i) {
+        u(i) = forcingExpr(quadrature_nodes.row(i));
+    }
+    pde_.set_forcing(u);
+    
+    DMatrix<double> initial_guess = DMatrix<double>::Zero(nodes_.rows(),1);
+    pde_.set_dirichlet_bc(dirichletBC);
+    pde_.set_initial_condition(initial_guess);
+
+    pde_.init();
+    pde_.solve();
+
+    // check computed error
+    DMatrix<double> error_ = solution_ex - pde_.solution();
+    double error_L2 = (pde_.mass() * error_.cwiseProduct(error_)).sum();
+    EXPECT_TRUE(error_L2 < 1e-7);
+
+    // std::cout << std::setprecision(17);
+    std::cout << "error_L2 = " << error_L2 << std::endl;
+    
+    //storing solution 
+    std::ofstream file("solution_nonlinear_P1.txt");    //it will be exported in the current build directory
+    if (file.is_open()){
+        for(int i = 0; i < pde_.solution().rows(); ++i)
+            file << pde_.solution()(i) << '\n';
+        file.close();
+    } else {
+        std::cerr << "nonlinear test unable to save solution" << std::endl;
+    }
+}
+
+TEST(fem_pde_test, testing_is_whatever) {
+
+    // testing the compile_time boolean checks for every operator
+    // the problem is that now nonlinearity cannot be defined without a domain
+    MeshLoader<Mesh2D> unit_square("unit_square_32");
+    NonLinearReaction<2, LagrangianBasis<decltype(unit_square.mesh),2>::ReferenceBasis> h;
+    SVector<2> b; b << 2., -1.;
+    SMatrix<2,2> K{{1., -1.},{2., 0.}};
+    double c = 2;
+
+    // define differential operator to test
+    // auto L = dt<FEM>();
+    // auto L = dt<FEM>() -laplacian<FEM>();
+    // auto L = dt<FEM>() -laplacian<FEM>() + diffusion<FEM>(K);
+    // auto L = dt<FEM>() -laplacian<FEM>() + diffusion<FEM>(K) + advection<FEM>(b);
+    // auto L = dt<FEM>() -laplacian<FEM>() + diffusion<FEM>(K) + advection<FEM>(b) + reaction<FEM>(c);
+    auto L = dt<FEM>() -laplacian<FEM>() + diffusion<FEM>(K) + advection<FEM>(b) + reaction<FEM>(c) + non_linear_op<FEM>(h);
+
+    // output tests
+    std::cout << "\n\tIs symmetric: " << fdapde::core::is_symmetric<decltype(L)>::value << std::endl;
+    std::cout << "\n\tIs parabolic: " << fdapde::core::is_parabolic<decltype(L)>::value << std::endl;
+    std::cout << "\n\tIs laplacian: " << fdapde::core::is_laplacian<decltype(L)>::value << std::endl;
+    std::cout << "\n\tIs diffusion: " << fdapde::core::is_diffusion<decltype(L)>::value << std::endl;
+    std::cout << "\n\tIs advection: " << fdapde::core::is_advection<decltype(L)>::value << std::endl;
+    std::cout << "\n\tIs reaction: " << fdapde::core::is_reaction<decltype(L)>::value << std::endl;
+    std::cout << "\n\tIs non-linear: " << fdapde::core::is_nonlinear<decltype(L)>::value << std::endl;
+
+    EXPECT_TRUE(1);
+}
+
+TEST(fem_pde_test, non_linear_1_convergence){
+    int num_refinements = 4;
+    DMatrix<int> N(num_refinements, 1); // number of refinements
+    N << 16, 32, 64, 128;
+    DMatrix<double> order(num_refinements-1,1);
+    DMatrix<double> error_L2 = DMatrix<double>::Zero(num_refinements, 1);
+
+    auto solutionExpr = [](SVector<2> x) -> double { return 3*x[0]*x[0] + 2*x[1]*x[1]; };
+    double nu = 1;
+    auto forcingExpr = [&](SVector<2> x) -> double { return -9*x[0]*x[0]*x[0]*x[0] - 12*x[0]*x[0]*x[1]*x[1] + 3*x[0]*x[0] - 4*x[1]*x[1]*x[1]*x[1] + 2*x[1]*x[1] - 10*nu; };
+    ScalarField<2> forcing(forcingExpr);   // wrap lambda expression in ScalarField object
+
+
+
+    for( int n = 0; n < num_refinements; ++n){
+        std::string domain_name = "unit_square_" + std::to_string(N(n));
+        MeshLoader<Mesh2D> unit_square(domain_name);
+        // now I need to define the NonLinearReaction and the operator here, since I need the domain to create it
+        NonLinearReaction<2, LagrangianBasis<decltype(unit_square.mesh),1>::ReferenceBasis> h;
+        auto L = -nu*laplacian<FEM>() + non_linear_op<FEM>(h);
+
+        PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_square.mesh);
+        pde_.set_differential_operator(L);
+
+        // compute boundary condition and exact solution
+        DMatrix<double> nodes_ = pde_.dof_coords();
+        DMatrix<double> dirichlet_bc(nodes_.rows(), 1);
+        DMatrix<double> solution_ex(nodes_.rows(), 1);
+        DMatrix<double> initial_guess = DMatrix<double>::Zero(nodes_.rows(),1);
+
+        for (int i = 0; i < nodes_.rows(); ++i) {
+            solution_ex(i) = solutionExpr(nodes_.row(i));
+            dirichlet_bc(i) = solutionExpr(nodes_.row(i));
+        }
+
+        // set dirichlet conditions
+        pde_.set_dirichlet_bc(dirichlet_bc);
+
+        // set initial condition
+        pde_.set_initial_condition(initial_guess);
+
+        // request quadrature nodes and evaluate forcing on them
+        DMatrix<double> quadrature_nodes = pde_.integrator().quadrature_nodes(unit_square.mesh);
+        DMatrix<double> u(quadrature_nodes.rows(), 1);
+        for (int i = 0; i < quadrature_nodes.rows(); ++i) {
+            u(i) = forcingExpr(quadrature_nodes.row(i));
+        }
+        pde_.set_forcing(u);
+
+        // init solver and solve differential problem
+        pde_.init();
+        pde_.solve();
+
+        // check computed error
+        DMatrix<double> error_ = solution_ex - pde_.solution();
+        error_L2(n) = std::sqrt( (pde_.mass() * error_.cwiseProduct(error_)).sum() );
+
+    } // end refinement for loop
+
+    // check estimated convergence rate
+    for(int n = 1; n < num_refinements; ++n){
+        order(n-1) = std::log2(error_L2(n-1)/error_L2(n));
+        EXPECT_TRUE(floor(order(n-1)) == 2);
+    }
+}
+
+TEST(fem_pde_test, derivative){
+    MeshLoader<Mesh2D> unit_square("unit_square_16");
+    NonLinearReactionPrime<2, LagrangianBasis<decltype(unit_square.mesh),1>::ReferenceBasis> h_prime;
+    NonLinearReaction<2, LagrangianBasis<decltype(unit_square.mesh),1>::ReferenceBasis> h;
+    std::shared_ptr<DVector<double>> f = std::make_shared<DVector<double>>(3);
+    for (size_t i=0; i<3; ++i)
+        (*f)[i] = 1*i*5;
+    h_prime(f);
+    h(f);
+
+    SVector<2> x = {10., 10.};
+
+    std::cout << h(x) << std::endl;
+    std::cout << h_prime(x) << std::endl;
+
+    EXPECT_TRUE(0 < 1);
+}

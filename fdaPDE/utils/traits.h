@@ -65,6 +65,24 @@ struct has_instance_of<E, std::tuple<U, Tail...>> {
     static constexpr bool value = has_instance_of<E, std::tuple<Tail...>>::value;
 };
 
+// ADDED HERE THE RECURSIVE TEMPLATE METAPROGRAMMING STRUCTURE THAT TAKES 2 TEMPLATE PARAMS
+// maybe it van be generalized with variadic templates?
+//_____________________________________________________________________________________________________________________
+// returns std::true_type if tuple contains an instantiation of template E<F<T>>
+template <template <typename, typename> typename E, typename Tuple> struct has_instance_of_2 { };
+
+template <template <typename, typename> typename E>   // empty tuple cannot contain anything
+struct has_instance_of_2<E, std::tuple<>> : std::false_type { };
+
+template <typename F, typename T, template <typename, typename> typename E, typename... Tail>   // type found, stop recursion
+struct has_instance_of_2<E, std::tuple<E<F, T>, Tail...>> : std::true_type { };
+
+template <typename U, template <typename, typename> typename E, typename... Tail>   // recursive step
+struct has_instance_of_2<E, std::tuple<U, Tail...>> {
+    static constexpr bool value = has_instance_of_2<E, std::tuple<Tail...>>::value;
+};
+//_____________________________________________________________________________________________________________________
+
 // trait to detect whether all types in a parameter pack are unique
 template <typename... Ts> struct unique_types;
 // consider a pair of types and develop a tree of matches starting from them
