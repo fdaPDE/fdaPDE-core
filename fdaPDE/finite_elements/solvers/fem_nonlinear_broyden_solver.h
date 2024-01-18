@@ -75,7 +75,7 @@ public:
         solver.compute(A);
         if (solver.info() != Eigen::Success) {    // stop if something went wrong...
             this->success = false;
-            std::cout << "LU return due to success=false" << std::endl;
+            // std::cout << "LU return due to success=false" << std::endl;
             return;
         }
         DVector<double> x0 = solver.solve(this->force_);

@@ -222,7 +222,7 @@ TEST(fem_operators_test, advection_reaction_diffusion_order_2) {
     }
 
     EXPECT_TRUE(1);
-    std::cout << "\n\t Integration test with full elliptic operator compiled!" << std::endl;
+    // std::cout << "\n\t Integration test with full elliptic operator compiled!" << std::endl;
 }
 
 
@@ -275,13 +275,13 @@ TEST(fem_operators_test, non_linear_order_2) {
     }
 
     // print the results
-    std::cout << "\n\t H = ";
+    // std::cout << "\n\t H = ";
     for (std::size_t i=0; i<integrals.size(); i++){
-        std::cout << std::fixed << std::setprecision(6) << integrals[i] << ",\t";
+        // std::cout << std::fixed << std::setprecision(6) << integrals[i] << ",\t";
         if (!((i+1)%6))
-            std::cout << "\n";
+            // std::cout << "\n";
     }
-    std::cout << std::endl;
-    std::cout << "\t Integration test with non-linear operator compiled!\n" << std::endl;
+    // std::cout << std::endl;
+    // std::cout << "\t Integration test with non-linear operator compiled!\n" << std::endl;
     EXPECT_TRUE(1);
 }

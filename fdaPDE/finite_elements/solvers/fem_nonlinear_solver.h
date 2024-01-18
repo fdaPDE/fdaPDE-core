@@ -133,7 +133,7 @@ public:
     template <typename PDE>
     void solve(PDE& pde) {
         solveFixedPoint(pde);
-        std::cout << "\n\n\t done with fixedpoint \n"<<std::endl;
+        // std::cout << "\n\n\t done with fixedpoint \n"<<std::endl;
         pde.set_initial_condition(this->solution_);
         // solveBroyden(pde);
         solveNewton(pde);
@@ -178,7 +178,7 @@ public:
             solver.compute(this->stiff_);                // prepare solver
             if (solver.info() != Eigen::Success) {    // stop if something was wrong...
                 this->success = false;
-                std::cout << "Return due to success=false at iteration " << i << std::endl;
+                // std::cout << "Return due to success=false at iteration " << i << std::endl;
                 return;
             }
 
@@ -201,10 +201,10 @@ public:
             DMatrix<double> error_ = solution_ex - this->solution_;
             error_L2(i) = (this->mass_ * error_.cwiseProduct(error_)).sum();
 
-            std::cout << "Error: " << error_L2(i) << std::endl;
-            std::cout << "Iter: " << i << std::endl;
-            std::cout << "|| Au - f || = " << (this->stiff_ * this->solution_ - this->force_).norm() << std::endl;
-            std::cout << "||Increment|| : " << incr.norm() << std::endl;
+            // std::cout << "Error: " << error_L2(i) << std::endl;
+            // std::cout << "Iter: " << i << std::endl;
+            // std::cout << "|| Au - f || = " << (this->stiff_ * this->solution_ - this->force_).norm() << std::endl;
+            // std::cout << "||Increment|| : " << incr.norm() << std::endl;
 
             if (error_L2(i) < tol_) break;
         }
@@ -245,16 +245,16 @@ public:
             return this->stiff_ * u - this->force_;
         };
 
-        std::cout << "Fun(fixedpoint) = " << Fun(this->solution_).norm() << std::endl;
-        std::cout << "starting broyden.h with " << BroydenIter_ << " iterations" << std::endl;
+        // std::cout << "Fun(fixedpoint) = " << Fun(this->solution_).norm() << std::endl;
+        // std::cout << "starting broyden.h with " << BroydenIter_ << " iterations" << std::endl;
 
         // initial condition
         DVector<double> x = pde.initial_condition();
         // error at zeroth iteration
         DMatrix<double> error_ = solution_ex - x;
         error_L2(0) = (this->mass_ * error_.cwiseProduct(error_)).sum();
-        std::cout << "\nBroyden iter: 0" << std::endl;
-        std::cout << "Error: " << error_L2(0) << std::endl;
+        // std::cout << "\nBroyden iter: 0" << std::endl;
+        // std::cout << "Error: " << error_L2(0) << std::endl;
 
         int dim = x.size(); // = f_(x).size();
 
@@ -287,8 +287,8 @@ public:
             fx = Fun(x);
             norm_fx = fx.norm();
 
-            std::cout << "Current iteration: " << itc << std::endl;
-            std::cout << "||f(x)|| = " << norm_fx << std::endl;
+            // std::cout << "Current iteration: " << itc << std::endl;
+            // std::cout << "||f(x)|| = " << norm_fx << std::endl;
 
             // step 2
             if (norm_fx < tol_) {this->solution_ = x; return;}
@@ -325,7 +325,7 @@ public:
                     alfa_k = 1.;
                     while (Fun(x+alfa_k*d).norm() > norm_fx - sigma_2*(alfa_k*d).squaredNorm() + eps(itc)*norm_fx)
                         alfa_k *= r;
-                    std::cout << "iteration " << itc << " alfa = " << alfa_k << std::endl;
+                    // std::cout << "iteration " << itc << " alfa = " << alfa_k << std::endl;
                     // compute alfa_k = max{1, r, r^2, ...} s.t.
                     // f_(x+alfa_k*d.col(n)).norm() <= f_(x).norm() - sigma_2*(alfa_k*d.col(n)).norm() + eps(n)*f_(x).norm()
                 }
@@ -343,10 +343,10 @@ public:
             DMatrix<double> error_ = solution_ex - x;
             error_L2(itc) = (this->mass_ * error_.cwiseProduct(error_)).sum();
 
-            std::cout << "\nBroyden iter: " << itc << std::endl;
-            std::cout << "Error: " << error_L2(itc) << std::endl;
-            std::cout << "Broyden -> || Au - f || = " << norm_fx << std::endl;
-            std::cout << "Broyden -> ||Increment|| = " << s.norm() << std::endl;
+            // std::cout << "\nBroyden iter: " << itc << std::endl;
+            // std::cout << "Error: " << error_L2(itc) << std::endl;
+            // std::cout << "Broyden -> || Au - f || = " << norm_fx << std::endl;
+            // std::cout << "Broyden -> ||Increment|| = " << s.norm() << std::endl;
             if (error_L2(itc) < tol_) break;
 
             x = x_new;
@@ -390,8 +390,8 @@ public:
         // error at zeroth iteration
         DMatrix<double> error_ = solution_ex - this->solution_;
         error_L2(0) = (this->mass_ * error_.cwiseProduct(error_)).sum();
-        std::cout << "\nNewton iter: 0" << std::endl;
-        std::cout << "Error: " << error_L2(0) << std::endl;
+        // std::cout << "\nNewton iter: 0" << std::endl;
+        // std::cout << "Error: " << error_L2(0) << std::endl;
 
         // declare the known term that will go on the right hand side and will contain h'
         NonLinearReactionPrime<DomainType::local_dimension, ReferenceBasis> h_prime;
@@ -425,7 +425,7 @@ public:
             solver.compute(this->stiff_);                // prepare solver
             if (solver.info() != Eigen::Success) {    // stop if something was wrong...
                 this->success = false;
-                std::cout << "Return due to success=false at iteration " << i << std::endl;
+                // std::cout << "Return due to success=false at iteration " << i << std::endl;
                 return;
             }
 
@@ -440,10 +440,10 @@ public:
             DMatrix<double> error_ = solution_ex - this->solution_;
             error_L2(i) = (this->mass_ * error_.cwiseProduct(error_)).sum();
 
-            std::cout << "\nNewton iter: " << i << std::endl;
-            std::cout << "Error: " << error_L2(i) << std::endl;
-            std::cout << "Newton -> || Au - f || = " << (this->stiff_ * this->solution_ - this->force_ ).norm() << std::endl;
-            std::cout << "Newton -> ||Increment|| = " << incr << std::endl;
+            // std::cout << "\nNewton iter: " << i << std::endl;
+            // std::cout << "Error: " << error_L2(i) << std::endl;
+            // std::cout << "Newton -> || Au - f || = " << (this->stiff_ * this->solution_ - this->force_ ).norm() << std::endl;
+            // std::cout << "Newton -> ||Increment|| = " << incr << std::endl;
             if (error_L2(i) < tol_) break;
             f_prev = this->solution_;
 

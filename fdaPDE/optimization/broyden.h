@@ -87,7 +87,7 @@ typename Broyden<N>::VectorType Broyden<N>::solve(F& f_, VectorType& x) const {
             std::cerr << "Unable to save solution" << std::endl;
         }
 
-        std::cout << "iter "<< itc <<", x = " << x.norm() << std::endl;
+        // std::cout << "iter "<< itc <<", x = " << x.norm() << std::endl;
 
         if (f_(x).norm() < tol_) {return x;}
 
@@ -114,7 +114,8 @@ typename Broyden<N>::VectorType Broyden<N>::solve(F& f_, VectorType& x) const {
 } // end solve
 
 // 3 points line search for Broyden Armijo
-double parab3p(double lambdac, double lambdam, double ff0, double ffc, double ffm) {
+template <typename T = double>>
+double parab3p(T lambdac, T lambdam, T ff0, T ffc, T ffm) {
     // std::cout << "lambdac, lambdam, ff0, ffc, ffm = " << lambdac << " "<< lambdam << " " << ff0 << " " << ffc << " " << ffm << std::endl;
     double sigma0 = 0.1;
     double sigma1 = 0.5;
@@ -164,7 +165,7 @@ typename Broyden<N>::VectorType Broyden<N>::solveArmijo(F& f_, VectorType& x) co
     for (int itc = 0; itc < max_iter_; itc++){
         n++;
 
-        std::cout << "iter " << n << ": " << std::endl;
+        // std::cout << "iter " << n << ": " << std::endl;
 
         fnrmo = fnrm;
         xold = x;
@@ -192,7 +193,7 @@ typename Broyden<N>::VectorType Broyden<N>::solveArmijo(F& f_, VectorType& x) co
         // START LINE SEARCH (correct the step)
         for (int j = 0; j < maxArm; j++){
             if ( fnrm < ( 1 - lambda * alpha )*fnrmo ){
-                std::cout << "\tline search converged -> break" << std::endl;
+                // std::cout << "\tline search converged -> break" << std::endl;
                 break;
             }
 
@@ -202,7 +203,7 @@ typename Broyden<N>::VectorType Broyden<N>::solveArmijo(F& f_, VectorType& x) co
                 lambda = parab3p(lambda_c, lambda_m, ff0, ffc, ffm);
 
             // update values
-            std::cout << "\tline search: iter "<< j << ", lambda = " << lambda << std::endl;
+            // std::cout << "\tline search: iter "<< j << ", lambda = " << lambda << std::endl;
             lambda_m = lambda_c;
             ffm = ffc;
             lambda_c = lambda;
@@ -210,7 +211,7 @@ typename Broyden<N>::VectorType Broyden<N>::solveArmijo(F& f_, VectorType& x) co
             fc = f_(x);
             fnrm = fc.norm()/sqrtdim;
             ffc = fnrm*fnrm;
-            if (j >= maxArm - 1) { std::cout<<"\t failure in line search"<<std::endl; }
+            // if (j >= maxArm - 1) { std::cout<<"\t failure in line search"<<std::endl; }
         }// end of line search, step corrected
 
         // stopping criterion
@@ -240,18 +241,18 @@ typename Broyden<N>::VectorType Broyden<N>::solveArmijo(F& f_, VectorType& x) co
             s.col(n+1) = ( z - tmp2 * s.col(n) ) / tmp3;
             snrm(n+1) = s.col(n+1).squaredNorm();
 
-            std::cout << std::setprecision(16) << "\n\t x = " << x(0) << ", " << x(1) << std::endl;
-            std::cout << std::setprecision(16) << "\n\tsnrm(n+1) = " << snrm(n+1) << std::endl;
+            // std::cout << std::setprecision(16) << "\n\t x = " << x(0) << ", " << x(1) << std::endl;
+            // std::cout << std::setprecision(16) << "\n\tsnrm(n+1) = " << snrm(n+1) << std::endl;
 
         } else {
-            std::cout << "\n\nrestart\n\n" << std::endl;
+            // std::cout << "\n\nrestart\n\n" << std::endl;
             s.col(0) = -fc;
             snrm(0) = s.col(0).squaredNorm();
         }
 
     } // end for itc
     file.close();
-    std::cout << "not converged" << std::endl;
+    // std::cout << "not converged" << std::endl;
     return x;       // return without convergence
 
 } // end solveArmijo
@@ -294,8 +295,8 @@ typename Broyden<N>::VectorType Broyden<N>::solve_modified(F& f_, VectorType& x)
         fx = f_(x);
         norm_fx = fx.norm();
 
-        std::cout << "Current iteration: " << itc << std::endl;
-        std::cout << "||f(x)|| = " << norm_fx << std::endl;
+        // std::cout << "Current iteration: " << itc << std::endl;
+        // std::cout << "||f(x)|| = " << norm_fx << std::endl;
 
         // step 2
         if (norm_fx < tol_) {return x;}
@@ -332,7 +333,7 @@ typename Broyden<N>::VectorType Broyden<N>::solve_modified(F& f_, VectorType& x)
                 alfa_k = 1.;
                 while (f_(x+alfa_k*d).norm() > norm_fx - sigma_2*(alfa_k*d).squaredNorm() + eps(itc)*norm_fx)
                     alfa_k *= r;
-                std::cout << "iteration " << itc << " alfa = " << alfa_k << std::endl;
+                // std::cout << "iteration " << itc << " alfa = " << alfa_k << std::endl;
                 // compute alfa_k = max{1, r, r^2, ...} s.t.
                 // f_(x+alfa_k*d.col(n)).norm() <= f_(x).norm() - sigma_2*(alfa_k*d.col(n)).norm() + eps(n)*f_(x).norm()
             }
@@ -399,10 +400,10 @@ typename Broyden<N>::VectorType Broyden<N>::solve_modified_inv(F& f_, VectorType
         itc += 1;
         step_5 = false;
 
-        std::cout << "Current iteration: " << itc << std::endl;
-        std::cout << "Current n: " << n << std::endl;
+        // std::cout << "Current iteration: " << itc << std::endl;
+        // std::cout << "Current n: " << n << std::endl;
         // std::cout << "Current x: \n" << x << std::endl;
-        std::cout << "||f(x)|| = " << norm_fx << std::endl;
+        // std::cout << "||f(x)|| = " << norm_fx << std::endl;
 
         // step 2
         if (norm_fx < tol_) {return x;}
@@ -493,7 +494,7 @@ double solve_quadratic(double Delta, typename Broyden<N>::VectorType sU, typenam
 
     double D = B*B-4*A*C;
     if (D < 0){
-        std::cout << "error in solving for tau, no roots" << std::endl;
+        // std::cout << "error in solving for tau, no roots" << std::endl;
         return 1;
     }
 
@@ -504,15 +505,15 @@ double solve_quadratic(double Delta, typename Broyden<N>::VectorType sU, typenam
     double tau2 = y2 + 1;
 
     if (tau1 >=0 && tau1 <= 2){
-        std::cout << "returning tau1 = " << tau1 << std::endl;
+        // std::cout << "returning tau1 = " << tau1 << std::endl;
         return tau1;
     }
     if (tau2 >=0 && tau2 <= 2){
-        std::cout << "returning tau2 = " << tau2 << std::endl;
+        // std::cout << "returning tau2 = " << tau2 << std::endl;
         return tau2;
     }
 
-    std::cout << "error in solving for tau, roots not in range" << std::endl;
+    // std::cout << "error in solving for tau, roots not in range" << std::endl;
     return 1;
 }
 
@@ -554,9 +555,9 @@ typename Broyden<N>::VectorType Broyden<N>::solve_trust_region(F& f_, VectorType
 
     std::size_t k = 0;
     while (k < max_iter_ && Fk.norm() > tol_) {
-        std::cout << "\n\nbegin iteration " << k << std::endl;
-        std::cout << "||Fk|| = " << std::setprecision(16) << Fk.norm() << std::endl;
-        std::cout << "Delta = " << Delta << std::endl;
+        // std::cout << "\n\nbegin iteration " << k << std::endl;
+        // std::cout << "||Fk|| = " << std::setprecision(16) << Fk.norm() << std::endl;
+        // std::cout << "Delta = " << Delta << std::endl;
 
         // assert Bk is not singular, and actually we need the determinant to be larger than a tolerance,
         // so that the determinant of B^T B is larger than machine eps
@@ -564,10 +565,10 @@ typename Broyden<N>::VectorType Broyden<N>::solve_trust_region(F& f_, VectorType
 
         // compute newton direction
         // solve linear system Bk sN = Fk
-        if (debug) std::cout << "B = \n" << Bk << std::endl;
+        // if (debug) std::cout << "B = \n" << Bk << std::endl;
         Eigen::GMRES<MatrixType> solver(Bk);
         sN = solver.solve(-Fk);
-        if (debug) std::cout << "Newton Direction: [" << std::setprecision(8) << sN(0) << ", " << sN(1) << "], ||sN|| = :" << sN.norm() << std::endl;
+        // if (debug) std::cout << "Newton Direction: [" << std::setprecision(8) << sN(0) << ", " << sN(1) << "], ||sN|| = :" << sN.norm() << std::endl;
 
         // compute the hessian matrix of the associate optimization problem
         MatrixType Hk = Bk.transpose()*Bk;  // this matrix may be ill conditioned, but we need it
@@ -588,7 +589,7 @@ typename Broyden<N>::VectorType Broyden<N>::solve_trust_region(F& f_, VectorType
         double tau_k = std::min(1., num/den);
         tau_k *= -Delta/(Bk.transpose()*Fk).norm();
         VectorType sC = tau_k*Bk.transpose()*Fk;
-        if (debug) std::cout << "Cauchy Direction: [" << std::setprecision(8) << sC(0) << ", " << sC(1) << "], ||sC|| = :" << sC.norm() << std::endl;
+        // if (debug) std::cout << "Cauchy Direction: [" << std::setprecision(8) << sC(0) << ", " << sC(1) << "], ||sC|| = :" << sC.norm() << std::endl;
 
         // begin the Trust-Region dogleg method
         bool step_accepted = false;
@@ -596,7 +597,7 @@ typename Broyden<N>::VectorType Broyden<N>::solve_trust_region(F& f_, VectorType
         std::size_t maxit_dogleg = 4;
         while(!step_accepted && j < maxit_dogleg){
             j++;
-            std::cout << "\nDogleg iteration " << j << "/" << maxit_dogleg << std::endl;
+            // std::cout << "\nDogleg iteration " << j << "/" << maxit_dogleg << std::endl;
             step_accepted = true;
 
             //find the dogleg step
@@ -619,7 +620,7 @@ typename Broyden<N>::VectorType Broyden<N>::solve_trust_region(F& f_, VectorType
                 }
 
             } else {
-                std::cout << "trying with newton direction" << std::endl;
+                // std::cout << "trying with newton direction" << std::endl;
             }
 
             // update with dogleg direction, later we'll decide if we accept it or not.
@@ -630,34 +631,34 @@ typename Broyden<N>::VectorType Broyden<N>::solve_trust_region(F& f_, VectorType
             double fk = Fk.dot(Fk);
             double fk1 = Fk1.dot(Fk1);
             double mk1 = fk + Fk.dot(Bk*s_) + 0.5*s_.dot(Hk*s_); // evaluation of the associated quadratic model
-            if (debug) std::cout << "fk = " << fk << "\tfk+1 = " << fk1 << "\tmk+1 = " << mk1 << std::endl;
+            // if (debug) std::cout << "fk = " << fk << "\tfk+1 = " << fk1 << "\tmk+1 = " << mk1 << std::endl;
 
             // compute the model fit parameter ( Nocedal-Wright 4.4 pag 68 )
             double rho = (fk-fk1)/(fk-mk1);  // should be in the interval [0,1]
-            std::cout << "rho = " << rho << std::endl;
+            // std::cout << "rho = " << rho << std::endl;
 
             // decide what to do with the trust region
             if (rho < 0.25 || rho > 2){
                 Delta = std::max(Delta*0.5, 0.001);    // quadratic model is not a good fit, shrink trust region
-                std::cout << "shrinking trust region " << std::endl;
+                // std::cout << "shrinking trust region " << std::endl;
             } else if(rho>0.75 && std::abs(s_.norm() - Delta)<1e-10 && rho < 2) {   // I added rho < 3
                 Delta = std::min(2*Delta, Delta_MAX);
-                std::cout << "expanding trust region " << std::endl;
+                // std::cout << "expanding trust region " << std::endl;
             }
             // if the two above conditions are not satisfied, leave the trust region unchanged
-            std::cout << "Delta = " << Delta << std::endl;
+            // std::cout << "Delta = " << Delta << std::endl;
 
             // decide whether to accept xk1 or not
             // if ( rho <= eta )   //eta is a parameter in [0,1/4) ( Nocedal-Wright pag 69 )
             if (fk1>fk) {
                 // if nothing happened to the trust region, change it...
                 step_accepted = false;  // try again with shrunk trust region
-                std::cout << "step rejected" << std::endl;
+                // std::cout << "step rejected" << std::endl;
             }
         }
         // step accepted !
-        if (debug) std::cout << "xk = [" << std::setprecision(8) << xk(0) << ", " << xk(1) << "]" << std::endl;
-        if (debug) std::cout << "xk+1 = [" << std::setprecision(8) << xk1(0) << ", " << xk1(1) << "]" << std::endl;
+        // if (debug) std::cout << "xk = [" << std::setprecision(8) << xk(0) << ", " << xk(1) << "]" << std::endl;
+        // if (debug) std::cout << "xk+1 = [" << std::setprecision(8) << xk1(0) << ", " << xk1(1) << "]" << std::endl;
 
         // update Broyden matrix
         VectorType s = xk1 - xk;

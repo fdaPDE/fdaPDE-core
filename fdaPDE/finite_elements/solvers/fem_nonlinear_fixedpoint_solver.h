@@ -76,7 +76,7 @@ public:
             solver.compute(this->stiff_);                // prepare solver
             if (solver.info() != Eigen::Success) {    // stop if something was wrong...
                 this->success = false;
-                std::cout << "Return due to success=false at iteration " << i << std::endl;
+                // std::cout << "Return due to success=false at iteration " << i << std::endl;
                 return;
             }
             this->solution_ = solver.solve(this->force_);   // solve linear system
@@ -95,7 +95,7 @@ public:
             // set dirichlet boundary conditions on the system matrix
             this->set_dirichlet_bc(pde);
         }
-        std::cout << "\n\t Fixedpoint ended with " << i + 1 << " iterations" << std::endl;
+        // std::cout << "\n\t Fixedpoint ended with " << i + 1 << " iterations" << std::endl;
         this->success = true;
         return;
     } // end solve

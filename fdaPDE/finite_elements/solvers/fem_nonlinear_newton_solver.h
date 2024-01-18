@@ -70,7 +70,7 @@ public:
         solver.compute(this->stiff_);
         if (solver.info() != Eigen::Success) {    // stop if something went wrong...
             this->success = false;
-            std::cout << "LU return due to success=false" << std::endl;
+            // std::cout << "LU return due to success=false" << std::endl;
             return;
         }
         this->solution_ = solver.solve(this->force_);
@@ -105,7 +105,7 @@ public:
             solver.compute(this->stiff_);                // prepare solver
             if (solver.info() != Eigen::Success) {    // stop if something was wrong...
                 this->success = false;
-                std::cout << "Return due to success=false at iteration " << i << std::endl;
+                // std::cout << "Return due to success=false at iteration " << i << std::endl;
                 return;
             }
 
@@ -118,9 +118,9 @@ public:
             double incr = (this->solution_ - f_prev).norm();
             if (incr < tol_) break;
 
-            std::cout << "\nNewton iter: " << i << std::endl;
-            std::cout << "Newton -> || Au - f || = " << (this->stiff_ * this->solution_ - this->force_ ).norm() << std::endl;
-            std::cout << "Newton -> ||Increment|| = " << incr << std::endl;
+            // std::cout << "\nNewton iter: " << i << std::endl;
+            // std::cout << "Newton -> || Au - f || = " << (this->stiff_ * this->solution_ - this->force_ ).norm() << std::endl;
+            // std::cout << "Newton -> ||Increment|| = " << incr << std::endl;
 
             f_prev = this->solution_;
         }

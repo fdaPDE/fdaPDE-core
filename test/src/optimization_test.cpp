@@ -122,7 +122,7 @@ TEST(fem_pde_test, Broyden_2D){
 
     Broyden<Dynamic> br(80, 1e-12);
     auto solution = br.solve(F, x0);
-    std::cout << "solution: \n" << solution << std::endl;
+    // std::cout << "solution: \n" << solution << std::endl;
 
     // exact solution
     DVector<double> exact_sol(2);
@@ -145,7 +145,7 @@ TEST(fem_pde_test, GlobalBroyden_2D){
     // auto solution = br.solveArmijo(F, x0);
     auto solution = br.solve_modified(F, x0);
     // auto solution = br.solve_modified_inv(F, x0);
-    std::cout << "solution: \n" << solution << std::endl;
+    // std::cout << "solution: \n" << solution << std::endl;
 
     // exact solution
     DVector<double> exact_sol(2);
@@ -176,8 +176,8 @@ TEST(fem_pde_test, bfgs){
 
     // expected solution
     SVector<2> expected(0., 0.);
-    std::cout << opt.optimum() << std::endl;
-    std::cout << opt.optimum().norm() << std::endl;
+    // std::cout << opt.optimum() << std::endl;
+    // std::cout << opt.optimum().norm() << std::endl;
     double L2_error = (opt.optimum() - expected).norm();
     EXPECT_TRUE(L2_error < 1e-5);
 }
@@ -213,7 +213,7 @@ TEST(fem_pde_test, Broyden_2D_on_a_grid){
         solution = br.solve(F, x1);
         // solution = br.solveArmijo(F, x1);
     }
-    std::cout << "solution: \n" << solution << std::endl;
+    // std::cout << "solution: \n" << solution << std::endl;
 
     // exact solution
     DVector<double> exact_sol(2);

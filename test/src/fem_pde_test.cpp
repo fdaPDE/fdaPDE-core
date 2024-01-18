@@ -481,7 +481,7 @@ TEST(fem_pde_test, non_linear_2) {
     EXPECT_TRUE(error_L2 < 1e-7);
 
     // std::cout << std::setprecision(17);
-    std::cout << "error_L2 = " << error_L2 << std::endl;
+    // std::cout << "error_L2 = " << error_L2 << std::endl;
 
     //storing solution
     std::ofstream file("solution_nonlinear_P2.txt");    //it will be exported in the current build directory
@@ -556,7 +556,7 @@ TEST(fem_pde_test, non_linear_1) {
     EXPECT_TRUE(error_L2 < 1e-7);
 
     // std::cout << std::setprecision(17);
-    std::cout << "error_L2 = " << error_L2 << std::endl;
+    // std::cout << "error_L2 = " << error_L2 << std::endl;
     
     //storing solution 
     std::ofstream file("solution_nonlinear_P1.txt");    //it will be exported in the current build directory
@@ -588,13 +588,13 @@ TEST(fem_pde_test, testing_is_whatever) {
     auto L = dt<FEM>() -laplacian<FEM>() + diffusion<FEM>(K) + advection<FEM>(b) + reaction<FEM>(c) + non_linear_op<FEM>(h);
 
     // output tests
-    std::cout << "\n\tIs symmetric: " << fdapde::core::is_symmetric<decltype(L)>::value << std::endl;
-    std::cout << "\n\tIs parabolic: " << fdapde::core::is_parabolic<decltype(L)>::value << std::endl;
-    std::cout << "\n\tIs laplacian: " << fdapde::core::is_laplacian<decltype(L)>::value << std::endl;
-    std::cout << "\n\tIs diffusion: " << fdapde::core::is_diffusion<decltype(L)>::value << std::endl;
-    std::cout << "\n\tIs advection: " << fdapde::core::is_advection<decltype(L)>::value << std::endl;
-    std::cout << "\n\tIs reaction: " << fdapde::core::is_reaction<decltype(L)>::value << std::endl;
-    std::cout << "\n\tIs non-linear: " << fdapde::core::is_nonlinear<decltype(L)>::value << std::endl;
+    // std::cout << "\n\tIs symmetric: " << fdapde::core::is_symmetric<decltype(L)>::value << std::endl;
+    // std::cout << "\n\tIs parabolic: " << fdapde::core::is_parabolic<decltype(L)>::value << std::endl;
+    // std::cout << "\n\tIs laplacian: " << fdapde::core::is_laplacian<decltype(L)>::value << std::endl;
+    // std::cout << "\n\tIs diffusion: " << fdapde::core::is_diffusion<decltype(L)>::value << std::endl;
+    // std::cout << "\n\tIs advection: " << fdapde::core::is_advection<decltype(L)>::value << std::endl;
+    // std::cout << "\n\tIs reaction: " << fdapde::core::is_reaction<decltype(L)>::value << std::endl;
+    // std::cout << "\n\tIs non-linear: " << fdapde::core::is_nonlinear<decltype(L)>::value << std::endl;
 
     EXPECT_TRUE(1);
 }
@@ -677,8 +677,8 @@ TEST(fem_pde_test, derivative){
 
     SVector<2> x = {10., 10.};
 
-    std::cout << h(x) << std::endl;
-    std::cout << h_prime(x) << std::endl;
+    // std::cout << h(x) << std::endl;
+    // std::cout << h_prime(x) << std::endl;
 
     EXPECT_TRUE(0 < 1);
 }
