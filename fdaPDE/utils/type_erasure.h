@@ -96,7 +96,6 @@ struct shared_storage {
     std::shared_ptr<void> ptr_ = nullptr;
     void* ptr() { return ptr_.get(); }
     const void* ptr() const { return ptr_.get(); }
-    operator bool() const { return ptr_ == nullptr; }
 
     shared_storage() = default;
     template <typename T> shared_storage(const T& obj) : ptr_(std::make_shared<T>(obj)) {};
@@ -106,7 +105,6 @@ struct non_owning_storage {
     const void* ptr_ = nullptr;
     void* ptr() { return const_cast<void*>(ptr_); }
     const void* ptr() const { return ptr_; }
-    operator bool() const { return ptr_ == nullptr; }
 
     non_owning_storage() = default;
     template <typename T> non_owning_storage(T& obj) : ptr_(&obj) {};
@@ -158,7 +156,6 @@ struct heap_storage {
     // getter to holded data
     void* ptr() { return ptr_; };
     const void* ptr() const { return ptr_; }
-    operator bool() const { return ptr_ != nullptr; }
   
     ~heap_storage() {
         // free memory and restore status
@@ -206,8 +203,10 @@ struct vtable_handler {
     ~vtable_handler() {
         if(vtable_) delete[] vtable_;
         vtable_ = nullptr;
+	size_ = 0;
     }
 
+    operator bool() const { return size_ != 0; }
     virtual void* __data() = 0;   // pointer to stored object
     virtual const void* __data() const = 0;
 };
@@ -256,7 +255,7 @@ template <typename StorageType, typename... I> class erase : vtable_handler, pub
 
     virtual void* __data() override { return data_.ptr(); }
     virtual const void* __data() const override { return data_.ptr(); }
-    operator bool() const { return data_.operator bool(); }
+    operator bool() const { return vtable_handler::operator bool(); }
     
     virtual ~erase() = default;
    private:

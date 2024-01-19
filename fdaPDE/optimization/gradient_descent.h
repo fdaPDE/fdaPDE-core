@@ -43,6 +43,7 @@ template <int N, typename... Args> class GradientDescent {
 
     // constructor
     GradientDescent() = default;
+    template <int N_ = sizeof...(Args), typename std::enable_if<N_ != 0, int>::type = 0>
     GradientDescent(std::size_t max_iter, double tol, double step) : max_iter_(max_iter), tol_(tol), step_(step) {};
     GradientDescent(std::size_t max_iter, double tol, double step, Args&... callbacks) :
         max_iter_(max_iter), tol_(tol), step_(step), callbacks_(std::make_tuple(std::forward<Args>(callbacks)...)) {};

@@ -44,6 +44,7 @@ template <int N, typename... Args> class Newton {
 
     // constructor
     Newton() = default;
+    template <int N_ = sizeof...(Args), typename std::enable_if<N_ != 0, int>::type = 0>
     Newton(std::size_t max_iter, double tol, double step) : max_iter_(max_iter), tol_(tol), step_(step) {};
     Newton(std::size_t max_iter, double tol, double step, Args&... callbacks) :
         max_iter_(max_iter), tol_(tol), step_(step), callbacks_(std::make_tuple(std::forward<Args>(callbacks)...)) {};
