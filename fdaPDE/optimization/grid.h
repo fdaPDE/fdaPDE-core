@@ -25,22 +25,24 @@ namespace fdapde {
 namespace core {
 
 // searches for the point in a given grid minimizing a given nonlinear objective
-template <int N> class Grid {
+template <int N, typename... Args> class Grid {
    private:
     typedef typename std::conditional<N == Dynamic, DVector<double>, SVector<N>>::type VectorType;
+    std::tuple<Args...> callbacks_ {};
     VectorType optimum_;
     double value_;   // objective value at optimum
    public:
     VectorType x_current;
 
     // constructor
-    Grid() = default;
+    template <int N_ = sizeof...(Args), typename std::enable_if<N_ != 0, int>::type = 0> Grid() {};
+    Grid(Args&&... callbacks) : callbacks_(std::make_tuple(std::forward<Args>(callbacks)...)) {};
 
-    template <typename F, typename... Args>
-    VectorType optimize(F& objective, const std::vector<VectorType>& grid, Args&... args) {
+    template <typename F>
+    VectorType optimize(F& objective, const std::vector<VectorType>& grid) {
         static_assert(
           std::is_same<decltype(std::declval<F>().operator()(VectorType())), double>::value,
-          "cannot find definition for F.operator()(const VectorType&)");
+          "F_IS_NOT_A_FUNCTOR_ACCEPTING_A_VECTORTYPE");
 
         bool stop = false;   // asserted true in case of forced stop
         // algorithm initialization
@@ -51,7 +53,7 @@ template <int N> class Grid {
         for (std::size_t i = 1; i < grid.size() && !stop; ++i) {
             x_current = grid[i];
             double x = objective(x_current);
-            stop |= execute_post_update_step(*this, objective, args...);
+            stop |= execute_post_update_step(*this, objective, callbacks_);
 
             // update minimum if better optimum found
             if (x < value_) {

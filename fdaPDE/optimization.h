@@ -17,6 +17,7 @@
 #ifndef __FDAPDE_OPTIMIZATION_MODULE_H__
 #define __FDAPDE_OPTIMIZATION_MODULE_H__
 
+#include "optimization/optimizer.h"
 #include "optimization/grid.h"
 #include "optimization/newton.h"
 #include "optimization/gradient_descent.h"

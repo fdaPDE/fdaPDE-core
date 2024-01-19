@@ -27,28 +27,26 @@ define_has(pre_update_step);
 define_has(post_update_step);
 
 template <typename Opt, typename Obj, typename... Args>
-bool execute_pre_update_step(Opt& optimizer, Obj& objective, Args&... args) {
+bool execute_pre_update_step(Opt& optimizer, Obj& objective, std::tuple<Args...>& callbacks) {
     bool b = false;
-    (   // fold expand parameter pack
-      [&] {
-          if constexpr (has_pre_update_step<Args, bool(Opt&, Obj&)>::value) {
-              b |= args.pre_update_step(optimizer, objective);
-          }
-      }(),
-      ...);
+    auto exec_callback = [&](auto&& callback) {
+        if constexpr (has_pre_update_step<std::decay_t<decltype(callback)>, bool(Opt&, Obj&)>::value) {
+            b |= callback.pre_update_step(optimizer, objective);
+        }
+    };
+    std::apply([&](auto&&... callback) { (exec_callback(callback), ...); }, callbacks);
     return b;
 }
 
 template <typename Opt, typename Obj, typename... Args>
-bool execute_post_update_step(Opt& optimizer, Obj& objective, Args&... args) {
+bool execute_post_update_step(Opt& optimizer, Obj& objective, std::tuple<Args...>& callbacks) {
     bool b = false;
-    (   // fold expand parameter pack
-      [&] {
-          if constexpr (has_post_update_step<Args, bool(Opt&, Obj&)>::value) {
-              b |= args.post_update_step(optimizer, objective);
-          }
-      }(),
-      ...);
+    auto exec_callback = [&](auto&& callback) {
+        if constexpr (has_post_update_step<std::decay_t<decltype(callback)>, bool(Opt&, Obj&)>::value) {
+            b |= callback.post_update_step(optimizer, objective);
+        }
+    };
+    std::apply([&](auto&&... callback) { (exec_callback(callback), ...); }, callbacks);
     return b;
 }
 

@@ -47,6 +47,7 @@ class ScalarField : public ScalarExpr<N, ScalarField<N, F>> {
     typedef typename static_dynamic_vector_selector<N>::type VectorType;
     typedef typename static_dynamic_matrix_selector<N, N>::type MatrixType;
     typedef ScalarExpr<N, ScalarField<N, F>> Base;
+    static constexpr int DomainDimension = N;
     static_assert(
       std::is_invocable<F, VectorType>::value &&
       std::is_same<typename std::invoke_result<F, VectorType>::type, double>::value);
@@ -114,6 +115,7 @@ template <int N, typename RetType_, typename ClassType_, typename VectorType_>
 struct ScalarField<N, RetType_ (ClassType_::*)(VectorType_)> :    // non-const member function pointers
     public ScalarField_MemFnBase<N, RetType_ (ClassType_::*)(VectorType_)> {
     using Base = ScalarField_MemFnBase<N, RetType_ (ClassType_::*)(VectorType_)>;
+    static constexpr int DomainDimension = N;
     // constructors
     ScalarField() = default;
     ScalarField(typename Base::ClassPtrType_ c, typename Base::FieldType_ f) : Base(c, f) {};

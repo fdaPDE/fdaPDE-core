@@ -20,6 +20,7 @@
 #include <fdaPDE/utils.h>
 #include <fdaPDE/fields.h>
 #include <fdaPDE/optimization.h>
+using fdapde::core::Optimizer;
 using fdapde::core::BFGS;
 using fdapde::core::GradientDescent;
 using fdapde::core::Grid;
@@ -57,9 +58,9 @@ TEST(optimization_test, gradient_descent_backtracking_line_search) {
     };
     f.set_step(1e-4);
 
-    GradientDescent<2> opt(1000, 1e-6, 0.01);
+    GradientDescent<2, BacktrackingLineSearch> opt(1000, 1e-6, 0.01);
     SVector<2> pt(-1, -1);
-    opt.optimize(f, pt, BacktrackingLineSearch());
+    opt.optimize(f, pt);
 
     // expected solution
     SVector<2> expected(-0.6690718221499544, 0);
@@ -75,9 +76,9 @@ TEST(optimization_test, newton_backtracking_line_search) {
     };
     f.set_step(1e-4);
 
-    Newton<2> opt(1000, 1e-6, 0.01);
+    Newton<2, BacktrackingLineSearch> opt(1000, 1e-6, 0.01);
     SVector<2> pt(-0.5, -0.5);
-    opt.optimize(f, pt, BacktrackingLineSearch());
+    opt.optimize(f, pt);
 
     // expected solution
     SVector<2> expected(-0.6690718221499544, 0);
@@ -86,7 +87,7 @@ TEST(optimization_test, newton_backtracking_line_search) {
 }
 
 // test integration of Laplacian weak form for a LagrangianBasis of order 2
-TEST(optimization_test, bfgs_wolfe_line_search) {
+TEST(optimization_test, type_erased_bfgs_wolfe_line_search) {
     // define objective function: x*e^{-x^2 - y^2} + (x^2 + y^2)/20
     ScalarField<2> f;
     f = [](SVector<2> x) -> double {
@@ -95,10 +96,10 @@ TEST(optimization_test, bfgs_wolfe_line_search) {
     f.set_step(1e-4);
 
     // define optimizer
-    BFGS<2> opt(1000, 1e-6, 0.01);
+    Optimizer<ScalarField<2>> opt = BFGS<2, WolfeLineSearch>(1000, 1e-6, 0.01); // use a type erasure wrapper
     // perform optimization
     SVector<2> pt(-1, -1);
-    opt.optimize(f, pt, WolfeLineSearch());
+    opt.optimize(f, pt);
 
     // expected solution
     SVector<2> expected(-0.6690718221499544, 0);
