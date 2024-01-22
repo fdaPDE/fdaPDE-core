@@ -21,9 +21,7 @@
 
 #include "../../utils/symbols.h"
 #include "fem_solver_base.h"
-#include "fem_nonlinear_solver.h"
-#include "../../fields/non_linearity.h"
-
+#include "../../fields/non_linear_reaction.h"
 
 using fdapde::core::laplacian;
 using fdapde::core::ScalarField;

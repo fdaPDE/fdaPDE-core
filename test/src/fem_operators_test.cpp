@@ -278,8 +278,9 @@ TEST(fem_operators_test, non_linear_order_2) {
     // std::cout << "\n\t H = ";
     for (std::size_t i=0; i<integrals.size(); i++){
         // std::cout << std::fixed << std::setprecision(6) << integrals[i] << ",\t";
-        if (!((i+1)%6))
+        if (!((i+1)%6)) {
             // std::cout << "\n";
+        }
     }
     // std::cout << std::endl;
     // std::cout << "\t Integration test with non-linear operator compiled!\n" << std::endl;

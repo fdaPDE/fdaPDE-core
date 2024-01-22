@@ -114,7 +114,7 @@ typename Broyden<N>::VectorType Broyden<N>::solve(F& f_, VectorType& x) const {
 } // end solve
 
 // 3 points line search for Broyden Armijo
-template <typename T = double>>
+template <typename T = double>
 double parab3p(T lambdac, T lambdam, T ff0, T ffc, T ffm) {
     // std::cout << "lambdac, lambdam, ff0, ffc, ffm = " << lambdac << " "<< lambdam << " " << ff0 << " " << ffc << " " << ffm << std::endl;
     double sigma0 = 0.1;

@@ -27,6 +27,7 @@
 #include "fields/scalar_field.h"
 #include "fields/vector_expressions.h"
 #include "fields/vector_field.h"
-#include "fields/non_linearity.h"
+#include "fields/non_linearity_base.h"
+#include "fields/non_linear_reaction.h"
 
 #endif   // __FDAPDE_FIELDS_MODULE_H__
