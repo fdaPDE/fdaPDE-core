@@ -263,7 +263,7 @@ template <typename StorageType, typename... I> class erase : vtable_handler, pub
 };
 
 // invoke function pointer (T is deduced to the type of the interface)
-template <typename RetType, int N, typename T, typename... Args> RetType invoke(const T& obj, Args... args) {
+template <typename RetType, int N, typename T, typename... Args> RetType invoke(const T& obj, Args&&... args) {
     auto& vtable = reinterpret_cast<const vtable_handler&>(obj);
     short offset = vtable.offset_table_.at(typeid(std::decay_t<T>)) + N;
     return reinterpret_cast<RetType (*)(const void*, Args...)>(vtable.vtable_[offset])(vtable.__data(), args...);
