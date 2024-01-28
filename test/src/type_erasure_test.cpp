@@ -130,3 +130,35 @@ TEST(type_erasure_test, non_owning_storage) {
   NonOwningDrawable non_owning_d2 = non_owning_d;
   EXPECT_TRUE(non_owning_d2.draw() == "4");
 }
+
+// test parameter forwarding
+struct Value {   // just a type wrapping an integral type
+  double value = 0;
+};
+
+// something which can hold a value
+struct IKeep {
+  // function pointer bindings to assigned type T
+  template <typename T> using fn_ptrs = fdapde::mem_fn_ptrs<&T::set, &T::set_value, &T::get>;
+  // interface
+  void set(double x) { return fdapde::invoke<void, 0>(*this, x); }
+  void set_value(Value x) { return fdapde::invoke<void, 1>(*this, x); }
+  double get() const { return fdapde::invoke<double, 2>(*this); }
+};
+using Keeper = fdapde::erase<fdapde::heap_storage, IKeep>;
+
+// implementation of Keeper
+struct Keep {
+  double x_ = 0;
+  void set(double x) { x_ = x; }
+  void set_value(Value x) { x_ = x.value; }
+  double get() { return x_; }
+};
+
+TEST(type_erasure_test, forward_arguments) {
+  Keeper k = Keep();
+  k.set(4);
+  EXPECT_TRUE(k.get() == 4);
+  k.set_value(Value{20});
+  EXPECT_TRUE(k.get() == 20);
+}

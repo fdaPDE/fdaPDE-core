@@ -165,7 +165,7 @@ template <typename R, typename T, typename... Args> struct fn_ptr_traits_base<R 
     using ArgsType = std::tuple<Args...>;
     static constexpr int n_args = sizeof...(Args);
     using ClassType = T;
-    using FnPtrType = R (*)(void*, Args...);    // void* is the pointer to the object instance
+    using FnPtrType = R (*)(void*, Args&&...);    // void* is the pointer to the object instance
 };
 template <typename F> struct fn_ptr_traits_impl { };
 template <typename R, typename T, typename... Args>
