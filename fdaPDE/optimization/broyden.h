@@ -70,22 +70,12 @@ typename Broyden<N>::VectorType Broyden<N>::solve(F& f_, VectorType& x) const {
 
     int itc = 0;   // current iteration
 
-    // store x at each step
-    std::ofstream file("Broyden_(" + std::to_string(x(0)) + "," + std::to_string(x(1)) + ")");    //it will be exported in the current build directory
-
     while (itc < max_iter_){
         n += 1;
         itc += 1;
 
         // update the point x
         x = x + s.col(n);
-
-        //storing x at each step 
-        if (file.is_open()){
-            file << std::setprecision(15) << x(0) << '\n' << x(1) << '\n';
-        } else {
-            std::cerr << "Unable to save solution" << std::endl;
-        }
 
         // std::cout << "iter "<< itc <<", x = " << x.norm() << std::endl;
 
@@ -108,7 +98,6 @@ typename Broyden<N>::VectorType Broyden<N>::solve(F& f_, VectorType& x) const {
             s.col(n+1) = -f_(x);
         }
     }
-    file.close();
     
     return x;
 } // end solve
@@ -160,7 +149,6 @@ typename Broyden<N>::VectorType Broyden<N>::solveArmijo(F& f_, VectorType& x) co
     snrm(0) = s.col(0).squaredNorm();
     
     // store x at each step
-    std::ofstream file("BroydenArmijo_(" + std::to_string(x(0)) + "," + std::to_string(x(1)) + ")");    //it will be exported in the current build directory
 
     for (int itc = 0; itc < max_iter_; itc++){
         n++;
@@ -172,13 +160,6 @@ typename Broyden<N>::VectorType Broyden<N>::solveArmijo(F& f_, VectorType& x) co
         lambda = 1;
 
         x += s.col(n);
-        
-        //storing x at each step 
-        if (file.is_open()){
-            file << std::setprecision(15) << x(0) << '\n' << x(1) << '\n';
-        } else {
-            std::cerr << "Unable to save solution" << std::endl;
-        }
 
         fc = f_(x);
         fnrm = fc.norm()/sqrtdim;
@@ -251,7 +232,6 @@ typename Broyden<N>::VectorType Broyden<N>::solveArmijo(F& f_, VectorType& x) co
         }
 
     } // end for itc
-    file.close();
     // std::cout << "not converged" << std::endl;
     return x;       // return without convergence
 

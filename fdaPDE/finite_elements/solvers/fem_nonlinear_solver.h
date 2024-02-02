@@ -144,15 +144,6 @@ public:
 
             if (error_L2(i) < tol_) break;
         }
-
-        //save convergence test results
-        std::ofstream file("convergence_test_fixedpoint.txt");    //it will be exported in the current build directory
-        if (file.is_open()){
-            file << error_L2;
-            file.close();
-        } else {
-            std::cerr << "fixedpoint unable to save convergence test" << std::endl;
-        }
     } // end fixedpoint
 
     template <typename PDE>
@@ -291,15 +282,6 @@ public:
         this->solution_ = x;
         this->success = true;
 
-        // save convergence test results
-        std::ofstream file("convergence_test_broyden.txt");    //it will be exported in the current build directory
-        if (file.is_open()){
-            file << error_L2;
-            file.close();
-        } else {
-            std::cerr << "broyden unable to save convergence test" << std::endl;
-        }
-
         return;
     }
 
@@ -385,15 +367,6 @@ public:
 
         }
         this->success = true;
-
-        //save convergence test results
-        std::ofstream file("convergence_test_newtonPDE.txt");    //it will be exported in the current build directory
-        if (file.is_open()){
-            file << error_L2;
-            file.close();
-        } else {
-            std::cerr << "newtonPDE unable to save convergence test" << std::endl;
-        }
 
         return;
     } // end solve
