@@ -45,7 +45,7 @@ end
 
 % compute quadratic reference
 q = 1.5;
-quadratic_ref_fp = 1e-2;
+quadratic_ref_fp = 1;
 for i = 2:length(xx_fp)
     quadratic_ref_fp = [quadratic_ref_fp, lambda_fp(i-1)*quadratic_ref_fp(i-1)^q];
 end
@@ -83,26 +83,31 @@ end
 figure
 semilogy(xx_fp, error_fp, 'o-')
 hold on
-plot(xx_fp, linear_ref_fp, 'r-')
-% plot(xx_fp, quadratic_ref_fp, 'b-')
-xlabel('iterations')
-ylabel('error')
-legend('fixedpoint error', 'linear decrease'); %, 'quadratic');
+plot(xx_fp, linear_ref_fp, '--', 'Color',[.5,.5,.5])
+plot(xx_fp, quadratic_ref_fp, '-.', 'Color',[.5,.5,.5])
+
+legend('fixedpoint error', 'linear decrease', 'qudratic decrease'); %, 'quadratic');
 title('fixedpoint convergence')
 grid on
+xticks(unique(round(xticks)));
+xticklabels(cellstr(num2str(round(xticks'))));
+xlabel('iterations')
+ylabel('error')
+
 
 % plot newton
 figure
 semilogy(xx_nw, error_nw, 'o-')
 hold on
-plot(xx_nw, linear_ref_nw(1:maxit_nw), 'r-')
-plot(xx_nw, quadratic_ref_nw(1:maxit_nw), 'b-')
-xlabel('iterations')
-ylabel('error')
+plot(xx_nw, linear_ref_nw(1:maxit_nw), '--', 'Color',[.5,.5,.5])
+plot(xx_nw, quadratic_ref_nw(1:maxit_nw), '-.', 'Color',[.5,.5,.5])
 legend('newton error', 'linear decrease', 'quadratic decrease', 'Location','southwest');
 title('newton convergence')
 grid on
-
+xticks(unique(round(xticks)));
+xticklabels(cellstr(num2str(round(xticks'))));
+xlabel('iterations')
+ylabel('error')
 
 % subplots
 figure
@@ -117,8 +122,6 @@ ylabel('error')
 legend('fixedpoint error', 'linear decrease'); %, 'quadratic');
 title('fixedpoint convergence')
 grid on
-
-
 
 % plot newton
 subplot(1,3,2)

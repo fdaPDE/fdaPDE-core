@@ -1,4 +1,4 @@
-int n = 32;
+int n = 64;
 mesh Th = square(n, n); //flags = 1);
 plot(Th);
 
@@ -41,19 +41,22 @@ problem newton(fh, vh, solver = LU, eps = 1.e-10) =
     )
     + on(1, 2, 3, 4, fh = fex);
 
+// Compute mass matrix for weighted error.
+varf mass(p, q) = int2d(Th)(p * q);
+matrix M = mass(Vh, Vh);
+real[int] prod(Ndofs);
+
 func real increment(){
   // store increments in incr variables
   incr[] = fh[];
   incr[] -= f0h[];
 
-  real result = int2d(Th)(incr^2);
+  real result = 0;
+  // real result = int2d(Th)(incr^2);
+  for (int i = 0; i < Ndofs; ++i)
+    result += incr[][i]*incr[][i];
   return sqrt(result);
 }
-
-// Compute mass matrix for weighted error.
-varf mass(p, q) = int2d(Th)(p * q);
-matrix M = mass(Vh, Vh);
-real[int] prod(Ndofs);
 
 func real error(){
   // store increments in incr variables
@@ -79,7 +82,7 @@ func real error(){
 
 // loop control
 int nbiter = 20;
-real eps = 1e-8;
+real eps = 1e-7;
 
 int iter;
 real incrErr = eps + 1; // at least one iteration has to be performed

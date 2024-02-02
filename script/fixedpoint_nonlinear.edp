@@ -1,4 +1,4 @@
-int n = 32;
+int n = 16;
 mesh Th = square(n, n); //flags = 1);
 plot(Th);
 
@@ -56,7 +56,7 @@ func real error(){
   // store increments in incr variables
   Err[] = fexh[];
   Err[] -= fh[];
-/*
+
   for (int i = 0; i < Ndofs; ++i)
     prod[i] = Err[][i]*Err[][i];
 
@@ -69,14 +69,15 @@ func real error(){
       err2 += temp[i];
 
   return err2;
-*/
+  /*
   real result = int2d(Th)(Err^2);
   return sqrt(result);
+  */
 }
 
 // loop control
 int nbiter = 20;
-real eps = 1e-10;
+real eps = 1e-7;
 
 int iter;
 real incrErr = eps + 1; // at least one iteration has to be performed
@@ -84,6 +85,8 @@ real err = eps + 1;
 
 [fh] = [0.0];
 fixedpoint;
+err = error();
+cout << "\t Newton iteration 0, error = " << err << endl;
 [f0h] = [fh];
 
 // for (iter = 0; iter < nbiter && incrErr > eps; ++iter) {
@@ -102,9 +105,10 @@ for (iter = 0; iter < nbiter && err > eps; ++iter) {
     cout << "\t Fixedpoint iteration " << iter+1 << ", error = " << err << endl;
 }
 
-cout << "# iter: " << iter << endl;
+cout << "# iter: " << iter+1 << endl;
 plot([fh], value = 1, fill = 1, wait = 1, cmm = "f_computed");
 plot([fexh], value = 1, fill = 1, wait = 1, cmm = "Exact Solution");
+plot(Th, wait = 1, value =1, cmm = "Discretization unit_square_16");
 
 cout << "\n\t saving results... " << endl;
 
