@@ -71,7 +71,10 @@ class PDE {
     fdapde_enable_constructor_if(is_parabolic, OperatorType) PDE(
       const SpaceDomainType& domain, const TimeDomainType& t, OperatorType diff_op, const ForcingType& forcing_data) :
         domain_(domain), time_domain_(t), diff_op_(diff_op), forcing_data_(forcing_data), solver_(domain) { }
-
+    
+    fdapde_enable_constructor_if(is_stationary, OperatorType) PDE(const D& domain, E diff_op,
+      const std::function<double(SVector<N>, SVector<1>)>& non_linear_reaction) :
+        domain_(domain), diff_op_(diff_op), solver_(domain), non_linear_reaction_(non_linear_reaction) { }
     // setters
     void set_forcing(const ForcingType& forcing_data) { forcing_data_ = forcing_data; }
     void set_differential_operator(OperatorType diff_op) { diff_op_ = diff_op; }
@@ -86,6 +89,7 @@ class PDE {
     const DMatrix<double>& boundary_data() const { return boundary_data_; };
     const Quadrature& integrator() const { return solver_.integrator(); }
     const FunctionalBasis& basis() const { return solver_.basis(); }
+    const std::function<double(SVector<N>, SVector<1>)>& non_linear_reaction() const {return non_linear_reaction_; }
     // evaluates the functional basis defined over the pyhisical domain on a given set of locations
     template <template <typename> typename EvaluationPolicy>
     std::pair<SpMatrix<double>, DVector<double>> eval_functional_basis(const DMatrix<double>& locs) const {
@@ -111,6 +115,7 @@ class PDE {
     DVector<double> initial_condition_ {};   // initial condition, for space-time PDEs
     SolverType solver_ {};                   // problem solver
     DMatrix<double> boundary_data_;          // boundary conditions
+    std::function<double(SVector<N>, SVector<1>)> non_linear_reaction_ ; // ... 
 };
 
 // type-erasure wrapper (we require ForcingType_ to be convertible to a DMatrix<double>)

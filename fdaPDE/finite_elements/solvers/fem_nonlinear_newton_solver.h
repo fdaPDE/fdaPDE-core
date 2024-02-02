@@ -73,7 +73,7 @@ public:
         DVector<double> f_prev = this->solution_;   // solution at the previous step
 
         // declare the known term that will go on the right hand side and will contain h'
-        NonLinearReactionPrime<DomainType::local_dimension, ReferenceBasis> h_prime;
+        NonLinearReactionPrime<DomainType::local_dimension, ReferenceBasis> h_prime(pde.non_linear_reaction());
         auto Lprime = non_linear_op<FEM>(h_prime);
 
         DVector<double> force_backup = this->force_;

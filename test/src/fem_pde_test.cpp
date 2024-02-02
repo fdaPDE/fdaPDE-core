@@ -438,15 +438,16 @@ TEST(fem_pde_test, non_linear_2) {
     // load sample mesh for order 1 basis
     MeshLoader<Mesh2D> unit_square("unit_square_32");
 
-    // non-linearity is defined inside class h
+    // non linear reaction h_(u)*u
+    std::function<double(SVector<2>, SVector<1>)> h_ = [](SVector<2> x, SVector<1> ff) -> double {return 1 - ff[0];};
+    
     // build the non-linearity object # N=2
-    NonLinearReaction<2, LagrangianBasis<decltype(unit_square.mesh),2>::ReferenceBasis> h;
+    NonLinearReaction<2, LagrangianBasis<decltype(unit_square.mesh),2>::ReferenceBasis> non_linear_reaction(h_);
 
     // differential operator
-    auto L = -nu*laplacian<FEM>() + non_linear_op<FEM>(h);
+        auto L = -nu*laplacian<FEM>() + non_linear_op<FEM>(non_linear_reaction);
 
-    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<2>> pde_(unit_square.mesh);
-    pde_.set_differential_operator(L);
+    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<2>> pde_(unit_square.mesh, L, h_);
 
     // compute boundary condition and exact solution
     DMatrix<double> nodes_ = pde_.dof_coords();
@@ -514,14 +515,16 @@ TEST(fem_pde_test, non_linear_1) {
     // load sample mesh for order 1 basis
     MeshLoader<Mesh2D> unit_square("unit_square_32");
 
-    // define the nonlinearity
-    NonLinearReaction<2, LagrangianBasis<decltype(unit_square.mesh),1>::ReferenceBasis> h;
+    // non linear reaction h_(u)*u
+    std::function<double(SVector<2>, SVector<1>)> h_ = [](SVector<2> x, SVector<1> ff) -> double {return 1 - ff[0];};
+
+    // build the non-linearity object # N=2
+    NonLinearReaction<2, LagrangianBasis<decltype(unit_square.mesh),1>::ReferenceBasis> non_linear_reaction(h_);
 
     // differential operator
-    auto L = -nu*laplacian<FEM>() + non_linear_op<FEM>(h);
+    auto L = -nu*laplacian<FEM>() + non_linear_op<FEM>(non_linear_reaction);
 
-    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_square.mesh);
-    pde_.set_differential_operator(L);
+    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_square.mesh, L, h_);
     
     // compute boundary condition and exact solution
     DMatrix<double> nodes_ = pde_.dof_coords();

@@ -22,6 +22,7 @@
 #include "../utils/symbols.h"
 #include "scalar_expressions.h"
 #include "non_linearity_base.h"
+#include "field_derivatives.h"
 
 namespace fdapde{
 namespace core{
@@ -32,6 +33,9 @@ namespace core{
     public:
         typedef std::shared_ptr<DVector<double>> VecP;
         
+        NonLinearReaction() = default;
+        NonLinearReaction(std::function<double(SVector<N>, SVector<1>)> h_) : NonLinearityBase<N,B>(h_){}
+
         auto operator()(VecP f_prev) const{
             this->f_prev_ = f_prev;
             return *this;
@@ -48,6 +52,9 @@ namespace core{
     public:
         typedef std::shared_ptr<DVector<double>> VecP;
     
+        NonLinearReactionPrime() = default;
+        NonLinearReactionPrime(std::function<double(SVector<N>, SVector<1>)> h_) : NonLinearityBase<N,B>(h_){}
+
         double operator()(const SVector<N>& x) const{
             std::function<double(SVector<1>)> lambda_fun = [&] (SVector<1> ff) -> double {return this->h(x, ff);};
             ScalarField<1> lambda_field(lambda_fun);
