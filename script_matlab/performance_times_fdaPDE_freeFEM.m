@@ -2,43 +2,67 @@
 clear all; close all; clc;
 
 % data
-x1 = {'h=0.0625 | P1\_16', 'h=0.3125 | P1\_32', 'h=0.15625 | P1\_64'};
+x1 = {'P1\_16', 'P1\_32', 'P1\_64'};
+x2 = {'P2\_16', 'P2\_32', 'P2\_64'};
 
-desolve = [0.7556348, 0.8060179, 0.764384];
-femR = [0.01479602, 0.05429697, 0.2281511];
+p1_freeFEM_fixed = [0.142, 0.147, 0.313];
+p2_freeFEM_fixed = [0.148, 0.221, 1.462];
 
-nodes = [256, 1024, 4096]
-dofs = [289, 1089, 4225]
+p1_fdaPDE_fixed = [0.029, 0.055, 0.181];
+p2_fdaPDE_fixed = [0.185, 0.71, 3.07];
 
-% plots
+p1_freeFEM_newt = [0.14, 0.147, 0.223];
+p2_freeFEM_newt = [0.141, 0.217, 1.006];
+
+p1_fdaPDE_newt = [0.27, 0.56, 0.205];
+p2_fdaPDE_newt = [0.194, 0.843, 3.441];
+
+
+%% fixedpoint
 figure;
-subplot(1, 2, 1)
-b = bar([desolve', femR']);
-b(1).FaceColor = [0.2196, 0.4902, 0.9216];%[0.5098, 0.5686, 0.6824];
-b(2).FaceColor = [0.7137    0.3725    0.8118]; %[0.6078, 0.5255, 0.6314];
-% colormap jet;
-% b(1).CData = 1:size(desolve', 1);
-% b(2).CData = 1:size(femR', 1);
 
-xlabel('Step | Mesh Size');
+subplot(2,2,1)
+bar([p1_freeFEM_fixed', p1_fdaPDE_fixed']);
+xlabel('Mesh Size');
 ylabel('Time (s)');
-title('Time comparison deSolve / femR');
+title('fixedpoint P1');
 xticks(1:length(x1));
 xticklabels(x1);
-legend('deSolve', 'femR', 'Location','northeast');
+legend('freeFEM', 'femR', 'Location','best');
 grid on;
 hold off;
 
-subplot(1, 2, 2)
-b = bar([nodes', dofs']);
-b(1).FaceColor = [0.2196, 0.2196, 0.2196];
-b(2).FaceColor = [0.7137    0.7137    0.7137];
-
-xlabel('Step | Mesh Size');
+subplot(2,2,2)
+bar([p2_freeFEM_fixed', p2_fdaPDE_fixed']);
+xlabel('Mesh Size');
 ylabel('Time (s)');
-title('Time comparison deSolve / femR');
+title('fixedpoint P2');
+xticks(1:length(x2));
+xticklabels(x2);
+legend('freeFEM', 'femR', 'Location','best');
+grid on;
+hold off;
+
+%% newton with three iterations
+
+subplot(2,2,3)
+bar([p1_freeFEM_newt', p1_fdaPDE_newt']);
+xlabel('Mesh Size');
+ylabel('Time (s)');
+title('newton P1');
 xticks(1:length(x1));
 xticklabels(x1);
-legend('deSolve nodes', 'femR dofs', 'Location','northeast');
+legend('freeFEM', 'femR', 'Location','best');
+grid on;
+hold off;
+
+subplot(2,2,4)
+bar([p2_freeFEM_newt', p2_fdaPDE_newt']);
+xlabel('Mesh Size');
+ylabel('Time (s)');
+title('newton P2');
+xticks(1:length(x2));
+xticklabels(x2);
+legend('freeFEM', 'femR', 'Location','best');
 grid on;
 hold off;
