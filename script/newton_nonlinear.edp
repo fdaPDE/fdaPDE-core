@@ -1,0 +1,119 @@
+int n = 32;
+mesh Th = square(n, n); //flags = 1);
+plot(Th);
+
+fespace Vh(Th, P2);
+Vh fh, vh, f0h, incr, Err, fexh;
+
+// 1. exact solution (useful for testing)
+func fex = 3*x*x + 2*y*y;
+
+real nu = 1;
+
+// define forcing term
+func u = -9*x^4 - 12*x^2*y^2 + 3*x^2 - 4*y^4 + 2*y^2 - 10*nu;
+
+fexh = fex; // Interpolate fex into Vh
+
+int Ndofs = Vh.ndof;
+cout << "Ndofs = " << Ndofs << endl;
+
+// 3. define problem
+problem fixedpoint(fh, vh, solver = LU, eps = 1.e-10, init = 0) =
+// problem fixedpoint(fh, vh, eps = 1.e-10, init = 0) =
+    int2d(Th)( 
+        nu * (dx(fh)*dx(vh) + dy(fh)*dy(vh)) //Laplacian
+        + (1.0 - f0h) * fh * vh  //NonLinear
+    )
+    - int2d(Th)(u * vh)
+    + on(1, 2, 3, 4, fh = fex);
+
+problem newton(fh, vh, solver = LU, eps = 1.e-10) =
+// problem newton(fh, vh, eps = 1.e-10) =
+    int2d(Th)( 
+        nu * (dx(fh)*dx(vh) + dy(fh)*dy(vh)) //Laplacian
+        + (1.0 - f0h) * fh * vh  // NonLinear h(x, f_k) f_{k+1}
+        + (-1) * f0h * fh * vh   // NonLinearityPrime h'(x, f_k) * f_k * f_{k+1} - in our case h' = -1 !!
+    )
+    - int2d(Th)(
+        u * vh
+        + (-1) * f0h * f0h * vh    // h'(x, f_k)f_k f_k
+    )
+    + on(1, 2, 3, 4, fh = fex);
+
+func real increment(){
+  // store increments in incr variables
+  incr[] = fh[];
+  incr[] -= f0h[];
+
+  real result = int2d(Th)(incr^2);
+  return sqrt(result);
+}
+
+// Compute mass matrix for weighted error.
+varf mass(p, q) = int2d(Th)(p * q);
+matrix M = mass(Vh, Vh);
+real[int] prod(Ndofs);
+
+func real error(){
+  // store increments in incr variables
+  Err[] = fexh[];
+  Err[] -= fh[];
+
+  for (int i = 0; i < Ndofs; ++i)
+    prod[i] = Err[][i]*Err[][i];
+
+  real[int] temp(Ndofs);
+  temp = M*prod;
+
+  real err2 = 0;
+
+  for (int i = 0; i< Ndofs; ++i)
+      err2 += temp[i];
+
+  return err2;
+
+  // real result = int2d(Th)(Err^2);
+  // return sqrt(result);
+}
+
+// loop control
+int nbiter = 20;
+real eps = 1e-8;
+
+int iter;
+real incrErr = eps + 1; // at least one iteration has to be performed
+real err = eps + 1;
+
+[fh] = [0.0];
+fixedpoint;     // solve associated linear system
+err = error();
+cout << "\t Newton iteration 0, error = " << err << endl;
+[f0h] = [fh];
+
+// for (iter = 0; iter < nbiter && incrErr > eps; ++iter) {
+for (iter = 0; iter < nbiter && err > eps; ++iter) {
+    // perform a newton iteration
+    newton;
+
+    // update incr for the stopping criterion
+    incrErr = increment();
+    err = error();
+
+    // update old solution
+    [f0h] = [fh];
+
+    cout << "\t Newton iteration " << iter+1 << ", incr = " << incrErr << endl;
+    cout << "\t Newton iteration " << iter+1 << ", error = " << err << endl;
+}
+
+cout << "# iter: " << iter + 1<< endl;
+plot([fh], value=1, fill = 1, wait = 1, cmm="f_computed");
+plot([fexh], value=1, fill=1, wait=1, cmm="Exact Solution");
+
+cout << "\n\t saving results... " << endl;
+
+ofstream file("freefem_P1_newton.txt");
+for(int i=0; i<fh[].n; i++){
+    file << fh[][i] << endl;
+}
