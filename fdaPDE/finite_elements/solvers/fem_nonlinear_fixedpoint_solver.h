@@ -38,8 +38,6 @@ public:
     typedef std::tuple<Ts...> SolverArgs;
     enum {fem_order = std::tuple_element <0, SolverArgs>::type::value };
     typedef D DomainType;
-    // typedef Integrator<DomainType::local_dimension, fem_order> QuadratureRule;
-    // typedef LagrangianElement<DomainType::local_dimension, fem_order> FunctionSpace;
     using FunctionalBasis = LagrangianBasis<DomainType, fem_order>;
     using ReferenceBasis = typename FunctionalBasis::ReferenceBasis;
     using Quadrature = typename ReferenceBasis::Quadrature;

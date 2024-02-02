@@ -157,7 +157,7 @@ typename Broyden<N>::VectorType Broyden<N>::solveArmijo(F& f_, VectorType& x) co
     VectorType snrm = DVector<double>::Zero(nmax_);
 
     s.col(0) = -f0;
-    snrm(0) = s.col(0).squaredNorm(); // NON c'è /sqrt(dim)
+    snrm(0) = s.col(0).squaredNorm();
     
     // store x at each step
     std::ofstream file("BroydenArmijo_(" + std::to_string(x(0)) + "," + std::to_string(x(1)) + ")");    //it will be exported in the current build directory
@@ -372,9 +372,6 @@ typename Broyden<N>::VectorType Broyden<N>::solve_modified_inv(F& f_, VectorType
 
     int itc = 0;   // current iteration
 
-    // DMatrix<double>  inv_B(dim, dim);
-    // inv_B = inv_B.inverse(); 
-
     // parameters
     double tau = 1.;
     double rho = sqrt(0.9);
@@ -454,7 +451,6 @@ typename Broyden<N>::VectorType Broyden<N>::solve_modified_inv(F& f_, VectorType
         y = f_(x_new) - fx;
 
         //compute (B_n+1)^-1
-        // inv_B *= (Id + s*s_old.transpose() / s_old.squaredNorm());
         inv_B += (s - inv_B*y)*y.transpose() / y.squaredNorm();
     
         // update variables

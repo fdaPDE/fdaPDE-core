@@ -42,8 +42,6 @@ public:
     typedef std::tuple<Ts...> SolverArgs;
     enum { fem_order = std::tuple_element <0, SolverArgs>::type::value };
     typedef D DomainType;
-    // typedef Integrator<DomainType::local_dimension, fem_order> QuadratureRule;
-    // typedef LagrangianElement<DomainType::local_dimension, fem_order> FunctionSpace;
     using FunctionalBasis = LagrangianBasis<DomainType, fem_order>;
     using ReferenceBasis = typename FunctionalBasis::ReferenceBasis;
     using Quadrature = typename ReferenceBasis::Quadrature;
@@ -107,9 +105,6 @@ public:
                 return;
             }
 
-            // DVector<double> sN = solver.solve(this->force_ - this->stiff_*f_prev);  // Newton direction
-            // LINE SEARCH O TRUST REGION
-            // this->solution_ += sN;
             this->solution_ = solver.solve(this->force_);
 
             // Check convergence to stop early
