@@ -42,9 +42,8 @@ struct FEMNonLinearSolver : public FEMSolverBase<D, E, F, Ts...> {
 
 protected:
     size_t FixedpointIter_  = 1;          // maximum number of iterations
-    size_t BroydenIter_     = 500;        // maximum number of iterations
+    size_t BroydenIter_     = 2000;        // maximum number of iterations
     size_t NewtonIter_      = 15;
-    size_t RestartBroyden_  = BroydenIter_ + 1;
     double tol_             = 1e-7;    // tolerance for convergence
 
 public:
@@ -64,7 +63,6 @@ public:
     void setFixedpointIter(const size_t FixedpointIter) { FixedpointIter_ = FixedpointIter; }
     void setBroydenIter(const size_t BroydenIter) { BroydenIter_=BroydenIter; }
     void setNewtonIter(const size_t NewtonIter) { NewtonIter_=NewtonIter; }
-    void setRestartBroyden(const size_t RestartBroyden) { RestartBroyden_=RestartBroyden; }
     void setTol(const double tol) { tol_=tol; }
 
     // solves the nonlinear PDE with different methods
@@ -170,7 +168,7 @@ public:
             solution_ex(i) = solutionExpr(nodes_.row(i));
         }
         // vector for convergence test
-        DVector<double> error_L2 = DVector<double>::Zero(BroydenIter_);
+        DVector<double> error_L2 = DVector<double>::Zero(BroydenIter_+1);
 
         // F(u) = A(u)*u - b
         std::function<DVector<double>(DVector<double>)> Fun;
@@ -319,7 +317,7 @@ public:
             solution_ex(i) = solutionExpr(nodes_.row(i));
         }
         // vector for convergence test
-        DVector<double> error_L2 = DVector<double>::Zero(BroydenIter_);
+        DVector<double> error_L2 = DVector<double>::Zero(NewtonIter_+1);
 
         // first solve the linear associated pde (initial guess = 0)
         
