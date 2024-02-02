@@ -66,7 +66,6 @@ struct has_instance_of<E, std::tuple<U, Tail...>> {
 };
 
 // ADDED HERE THE RECURSIVE TEMPLATE METAPROGRAMMING STRUCTURE THAT TAKES 2 TEMPLATE PARAMS
-// maybe it van be generalized with variadic templates?
 //_____________________________________________________________________________________________________________________
 // returns std::true_type if tuple contains an instantiation of template E<F<T>>
 template <template <typename, typename> typename E, typename Tuple> struct has_instance_of_2 { };
