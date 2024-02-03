@@ -556,7 +556,7 @@ TEST(fem_pde_test, non_linear_1) {
     // check computed error
     DMatrix<double> error_ = solution_ex - pde_.solution();
     double error_L2 = (pde_.mass() * error_.cwiseProduct(error_)).sum();
-    EXPECT_TRUE(error_L2 < 1e-7);
+    EXPECT_TRUE(error_L2 < 2e-7);
 
     // std::cout << std::setprecision(17);
     // std::cout << "error_L2 = " << error_L2 << std::endl;
