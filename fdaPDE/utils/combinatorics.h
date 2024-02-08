@@ -32,14 +32,12 @@ constexpr int ct_factorial(const int n) { return n ? (n * ct_factorial(n - 1)) :
 constexpr int ct_binomial_coefficient(const int N, const int M) {
     return ct_factorial(N) / (ct_factorial(M) * ct_factorial(N - M));
 }
-  
+
 // all combinations of k elements from a set of n
 template <int K, int N> SMatrix<ct_binomial_coefficient(N, K), K, int> combinations() {
     std::vector<bool> bitmask(K, 1);
     bitmask.resize(N, 0);
-
     SMatrix<ct_binomial_coefficient(N, K), K, int> result;
-
     int j = 0;
     do {
         int k = 0;
@@ -51,7 +49,8 @@ template <int K, int N> SMatrix<ct_binomial_coefficient(N, K), K, int> combinati
 
     return result;
 }
- 
-}}
 
-#endif // _COMBINATORICS_H__
+}   // namespace core
+}   // namespace fdapde
+
+#endif   // _COMBINATORICS_H__

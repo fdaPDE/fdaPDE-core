@@ -56,8 +56,8 @@ template <int N, typename E> class ScalarExprHessian;
 // Base class for scalar field expressions
 template <int N, typename E> class ScalarExpr : public ScalarBase {
    protected:
-    int dynamic_inner_size_;   // run-time base space dimension
-    double h_ = 1e-3;         // step size used in derivative approximation
+    int dynamic_inner_size_ = 0;   // run-time base space dimension
+    double h_ = 1e-3;              // step size used in derivative approximation
    public:
     typedef typename static_dynamic_vector_selector<N>::type VectorType;
     static constexpr int rows = 1;
