@@ -171,7 +171,7 @@ template <typename T> typename std::enable_if<!std::numeric_limits<T>::is_intege
 template <typename Derived> bool is_empty(const Eigen::EigenBase<Derived>& matrix) { return matrix.size() == 0; }
 
 // compute log(1 + exp(x)) in a numerical stable way (see Machler, M. (2012). Accurately computing log(1-exp(-|a|)))
-double log1pexp(double x) const {
+double log1pexp(double x) {
     if (x <= -37.0) return std::exp(x);
     if (x <= 18.0) return std::log1p(std::exp(x));
     if (x > 33.3) return x;
