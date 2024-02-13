@@ -37,8 +37,8 @@ template <typename T> using SpMatrix = Eigen::SparseMatrix<T>;
 
 namespace fdapde {
 
-const int Dynamic = -1;       // used when the size of a vector or matrix is not known at compile time
-const int random_seed = -1;   // signals that a random seed is used somewhere
+constexpr int Dynamic = -1;       // used when the size of a vector or matrix is not known at compile time
+constexpr int random_seed = -1;   // signals that a random seed is used somewhere
 
 template <int N, typename T = double> struct static_dynamic_vector_selector {
     using type = typename std::conditional<N == Dynamic, DVector<T>, SVector<N, T>>::type;
@@ -156,7 +156,7 @@ template <typename T> class SparseLU {
 };
 
 // test for floating point equality based on relative error.
-const double DOUBLE_TOLERANCE = 50 * std::numeric_limits<double>::epsilon();   // approx 10^-14
+constexpr double DOUBLE_TOLERANCE = 50 * std::numeric_limits<double>::epsilon();   // approx 10^-14
 template <typename T>
 typename std::enable_if<!std::numeric_limits<T>::is_integer, bool>::type almost_equal(T a, T b, T epsilon) {
     return std::fabs(a - b) < epsilon ||
@@ -171,10 +171,10 @@ template <typename T> typename std::enable_if<!std::numeric_limits<T>::is_intege
 template <typename Derived> bool is_empty(const Eigen::EigenBase<Derived>& matrix) { return matrix.size() == 0; }
 
 // compute log(1 + exp(x)) in a numerical stable way (see Machler, M. (2012). Accurately computing log(1-exp(-|a|)))
-double log1pexp(double x) {
+constexpr double log1pexp(double x) {
     if (x <= -37.0) return std::exp(x);
-    if (x <= 18.0) return std::log1p(std::exp(x));
-    if (x > 33.3) return x;
+    if (x <=  18.0) return std::log1p(std::exp(x));
+    if (x >   33.3) return x;
     return x + std::exp(-x);
 }
 
