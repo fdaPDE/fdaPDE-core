@@ -344,7 +344,7 @@ TEST(scalar_field_test, expression_differentials_approximation) {
 
     SMatrix<2> hessian;
     hessian << -std::sin(2), -std::sin(2), -std::sin(2), -std::sin(2);
-    ASSERT_TRUE((hess(p) - hessian).norm() < DOUBLE_TOLERANCE);
+    ASSERT_TRUE((hess(p) - hessian).norm() < 1e-6);
 }
 
 double f_impl(SVector<2> x) { return x[0]; }

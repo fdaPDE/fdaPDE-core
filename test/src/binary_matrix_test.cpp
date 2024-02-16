@@ -21,9 +21,6 @@ using fdapde::Dynamic;
 using fdapde::core::BinaryMatrix;
 using fdapde::core::BinaryVector;
 
-#include <bitset>
-
-// test definition of spline basis
 TEST(binary_matrix_test, static_sized_matrix) {
     // build a static-sized binary matrix
     BinaryMatrix<5, 3> m;

@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <fdaPDE/mesh.h>
+#include <fdaPDE/geometry.h>
 #include <fdaPDE/utils.h>
 #include <gtest/gtest.h>   // testing framework
 

@@ -17,8 +17,8 @@
 #ifndef __LAGRANGIAN_BASIS_H__
 #define __LAGRANGIAN_BASIS_H__
 
-#include "../../mesh/element.h"
-#include "../../mesh/reference_element.h"
+#include "../../geometry/element.h"
+#include "../../geometry/reference_element.h"
 #include "../../pde/symbols.h"
 #include "../../utils/compile_time.h"
 #include "../../utils/symbols.h"

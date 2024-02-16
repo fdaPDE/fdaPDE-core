@@ -14,15 +14,17 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_MESH_MODULE_H__
-#define __FDAPDE_MESH_MODULE_H__
+#ifndef __FDAPDE_GEOMETRY_MODULE_H__
+#define __FDAPDE_GEOMETRY_MODULE_H__
 
-#include "mesh/mesh.h"
-#include "mesh/element.h"
-#include "mesh/reference_element.h"
-#include "mesh/point_location/point_location_base.h"
-#include "mesh/point_location/naive_search.h"
-#include "mesh/point_location/barycentric_walk.h"
-#include "mesh/point_location/adt.h"
+#include "geometry/mesh.h"
+#include "geometry/element.h"
+#include "geometry/reference_element.h"
+// #include "geometry/voronoi.h"
+#include "geometry/kd_tree.h"
+#include "geometry/point_location/point_location.h"
+#include "geometry/point_location/naive_search.h"
+#include "geometry/point_location/barycentric_walk.h"
+#include "geometry/point_location/tree_search.h"
 
-#endif   // __FDAPDE_MESH_MODULE_H__
+#endif   // __FDAPDE_GEOMETRY_MODULE_H__

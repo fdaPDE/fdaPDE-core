@@ -22,7 +22,7 @@
 
 #include <fdaPDE/utils.h>
 #include <fdaPDE/fields.h>
-#include <fdaPDE/mesh.h>
+#include <fdaPDE/geometry.h>
 #include <fdaPDE/linear_algebra.h>
 #include <fdaPDE/finite_elements.h>
 using fdapde::core::ct_binomial_coefficient;
@@ -208,7 +208,7 @@ TEST(lagrangian_basis_test, order1_pointwise_evaluation) {
 // areal evaluate a lagrangian basis over a given set of nodes
 TEST(lagrangian_basis_test, order1_areal_evaluation) {
     MeshLoader<Mesh2D> domain("quasi_circle");
-    domain.mesh.set_point_location_policy<BarycentricWalk>();
+    domain.mesh.set_point_location(BarycentricWalk(domain.mesh));
     // create lagrangian basis over domain
     LagrangianBasis<Mesh2D, 1> basis(domain.mesh);
     // load matrix of locations and evaluate
@@ -231,7 +231,7 @@ TEST(lagrangian_basis_test, order2_pointwise_evaluation) {
 // areal evaluate a lagrangian basis over a given set of nodes
 TEST(lagrangian_basis_test, order2_areal_evaluation) {
     MeshLoader<Mesh2D> domain("quasi_circle");
-    domain.mesh.set_point_location_policy<BarycentricWalk>();
+    domain.mesh.set_point_location(BarycentricWalk(domain.mesh));
     // create lagrangian basis over domain
     LagrangianBasis<Mesh2D, 2> basis(domain.mesh);
     // load matrix of locations and evaluate

@@ -28,8 +28,8 @@
 #include "element.h"
 #include "mesh_utils.h"
 #include "reference_element.h"
-#include "point_location/point_location_base.h"
-#include "point_location/adt.h"
+#include "point_location/point_location.h"
+#include "point_location/tree_search.h"
 
 namespace fdapde {
 namespace core {
@@ -62,19 +62,16 @@ template <int M, int N> class Mesh {
 
     // precomputed set of elements
     std::vector<Element<M, N>> elements_cache_ {};
-    mutable std::shared_ptr<PointLocationBase<M, N>> point_location_ = nullptr;
-    using DefaultLocationPolicy = ADT<M, N>;
+    mutable PointLocation<M, N> point_location_;
    public:
     Mesh() = default;
     // 2D, 2.5D, 3D constructor
-    template <int M_ = M, int N_ = N,
-	      typename std::enable_if<!is_network<M_, N_>::value, int>::type = 0>
+    template <int M_ = M, int N_ = N, typename std::enable_if<!is_network<M_, N_>::value, int>::type = 0>
     Mesh(const DMatrix<double>& nodes, const DMatrix<int>& elements, const DMatrix<int>& boundary);
     // linear network (1.5D) specialized constructor
-    template <int M_ = M, int N_ = N,
-	      typename std::enable_if< is_network<M_, N_>::value, int>::type = 0>
+    template <int M_ = M, int N_ = N, typename std::enable_if< is_network<M_, N_>::value, int>::type = 0>
     Mesh(const DMatrix<double>& nodes, const DMatrix<int>& elements, const DMatrix<int>& boundary);
-  
+
     // getters
     const Element<M, N>& element(int ID) const { return elements_cache_[ID]; }
     Element<M, N>& element(int ID) { return elements_cache_[ID]; }
@@ -106,8 +103,8 @@ template <int M, int N> class Mesh {
         }
     }
     DVector<int> locate(const DMatrix<double>& points) const {
-        if (point_location_ == nullptr) point_location_ = std::make_shared<DefaultLocationPolicy>(*this);
-        return point_location_->locate(points);
+        if (!point_location_) point_location_ = TreeSearch(*this);   // fallback to tree-based search strategy
+        return point_location_.locate(points);
     }
     // getter and iterator on edges
 
@@ -128,6 +125,8 @@ template <int M, int N> class Mesh {
         friend bool operator!=(const iterator& lhs, const iterator& rhs) { return lhs.index_ != rhs.index_; }
         const Element<M, N>& operator*() const { return mesh_->element(index_); }
     };
+    iterator begin() const { return iterator(this, 0); }
+    iterator end() const { return iterator(this, elements_.rows()); }
 
     struct boundary_iterator {   // range-for loop over boundary nodes
        private:
@@ -149,6 +148,8 @@ template <int M, int N> class Mesh {
             return lhs.index_ != rhs.index_;
         }
     };
+    boundary_iterator boundary_begin() const { return boundary_iterator(this, 0); }
+    boundary_iterator boundary_end() const { return boundary_iterator(this, n_nodes_); }
 
     struct facet_iterator {   // range-for over facets
        private:
@@ -167,20 +168,13 @@ template <int M, int N> class Mesh {
             return lhs.index_ != rhs.index_;
         }
     };
-
-    iterator begin() const { return iterator(this, 0); }
-    iterator end() const { return iterator(this, elements_.rows()); }
-    boundary_iterator boundary_begin() const { return boundary_iterator(this, 0); }
-    boundary_iterator boundary_end() const { return boundary_iterator(this, n_nodes_); }
     facet_iterator facet_begin() const { return facet_iterator(this, 0); }
     facet_iterator facet_end() const { return facet_iterator(this, n_facets_); }
-
     // setters
-    template <template <int, int> typename PointLocationPolicy_>
-    void set_point_location_policy() {
-        point_location_ = std::make_shared<PointLocationPolicy_<M, N>>(*this);
+    template <typename PointLocation_> void set_point_location(PointLocation_&& point_location) {
+        point_location_ = point_location;
     }
-  
+
     // compile time informations
     static constexpr bool is_manifold = (M != N);
     enum {

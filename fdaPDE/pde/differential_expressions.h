@@ -19,7 +19,6 @@
 
 #include <tuple>
 
-#include "../mesh/element.h"
 #include "../utils/symbols.h"
 #include "../utils/traits.h"
 

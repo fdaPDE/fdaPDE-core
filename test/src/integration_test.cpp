@@ -18,7 +18,7 @@
 #include <cstddef>
 
 #include <fdaPDE/utils.h>
-#include <fdaPDE/mesh.h>
+#include <fdaPDE/geometry.h>
 #include <fdaPDE/linear_algebra.h>
 #include <fdaPDE/finite_elements.h>
 using fdapde::core::Element;

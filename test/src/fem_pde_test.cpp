@@ -16,7 +16,7 @@
 
 #include <fdaPDE/fields.h>
 #include <fdaPDE/finite_elements.h>
-#include <fdaPDE/mesh.h>
+#include <fdaPDE/geometry.h>
 #include <fdaPDE/utils.h>
 #include <gtest/gtest.h>   // testing framework
 

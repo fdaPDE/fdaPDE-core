@@ -24,10 +24,13 @@
 #include "src/vector_field_test.cpp"
 #include "src/matrix_field_test.cpp"
 #include "src/type_erasure_test.cpp"
+#include "src/binary_tree_test.cpp"
 // mesh
 #include "src/element_test.cpp"
 #include "src/mesh_test.cpp"
 #include "src/point_location_test.cpp"
+#include "src/kd_tree_test.cpp"
+//#include "src/voronoi_test.cpp"
 // linear_algebra
 #include "src/kronecker_product_test.cpp"
 #include "src/vector_space_test.cpp"

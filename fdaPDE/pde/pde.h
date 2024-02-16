@@ -21,7 +21,7 @@
 #include <unordered_map>
 #include <optional>
 
-#include "../mesh/mesh.h"
+#include "../geometry/mesh.h"
 #include "../utils/symbols.h"
 #include "../utils/integration/integrator.h"
 #include "differential_expressions.h"

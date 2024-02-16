@@ -20,7 +20,6 @@
 #include <type_traits>
 
 #include "../../fields/scalar_field.h"
-#include "../../mesh/element.h"
 #include "../../pde/differential_expressions.h"
 #include "../../pde/differential_operators.h"
 #include "../fem_symbols.h"

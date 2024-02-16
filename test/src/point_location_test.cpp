@@ -18,11 +18,12 @@
 #include <memory>
 
 #include <fdaPDE/utils.h>
-#include <fdaPDE/mesh.h>
+#include <fdaPDE/geometry.h>
 using fdapde::core::Element;
+using fdapde::core::Mesh;
 using fdapde::core::NaiveSearch;
 using fdapde::core::BarycentricWalk;
-using fdapde::core::ADT;
+using fdapde::core::TreeSearch;
 
 #include "utils/mesh_loader.h"
 using fdapde::testing::MESH_TYPE_LIST;
@@ -52,7 +53,7 @@ TYPED_TEST(point_location_test, naive_search) {
 
 TYPED_TEST(point_location_test, alternating_digital_tree) {
     // build search engine
-    ADT<TestFixture::M, TestFixture::N> engine(this->mesh_loader.mesh);
+    TreeSearch<TestFixture::M, TestFixture::N> engine(this->mesh_loader.mesh);
     // build test set
     std::vector<std::pair<std::size_t, SVector<TestFixture::N>>> testSet = this->mesh_loader.sample(100);
     // test all queries in test set

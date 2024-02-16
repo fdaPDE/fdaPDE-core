@@ -17,8 +17,8 @@
 #ifndef __INTEGRATOR_H__
 #define __INTEGRATOR_H__
 
-#include "../../mesh/element.h"
-#include "../../mesh/mesh.h"
+#include "../../geometry/element.h"
+#include "../../geometry/mesh.h"
 #include "../../fields/scalar_expressions.h"
 #include "../compile_time.h"
 #include "../symbols.h"

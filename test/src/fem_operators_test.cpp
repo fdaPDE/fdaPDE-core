@@ -19,7 +19,7 @@
 
 #include <fdaPDE/utils.h>
 #include <fdaPDE/fields.h>
-#include <fdaPDE/mesh.h>
+#include <fdaPDE/geometry.h>
 #include <fdaPDE/finite_elements.h>
 using fdapde::core::Element;
 using fdapde::core::Integrator;
