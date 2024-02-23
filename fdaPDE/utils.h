@@ -17,6 +17,7 @@
 #ifndef __FDAPDE_UTILS_MODULE_H__
 #define __FDAPDE_UTILS_MODULE_H__
 
+#include <iostream>
 #include "utils/symbols.h"
 #include "utils/assert.h"
 #include "utils/compile_time.h"

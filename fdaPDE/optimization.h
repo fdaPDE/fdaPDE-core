@@ -22,6 +22,7 @@
 #include "optimization/newton.h"
 #include "optimization/gradient_descent.h"
 #include "optimization/bfgs.h"
+#include "optimization/broyden.h"
 #include "optimization/callbacks/callbacks.h"
 #include "optimization/callbacks/backtracking_line_search.h"
 #include "optimization/callbacks/wolfe_line_search.h"

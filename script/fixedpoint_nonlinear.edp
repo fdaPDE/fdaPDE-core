@@ -1,0 +1,118 @@
+int n = 16;
+mesh Th = square(n, n); //flags = 1);
+plot(Th);
+
+fespace Vh(Th, P2);
+Vh fh, vh, f0h, incr, Err, fexh;
+
+// 1. exact solution (useful for testing)
+func fex = 3*x*x + 2*y*y;
+
+real nu = 1;
+
+// define forcing term
+func u = -9*x^4 - 12*x^2*y^2 + 3*x^2 - 4*y^4 + 2*y^2 - 10*nu;
+
+fexh = fex; // Interpolate fex into Vh
+
+int Ndofs = Vh.ndof;
+cout << "Ndofs = " << Ndofs << endl;
+
+/*  
+weak form of the pde that we want to solve:
+\[
+\int_\Omega \nu \nabla u \cdot \nabla v + \int_\Omega h(x,f) f v = \int_\Omega u v
+\]
+where the nonlinear function $h(x,f)$ is defined as
+\[
+h(x,f) = 1 + f(x)
+\]
+*/
+
+// 3. define problem
+problem fixedpoint(fh, vh, solver = LU, eps = 1.e-10, init = 0) =
+    int2d(Th)( 
+        nu * (dx(fh)*dx(vh) + dy(fh)*dy(vh)) //Laplacian
+        + (1.0 - f0h) * fh * vh  //NonLinear
+    )
+    - int2d(Th)(u * vh)
+    + on(1, 2, 3, 4, fh = fex);
+
+func real increment(){
+  // store increments in incr variables
+  incr[] = fh[];
+  incr[] -= f0h[];
+
+  real result = int2d(Th)(incr^2);
+  return sqrt(result);
+}
+
+// Compute mass matrix for weighted error.
+varf mass(p, q) = int2d(Th)(p * q);
+matrix M = mass(Vh, Vh);
+real[int] prod(Ndofs);
+
+func real error(){
+  // store increments in incr variables
+  Err[] = fexh[];
+  Err[] -= fh[];
+
+  for (int i = 0; i < Ndofs; ++i)
+    prod[i] = Err[][i]*Err[][i];
+
+  real[int] temp(Ndofs);
+  temp = M*prod;
+
+  real err2 = 0;
+
+  for (int i = 0; i< Ndofs; ++i)
+      err2 += temp[i];
+
+  return err2;
+  /*
+  real result = int2d(Th)(Err^2);
+  return sqrt(result);
+  */
+}
+
+// loop control
+int nbiter = 20;
+real eps = 1e-7;
+
+int iter;
+real incrErr = eps + 1; // at least one iteration has to be performed
+real err = eps + 1;
+
+[fh] = [0.0];
+fixedpoint;
+err = error();
+cout << "\t Newton iteration 0, error = " << err << endl;
+[f0h] = [fh];
+
+// for (iter = 0; iter < nbiter && incrErr > eps; ++iter) {
+for (iter = 0; iter < nbiter && err > eps; ++iter) {
+    // perform a fixed point iteration
+    fixedpoint;
+
+    // update incr for the stopping criterion
+    incrErr = increment();
+    err = error();
+
+    // update old solution
+    [f0h] = [fh];
+
+    cout << "\t Fixedpoint iteration " << iter+1 << ", incr = " << incrErr << endl;
+    cout << "\t Fixedpoint iteration " << iter+1 << ", error = " << err << endl;
+}
+
+cout << "# iter: " << iter+1 << endl;
+plot([fh], value = 1, fill = 1, wait = 1, cmm = "f_computed");
+plot([fexh], value = 1, fill = 1, wait = 1, cmm = "Exact Solution");
+plot(Th, wait = 1, value =1, cmm = "Discretization unit_square_16");
+
+cout << "\n\t saving results... " << endl;
+
+ofstream file("freefem_P1_fixedpoint.txt");
+for(int i=0; i<fh[].n; i++){
+    file << fh[][i] << endl;
+}

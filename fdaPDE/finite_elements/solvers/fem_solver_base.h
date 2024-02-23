@@ -115,6 +115,10 @@ void FEMSolverBase<D, E, F, Ts...>::init(const PDE& pde) {
     boundary_dofs_ = basis_.boundary_dofs();
     // assemble discretization matrix for given operator
     Assembler<FEM, DomainType, ReferenceBasis, Quadrature> assembler(pde.domain(), integrator_, n_dofs_, dofs_);
+    if constexpr(is_nonlinear<E>::value){
+      if (is_empty(solution_)) solution_ = pde.initial_condition();
+      assembler.set_f(solution_.col(0));
+    }
     stiff_ = assembler.discretize_operator(pde.differential_operator());
     stiff_.makeCompressed();
     // assemble forcing vector

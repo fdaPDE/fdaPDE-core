@@ -53,6 +53,9 @@ template <typename D, typename B, typename I> class Assembler<FEM, D, B, I> {
     // discretization methods
     template <typename E> SpMatrix<double> discretize_operator(const E& op);
     template <typename F> DVector<double> discretize_forcing(const F& force);
+
+    // setter for f (for non-linear operators)
+    void set_f (const DVector<double>& f) {f_ = f;};
 };
 
 // implementative details
@@ -76,7 +79,7 @@ SpMatrix<double> Assembler<FEM, D, B, I>::discretize_operator(const E& op) {
     BasisType buff_psi_i, buff_psi_j;               // basis functions \psi_i, \psi_j
     NablaType buff_nabla_psi_i, buff_nabla_psi_j;   // gradient of basis functions \nabla \psi_i, \nabla \psi_j
     MatrixConst<M, N, M> buff_invJ;   // (J^{-1})^T, being J the inverse of the barycentric matrix relative to element e
-    DVector<double> f(n_basis);       // active solution coefficients on current element e
+        std::shared_ptr<DVector<double>> f = std::make_shared<DVector<double>>(n_basis);
     // prepare buffer to be sent to bilinear form
     auto mem_buffer = std::make_tuple(
       ScalarPtr(&buff_psi_i), ScalarPtr(&buff_psi_j), VectorPtr(&buff_nabla_psi_i), VectorPtr(&buff_nabla_psi_j),
@@ -92,8 +95,8 @@ SpMatrix<double> Assembler<FEM, D, B, I>::discretize_operator(const E& op) {
       buff_invJ = e.inv_barycentric_matrix().transpose(); // affine map from current element to reference element
       current_id = e.ID(); // element ID
       
-      if(!is_empty(f_)) // should be bypassed in case of linear operators via an if constexpr!!!
-	for(std::size_t dof = 0; dof < n_basis; dof++) { f[dof] = f_[dof_table_(current_id, dof)]; } 
+    if constexpr(is_nonlinear<E>::value) // bypassed in case of linear operators
+	    for(std::size_t dof = 0; dof < n_basis; dof++) { (*f)[dof] = f_[dof_table_(current_id, dof)]; } 
 
         // consider all pair of nodes
         for (size_t i = 0; i < n_basis; ++i) {

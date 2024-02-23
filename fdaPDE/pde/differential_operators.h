@@ -35,6 +35,7 @@ FDAPDE_DEFINE_DIFFERENTIAL_OPERATOR(Advection,   advection  );
 FDAPDE_DEFINE_DIFFERENTIAL_OPERATOR(Reaction,    reaction   );
 FDAPDE_DEFINE_DIFFERENTIAL_OPERATOR(dT,          dt         );
 FDAPDE_DEFINE_DIFFERENTIAL_OPERATOR(BiLaplacian, bilaplacian);
+FDAPDE_DEFINE_DIFFERENTIAL_OPERATOR(NonLinearOp, non_linear_op);
 
 // trait to detect if the bilinear form obtained from the weak formulation of a differential operator is symmetric.
 template <typename E> struct is_symmetric {
@@ -49,6 +50,28 @@ template <typename E_> struct is_parabolic {
 template <typename E_> struct is_stationary {
     typedef typename std::decay<E_>::type E;
     static constexpr bool value = !has_instance_of<dT, decltype(std::declval<E>().get_operator_type())>::value;
+};
+// trait to detect if the differential operator denotes a nonlinear problem.
+template <typename E_> struct is_nonlinear {
+    typedef typename std::decay<E_>::type E;
+    static constexpr bool value = has_instance_of_2<NonLinearOp, decltype(std::declval<E>().get_operator_type())>::value;
+};
+
+template <typename E_> struct is_laplacian {
+    typedef typename std::decay<E_>::type E;
+    static constexpr bool value = has_instance_of<Laplacian, decltype(std::declval<E>().get_operator_type())>::value;
+};
+template <typename E_> struct is_diffusion {
+    typedef typename std::decay<E_>::type E;
+    static constexpr bool value = has_instance_of_2<Diffusion, decltype(std::declval<E>().get_operator_type())>::value;
+};
+template <typename E_> struct is_advection {
+    typedef typename std::decay<E_>::type E;
+    static constexpr bool value = has_instance_of_2<Advection, decltype(std::declval<E>().get_operator_type())>::value;
+};
+template <typename E_> struct is_reaction {
+    typedef typename std::decay<E_>::type E;
+    static constexpr bool value = has_instance_of_2<Reaction, decltype(std::declval<E>().get_operator_type())>::value;
 };
   
 }   // namespace core

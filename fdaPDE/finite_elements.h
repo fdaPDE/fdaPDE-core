@@ -36,11 +36,15 @@
 #include "finite_elements/solvers/fem_solver_base.h"
 #include "finite_elements/solvers/fem_solver_selector.h"
 #include "finite_elements/solvers/fem_linear_elliptic_solver.h"
+#include "finite_elements/solvers/fem_nonlinear_fixedpoint_solver.h"
+#include "finite_elements/solvers/fem_nonlinear_broyden_solver.h"
+#include "finite_elements/solvers/fem_nonlinear_newton_solver.h"
 #include "finite_elements/solvers/fem_linear_parabolic_solver.h"
 #include "finite_elements/operators/laplacian.h"
 #include "finite_elements/operators/diffusion.h"
 #include "finite_elements/operators/advection.h"
 #include "finite_elements/operators/reaction.h"
 #include "finite_elements/operators/dt.h"
+#include "finite_elements/operators/non_linear_operator.h"
 
 #endif   // __FDAPDE_FINITE_ELEMENTS_MODULE_H__
