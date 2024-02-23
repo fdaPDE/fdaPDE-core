@@ -108,7 +108,7 @@ TEST(optimization_test, type_erased_bfgs_wolfe_line_search) {
     EXPECT_TRUE(L2_error < 1e-6);
 }
 
-TEST(fem_pde_test, Broyden_2D){
+TEST(optimization_test, Broyden_2D){
     // define the vector field
     VectorField<Dynamic> F(2,2);
     // F[0] = [](DVector<double> x) -> double { return atan(x(0)*x(1)); }; // the base broyden solver fails with this F
@@ -132,7 +132,7 @@ TEST(fem_pde_test, Broyden_2D){
     EXPECT_TRUE((exact_sol - solution).norm() < 1e-5);
 }
 
-TEST(fem_pde_test, GlobalBroyden_2D){
+TEST(optimization_test, GlobalBroyden_2D){
     // define the vector field
     VectorField<Dynamic> F(2,2);
     F[0] = [](DVector<double> x) -> double { return atan(x(0)*x(1)); };
@@ -156,7 +156,7 @@ TEST(fem_pde_test, GlobalBroyden_2D){
 }
 
 // test bfgs on the norm of an operator F: Rn -> Rn
-TEST(fem_pde_test, bfgs){
+TEST(optimization_test, bfgs){
     VectorField<Dynamic> F(2,2);
     F[0] = [](SVector<2> x) -> double { return atan(x(0)*x(1)); };
     F[1] = [](SVector<2> x) -> double { return x(0)-x(1); };
@@ -172,8 +172,10 @@ TEST(fem_pde_test, bfgs){
     // initial point
     SVector<2> x0(7.,7.);
 
-    BFGS<2> opt(1000, 1e-15, 1);
-    opt.optimize(f, x0, WolfeLineSearch());
+    // BFGS<2> opt(1000, 1e-15, 1);
+    Optimizer<ScalarField<2>> opt = BFGS<2, WolfeLineSearch>(1000, 1e-15, 1);
+    // opt.optimize(f, x0, WolfeLineSearch());
+    opt.optimize(f, x0);
 
     // expected solution
     SVector<2> expected(0., 0.);
