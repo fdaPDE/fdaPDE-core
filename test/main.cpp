@@ -37,6 +37,7 @@
 #include "src/fem_pde_test.cpp"
 #include "src/integration_test.cpp"
 #include "src/lagrangian_basis_test.cpp"
+#include "src/fem_pde_transport_test.cpp"   //ADDED
 // optimization
 #include "src/optimization_test.cpp"
 //splines

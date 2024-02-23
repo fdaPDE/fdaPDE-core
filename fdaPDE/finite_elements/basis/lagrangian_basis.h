@@ -146,6 +146,7 @@ template <typename DomainType, int order> class LagrangianBasis {
 	    return coords;
         }
     }
+    double get_element_size( const int l = 0) const{ return domain_->element(l).measure(); } // ADDED
 
     static ReferenceBasis ref_basis() { return ReferenceBasis {}; }
     // given a coefficient vector c \in \mathbb{R}^size_, evaluates the corresponding basis expansion at locs

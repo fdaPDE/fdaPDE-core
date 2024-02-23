@@ -25,6 +25,7 @@
 #include "fem_nonlinear_broyden_solver.h"
 #include "fem_nonlinear_newton_solver.h"
 #include "fem_nonlinear_solver.h"
+#include "fem_linear_transport_elliptic_solver.h"   //ADDED
 
 namespace fdapde {
 namespace core {
@@ -37,7 +38,9 @@ template <typename D, typename E, typename F, typename... Ts> struct pde_solver_
       // switch_type_case<!is_parabolic<E>::value && is_nonlinear<E>::value, FEMNonLinearFixedPointSolver<D, E, F, Ts...>>,
       switch_type_case<!is_parabolic<E>::value && is_nonlinear<E>::value, FEMNonLinearNewtonSolver<D, E, F, Ts...>>,
       // switch_type_case<!is_parabolic<E>::value && is_nonlinear<E>::value, FEMNonLinearSolver<D, E, F, Ts...>>,
-      switch_type_case<!is_parabolic<E>::value && !is_nonlinear<E>::value, FEMLinearEllipticSolver<D, E, F, Ts...>>
+
+      switch_type_case<!is_parabolic<E>::value && !is_nonlinear<E>::value, FEMLinearTransportEllipticSolver<D, E, F, Ts...>>
+      // switch_type_case<!is_parabolic<E>::value && !is_nonlinear<E>::value, FEMLinearEllipticSolver<D, E, F, Ts...>>
       >::type;
 };
 

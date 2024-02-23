@@ -40,11 +40,13 @@
 #include "finite_elements/solvers/fem_nonlinear_broyden_solver.h"
 #include "finite_elements/solvers/fem_nonlinear_newton_solver.h"
 #include "finite_elements/solvers/fem_linear_parabolic_solver.h"
+#include "finite_elements/solvers/fem_linear_transport_elliptic_solver.h"   //ADDED
 #include "finite_elements/operators/laplacian.h"
 #include "finite_elements/operators/diffusion.h"
 #include "finite_elements/operators/advection.h"
 #include "finite_elements/operators/reaction.h"
 #include "finite_elements/operators/dt.h"
 #include "finite_elements/operators/non_linear_operator.h"
+#include "finite_elements/operators/streamline_diffusion.h"   //ADDED
 
 #endif   // __FDAPDE_FINITE_ELEMENTS_MODULE_H__
