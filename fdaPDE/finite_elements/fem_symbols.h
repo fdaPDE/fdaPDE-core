@@ -43,6 +43,23 @@ template <int R> struct fem_order {
     static constexpr int value = R;
 };
 
+// PDE parameters singleton: a tuple of parameters for the PDE to be forwarded to the solver
+template<typename... Args>
+class PDEparameters final {
+public:
+    PDEparameters(PDEparameters const &) = delete;
+    PDEparameters &operator=(PDEparameters const &) = delete;
+    static PDEparameters &getInstance( const Args &... data) {
+        static PDEparameters instance(data...);
+        return instance;
+    }
+    // getter to the first element of the tuple
+    std::tuple<Args...> getData(void) const { return data_; }
+private:
+    explicit PDEparameters(const Args &... data) : data_(std::make_tuple(data...)) {}
+    std::tuple<Args...> data_;
+};
+
 }   // namespace core
 }   // namespace fdapde
 

@@ -39,6 +39,7 @@ using fdapde::core::laplacian;
 using fdapde::core::dt;
 using fdapde::core::fem_order;
 using fdapde::core::make_pde;
+using fdapde::core::PDEparameters;
 
 #include "utils/mesh_loader.h"
 using fdapde::testing::MeshLoader;
@@ -70,8 +71,11 @@ TEST(transport_test, transportP1) {
     SVector<2> b;  b << 1., 1.;
     double mu = 1e-9;
 
+    // save parameters in the PDEparameters singleton, these will be retrieved by the solver
+    PDEparameters<decltype(mu), decltype(b)> &PDEparams = PDEparameters<decltype(mu), decltype(b)>::getInstance(mu, b);
+
     // non-zero forcing term
-    auto forcingExpr = [mu, b](SVector<2> x) -> double {
+    auto forcingExpr = [&mu, &b](SVector<2> x) -> double {
         return 2*b[1] + 3*b[0]*cos(x[0]) + 3*mu*sin(x[0]);
         // return 2*b(x)[1] + 3*b(x)[0]*cos(x[0]) + 3*mu*sin(x[0]);
     };
@@ -83,8 +87,8 @@ TEST(transport_test, transportP1) {
 
     constexpr std::size_t femOrder = 1;
 
-    // PDE<decltype(unit_square.mesh), decltype(L), ScalarField<2>, FEM, fem_order<femOrder>> pde_(unit_square.mesh, L, forcing);
-    PDE<decltype(unit_square.mesh), decltype(L), ScalarField<2>, FEM, fem_order<1>> pde_(unit_square.mesh, L, forcing);
+    PDE< decltype(unit_square.mesh), decltype(L), ScalarField<2>, FEM, fem_order<femOrder>, decltype(mu),
+            decltype(b)> pde_( unit_square.mesh, L, forcing);
 
     // compute boundary condition and exact solution
     DMatrix<double> nodes_ = pde_.dof_coords();
@@ -107,7 +111,7 @@ TEST(transport_test, transportP1) {
     double error_L2 = (pde_.mass() * error_.cwiseProduct(error_)).sum();
     EXPECT_TRUE(error_L2 < 1e-6);
 
-    std::cout << "error_L2 = " << std::setprecision(17) << error_L2 << std::endl;
+    // std::cout << "error_L2 = " << std::setprecision(17) << error_L2 << std::endl;
 
     //save solution
     //std::string titlename = "transport_test_solution_mu_" + std::to_string(mu) + "_b_" + std::to_string(b_[0]) + "_" + std::to_string(b_[1]) + ".txt";

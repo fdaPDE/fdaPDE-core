@@ -60,10 +60,11 @@ TEST(fem_operators_test, laplacian_order_2) {
     NablaType buff_nabla_psi_i, buff_nabla_psi_j;   // gradient of basis functions \nabla \psi_i, \nabla \psi_j
     MatrixConst<2, 2, 2> buff_invJ;   // (J^{-1})^T, being J the inverse of the barycentric matrix relative to element e
     DVector<double> f(ct_nnodes(Mesh2D::local_dimension, 2));   // active solution coefficients on current element e
+    double element_measure = e.measure();    // measure of the reference element
     // prepare buffer to be sent to bilinear form
     auto mem_buffer = std::make_tuple(
       ScalarPtr(&buff_psi_i), ScalarPtr(&buff_psi_j), VectorPtr(&buff_nabla_psi_i), VectorPtr(&buff_nabla_psi_j),
-      MatrixPtr(&buff_invJ), &f);
+      MatrixPtr(&buff_invJ), &f, &element_measure);
 
     // develop bilinear form expression in an integrable field
     auto weak_form = L.integrate(mem_buffer);
@@ -126,10 +127,11 @@ TEST(fem_operators_test, laplacian_laplacian_order_2) {
     NablaType buff_nabla_psi_i, buff_nabla_psi_j;   // gradient of basis functions \nabla \psi_i, \nabla \psi_j
     MatrixConst<2, 2, 2> buff_invJ;   // (J^{-1})^T, being J the inverse of the barycentric matrix relative to element e
     DVector<double> f(ct_nnodes(Mesh2D::local_dimension, 2));   // active solution coefficients on current element e
+    double element_measure = e.measure();    // measure of the reference element
     // prepare buffer to be sent to bilinear form
     auto mem_buffer = std::make_tuple(
       ScalarPtr(&buff_psi_i), ScalarPtr(&buff_psi_j), VectorPtr(&buff_nabla_psi_i), VectorPtr(&buff_nabla_psi_j),
-      MatrixPtr(&buff_invJ), &f);
+      MatrixPtr(&buff_invJ), &f, &element_measure);
 
     // develop bilinear form expression in an integrable field
     auto weak_form = L.integrate(mem_buffer);
@@ -199,10 +201,11 @@ TEST(fem_operators_test, advection_reaction_diffusion_order_2) {
     NablaType buff_nabla_psi_i, buff_nabla_psi_j;   // gradient of basis functions \nabla \psi_i, \nabla \psi_j
     MatrixConst<2, 2, 2> buff_invJ;   // (J^{-1})^T, being J the inverse of the barycentric matrix relative to element e
     DVector<double> f(ct_nnodes(Mesh2D::local_dimension, 2));   // active solution coefficients on current element e
+    double element_measure = e.measure();    // measure of the reference element
     // prepare buffer to be sent to bilinear form
     auto mem_buffer = std::make_tuple(
       ScalarPtr(&buff_psi_i), ScalarPtr(&buff_psi_j), VectorPtr(&buff_nabla_psi_i), VectorPtr(&buff_nabla_psi_j),
-      MatrixPtr(&buff_invJ), &f);
+      MatrixPtr(&buff_invJ), &f, &element_measure);
 
     // develop bilinear form expression in an integrable field
     auto weak_form = L.integrate(mem_buffer);
@@ -252,10 +255,11 @@ TEST(fem_operators_test, non_linear_order_2) {
     NonLinearReaction<2, LagrangianBasis<decltype(CShaped.mesh),2>::ReferenceBasis> h;
     auto L = non_linear_op<FEM>(h);
 
+    double element_measure = e.measure();    // measure of the reference element
     // prepare buffer to be sent to bilinear form
     auto mem_buffer = std::make_tuple(
       ScalarPtr(&buff_psi_i), ScalarPtr(&buff_psi_j), VectorPtr(&buff_nabla_psi_i), VectorPtr(&buff_nabla_psi_j),
-      MatrixPtr(&buff_invJ), &f);
+      MatrixPtr(&buff_invJ), &f, &element_measure);
 
     // develop bilinear form expression in an integrable field
     auto weak_form = L.integrate(mem_buffer);

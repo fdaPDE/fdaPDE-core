@@ -21,6 +21,9 @@
 
 #include "../../utils/symbols.h"
 #include "fem_solver_base.h"
+#include "../fem_symbols.h"
+
+using fdapde::core::PDEparameters;
 
 namespace fdapde {
 namespace core {
@@ -46,22 +49,31 @@ struct FEMLinearTransportEllipticSolver : public FEMSolverBase<D, E, F, Ts...> {
         typedef Eigen::SparseLU<SpMatrix<double>, Eigen::COLAMDOrdering<int>> SystemSolverType;
         SystemSolverType solver;
 
-        // retrieve PDE parameters here (how?) !!
-        SVector<2> b;  b << 1., 1.;
-        double mu = 1e-9;
+        SpMatrix<double> stab_(this->n_dofs_, this->n_dofs_);
+        // IF THERE IS AN ADVECTION TERM CHECK IF THE EQUATION NEEDS STABILIZATION
+        if constexpr (fdapde::core::is_advection<E>::value){
+            // initialize empty value with the correct type using default constructor
+            auto mu = std::tuple_element_t<1, SolverArgs>();
+            auto b = std::tuple_element_t<2, SolverArgs>();
+            // retrieve the values of the PDE parameters from the singleton
+            PDEparameters<decltype(mu), decltype(b)> &PDEparams = PDEparameters<decltype(mu), decltype(b)>::getInstance(mu, b);
+            mu = std::get<0>(PDEparams.getData());
+            b = std::get<1>(PDEparams.getData());
+            // std::cout << "from elliptic transport solver: mu = " << mu << " b = " << b << std::endl;
 
-        // add stabilization method IF IT IS NECESSARY
-        // double h = 0.01;    // how can we get the measure of one element here?
-        double h = this->basis_.get_element_size();
-        double Pe = b.norm()*h/(2*mu);
-        //todo: check Peclet number and decide whether to use stabilizer
-        Assembler<FEM, DomainType, ReferenceBasis, Quadrature> assembler(pde.domain(), this->integrator_, this->n_dofs_, this->dofs_);
+            // add stabilization method IF IT IS NECESSARY
+            double h = this->basis_.get_element_size();
+            // double Pe = b.norm() * h / (2 * mu);
+            //todo: check Peclet number and decide whether to use stabilizer
 
-        // streamline diffusion
-        auto StreamDiff = streamline_diffusion<FEM>(b);
-        SpMatrix<double> stab_ = assembler.discretize_operator(StreamDiff); // stabilization matrix
+            Assembler<FEM, DomainType, ReferenceBasis, Quadrature> assembler(pde.domain(), this->integrator_, this->n_dofs_, this->dofs_);
 
-        // strong staibilizer (GLS-SUPG-DW) [...]
+            // streamline diffusion
+            auto StreamDiff = streamline_diffusion<FEM>(b);
+            stab_ = assembler.discretize_operator(StreamDiff); // stabilization matrix
+
+            // strong staibilizer (GLS-SUPG-DW) [...]
+        }
 
         solver.compute(this->stiff_ + stab_);
         // stop if something was wrong
