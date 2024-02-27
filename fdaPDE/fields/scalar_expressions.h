@@ -79,6 +79,7 @@ template <int N, typename E> class ScalarExpr : public ScalarBase {
     template <int N_ = N> typename std::enable_if<N_ == Dynamic, void>::type resize(int n) { dynamic_inner_size_ = n; }
 
     void set_step(double h) { h_ = h; }   // set step size in derivative approximation
+    double step() const { return h_; }
     ScalarExprGradient<N, E> derive() const { return ScalarExprGradient<N, E>(get(), h_); }
     ScalarExprHessian<N, E> derive_twice() const { return ScalarExprHessian<N, E>(get(), h_); }
 };
