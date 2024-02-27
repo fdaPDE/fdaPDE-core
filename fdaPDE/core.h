@@ -19,7 +19,7 @@
 
 #include "utils.h"
 #include "fields.h"
-#include "mesh.h"
+#include "geometry.h"
 #include "linear_algebra.h"
 #include "optimization.h"
 #include "finite_elements.h"
