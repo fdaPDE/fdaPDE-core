@@ -294,16 +294,16 @@ template <typename T> class BST {
    private:
     using Container_ = BinaryTree<T>;
     struct Compare {
-        bool operator()(const T& data, const Container_::node_pointer& node) const { return data < node->data_; }
+        bool operator()(const T& data, typename Container_::node_pointer node) const { return data < node->data_; }
     };
     Container_ tree_;
    public:
-    using value_type    = Container_::value_type;
-    using node_type     = Container_::node_type;
-    using node_pointer  = Container_::node_pointer;
-    using dfs_iterator  = Container_::dfs_iterator;
-    using bfs_iterator  = Container_::bfs_iterator;
-    using leaf_iterator = Container_::leaf_iterator;
+    using value_type    = typename Container_::value_type;
+    using node_type     = typename Container_::node_type;
+    using node_pointer  = typename Container_::node_pointer;
+    using dfs_iterator  = typename Container_::dfs_iterator;
+    using bfs_iterator  = typename Container_::bfs_iterator;
+    using leaf_iterator = typename Container_::leaf_iterator;
   
     // constructors
     BST() = default;
