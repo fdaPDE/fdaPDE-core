@@ -632,3 +632,159 @@ TEST(fem_pde_test, derivative){
 
     EXPECT_TRUE(0 < 1);
 }
+
+// space time test
+TEST(fem_pde_test, space_time) {
+
+    // exact solution
+    int M = 101;
+    DMatrix<double> times(M, 1);
+    double time_max = 1e-3;
+    for (int j = 0; j < M; ++j) { times(j) = time_max / (M - 1) * j; }
+
+    int num_refinements = 1;
+    DMatrix<double> error_L2 = DMatrix<double>::Zero(M, num_refinements);
+    constexpr double pi = 3.14159265358979323846;
+
+    auto solution_expr = [](SVector<2> x, double t) -> double {
+        return (std::cos(pi*x[0])*std::cos(pi*x[1]) + 2)*std::exp(-t);
+    };
+    auto forcing_expr = [](SVector<2> x, double t) -> double {
+        return -4*std::exp(-t) + std::cos(pi*x[0])*std::cos(pi*x[1])*std::exp(-t)*(-2+2*pi*pi) + (4 + std::cos(pi*x[0])*std::cos(pi*x[0])*std::cos(pi*x[1])*std::cos(pi*x[1]) + 4*std::cos(pi*x[0])*std::cos(pi*x[1]))*std::exp(-2*t);
+    };
+
+    MeshLoader<Mesh2D> unit_square("unit_square_16");
+
+    // non linear reaction h_(u)*u
+    std::function<double(SVector<2>, SVector<1>)> h_ = [&](SVector<2> x, SVector<1> ff) -> double {return 1 - ff[0];};
+    // build the non-linearity object # N=2
+    NonLinearReaction<2, LagrangianBasis<decltype(unit_square.mesh),2>::ReferenceBasis> non_linear_reaction(h_);
+
+    // differential operator
+    auto L = dt<FEM>() - laplacian<FEM>() - non_linear_op<FEM>(non_linear_reaction);
+
+    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<2>> pde_(unit_square.mesh, times, L, h_);
+    
+    // compute boundary condition and exact solution
+    DMatrix<double> nodes_ = pde_.dof_coords();
+    DMatrix<double> dirichlet_bc(nodes_.rows(), M);
+    DMatrix<double> solution_ex(nodes_.rows(), M);
+    DMatrix<double> initial_condition(nodes_.rows(), 1);
+
+    for (int i = 0; i < nodes_.rows(); ++i) {
+        for (int j = 0; j < M; ++j) {
+            dirichlet_bc(i, j) = solution_expr(nodes_.row(i), times(j));
+            solution_ex(i, j) = solution_expr(nodes_.row(i), times(j));
+        }
+    }
+    // dirichlet_bc = DMatrix<double>::Zero(nodes_.rows(),M);
+
+    for (int i = 0; i < nodes_.rows(); ++i) { initial_condition(i) = solution_expr(nodes_.row(i), times(0)); }
+    // for (int i = 0; i < nodes_.rows(); ++i) { initial_condition(i) = 0.0; }
+    // set dirichlet conditions
+    pde_.set_dirichlet_bc(dirichlet_bc);
+
+    // set initial condition
+    pde_.set_initial_condition(initial_condition);
+
+    // request quadrature nodes and evaluate forcing on them
+    DMatrix<double> quadrature_nodes = pde_.quadrature_nodes();
+    DMatrix<double> f(quadrature_nodes.rows(), M);
+    for (int i = 0; i < quadrature_nodes.rows(); ++i) {
+        for (int j = 0; j < M; ++j) { f(i, j) = forcing_expr(quadrature_nodes.row(i), times(j)); }
+    }
+    pde_.set_forcing(f);
+    // init solver and solve differential problem
+    pde_.init();
+    pde_.solve();
+
+    // check computed error within theoretical expectations
+    // std::cout << "L2 errors:" << std::endl;
+    DMatrix<double> error_(nodes_.rows(), 1);
+    for (int j = 0; j < M; ++j) {
+        error_ = solution_ex.col(j) - pde_.solution().col(j);
+        error_L2(j, 0) = (pde_.mass() * error_.cwiseProduct(error_)).sum();
+        // std::cout << "t = " << j << " ErrorL2 = " << error_L2(j,0) << std::endl;
+    }
+
+    EXPECT_TRUE(error_L2.maxCoeff() < 1e-7);
+}
+
+
+// space time test
+TEST(fem_pde_test, travelling_waves) {
+
+    // exact solution
+    double time_max = 1;
+    int M = time_max/0.01;  // 0.01 is the time step
+    DMatrix<double> times(M, 1);
+    for (int j = 0; j < M; ++j) { times(j) = time_max / (M - 1) * j; }
+
+    int num_refinements = 1;
+    DMatrix<double> error_L2 = DMatrix<double>::Zero(M, num_refinements);
+
+    constexpr double c = 5/sqrt(6);
+    auto solution_expr = [&](SVector<2> x, double t) -> double {
+        return 1 / ((1 + (sqrt(2)-1)*std::exp((x[0]-c*t)/sqrt(6)))*(1 + (sqrt(2)-1)*std::exp((x[0]-c*t)/sqrt(6))));
+    };
+    auto forcing_expr = [](SVector<2> x, double t) -> double {
+        return 0;
+    };
+
+    MeshLoader<Mesh2D> unit_square("unit_square_16");
+
+    // non linear reaction h_(u)*u
+    std::function<double(SVector<2>, SVector<1>)> h_ = [&](SVector<2> x, SVector<1> ff) -> double {return 1 - ff[0];};
+    // build the non-linearity object # N=2
+    NonLinearReaction<2, LagrangianBasis<decltype(unit_square.mesh),2>::ReferenceBasis> non_linear_reaction(h_);
+
+    // differential operator
+    double d = 1e-3;
+    auto L = dt<FEM>() - d*laplacian<FEM>() - non_linear_op<FEM>(non_linear_reaction);
+
+    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<2>> pde_(unit_square.mesh, times, L, h_);
+    
+    // compute boundary condition and exact solution
+    DMatrix<double> nodes_ = pde_.dof_coords();
+    DMatrix<double> dirichlet_bc(nodes_.rows(), M);
+    DMatrix<double> solution_ex(nodes_.rows(), M);
+    DMatrix<double> initial_condition(nodes_.rows(), 1);
+
+    for (int i = 0; i < nodes_.rows(); ++i) {
+        for (int j = 0; j < M; ++j) {
+            dirichlet_bc(i, j) = solution_expr(nodes_.row(i), times(j));
+            solution_ex(i, j) = solution_expr(nodes_.row(i), times(j));
+        }
+    }
+    // dirichlet_bc = DMatrix<double>::Zero(nodes_.rows(),M);
+
+    for (int i = 0; i < nodes_.rows(); ++i) { initial_condition(i) = solution_expr(nodes_.row(i), times(0)); }
+    // for (int i = 0; i < nodes_.rows(); ++i) { initial_condition(i) = 0.0; }
+    // set dirichlet conditions
+    pde_.set_dirichlet_bc(dirichlet_bc);
+
+    // set initial condition
+    pde_.set_initial_condition(initial_condition);
+
+    // request quadrature nodes and evaluate forcing on them
+    DMatrix<double> quadrature_nodes = pde_.quadrature_nodes();
+    DMatrix<double> f(quadrature_nodes.rows(), M);
+    for (int i = 0; i < quadrature_nodes.rows(); ++i) {
+        for (int j = 0; j < M; ++j) { f(i, j) = forcing_expr(quadrature_nodes.row(i), times(j)); }
+    }
+    pde_.set_forcing(f);
+    // init solver and solve differential problem
+    pde_.init();
+    pde_.solve();
+
+    // check computed error within theoretical expectations
+    // std::cout << "L2 errors:" << std::endl;
+    DMatrix<double> error_(nodes_.rows(), 1);
+    for (int j = 0; j < M; ++j) {
+        error_ = solution_ex.col(j) - pde_.solution().col(j);
+        error_L2(j, 0) = (pde_.mass() * error_.cwiseProduct(error_)).sum();
+        // std::cout << "t = " << j << " ErrorL2 = " << error_L2(j,0) << std::endl;
+    }
+
+    EXPECT_TRUE(error_L2.maxCoeff() < 1e-3);
+}

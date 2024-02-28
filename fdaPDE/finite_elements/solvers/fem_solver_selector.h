@@ -26,6 +26,7 @@
 #include "fem_nonlinear_newton_solver.h"
 #include "fem_nonlinear_solver.h"
 #include "fem_linear_transport_elliptic_solver.h"   //ADDED
+#include "fem_space_time_solver.h"
 
 namespace fdapde {
 namespace core {
@@ -33,7 +34,8 @@ namespace core {
 // selects solver type depending on properties of operator E, carries domain D and forcing F to solver
 template <typename D, typename E, typename F, typename... Ts> struct pde_solver_selector<FEM, D, E, F, Ts...> {
     using type = typename switch_type<
-      switch_type_case< is_parabolic<E>::value, FEMLinearParabolicSolver<D, E, F, Ts...>>,
+      switch_type_case< is_parabolic<E>::value && !is_nonlinear<E>::value, FEMLinearParabolicSolver<D, E, F, Ts...>>,
+      switch_type_case< is_parabolic<E>::value && is_nonlinear<E>::value, FEMSpaceTimeSolver<D, E, F, Ts...>>,
       // switch_type_case<!is_parabolic<E>::value && is_nonlinear<E>::value, FEMNonLinearBroydenSolver<D, E, F, Ts...>>,
       // switch_type_case<!is_parabolic<E>::value && is_nonlinear<E>::value, FEMNonLinearFixedPointSolver<D, E, F, Ts...>>,
       switch_type_case<!is_parabolic<E>::value && is_nonlinear<E>::value, FEMNonLinearNewtonSolver<D, E, F, Ts...>>,

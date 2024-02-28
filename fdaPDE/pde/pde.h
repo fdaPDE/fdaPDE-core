@@ -75,6 +75,9 @@ class PDE {
     fdapde_enable_constructor_if(is_stationary, OperatorType) PDE(const D& domain, E diff_op,
       const std::function<double(SVector<N>, SVector<1>)>& non_linear_reaction) :
         domain_(domain), diff_op_(diff_op), solver_(domain), non_linear_reaction_(non_linear_reaction) { }
+    fdapde_enable_constructor_if(is_parabolic, OperatorType) PDE(const D& domain, const TimeDomainType& t, E diff_op,
+      const std::function<double(SVector<N>, SVector<1>)>& non_linear_reaction) :
+        domain_(domain), time_domain_(t), diff_op_(diff_op), solver_(domain), non_linear_reaction_(non_linear_reaction) { }
     // setters
     void set_forcing(const ForcingType& forcing_data) { forcing_data_ = forcing_data; }
     void set_differential_operator(OperatorType diff_op) { diff_op_ = diff_op; }

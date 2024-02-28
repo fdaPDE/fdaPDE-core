@@ -41,6 +41,7 @@
 #include "finite_elements/solvers/fem_nonlinear_newton_solver.h"
 #include "finite_elements/solvers/fem_linear_parabolic_solver.h"
 #include "finite_elements/solvers/fem_linear_transport_elliptic_solver.h"   //ADDED
+#include "finite_elements/solvers/fem_space_time_solver.h"
 #include "finite_elements/operators/laplacian.h"
 #include "finite_elements/operators/diffusion.h"
 #include "finite_elements/operators/advection.h"
