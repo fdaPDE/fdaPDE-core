@@ -52,19 +52,25 @@ struct FEMLinearTransportEllipticSolver : public FEMSolverBase<D, E, F, Ts...> {
         SpMatrix<double> stab_(this->n_dofs_, this->n_dofs_);
         // IF THERE IS AN ADVECTION TERM CHECK IF THE EQUATION NEEDS STABILIZATION
         if constexpr (fdapde::core::is_advection<E>::value){
-            // initialize empty value with the correct type using default constructor
-            auto mu = std::tuple_element_t<1, SolverArgs>();
-            auto b = std::tuple_element_t<2, SolverArgs>();
+
+            // initialize empty value with the CORRECT TYPE using default constructor
+            auto mu_temp = std::tuple_element_t<1, SolverArgs>();
+            auto b_temp = std::tuple_element_t<2, SolverArgs>();
+
             // retrieve the values of the PDE parameters from the singleton
-            PDEparameters<decltype(mu), decltype(b)> &PDEparams = PDEparameters<decltype(mu), decltype(b)>::getInstance(mu, b);
-            mu = std::get<0>(PDEparams.getData());
-            b = std::get<1>(PDEparams.getData());
-            // std::cout << "from elliptic transport solver: mu = " << mu << " b = " << b << std::endl;
+            PDEparameters<decltype(mu_temp), decltype(b_temp)> &PDEparams = PDEparameters<decltype(mu_temp),
+                    decltype(b_temp)>::getInstance(mu_temp, b_temp);
+
+            auto mu = std::get<0>(PDEparams.getData());
+            auto b = std::get<1>(PDEparams.getData());
+
+            // std::cout << "type of b is: " << typeid(b).name() << std::endl;
+            // std::cout << "b.norm() is: " << b.norm() << std::endl;
 
             // add stabilization method IF IT IS NECESSARY
             double h = this->basis_.get_element_size();
             // double Pe = b.norm() * h / (2 * mu);
-            //todo: check Peclet number and decide whether to use stabilizer
+            // todo: check Peclet number and decide whether to use stabilizer
 
             Assembler<FEM, DomainType, ReferenceBasis, Quadrature> assembler(pde.domain(), this->integrator_, this->n_dofs_, this->dofs_);
 

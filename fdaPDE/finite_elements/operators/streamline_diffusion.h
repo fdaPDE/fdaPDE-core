@@ -31,16 +31,14 @@ namespace core {
 template <typename T> class StreamlineDiffusion<FEM, T> : public DifferentialExpr<StreamlineDiffusion<FEM, T>> {
     // perform compile-time sanity checks
     static_assert(
-            std::is_base_of<MatrixBase, T>::value ||            // space-varying case
-            std::is_base_of<Eigen::MatrixBase<T>, T>::value);   // constant coefficient case
+      std::is_base_of<VectorBase, T>::value ||   // space-varying case
+      is_eigen_vector<T>::value);                // constant coefficient case
 private:
     T b_;               // transport tensor
-    // double h_ = 0.01;   // element size  // INFO HERE
 public:
-
     enum {
-        is_space_varying = false,
-        is_symmetric = true
+        is_space_varying = std::is_base_of<VectorBase, T> ::value,
+        is_symmetric = false
     };
     // constructor
     StreamlineDiffusion() = default;

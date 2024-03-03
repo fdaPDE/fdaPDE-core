@@ -114,6 +114,7 @@ template <int M, int N> class DiscretizedVectorField : public VectorExpr<M, N, D
     void forward(std::size_t i) {
         new (&value_) Eigen::Map<SVector<M>>(data_->data() + (i * N));   // construct map in place
     }
+    double norm(void) const { return data_->norm(); }   // How can I get the norm of a Discretized Vector Field?
 };
   
 // a generic binary operation node

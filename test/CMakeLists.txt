@@ -4,6 +4,7 @@ project(TEST)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_FLAGS "-O2 -march=x86-64 -std=c++17 -I${CMAKE_CURRENT_SOURCE_DIR}/../")
+# set(CMAKE_CXX_FLAGS "-O0 -march=x86-64 -std=c++17 -I${CMAKE_CURRENT_SOURCE_DIR}/../ -g") #use for debugging
 
 find_package (Eigen3 3.3 REQUIRED NO_MODULE)
 

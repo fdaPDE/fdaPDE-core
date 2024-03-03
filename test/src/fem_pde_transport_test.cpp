@@ -39,35 +39,28 @@ using fdapde::core::laplacian;
 using fdapde::core::dt;
 using fdapde::core::fem_order;
 using fdapde::core::make_pde;
-using fdapde::core::PDEparameters;
+using fdapde::core::PDEparameters;  // ADDED
+using fdapde::core::DiscretizedMatrixField; // ADDED
+using fdapde::core::DiscretizedVectorField; // ADDED
 
 #include "utils/mesh_loader.h"
 using fdapde::testing::MeshLoader;
 #include "utils/utils.h"
 using fdapde::testing::almost_equal;
 using fdapde::testing::DOUBLE_TOLERANCE;
+using fdapde::testing::read_csv;
 
 #include <iomanip>
 #include <string>
 
 // tests for Advection Dominated Elliptic Partial Differential Equations
-TEST(transport_test, transportP1) {
+TEST(transport_test, TransportConsantCoefficients) {
     // define exact solution
     auto solutionExpr = [](SVector<2> x) -> double {
         return 3*sin(x[0]) + 2*x[1];
     };
 
     // start with a transport-dominated differential operator
-
-    // sembra che questa dichiarazione funzioni, però poi ci sono dei problemi con la forma debole dell'operatore,
-    // perché nel metodo integrate facciamo .dot(b), ma adesso non si può più fare, non esistono infatti dei test
-    // nella libreria per questo caso
-    /*
-    auto b = [](const SVector<2>& x) -> SVector<2> {
-        return SVector<2>(x[0], x[1] + x[0]*2);
-    };
-    */
-
     SVector<2> b;  b << 1., 1.;
     double mu = 1e-9;
 
@@ -84,6 +77,7 @@ TEST(transport_test, transportP1) {
     auto L = - mu * laplacian<FEM>() + advection<FEM>(b); //+ reaction<FEM>(c_);
     // load sample mesh for order 1 basis
     MeshLoader<Mesh2D> unit_square("unit_square_32");
+    // MeshLoader<Mesh2D> unit_square("quasi_circle");
 
     constexpr std::size_t femOrder = 1;
 
@@ -112,52 +106,63 @@ TEST(transport_test, transportP1) {
     EXPECT_TRUE(error_L2 < 1e-6);
 
     // std::cout << "error_L2 = " << std::setprecision(17) << error_L2 << std::endl;
-
-    //save solution
-    //std::string titlename = "transport_test_solution_mu_" + std::to_string(mu) + "_b_" + std::to_string(b_[0]) + "_" + std::to_string(b_[1]) + ".txt";
-    std::string titlename = "transport_test_solution.txt";
-    std::ofstream file(titlename);
-    if (file.is_open()){
-        for(int i = 0; i < pde_.solution().rows(); ++i)
-            file << pde_.solution()(i) << '\n';
-            file.close();
-    } else {
-        std::cerr << "transport test unable to save solution" << std::endl;
-    }
 }
 
-/*
-TEST(transport_test, transportP2_32) {
+TEST(transport_test, TransportNonConstantCoefficients) {
     // define exact solution
     auto solutionExpr = [](SVector<2> x) -> double {
-        // return 3*x[0]*x[0] + 2*x[1]*x[1];
         return 3*sin(x[0]) + 2*x[1];
     };
 
-    // start with a transport-dominated differential operator
-    SVector<2> b;  b << 1., 1.;
-    double mu = 1e-9;
+    // define domain
+    // MeshLoader<Mesh2D> domain("quasi_circle");
+    MeshLoader<Mesh2D> domain("unit_square_32");
 
-    // evaluate the peclet number
-    double Pe = b.norm()*(double(1)/double(32))/(2*mu); //TODO va fatto meglio
-    std::cout << "Peclet number = " << Pe << std::endl;
+    // std::cout << "domain.mesh.n_elements() = " << domain.mesh.n_elements() << std::endl;
+
+    // define vector field containing transport data
+    VectorField<2> b_callable;
+    b_callable[0] = [](SVector<2> x) -> double { return std::pow(x[0], 2) + 1; };   // x^2 + 1
+    b_callable[1] = [](SVector<2> x) -> double { return 2 * x[0] + x[1]; };         // 2*x + y
+
+    size_t size_transport = domain.mesh.n_elements() * domain.mesh.element(0).coords().size();
+    // std::cout << "size of discretized transport = " << size_transport << std::endl;
+    DMatrix<double, Eigen::RowMajor> b_data(size_transport, 2);
+    int i = 0;
+    for (const auto& e : domain.mesh) {
+        for (int j = 0; j < e.coords().size(); ++j) {
+            SVector<2> x;
+            x << e.coords()[j][0], e.coords()[j][1];
+            b_data(i, 0) = b_callable[0](x);
+            b_data(i, 1) = b_callable[1](x);
+            // std::cout << "element = " << e.ID() << ", i = " << i << ",\t x = [" << x[0] << ", " << x[1] << "],\t b = [" << b_data(i, 0) << ", " << b_data(i, 1) << "]" << std::endl;
+            //if ( ((i + 1) % 3) == 0) std::cout << std::endl;
+            i++;
+        }
+    }
+    // wrap data into a field
+    DiscretizedVectorField<2,2> b_discretized(b_data);
+
+    // coefficients
+    double mu = 1; // 1e-9;
 
     // non-zero forcing term
-    auto forcingExpr = [mu, b](SVector<2> x) -> double {
-        // return 6*x[0]*b_[0] - 10*mu + 4*x[1]*b_[1];
-        return 2*b[1] + 3*b[0]*cos(x[0]) + 3*mu*sin(x[0]);
+    auto forcingExpr = [&mu, &b_callable](SVector<2> x) -> double {
+        // return 2*b[1] + 3*b[0]*cos(x[0]) + 3*mu*sin(x[0]);
+        return 2*b_callable[1](x) + 3*b_callable[0](x)*cos(x[0]) + 3*mu*sin(x[0]);
     };
     ScalarField<2> forcing(forcingExpr);   // wrap lambda expression in ScalarField object
 
-    auto L = - mu * laplacian<FEM>() + advection<FEM>(b); //+ reaction<FEM>(c_);
-    // load sample mesh for order 1 basis
-    MeshLoader<Mesh2D> unit_square("unit_square_32");
+    // save parameters in the PDEparameters singleton, these will be retrieved by the solver
+    PDEparameters<decltype(mu), decltype(b_discretized)> &PDEparams = PDEparameters<decltype(mu), decltype(b_discretized)>::getInstance(mu, b_discretized);
 
-    std::cout << "h = " << unit_square.mesh.element(0).measure() << std::endl;
+    // define differential operator
+    auto L = -mu*laplacian<FEM>() + advection<FEM>(b_discretized);
 
-    constexpr std::size_t femOrder = 2;
+    constexpr std::size_t femOrder = 1;
 
-    PDE<decltype(unit_square.mesh), decltype(L), ScalarField<2>, FEM, fem_order<femOrder>> pde_(unit_square.mesh, L, forcing);
+    PDE< decltype(domain.mesh), decltype(L), ScalarField<2>, FEM, fem_order<femOrder>, decltype(mu),
+            decltype(b_discretized)> pde_( domain.mesh, L, forcing );
 
     // compute boundary condition and exact solution
     DMatrix<double> nodes_ = pde_.dof_coords();
@@ -166,8 +171,8 @@ TEST(transport_test, transportP2_32) {
 
     // set exact sol & dirichlet conditions
     for (int i = 0; i < nodes_.rows(); ++i) {
-    solution_ex(i) = solutionExpr(nodes_.row(i));
-    dirichletBC(i) = solutionExpr(nodes_.row(i));
+        solution_ex(i) = solutionExpr(nodes_.row(i));
+        dirichletBC(i) = solutionExpr(nodes_.row(i));
     }
     pde_.set_dirichlet_bc(dirichletBC);
 
@@ -177,21 +182,10 @@ TEST(transport_test, transportP2_32) {
 
     // check computed error
     DMatrix<double> error_ = solution_ex - pde_.solution();
-    double error_L2 = (pde_.R0() * error_.cwiseProduct(error_)).sum();
-    EXPECT_TRUE(error_L2 < 1e-7);
+    double error_L2 = (pde_.mass() * error_.cwiseProduct(error_)).sum();
+    EXPECT_TRUE(error_L2 < 1e-6);
 
-    std::cout << "error_L2 = " << std::setprecision(17) << error_L2 << std::endl;
+    // std::cout << "error_L2 = " << std::setprecision(17) << error_L2 << std::endl;
 
-    //save solution
-    //std::string titlename = "transport_test_solution_mu_" + std::to_string(mu) + "_b_" + std::to_string(b_[0]) + "_" + std::to_string(b_[1]) + ".txt";
-    std::string titlename = "transport_test_solution_P2.txt";
-    std::ofstream file(titlename);
-    if (file.is_open()){
-    for(int i = 0; i < pde_.solution().rows(); ++i)
-    file << pde_.solution()(i) << '\n';
-    file.close();
-    } else {
-    std::cerr << "transport test unable to save solution" << std::endl;
-    }
+    EXPECT_TRUE(1);
 }
-*/
