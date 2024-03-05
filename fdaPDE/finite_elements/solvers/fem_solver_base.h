@@ -58,7 +58,7 @@ template <typename D, typename E, typename F, typename... Ts> class FEMSolverBas
     const Quadrature& integrator() const { return integrator_; }
     const ReferenceBasis& reference_basis() const { return reference_basis_; }
     const FunctionalBasis& basis() const { return basis_; }
-    std::size_t n_dofs() const { return n_dofs_; }   // number of degrees of freedom (FEM linear system's unknowns)
+    int n_dofs() const { return n_dofs_; }   // number of degrees of freedom (FEM linear system's unknowns)
     const DMatrix<int>& dofs() const { return dofs_; }
     DMatrix<double> dofs_coords() { return basis_.dofs_coords(); };   // computes the physical coordinates of dofs
     // flags
@@ -73,7 +73,7 @@ template <typename D, typename E, typename F, typename... Ts> class FEMSolverBas
         friend FEMSolverBase;
         const FEMSolverBase* fem_solver_;
         int index_;   // current boundary dof
-        boundary_dofs_iterator(const FEMSolverBase* fem_solver, int index) : fem_solver_(fem_solver), index_(index) {};
+        boundary_dofs_iterator(const FEMSolverBase* fem_solver, int index) : fem_solver_(fem_solver), index_(index) { }
        public:
         // fetch next boundary dof
         boundary_dofs_iterator& operator++() {
@@ -98,7 +98,7 @@ template <typename D, typename E, typename F, typename... Ts> class FEMSolverBas
     SpMatrix<double> stiff_;              // [stiff_]_{ij} = a(\psi_i, \psi_j), being a(.,.) the bilinear form
     SpMatrix<double> mass_;               // mass matrix, [mass_]_{ij} = \int_D (\psi_i * \psi_j)
 
-    std::size_t n_dofs_ = 0;        // degrees of freedom, i.e. the maximum ID in the dof_table_
+    int n_dofs_ = 0;                // degrees of freedom, i.e. the maximum ID in the dof_table_
     DMatrix<int> dofs_;             // for each element, the degrees of freedom associated to it
     DMatrix<int> boundary_dofs_;    // unknowns on the boundary of the domain, for boundary conditions prescription
 };
@@ -118,8 +118,8 @@ void FEMSolverBase<D, E, F, Ts...>::init(const PDE& pde) {
     stiff_ = assembler.discretize_operator(pde.differential_operator());
     stiff_.makeCompressed();
     // assemble forcing vector
-    std::size_t n = n_dofs_;   // degrees of freedom in space
-    std::size_t m;             // number of time points
+    int n = n_dofs_;   // degrees of freedom in space
+    int m;             // number of time points
     if constexpr (!std::is_base_of<ScalarBase, F>::value) {
         m = pde.forcing_data().cols();
         force_.resize(n * m, 1);
@@ -127,7 +127,7 @@ void FEMSolverBase<D, E, F, Ts...>::init(const PDE& pde) {
 
         // iterate over time steps if a space-time PDE is supplied
         if constexpr (is_parabolic<E>::value) {
-            for (std::size_t i = 1; i < m; ++i) {
+            for (int i = 1; i < m; ++i) {
                 force_.block(n * i, 0, n, 1) = assembler.discretize_forcing(pde.forcing_data().col(i));
             }
         }

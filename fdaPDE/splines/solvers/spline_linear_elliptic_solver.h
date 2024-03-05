@@ -31,7 +31,7 @@ struct SplineLinearEllipticSolver : public SplineSolverBase<D, E, F, Ts...> {
     SplineLinearEllipticSolver(const D& domain) : Base(domain) { }
     
     // solves linear system R1_*u = b, where R1_ : stiff matrix, b : discretized force
-    template <typename PDE> void solve(const PDE& pde) {
+    template <typename PDE> void solve([[maybe_unused]] const PDE& pde) {
         fdapde_static_assert(is_pde<PDE>::value, THIS_METHOD_IS_FOR_PDE_ONLY);
         if (!this->is_init) throw std::runtime_error("solver must be initialized first!");
 

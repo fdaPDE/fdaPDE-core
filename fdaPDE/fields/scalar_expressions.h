@@ -59,10 +59,11 @@ template <int N, typename E> class ScalarExpr : public ScalarBase {
     int dynamic_inner_size_ = 0;   // run-time base space dimension
     double h_ = 1e-3;              // step size used in derivative approximation
    public:
-    typedef typename static_dynamic_vector_selector<N>::type VectorType;
+    using VectorType = typename static_dynamic_vector_selector<N>::type;
     static constexpr int rows = 1;
     static constexpr int cols = 1;
     static constexpr int static_inner_size = N;   // dimensionality of base space (can be Dynamic)
+    static constexpr int NestAsRef = 0;           // whether to store the node by reference of by copy
 
     ScalarExpr() = default;
     ScalarExpr(int dynamic_inner_size) : dynamic_inner_size_(dynamic_inner_size) { }
@@ -71,7 +72,7 @@ template <int N, typename E> class ScalarExpr : public ScalarBase {
     inline double operator()(const VectorType& p) const { return static_cast<const E&>(*this)(p); }
     const E& get() const { return static_cast<const E&>(*this); }
     // forward i to all nodes of the expression. Does nothing if not redefined in E
-    template <typename T> void forward(T i) const { return; }
+    template <typename T> void forward([[maybe_unused]] T t) const { return; }
     // map unary operator- to a ScalarNegationOp expression node
     ScalarNegationOp<N, E> operator-() const { return ScalarNegationOp<N, E>(get(), dynamic_inner_size_); }
     inline constexpr int inner_size() const { return (N == Dynamic) ? dynamic_inner_size_ : static_inner_size; }
@@ -87,36 +88,41 @@ template <int N, typename E> class ScalarExpr : public ScalarBase {
 // an expression node representing a scalar value
 template <int N> class Scalar : public ScalarExpr<N, Scalar<N>> {
    private:
-    typedef ScalarExpr<N, Scalar<N>> Base;
-    double value_;
+    using Base = ScalarExpr<N, Scalar<N>>;
+    using VectorType = typename Base::VectorType;
+    double value_ = 0;
    public:
+    static constexpr int NestAsRef = 0;
     Scalar(double value, int n) : Base(n), value_(value) { }
-    inline double operator()(const typename Base::VectorType& p) const { return value_; };
+    inline double operator()([[maybe_unused]] const VectorType& p) const { return value_; };
 };
 
 // wraps an n_rows x 1 vector of data, acts as a double once forwarded the matrix row
 template <int N> class DiscretizedScalarField : public ScalarExpr<N, DiscretizedScalarField<N>> {
    private:
-    DMatrix<double, Eigen::RowMajor>* data_;
-    double value_;
+    using MatrixType = DMatrix<double, Eigen::RowMajor>;
+    MatrixType* data_;
+    mutable double value_ = 0;
    public:
     DiscretizedScalarField() = default;
-    DiscretizedScalarField(DMatrix<double, Eigen::RowMajor>& data) : data_(&data) {};
-    double operator()(const SVector<N>& p) const { return value_; }
-    void forward(Eigen::Index i) { value_ = data_->operator()(i, 0); }   // fix value_ to the i-th coefficient of data_
+    DiscretizedScalarField(MatrixType& data) : data_(&data) {};
+    double operator()([[maybe_unused]] const SVector<N>& p) const { return value_; }
+    void forward(int i) const { value_ = data_->operator()(i, 0); }   // impose value of value_
 };
 
 // expression template based arithmetic
 template <int N, typename OP1, typename OP2, typename BinaryOperation>
 class ScalarBinOp : public ScalarExpr<N, ScalarBinOp<N, OP1, OP2, BinaryOperation>> {
-    static_assert(OP1::static_inner_size == OP2::static_inner_size, "you mixed fields with different base dimension");
+    fdapde_static_assert(
+      OP1::static_inner_size == OP2::static_inner_size, YOU_MIXED_FIELDS_WITH_DIFFERENT_BASE_DIMENSION);
    private:
-    typedef ScalarExpr<N, ScalarBinOp<N, OP1, OP2, BinaryOperation>> Base;
-    typename std::remove_reference<OP1>::type op1_;   // first  operand
-    typename std::remove_reference<OP2>::type op2_;   // second operand
-    BinaryOperation f_;                               // operation to apply
+    using Base = ScalarExpr<N, ScalarBinOp<N, OP1, OP2, BinaryOperation>>;
+    typename internals::ref_select<const OP1>::type op1_;   // first  operand
+    typename internals::ref_select<const OP2>::type op2_;   // second operand
+    BinaryOperation f_;
    public:
     static constexpr int static_inner_size = OP1::static_inner_size;
+    static constexpr int NestAsRef = 0;
     // constructor
     ScalarBinOp(const OP1& op1, const OP2& op2, BinaryOperation f) :
         Base(op1.inner_size()), op1_(op1), op2_(op2), f_(f) {
@@ -127,27 +133,30 @@ class ScalarBinOp : public ScalarExpr<N, ScalarBinOp<N, OP1, OP2, BinaryOperatio
         return f_(op1_(p), op2_(p));
     }
     // forward to child nodes
-    template <typename T> const ScalarBinOp<N, OP1, OP2, BinaryOperation>& forward(T i) {
+    template <typename T> const ScalarBinOp<N, OP1, OP2, BinaryOperation>& forward(T i) const {
         op1_.forward(i); op2_.forward(i);
         return *this;
     }
 };
-DEFINE_SCALAR_BINARY_OPERATOR(operator+, std::plus<>)
-DEFINE_SCALAR_BINARY_OPERATOR(operator-, std::minus<>)
+DEFINE_SCALAR_BINARY_OPERATOR(operator+, std::plus<>      )
+DEFINE_SCALAR_BINARY_OPERATOR(operator-, std::minus<>     )
 DEFINE_SCALAR_BINARY_OPERATOR(operator*, std::multiplies<>)
-DEFINE_SCALAR_BINARY_OPERATOR(operator/, std::divides<>)
+DEFINE_SCALAR_BINARY_OPERATOR(operator/, std::divides<>   )
 
 // definition of unary operation nodes
-template <int N, typename OP1, typename UnaryOperation>
-class ScalarUnOp : public ScalarExpr<N, ScalarUnOp<N, OP1, UnaryOperation>> {
+template <int N, typename OP, typename UnaryOperation>
+class ScalarUnOp : public ScalarExpr<N, ScalarUnOp<N, OP, UnaryOperation>> {
    private:
-    typedef ScalarExpr<N, ScalarUnOp<N, OP1, UnaryOperation>> Base;
-    typename std::remove_reference<OP1>::type op1_;   // operand
+    using Base = ScalarExpr<N, ScalarUnOp<N, OP, UnaryOperation>>;
+    using VectorType = typename Base::VectorType;
+    typename internals::ref_select<const OP>::type op_;   // operand
     UnaryOperation f_;                                // operation to apply
    public:
+    static constexpr int static_inner_size = OP::static_inner_size;
+    static constexpr int NestAsRef = 0;
     // constructor
-    ScalarUnOp(const OP1& op1, UnaryOperation f, int n) : Base(n), op1_(op1), f_(f) {};
-    double operator()(const typename Base::VectorType& p) const { return f_(op1_(p)); }
+    ScalarUnOp(const OP& op, UnaryOperation f, int n) : Base(n), op_(op), f_(f) {};
+    double operator()(const VectorType& p) const { return f_(op_(p)); }
 };
 DEFINE_SCALAR_UNARY_OPERATOR(sin, std::sin)
 DEFINE_SCALAR_UNARY_OPERATOR(cos, std::cos)
@@ -158,14 +167,17 @@ DEFINE_SCALAR_UNARY_OPERATOR(log, std::log)
 // unary negation operation
 template <int N, typename OP> class ScalarNegationOp : public ScalarExpr<N, ScalarNegationOp<N, OP>> {
    private:
-    typedef ScalarExpr<N, ScalarNegationOp<N, OP>> Base;
-    typename std::remove_reference<OP>::type op_;
+    using Base = ScalarExpr<N, ScalarNegationOp<N, OP>>;
+    using VectorType = typename Base::VectorType;
+    typename internals::ref_select<const OP>::type op_;
    public:
+    static constexpr int static_inner_size = OP::static_inner_size;
+    static constexpr int NestAsRef = 0;
     // constructor
     ScalarNegationOp(const OP& op, int n) : Base(n), op_(op) {};  
-    double operator()(const typename Base::VectorType& p) const { return -op_(p); }
+    double operator()(const VectorType& p) const { return -op_(p); }
     // call parameter evaluation on stored operand
-    template <typename T> const ScalarNegationOp<N, OP>& forward(T i) {
+    template <typename T> const ScalarNegationOp<N, OP>& forward(T i) const {
         op_.forward(i);
         return *this;
     }

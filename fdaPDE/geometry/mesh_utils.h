@@ -51,18 +51,19 @@ constexpr int ct_nneighbors(const int M) { return (M == 1) ? fdapde::Dynamic : (
 template <int M, int N> class Facet {
    private:
     std::size_t ID_;
-    std::vector<int> elements_;          // elements insisting on the facet
-    std::array<int, M> node_ids_;        // ID of nodes composing the facet
-    std::array<SVector<N>, M> coords_;   // pyhisical coordinates of the nodes composing the facet
-    bool boundary_; // asserted true if the edge is on boundary, i.e. all its nodes are boundary nodes
+    std::array<int, M> node_ids_;   // ID of nodes composing the facet
+    SMatrix<N, M> coords_;          // pyhisical coordinates of the nodes composing the facet
+    std::vector<int> elements_;     // elements insisting on the facet
+    bool boundary_;                 // asserted true if the edge is on boundary, i.e. all its nodes are boundary nodes
    public:
-    Facet(std::size_t ID, const std::array<int, M>& node_ids, const std::array<SVector<N>, M>& coords,
-	  const std::vector<int>& elements, bool boundary) :
-      ID_(ID), node_ids_(node_ids), coords_(coords), elements_(elements), boundary_(boundary) {};
+    Facet(
+      std::size_t ID, const std::array<int, M>& node_ids, const SMatrix<N, M>& coords, const std::vector<int>& elements,
+      bool boundary) :
+        ID_(ID), node_ids_(node_ids), coords_(coords), elements_(elements), boundary_(boundary) {};
 
     // getters
     std::size_t ID() const { return ID_; }
-    const std::array<SVector<N>, M>& coords() const { return coords_; }
+    const SMatrix<N, M>& coords() const { return coords_; }
     const std::vector<int>& adjacent_elements() const { return elements_; }
     const std::array<int, M>& node_ids() const { return node_ids_; }
     bool on_boundary() const { return boundary_; }

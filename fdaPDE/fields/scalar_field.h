@@ -27,14 +27,15 @@ namespace core {
 
 // a functor representing a constant field
 template <int N> class ConstantField : public ScalarExpr<N, ConstantField<N>> {
-    double c_;
+    using VectorType = typename static_dynamic_vector_selector<N>::type;
+    double c_ = 0;
    public:
-    ConstantField(double c) : c_(c) {};
-    inline double operator()(const typename static_dynamic_vector_selector<N>::type& p) const { return c_; }
+    explicit ConstantField(double c) : c_(c) { }
+    inline double operator()([[maybe_unused]] const VectorType& p) const { return c_; }
 };
 // a functor representing a zero field
 template <int N> struct ZeroField : public ConstantField<N> {
-    ZeroField() : ConstantField<N>(0) {};
+    explicit ZeroField() : ConstantField<N>(0) { }
 };
 
 // a template class for handling general scalar fields.
@@ -43,17 +44,17 @@ template <
   typename F = std::function<double(static_dynamic_vector_selector_t<N>)>>
 class ScalarField : public ScalarExpr<N, ScalarField<N, F>> {
    public:
-    typedef F FieldType;   // type of wrapped functor
-    typedef typename static_dynamic_vector_selector<N>::type VectorType;
-    typedef typename static_dynamic_matrix_selector<N, N>::type MatrixType;
-    typedef ScalarExpr<N, ScalarField<N, F>> Base;
+    using FieldType = F;   // type of wrapped functor
+    using VectorType = typename static_dynamic_vector_selector<N>::type;
+    using MatrixType = typename static_dynamic_matrix_selector<N, N>::type;
+    using Base = ScalarExpr<N, ScalarField<N, F>>;
     static constexpr int DomainDimension = N;
     static_assert(
       std::is_invocable<F, VectorType>::value &&
       std::is_same<typename std::invoke_result<F, VectorType>::type, double>::value);
     // constructors
-    template <int N_ = N, typename std::enable_if<N_ != Dynamic, int>::type = 0> ScalarField() {};
-    template <int N_ = N, typename std::enable_if<N_ == Dynamic, int>::type = 0> ScalarField(int n) : Base(n) {};
+    explicit ScalarField() requires(N != Dynamic) { }
+    explicit ScalarField(int n) requires (N == Dynamic) : Base(n) { }
     explicit ScalarField(const FieldType& f) : f_(f) {};
 
     // assignement and constructor from a ScalarExpr requires the base type F to be a std::function<>
@@ -64,7 +65,7 @@ class ScalarField : public ScalarExpr<N, ScalarField<N, F>> {
         E op = f.get();
         std::function<double(VectorType)> field_expr = [op](SVector<N> x) -> double { return op(x); };
         f_ = field_expr;
-    };
+    }
     template <typename E, typename U = FieldType>
     typename std::enable_if<std::is_same<U, std::function<double(VectorType)>>::value, ScalarField<N>&>::type
     operator=(const ScalarExpr<N, E>& f) {
@@ -72,7 +73,7 @@ class ScalarField : public ScalarExpr<N, ScalarField<N, F>> {
         std::function<double(VectorType)> field_expr = [op](VectorType x) -> double { return op(x); };
         f_ = field_expr;
         return *this;
-    };
+    }
     // assignment from lambda expression
     template <typename L, typename U = FieldType>
     typename std::enable_if<std::is_same<U, std::function<double(VectorType)>>::value, ScalarField<N>&>::type

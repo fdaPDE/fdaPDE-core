@@ -177,10 +177,6 @@ struct fn_ptr_traits_impl<R (T::*)(Args...) const> : public fn_ptr_traits_base<R
     using MemFnPtrType = R (T::*)(Args...) const;
 };
 template <auto FnPtr> struct fn_ptr_traits : public fn_ptr_traits_impl<decltype(FnPtr)> { };
-
-// macro for SFINAE based selection of constructor in overload resolution
-#define fdapde_enable_constructor_if(TRAIT_CONDITION, T)                                                               \
-    template <typename T_ = T, typename std::enable_if<TRAIT_CONDITION<T_>::value, int>::type = 0>
   
 }   // namespace fdapde
 

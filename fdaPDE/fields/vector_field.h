@@ -33,24 +33,20 @@ template <int M, int N = M,   // input/output space dimensions (fdapde::Dynamic 
 	  typename F = std::function<double(static_dynamic_vector_selector_t<M>)>>
 class VectorField : public VectorExpr<M, N, VectorField<M, N, F>> {
    public:
-    typedef F FieldType;   // type of each field's component
-    typedef typename static_dynamic_vector_selector<M>::type InnerVectorType;
-    typedef typename static_dynamic_vector_selector<N>::type OuterVectorType;
-    typedef VectorExpr<M, N, VectorField<M, N, F>> Base;
+    using FieldType = F;   // type of each field's component
+    using InnerVectorType = typename static_dynamic_vector_selector<M>::type;
+    using OuterVectorType = typename static_dynamic_vector_selector<N>::type;
+    using Base = VectorExpr<M, N, VectorField<M, N, F>>;
     using Base::inner_size;   // \mathbb{R}^M
     using Base::outer_size;   // \mathbb{R}^N
     static_assert(
       std::is_invocable<F, InnerVectorType>::value &&
       std::is_same<typename std::invoke_result<F, InnerVectorType>::type, double>::value);
     // constructors
-    template <int N_ = N, typename std::enable_if<N_ != Dynamic, int>::type = 0> VectorField() { field_.resize(N); };
-    template <int N_ = N, typename std::enable_if<N_ == Dynamic, int>::type = 0>
-    VectorField(int m, int n) : Base(m, n) {
-        field_.resize(n, ScalarField<M, FieldType>(m));
-    };
-
+    VectorField() requires(N != Dynamic) { field_.resize(N); }
+    VectorField(int m, int n) requires(N == Dynamic) : Base(m, n) { field_.resize(n, ScalarField<M, FieldType>(m)); }
     VectorField(const std::vector<FieldType>& v) {
-      fdapde_assert(v.size() == outer_size());
+      fdapde_assert(int(v.size()) == outer_size());
       field_.reserve(v.size());
       for (std::size_t i = 0; i < v.size(); ++i) { field_.emplace_back(v[i]); }
     }

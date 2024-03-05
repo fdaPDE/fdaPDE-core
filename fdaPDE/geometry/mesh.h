@@ -27,20 +27,15 @@
 #include "../utils/symbols.h"
 #include "element.h"
 #include "mesh_utils.h"
-#include "reference_element.h"
 #include "point_location/point_location.h"
 #include "point_location/tree_search.h"
 
 namespace fdapde {
 namespace core {
 
-// trait to select a proper neighboring storage structure depending on mesh type.
-template <int M, int N> struct neighboring_structure {
-    using type = typename std::conditional<is_network<M, N>::value, SpMatrix<int>, DMatrix<int>>::type;
-};
-
 template <int M, int N> class Mesh {
    protected:
+    using neigh_container = std::conditional_t<is_network<M, N>::value, SpMatrix<int>, DMatrix<int>>;
     // physical coordinates of mesh's vertices
     DMatrix<double> nodes_ {};
     int n_nodes_ = 0;
@@ -50,7 +45,7 @@ template <int M, int N> class Mesh {
     // vector of binary coefficients such that, boundary_[j] = 1 \iff node j is on boundary
     DMatrix<int> boundary_ {};
     SMatrix<2, N> range_ {};   // mesh bounding box (column i maps to the i-th dimension)
-    typename neighboring_structure<M, N>::type neighbors_ {};
+    neigh_container neighbors_ {};
     // identifiers of nodes composing each facet of the mesh (linearly stored in a row-major format)
     std::vector<int> facets_ {};
     std::unordered_map<int, std::vector<int>> facet_to_element_ {};   // map from facet id to elements insisting on it
@@ -79,7 +74,7 @@ template <int M, int N> class Mesh {
     bool is_on_boundary(int ID) const { return boundary_(ID) == 1; }
     const DMatrix<double>& nodes() const { return nodes_; }
     const DMatrix<int, Eigen::RowMajor>& elements() const { return elements_; }
-    const typename neighboring_structure<M, N>::type& neighbors() const { return neighbors_; }
+    const neigh_container& neighbors() const { return neighbors_; }
     const DMatrix<int>& boundary() const { return boundary_; }
     int n_elements() const { return n_elements_; }
     int n_nodes() const { return n_nodes_; }
@@ -273,14 +268,13 @@ Mesh<M, N>::Mesh(const DMatrix<double>& nodes, const DMatrix<int>& elements, con
     // precompute elements informations for fast access
     elements_cache_.reserve(n_elements_);
     std::array<int, ct_nvertices(M)> node_ids {};
-    std::array<SVector<N>, ct_nvertices(M)> coords {};
+    SMatrix<N, ct_nvertices(M)> coords {};
     std::array<int, ct_nneighbors(M)> neighbors {};
     for (int i = 0; i < n_elements_; ++i) {
         bool boundary = false;   // element on boundary \iff at least one of its nodes is on boundary
         for (int j = 0; j < ct_nvertices(M); ++j) {
             int node_id = elements_(i, j);
-            SVector<N> node(nodes_.row(node_id));    // physical coordinate of the node
-            coords[j] = node;
+            coords.col(j) = nodes_.row(node_id);     // physical coordinate of the node
             node_ids[j] = node_id;                   // global id of node in the mesh
             boundary |= (boundary_(node_id) == 1);   // boundary status
             neighbors[j] = neighbors_(i, j);         // neighboring element on the facet opposite to node_id
@@ -303,7 +297,7 @@ Mesh<M, N>::Mesh(const DMatrix<double>& nodes, const DMatrix<int>& elements, con
     range_.row(0) = nodes_.colwise().minCoeff();
     range_.row(1) = nodes_.colwise().maxCoeff();
     // compute facets and facet to elements boundings (for linear networks, facets coincide with nodes)
-    for (std::size_t i = 0; i < n_elements_; ++i) {
+    for (int i = 0; i < n_elements_; ++i) {
         facet_to_element_[elements_(i, 0)].push_back(i);
         facet_to_element_[elements_(i, 1)].push_back(i);
     }
@@ -325,14 +319,13 @@ Mesh<M, N>::Mesh(const DMatrix<double>& nodes, const DMatrix<int>& elements, con
     // precompute elements informations for fast access
     elements_cache_.reserve(n_elements_);
     std::array<int, ct_nvertices(1)> node_ids {};
-    std::array<SVector<2>, ct_nvertices(1)> coords {};
+    SMatrix<2, ct_nvertices(1)> coords;
     for (int i = 0; i < n_elements_; ++i) {
         std::vector<int> neighbors {};
         bool boundary = false;   // element on boundary \iff at least one of its nodes is on boundary
         for (int j = 0; j < ct_nvertices(1); ++j) {
             int node_id = elements_(i, j);
-            SVector<2> node(nodes_.row(node_id));    // physical coordinate of the node
-            coords[j] = node;
+            coords.col(j) = nodes_.row(node_id);     // physical coordinate of the node
             node_ids[j] = node_id;                   // global id of node in the mesh
             boundary |= (boundary_(node_id) == 1);   // boundary status
         }
@@ -346,11 +339,11 @@ Mesh<M, N>::Mesh(const DMatrix<double>& nodes, const DMatrix<int>& elements, con
 
 template <int M, int N> Facet<M, N> Mesh<M, N>::facet(int ID) const {
     // fetch facet nodes informations
-    std::array<SVector<N>, n_vertices_per_facet> coords {};
+    SMatrix<N, n_vertices_per_facet> coords {};
     std::array<int, n_vertices_per_facet> node_ids {};
     bool on_boundary = true;   // facet is a boundary facet \iff all its nodes are ob boundary
     for (int i = 0; i < n_vertices_per_facet; ++i) {
-        coords[i] = SVector<N>(nodes_.row(i));
+        coords.col(i) = nodes_.row(i);
         node_ids[i] = *(facets_.begin() + ID * n_vertices_per_facet + i);
         on_boundary &= is_on_boundary(node_ids[i]);
     }
@@ -368,7 +361,7 @@ template <> class Mesh<1, 1> {
     int n_elements_ = 0;
     SVector<2> range_ {};   // mesh bounding box (minimum and maximum coordinates of interval)
     DMatrix<int> neighbors_ {};
-
+    DMatrix<int> boundary_ {};
     // precomputed set of elements
     std::vector<Element<1, 1>> elements_cache_ {};
    public:
@@ -383,30 +376,35 @@ template <> class Mesh<1, 1> {
 
         // build elements and neighboring structure
         elements_.resize(n_elements_, 2);
-        for (std::size_t i = 0; i < n_nodes_ - 1; ++i) {
+        for (int i = 0; i < n_nodes_ - 1; ++i) {
             elements_(i, 0) = i;
             elements_(i, 1) = i + 1;
         }
         neighbors_ = DMatrix<int>::Constant(n_elements_, n_neighbors_per_element, -1);
         neighbors_(0, 1) = 1;
-        for (std::size_t i = 1; i < n_elements_ - 1; ++i) {
+        for (int i = 1; i < n_elements_ - 1; ++i) {
             neighbors_(i, 0) = i - 1;
             neighbors_(i, 1) = i + 1;
         }
         neighbors_(n_elements_ - 1, 0) = n_elements_ - 2;
+	boundary_ = DMatrix<int>::Zero(n_nodes_, 1);
+	boundary_(0, 0) = 1;
+	boundary_(n_nodes_ - 1, 0) = 1;
 
         // precompute elements informations for fast access
         elements_cache_.reserve(n_elements_);
         for (int i = 0; i < n_elements_; ++i) {
             bool boundary = i == 0 || i == (n_elements_ - 1);   // element on boundary \iff its ID is 0 or n_elements_-1
+            SMatrix<1, 2> coords;
+            coords << node(i), node(i + 1);
             elements_cache_.emplace_back(
-              i, std::array<int, 2> {i, i + 1}, std::array<SVector<1>, 2> {node(i), node(i + 1)},
-              std::array<int, 2> {neighbors_(i, 0), neighbors_(i, 1)}, boundary);
+              i, std::array<int, 2> {i, i + 1}, coords, std::array<int, 2> {neighbors_(i, 0), neighbors_(i, 1)},
+              boundary);
         }
         return;
     };
     // construct from interval's bounds [a, b] and the number of subintervals n into which split [a, b]
-    Mesh(double a, double b, std::size_t n) : Mesh(DVector<double>::LinSpaced(n + 1, a, b)) { }
+    Mesh(double a, double b, int n) : Mesh(DVector<double>::LinSpaced(n + 1, a, b)) { }
 
     // getters
     const Element<1, 1>& element(int ID) const { return elements_cache_[ID]; }
@@ -416,6 +414,7 @@ template <> class Mesh<1, 1> {
     const DVector<double>& nodes() const { return nodes_; }
     const DMatrix<int, Eigen::RowMajor>& elements() const { return elements_; }
     const DMatrix<int>& neighbors() const { return neighbors_; }
+    const DMatrix<int>& boundary() const { return boundary_; }
     int n_elements() const { return n_elements_; }
     int n_nodes() const { return n_nodes_; }
     SVector<2> range() const { return range_; }
@@ -446,12 +445,12 @@ template <> class Mesh<1, 1> {
         DVector<int> result;
         result.resize(points.rows());
         // start search
-        for (std::size_t i = 0; i < points.rows(); ++i) {
+        for (int i = 0; i < points.rows(); ++i) {
             // check if point is inside
             if (points[i] < range_[0] || points[i] > range_[1]) {
                 result[i] = -1;
             } else {
-                // search by binary search strategy
+                // binary search strategy
                 int h_min = 0, h_max = n_nodes_;
                 while (true) {
                     int j = h_min + std::floor((h_max - h_min) / 2);
@@ -459,10 +458,10 @@ template <> class Mesh<1, 1> {
                         result[i] = j;
                         break;
                     } else {
-                        if (points[i] < nodes_[j]) {
-                            h_max = j;   // search on the left
-                        } else {
-                            h_min = j;   // search on the right
+                        if (points[i] < nodes_[j]) {   // search on the left
+                            h_max = j;
+                        } else {   // search on the right
+                            h_min = j;
                         }
                     }
                 }

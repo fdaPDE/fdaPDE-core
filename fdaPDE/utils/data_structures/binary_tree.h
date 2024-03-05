@@ -357,7 +357,6 @@ template <typename T> class BST {
     // search in O(log(n)) time, return end iterator if element is not in the tree
     dfs_iterator find(const T& data) const {
         node_pointer current = tree_.root().node;
-        node_pointer* tmp;
         while (current->l_child_ || current->r_child_) {   // cycle until leaf not found
             if (current->data_ == data) { return dfs_iterator(current); }
             // move down

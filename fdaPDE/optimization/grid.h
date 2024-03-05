@@ -35,8 +35,14 @@ template <int N, typename... Args> class Grid {
     VectorType x_current;
 
     // constructor
-    template <int N_ = sizeof...(Args), typename std::enable_if<N_ != 0, int>::type = 0> Grid() {};
-    Grid(Args&&... callbacks) : callbacks_(std::make_tuple(std::forward<Args>(callbacks)...)) {};
+    template <int N_ = sizeof...(Args), typename std::enable_if<N_ != 0, int>::type = 0> Grid() { }
+    Grid(Args&&... callbacks) : callbacks_(std::make_tuple(std::forward<Args>(callbacks)...)) { }
+    // copy semantic
+    Grid(const Grid& other) : callbacks_(other.callbacks_) { }
+    Grid& operator=(const Grid& other) {
+        callbacks_ = other.callbacks_;
+        return *this;
+    }
 
     template <typename F>
     VectorType optimize(F& objective, const std::vector<VectorType>& grid) {

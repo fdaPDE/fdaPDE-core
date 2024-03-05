@@ -30,12 +30,9 @@ template <> struct dT<FEM> : public DifferentialExpr<dT<FEM>> {
         is_space_varying = false,
         is_symmetric = true
     };
-
     // return zero field
-    template <typename... Args> auto integrate(const std::tuple<Args...>& mem_buffer) const {
-        IMPORT_FEM_MEM_BUFFER_SYMBOLS(mem_buffer);
-        // recover dimensionality of weak formulation from \psi_i
-        return ScalarField<decltype(psi_i)::PtrType::input_space_dimension>::Zero();
+    template <typename... Args> auto integrate([[maybe_unused]] const std::tuple<Args...>& mem_buffer) const {
+        return ScalarField<std::tuple_element_t<0, std::tuple<Args...>>::PtrType::input_space_dimension>::Zero();
     }
 };
 

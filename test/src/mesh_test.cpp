@@ -35,15 +35,15 @@ using fdapde::testing::MeshLoader;
 // test suite for testing both non-manifold meshes (2D/3D) and manifold mesh (2.5D/1.5D)
 template <typename E> struct mesh_test : public ::testing::Test {
     MeshLoader<E> mesh_loader {};   // use default mesh
-    static constexpr unsigned int M = MeshLoader<E>::M;
-    static constexpr unsigned int N = MeshLoader<E>::N;
+    static constexpr int M = MeshLoader<E>::M;
+    static constexpr int N = MeshLoader<E>::N;
     typedef E MeshType;
 };
 TYPED_TEST_SUITE(mesh_test, MESH_TYPE_LIST);
 
 // check points' coordinate embedded in an element are loaded correctly
 TYPED_TEST(mesh_test, elements_construction) {
-    for (std::size_t i = 0; i < this->mesh_loader.mesh.n_elements(); ++i) {
+    for (int i = 0; i < this->mesh_loader.mesh.n_elements(); ++i) {
         // request element with ID i
         auto e = this->mesh_loader.mesh.element(i);
         // check coordinates stored in element built from Mesh object match raw informations
@@ -53,8 +53,8 @@ TYPED_TEST(mesh_test, elements_construction) {
         for (int k = 0; k < raw_elements.size(); ++k) {
             int nodeID = raw_elements[k];
             auto p = raw_points.row(nodeID);
-            SVector<TestFixture::N> ePoint = e.coords()[j];
-            for (std::size_t idx = 0; idx < TestFixture::N; ++idx) { EXPECT_TRUE(almost_equal(p[idx], ePoint[idx])); }
+            SVector<TestFixture::N> ePoint = e.coord(j);
+            for (int idx = 0; idx < TestFixture::N; ++idx) { EXPECT_TRUE(almost_equal(p[idx], ePoint[idx])); }
             j++;
         }
     }
@@ -65,9 +65,9 @@ TYPED_TEST(mesh_test, edges_construction) {
     constexpr int K = TestFixture::MeshType::n_vertices_per_facet;
     // load raw edges
     std::vector<std::vector<int>> expected_edge_set;
-    for (std::size_t i = 0; i < this->mesh_loader.edges_.rows(); ++i) {
+    for (int i = 0; i < this->mesh_loader.edges_.rows(); ++i) {
         std::vector<int> e {};
-        for (std::size_t j = 0; j < K; ++j) { e.push_back(this->mesh_loader.edges_(i, j)); }
+        for (int j = 0; j < K; ++j) { e.push_back(this->mesh_loader.edges_(i, j)); }
         std::sort(e.begin(), e.end());   // normalize wrt ordering of edge's nodes
         expected_edge_set.push_back(e);
     }
@@ -76,7 +76,7 @@ TYPED_TEST(mesh_test, edges_construction) {
     std::vector<bool> edge_mask(expected_edge_set.size(), false);
     for (auto it = this->mesh_loader.mesh.facet_begin(); it != this->mesh_loader.mesh.facet_end(); ++it) {
         std::vector<int> e {};
-        for (std::size_t j = 0; j < K; ++j) { e.push_back((*it).node_ids()[j]); }
+        for (int j = 0; j < K; ++j) { e.push_back((*it).node_ids()[j]); }
         std::sort(e.begin(), e.end());   // normalize wrt ordering of edge's node
 
         // find this edge in expected set
@@ -100,8 +100,8 @@ TYPED_TEST(mesh_test, neighbors_construction) {
         bool result = true;
 	int n_row = this->mesh_loader.neighbors_.rows();
 	int n_col = this->mesh_loader.neighbors_.cols();
-	for(std::size_t i = 0; i < n_row; ++i) {
-	  for(std::size_t j = 0; j < n_col; ++j){
+	for(int i = 0; i < n_row; ++i) {
+	  for(int j = 0; j < n_col; ++j){
 	    if(this->mesh_loader.neighbors_(i,j) != this->mesh_loader.mesh.neighbors()(i,j)) { result = false; }
 	  }
 	}
@@ -121,7 +121,7 @@ TYPED_TEST(mesh_test, neighbors_construction) {
 // performs some checks on the mesh topology, e.g. checks that stated neighbors shares exactly M points
 TYPED_TEST(mesh_test, boundary_checks) {
     // cycle over all mesh elements
-    for (std::size_t i = 0; i < this->mesh_loader.mesh.n_elements(); ++i) {
+    for (int i = 0; i < this->mesh_loader.mesh.n_elements(); ++i) {
         auto e = this->mesh_loader.mesh.element(i);
         // check that neighboing elements have always M points in common
         for (int neigh_id : e.neighbors()) {
@@ -130,12 +130,12 @@ TYPED_TEST(mesh_test, boundary_checks) {
                 auto n = this->mesh_loader.mesh.element(neigh_id);
                 // take nodes of both elements
                 std::array<SVector<TestFixture::N>, TestFixture::M + 1> eList, nList;
-                for (std::size_t j = 0; j < TestFixture::M + 1; ++j) {
-                    eList[j] = e.coords()[j];
-                    nList[j] = n.coords()[j];
+                for (int j = 0; j < TestFixture::M + 1; ++j) {
+                    eList[j] = e.coord(j);
+                    nList[j] = n.coord(j);
                 }
                 // check that the points in common between the two are exactly M
-                std::size_t matches = 0;
+                int matches = 0;
                 for (SVector<TestFixture::N> p : eList) {
                     if (std::find(nList.begin(), nList.end(), p) != nList.end()) matches++;
                 }
@@ -144,7 +144,7 @@ TYPED_TEST(mesh_test, boundary_checks) {
                 // check that at least one vertex of e is detected as boundary point
                 bool element_on_boundary = false;
                 auto node_ids = e.node_ids();
-                for (std::size_t n : node_ids) {
+                for (int n : node_ids) {
                     if (this->mesh_loader.mesh.is_on_boundary(n)) {   // mesh detects this point as boundary point
                         element_on_boundary = true;
                     }

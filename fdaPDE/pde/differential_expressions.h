@@ -104,7 +104,9 @@ class DifferentialScalar : public DifferentialExpr<DifferentialScalar> {
     DifferentialScalar() = default;
     DifferentialScalar(double value) : value_(value) { }
     // integrate method returns the stored value
-    template <typename... Args> auto integrate(const std::tuple<Args...>& mem_buffer) const { return value_; }
+    template <typename... Args> auto integrate([[maybe_unused]] const std::tuple<Args...>& mem_buffer) const {
+        return value_;
+    }
     std::tuple<DifferentialScalar> get_operator_type() const { return std::make_tuple(*this); }
     enum { is_space_varying = false, is_symmetric = true };
 };

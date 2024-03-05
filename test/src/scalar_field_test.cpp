@@ -245,7 +245,7 @@ TEST(scalar_field_test, differentiable_field) {
     ScalarField<2> sf(baseField);
     // build explicitly the gradient field using list initialization
     std::function<double(SVector<2>)> dx = [](SVector<2> x) -> double { return 3 * std::pow(x[0], 2); };
-    std::function<double(SVector<2>)> dy = [](SVector<2> x) -> double { return 1; };
+    std::function<double(SVector<2>)> dy = []([[maybe_unused]] SVector<2> x) -> double { return 1; };
     DifferentiableScalarField<2> df_(baseField, std::vector<decltype(dx)> {dx, dy});
 
     // define evaluation point
@@ -264,12 +264,12 @@ TEST(scalar_field_test, twice_differentiable_field) {
         return std::pow(x[0], 3) + x[1];
     };
     std::function<double(SVector<2>)> dx = [](SVector<2> x) -> double { return 3 * std::pow(x[0], 2); };
-    std::function<double(SVector<2>)> dy = [](SVector<2> x) -> double { return 1; };
+    std::function<double(SVector<2>)> dy = []([[maybe_unused]] SVector<2> x) -> double { return 1; };
     MatrixField<2> hess;
     hess(0,0) = [](SVector<2> x) -> double { return 6 * x[0]; };
-    hess(1,0) = [](SVector<2> x) -> double { return 0; };
-    hess(0,1) = [](SVector<2> x) -> double { return 0; };
-    hess(1,1) = [](SVector<2> x) -> double { return 0; };
+    hess(1,0) = []([[maybe_unused]] SVector<2> x) -> double { return 0; };
+    hess(0,1) = []([[maybe_unused]] SVector<2> x) -> double { return 0; };
+    hess(1,1) = []([[maybe_unused]] SVector<2> x) -> double { return 0; };
     
     // wrap all in a twice differentiable scalar field
     ScalarField<2> sf(baseField);

@@ -29,10 +29,10 @@ template <int N, typename... Args> class Newton {
    private:
     typedef typename std::conditional<N == Dynamic, DVector<double>, SVector<N>>::type VectorType;
     typedef typename std::conditional<N == Dynamic, DMatrix<double>, SMatrix<N>>::type MatrixType;
-    std::tuple<Args...> callbacks_ {};
     std::size_t max_iter_;   // maximum number of iterations before forced stop
     double tol_;             // tolerance on error before forced stop
     double step_;            // update step
+    std::tuple<Args...> callbacks_;
 
     VectorType optimum_;
     double value_;   // objective value at optimum
@@ -45,9 +45,19 @@ template <int N, typename... Args> class Newton {
     // constructor
     Newton() = default;
     template <int N_ = sizeof...(Args), typename std::enable_if<N_ != 0, int>::type = 0>
-    Newton(std::size_t max_iter, double tol, double step) : max_iter_(max_iter), tol_(tol), step_(step) {};
-    Newton(std::size_t max_iter, double tol, double step, Args&... callbacks) :
-        max_iter_(max_iter), tol_(tol), step_(step), callbacks_(std::make_tuple(std::forward<Args>(callbacks)...)) {};
+    Newton(std::size_t max_iter, double tol, double step) : max_iter_(max_iter), tol_(tol), step_(step) { }
+    Newton(std::size_t max_iter, double tol, double step, Args&&... callbacks) :
+        max_iter_(max_iter), tol_(tol), step_(step), callbacks_(std::make_tuple(std::forward<Args>(callbacks)...)) { }
+    // copy semantic
+    Newton(const Newton& other) :
+        max_iter_(other.max_iter_), tol_(other.tol_), step_(other.step_), callbacks_(other.callbacks_) { }
+    Newton& operator=(const Newton& other) {
+        max_iter_ = other.max_iter_;
+        tol_ = other.tol_;
+        step_ = other.step_;
+        callbacks_ = other.callbacks_;
+        return *this;
+    }
 
     template <typename F> VectorType optimize(F& objective, const VectorType& x0) {
         static_assert(

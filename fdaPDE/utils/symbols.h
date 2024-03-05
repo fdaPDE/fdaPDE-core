@@ -91,7 +91,7 @@ struct matrix_hash {
             }
         }
         return hash;
-    };
+    }
 };
   
 // hash function for an standard container's iterator range
@@ -178,6 +178,14 @@ constexpr double log1pexp(double x) {
     return x + std::exp(-x);
 }
 
+namespace internals {
+// if XprType has its NestAsRef bit set, returns the type XprType&, otherwise return XprType
+template <typename XprType> struct ref_select {
+    using type = typename std::conditional<
+      XprType::NestAsRef == 0, std::remove_reference_t<XprType>, std::add_lvalue_reference_t<XprType>>::type;
+};
+}   // namespace internals
+  
 }   // namespace fdapde
 
 #endif   // __FDAPDE_SYMBOLS_H__

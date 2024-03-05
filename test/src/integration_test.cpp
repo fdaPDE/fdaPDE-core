@@ -26,6 +26,8 @@ using fdapde::core::Integrator;
 using fdapde::core::IntegratorTable;
 using fdapde::core::LagrangianBasis;
 using fdapde::core::FEM;
+using fdapde::core::Mesh;
+using fdapde::core::BarycentricWalk;
 
 #include "utils/mesh_loader.h"
 using fdapde::testing::MESH_TYPE_LIST;
@@ -47,7 +49,7 @@ TYPED_TEST(integration_test, constant_unitary_field) {
     auto e = this->meshLoader.generate_random_element();
     Integrator<FEM, TestFixture::M, 1> integrator;   // define integrator
     // the integral of the constant field 1 over the mesh element equals its measure
-    std::function<double(SVector<TestFixture::N>)> f = [](SVector<TestFixture::N> x) -> double { return 1; };
+    std::function<double(SVector<TestFixture::N>)> f = [](SVector<TestFixture::N>) -> double { return 1; };
     EXPECT_TRUE(almost_equal(e.measure(), integrator.integrate(e, f)));
 }
 
@@ -62,7 +64,7 @@ TYPED_TEST(integration_test, linear_field) {
     std::function<double(SVector<TestFixture::N>)> f = [](SVector<TestFixture::N> x) -> double { return x[0] + x[1]; };
     // compute volume of truncated rectangular prism: 1/(M+1)*V*(h1 + h2 + ... + hM), where V is the element's measure
     double h = 0;
-    for (auto p : e) h += f(p);
+    for (int i = 0; i < decltype(e)::n_vertices; ++i) h += f(e.coord(i));
     double measure = e.measure() * h / (TestFixture::M + 1);
     // test for equality
     EXPECT_TRUE(almost_equal(measure, integrator.integrate(e, f)));
@@ -74,7 +76,7 @@ TEST(integration_test, integrate_over_triangulation) {
     MeshLoader<Mesh2D> CShaped("unit_square");
     Integrator<FEM, 2, 1> integrator {};
     // define field to integrate
-    std::function<double(SVector<2>)> f = [](SVector<2> x) -> double { return 1; };
+    std::function<double(SVector<2>)> f = [](SVector<2>) -> double { return 1; };
     EXPECT_TRUE(almost_equal(1.0, integrator.integrate(CShaped.mesh, f)));
 }
 

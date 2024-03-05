@@ -311,7 +311,7 @@ template <ViewType S, typename... Ts> class BlockView {
     BlockFrame<Ts...> extract() const {
         BlockFrame<Ts...> result;
         std::apply(
-          [&](Ts... args) {   // cycle on types
+          [&]([[maybe_unused]] Ts... args) {   // cycle on types
               ((extract_<Ts>(result)), ...);
           },
           types_());

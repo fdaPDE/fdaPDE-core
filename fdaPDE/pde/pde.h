@@ -56,21 +56,20 @@ class PDE {
     using Quadrature = typename SolverType::Quadrature;             // quadrature for numerical integral approximations
 
     // space-only constructors
-    fdapde_enable_constructor_if(is_stationary, OperatorType) PDE(const D& domain) :
-        domain_(domain), solver_(domain) { }
-    fdapde_enable_constructor_if(is_stationary, OperatorType) PDE(const D& domain, E diff_op) :
-        domain_(domain), diff_op_(diff_op), solver_(domain) { }
-    fdapde_enable_constructor_if(is_stationary, OperatorType)
-      PDE(const SpaceDomainType& domain, OperatorType diff_op, const ForcingType& forcing_data) :
-        domain_(domain), diff_op_(diff_op), forcing_data_(forcing_data), solver_(domain) { }
+    PDE(const D& domain) requires(is_stationary<OperatorType>::value) : domain_(domain), solver_(domain) { }
+    PDE(const D& domain, E diff_op) requires(is_stationary<OperatorType>::value)
+        : domain_(domain), diff_op_(diff_op), solver_(domain) { }
+    PDE(const SpaceDomainType& domain, OperatorType diff_op, const ForcingType& forcing_data)
+        requires(is_stationary<OperatorType>::value)
+        : domain_(domain), diff_op_(diff_op), forcing_data_(forcing_data), solver_(domain) { }
     // space-time constructors
-    fdapde_enable_constructor_if(is_parabolic, OperatorType) PDE(const D& domain, const TimeDomainType& t) :
-        domain_(domain), time_domain_(t), solver_(domain) { }
-    fdapde_enable_constructor_if(is_parabolic, OperatorType) PDE(const D& domain, const TimeDomainType& t, E diff_op) :
-        domain_(domain), time_domain_(t), diff_op_(diff_op), solver_(domain) { }
-    fdapde_enable_constructor_if(is_parabolic, OperatorType) PDE(
-      const SpaceDomainType& domain, const TimeDomainType& t, OperatorType diff_op, const ForcingType& forcing_data) :
-        domain_(domain), time_domain_(t), diff_op_(diff_op), forcing_data_(forcing_data), solver_(domain) { }
+    PDE(const D& domain, const TimeDomainType& t) requires(is_parabolic<OperatorType>::value)
+        : domain_(domain), time_domain_(t), solver_(domain) { }
+    PDE(const D& domain, const TimeDomainType& t, E diff_op) requires(is_parabolic<OperatorType>::value)
+        : domain_(domain), time_domain_(t), diff_op_(diff_op), solver_(domain) { }
+    PDE(const SpaceDomainType& domain, const TimeDomainType& t, OperatorType diff_op, const ForcingType& forcing_data)
+        requires(is_parabolic<OperatorType>::value)
+        : domain_(domain), time_domain_(t), diff_op_(diff_op), forcing_data_(forcing_data), solver_(domain) { }
 
     // setters
     void set_forcing(const ForcingType& forcing_data) { forcing_data_ = forcing_data; }

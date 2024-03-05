@@ -28,7 +28,7 @@ TEST(matrix_field_test, define_from_lambda) {
     std::function<double(SVector<2>)> xx_comp = [](SVector<2> x) -> double { return 4 * x[0]; };
     std::function<double(SVector<2>)> xy_comp = [](SVector<2> x) -> double { return x[1]; };
     std::function<double(SVector<2>)> yx_comp = [](SVector<2> x) -> double { return x[0] + x[1]; };
-    std::function<double(SVector<2>)> yy_comp = [](SVector<2> x) -> double { return 3; };
+    std::function<double(SVector<2>)> yy_comp = []([[maybe_unused]] SVector<2> x) -> double { return 3; };
     MatrixField<2> field1({xx_comp, xy_comp, yx_comp, yy_comp});
     // define evaluation point
     SVector<2> p(1, 1);

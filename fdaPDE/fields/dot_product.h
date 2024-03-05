@@ -30,15 +30,15 @@ template <int N, typename T1, typename T2> class DotProduct : public ScalarExpr<
     T1 op1_; T2 op2_;
     typedef typename static_dynamic_vector_selector<N>::type InnerVectorType;
     static_assert(
-      // both are dynamic expressions
-      (T1::static_inner_size == Dynamic && T2::static_inner_size == Dynamic) ||
+      (T1::static_inner_size == Dynamic && T2::static_inner_size == Dynamic) ||   // both are dynamic expressions
       // or they are both static and have the same number of rows
-      (T1::static_inner_size != Dynamic && T2::static_inner_size != Dynamic) &&
-      ((T1::cols == T2::cols == 1) && (T1::rows == T2::rows)) || (T1::cols == T2::rows) || (T1::rows == T2::cols));
+      ((T1::static_inner_size != Dynamic && T2::static_inner_size != Dynamic) &&
+       ((((T1::cols == T2::cols) == 1) && (T1::rows == T2::rows)) ||
+        ((T1::cols == T2::rows) || (T1::rows == T2::cols)))));
 
     int dot_product_outer_size() const {
         if (N == Dynamic) return op1_.outer_size();
-        if (T1::cols == T2::cols == 1) {
+        if ((T1::cols == T2::cols) == 1) {
             return T1::rows;
         } else {
             return (T1::cols == T2::rows) ? T1::cols : T1::rows;

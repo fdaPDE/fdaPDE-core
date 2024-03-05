@@ -30,17 +30,17 @@ template <int R> class SplineBasis {
     DVector<double> knots_ {};   // vector of knots
     std::vector<Spline<R>> basis_ {};
    public:
-    static constexpr std::size_t order = R;
+    static constexpr int order = R;
     typedef Spline<R> ElementType;
     typedef Integrator<SPLINE, 1, order> Quadrature;
     // constructor
     SplineBasis() = default;
     SplineBasis(const DVector<double>& knots) : knots_(knots) {
         // reserve space
-        std::size_t n = knots.size();
+        int n = knots.size();
         knots_.resize(n + 2 * R);
         // pad the knot vector to obtain a full basis for the whole knot span [u_0, u_n]
-        for (std::size_t i = 0; i < n + 2 * R; ++i) {
+        for (int i = 0; i < n + 2 * R; ++i) {
             if (i < R) {
                 knots_[i] = knots[0];
             } else {
@@ -53,7 +53,7 @@ template <int R> class SplineBasis {
 	}
         // reserve space and compute spline basis
         basis_.reserve(knots_.rows() - R - 1);
-        for (std::size_t k = 0; k < knots_.size() - R - 1; ++k) {
+        for (int k = 0; k < knots_.size() - R - 1; ++k) {
             basis_.emplace_back(knots_, k);   // create spline centered at k-th point of knots_
         }
     }
@@ -63,17 +63,18 @@ template <int R> class SplineBasis {
     std::pair<SpMatrix<double>, DVector<double>> eval(const DVector<double>& locs) const {
         return EvaluationPolicy<SplineBasis<R>>::eval(*this, locs, basis_.size());
     }
-    const Spline<R>& operator[](std::size_t i) const { return basis_[i]; }
+    const Spline<R>& operator[](int i) const { return basis_[i]; }
     int size() const { return basis_.size(); }
     const DVector<double>& knots() const { return knots_; }
+    DMatrix<double> dofs_coords() const { return knots_.middleRows(R, knots_.rows() - R); }
     // given a coefficient vector c \in \mathbb{R}^size_, evaluates the corresponding basis expansion at locs
     DVector<double> operator()(const DVector<double>& c, const DVector<double>& locs) const {
         fdapde_assert(c.rows() == size() && locs.cols() != 0);
         DVector<double> result = DVector<double>::Zero(locs.rows());
-        for (std::size_t i = 0; i < locs.rows(); ++i) {
+        for (int i = 0; i < locs.rows(); ++i) {
             // evaluate basis expansion \sum_{i=1}^size_ c_i \phi_i(x) at p
             SVector<1> p(locs[i]);
-            for (std::size_t h = 0; h < basis_.size(); ++h) { result[i] += c[h] * basis_[h](p); }
+            for (int h = 0; h < basis_.size(); ++h) { result[i] += c[h] * basis_[h](p); }
         }
         return result;
     }
@@ -83,7 +84,7 @@ template <int R> struct pointwise_evaluation<SplineBasis<R>> {
     using BasisType = SplineBasis<R>;
     // computes a matrix \Phi such that [\Phi]_{ij} = \phi_j(t_i)
     static std::pair<SpMatrix<double>, DVector<double>>
-    eval(const BasisType& basis, const DVector<double>& locs, std::size_t n_basis) {
+    eval(const BasisType& basis, const DVector<double>& locs, int n_basis) {
         fdapde_assert(locs.size() != 0);
         // preallocate space
         SpMatrix<double> Phi(locs.rows(), n_basis);
@@ -105,7 +106,7 @@ template <int R> struct pointwise_evaluation<SplineBasis<R>> {
     using BasisType = SplineBasis<R>;
     // computes a matrix \Phi such that [\Phi]_{ij} = \phi_j(t_i)
     static std::pair<SpMatrix<double>, DVector<double>>
-    eval(const BasisType& basis, const DVector<double>& locs, std::size_t n_basis) {
+    eval(const BasisType&, const DVector<double>& locs, int) {
       // TODO
       return std::make_pair(SpMatrix<double>{}, DVector<double>::Ones(locs.rows()));
     }

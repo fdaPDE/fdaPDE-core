@@ -55,8 +55,8 @@ template <int M, int N, typename E> class VectorExpr : public VectorBase {
     int inner_size_ = M;   // \mathbb{R}^M
     int outer_size_ = N;   // \mathbb{R}^N
    public:
-    typedef typename static_dynamic_vector_selector<M>::type InnerVectorType;
-    typedef typename static_dynamic_vector_selector<N>::type OuterVectorType;
+    using InnerVectorType = typename static_dynamic_vector_selector<M>::type;
+    using OuterVectorType = typename static_dynamic_vector_selector<N>::type;
     static constexpr int rows = N;
     static constexpr int cols = 1;
     static constexpr int static_inner_size = M;
@@ -65,7 +65,7 @@ template <int M, int N, typename E> class VectorExpr : public VectorBase {
     VectorExpr(int inner_size, int outer_size) : inner_size_(inner_size), outer_size_(outer_size) {};
 
     // call operator[] on the base type E
-    auto operator[](std::size_t i) const { return static_cast<const E&>(*this)[i]; }
+    auto operator[](int i) const { return static_cast<const E&>(*this)[i]; }
     const E& get() const { return static_cast<const E&>(*this); }
     inline constexpr int inner_size() const { return (M == Dynamic) ? inner_size_ : static_inner_size; }
     inline constexpr int outer_size() const { return (N == Dynamic) ? outer_size_ : rows; }
@@ -73,7 +73,7 @@ template <int M, int N, typename E> class VectorExpr : public VectorBase {
     OuterVectorType operator()(const InnerVectorType& x) const {
         if constexpr (M == Dynamic) fdapde_assert(inner_size_ == x.size());
         OuterVectorType result(outer_size());
-        for (size_t i = 0; i < outer_size_; ++i) { result[i] = operator[](i)(x); }
+        for (int i = 0; i < outer_size_; ++i) { result[i] = operator[](i)(x); }
         return result;
     }
     // VectorExpr - InnerVectorType dot product
@@ -85,7 +85,7 @@ template <int M, int N, typename E> class VectorExpr : public VectorBase {
         return DotProduct<M, E, F>(get(), op.get());
     }
     // evaluate parametric nodes in the expression, does nothing if not redefined in derived classes
-    template <typename T> void forward(T i) const { return; }
+    template <typename T> void forward([[maybe_unused]] T t) const { return; }
     // map unary operator- to a VectorNegationOp expression node
     VectorNegationOp<M, N, E> operator-() const { return VectorNegationOp<M, N, E>(get()); }
 };
@@ -93,25 +93,27 @@ template <int M, int N, typename E> class VectorExpr : public VectorBase {
 // an expression node representing a constant vector
 template <int M, int N> class VectorConst : public VectorExpr<M, N, VectorConst<M, N>> {
    private:
-    typedef VectorExpr<M, N, VectorConst<M, N>> Base;
+    using Base = VectorExpr<M, N, VectorConst<M, N>>;
+    using InnerVectorType = typename Base::InnerVectorType;
+    using OuterVectorType = typename Base::OuterVectorType;
     typename Base::OuterVectorType value_;
    public:
-    VectorConst(const typename Base::OuterVectorType& value, int m, int n) : Base(m, n), value_(value) {};
-    double operator[](std::size_t i) const { return value_[i]; }
+    VectorConst(const OuterVectorType& value, int m, int n) : Base(m, n), value_(value) {};
+    double operator[](int i) const { return value_[i]; }
 };
 
 // wraps a n_rows x N matrix of data, acts as an SVector<N> once fixed the matrix row, assuming each row contains
 // the vector to map
 template <int M, int N> class DiscretizedVectorField : public VectorExpr<M, N, DiscretizedVectorField<M, N>> {
    private:
-    typedef Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> DataType;
+    using DataType = Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
     DataType* data_;
     Eigen::Map<SVector<N>> value_;
    public:
     DiscretizedVectorField() : value_(NULL) {};
     DiscretizedVectorField(DataType& data) : data_(&data), value_(NULL) {};
-    double operator[](std::size_t i) const { return value_[i]; }
-    void forward(std::size_t i) {
+    double operator[](int i) const { return value_[i]; }
+    void forward(int i) {
         new (&value_) Eigen::Map<SVector<M>>(data_->data() + (i * N));   // construct map in place
     }
 };
@@ -121,13 +123,12 @@ template <int M, int N, typename OP1, typename OP2, typename BinaryOperation>
 class VectorBinOp : public VectorExpr<M, N, VectorBinOp<M, N, OP1, OP2, BinaryOperation>> {
     static_assert(OP1::static_inner_size == OP2::static_inner_size, "you mixed fields with different base dimension");
    private:
-    typedef VectorExpr<M, N, VectorBinOp<M, N, OP1, OP2, BinaryOperation>> Base;
+    using Base = VectorExpr<M, N, VectorBinOp<M, N, OP1, OP2, BinaryOperation>>;
     typename std::remove_reference<OP1>::type op1_;   // first  operand
     typename std::remove_reference<OP2>::type op2_;   // second operand
     BinaryOperation f_;                               // operation to apply
    public:
     static constexpr int static_inner_size = OP1::static_inner_size;
-
     // constructor
     VectorBinOp(const OP1& op1, const OP2& op2, BinaryOperation f) :
         Base(op1.inner_size(), op1.outer_size()), op1_(op1), op2_(op2), f_(f) {
@@ -135,7 +136,7 @@ class VectorBinOp : public VectorExpr<M, N, VectorBinOp<M, N, OP1, OP2, BinaryOp
             fdapde_assert(op1_.inner_size() == op2_.inner_size() && op1_.outer_size() == op2_.outer_size());
         }
     };
-    auto operator[](std::size_t i) const { return f_(op1_[i], op2_[i]); }
+    auto operator[](int i) const { return f_(op1_[i], op2_[i]); }
     // forward to child nodes
     template <typename T> const VectorBinOp<M, N, OP1, OP2, BinaryOperation>& forward(T i) {
         op1_.forward(i); op2_.forward(i);
@@ -149,11 +150,11 @@ DEF_VECT_EXPR_OPERATOR(operator-, std::minus<>)
 // node representing a scalar value in a vectorial expression.
 template <int M, int N> class VectorScalar : public VectorExpr<M, N, VectorScalar<M, N>> {
    private:
-    typedef VectorExpr<M, N, VectorScalar<M, N>> Base;
+    using Base = VectorExpr<M, N, VectorScalar<M, N>>;
     double value_;
    public:
     VectorScalar(double value, int m, int n) : Base(m, n), value_(value) {};
-    double operator[](size_t i) const { return value_; }
+    double operator[]([[maybe_unused]] int i) const { return value_; }
 };
 template <int M, int N, typename E>
 VectorBinOp<M, N, VectorScalar<M, N>, E, std::multiplies<>> operator*(double op1, const VectorExpr<M, N, E>& op2) {
@@ -173,9 +174,8 @@ template <int M, int N, typename E> class VectorNegationOp : public VectorExpr<M
    public:
     // constructor
     VectorNegationOp(const E& op) : op_(op) {};
-    // subscript operator
-    auto operator[](std::size_t i) const { return -(op_[i]); }
-    // call parameter evaluation on stored operand
+    auto operator[](int i) const { return -(op_[i]); }
+    // forward to child node
     template <typename T> const VectorNegationOp<M, N, E>& forward(T i) {
         op_.forward(i);
         return *this;

@@ -42,14 +42,17 @@ template <typename T> class Advection<FEM, T> : public DifferentialExpr<Advectio
         is_space_varying = std::is_base_of<VectorBase, T> ::value,
         is_symmetric = false
     };
-
     // constructor
     Advection() = default;
     explicit Advection(const T& b) : b_(b) { }
     // provides the operator's weak form
     template <typename... Args> auto integrate(const std::tuple<Args...>& mem_buffer) const {
-        IMPORT_FEM_MEM_BUFFER_SYMBOLS(mem_buffer);
-        return psi_i * (invJ * nabla_psi_j).dot(b_);   // \psi_i*b.dot(\nabla \psi_j)
+        // unpack mem_buffer tuple
+        auto psi_i       = std::get<0>(mem_buffer);
+        auto nabla_psi_j = std::get<3>(mem_buffer);
+        auto invJ        = std::get<4>(mem_buffer);   // affine map to reference element
+        // \psi_i*b.dot(\nabla \psi_j)
+        return psi_i * (invJ * nabla_psi_j).dot(b_);
     }
 };
   

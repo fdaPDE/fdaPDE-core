@@ -70,7 +70,7 @@ template <typename D, typename E, typename F, typename... Ts> class SplineSolver
         is_init = true;
         return;
     }
-    template <typename PDE> void set_dirichlet_bc(const PDE& pde) { return; }; // TODO
+    template <typename PDE> void set_dirichlet_bc([[maybe_unused]] const PDE& pde) { return; } // TODO
    protected:
     const DomainType* domain_;
     Quadrature integrator_ {};   // default to a quadrature rule which is exact for the considered spline order

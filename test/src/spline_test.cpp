@@ -27,6 +27,8 @@ using fdapde::core::reaction;
 using fdapde::core::SPLINE;
 using fdapde::core::SplineBasis;
 using fdapde::core::spline_order;
+using fdapde::core::Mesh;
+using fdapde::core::PDE;
 
 #include "utils/utils.h"
 using fdapde::testing::almost_equal;
@@ -45,7 +47,7 @@ TEST(spline_test, cox_de_boor_definition) {
     SpMatrix<double> expected;
     Eigen::loadMarket(expected, "../data/mtx/spline_test_1.mtx");
 
-    for (std::size_t i = 0; i < 1; ++i) {
+    for (int i = 0; i < 1; ++i) {
         // evaluate i-th spline over [0,1]
         std::vector<double> result;
         result.reserve(101);
@@ -69,11 +71,11 @@ TEST(spline_test, cubic_spline_second_derivative) {
     SpMatrix<double> expected;
     Eigen::loadMarket(expected, "../data/mtx/spline_test_2.mtx");
 
-    for (std::size_t i = 0; i < basis.size(); ++i) {
+    for (int i = 0; i < basis.size(); ++i) {
         // evaluate i-th spline over [0,1]
         std::vector<double> result;
-        result.reserve(101);
-        for (double x = 0; x <= 1.01; x += 0.01) { result.push_back(basis[i].derive<2>()(SVector<1>(x))); }
+        result.reserve(100);
+        for (double x = 0; x <= 1.00; x += 0.01) { result.push_back(basis[i].derive<2>()(SVector<1>(x))); }
         // check results within double tolerance
         for (std::size_t j = 0; j < result.size(); ++j) { EXPECT_TRUE(almost_equal(result[j], expected.coeff(j, i))); }
     }

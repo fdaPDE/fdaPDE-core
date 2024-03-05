@@ -41,10 +41,10 @@ TYPED_TEST(point_location_test, naive_search) {
     // build search engine
     NaiveSearch<TestFixture::M, TestFixture::N> engine(this->mesh_loader.mesh);
     // build test set
-    std::vector<std::pair<std::size_t, SVector<TestFixture::N>>> testSet = this->mesh_loader.sample(100);
+    std::vector<std::pair<int, SVector<TestFixture::N>>> test_set = this->mesh_loader.sample(100);
     // test all queries in test set
     std::size_t matches = 0;
-    for (auto query : testSet) {
+    for (auto query : test_set) {
         auto e = engine.locate(query.second);
         if (e != nullptr && e->ID() == query.first) matches++;
     }
@@ -55,10 +55,10 @@ TYPED_TEST(point_location_test, alternating_digital_tree) {
     // build search engine
     TreeSearch<TestFixture::M, TestFixture::N> engine(this->mesh_loader.mesh);
     // build test set
-    std::vector<std::pair<std::size_t, SVector<TestFixture::N>>> testSet = this->mesh_loader.sample(100);
+    std::vector<std::pair<int, SVector<TestFixture::N>>> test_set = this->mesh_loader.sample(100);
     // test all queries in test set
     std::size_t matches = 0;
-    for (auto query : testSet) {
+    for (auto query : test_set) {
         auto e = engine.locate(query.second);
         if (e != nullptr && e->ID() == query.first) { matches++; }
     }
@@ -70,10 +70,10 @@ TYPED_TEST(point_location_test, barycentric_walk) {
     if constexpr (TestFixture::N == TestFixture::M) {
         BarycentricWalk<TestFixture::M, TestFixture::N> engine(this->mesh_loader.mesh);
         // build test set
-        std::vector<std::pair<std::size_t, SVector<TestFixture::N>>> testSet = this->mesh_loader.sample(100);
+        std::vector<std::pair<int, SVector<TestFixture::N>>> test_set = this->mesh_loader.sample(100);
         // test all queries in test set
         std::size_t matches = 0;
-        for (auto query : testSet) {
+        for (auto query : test_set) {
             auto e = engine.locate(query.second);
             if (e != nullptr && e->ID() == query.first) matches++;
         }
@@ -93,8 +93,8 @@ TEST(point_location_test, 1D_binary_search) {
     Mesh<1, 1> unit_interval(mesh_nodes);
 
     // build test set
-    std::vector<std::pair<std::size_t, SVector<1>>> testSet;
-    testSet.reserve(100);
+    std::vector<std::pair<int, SVector<1>>> test_set;
+    test_set.reserve(100);
     std::mt19937 gen {};
     std::uniform_int_distribution<> element_dist {0, static_cast<int>(nodes.size() - 2)};
     for (std::size_t i = 0; i < 100; ++i) {
@@ -102,12 +102,12 @@ TEST(point_location_test, 1D_binary_search) {
         // take random point in element
         std::uniform_real_distribution<double> point_dist(nodes[element_id], nodes[element_id + 1]);
         SVector<1> p(point_dist(gen));
-        testSet.emplace_back(element_id, p);
+        test_set.emplace_back(element_id, p);
     }
 
     // test all queries in test set
     std::size_t matches = 0;
-    for (auto query : testSet) {
+    for (auto query : test_set) {
         int e = unit_interval.locate(query.second)[0];
         if (e == query.first) matches++;
     }

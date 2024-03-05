@@ -23,19 +23,6 @@ namespace core {
 // finite element strategy tag for PDE discretization
 struct FEM { };
 
-// utility macro to import symbols from memory buffer recived from assembly loop to fe operators
-#define IMPORT_FEM_MEM_BUFFER_SYMBOLS(mem_buff)                                                                        \
-    /* pair of basis functions \psi_i, \psi_j*/                                                                        \
-    auto psi_i = std::get<0>(mem_buff);                                                                                \
-    auto psi_j = std::get<1>(mem_buff);                                                                                \
-    /* gradient of \psi_i, \psi_j */                                                                                   \
-    auto nabla_psi_i = std::get<2>(mem_buff);                                                                          \
-    auto nabla_psi_j = std::get<3>(mem_buff);                                                                          \
-    /* affine map to reference element */                                                                              \
-    auto invJ = std::get<4>(mem_buff);                                                                                 \
-    /* for non-linear operators, the current approximated solution */                                                  \
-    auto f = *std::get<5>(mem_buff);
-
 // finite element order type (just a type wrapper around an int)
 template <int R> struct fem_order {
     static constexpr int value = R;

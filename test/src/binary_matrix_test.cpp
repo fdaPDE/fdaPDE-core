@@ -14,6 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+#include <fdaPDE/core.h>
 #include <fdaPDE/linear_algebra.h>
 #include <fdaPDE/utils.h>
 #include <gtest/gtest.h>   // testing framework
@@ -29,13 +30,13 @@ TEST(binary_matrix_test, static_sized_matrix) {
     EXPECT_TRUE(m.cols() == 3);
     EXPECT_TRUE(m.size() == 15);
     // check all is set to zero
-    for (std::size_t i = 0; i < m.rows(); ++i) {
-        for (std::size_t j = 0; j < m.cols(); ++j) { EXPECT_TRUE(m(i, j) == false); }
+    for (int i = 0; i < m.rows(); ++i) {
+        for (int j = 0; j < m.cols(); ++j) { EXPECT_TRUE(m(i, j) == false); }
     }
     // set a coefficient to true and check that it is the only one set to true
     m.set(3, 1);
-    for (std::size_t i = 0; i < m.rows(); ++i) {
-        for (std::size_t j = 0; j < m.cols(); ++j) {
+    for (int i = 0; i < m.rows(); ++i) {
+        for (int j = 0; j < m.cols(); ++j) {
             if (i == 3 && j == 1) {
                 EXPECT_TRUE(m(i, j) == true);
             } else {
@@ -45,8 +46,8 @@ TEST(binary_matrix_test, static_sized_matrix) {
     }
     // set back to false, and check all is false
     m.clear(3, 1);
-    for (std::size_t i = 0; i < m.rows(); ++i) {
-        for (std::size_t j = 0; j < m.cols(); ++j) { EXPECT_TRUE(m(i, j) == false); }
+    for (int i = 0; i < m.rows(); ++i) {
+        for (int j = 0; j < m.cols(); ++j) { EXPECT_TRUE(m(i, j) == false); }
     }
 }
 
@@ -58,13 +59,13 @@ TEST(binary_matrix_test, dynamic_sized_matrix) {
     EXPECT_TRUE(m.cols() == 100);
     EXPECT_TRUE(m.size() == 500);
     // check all is set to zero
-    for (std::size_t i = 0; i < m.rows(); ++i) {
-        for (std::size_t j = 0; j < m.cols(); ++j) { EXPECT_TRUE(m(i, j) == false); }
+    for (int i = 0; i < m.rows(); ++i) {
+        for (int j = 0; j < m.cols(); ++j) { EXPECT_TRUE(m(i, j) == false); }
     }
     // set a coefficient to true and check that it is the only one set to true
     m.set(3, 47);
-    for (std::size_t i = 0; i < m.rows(); ++i) {
-        for (std::size_t j = 0; j < m.cols(); ++j) {
+    for (int i = 0; i < m.rows(); ++i) {
+        for (int j = 0; j < m.cols(); ++j) {
             if (i == 3 && j == 47) {
                 EXPECT_TRUE(m(i, j) == true);
             } else {
@@ -74,8 +75,8 @@ TEST(binary_matrix_test, dynamic_sized_matrix) {
     }
     // set back to false, and check all is false
     m.clear(3, 47);
-    for (std::size_t i = 0; i < m.rows(); ++i) {
-        for (std::size_t j = 0; j < m.cols(); ++j) { EXPECT_TRUE(m(i, j) == false); }
+    for (int i = 0; i < m.rows(); ++i) {
+        for (int j = 0; j < m.cols(); ++j) { EXPECT_TRUE(m(i, j) == false); }
     }
     // resize matrix and check dimensionalities
     m.set(0, 0);
@@ -84,8 +85,8 @@ TEST(binary_matrix_test, dynamic_sized_matrix) {
     EXPECT_TRUE(m.cols() == 20);
     EXPECT_TRUE(m.size() == 400);
     // resizing a matrix should destruct previous memory and set all to 0
-    for (std::size_t i = 0; i < m.rows(); ++i) {
-        for (std::size_t j = 0; j < m.cols(); ++j) { EXPECT_TRUE(m(i, j) == false); }
+    for (int i = 0; i < m.rows(); ++i) {
+        for (int j = 0; j < m.cols(); ++j) { EXPECT_TRUE(m(i, j) == false); }
     }
 }
 
@@ -101,7 +102,7 @@ TEST(binary_matrix_test, binary_vector) {
     EXPECT_TRUE(v[1] == true);
     EXPECT_TRUE(v[1] == v(1, 0));   // matrix-like interface still works
     v.clear(1);
-    for (std::size_t i = 0; i < v.size(); ++i) { EXPECT_TRUE(v[i] == false); }
+    for (int i = 0; i < v.size(); ++i) { EXPECT_TRUE(v[i] == false); }
 
     // dynamic-sized vector
     BinaryVector<Dynamic> s;
@@ -113,7 +114,7 @@ TEST(binary_matrix_test, binary_vector) {
 
     s.set(10);
     s.set(70);
-    for (std::size_t i = 0; i < s.size(); ++i) {
+    for (int i = 0; i < s.size(); ++i) {
         if (i == 10 || i == 70) {
             EXPECT_TRUE(s[i] == true);
         } else {
@@ -133,7 +134,7 @@ TEST(binary_matrix_test, block_operations) {
     // check dimensionalities
     EXPECT_TRUE(r.rows() == 1);
     EXPECT_TRUE(r.cols() == 100);
-    for (std::size_t i = 0; i < r.size(); ++i) {
+    for (int i = 0; i < r.size(); ++i) {
         if (i == 40) {
             EXPECT_TRUE(r(0, i) == true);
         } else {
@@ -149,7 +150,7 @@ TEST(binary_matrix_test, block_operations) {
     // check dimensionalities
     EXPECT_TRUE(c.rows() == 5);
     EXPECT_TRUE(c.cols() == 1);
-    for (std::size_t i = 0; i < c.size(); ++i) {
+    for (int i = 0; i < c.size(); ++i) {
         if (i == 4) {
             EXPECT_TRUE(c(i, 0) == true);
         } else {

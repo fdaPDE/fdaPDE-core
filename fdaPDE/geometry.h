@@ -19,7 +19,7 @@
 
 #include "geometry/mesh.h"
 #include "geometry/element.h"
-#include "geometry/reference_element.h"
+#include "geometry/hyperplane.h"
 // #include "geometry/voronoi.h"
 #include "geometry/kd_tree.h"
 #include "geometry/point_location/point_location.h"

@@ -40,14 +40,16 @@ template <typename T> class Reaction<FEM, T> : public DifferentialExpr<Reaction<
         is_space_varying = std::is_base_of<ScalarBase, T> ::value,
         is_symmetric = true
     };
-
     // constructors
     Reaction() = default;
     Reaction(const T& c) : c_(c) {};
     // provides the operator's weak form
     template <typename... Args> auto integrate(const std::tuple<Args...>& mem_buffer) const {
-        IMPORT_FEM_MEM_BUFFER_SYMBOLS(mem_buffer);
-	return c_ * psi_i * psi_j;   // c*\psi_i*\psi_j
+        // unpack mem_buffer tuple
+        auto psi_i = std::get<0>(mem_buffer);
+        auto psi_j = std::get<1>(mem_buffer);
+        // c*\psi_i*\psi_j
+        return c_ * psi_i * psi_j;
     }
 };
   

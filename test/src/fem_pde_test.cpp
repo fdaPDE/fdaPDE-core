@@ -79,7 +79,7 @@ TEST(fem_pde_test, laplacian_isotropic_order2_callable_force) {
     // exact solution
     auto solution_expr = [](SVector<2> x) -> double { return 1. - x[0] * x[0] - x[1] * x[1]; };
     // non-zero forcing term
-    auto forcing_expr = [](SVector<2> x) -> double { return 4.0; };
+    auto forcing_expr = []([[maybe_unused]] SVector<2> x) -> double { return 4.0; };
     ScalarField<2> forcing(forcing_expr);   // wrap lambda expression in ScalarField object
 
     MeshLoader<Mesh2D> unit_square("unit_square");

@@ -31,7 +31,7 @@ class BacktrackingLineSearch {
    public:
     // constructors
     BacktrackingLineSearch() = default;
-    BacktrackingLineSearch(double alpha, double beta, double gamma) : alpha_(alpha), beta_(beta), gamma_(gamma) {};
+    BacktrackingLineSearch(double alpha, double beta, double gamma) : alpha_(alpha), beta_(beta), gamma_(gamma) { }
 
     // backtracking based step search
     template <typename Opt, typename Obj> bool pre_update_step(Opt& opt, Obj& obj) {

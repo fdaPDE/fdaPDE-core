@@ -65,7 +65,7 @@ template <typename E> class lagrangian_basis_test : public ::testing::Test {
         SVector<M> result {};
         for (std::size_t j = 0; j < M; ++j) { result[j] = pList[i][j]; }
         return result;
-    };
+    }
 };
 
 // pair format: <x,y> : x dimension of space, y order of mesh
@@ -112,9 +112,9 @@ TEST(lagrangian_basis_test, order1_reference_element) {
     std::vector<SVector<2>> gradients({SVector<2>(-1.0, -1.0), SVector<2>(1.0, 0.0), SVector<2>(0.0, 1.0)});
 
     // check gradient of each basis function equals the expected one
-    for (std::size_t i = 0; i < basis.size(); ++i) {
+    for (int i = 0; i < basis.size(); ++i) {
         VectorField<2> grad = basis[i].derive();
-        for (std::size_t j = 0; j < 2; ++j) EXPECT_TRUE(almost_equal(grad(p)[j], gradients[i][j]));
+        for (int j = 0; j < 2; ++j) EXPECT_TRUE(almost_equal(grad(p)[j], gradients[i][j]));
     }
 }
 
@@ -138,9 +138,9 @@ TEST(lagrangian_basis_test, order2_reference_element) {
       4 * p[1], 4 * p[0];                                                // \nabla \psi_6
 
     // check gradient of each basis function equals the expected one
-    for (std::size_t i = 0; i < basis.size(); ++i) {
+    for (int i = 0; i < basis.size(); ++i) {
         VectorField<2> grad = basis[i].derive();
-        for (std::size_t j = 0; j < 2; ++j) EXPECT_TRUE(almost_equal(grad(p)[j], gradients(i, j)));
+        for (int j = 0; j < 2; ++j) EXPECT_TRUE(almost_equal(grad(p)[j], gradients(i, j)));
     }
 }
 
@@ -162,9 +162,9 @@ TEST(lagrangian_basis_test, order1_pyhsical_element) {
     LagrangianBasis<Mesh2D, 1> basis(CShaped.mesh);
     auto ref_basis = basis.ref_basis();
 
-    for (std::size_t i = 0; i < ref_basis.size(); ++i) {
+    for (int i = 0; i < ref_basis.size(); ++i) {
         VectorField<2, 2> grad = invJ * ref_basis[i].derive();
-        for (std::size_t j = 0; j < 2; ++j) EXPECT_TRUE(almost_equal(grad(p)[j], gradients[i][j]));
+        for (int j = 0; j < 2; ++j) EXPECT_TRUE(almost_equal(grad(p)[j], gradients[i][j]));
     }
 }
 
@@ -188,9 +188,9 @@ TEST(lagrangian_basis_test, order2_pyhiscal_element) {
     LagrangianBasis<Mesh2D, 2> basis(CShaped.mesh);
     auto ref_basis = basis.ref_basis();
     
-    for (std::size_t i = 0; i < ref_basis.size(); ++i) {
+    for (int i = 0; i < ref_basis.size(); ++i) {
         VectorField<2, 2> grad = invJ * ref_basis[i].derive();
-        for (std::size_t j = 0; j < 2; ++j) EXPECT_TRUE(almost_equal(grad(p)[j], gradients[i][j]));
+        for (int j = 0; j < 2; ++j) EXPECT_TRUE(almost_equal(grad(p)[j], gradients[i][j]));
     }
 }
 

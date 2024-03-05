@@ -42,9 +42,9 @@ class DifferentiableScalarField : public ScalarField<N, F> {
 
     GradientType df_ {};   // gradient vector of scalar field f
    public:
-    DifferentiableScalarField(const FieldType& f, const GradientType& df) : Base(f), df_(df) {};
+    DifferentiableScalarField(const FieldType& f, const GradientType& df) : Base(f), df_(df) { }
     template <typename Args>
-    DifferentiableScalarField(const FieldType& f, const std::vector<Args>& df) : Base(f), df_(GradientType(df)) {};
+    DifferentiableScalarField(const FieldType& f, const std::vector<Args>& df) : Base(f), df_(GradientType(df)) { }
     GradientType derive() { return df_; }   // return analytical gradient
 };
 
@@ -65,10 +65,10 @@ class TwiceDifferentiableScalarField : public DifferentiableScalarField<N, F, G>
     HessianType ddf_ {};   // hessian matrix of scalar field f
    public:
     TwiceDifferentiableScalarField(const FieldType& f, const GradientType& df, const HessianType& ddf) :
-        Base(f, df), ddf_(ddf) {};
+        Base(f, df), ddf_(ddf) { }
     template <typename Args>
     TwiceDifferentiableScalarField(const FieldType& f, const std::vector<Args>& df, const HessianType& ddf) :
-        Base(f, df), ddf_(ddf) {};
+        Base(f, df), ddf_(ddf) { }
     HessianType derive_twice() { return ddf_; }   // return analytical hessian
 };
 

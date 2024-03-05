@@ -21,7 +21,6 @@
 #include "linear_algebra/kronecker_product.h"
 #include "linear_algebra/smw.h"
 #include "linear_algebra/sparse_block_matrix.h"
-#include "linear_algebra/vector_space.h"
 #include "linear_algebra/lumping.h"
 
 #endif   // __FDAPDE_LINEAR_ALGEBRA_MODULE_H__

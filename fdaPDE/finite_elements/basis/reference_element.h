@@ -19,7 +19,7 @@
 
 #include <array>
 
-#include "../utils/symbols.h"
+#include "../../utils/symbols.h"
 
 namespace fdapde {
 namespace core {

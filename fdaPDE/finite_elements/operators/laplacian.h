@@ -35,7 +35,10 @@ template <> struct Laplacian<FEM> : public DifferentialExpr<Laplacian<FEM>> {
 
     // provides the operator's weak form
     template <typename... Args> auto integrate(const std::tuple<Args...>& mem_buffer) const {
-        IMPORT_FEM_MEM_BUFFER_SYMBOLS(mem_buffer);
+        // unpack mem_buffer tuple
+        auto nabla_psi_i = std::get<2>(mem_buffer);
+        auto nabla_psi_j = std::get<3>(mem_buffer);
+        auto invJ        = std::get<4>(mem_buffer);   // affine map to reference element
         // isotropic unitary diffusion: -(\Nabla psi_i).dot(\Nabla psi_j)
         return -(invJ * nabla_psi_i).dot(invJ * nabla_psi_j);
     }

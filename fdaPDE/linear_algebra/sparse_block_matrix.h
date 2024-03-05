@@ -73,7 +73,7 @@ struct SparseBlockMatrix :
         // evaluate each block and store in internal storage
         blocks_.reserve(Rows_ * Cols_);
         ([&] { blocks_.emplace_back(m); }(), ...);
-    };
+    }
 
     // read/write access to individual blocks
     const SpMatrix<double>& block(Eigen::Index row, Eigen::Index col) const {

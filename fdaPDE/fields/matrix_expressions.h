@@ -28,7 +28,7 @@ namespace core {
 
 // forward declarations
 template <int N, int M, int K, typename F> class MatrixField;
-template <int N, int M, int K, typename E> struct MatrixExpr;
+template <int N, int M, int K, typename E> class MatrixExpr;
 template <int N, int M, int K, typename E> class MatrixNegationOp;
 
 // Base class for any MatrixField type
@@ -44,10 +44,9 @@ class MatrixVectorProduct : public VectorExpr<N, M, MatrixVectorProduct<N, M, K,
    public:
     MatrixVectorProduct(const T1& op1, const T2& op2) : op1_(op1), op2_(op2) {};
     // the i-th element of the vector is given as the dot product of the i-th column of T1 and T2
-    inline DotProduct<N, decltype(op1_.row(std::size_t())), T2> operator[](std::size_t i) const {
-        return DotProduct<N, decltype(op1_.row(std::size_t())), T2>(op1_.row(i), op2_);
+    inline DotProduct<N, decltype(op1_.row(int())), T2> operator[](int i) const {
+        return DotProduct<N, decltype(op1_.row(int())), T2>(op1_.row(i), op2_);
     }
-    // call parameter evaluation on operands
     template <typename T> const MatrixVectorProduct<N, M, K, T1, T2>& forward(T i) {
         op1_.forward(i);
         op2_.forward(i);
@@ -63,15 +62,13 @@ class MatrixMatrixProduct : public MatrixExpr<N, M, K, MatrixMatrixProduct<N, M,
     T1 op1_;
     T2 op2_;
    public:
-    MatrixMatrixProduct(const T1& op1, const T2& op2) : op1_(op1), op2_(op2) {};
-    // the (i,j)-th element of the resulting matrix is given by the dot product of the i-th column of T1 and
-    // the j-th column of T2
-    inline DotProduct<N, decltype(op1_.row(std::size_t())), decltype(op2_.col(std::size_t()))>
-    operator()(std::size_t i, std::size_t j) const {
-        return DotProduct<N, decltype(op1_.row(std::size_t())), decltype(op2_.col(std::size_t()))>(
+    MatrixMatrixProduct(const T1& op1, const T2& op2) : op1_(op1), op2_(op2) { }
+    // the (i,j)-th element is given by the dot product of the i-th column of T1 and the j-th column of T2
+    inline DotProduct<N, decltype(op1_.row(int())), decltype(op2_.col(int()))>
+    operator()(int i, int j) const {
+        return DotProduct<N, decltype(op1_.row(int())), decltype(op2_.col(int()))>(
           op1_.row(i), op2_.col(j));
     }
-    // call parameter evaluation on operands
     template <typename T> const MatrixMatrixProduct<N, M, K, T1, T2>& forward(T i) {
         op1_.forward(i);
         op2_.forward(i);
@@ -83,12 +80,11 @@ class MatrixMatrixProduct : public MatrixExpr<N, M, K, MatrixMatrixProduct<N, M,
 template <int N, int M, int K, typename E> class MatrixRow : public VectorExpr<N, M, MatrixRow<N, M, K, E>> {
    private:
     E expr_;
-    std::size_t row_;
+    int row_;
    public:
-    MatrixRow(const E& expr, std::size_t row) : expr_(expr), row_(row) {};
+    MatrixRow(const E& expr, int row) : expr_(expr), row_(row) {};
     // subscripting the i-th element of a row triggers evaluation of the expression
-    auto operator[](std::size_t i) const { return expr_.coeff(row_, i); }
-    // call parameter evaluation on stored expression
+    auto operator[](int i) const { return expr_.coeff(row_, i); }
     template <typename T> const MatrixRow<N, M, K, E>& forward(T i) {
         expr_.forward(i);
         return *this;
@@ -101,12 +97,11 @@ template <int N, int M, int K, typename E> class MatrixRow : public VectorExpr<N
 template <int N, int M, int K, typename E> class MatrixCol : public VectorExpr<N, M, MatrixCol<N, M, K, E>> {
    private:
     E expr_;
-    std::size_t col_;
+    int col_;
    public:
-    MatrixCol(const E& expr, std::size_t col) : expr_(expr), col_(col) {};
+    MatrixCol(const E& expr, int col) : expr_(expr), col_(col) {};
     // subscripting the i-th element of a column triggers evaluation of the expression
-    auto operator[](std::size_t i) const { return expr_.coeff(i, col_); }
-    // call parameter evaluation on stored expression
+    auto operator[](int i) const { return expr_.coeff(i, col_); }
     template <typename T> const MatrixCol<N, M, K, E>& forward(T i) {
         expr_.forward(i);
         return *this;
@@ -140,25 +135,25 @@ template <int N, int M, int K, typename E> class MatrixCol : public VectorExpr<N
     }
 
 // base class for matrix expressions
-template <int M, int N, int K, typename E> struct MatrixExpr : public MatrixBase {
+template <int M, int N, int K, typename E> class MatrixExpr : public MatrixBase {
    protected:
     int inner_size_ = M;       // \mathbb{R}^M
-    int outer_size_ = N * K;   // \mathbb{R}^{N \times K}
     int outer_rows_ = N, outer_cols_ = K;
+    int outer_size_ = N * K;   // \mathbb{R}^{N \times K}
    public:
-    typedef typename static_dynamic_vector_selector<M>::type InnerVectorType;
-    typedef typename static_dynamic_matrix_selector<N, K>::type OuterMatrixType;
+    using InnerVectorType = typename static_dynamic_vector_selector<M>::type;
+    using OuterMatrixType = typename static_dynamic_matrix_selector<N, K>::type;
     static constexpr int rows = N;
     static constexpr int cols = K;
     static constexpr int static_inner_size = M;   // dimensionality of base space
-
+    // constructors
     MatrixExpr() = default;
     MatrixExpr(int inner_size, int outer_rows, int outer_cols) :
         inner_size_(inner_size), outer_rows_(outer_rows), outer_cols_(outer_cols),
 	outer_size_(outer_rows * outer_cols) {};
 
     // access operator on (i,j)-th element on the base type E
-    auto coeff(std::size_t i, std::size_t j) const { return static_cast<const E&>(*this).coeff(i, j); }
+    auto coeff(int i, int j) const { return static_cast<const E&>(*this).coeff(i, j); }
     const E& get() const { return static_cast<const E&>(*this); }
     inline constexpr int inner_size() const { return (M == Dynamic) ? inner_size_ : static_inner_size; }
     inline constexpr int outer_cols() const { return (K == Dynamic) ? outer_cols_ : cols; }
@@ -168,8 +163,8 @@ template <int M, int N, int K, typename E> struct MatrixExpr : public MatrixBase
     OuterMatrixType operator()(const InnerVectorType& p) const {
         OuterMatrixType result;
 	if constexpr(N == Dynamic || K == Dynamic) result.resize(outer_rows(), outer_cols());
-        for (std::size_t i = 0; i < outer_rows(); ++i) {
-           for (std::size_t j = 0; j < outer_cols(); ++j) {
+        for (int i = 0; i < outer_rows(); ++i) {
+           for (int j = 0; j < outer_cols(); ++j) {
                 // trigger evaluation on each element of the expression template.
                 // This will produce for the (i,j)-th element a callable object, evaluate it on p
                 result(i, j) = coeff(i, j)(p);
@@ -178,24 +173,20 @@ template <int M, int N, int K, typename E> struct MatrixExpr : public MatrixBase
         return result;
     }
     // block access to i-th row/column of MatrixExpr
-    MatrixRow<M, N, K, E> row(std::size_t i) const;
-    MatrixCol<M, N, K, E> col(std::size_t i) const;
-    // allow rhs multiplication by a VectorExpr
+    MatrixRow<M, N, K, E> row(int i) const;
+    MatrixCol<M, N, K, E> col(int i) const;
     template <typename F> MatrixVectorProduct<M, N, K, E, F> operator*(const VectorExpr<M, K, F>& op) const;
-    // allow rhs multiplication by constant SVector
     MatrixVectorProduct<M, N, K, E, VectorConst<M, K>> operator*(const SVector<K>& op) const;
-    // evaluate parametric nodes in the expression, does nothing if not redefined in derived classes
-    template <typename T> void forward(T i) const { return; }
-    // map unary operator- to a MatrixNegationOp expression node
+    template <typename T> void forward([[maybe_unused]] T i) const { return; }
     MatrixNegationOp<M, N, K, E> operator-() const { return MatrixNegationOp<M, N, K, E>(get()); }
 };
 
 // access i-th row of MatrixExpr
-template <int N, int M, int K, typename E> MatrixRow<N, M, K, E> MatrixExpr<N, M, K, E>::row(std::size_t i) const {
+template <int N, int M, int K, typename E> MatrixRow<N, M, K, E> MatrixExpr<N, M, K, E>::row(int i) const {
     return MatrixRow<N, M, K, E>(this->get(), i);
 }
 // access i-th column of MatrixExpr
-template <int N, int M, int K, typename E> MatrixCol<N, M, K, E> MatrixExpr<N, M, K, E>::col(std::size_t i) const {
+template <int N, int M, int K, typename E> MatrixCol<N, M, K, E> MatrixExpr<N, M, K, E>::col(int i) const {
     return MatrixCol<N, M, K, E>(this->get(), i);
 }
 
@@ -208,7 +199,7 @@ class MatrixConst : public MatrixExpr<N, M, K, MatrixConst<N, M, K>> {
     // constructor
     MatrixConst() = default;
     MatrixConst(SMatrix<M, K> value) : value_(value) { }
-    double coeff(std::size_t i, std::size_t j) const { return value_(i, j); }
+    double coeff(int i, int j) const { return value_(i, j); }
     // assignment operator
     MatrixConst<N, M, K>& operator=(const SMatrix<M, K>& value) {
         value_ = value;
@@ -225,10 +216,11 @@ class DiscretizedMatrixField : public MatrixExpr<N, M, K, DiscretizedMatrixField
     DataType* data_;
     Eigen::Map<SMatrix<M, K>> value_;
    public:
+    // constructor
     DiscretizedMatrixField() : value_(NULL) {};
     DiscretizedMatrixField(DataType& data) : data_(&data), value_(NULL) {};
-    double coeff(std::size_t i, std::size_t j) const { return value_(i, j); }
-    void forward(std::size_t i) {
+    double coeff(int i, int j) const { return value_(i, j); }
+    void forward(int i) {
         new (&value_) Eigen::Map<SMatrix<M, K>>(data_->data() + (i * M * K));   // construct map in place
     }
 };
@@ -244,7 +236,7 @@ class MatrixBinOp : public MatrixExpr<N, M, K, MatrixBinOp<N, M, K, OP1, OP2, Bi
     // constructor
     MatrixBinOp(const OP1& op1, const OP2& op2, BinaryOperation f) : op1_(op1), op2_(op2), f_(f) {};
     // access operator. Apply the functor to each accessed element. This returns a callable object
-    auto coeff(std::size_t i, std::size_t j) const { return f_(op1_.coeff(i, j), op2_.coeff(i, j)); }
+    auto coeff(int i, int j) const { return f_(op1_.coeff(i, j), op2_.coeff(i, j)); }
     // call parameter evaluation on operands
     template <typename T> const MatrixBinOp<N, M, K, OP1, OP2, BinaryOperation>& forward(T i) {
         op1_.forward(i);
@@ -280,7 +272,7 @@ template <int N, int M, int K> class MatrixScalar : public MatrixExpr<N, M, K, M
     double value_;
    public:
     MatrixScalar(double value) : value_(value) { }
-    double coeff(std::size_t i, std::size_t j) const { return value_; }
+    double coeff([[maybe_unused]] int i, [[maybe_unused]] int j) const { return value_; }
 };
 template <int N, int M, int K, typename E>
 MatrixBinOp<N, M, K, MatrixScalar<N, M, K>, E, std::multiplies<>>
@@ -309,7 +301,7 @@ class MatrixNegationOp : public MatrixExpr<M, N, K, MatrixNegationOp<M, N, K, E>
    public:
     // constructor
     MatrixNegationOp(const E& op) : op_(op) {};
-    auto coeff(std::size_t i, std::size_t j) const { return -(op_.coeff(i, j)); }
+    auto coeff(int i, int j) const { return -(op_.coeff(i, j)); }
     // call parameter evaluation on operands
     template <typename T> const MatrixNegationOp<N, M, K, E>& forward(T i) {
         op_.forward(i);

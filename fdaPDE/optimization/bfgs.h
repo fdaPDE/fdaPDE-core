@@ -29,10 +29,10 @@ template <int N, typename... Args> class BFGS {
    private:
     typedef typename std::conditional<N == Dynamic, DVector<double>, SVector<N>>::type VectorType;
     typedef typename std::conditional<N == Dynamic, DMatrix<double>, SMatrix<N>>::type MatrixType;
-    std::tuple<Args...> callbacks_ {};
     std::size_t max_iter_;   // maximum number of iterations before forced stop
     double tol_;             // tolerance on error before forced stop
     double step_;            // update step
+    std::tuple<Args...> callbacks_;
 
     VectorType optimum_;
     double value_;   // objective value at optimum
@@ -44,9 +44,19 @@ template <int N, typename... Args> class BFGS {
     // constructor
     BFGS() = default;
     template <int N_ = sizeof...(Args), typename std::enable_if<N_ != 0, int>::type = 0>
-    BFGS(std::size_t max_iter, double tol, double step) : max_iter_(max_iter), tol_(tol), step_(step) {};
-    BFGS(std::size_t max_iter, double tol, double step, Args&... callbacks) :
-        max_iter_(max_iter), tol_(tol), step_(step), callbacks_(std::make_tuple(std::forward<Args>(callbacks)...)) {};
+    BFGS(std::size_t max_iter, double tol, double step) : max_iter_(max_iter), tol_(tol), step_(step) { }
+    BFGS(std::size_t max_iter, double tol, double step, Args&&... callbacks) :
+        max_iter_(max_iter), tol_(tol), step_(step), callbacks_(std::make_tuple(std::forward<Args>(callbacks)...)) { }
+    // copy semantic
+    BFGS(const BFGS& other) :
+        max_iter_(other.max_iter_), tol_(other.tol_), step_(other.step_), callbacks_(other.callbacks_) { }
+    BFGS& operator=(const BFGS& other) {
+        max_iter_ = other.max_iter_;
+        tol_ = other.tol_;
+        step_ = other.step_;
+        callbacks_ = other.callbacks_;
+        return *this;
+    }
 
     template <typename F> VectorType optimize(F& objective, const VectorType& x0) {
         static_assert(

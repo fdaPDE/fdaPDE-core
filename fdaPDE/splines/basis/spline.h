@@ -32,51 +32,47 @@ namespace core {
 
 // A spline of order R centered in knot u_i.
 // Template parameter M is used to keep track of the order of the spline while developing the Cox-DeBoor recursion.
-template <int R, int M = R> class Spline : public ScalarExpr<1, Spline<R>> {
+template <int R, int M = R> class Spline : public ScalarExpr<1, Spline<R, M>> {
    private:
-    DVector<double> knots_;
-    std::size_t i_;   // knot index where this basis is centered
-
-    // store constants a_ = 1/(u_i+j - u_i), b_ = 1/(u_i+j+1 - u_i+1)
-    double a_, b_;
+    DVector<double> knots_ {};
+    int i_ = 0;              // knot index where this basis element is centered
+    double a_ = 0, b_ = 0;   // constants a_ = 1/(u_i+j - u_i), b_ = 1/(u_i+j+1 - u_i+1)
    public:
-    // full constructor (used by SplineBasis)
+    static constexpr int NestAsRef = 0;   // avoid nesting as reference, .derive() generates temporaries
     Spline() = default;
-    Spline(const DVector<double>& knots, std::size_t i) : knots_(knots), i_(i) {
+    Spline(const DVector<double>& knots, int i) : knots_(knots), i_(i) {
         // avoid possible divisions by zero
         a_ = knots_[i_ + R] - knots_[i_] != 0 ? 1.0 / (knots_[i_ + R] - knots_[i_]) : 0.0;
         b_ = knots_[i_ + R + 1] - knots_[i_ + 1] != 0 ? 1.0 / (knots_[i_ + R + 1] - knots_[i_ + 1]) : 0.0;
     };
-
     // evaluates the spline at a given point by Cox-DeBoor recursion
     inline double operator()(SVector<1> x) const {
         return a_ * (x[0] - knots_[i_]) * Spline<R - 1, M>(knots_, i_)(x) +
                b_ * (knots_[i_ + R + 1] - x[0]) * Spline<R - 1, M>(knots_, i_ + 1)(x);
     }
-
     // compute derivative of order K as a ScalarExpr
     // d^K/dx^K N_ij(x) = j/(u_i+j - u_i)*[d^{K-1}/dx^{K-1} N_i,j-1(x)]  - j/(u_i+j+1 - u_i+1)*
     // [d^{K-1}/dx^{K-1} N_i+1,j-1(x)]
     template <int K> auto derive() const {
-        if constexpr (K == 1)   // end of recursion
+        if constexpr (K == 1) {   // end of recursion
             return (R * a_) * Spline<R - 1, M>(knots_, i_) - (R * b_) * Spline<R - 1, M>(knots_, i_ + 1);
-        else   // exploit Cox-DeBoor recursive formula
+        } else {   // exploit Cox-DeBoor recursive formula
             return (R * a_) * Spline<R - 1, M>(knots_, i_).template derive<K - 1>() -
                    (R * b_) * Spline<R - 1, M>(knots_, i_ + 1).template derive<K - 1>();
+        }
     }
 };
 
 // partial template specialization for order 0 splines (end of recursion)
-template <int M> class Spline<0, M> : public ScalarExpr<1, Spline<0>> {
+template <int M> class Spline<0, M> : public ScalarExpr<1, Spline<0, M>> {
    private:
-    DVector<double> knots_;
-    std::size_t i_;   // knot index where this basis is centered
-
+    DVector<double> knots_ {};
+    int i_ = 0;   // knot index where this basis is centered
     static constexpr double tol_ = 50 * std::numeric_limits<double>::epsilon();   // approx 10^-14
    public:
-    // constructor
+    static constexpr int NestAsRef = 0;   // avoid nesting as reference
     Spline() = default;
-    Spline(const DVector<double>& knots, std::size_t i) : knots_(knots), i_(i) {};
+    Spline(const DVector<double>& knots, int i) : knots_(knots), i_(i) { }
     // indicator function over the interval [u_i, u_{i+1}). Returns 1 if at the end of the knot span.
     inline double operator()(SVector<1> x) const {
         return (knots_[i_] <= x[0] && x[0] < knots_[i_ + 1]) ||

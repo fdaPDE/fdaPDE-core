@@ -95,11 +95,10 @@ class CSVReader{
     getline(file_stream, line); // skip first line
     // read file until EOF
     int row = 0;
-    T val;
     while(getline(file_stream, line)){
       // split CSV line in tokens
       std::vector<std::string> parsed_line = split_string(line, ",");
-      for(int col = 1; col < parsed_line.size(); ++col){ // skip first column (row index column)
+      for(std::size_t col = 1; col < parsed_line.size(); ++col){ // skip first column (row index column)
 	std::string data_token = remove_char(parsed_line[col], filter_);
 	// detect token type
 	auto token_type = reserved_tokens_.find(data_token);

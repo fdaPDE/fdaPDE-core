@@ -44,15 +44,13 @@ template <int M, int R> class Integrator<FEM, M, R> {
     template <int N, typename F> double integrate(const Element<M, N>& e, const F& f) const {
         double value = 0;
         for (size_t iq = 0; iq < integration_table_.num_nodes; ++iq) {
-            if constexpr (std::is_invocable<F, SVector<N>>::value) {
-                // functor f is evaluable at any point
-                SVector<N> p = e.barycentric_matrix() * integration_table_.nodes[iq] +
-                               e.coords()[0];   // map quadrature point onto e
+            if constexpr (std::is_invocable_r<double, F, SVector<N>>::value) {   // callable f
+                // map quadrature point onto e
+                SVector<N> p = e.barycentric_matrix() * integration_table_.nodes[iq] + e.coord(0);
                 value += f(p) * integration_table_.weights[iq];
             } else {
-                // as a fallback we assume f given as vector of values with the assumption that
-                // f[integration_table_.num_nodes*e.ID() + iq] equals the discretized field at the iq-th quadrature
-                // node.
+                // as a fallback we assume f given as vector with the assumption that
+                // f[integration_table_.num_nodes*e.ID() + iq] equals the discretized field at the iq-th quadrature node
                 value += f(integration_table_.num_nodes * e.ID() + iq, 0) * integration_table_.weights[iq];
             }
         }
@@ -76,7 +74,7 @@ template <int M, int R> class Integrator<FEM, M, R> {
             if constexpr (std::is_base_of<ScalarExpr<N, F>, F>::value) {
                 // functor f is evaluable at any point.
                 SVector<N> Jp =
-                  e.barycentric_matrix() * p + e.coords()[0];   // map quadrature point on physical element e
+                  e.barycentric_matrix() * p + e.coord(0);   // map quadrature point on physical element e
                 value += (f(Jp) * Phi(p)) * integration_table_.weights[iq];
             } else {
                 // as a fallback we assume f given as vector of values with the assumption that
@@ -113,7 +111,7 @@ template <int M, int R> class Integrator<FEM, M, R> {
             // for each quadrature node, map it onto the physical element e and store it
             for (size_t iq = 0; iq < integration_table_.num_nodes; ++iq) {
                 quadrature_nodes.row(integration_table_.num_nodes * e.ID() + iq) =
-                  e.barycentric_matrix() * SVector<M>(integration_table_.nodes[iq].data()) + e.coords()[0];
+                  e.barycentric_matrix() * SVector<M>(integration_table_.nodes[iq].data()) + e.coord(0);
             }
         }
         return quadrature_nodes;
@@ -139,7 +137,7 @@ template <int R> class Integrator<SPLINE, 1, R> {
         return (b - a) / 2 * value;
     }
     template <typename F> double integrate(const Element<1, 1>& e, const F& f) const {
-        return integrate(e.coords()[0], e.coords()[1], f);
+        return integrate(e.coord(0), e.coord(1), f);
     }
     // integrate a callable F over a 1D Mesh
     template <typename F> double integrate(const Mesh<1, 1>& m, const F& f) const {
@@ -157,8 +155,7 @@ template <int R> class Integrator<SPLINE, 1, R> {
             // for each quadrature node, map it onto the physical element e and store it
             for (size_t iq = 0; iq < integration_table_.num_nodes; ++iq) {
                 quadrature_nodes.row(integration_table_.num_nodes * e.ID() + iq) =
-                  ((e.coords()[1] - e.coords()[0]) / 2) * integration_table_.nodes[iq][0] +
-                  ((e.coords()[1] + e.coords()[0]) / 2);
+                  ((e.coord(1) - e.coord(0)) / 2) * integration_table_.nodes[iq][0] + ((e.coord(1) + e.coord(0)) / 2);
             }
         }
         return quadrature_nodes;

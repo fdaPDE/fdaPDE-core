@@ -66,10 +66,10 @@ TEST(fem_operators_test, laplacian_order_2) {
 
     std::vector<double> integrals;
 
-    for (size_t i = 0; i < basis.size(); ++i) {
+    for (int i = 0; i < basis.size(); ++i) {
         buff_psi_i = basis[i];
         buff_nabla_psi_i = buff_psi_i.derive();
-        for (size_t j = 0; j < basis.size(); ++j) {
+        for (int j = 0; j < basis.size(); ++j) {
             buff_psi_j = basis[j];
             buff_nabla_psi_j = buff_psi_j.derive();
             double value = integrator.template integrate<decltype(L)>(e, weak_form);

@@ -99,7 +99,7 @@ struct shared_storage {
     const void* ptr() const { return ptr_.get(); }
 
     shared_storage() = default;
-    template <typename T> shared_storage(const T& obj) : ptr_(std::make_shared<T>(obj)) {};
+    template <typename T> shared_storage(const T& obj) : ptr_(std::make_shared<T>(obj)) { }
 };
 
 struct non_owning_storage {
@@ -108,8 +108,8 @@ struct non_owning_storage {
     const void* ptr() const { return ptr_; }
 
     non_owning_storage() = default;
-    template <typename T> non_owning_storage(T& obj) : ptr_(&obj) {};
-    template <typename T> non_owning_storage(const T& obj) : ptr_(&obj) {};
+    template <typename T> non_owning_storage(T& obj) : ptr_(&obj) { }
+    template <typename T> non_owning_storage(const T& obj) : ptr_(&obj) { }
     // copy construct/assign
     non_owning_storage(const non_owning_storage& other) : ptr_(other.ptr_) { }
     non_owning_storage& operator=(const non_owning_storage& other) {
@@ -128,10 +128,10 @@ struct heap_storage {
         // store delete and copy function pointers
         del = [](void* ptr) { delete reinterpret_cast<T*>(ptr); };
         copy = [](const void* ptr) -> void* { return new T(*reinterpret_cast<const T*>(ptr)); };
-    };
+    }
     // copy construct/assign
     heap_storage(const heap_storage& other) :
-        ptr_(other.ptr_ == nullptr ? nullptr : other.copy(other.ptr_)), del(other.del), copy(other.copy) { };
+        ptr_(other.ptr_ == nullptr ? nullptr : other.copy(other.ptr_)), del(other.del), copy(other.copy) { }
     heap_storage& operator=(const heap_storage& other) {
         // free memory
         if (ptr_) del(ptr_);
@@ -144,7 +144,7 @@ struct heap_storage {
     // move semantic
     heap_storage(heap_storage&& other) :
         ptr_(std::exchange(other.ptr_, nullptr)), del(std::exchange(other.del, nullptr)),
-        copy(std::exchange(other.copy, nullptr)) {};
+        copy(std::exchange(other.copy, nullptr)) { }
     heap_storage& operator=(heap_storage&& other) {
         // free memory
         if (ptr_) del(ptr_);
@@ -174,11 +174,11 @@ struct vtable_handler {
     void** vtable_copy(const vtable_handler& vt1, vtable_handler& vt2) {
         vt2.size_ = vt1.size_;
         vt2.vtable_ = new void*[vt2.size_];
-        for (std::size_t i = 0; i < vt2.size_; ++i) { vt2.vtable_[i] = vt1.vtable_[i]; }
+        for (int i = 0; i < vt2.size_; ++i) { vt2.vtable_[i] = vt1.vtable_[i]; }
         return vt2.vtable_;
     }
 
-    vtable_handler() : vtable_(nullptr), size_(0) {};
+    vtable_handler() : vtable_(nullptr), size_(0) { }
     // copy construct/assign
     vtable_handler(const vtable_handler& other) :
         vtable_(other.vtable_ == nullptr ? nullptr : vtable_copy(other, *this)), offset_table_(other.offset_table_) { };
@@ -191,7 +191,7 @@ struct vtable_handler {
     // move semantic
     vtable_handler(vtable_handler&& other) :
         vtable_(std::exchange(other.vtable_, nullptr)), size_(std::exchange(other.size_, 0)),
-        offset_table_(std::move(other.offset_table_)) {};
+        offset_table_(std::move(other.offset_table_)) { }
     vtable_handler& operator=(vtable_handler&& other) {
         if (vtable_) delete[] vtable_;
         // move data from other to this
@@ -214,7 +214,7 @@ struct vtable_handler {
   
 template <typename StorageType, typename... I> class erase : vtable_handler, public I... {
     // initializes virtual table
-    template <typename T> void _vtable_init(const T& obj) {
+    template <typename T> void _vtable_init([[maybe_unused]] const T& obj) {
         typedef typename std::decay<T>::type T_;
         static_assert(
           std::is_destructible<T_>::value &&
@@ -260,7 +260,7 @@ template <typename StorageType, typename... I> class erase : vtable_handler, pub
     
     virtual ~erase() = default;
    private:
-    StorageType data_ {};    // pointer to holded object
+    StorageType data_ {};   // pointer to holded object
 };
 
 // invoke function pointer (T is deduced to the type of the interface)

@@ -96,7 +96,7 @@ TEST(optimization_test, type_erased_bfgs_wolfe_line_search) {
     f.set_step(1e-4);
 
     // define optimizer
-    Optimizer<ScalarField<2>> opt = BFGS<2, WolfeLineSearch>(1000, 1e-6, 0.01); // use a type erasure wrapper
+    Optimizer<ScalarField<2>> opt = BFGS<2, WolfeLineSearch>(1000, 1e-6, 0.01);   // use a type erasure wrapper
     // perform optimization
     SVector<2> pt(-1, -1);
     opt.optimize(f, pt);
