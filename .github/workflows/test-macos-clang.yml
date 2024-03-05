@@ -5,13 +5,13 @@ on:
      
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: macos-13
     steps:
     - name: checkout repository
       uses: actions/checkout@v2
       with:
         submodules: 'recursive'
-    - name: install_deps
+    - name: install_eigen
       run: |
         brew install eigen
     - name: run_tests

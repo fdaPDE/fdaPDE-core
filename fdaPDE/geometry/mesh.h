@@ -34,38 +34,160 @@ namespace fdapde {
 namespace core {
 
 template <int M, int N> class Mesh {
-   protected:
-    using neigh_container = std::conditional_t<is_network<M, N>::value, SpMatrix<int>, DMatrix<int>>;
-    // physical coordinates of mesh's vertices
-    DMatrix<double> nodes_ {};
-    int n_nodes_ = 0;
-    // identifiers of nodes (as row indexes in nodes_ matrix) composing each element, in a RowMajor format
-    DMatrix<int, Eigen::RowMajor> elements_ {};
-    int n_elements_ = 0;
-    // vector of binary coefficients such that, boundary_[j] = 1 \iff node j is on boundary
-    DMatrix<int> boundary_ {};
-    SMatrix<2, N> range_ {};   // mesh bounding box (column i maps to the i-th dimension)
-    neigh_container neighbors_ {};
-    // identifiers of nodes composing each facet of the mesh (linearly stored in a row-major format)
-    std::vector<int> facets_ {};
-    std::unordered_map<int, std::vector<int>> facet_to_element_ {};   // map from facet id to elements insisting on it
-    int n_facets_ = 0;
-    // identifiers of nodes composing each edge (for 2D and 2.5D, edges coincide with facets)
-    std::vector<int> edges_ {};
-    std::unordered_map<int, std::vector<int>> edge_to_element_ {};   // map from edge id to elements insisting on it
-    int n_edges_ = 0;
-
-    // precomputed set of elements
-    std::vector<Element<M, N>> elements_cache_ {};
-    mutable PointLocation<M, N> point_location_;
    public:
+    using NeighborsContainerType = std::conditional_t<is_network<M, N>::value, SpMatrix<int>, DMatrix<int>>;
     Mesh() = default;
     // 2D, 2.5D, 3D constructor
-    template <int M_ = M, int N_ = N, typename std::enable_if<!is_network<M_, N_>::value, int>::type = 0>
-    Mesh(const DMatrix<double>& nodes, const DMatrix<int>& elements, const DMatrix<int>& boundary);
+    Mesh(const DMatrix<double>& nodes, const DMatrix<int>& elements, const DMatrix<int>& boundary)
+        requires(!is_network<M, N>::value)
+        : nodes_(nodes), elements_(elements), boundary_(boundary) {
+        // store number of nodes and number of elements
+        n_nodes_ = nodes_.rows();
+        n_elements_ = elements_.rows();
+        // compute mesh limits
+        range_.row(0) = nodes_.colwise().minCoeff();
+        range_.row(1) = nodes_.colwise().maxCoeff();
+
+        // reserve neighbors_ storage (-1 in column i implies no neighbor adjacent to the facet opposite to vertex i)
+        neighbors_ = DMatrix<int>::Constant(n_elements_, n_neighbors_per_element, -1);
+        // compute facets informations and neighboring structure
+        auto facet_pattern = combinations<n_vertices_per_facet, n_vertices>();
+        std::unordered_map<std::array<int, n_vertices_per_facet>, int, std_array_hash<int, n_vertices_per_facet>>
+          visited;
+        std::array<int, n_vertices_per_facet> facet;
+
+        // cycle over all elements
+        for (int i = 0; i < n_elements_; ++i) {
+            for (int j = 0; j < facet_pattern.rows(); ++j) {
+                // construct facet
+                for (int k = 0; k < n_vertices_per_facet; ++k) { facet[k] = elements_(i, facet_pattern(j, k)); }
+                std::sort(facet.begin(), facet.end());   // normalize wrt node ordering
+                auto it = visited.find(facet);
+                if (it != visited.end()) {
+                    // update face to element bounding
+                    facet_to_element_[it->second][1] = i;
+                    // update neighboring informations (each face is shared by two, and only two, adjacent elements)
+                    for (int h = 0; h < n_elements_per_facet; ++h) {
+                        int element_id = facet_to_element_[it->second][h];
+                        if (element_id >= 0) {   // not a boundary face
+                            // search point opposite to this face (the j-th node which is not a node of this face)
+                            int j = 0;
+                            for (; j < n_vertices; ++j) {
+                                bool found = false;
+                                for (int k = 0; k < n_vertices_per_facet; ++k) {
+                                    if (it->first[k] == elements_(element_id, j)) { found = true; }
+                                }
+                                if (!found) break;
+                            }
+                            neighbors_(element_id, j) = facet_to_element_[it->second][(h + 1) % n_elements_per_facet];
+                        }
+                    }
+                    // free memory
+                    visited.erase(it);
+                } else {
+                    // store facet and update face to element bounding
+                    for (int k = 0; k < n_vertices_per_facet; ++k) { facets_.emplace_back(facet[k]); }
+                    visited.insert({facet, n_facets_});
+                    facet_to_element_[n_facets_].insert(facet_to_element_[n_facets_].end(), {i, -1});
+                    n_facets_++;
+                }
+            }
+        }
+        // compute edges for 3D domains
+        if constexpr (is_3d<M, N>::value) {
+            auto edge_pattern = combinations<n_vertices_per_edge, n_vertices>();
+            std::unordered_map<std::array<int, n_vertices_per_edge>, int, std_array_hash<int, n_vertices_per_edge>>
+              visited;
+            std::array<int, n_vertices_per_edge> edge;
+            // cycle over all elements
+            for (int i = 0; i < n_elements_; ++i) {
+                for (int j = 0; j < edge_pattern.rows(); ++j) {
+                    // construct facet
+                    for (int k = 0; k < n_vertices_per_edge; ++k) { edge[k] = elements_(i, edge_pattern(j, k)); }
+                    std::sort(edge.begin(), edge.end());   // normalize wrt node ordering
+                    auto it = visited.find(edge);
+                    if (it != visited.end()) {
+                        edge_to_element_[it->second].push_back(i);
+                    } else {
+                        // store facet and update face to element bounding
+                        for (int k = 0; k < n_vertices_per_edge; ++k) { edges_.emplace_back(edge[k]); }
+                        visited.insert({edge, n_edges_});
+                        edge_to_element_[n_edges_].push_back(i);
+                        n_edges_++;
+                    }
+                }
+            }
+        }
+        // precompute elements informations for fast access
+        elements_cache_.reserve(n_elements_);
+        std::array<int, ct_nvertices(M)> node_ids {};
+        SMatrix<N, ct_nvertices(M)> coords {};
+        std::array<int, ct_nneighbors(M)> neighbors {};
+        for (int i = 0; i < n_elements_; ++i) {
+            bool boundary = false;   // element on boundary \iff at least one of its nodes is on boundary
+            for (int j = 0; j < ct_nvertices(M); ++j) {
+                int node_id = elements_(i, j);
+                coords.col(j) = nodes_.row(node_id);     // physical coordinate of the node
+                node_ids[j] = node_id;                   // global id of node in the mesh
+                boundary |= (boundary_(node_id) == 1);   // boundary status
+                neighbors[j] = neighbors_(i, j);         // neighboring element on the facet opposite to node_id
+            }
+            // cache element
+            elements_cache_.emplace_back(i, node_ids, coords, neighbors, boundary);
+        }
+        return;
+    }
     // linear network (1.5D) specialized constructor
-    template <int M_ = M, int N_ = N, typename std::enable_if< is_network<M_, N_>::value, int>::type = 0>
-    Mesh(const DMatrix<double>& nodes, const DMatrix<int>& elements, const DMatrix<int>& boundary);
+    Mesh(const DMatrix<double>& nodes, const DMatrix<int>& elements, const DMatrix<int>& boundary)
+        requires(is_network<M, N>::value)
+        : nodes_(nodes), elements_(elements), boundary_(boundary) {
+        // store number of nodes and number of elements
+        n_nodes_ = nodes_.rows();
+        n_elements_ = elements_.rows();
+        // compute mesh limits
+        range_.row(0) = nodes_.colwise().minCoeff();
+        range_.row(1) = nodes_.colwise().maxCoeff();
+        // compute facets and facet to elements boundings (for linear networks, facets coincide with nodes)
+        for (int i = 0; i < n_elements_; ++i) {
+            facet_to_element_[elements_(i, 0)].push_back(i);
+            facet_to_element_[elements_(i, 1)].push_back(i);
+        }
+        for (auto& [key, value] : facet_to_element_) { facets_.emplace_back(key); }
+        n_facets_ = facets_.size();
+
+        // recover adjacency matrix
+        SpMatrix<int> adjoint_neighbors;
+        std::vector<Eigen::Triplet<int>> triplets;
+        for (const auto& e : facet_to_element_) {
+            for (std::size_t i = 0; i < e.second.size(); ++i) {
+                for (std::size_t j = i + 1; j < e.second.size(); ++j)
+                    triplets.emplace_back(e.second[j], e.second[i], 1);
+            }
+        }
+        adjoint_neighbors.resize(n_elements_, n_elements_);
+        adjoint_neighbors.setFromTriplets(triplets.begin(), triplets.end());
+        neighbors_ = adjoint_neighbors.selfadjointView<Eigen::Lower>();   // symmetrize neighboring relation
+
+        // precompute elements informations for fast access
+        elements_cache_.reserve(n_elements_);
+        std::array<int, ct_nvertices(1)> node_ids {};
+        SMatrix<2, ct_nvertices(1)> coords;
+        for (int i = 0; i < n_elements_; ++i) {
+            std::vector<int> neighbors {};
+            bool boundary = false;   // element on boundary \iff at least one of its nodes is on boundary
+            for (int j = 0; j < ct_nvertices(1); ++j) {
+                int node_id = elements_(i, j);
+                coords.col(j) = nodes_.row(node_id);     // physical coordinate of the node
+                node_ids[j] = node_id;                   // global id of node in the mesh
+                boundary |= (boundary_(node_id) == 1);   // boundary status
+            }
+            for (SpMatrix<int>::InnerIterator sp_mat_it(neighbors_, i); sp_mat_it; ++sp_mat_it) {
+                neighbors.push_back(sp_mat_it.row());   // neighbors_ organized in ColumnMajor mode
+            }
+            // cache element
+            elements_cache_.emplace_back(i, node_ids, coords, neighbors, boundary);
+        }
+    }
 
     // getters
     const Element<M, N>& element(int ID) const { return elements_cache_[ID]; }
@@ -74,7 +196,7 @@ template <int M, int N> class Mesh {
     bool is_on_boundary(int ID) const { return boundary_(ID) == 1; }
     const DMatrix<double>& nodes() const { return nodes_; }
     const DMatrix<int, Eigen::RowMajor>& elements() const { return elements_; }
-    const neigh_container& neighbors() const { return neighbors_; }
+    const NeighborsContainerType& neighbors() const { return neighbors_; }
     const DMatrix<int>& boundary() const { return boundary_; }
     int n_elements() const { return n_elements_; }
     int n_nodes() const { return n_nodes_; }
@@ -182,159 +304,28 @@ template <int M, int N> class Mesh {
         n_neighbors_per_element = ct_nneighbors(M),
         n_elements_per_facet = 2
     };
-};
-
-// implementative details
-
-template <int M, int N>
-template <int M_, int N_, typename std::enable_if<!is_network<M_, N_>::value, int>::type>
-Mesh<M, N>::Mesh(const DMatrix<double>& nodes, const DMatrix<int>& elements, const DMatrix<int>& boundary) :
-    nodes_(nodes), elements_(elements), boundary_(boundary) {
-    // store number of nodes and number of elements
-    n_nodes_ = nodes_.rows();
-    n_elements_ = elements_.rows();
-    // compute mesh limits
-    range_.row(0) = nodes_.colwise().minCoeff();
-    range_.row(1) = nodes_.colwise().maxCoeff();
-
-    // reserve neighbors_ storage (-1 in column i implies no neighbor adjacent to the facet opposite to vertex i)
-    neighbors_ = DMatrix<int>::Constant(n_elements_, n_neighbors_per_element, -1);
-    // compute facets informations and neighboring structure
-    auto facet_pattern = combinations<n_vertices_per_facet, n_vertices>();
-    std::unordered_map<std::array<int, n_vertices_per_facet>, int, std_array_hash<int, n_vertices_per_facet>> visited;
-    std::array<int, n_vertices_per_facet> facet;
-
-    // cycle over all elements
-    for (int i = 0; i < n_elements_; ++i) {
-        for (int j = 0; j < facet_pattern.rows(); ++j) {
-            // construct facet
-            for (int k = 0; k < n_vertices_per_facet; ++k) { facet[k] = elements_(i, facet_pattern(j, k)); }
-            std::sort(facet.begin(), facet.end());   // normalize wrt node ordering
-            auto it = visited.find(facet);
-            if (it != visited.end()) {
-                // update face to element bounding
-                facet_to_element_[it->second][1] = i;
-                // update neighboring informations (each face is shared by two, and only two, adjacent elements)
-                for (int h = 0; h < n_elements_per_facet; ++h) {
-                    int element_id = facet_to_element_[it->second][h];
-                    if (element_id >= 0) {   // not a boundary face
-                        // search point opposite to this face (the j-th node which is not a node of this face)
-                        int j = 0;
-                        for (; j < n_vertices; ++j) {
-                            bool found = false;
-                            for (int k = 0; k < n_vertices_per_facet; ++k) {
-                                if (it->first[k] == elements_(element_id, j)) { found = true; }
-                            }
-                            if (!found) break;
-                        }
-                        neighbors_(element_id, j) = facet_to_element_[it->second][(h + 1) % n_elements_per_facet];
-                    }
-                }
-                // free memory
-                visited.erase(it);
-            } else {
-                // store facet and update face to element bounding
-                for (int k = 0; k < n_vertices_per_facet; ++k) { facets_.emplace_back(facet[k]); }
-                visited.insert({facet, n_facets_});
-                facet_to_element_[n_facets_].insert(facet_to_element_[n_facets_].end(), {i, -1});
-                n_facets_++;
-            }
-        }
-    }
-    // compute edges for 3D domains
-    if constexpr (is_3d<M, N>::value) {
-        auto edge_pattern = combinations<n_vertices_per_edge, n_vertices>();
-        std::unordered_map<std::array<int, n_vertices_per_edge>, int, std_array_hash<int, n_vertices_per_edge>> visited;
-        std::array<int, n_vertices_per_edge> edge;
-        // cycle over all elements
-        for (int i = 0; i < n_elements_; ++i) {
-            for (int j = 0; j < edge_pattern.rows(); ++j) {
-                // construct facet
-                for (int k = 0; k < n_vertices_per_edge; ++k) { edge[k] = elements_(i, edge_pattern(j, k)); }
-                std::sort(edge.begin(), edge.end());   // normalize wrt node ordering
-                auto it = visited.find(edge);
-                if (it != visited.end()) {
-                    edge_to_element_[it->second].push_back(i);
-                } else {
-                    // store facet and update face to element bounding
-                    for (int k = 0; k < n_vertices_per_edge; ++k) { edges_.emplace_back(edge[k]); }
-                    visited.insert({edge, n_edges_});
-                    edge_to_element_[n_edges_].push_back(i);
-                    n_edges_++;
-                }
-            }
-        }
-    }
-    // precompute elements informations for fast access
-    elements_cache_.reserve(n_elements_);
-    std::array<int, ct_nvertices(M)> node_ids {};
-    SMatrix<N, ct_nvertices(M)> coords {};
-    std::array<int, ct_nneighbors(M)> neighbors {};
-    for (int i = 0; i < n_elements_; ++i) {
-        bool boundary = false;   // element on boundary \iff at least one of its nodes is on boundary
-        for (int j = 0; j < ct_nvertices(M); ++j) {
-            int node_id = elements_(i, j);
-            coords.col(j) = nodes_.row(node_id);     // physical coordinate of the node
-            node_ids[j] = node_id;                   // global id of node in the mesh
-            boundary |= (boundary_(node_id) == 1);   // boundary status
-            neighbors[j] = neighbors_(i, j);         // neighboring element on the facet opposite to node_id
-        }
-        // cache element
-        elements_cache_.emplace_back(i, node_ids, coords, neighbors, boundary);
-    }
-    return;
-}
-
-// constructor specialization for linear networks (1.5D domains)
-template <int M, int N>
-template <int M_, int N_, typename std::enable_if< is_network<M_, N_>::value, int>::type>
-Mesh<M, N>::Mesh(const DMatrix<double>& nodes, const DMatrix<int>& elements, const DMatrix<int>& boundary) :
-    nodes_(nodes), elements_(elements), boundary_(boundary) {
-    // store number of nodes and number of elements
-    n_nodes_ = nodes_.rows();
-    n_elements_ = elements_.rows();
-    // compute mesh limits
-    range_.row(0) = nodes_.colwise().minCoeff();
-    range_.row(1) = nodes_.colwise().maxCoeff();
-    // compute facets and facet to elements boundings (for linear networks, facets coincide with nodes)
-    for (int i = 0; i < n_elements_; ++i) {
-        facet_to_element_[elements_(i, 0)].push_back(i);
-        facet_to_element_[elements_(i, 1)].push_back(i);
-    }
-    for (auto& [key, value] : facet_to_element_) { facets_.emplace_back(key); }
-    n_facets_ = facets_.size();
-
-    // recover adjacency matrix
-    SpMatrix<int> adjoint_neighbors;
-    std::vector<Eigen::Triplet<int>> triplets;
-    for (const auto& e : facet_to_element_) {
-        for (std::size_t i = 0; i < e.second.size(); ++i) {
-            for (std::size_t j = i + 1; j < e.second.size(); ++j) triplets.emplace_back(e.second[j], e.second[i], 1);
-        }
-    }
-    adjoint_neighbors.resize(n_elements_, n_elements_);
-    adjoint_neighbors.setFromTriplets(triplets.begin(), triplets.end());
-    neighbors_ = adjoint_neighbors.selfadjointView<Eigen::Lower>();   // symmetrize neighboring relation
-
-    // precompute elements informations for fast access
-    elements_cache_.reserve(n_elements_);
-    std::array<int, ct_nvertices(1)> node_ids {};
-    SMatrix<2, ct_nvertices(1)> coords;
-    for (int i = 0; i < n_elements_; ++i) {
-        std::vector<int> neighbors {};
-        bool boundary = false;   // element on boundary \iff at least one of its nodes is on boundary
-        for (int j = 0; j < ct_nvertices(1); ++j) {
-            int node_id = elements_(i, j);
-            coords.col(j) = nodes_.row(node_id);     // physical coordinate of the node
-            node_ids[j] = node_id;                   // global id of node in the mesh
-            boundary |= (boundary_(node_id) == 1);   // boundary status
-        }
-        for (SpMatrix<int>::InnerIterator sp_mat_it(neighbors_, i); sp_mat_it; ++sp_mat_it) {
-            neighbors.push_back(sp_mat_it.row());   // neighbors_ organized in ColumnMajor mode
-        }
-        // cache element
-        elements_cache_.emplace_back(i, node_ids, coords, neighbors, boundary);
-    }
+   protected:
+    // physical coordinates of mesh's vertices
+    DMatrix<double> nodes_ {};
+    int n_nodes_ = 0;
+    // identifiers of nodes (as row indexes in nodes_ matrix) composing each element, in a RowMajor format
+    DMatrix<int, Eigen::RowMajor> elements_ {};
+    int n_elements_ = 0;
+    // vector of binary coefficients such that, boundary_[j] = 1 \iff node j is on boundary
+    DMatrix<int> boundary_ {};
+    SMatrix<2, N> range_ {};   // mesh bounding box (column i maps to the i-th dimension)
+    NeighborsContainerType neighbors_ {};
+    // identifiers of nodes composing each facet of the mesh (linearly stored in a row-major format)
+    std::vector<int> facets_ {};
+    std::unordered_map<int, std::vector<int>> facet_to_element_ {};   // map from facet id to elements insisting on it
+    int n_facets_ = 0;
+    // identifiers of nodes composing each edge (for 2D and 2.5D, edges coincide with facets)
+    std::vector<int> edges_ {};
+    std::unordered_map<int, std::vector<int>> edge_to_element_ {};   // map from edge id to elements insisting on it
+    int n_edges_ = 0;
+    // precomputed set of elements
+    std::vector<Element<M, N>> elements_cache_ {};
+    mutable PointLocation<M, N> point_location_ {};
 };
 
 template <int M, int N> Facet<M, N> Mesh<M, N>::facet(int ID) const {
