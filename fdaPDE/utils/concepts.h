@@ -17,13 +17,13 @@
 #ifndef __FDAPDE_CORE_CONCEPTS_H__
 #define __FDAPDE_CORE_CONCEPTS_H__
 
-namespace fdapde {
+// namespace fdapde {
 
-template <typename R, typename U, typename V>
-concept LessThanComparable = requires(R r, U u, V v) {
-    { r.operator()(u, v) } -> std::same_as<bool>;
-};
+// template <typename R, typename U, typename V>
+// concept LessThanComparable = requires(R r, U u, V v) {
+//     { r.operator()(u, v) } -> std::same_as<bool>;
+// };
 
-}
+// }
 
 #endif   // __FDAPDE_CORE_CONCEPTS_H__

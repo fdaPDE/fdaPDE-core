@@ -21,6 +21,7 @@
 #include <numeric>
 
 #include "../utils/symbols.h"
+#include "../utils/data_structures/binary_tree.h"
 
 namespace fdapde {
 namespace core {

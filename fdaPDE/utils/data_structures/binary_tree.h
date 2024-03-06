@@ -165,7 +165,7 @@ template <typename T> class BinaryTree {
 
     // push with custom compare strategy
     template <typename Compare_>
-        requires fdapde::LessThanComparable<Compare_, T, node_pointer>
+    //    requires fdapde::LessThanComparable<Compare_, T, node_pointer>
     dfs_iterator push(const T& data, Compare_&& less_than) {
         if (!root_) {   // if tree empty, insert root and return
             root_ = new node_type(data, 0);
@@ -188,7 +188,7 @@ template <typename T> class BinaryTree {
         }
     }
     template <typename Compare_>
-        requires fdapde::LessThanComparable<Compare_, T, node_pointer>
+    //    requires fdapde::LessThanComparable<Compare_, T, node_pointer>
     dfs_iterator push(const std::initializer_list<T>& data, Compare_&& less_than) {
         auto it = data.begin();
         for (; it != data.end() - 1; ++it) push(*it, std::forward<Compare_>(less_than));
