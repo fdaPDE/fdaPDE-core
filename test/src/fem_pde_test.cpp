@@ -658,12 +658,12 @@ TEST(fem_pde_test, space_time) {
     // non linear reaction h_(u)*u
     std::function<double(SVector<2>, SVector<1>)> h_ = [&](SVector<2> x, SVector<1> ff) -> double {return 1 - ff[0];};
     // build the non-linearity object # N=2
-    NonLinearReaction<2, LagrangianBasis<decltype(unit_square.mesh),2>::ReferenceBasis> non_linear_reaction(h_);
+    NonLinearReaction<2, LagrangianBasis<decltype(unit_square.mesh),1>::ReferenceBasis> non_linear_reaction(h_);
 
     // differential operator
     auto L = dt<FEM>() - laplacian<FEM>() - non_linear_op<FEM>(non_linear_reaction);
 
-    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<2>> pde_(unit_square.mesh, times, L, h_);
+    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_square.mesh, times, L, h_);
     
     // compute boundary condition and exact solution
     DMatrix<double> nodes_ = pde_.dof_coords();
@@ -706,6 +706,15 @@ TEST(fem_pde_test, space_time) {
         error_L2(j, 0) = (pde_.mass() * error_.cwiseProduct(error_)).sum();
         // std::cout << "t = " << j << " ErrorL2 = " << error_L2(j,0) << std::endl;
     }
+
+    /* std::ofstream file("solution_space_time_P1.txt");    //it will be exported in the current build directory
+    if (file.is_open()){
+        for(int i = 0; i < pde_.solution().col(M-1).rows(); ++i)
+            file << pde_.solution().col(M-1)(i) << '\n';
+        file.close();
+    } else {
+        std::cerr << "parabolic test unable to save solution" << std::endl;
+    } */
 
     EXPECT_TRUE(error_L2.maxCoeff() < 1e-7);
 }
@@ -736,13 +745,13 @@ TEST(fem_pde_test, travelling_waves) {
     // non linear reaction h_(u)*u
     std::function<double(SVector<2>, SVector<1>)> h_ = [&](SVector<2> x, SVector<1> ff) -> double {return 1 - ff[0];};
     // build the non-linearity object # N=2
-    NonLinearReaction<2, LagrangianBasis<decltype(unit_square.mesh),2>::ReferenceBasis> non_linear_reaction(h_);
+    NonLinearReaction<2, LagrangianBasis<decltype(unit_square.mesh),1>::ReferenceBasis> non_linear_reaction(h_);
 
     // differential operator
     double d = 1e-3;
     auto L = dt<FEM>() - d*laplacian<FEM>() - non_linear_op<FEM>(non_linear_reaction);
 
-    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<2>> pde_(unit_square.mesh, times, L, h_);
+    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_square.mesh, times, L, h_);
     
     // compute boundary condition and exact solution
     DMatrix<double> nodes_ = pde_.dof_coords();
@@ -785,6 +794,15 @@ TEST(fem_pde_test, travelling_waves) {
         error_L2(j, 0) = (pde_.mass() * error_.cwiseProduct(error_)).sum();
         // std::cout << "t = " << j << " ErrorL2 = " << error_L2(j,0) << std::endl;
     }
+
+    /* std::ofstream file("solution_travelling_wave_P1.txt");    //it will be exported in the current build directory
+    if (file.is_open()){
+        for(int i = 0; i < pde_.solution().col(M-1).rows(); ++i)
+            file << pde_.solution().col(M-1)(i) << '\n';
+        file.close();
+    } else {
+        std::cerr << "travelling wave test unable to save solution" << std::endl;
+    } */
 
     EXPECT_TRUE(error_L2.maxCoeff() < 1e-3);
 }
