@@ -54,7 +54,7 @@ using fdapde::testing::read_csv;
 #include <string>
 
 // tests for Advection Dominated Elliptic Partial Differential Equations
-TEST(transport_test, TransportConsantCoefficients) {
+TEST(transport_test, TransportConsantCoefficients2D) {
     // define exact solution
     auto solutionExpr = [](SVector<2> x) -> double {
         return 3*sin(x[0]) + 2*x[1];
@@ -70,7 +70,6 @@ TEST(transport_test, TransportConsantCoefficients) {
     // non-zero forcing term
     auto forcingExpr = [&mu, &b](SVector<2> x) -> double {
         return 2*b[1] + 3*b[0]*cos(x[0]) + 3*mu*sin(x[0]);
-        // return 2*b(x)[1] + 3*b(x)[0]*cos(x[0]) + 3*mu*sin(x[0]);
     };
     ScalarField<2> forcing(forcingExpr);   // wrap lambda expression in ScalarField object
 
@@ -108,7 +107,10 @@ TEST(transport_test, TransportConsantCoefficients) {
     // std::cout << "error_L2 = " << std::setprecision(17) << error_L2 << std::endl;
 }
 
-TEST(transport_test, TransportNonConstantCoefficients) {
+TEST(transport_test, TransportNonConstantCoefficients2D) {
+
+    constexpr std::size_t femOrder = 1;
+
     // define exact solution
     auto solutionExpr = [](SVector<2> x) -> double {
         return 3*sin(x[0]) + 2*x[1];
@@ -118,37 +120,26 @@ TEST(transport_test, TransportNonConstantCoefficients) {
     // MeshLoader<Mesh2D> domain("quasi_circle");
     MeshLoader<Mesh2D> domain("unit_square_32");
 
-    // std::cout << "domain.mesh.n_elements() = " << domain.mesh.n_elements() << std::endl;
-
     // define vector field containing transport data
     VectorField<2> b_callable;
     b_callable[0] = [](SVector<2> x) -> double { return std::pow(x[0], 2) + 1; };   // x^2 + 1
     b_callable[1] = [](SVector<2> x) -> double { return 2 * x[0] + x[1]; };         // 2*x + y
 
-    size_t size_transport = domain.mesh.n_elements() * domain.mesh.element(0).coords().size();
-    // std::cout << "size of discretized transport = " << size_transport << std::endl;
-    DMatrix<double, Eigen::RowMajor> b_data(size_transport, 2);
-    int i = 0;
-    for (const auto& e : domain.mesh) {
-        for (int j = 0; j < e.coords().size(); ++j) {
-            SVector<2> x;
-            x << e.coords()[j][0], e.coords()[j][1];
-            b_data(i, 0) = b_callable[0](x);
-            b_data(i, 1) = b_callable[1](x);
-            // std::cout << "element = " << e.ID() << ", i = " << i << ",\t x = [" << x[0] << ", " << x[1] << "],\t b = [" << b_data(i, 0) << ", " << b_data(i, 1) << "]" << std::endl;
-            //if ( ((i + 1) % 3) == 0) std::cout << std::endl;
-            i++;
-        }
+    Integrator<FEM, 2, femOrder> integrator;
+    DMatrix<double> quad_nodes = integrator.quadrature_nodes(domain.mesh);
+    DMatrix<double, Eigen::RowMajor> b_data(quad_nodes.rows(), 2);
+    for(int i = 0; i < quad_nodes.rows(); i++) {
+        b_data.row(i) = b_callable(SVector<2>(quad_nodes.row(i)));
     }
+
     // wrap data into a field
     DiscretizedVectorField<2,2> b_discretized(b_data);
 
     // coefficients
-    double mu = 1; // 1e-9;
+    double mu = 1e-9;
 
     // non-zero forcing term
     auto forcingExpr = [&mu, &b_callable](SVector<2> x) -> double {
-        // return 2*b[1] + 3*b[0]*cos(x[0]) + 3*mu*sin(x[0]);
         return 2*b_callable[1](x) + 3*b_callable[0](x)*cos(x[0]) + 3*mu*sin(x[0]);
     };
     ScalarField<2> forcing(forcingExpr);   // wrap lambda expression in ScalarField object
@@ -158,8 +149,6 @@ TEST(transport_test, TransportNonConstantCoefficients) {
 
     // define differential operator
     auto L = -mu*laplacian<FEM>() + advection<FEM>(b_discretized);
-
-    constexpr std::size_t femOrder = 1;
 
     PDE< decltype(domain.mesh), decltype(L), ScalarField<2>, FEM, fem_order<femOrder>, decltype(mu),
             decltype(b_discretized)> pde_( domain.mesh, L, forcing );
@@ -186,6 +175,4 @@ TEST(transport_test, TransportNonConstantCoefficients) {
     EXPECT_TRUE(error_L2 < 1e-6);
 
     // std::cout << "error_L2 = " << std::setprecision(17) << error_L2 << std::endl;
-
-    EXPECT_TRUE(1);
 }

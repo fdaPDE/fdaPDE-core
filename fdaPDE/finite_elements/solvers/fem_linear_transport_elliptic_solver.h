@@ -68,11 +68,13 @@ struct FEMLinearTransportEllipticSolver : public FEMSolverBase<D, E, F, Ts...> {
             // std::cout << "b.norm() is: " << b.norm() << std::endl;
 
             // add stabilization method IF IT IS NECESSARY
-            double h = this->basis_.get_element_size();
+            // I cannot avoid having introduced a getter in lagrangian_basis.h, domain_ is declared private
+            double h = this->basis_.get_element_size(); //todo: take the maximum of every element...
             // double Pe = b.norm() * h / (2 * mu);
             // todo: check Peclet number and decide whether to use stabilizer
 
-            Assembler<FEM, DomainType, ReferenceBasis, Quadrature> assembler(pde.domain(), this->integrator_, this->n_dofs_, this->dofs_);
+            Assembler<FEM, DomainType, ReferenceBasis, Quadrature> assembler(pde.domain(), this->integrator_,
+                                                                             this->n_dofs_, this->dofs_);
 
             // streamline diffusion
             auto StreamDiff = streamline_diffusion<FEM>(b);
