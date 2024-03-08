@@ -116,6 +116,9 @@ struct non_owning_storage {
         ptr_ = other.ptr_;
         return *this;
     }
+    // move semantic to not transfer ownership, act as trivial copy semantic
+    non_owning_storage(non_owning_storage&& other) = default;
+    non_owning_storage& operator=(non_owning_storage&& other) = default; 
 };
 
 struct heap_storage {

@@ -471,7 +471,7 @@ template <int Rows, int Cols, typename XprType> class BinMtxBase {
             for (int j = 0; j < mtx.cols(); ++j) {
                 if (!get().operator()(i, j)) masked_mtx(i, j) = 0;
             }
-        return std::move(masked_mtx);
+        return masked_mtx;
     }
     template <typename ExprType>
     SpMatrix<typename ExprType::Scalar> select(const Eigen::SparseMatrixBase<ExprType>& mtx) const {
@@ -482,7 +482,7 @@ template <int Rows, int Cols, typename XprType> class BinMtxBase {
             for (typename SpMatrix<Scalar_>::InnerIterator it(masked_mtx, k); it; ++it) {
                 if (!get().operator()(it.row(), it.col())) { it.valueRef() = 0; }
             }
-        return std::move(masked_mtx);
+        return masked_mtx;
     }
     // block-repeat operation
     BinMtxBlockRepeatOp<Dynamic, Dynamic, XprType> blk_repeat(int rep_row, int rep_col) const {
