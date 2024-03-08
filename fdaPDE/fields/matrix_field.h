@@ -46,10 +46,10 @@ class MatrixField : public MatrixExpr<M, N, K, MatrixField<M, N, K, F>> {
       std::is_same<typename std::invoke_result<F, InnerVectorType>::type, double>::value);
     // static constructors
     MatrixField() requires(N != Dynamic && K != Dynamic) { field_.resize(N * K); }
-    MatrixField(const std::vector<FieldType>& v) requires(N != Dynamic && K != Dynamic){
-      fdapde_assert(int(v.size()) == outer_size());
-      field_.reserve(v.size());
-      for (std::size_t i = 0; i < v.size(); ++i) { field_.emplace_back(v[i]); }
+    MatrixField(const std::vector<FieldType>& v) requires(N != Dynamic && K != Dynamic) {
+        fdapde_assert(int(v.size()) == outer_size());
+        field_.reserve(v.size());
+        for (std::size_t i = 0; i < v.size(); ++i) { field_.emplace_back(v[i]); }
     }
     // fully dynamic constructor
     MatrixField(int m, int n, int k) requires (N == Dynamic || K == Dynamic): Base(m, n, k) {
@@ -57,17 +57,15 @@ class MatrixField : public MatrixExpr<M, N, K, MatrixField<M, N, K, F>> {
     }
     // call operator (evaluate field at point)
     OuterMatrixType operator()(const InnerVectorType& point) const {
-      OuterMatrixType result;
-      if constexpr(N == Dynamic || K == Dynamic) result.resize(outer_rows(), outer_cols());
-      for (int i = 0; i < outer_rows(); ++i) {
-          for (int j = 0; j < outer_cols(); ++j) result(i, j) = field_[j + i * outer_cols()](point);
-      }
-      return result;
+        OuterMatrixType result;
+        if constexpr (N == Dynamic || K == Dynamic) result.resize(outer_rows(), outer_cols());
+        for (int i = 0; i < outer_rows(); ++i) {
+            for (int j = 0; j < outer_cols(); ++j) result(i, j) = field_[j + i * outer_cols()](point);
+        }
+        return result;
     }
     // const and non-const access operations
-    const ScalarField<M, FieldType>& operator()(int i, int j) const {
-      return field_[j + i * outer_cols()];
-    };
+    const ScalarField<M, FieldType>& operator()(int i, int j) const { return field_[j + i * outer_cols()]; };
     ScalarField<M, FieldType>& operator()(int i, int j) { return field_[j + i * outer_cols()]; };
     const ScalarField<M, FieldType>& coeff(int i, int j) const { return operator()(i, j); };
    protected:
@@ -77,10 +75,10 @@ class MatrixField : public MatrixExpr<M, N, K, MatrixField<M, N, K, F>> {
 // out of class definitions of MatrixField arithmetic
 // rhs multiplication by SVector
 template <int M, int N, int K, typename F>
-MatrixVectorProduct<M, N, K, MatrixField<M, N, K, F>, VectorConst<M, K>>
+MatrixVectorProduct<M, N, K, MatrixField<M, N, K, F>, Vector<M, K>>
 operator*(const MatrixField<M, N, K, F>& op1, const static_dynamic_vector_selector_t<K>& op2) {
-    return MatrixVectorProduct<M, N, K, MatrixField<M, N, K, F>, VectorConst<M, K>>(
-      op1, VectorConst<M, K>(op2, op1.inner_size(), op1.outer_cols()));
+    return MatrixVectorProduct<M, N, K, MatrixField<M, N, K, F>, Vector<M, K>>(
+      op1, Vector<M, K>(op2, op1.inner_size(), op1.outer_cols()));
 }
 // rhs multiplication by VectorField
 template <int M, int N, int K, typename F1, typename F2>

@@ -66,7 +66,7 @@ template <typename D, typename B, typename I> class Assembler<FEM, D, B, I> {
         using NablaType = decltype(std::declval<BasisType>().derive());
         BasisType buff_psi_i, buff_psi_j;               // basis functions \psi_i, \psi_j
         NablaType buff_nabla_psi_i, buff_nabla_psi_j;   // gradient of basis functions \nabla \psi_i, \nabla \psi_j
-        MatrixConst<M, N, M> buff_invJ;   // (J^{-1})^T, being J the inverse of the barycentric matrix of e
+        Matrix<M, N, M> buff_invJ;        // (J^{-1})^T, being J the inverse of the barycentric matrix of e
         DVector<double> f(n_basis);       // active solution coefficients on current element e
         // prepare buffer to be sent to bilinear form
         auto mem_buffer = std::make_tuple(

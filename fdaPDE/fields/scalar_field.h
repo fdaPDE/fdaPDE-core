@@ -56,28 +56,24 @@ class ScalarField : public ScalarExpr<N, ScalarField<N, F>> {
     explicit ScalarField() requires(N != Dynamic) { }
     explicit ScalarField(int n) requires (N == Dynamic) : Base(n) { }
     explicit ScalarField(const FieldType& f) : f_(f) {};
-
     // assignement and constructor from a ScalarExpr requires the base type F to be a std::function<>
-    template <
-      typename E, typename U = FieldType,
-      typename std::enable_if<std::is_same<U, std::function<double(VectorType)>>::value, int>::type = 0>
-    ScalarField(const ScalarExpr<N, E>& f) {
+    template <typename E>
+    ScalarField(const ScalarExpr<N, E>& f)
+        requires(std::is_same<FieldType, std::function<double(VectorType)>>::value) {
         E op = f.get();
-        std::function<double(VectorType)> field_expr = [op](SVector<N> x) -> double { return op(x); };
-        f_ = field_expr;
+	f_ = [op](SVector<N> x) -> double { return op(x); };
     }
-    template <typename E, typename U = FieldType>
-    typename std::enable_if<std::is_same<U, std::function<double(VectorType)>>::value, ScalarField<N>&>::type
-    operator=(const ScalarExpr<N, E>& f) {
+    template <typename E>
+    ScalarField& operator=(const ScalarExpr<N, E>& f)
+        requires(std::is_same<FieldType, std::function<double(VectorType)>>::value) {
         E op = f.get();
-        std::function<double(VectorType)> field_expr = [op](VectorType x) -> double { return op(x); };
-        f_ = field_expr;
+        f_ = [op](VectorType x) -> double { return op(x); };
         return *this;
     }
     // assignment from lambda expression
-    template <typename L, typename U = FieldType>
-    typename std::enable_if<std::is_same<U, std::function<double(VectorType)>>::value, ScalarField<N>&>::type
-    operator=(const L& lambda) {
+    template <typename L>
+    ScalarField& operator=(const L& lambda)
+        requires(std::is_same<FieldType, std::function<double(VectorType)>>::value) {
         f_ = lambda;
         return *this;
     }

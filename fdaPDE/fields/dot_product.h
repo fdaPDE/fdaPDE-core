@@ -71,7 +71,7 @@ template <int N, typename T1, typename T2> class DotProduct : public ScalarExpr<
         }
         return result;
     }
-    template <typename T> const DotProduct<N, T1, T2>& forward(T i) {
+    template <typename T> const DotProduct<N, T1, T2>& forward(T i) const {
         op1_.forward(i);
         op2_.forward(i);
         return *this;

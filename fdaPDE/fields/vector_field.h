@@ -37,6 +37,7 @@ class VectorField : public VectorExpr<M, N, VectorField<M, N, F>> {
     using InnerVectorType = typename static_dynamic_vector_selector<M>::type;
     using OuterVectorType = typename static_dynamic_vector_selector<N>::type;
     using Base = VectorExpr<M, N, VectorField<M, N, F>>;
+    using This = VectorField<M, N, FieldType>;
     using Base::inner_size;   // \mathbb{R}^M
     using Base::outer_size;   // \mathbb{R}^N
     static_assert(
@@ -46,61 +47,44 @@ class VectorField : public VectorExpr<M, N, VectorField<M, N, F>> {
     VectorField() requires(N != Dynamic) { field_.resize(N); }
     VectorField(int m, int n) requires(N == Dynamic) : Base(m, n) { field_.resize(n, ScalarField<M, FieldType>(m)); }
     VectorField(const std::vector<FieldType>& v) {
-      fdapde_assert(int(v.size()) == outer_size());
-      field_.reserve(v.size());
-      for (std::size_t i = 0; i < v.size(); ++i) { field_.emplace_back(v[i]); }
+        fdapde_assert(int(v.size()) == outer_size());
+        field_.reserve(v.size());
+        for (std::size_t i = 0; i < v.size(); ++i) { field_.emplace_back(v[i]); }
     }
     // wrap a VectorExpr into a valid VectorField
-    template <
-      typename E, typename U = F,
-      typename std::enable_if<std::is_same<U, std::function<double(SVector<N>)>>::value, int>::type = 0>
-    VectorField(const VectorExpr<M, N, E>& expr) {
-      if constexpr(N == Dynamic) fdapde_assert(outer_size() == expr.outer_size());
-      field_.resize(outer_size());
-      for (std::size_t i = 0; i < field_.size(); ++i) { field_[i] = expr[i]; }
+    template <typename E>
+    VectorField(const VectorExpr<M, N, E>& expr)
+        requires(std::is_same<FieldType, std::function<double(InnerVectorType)>>::value) {
+        if constexpr(N == Dynamic) fdapde_assert(outer_size() == expr.outer_size());
+        field_.resize(outer_size());
+        for (std::size_t i = 0; i < field_.size(); ++i) { field_[i] = expr[i]; }
     }
     // initializer for a zero field
     static VectorField<N, N, ZeroField<N>> Zero() {
-      return VectorField<N, N, ZeroField<N>>(std::vector<ZeroField<N>>(outer_size()));
+        return VectorField<N, N, ZeroField<N>>(std::vector<ZeroField<N>>(outer_size()));
     }
     // call operator
-    inline OuterVectorType operator()(const InnerVectorType& x) const;
+    inline OuterVectorType operator()(const InnerVectorType& x) const {
+        if constexpr (M == Dynamic) fdapde_assert(inner_size() == x.rows());
+        OuterVectorType result(outer_size());
+        for (int i = 0; i < outer_size(); ++i) { result[i] = field_[i](x); }
+        return result;
+    }
     // subscript operator
     inline const ScalarField<M, F>& operator[](size_t i) const { return field_[i]; }   // const access to i-th element
     inline ScalarField<M, F>& operator[](size_t i) { return field_[i]; }   // non-const access to i-th element
 
     // inner product VectorField.dot(VectorField)
-    DotProduct<M, VectorField<M, N, F>, VectorConst<M, N>> dot(const OuterVectorType& rhs) const;
+    DotProduct<M, This, Vector<M, N>> dot(const OuterVectorType& rhs) const {
+        return DotProduct<M, This, Vector<M, N>>(*this, Vector<M, N>(rhs, inner_size(), outer_size()));
+    }
     // Inner product VectorField.dot(VectorExpr)
-    template <typename E> DotProduct<M, VectorField<M, N, F>, E> dot(const VectorExpr<M, N, E>& expr) const;
+    template <typename E> DotProduct<M, This, E> dot(const VectorExpr<M, N, E>& rhs) const {
+        return DotProduct<M, This, E>(*this, rhs.get());
+    }
    protected:
     std::vector<ScalarField<M, FieldType>> field_ {};
 };
-
-// implementation details
-
-template <int M, int N, typename F>
-typename VectorField<M, N, F>::OuterVectorType VectorField<M, N, F>::operator()(const InnerVectorType& x) const {
-    if constexpr(M == Dynamic) fdapde_assert(inner_size() == x.rows());
-    OuterVectorType result(outer_size());
-    for (int i = 0; i < outer_size(); ++i) { result[i] = field_[i](x); }
-    return result;
-}
-// out of class definitions of VectorField arithmetic
-// forward declaration
-template <int N, int M, int K> class MatrixConst;
-// VectorField-VectorField inner product
-template <int M, int N, typename F>
-DotProduct<M, VectorField<M, N, F>, VectorConst<M, N>> VectorField<M, N, F>::dot(const OuterVectorType& rhs) const {
-    return DotProduct<M, VectorField<M, N, F>, VectorConst<M, N>>(
-      *this, VectorConst<M, N>(rhs, inner_size(), outer_size()));
-}
-// VectorField-VectorExpr inner product
-template <int M, int N, typename F>
-template <typename E>
-DotProduct<M, VectorField<M, N, F>, E> VectorField<M, N, F>::dot(const VectorExpr<M, N, E>& rhs) const {
-    return DotProduct<M, VectorField<M, N, F>, E>(*this, rhs.get());
-}
 
 }   // namespace core
 }   // namespace fdapde

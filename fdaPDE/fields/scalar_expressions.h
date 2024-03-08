@@ -64,10 +64,8 @@ template <int N, typename E> class ScalarExpr : public ScalarBase {
     static constexpr int cols = 1;
     static constexpr int static_inner_size = N;   // dimensionality of base space (can be Dynamic)
     static constexpr int NestAsRef = 0;           // whether to store the node by reference of by copy
-
     ScalarExpr() = default;
     ScalarExpr(int dynamic_inner_size) : dynamic_inner_size_(dynamic_inner_size) { }
-
     // call operator() on the base type E
     inline double operator()(const VectorType& p) const { return static_cast<const E&>(*this)(p); }
     const E& get() const { return static_cast<const E&>(*this); }
@@ -77,8 +75,7 @@ template <int N, typename E> class ScalarExpr : public ScalarBase {
     ScalarNegationOp<N, E> operator-() const { return ScalarNegationOp<N, E>(get(), dynamic_inner_size_); }
     inline constexpr int inner_size() const { return (N == Dynamic) ? dynamic_inner_size_ : static_inner_size; }
     // dynamic resizing of base space dimension only allowed for Dynamic expressions
-    template <int N_ = N> typename std::enable_if<N_ == Dynamic, void>::type resize(int n) { dynamic_inner_size_ = n; }
-
+    void resize(int n) requires(N == Dynamic) { dynamic_inner_size_ = n; }
     void set_step(double h) { h_ = h; }   // set step size in derivative approximation
     double step() const { return h_; }
     ScalarExprGradient<N, E> derive() const { return ScalarExprGradient<N, E>(get(), h_); }

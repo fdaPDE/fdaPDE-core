@@ -34,7 +34,7 @@ template <typename E> class ScalarPtr : public ScalarExpr<E::static_inner_size, 
     ScalarPtr(E* ptr) : ptr_(ptr) { fdapde_assert(bool(ptr_) == true); };
     // delegate to pointed memory location
     double operator()(const SVector<E::static_inner_size>& p) const { return ptr_->operator()(p); }
-    template <typename T> void forward(T i) { ptr_->forward(i); }
+    template <typename T> void forward(T i) const { ptr_->forward(i); }
     // access to pointed element
     E* operator->() { return ptr_; }
     typedef E PtrType;   // expose wrapped type
@@ -50,7 +50,7 @@ template <typename E> class VectorPtr : public VectorExpr<E::static_inner_size, 
     VectorPtr(E* ptr) : ptr_(ptr) { fdapde_assert(bool(ptr_) == true); };
     // delegate to pointed memory location
     auto operator[](std::size_t i) const { return ptr_->operator[](i); }
-    template <typename T> void forward(T i) { ptr_->forward(i); }
+    template <typename T> void forward(T i) const { ptr_->forward(i); }
     // access to pointed element
     E* operator->() { return ptr_; }
     typedef E PtrType;   // expose wrapped type
@@ -66,7 +66,7 @@ template <typename E> class MatrixPtr : public MatrixExpr<E::static_inner_size, 
     MatrixPtr(E* ptr) : ptr_(ptr) { fdapde_assert(bool(ptr_) == true); };
     // delegate to pointed memory location
     auto coeff(std::size_t i, std::size_t j) const { return ptr_->coeff(i, j); }
-    template <typename T> void forward(T i) { ptr_->forward(i); }
+    template <typename T> void forward(T i) const { ptr_->forward(i); }
     // access to pointed element
     E* operator->() { return ptr_; }
     typedef E PtrType;   // expose wrapped type

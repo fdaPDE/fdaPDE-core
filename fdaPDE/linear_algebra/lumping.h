@@ -33,7 +33,7 @@ template <typename ExprType> SpMatrix<typename ExprType::Scalar> lump(const Eige
     // reserve space for triplets
     std::vector<fdapde::Triplet<Scalar_>> triplet_list;
     triplet_list.reserve(expr.rows());
-    for (std::size_t i = 0; i < expr.rows(); ++i) { triplet_list.emplace_back(i, i, expr.row(i).sum()); }
+    for (int i = 0; i < expr.rows(); ++i) { triplet_list.emplace_back(i, i, expr.row(i).sum()); }
     // matrix lumping
     SpMatrix<Scalar_> lumped_matrix(expr.rows(), expr.rows());
     lumped_matrix.setFromTriplets(triplet_list.begin(), triplet_list.end());

@@ -34,19 +34,19 @@ struct VectorBase { };
         return VectorBinOp<M, N, E1, E2, FUNCTOR>(op1.get(), op2.get(), FUNCTOR());                                    \
     }                                                                                                                  \
     template <int M, int N, typename E>                                                                                \
-    VectorBinOp<M, N, VectorConst<M, N>, E, FUNCTOR> OPERATOR(SVector<N> op1, const VectorExpr<M, N, E>& op2) {        \
-        return VectorBinOp<M, N, VectorConst<M, N>, E, FUNCTOR>(                                                       \
-          VectorConst<M, N>(op1, op2.inner_size(), op2.outer_size()), op2.get(), FUNCTOR());                           \
+    VectorBinOp<M, N, Vector<M, N>, E, FUNCTOR> OPERATOR(SVector<N> op1, const VectorExpr<M, N, E>& op2) {             \
+        return VectorBinOp<M, N, Vector<M, N>, E, FUNCTOR>(                                                            \
+          Vector<M, N>(op1, op2.inner_size(), op2.outer_size()), op2.get(), FUNCTOR());                                \
     }                                                                                                                  \
     template <int M, int N, typename E>                                                                                \
-    VectorBinOp<M, N, E, VectorConst<M, N>, FUNCTOR> OPERATOR(const VectorExpr<M, N, E>& op1, SVector<N> op2) {        \
-        return VectorBinOp<M, N, E, VectorConst<M, N>, FUNCTOR>(                                                       \
-          op1.get(), VectorConst<M, N>(op2, op1.inner_size(), op1.outer_size()), FUNCTOR());                           \
+    VectorBinOp<M, N, E, Vector<M, N>, FUNCTOR> OPERATOR(const VectorExpr<M, N, E>& op1, SVector<N> op2) {             \
+        return VectorBinOp<M, N, E, Vector<M, N>, FUNCTOR>(                                                            \
+          op1.get(), Vector<M, N>(op2, op1.inner_size(), op1.outer_size()), FUNCTOR());                                \
     }
 
 // forward declarations
 template <int M, typename T1, typename T2> class DotProduct;
-template <int M, int N> class VectorConst;
+template <int M, int N> class Vector;
 template <int M, int N, typename E> class VectorNegationOp;
 
 // Base class for vectorial expressions
@@ -60,10 +60,8 @@ template <int M, int N, typename E> class VectorExpr : public VectorBase {
     static constexpr int rows = N;
     static constexpr int cols = 1;
     static constexpr int static_inner_size = M;
-
     VectorExpr() = default;
     VectorExpr(int inner_size, int outer_size) : inner_size_(inner_size), outer_size_(outer_size) {};
-
     // call operator[] on the base type E
     auto operator[](int i) const { return static_cast<const E&>(*this)[i]; }
     const E& get() const { return static_cast<const E&>(*this); }
@@ -77,8 +75,8 @@ template <int M, int N, typename E> class VectorExpr : public VectorBase {
         return result;
     }
     // VectorExpr - InnerVectorType dot product
-    DotProduct<M, E, VectorConst<M, N>> dot(const InnerVectorType& op) const {
-        return DotProduct<M, E, VectorConst<M, N>>(get(), VectorConst<M, N>(op, inner_size(), outer_size()));
+    DotProduct<M, E, Vector<M, N>> dot(const InnerVectorType& op) const {
+        return DotProduct<M, E, Vector<M, N>>(get(), Vector<M, N>(op, inner_size(), outer_size()));
     }
     // VectorExpr - VectorExpr dot product
     template <typename F> DotProduct<M, E, F> dot(const VectorExpr<M, N, F>& op) const {
@@ -91,29 +89,27 @@ template <int M, int N, typename E> class VectorExpr : public VectorBase {
 };
   
 // an expression node representing a constant vector
-template <int M, int N> class VectorConst : public VectorExpr<M, N, VectorConst<M, N>> {
+template <int M, int N> class Vector : public VectorExpr<M, N, Vector<M, N>> {
    private:
-    using Base = VectorExpr<M, N, VectorConst<M, N>>;
-    using InnerVectorType = typename Base::InnerVectorType;
+    using Base = VectorExpr<M, N, Vector<M, N>>;
     using OuterVectorType = typename Base::OuterVectorType;
-    typename Base::OuterVectorType value_;
+    OuterVectorType value_;
    public:
-    VectorConst(const OuterVectorType& value, int m, int n) : Base(m, n), value_(value) {};
+    Vector(const OuterVectorType& value, int m, int n) : Base(m, n), value_(value) {};
     double operator[](int i) const { return value_[i]; }
 };
 
-// wraps a n_rows x N matrix of data, acts as an SVector<N> once fixed the matrix row, assuming each row contains
-// the vector to map
+// wraps a n_rows x N matrix of data, acts as an SVector<N> once fixed the matrix row
 template <int M, int N> class DiscretizedVectorField : public VectorExpr<M, N, DiscretizedVectorField<M, N>> {
    private:
-    using DataType = Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+    using DataType = DMatrix<double, Eigen::RowMajor>;
     DataType* data_;
-    Eigen::Map<SVector<N>> value_;
+    mutable Eigen::Map<SVector<N>> value_;
    public:
-    DiscretizedVectorField() : value_(NULL) {};
-    DiscretizedVectorField(DataType& data) : data_(&data), value_(NULL) {};
+    DiscretizedVectorField() : value_(NULL) { }
+    DiscretizedVectorField(DataType& data) : data_(&data), value_(NULL) { }
     double operator[](int i) const { return value_[i]; }
-    void forward(int i) {
+    void forward(int i) const {
         new (&value_) Eigen::Map<SVector<M>>(data_->data() + (i * N));   // construct map in place
     }
 };
@@ -121,12 +117,12 @@ template <int M, int N> class DiscretizedVectorField : public VectorExpr<M, N, D
 // a generic binary operation node
 template <int M, int N, typename OP1, typename OP2, typename BinaryOperation>
 class VectorBinOp : public VectorExpr<M, N, VectorBinOp<M, N, OP1, OP2, BinaryOperation>> {
-    static_assert(OP1::static_inner_size == OP2::static_inner_size, "you mixed fields with different base dimension");
+    fdapde_static_assert(OP1::static_inner_size == OP2::static_inner_size, FIELDS_WITH_DIFFERENT_BASE_DIMENSION);
    private:
     using Base = VectorExpr<M, N, VectorBinOp<M, N, OP1, OP2, BinaryOperation>>;
     typename std::remove_reference<OP1>::type op1_;   // first  operand
     typename std::remove_reference<OP2>::type op2_;   // second operand
-    BinaryOperation f_;                               // operation to apply
+    BinaryOperation f_;
    public:
     static constexpr int static_inner_size = OP1::static_inner_size;
     // constructor
@@ -138,20 +134,20 @@ class VectorBinOp : public VectorExpr<M, N, VectorBinOp<M, N, OP1, OP2, BinaryOp
     };
     auto operator[](int i) const { return f_(op1_[i], op2_[i]); }
     // forward to child nodes
-    template <typename T> const VectorBinOp<M, N, OP1, OP2, BinaryOperation>& forward(T i) {
-        op1_.forward(i); op2_.forward(i);
+    template <typename T> const VectorBinOp<M, N, OP1, OP2, BinaryOperation>& forward(T i) const {
+        op1_.forward(i);
+        op2_.forward(i);
         return *this;
     }
 };
-DEF_VECT_EXPR_OPERATOR(operator+, std::plus<>)
+DEF_VECT_EXPR_OPERATOR(operator+, std::plus<> )
 DEF_VECT_EXPR_OPERATOR(operator-, std::minus<>)
 
-// support for double*VectorExpr: multiplies each element of VectorExpr by the scalar
-// node representing a scalar value in a vectorial expression.
+// support for double * VectorExpr: multiplies each element of VectorExpr by the scalar
 template <int M, int N> class VectorScalar : public VectorExpr<M, N, VectorScalar<M, N>> {
    private:
     using Base = VectorExpr<M, N, VectorScalar<M, N>>;
-    double value_;
+    double value_ = 0;
    public:
     VectorScalar(double value, int m, int n) : Base(m, n), value_(value) {};
     double operator[]([[maybe_unused]] int i) const { return value_; }
@@ -176,7 +172,7 @@ template <int M, int N, typename E> class VectorNegationOp : public VectorExpr<M
     VectorNegationOp(const E& op) : op_(op) {};
     auto operator[](int i) const { return -(op_[i]); }
     // forward to child node
-    template <typename T> const VectorNegationOp<M, N, E>& forward(T i) {
+    template <typename T> const VectorNegationOp<M, N, E>& forward(T i) const {
         op_.forward(i);
         return *this;
     }

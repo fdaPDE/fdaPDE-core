@@ -13,9 +13,9 @@ Documentation can be found on our [documentation site](https://fdapde.github.io/
 
 ## Dependencies
 fdaPDE-core is an header-only library, therefore it does not require any installation. Just make sure to have it in your include path. Neverthless, to compile code including this library you need:
-* A C++17 compliant compiler. Supported versions are:
-     * Linux: `gcc` 11 (or higher), `clang` 13 (or higher)
-	 * macOS: `apple-clang` (the XCode version of `clang`).
-* The [Eigen](https://eigen.tuxfamily.org/index.php?title=Main_Page) linear algebra library, version 3.3.9.
+* A C++20 compliant compiler. Supported versions are:
+     * Linux: `gcc` 11 (or higher), `clang` 15 (or higher)
+	 * macOS: `apple-clang` (the XCode version of `clang`, AppleClang 15 or higher).
+* The [Eigen](https://eigen.tuxfamily.org/index.php?title=Main_Page) linear algebra library, version 3.4.0.
 
 If you wish to run the test suite contained in the `test/` folder, be sure to have [Google Test](http://google.github.io/googletest/) installed. 

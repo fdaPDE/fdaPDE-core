@@ -26,7 +26,7 @@ using fdapde::core::Integrator;
 using fdapde::core::LagrangianBasis;
 using fdapde::core::FEM;
 using fdapde::core::laplacian;
-using fdapde::core::MatrixConst;
+using fdapde::core::Matrix;
 using fdapde::core::MatrixPtr;
 using fdapde::core::ScalarPtr;
 using fdapde::core::VectorPtr;
@@ -51,10 +51,10 @@ TEST(fem_operators_test, laplacian_order_2) {
 
     using BasisType = typename LagrangianBasis<Mesh2D, 2>::ReferenceBasis::ElementType;
     using NablaType = decltype(std::declval<BasisType>().derive());
-    BasisType buff_psi_i, buff_psi_j;               // basis functions \psi_i, \psi_j
-    NablaType buff_nabla_psi_i, buff_nabla_psi_j;   // gradient of basis functions \nabla \psi_i, \nabla \psi_j
-    MatrixConst<2, 2, 2> buff_invJ;   // (J^{-1})^T, being J the inverse of the barycentric matrix relative to element e
-    DVector<double> f(ct_nnodes(Mesh2D::local_dimension, 2));   // active solution coefficients on current element e
+    BasisType buff_psi_i, buff_psi_j;
+    NablaType buff_nabla_psi_i, buff_nabla_psi_j;
+    Matrix<2, 2, 2> buff_invJ;
+    DVector<double> f(ct_nnodes(Mesh2D::local_dimension, 2));
     // prepare buffer to be sent to bilinear form
     auto mem_buffer = std::make_tuple(
       ScalarPtr(&buff_psi_i), ScalarPtr(&buff_psi_j), VectorPtr(&buff_nabla_psi_i), VectorPtr(&buff_nabla_psi_j),
