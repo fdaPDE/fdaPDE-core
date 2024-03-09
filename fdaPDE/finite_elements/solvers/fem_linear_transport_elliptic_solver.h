@@ -81,6 +81,8 @@ struct FEMLinearTransportEllipticSolver : public FEMSolverBase<D, E, F, Ts...> {
             stab_ = assembler.discretize_operator(StreamDiff); // stabilization matrix
 
             // strong staibilizer (GLS-SUPG-DW) [...]
+            // auto StrongStab = SUPG<FEM, decltype(PDEparams.getData())>(PDEparams.getData());
+            // stab_ = assembler.discretize_operator(StrongStab); // stabilization matrix
         }
 
         solver.compute(this->stiff_ + stab_);

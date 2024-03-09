@@ -14,8 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FEM_STREAMLINE_DIFFUSION_H__
-#define __FEM_STREAMLINE_DIFFUSION_H__
+#ifndef __FEM_SUPG_H__
+#define __FEM_SUPG_H__
 
 #include <type_traits>
 
@@ -27,31 +27,49 @@
 
 namespace fdapde {
 namespace core {
-
-template <typename T> class StreamlineDiffusion<FEM, T> : public DifferentialExpr<StreamlineDiffusion<FEM, T>> {
+// rho = {1, GLS}, {0, SUPG}, {-1, DW}
+template <typename T> class SUPG<FEM, T> : public DifferentialExpr<StreamlineDiffusion<FEM, T>> {
     // perform compile-time sanity checks
-    static_assert(
+    // todo: qui gli static asserts sono da rivedere, perché adesso T è una tupla
+/*    static_assert(
       std::is_base_of<VectorBase, T>::value ||   // space-varying case
-      is_eigen_vector<T>::value);                // constant coefficient case
+      is_eigen_vector<T>::value);                // constant coefficient case*/
 private:
-    T b_;               // transport tensor
+
+    double delta_ = 0.25;        // dim.less parameter for stabilization (not known a priori and should be tuned)
+    T data_;        // tuple containing the parameters of the kind <mu_, b_, c_>
+                    // this will contain ALL the data necessary to stabilize a full Linear elliptic PDE
 public:
-    enum {
+    /*enum {
         is_space_varying = std::is_base_of<VectorBase, T> ::value,
         is_symmetric = false
-    };
+    };*/
     // constructor
-    StreamlineDiffusion() = default;
-    explicit StreamlineDiffusion(const T& b) : b_(b) { }
+    SUPG() = default;
+    explicit SUPG(const T& data) : data_(data) { }
 
     // provides the operator's weak form
     template <typename... Args> auto integrate(const std::tuple<Args...>& mem_buffer) const {
+
         IMPORT_FEM_MEM_BUFFER_SYMBOLS(mem_buffer);
-        return (*h)/b_.norm() * (invJ * nabla_psi_i).dot(b_) * (invJ * nabla_psi_j).dot(b_);
+
+        auto mu = std::get<0>(data_);
+        auto b = std::get<1>(data_);
+
+        double tau_k = delta_*(*h)/b.norm();
+
+        // compute the divergence (either in 2D or in 3D)
+        auto div_nabla_i = (invJ * nabla_psi_i)[0].derive()[0];
+        auto div_nabla_j = (invJ * nabla_psi_j)[0].derive()[0];
+
+        // !!!! espressione da ridefinire !!!!
+        return  tau_k * (
+                mu * div_nabla_j * (invJ * nabla_psi_i).dot(b) +
+                (invJ * nabla_psi_j).dot(b) * (invJ * nabla_psi_i).dot(b));
     }
 };
 
 }   // namespace core
 }   // namespace fdapde
 
-#endif   // __FEM_STREAMLINE_DIFFUSION_H__
+#endif   // __FEM_SUPG_H__

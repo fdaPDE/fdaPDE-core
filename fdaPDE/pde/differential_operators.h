@@ -36,7 +36,8 @@ FDAPDE_DEFINE_DIFFERENTIAL_OPERATOR(Reaction,    reaction   );
 FDAPDE_DEFINE_DIFFERENTIAL_OPERATOR(dT,          dt         );
 FDAPDE_DEFINE_DIFFERENTIAL_OPERATOR(BiLaplacian, bilaplacian);
 FDAPDE_DEFINE_DIFFERENTIAL_OPERATOR(NonLinearOp, non_linear_op);
-FDAPDE_DEFINE_DIFFERENTIAL_OPERATOR(StreamlineDiffusion, streamline_diffusion); //ADDED
+FDAPDE_DEFINE_DIFFERENTIAL_OPERATOR(StreamlineDiffusion, streamline_diffusion);
+FDAPDE_DEFINE_DIFFERENTIAL_OPERATOR(SUPG, supg);
 
 // trait to detect if the bilinear form obtained from the weak formulation of a differential operator is symmetric.
 template <typename E> struct is_symmetric {
