@@ -40,9 +40,12 @@ TEST(optimization_test, grid_search) {
     ScalarField<2> f;
     f = [](SVector<2> x) -> double { return x[0] * x[0] + x[1] * x[1]; };
     // define grid of points
-    std::vector<SVector<2>> grid;
-    for (double x = -1; x < 1; x += 0.2) {
-        for (double y = -1; y < 1; y += 0.2) { grid.push_back(SVector<2>(x, y)); }
+    Eigen::Matrix<double, Eigen::Dynamic, 2> grid(100, 2);
+    for (int i = 0; i < 10; ++i) {
+        for (int j = 0; j < 10; ++j) {
+            grid(i * 10 + j, 0) = -1 + 0.2 * i;
+            grid(i * 10 + j, 1) = -1 + 0.2 * j;
+        }
     }
     // define optimizer
     Grid<2> opt;

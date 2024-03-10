@@ -27,8 +27,8 @@ namespace core {
 // implementation of the gradient descent method for unconstrained nonlinear optimization
 template <int N, typename... Args> class GradientDescent {
    private:
-    typedef typename std::conditional<N == Dynamic, DVector<double>, SVector<N>>::type VectorType;
-    typedef typename std::conditional<N == Dynamic, DMatrix<double>, SMatrix<N>>::type MatrixType;
+    using VectorType = typename std::conditional<N == Dynamic, DVector<double>, SVector<N>>::type;
+    using MatrixType = typename std::conditional<N == Dynamic, DMatrix<double>, SMatrix<N>>::type;
     std::size_t max_iter_;   // maximum number of iterations before forced stop
     double tol_;             // tolerance on error before forced stop
     double step_;            // update step
@@ -62,12 +62,10 @@ template <int N, typename... Args> class GradientDescent {
         static_assert(
           std::is_same<decltype(std::declval<F>().operator()(VectorType())), double>::value,
           "F_IS_NOT_A_FUNCTOR_ACCEPTING_A_VECTORTYPE");
-
         bool stop = false;   // asserted true in case of forced stop
         std::size_t n_iter = 0;
         double error = std::numeric_limits<double>::max();
-        h = step_;   // restore optimizer step
-
+        h = step_;
         x_old = x0;
         x_new = x0;
         grad_old = objective.derive()(x_old);
@@ -75,11 +73,9 @@ template <int N, typename... Args> class GradientDescent {
         while (n_iter < max_iter_ && error > tol_ && !stop) {
             update = -grad_old;
             stop |= execute_pre_update_step(*this, objective, callbacks_);
-
             // update along descent direction
             x_new = x_old + h * update;
             grad_new = objective.derive()(x_new);
-
             // prepare next iteration
             error = grad_new.norm();
             stop |= execute_post_update_step(*this, objective, callbacks_);

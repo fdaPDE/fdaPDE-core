@@ -27,15 +27,15 @@ namespace core {
 // searches for the point in a given grid minimizing a given nonlinear objective
 template <int N, typename... Args> class Grid {
    private:
-    typedef typename std::conditional<N == Dynamic, DVector<double>, SVector<N>>::type VectorType;
+    using VectorType = typename std::conditional_t<N == Dynamic, DVector<double>, SVector<N>>;
+    using GridType = Eigen::Matrix<double, Eigen::Dynamic, N>;   // equivalent to DMatrix<double> for N == Dynamic
     std::tuple<Args...> callbacks_ {};
     VectorType optimum_;
     double value_;   // objective value at optimum
    public:
     VectorType x_current;
-
     // constructor
-    template <int N_ = sizeof...(Args), typename std::enable_if<N_ != 0, int>::type = 0> Grid() { }
+    Grid() requires(sizeof...(Args) != 0) { }
     Grid(Args&&... callbacks) : callbacks_(std::make_tuple(std::forward<Args>(callbacks)...)) { }
     // copy semantic
     Grid(const Grid& other) : callbacks_(other.callbacks_) { }
@@ -43,24 +43,20 @@ template <int N, typename... Args> class Grid {
         callbacks_ = other.callbacks_;
         return *this;
     }
-
-    template <typename F>
-    VectorType optimize(F& objective, const std::vector<VectorType>& grid) {
+    template <typename F> VectorType optimize(F& objective, const GridType& grid) {
         static_assert(
           std::is_same<decltype(std::declval<F>().operator()(VectorType())), double>::value,
           "F_IS_NOT_A_FUNCTOR_ACCEPTING_A_VECTORTYPE");
-
         bool stop = false;   // asserted true in case of forced stop
         // algorithm initialization
-        x_current = grid[0];
+        x_current = grid.row(0);
         value_ = objective(x_current);
         optimum_ = x_current;
         // optimize field over supplied grid
-        for (std::size_t i = 1; i < grid.size() && !stop; ++i) {
-            x_current = grid[i];
+        for (int i = 1; i < grid.rows() && !stop; ++i) {
+            x_current = grid.row(i);
             double x = objective(x_current);
             stop |= execute_post_update_step(*this, objective, callbacks_);
-
             // update minimum if better optimum found
             if (x < value_) {
                 value_ = x;
@@ -69,7 +65,6 @@ template <int N, typename... Args> class Grid {
         }
         return optimum_;
     }
-
     // getters
     VectorType optimum() const { return optimum_; }
     double value() const { return value_; }
