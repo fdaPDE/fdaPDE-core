@@ -44,7 +44,7 @@ template <int M, int R> class Integrator<FEM, M, R> {
     template <int N, typename F> double integrate(const Element<M, N>& e, const F& f) const {
         double value = 0;
         for (size_t iq = 0; iq < integration_table_.num_nodes; ++iq) {
-            if constexpr (std::is_invocable<F, SVector<N>>::value) {
+            if constexpr (std::is_invocable_r<double, F, SVector<N>>::value) {
                 // functor f is evaluable at any point
                 SVector<N> p = e.barycentric_matrix() * integration_table_.nodes[iq] +
                                e.coords()[0];   // map quadrature point onto e
