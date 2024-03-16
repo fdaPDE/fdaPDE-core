@@ -42,6 +42,7 @@ using fdapde::core::make_pde;
 using fdapde::core::PDEparameters;  // ADDED
 using fdapde::core::DiscretizedMatrixField; // ADDED
 using fdapde::core::DiscretizedVectorField; // ADDED
+using fdapde::core::Divergence; // ADDED
 
 #include "utils/mesh_loader.h"
 using fdapde::testing::MeshLoader;
@@ -52,6 +53,8 @@ using fdapde::testing::read_csv;
 
 #include <iomanip>
 #include <string>
+
+constexpr std::size_t femOrder = 1;
 
 // tests for Advection Dominated Elliptic Partial Differential Equations
 TEST(transport_test, TransportConsantCoefficients2D) {
@@ -64,21 +67,20 @@ TEST(transport_test, TransportConsantCoefficients2D) {
     SVector<2> b;  b << 1., 1.;
     double mu = 1e-9;
 
-    // save parameters in the PDEparameters singleton, these will be retrieved by the solver
-    PDEparameters<decltype(mu), decltype(b)> &PDEparams = PDEparameters<decltype(mu), decltype(b)>::getInstance(mu, b);
-
     // non-zero forcing term
     auto forcingExpr = [&mu, &b](SVector<2> x) -> double {
         return 2*b[1] + 3*b[0]*cos(x[0]) + 3*mu*sin(x[0]);
     };
     ScalarField<2> forcing(forcingExpr);   // wrap lambda expression in ScalarField object
 
+    // save parameters in the PDEparameters singleton, these will be retrieved by the solver
+    PDEparameters<decltype(mu), decltype(b)> &PDEparams =
+            PDEparameters<decltype(mu), decltype(b)>::getInstance(mu, b);
+
     auto L = - mu * laplacian<FEM>() + advection<FEM>(b); //+ reaction<FEM>(c_);
     // load sample mesh for order 1 basis
     MeshLoader<Mesh2D> unit_square("unit_square_32");
     // MeshLoader<Mesh2D> unit_square("quasi_circle");
-
-    constexpr std::size_t femOrder = 1;
 
     PDE< decltype(unit_square.mesh), decltype(L), ScalarField<2>, FEM, fem_order<femOrder>, decltype(mu),
             decltype(b)> pde_( unit_square.mesh, L, forcing);
@@ -109,8 +111,6 @@ TEST(transport_test, TransportConsantCoefficients2D) {
 
 TEST(transport_test, TransportNonConstantCoefficients2D) {
 
-    constexpr std::size_t femOrder = 1;
-
     // define exact solution
     auto solutionExpr = [](SVector<2> x) -> double {
         return 3*sin(x[0]) + 2*x[1];
@@ -132,8 +132,14 @@ TEST(transport_test, TransportNonConstantCoefficients2D) {
         b_data.row(i) = b_callable(SVector<2>(quad_nodes.row(i)));
     }
 
-    // wrap data into a field
-    DiscretizedVectorField<2,2> b_discretized(b_data);
+    // construct it together with its divergence
+    ScalarField<2> div_b_callable = div(b_callable);
+    DVector<double> div_b_data(quad_nodes.rows());
+    for(int i = 0; i < quad_nodes.rows(); i++) {
+        div_b_data(i) = div_b_callable(SVector<2>(quad_nodes.row(i)));
+    }
+
+    DiscretizedVectorField<2,2> b_discretized(b_data, div_b_data);
 
     // coefficients
     double mu = 1e-9;
@@ -145,7 +151,8 @@ TEST(transport_test, TransportNonConstantCoefficients2D) {
     ScalarField<2> forcing(forcingExpr);   // wrap lambda expression in ScalarField object
 
     // save parameters in the PDEparameters singleton, these will be retrieved by the solver
-    PDEparameters<decltype(mu), decltype(b_discretized)> &PDEparams = PDEparameters<decltype(mu), decltype(b_discretized)>::getInstance(mu, b_discretized);
+    PDEparameters<decltype(mu), decltype(b_discretized)> &PDEparams =
+            PDEparameters<decltype(mu), decltype(b_discretized)>::getInstance(mu, b_discretized);
 
     // define differential operator
     auto L = -mu*laplacian<FEM>() + advection<FEM>(b_discretized);

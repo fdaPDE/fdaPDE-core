@@ -50,16 +50,19 @@ struct FEMLinearTransportEllipticSolver : public FEMSolverBase<D, E, F, Ts...> {
         SystemSolverType solver;
 
         SpMatrix<double> stab_(this->n_dofs_, this->n_dofs_);
-        // IF THERE IS AN ADVECTION TERM CHECK IF THE EQUATION NEEDS STABILIZATION
+        DVector<double> stab_rhs_(this->n_dofs_);   // todo: initialize it with zeroes
+
+        // if there's an advection term -> stabilization
         if constexpr (fdapde::core::is_advection<E>::value){
 
             // initialize empty value with the CORRECT TYPE using default constructor
             auto mu_temp = std::tuple_element_t<1, SolverArgs>();
             auto b_temp = std::tuple_element_t<2, SolverArgs>();
+            // auto f_temp = std::tuple_element_t<3, SolverArgs>();
 
             // retrieve the values of the PDE parameters from the singleton
-            PDEparameters<decltype(mu_temp), decltype(b_temp)> &PDEparams = PDEparameters<decltype(mu_temp),
-                    decltype(b_temp)>::getInstance(mu_temp, b_temp);
+            PDEparameters<decltype(mu_temp), decltype(b_temp)> &PDEparams =
+                    PDEparameters<decltype(mu_temp), decltype(b_temp)>::getInstance(mu_temp, b_temp);
 
             auto mu = std::get<0>(PDEparams.getData());
             auto b = std::get<1>(PDEparams.getData());
@@ -83,6 +86,11 @@ struct FEMLinearTransportEllipticSolver : public FEMSolverBase<D, E, F, Ts...> {
             // strong staibilizer (GLS-SUPG-DW) [...]
             // auto StrongStab = SUPG<FEM, decltype(PDEparams.getData())>(PDEparams.getData());
             // stab_ = assembler.discretize_operator(StrongStab); // stabilization matrix
+
+            // prepare a tuple containing b and pde forcing_data and send it to the operator SUPG_RHS
+            // auto b_and_forcing = std::make_tuple(b, pde.forcing_data());
+            // auto StrongStabRHS = SUPG_RHS<FEM, decltype(b_and_forcing)>(b_and_forcing);
+            // stab_rhs_ = assembler.discretize_SUPG_RHS(StrongStabRHS); // stabilization rhs
         }
 
         solver.compute(this->stiff_ + stab_);
@@ -95,7 +103,9 @@ struct FEMLinearTransportEllipticSolver : public FEMSolverBase<D, E, F, Ts...> {
         // solve FEM linear system arising from the generalized Petrov Galerkin
         // streamline diffusion
         this->solution_ = solver.solve(this->force_);
+
         // strong stabilizers [...]
+        // this->solution_ = solver.solve(this->force_ + stab_rhs_);
 
         this->success = true;
         return;

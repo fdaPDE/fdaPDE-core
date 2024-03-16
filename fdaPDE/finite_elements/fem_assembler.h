@@ -53,6 +53,7 @@ template <typename D, typename B, typename I> class Assembler<FEM, D, B, I> {
     // discretization methods
     template <typename E> SpMatrix<double> discretize_operator(const E& op);
     template <typename F> DVector<double> discretize_forcing(const F& force);
+    template <typename E> DVector<double> discretize_SUPG_RHS(const E& op);
 
     // setter for f (for non-linear operators)
     void set_f (const DVector<double>& f) {f_ = f;};
@@ -156,6 +157,51 @@ DVector<double> Assembler<FEM, D, B, I>::discretize_forcing(const F& f) {
     return discretization_vector;
 }
 
+// I need this function to discretize the vector that goes on the RHS from the SUPG method (returns a vector)
+template <typename D, typename B, typename I>
+template <typename E>
+DVector<double> Assembler<FEM, D, B, I>::discretize_SUPG_RHS(const E& op) {
+    constexpr std::size_t M = D::local_dimension;
+    constexpr std::size_t N = D::embedding_dimension;
+
+    // allocate space for result vector
+    DVector<double> discretization_vector {};
+    discretization_vector.resize(dof_, 1);   // there are as many basis functions as degrees of freedom on the mesh
+    discretization_vector.fill(0);           // init result vector to zero
+
+    // prepare space for bilinear form components
+    using BasisType = typename B::ElementType;
+    using NablaType = decltype(std::declval<BasisType>().derive());
+    BasisType buff_psi_i, buff_psi_j;               // basis functions \psi_i, \psi_j
+    NablaType buff_nabla_psi_i, buff_nabla_psi_j;   // gradient of basis functions \nabla \psi_i, \nabla \psi_j
+    MatrixConst<M, N, M> buff_invJ;   // (J^{-1})^T, being J the inverse of the barycentric matrix relative to element e
+
+    std::shared_ptr<DVector<double>> f = std::make_shared<DVector<double>>(n_basis);    // empty
+    double element_measure = mesh_.element(0).measure();    // measure of the reference element
+
+    // prepare buffer to be sent to bilinear form
+    auto mem_buffer = std::make_tuple(
+      ScalarPtr(&buff_psi_i), ScalarPtr(&buff_psi_j), VectorPtr(&buff_nabla_psi_i), VectorPtr(&buff_nabla_psi_j),
+      MatrixPtr(&buff_invJ), &f, &element_measure);
+
+    // develop bilinear form expression in an integrable field here once
+    auto weak_form = op.integrate(mem_buffer);   // let the compiler deduce the type of the expression template!
+
+    std::size_t current_id;
+    for (const auto& e : mesh_) {
+        buff_invJ = e.inv_barycentric_matrix().transpose(); // affine map from current element to reference element
+        current_id = e.ID(); // element ID
+        element_measure = e.measure(); // measure of the reference element
+        for (size_t i = 0; i < n_basis; ++i) {
+            buff_psi_i = reference_basis_[i];
+            buff_nabla_psi_i = buff_psi_i.derive();
+
+            double value = integrator_.template integrate<decltype(op)>(e, weak_form);
+            discretization_vector[dof_table_(e.ID(), i)] += value;
+        }
+    }
+    return discretization_vector;
+}
 }   // namespace core
 }   // namespace fdapde
 

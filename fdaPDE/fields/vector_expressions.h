@@ -21,6 +21,7 @@
 
 #include "../utils/symbols.h"
 #include "../utils/assert.h"
+#include "divergence.h"
 
 namespace fdapde {
 namespace core {
@@ -88,6 +89,7 @@ template <int M, int N, typename E> class VectorExpr : public VectorBase {
     template <typename T> void forward(T i) const { return; }
     // map unary operator- to a VectorNegationOp expression node
     VectorNegationOp<M, N, E> operator-() const { return VectorNegationOp<M, N, E>(get()); }
+    Divergence<M, N, E> div() const { return Divergence<M, N, E>(get()); }
 };
   
 // an expression node representing a constant vector
@@ -107,14 +109,17 @@ template <int M, int N> class DiscretizedVectorField : public VectorExpr<M, N, D
     typedef Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> DataType;
     DataType* data_;
     Eigen::Map<SVector<N>> value_;
+    DVector<double> div_data_;  // a discretized vector field contains its divergence data
    public:
     DiscretizedVectorField() : value_(NULL) {};
     DiscretizedVectorField(DataType& data) : data_(&data), value_(NULL) {};
+    DiscretizedVectorField(DataType& data, const DVector<double>& div_data) : data_(&data), div_data_(div_data), value_(NULL) { };
     double operator[](std::size_t i) const { return value_[i]; }
     void forward(std::size_t i) {
         new (&value_) Eigen::Map<SVector<M>>(data_->data() + (i * N));   // construct map in place
     }
     double norm(void) const { return data_->norm(); }   // How can I get the norm of a Discretized Vector Field?
+    Divergence<M, N, DiscretizedVectorField<M, N>> div(void) const { return Divergence<M, N, DiscretizedVectorField<M, N>>(this->div_data_); }
 };
   
 // a generic binary operation node

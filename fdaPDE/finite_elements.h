@@ -51,5 +51,6 @@
 #include "finite_elements/operators/non_linear_operator.h"
 #include "finite_elements/operators/streamline_diffusion.h"   //ADDED
 #include "finite_elements/operators/supg.h"      //ADDED
+#include "finite_elements/operators/supg_RHS.h"  //ADDED
 
 #endif   // __FDAPDE_FINITE_ELEMENTS_MODULE_H__
