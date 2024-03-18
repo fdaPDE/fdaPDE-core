@@ -15,22 +15,18 @@ help()
        -h --help             shows this message"
     exit 2
 }
-
 clean_build_dir()
 {
-    if [ -d "$BUILD_DIR" ];
+    if [ -d "$BUILD_DIR" ] && [ -f "$BUILD_DIR/CMakeCache.txt" ] && [ -d "$BUILD_DIR/CMakeFiles" ];
     then
 	rm -r build/CMakeCache.txt build/CMakeFiles/
     fi
 }
-
 ## parse command line inputs
 SHORT=m,c:,h
 LONG=memcheck,compiler:,help
 OPTS=$(getopt -a --n "$SCRIPT_NAME" --options $SHORT --longoptions $LONG -- "$@") 
-
 eval set -- "$OPTS"
-
 while :; do
     case "$1" in
 	-m | --memcheck )
@@ -54,16 +50,14 @@ while :; do
 	    ;;
     esac
 done
-
 ## set CMake compiler
 if [ "$COMPILER" = "gcc" ]; then
-    export CC=/usr/bin/gcc
-    export CXX=/usr/bin/g++
+    export CC=$(which gcc)
+    export CXX=$(which g++)
 elif [ "$COMPILER" = "clang" ]; then
-    export CC=/usr/bin/clang
-    export CXX=/usr/bin/clang++
+    export CC=$(which clang)
+    export CXX=$(which clang++)
 fi
-
 # cd into build directory
 if [ -d "$BUILD_DIR" ];
 then
@@ -76,11 +70,9 @@ fi
 
 cmake -Wno-dev ../CMakeLists.txt
 make
-
 if [ "$MEMCHECK" = true ]; then
     valgrind --leak-check=full --track-origins=yes ./fdapde_test
 else
     ./fdapde_test
 fi
-
 rm fdapde_test

@@ -44,7 +44,7 @@ TEST(fem_pde_test, laplacian_isotropic_order1) {
     // exact solution
     auto solution_expr = [](SVector<2> x) -> double { return x[0] + x[1]; };
 
-    MeshLoader<Mesh2D> unit_square("unit_square");
+    MeshLoader<Triangulation2D> unit_square("unit_square");
     auto L = -laplacian<FEM>();
     // instantiate a type-erased wrapper for this pde
     PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_square.mesh, L);
@@ -82,7 +82,7 @@ TEST(fem_pde_test, laplacian_isotropic_order2_callable_force) {
     auto forcing_expr = []([[maybe_unused]] SVector<2> x) -> double { return 4.0; };
     ScalarField<2> forcing(forcing_expr);   // wrap lambda expression in ScalarField object
 
-    MeshLoader<Mesh2D> unit_square("unit_square");
+    MeshLoader<Triangulation2D> unit_square("unit_square");
     auto L = -laplacian<FEM>();
     // initialize PDE with callable forcing term
     PDE<decltype(unit_square.mesh), decltype(L), ScalarField<2>, FEM, fem_order<2>> pde_(unit_square.mesh, L, forcing);
@@ -136,7 +136,7 @@ TEST(fem_pde_test, advection_diffusion_isotropic_order1) {
     beta_ << -alpha_, 0.;
     auto L = -laplacian<FEM>() + advection<FEM>(beta_);
     // load sample mesh for order 1 basis
-    MeshLoader<Mesh2D> unit_square("unit_square");
+    MeshLoader<Triangulation2D> unit_square("unit_square");
     PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_square.mesh);
     pde_.set_differential_operator(L);
 
@@ -196,7 +196,7 @@ TEST(fem_pde_test, advection_diffusion_isotropic_order2) {
     beta_ << -alpha_, 0.;
     auto L = -laplacian<FEM>() + advection<FEM>(beta_);   // -\Delta + dot(beta_, \nabla)
     // load sample mesh for order 1 basis
-    MeshLoader<Mesh2D> unit_square("unit_square");
+    MeshLoader<Triangulation2D> unit_square("unit_square");
 
     PDE<decltype(unit_square.mesh), decltype(L), ScalarField<2>, FEM, fem_order<2>> pde_(unit_square.mesh, L, forcing);
 
@@ -245,7 +245,7 @@ TEST(fem_pde_test, parabolic_isotropic_order2) {
         return (8 * pi * pi - 1.) * std::sin(2 * pi * x[0]) * std::sin(2 * pi * x[1]) * std::exp(-t);
     };
 
-    MeshLoader<Mesh2D> unit_square("unit_square");
+    MeshLoader<Triangulation2D> unit_square("unit_square");
     auto L = dt<FEM>() - laplacian<FEM>();
     PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<2>> pde_(unit_square.mesh, times);
     pde_.set_differential_operator(L);
@@ -323,7 +323,7 @@ TEST(fem_pde_test, parabolic_isotropic_order1_convergence) {
 
     for (int n = 0; n < num_refinements; ++n) {
         std::string domain_name = "unit_square_" + std::to_string(N(n));
-        MeshLoader<Mesh2D> unit_square(domain_name);
+        MeshLoader<Triangulation2D> unit_square(domain_name);
         auto L = dt<FEM>() - laplacian<FEM>();
         PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_square.mesh, times);
         pde_.set_differential_operator(L);

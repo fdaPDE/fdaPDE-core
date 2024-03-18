@@ -26,7 +26,7 @@ using fdapde::core::Integrator;
 using fdapde::core::IntegratorTable;
 using fdapde::core::LagrangianBasis;
 using fdapde::core::FEM;
-using fdapde::core::Mesh;
+using fdapde::core::Triangulation;
 using fdapde::core::BarycentricWalk;
 
 #include "utils/mesh_loader.h"
@@ -73,7 +73,7 @@ TYPED_TEST(integration_test, linear_field) {
 // test if is possible to integrate a field over the entire mesh
 TEST(integration_test, integrate_over_triangulation) {
     // load sample mesh
-    MeshLoader<Mesh2D> CShaped("unit_square");
+    MeshLoader<Triangulation2D> CShaped("unit_square");
     Integrator<FEM, 2, 1> integrator {};
     // define field to integrate
     std::function<double(SVector<2>)> f = [](SVector<2>) -> double { return 1; };
@@ -112,7 +112,7 @@ void compute_quadrature(const F& f, const I& integratorTable, std::vector<double
 // test if integration works on linear fields, expect all results equal
 TYPED_TEST(quadrature_rules_test, check_correctness) {
     // define lagrangian basis on reference element
-    auto b = LagrangianBasis<Mesh<TestFixture::M, TestFixture::M>, 1>::ref_basis();
+    auto b = LagrangianBasis<Triangulation<TestFixture::M, TestFixture::M>, 1>::ref_basis();
     // space where results will be stored
     std::vector<double> results;
     // perform integration

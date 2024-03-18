@@ -91,15 +91,15 @@ template <typename DomainType, int order> class LagrangianBasis {
             }
         }
     };
-    LagrangianElement<DomainType::local_dimension, order> ref_basis_ {};
+    LagrangianElement<DomainType::local_dim, order> ref_basis_ {};
     void enumerate_dofs();    // produce the matrix of dof coordinates
    public:
     static constexpr int R = order;                         // basis order
-    static constexpr int M = DomainType::local_dimension;   // input space dimension
-    static constexpr int n_dof_per_element = ct_nnodes(DomainType::local_dimension, order);
+    static constexpr int M = DomainType::local_dim;   // input space dimension
+    static constexpr int n_dof_per_element = ct_nnodes(DomainType::local_dim, order);
     static constexpr int n_dof_per_edge = order - 1;
     static constexpr int n_dof_internal =
-      n_dof_per_element - (DomainType::local_dimension + 1) - DomainType::n_facets_per_element * (order - 1);
+      n_dof_per_element - (DomainType::local_dim + 1) - DomainType::n_facets_per_element * (order - 1);
     using ReferenceBasis = LagrangianElement<M, R>;
     // constructor
     LagrangianBasis() = default;
@@ -121,11 +121,11 @@ template <typename DomainType, int order> class LagrangianBasis {
         else {
             // allocate space
             DMatrix<double> coords;
-            coords.resize(size_, DomainType::embedding_dimension);
+            coords.resize(size_, DomainType::embed_dim);
             coords.topRows(domain_->n_nodes()) = domain_->nodes();   // copy coordinates of elements' vertices
             std::unordered_set<int> visited;                       // set of already visited dofs
-            std::array<SVector<DomainType::local_dimension + 1>, n_dof_per_element> ref_coords =
-              ReferenceElement<DomainType::local_dimension, R>().bary_coords;
+            std::array<SVector<DomainType::local_dim + 1>, n_dof_per_element> ref_coords =
+              ReferenceElement<DomainType::local_dim, R>().bary_coords;
 
             // cycle over all mesh elements
             for (const auto& e : (*domain_)) {
@@ -133,7 +133,7 @@ template <typename DomainType, int order> class LagrangianBasis {
                 auto dofs = dofs_.row(e.ID());
                 for (int j = DomainType::n_vertices; j < n_dof_per_element; ++j) {
                     if (visited.find(dofs[j]) == visited.end()) {   // not yet mapped dof
-                        static constexpr int M = DomainType::local_dimension;
+                        static constexpr int M = DomainType::local_dim;
 			// map points from reference to physical element
                         coords.row(dofs[j]) = e.barycentric_matrix() * ref_coords[j].template tail<M>() + e.coord(0);
                         visited.insert(dofs[j]);
@@ -146,14 +146,14 @@ template <typename DomainType, int order> class LagrangianBasis {
     static ReferenceBasis ref_basis() { return ReferenceBasis {}; }
     // given a coefficient vector c \in \mathbb{R}^size_, evaluates the corresponding basis expansion at locs
     DVector<double> operator()(const DVector<double>& c, const DMatrix<double>& locs) const {
-        fdapde_assert(c.rows() == size_ && locs.cols() == DomainType::embedding_dimension);
+        fdapde_assert(c.rows() == size_ && locs.cols() == DomainType::embed_dim);
         // locate elements
         DVector<int> element_ids = domain_->locate(locs);
         DVector<double> result = DVector<double>::Zero(locs.rows());
         for (int i = 0; i < locs.rows(); ++i) {
             auto e = domain_->element(element_ids[i]);
             // evaluate basis expansion \sum_{i=1}^size_ c_i \psi_i(x) at p
-            SVector<DomainType::embedding_dimension> p(locs.row(i));
+            SVector<DomainType::embed_dim> p(locs.row(i));
             for (int h = 0; h < ref_basis_.size(); ++h) {
                 result[i] += c[e.node_ids()[h]] * ref_basis_[h](e.inv_barycentric_matrix() * (p - e.coord(0)));
             }
@@ -213,12 +213,12 @@ void LagrangianBasis<DomainType, order>::enumerate_dofs() {
 
 template <typename DomainType, int order> struct pointwise_evaluation<LagrangianBasis<DomainType, order>> {
     using BasisType = typename LagrangianBasis<DomainType, order>::ReferenceBasis;
-    static constexpr int N = DomainType::embedding_dimension;
+    static constexpr int N = DomainType::embed_dim;
     // computes a matrix \Psi such that [\Psi]_{ij} = \psi_j(p_i), D is a vector of ones
     static std::pair<SpMatrix<double>, DVector<double>> eval(
       const DomainType& domain, const BasisType& basis, const DMatrix<double>& locs, int n_basis,
       const DMatrix<int>& dofs) {
-      fdapde_assert(locs.size() != 0 && locs.cols() == DomainType::embedding_dimension);
+      fdapde_assert(locs.size() != 0 && locs.cols() == DomainType::embed_dim);
       // preallocate space
       SpMatrix<double> Psi(locs.rows(), n_basis);
       std::vector<fdapde::Triplet<double>> triplet_list;
@@ -245,7 +245,7 @@ template <typename DomainType, int order> struct pointwise_evaluation<Lagrangian
 
 template <typename DomainType, int order> struct areal_evaluation<LagrangianBasis<DomainType, order>> {
     using BasisType = typename LagrangianBasis<DomainType, order>::ReferenceBasis;
-    static constexpr int N = DomainType::embedding_dimension;
+    static constexpr int N = DomainType::embed_dim;
     // computes a matrix \Psi such that [\Psi]_{ij} = \int_{D_j} \psi_i, D contains the measures of subdomains
     static std::pair<SpMatrix<double>, DVector<double>> eval(
       const DomainType& domain, const BasisType& basis, const DMatrix<double>& locs, int n_basis,

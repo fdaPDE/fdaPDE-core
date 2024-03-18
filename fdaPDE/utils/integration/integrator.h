@@ -18,7 +18,7 @@
 #define __INTEGRATOR_H__
 
 #include "../../geometry/element.h"
-#include "../../geometry/mesh.h"
+#include "../../geometry/triangulation.h"
 #include "../../fields/scalar_expressions.h"
 #include "../compile_time.h"
 #include "../symbols.h"
@@ -30,23 +30,24 @@ namespace core {
 
 // A set of utilities to perform numerical integration
 // T: integrator family tag, M: dimension of the integration space, R: order of basis elements
-template <typename T, int M, int R> class Integrator;
+template <typename T, int LocalDim, int Order> class Integrator;
 
 // specialization for Finite Element integration
-template <int M, int R> class Integrator<FEM, M, R> {
+template <int LocalDim, int Order> class Integrator<FEM, LocalDim, Order> {
    private:
-    static constexpr int K = standard_fem_quadrature_rule<M, R>::K;   // number of quadrature nodes
-    IntegratorTable<M, K> integration_table_;
+    static constexpr int K = standard_fem_quadrature_rule<LocalDim, Order>::K;   // number of quadrature nodes
+    IntegratorTable<LocalDim, K> integration_table_;
    public:
-    Integrator() : integration_table_(IntegratorTable<M, K>()) {};
+    Integrator() : integration_table_(IntegratorTable<LocalDim, K>()) {};
 
     // integrate a callable F over a mesh element e
-    template <int N, typename F> double integrate(const Element<M, N>& e, const F& f) const {
+    template <typename MeshType, typename ExprType>
+    double integrate(const Element<MeshType>& e, const ExprType& f) const {
         double value = 0;
         for (size_t iq = 0; iq < integration_table_.num_nodes; ++iq) {
-            if constexpr (std::is_invocable_r<double, F, SVector<N>>::value) {   // callable f
+            if constexpr (std::is_invocable_r<double, ExprType, SVector<MeshType::embed_dim>>::value) {   // callable
                 // map quadrature point onto e
-                SVector<N> p = e.barycentric_matrix() * integration_table_.nodes[iq] + e.coord(0);
+                SVector<MeshType::embed_dim> p = e.J() * integration_table_.nodes[iq] + e.coord(0);
                 value += f(p) * integration_table_.weights[iq];
             } else {
                 // as a fallback we assume f given as vector with the assumption that
@@ -57,8 +58,8 @@ template <int M, int R> class Integrator<FEM, M, R> {
         // correct for measure of domain (element e)
         return value * e.measure();
     }
-    // integrate a callable F over a triangualtion m
-    template <int N, typename F> double integrate(const Mesh<M, N>& m, const F& f) const {
+    // integrate a callable F over a mesh m
+    template <typename MeshType, typename ExprType> double integrate(const MeshType& m, const ExprType& f) const {
         double value = 0;
         // cycle over all mesh elements
         for (const auto& e : m) value += integrate(e, f);
@@ -67,19 +68,18 @@ template <int M, int R> class Integrator<FEM, M, R> {
     // perform integration of \int_e [f * \phi] using a basis system defined over the reference element and the change
     // of variables formula: \int_e [f(x) * \phi(x)] = \int_{E} [f(J(X)) * \Phi(X)] |detJ| where J is the affine mapping
     // from the reference element E to the physical element e
-    template <int N, typename F, typename B> double integrate(const Element<M, N>& e, const F& f, const B& Phi) const {
+    template <typename MeshType, typename ExprType, typename BasisType>
+    double integrate(const Element<MeshType>& e, const ExprType& f, const BasisType& Phi) const {
         double value = 0;
         for (size_t iq = 0; iq < integration_table_.num_nodes; ++iq) {
-            const SVector<M>& p = integration_table_.nodes[iq];
-            if constexpr (std::is_base_of<ScalarExpr<N, F>, F>::value) {
+            const SVector<MeshType::local_dim>& p = integration_table_.nodes[iq];
+            if constexpr (std::is_base_of<ScalarExpr<MeshType::embed_dim, ExprType>, ExprType>::value) {
                 // functor f is evaluable at any point.
-                SVector<N> Jp =
-                  e.barycentric_matrix() * p + e.coord(0);   // map quadrature point on physical element e
+                SVector<MeshType::embed_dim> Jp = e.J() * p + e.coord(0);   // map quadrature point on physical element
                 value += (f(Jp) * Phi(p)) * integration_table_.weights[iq];
             } else {
                 // as a fallback we assume f given as vector of values with the assumption that
-                // f[integration_table_.num_nodes*e.ID() + iq] equals the discretized field at the iq-th quadrature
-                // node.
+                // f[integration_table_.num_nodes*e.ID() + iq] equals the discretized field at the iq-th quadrature node
                 value += (f(integration_table_.num_nodes * e.ID() + iq, 0) * Phi(p)) * integration_table_.weights[iq];
             }
         }
@@ -87,11 +87,12 @@ template <int M, int R> class Integrator<FEM, M, R> {
         return value * e.measure();
     }
     // integrate the weak form of operator L to produce its (i,j)-th discretization matrix element
-    template <typename L, int N, typename F> double integrate(const Element<M, N>& e, F& f) const {
+    template <typename L, typename MeshType, typename ExprType>
+    double integrate(const Element<MeshType>& e, ExprType& f) const {
         // apply quadrature rule
         double value = 0;
         for (size_t iq = 0; iq < integration_table_.num_nodes; ++iq) {
-            const SVector<M>& p = integration_table_.nodes[iq];
+            const SVector<MeshType::local_dim>& p = integration_table_.nodes[iq];
             if constexpr (std::remove_reference<L>::type::is_space_varying) {
                 // space-varying case: forward the quadrature node index to non constant coefficients
                 f.forward(integration_table_.num_nodes * e.ID() + iq);
@@ -103,15 +104,15 @@ template <int M, int R> class Integrator<FEM, M, R> {
     }
 
     // getters
-    template <int N> DMatrix<double> quadrature_nodes(const Mesh<M, N>& m) const {
+    template <typename MeshType> DMatrix<double> quadrature_nodes(const MeshType& m) const {
         DMatrix<double> quadrature_nodes;
-        quadrature_nodes.resize(m.n_elements() * integration_table_.num_nodes, N);
+        quadrature_nodes.resize(m.n_elements() * integration_table_.num_nodes, MeshType::embed_dim);
         // cycle over all mesh elements
         for (const auto& e : m) {
             // for each quadrature node, map it onto the physical element e and store it
             for (size_t iq = 0; iq < integration_table_.num_nodes; ++iq) {
                 quadrature_nodes.row(integration_table_.num_nodes * e.ID() + iq) =
-                  e.barycentric_matrix() * SVector<M>(integration_table_.nodes[iq].data()) + e.coord(0);
+                  e.J() * SVector<LocalDim>(integration_table_.nodes[iq].data()) + e.coord(0);
             }
         }
         return quadrature_nodes;
@@ -120,14 +121,14 @@ template <int M, int R> class Integrator<FEM, M, R> {
 };
 
 // specialization for 1D spline integration (R: order of spline)
-template <int R> class Integrator<SPLINE, 1, R> {
+template <int Order> class Integrator<SPLINE, 1, Order> {
    private:
     static constexpr int K = 3;   // number of quadrature nodes (TODO: generalize)
     IntegratorTable<1, K, GaussLegendre> integration_table_;
    public:
     // integration of f over 1D segments of type [a,b], using formula
     // \int_{[a,b]} f(x) -> (b-a)/2 * \sum_{iq} w_{iq} * f((b-a)/2*x + (b+a)/2)
-    template <typename F> double integrate(double a, double b, const F& f) const {
+    template <typename ExprType> double integrate(double a, double b, const ExprType& f) const {
         double value = 0;
         for (std::size_t iq = 0; iq < integration_table_.num_nodes; ++iq) {
             value += f(SVector<1>(((b - a) / 2) * integration_table_.nodes[iq][0] + (b + a) / 2)) *
@@ -136,18 +137,18 @@ template <int R> class Integrator<SPLINE, 1, R> {
         // correct for measure of interval
         return (b - a) / 2 * value;
     }
-    template <typename F> double integrate(const Element<1, 1>& e, const F& f) const {
+    template <typename ExprType> double integrate(const Element<Triangulation<1, 1>>& e, const ExprType& f) const {
         return integrate(e.coord(0), e.coord(1), f);
     }
     // integrate a callable F over a 1D Mesh
-    template <typename F> double integrate(const Mesh<1, 1>& m, const F& f) const {
+    template <typename ExprType> double integrate(const Triangulation<1, 1>& m, const ExprType& f) const {
         double value = 0;
         // cycle over all mesh elements
         for (const auto& e : m) value += integrate(e, f);
         return value;
     }
     // getters
-    DMatrix<double> quadrature_nodes(const Mesh<1, 1>& m) const {
+    DMatrix<double> quadrature_nodes(const Triangulation<1, 1>& m) const {
         DMatrix<double> quadrature_nodes;
         quadrature_nodes.resize(m.n_elements() * integration_table_.num_nodes, 1);
         // cycle over all mesh elements

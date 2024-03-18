@@ -38,10 +38,10 @@ template <typename D, typename E, typename F, typename... Ts> class FEMSolverBas
     typedef std::tuple<Ts...> SolverArgs;
     enum {
         fem_order = std::tuple_element<0, SolverArgs>::type::value,
-        n_dof_per_element = ct_nnodes(D::local_dimension, fem_order),
+        n_dof_per_element = ct_nnodes(D::local_dim, fem_order),
         n_dof_per_edge = fem_order - 1,
         n_dof_internal =
-          n_dof_per_element - (D::local_dimension + 1) - D::n_facets_per_element * (fem_order - 1)   // > 0 \iff R > 2
+          n_dof_per_element - (D::local_dim + 1) - D::n_facets_per_element * (fem_order - 1)   // > 0 \iff R > 2
     };
     using DomainType = D;
     using FunctionalBasis = LagrangianBasis<DomainType, fem_order>;

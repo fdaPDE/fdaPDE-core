@@ -23,45 +23,45 @@
 namespace fdapde {
 namespace core {
 
-// TreeSearch is used as default point location strategy in Mesh, need to forward declare Mesh here
-template <int M, int N> class Mesh;
-
 // tree-based point location over triangulation. Based on "J. Bonet, J. Peraire (1991), An alternating digital tree
 // (ADT) algorithm for 3D geometric searching and intersection problems"
-template <int M, int N> class TreeSearch {
+template <typename MeshType> class TreeSearch {
    private:
-    KDTree<2 * N> tree_;
-    const Mesh<M, N>& mesh_;
-    SVector<N> c_;   // normalization constants
+    static constexpr int embed_dim = MeshType::embed_dim;
+    static constexpr int local_dim = MeshType::local_dim;
+    KDTree<2 * embed_dim> tree_;
+    const MeshType* mesh_;
+    SVector<embed_dim> c_;   // normalization constants
    public:
-    TreeSearch(const Mesh<M, N>& mesh) : mesh_(mesh) {
+    TreeSearch() = default;
+    TreeSearch(const MeshType* mesh) : mesh_(mesh) {
         // the i-th row of data contains the bounding box of the i-th element, stored as the vector [lower-left,
         // upper-right] corner. This moves each element to a point in R^{2N}
         DMatrix<double> data;
-        data.resize(mesh.n_elements(), 2 * N);
-        for (int dim = 0; dim < N; ++dim) { c_[dim] = 1.0 / (mesh_.range()(1, dim) - mesh_.range()(0, dim)); }
+        data.resize(mesh_->n_elements(), 2 * embed_dim);
+        for (int dim = 0; dim < embed_dim; ++dim) { c_[dim] = 1.0 / (mesh_->range()(1, dim) - mesh_->range()(0, dim)); }
         int i = 0;
-        for (const auto& e : mesh_) {
-            std::pair<SVector<N>, SVector<N>> bounding_box = e.bounding_box();
+        for (const auto& e : *mesh_) {
+            std::pair<SVector<embed_dim>, SVector<embed_dim>> bbox = e.bounding_box();
             // unit hypercube point scaling
-            data.row(i).leftCols(N)  = (bounding_box.first  - mesh_.range().row(0).transpose()).array() * c_.array();
-            data.row(i).rightCols(N) = (bounding_box.second - mesh_.range().row(0).transpose()).array() * c_.array();
+            data.row(i).leftCols(embed_dim)  = (bbox.first  - mesh_->range().row(0).transpose()).array() * c_.array();
+            data.row(i).rightCols(embed_dim) = (bbox.second - mesh_->range().row(0).transpose()).array() * c_.array();
             ++i;
         }
-        tree_ = KDTree<2 * N>(std::move(data));   // organize elements in a KD-tree structure
+        tree_ = KDTree<2 * embed_dim>(std::move(data));   // organize elements in a KD-tree structure
     }
     // finds element containing p, returns nullptr if element not found
-    const Element<M, N>* locate(const SVector<N>& p) const {
+    const typename MeshType::ElementType* locate(const SVector<embed_dim>& p) const {
         // build search query
-        SVector<N> scaled_p = (p - mesh_.range().row(0).transpose()).array() * c_.array();
-        SVector<2 * N> ll, ur;
-        ll << SVector<N>::Zero(), scaled_p;
-        ur << scaled_p, SVector<N>::Ones();
+        SVector<embed_dim> scaled_p = (p - mesh_->range().row(0).transpose()).array() * c_.array();
+        SVector<2 * embed_dim> ll, ur;
+        ll << SVector<embed_dim>::Zero(), scaled_p;
+        ur << scaled_p, SVector<embed_dim>::Ones();
         auto found = tree_.range_search({ll, ur});
         // exhaustively scan the query results to get the searched mesh element
         for (int id : found) {
-            auto element = mesh_.element(id);
-            if (element.contains(p)) { return &mesh_.element(id); }
+            auto element = mesh_->element(id);
+            if (element.contains(p)) { return &mesh_->element(id); }
         }
         return nullptr;   // no element found
     }

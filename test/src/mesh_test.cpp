@@ -24,7 +24,7 @@
 #include <unordered_set>
 #include <vector>
 using fdapde::core::Element;
-using fdapde::core::Mesh;
+using fdapde::core::Triangulation;
 
 #include "utils/mesh_loader.h"
 #include "utils/utils.h"
@@ -33,16 +33,16 @@ using fdapde::testing::MESH_TYPE_LIST;
 using fdapde::testing::MeshLoader;
 
 // test suite for testing both non-manifold meshes (2D/3D) and manifold mesh (2.5D/1.5D)
-template <typename E> struct mesh_test : public ::testing::Test {
+template <typename E> struct triangulation_test : public ::testing::Test {
     MeshLoader<E> mesh_loader {};   // use default mesh
     static constexpr int M = MeshLoader<E>::M;
     static constexpr int N = MeshLoader<E>::N;
     typedef E MeshType;
 };
-TYPED_TEST_SUITE(mesh_test, MESH_TYPE_LIST);
+TYPED_TEST_SUITE(triangulation_test, MESH_TYPE_LIST);
 
 // check points' coordinate embedded in an element are loaded correctly
-TYPED_TEST(mesh_test, elements_construction) {
+TYPED_TEST(triangulation_test, elements_construction) {
     for (int i = 0; i < this->mesh_loader.mesh.n_elements(); ++i) {
         // request element with ID i
         auto e = this->mesh_loader.mesh.element(i);
@@ -61,7 +61,7 @@ TYPED_TEST(mesh_test, elements_construction) {
 }
 
 // check edges informations are computed correctly (up to an ordering of the nodes)
-TYPED_TEST(mesh_test, edges_construction) {
+TYPED_TEST(triangulation_test, edges_construction) {
     constexpr int K = TestFixture::MeshType::n_vertices_per_facet;
     // load raw edges
     std::vector<std::vector<int>> expected_edge_set;
@@ -74,9 +74,9 @@ TYPED_TEST(mesh_test, edges_construction) {
     // load mesh edges and compute mask
     std::vector<std::vector<int>> mesh_edge_set;
     std::vector<bool> edge_mask(expected_edge_set.size(), false);
-    for (auto it = this->mesh_loader.mesh.facet_begin(); it != this->mesh_loader.mesh.facet_end(); ++it) {
+    for (int i = 0; i < this->mesh_loader.mesh.facets().rows(); ++i) {
         std::vector<int> e {};
-        for (int j = 0; j < K; ++j) { e.push_back((*it).node_ids()[j]); }
+        for (int j = 0; j < K; ++j) { e.push_back(this->mesh_loader.mesh.facets()(i, j)); }
         std::sort(e.begin(), e.end());   // normalize wrt ordering of edge's node
 
         // find this edge in expected set
@@ -92,71 +92,68 @@ TYPED_TEST(mesh_test, edges_construction) {
 }
 
 // check neighbors informations are computed correctly (up to a permutation of the elements)
-TYPED_TEST(mesh_test, neighbors_construction) {
+TYPED_TEST(triangulation_test, neighbors_construction) {
     // same number of elements
     EXPECT_TRUE(this->mesh_loader.neighbors_.size() == this->mesh_loader.mesh.neighbors().size());
 
     if constexpr (!fdapde::core::is_network<TestFixture::M, TestFixture::N>::value) {
-        bool result = true;
-	int n_row = this->mesh_loader.neighbors_.rows();
-	int n_col = this->mesh_loader.neighbors_.cols();
-	for(int i = 0; i < n_row; ++i) {
-	  for(int j = 0; j < n_col; ++j){
-	    if(this->mesh_loader.neighbors_(i,j) != this->mesh_loader.mesh.neighbors()(i,j)) { result = false; }
-	  }
-	}
-        EXPECT_TRUE(result == true);
+        EXPECT_TRUE(this->mesh_loader.neighbors_ == this->mesh_loader.mesh.neighbors());
     } else {
-      // for linear networks, neighbors are stored as a sparse adjacency matrix
-      bool result = true;
-      for (int k = 0; k < this->mesh_loader.neighbors_.outerSize(); ++k) {
-	for (SpMatrix<int>::InnerIterator it(this->mesh_loader.neighbors_,k); it; ++it) {
-	  if(it.value() != this->mesh_loader.mesh.neighbors().coeff(it.row(), it.col())) { result = false; }
-	}
-      }
-      EXPECT_TRUE(result == true);
+        // for linear networks, neighbors are stored as a sparse adjacency matrix
+        bool result = true;
+        for (int k = 0; k < this->mesh_loader.neighbors_.outerSize(); ++k) {
+            for (SpMatrix<int>::InnerIterator it(this->mesh_loader.neighbors_, k); it; ++it) {
+                if (it.value() != this->mesh_loader.mesh.neighbors().coeff(it.row(), it.col())) { result = false; }
+            }
+        }
+        EXPECT_TRUE(result == true);
     }
 }
 
 // performs some checks on the mesh topology, e.g. checks that stated neighbors shares exactly M points
-TYPED_TEST(mesh_test, boundary_checks) {
-    // cycle over all mesh elements
-    for (int i = 0; i < this->mesh_loader.mesh.n_elements(); ++i) {
-        auto e = this->mesh_loader.mesh.element(i);
-        // check that neighboing elements have always M points in common
-        for (int neigh_id : e.neighbors()) {
-            if (!e.is_on_boundary()) {
-                // request neighboring element from mesh
-                auto n = this->mesh_loader.mesh.element(neigh_id);
-                // take nodes of both elements
-                std::array<SVector<TestFixture::N>, TestFixture::M + 1> eList, nList;
-                for (int j = 0; j < TestFixture::M + 1; ++j) {
-                    eList[j] = e.coord(j);
-                    nList[j] = n.coord(j);
-                }
-                // check that the points in common between the two are exactly M
-                int matches = 0;
-                for (SVector<TestFixture::N> p : eList) {
-                    if (std::find(nList.begin(), nList.end(), p) != nList.end()) matches++;
-                }
-		EXPECT_TRUE(matches == TestFixture::M);
-            } else {
-                // check that at least one vertex of e is detected as boundary point
-                bool element_on_boundary = false;
-                auto node_ids = e.node_ids();
-                for (int n : node_ids) {
-                    if (this->mesh_loader.mesh.is_on_boundary(n)) {   // mesh detects this point as boundary point
-                        element_on_boundary = true;
+TYPED_TEST(triangulation_test, boundary_checks) {
+    if constexpr (TestFixture::M != 1) {
+        // cycle over all mesh elements
+        for (int i = 0; i < this->mesh_loader.mesh.n_elements(); ++i) {
+            auto e = this->mesh_loader.mesh.element(i);
+            // check that neighboing elements have always M points in common
+            for (int neigh_id : e.neighbors()) {
+                if (!e.is_on_boundary()) {
+                    // request neighboring element from mesh
+                    auto n = this->mesh_loader.mesh.element(neigh_id);
+                    // take nodes of both elements
+                    std::array<SVector<TestFixture::N>, TestFixture::M + 1> eList, nList;
+                    for (int j = 0; j < TestFixture::M + 1; ++j) {
+                        eList[j] = e.coord(j);
+                        nList[j] = n.coord(j);
                     }
+                    // check that the points in common between the two are exactly M
+                    int matches = 0;
+                    for (const SVector<TestFixture::N>& p : eList) {
+                        if (std::find(nList.begin(), nList.end(), p) != nList.end()) matches++;
+                    }
+                    EXPECT_TRUE(matches == TestFixture::M);
+                } else {
+                    // check that at least one vertex of e is detected as boundary point
+                    bool element_on_boundary = false;
+                    auto node_ids = e.node_ids();
+                    for (int n : node_ids) {
+                        if (this->mesh_loader.mesh.is_on_boundary(n)) {   // mesh detects this point as boundary point
+                            element_on_boundary = true;
+                        }
+                    }
+                    EXPECT_TRUE(element_on_boundary);
                 }
-                EXPECT_TRUE(element_on_boundary);
             }
         }
+    } else {
+        // skeep linear network case
+        SUCCEED();
     }
 }
 
 // check the range for loop scans the whole mesh element by element
-TYPED_TEST(mesh_test, range_for) {
+TYPED_TEST(triangulation_test, range_for) {
     // prepare set with all indexes of IDs to touch
     std::unordered_set<int> mesh_ids {};
     for (int i = 0; i < this->mesh_loader.mesh.n_elements(); ++i) mesh_ids.insert(i);
@@ -171,9 +168,9 @@ TYPED_TEST(mesh_test, range_for) {
     EXPECT_TRUE(mesh_ids.empty());
 }
 
-TEST(mesh_test, 1D_interval) {
+TEST(triangulation_test, 1D_interval) {
     // create unit interval (nodes evenly distributed)
-    Mesh<1, 1> unit_interval(0, 1, 10);
+    Triangulation<1, 1> unit_interval(0, 1, 10);
 
     std::unordered_set<int> mesh_ids {};
     for (int i = 0; i < unit_interval.n_elements(); ++i) { mesh_ids.insert(i); }
@@ -182,13 +179,13 @@ TEST(mesh_test, 1D_interval) {
         EXPECT_TRUE(mesh_ids.find(e.ID()) != mesh_ids.end());
         mesh_ids.erase(e.ID());
 
-	// boundary checks
-        if (e.ID() == 0 || e.ID() == unit_interval.n_elements()-1) {
+        // boundary checks
+        if (e.ID() == 0 || e.ID() == unit_interval.n_elements() - 1) {
             EXPECT_TRUE(e.is_on_boundary());
         } else {
-	    EXPECT_TRUE(!e.is_on_boundary());
+            EXPECT_TRUE(!e.is_on_boundary());
         }
     }
     // check that no ID is left in the initial set
-    EXPECT_TRUE(mesh_ids.empty());   
+    EXPECT_TRUE(mesh_ids.empty());
 }

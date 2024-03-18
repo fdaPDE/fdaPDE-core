@@ -22,6 +22,7 @@
 #include <fdaPDE/linear_algebra.h>
 using fdapde::core::Element;
 using fdapde::core::HyperPlane;
+using fdapde::core::Triangulation2D;
 //using fdapde::core::circumcenter;
 
 #include "utils/mesh_loader.h"
@@ -34,7 +35,7 @@ using fdapde::testing::almost_equal;
 
 // test fixture
 template <typename E> struct mesh_element_test : public ::testing::Test {
-    MeshLoader<E> meshLoader {};   // use default mesh
+    MeshLoader<E> mesh_loader {};   // use default mesh
     static constexpr int M = MeshLoader<E>::M;
     static constexpr int N = MeshLoader<E>::N;
 };
@@ -43,18 +44,17 @@ TYPED_TEST_SUITE(mesh_element_test, MESH_TYPE_LIST);
 // check computation of barycentric coordinates is coherent with well known properties
 TYPED_TEST(mesh_element_test, barycentric_coordinates_computation) {
     // generate a random element, a random point inside it and compute its barycentric coordinates
-    auto e = this->meshLoader.generate_random_element();
-    SVector<TestFixture::N> p = this->meshLoader.generate_random_point(e);
+    auto e = this->mesh_loader.generate_random_element();
+    SVector<TestFixture::N> p = this->mesh_loader.generate_random_point(e);
     SVector<TestFixture::M + 1> q = e.to_barycentric_coords(p);   // compute barycentric coordinates of point p
-
     // the barycentric coordinates of a point inside the element sums to 1
     EXPECT_TRUE(almost_equal(q.sum(), 1.0));
     // the barycentric coordinates of a point inside the element are all positive
     EXPECT_TRUE((q.array() >= 0).all());
 
     // a point outside the element has at least one negative barycentric coordinate
-    auto f = this->meshLoader.generate_random_element();
-    while (e.ID() == f.ID()) f = this->meshLoader.generate_random_element();
+    auto f = this->mesh_loader.generate_random_element();
+    while (e.ID() == f.ID()) f = this->mesh_loader.generate_random_element();
 
     if constexpr (TestFixture::N == TestFixture::M) {
         EXPECT_FALSE((e.to_barycentric_coords(f.mid_point()).array() > 0).all());
@@ -81,7 +81,7 @@ TYPED_TEST(mesh_element_test, barycentric_coordinates_computation) {
 
 // test midpoint is correctly computed
 TYPED_TEST(mesh_element_test, mid_point_computation) {
-    auto e = this->meshLoader.generate_random_element();
+    auto e = this->mesh_loader.generate_random_element();
     SVector<TestFixture::N> m = e.mid_point();
     SVector<TestFixture::M + 1> b = e.to_barycentric_coords(m);
     // the midpoint of an element is strictly inside it <-> its barycentric coordinates are all strictly positive
@@ -98,37 +98,37 @@ TYPED_TEST(mesh_element_test, mid_point_computation) {
 
 // chcek .contains is able to correctly evaluate when a point is contained or not in an element
 TYPED_TEST(mesh_element_test, assert_if_point_inside) {
-    auto e = this->meshLoader.generate_random_element();
+    auto e = this->mesh_loader.generate_random_element();
     // expect the mid point of the element is contained in the element itself
     EXPECT_TRUE(e.contains(e.mid_point()));
 
     // generate random points inside the element and check they are all contained into it
     for (int i = 0; i < 100; ++i) {
-        SVector<TestFixture::N> p = this->meshLoader.generate_random_point(e);
+        SVector<TestFixture::N> p = this->mesh_loader.generate_random_point(e);
         EXPECT_TRUE(e.contains(p));
     }
 
     // expect the midpoint of a different element is not contained in e
-    auto f = this->meshLoader.generate_random_element();
-    while (e.ID() == f.ID()) { f = this->meshLoader.generate_random_element(); }
+    auto f = this->mesh_loader.generate_random_element();
+    while (e.ID() == f.ID()) { f = this->mesh_loader.generate_random_element(); }
     EXPECT_FALSE(e.contains(f.mid_point()));
 }
 
 TEST(mesh_element_test, measure_computation) {
-    MeshLoader<Mesh2D> CShaped("c_shaped");
+    MeshLoader<Triangulation2D> CShaped("c_shaped");
     double expected_measure = 0.0173913024287495;   // expected measure for element 175
     EXPECT_TRUE(almost_equal(CShaped.mesh.element(175).measure(), expected_measure));
 }
 
 // test barycentric matrix and its inverse
 TEST(mesh_element_test, barycentric_matrix_assembly) {
-    MeshLoader<Mesh2D> CShaped("c_shaped");
+    MeshLoader<Triangulation2D> CShaped("c_shaped");
     auto e = CShaped.mesh.element(175);
 
     // set expected barycentric matrix for element with ID 175
     Eigen::Matrix<double, 2, 2> barycentric_matrix;
     barycentric_matrix << 0.1666666666666650, 0.0418368195713161, 0.0345649283581886, 0.2173721491722987;
-    Eigen::Matrix<double, 2, 2> M = e.barycentric_matrix();
+    Eigen::Matrix<double, 2, 2> M = e.J();
     for (int i = 0; i < 2; ++i) {
         for (int j = 0; j < 2; ++j) EXPECT_TRUE(almost_equal(barycentric_matrix(i, j), M(i, j)));
     }
@@ -136,7 +136,7 @@ TEST(mesh_element_test, barycentric_matrix_assembly) {
     // set expected inverse of the barycentric matrix for element with ID 175
     Eigen::Matrix<double, 2, 2> inv_barycentric_matrix;
     inv_barycentric_matrix << 6.2494499783110298, -1.2028086954015513, -0.9937417999542519, 4.7916671954122458;
-    Eigen::Matrix<double, 2, 2> invM = e.inv_barycentric_matrix();
+    Eigen::Matrix<double, 2, 2> invM = e.invJ();
     for (int i = 0; i < 2; ++i) {
         for (int j = 0; j < 2; ++j) EXPECT_TRUE(almost_equal(inv_barycentric_matrix(i, j), invM(i, j)));
     }
@@ -144,9 +144,9 @@ TEST(mesh_element_test, barycentric_matrix_assembly) {
 
 // check circumcenter of an element
 // TEST(mesh_element_test, cicrumcenter_2d) {
-//     MeshLoader<Mesh2D> CShaped("c_shaped");
+//     MeshLoader<Triangulation2D> CShaped("c_shaped");
 
-//     Mesh2D m = CShaped.mesh;
+//     Triangulation2D m = CShaped.mesh;
     
 //     for(auto e_it = m.edge_begin(); e_it != m.edge_end(); ++e_it) {
 //       std::cout << (*e_it).adjacent_elements()[0] << " " << (*e_it).adjacent_elements()[1] << std::endl;

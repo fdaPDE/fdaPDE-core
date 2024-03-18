@@ -20,7 +20,7 @@
 #include <fdaPDE/utils.h>
 #include <fdaPDE/geometry.h>
 using fdapde::core::Element;
-using fdapde::core::Mesh;
+using fdapde::core::Triangulation;
 using fdapde::core::NaiveSearch;
 using fdapde::core::BarycentricWalk;
 using fdapde::core::TreeSearch;
@@ -39,7 +39,7 @@ TYPED_TEST_SUITE(point_location_test, MESH_TYPE_LIST);
 
 TYPED_TEST(point_location_test, naive_search) {
     // build search engine
-    NaiveSearch<TestFixture::M, TestFixture::N> engine(this->mesh_loader.mesh);
+    NaiveSearch<Triangulation<TestFixture::M, TestFixture::N>> engine(&this->mesh_loader.mesh);
     // build test set
     std::vector<std::pair<int, SVector<TestFixture::N>>> test_set = this->mesh_loader.sample(100);
     // test all queries in test set
@@ -53,7 +53,7 @@ TYPED_TEST(point_location_test, naive_search) {
 
 TYPED_TEST(point_location_test, alternating_digital_tree) {
     // build search engine
-    TreeSearch<TestFixture::M, TestFixture::N> engine(this->mesh_loader.mesh);
+    TreeSearch<Triangulation<TestFixture::M, TestFixture::N>> engine(&this->mesh_loader.mesh);
     // build test set
     std::vector<std::pair<int, SVector<TestFixture::N>>> test_set = this->mesh_loader.sample(100);
     // test all queries in test set
@@ -68,7 +68,7 @@ TYPED_TEST(point_location_test, alternating_digital_tree) {
 // barycentric walk cannot be applied to manifold mesh, filter out manifold cases at compile time
 TYPED_TEST(point_location_test, barycentric_walk) {
     if constexpr (TestFixture::N == TestFixture::M) {
-        BarycentricWalk<TestFixture::M, TestFixture::N> engine(this->mesh_loader.mesh);
+        BarycentricWalk<Triangulation<TestFixture::M, TestFixture::N>> engine(&this->mesh_loader.mesh);
         // build test set
         std::vector<std::pair<int, SVector<TestFixture::N>>> test_set = this->mesh_loader.sample(100);
         // test all queries in test set
@@ -90,7 +90,7 @@ TEST(point_location_test, 1D_binary_search) {
     DVector<double> mesh_nodes(nodes.size());
     for (std::size_t i = 0; i < nodes.size(); ++i) { mesh_nodes[i] = nodes[i]; }
     // create mesh
-    Mesh<1, 1> unit_interval(mesh_nodes);
+    Triangulation<1, 1> unit_interval(mesh_nodes);
 
     // build test set
     std::vector<std::pair<int, SVector<1>>> test_set;

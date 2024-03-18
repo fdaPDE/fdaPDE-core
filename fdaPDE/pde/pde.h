@@ -21,7 +21,6 @@
 #include <unordered_map>
 #include <optional>
 
-#include "../geometry/mesh.h"
 #include "../utils/symbols.h"
 #include "../utils/integration/integrator.h"
 #include "differential_expressions.h"
@@ -42,14 +41,14 @@ class PDE {
    public:
     using SpaceDomainType = D;                // triangulated spatial domain
     using TimeDomainType = DVector<double>;   // time-interval [0,T] (for time-dependent PDEs)
-    static constexpr int M = SpaceDomainType::local_dimension;
-    static constexpr int N = SpaceDomainType::embedding_dimension;
+    static constexpr int M = SpaceDomainType::local_dim;
+    static constexpr int N = SpaceDomainType::embed_dim;
     using OperatorType = E;   // differential operator in its strong-formulation
     static_assert(std::is_base_of<DifferentialExpr<OperatorType>, OperatorType>::value);
     using ForcingType = F;   // type of forcing object (either a matrix or a callable object)
     static_assert(
       std::is_same<DMatrix<double>, ForcingType>::value ||
-      std::is_base_of<ScalarExpr<SpaceDomainType::embedding_dimension, ForcingType>, ForcingType>::value);
+      std::is_base_of<ScalarExpr<N, ForcingType>, ForcingType>::value);
     using SolverType = typename pde_solver_selector<S, SpaceDomainType, OperatorType, ForcingType, Ts...>::type;
     using FunctionalBasis = typename SolverType::FunctionalBasis;   // function space approximating the solution space
     using Quadrature = typename SolverType::Quadrature;             // quadrature for numerical integral approximations

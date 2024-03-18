@@ -185,7 +185,7 @@ template <typename XprType> struct ref_select {
       XprType::NestAsRef == 0, std::remove_reference_t<XprType>, std::add_lvalue_reference_t<XprType>>::type;
 };
 }   // namespace internals
-  
+
 }   // namespace fdapde
 
 #endif   // __FDAPDE_SYMBOLS_H__

@@ -22,8 +22,6 @@
 #include "../fields/field_ptrs.h"
 #include "../fields/scalar_field.h"
 #include "../fields/vector_field.h"
-#include "../geometry/element.h"
-#include "../geometry/mesh.h"
 #include "../pde/assembler.h"
 #include "../utils/compile_time.h"
 #include "../utils/integration/integrator.h"
@@ -52,8 +50,8 @@ template <typename D, typename B, typename I> class Assembler<FEM, D, B, I> {
 
     // discretization methods
     template <typename E> SpMatrix<double> discretize_operator(const E& op) {
-        constexpr int M = D::local_dimension;
-        constexpr int N = D::embedding_dimension;
+        constexpr int M = D::local_dim;
+        constexpr int N = D::embed_dim;
         std::vector<Eigen::Triplet<double>> triplet_list;   // store triplets (node_i, node_j, integral_value)
         SpMatrix<double> discretization_matrix;
 

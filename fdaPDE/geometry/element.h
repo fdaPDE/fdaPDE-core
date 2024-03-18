@@ -17,95 +17,103 @@
 #ifndef __ELEMENT_H__
 #define __ELEMENT_H__
 
-#include <array>
+#include <optional>
 
 #include "../utils/symbols.h"
 #include "hyperplane.h"
-#include "mesh_utils.h"
+#include "utils.h"
 
 namespace fdapde {
 namespace core {
-  
-// A mesh element. M: tangent space dimension, N: embedding dimension
-template <int M, int N> class Element {
+
+template <typename MeshType> class Element {
    public:
-    using neigh_container = std::conditional_t<is_network<M, N>::value, std::vector<int>, std::array<int, M + 1>>;
-    using bbox_type       = std::pair<SVector<N>, SVector<N>>;
-    static constexpr double tolerance_ = 10 * std::numeric_limits<double>::epsilon();
-    // compile time constants
-    enum {
-        n_vertices = ct_nvertices(M),
-        local_dimension = M,
-        embedding_dimension = N
-    };
+    static constexpr int local_dim = MeshType::local_dim;
+    static constexpr int embed_dim = MeshType::embed_dim;
+    static constexpr int n_vertices = ct_nvertices(local_dim);
+    using bbox_type = std::pair<SVector<embed_dim>, SVector<embed_dim>>;
     // constructor
     Element() = default;
-    Element(int id, const std::array<int, n_vertices>& node_ids, const SMatrix<N, n_vertices>& coords,
-        const neigh_container& neighbors, bool boundary) :
-        id_(id), node_ids_(node_ids), coords_(coords), neighbors_(neighbors), boundary_(boundary) {
-        // precompute barycentric coordinate matrix for fast access, use first point as reference
-        for (std::size_t j = 0; j < M; ++j) { J_.col(j) = coords_.col(j + 1) - coords_.col(0); }
-        // precompute and cache inverse of barycentric matrix and element's measure
-        if constexpr (N == M) {
-            inv_J_ = J_.inverse();
-            measure_ = std::abs(J_.determinant()) / (ct_factorial(M));
-        } else {
-            inv_J_ = (J_.transpose() * J_).inverse() * J_.transpose();   // generalized Penrose inverse
-            if constexpr (M == 2)
-                measure_ = 0.5 * J_.col(0).cross(J_.col(1)).norm();
-            if constexpr (M == 1)
-                measure_ = J_.col(0).norm();
-        }
+    Element(int id, const MeshType* mesh) : id_(id), mesh_(mesh), boundary_(false) {
+        for (int j = 0; j < n_vertices; ++j) { boundary_ |= mesh_->is_on_boundary(mesh_->elements()(id_, j)); }
     }
     // getters
-    const SMatrix<N, n_vertices>& coords() const { return coords_; }
-    auto coord(int vertex) const { return coords_.col(vertex); }   // coordinate of i-th vertex
-    const neigh_container& neighbors() const { return neighbors_; }
+    SMatrix<embed_dim, n_vertices> coords() const {
+        SMatrix<embed_dim, n_vertices> coords {};
+        for (int j = 0; j < n_vertices; ++j) {
+            coords.col(j) = mesh_->node(mesh_->elements()(id_, j));   // physical coordinate of the node
+        }
+        return coords;
+    }
+    SVector<embed_dim> coord(int vertex) const {   // coordinate of the i-th vertex of this element
+        return mesh_->node(mesh_->elements()(id_, vertex));
+    }
+    auto neighbors() const { return mesh_->neighbors().row(id_); }
     int ID() const { return id_; }
-    SMatrix<N, M> barycentric_matrix() const { return J_; }
-    SMatrix<M, N> inv_barycentric_matrix() const { return inv_J_; }
-    std::array<int, n_vertices> node_ids() const { return node_ids_; }
-    double measure() const { return measure_; }   // measure of the element
-  
+    const SMatrix<embed_dim, local_dim>& J() const {
+        if (!J_.has_value()) {
+            J_ = SMatrix<embed_dim, local_dim>::Zero();
+            for (int j = 0; j < local_dim; ++j) { J_->col(j) = coord(j + 1) - coord(0); }
+        }
+        return J_.value();
+    }
+    const SMatrix<local_dim, embed_dim>& invJ() const {
+        if (!invJ_.has_value()) {
+            if constexpr (embed_dim == local_dim) {
+                invJ_ = J().inverse();
+            } else {   // generalized Penrose inverse for manifold eleents
+                invJ_ = (J().transpose() * J()).inverse() * J().transpose();
+            }
+        }
+        return invJ_.value();
+    }
+    auto node_ids() const { return mesh_->elements().row(id_); }
+    double measure() const {
+        if (measure_ < 0) {
+            if constexpr (embed_dim == local_dim) {
+                measure_ = std::abs(J().determinant()) / (ct_factorial(local_dim));
+            } else {
+                if constexpr (local_dim == 2) measure_ = 0.5 * J().col(0).cross(J().col(1)).norm();
+                if constexpr (local_dim == 1) measure_ = J().col(0).norm();
+            }
+        }
+        return measure_;
+    }
     // check if x is contained in the element (checks for positiveness of barycentric coordinates of x)
-    bool contains(const SVector<N>& x) const {
-        if constexpr (N != M) {
-            // check if the point is contained in the affine space spanned by the element
+    bool contains(const SVector<embed_dim>& x) const {
+        if constexpr (local_dim != embed_dim) {   // check if the point is contained in the hyperplane through this
             if (hyperplane().distance(x) > tolerance_) return false;
         }
         return (to_barycentric_coords(x).array() >= -tolerance_).all();
     }
     // move x into the barycentric reference system of this element
-    SVector<M + 1> to_barycentric_coords(const SVector<N>& x) const {
-        SVector<M> z = inv_J_ * (x - coords_.col(0));
-        SVector<M + 1> result;
+    SVector<local_dim + 1> to_barycentric_coords(const SVector<embed_dim>& x) const {
+        SVector<local_dim> z = invJ() * (x - coord(0));
+        SVector<local_dim + 1> result;
         result << SVector<1>(1 - z.sum()), z;
         return result;
     }
     // computes midpoint of the element
-    SVector<N> mid_point() const {
-        SVector<M> barycenter;
-        barycenter.fill(1.0 / (M + 1));   // the barycenter has all its barycentric coordinates equal to 1/(M+1).
-        return J_ * barycenter + coords_.col(0);
+    SVector<embed_dim> mid_point() const {
+        SVector<local_dim> barycenter;
+        barycenter.fill(1.0 / (local_dim + 1));   // the barycenter has all its barycentric coordinates equal to 1/(M+1)
+        return J() * barycenter + coord(0);
     }
     // compute the smallest rectangle containing this element
     bbox_type bounding_box() const {
-        return std::make_pair(coords_.rowwise().minCoeff(), coords_.rowwise().maxCoeff());
+        return std::make_pair(coords().rowwise().minCoeff(), coords().rowwise().maxCoeff());
     }
-    bool is_on_boundary() const { return boundary_; }   // true if the element has at least one node on the boundary
-    // hyperplane passing throught this element
-    HyperPlane<M, N> hyperplane() const {
-        return HyperPlane<M, N>(coords_);
-    }
+    bool is_on_boundary() const { return boundary_; }
+    HyperPlane<local_dim, embed_dim> hyperplane() const { return HyperPlane<local_dim, embed_dim>(coords()); }
+    operator bool() const { return mesh_ != nullptr; }
    private:
-    int id_ = 0;
-    std::array<int, n_vertices> node_ids_ {};   // vertices ids
-    SMatrix<N, n_vertices> coords_ {};          // vertices coordinates (1-1 mapped with node_ids_)
-    neigh_container neighbors_ {};
-    bool boundary_;         // true if the element has at least one vertex on the boundary
-    double measure_ = 0;    // element's measure
-    SMatrix<N, M> J_;       // [J_]_ij = (coords_(j,i) - coords_(0,i))
-    SMatrix<M, N> inv_J_;   // J^{-1} (Penrose pseudo-inverse for manifold elements)
+    static constexpr double tolerance_ = 10 * std::numeric_limits<double>::epsilon();
+    int id_ = 0;   // ID of this element in the physical mesh
+    const MeshType* mesh_ = nullptr;
+    bool boundary_ = false;   // true if the element has at least one vertex on the boundary
+    mutable double measure_ = -1;                                 // element's measure
+    mutable std::optional<SMatrix<embed_dim, local_dim>> J_;      // [J_]_ij = (coords_(j,i) - coords_(0,i))
+    mutable std::optional<SMatrix<local_dim, embed_dim>> invJ_;   // J^{-1} (Penrose pseudo-inverse for manifold)
 };
 
 }   // namespace core
