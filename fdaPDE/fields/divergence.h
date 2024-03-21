@@ -53,17 +53,19 @@ class Divergence<M, N, DiscretizedVectorField<M, N>> : public ScalarExpr<M, Dive
    public:
     Divergence(const DVector<double>& data)  : data_(data) { fdapde_assert(data.size() != 0); }
     inline double operator()(const InnerVectorType& x) const { return value_; }
-    template <typename T> const This& forward(T i) {
-        value_ = data_.row(i);
+    const This& forward(std::size_t i) {
+        value_ = data_[i];
         return *this;
     }
 };
 
 template <typename VectorExprType>
+// auto div(VectorExprType expr) {
 auto div(const VectorExprType& expr) {
     return expr.div();
 }
-template <> auto div(const SVector<2>& expr) {
+// template <> inline auto div(SVector<2> expr) {
+template <> inline auto div(const SVector<2>& expr) {
     return 0.0;
 }
 

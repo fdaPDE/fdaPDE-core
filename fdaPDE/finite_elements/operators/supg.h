@@ -38,7 +38,7 @@ private:
     T data_;        // tuple containing the parameters of the kind <mu_, b_, c_>
 public:
     enum {
-        is_space_varying = std::is_base_of<VectorBase, decltype(std::get<0>(data_))>::value || std::is_base_of<VectorBase, decltype(std::get<1>(data_))>::value,
+        is_space_varying = std::is_base_of<VectorBase, std::decay_t<decltype(std::get<0>(data_))>>::value || std::is_base_of<VectorBase, std::decay_t<decltype(std::get<1>(data_))>>::value,
         is_symmetric = false
     };
     // constructor

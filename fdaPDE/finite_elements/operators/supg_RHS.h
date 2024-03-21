@@ -34,7 +34,7 @@ private:
     T data_;    // tuple containing both transport and forcing data ( <b_, force_> )
 public:
     enum {
-        is_space_varying = std::is_base_of<VectorBase, decltype(std::get<0>(data_))>::value || std::is_base_of<VectorBase, decltype(std::get<1>(data_))>::value,
+        is_space_varying = std::is_base_of<VectorBase, std::decay_t<decltype(std::get<0>(data_))>>::value || std::is_base_of<VectorBase, std::decay_t<decltype(std::get<1>(data_))>>::value,
         is_symmetric = false
     };
     // constructor
@@ -49,7 +49,7 @@ public:
         auto b = std::get<0>(data_);
         auto force = std::get<1>(data_);
 
-        return  delta_*(*h)/b.norm() * (0.5 * force * div(b) * psi_i + force * (invJ * nabla_psi_i).dot(b));
+        return  delta_*(*h)/b.norm() * (0.5 * div(b) * force * psi_i + force * (invJ * nabla_psi_i).dot(b));
     }
 };
 

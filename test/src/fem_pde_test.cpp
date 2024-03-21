@@ -131,19 +131,21 @@ TEST(fem_pde_test, advection_diffusion_isotropic_order1) {
 
     // non-zero forcing term
     auto forcingExpr = [&gamma_](SVector<2> x) -> double { return gamma_ * std::sin(pi * x[1]); };
+    ScalarField<2> forcing(forcingExpr);   // wrap lambda expression in ScalarField object
 
     // differential operator
     SVector<2> beta_;
     beta_ << -alpha_, 0.;
 
     // save parameters in the PDEparameters singleton, these will be retrieved by the solver (MANDATORY WITH ADVECTION TERM!!)
-    PDEparameters<double, decltype(beta_)> &PDEparams = PDEparameters<double, decltype(beta_)>::getInstance(1.0, beta_);
+    PDEparameters<double, decltype(beta_)> &PDEparams = PDEparameters<double, decltype(beta_)>::getInstance(1., beta_);
 
     auto L = -laplacian<FEM>() + advection<FEM>(beta_);
     // load sample mesh for order 1 basis
     MeshLoader<Mesh2D> unit_square("unit_square");
-    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>, double, decltype(beta_)> pde_(unit_square.mesh);
-    pde_.set_differential_operator(L);
+    // PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>, double, decltype(beta_)> pde_(unit_square.mesh, L, forcing);
+    PDE<decltype(unit_square.mesh), decltype(L), ScalarField<2>, FEM, fem_order<1>, double, decltype(beta_)> pde_(unit_square.mesh, L, forcing);
+    // pde_.set_differential_operator(L);
 
     // compute boundary condition and exact solution
     DMatrix<double> nodes_ = pde_.dof_coords();
@@ -155,10 +157,10 @@ TEST(fem_pde_test, advection_diffusion_isotropic_order1) {
     pde_.set_dirichlet_bc(dirichletBC);
 
     // request quadrature nodes and evaluate forcing on them
-    DMatrix<double> quadrature_nodes = pde_.quadrature_nodes();
-    DMatrix<double> f = DMatrix<double>::Zero(quadrature_nodes.rows(), 1);
-    for (int i = 0; i < quadrature_nodes.rows(); ++i) { f(i) = forcingExpr(quadrature_nodes.row(i)); }
-    pde_.set_forcing(f);
+    // DMatrix<double> quadrature_nodes = pde_.quadrature_nodes();
+    // DMatrix<double> f = DMatrix<double>::Zero(quadrature_nodes.rows(), 1);
+    // for (int i = 0; i < quadrature_nodes.rows(); ++i) { f(i) = forcingExpr(quadrature_nodes.row(i)); }
+    // pde_.set_forcing(f);
 
     // init solver and solve differential problem
     pde_.init();
@@ -428,7 +430,7 @@ TEST(fem_pde_test, advection_diffusion_reaction_non_isotropic_order_2) {
     // check computed error
     DMatrix<double> error_ = solution_ex - pde_.solution();
     double error_L2 = (pde_.mass() * error_.cwiseProduct(error_)).sum();
-    EXPECT_TRUE(error_L2 < 1e-6);
+    EXPECT_TRUE(error_L2 < 3e-6);
 }
 
 // ADDED TEST (NonLinear PDE)

@@ -140,6 +140,12 @@ TEST(transport_test, TransportNonConstantCoefficients2D) {
     }
 
     DiscretizedVectorField<2,2> b_discretized(b_data, div_b_data);
+    /*std::cout << div_b_data.rows() << std::endl;
+    std::cout << b_data.rows() << std::endl;
+    auto ddd = div(b_discretized);
+    ddd.forward(13);
+    double x = ddd(SVector<2>(0.5, 0.5));
+    std::cout << x << std::endl;*/
 
     // coefficients
     double mu = 1e-9;
@@ -179,7 +185,7 @@ TEST(transport_test, TransportNonConstantCoefficients2D) {
     // check computed error
     DMatrix<double> error_ = solution_ex - pde_.solution();
     double error_L2 = (pde_.mass() * error_.cwiseProduct(error_)).sum();
-    EXPECT_TRUE(error_L2 < 1e-6);
+    EXPECT_TRUE(error_L2 < 1e-7);
 
     // std::cout << "error_L2 = " << std::setprecision(17) << error_L2 << std::endl;
 }

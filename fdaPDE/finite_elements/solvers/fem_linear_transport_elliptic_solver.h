@@ -80,17 +80,16 @@ struct FEMLinearTransportEllipticSolver : public FEMSolverBase<D, E, F, Ts...> {
                                                                              this->n_dofs_, this->dofs_);
 
             // streamline diffusion
-            auto StreamDiff = streamline_diffusion<FEM>(b);
-            stab_ = assembler.discretize_operator(StreamDiff); // stabilization matrix
+            // auto StreamDiff = streamline_diffusion<FEM>(b);
+            // stab_ = assembler.discretize_operator(StreamDiff); // stabilization matrix
 
             // strong staibilizer (GLS-SUPG-DW) [...]
-            // auto StrongStab = SUPG<FEM, decltype(PDEparams.getData())>(PDEparams.getData());
-            // stab_ = assembler.discretize_operator(StrongStab); // stabilization matrix
-
+            auto StrongStab = SUPG<FEM, decltype(PDEparams.getData())>(PDEparams.getData());
+            stab_ = assembler.discretize_operator(StrongStab); // stabilization matrix
             // prepare a tuple containing b and pde forcing_data and send it to the operator SUPG_RHS
-            // auto b_and_forcing = std::make_tuple(b, pde.forcing_data());
-            // auto StrongStabRHS = SUPG_RHS<FEM, decltype(b_and_forcing)>(b_and_forcing);
-            // stab_rhs_ = assembler.discretize_SUPG_RHS(StrongStabRHS); // stabilization rhs
+            auto b_and_forcing = std::make_tuple(b, pde.forcing_data());
+            auto StrongStabRHS = SUPG_RHS<FEM, decltype(b_and_forcing)>(b_and_forcing);
+            stab_rhs_ = assembler.discretize_SUPG_RHS(StrongStabRHS); // stabilization rhs
         }
 
         solver.compute(this->stiff_ + stab_);
@@ -102,10 +101,10 @@ struct FEMLinearTransportEllipticSolver : public FEMSolverBase<D, E, F, Ts...> {
 
         // solve FEM linear system arising from the generalized Petrov Galerkin
         // streamline diffusion
-        this->solution_ = solver.solve(this->force_);
+        // this->solution_ = solver.solve(this->force_);
 
         // strong stabilizers [...]
-        // this->solution_ = solver.solve(this->force_ + stab_rhs_);
+        this->solution_ = solver.solve(this->force_ + stab_rhs_);
 
         this->success = true;
         return;
