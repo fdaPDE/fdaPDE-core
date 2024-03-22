@@ -4,10 +4,7 @@ project(TEST)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_WARNINGS_FLAGS "-Wall -Wpedantic -Wextra -Werror")
-set(CMAKE_CXX_FLAGS "\
-    -g -O2 -march=x86-64 -std=c++20 \
-    ${CMAKE_WARNINGS_FLAGS} -I${CMAKE_CURRENT_SOURCE_DIR}/../ -I${CMAKE_CURRENT_SOURCE_DIR}/../fdaPDE/core/ \
-")
+set(CMAKE_CXX_FLAGS "-g -O2 -mcpu=apple-m1 -std=c++20 ${CMAKE_WARNINGS_FLAGS} -I${CMAKE_CURRENT_SOURCE_DIR}/../ -I${CMAKE_CURRENT_SOURCE_DIR}/../fdaPDE/core/")
 
 find_package (Eigen3 3.4 REQUIRED NO_MODULE)
 
