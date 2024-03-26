@@ -47,6 +47,7 @@ public:
 
     using Base = FEMSolverBase<D, E, F, Ts...>;
     FEMNonLinearBroydenSolver(const D& domain) : Base(domain) { }
+    FEMNonLinearBroydenSolver(const D& domain, const BinaryMatrix<Dynamic>& BMtrx) : Base(domain, BMtrx){ }
 
     // setter for MaxIter and tol (should we add them to the constructor?)
     void set_MaxIter(size_t MaxIter) { MaxIter_ = MaxIter; }
@@ -66,7 +67,7 @@ public:
         SpMatrix<double> A = assembler.discretize_operator(pde.differential_operator());
         A.makeCompressed();
         // set B.C.s
-        for (auto it = this->boundary_dofs_begin(); it != this->boundary_dofs_end(); ++it) {
+        for (auto it = this->boundary_dofs_begin_Dirichlet(); it != this->boundary_dofs_end_Dirichlet(); ++it) {
             A.row(*it) *= 0;            // zero all entries of this row
             A.coeffRef(*it, *it) = 1;   // set diagonal element to 1 to impose equation u_j = b_j
         }

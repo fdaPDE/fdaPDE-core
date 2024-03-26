@@ -31,6 +31,7 @@ class FEMLinearParabolicSolver : public FEMSolverBase<D, E, F, Ts...> {
    public:
     using Base = FEMSolverBase<D, E, F, Ts...>;
     FEMLinearParabolicSolver(const D& domain) : Base(domain) { }
+    FEMLinearParabolicSolver(const D& domain, const BinaryMatrix<Dynamic>& BMtrx) : Base(domain, BMtrx){ }
     void set_deltaT(double deltaT) { deltaT_ = deltaT; }
 
     // solves the PDE using a forward-euler scheme
@@ -62,8 +63,8 @@ class FEMLinearParabolicSolver : public FEMSolverBase<D, E, F, Ts...> {
         for (std::size_t i = 0; i < m - 1; ++i) {
             rhs = ((this->mass_) / deltaT_) * this->solution_.col(i) + this->force_.block(n * (i + 1), 0, n, 1);
             // impose boundary conditions
-            for (auto it = this->boundary_dofs_begin(); it != this->boundary_dofs_end(); ++it) {
-                rhs[*it] = pde.boundary_data()(*it, i + 1);
+            for (auto it = this->boundary_dofs_begin_Dirichlet(); it != this->boundary_dofs_end_Dirichlet(); ++it) {
+                rhs[*it] = pde.dirichlet_boundary_data()(*it, i + 1);
             }
             this->solution_.col(i + 1) = solver.solve(rhs);   // append time step solution to solution matrix
         }

@@ -33,6 +33,7 @@ struct FEMLinearTransportEllipticSolver : public FEMSolverBase<D, E, F, Ts...> {
 
     using Base = FEMSolverBase<D, E, F, Ts...>;
     FEMLinearTransportEllipticSolver(const D& domain) : Base(domain){ }
+    FEMLinearTransportEllipticSolver(const D& domain, const BinaryMatrix<Dynamic>& BMtrx) : Base(domain, BMtrx){ }
 
     typedef std::tuple<Ts...> SolverArgs;
     enum { fem_order = std::tuple_element <0, SolverArgs>::type::value };
@@ -51,6 +52,7 @@ struct FEMLinearTransportEllipticSolver : public FEMSolverBase<D, E, F, Ts...> {
 
         SpMatrix<double> stab_(this->n_dofs_, this->n_dofs_);
         DVector<double> stab_rhs_(this->n_dofs_);   // todo: initialize it with zeroes
+        for (size_t i=0; i<this->n_dofs_; ++i) stab_rhs_(i, 0) = 0.;
 
         // if there's an advection term -> stabilization
         if constexpr (fdapde::core::is_advection<E>::value){

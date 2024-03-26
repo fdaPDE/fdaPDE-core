@@ -30,6 +30,8 @@
 #include "reference_element.h"
 #include "point_location/point_location_base.h"
 #include "point_location/adt.h"
+#include "point_location/naive_search.h"
+#include "../geometry/hyperplane.h"
 
 namespace fdapde {
 namespace core {
@@ -109,6 +111,18 @@ template <int M, int N> class Mesh {
         if (point_location_ == nullptr) point_location_ = std::make_shared<DefaultLocationPolicy>(*this);
         return point_location_->locate(points);
     }
+
+    // returns the number of facets that are on the boundary
+    int n_facets_on_boundary() const {
+        int n_facets_on_boundary = 0;
+        // cycle over all mesh facets
+        for (auto it = facet_begin(); it != facet_end(); ++it) {
+            // for each quadrature node, map it onto the physical element e and store it
+            if ((*it).on_boundary()) n_facets_on_boundary++;
+        }
+        return n_facets_on_boundary;
+    }
+
     // getter and iterator on edges
 
     // iterators support
@@ -354,12 +368,36 @@ template <int M, int N> Facet<M, N> Mesh<M, N>::facet(int ID) const {
     // fetch facet nodes informations
     std::array<SVector<N>, n_vertices_per_facet> coords {};
     std::array<int, n_vertices_per_facet> node_ids {};
-    bool on_boundary = true;   // facet is a boundary facet \iff all its nodes are ob boundary
+    bool on_boundary = true;   // for a facet to be a boundary facet it is necessary that all its nodes are on boundary
     for (int i = 0; i < n_vertices_per_facet; ++i) {
-        coords[i] = SVector<N>(nodes_.row(i));
         node_ids[i] = *(facets_.begin() + ID * n_vertices_per_facet + i);
+        coords[i] = SVector<N>(nodes_.row(node_ids[i]));
         on_boundary &= is_on_boundary(node_ids[i]);
     }
+
+    // In order to asses if a facet is on the boundary it is NOT suffiecient to check the 2 vertices
+    // we check also the number of elements insisting on the facet
+    if constexpr (M==N) {
+        if (on_boundary) {
+            HyperPlane<M-1, N> hyperplane;
+            if constexpr (M == 2) hyperplane = HyperPlane<M-1, N>(coords[0], coords[1]);
+            if constexpr (M == 3) hyperplane = HyperPlane<M-1, N>(coords[0], coords[1], coords[2]);
+            auto normal = hyperplane.normal();     // normal to the hyper plane
+            // Starting from the point in the middle of the facet, find the 2 points on the normal and on the -normal 
+            // and determine if they are contained in an element.
+            // If there's a point NOT conintained in an element, then we have a boundary facet
+            SVector<N> mid_point = Facet<M, N>(ID, node_ids, coords, facet_to_element_.at(ID), on_boundary).mid_point();
+            std::array<SVector<N>, 2> points {};
+            double eps = 1e-7;
+            points[0] = mid_point + eps*normal;
+            points[1] = mid_point - eps*normal;
+
+            // search if the points are contained in elements
+            NaiveSearch<M, N> engine(*this);
+            if (engine.locate(points[0]) != nullptr && engine.locate(points[1]) != nullptr) on_boundary = false;
+        }
+    }
+
     return Facet<M, N>(ID, node_ids, coords, facet_to_element_.at(ID), on_boundary);
 }
 
@@ -425,6 +463,16 @@ template <> class Mesh<1, 1> {
     int n_elements() const { return n_elements_; }
     int n_nodes() const { return n_nodes_; }
     SVector<2> range() const { return range_; }
+    // returns the number of nodes that are on the boundary
+    int n_nodes_on_boundary() const {
+        int n_nodes_on_boundary = 0;
+        // cycle over all mesh facets
+        for (int i = 0; i < n_nodes_; ++i) {
+            // for each quadrature node, map it onto the physical element e and store it
+            if (is_on_boundary(i)) n_nodes_on_boundary++;
+        }
+        return n_nodes_on_boundary;
+    }
 
     // iterators support
     struct iterator {   // range-for loop over mesh elements

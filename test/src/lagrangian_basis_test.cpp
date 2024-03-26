@@ -240,3 +240,46 @@ TEST(lagrangian_basis_test, order2_areal_evaluation) {
     EXPECT_TRUE(almost_equal(res.first, "../data/mtx/lagrangian_areal_eval_order2.mtx"));
 }
 
+// check if the Dirichlet and Neumann boundary conition sets are computed correctly for order 1
+TEST(lagrangian_basis_test, order1_dirichlet_neumann) {
+    MeshLoader<Mesh2D> domain("unit_square_16");
+    // create lagrangian basis over domain
+    LagrangianBasis<Mesh2D, 1> basis1(domain.mesh);
+    // without passing a BinaryMatrix to the constructor to identify Dirichlet and Neumann boundaries, Dirichlet bc.s should be assumed everywhere
+    for (size_t i=0; i<basis1.boundary_dofs().rows(); ++i) {
+        EXPECT_TRUE(basis1.boundary_dofs()(i,0) == basis1.boundary_dofs_Dirichlet()(i,0));
+        EXPECT_TRUE(basis1.boundary_dofs_Neumann()(i,0) == 0);
+    }
+
+    // create lagrangian basis over domain passing a BinaryMatrix to the constructor to identify Dirichlet(1) and Neumann(0) boundaries
+    BinaryMatrix<Dynamic> BMtrx(domain.mesh.n_nodes(), 1); // all zeros
+    BMtrx.set(1,0); BMtrx.set(2,0); BMtrx.set(3,0); BMtrx.set(4,0); BMtrx.set(56,0);
+    LagrangianBasis<Mesh2D, 1> basis2(domain.mesh, BMtrx);
+    for (size_t i=0; i<basis2.boundary_dofs().rows(); ++i) {
+        if (!basis2.boundary_dofs()(i,0)) {EXPECT_TRUE(basis2.boundary_dofs_Dirichlet()(i,0) == 0); EXPECT_TRUE(basis2.boundary_dofs_Neumann()(i,0) == 0);}
+        else {
+            if(BMtrx(i,0)) {EXPECT_TRUE(basis2.boundary_dofs_Dirichlet()(i,0) == 1); EXPECT_TRUE(basis2.boundary_dofs_Neumann()(i,0) == 0);}
+            else {EXPECT_TRUE(basis2.boundary_dofs_Dirichlet()(i,0) == 0); EXPECT_TRUE(basis2.boundary_dofs_Neumann()(i,0) == 1);}
+        }
+    }
+}
+
+// check if the Dirichlet and Neumann boundary conition sets are computed correctly for order 2
+TEST(lagrangian_basis_test, order2_dirichlet_neumann) {
+    MeshLoader<Mesh2D> domain("unit_square_16");
+    // create lagrangian basis over domain
+    LagrangianBasis<Mesh2D, 2> basis1(domain.mesh);
+    // without passing a BinaryMatrix to the constructor to identify Dirichlet and Neumann boundaries, Dirichlet bc.s should be assumed everywhere
+    for (size_t i=0; i<basis1.boundary_dofs().rows(); ++i) {
+        EXPECT_TRUE(basis1.boundary_dofs()(i,0) == basis1.boundary_dofs_Dirichlet()(i,0));
+        EXPECT_TRUE(basis1.boundary_dofs_Neumann()(i,0) == 0);
+    }
+
+    // create lagrangian basis over domain passing a BinaryMatrix to the constructor to identify Dirichlet(1) and Neumann(0) boundaries
+    BinaryMatrix<Dynamic> BMtrx(domain.mesh.n_nodes(), 1); // all zeros
+    BMtrx.set(1,0); BMtrx.set(2,0); BMtrx.set(3,0); BMtrx.set(4,0); BMtrx.set(9,0); BMtrx.set(17,0); BMtrx.set(250,0);
+    LagrangianBasis<Mesh2D, 2> basis2(domain.mesh, BMtrx);
+    for (size_t i=0; i<basis2.boundary_dofs().rows(); ++i) {
+        if (!basis2.boundary_dofs()(i,0)) {EXPECT_TRUE(basis2.boundary_dofs_Dirichlet()(i,0) == 0); EXPECT_TRUE(basis2.boundary_dofs_Neumann()(i,0) == 0);}
+    }
+}

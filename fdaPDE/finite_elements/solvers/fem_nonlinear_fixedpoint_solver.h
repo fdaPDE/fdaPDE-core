@@ -44,6 +44,7 @@ public:
 
     using Base = FEMSolverBase<D, E, F, Ts...>;
     FEMNonLinearFixedPointSolver(const D& domain) : Base(domain) { }
+    FEMNonLinearFixedPointSolver(const D& domain, const BinaryMatrix<Dynamic>& BMtrx) : Base(domain, BMtrx){ }
 
     // setter for MaxIter and tol (should we add them to the constructor?)
     void set_MaxIter(size_t MaxIter) { MaxIter_ = MaxIter; }

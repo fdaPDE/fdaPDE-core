@@ -29,11 +29,15 @@ namespace core {
 
 template <typename DomainType, int order> class LagrangianBasis {
    private:
-    std::size_t size_ = 0;         // number of basis functions over physical domain
-    DMatrix<int> dofs_;            // for each element, the degrees of freedom associated to it
-    DMatrix<int> boundary_dofs_;   // unknowns on the boundary of the domain, for boundary conditions prescription
-    const DomainType* domain_;     // physical domain of definition
-  
+    std::size_t size_ = 0;                   // number of basis functions over physical domain
+    DMatrix<int> dofs_;                      // for each element, the degrees of freedom associated to it
+    DMatrix<int> boundary_dofs_;             // unknowns on the boundary of the domain, for boundary conditions prescription
+    DMatrix<int> boundary_dofs_Dirichlet_;   // unknowns on the boundary of the domain, for Dirichlet boundary conditions prescription
+    DMatrix<int> boundary_dofs_Neumann_;     // unknowns on the boundary of the domain, for Neumann boundary conditions prescription
+    const DomainType* domain_;               // physical domain of definition
+    BinaryMatrix<Dynamic> BMtrx_;            // 1 = Dirichlet node, otherwise Neumann node
+    DMatrix<int> dof_boundary_table_;        // each row corresponds to a facet with its dofs 
+
     // A Lagrangian basis of degree R over an M-dimensional element
     template <int M_, int R_> class LagrangianElement {
        public:
@@ -105,7 +109,8 @@ template <typename DomainType, int order> class LagrangianBasis {
 
     // constructor
     LagrangianBasis() = default;
-    LagrangianBasis(const DomainType& domain) : domain_(&domain) { enumerate_dofs(); };
+    LagrangianBasis(const DomainType& domain) : domain_(&domain) { BMtrx_=BinaryMatrix<Dynamic>::Ones(domain_->n_nodes(), 1); enumerate_dofs(); }; // if no binary matrix is passed, we assume Dirichlet bc
+    LagrangianBasis(const DomainType& domain, const BinaryMatrix<Dynamic> BMtrx) : domain_(&domain), BMtrx_(BMtrx) { enumerate_dofs(); };
 
     // returns a pair of matrices (\Psi, D) where: \Psi is the matrix of basis functions evaluations according
     // to the given policy, D is a policy-dependent vector (see the specific policy for details)
@@ -118,6 +123,9 @@ template <typename DomainType, int order> class LagrangianBasis {
     //getters
     DMatrix<int> dofs() const { return dofs_; }
     DMatrix<int> boundary_dofs() const { return boundary_dofs_; }
+    DMatrix<int> boundary_dofs_Dirichlet() const { return boundary_dofs_Dirichlet_; }
+    DMatrix<int> boundary_dofs_Neumann() const { return boundary_dofs_Neumann_; }
+    DMatrix<int> dof_boundary_table() const { return dof_boundary_table_; }
     DMatrix<double> dofs_coords() {   // computes the physical coordinates of the degrees of freedom
         if constexpr (R == 1)
             return domain_->nodes();   // for order 1 dofs coincide with mesh vertices
@@ -147,6 +155,7 @@ template <typename DomainType, int order> class LagrangianBasis {
         }
     }
     double get_element_size( const int l = 0) const{ return domain_->element(l).measure(); } // ADDED
+    BinaryMatrix<Dynamic> BMtrx() const { return BMtrx_; }
 
     static ReferenceBasis ref_basis() { return ReferenceBasis {}; }
     // given a coefficient vector c \in \mathbb{R}^size_, evaluates the corresponding basis expansion at locs
@@ -175,6 +184,25 @@ void LagrangianBasis<DomainType, order>::enumerate_dofs() {
       size_ = domain_->n_nodes();
       dofs_ = domain_->elements();
       boundary_dofs_ = domain_->boundary();
+      boundary_dofs_Dirichlet_ = DMatrix<int>::Zero(size_, 1);
+      boundary_dofs_Neumann_ = DMatrix<int>::Zero(size_, 1);
+      for (size_t j = 0; j < domain_->boundary().rows(); ++j){
+        if(domain_->boundary()(j,0) == 1){
+            if (BMtrx_(j,0)) boundary_dofs_Dirichlet_(j,0) = 1;
+            else boundary_dofs_Neumann_(j,0) = 1;
+        }
+      }
+
+      // build dof_boundary_table_
+      dof_boundary_table_.resize(domain_->n_facets_on_boundary(), domain_->n_vertices_per_facet);
+      size_t boundary_facet_ID = 0;  // index to count the facets on boundary
+      for (auto edge = domain_->facet_begin(); edge != domain_->facet_end(); ++edge) {
+        if ((*edge).on_boundary()){
+            for (size_t j=0; j<domain_->n_vertices_per_facet; ++j) dof_boundary_table_(boundary_facet_ID, j) = (*edge).node_ids()[j];
+            boundary_facet_ID++;
+        }
+      }
+      
     } else {
       dofs_.resize(domain_->n_elements(), this->n_dof_per_element);
       dofs_.leftCols(DomainType::n_vertices) = domain_->elements();   // copy dofs associated to geometric vertices
@@ -182,8 +210,12 @@ void LagrangianBasis<DomainType, order>::enumerate_dofs() {
       int next = domain_->n_nodes();   // next valid ID to assign
       auto edge_pattern = combinations<DomainType::n_vertices_per_edge, DomainType::n_vertices>();
       std::set<int> boundary_set;
+      std::set<int> boundary_set_D;
+      std::set<int> boundary_set_N;
+      dof_boundary_table_.resize(domain_->n_facets_on_boundary(), domain_->n_vertices_per_facet + n_dof_per_edge);
 
       // cycle over mesh edges
+      size_t boundary_facet_ID = 0;  // index to count the facets on boundary
       for (auto edge = domain_->facet_begin(); edge != domain_->facet_end(); ++edge) {
             for (std::size_t i = 0; i < DomainType::n_elements_per_facet; ++i) {
                 int element_id = (*edge).adjacent_elements()[i];
@@ -199,21 +231,49 @@ void LagrangianBasis<DomainType, order>::enumerate_dofs() {
                         if ((*edge).node_ids() == e) break;
                     }
                     dofs_(element_id, DomainType::n_vertices + j) = next;
-                    if ((*edge).on_boundary()) boundary_set.insert(next);
+
+                    if ((*edge).on_boundary()){
+                        // insert the node in the boundary set
+                        boundary_set.insert(next);
+                        
+                        // insert the node in the DIrichlet or Neumann boundary set depending on its nature
+                        auto node_ids = (*edge).node_ids();
+                        if (!BMtrx_((*edge).node_ids()[0], 0)) {boundary_set_N.insert(next);}  // if the near vertex is Neumann, then we have Neumann
+                        else {
+                            if (BMtrx_((*edge).node_ids()[1], 0)) {boundary_set_D.insert(next);} // if between 2 Dirichlet, then we have Dirichlet
+                            else {boundary_set_N.insert(next); } // if the near vertex is Neumann, then we have Neumann
+                        }
+                    }
 
                     // insert any internal dofs, if any (for cubic or higher order) + insert n_dof_per_edge dofs (for
                     // cubic or higher)
                 }
             }
+            // insert dofs in dof_boundary_table_
+            if ((*edge).on_boundary()) {
+                for (size_t j=0; j<domain_->n_vertices_per_facet; ++j) dof_boundary_table_(boundary_facet_ID, j) = (*edge).node_ids()[j];
+                dof_boundary_table_(boundary_facet_ID, domain_->n_vertices_per_facet) = next;
+                boundary_facet_ID++;
+            }
+
             next++;
       }
 
       size_ = next;   // store number of unknowns
       // update boundary
       boundary_dofs_ = DMatrix<int>::Zero(size_, 1);
+      boundary_dofs_Dirichlet_ = DMatrix<int>::Zero(size_, 1);
+      boundary_dofs_Neumann_ = DMatrix<int>::Zero(size_, 1);
       boundary_dofs_.topRows(domain_->boundary().rows()) = domain_->boundary();
+      for (size_t j = 0; j < domain_->boundary().rows(); ++j){
+        if(domain_->boundary()(j,0) == 1){
+            if (BMtrx_(j,0)) boundary_dofs_Dirichlet_(j,0) = 1;
+            else boundary_dofs_Neumann_(j,0) = 1;
+        }
+      }
       for (auto it = boundary_set.begin(); it != boundary_set.end(); ++it) { boundary_dofs_(*it, 0) = 1; }
-    }
+      for (auto it = boundary_set_D.begin(); it != boundary_set_D.end(); ++it) { boundary_dofs_Dirichlet_(*it, 0) = 1; }
+      for (auto it = boundary_set_N.begin(); it != boundary_set_N.end(); ++it) { boundary_dofs_Neumann_(*it, 0) = 1; }    }
     return;
 }
 

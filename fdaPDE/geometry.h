@@ -14,17 +14,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_CORE_MODULE_H__
-#define __FDAPDE_CORE_MODULE_H__
+#ifndef __FDAPDE_GEOMETRY_MODULE_H__
+#define __FDAPDE_GEOMETRY_MODULE_H__
 
-#include "utils.h"
-#include "fields.h"
-#include "mesh.h"
-#include "linear_algebra.h"
-#include "optimization.h"
-#include "finite_elements.h"
-#include "splines.h"
-#include "multithreading.h"
-#include "geometry.h"
+#include "geometry/hyperplane.h"
 
-#endif   // __FDAPDE_CORE_MODULE_H__
+#endif   // __FDAPDE_GEOMETRY_MODULE_H__

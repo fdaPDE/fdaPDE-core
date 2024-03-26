@@ -63,6 +63,13 @@ class PDE {
     fdapde_enable_constructor_if(is_stationary, OperatorType)
       PDE(const SpaceDomainType& domain, OperatorType diff_op, const ForcingType& forcing_data) :
         domain_(domain), diff_op_(diff_op), forcing_data_(forcing_data), solver_(domain) { }
+    fdapde_enable_constructor_if(is_stationary, OperatorType) PDE(const D& domain, const BinaryMatrix<Dynamic>& BMtrx) :
+        domain_(domain), solver_(domain, BMtrx) { }
+    fdapde_enable_constructor_if(is_stationary, OperatorType) PDE(const D& domain, E diff_op, const BinaryMatrix<Dynamic>& BMtrx) :
+        domain_(domain), diff_op_(diff_op), solver_(domain, BMtrx) { }
+    fdapde_enable_constructor_if(is_stationary, OperatorType)
+      PDE(const SpaceDomainType& domain, OperatorType diff_op, const ForcingType& forcing_data, const BinaryMatrix<Dynamic>& BMtrx) :
+        domain_(domain), diff_op_(diff_op), forcing_data_(forcing_data), solver_(domain, BMtrx) { }
     // space-time constructors
     fdapde_enable_constructor_if(is_parabolic, OperatorType) PDE(const D& domain, const TimeDomainType& t) :
         domain_(domain), time_domain_(t), solver_(domain) { }
@@ -71,6 +78,13 @@ class PDE {
     fdapde_enable_constructor_if(is_parabolic, OperatorType) PDE(
       const SpaceDomainType& domain, const TimeDomainType& t, OperatorType diff_op, const ForcingType& forcing_data) :
         domain_(domain), time_domain_(t), diff_op_(diff_op), forcing_data_(forcing_data), solver_(domain) { }
+    fdapde_enable_constructor_if(is_parabolic, OperatorType) PDE(const D& domain, const TimeDomainType& t, const BinaryMatrix<Dynamic>& BMtrx) :
+        domain_(domain), time_domain_(t), solver_(domain, BMtrx) { }
+    fdapde_enable_constructor_if(is_parabolic, OperatorType) PDE(const D& domain, const TimeDomainType& t, E diff_op, const BinaryMatrix<Dynamic>& BMtrx) :
+        domain_(domain), time_domain_(t), diff_op_(diff_op), solver_(domain, BMtrx) { }
+    fdapde_enable_constructor_if(is_parabolic, OperatorType) PDE(
+      const SpaceDomainType& domain, const TimeDomainType& t, OperatorType diff_op, const ForcingType& forcing_data, const BinaryMatrix<Dynamic>& BMtrx) :
+        domain_(domain), time_domain_(t), diff_op_(diff_op), forcing_data_(forcing_data), solver_(domain, BMtrx) { }
     
     fdapde_enable_constructor_if(is_stationary, OperatorType) PDE(const D& domain, E diff_op,
       const std::function<double(SVector<N>, SVector<1>)>& non_linear_reaction) :
@@ -78,10 +92,17 @@ class PDE {
     fdapde_enable_constructor_if(is_parabolic, OperatorType) PDE(const D& domain, const TimeDomainType& t, E diff_op,
       const std::function<double(SVector<N>, SVector<1>)>& non_linear_reaction) :
         domain_(domain), time_domain_(t), diff_op_(diff_op), solver_(domain), non_linear_reaction_(non_linear_reaction) { }
+    fdapde_enable_constructor_if(is_stationary, OperatorType) PDE(const D& domain, E diff_op,
+      const std::function<double(SVector<N>, SVector<1>)>& non_linear_reaction, const BinaryMatrix<Dynamic>& BMtrx) :
+        domain_(domain), diff_op_(diff_op), solver_(domain, BMtrx), non_linear_reaction_(non_linear_reaction) { }
+    fdapde_enable_constructor_if(is_parabolic, OperatorType) PDE(const D& domain, const TimeDomainType& t, E diff_op,
+      const std::function<double(SVector<N>, SVector<1>)>& non_linear_reaction, const BinaryMatrix<Dynamic>& BMtrx) :
+        domain_(domain), time_domain_(t), diff_op_(diff_op), solver_(domain, BMtrx), non_linear_reaction_(non_linear_reaction) { }
     // setters
     void set_forcing(const ForcingType& forcing_data) { forcing_data_ = forcing_data; }
     void set_differential_operator(OperatorType diff_op) { diff_op_ = diff_op; }
-    void set_dirichlet_bc(const DMatrix<double>& data) { boundary_data_ = data; }
+    void set_dirichlet_bc(const DMatrix<double>& data) { dirichlet_boundary_data_ = data; }
+    void set_neumann_bc(const ForcingType& data) { neumann_boundary_data_ = data; }
     void set_initial_condition(const DVector<double>& data) { initial_condition_ = data; };
     // getters
     const SpaceDomainType& domain() const { return domain_; }
@@ -89,7 +110,8 @@ class PDE {
     OperatorType differential_operator() const { return diff_op_; }
     const ForcingType& forcing_data() const { return forcing_data_; }
     const DVector<double>& initial_condition() const { return initial_condition_; }
-    const DMatrix<double>& boundary_data() const { return boundary_data_; };
+    const DMatrix<double>& dirichlet_boundary_data() const { return dirichlet_boundary_data_; };
+    const DMatrix<double>& neumann_boundary_data() const { return neumann_boundary_data_; };
     const Quadrature& integrator() const { return solver_.integrator(); }
     const FunctionalBasis& basis() const { return solver_.basis(); }
     const std::function<double(SVector<N>, SVector<1>)>& non_linear_reaction() const {return non_linear_reaction_; }
@@ -105,19 +127,22 @@ class PDE {
     const SpMatrix<double>& mass() const { return solver_.mass(); };          // mass matrix
     DMatrix<double> dof_coords() { return solver_.dofs_coords(); }
     DMatrix<double> quadrature_nodes() const { return integrator().quadrature_nodes(domain_); };
+    DMatrix<double> boundary_quadrature_nodes() const { return integrator().boundary_quadrature_nodes(domain_); };
     void init() { solver_.init(*this); };   // initializes the solver
     void solve() {                          // solves the PDE
-        if (!is_empty(boundary_data_)) solver_.set_dirichlet_bc(*this);
+        if (!is_empty(dirichlet_boundary_data_)) solver_.set_dirichlet_bc(*this);
+        if (!is_empty(neumann_boundary_data_)) solver_.set_neumann_bc(*this, neumann_boundary_data_);
         solver_.solve(*this);
     }
    private:
-    const SpaceDomainType& domain_;          // triangulated spatial domain
-    const TimeDomainType time_domain_;       // time interval [0, T], for space-time PDEs
-    OperatorType diff_op_;                   // differential operator in its strong formulation
-    ForcingType forcing_data_;               // forcing data
-    DVector<double> initial_condition_ {};   // initial condition, for space-time PDEs
-    SolverType solver_ {};                   // problem solver
-    DMatrix<double> boundary_data_;          // boundary conditions
+    const SpaceDomainType& domain_;            // triangulated spatial domain
+    const TimeDomainType time_domain_;         // time interval [0, T], for space-time PDEs
+    OperatorType diff_op_;                     // differential operator in its strong formulation
+    ForcingType forcing_data_;                 // forcing data
+    DVector<double> initial_condition_ {};     // initial condition, for space-time PDEs
+    SolverType solver_ {};                     // problem solver
+    DMatrix<double> dirichlet_boundary_data_;  // Dirichlet boundary conditions
+    DMatrix<double> neumann_boundary_data_;    // Neumann boundary conditions
     std::function<double(SVector<N>, SVector<1>)> non_linear_reaction_ ; // ... 
 };
 

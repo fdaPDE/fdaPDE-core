@@ -29,6 +29,7 @@ template <typename D, typename E, typename F, typename... Ts>
 struct FEMLinearEllipticSolver : public FEMSolverBase<D, E, F, Ts...> {
     using Base = FEMSolverBase<D, E, F, Ts...>;
     FEMLinearEllipticSolver(const D& domain) : Base(domain){ }
+    FEMLinearEllipticSolver(const D& domain, const BinaryMatrix<Dynamic>& BMtrx) : Base(domain, BMtrx){ }
   
     // solves linear system stiff_*u = force_
     template <typename PDE> void solve(const PDE& pde) {

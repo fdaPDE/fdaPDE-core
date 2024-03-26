@@ -43,6 +43,7 @@ public:
 
     using Base = FEMSolverBase<D, E, F, Ts...>;
     FEMEulerSemiImplicit(const D& domain) : Base(domain) { }
+    FEMEulerSemiImplicit(const D& domain, const BinaryMatrix<Dynamic>& BMtrx) : Base(domain, BMtrx){ }
 
     void set_deltaT(double deltaT) { deltaT_ = deltaT; }
 
@@ -77,10 +78,10 @@ public:
             rhs = ((this->mass_) / deltaT_) * this->solution_.col(i) + this->force_.block(n * (i + 1), 0, n, 1);
 
             // set dirichlet boundary conditions
-            for (auto it = this->boundary_dofs_begin(); it != this->boundary_dofs_end(); ++it) {
+            for (auto it = this->boundary_dofs_begin_Dirichlet(); it != this->boundary_dofs_end_Dirichlet(); ++it) {
                 K.row(*it) *= 0;            // zero all entries of this row
                 K.coeffRef(*it, *it) = 1;   // set diagonal element to 1 to impose equation u_j = b_j
-                rhs[*it] = pde.boundary_data()(*it, i + 1);
+                rhs[*it] = pde.dirichlet_boundary_data()(*it, i + 1);
             }
             K.makeCompressed();
             // Perform LU decomposition of the system matrix at every step
