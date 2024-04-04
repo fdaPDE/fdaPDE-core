@@ -55,10 +55,9 @@ template <int Rows, int Cols = Rows> class BinaryMatrix : public BinMtxBase<Rows
         data_.resize(1 + std::ceil((n_rows_ * n_cols_) / PackSize), 0);
     }
     // vector constructor
-    BinaryMatrix(int n_rows) requires(is_dynamic_sized<This>::value) : BinaryMatrix(n_rows, 1) {
+    explicit BinaryMatrix(int n_rows) requires(is_dynamic_sized<This>::value) : BinaryMatrix(n_rows, 1) {
         fdapde_static_assert(Rows == Dynamic && Cols == 1, THIS_METHOD_IS_ONLY_FOR_VECTORS);
     }
-
     // construct from expression
     template <int Rows_, int Cols_, typename Rhs_> BinaryMatrix(const BinMtxBase<Rows_, Cols_, Rhs_>& rhs) {
         // !is_dynamic_sized \implies (Rows == Rows_ && Cols == Cols_)
@@ -76,6 +75,18 @@ template <int Rows, int Cols = Rows> class BinaryMatrix : public BinMtxBase<Rows
         Base::n_bitpacks_ = rhs.bitpacks();
         if constexpr (is_dynamic_sized<This>::value) data_.resize(Base::n_bitpacks_, 0);
         for (int i = 0; i < rhs.bitpacks(); ++i) { data_[i] = rhs.bitpack(i); }
+    }
+    // construct from Eigen dense matrix
+    template <typename Derived> BinaryMatrix(const Eigen::MatrixBase<Derived>& mtx) : Base(mtx.rows(), mtx.cols()) {
+        fdapde_static_assert(
+          is_dynamic_sized<This>::value || (Rows == Derived::RowsAtCompileTime && Cols == Derived::ColsAtCompileTime),
+          INVALID_MATRIX_ASSIGNMENT);
+        if constexpr (is_dynamic_sized<This>::value) { resize(n_rows_, n_cols_); }
+        for (int i = 0; i < n_rows_; ++i) {
+            for (int j = 0; j < n_cols_; ++j) {
+                if (mtx(i, j)) set(i, j);
+            }
+        }
     }
 
     // constructs a matrix of ones
@@ -156,6 +167,21 @@ template <int Rows, int Cols = Rows> class BinaryMatrix : public BinMtxBase<Rows
         Base::n_bitpacks_ = rhs.bitpacks();
         if constexpr (is_dynamic_sized<This>::value) data_.resize(Base::n_bitpacks_, 0);
         for (int i = 0; i < rhs.bitpacks(); ++i) { data_[i] = rhs.bitpack(i); }
+        return *this;
+    }
+    // assignment from Eigen dense expression
+    template <typename Derived> BinaryMatrix& operator=(const Eigen::MatrixBase<Derived>& mtx) {
+        fdapde_static_assert(
+          is_dynamic_sized<This>::value || (Rows == Derived::RowsAtCompileTime && Cols == Derived::ColsAtCompileTime),
+          INVALID_MATRIX_ASSIGNMENT);
+        n_rows_ = mtx.rows();
+        n_cols_ = mtx.cols();
+        if constexpr (is_dynamic_sized<This>::value) { resize(n_rows_, n_cols_); }
+        for (int i = 0; i < n_rows_; ++i) {
+            for (int j = 0; j < n_cols_; ++j) {
+                if (mtx(i, j)) set(i, j);
+            }
+        }
         return *this;
     }
    private:

@@ -30,23 +30,12 @@ namespace core {
 // compute the circumcircle's center of a 2D triangle
 // see https://www.ics.uci.edu/~eppstein/junkyard/circumcenter.html
 constexpr SVector<2> circumcenter(const SVector<2>& p1, const SVector<2>& p2, const SVector<2>& p3) {
-    // load vertices in cpu registers
-    double x1 = p1[0], y1 = p1[1];
-    double x2 = p2[0], y2 = p2[1];
-    double x3 = p3[0], y3 = p3[1];
-
-    double y2y1 = y2 - y1;
-    double y3y1 = y3 - y1;
-    double x2x1 = x2 - x1;
-    double x3x1 = x3 - x1;
-
-    double D = 2 * (x2x1 * y3y1 - x3x1 * y2y1);
-
-    double s1 = x1 * x1 + y1 * y1;
-    double s2 = x2 * x2 + y2 * y2;
-    double s3 = x3 * x3 + y3 * y3;
-    // return circumcenter coordinates
-    return {((s2 - s1) * y3y1 - (s3 - s1) * y2y1) / D, ((s3 - s1) * x2x1 - (s2 - s1) * x3x1) / D};
+    SMatrix<2, 2> M;
+    M.col(0) = p2 - p1;
+    M.col(1) = p3 - p1;
+    double a = p1.squaredNorm()
+    SVector<2> b(p2.squaredNorm() - a, p3.squaredNorm() - a);
+    return M.inverse() * b;
 }
 constexpr SVector<2> circumcenter(const Element<2, 2>& e) { return circumcenter(e.coords()[0], e.coords()[1], e.coords()[2]); }
 
@@ -55,6 +44,11 @@ constexpr double measure(const SVector<2>& p1, const SVector<2>& p2, const SVect
     return 0.5 * (p1[0] * (p2[1] - p3[1]) + p2[0] * (p3[1] - p1[1]) + p3[0] * (p1[1] - p2[1]));
 }
 
+  template <int N>
+  constexpr double simplex_measure(const SMatrix<N, N + 1>& coords) {
+
+  }
+  
 // // compute the circumcirles's center of a 3D tetrahedron
 // SVector<3> circumcenter(const SVector<2>& p1, const SVector<2>& p2, const SVector<2>& p3, const SVector<2>& p4) {
 //     // load vertices in cpu registers

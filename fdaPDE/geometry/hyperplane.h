@@ -32,7 +32,7 @@ template <int N> constexpr SVector<N> orthogonal_project(const SVector<N>& v, co
 
 // a template class representing an M-dimensional plane embedded in an N-dimensional space
 template <int M, int N> class HyperPlane {
-    static_assert(M < N);
+    static_assert(M <= N);
    private:
     // let x_1, x_2, \ldots, x_{N+1} be a set of N+1 points through which the plane passes
     SMatrix<N, M> basis_;   // matrix [x2 - x1, x3 - x1, \ldots, x_{N+1} - x1] of vectors generating the plane
@@ -88,7 +88,13 @@ template <int M, int N> class HyperPlane {
             return proj;
         }
     }
-    SVector<N> project(const SVector<N>& x) const { return basis_ * basis_.transpose() * (x - p_) + p_; }
+    SVector<N> project(const SVector<N>& x) const {
+        if constexpr (M == N) {
+            return x;
+        } else {
+            return basis_ * basis_.transpose() * (x - p_) + p_;
+        }
+    }
     // euclidean distance of a point from the space
     double distance(const SVector<N>& x) { return (x - project(x)).norm(); }
     SVector<N> operator()(const SVector<M>& coeffs) const {

@@ -17,8 +17,8 @@
 #ifndef __TREE_SEARCH_H__
 #define __TREE_SEARCH_H__
 
-#include "../../utils/symbols.h"
-#include "../kd_tree.h"
+#include "../utils/symbols.h"
+#include "kd_tree.h"
 
 namespace fdapde {
 namespace core {

@@ -22,8 +22,7 @@
 #include "geometry/hyperplane.h"
 // #include "geometry/voronoi.h"
 #include "geometry/kd_tree.h"
-#include "geometry/point_location/naive_search.h"
-#include "geometry/point_location/barycentric_walk.h"
-#include "geometry/point_location/tree_search.h"
+#include "geometry/walk_search.h"
+#include "geometry/tree_search.h"
 
 #endif   // __FDAPDE_GEOMETRY_MODULE_H__

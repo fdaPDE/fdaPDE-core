@@ -62,7 +62,7 @@ TYPED_TEST(triangulation_test, elements_construction) {
 
 // check edges informations are computed correctly (up to an ordering of the nodes)
 TYPED_TEST(triangulation_test, edges_construction) {
-    constexpr int K = TestFixture::MeshType::n_vertices_per_facet;
+    constexpr int K = TestFixture::MeshType::n_vertices_per_face;
     // load raw edges
     std::vector<std::vector<int>> expected_edge_set;
     for (int i = 0; i < this->mesh_loader.edges_.rows(); ++i) {
@@ -74,9 +74,9 @@ TYPED_TEST(triangulation_test, edges_construction) {
     // load mesh edges and compute mask
     std::vector<std::vector<int>> mesh_edge_set;
     std::vector<bool> edge_mask(expected_edge_set.size(), false);
-    for (int i = 0; i < this->mesh_loader.mesh.facets().rows(); ++i) {
+    for (int i = 0; i < this->mesh_loader.mesh.faces().rows(); ++i) {
         std::vector<int> e {};
-        for (int j = 0; j < K; ++j) { e.push_back(this->mesh_loader.mesh.facets()(i, j)); }
+        for (int j = 0; j < K; ++j) { e.push_back(this->mesh_loader.mesh.faces()(i, j)); }
         std::sort(e.begin(), e.end());   // normalize wrt ordering of edge's node
 
         // find this edge in expected set

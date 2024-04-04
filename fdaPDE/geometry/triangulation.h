@@ -24,17 +24,27 @@
 
 #include "../utils/combinatorics.h"
 #include "../utils/symbols.h"
+#include "../linear_algebra/binary_matrix.h"
 #include "element.h"
 #include "utils.h"
 
 namespace fdapde {
 namespace core {
 
+// face-based storage
 template <int M, int N> class Triangulation {
    public:
-    using NeighborsContainerType = std::conditional_t<is_network<M, N>::value, SpMatrix<int>, DMatrix<int>>;
+    static constexpr int local_dim = M;
+    static constexpr int embed_dim = N;
+    static constexpr int n_vertices_per_face = ct_nvertices(local_dim);
+    static constexpr int n_vertices_per_edge = local_dim;
+    static constexpr int n_edges_per_face = ct_nedges(local_dim);
+    static constexpr int n_neighbors_per_face = ct_nneighbors(local_dim);
+    static constexpr int n_faces_per_edge = 2;
+    static constexpr bool is_manifold = !(local_dim == embed_dim);
     using MeshType = Triangulation<M, N>;
-    using ElementType = Element<MeshType>;
+    using FaceType = Element<MeshType>;
+    using NodeType = SVector<N>;
     // type-erasure wrapper for point location strategy
     struct PointLocation__ {
         template <typename T> using fn_ptrs = mem_fn_ptrs<&T::locate>;
@@ -43,195 +53,181 @@ template <int M, int N> class Triangulation {
             fdapde_assert(points.cols() == N);
             DVector<int> result(points.rows());
             for (int i = 0; i < points.rows(); ++i) {
-                auto e = invoke<const ElementType*, 0>(*this, SVector<N>(points.row(i)));
+                auto e = invoke<const FaceType*, 0>(*this, NodeType(points.row(i)));
                 result[i] = e ? e->ID() : -1;
             }
             return result;
         }
     };
-    // compile time informations
-    static constexpr int local_dim = M;
-    static constexpr int embed_dim = N;
-    static constexpr bool is_manifold = (local_dim != embed_dim);
-    static constexpr int n_vertices = ct_nvertices(local_dim);
-    static constexpr int n_vertices_per_facet = local_dim;
-    static constexpr int n_facets_per_element = ct_nfacets(local_dim);
-    static constexpr int n_neighbors_per_element = ct_nneighbors(local_dim);
-    static constexpr int n_elements_per_facet = 2;
 
     Triangulation() = default;
-    // 2D, 2.5D, 3D constructor
-    Triangulation(const DMatrix<double>& nodes, const DMatrix<int>& elements, const DMatrix<int>& boundary)
+    Triangulation(const DMatrix<double>& nodes, const DMatrix<int>& faces, const DMatrix<int>& boundary)
         requires(!is_network<M, N>::value)
-        : nodes_(nodes), elements_(elements), boundary_(boundary) {
-        // store number of nodes and number of elements
+        : nodes_(nodes), faces_(faces), nodes_markers_(boundary) {
+        // store number of nodes and number of faces
         n_nodes_ = nodes_.rows();
-        n_elements_ = elements_.rows();
+        n_faces_ = faces_.rows();
         // compute mesh limits
         range_.row(0) = nodes_.colwise().minCoeff();
         range_.row(1) = nodes_.colwise().maxCoeff();
-
-        // reserve neighbors_ storage (-1 in column i implies no neighbor adjacent to the facet opposite to vertex i)
-        neighbors_ = DMatrix<int>::Constant(n_elements_, n_neighbors_per_element, -1);
-        // compute facets informations and neighboring structure
-        auto facet_pattern = combinations<n_vertices_per_facet, n_vertices>();
-        std::unordered_map<   // for each facet, one of the elements insisting on it
-          std::array<int, n_vertices_per_facet>, int, std_array_hash<int, n_vertices_per_facet>>
-          visited;
-        std::array<int, n_vertices_per_facet> facet;
-        // search vertex of e opposite to facet f (the j-th vertex of e which is not a node of f)
-        auto vertex_opposite_to_facet = [this](const std::array<int, n_vertices_per_facet>& f, int e) -> int {
+	// compute number of edges
+        auto edge_pattern = combinations<n_vertices_per_edge, n_vertices_per_face>();
+	using edge_t = std::array<int, n_vertices_per_edge>;
+	using hash_t = fdapde::std_array_hash<int, n_vertices_per_edge>;
+	std::unordered_set<edge_t, hash_t> edges_set;
+	edge_t edge;
+        for (int i = 0; i < n_faces_; ++i) {
+            for (int j = 0; j < edge_pattern.rows(); ++j) {
+                // construct edge
+                for (int k = 0; k < n_vertices_per_edge; ++k) { edge[k] = faces_(i, edge_pattern(j, k)); }
+                std::sort(edge.begin(), edge.end());   // normalize wrt node ordering
+                if (edges_set.find(edge) == edges_set.end()) edges_set.insert(edge);
+            }
+        }
+	n_edges_ = edges_set.size();
+	edges_set.clear();
+	// allocate storage
+	edges_markers_ = BinaryVector<Dynamic>::Ones(n_edges_);
+	edges_.resize(n_edges_, n_vertices_per_edge);
+	// -1 in neighbors_'s column i implies no neighbor adjacent to the edge opposite to vertex i
+        neighbors_ = DMatrix<int>::Constant(n_faces_, n_neighbors_per_face, -1);
+	struct edge_info {
+            int edge_id, face_id;   // for each face, its ID and the ID of one of the faces insisting on it
+        };
+        std::unordered_map<edge_t, edge_info, hash_t> edges_map;
+        // search vertex of face f opposite to edge e (the j-th vertex of f which is not a node of e)
+        auto vertex_opposite_to_edge = [this](int e, int f) -> int {
             int j = 0;
-            for (; j < n_vertices; ++j) {
+            for (; j < n_vertices_per_face; ++j) {
                 bool found = false;
-                for (int k = 0; k < n_vertices_per_facet; ++k) {
-                    if (f[k] == elements_(e, j)) { found = true; }
+                for (int k = 0; k < n_vertices_per_edge; ++k) {
+                    if (edges_(e, k) == faces_(f, j)) { found = true; }
                 }
                 if (!found) break;
             }
             return j;
         };
-        // cycle over all elements
-        for (int i = 0; i < n_elements_; ++i) {
-            for (int j = 0; j < facet_pattern.rows(); ++j) {
-                // construct facet
-                for (int k = 0; k < n_vertices_per_facet; ++k) { facet[k] = elements_(i, facet_pattern(j, k)); }
-                std::sort(facet.begin(), facet.end());   // normalize wrt node ordering
-                auto it = visited.find(facet);
-                if (it == visited.end()) {
-                    facets_.insert(facets_.end(), &facet[0], &facet[n_vertices_per_facet]);
-                    visited.insert({facet, i});   // store facet and ID of element insisting on it
-                    n_facets_++;
+	int edge_id = 0;
+        for (int i = 0; i < n_faces_; ++i) {
+            for (int j = 0; j < edge_pattern.rows(); ++j) {
+                // construct edge
+                for (int k = 0; k < n_vertices_per_edge; ++k) { edge[k] = faces_(i, edge_pattern(j, k)); }
+                std::sort(edge.begin(), edge.end());   // normalize wrt node ordering
+                auto it = edges_map.find(edge);
+                if (it == edges_map.end()) {   // never processed edge
+                    for (int k = 0; k < n_vertices_per_edge; ++k) { edges_(edge_id, k) = edge[k]; }
+                    edges_map.emplace(edge, {edge_id, i});
+                    edge_id++;
                 } else {
-                    // update neighboring informations (each facet is shared by two, and only two, adjacent elements)
-                    neighbors_(it->second, vertex_opposite_to_facet(facet, it->second)) = i;
-                    neighbors_(i, vertex_opposite_to_facet(facet, i)) = it->second;   // exploit symmetry of relation
-                    visited.erase(it);
+                    int k = it->second.face_id;
+		    int h = it->second.edge_id;
+		    // elements k and i are neighgbors (they share a face)
+                    neighbors_(k, vertex_opposite_to_edge(h, k)) = i;
+                    neighbors_(i, vertex_opposite_to_edge(h, i)) = k;
+                    edges_markers_.clear(h);   // edge_id-th edge cannot be on boundary
+                    edges_map.erase(it);
                 }
             }
         }
-        cache_.resize(n_elements_);
-        return;
+	return;
     }
-    // linear network (1.5D) specialized constructor
-    Triangulation(const DMatrix<double>& nodes, const DMatrix<int>& elements, const DMatrix<int>& boundary)
-        requires(is_network<M, N>::value)
-        : nodes_(nodes), elements_(elements), boundary_(boundary) {
-        // store number of nodes and number of elements
-        n_nodes_ = nodes_.rows();
-        n_elements_ = elements_.rows();
-        // compute mesh limits
-        range_.row(0) = nodes_.colwise().minCoeff();
-        range_.row(1) = nodes_.colwise().maxCoeff();
-        // compute facets and neighboring structure
-	std::unordered_map<int, std::vector<int>> node_connection; // for each node, the elements insisting on it
-        for (int i = 0; i < n_elements_; ++i) {
-            node_connection[elements_(i, 0)].push_back(i);
-            node_connection[elements_(i, 1)].push_back(i);
-        }
-        for (auto& [key, value] : node_connection) { facets_.emplace_back(key); }
-        n_facets_ = facets_.size();
-        // recover adjacency matrix
-        SpMatrix<int> adjoint_neighbors;
-        std::vector<Eigen::Triplet<int>> adj;
-        for (const auto& e : node_connection) {
-            for (std::size_t i = 0; i < e.second.size(); ++i) {
-                for (std::size_t j = i + 1; j < e.second.size(); ++j) adj.emplace_back(e.second[j], e.second[i], 1);
-            }
-        }
-        adjoint_neighbors.resize(n_elements_, n_elements_);
-        adjoint_neighbors.setFromTriplets(adj.begin(), adj.end());
-        neighbors_ = adjoint_neighbors.selfadjointView<Eigen::Lower>();   // symmetrize neighboring relation
-        cache_.resize(n_elements_);
-    }
-
     // getters
-    const ElementType& element(int id) const {
-        if (!cache_[id]) cache_[id] = ElementType(id, this);
-        return cache_[id];
-    }
-    ElementType& element(int id) {
-        if (!cache_[id]) cache_[id] = ElementType(id, this);
-        return cache_[id];
-    }
-    SVector<N> node(int id) const { return nodes_.row(id); }
-    bool is_on_boundary(int id) const { return boundary_(id) == 1; }
+    FaceType face(int id) const { return FaceType(id, this); }
+    NodeType node(int id) const { return nodes_.row(id); }
+    bool is_node_on_boundary(int id) const { return nodes_markers_[id]; }
+    bool is_edge_on_boundary(int id) const { return edges_markers_[id]; }
     const DMatrix<double>& nodes() const { return nodes_; }
-    const DMatrix<int, Eigen::RowMajor>& elements() const { return elements_; }
-    const NeighborsContainerType& neighbors() const { return neighbors_; }
-    const DMatrix<int>& boundary() const { return boundary_; }
-    int n_elements() const { return n_elements_; }
+    const DMatrix<int, Eigen::RowMajor>& faces() const { return faces_; }
+    const DMatrix<int, Eigen::RowMajor>& neighbors() const { return neighbors_; }
+    const DMatrix<int, Eigen::RowMajor>& edges() const { return edges_; }
+    const BinaryVector<Dynamic>& boundary_nodes() const { return nodes_markers_; }
+    const BinaryVector<Dynamic>& boundary_edges() const { return edges_markers_; }
+    int n_faces() const { return n_faces_; }
     int n_nodes() const { return n_nodes_; }
+    int n_edges() const { return n_edges_; }
     SMatrix<2, N> range() const { return range_; }
-    Eigen::Map<const DMatrix<int, Eigen::RowMajor>> facets() const {
-        return Eigen::Map<const DMatrix<int, Eigen::RowMajor>>(facets_.data(), n_facets_, n_vertices_per_facet);
-    }
-    int n_facets() const { return n_facets_; }
     DVector<int> locate(const DMatrix<double>& points) const {
-        if (!point_location_) point_location_ = TreeSearch(*this);   // fallback to tree-based search strategy
-        return point_location_.locate(points);
+        if (!point_locator_) point_locator_ = TreeSearch(*this);   // fallback to tree-based search strategy
+        return point_locator_.locate(points);
     }
-
-    // iterators support
-    struct element_iterator {   // range-for loop over mesh elements
+  
+    // iterators
+    struct face_iterator {
        private:
-        friend Triangulation;
+        using This = face_iterator;
         const Triangulation* mesh_;
         int index_;   // current element
        public:
-        element_iterator(const Triangulation* mesh, int index) : mesh_(mesh), index_(index) {};
-        element_iterator& operator++() {
+        face_iterator(const Triangulation* mesh, int index) : mesh_(mesh), index_(index) { }
+        This& operator++() {
             ++index_;
             return *this;
         }
-        const ElementType& operator*() { return mesh_->element(index_); }
-        const ElementType& operator*() const { return mesh_->element(index_); }
-        friend bool operator!=(const element_iterator& lhs, const element_iterator& rhs) {
-            return lhs.index_ != rhs.index_;
-        }
+        FaceType operator*() const { return mesh_->face(index_); }
+        friend bool operator!=(const This& lhs, const This& rhs) { return lhs.index_ != rhs.index_; }
+        friend bool operator==(const This& lhs, const This& rhs) { return lhs.index_ == rhs.index_; }
     };
-    element_iterator begin() const { return element_iterator(this, 0); }
-    element_iterator end() const { return element_iterator(this, elements_.rows()); }
+    face_iterator faces_begin() const { return face_iterator(this, 0); }
+    face_iterator faces_end() const { return face_iterator(this, n_faces_); }
 
-    struct boundary_iterator {   // range-for loop over boundary nodes
+    struct boundary_node_iterator {
        private:
-        friend Triangulation;
+        using This = boundary_node_iterator;
         const Triangulation* mesh_;
         int index_;   // current boundary node
        public:
-        boundary_iterator(const Triangulation* mesh, int index) : mesh_(mesh), index_(index) {};
-        boundary_iterator& operator++() {
+        boundary_node_iterator(const Triangulation* mesh, int index) : mesh_(mesh), index_(index) { }
+        boundary_node_iterator& operator++() {
             index_++;
             // scan until all nodes have been visited or a boundary node is not found
-            for (; index_ < mesh_->n_nodes_ && mesh_->is_on_boundary(index_) != true; ++index_);
+            for (; index_ < mesh_->n_nodes() && mesh_->is_on_boundary(index_) != true; ++index_);
             return *this;
         }
-        int operator*() const { return index_; }
-        friend bool operator!=(const boundary_iterator& lhs, const boundary_iterator& rhs) {
-            return lhs.index_ != rhs.index_;
-        }
+        int operator*() const { return index_; }   // ID of the boundary node
+        friend bool operator!=(const This& lhs, const This& rhs) { return lhs.index_ != rhs.index_; }
+        friend bool operator==(const This& lhs, const This& rhs) { return lhs.index_ == rhs.index_; }
     };
-    boundary_iterator boundary_begin() const { return boundary_iterator(this, 0); }
-    boundary_iterator boundary_end() const { return boundary_iterator(this, n_nodes_); }
+    boundary_node_iterator boundary_nodes_begin() const { return boundary_node_iterator(this, 0); }
+    boundary_node_iterator boundary_nodes_end() const { return boundary_node_iterator(this, n_nodes_); }
 
+    // geometrical view (e.g., as Simplex instances) of the boundary edges
+    struct boundary_edge_iterator {
+       private:
+        using This = boundary_edge_iterator;
+        const Triangulation* mesh_;
+        int index_;   // current boundary face
+       public:
+        boundary_edge_iterator(const Triangulation* mesh, int index) : mesh_(mesh), index_(index) { }
+        boundary_edge_iterator& operator++() {
+            index_++;
+            for (; index_ < mesh_->n_edges() && mesh_->edges_markers_[index_]; ++index_);
+            return *this;
+        }
+        Simplex<local_dim - 1, embed_dim> operator*() const {
+            SMatrix<embed_dim, local_dim> coords;
+            for (int i = 0; i < local_dim; ++i) { coords.col(i) = mesh_->nodes_.row(mesh_->edges_(index_, i)); }
+            return Simplex<local_dim - 1, embed_dim>(coords);
+        };
+        friend bool operator!=(const This& lhs, const This& rhs) { return lhs.index_ != rhs.index_; }
+        friend bool operator==(const This& lhs, const This& rhs) { return lhs.index_ == rhs.index_; }
+    };
+    boundary_edge_iterator boundary_edges_begin() const { return boundary_edge_iterator(this, 0); }
+    boundary_edge_iterator boundary_edges_end() const { return boundary_edge_iterator(this, n_edges_); }
+  
     // setters
-    template <typename PointLocation> void set_point_location(PointLocation&& point_location) {
-        point_location_ = point_location;
+    template <typename PointLocation_> void set_point_locator(PointLocation_&& point_locator) {
+        point_locator_ = point_locator;
     }
    protected:
-    // physical coordinates of mesh's vertices
-    DMatrix<double> nodes_ {};
-    int n_nodes_ = 0;
-    // identifiers of nodes (as row indexes in nodes_ matrix) composing each element, in a RowMajor format
-    DMatrix<int, Eigen::RowMajor> elements_ {};
-    int n_elements_ = 0;
-    DMatrix<int> boundary_ {};   // vector of binary coefficients such that, boundary_[j] = 1 \iff node j is on boundary
-    SMatrix<2, N> range_ {};     // mesh bounding box (column i maps to the i-th dimension)
-    NeighborsContainerType neighbors_ {};
-    std::vector<int> facets_ {};   // nodes composing each facet of the mesh (linearly stored in a row-major format)
-    int n_facets_ = 0;
-    mutable std::vector<ElementType> cache_ {};
-    mutable erase<heap_storage, PointLocation__> point_location_ {};
+    DMatrix<double> nodes_ {};                         // physical coordinates of mesh's vertices
+    DMatrix<int, Eigen::RowMajor> faces_ {};           // nodes (as row indexes in nodes_ matrix) composing each face
+    DMatrix<int, Eigen::RowMajor> edges_ {};           // nodes composing each edge
+    DMatrix<int, Eigen::RowMajor> neighbors_ {};       // ids of faces adjacent to a given face (-1 if no adjacent face)
+    BinaryVector<fdapde::Dynamic> nodes_markers_ {};   // j-th element is 1 \iff node j is on boundary
+    BinaryVector<fdapde::Dynamic> edges_markers_ {};   // j-th element is 1 \iff edge j is on boundary
+    SMatrix<2, N> range_ {};                           // mesh bounding box (column i maps to the i-th dimension)
+    int n_nodes_ = 0, n_faces_ = 0, n_edges_ = 0;
+    mutable erase<heap_storage, PointLocation__> point_locator_ {};
 };
 
 // template specialization for 1D meshes (bounded intervals)
@@ -239,14 +235,14 @@ template <> class Triangulation<1, 1> {
    public:
     using NeighborsContainerType = DMatrix<int>;
     using MeshType = Triangulation<1, 1>;
-    using ElementType = Element<MeshType>;
+    using FaceType = Element<MeshType>;
     // compile time informations
     static constexpr int local_dim = 1;
     static constexpr int embed_dim = 1;
     static constexpr bool is_manifold = false;
-    static constexpr int n_vertices = 2;
-    static constexpr int n_vertices_per_facet = local_dim;
-    static constexpr int n_facets_per_element = 2;
+    static constexpr int n_vertices_per_element = 2;
+    static constexpr int n_vertices_per_face = local_dim;
+    static constexpr int n_faces_per_element = 2;
     static constexpr int n_neighbors_per_element = 2;
 
     Triangulation() = default;
@@ -280,12 +276,12 @@ template <> class Triangulation<1, 1> {
     Triangulation(double a, double b, int n) : Triangulation(DVector<double>::LinSpaced(n + 1, a, b)) { }
 
     // getters
-    const ElementType& element(int ID) const {
-        if (!cache_[ID]) cache_[ID] = ElementType(ID, this);
+    const FaceType& element(int ID) const {
+        if (!cache_[ID]) cache_[ID] = FaceType(ID, this);
         return cache_[ID];
     }
-    ElementType& element(int ID) {
-        if (!cache_[ID]) cache_[ID] = ElementType(ID, this);
+    FaceType& element(int ID) {
+        if (!cache_[ID]) cache_[ID] = FaceType(ID, this);
         return cache_[ID];
     }
     SVector<1> node(int ID) const { return SVector<1>(nodes_[ID]); }
@@ -311,11 +307,11 @@ template <> class Triangulation<1, 1> {
             ++index_;
             return *this;
         }
-        const ElementType& operator*() { return mesh_->element(index_); }
+        const FaceType& operator*() { return mesh_->element(index_); }
         friend bool operator!=(const element_iterator& lhs, const element_iterator& rhs) {
             return lhs.index_ != rhs.index_;
         }
-        const ElementType& operator*() const { return mesh_->element(index_); }
+        const FaceType& operator*() const { return mesh_->element(index_); }
     };
     element_iterator begin() const { return element_iterator(this, 0); }
     element_iterator end() const { return element_iterator(this, elements_.rows()); }
@@ -360,9 +356,43 @@ template <> class Triangulation<1, 1> {
     DMatrix<int> boundary_ {};   // vector of binary coefficients such that, boundary_[j] = 1 \iff node j is on boundary
     SVector<2> range_ {};        // mesh bounding box (minimum and maximum coordinates of interval)
     DMatrix<int> neighbors_ {};
-    mutable std::vector<ElementType> cache_ {};
+    mutable std::vector<FaceType> cache_ {};
 };
 
+    // linear network (1.5D) specialized constructor
+    // Triangulation(const DMatrix<double>& nodes, const DMatrix<int>& faces, const DMatrix<int>& boundary)
+    //     requires(is_network<M, N>::value)
+    //     : nodes_(nodes), faces_(faces), boundary_(boundary) {
+    //     // store number of nodes and number of elements
+    //     // n_nodes_ = nodes_.rows();
+    //     // n_faces_ = faces_.rows();
+    //     // // compute mesh limits
+    //     // range_.row(0) = nodes_.colwise().minCoeff();
+    //     // range_.row(1) = nodes_.colwise().maxCoeff();
+    //     // // compute faces and neighboring structure
+    // 	// std::unordered_map<int, std::vector<int>> node_connection; // for each node, the elements insisting on it
+    //     // for (int i = 0; i < n_elements_; ++i) {
+    //     //     node_connection[faces_(i, 0)].push_back(i);
+    //     //     node_connection[faces_(i, 1)].push_back(i);
+    //     // }
+    //     // for (auto& [key, value] : node_connection) { edges_.emplace_back(key); }
+    //     // n_faces_ = faces_.size();
+    //     // // recover adjacency matrix
+    //     // SpMatrix<int> adjoint_neighbors;
+    //     // std::vector<Eigen::Triplet<int>> adj;
+    //     // for (const auto& e : node_connection) {
+    //     //     for (std::size_t i = 0; i < e.second.size(); ++i) {
+    //     //         for (std::size_t j = i + 1; j < e.second.size(); ++j) adj.emplace_back(e.second[j], e.second[i], 1);
+    //     //     }
+    //     // }
+    //     // adjoint_neighbors.resize(n_elements_, n_elements_);
+    //     // adjoint_neighbors.setFromTriplets(adj.begin(), adj.end());
+    //     // neighbors_ = adjoint_neighbors.selfadjointView<Eigen::Lower>();   // symmetrize neighboring relation
+    //     // cache_.resize(n_elements_);
+    // }
+
+
+  
 // alias exports
 using Triangulation1D = Triangulation<1, 1>;
 using Triangulation2D = Triangulation<2, 2>;

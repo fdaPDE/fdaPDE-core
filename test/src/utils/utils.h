@@ -29,51 +29,57 @@ namespace testing {
 
   // this function is an implementation of the test for floating point equality based on relative error. There is
   // an huge literature about floating point comparison, refer to it for details
-  template <typename T>
-  typename std::enable_if<!std::numeric_limits<T>::is_integer, bool>::type
-  almost_equal(T a, T b, T epsilon){
-    return std::fabs(a-b) < epsilon ||
-      std::fabs(a-b) < ((std::fabs(a) < std::fabs(b) ? std::fabs(b) : std::fabs(a)) * epsilon);
-  }
+template <typename T>
+typename std::enable_if<!std::numeric_limits<T>::is_integer, bool>::type almost_equal(T a, T b, T epsilon) {
+    return std::fabs(a - b) < epsilon ||
+           std::fabs(a - b) < ((std::fabs(a) < std::fabs(b) ? std::fabs(b) : std::fabs(a)) * epsilon);
+}
 
-  // set default epsilon to DOUBLE_TOLERANCE
-  template <typename T>
-  typename std::enable_if<!std::numeric_limits<T>::is_integer, bool>::type
-  almost_equal(T a, T b){ return almost_equal(a,b, DOUBLE_TOLERANCE); }
+// set default epsilon to DOUBLE_TOLERANCE
+template <typename T> typename std::enable_if<!std::numeric_limits<T>::is_integer, bool>::type almost_equal(T a, T b) {
+    return almost_equal(a, b, DOUBLE_TOLERANCE);
+}
 
-  // test if two matrices are equal testing the relative error of the infinte norm of their difference
-  inline bool almost_equal(const DMatrix<double>& op1, const DMatrix<double>& op2, double epsilon){
-    return (op1-op2).lpNorm<Eigen::Infinity>() < epsilon ||
-      (op1-op2).lpNorm<Eigen::Infinity>() < (std::max(op1.lpNorm<Eigen::Infinity>(), op2.lpNorm<Eigen::Infinity>()) * epsilon);
-  }
-  inline bool almost_equal(const DMatrix<double>& op1, const DMatrix<double>& op2){
+// test if two matrices are equal testing the relative error of the infinte norm of their difference
+inline bool almost_equal(const DMatrix<double>& op1, const DMatrix<double>& op2, double epsilon) {
+    return (op1 - op2).lpNorm<Eigen::Infinity>() < epsilon ||
+           (op1 - op2).lpNorm<Eigen::Infinity>() <
+             (std::max(op1.lpNorm<Eigen::Infinity>(), op2.lpNorm<Eigen::Infinity>()) * epsilon);
+}
+inline bool almost_equal(const DMatrix<double>& op1, const DMatrix<double>& op2) {
     return almost_equal(op1, op2, DOUBLE_TOLERANCE);
-  }
-  // sparse operands
-  inline bool almost_equal(const SpMatrix<double>& op1, const SpMatrix<double>& op2, double epsilon){
+}
+// sparse operands
+inline bool almost_equal(const SpMatrix<double>& op1, const SpMatrix<double>& op2, double epsilon) {
     return almost_equal(DMatrix<double>(op1), DMatrix<double>(op2), epsilon);
-  }
-  inline bool almost_equal(const SpMatrix<double>& op1, const SpMatrix<double>& op2){
+}
+inline bool almost_equal(const SpMatrix<double>& op1, const SpMatrix<double>& op2) {
     return almost_equal(DMatrix<double>(op1), DMatrix<double>(op2));
-  }
+}
 
   // load rhs from file
   bool almost_equal(const SpMatrix<double>& op1, std::string op2) {
-      SpMatrix<double> mem_buff;
-      Eigen::loadMarket(mem_buff, op2);
-      return almost_equal(op1, mem_buff);
+    SpMatrix<double> mem_buff;
+    Eigen::loadMarket(mem_buff, op2);
+    return almost_equal(op1, mem_buff);
   }
   bool almost_equal(const DMatrix<double>& op1, std::string op2) {
-      SpMatrix<double> mem_buff;
-      Eigen::loadMarket(mem_buff, op2);
-      return almost_equal(op1, DMatrix<double>(mem_buff));
+    SpMatrix<double> mem_buff;
+    Eigen::loadMarket(mem_buff, op2);
+    return almost_equal(op1, DMatrix<double>(mem_buff));
   }
 
-  bool almost_equal(const std::vector<double>& op1, std::string op2){
+  bool almost_equal(const std::vector<double>& op1, std::string op2) {
     DMatrix<double> m;
     m.resize(op1.size(), 1);
-    for(std::size_t i = 0; i < op1.size(); ++i) m(i,0) = op1[i];
+    for (std::size_t i = 0; i < op1.size(); ++i) m(i, 0) = op1[i];
     return almost_equal(m, op2);
+  }
+
+  template <int N> bool almost_equal(const SVector<N>& op1, const SVector<N>& op2) {
+    bool equal = true;
+    for (int i = 0; i < N; ++i) equal &= almost_equal(op1[i], op2[i]);
+    return equal;
   }
 
   // utility to import .mtx files

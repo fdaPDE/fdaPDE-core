@@ -157,6 +157,8 @@ template <typename T> class SparseLU {
 
 // test for floating point equality based on relative error.
 constexpr double DOUBLE_TOLERANCE = 50 * std::numeric_limits<double>::epsilon();   // approx 10^-14
+constexpr double machine_epsilon  = 10 * std::numeric_limits<double>::epsilon();
+
 template <typename T>
 typename std::enable_if<!std::numeric_limits<T>::is_integer, bool>::type almost_equal(T a, T b, T epsilon) {
     return std::fabs(a - b) < epsilon ||

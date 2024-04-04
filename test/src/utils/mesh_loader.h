@@ -86,13 +86,13 @@ template <typename MeshType_> struct MeshLoader {
     // load default mesh according to dimensionality
     MeshLoader() : MeshLoader(standard_mesh_selector(MeshType::local_dim, MeshType::embed_dim)) {};
     // generate element at random inside mesh m
-    const typename MeshType::ElementType& generate_random_element() {
+    typename MeshType::FaceType generate_random_element() {
         std::uniform_int_distribution<int> random_ID(0, mesh.n_elements() - 1);
         int ID = random_ID(rng);
-        return mesh.element(ID);
+        return mesh.face(ID);
     };
     // generate point at random inside element e
-    SVector<N> generate_random_point(const typename MeshType::ElementType& e) {
+    SVector<N> generate_random_point(const typename MeshType::FaceType& e) {
         std::uniform_real_distribution<double> T(0, 1);
         // let t, s, u ~ U(0,1) and P1, P2, P3, P4 a set of points, observe that:
         //     * if P1 and P2 are the vertices of a linear element, p = t*P1 + (1-t)*P2 lies into it for any t ~ U(0,1)
@@ -101,10 +101,10 @@ template <typename MeshType_> struct MeshLoader {
         //     * if P1, P2, P3, P4 are vertices of a tetrahedron, then letting Q = (1-t)P1 + t((1-s)P2 + sP3) and
         //       P = (1-u)P4 + uQ, P belongs to the tetrahedron for any choice of t, s, u ~ U(0,1)
         double t = T(rng);
-        SVector<N> p = t * e.coord(0) + (1 - t) * e.coord(1);
+        SVector<N> p = t * e.vertex(0) + (1 - t) * e.vertex(1);
         for (int j = 1; j < M; ++j) {
             t = T(rng);
-            p = (1 - t) * e.coord(1 + j) + t * p;
+            p = (1 - t) * e.vertex(1 + j) + t * p;
         }
         return p;
     }

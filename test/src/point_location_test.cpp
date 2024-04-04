@@ -21,7 +21,6 @@
 #include <fdaPDE/geometry.h>
 using fdapde::core::Element;
 using fdapde::core::Triangulation;
-using fdapde::core::NaiveSearch;
 using fdapde::core::BarycentricWalk;
 using fdapde::core::TreeSearch;
 
@@ -37,21 +36,7 @@ template <typename E> struct point_location_test : public ::testing::Test {
 };
 TYPED_TEST_SUITE(point_location_test, MESH_TYPE_LIST);
 
-TYPED_TEST(point_location_test, naive_search) {
-    // build search engine
-    NaiveSearch<Triangulation<TestFixture::M, TestFixture::N>> engine(&this->mesh_loader.mesh);
-    // build test set
-    std::vector<std::pair<int, SVector<TestFixture::N>>> test_set = this->mesh_loader.sample(100);
-    // test all queries in test set
-    std::size_t matches = 0;
-    for (auto query : test_set) {
-        auto e = engine.locate(query.second);
-        if (e != nullptr && e->ID() == query.first) matches++;
-    }
-    EXPECT_EQ(matches, 100);
-}
-
-TYPED_TEST(point_location_test, alternating_digital_tree) {
+TYPED_TEST(point_location_test, tree_search) {
     // build search engine
     TreeSearch<Triangulation<TestFixture::M, TestFixture::N>> engine(&this->mesh_loader.mesh);
     // build test set
@@ -66,7 +51,7 @@ TYPED_TEST(point_location_test, alternating_digital_tree) {
 }
 
 // barycentric walk cannot be applied to manifold mesh, filter out manifold cases at compile time
-TYPED_TEST(point_location_test, barycentric_walk) {
+TYPED_TEST(point_location_test, walk_search) {
     if constexpr (TestFixture::N == TestFixture::M) {
         BarycentricWalk<Triangulation<TestFixture::M, TestFixture::N>> engine(&this->mesh_loader.mesh);
         // build test set
