@@ -25,7 +25,7 @@
 #include <unordered_set>
 #include <vector>
 
-#include "../utils/Symbols.h"
+#include "../utils/symbols.h"
 
 namespace fdapde {
 namespace core {
@@ -154,7 +154,7 @@ void FSPAI::selectCandidates(const Eigen::Index& k) {
 FSPAI::FSPAI(const Eigen::SparseMatrix<double>& A) : A_(A), n_(A.rows()) {
     // initialize the sparsity pattern to the identity matrix
     J_.resize(n_);
-    for (std::size_t i = 0; i < n_; ++i) { J_[i].insert(i); }
+    for (std::size_t i = 0; i < static_cast<std::size_t>(n_); ++i) { J_[i].insert(i); }
 
     // pre-allocate memory
     L_.resize(n_, n_);
@@ -178,7 +178,7 @@ void FSPAI::compute(unsigned alpha, unsigned beta, double epsilon) {
     std::list<Eigen::Triplet<double>> tripetList;
 
     // cycle over each column of the sparse matrix A_
-    for (std::size_t k = 0; k < n_; ++k) {
+    for (std::size_t k = 0; k < static_cast<std::size_t>(n_); ++k) {
         Lk_.fill(0);               // reset column vector Lk_
         candidateSet_.clear();     // reset candidateSet
         deltaPattern_.insert(k);   // init deltaPattern to allow for sparsity pattern updates
@@ -261,7 +261,7 @@ void FSPAI::compute(unsigned alpha, unsigned beta, double epsilon) {
             }
         }
         // save approximate inverse of column k
-        for (std::size_t i = 0; i < n_; ++i) {
+        for (std::size_t i = 0; i < static_cast<std::size_t>(n_); ++i) {
             if (Lk_[i] != 0) tripetList.push_back(Eigen::Triplet<double>(i, k, Lk_[i]));
         }
     }
