@@ -25,6 +25,7 @@
 #include "../utils/combinatorics.h"
 #include "../utils/symbols.h"
 #include "../linear_algebra/binary_matrix.h"
+#include "tree_search.h"
 #include "element.h"
 #include "utils.h"
 
@@ -42,22 +43,14 @@ template <int M, int N> class Triangulation {
     static constexpr int n_neighbors_per_face = ct_nneighbors(local_dim);
     static constexpr int n_faces_per_edge = 2;
     static constexpr bool is_manifold = !(local_dim == embed_dim);
-    using MeshType = Triangulation<M, N>;
-    using FaceType = Element<MeshType>;
-    using NodeType = SVector<N>;
+    using FaceType = Element<Triangulation<local_dim, embed_dim>>;
+    using EdgeType = typename FaceType::FaceType;
+    using VertexType = SVector<embed_dim>;
     // type-erasure wrapper for point location strategy
     struct PointLocation__ {
-        template <typename T> using fn_ptrs = mem_fn_ptrs<&T::locate>;
-        // solves the point location problem for a set of points, outputs -1 if element not found
-        DVector<int> locate(const DMatrix<double>& points) const {
-            fdapde_assert(points.cols() == N);
-            DVector<int> result(points.rows());
-            for (int i = 0; i < points.rows(); ++i) {
-                auto e = invoke<const FaceType*, 0>(*this, NodeType(points.row(i)));
-                result[i] = e ? e->ID() : -1;
-            }
-            return result;
-        }
+        template <typename T>
+        using fn_ptrs = mem_fn_ptrs<static_cast<DVector<int> (T::*)(const DMatrix<double>&) const>(&T::locate)>;
+        DVector<int> locate(const DMatrix<double>& points) const { return invoke<DVector<int>, 0>(*this, points); }
     };
 
     Triangulation() = default;
@@ -91,6 +84,7 @@ template <int M, int N> class Triangulation {
 	edges_.resize(n_edges_, n_vertices_per_edge);
 	// -1 in neighbors_'s column i implies no neighbor adjacent to the edge opposite to vertex i
         neighbors_ = DMatrix<int>::Constant(n_faces_, n_neighbors_per_face, -1);
+	face_to_edges_.resize(n_faces_, n_edges_per_face);
 	struct edge_info {
             int edge_id, face_id;   // for each face, its ID and the ID of one of the faces insisting on it
         };
@@ -116,14 +110,15 @@ template <int M, int N> class Triangulation {
                 auto it = edges_map.find(edge);
                 if (it == edges_map.end()) {   // never processed edge
                     for (int k = 0; k < n_vertices_per_edge; ++k) { edges_(edge_id, k) = edge[k]; }
-                    edges_map.emplace(edge, {edge_id, i});
+                    edges_map.emplace(edge, edge_info{edge_id, i});
+		    face_to_edges_(i, j) = edge_id;
                     edge_id++;
                 } else {
-                    int k = it->second.face_id;
-		    int h = it->second.edge_id;
-		    // elements k and i are neighgbors (they share a face)
+                    const auto& [h, k] = it->second;
+                    // elements k and i are neighgbors (they share a face)
                     neighbors_(k, vertex_opposite_to_edge(h, k)) = i;
                     neighbors_(i, vertex_opposite_to_edge(h, i)) = k;
+		    face_to_edges_(i, j) = h;
                     edges_markers_.clear(h);   // edge_id-th edge cannot be on boundary
                     edges_map.erase(it);
                 }
@@ -133,86 +128,145 @@ template <int M, int N> class Triangulation {
     }
     // getters
     FaceType face(int id) const { return FaceType(id, this); }
-    NodeType node(int id) const { return nodes_.row(id); }
+    VertexType node(int id) const { return nodes_.row(id); }
     bool is_node_on_boundary(int id) const { return nodes_markers_[id]; }
     bool is_edge_on_boundary(int id) const { return edges_markers_[id]; }
     const DMatrix<double>& nodes() const { return nodes_; }
     const DMatrix<int, Eigen::RowMajor>& faces() const { return faces_; }
     const DMatrix<int, Eigen::RowMajor>& neighbors() const { return neighbors_; }
     const DMatrix<int, Eigen::RowMajor>& edges() const { return edges_; }
+    const DMatrix<int, Eigen::RowMajor>& face_to_edges() const { return face_to_edges_; }
     const BinaryVector<Dynamic>& boundary_nodes() const { return nodes_markers_; }
     const BinaryVector<Dynamic>& boundary_edges() const { return edges_markers_; }
     int n_faces() const { return n_faces_; }
     int n_nodes() const { return n_nodes_; }
     int n_edges() const { return n_edges_; }
+    int n_boundary_nodes() const { return nodes_markers_.count(); }
+    int n_boundary_edges() const { return edges_markers_.count(); }
     SMatrix<2, N> range() const { return range_; }
     DVector<int> locate(const DMatrix<double>& points) const {
-        if (!point_locator_) point_locator_ = TreeSearch(*this);   // fallback to tree-based search strategy
+        if (!point_locator_) point_locator_ = TreeSearch<Triangulation<M, N>>(this);   // fallback
         return point_locator_.locate(points);
     }
   
     // iterators
     struct face_iterator {
        private:
-        using This = face_iterator;
-        const Triangulation* mesh_;
         int index_;   // current element
+        const Triangulation* mesh_;
+        FaceType f_;
        public:
-        face_iterator(const Triangulation* mesh, int index) : mesh_(mesh), index_(index) { }
-        This& operator++() {
+        using value_type        = FaceType;
+        using pointer           = const FaceType*;
+        using reference         = const FaceType&;
+        using size_type         = std::size_t;
+        using difference_type   = std::ptrdiff_t;
+        using iterator_category = std::forward_iterator_tag;
+
+        face_iterator(int index, const Triangulation* mesh) : index_(index), mesh_(mesh) {
+            if (index_ < mesh_->n_faces_) f_ = mesh_->face(index_);
+        }
+        reference operator*() const { return f_; }
+        pointer operator->() const { return &f_; }
+      
+        face_iterator& operator++() {
             ++index_;
+            if (index_ < mesh_->n_faces_) f_ = mesh_->face(index_);
             return *this;
         }
-        FaceType operator*() const { return mesh_->face(index_); }
-        friend bool operator!=(const This& lhs, const This& rhs) { return lhs.index_ != rhs.index_; }
-        friend bool operator==(const This& lhs, const This& rhs) { return lhs.index_ == rhs.index_; }
+        face_iterator operator++(int) {
+            face_iterator tmp(index_, this);
+            ++(*this);
+            return tmp;
+        }
+        friend bool operator!=(const face_iterator& lhs, const face_iterator& rhs) { return lhs.index_ != rhs.index_; }
+        friend bool operator==(const face_iterator& lhs, const face_iterator& rhs) { return lhs.index_ == rhs.index_; }
     };
-    face_iterator faces_begin() const { return face_iterator(this, 0); }
-    face_iterator faces_end() const { return face_iterator(this, n_faces_); }
+    face_iterator faces_begin() const { return face_iterator(0, this); }
+    face_iterator faces_end() const { return face_iterator(n_faces_, this); }
 
+  // edge iterator
+  
     struct boundary_node_iterator {
        private:
-        using This = boundary_node_iterator;
-        const Triangulation* mesh_;
         int index_;   // current boundary node
+        const Triangulation* mesh_;
        public:
-        boundary_node_iterator(const Triangulation* mesh, int index) : mesh_(mesh), index_(index) { }
+        using value_type        = int;
+        using pointer           = const int*;
+        using reference         = const int&;
+        using size_type         = std::size_t;
+        using difference_type   = std::ptrdiff_t;
+        using iterator_category = std::forward_iterator_tag;
+
+        boundary_node_iterator(int index, const Triangulation* mesh) : index_(index), mesh_(mesh) { }
+        reference operator*() const { return index_; }
+      
         boundary_node_iterator& operator++() {
             index_++;
-            // scan until all nodes have been visited or a boundary node is not found
-            for (; index_ < mesh_->n_nodes() && mesh_->is_on_boundary(index_) != true; ++index_);
+            for (; index_ < mesh_->n_nodes() && !mesh_->nodes_markers_[index_] != true; ++index_);
             return *this;
         }
-        int operator*() const { return index_; }   // ID of the boundary node
-        friend bool operator!=(const This& lhs, const This& rhs) { return lhs.index_ != rhs.index_; }
-        friend bool operator==(const This& lhs, const This& rhs) { return lhs.index_ == rhs.index_; }
+        boundary_node_iterator operator++(int) {
+            boundary_node_iterator tmp(index_, this);
+            ++(*this);
+            return tmp;
+        }
+        friend bool operator!=(const boundary_node_iterator& lhs, const boundary_node_iterator& rhs) {
+            return lhs.index_ != rhs.index_;
+        }
+        friend bool operator==(const boundary_node_iterator& lhs, const boundary_node_iterator& rhs) {
+            return lhs.index_ == rhs.index_;
+        }
     };
-    boundary_node_iterator boundary_nodes_begin() const { return boundary_node_iterator(this, 0); }
-    boundary_node_iterator boundary_nodes_end() const { return boundary_node_iterator(this, n_nodes_); }
+    boundary_node_iterator boundary_nodes_begin() const { return boundary_node_iterator(0, this); }
+    boundary_node_iterator boundary_nodes_end() const { return boundary_node_iterator(n_nodes_, this); }
 
     // geometrical view (e.g., as Simplex instances) of the boundary edges
     struct boundary_edge_iterator {
        private:
-        using This = boundary_edge_iterator;
-        const Triangulation* mesh_;
         int index_;   // current boundary face
-       public:
-        boundary_edge_iterator(const Triangulation* mesh, int index) : mesh_(mesh), index_(index) { }
-        boundary_edge_iterator& operator++() {
-            index_++;
-            for (; index_ < mesh_->n_edges() && mesh_->edges_markers_[index_]; ++index_);
-            return *this;
-        }
-        Simplex<local_dim - 1, embed_dim> operator*() const {
+        const Triangulation* mesh_;
+        EdgeType e_;
+        // fetch next boundary edge and construct
+        void next() {
+            for (; index_ < mesh_->n_edges_ && !mesh_->edges_markers_[index_]; ++index_);
+            if (index_ == mesh_->n_edges_) return;
             SMatrix<embed_dim, local_dim> coords;
             for (int i = 0; i < local_dim; ++i) { coords.col(i) = mesh_->nodes_.row(mesh_->edges_(index_, i)); }
-            return Simplex<local_dim - 1, embed_dim>(coords);
-        };
-        friend bool operator!=(const This& lhs, const This& rhs) { return lhs.index_ != rhs.index_; }
-        friend bool operator==(const This& lhs, const This& rhs) { return lhs.index_ == rhs.index_; }
+            e_ = EdgeType(coords);
+	    index_++;
+        }
+       public:
+        using value_type        = EdgeType;
+        using pointer           = const EdgeType*;
+        using reference         = const EdgeType&;
+        using size_type         = std::size_t;
+        using difference_type   = std::ptrdiff_t;
+        using iterator_category = std::forward_iterator_tag;
+
+        boundary_edge_iterator(int index, const Triangulation* mesh) : index_(index), mesh_(mesh) { next(); }
+        reference operator*() const { return e_; }
+        pointer operator->() const { return &e_; }
+
+        boundary_edge_iterator& operator++() {
+            next();
+            return *this;
+        }
+        boundary_edge_iterator operator++(int) {
+            boundary_edge_iterator tmp(index_, this);
+            ++(*this);
+            return tmp;
+        }
+        friend bool operator!=(const boundary_edge_iterator& lhs, const boundary_edge_iterator& rhs) {
+            return lhs.index_ != rhs.index_;
+        }
+        friend bool operator==(const boundary_edge_iterator& lhs, const boundary_edge_iterator& rhs) {
+            return lhs.index_ == rhs.index_;
+        }
     };
-    boundary_edge_iterator boundary_edges_begin() const { return boundary_edge_iterator(this, 0); }
-    boundary_edge_iterator boundary_edges_end() const { return boundary_edge_iterator(this, n_edges_); }
+    boundary_edge_iterator boundary_edges_begin() const { return boundary_edge_iterator(0, this); }
+    boundary_edge_iterator boundary_edges_end() const { return boundary_edge_iterator(n_edges_, this); }
   
     // setters
     template <typename PointLocation_> void set_point_locator(PointLocation_&& point_locator) {
@@ -221,8 +275,9 @@ template <int M, int N> class Triangulation {
    protected:
     DMatrix<double> nodes_ {};                         // physical coordinates of mesh's vertices
     DMatrix<int, Eigen::RowMajor> faces_ {};           // nodes (as row indexes in nodes_ matrix) composing each face
-    DMatrix<int, Eigen::RowMajor> edges_ {};           // nodes composing each edge
+    DMatrix<int, Eigen::RowMajor> edges_ {};           // nodes (as row indexes in nodes_ matrix) composing each edge
     DMatrix<int, Eigen::RowMajor> neighbors_ {};       // ids of faces adjacent to a given face (-1 if no adjacent face)
+    DMatrix<int, Eigen::RowMajor> face_to_edges_ {};   // ids of edges composing each face
     BinaryVector<fdapde::Dynamic> nodes_markers_ {};   // j-th element is 1 \iff node j is on boundary
     BinaryVector<fdapde::Dynamic> edges_markers_ {};   // j-th element is 1 \iff edge j is on boundary
     SMatrix<2, N> range_ {};                           // mesh bounding box (column i maps to the i-th dimension)
@@ -234,8 +289,7 @@ template <int M, int N> class Triangulation {
 template <> class Triangulation<1, 1> {
    public:
     using NeighborsContainerType = DMatrix<int>;
-    using MeshType = Triangulation<1, 1>;
-    using FaceType = Element<MeshType>;
+    using FaceType = Element<Triangulation<1, 1>>;
     // compile time informations
     static constexpr int local_dim = 1;
     static constexpr int embed_dim = 1;
@@ -285,9 +339,9 @@ template <> class Triangulation<1, 1> {
         return cache_[ID];
     }
     SVector<1> node(int ID) const { return SVector<1>(nodes_[ID]); }
-    bool is_on_boundary(int ID) const { return (ID == 0 || ID == (n_nodes_ - 1)); }
+    bool is_node_on_boundary(int ID) const { return (ID == 0 || ID == (n_nodes_ - 1)); }
     const DVector<double>& nodes() const { return nodes_; }
-    const DMatrix<int, Eigen::RowMajor>& elements() const { return elements_; }
+    const DMatrix<int, Eigen::RowMajor>& faces() const { return elements_; }
     const DMatrix<int>& neighbors() const { return neighbors_; }
     const DMatrix<int>& boundary() const { return boundary_; }
     int n_elements() const { return n_elements_; }

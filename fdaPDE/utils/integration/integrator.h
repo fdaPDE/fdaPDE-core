@@ -51,8 +51,8 @@ template <int LocalDim, int Order> class Integrator<FEM, LocalDim, Order> {
                 value += f(p) * integration_table_.weights[iq];
             } else {
                 // as a fallback we assume f given as vector with the assumption that
-                // f[integration_table_.num_nodes*e.ID() + iq] equals the discretized field at the iq-th quadrature node
-                value += f(integration_table_.num_nodes * e.ID() + iq, 0) * integration_table_.weights[iq];
+                // f[integration_table_.num_nodes*e.id() + iq] equals the discretized field at the iq-th quadrature node
+                value += f(integration_table_.num_nodes * e.id() + iq, 0) * integration_table_.weights[iq];
             }
         }
         // correct for measure of domain (element e)
@@ -79,8 +79,8 @@ template <int LocalDim, int Order> class Integrator<FEM, LocalDim, Order> {
                 value += (f(Jp) * Phi(p)) * integration_table_.weights[iq];
             } else {
                 // as a fallback we assume f given as vector of values with the assumption that
-                // f[integration_table_.num_nodes*e.ID() + iq] equals the discretized field at the iq-th quadrature node
-                value += (f(integration_table_.num_nodes * e.ID() + iq, 0) * Phi(p)) * integration_table_.weights[iq];
+                // f[integration_table_.num_nodes*e.id() + iq] equals the discretized field at the iq-th quadrature node
+                value += (f(integration_table_.num_nodes * e.id() + iq, 0) * Phi(p)) * integration_table_.weights[iq];
             }
         }
         // correct for measure of domain (element e)
@@ -95,7 +95,7 @@ template <int LocalDim, int Order> class Integrator<FEM, LocalDim, Order> {
             const SVector<MeshType::local_dim>& p = integration_table_.nodes[iq];
             if constexpr (std::remove_reference<L>::type::is_space_varying) {
                 // space-varying case: forward the quadrature node index to non constant coefficients
-                f.forward(integration_table_.num_nodes * e.ID() + iq);
+                f.forward(integration_table_.num_nodes * e.id() + iq);
             }
             value += f(p) * integration_table_.weights[iq];
         }
@@ -111,7 +111,7 @@ template <int LocalDim, int Order> class Integrator<FEM, LocalDim, Order> {
         for (const auto& e : m) {
             // for each quadrature node, map it onto the physical element e and store it
             for (size_t iq = 0; iq < integration_table_.num_nodes; ++iq) {
-                quadrature_nodes.row(integration_table_.num_nodes * e.ID() + iq) =
+                quadrature_nodes.row(integration_table_.num_nodes * e.id() + iq) =
                   e.J() * SVector<LocalDim>(integration_table_.nodes[iq].data()) + e.vertex(0);
             }
         }
@@ -155,7 +155,7 @@ template <int Order> class Integrator<SPLINE, 1, Order> {
         for (const auto& e : m) {
             // for each quadrature node, map it onto the physical element e and store it
             for (size_t iq = 0; iq < integration_table_.num_nodes; ++iq) {
-                quadrature_nodes.row(integration_table_.num_nodes * e.ID() + iq) =
+                quadrature_nodes.row(integration_table_.num_nodes * e.id() + iq) =
                   ((e.vertex(1) - e.vertex(0)) / 2) * integration_table_.nodes[iq][0] +
                   ((e.vertex(1) + e.vertex(0)) / 2);
             }

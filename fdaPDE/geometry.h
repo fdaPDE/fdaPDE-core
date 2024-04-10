@@ -20,7 +20,7 @@
 #include "geometry/triangulation.h"
 #include "geometry/element.h"
 #include "geometry/hyperplane.h"
-// #include "geometry/voronoi.h"
+#include "geometry/voronoi.h"
 #include "geometry/kd_tree.h"
 #include "geometry/walk_search.h"
 #include "geometry/tree_search.h"

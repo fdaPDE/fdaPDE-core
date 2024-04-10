@@ -38,11 +38,11 @@ template <typename MeshType> class TreeSearch {
         // the i-th row of data contains the bounding box of the i-th element, stored as the vector [lower-left,
         // upper-right] corner. This moves each element to a point in R^{2N}
         DMatrix<double> data;
-        data.resize(mesh_->n_elements(), 2 * embed_dim);
+        data.resize(mesh_->n_faces(), 2 * embed_dim);
         for (int dim = 0; dim < embed_dim; ++dim) { c_[dim] = 1.0 / (mesh_->range()(1, dim) - mesh_->range()(0, dim)); }
         int i = 0;
-        for (const auto& e : *mesh_) {
-            std::pair<SVector<embed_dim>, SVector<embed_dim>> bbox = e.bounding_box();
+        for (typename MeshType::face_iterator it = mesh_->faces_begin(); it != mesh_->faces_end(); ++it) {
+            std::pair<SVector<embed_dim>, SVector<embed_dim>> bbox = it->bounding_box();
             // unit hypercube point scaling
             data.row(i).leftCols(embed_dim)  = (bbox.first  - mesh_->range().row(0).transpose()).array() * c_.array();
             data.row(i).rightCols(embed_dim) = (bbox.second - mesh_->range().row(0).transpose()).array() * c_.array();
@@ -51,7 +51,7 @@ template <typename MeshType> class TreeSearch {
         tree_ = KDTree<2 * embed_dim>(std::move(data));   // organize elements in a KD-tree structure
     }
     // finds element containing p, returns nullptr if element not found
-    const typename MeshType::ElementType* locate(const SVector<embed_dim>& p) const {
+    int locate(const SVector<embed_dim>& p) const {
         // build search query
         SVector<embed_dim> scaled_p = (p - mesh_->range().row(0).transpose()).array() * c_.array();
         SVector<2 * embed_dim> ll, ur;
@@ -60,10 +60,16 @@ template <typename MeshType> class TreeSearch {
         auto found = tree_.range_search({ll, ur});
         // exhaustively scan the query results to get the searched mesh element
         for (int id : found) {
-            auto element = mesh_->element(id);
-            if (element.contains(p)) { return &mesh_->element(id); }
+            typename MeshType::FaceType element = mesh_->face(id);
+            if (element.contains(p)) { return element.id(); }
         }
-        return nullptr;   // no element found
+        return -1;   // no element found
+    }
+    DVector<int> locate(const DMatrix<double>& locs) const {
+        fdapde_assert(locs.cols() == embed_dim);
+        DVector<int> ids(locs.rows());
+        for (int i = 0; i < locs.rows(); ++i) { ids[i] = locate(SVector<embed_dim>(locs.row(i))); }
+        return ids;
     }
 };
 

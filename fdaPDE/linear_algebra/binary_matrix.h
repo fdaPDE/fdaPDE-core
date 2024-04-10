@@ -108,8 +108,10 @@ template <int Rows, int Cols = Rows> class BinaryMatrix : public BinMtxBase<Rows
     }
 
     template <int Rows_ = Rows, int Cols_ = Cols>
-    typename std::enable_if<Rows_ == Dynamic && Cols_ == Dynamic, void>::type
+    typename std::enable_if<Rows_ == Dynamic || Cols_ == Dynamic, void>::type
     resize(int rows, int cols) {
+        fdapde_assert(
+          (Rows_ == Dynamic || (Rows_ == 1 && rows == 1)) && (Cols_ == Dynamic || (Cols_ == 1 && cols == 1)));
         n_rows_ = rows;
         n_cols_ = cols;
         Base::n_bitpacks_ = 1 + std::ceil((n_rows_ * n_cols_) / PackSize);

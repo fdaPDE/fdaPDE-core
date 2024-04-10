@@ -120,12 +120,6 @@ template <int K> class KDTree {
     // solves a (rectangular) range query in a K-dimensional euclidean space
     struct RangeType {
         SVector<K> ll, ur;   // lower-left and upper-right corner
-        RangeType(const SVector<K>& ll_, const SVector<K>& ur_) : ll(ll_), ur(ur_) {
-            bool WELL_FORMED_QUERY = true;
-            for (int i = 0; i < K; ++i)
-                if (ll[i] > ur[i]) WELL_FORMED_QUERY = false;
-            fdapde_assert(WELL_FORMED_QUERY);
-        }
     };
     // returns a set of iterators to the nodes contained in the query
     std::unordered_set<int> range_search(const RangeType& query) const {

@@ -40,18 +40,7 @@ template <int Order_, int EmbedDim_> class Simplex {
     using FaceType = Simplex<Order_ - 1, EmbedDim_>;
 
     Simplex() = default;
-    explicit Simplex(const SMatrix<embed_dim, Order_ + 1>& coords) : coords_(coords) {
-        for (int j = 0; j < local_dim; ++j) { J_.col(j) = coords_.col(j + 1) - coords_.col(0); }
-        if constexpr (embed_dim == local_dim) {
-            invJ_ = J_.inverse();
-            measure_ = std::abs(J_.determinant()) / (ct_factorial(local_dim));
-        } else {   // generalized Penrose inverse for manifolds
-            invJ_ = (J_.transpose() * J_).inverse() * J_.transpose();
-            if constexpr (local_dim == 2) measure_ = 0.5 * J_.col(0).cross(J_.col(1)).norm();
-            if constexpr (local_dim == 1) measure_ = J_.col(0).norm();
-            if constexpr (local_dim == 0) measure_ = 0;   // points have zero measure
-        }
-    }
+    explicit Simplex(const SMatrix<embed_dim, Order_ + 1>& coords) : coords_(coords) { initialize(); }
     // unit simplex constructor
     static Simplex<Order_, EmbedDim_> Unit() {
         SMatrix<embed_dim, Order_ + 1> coords;
@@ -176,6 +165,19 @@ template <int Order_, int EmbedDim_> class Simplex {
     face_iterator face_begin() const { return face_iterator(0, this); }
     face_iterator face_end() const { return face_iterator(n_faces, this); }
    protected:
+    void initialize() {
+        for (int j = 0; j < local_dim; ++j) { J_.col(j) = coords_.col(j + 1) - coords_.col(0); }
+        if constexpr (embed_dim == local_dim) {
+            invJ_ = J_.inverse();
+            measure_ = std::abs(J_.determinant()) / (ct_factorial(local_dim));
+        } else {   // generalized Penrose inverse for manifolds
+            invJ_ = (J_.transpose() * J_).inverse() * J_.transpose();
+            if constexpr (local_dim == 2) measure_ = 0.5 * J_.col(0).cross(J_.col(1)).norm();
+            if constexpr (local_dim == 1) measure_ = J_.col(0).norm();
+            if constexpr (local_dim == 0) measure_ = 0;   // points have zero measure
+        }
+    }
+
     SMatrix<embed_dim, n_vertices> coords_;
     mutable std::optional<HyperPlane<local_dim, embed_dim>> plane_;
     double measure_;
