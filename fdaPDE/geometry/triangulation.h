@@ -33,7 +33,7 @@ namespace fdapde {
 namespace core {
 
 // face-based storage
-template <int M, int N> class Triangulation {
+  template <int M, int N, template <typename> typename LocationPolicy_ = TreeSearch> class Triangulation {
    public:
     static constexpr int local_dim = M;
     static constexpr int embed_dim = N;
@@ -46,12 +46,7 @@ template <int M, int N> class Triangulation {
     using FaceType = Element<Triangulation<local_dim, embed_dim>>;
     using EdgeType = typename FaceType::FaceType;
     using VertexType = SVector<embed_dim>;
-    // type-erasure wrapper for point location strategy
-    struct PointLocation__ {
-        template <typename T>
-        using fn_ptrs = mem_fn_ptrs<static_cast<DVector<int> (T::*)(const DMatrix<double>&) const>(&T::locate)>;
-        DVector<int> locate(const DMatrix<double>& points) const { return invoke<DVector<int>, 0>(*this, points); }
-    };
+    using LocationPolicy = LocationPolicy_<Triangulation<M, N>>;
 
     Triangulation() = default;
     Triangulation(const DMatrix<double>& nodes, const DMatrix<int>& faces, const DMatrix<int>& boundary)
@@ -144,134 +139,94 @@ template <int M, int N> class Triangulation {
     int n_boundary_nodes() const { return nodes_markers_.count(); }
     int n_boundary_edges() const { return edges_markers_.count(); }
     SMatrix<2, N> range() const { return range_; }
+
+    // point location
     DVector<int> locate(const DMatrix<double>& points) const {
-        if (!point_locator_) point_locator_ = TreeSearch<Triangulation<M, N>>(this);   // fallback
-        return point_locator_.locate(points);
+        if (!point_locator_.has_value()) point_locator_ = LocationPolicy(this);
+        return point_locator_->locate(points);
     }
   
     // iterators
-    struct face_iterator {
-       private:
-        int index_;   // current element
+    class face_iterator : public index_based_iterator<face_iterator, FaceType> {
+        using Base = index_based_iterator<face_iterator, FaceType>;
+        using Base::index_;
         const Triangulation* mesh_;
-        FaceType f_;
        public:
-        using value_type        = FaceType;
-        using pointer           = const FaceType*;
-        using reference         = const FaceType&;
-        using size_type         = std::size_t;
-        using difference_type   = std::ptrdiff_t;
-        using iterator_category = std::forward_iterator_tag;
-
-        face_iterator(int index, const Triangulation* mesh) : index_(index), mesh_(mesh) {
-            if (index_ < mesh_->n_faces_) f_ = mesh_->face(index_);
+        face_iterator(int index, const Triangulation* mesh) : Base(index), mesh_(mesh) {
+            if (index_ < mesh_->n_faces_) this->val_ = mesh_->face(index_);
         }
-        reference operator*() const { return f_; }
-        pointer operator->() const { return &f_; }
-      
         face_iterator& operator++() {
             ++index_;
-            if (index_ < mesh_->n_faces_) f_ = mesh_->face(index_);
+            if (index_ < mesh_->n_faces_) this->val_ = mesh_->face(index_);
             return *this;
         }
-        face_iterator operator++(int) {
-            face_iterator tmp(index_, this);
-            ++(*this);
-            return tmp;
+        face_iterator& operator--() {
+            --index_;
+            if (index_ >= 0) this->val_ = mesh_->face(index_);
+            return *this;
         }
-        friend bool operator!=(const face_iterator& lhs, const face_iterator& rhs) { return lhs.index_ != rhs.index_; }
-        friend bool operator==(const face_iterator& lhs, const face_iterator& rhs) { return lhs.index_ == rhs.index_; }
     };
     face_iterator faces_begin() const { return face_iterator(0, this); }
     face_iterator faces_end() const { return face_iterator(n_faces_, this); }
 
   // edge iterator
   
-    struct boundary_node_iterator {
-       private:
-        int index_;   // current boundary node
+    class boundary_node_iterator : public index_based_iterator<boundary_node_iterator, int> {
+        using Base = index_based_iterator<boundary_node_iterator, int>;
+        using Base::index_;
         const Triangulation* mesh_;
+        void next_() {
+            for (; index_ < mesh_->n_nodes_ && !mesh_->nodes_markers_[index_] != true; ++index_);
+            this->val_ = index_;
+        }
        public:
-        using value_type        = int;
-        using pointer           = const int*;
-        using reference         = const int&;
-        using size_type         = std::size_t;
-        using difference_type   = std::ptrdiff_t;
-        using iterator_category = std::forward_iterator_tag;
-
-        boundary_node_iterator(int index, const Triangulation* mesh) : index_(index), mesh_(mesh) { }
-        reference operator*() const { return index_; }
-      
+        boundary_node_iterator(int index, const Triangulation* mesh) : Base(index), mesh_(mesh) { next_(); }
         boundary_node_iterator& operator++() {
             index_++;
-            for (; index_ < mesh_->n_nodes() && !mesh_->nodes_markers_[index_] != true; ++index_);
+	    next_();
             return *this;
         }
-        boundary_node_iterator operator++(int) {
-            boundary_node_iterator tmp(index_, this);
-            ++(*this);
-            return tmp;
-        }
-        friend bool operator!=(const boundary_node_iterator& lhs, const boundary_node_iterator& rhs) {
-            return lhs.index_ != rhs.index_;
-        }
-        friend bool operator==(const boundary_node_iterator& lhs, const boundary_node_iterator& rhs) {
-            return lhs.index_ == rhs.index_;
+        face_iterator& operator--() {
+            --index_;
+	    for (; index_ >= 0 && !mesh_->nodes_markers_[index_] != true; --index_);
+	    this->val_ = index_;
+            return *this;
         }
     };
     boundary_node_iterator boundary_nodes_begin() const { return boundary_node_iterator(0, this); }
     boundary_node_iterator boundary_nodes_end() const { return boundary_node_iterator(n_nodes_, this); }
 
     // geometrical view (e.g., as Simplex instances) of the boundary edges
-    struct boundary_edge_iterator {
-       private:
-        int index_;   // current boundary face
+    class boundary_edge_iterator : public index_based_iterator<boundary_edge_iterator, EdgeType> {
+        using Base = index_based_iterator<boundary_edge_iterator, EdgeType>;
+        using Base::index_;
         const Triangulation* mesh_;
-        EdgeType e_;
-        // fetch next boundary edge and construct
-        void next() {
-            for (; index_ < mesh_->n_edges_ && !mesh_->edges_markers_[index_]; ++index_);
-            if (index_ == mesh_->n_edges_) return;
+        void construct_edge_() {
             SMatrix<embed_dim, local_dim> coords;
             for (int i = 0; i < local_dim; ++i) { coords.col(i) = mesh_->nodes_.row(mesh_->edges_(index_, i)); }
-            e_ = EdgeType(coords);
+            this->val_ = EdgeType(coords);
+        }
+        // fetch next boundary edge
+        void next_() {
+            for (; index_ < mesh_->n_edges_ && !mesh_->edges_markers_[index_]; ++index_);
+            if (index_ == mesh_->n_edges_) return;
+	    construct_edge_();
 	    index_++;
         }
        public:
-        using value_type        = EdgeType;
-        using pointer           = const EdgeType*;
-        using reference         = const EdgeType&;
-        using size_type         = std::size_t;
-        using difference_type   = std::ptrdiff_t;
-        using iterator_category = std::forward_iterator_tag;
-
-        boundary_edge_iterator(int index, const Triangulation* mesh) : index_(index), mesh_(mesh) { next(); }
-        reference operator*() const { return e_; }
-        pointer operator->() const { return &e_; }
-
-        boundary_edge_iterator& operator++() {
-            next();
+        boundary_edge_iterator(int index, const Triangulation* mesh) : Base(index), mesh_(mesh) { next_(); }
+        boundary_edge_iterator& operator++() { next_(); return *this; }
+        boundary_edge_iterator& operator--() {
+	    // fetch previous boundary edge
+            for (; index_ >= 0 && !mesh_->edges_markers_[index_]; --index_);
+            if (index_ == -1) return *this;
+            construct_edge_();
+            index_--;
             return *this;
-        }
-        boundary_edge_iterator operator++(int) {
-            boundary_edge_iterator tmp(index_, this);
-            ++(*this);
-            return tmp;
-        }
-        friend bool operator!=(const boundary_edge_iterator& lhs, const boundary_edge_iterator& rhs) {
-            return lhs.index_ != rhs.index_;
-        }
-        friend bool operator==(const boundary_edge_iterator& lhs, const boundary_edge_iterator& rhs) {
-            return lhs.index_ == rhs.index_;
-        }
+	}
     };
     boundary_edge_iterator boundary_edges_begin() const { return boundary_edge_iterator(0, this); }
     boundary_edge_iterator boundary_edges_end() const { return boundary_edge_iterator(n_edges_, this); }
-  
-    // setters
-    template <typename PointLocation_> void set_point_locator(PointLocation_&& point_locator) {
-        point_locator_ = point_locator;
-    }
    protected:
     DMatrix<double> nodes_ {};                         // physical coordinates of mesh's vertices
     DMatrix<int, Eigen::RowMajor> faces_ {};           // nodes (as row indexes in nodes_ matrix) composing each face
@@ -280,9 +235,9 @@ template <int M, int N> class Triangulation {
     DMatrix<int, Eigen::RowMajor> face_to_edges_ {};   // ids of edges composing each face
     BinaryVector<fdapde::Dynamic> nodes_markers_ {};   // j-th element is 1 \iff node j is on boundary
     BinaryVector<fdapde::Dynamic> edges_markers_ {};   // j-th element is 1 \iff edge j is on boundary
-    SMatrix<2, N> range_ {};                           // mesh bounding box (column i maps to the i-th dimension)
+    SMatrix<2, embed_dim> range_ {};                   // mesh bounding box (column i maps to the i-th dimension)
     int n_nodes_ = 0, n_faces_ = 0, n_edges_ = 0;
-    mutable erase<heap_storage, PointLocation__> point_locator_ {};
+    mutable std::optional<LocationPolicy> point_locator_ {};
 };
 
 // template specialization for 1D meshes (bounded intervals)

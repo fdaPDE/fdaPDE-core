@@ -17,8 +17,8 @@
 #ifndef __MESH_UTILS_H__
 #define __MESH_UTILS_H__
 
-#include "../utils/symbols.h"
 #include "../utils/combinatorics.h"
+#include "../utils/symbols.h"
 
 namespace fdapde {
 namespace core {
@@ -39,14 +39,66 @@ DEFINE_MESH_TYPE_DETECTION_TRAIT(1, 2, network);   // is_network<M, N>
 DEFINE_MESH_TYPE_DETECTION_TRAIT(2, 2, 2d);        // is_2d<M, N>
 DEFINE_MESH_TYPE_DETECTION_TRAIT(2, 3, surface);   // is_surface<M, N>
 DEFINE_MESH_TYPE_DETECTION_TRAIT(3, 3, 3d);        // is_3d<M, N>
-  
-// number of degrees of freedom associated to an M-dimensional element of degree R
-constexpr int ct_nnodes(const int M, const int R) {
-    return ct_factorial(M + R) / (ct_factorial(M) * ct_factorial(R));
-}
+
+constexpr int ct_nnodes(const int M, const int R) { return ct_factorial(M + R) / (ct_factorial(M) * ct_factorial(R)); }
 constexpr int ct_nvertices(const int M) { return M + 1; }
 constexpr int ct_nedges(const int M) { return (M * (M + 1)) / 2; }
 constexpr int ct_nneighbors(const int M) { return (M == 1) ? fdapde::Dynamic : (M + 1); }
+
+// sorts a range of points in clockwise order around their geometrical center
+template <typename T> struct clockwise_order {
+   private:
+    T c_ {};
+   public:
+    clockwise_order(const T& c) : c_(c) { }
+    bool operator()(const T& a, const T& b) {
+        if (a[0] - c_[0] >= 0 && b[0] - c_[0] < 0) return true;
+        if (b[0] - c_[0] >= 0 && a[0] - c_[0] < 0) return false;
+        if (a[0] - c_[0] == 0 && b[0] - c_[0] == 0) {
+            return (a[1] - c_[1] >= 0 || b[1] - c_[1] >= 0) ? a[1] > b[1] : b[1] > a[1];
+        }
+        // check sign of the cross product of vectors CA and CB
+        double aXb_sign = (a[0] - c_[0]) * (b[1] - c_[1]) - (b[0] - c_[0]) * (a[1] - c_[1]);
+        if (aXb_sign < 0) return true;
+        if (aXb_sign > 0) return false;
+        // points a and b are on the same line from the center, sort wrt distance from the center
+        return (a - c_).squaredNorm() > (b - c_).squaredNorm();
+    }
+};
+
+template <typename Iterator, typename ValueType> class index_based_iterator {
+   protected:
+    using This = index_based_iterator<Iterator, ValueType>;
+    int index_;
+    ValueType val_;
+   public:
+    using value_type        = ValueType;
+    using pointer           = const ValueType*;
+    using reference         = const ValueType&;
+    using size_type         = std::size_t;
+    using difference_type   = std::ptrdiff_t;
+    using iterator_category = std::bidirectional_iterator_tag;
+
+    index_based_iterator(int index) : index_(index) { }
+    reference operator*() const { return val_; }
+    pointer operator->() const { return &val_; }
+
+    Iterator operator++(int) {
+        Iterator tmp(index_, static_cast<Iterator*>(this));
+        ++(static_cast<Iterator&>(*this));
+        return tmp;
+    }
+    Iterator operator--(int) {
+        Iterator tmp(index_, static_cast<Iterator*>(this));
+        --(static_cast<Iterator&>(*this));
+        return tmp;
+    }
+    Iterator& operator++() { return ++static_cast<Iterator&>(*this); }
+    Iterator& operator--() { return --static_cast<Iterator&>(*this); }
+
+    friend bool operator!=(const This& lhs, const This& rhs) { return lhs.index_ != rhs.index_; }
+    friend bool operator==(const This& lhs, const This& rhs) { return lhs.index_ == rhs.index_; }
+};
 
 }   // namespace core
 }   // namespace fdapde
