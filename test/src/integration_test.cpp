@@ -125,10 +125,35 @@ TYPED_TEST(quadrature_rules_test, check_correctness) {
 }
 
 // test integration over Dirichlet boundary
+TEST(integration_test, integrate_over_Dirichlet_boundary_1D_order1) {
+    // load sample mesh
+    Mesh1D domain(0.0, 1.0, 10);
+    Integrator<FEM, 1, 1> integrator {};
+    // Binary matrix defining the type of boundary
+    auto M = BinaryMatrix<Dynamic>::Ones(domain.n_nodes(), 1);  // all ones means a fully Dirichlet boundary
+    // define field to integrate
+    std::function<double(SVector<1>)> f = [](SVector<1> x) -> double { return 1; };
+    EXPECT_TRUE(almost_equal(2.0, integrator.integrate_on_boundary_Dirichlet(domain, f, M)));
+}
+
+// test integration over Dirichlet boundary
+TEST(integration_test, integrate_over_Dirichlet_boundary_15D_order1) {
+    // load sample mesh
+    MeshLoader<NetworkMesh> domain("network");
+    Integrator<FEM, 1, 1> integrator {};
+    // Binary matrix defining the type of boundary
+    auto M = BinaryMatrix<Dynamic>::Ones(domain.mesh.n_nodes(), 1);  // all ones means a fully Dirichlet boundary
+    // define field to integrate
+    std::function<double(SVector<2>)> f = [](SVector<2> x) -> double { return 1; };
+    EXPECT_TRUE(almost_equal(2.0, integrator.integrate_on_boundary_Dirichlet(domain.mesh, f, M)));
+}
+
+// test integration over Dirichlet boundary
 TEST(integration_test, integrate_over_Dirichlet_boundary_2D_order1) {
     // load sample mesh
     MeshLoader<Mesh2D> domain("unit_square_16");
     Integrator<FEM, 2, 1> integrator {};
+    // Binary matrix defining the type of boundary
     auto M = BinaryMatrix<Dynamic>::Ones(domain.mesh.n_nodes(), 1);  // all ones means a fully Dirichlet boundary
     // define field to integrate
     std::function<double(SVector<2>)> f = [](SVector<2> x) -> double { return 1; };
@@ -136,10 +161,23 @@ TEST(integration_test, integrate_over_Dirichlet_boundary_2D_order1) {
 }
 
 // test integration over Neumann boundary
+TEST(integration_test, integrate_over_Neumann_boundary_surface_order1) {
+    // load sample mesh
+    MeshLoader<SurfaceMesh> domain("square_surface");
+    Integrator<FEM, 2, 1> integrator {};
+    // Binary matrix defining the type of boundary
+    auto M = BinaryMatrix<Dynamic>(domain.mesh.n_nodes(), 1);  // all zero means a fully Neumann boundary
+    // define field to integrate
+    std::function<double(SVector<3>)> f = [](SVector<3> x) -> double { return 1.; };
+    EXPECT_TRUE(almost_equal(4.0, integrator.integrate_on_boundary_Neumann(domain.mesh, f, M)));
+}
+
+// test integration over Neumann boundary
 TEST(integration_test, integrate_over_Neumann_boundary_3D_order1) {
     // load sample mesh
-    MeshLoader<Mesh3D> domain("unit_cube");
+    MeshLoader<Mesh3D> domain("unit_cube_14");
     Integrator<FEM, 3, 1> integrator {};
+    // Binary matrix defining the type of boundary
     auto M = BinaryMatrix<Dynamic>(domain.mesh.n_nodes(), 1);  // all zero means a fully Neumann boundary
     // define field to integrate
     std::function<double(SVector<3>)> f = [](SVector<3> x) -> double { return 1.; };
@@ -152,16 +190,14 @@ TEST(integration_test, integrate_over_Neumann_boundary_phi_2D_order2) {
     MeshLoader<Mesh2D> domain("unit_square_16");
     Integrator<FEM, 2, 2> integrator {};
     LagrangianBasis<decltype(domain.mesh), 1> basis(domain.mesh);
-
-    auto phiExpr = [](SVector<1> x) -> double { return 1.; };
-    ScalarField<1> phi(phiExpr);
-
+    // Binary matrix defining the type of boundary
     auto M = BinaryMatrix<Dynamic>(domain.mesh.n_nodes(), 1);  // all zero means a fully Neumann boundary
 
-    // define field to integrate
-    // auto fieldExpr = [](SVector<2> x) -> double { return 1.; };
-    // ScalarField<2> f(fieldExpr);
-    DVector<double> f(192);
-    for (size_t j=0; j<192; ++j) f[j] = 1.;
+    // define the fields (we want to integrate f*phi)
+    auto phiExpr = [](SVector<1> x) -> double { return 1.; };
+    ScalarField<1> phi(phiExpr);
+    auto fieldExpr = [](SVector<2> x) -> double { return 1.; };
+    ScalarField<2> f(fieldExpr);
+
     EXPECT_TRUE(almost_equal(4.0, integrator.integrate_on_boundary_Neumann(domain.mesh, f, M, phi)));
 }

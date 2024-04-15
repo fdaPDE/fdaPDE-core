@@ -180,7 +180,35 @@ template <typename DomainType, int order> class LagrangianBasis {
 template <typename DomainType, int order> 
 void LagrangianBasis<DomainType, order>::enumerate_dofs() {
     if (size_ != 0) return;   // return early if dofs already computed
-    if constexpr (R == 1) {
+
+    if constexpr (M == 1) {
+      size_ = domain_->n_nodes();
+      dofs_ = domain_->elements();
+
+      boundary_dofs_ = DMatrix<int>::Zero(size_, 1);
+      boundary_dofs_Dirichlet_ = DMatrix<int>::Zero(size_, 1);
+      boundary_dofs_Neumann_ = DMatrix<int>::Zero(size_, 1);
+      for (int ID = 0; ID < domain_->n_nodes(); ++ID) {
+        if (domain_->is_on_boundary(ID)) {
+            boundary_dofs_(ID, 0) = 1;
+            if (BMtrx_(ID,0)) boundary_dofs_Dirichlet_(ID,0) = 1;
+            else boundary_dofs_Neumann_(ID,0) = 1;
+        }
+      }
+
+      // build dof_boundary_table_
+      int n_boundary_nodes = 0;
+      if constexpr (DomainType::embedding_dimension == 1) n_boundary_nodes = domain_->n_nodes_on_boundary();
+      else n_boundary_nodes = domain_->n_facets_on_boundary();
+      dof_boundary_table_.resize(n_boundary_nodes, 1);
+      size_t boundary_node_ID = 0;  // index to count the facets on boundary
+      for (int ID = 0; ID < domain_->n_nodes(); ++ID) {
+        if (domain_->is_on_boundary(ID)){
+            dof_boundary_table_(boundary_node_ID, 0) = ID;
+            boundary_node_ID++;
+        }
+      }
+    } else if constexpr (R == 1) {
       size_ = domain_->n_nodes();
       dofs_ = domain_->elements();
       boundary_dofs_ = domain_->boundary();

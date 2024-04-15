@@ -47,6 +47,7 @@ template <typename D, typename E, typename F, typename... Ts> class FEMSolverBas
     using FunctionalBasis = LagrangianBasis<DomainType, fem_order>;
     using ReferenceBasis = typename FunctionalBasis::ReferenceBasis;
     using Quadrature = typename ReferenceBasis::Quadrature;
+    using ForceQuadrature = Integrator<FEM, D::local_dimension, 2>;  // quadrature to assemble the force (higher grade)
     // constructor
     FEMSolverBase() = default;
     FEMSolverBase(const DomainType& domain) : basis_(domain) {}
@@ -57,6 +58,7 @@ template <typename D, typename E, typename F, typename... Ts> class FEMSolverBas
     const SpMatrix<double>& stiff() const { return stiff_; }
     const SpMatrix<double>& mass() const { return mass_; }
     const Quadrature& integrator() const { return integrator_; }
+    const ForceQuadrature& force_integrator() const { return force_integrator_; }
     const ReferenceBasis& reference_basis() const { return reference_basis_; }
     const FunctionalBasis& basis() const { return basis_; }
     std::size_t n_dofs() const { return n_dofs_; }   // number of degrees of freedom (FEM linear system's unknowns)
@@ -144,6 +146,7 @@ template <typename D, typename E, typename F, typename... Ts> class FEMSolverBas
     boundary_dofs_iterator_Neumann boundary_dofs_end_Neumann() const { return boundary_dofs_iterator_Neumann(this, n_dofs_); }
    protected:
     Quadrature integrator_ {};                   // default to a quadrature rule which is exact for the considered FEM order
+    ForceQuadrature force_integrator_ {};        // default to a quadrature rule which is of order 2
     FunctionalBasis basis_ {};                   // basis system defined over the pyhisical domain
     ReferenceBasis reference_basis_ {};          // function basis on the reference unit simplex
     DMatrix<double> solution_;                   // vector of coefficients of the approximate solution
@@ -171,35 +174,36 @@ void FEMSolverBase<D, E, F, Ts...>::init(const PDE& pde) {
     boundary_dofs_Dirichlet_ = basis_.boundary_dofs_Dirichlet();
     boundary_dofs_Neumann_ = basis_.boundary_dofs_Neumann();
     // assemble discretization matrix for given operator
-    Assembler<FEM, DomainType, ReferenceBasis, Quadrature> assembler(pde.domain(), integrator_, n_dofs_, dofs_);
+    Assembler<FEM, DomainType, ReferenceBasis, Quadrature> assembler_stiff(pde.domain(), integrator_, n_dofs_, dofs_);
     if constexpr(is_nonlinear<E>::value){
       if (is_empty(solution_)) solution_ = pde.initial_condition();
-      assembler.set_f(solution_.col(0));
+      assembler_stiff.set_f(solution_.col(0));
     }
-    stiff_ = assembler.discretize_operator(pde.differential_operator());
+    stiff_ = assembler_stiff.discretize_operator(pde.differential_operator());
     stiff_.makeCompressed();
     // assemble forcing vector
     std::size_t n = n_dofs_;   // degrees of freedom in space
     std::size_t m;             // number of time points
+    Assembler<FEM, DomainType, ReferenceBasis, ForceQuadrature> assembler_force(pde.domain(), force_integrator_, n_dofs_, dofs_);
     if constexpr (!std::is_base_of<ScalarBase, F>::value) {
         m = pde.forcing_data().cols();
         force_.resize(n * m, 1);
-        force_.block(0, 0, n, 1) = assembler.discretize_forcing(pde.forcing_data().col(0));
+        force_.block(0, 0, n, 1) = assembler_force.discretize_forcing(pde.forcing_data().col(0));
 
         // iterate over time steps if a space-time PDE is supplied
         if constexpr (is_parabolic<E>::value) {
             for (std::size_t i = 1; i < m; ++i) {
-                force_.block(n * i, 0, n, 1) = assembler.discretize_forcing(pde.forcing_data().col(i));
+                force_.block(n * i, 0, n, 1) = assembler_force.discretize_forcing(pde.forcing_data().col(i));
             }
         }
     } else {
         // TODO: support space-time callable forcing for parabolic problems
         m = 1;
         force_.resize(n * m, 1);
-        force_.block(0, 0, n, 1) = assembler.discretize_forcing(pde.forcing_data());
+        force_.block(0, 0, n, 1) = assembler_force.discretize_forcing(pde.forcing_data());
     }
     // compute mass matrix [mass]_{ij} = \int_{\Omega} \phi_i \phi_j
-    mass_ = assembler.discretize_operator(Reaction<FEM, double>(1.0));
+    mass_ = assembler_stiff.discretize_operator(Reaction<FEM, double>(1.0));
     is_init = true;
     return;
 }
@@ -237,64 +241,101 @@ void FEMSolverBase<D, E, F, Ts...>::set_neumann_bc(const PDE& pde, const G& g) {
     
     Assembler<FEM, DomainType, ReferenceBasis, Quadrature> assembler(pde.domain(), integrator_, n_dofs_, dofs_);
 
-
-    static constexpr int Mb = D::local_dimension - 1;
-    static constexpr int Nb = D::embedding_dimension;
-    static constexpr int Rb = basis_.R;
-    using FunctionalBasis = LagrangianBasis<Mesh<Mb,Nb>, Rb>;
-    using ReferenceBasis = typename FunctionalBasis::ReferenceBasis;
-
     // allocate space for result vector
     DVector<double> neumann_forcing {};
     neumann_forcing.resize(n_dofs_, 1);   // there are as many basis functions as degrees of freedom on the mesh
-    neumann_forcing.fill(0);           // init result vector to zero
-
-    ReferenceBasis boundary_reference_basis(ReferenceElement<Mb, Rb>::nodes);
-    static constexpr int Kb = standard_fem_quadrature_rule<Mb, Rb>::K;   // number of quadrature nodes for integration on the boundary
-    auto boundary_integration_table_ = IntegratorTable<Mb, Kb>();
-
+    neumann_forcing.fill(0);              // init result vector to zero
 
     std::size_t n = n_dofs_;   // degrees of freedom in space
     std::size_t m = 1;
     if constexpr (is_parabolic<E>::value) m = pde.forcing_data().cols();  // number of time points
 
-    // for each timestep
-    for (size_t k=0; k<m; k++){
+    int i;   // index we need to count the number of facets on the boundary
 
-        int i = -1;
-        // cycle over all mesh facets
-        for (auto it = pde.domain().facet_begin(); it != pde.domain().facet_end(); ++it) {
-            bool Neumann = false;  // to asses if a facet is a Neumann boundary one
-            // check if the facet is on boundary
-            if ((*it).on_boundary()) {
-                i++;
-                for (auto j = 0; j < (*it).node_ids().size(); ++j) if (!basis_.BMtrx()((*it).node_ids()[j], 0)) Neumann = true;
-                if (Neumann) {
-                    for (auto jj=0; jj<boundary_reference_basis.n_basis; ++jj){
+    if constexpr(D::local_dimension ==1) {
+        // for each timestep
+        for (std::size_t k=0; k<m; k++){
+            i = -1;
+            // cycle over all mesh facets
+            for (int ID = 0; ID < pde.domain().n_nodes(); ++ID) {
+                // check if the facet is on boundary
+                if (pde.domain().is_on_boundary(ID)) {
+                    i++;                    
+                    bool Neumann = (!basis_.BMtrx()(ID, 0));
+                    if (Neumann) {
                         // integrate g*phi over the facet (*it)
                         double integral_value = 0;
-                        for (size_t iq = 0; iq < boundary_integration_table_.num_nodes; ++iq) {
-                            const SVector<Mb>& p = boundary_integration_table_.nodes[iq];
-                            if constexpr (std::is_base_of<ScalarExpr<Nb, G>, G>::value) {
-                                // functor g is evaluable at any point.  
-                                SVector<Nb> Jp =
-                                (*it).barycentric_matrix() * p + (*it).coords()[0];   // map quadrature point on physical element e
-                                integral_value += (g(Jp) * boundary_reference_basis[jj](p)) * boundary_integration_table_.weights[iq];
-                            } else {
-                                // as a fallback we assume g given as vector of values with the assumption that
-                                // g[boundary_integration_table_.num_nodes*e.ID() + iq] equals the discretized field at the iq-th quadrature
-                                // node.
-                                integral_value += (g(boundary_integration_table_.num_nodes * i + iq, k) * boundary_reference_basis[jj](p)) * boundary_integration_table_.weights[iq];
-                            }
+                        
+                        if constexpr (std::is_base_of<ScalarExpr<D::embedding_dimension, G>, G>::value) {
+                            // functor g is evaluable at any point
+                            integral_value += g(pde.domain().node(ID));
+                        } else {
+                            // as a fallback we assume g given as vector of values with the assumption that
+                            // g[boundary_integration_table_.num_nodes*e.ID() + iq] equals the discretized field at the iq-th quadrature
+                            // node.
+                            integral_value += g(i, k);
                         }
+
                         // correct for measure of domain (facet e)
-                        neumann_forcing[basis_.dof_boundary_table()(i, jj)] += integral_value * (*it).measure();
-                    }
-                }    
+                        neumann_forcing[ID] += integral_value;
+                    }    
+                }
+            }
+            for (auto it = boundary_dofs_begin_Neumann(); it != boundary_dofs_end_Neumann(); ++it) {
+                force_.coeffRef((*it) + n*k, 0) += neumann_forcing(*it, 0);
             }
         }
-        for (auto it = boundary_dofs_begin_Neumann(); it != boundary_dofs_end_Neumann(); ++it) {
-            force_.coeffRef((*it) + n*k, 0) += neumann_forcing(*it, 0);
+    }
+
+    else {
+        static constexpr int Mb = D::local_dimension - 1;
+        static constexpr int Nb = D::embedding_dimension;
+        static constexpr int Rb = basis_.R;
+        using FunctionalBasis = LagrangianBasis<Mesh<Mb,Nb>, Rb>;
+        using ReferenceBasis = typename FunctionalBasis::ReferenceBasis;
+
+        ReferenceBasis boundary_reference_basis(ReferenceElement<Mb, Rb>::nodes);
+        static constexpr int Kb = standard_fem_quadrature_rule<Mb, Rb>::K;   // number of quadrature nodes for integration on the boundary
+        auto boundary_integration_table_ = IntegratorTable<Mb, Kb>();
+
+
+        // for each timestep
+        for (std::size_t k=0; k<m; k++){
+            i = -1;
+            // cycle over all mesh facets
+            for (auto it = pde.domain().facet_begin(); it != pde.domain().facet_end(); ++it) {
+                bool Neumann = false;  // to asses if a facet is a Neumann boundary one
+                // check if the facet is on boundary
+                if ((*it).on_boundary()) {
+                    i++;
+                    for (auto j = 0; j < (*it).node_ids().size(); ++j) if (!basis_.BMtrx()((*it).node_ids()[j], 0)) Neumann = true;
+                    if (Neumann) {
+                        for (auto jj=0; jj<boundary_reference_basis.n_basis; ++jj){
+                            // integrate g*phi over the facet (*it)
+                            double integral_value = 0;
+                            for (size_t iq = 0; iq < boundary_integration_table_.num_nodes; ++iq) {
+                                const SVector<Mb>& p = boundary_integration_table_.nodes[iq];
+                                if constexpr (std::is_base_of<ScalarExpr<Nb, G>, G>::value) {
+                                    // functor g is evaluable at any point.  
+                                    SVector<Nb> Jp =
+                                    (*it).barycentric_matrix() * p + (*it).coords()[0];   // map quadrature point on physical element e
+                                    integral_value += (g(Jp) * boundary_reference_basis[jj](p)) * boundary_integration_table_.weights[iq];
+                                } else {
+                                    // as a fallback we assume g given as vector of values with the assumption that
+                                    // g[boundary_integration_table_.num_nodes*e.ID() + iq] equals the discretized field at the iq-th quadrature
+                                    // node.
+                                    integral_value += (g(boundary_integration_table_.num_nodes * i + iq, k) * boundary_reference_basis[jj](p)) * boundary_integration_table_.weights[iq];
+                                }
+                            }
+                            // correct for measure of domain (facet e)
+                            neumann_forcing[basis_.dof_boundary_table()(i, jj)] += integral_value * (*it).measure();
+                        }
+                    }    
+                }
+            }
+            for (auto it = boundary_dofs_begin_Neumann(); it != boundary_dofs_end_Neumann(); ++it) {
+                force_.coeffRef((*it) + n*k, 0) += neumann_forcing(*it, 0);
+            }
         }
     }
 

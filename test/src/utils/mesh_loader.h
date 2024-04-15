@@ -26,6 +26,7 @@ using fdapde::core::CSVReader;
 using fdapde::core::Element;
 using fdapde::core::is_network;
 using fdapde::core::is_manifold;
+using fdapde::core::Mesh1D;
 using fdapde::core::Mesh2D;
 using fdapde::core::Mesh3D;
 using fdapde::core::NetworkMesh;

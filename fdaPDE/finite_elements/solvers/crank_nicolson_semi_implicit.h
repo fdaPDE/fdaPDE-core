@@ -31,7 +31,6 @@ struct FEMCrankNicolsonSemiImplicit : public FEMSolverBase<D, E, F, Ts...> {
 
 protected:
     double deltaT_ = 1e-2;
-    bool convergence_test_ = false; 
 
 public:
     typedef std::tuple<Ts...> SolverArgs;
@@ -52,7 +51,7 @@ public:
         fdapde_static_assert(is_pde<PDE>::value, THIS_METHOD_IS_FOR_PDE_ONLY);
         if (!this->is_init) throw std::runtime_error("solver must be initialized first!");
 
-        // first solve the linear associated pde (initial guess = 0)
+        // define eigen system solver, use SparseLU decomposition.
         Eigen::SparseLU<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int>> solver;
         this->set_deltaT((pde.time_domain()[1] - pde.time_domain()[0]));
         std::size_t n = this->n_dofs();              // degrees of freedom in space
@@ -64,8 +63,7 @@ public:
 
         // Crank-Nicolson with semi-implicit treatment of the nonlinear term
         SpMatrix<double> K; // stifness matrix
-        std::size_t i;
-        for (i = 0; i < m-1; ++i) {
+        for (std::size_t i = 0; i < m-1; ++i) {
             if (i==0) { // first step with implicit Eler
                 // declare the assembler with the solution at the previous step updated
                 // allows to assemble the nonlinearity defined in the test u*h(u) in a semi-implicit way at each time-step as u_{k+1}*h(u_{k})

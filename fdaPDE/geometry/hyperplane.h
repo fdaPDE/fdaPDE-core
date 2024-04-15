@@ -47,7 +47,8 @@ template <int M, int N> class HyperPlane {
         fdapde_static_assert(M == 1, THIS_METHOD_IS_ONLY_FOR_LINES);
 	SVector<N> tmp = x2 - x1;
         basis_.col(0) = tmp.normalized();
-        normal_ << -tmp[1], tmp[0];
+        if constexpr(N == 2) normal_ << -tmp[1], tmp[0];
+        if constexpr(N == 3) normal_ << -tmp[1], tmp[0], tmp[2];
 	normal_.normalized();
         offset_ = -x1.dot(normal_);
     }

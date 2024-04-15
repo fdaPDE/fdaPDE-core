@@ -27,6 +27,8 @@
 #include "fem_nonlinear_solver.h"
 #include "fem_linear_transport_elliptic_solver.h"   //ADDED
 #include "euler_semi_implicit.h"
+#include "euler_implicit_fixedpoint.h"
+#include "euler_implicit_newton.h"
 #include "crank_nicolson_semi_implicit.h"
 
 namespace fdapde {
@@ -37,6 +39,8 @@ template <typename D, typename E, typename F, typename... Ts> struct pde_solver_
     using type = typename switch_type<
       switch_type_case< is_parabolic<E>::value && !is_nonlinear<E>::value, FEMLinearParabolicSolver<D, E, F, Ts...>>,
       // switch_type_case< is_parabolic<E>::value && is_nonlinear<E>::value, FEMEulerSemiImplicit<D, E, F, Ts...>>,
+      // switch_type_case< is_parabolic<E>::value && is_nonlinear<E>::value, FEMEulerImplicitFixedPoint<D, E, F, Ts...>>,
+      // switch_type_case< is_parabolic<E>::value && is_nonlinear<E>::value, FEMEulerImplicitNewton<D, E, F, Ts...>>,
       switch_type_case< is_parabolic<E>::value && is_nonlinear<E>::value, FEMCrankNicolsonSemiImplicit<D, E, F, Ts...>>,
       // switch_type_case<!is_parabolic<E>::value && is_nonlinear<E>::value, FEMNonLinearBroydenSolver<D, E, F, Ts...>>,
       // switch_type_case<!is_parabolic<E>::value && is_nonlinear<E>::value, FEMNonLinearFixedPointSolver<D, E, F, Ts...>>,

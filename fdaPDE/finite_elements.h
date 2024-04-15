@@ -42,6 +42,8 @@
 #include "finite_elements/solvers/fem_linear_parabolic_solver.h"
 #include "finite_elements/solvers/fem_linear_transport_elliptic_solver.h"   //ADDED
 #include "finite_elements/solvers/euler_semi_implicit.h"
+#include "finite_elements/solvers/euler_implicit_fixedpoint.h"
+#include "finite_elements/solvers/euler_implicit_newton.h"
 #include "finite_elements/solvers/crank_nicolson_semi_implicit.h"
 #include "finite_elements/operators/laplacian.h"
 #include "finite_elements/operators/diffusion.h"

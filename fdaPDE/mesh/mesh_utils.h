@@ -59,7 +59,7 @@ template <int M, int N> class Facet {
     // affine transformations from cartesian to barycentric coordinates and viceversa
     SMatrix<N, M-1> J_;       // [J_]_ij = (coords_[j][i] - coords_[0][i])
     SMatrix<M-1, N> inv_J_;   // J^{-1} (Penrose pseudo-inverse for manifold elements)
-    double measure_ = 0;    // measure of the facet
+    double measure_ = 0;      // measure of the facet
    public:
     Facet(std::size_t ID, const std::array<int, M>& node_ids, const std::array<SVector<N>, M>& coords,
 	  const std::vector<int>& elements, bool boundary) :

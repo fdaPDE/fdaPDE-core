@@ -377,24 +377,26 @@ template <int M, int N> Facet<M, N> Mesh<M, N>::facet(int ID) const {
 
     // In order to asses if a facet is on the boundary it is NOT suffiecient to check the 2 vertices
     // we check also the number of elements insisting on the facet
-    if constexpr (M==N) {
+    if constexpr(M > 1) {
         if (on_boundary) {
-            HyperPlane<M-1, N> hyperplane;
-            if constexpr (M == 2) hyperplane = HyperPlane<M-1, N>(coords[0], coords[1]);
-            if constexpr (M == 3) hyperplane = HyperPlane<M-1, N>(coords[0], coords[1], coords[2]);
-            auto normal = hyperplane.normal();     // normal to the hyper plane
-            // Starting from the point in the middle of the facet, find the 2 points on the normal and on the -normal 
-            // and determine if they are contained in an element.
-            // If there's a point NOT conintained in an element, then we have a boundary facet
-            SVector<N> mid_point = Facet<M, N>(ID, node_ids, coords, facet_to_element_.at(ID), on_boundary).mid_point();
-            std::array<SVector<N>, 2> points {};
-            double eps = 1e-7;
-            points[0] = mid_point + eps*normal;
-            points[1] = mid_point - eps*normal;
+            if (facet_to_element_.at(ID)[0] >= 0 && facet_to_element_.at(ID)[1] >= 0) on_boundary = false;
 
-            // search if the points are contained in elements
-            NaiveSearch<M, N> engine(*this);
-            if (engine.locate(points[0]) != nullptr && engine.locate(points[1]) != nullptr) on_boundary = false;
+            // HyperPlane<M-1, N> hyperplane;
+            // if constexpr (M == 2) hyperplane = HyperPlane<M-1, N>(coords[0], coords[1]);
+            // if constexpr (M == 3) hyperplane = HyperPlane<M-1, N>(coords[0], coords[1], coords[2]);
+            // auto normal = hyperplane.normal();     // normal to the hyper plane
+            // // Starting from the point in the middle of the facet, find the 2 points on the normal and on the -normal 
+            // // and determine if they are contained in an element.
+            // // If there's a point NOT conintained in an element, then we have a boundary facet
+            // SVector<N> mid_point = Facet<M, N>(ID, node_ids, coords, facet_to_element_.at(ID), on_boundary).mid_point();
+            // std::array<SVector<N>, 2> points {};
+            // double eps = 1e-7;
+            // points[0] = mid_point + eps*normal;
+            // points[1] = mid_point - eps*normal;
+
+            // // search if the points are contained in elements
+            // NaiveSearch<M, N> engine(*this);
+            // if (engine.locate(points[0]) != nullptr && engine.locate(points[1]) != nullptr) on_boundary = false;
         }
     }
 
@@ -531,7 +533,8 @@ template <> class Mesh<1, 1> {
         local_dimension = 1,
         embedding_dimension = 1,
         n_vertices = 2,
-        n_neighbors_per_element = 2
+        n_neighbors_per_element = 2,
+        n_facets_per_element = 2
     };
 };
 
