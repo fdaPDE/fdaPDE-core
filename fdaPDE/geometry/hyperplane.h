@@ -47,8 +47,9 @@ template <int M, int N> class HyperPlane {
         fdapde_static_assert(M == 1, THIS_METHOD_IS_ONLY_FOR_LINES);
 	SVector<N> tmp = x2 - x1;
         basis_.col(0) = tmp.normalized();
-        normal_ << -tmp[0], tmp[1];
-	normal_.normalized();
+        if constexpr (N == 2) normal_ << -tmp[0], tmp[1];
+        if constexpr (N == 3) normal_ << -tmp[0], tmp[1], 0;   // one of the (infintely-many) normals to a 3D line
+        normal_.normalized();
         offset_ = -x1.dot(normal_);
     }
     // constructs an hyperplane passing through 3 (non-collinear) points, e.g. a plane
@@ -95,15 +96,11 @@ template <int M, int N> class HyperPlane {
             return basis_ * basis_.transpose() * (x - p_) + p_;
         }
     }
-    // euclidean distance of a point from the space
-    double distance(const SVector<N>& x) { return (x - project(x)).norm(); }
-    SVector<N> operator()(const SVector<M>& coeffs) const {
-        SVector<N> res = p_;
-        for (int i = 0; i < M; ++i) res += coeffs[i] * basis_.col(i);
-        return res;
-    }
-    // normal direction to the hyperplane
-    const SVector<N>& normal() { return normal_; }  
+    double distance(const SVector<N>& x) { return (x - project(x)).norm(); }   // point-plane euclidean distance
+    SVector<N> operator()(const SVector<N>& coeffs) const { return normal_.dot(coeffs) + offset_; }
+    const SVector<N>& normal() const { return normal_; }   // normal direction to the hyperplane
+    const SVector<N>& point() const { return p_; }         // a point belonging to the plane
+    const SMatrix<N, M>& basis() const { return basis_; }
 };
 
 }   // namespace core

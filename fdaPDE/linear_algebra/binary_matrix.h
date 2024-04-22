@@ -88,6 +88,24 @@ template <int Rows, int Cols = Rows> class BinaryMatrix : public BinMtxBase<Rows
             }
         }
     }
+    // construct from STL iterator
+    template <typename Iter> BinaryMatrix(Iter begin, Iter end, int n_rows, int n_cols) : Base(n_rows, n_cols) {
+        fdapde_static_assert(
+          Rows == fdapde::Dynamic && Cols == fdapde::Dynamic, THIS_METHOD_IS_ONLY_FOR_DYNAMIC_SIZED_MATRICES);
+        resize(n_rows, n_cols);   // reserve space
+        int i = 0, size = n_rows * n_cols;
+        for (Iter it = begin; it != end || i < size; ++it, ++i) {
+            if (*it) set(i / n_rows, i % n_cols);
+        }
+    }
+    template <typename Iter> BinaryMatrix(Iter begin, Iter end, int n_rows) : BinaryMatrix(n_rows, 1) {
+        fdapde_static_assert(Rows == Dynamic && Cols == 1, THIS_METHOD_IS_ONLY_FOR_VECTORS);
+        resize(n_rows);   // reserve space
+        int i = 0;
+        for (Iter it = begin; it != end || i < n_rows; ++it, ++i) {
+            if (*it) set(i);
+        }
+    }
 
     // constructs a matrix of ones
     static BinaryMatrix<Rows, Cols> Ones(int i, int j) {

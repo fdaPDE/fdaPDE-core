@@ -70,6 +70,7 @@ template <typename Iterator, typename ValueType> class index_based_iterator {
    protected:
     using This = index_based_iterator<Iterator, ValueType>;
     int index_;
+    int begin_, end_;
     ValueType val_;
    public:
     using value_type        = ValueType;
@@ -79,7 +80,7 @@ template <typename Iterator, typename ValueType> class index_based_iterator {
     using difference_type   = std::ptrdiff_t;
     using iterator_category = std::bidirectional_iterator_tag;
 
-    index_based_iterator(int index) : index_(index) { }
+    index_based_iterator(int index, int begin, int end) : index_(index), begin_(begin), end_(end) { }
     reference operator*() const { return val_; }
     pointer operator->() const { return &val_; }
 
@@ -93,9 +94,24 @@ template <typename Iterator, typename ValueType> class index_based_iterator {
         --(static_cast<Iterator&>(*this));
         return tmp;
     }
-    Iterator& operator++() { return ++static_cast<Iterator&>(*this); }
-    Iterator& operator--() { return --static_cast<Iterator&>(*this); }
-
+    Iterator& operator++() {
+        index_++;
+        if (index_ < end_) static_cast<Iterator&>(*this)(index_);
+        return static_cast<Iterator&>(*this);
+    }
+    Iterator& operator--() {
+        --index_;
+        if (index_ >= begin_) static_cast<Iterator&>(*this)(index_);
+        return static_cast<Iterator&>(*this);
+    }
+    Iterator& operator+(int i) {
+        index_ = index_ + i;
+        return static_cast<Iterator&>(*this)(index_);
+    }
+    Iterator& operator-(int i) {
+        index_ = index_ - i;
+        return static_cast<Iterator&>(*this)(index_);
+    }
     friend bool operator!=(const This& lhs, const This& rhs) { return lhs.index_ != rhs.index_; }
     friend bool operator==(const This& lhs, const This& rhs) { return lhs.index_ == rhs.index_; }
 };

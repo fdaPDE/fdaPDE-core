@@ -33,11 +33,12 @@ template <int Order_, int EmbedDim_> class Simplex {
    public:
     static constexpr int local_dim = Order_;
     static constexpr int embed_dim = EmbedDim_;
-    static constexpr int n_vertices = ct_nvertices(Order_);
-    static constexpr int n_edges = ct_nedges(Order_);
+    static constexpr int n_nodes = Order_ + 1;
+    static constexpr int n_edges = (Order_ * (Order_ + 1)) / 2;
     static constexpr int n_faces = Order_ + 1;
-    static constexpr int n_vertices_per_face = Order_;
-    using FaceType = Simplex<Order_ - 1, EmbedDim_>;
+    static constexpr int n_nodes_per_face = Order_;
+    using BoundaryCellType = Simplex<Order_ - 1, EmbedDim_>;
+    using NodeType = SVector<embed_dim>;
 
     Simplex() = default;
     explicit Simplex(const SMatrix<embed_dim, Order_ + 1>& coords) : coords_(coords) { initialize(); }
@@ -50,23 +51,23 @@ template <int Order_, int EmbedDim_> class Simplex {
     }
 
     // getters
-    SVector<embed_dim> vertex(int v) const { return coords_.col(v); }
-    SVector<embed_dim> operator[](int v) const { return coords_.col(v); }
-    const SMatrix<embed_dim, n_vertices>& vertices() const { return coords_; }
+    NodeType node(int v) const { return coords_.col(v); }
+    NodeType operator[](int v) const { return coords_.col(v); }
+    const SMatrix<embed_dim, n_nodes>& nodes() const { return coords_; }
     const SMatrix<embed_dim, local_dim>& J() const { return J_; }
     const SMatrix<local_dim, embed_dim>& invJ() const { return invJ_; }
     double measure() const { return measure_; }
     // the smallest rectangle containing the simplex
-    std::pair<SVector<embed_dim>, SVector<embed_dim>> bounding_box() const {
+    std::pair<NodeType, NodeType> bounding_box() const {
         return std::make_pair(coords_.rowwise().minCoeff(), coords_.rowwise().maxCoeff());
     }
     // the barycenter has all its barycentric coordinates equal to 1/(local_dim + 1)
-    SVector<embed_dim> barycenter() const {
+    NodeType barycenter() const {
         return J_ * SVector<local_dim>::Constant(1.0 / (local_dim + 1)) + coords_.col(0);
     }
 
     // simplex circumcenter
-    SVector<embed_dim> circumcenter() const {
+    NodeType circumcenter() const {
         if constexpr (local_dim == 1) { return (coords_.col(0) + coords_.col(1)) / 2; }
         if constexpr (local_dim == 2 && embed_dim == 3) {
             // circumcenter of 3D triangle, see https://ics.uci.edu/~eppstein/junkyard/circumcenter.html
@@ -82,7 +83,7 @@ template <int Order_, int EmbedDim_> class Simplex {
             double a = coords_.col(0).squaredNorm();
             SMatrix<embed_dim, embed_dim> M;
             SVector<embed_dim> b;
-            for (int i = 0; i < n_vertices - 1; ++i) {
+            for (int i = 0; i < n_nodes - 1; ++i) {
                 M.row(i) = coords_.col(i + 1) - coords_.col(0);
                 b[i] = coords_.col(i + 1).squaredNorm() - a;
             }
@@ -91,19 +92,7 @@ template <int Order_, int EmbedDim_> class Simplex {
     }
     // simplex's circumcircle radius
     double circumradius() const { return (circumcenter() - coords_.col(0)).norm(); }
-
-    // access to the i-th face as an Order_ - 1 Simplex
-    Simplex<Order_ - 1, EmbedDim_> face(int i) const requires(Order_ > 0) {
-        fdapde_assert(i < n_faces);
-        std::vector<bool> bitmask(n_vertices, 0);
-        std::fill_n(bitmask.begin(), n_vertices_per_face, 1);
-        SMatrix<embed_dim, n_vertices_per_face> coords;
-        for (int j = 0; j < i; ++j) std::prev_permutation(bitmask.begin(), bitmask.end());
-        for (int j = 0, h = 0; j < n_vertices; ++j) {
-            if (bitmask[j]) coords.col(h++) = coords_.col(j);
-        }
-        return Simplex<Order_ - 1, EmbedDim_>(coords);
-    }
+  
     // (hyper)plane passing thorught the simplex
     HyperPlane<local_dim, embed_dim> supporting_plane() const requires(local_dim != embed_dim) {
         if (!plane_.has_value()) { plane_ = HyperPlane<local_dim, embed_dim>(coords_); }
@@ -126,47 +115,38 @@ template <int Order_, int EmbedDim_> class Simplex {
         if ((z.array() < -fdapde::machine_epsilon).any()) return ContainsReturnType::OUTSIDE;
         int nonzeros = (z.array() > fdapde::machine_epsilon).count();
         if (nonzeros == 1) return ContainsReturnType::ON_VERTEX;
-        if (nonzeros == n_vertices_per_face) return ContainsReturnType::ON_FACE;
+        if (nonzeros == n_nodes_per_face) return ContainsReturnType::ON_FACE;
         return ContainsReturnType::INSIDE;
     }
-  
-    // LegacyInputIterator over faces
-    struct face_iterator {
-       private:
-        int index_;
-        const Simplex* s_;
-        FaceType f_;
-       public:
-        using value_type        = FaceType;
-        using pointer           = const FaceType*;
-        using reference         = const FaceType&;
-        using size_type         = std::size_t;
-        using difference_type   = std::ptrdiff_t;
-        using iterator_category = std::forward_iterator_tag;
 
-        face_iterator(int index, const Simplex* s) : index_(index), s_(s) {
-            if (index_ < s_->n_faces) f_ = s->face(index_);
-        }
-        reference operator*() const { return f_; }
-        pointer operator->() const { return &f_; }
-        face_iterator& operator++() {
-            index_++;
-            if (index_ < s_->n_faces) f_ = s_->face(index_);
+    // iterator over boundary
+    class boundary_iterator : public index_based_iterator<boundary_iterator, BoundaryCellType> {
+        using Base = index_based_iterator<boundary_iterator, BoundaryCellType>;
+        using Base::index_;
+        friend Base;
+        const Simplex* s_;
+        // access to the i-th boundary cell as an Order_ - 1 Simplex
+        boundary_iterator& operator()(int i) requires(Order_ > 0) {
+            std::vector<bool> bitmask(n_nodes, 0);
+            std::fill_n(bitmask.begin(), n_nodes_per_face, 1);
+            SMatrix<embed_dim, n_nodes_per_face> coords;
+            for (int j = 0; j < i; ++j) std::prev_permutation(bitmask.begin(), bitmask.end());
+            for (int j = 0, h = 0; j < n_nodes; ++j) {
+                if (bitmask[j]) coords.col(h++) = s_->coords_.col(j);
+            }
+            Base::val_ = BoundaryCellType(coords);
             return *this;
         }
-        face_iterator operator++(int) {
-            face_iterator tmp(index_, this);
-            ++(*this);
-            return tmp;
+       public:
+        boundary_iterator(int index, const Simplex* s) : Base(index, 0, Order_ + 1), s_(s) {
+            if (index_ < Order_ + 1) operator()(index_);
         }
-        friend bool operator!=(const face_iterator& lhs, const face_iterator& rhs) { return lhs.index_ != rhs.index_; }
-        friend bool operator==(const face_iterator& lhs, const face_iterator& rhs) { return lhs.index_ == rhs.index_; }
     };
-    face_iterator face_begin() const { return face_iterator(0, this); }
-    face_iterator face_end() const { return face_iterator(n_faces, this); }
+    boundary_iterator boundary_begin() const requires(Order_ >= 1) { return boundary_iterator(0, this); }
+    boundary_iterator boundary_end() const requires(Order_ >= 1) { return boundary_iterator(Order_ + 1, this); }
    protected:
     void initialize() {
-        for (int j = 0; j < local_dim; ++j) { J_.col(j) = coords_.col(j + 1) - coords_.col(0); }
+      for (int j = 0; j < n_nodes - 1; ++j) { J_.col(j) = coords_.col(j + 1) - coords_.col(0); }
         if constexpr (embed_dim == local_dim) {
             invJ_ = J_.inverse();
             measure_ = std::abs(J_.determinant()) / (ct_factorial(local_dim));
@@ -178,7 +158,7 @@ template <int Order_, int EmbedDim_> class Simplex {
         }
     }
 
-    SMatrix<embed_dim, n_vertices> coords_;
+    SMatrix<embed_dim, n_nodes> coords_;
     mutable std::optional<HyperPlane<local_dim, embed_dim>> plane_;
     double measure_;
     // affine mappings from physical to reference simplex and viceversa

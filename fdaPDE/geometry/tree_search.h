@@ -38,10 +38,10 @@ template <typename MeshType> class TreeSearch {
         // the i-th row of data contains the bounding box of the i-th element, stored as the vector [lower-left,
         // upper-right] corner. This moves each element to a point in R^{2N}
         DMatrix<double> data;
-        data.resize(mesh_->n_faces(), 2 * embed_dim);
+        data.resize(mesh_->n_cells(), 2 * embed_dim);
         for (int dim = 0; dim < embed_dim; ++dim) { c_[dim] = 1.0 / (mesh_->range()(1, dim) - mesh_->range()(0, dim)); }
         int i = 0;
-        for (typename MeshType::face_iterator it = mesh_->faces_begin(); it != mesh_->faces_end(); ++it) {
+        for (typename MeshType::cell_iterator it = mesh_->cells_begin(); it != mesh_->cells_end(); ++it) {
             std::pair<SVector<embed_dim>, SVector<embed_dim>> bbox = it->bounding_box();
             // unit hypercube point scaling
             data.row(i).leftCols(embed_dim)  = (bbox.first  - mesh_->range().row(0).transpose()).array() * c_.array();
@@ -60,8 +60,8 @@ template <typename MeshType> class TreeSearch {
         auto found = tree_.range_search({ll, ur});
         // exhaustively scan the query results to get the searched mesh element
         for (int id : found) {
-            typename MeshType::FaceType element = mesh_->face(id);
-            if (element.contains(p)) { return element.id(); }
+            typename MeshType::CellType c = mesh_->cell(id);
+            if (c.contains(p)) { return c.id(); }
         }
         return -1;   // no element found
     }

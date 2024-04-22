@@ -19,6 +19,7 @@
 
 #include "../../geometry/element.h"
 #include "../../geometry/triangulation.h"
+#include "../../geometry/interval.h"
 #include "../../fields/scalar_expressions.h"
 #include "../compile_time.h"
 #include "../symbols.h"
@@ -47,7 +48,7 @@ template <int LocalDim, int Order> class Integrator<FEM, LocalDim, Order> {
         for (size_t iq = 0; iq < integration_table_.num_nodes; ++iq) {
             if constexpr (std::is_invocable_r<double, ExprType, SVector<MeshType::embed_dim>>::value) {   // callable
                 // map quadrature point onto e
-                SVector<MeshType::embed_dim> p = e.J() * integration_table_.nodes[iq] + e.vertex(0);
+                SVector<MeshType::embed_dim> p = e.J() * integration_table_.nodes[iq] + e.node(0);
                 value += f(p) * integration_table_.weights[iq];
             } else {
                 // as a fallback we assume f given as vector with the assumption that
@@ -75,7 +76,7 @@ template <int LocalDim, int Order> class Integrator<FEM, LocalDim, Order> {
             const SVector<MeshType::local_dim>& p = integration_table_.nodes[iq];
             if constexpr (std::is_base_of<ScalarExpr<MeshType::embed_dim, ExprType>, ExprType>::value) {
                 // functor f is evaluable at any point.
-                SVector<MeshType::embed_dim> Jp = e.J() * p + e.vertex(0);   // map quadrature point on physical element
+                SVector<MeshType::embed_dim> Jp = e.J() * p + e.node(0);   // map quadrature point on physical element
                 value += (f(Jp) * Phi(p)) * integration_table_.weights[iq];
             } else {
                 // as a fallback we assume f given as vector of values with the assumption that
@@ -112,7 +113,7 @@ template <int LocalDim, int Order> class Integrator<FEM, LocalDim, Order> {
             // for each quadrature node, map it onto the physical element e and store it
             for (size_t iq = 0; iq < integration_table_.num_nodes; ++iq) {
                 quadrature_nodes.row(integration_table_.num_nodes * e.id() + iq) =
-                  e.J() * SVector<LocalDim>(integration_table_.nodes[iq].data()) + e.vertex(0);
+                  e.J() * SVector<LocalDim>(integration_table_.nodes[iq].data()) + e.node(0);
             }
         }
         return quadrature_nodes;
@@ -138,26 +139,28 @@ template <int Order> class Integrator<SPLINE, 1, Order> {
         return (b - a) / 2 * value;
     }
     template <typename ExprType> double integrate(const Element<Triangulation<1, 1>>& e, const ExprType& f) const {
-        return integrate(e.vertex(0), e.vertex(1), f);
+        return integrate(e.node(0), e.node(1), f);
     }
     // integrate a callable F over a 1D Mesh
     template <typename ExprType> double integrate(const Triangulation<1, 1>& m, const ExprType& f) const {
         double value = 0;
         // cycle over all mesh elements
-        for (const auto& e : m) value += integrate(e, f);
+        for (Triangulation<1, 1>::cell_iterator it = m.cells_begin(); it != m.cells_end(); ++it) {
+            value += integrate(*it, f);
+	}
         return value;
     }
     // getters
     DMatrix<double> quadrature_nodes(const Triangulation<1, 1>& m) const {
         DMatrix<double> quadrature_nodes;
-        quadrature_nodes.resize(m.n_elements() * integration_table_.num_nodes, 1);
+        quadrature_nodes.resize(m.n_cells() * integration_table_.num_nodes, 1);
         // cycle over all mesh elements
-        for (const auto& e : m) {
+        for (Triangulation<1, 1>::cell_iterator it = m.cells_begin(); it != m.cells_end(); ++it) {
             // for each quadrature node, map it onto the physical element e and store it
             for (size_t iq = 0; iq < integration_table_.num_nodes; ++iq) {
-                quadrature_nodes.row(integration_table_.num_nodes * e.id() + iq) =
-                  ((e.vertex(1) - e.vertex(0)) / 2) * integration_table_.nodes[iq][0] +
-                  ((e.vertex(1) + e.vertex(0)) / 2);
+                quadrature_nodes.row(integration_table_.num_nodes * it->id() + iq) =
+                  ((it->node(1) - it->node(0)) / 2) * integration_table_.nodes[iq][0] +
+                  ((it->node(1) + it->node(0)) / 2);
             }
         }
         return quadrature_nodes;
