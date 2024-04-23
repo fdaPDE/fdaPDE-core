@@ -266,22 +266,22 @@ TEST(fem_pde_test, laplacian_dirichlet_neumann_2D_order2) {
 TEST(fem_pde_test, laplacian_dirichlet_neumann_surface) {
     // exact solution
     auto solution_expr = [](SVector<3> x) -> double { return 1. + x[0]*x[0] + 2*x[1]*x[1] + 3*x[2]*x[2]; };
-    // auto neumann_expr = [](SVector<3> x) -> double {
-    //     if (x[1]==0 || x[1]==1) return 4*x[1]; 
-    //     return 2*x[0];};
+    auto neumann_expr = [](SVector<3> x) -> double {
+        if (x[1]==0 || x[1]==1) return 4*x[1]; 
+        return 2*x[0];};
     auto forcing_expr = [](SVector<3> x) -> double { return -6.; };
 
     // Robin data
-    double a = 35;
-    double b = 3;
-    auto robin_expr = [&](SVector<3> x) -> double { return a*(1 + x[0]*x[0] + 2*x[1]*x[1] + 3*x[2]*x[2]) + b*4*x[1]; };
+    // double a = 35;
+    // double b = 3;
+    // auto robin_expr = [&](SVector<3> x) -> double { return a*(1 + x[0]*x[0] + 2*x[1]*x[1] + 3*x[2]*x[2]) + b*4*x[1]; };
 
     MeshLoader<SurfaceMesh> domain("square_surface");
     // define the Neumann and Dirichlet boundary with a DMatrix (=0 if Dirichlet, =1 if Neumann, =2 if Robin)
     // we have Neumann boundary when y=0 and y=1 (upper and lower sides)
     DMatrix<short int> boundary_matrix = DMatrix<short int>::Zero(domain.mesh.n_nodes(), 1) ; // has all zeros
-    for (size_t j=1; j<10; ++j) boundary_matrix(j, 0) = 2;
-    for (size_t j=111; j<120; ++j) boundary_matrix(j, 0) = 2;
+    for (size_t j=1; j<10; ++j) boundary_matrix(j, 0) = 1;
+    for (size_t j=111; j<120; ++j) boundary_matrix(j, 0) = 1;
 
     auto L = -laplacian<FEM>();
     // instantiate a type-erased wrapper for this pde
@@ -307,18 +307,18 @@ TEST(fem_pde_test, laplacian_dirichlet_neumann_surface) {
     }
     pde_.set_forcing(f);
     DMatrix<double> boundary_quadrature_nodes = pde_.boundary_quadrature_nodes();
-    // DMatrix<double> f_neumann(boundary_quadrature_nodes.rows(), 1);
-    // for (auto i = 0; i < boundary_quadrature_nodes.rows(); ++i){
-    //     f_neumann(i) = neumann_expr(boundary_quadrature_nodes.row(i));
-    // }
-    // pde_.set_neumann_bc(f_neumann);
-    DMatrix<double> f_robin(boundary_quadrature_nodes.rows(), 1);
-    for (auto i=0; i< boundary_quadrature_nodes.rows(); ++i){
-        f_robin(i) = robin_expr(boundary_quadrature_nodes.row(i));
+    DMatrix<double> f_neumann(boundary_quadrature_nodes.rows(), 1);
+    for (auto i = 0; i < boundary_quadrature_nodes.rows(); ++i){
+        f_neumann(i) = neumann_expr(boundary_quadrature_nodes.row(i));
     }
-    DVector<double> robin_constants(2,1);
-    robin_constants << a, b;
-    pde_.set_robin_bc(f_robin, robin_constants);
+    pde_.set_neumann_bc(f_neumann);
+    // DMatrix<double> f_robin(boundary_quadrature_nodes.rows(), 1);
+    // for (auto i=0; i< boundary_quadrature_nodes.rows(); ++i){
+    //     f_robin(i) = robin_expr(boundary_quadrature_nodes.row(i));
+    // }
+    // DVector<double> robin_constants(2,1);
+    // robin_constants << a, b;
+    // pde_.set_robin_bc(f_robin, robin_constants);
     // init solver and solve differential problem
     pde_.init();
     pde_.solve();
