@@ -47,7 +47,7 @@ public:
 
     using Base = FEMSolverBase<D, E, F, Ts...>;
     FEMNonLinearBroydenSolver(const D& domain) : Base(domain) { }
-    FEMNonLinearBroydenSolver(const D& domain, const BinaryMatrix<Dynamic>& BMtrx) : Base(domain, BMtrx){ }
+    FEMNonLinearBroydenSolver(const D& domain, const DMatrix<short int>& BMtrx) : Base(domain, BMtrx){ }
 
     // setter for MaxIter and tol (should we add them to the constructor?)
     void set_MaxIter(size_t MaxIter) { MaxIter_ = MaxIter; }
@@ -65,6 +65,12 @@ public:
         // Assembler<FEM, D, FunctionSpace, QuadratureRule> assembler(pde.domain(), this->integrator_, this->n_dofs_, this->dofs_, f_prev); //old
         Assembler<FEM, DomainType, ReferenceBasis, Quadrature> assembler(pde.domain(), this->integrator_, this->n_dofs_, this->dofs_, f_prev);
         SpMatrix<double> A = assembler.discretize_operator(pde.differential_operator());
+
+        // set Robin boundary conditions
+        if (this->boundary_dofs_begin_Robin() != this->boundary_dofs_end_Robin()) {
+            A += this->robin_;
+        }
+
         A.makeCompressed();
         // set B.C.s
         for (auto it = this->boundary_dofs_begin_Dirichlet(); it != this->boundary_dofs_end_Dirichlet(); ++it) {
@@ -76,7 +82,6 @@ public:
         solver.compute(A);
         if (solver.info() != Eigen::Success) {    // stop if something went wrong...
             this->success = false;
-            // std::cout << "LU return due to success=false" << std::endl;
             return;
         }
         DVector<double> x0 = solver.solve(this->force_);
@@ -88,6 +93,7 @@ public:
             // A(u) * u - f = 0
             this->solution_ = u;
             this->init(pde);
+            this->set_robin_bc(pde);
             this->set_dirichlet_bc(pde);
             return this->stiff_ * u - this->force_;
         };

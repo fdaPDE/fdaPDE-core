@@ -42,7 +42,7 @@ public:
 
     using Base = FEMSolverBase<D, E, F, Ts...>;
     FEMCrankNicolsonSemiImplicit(const D& domain) : Base(domain) { }
-    FEMCrankNicolsonSemiImplicit(const D& domain, const BinaryMatrix<Dynamic>& BMtrx) : Base(domain, BMtrx){ }
+    FEMCrankNicolsonSemiImplicit(const D& domain, const DMatrix<short int>& BMtrx) : Base(domain, BMtrx){ }
 
     void set_deltaT(double deltaT) { deltaT_ = deltaT; }
 
@@ -76,6 +76,11 @@ public:
                 // build system matrix and rhs
                 K = (this->mass_) / deltaT_ + this->stiff_;
                 rhs = ((this->mass_) / deltaT_) * this->solution_.col(i) + this->force_.block(n * (i + 1), 0, n, 1);
+
+                // set Robin boundary conditions
+                if (this->boundary_dofs_begin_Robin() != this->boundary_dofs_end_Robin()) {
+                   K += this->robin_;
+                }
             }
             else { // Crank-Nicolson for all the other iterations
                 // declare the assembler passing w = 3*u_{k}/2 - u_{k-1}/2 where u_k = solution at the previous step
@@ -89,6 +94,12 @@ public:
                 // build system matrix and rhs
                 K = (this->mass_) / deltaT_ + this->stiff_ / 2;
                 rhs = ((this->mass_) / deltaT_  - (this->stiff_) / 2) * this->solution_.col(i) + (this->force_.block(n * (i + 1), 0, n, 1) + this->force_.block(n * i, 0, n, 1))/2;
+
+                // set Robin boundary conditions
+                if (this->boundary_dofs_begin_Robin() != this->boundary_dofs_end_Robin()) {
+                   K += this->robin_ / 2;
+                   rhs += -(this->robin_ / 2) * this->solution_.col(i);
+                }
             }
 
             // set dirichlet boundary conditions

@@ -31,7 +31,7 @@ class FEMLinearParabolicSolver : public FEMSolverBase<D, E, F, Ts...> {
    public:
     using Base = FEMSolverBase<D, E, F, Ts...>;
     FEMLinearParabolicSolver(const D& domain) : Base(domain) { }
-    FEMLinearParabolicSolver(const D& domain, const BinaryMatrix<Dynamic>& BMtrx) : Base(domain, BMtrx){ }
+    FEMLinearParabolicSolver(const D& domain, const DMatrix<short int>& BMtrx) : Base(domain, BMtrx){ }
     void set_deltaT(double deltaT) { deltaT_ = deltaT; }
 
     // solves the PDE using a forward-euler scheme

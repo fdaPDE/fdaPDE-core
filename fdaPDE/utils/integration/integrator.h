@@ -24,7 +24,6 @@
 #include "../symbols.h"
 #include "integrator_tables.h"
 #include "../../pde/symbols.h"
-#include "../../linear_algebra/binary_matrix.h"
 
 namespace fdapde {
 namespace core {
@@ -67,7 +66,7 @@ template <int M, int R> class Integrator<FEM, M, R> {
         for (const auto& e : m) value += integrate(e, f);
         return value;
     }
-    template <int N, typename F> double integrate_on_boundary_Dirichlet(const Mesh<M, N>& m, const F& f, const BinaryMatrix<Dynamic>& BMtrx) const {
+    template <int N, typename F> double integrate_on_boundary_Dirichlet(const Mesh<M, N>& m, const F& f, const DMatrix<short int>& BMtrx) const {
         double value = 0;  // value to be returned
         int i = -1;        // index we need to count the number of facets or nodes on the boundary
 
@@ -77,7 +76,7 @@ template <int M, int R> class Integrator<FEM, M, R> {
                 // check if the facet is on boundary
                 if (m.is_on_boundary(ID)) {
                     ++i;
-                    bool Dirichlet = BMtrx(ID, 0);
+                    bool Dirichlet = (BMtrx(ID, 0) == 0);
                     if (Dirichlet) {
                         if constexpr (std::is_invocable<F, SVector<N>>::value) {
                             // functor f is evaluable at any point
@@ -105,7 +104,7 @@ template <int M, int R> class Integrator<FEM, M, R> {
                 if ((*it).on_boundary()) {
                     ++i;
                     bool Dirichlet = true;
-                    for (auto j = 0; j < (*it).node_ids().size(); ++j) Dirichlet &= BMtrx((*it).node_ids()[j], 0);
+                    for (auto j = 0; j < (*it).node_ids().size(); ++j) Dirichlet &= (BMtrx((*it).node_ids()[j], 0) == 0);
                     if (Dirichlet) {
                         double integral_value = 0;
                         for (size_t iq = 0; iq < boundary_integration_table_.num_nodes; ++iq) {
@@ -129,7 +128,7 @@ template <int M, int R> class Integrator<FEM, M, R> {
 
         return value;
     }
-    template <int N, typename F> double integrate_on_boundary_Neumann(const Mesh<M, N>& m, const F& f, const BinaryMatrix<Dynamic>& BMtrx) const {
+    template <int N, typename F> double integrate_on_boundary_Neumann(const Mesh<M, N>& m, const F& f, const DMatrix<short int>& BMtrx) const {
         double value = 0;  // value to be returned
         int i = -1;        // index we need to count the number of facets on the boundary
 
@@ -139,7 +138,7 @@ template <int M, int R> class Integrator<FEM, M, R> {
                 // check if the facet is on boundary
                 if (m.is_on_boundary(ID)) {
                     ++i;
-                    bool Neumann = !BMtrx(ID, 0);
+                    bool Neumann = (BMtrx(ID, 0) == 1);
                     if (Neumann) {
                         if constexpr (std::is_invocable<F, SVector<N>>::value) {
                             // functor f is evaluable at any point
@@ -167,8 +166,72 @@ template <int M, int R> class Integrator<FEM, M, R> {
                 if ((*it).on_boundary()) {
                     ++i;
                     bool Neumann = false;
-                    for (auto j = 0; j < (*it).node_ids().size(); ++j) if (!BMtrx((*it).node_ids()[j], 0)) Neumann = true;
+                    for (auto j = 0; j < (*it).node_ids().size(); ++j) if (BMtrx((*it).node_ids()[j], 0) == 1) Neumann = true;
                     if (Neumann) {
+                        double integral_value = 0;
+                        for (size_t iq = 0; iq < boundary_integration_table_.num_nodes; ++iq) {
+                            if constexpr (std::is_invocable<F, SVector<N>>::value) {
+                                // functor f is evaluable at any point
+                                SVector<N> p = (*it).barycentric_matrix() * boundary_integration_table_.nodes[iq] +
+                                        (*it).coords()[0];   // map quadrature point onto the facet
+                                integral_value += f(p) * boundary_integration_table_.weights[iq];
+                            } else {
+                                // as a fallback we assume f given as vector of values with the assumption that
+                                // f[boundary_integration_table_.num_nodes*i + iq] equals the discretized field at the iq-th quadrature
+                                // node.
+                                integral_value += f(boundary_integration_table_.num_nodes * i + iq, 0) * boundary_integration_table_.weights[iq];
+                            }
+                        }
+                        value += integral_value * (*it).measure();
+                    }
+                }
+            }
+        }
+        return value;
+    }
+    template <int N, typename F> double integrate_on_boundary_Robin(const Mesh<M, N>& m, const F& f, const DMatrix<short int>& BMtrx) const {
+        double value = 0;  // value to be returned
+        int i = -1;        // index we need to count the number of facets on the boundary
+
+        if constexpr (M == 1) {
+            // cycle over all mesh nodes
+            for (int ID = 0; ID < m.n_nodes(); ++ID) {
+                // check if the facet is on boundary
+                if (m.is_on_boundary(ID)) {
+                    ++i;
+                    bool Robin = (BMtrx(ID, 0) == 2);
+                    if (Robin) {
+                        if constexpr (std::is_invocable<F, SVector<N>>::value) {
+                            // functor f is evaluable at any point
+                            value += f(m.node(ID));
+                        } else {
+                            // as a fallback we assume f given as vector of values with the assumption that
+                            // f[boundary_integration_table_.num_nodes*i + iq] equals the discretized field at the iq-th quadrature
+                            // node.
+                            value += f(i, 0);
+                        }
+                    }
+                }
+            }
+        }
+        
+        else {
+            static constexpr int Kb = standard_fem_quadrature_rule<M-1, R>::K;   // number of quadrature nodes for integration on the boundary
+            auto boundary_integration_table_ = IntegratorTable<M-1, Kb>();
+
+            // check the size of the matrix ?
+
+            // cycle over all mesh facets
+            for (auto it = m.facet_begin(); it != m.facet_end(); ++it) {
+                // check if the facet is on boundary
+                if ((*it).on_boundary()) {
+                    ++i;
+                    bool Robin = false;
+                    for (auto j = 0; j < (*it).node_ids().size(); ++j){
+                        if (BMtrx((*it).node_ids()[j], 0) == 1) {Robin = false; break;}
+                        if (BMtrx((*it).node_ids()[j], 0) == 2) {Robin = true;}
+                    }
+                    if (Robin) {
                         double integral_value = 0;
                         for (size_t iq = 0; iq < boundary_integration_table_.num_nodes; ++iq) {
                             if constexpr (std::is_invocable<F, SVector<N>>::value) {
@@ -212,7 +275,7 @@ template <int M, int R> class Integrator<FEM, M, R> {
         // correct for measure of domain (element e)
         return value * e.measure();
     }
-    template <int N, typename F, typename B> double integrate_on_boundary_Dirichlet(const Mesh<M, N>& m, const F& f, const BinaryMatrix<Dynamic>& BMtrx, const B& Phi) const {
+    template <int N, typename F, typename B> double integrate_on_boundary_Dirichlet(const Mesh<M, N>& m, const F& f, const DMatrix<short int>& BMtrx, const B& Phi) const {
         double value = 0;  // value to be returned
         int i = -1;        // index we need to count the number of facets on the boundary
 
@@ -222,7 +285,7 @@ template <int M, int R> class Integrator<FEM, M, R> {
                 // check if the facet is on boundary
                 if (m.is_on_boundary(ID)) {
                     ++i;
-                    bool Dirichlet = BMtrx(ID, 0);
+                    bool Dirichlet = (BMtrx(ID, 0) == 0);
                     if (Dirichlet) {
                         if constexpr (std::is_invocable<F, SVector<N>>::value) {
                             // functor f is evaluable at any point
@@ -250,7 +313,7 @@ template <int M, int R> class Integrator<FEM, M, R> {
                 if ((*it).on_boundary()) {
                     i++;
                     bool Dirichlet = true;
-                    for (auto j = 0; j < (*it).node_ids().size(); ++j) Dirichlet &= BMtrx((*it).node_ids()[j], 0);
+                    for (auto j = 0; j < (*it).node_ids().size(); ++j) Dirichlet &= (BMtrx((*it).node_ids()[j], 0) == 0);
                     if (Dirichlet) {
                         // integrate f*phi over the facet (*it)
                         double integral_value = 0;
@@ -277,7 +340,7 @@ template <int M, int R> class Integrator<FEM, M, R> {
 
         return value;
     }
-    template <int N, typename F, typename B> double integrate_on_boundary_Neumann(const Mesh<M, N>& m, const F& f, const BinaryMatrix<Dynamic>& BMtrx, const B& Phi) const {
+    template <int N, typename F, typename B> double integrate_on_boundary_Neumann(const Mesh<M, N>& m, const F& f, const DMatrix<short int>& BMtrx, const B& Phi) const {
         double value = 0;  // value to be returned
         int i = -1;        // index we need to count the number of facets on the boundary
 
@@ -287,7 +350,7 @@ template <int M, int R> class Integrator<FEM, M, R> {
                 // check if the facet is on boundary
                 if (m.is_on_boundary(ID)) {
                     ++i;
-                    bool Neumann = !BMtrx(ID, 0);
+                    bool Neumann = (BMtrx(ID, 0) == 1);
                     if (Neumann) {
                         if constexpr (std::is_invocable<F, SVector<N>>::value) {
                             // functor f is evaluable at any point
@@ -315,8 +378,76 @@ template <int M, int R> class Integrator<FEM, M, R> {
                 if ((*it).on_boundary()) {
                     i++;
                     bool Neumann = false;
-                    for (auto j = 0; j < (*it).node_ids().size(); ++j) if (!BMtrx((*it).node_ids()[j], 0)) Neumann = true;
+                    for (auto j = 0; j < (*it).node_ids().size(); ++j) if (BMtrx((*it).node_ids()[j], 0) == 1) Neumann = true;
                     if (Neumann) {
+                        // integrate f*phi over the facet (*it)
+                        double integral_value = 0;
+                        for (size_t iq = 0; iq < boundary_integration_table_.num_nodes; ++iq) {
+                            const SVector<M-1>& p = boundary_integration_table_.nodes[iq];
+                            if constexpr (std::is_base_of<ScalarExpr<N, F>, F>::value) {
+                                // functor f is evaluable at any point.
+                                SVector<N> Jp =
+                                (*it).barycentric_matrix() * p + (*it).coords()[0];   // map quadrature point on physical element e
+                                integral_value += (f(Jp) * Phi(p)) * boundary_integration_table_.weights[iq];
+                            } else {
+                                // as a fallback we assume f given as vector of values with the assumption that
+                                // f[boundary_integration_table_.num_nodes*e.ID() + iq] equals the discretized field at the iq-th quadrature
+                                // node.
+                                integral_value += (f(boundary_integration_table_.num_nodes * i + iq, 0) * Phi(p)) * boundary_integration_table_.weights[iq];
+                            }
+                        }
+                        // correct for measure of domain (facet e)
+                        value += integral_value * (*it).measure();
+                    }
+                }
+            }
+        }
+
+        return value;
+    }
+    template <int N, typename F, typename B> double integrate_on_boundary_Robin(const Mesh<M, N>& m, const F& f, const DMatrix<short int>& BMtrx, const B& Phi) const {
+        double value = 0;  // value to be returned
+        int i = -1;        // index we need to count the number of facets on the boundary
+
+        if constexpr (M == 1) {
+            // cycle over all mesh nodes
+            for (int ID = 0; ID < m.n_nodes(); ++ID) {
+                // check if the facet is on boundary
+                if (m.is_on_boundary(ID)) {
+                    ++i;
+                    bool Robin = (BMtrx(ID, 0) == 2);
+                    if (Robin) {
+                        if constexpr (std::is_invocable<F, SVector<N>>::value) {
+                            // functor f is evaluable at any point
+                            value += f(m.node(ID))*Phi(m.node(ID));
+                        } else {
+                            // as a fallback we assume f given as vector of values with the assumption that
+                            // f[boundary_integration_table_.num_nodes*i + iq] equals the discretized field at the iq-th quadrature
+                            // node.
+                            value += f(i, 0)*Phi(m.node(ID));
+                        }
+                    }
+                }
+            }
+        }
+        
+        else {
+            // check the size of the matrix ?
+
+            static constexpr int Kb = standard_fem_quadrature_rule<M-1, R>::K;   // number of quadrature nodes for integration on the boundary
+            auto boundary_integration_table_ = IntegratorTable<M-1, Kb>();
+
+            // cycle over all mesh facets
+            for (auto it = m.facet_begin(); it != m.facet_end(); ++it) {
+                // check if the facet is on boundary
+                if ((*it).on_boundary()) {
+                    i++;
+                    bool Robin = false;
+                    for (auto j = 0; j < (*it).node_ids().size(); ++j) {
+                        if (BMtrx((*it).node_ids()[j], 0) == 1) {Robin = false; break;}
+                        if (BMtrx((*it).node_ids()[j], 0) == 2) {Robin = true;}
+                    }
+                    if (Robin) {
                         // integrate f*phi over the facet (*it)
                         double integral_value = 0;
                         for (size_t iq = 0; iq < boundary_integration_table_.num_nodes; ++iq) {

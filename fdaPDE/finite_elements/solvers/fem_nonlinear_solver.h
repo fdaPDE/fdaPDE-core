@@ -58,7 +58,7 @@ public:
 
     using Base = FEMSolverBase<D, E, F, Ts...>;
     FEMNonLinearSolver(const D& domain) : Base(domain) { }
-    FEMNonLinearSolver(const D& domain, const BinaryMatrix<Dynamic>& BMtrx) : Base(domain, BMtrx){ }
+    FEMNonLinearSolver(const D& domain, const DMatrix<short int>& BMtrx) : Base(domain, BMtrx){ }
 
     // setters
     void setFixedpointIter(const size_t FixedpointIter) { FixedpointIter_ = FixedpointIter; }
@@ -131,6 +131,10 @@ public:
             this->stiff_ = assembler.discretize_operator(pde.differential_operator());
             this->stiff_.makeCompressed();
 
+            // set Robin boundary conditions
+            if (this->boundary_dofs_begin_Robin() != this->boundary_dofs_end_Robin()) {
+                this->stiff_ += this->robin_;
+            }
             // set dirichlet boundary conditions on the system matrix
             this->set_dirichlet_bc(pde);
 
@@ -169,6 +173,7 @@ public:
             // A(u) * u - f = 0
             this->solution_ = u;
             this->init(pde);
+            this->set_robin_bc(pde);
             this->set_dirichlet_bc(pde);
             return this->stiff_ * u - this->force_;
         };
@@ -338,6 +343,12 @@ public:
 
             this->force_ = force_backup + R2*f_prev;
             this->stiff_ += R2;
+
+            // set Robin boundary conditions
+            if (this->boundary_dofs_begin_Robin() != this->boundary_dofs_end_Robin()) {
+                this->stiff_ += this->robin_;
+            }
+            // set Dirichlet boundary conitions
             this->set_dirichlet_bc(pde);
 
             // Perform LU decomposition of the system matrix at every step

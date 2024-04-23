@@ -61,30 +61,30 @@ class PDE {
         domain_(domain), solver_(domain) { }
     fdapde_enable_constructor_if(is_stationary, OperatorType) PDE(const D& domain, E diff_op) :
         domain_(domain), diff_op_(diff_op), solver_(domain) { }
-    fdapde_enable_constructor_if(is_stationary, OperatorType)
-      PDE(const SpaceDomainType& domain, OperatorType diff_op, const ForcingType& forcing_data) :
-        domain_(domain), diff_op_(diff_op), forcing_data_(forcing_data), solver_(domain) { }
-    fdapde_enable_constructor_if(is_stationary, OperatorType) PDE(const D& domain, const BinaryMatrix<Dynamic>& BMtrx) :
+    // fdapde_enable_constructor_if(is_stationary, OperatorType)
+    //   PDE(const SpaceDomainType& domain, OperatorType diff_op, const ForcingType& forcing_data) :
+    //     domain_(domain), diff_op_(diff_op), forcing_data_(forcing_data), solver_(domain) { }
+    fdapde_enable_constructor_if(is_stationary, OperatorType) PDE(const D& domain, const DMatrix<short int>& BMtrx) :
         domain_(domain), solver_(domain, BMtrx) { }
-    fdapde_enable_constructor_if(is_stationary, OperatorType) PDE(const D& domain, E diff_op, const BinaryMatrix<Dynamic>& BMtrx) :
+    fdapde_enable_constructor_if(is_stationary, OperatorType) PDE(const D& domain, E diff_op, const DMatrix<short int>& BMtrx) :
         domain_(domain), diff_op_(diff_op), solver_(domain, BMtrx) { }
     fdapde_enable_constructor_if(is_stationary, OperatorType)
-      PDE(const SpaceDomainType& domain, OperatorType diff_op, const ForcingType& forcing_data, const BinaryMatrix<Dynamic>& BMtrx) :
+      PDE(const SpaceDomainType& domain, OperatorType diff_op, const ForcingType& forcing_data, const DMatrix<short int>& BMtrx) :
         domain_(domain), diff_op_(diff_op), forcing_data_(forcing_data), solver_(domain, BMtrx) { }
     // space-time constructors
     fdapde_enable_constructor_if(is_parabolic, OperatorType) PDE(const D& domain, const TimeDomainType& t) :
         domain_(domain), time_domain_(t), solver_(domain) { }
     fdapde_enable_constructor_if(is_parabolic, OperatorType) PDE(const D& domain, const TimeDomainType& t, E diff_op) :
         domain_(domain), time_domain_(t), diff_op_(diff_op), solver_(domain) { }
-    fdapde_enable_constructor_if(is_parabolic, OperatorType) PDE(
-      const SpaceDomainType& domain, const TimeDomainType& t, OperatorType diff_op, const ForcingType& forcing_data) :
-        domain_(domain), time_domain_(t), diff_op_(diff_op), forcing_data_(forcing_data), solver_(domain) { }
-    fdapde_enable_constructor_if(is_parabolic, OperatorType) PDE(const D& domain, const TimeDomainType& t, const BinaryMatrix<Dynamic>& BMtrx) :
+    // fdapde_enable_constructor_if(is_parabolic, OperatorType) PDE(
+    //   const SpaceDomainType& domain, const TimeDomainType& t, OperatorType diff_op, const ForcingType& forcing_data) :
+    //     domain_(domain), time_domain_(t), diff_op_(diff_op), forcing_data_(forcing_data), solver_(domain) { }
+    fdapde_enable_constructor_if(is_parabolic, OperatorType) PDE(const D& domain, const TimeDomainType& t, const DMatrix<short int>& BMtrx) :
         domain_(domain), time_domain_(t), solver_(domain, BMtrx) { }
-    fdapde_enable_constructor_if(is_parabolic, OperatorType) PDE(const D& domain, const TimeDomainType& t, E diff_op, const BinaryMatrix<Dynamic>& BMtrx) :
+    fdapde_enable_constructor_if(is_parabolic, OperatorType) PDE(const D& domain, const TimeDomainType& t, E diff_op, const DMatrix<short int>& BMtrx) :
         domain_(domain), time_domain_(t), diff_op_(diff_op), solver_(domain, BMtrx) { }
     fdapde_enable_constructor_if(is_parabolic, OperatorType) PDE(
-      const SpaceDomainType& domain, const TimeDomainType& t, OperatorType diff_op, const ForcingType& forcing_data, const BinaryMatrix<Dynamic>& BMtrx) :
+      const SpaceDomainType& domain, const TimeDomainType& t, OperatorType diff_op, const ForcingType& forcing_data, const DMatrix<short int>& BMtrx) :
         domain_(domain), time_domain_(t), diff_op_(diff_op), forcing_data_(forcing_data), solver_(domain, BMtrx) { }
     
     fdapde_enable_constructor_if(is_stationary, OperatorType) PDE(const D& domain, E diff_op,
@@ -94,16 +94,17 @@ class PDE {
       const std::function<double(SVector<N>, SVector<1>)>& non_linear_reaction) :
         domain_(domain), time_domain_(t), diff_op_(diff_op), solver_(domain), non_linear_reaction_(non_linear_reaction) { }
     fdapde_enable_constructor_if(is_stationary, OperatorType) PDE(const D& domain, E diff_op,
-      const std::function<double(SVector<N>, SVector<1>)>& non_linear_reaction, const BinaryMatrix<Dynamic>& BMtrx) :
+      const std::function<double(SVector<N>, SVector<1>)>& non_linear_reaction, const DMatrix<short int>& BMtrx) :
         domain_(domain), diff_op_(diff_op), solver_(domain, BMtrx), non_linear_reaction_(non_linear_reaction) { }
     fdapde_enable_constructor_if(is_parabolic, OperatorType) PDE(const D& domain, const TimeDomainType& t, E diff_op,
-      const std::function<double(SVector<N>, SVector<1>)>& non_linear_reaction, const BinaryMatrix<Dynamic>& BMtrx) :
+      const std::function<double(SVector<N>, SVector<1>)>& non_linear_reaction, const DMatrix<short int>& BMtrx) :
         domain_(domain), time_domain_(t), diff_op_(diff_op), solver_(domain, BMtrx), non_linear_reaction_(non_linear_reaction) { }
     // setters
     void set_forcing(const ForcingType& forcing_data) { forcing_data_ = forcing_data; }
     void set_differential_operator(OperatorType diff_op) { diff_op_ = diff_op; }
     void set_dirichlet_bc(const DMatrix<double>& data) { dirichlet_boundary_data_ = data; }
-    void set_neumann_bc(const ForcingType& data) { neumann_boundary_data_ = data; }
+    void set_neumann_bc(const ForcingType& data, const double diffusion = 1.) { neumann_boundary_data_ = data; diffusion_coefficient_ = diffusion; }
+    void set_robin_bc(const ForcingType& data, const DVector<double> constants, const double diffusion = 1.) { robin_boundary_data_ = data; robin_constants_ = constants; diffusion_coefficient_ = diffusion; }
     void set_initial_condition(const DVector<double>& data) { initial_condition_ = data; };
     // getters
     const SpaceDomainType& domain() const { return domain_; }
@@ -113,6 +114,9 @@ class PDE {
     const DVector<double>& initial_condition() const { return initial_condition_; }
     const DMatrix<double>& dirichlet_boundary_data() const { return dirichlet_boundary_data_; };
     const DMatrix<double>& neumann_boundary_data() const { return neumann_boundary_data_; };
+    const DMatrix<double>& robin_boundary_data() const { return robin_boundary_data_; };
+    const DVector<double> robin_constants() const { return robin_constants_; };
+    const double diffusion_coefficient() const { return diffusion_coefficient_; };
     const Quadrature& integrator() const { return solver_.integrator(); }
     const ForceQuadrature& force_integrator() const { return solver_.force_integrator(); }
     const FunctionalBasis& basis() const { return solver_.basis(); }
@@ -133,8 +137,9 @@ class PDE {
     DMatrix<double> boundary_quadrature_nodes() const { return integrator().boundary_quadrature_nodes(domain_); };
     void init() { solver_.init(*this); };   // initializes the solver
     void solve() {                          // solves the PDE
+        if (!is_empty(neumann_boundary_data_)) solver_.set_neumann_bc(*this);
+        if (!is_empty(robin_boundary_data_)) solver_.set_robin_bc(*this);
         if (!is_empty(dirichlet_boundary_data_)) solver_.set_dirichlet_bc(*this);
-        if (!is_empty(neumann_boundary_data_)) solver_.set_neumann_bc(*this, neumann_boundary_data_);
         solver_.solve(*this);
     }
    private:
@@ -146,6 +151,9 @@ class PDE {
     SolverType solver_ {};                     // problem solver
     DMatrix<double> dirichlet_boundary_data_;  // Dirichlet boundary conditions
     DMatrix<double> neumann_boundary_data_;    // Neumann boundary conditions
+    DMatrix<double> robin_boundary_data_;      // Robin boundary conditions
+    DMatrix<double> robin_constants_;          // constants needed to impose Robin boundary conditions
+    double diffusion_coefficient_;    // constants needed to impose Robin and Neumann boundary conditions
     std::function<double(SVector<N>, SVector<1>)> non_linear_reaction_ ; // ... 
 };
 

@@ -42,7 +42,7 @@ public:
 
     using Base = FEMSolverBase<D, E, F, Ts...>;
     FEMEulerSemiImplicit(const D& domain) : Base(domain) { }
-    FEMEulerSemiImplicit(const D& domain, const BinaryMatrix<Dynamic>& BMtrx) : Base(domain, BMtrx){ }
+    FEMEulerSemiImplicit(const D& domain, const DMatrix<short int>& BMtrx) : Base(domain, BMtrx){ }
 
     void set_deltaT(double deltaT) { deltaT_ = deltaT; }
 
@@ -71,11 +71,16 @@ public:
             // discretize stiffness matrix
             this->stiff_ = assembler.discretize_operator(pde.differential_operator());
 
+            // set Robin boundary conditions
+            if (this->boundary_dofs_begin_Robin() != this->boundary_dofs_end_Robin()) {
+                this->stiff_ += this->robin_;
+            }
+
             // build system matrix and rhs
             SpMatrix<double> K = (this->mass_) / deltaT_ + this->stiff_;
             rhs = ((this->mass_) / deltaT_) * this->solution_.col(i) + this->force_.block(n * (i + 1), 0, n, 1);
 
-            // set dirichlet boundary conditions
+            // set Dirichlet boundary conditions
             for (auto it = this->boundary_dofs_begin_Dirichlet(); it != this->boundary_dofs_end_Dirichlet(); ++it) {
                 K.row(*it) *= 0;            // zero all entries of this row
                 K.coeffRef(*it, *it) = 1;   // set diagonal element to 1 to impose equation u_j = b_j

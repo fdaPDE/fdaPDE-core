@@ -63,7 +63,7 @@ TEST(fem_pde_test, laplacian_isotropic_order1) {
     pde_.set_dirichlet_bc(dirichlet_bc);
 
     // request quadrature nodes and evaluate forcing on them
-    DMatrix<double> quadrature_nodes = pde_.quadrature_nodes();
+    DMatrix<double> quadrature_nodes = pde_.force_quadrature_nodes();
     DMatrix<double> f = DMatrix<double>::Zero(quadrature_nodes.rows(), 1);
     pde_.set_forcing(f);
     // init solver and solve differential problem
@@ -86,7 +86,8 @@ TEST(fem_pde_test, laplacian_isotropic_order2_callable_force) {
     MeshLoader<Mesh2D> unit_square("unit_square");
     auto L = -laplacian<FEM>();
     // initialize PDE with callable forcing term
-    PDE<decltype(unit_square.mesh), decltype(L), ScalarField<2>, FEM, fem_order<2>> pde_(unit_square.mesh, L, forcing);
+    PDE<decltype(unit_square.mesh), decltype(L), ScalarField<2>, FEM, fem_order<2>> pde_(unit_square.mesh, L);
+    pde_.set_forcing(forcing);
     // compute boundary condition and exact solution
     DMatrix<double> nodes_ = pde_.dof_coords();
     DMatrix<double> dirichlet_bc(nodes_.rows(), 1);
@@ -143,8 +144,9 @@ TEST(fem_pde_test, advection_diffusion_isotropic_order1) {
     auto L = -laplacian<FEM>() + advection<FEM>(beta_);
     // load sample mesh for order 1 basis
     MeshLoader<Mesh2D> unit_square("unit_square");
-    // PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>, double, decltype(beta_)> pde_(unit_square.mesh, L, forcing);
-    PDE<decltype(unit_square.mesh), decltype(L), ScalarField<2>, FEM, fem_order<1>, double, decltype(beta_)> pde_(unit_square.mesh, L, forcing);
+    // PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>, double, decltype(beta_)> pde_(unit_square.mesh, L);
+    PDE<decltype(unit_square.mesh), decltype(L), ScalarField<2>, FEM, fem_order<1>, double, decltype(beta_)> pde_(unit_square.mesh, L);
+    pde_.set_forcing(forcing);
     // pde_.set_differential_operator(L);
 
     // compute boundary condition and exact solution
@@ -157,7 +159,7 @@ TEST(fem_pde_test, advection_diffusion_isotropic_order1) {
     pde_.set_dirichlet_bc(dirichletBC);
 
     // request quadrature nodes and evaluate forcing on them
-    // DMatrix<double> quadrature_nodes = pde_.quadrature_nodes();
+    // DMatrix<double> quadrature_nodes = pde_.force_quadrature_nodes();
     // DMatrix<double> f = DMatrix<double>::Zero(quadrature_nodes.rows(), 1);
     // for (int i = 0; i < quadrature_nodes.rows(); ++i) { f(i) = forcingExpr(quadrature_nodes.row(i)); }
     // pde_.set_forcing(f);
@@ -209,7 +211,8 @@ TEST(fem_pde_test, advection_diffusion_isotropic_order2) {
     // load sample mesh for order 1 basis
     MeshLoader<Mesh2D> unit_square("unit_square");
 
-    PDE<decltype(unit_square.mesh), decltype(L), ScalarField<2>, FEM, fem_order<2>, double, decltype(beta_)> pde_(unit_square.mesh, L, forcing);
+    PDE<decltype(unit_square.mesh), decltype(L), ScalarField<2>, FEM, fem_order<2>, double, decltype(beta_)> pde_(unit_square.mesh, L);
+    pde_.set_forcing(forcing);
 
     // compute boundary condition and exact solution
     DMatrix<double> nodes_ = pde_.dof_coords();
@@ -283,7 +286,7 @@ TEST(fem_pde_test, parabolic_isotropic_order2) {
     pde_.set_initial_condition(initial_condition);
 
     // request quadrature nodes and evaluate forcing on them
-    DMatrix<double> quadrature_nodes = pde_.quadrature_nodes();
+    DMatrix<double> quadrature_nodes = pde_.force_quadrature_nodes();
     DMatrix<double> f(quadrature_nodes.rows(), M);
     for (int i = 0; i < quadrature_nodes.rows(); ++i) {
         for (int j = 0; j < M; ++j) { f(i, j) = forcing_expr(quadrature_nodes.row(i), times(j)); }
@@ -300,14 +303,14 @@ TEST(fem_pde_test, parabolic_isotropic_order2) {
         error_L2(j, 0) = (pde_.mass() * error_.cwiseProduct(error_)).sum();
     }
 
-    /* std::ofstream file("solution_parabolic_P1.txt");    //it will be exported in the current build directory
-    if (file.is_open()){
-        for(int i = 0; i < pde_.solution().col(M-1).rows(); ++i)
-            file << pde_.solution().col(M-1)(i) << '\n';
-        file.close();
-    } else {
-        std::cerr << "test unable to save solution" << std::endl;
-    } */
+    // std::ofstream file("solution_parabolic_P1.txt");    //it will be exported in the current build directory
+    // if (file.is_open()){
+    //     for(int i = 0; i < pde_.solution().col(M-1).rows(); ++i)
+    //         file << pde_.solution().col(M-1)(i) << '\n';
+    //     file.close();
+    // } else {
+    //     std::cerr << "test unable to save solution" << std::endl;
+    // }
 
     EXPECT_TRUE(error_L2.maxCoeff() < 1e-7);
 }
@@ -370,7 +373,7 @@ TEST(fem_pde_test, parabolic_isotropic_order1_convergence) {
         pde_.set_initial_condition(initial_condition);
 
         // request quadrature nodes and evaluate forcing on them
-        DMatrix<double> quadrature_nodes = pde_.quadrature_nodes();
+        DMatrix<double> quadrature_nodes = pde_.force_quadrature_nodes();
         DMatrix<double> f(quadrature_nodes.rows(), M);
         for (int i = 0; i < quadrature_nodes.rows(); ++i) {
             for (int j = 0; j < M; ++j) { f(i, j) = forcing_expr(quadrature_nodes.row(i), times(j)); }
@@ -418,7 +421,8 @@ TEST(fem_pde_test, advection_diffusion_reaction_non_isotropic_order_2) {
     // load sample mesh for order 1 basis
     MeshLoader<Mesh2D> unit_square("unit_square");
 
-    PDE<decltype(unit_square.mesh), decltype(L), ScalarField<2>, FEM, fem_order<2>, decltype(K_), decltype(b_)> pde_(unit_square.mesh, L, forcing);
+    PDE<decltype(unit_square.mesh), decltype(L), ScalarField<2>, FEM, fem_order<2>, decltype(K_), decltype(b_)> pde_(unit_square.mesh, L);
+    pde_.set_forcing(forcing);
 
     // compute boundary condition and exact solution
     DMatrix<double> nodes_ = pde_.dof_coords(); // unit_square.mesh.dof_coords();
@@ -486,7 +490,7 @@ TEST(fem_pde_test, non_linear_2) {
 
     // init solver and solve differential problem
     // request quadrature nodes and evaluate forcing on them
-    DMatrix<double> quadrature_nodes = pde_.integrator().quadrature_nodes(unit_square.mesh);
+    DMatrix<double> quadrature_nodes = pde_.force_quadrature_nodes();
     DMatrix<double> u(quadrature_nodes.rows(), 1);
     for (int i = 0; i < quadrature_nodes.rows(); ++i) {
         u(i) = forcingExpr(quadrature_nodes.row(i));
@@ -563,7 +567,7 @@ TEST(fem_pde_test, non_linear_1) {
     
     // init solver and solve differential problem
     // request quadrature nodes and evaluate forcing on them
-    DMatrix<double> quadrature_nodes = pde_.integrator().quadrature_nodes(unit_square.mesh);
+    DMatrix<double> quadrature_nodes = pde_.force_quadrature_nodes();
     DMatrix<double> u(quadrature_nodes.rows(), 1);
     for (int i = 0; i < quadrature_nodes.rows(); ++i) {
         u(i) = forcingExpr(quadrature_nodes.row(i));
@@ -692,18 +696,14 @@ TEST(fem_pde_test, space_time) {
             solution_ex(i, j) = solution_expr(nodes_.row(i), times(j));
         }
     }
-    // dirichlet_bc = DMatrix<double>::Zero(nodes_.rows(),M);
-
     for (int i = 0; i < nodes_.rows(); ++i) { initial_condition(i) = solution_expr(nodes_.row(i), times(0)); }
-    // for (int i = 0; i < nodes_.rows(); ++i) { initial_condition(i) = 0.0; }
     // set dirichlet conditions
     pde_.set_dirichlet_bc(dirichlet_bc);
-
     // set initial condition
     pde_.set_initial_condition(initial_condition);
 
     // request quadrature nodes and evaluate forcing on them
-    DMatrix<double> quadrature_nodes = pde_.quadrature_nodes();
+    DMatrix<double> quadrature_nodes = pde_.force_quadrature_nodes();
     DMatrix<double> f(quadrature_nodes.rows(), M);
     for (int i = 0; i < quadrature_nodes.rows(); ++i) {
         for (int j = 0; j < M; ++j) { f(i, j) = forcing_expr(quadrature_nodes.row(i), times(j)); }
@@ -719,21 +719,111 @@ TEST(fem_pde_test, space_time) {
     for (int j = 0; j < M; ++j) {
         error_ = solution_ex.col(j) - pde_.solution().col(j);
         error_L2(j, 0) = (pde_.mass() * error_.cwiseProduct(error_)).sum();
-        // std::cout << "t = " << j << " ErrorL2 = " << error_L2(j,0) << std::endl;
+        // std::cout << "t = " << j << " ErrorL2 = " << std::sqrt(error_L2(j,0)) << std::endl;
     }
 
-    /* std::ofstream file("solution_space_time_P1.txt");    //it will be exported in the current build directory
-    if (file.is_open()){
-        for(int i = 0; i < pde_.solution().col(M-1).rows(); ++i)
-            file << pde_.solution().col(M-1)(i) << '\n';
-        file.close();
-    } else {
-        std::cerr << "parabolic test unable to save solution" << std::endl;
-    } */
+    // std::ofstream file("solution_space_time_EIN.txt");    //it will be exported in the current build directory
+    // if (file.is_open()){
+    //     for(int i = 0; i < pde_.solution().col(M-1).rows(); ++i)
+    //         file << pde_.solution().col(M-1)(i) << '\n';
+    //     //file << std::sqrt(error_L2(M-1,0)) << '\n';
+    //     file.close();
+    // } else {
+    //     std::cerr << "test unable to save solution" << std::endl;
+    // }
 
     EXPECT_TRUE(error_L2.maxCoeff() < 1e-7);
 }
 
+/* TEST(fem_pde_test, space_time_complete) {
+
+    // exact solution
+    int M = 101;
+    DMatrix<double> times(M, 1);
+    double time_max = 1e-3;
+    for (int j = 0; j < M; ++j) { times(j) = time_max / (M - 1) * j; }
+
+    int num_refinements = 1;
+    DMatrix<double> error_L2 = DMatrix<double>::Zero(M, num_refinements);
+    constexpr double pi = 3.14159265358979323846;
+
+    auto solution_expr = [](SVector<2> x, double t) -> double {
+        return (std::cos(pi*x[0])*std::cos(pi*x[1]) + 2)*std::exp(-t);
+    };
+    auto forcing_expr = [](SVector<2> x, double t) -> double {
+        return ( (std::cos(pi*x[0])*std::cos(pi*x[1]) + 2) + pi*pi*(std::cos(pi*x[0])*std::cos(pi*x[1])-std::sin(pi*x[0])*std::sin(pi*x[1])) - 2*pi*std::sin(pi*x[0])*std::cos(pi*x[1]) + pi*std::cos(pi*x[0])*std::sin(pi*x[1]) )*std::exp(-t) - (std::cos(pi*x[0])*std::cos(pi*x[1]) + 2)*std::exp(-t)*(1 - (std::cos(pi*x[0])*std::cos(pi*x[1]) + 2)*std::exp(-t));
+    };
+
+    MeshLoader<Mesh2D> unit_square("unit_square_128");
+
+    // non linear reaction h_(u)*u
+    std::function<double(SVector<2>, SVector<1>)> h_ = [&](SVector<2> x, SVector<1> ff) -> double {return 1 - ff[0];};
+    // build the non-linearity object # N=2
+    NonLinearReaction<2, LagrangianBasis<decltype(unit_square.mesh),1>::ReferenceBasis> non_linear_reaction(h_);
+
+    // parameter for the differential operator
+    SVector<2> b_;
+    b_ << 2., -1.;
+    SMatrix<2,2> K_{{1., -1.},{2., 0.}};
+    double c_ = 2;
+    // save parameters in the PDEparameters singleton, these will be retrieved by the solver (MANDATORY WITH ADVECTION TERM!!)
+    // PDEparameters<decltype(K_), decltype(b_)> &PDEparams = PDEparameters<decltype(K_), decltype(b_)>::getInstance(K_, b_);
+
+    // differential operator
+    auto L = dt<FEM>() - diffusion<FEM>(K_) + advection<FEM>(b_) + reaction<FEM>(c_) - non_linear_op<FEM>(non_linear_reaction);
+
+    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_square.mesh, times, L, h_);
+    
+    // compute boundary condition and exact solution
+    DMatrix<double> nodes_ = pde_.dof_coords();
+    DMatrix<double> dirichlet_bc(nodes_.rows(), M);
+    DMatrix<double> solution_ex(nodes_.rows(), M);
+    DMatrix<double> initial_condition(nodes_.rows(), 1);
+
+    for (int i = 0; i < nodes_.rows(); ++i) {
+        for (int j = 0; j < M; ++j) {
+            dirichlet_bc(i, j) = solution_expr(nodes_.row(i), times(j));
+            solution_ex(i, j) = solution_expr(nodes_.row(i), times(j));
+        }
+    }
+    for (int i = 0; i < nodes_.rows(); ++i) { initial_condition(i) = solution_expr(nodes_.row(i), times(0)); }
+    // set dirichlet conditions
+    pde_.set_dirichlet_bc(dirichlet_bc);
+    // set initial condition
+    pde_.set_initial_condition(initial_condition);
+
+    // request quadrature nodes and evaluate forcing on them
+    DMatrix<double> quadrature_nodes = pde_.force_quadrature_nodes();
+    DMatrix<double> f(quadrature_nodes.rows(), M);
+    for (int i = 0; i < quadrature_nodes.rows(); ++i) {
+        for (int j = 0; j < M; ++j) { f(i, j) = forcing_expr(quadrature_nodes.row(i), times(j)); }
+    }
+    pde_.set_forcing(f);
+    // init solver and solve differential problem
+    pde_.init();
+    pde_.solve();
+
+    // check computed error within theoretical expectations
+    // std::cout << "L2 errors:" << std::endl;
+    DMatrix<double> error_(nodes_.rows(), 1);
+    for (int j = 0; j < M; ++j) {
+        error_ = solution_ex.col(j) - pde_.solution().col(j);
+        error_L2(j, 0) = (pde_.mass() * error_.cwiseProduct(error_)).sum();
+        std::cout << "t = " << j << " ErrorL2 = " << std::sqrt(error_L2(j,0)) << std::endl;
+    }
+
+    // std::ofstream file("solution_space_time_EIN.txt");    //it will be exported in the current build directory
+    // if (file.is_open()){
+    //     for(int i = 0; i < pde_.solution().col(M-1).rows(); ++i)
+    //         file << pde_.solution().col(M-1)(i) << '\n';
+    //     //file << std::sqrt(error_L2(M-1,0)) << '\n';
+    //     file.close();
+    // } else {
+    //     std::cerr << "test unable to save solution" << std::endl;
+    // }
+
+    EXPECT_TRUE(error_L2.maxCoeff() < 1e-7);
+} */
 
 // space time test
 TEST(fem_pde_test, travelling_waves) {
@@ -791,7 +881,7 @@ TEST(fem_pde_test, travelling_waves) {
     pde_.set_initial_condition(initial_condition);
 
     // request quadrature nodes and evaluate forcing on them
-    DMatrix<double> quadrature_nodes = pde_.quadrature_nodes();
+    DMatrix<double> quadrature_nodes = pde_.force_quadrature_nodes();
     DMatrix<double> f(quadrature_nodes.rows(), M);
     for (int i = 0; i < quadrature_nodes.rows(); ++i) {
         for (int j = 0; j < M; ++j) { f(i, j) = forcing_expr(quadrature_nodes.row(i), times(j)); }
@@ -810,222 +900,19 @@ TEST(fem_pde_test, travelling_waves) {
         // std::cout << "t = " << j << " ErrorL2 = " << error_L2(j,0) << std::endl;
     }
 
-    /* std::ofstream file("solution_travelling_wave_P1.txt");    //it will be exported in the current build directory
-    if (file.is_open()){
-        for(int i = 0; i < pde_.solution().col(M-1).rows(); ++i)
-            file << pde_.solution().col(M-1)(i) << '\n';
-        file.close();
-    } else {
-        std::cerr << "travelling wave test unable to save solution" << std::endl;
-    } */
+    // std::ofstream file("solution_travelling_wave_P1_E_IFP.txt");    //it will be exported in the current build directory
+    // if (file.is_open()){
+    //     for(int i = 0; i < pde_.solution().col(M-1).rows(); ++i)
+    //         file << pde_.solution().col(M-1)(i) << '\n';
+    //     file.close();
+    // } else {
+    //     std::cerr << "travelling wave test unable to save solution" << std::endl;
+    // }
 
     EXPECT_TRUE(error_L2.maxCoeff() < 1e-3);
 }
 
-// check error of approximated solution by an order 1 FEM within theoretical expectations
-// apply mixed boundary conditions
-TEST(fem_pde_test, laplacian_dirichlet_neumann) {
-    // exact solution
-    auto solution_expr = [](SVector<2> x) -> double { return 1. + x[0]*x[0] + 2*x[1]*x[1]; };
-    auto neumann_expr = [](SVector<2> x) -> double { return 4*x[1]; };
-    // auto neumann_expr = [](SVector<2> x) -> double { return 2*x[0]; };
-    auto forcing_expr = [](SVector<2> x) -> double { return -6.; };
-
-    MeshLoader<Mesh2D> unit_square("unit_square_16");
-    // define the Neumann and Dirichlet boundary with a BinaryMatrix (=1 if Dirichlet, =0 if Neumann)
-    // considering the unit square,
-    // we have Dirichlet boundary when x=0 and x=1 (left and right sides)
-    // we have Neumann boundary when y=0 and y=1 (upper and lower sides)
-    auto boundary_matrix = BinaryMatrix<Dynamic>::Ones(unit_square.mesh.n_nodes(), 1) ; // has all ones
-    for (size_t j=1; j<16; ++j) boundary_matrix.clear(j, 0);
-    for (size_t j=273; j<288; ++j) boundary_matrix.clear(j, 0);
-    // for (size_t j=1; j<16; j++) {
-    //     boundary_matrix.clear(0 + 17*j, 0);
-    //     boundary_matrix.clear(16 + 17*j, 0);
-    // }
-
-    auto L = -laplacian<FEM>();
-    // instantiate a type-erased wrapper for this pde
-    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_square.mesh, L, boundary_matrix);
-    
-    // compute boundary condition and exact solution
-    DMatrix<double> nodes_ = pde_.dof_coords();
-    DMatrix<double> dirichlet_bc(nodes_.rows(), 1);
-    DMatrix<double> solution_ex(nodes_.rows(), 1);
-
-    for (int i = 0; i < nodes_.rows(); ++i) {
-        dirichlet_bc(i) = solution_expr(nodes_.row(i));
-        solution_ex(i) = solution_expr(nodes_.row(i));
-    }
-    // set dirichlet conditions
-    pde_.set_dirichlet_bc(dirichlet_bc);
-
-    // request quadrature nodes and evaluate forcing on them
-    DMatrix<double> quadrature_nodes = pde_.quadrature_nodes();
-    DMatrix<double> f(quadrature_nodes.rows(), 1);
-    for (int i = 0; i < quadrature_nodes.rows(); ++i) {
-        f(i) = forcing_expr(quadrature_nodes.row(i)); 
-    }
-    pde_.set_forcing(f);
-    DMatrix<double> boundary_quadrature_nodes = pde_.boundary_quadrature_nodes();
-    DMatrix<double> f_neumann(boundary_quadrature_nodes.rows(), 1);
-    for (auto i=0; i< boundary_quadrature_nodes.rows(); ++i){
-        f_neumann(i) = neumann_expr(boundary_quadrature_nodes.row(i));
-    }
-    pde_.set_neumann_bc(f_neumann);
-    // init solver and solve differential problem
-    pde_.init();
-    pde_.solve();
-    // check computed error within theoretical expectations
-    DMatrix<double> error_ = solution_ex - pde_.solution();
-    double error_L2 = (pde_.mass() * error_.cwiseProduct(error_)).sum();
-    EXPECT_TRUE(error_L2 < DOUBLE_TOLERANCE);
-}
-
-// check error of approximated solution by an order 2 FEM within theoretical expectations
-// apply mixed boundary conditions
-TEST(fem_pde_test, laplacian_dirichlet_neumann_order2) {
-    // exact solution
-    auto solution_expr = [](SVector<2> x) -> double { return 1. + x[0]*x[0] + 2*x[1]*x[1]; };
-    auto neumann_expr = [](SVector<2> x) -> double { return 4*x[1]; };
-    // auto neumann_expr = [](SVector<2> x) -> double { return 2*x[0]; };
-    auto forcing_expr = [](SVector<2> x) -> double { return -6.; };
-
-    MeshLoader<Mesh2D> unit_square("unit_square_16");
-    // define the Neumann and Dirichlet boundary with a BinaryMatrix (=1 if Dirichlet, =0 if Neumann)
-    // considering the unit square,
-    // we have Dirichlet boundary when x=0 and x=1 (left and right sides)
-    // we have Neumann boundary when y=0 and y=1 (upper and lower sides)
-    auto boundary_matrix = BinaryMatrix<Dynamic>::Ones(unit_square.mesh.n_nodes(), 1) ; // has all ones
-    for (size_t j=1; j<16; ++j) boundary_matrix.clear(j, 0);
-    for (size_t j=273; j<288; ++j) boundary_matrix.clear(j, 0);
-    // for (size_t j=1; j<16; j++) {
-    //     boundary_matrix.clear(0 + 17*j, 0);
-    //     boundary_matrix.clear(16 + 17*j, 0);
-    // }
-
-    auto L = -laplacian<FEM>();
-    // instantiate a type-erased wrapper for this pde
-    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<2>> pde_(unit_square.mesh, L, boundary_matrix);
-    
-    // compute boundary condition and exact solution
-    DMatrix<double> nodes_ = pde_.dof_coords();
-    DMatrix<double> dirichlet_bc(nodes_.rows(), 1);
-    DMatrix<double> solution_ex(nodes_.rows(), 1);
-
-    for (int i = 0; i < nodes_.rows(); ++i) {
-        dirichlet_bc(i) = solution_expr(nodes_.row(i));
-        solution_ex(i) = solution_expr(nodes_.row(i));
-    }
-    // set dirichlet conditions
-    pde_.set_dirichlet_bc(dirichlet_bc);
-
-    // request quadrature nodes and evaluate forcing on them
-    DMatrix<double> quadrature_nodes = pde_.quadrature_nodes();
-    DMatrix<double> f(quadrature_nodes.rows(), 1);
-    for (int i = 0; i < quadrature_nodes.rows(); ++i) {
-        f(i) = forcing_expr(quadrature_nodes.row(i)); 
-    }
-    pde_.set_forcing(f);
-    DMatrix<double> boundary_quadrature_nodes = pde_.boundary_quadrature_nodes();
-    DMatrix<double> f_neumann(boundary_quadrature_nodes.rows(), 1);
-    for (auto i=0; i< boundary_quadrature_nodes.rows(); ++i){
-        f_neumann(i) = neumann_expr(boundary_quadrature_nodes.row(i));
-    }
-    pde_.set_neumann_bc(f_neumann);
-    // init solver and solve differential problem
-    pde_.init();
-    pde_.solve();
-    // check computed error within theoretical expectations
-    DMatrix<double> error_ = solution_ex - pde_.solution();
-    double error_L2 = (pde_.mass() * error_.cwiseProduct(error_)).sum();
-    // std::cout << error_L2 << std::endl;
-    EXPECT_TRUE(error_L2 < DOUBLE_TOLERANCE);
-}
-
-// check error of approximated solution by an order 1 FEM within theoretical expectations in 3D
-// apply mixed boundary conditions
-TEST(fem_pde_test, laplacian_dirichlet_neumann_cube) {
-    // exact solution
-    auto solution_expr = [](SVector<3> x) -> double { return 1. + x[0]*x[0] + 2*x[1]*x[1] + 3*x[2]*x[2]; };
-    auto neumann_expr = [](SVector<3> x) -> double { return 6*x[2]; };
-    auto forcing_expr = [](SVector<3> x) -> double { return -12.; };
-
-    MeshLoader<Mesh3D> unit_cube("unit_cube");
-    // define the Neumann and Dirichlet boundary with a BinaryMatrix (=1 if Dirichlet, =0 if Neumann)
-    // considering the unit square,
-    // we have Dirichlet boundary when x=0 and x=1 (left and right sides)
-    // we have Neumann boundary when y=0 and y=1 (upper and lower sides)
-    auto boundary_matrix = BinaryMatrix<Dynamic>::Ones(unit_cube.mesh.n_nodes(), 1) ; // has all ones
-    for (size_t j=1; j<225; ++j) boundary_matrix.clear(j, 0);
-    for (size_t j=3152; j<3375; ++j) boundary_matrix.clear(j, 0);
-    // set the Dirichlet nodes at the edges
-    for (size_t j=0; j<15; j++) {
-        boundary_matrix.set(15*j, 0);      // lower face, points with x=0
-        boundary_matrix.set(14 + j*15, 0); // lower face, points with x=1
-        boundary_matrix.set(j, 0);         // lower face, points with y=0
-        boundary_matrix.set(210 + j, 0);   // lower face, points with y=1
-
-        boundary_matrix.set(3150 + 15*j, 0);      // upper face, points with x=0
-        boundary_matrix.set(3164 + j*15, 0); // upper face, points with x=1
-        boundary_matrix.set(3150 + j, 0);         // upper face, points with y=0
-        boundary_matrix.set(3360 + j, 0);   // upper face, points with y=1
-    }
-
-
-    auto L = -laplacian<FEM>();
-    // instantiate a type-erased wrapper for this pde
-    PDE<decltype(unit_cube.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_cube.mesh, L, boundary_matrix);
-    
-    // compute boundary condition and exact solution
-    DMatrix<double> nodes_ = pde_.dof_coords();
-    DMatrix<double> dirichlet_bc(nodes_.rows(), 1);
-    DMatrix<double> solution_ex(nodes_.rows(), 1);
-
-    for (int i = 0; i < nodes_.rows(); ++i) {
-        dirichlet_bc(i) = solution_expr(nodes_.row(i));
-        solution_ex(i) = solution_expr(nodes_.row(i));
-    }
-    // set dirichlet conditions
-    pde_.set_dirichlet_bc(dirichlet_bc);
-
-    // request quadrature nodes and evaluate forcing on them
-    DMatrix<double> quadrature_nodes = pde_.quadrature_nodes();
-    DMatrix<double> f(quadrature_nodes.rows(), 1);
-    for (int i = 0; i < quadrature_nodes.rows(); ++i) {
-        f(i) = forcing_expr(quadrature_nodes.row(i)); 
-    }
-    pde_.set_forcing(f);
-    DMatrix<double> boundary_quadrature_nodes = pde_.boundary_quadrature_nodes();
-    DMatrix<double> f_neumann(boundary_quadrature_nodes.rows(), 1);
-    for (auto i=0; i< boundary_quadrature_nodes.rows(); ++i){
-        f_neumann(i) = neumann_expr(boundary_quadrature_nodes.row(i));
-    }
-    pde_.set_neumann_bc(f_neumann);
-    // init solver and solve differential problem
-    pde_.init();
-    pde_.solve();
-    // check computed error within theoretical expectations
-    DMatrix<double> error_ = solution_ex - pde_.solution();
-    double error_L2 = (pde_.mass() * error_.cwiseProduct(error_)).sum();
-    // std::cout << error_L2 << std::endl;
-    EXPECT_TRUE(error_L2 < DOUBLE_TOLERANCE);
-
-
-    //storing solution 
-    // std::ofstream file("cube_D_N.txt");    //it will be exported in the current build directory
-    // if (file.is_open()){
-    //     for(int i = 0; i < pde_.solution().rows(); ++i)
-    //         file << pde_.solution()(i) << '\n';
-    //     file.close();
-    // } else {
-    //     std::cerr << "cubic test unable to save solution" << std::endl;
-    // }
-
-}
-
-// space time test with mixed boundary onditions
-TEST(fem_pde_test, space_time_mixed_bc) {
+/* TEST(fem_pde_test, space_time1) {
 
     // exact solution
     int M = 101;
@@ -1043,21 +930,8 @@ TEST(fem_pde_test, space_time_mixed_bc) {
     auto forcing_expr = [](SVector<2> x, double t) -> double {
         return -4*std::exp(-t) + std::cos(pi*x[0])*std::cos(pi*x[1])*std::exp(-t)*(-2+2*pi*pi) + (4 + std::cos(pi*x[0])*std::cos(pi*x[0])*std::cos(pi*x[1])*std::cos(pi*x[1]) + 4*std::cos(pi*x[0])*std::cos(pi*x[1]))*std::exp(-2*t);
     };
-    auto neumann_expr = [](SVector<2> x, double t) -> double { 
-        if (x[0]==0 || x[0]==1) return pi*std::sin(pi*x[0])*std::cos(pi*x[1])*std::exp(-t) * (1-2*x[0]);
-        return pi*std::cos(pi*x[0])*std::sin(pi*x[1])*std::exp(-t) * (1-2*x[1]); };
 
-    MeshLoader<Mesh2D> unit_square("unit_square_16");
-
-    // define the Neumann and Dirichlet boundary with a BinaryMatrix (=1 if Dirichlet, =0 if Neumann)
-    // considering the unit square,
-    // we have Dirichlet boundary when y=0 and y=1 (upper and lower sides)
-    // we have Neumann boundary when x=0 and x=1 (left and right sides)
-    auto boundary_matrix = BinaryMatrix<Dynamic>::Ones(unit_square.mesh.n_nodes(), 1) ; // has all ones
-    for (size_t j=1; j<16; j++) {
-        boundary_matrix.clear(0 + 17*j, 0);
-        boundary_matrix.clear(16 + 17*j, 0);
-    }
+    MeshLoader<Mesh2D> unit_square("unit_square_32");
 
     // non linear reaction h_(u)*u
     std::function<double(SVector<2>, SVector<1>)> h_ = [&](SVector<2> x, SVector<1> ff) -> double {return 1 - ff[0];};
@@ -1067,7 +941,7 @@ TEST(fem_pde_test, space_time_mixed_bc) {
     // differential operator
     auto L = dt<FEM>() - laplacian<FEM>() - non_linear_op<FEM>(non_linear_reaction);
 
-    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_square.mesh, times, L, h_); //, boundary_matrix);
+    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_square.mesh, times, L, h_);
     
     // compute boundary condition and exact solution
     DMatrix<double> nodes_ = pde_.dof_coords();
@@ -1081,8 +955,10 @@ TEST(fem_pde_test, space_time_mixed_bc) {
             solution_ex(i, j) = solution_expr(nodes_.row(i), times(j));
         }
     }
-    for (int i = 0; i < nodes_.rows(); ++i) { initial_condition(i) = solution_expr(nodes_.row(i), times(0)); }
+    // dirichlet_bc = DMatrix<double>::Zero(nodes_.rows(),M);
 
+    for (int i = 0; i < nodes_.rows(); ++i) { initial_condition(i) = solution_expr(nodes_.row(i), times(0)); }
+    // for (int i = 0; i < nodes_.rows(); ++i) { initial_condition(i) = 0.0; }
     // set dirichlet conditions
     pde_.set_dirichlet_bc(dirichlet_bc);
 
@@ -1090,19 +966,12 @@ TEST(fem_pde_test, space_time_mixed_bc) {
     pde_.set_initial_condition(initial_condition);
 
     // request quadrature nodes and evaluate forcing on them
-    DMatrix<double> quadrature_nodes = pde_.quadrature_nodes();
+    DMatrix<double> quadrature_nodes = pde_.force_quadrature_nodes();
     DMatrix<double> f(quadrature_nodes.rows(), M);
     for (int i = 0; i < quadrature_nodes.rows(); ++i) {
         for (int j = 0; j < M; ++j) { f(i, j) = forcing_expr(quadrature_nodes.row(i), times(j)); }
     }
     pde_.set_forcing(f);
-    DMatrix<double> boundary_quadrature_nodes = pde_.boundary_quadrature_nodes();
-    DMatrix<double> f_neumann(boundary_quadrature_nodes.rows(), M);
-    for (auto i=0; i< boundary_quadrature_nodes.rows(); ++i){
-        for (int j = 0; j < M; ++j) f_neumann(i, j) = neumann_expr(boundary_quadrature_nodes.row(i), times(j));
-    }
-    pde_.set_neumann_bc(f_neumann);
-
     // init solver and solve differential problem
     pde_.init();
     pde_.solve();
@@ -1113,17 +982,357 @@ TEST(fem_pde_test, space_time_mixed_bc) {
     for (int j = 0; j < M; ++j) {
         error_ = solution_ex.col(j) - pde_.solution().col(j);
         error_L2(j, 0) = (pde_.mass() * error_.cwiseProduct(error_)).sum();
-        // std::cout << "t = " << j << " ErrorL2 = " << error_L2(j,0) << std::endl;
+        std::cout << "t = " << j << " ErrorL2 = " << std::sqrt(error_L2(j,0)) << std::endl;
     }
 
-    // std::ofstream file("solution_space_time_P1_N_D.txt");    //it will be exported in the current build directory
+    // std::ofstream file("solution_space_time_P1_E_IN_M101_16_D.txt");    //it will be exported in the current build directory
     // if (file.is_open()){
     //     for(int i = 0; i < pde_.solution().col(M-1).rows(); ++i)
     //         file << pde_.solution().col(M-1)(i) << '\n';
     //     file.close();
     // } else {
-    //     std::cerr << "test unable to save solution" << std::endl;
+    //     std::cerr << "parabolic test unable to save solution" << std::endl;
     // }
 
     EXPECT_TRUE(error_L2.maxCoeff() < 1e-7);
 }
+
+TEST(fem_pde_test, space_time2) {
+
+    // exact solution
+    int M = 101;
+    DMatrix<double> times(M, 1);
+    double time_max = 1e-3;
+    for (int j = 0; j < M; ++j) { times(j) = time_max / (M - 1) * j; }
+
+    int num_refinements = 1;
+    DMatrix<double> error_L2 = DMatrix<double>::Zero(M, num_refinements);
+    constexpr double pi = 3.14159265358979323846;
+
+    auto solution_expr = [](SVector<2> x, double t) -> double {
+        return (std::cos(pi*x[0])*std::cos(pi*x[1]) + 2)*std::exp(-t);
+    };
+    auto forcing_expr = [](SVector<2> x, double t) -> double {
+        return -4*std::exp(-t) + std::cos(pi*x[0])*std::cos(pi*x[1])*std::exp(-t)*(-2+2*pi*pi) + (4 + std::cos(pi*x[0])*std::cos(pi*x[0])*std::cos(pi*x[1])*std::cos(pi*x[1]) + 4*std::cos(pi*x[0])*std::cos(pi*x[1]))*std::exp(-2*t);
+    };
+
+    MeshLoader<Mesh2D> unit_square("unit_square_64");
+
+    // non linear reaction h_(u)*u
+    std::function<double(SVector<2>, SVector<1>)> h_ = [&](SVector<2> x, SVector<1> ff) -> double {return 1 - ff[0];};
+    // build the non-linearity object # N=2
+    NonLinearReaction<2, LagrangianBasis<decltype(unit_square.mesh),1>::ReferenceBasis> non_linear_reaction(h_);
+
+    // differential operator
+    auto L = dt<FEM>() - laplacian<FEM>() - non_linear_op<FEM>(non_linear_reaction);
+
+    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_square.mesh, times, L, h_);
+    
+    // compute boundary condition and exact solution
+    DMatrix<double> nodes_ = pde_.dof_coords();
+    DMatrix<double> dirichlet_bc(nodes_.rows(), M);
+    DMatrix<double> solution_ex(nodes_.rows(), M);
+    DMatrix<double> initial_condition(nodes_.rows(), 1);
+
+    for (int i = 0; i < nodes_.rows(); ++i) {
+        for (int j = 0; j < M; ++j) {
+            dirichlet_bc(i, j) = solution_expr(nodes_.row(i), times(j));
+            solution_ex(i, j) = solution_expr(nodes_.row(i), times(j));
+        }
+    }
+    // dirichlet_bc = DMatrix<double>::Zero(nodes_.rows(),M);
+
+    for (int i = 0; i < nodes_.rows(); ++i) { initial_condition(i) = solution_expr(nodes_.row(i), times(0)); }
+    // for (int i = 0; i < nodes_.rows(); ++i) { initial_condition(i) = 0.0; }
+    // set dirichlet conditions
+    pde_.set_dirichlet_bc(dirichlet_bc);
+
+    // set initial condition
+    pde_.set_initial_condition(initial_condition);
+
+    // request quadrature nodes and evaluate forcing on them
+    DMatrix<double> quadrature_nodes = pde_.force_quadrature_nodes();
+    DMatrix<double> f(quadrature_nodes.rows(), M);
+    for (int i = 0; i < quadrature_nodes.rows(); ++i) {
+        for (int j = 0; j < M; ++j) { f(i, j) = forcing_expr(quadrature_nodes.row(i), times(j)); }
+    }
+    pde_.set_forcing(f);
+    // init solver and solve differential problem
+    pde_.init();
+    pde_.solve();
+
+    // check computed error within theoretical expectations
+    // std::cout << "L2 errors:" << std::endl;
+    DMatrix<double> error_(nodes_.rows(), 1);
+    for (int j = 0; j < M; ++j) {
+        error_ = solution_ex.col(j) - pde_.solution().col(j);
+        error_L2(j, 0) = (pde_.mass() * error_.cwiseProduct(error_)).sum();
+        std::cout << "t = " << j << " ErrorL2 = " << std::sqrt(error_L2(j,0)) << std::endl;
+    }
+
+    // std::ofstream file("solution_space_time_P1_E_IN_M101_16_D.txt");    //it will be exported in the current build directory
+    // if (file.is_open()){
+    //     for(int i = 0; i < pde_.solution().col(M-1).rows(); ++i)
+    //         file << pde_.solution().col(M-1)(i) << '\n';
+    //     file.close();
+    // } else {
+    //     std::cerr << "parabolic test unable to save solution" << std::endl;
+    // }
+
+    EXPECT_TRUE(error_L2.maxCoeff() < 1e-7);
+}
+
+TEST(fem_pde_test, space_time3) {
+
+    // exact solution
+    int M = 101;
+    DMatrix<double> times(M, 1);
+    double time_max = 1e-3;
+    for (int j = 0; j < M; ++j) { times(j) = time_max / (M - 1) * j; }
+
+    int num_refinements = 1;
+    DMatrix<double> error_L2 = DMatrix<double>::Zero(M, num_refinements);
+    constexpr double pi = 3.14159265358979323846;
+
+    auto solution_expr = [](SVector<2> x, double t) -> double {
+        return (std::cos(pi*x[0])*std::cos(pi*x[1]) + 2)*std::exp(-t);
+    };
+    auto forcing_expr = [](SVector<2> x, double t) -> double {
+        return -4*std::exp(-t) + std::cos(pi*x[0])*std::cos(pi*x[1])*std::exp(-t)*(-2+2*pi*pi) + (4 + std::cos(pi*x[0])*std::cos(pi*x[0])*std::cos(pi*x[1])*std::cos(pi*x[1]) + 4*std::cos(pi*x[0])*std::cos(pi*x[1]))*std::exp(-2*t);
+    };
+
+    MeshLoader<Mesh2D> unit_square("unit_square_128");
+
+    // non linear reaction h_(u)*u
+    std::function<double(SVector<2>, SVector<1>)> h_ = [&](SVector<2> x, SVector<1> ff) -> double {return 1 - ff[0];};
+    // build the non-linearity object # N=2
+    NonLinearReaction<2, LagrangianBasis<decltype(unit_square.mesh),1>::ReferenceBasis> non_linear_reaction(h_);
+
+    // differential operator
+    auto L = dt<FEM>() - laplacian<FEM>() - non_linear_op<FEM>(non_linear_reaction);
+
+    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_square.mesh, times, L, h_);
+    
+    // compute boundary condition and exact solution
+    DMatrix<double> nodes_ = pde_.dof_coords();
+    DMatrix<double> dirichlet_bc(nodes_.rows(), M);
+    DMatrix<double> solution_ex(nodes_.rows(), M);
+    DMatrix<double> initial_condition(nodes_.rows(), 1);
+
+    for (int i = 0; i < nodes_.rows(); ++i) {
+        for (int j = 0; j < M; ++j) {
+            dirichlet_bc(i, j) = solution_expr(nodes_.row(i), times(j));
+            solution_ex(i, j) = solution_expr(nodes_.row(i), times(j));
+        }
+    }
+    // dirichlet_bc = DMatrix<double>::Zero(nodes_.rows(),M);
+
+    for (int i = 0; i < nodes_.rows(); ++i) { initial_condition(i) = solution_expr(nodes_.row(i), times(0)); }
+    // for (int i = 0; i < nodes_.rows(); ++i) { initial_condition(i) = 0.0; }
+    // set dirichlet conditions
+    pde_.set_dirichlet_bc(dirichlet_bc);
+
+    // set initial condition
+    pde_.set_initial_condition(initial_condition);
+
+    // request quadrature nodes and evaluate forcing on them
+    DMatrix<double> quadrature_nodes = pde_.force_quadrature_nodes();
+    DMatrix<double> f(quadrature_nodes.rows(), M);
+    for (int i = 0; i < quadrature_nodes.rows(); ++i) {
+        for (int j = 0; j < M; ++j) { f(i, j) = forcing_expr(quadrature_nodes.row(i), times(j)); }
+    }
+    pde_.set_forcing(f);
+    // init solver and solve differential problem
+    pde_.init();
+    pde_.solve();
+
+    // check computed error within theoretical expectations
+    // std::cout << "L2 errors:" << std::endl;
+    DMatrix<double> error_(nodes_.rows(), 1);
+    for (int j = 0; j < M; ++j) {
+        error_ = solution_ex.col(j) - pde_.solution().col(j);
+        error_L2(j, 0) = (pde_.mass() * error_.cwiseProduct(error_)).sum();
+        std::cout << "t = " << j << " ErrorL2 = " << std::sqrt(error_L2(j,0)) << std::endl;
+    }
+
+    // std::ofstream file("solution_space_time_P1_E_IN_M101_16_D.txt");    //it will be exported in the current build directory
+    // if (file.is_open()){
+    //     for(int i = 0; i < pde_.solution().col(M-1).rows(); ++i)
+    //         file << pde_.solution().col(M-1)(i) << '\n';
+    //     file.close();
+    // } else {
+    //     std::cerr << "parabolic test unable to save solution" << std::endl;
+    // }
+
+    EXPECT_TRUE(error_L2.maxCoeff() < 1e-7);
+}
+
+TEST(fem_pde_test, space_time4) {
+
+    // exact solution
+    int M = 129;
+    DMatrix<double> times(M, 1);
+    double time_max = 1;
+    for (int j = 0; j < M; ++j) { times(j) = time_max / (M - 1) * j; }
+
+    int num_refinements = 1;
+    DMatrix<double> error_L2 = DMatrix<double>::Zero(M, num_refinements);
+    constexpr double pi = 3.14159265358979323846;
+
+    auto solution_expr = [](SVector<2> x, double t) -> double {
+        return (std::cos(pi*x[0])*std::cos(pi*x[1]) + 2)*std::exp(-t);
+    };
+    auto forcing_expr = [](SVector<2> x, double t) -> double {
+        return -4*std::exp(-t) + std::cos(pi*x[0])*std::cos(pi*x[1])*std::exp(-t)*(-2+2*pi*pi) + (4 + std::cos(pi*x[0])*std::cos(pi*x[0])*std::cos(pi*x[1])*std::cos(pi*x[1]) + 4*std::cos(pi*x[0])*std::cos(pi*x[1]))*std::exp(-2*t);
+    };
+
+    MeshLoader<Mesh2D> unit_square("unit_square_128");
+
+    // non linear reaction h_(u)*u
+    std::function<double(SVector<2>, SVector<1>)> h_ = [&](SVector<2> x, SVector<1> ff) -> double {return 1 - ff[0];};
+    // build the non-linearity object # N=2
+    NonLinearReaction<2, LagrangianBasis<decltype(unit_square.mesh),1>::ReferenceBasis> non_linear_reaction(h_);
+
+    // differential operator
+    auto L = dt<FEM>() - laplacian<FEM>() - non_linear_op<FEM>(non_linear_reaction);
+
+    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_square.mesh, times, L, h_);
+    
+    // compute boundary condition and exact solution
+    DMatrix<double> nodes_ = pde_.dof_coords();
+    DMatrix<double> dirichlet_bc(nodes_.rows(), M);
+    DMatrix<double> solution_ex(nodes_.rows(), M);
+    DMatrix<double> initial_condition(nodes_.rows(), 1);
+
+    for (int i = 0; i < nodes_.rows(); ++i) {
+        for (int j = 0; j < M; ++j) {
+            dirichlet_bc(i, j) = solution_expr(nodes_.row(i), times(j));
+            solution_ex(i, j) = solution_expr(nodes_.row(i), times(j));
+        }
+    }
+    // dirichlet_bc = DMatrix<double>::Zero(nodes_.rows(),M);
+
+    for (int i = 0; i < nodes_.rows(); ++i) { initial_condition(i) = solution_expr(nodes_.row(i), times(0)); }
+    // for (int i = 0; i < nodes_.rows(); ++i) { initial_condition(i) = 0.0; }
+    // set dirichlet conditions
+    pde_.set_dirichlet_bc(dirichlet_bc);
+
+    // set initial condition
+    pde_.set_initial_condition(initial_condition);
+
+    // request quadrature nodes and evaluate forcing on them
+    DMatrix<double> quadrature_nodes = pde_.force_quadrature_nodes();
+    DMatrix<double> f(quadrature_nodes.rows(), M);
+    for (int i = 0; i < quadrature_nodes.rows(); ++i) {
+        for (int j = 0; j < M; ++j) { f(i, j) = forcing_expr(quadrature_nodes.row(i), times(j)); }
+    }
+    pde_.set_forcing(f);
+    // init solver and solve differential problem
+    pde_.init();
+    pde_.solve();
+
+    // check computed error within theoretical expectations
+    // std::cout << "L2 errors:" << std::endl;
+    DMatrix<double> error_(nodes_.rows(), 1);
+    for (int j = 0; j < M; ++j) {
+        error_ = solution_ex.col(j) - pde_.solution().col(j);
+        error_L2(j, 0) = (pde_.mass() * error_.cwiseProduct(error_)).sum();
+        std::cout << "t = " << j << " ErrorL2 = " << std::sqrt(error_L2(j,0)) << std::endl;
+    }
+
+    // std::ofstream file("solution_space_time_P1_E_IN_M101_16_D.txt");    //it will be exported in the current build directory
+    // if (file.is_open()){
+    //     for(int i = 0; i < pde_.solution().col(M-1).rows(); ++i)
+    //         file << pde_.solution().col(M-1)(i) << '\n';
+    //     file.close();
+    // } else {
+    //     std::cerr << "parabolic test unable to save solution" << std::endl;
+    // }
+
+    EXPECT_TRUE(error_L2.maxCoeff() < 1e-7);
+}
+
+TEST(fem_pde_test, space_time5) {
+
+    // exact solution
+    int M = 257;
+    DMatrix<double> times(M, 1);
+    double time_max = 1;
+    for (int j = 0; j < M; ++j) { times(j) = time_max / (M - 1) * j; }
+
+    int num_refinements = 1;
+    DMatrix<double> error_L2 = DMatrix<double>::Zero(M, num_refinements);
+    constexpr double pi = 3.14159265358979323846;
+
+    auto solution_expr = [](SVector<2> x, double t) -> double {
+        return (std::cos(pi*x[0])*std::cos(pi*x[1]) + 2)*std::exp(-t);
+    };
+    auto forcing_expr = [](SVector<2> x, double t) -> double {
+        return -4*std::exp(-t) + std::cos(pi*x[0])*std::cos(pi*x[1])*std::exp(-t)*(-2+2*pi*pi) + (4 + std::cos(pi*x[0])*std::cos(pi*x[0])*std::cos(pi*x[1])*std::cos(pi*x[1]) + 4*std::cos(pi*x[0])*std::cos(pi*x[1]))*std::exp(-2*t);
+    };
+
+    MeshLoader<Mesh2D> unit_square("unit_square_128");
+
+    // non linear reaction h_(u)*u
+    std::function<double(SVector<2>, SVector<1>)> h_ = [&](SVector<2> x, SVector<1> ff) -> double {return 1 - ff[0];};
+    // build the non-linearity object # N=2
+    NonLinearReaction<2, LagrangianBasis<decltype(unit_square.mesh),1>::ReferenceBasis> non_linear_reaction(h_);
+
+    // differential operator
+    auto L = dt<FEM>() - laplacian<FEM>() - non_linear_op<FEM>(non_linear_reaction);
+
+    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_square.mesh, times, L, h_);
+    
+    // compute boundary condition and exact solution
+    DMatrix<double> nodes_ = pde_.dof_coords();
+    DMatrix<double> dirichlet_bc(nodes_.rows(), M);
+    DMatrix<double> solution_ex(nodes_.rows(), M);
+    DMatrix<double> initial_condition(nodes_.rows(), 1);
+
+    for (int i = 0; i < nodes_.rows(); ++i) {
+        for (int j = 0; j < M; ++j) {
+            dirichlet_bc(i, j) = solution_expr(nodes_.row(i), times(j));
+            solution_ex(i, j) = solution_expr(nodes_.row(i), times(j));
+        }
+    }
+    // dirichlet_bc = DMatrix<double>::Zero(nodes_.rows(),M);
+
+    for (int i = 0; i < nodes_.rows(); ++i) { initial_condition(i) = solution_expr(nodes_.row(i), times(0)); }
+    // for (int i = 0; i < nodes_.rows(); ++i) { initial_condition(i) = 0.0; }
+    // set dirichlet conditions
+    pde_.set_dirichlet_bc(dirichlet_bc);
+
+    // set initial condition
+    pde_.set_initial_condition(initial_condition);
+
+    // request quadrature nodes and evaluate forcing on them
+    DMatrix<double> quadrature_nodes = pde_.force_quadrature_nodes();
+    DMatrix<double> f(quadrature_nodes.rows(), M);
+    for (int i = 0; i < quadrature_nodes.rows(); ++i) {
+        for (int j = 0; j < M; ++j) { f(i, j) = forcing_expr(quadrature_nodes.row(i), times(j)); }
+    }
+    pde_.set_forcing(f);
+    // init solver and solve differential problem
+    pde_.init();
+    pde_.solve();
+
+    // check computed error within theoretical expectations
+    // std::cout << "L2 errors:" << std::endl;
+    DMatrix<double> error_(nodes_.rows(), 1);
+    for (int j = 0; j < M; ++j) {
+        error_ = solution_ex.col(j) - pde_.solution().col(j);
+        error_L2(j, 0) = (pde_.mass() * error_.cwiseProduct(error_)).sum();
+        std::cout << "t = " << j << " ErrorL2 = " << std::sqrt(error_L2(j,0)) << std::endl;
+    }
+
+    // std::ofstream file("solution_space_time_P1_E_IN_M101_16_D.txt");    //it will be exported in the current build directory
+    // if (file.is_open()){
+    //     for(int i = 0; i < pde_.solution().col(M-1).rows(); ++i)
+    //         file << pde_.solution().col(M-1)(i) << '\n';
+    //     file.close();
+    // } else {
+    //     std::cerr << "parabolic test unable to save solution" << std::endl;
+    // }
+
+    EXPECT_TRUE(error_L2.maxCoeff() < 1e-7);
+} */

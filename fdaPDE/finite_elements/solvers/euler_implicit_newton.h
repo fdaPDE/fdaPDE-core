@@ -44,7 +44,7 @@ public:
 
     using Base = FEMSolverBase<D, E, F, Ts...>;
     FEMEulerImplicitNewton(const D& domain) : Base(domain) { }
-    FEMEulerImplicitNewton(const D& domain, const BinaryMatrix<Dynamic>& BMtrx) : Base(domain, BMtrx){ }
+    FEMEulerImplicitNewton(const D& domain, const DMatrix<short int>& BMtrx) : Base(domain, BMtrx){ }
 
     void set_deltaT(double deltaT) { deltaT_ = deltaT; }
     void set_MaxIter(double MaxIter) { MaxIter_ = MaxIter; }
@@ -119,6 +119,11 @@ public:
                 // discretize derived nonlinearity
                 SpMatrix<double> R2 = assembler.discretize_operator(Lprime);
                 R2.makeCompressed(); 
+
+                // set Robin boundary conditions
+                if (this->boundary_dofs_begin_Robin() != this->boundary_dofs_end_Robin()) {
+                    this->stiff_ += this->robin_;
+                }
 
                 // build system matrix and rhs
                 SpMatrix<double> K = (this->mass_) / deltaT_ + this->stiff_ + R2;

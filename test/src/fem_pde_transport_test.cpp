@@ -83,7 +83,8 @@ TEST(transport_test, TransportConsantCoefficients2D) {
     // MeshLoader<Mesh2D> unit_square("quasi_circle");
 
     PDE< decltype(unit_square.mesh), decltype(L), ScalarField<2>, FEM, fem_order<femOrder>, decltype(mu),
-            decltype(b)> pde_( unit_square.mesh, L, forcing);
+            decltype(b)> pde_( unit_square.mesh, L);
+    pde_.set_forcing(forcing);
 
     // compute boundary condition and exact solution
     DMatrix<double> nodes_ = pde_.dof_coords();
@@ -164,7 +165,8 @@ TEST(transport_test, TransportNonConstantCoefficients2D) {
     auto L = -mu*laplacian<FEM>() + advection<FEM>(b_discretized);
 
     PDE< decltype(domain.mesh), decltype(L), ScalarField<2>, FEM, fem_order<femOrder>, decltype(mu),
-            decltype(b_discretized)> pde_( domain.mesh, L, forcing );
+            decltype(b_discretized)> pde_( domain.mesh, L);
+    pde_.set_forcing(forcing);
 
     // compute boundary condition and exact solution
     DMatrix<double> nodes_ = pde_.dof_coords();

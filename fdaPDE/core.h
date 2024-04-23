@@ -25,6 +25,5 @@
 #include "finite_elements.h"
 #include "splines.h"
 #include "multithreading.h"
-#include "geometry.h"
 
 #endif   // __FDAPDE_CORE_MODULE_H__

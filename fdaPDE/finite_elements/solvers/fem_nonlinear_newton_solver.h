@@ -48,7 +48,7 @@ public:
 
     using Base = FEMSolverBase<D, E, F, Ts...>;
     FEMNonLinearNewtonSolver(const D& domain) : Base(domain) { }
-    FEMNonLinearNewtonSolver(const D& domain, const BinaryMatrix<Dynamic>& BMtrx) : Base(domain, BMtrx){ }
+    FEMNonLinearNewtonSolver(const D& domain, const DMatrix<short int>& BMtrx) : Base(domain, BMtrx){ }
 
     // setter for MaxIter and tol (should we add them to the constructor?)
     void set_MaxIter(size_t MaxIter) { MaxIter_ = MaxIter; }
@@ -96,6 +96,12 @@ public:
 
             this->force_ = force_backup + R2*f_prev;
             this->stiff_ += R2;
+
+            // set Robin boundary conditions
+            if (this->boundary_dofs_begin_Robin() != this->boundary_dofs_end_Robin()) {
+                this->stiff_ += this->robin_;
+            }
+            // set Dirichlet boundary conditions
             this->set_dirichlet_bc(pde);
 
             // Perform LU decomposition of the system matrix at every step

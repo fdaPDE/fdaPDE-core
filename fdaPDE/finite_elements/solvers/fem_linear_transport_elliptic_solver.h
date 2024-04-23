@@ -33,7 +33,7 @@ struct FEMLinearTransportEllipticSolver : public FEMSolverBase<D, E, F, Ts...> {
 
     using Base = FEMSolverBase<D, E, F, Ts...>;
     FEMLinearTransportEllipticSolver(const D& domain) : Base(domain){ }
-    FEMLinearTransportEllipticSolver(const D& domain, const BinaryMatrix<Dynamic>& BMtrx) : Base(domain, BMtrx){ }
+    FEMLinearTransportEllipticSolver(const D& domain, const DMatrix<short int>& BMtrx) : Base(domain, BMtrx){ }
 
     typedef std::tuple<Ts...> SolverArgs;
     enum { fem_order = std::tuple_element <0, SolverArgs>::type::value };

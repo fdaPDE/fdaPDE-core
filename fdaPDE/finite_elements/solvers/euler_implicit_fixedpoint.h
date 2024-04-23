@@ -44,7 +44,7 @@ public:
 
     using Base = FEMSolverBase<D, E, F, Ts...>;
     FEMEulerImplicitFixedPoint(const D& domain) : Base(domain) { }
-    FEMEulerImplicitFixedPoint(const D& domain, const BinaryMatrix<Dynamic>& BMtrx) : Base(domain, BMtrx){ }
+    FEMEulerImplicitFixedPoint(const D& domain, const DMatrix<short int>& BMtrx) : Base(domain, BMtrx){ }
 
     void set_deltaT(double deltaT) { deltaT_ = deltaT; }
     void set_MaxIter(double MaxIter) { MaxIter_ = MaxIter; }
@@ -85,6 +85,11 @@ public:
                 Assembler<FEM, DomainType, ReferenceBasis, Quadrature> assembler(pde.domain(), this->integrator_, this->n_dofs_, this->dofs_, f_prev);
                 this->stiff_ = assembler.discretize_operator(pde.differential_operator());
                 this->stiff_.makeCompressed();
+
+                // set Robin boundary conditions
+                if (this->boundary_dofs_begin_Robin() != this->boundary_dofs_end_Robin()) {
+                    this->stiff_ += this->robin_;
+                }
 
                 // build system matrix and rhs
                 SpMatrix<double> K = (this->mass_) / deltaT_ + this->stiff_;
