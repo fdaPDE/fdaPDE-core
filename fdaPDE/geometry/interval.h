@@ -17,20 +17,21 @@
 #ifndef __INTERVAL_H__
 #define __INTERVAL_H__
 
-#include "triangulation.h"
+#include "segment.h"
 
 namespace fdapde {
 namespace core {
-
+  
 // template specialization for 1D meshes (bounded intervals)
+template <int M, int N> class Triangulation;
 template <> class Triangulation<1, 1> {
    public:
     static constexpr int local_dim = 1;
     static constexpr int embed_dim = 1;
-    static constexpr int n_vertices_per_cell = 2;
+    static constexpr int n_nodes_per_cell = 2;
     static constexpr int n_neighbors_per_cell = 2;
     static constexpr bool is_manifold = false;
-    using CellType = Element<Triangulation<1, 1>>;
+    using CellType = Segment<Triangulation<1, 1>>;
     using VertexType = SVector<1>;
   
     Triangulation() = default;
@@ -55,6 +56,7 @@ template <> class Triangulation<1, 1> {
         }
         neighbors_(n_cells_ - 1, 0) = n_cells_ - 2;
 	// set first and last nodes as boundary nodes
+	nodes_markers_.resize(n_nodes_);
 	nodes_markers_.set(0);
 	nodes_markers_.set(n_nodes_ - 1);
     };
@@ -65,8 +67,8 @@ template <> class Triangulation<1, 1> {
     CellType cell(int id) const { return CellType(id, this); }
     VertexType node(int id) const { return SVector<1>(nodes_[id]); }
     bool is_node_on_boundary(int id) const { return (id == 0 || id == (n_nodes_ - 1)); }
-    const DVector<double>& cells() const { return nodes_; }
-    const DMatrix<int, Eigen::RowMajor>& faces() const { return cells_; }
+    const DVector<double>& nodes() const { return nodes_; }
+    const DMatrix<int, Eigen::RowMajor>& cells() const { return cells_; }
     const DMatrix<int, Eigen::RowMajor>& neighbors() const { return neighbors_; }
     const BinaryVector<fdapde::Dynamic>& boundary() const { return nodes_markers_; }
     int n_cells() const { return n_cells_; }
@@ -77,10 +79,15 @@ template <> class Triangulation<1, 1> {
     class cell_iterator : public index_based_iterator<cell_iterator, CellType> {
         using Base = index_based_iterator<cell_iterator, CellType>;
         using Base::index_;
+        friend Base;
         const Triangulation* mesh_;
+        cell_iterator& operator()(int i) {
+            Base::val_ = mesh_->cell(i);
+            return *this;
+        }
        public:
         cell_iterator(int index, const Triangulation* mesh) : Base(index, 0, mesh->n_cells_), mesh_(mesh) {
-            if (index_ < mesh_->n_cells_) this->val_ = mesh_->cell(index_);
+            if (index_ < mesh_->n_cells_) operator()(index_);
         }
     };
     cell_iterator cells_begin() const { return cell_iterator(0, this); }

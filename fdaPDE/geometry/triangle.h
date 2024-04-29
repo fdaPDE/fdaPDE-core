@@ -25,7 +25,7 @@ namespace core {
 
 // an element is a geometric object bounded to a mesh. It carries both geometrical and connectivity informations
 template <typename Triangulation> class Triangle : public Simplex<Triangulation::local_dim, Triangulation::embed_dim> {
-    fdapde_static_assert(Triangulation::local_dim == 2, THIS_CLASS_IS_ONLY_FOR_TRIANGULAR_MESHES_ONLY);
+    fdapde_static_assert(Triangulation::local_dim == 2, THIS_CLASS_IS_FOR_TRIANGULAR_MESHES_ONLY);
    public:
     // constructor
     Triangle() = default;
