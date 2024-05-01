@@ -53,6 +53,7 @@ template <typename Triangulation> class Triangle : public Simplex<Triangulation:
       bool on_boundary() const { return mesh_->is_edge_on_boundary(edge_id_); }
       DVector<int> node_ids() const { return mesh_->edges().row(edge_id_); }
       int id() const { return edge_id_; }
+      DVector<int> adjacent_cells() const { return mesh_->edge_to_cells().row(edge_id_); }
     };
   
     // getters

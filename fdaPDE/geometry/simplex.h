@@ -65,6 +65,13 @@ template <int Order_, int EmbedDim_> class Simplex {
     NodeType barycenter() const {
         return J_ * SVector<local_dim>::Constant(1.0 / (local_dim + 1)) + coords_.col(0);
     }
+    // writes the point p in the barycentric coordinate system of this simplex
+    SVector<local_dim + 1> barycentric_coords(const NodeType& p) const {
+        SVector<local_dim + 1> z;
+        z.bottomRows(local_dim) = invJ_ * (p - coords_.col(0));
+        z[0] = 1 - z.bottomRows(local_dim).sum();
+        return z;
+    }
 
     // simplex circumcenter
     NodeType circumcenter() const {

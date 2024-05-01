@@ -19,7 +19,6 @@
 
 #include <fdaPDE/utils.h>
 #include <fdaPDE/geometry.h>
-using fdapde::core::Element;
 using fdapde::core::Triangulation;
 using fdapde::core::BarycentricWalk;
 using fdapde::core::TreeSearch;
@@ -45,7 +44,7 @@ TYPED_TEST(point_location_test, tree_search) {
     std::size_t matches = 0;
     for (auto query : test_set) {
         auto e = engine.locate(query.second);
-        if (e != nullptr && e->ID() == query.first) { matches++; }
+        if (e != -1 && this->mesh_loader.mesh.cell(e).id() == query.first) { matches++; }
     }
     EXPECT_EQ(matches, 100);
 }
@@ -60,7 +59,7 @@ TYPED_TEST(point_location_test, walk_search) {
         std::size_t matches = 0;
         for (auto query : test_set) {
             auto e = engine.locate(query.second);
-            if (e != nullptr && e->ID() == query.first) matches++;
+            if (e != -1 && this->mesh_loader.mesh.cell(e).id() == query.first) matches++;
         }
         EXPECT_EQ(matches, 100);
     } else {

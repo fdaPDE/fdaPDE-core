@@ -21,7 +21,6 @@
 #include <fdaPDE/geometry.h>
 #include <fdaPDE/linear_algebra.h>
 #include <fdaPDE/finite_elements.h>
-using fdapde::core::Element;
 using fdapde::core::Integrator;
 using fdapde::core::IntegratorTable;
 using fdapde::core::LagrangianBasis;
@@ -50,7 +49,7 @@ TYPED_TEST(integration_test, constant_unitary_field) {
     Integrator<FEM, TestFixture::M, 1> integrator;   // define integrator
     // the integral of the constant field 1 over the mesh element equals its measure
     std::function<double(SVector<TestFixture::N>)> f = [](SVector<TestFixture::N>) -> double { return 1; };
-    EXPECT_TRUE(almost_equal(e.measure(), integrator.integrate(e, f)));
+    EXPECT_TRUE(almost_equal(e.measure(), integrator.integrate_cell(e, f)));
 }
 
 // test if linear fields can be integrated over mesh elements. In particular a closed formula for
@@ -64,16 +63,16 @@ TYPED_TEST(integration_test, linear_field) {
     std::function<double(SVector<TestFixture::N>)> f = [](SVector<TestFixture::N> x) -> double { return x[0] + x[1]; };
     // compute volume of truncated rectangular prism: 1/(M+1)*V*(h1 + h2 + ... + hM), where V is the element's measure
     double h = 0;
-    for (int i = 0; i < decltype(e)::n_vertices; ++i) h += f(e.coord(i));
+    for (int i = 0; i < decltype(e)::n_nodes; ++i) h += f(e.node(i));
     double measure = e.measure() * h / (TestFixture::M + 1);
     // test for equality
-    EXPECT_TRUE(almost_equal(measure, integrator.integrate(e, f)));
+    EXPECT_TRUE(almost_equal(measure, integrator.integrate_cell(e, f)));
 }
 
 // test if is possible to integrate a field over the entire mesh
 TEST(integration_test, integrate_over_triangulation) {
     // load sample mesh
-    MeshLoader<Triangulation2D> CShaped("unit_square");
+  MeshLoader<Triangulation<2, 2>> CShaped("unit_square");
     Integrator<FEM, 2, 1> integrator {};
     // define field to integrate
     std::function<double(SVector<2>)> f = [](SVector<2>) -> double { return 1; };

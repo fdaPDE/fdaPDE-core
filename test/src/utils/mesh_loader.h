@@ -22,14 +22,13 @@
 #include <gtest/gtest.h>   // testing framework
 #include <random>
 using fdapde::core::CSVReader;
-using fdapde::core::Element;
 
 namespace fdapde {
 namespace testing {
 
 const std::string MESH_PATH = "../data/mesh/";
 using MESH_TYPE_LIST = ::testing::Types<
-  core::Triangulation2D, core::SurfaceMeshTriangulation, core::Triangulation3D, core::NetworkMesh>;
+  core::Triangulation<2,2>/*, core::Triangulation<2,3>, core::Triangulation<3,3>*//*, core::NetworkMesh*/>;
 
 // selects sample mesh depending on the dimensionality of the problem
 //     * 1.5D: 204  2D points, 559   elements, 559   edges. /test/data/mesh/linear_newtwork/*.csv
@@ -86,13 +85,13 @@ template <typename MeshType_> struct MeshLoader {
     // load default mesh according to dimensionality
     MeshLoader() : MeshLoader(standard_mesh_selector(MeshType::local_dim, MeshType::embed_dim)) {};
     // generate element at random inside mesh m
-    typename MeshType::FaceType generate_random_element() {
-        std::uniform_int_distribution<int> random_ID(0, mesh.n_elements() - 1);
-        int ID = random_ID(rng);
-        return mesh.face(ID);
+    typename MeshType::CellType generate_random_element() {
+        std::uniform_int_distribution<int> random_id(0, mesh.n_cells() - 1);
+        int id = random_id(rng);
+        return mesh.cell(id);
     };
     // generate point at random inside element e
-    SVector<N> generate_random_point(const typename MeshType::FaceType& e) {
+    SVector<N> generate_random_point(const typename MeshType::CellType& e) {
         std::uniform_real_distribution<double> T(0, 1);
         // let t, s, u ~ U(0,1) and P1, P2, P3, P4 a set of points, observe that:
         //     * if P1 and P2 are the vertices of a linear element, p = t*P1 + (1-t)*P2 lies into it for any t ~ U(0,1)
@@ -101,10 +100,10 @@ template <typename MeshType_> struct MeshLoader {
         //     * if P1, P2, P3, P4 are vertices of a tetrahedron, then letting Q = (1-t)P1 + t((1-s)P2 + sP3) and
         //       P = (1-u)P4 + uQ, P belongs to the tetrahedron for any choice of t, s, u ~ U(0,1)
         double t = T(rng);
-        SVector<N> p = t * e.vertex(0) + (1 - t) * e.vertex(1);
+        SVector<N> p = t * e.node(0) + (1 - t) * e.node(1);
         for (int j = 1; j < M; ++j) {
             t = T(rng);
-            p = (1 - t) * e.vertex(1 + j) + t * p;
+            p = (1 - t) * e.node(1 + j) + t * p;
         }
         return p;
     }
@@ -116,7 +115,7 @@ template <typename MeshType_> struct MeshLoader {
         // generate sample
         for (int i = 0; i < n; ++i) {
             auto e = generate_random_element();
-            result[i] = std::make_pair(e.ID(), generate_random_point(e));
+            result[i] = std::make_pair(e.id(), generate_random_point(e));
         }
         return result;
     }

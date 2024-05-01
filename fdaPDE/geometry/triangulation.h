@@ -173,17 +173,19 @@ template <int N> class Triangulation<2, N> : public TriangulationBase<2, N, Tria
                 auto it = edges_map.find(edge);
                 if (it == edges_map.end()) {   // never processed edge
                     edges_.insert(edges_.end(), edge.begin(), edge.end());
-		    edges_markers.push_back(true);
+                    edge_to_cells_.insert(edge_to_cells_.end(), {i, -1});
+                    edges_markers.push_back(true);
                     edges_map.emplace(edge, edge_info {edge_id, i});
                     cell_to_edges_(i, j) = edge_id;
                     edge_id++;
                 } else {
                     const auto& [h, k] = it->second;
-                    // elements k and i are neighgbors (they share an edfe)
+                    // elements k and i are neighgbors (they share an edge)
                     this->neighbors_(k, node_opposite_to_edge(h, k)) = i;
                     this->neighbors_(i, node_opposite_to_edge(h, i)) = k;
                     cell_to_edges_(i, j) = h;
                     edges_markers[h] = false;   // edge_id-th edge cannot be on boundary
+                    edge_to_cells_[2 * h + 1] = i;
                     edges_map.erase(it);
                 }
             }
@@ -197,6 +199,9 @@ template <int N> class Triangulation<2, N> : public TriangulationBase<2, N, Tria
     Eigen::Map<const DMatrix<int, Eigen::RowMajor>> edges() const {
         return Eigen::Map<const DMatrix<int, Eigen::RowMajor>>(edges_.data(), n_edges_, n_nodes_per_edge);
     }
+    Eigen::Map<const DMatrix<int, Eigen::RowMajor>> edge_to_cells() const {
+        return Eigen::Map<const DMatrix<int, Eigen::RowMajor>>(edge_to_cells_.data(), n_edges_, 2);
+    }
     const DMatrix<int, Eigen::RowMajor>& cell_to_edges() const { return cell_to_edges_; }
     const BinaryVector<Dynamic>& boundary_edges() const { return edges_markers_; }
     int n_edges() const { return n_edges_; }
@@ -208,33 +213,33 @@ template <int N> class Triangulation<2, N> : public TriangulationBase<2, N, Tria
         using Base::index_;
         const Triangulation* mesh_;
         BinaryVector<fdapde::Dynamic> filter_;
-        // fetch next edge
-        void next_() {
-            for (; index_ < mesh_->n_edges_ && !filter_[index_]; ++index_);
-            if (index_ == mesh_->n_edges_) return;
-	    Base::val_ = EdgeType(index_, mesh_);
-            index_++;
-        }
        public:
         edge_iterator(int index, const Triangulation* mesh, const BinaryVector<fdapde::Dynamic>& filter) :
             Base(index, 0, mesh->n_edges_), mesh_(mesh), filter_(filter) {
-            next_();
+            for (; index_ < mesh_->n_edges_ && !filter_[index_]; ++index_);
+            if (index_ != mesh_->n_edges_) { Base::val_ = EdgeType(index_, mesh_); }
         }
         edge_iterator(int index, const Triangulation* mesh) :
-            edge_iterator(index, mesh, BinaryVector<fdapde::Dynamic>(mesh->n_edges_)) { }
+            edge_iterator(index, mesh, BinaryVector<fdapde::Dynamic>::Ones(mesh->n_edges_)) { }
         edge_iterator& operator++() {
-            next_();
+            // fetch next edge
+            index_++;
+            for (; index_ < mesh_->n_edges_ && !filter_[index_]; ++index_);
+            if (index_ == mesh_->n_edges_) return *this;
+            Base::val_ = EdgeType(index_, mesh_);
             return *this;
         }
         edge_iterator& operator--() {
             // fetch previous edge
+            index_--;
             for (; index_ >= 0 && !filter_[index_]; --index_);
             if (index_ == -1) return *this;
             Base::val_ = EdgeType(index_, mesh_);
-            index_--;
             return *this;
         }
     };
+    edge_iterator edges_begin() const { return edge_iterator(0, this); }
+    edge_iterator edges_end() const { return edge_iterator(n_edges_, this); }
     // iterator over boundary edges
     struct boundary_edge_iterator : public edge_iterator {
         boundary_edge_iterator(int index, const Triangulation* mesh) :
@@ -250,6 +255,7 @@ template <int N> class Triangulation<2, N> : public TriangulationBase<2, N, Tria
     }
    protected:
     std::vector<int> edges_ {};                        // nodes (as row indexes in nodes_ matrix) composing each edge
+    std::vector<int> edge_to_cells_ {};                // for each edge, the ids of adjacent cells
     DMatrix<int, Eigen::RowMajor> cell_to_edges_ {};   // ids of edges composing each face
     BinaryVector<fdapde::Dynamic> edges_markers_ {};   // j-th element is 1 \iff edge j is on boundary
     int n_edges_ = 0;
@@ -279,7 +285,7 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
             next_();
         }
         iterator(int index, int begin, int end, const Triangulation* mesh) :
-            iterator(index, begin, end, mesh, BinaryVector<fdapde::Dynamic>(mesh->n_edges_)) { }
+            iterator(index, begin, end, mesh, BinaryVector<fdapde::Dynamic>::Ones(mesh->n_edges_)) { }
         Iterator& operator++() {
             next_();
             return static_cast<Iterator&>(*this);
@@ -342,7 +348,8 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
                 auto it = faces_map.find(face);
                 if (it == faces_map.end()) {   // never processed face
                     faces_.insert(faces_.end(), face.begin(), face.end());
-		    faces_markers.push_back(true);
+                    face_to_cells_.insert(face_to_cells_.end(), {i, -1});
+                    faces_markers.push_back(true);
                     faces_map.emplace(face, face_info {face_id, i});
                     cell_to_faces_(i, j) = face_id;
                     face_id++;
@@ -367,6 +374,7 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
                     neighbors_(k, node_opposite_to_face(h, k)) = i;
                     neighbors_(i, node_opposite_to_face(h, i)) = k;
                     cell_to_faces_(i, j) = h;
+		    face_to_cells_[2 * h + 1] = i;
 		    faces_markers[h] = false;
                     faces_map.erase(it);
                 }
@@ -431,6 +439,7 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
     }
    protected:
     std::vector<int> faces_, edges_;   // nodes (as row indexes in nodes_ matrix) composing each face and edge
+    std::vector<int> face_to_cells_;   // for each face, the ids of adjacent cells
     DMatrix<int, Eigen::RowMajor> cell_to_faces_ {};   // ids of faces composing each cell
     std::vector<int> face_to_edges_;                   // ids of edges composing each face
     BinaryVector<fdapde::Dynamic> faces_markers_ {};   // j-th element is 1 \iff face j is on boundary

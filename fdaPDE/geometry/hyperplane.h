@@ -97,7 +97,12 @@ template <int M, int N> class HyperPlane {
         }
     }
     double distance(const SVector<N>& x) { return (x - project(x)).norm(); }   // point-plane euclidean distance
-    SVector<N> operator()(const SVector<N>& coeffs) const { return normal_.dot(coeffs) + offset_; }
+    double eval(const SVector<N>& coeffs) const { return normal_.dot(coeffs) + offset_; }
+    SVector<N> operator()(const SVector<M>& coeffs) const {
+        SVector<N> res = p_;
+        for (int i = 0; i < M; ++i) res += coeffs[i] * basis_.col(i);
+        return res;
+    }
     const SVector<N>& normal() const { return normal_; }   // normal direction to the hyperplane
     const SVector<N>& point() const { return p_; }         // a point belonging to the plane
     const SMatrix<N, M>& basis() const { return basis_; }

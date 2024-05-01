@@ -325,6 +325,21 @@ class BinMtxBlock : public BinMtxBase<BlockRows, BlockCols, BinMtxBlock<BlockRow
         }
         return out;
     }
+    // block assignment
+    template <int Rows_, int Cols_, typename Rhs_> XprType& operator=(const BinMtxBase<Rows_, Cols_, Rhs_>& rhs) {
+        // !is_dynamic_sized \implies (Rows == Rows_ && Cols == Cols_)
+        fdapde_static_assert(
+          (BlockRows == Dynamic || BlockCols == Dynamic) || (BlockRows == Rows_ && BlockCols == Cols_) ||
+            (BlockCols == 1 && (Rows_ == 1 || Cols_ == 1)),
+          INVALID_BLOCK_ASSIGNMENT);
+        fdapde_assert(rhs.rows() == n_rows_ && rhs.cols() == n_cols_);
+        for (int i = 0; i < rhs.rows(); ++i) {
+            for (int j = 0; j < rhs.cols(); ++j) {
+                if (rhs(i, j)) set(i, j);
+            }
+        }
+        return *this;
+    }
    private:
     // internal data
     typename internals::ref_select<XprTypeNested>::type xpr_;
@@ -495,14 +510,20 @@ template <int Rows, int Cols, typename XprType> class BinMtxBase {
     BinMtxBlock<Rows, 1, const XprType> col(int col) const {
         return BinMtxBlock<Rows, 1, const XprType>(get(), col);
     }
-    template <int Rows_, int Cols_>
+    template <int Rows_, int Cols_>   // static sized block
     BinMtxBlock<Rows_, Cols_, XprType> block(int start_row, int start_col) {
         return BinMtxBlock<Rows_, Cols_, XprType>(get(), start_row, start_col);
     }
-    BinMtxBlock<Dynamic, Dynamic, XprType>
+    BinMtxBlock<Dynamic, Dynamic, XprType>   // dynamic sized block
     block(int start_row, int start_col, int block_rows, int block_cols) {
         return BinMtxBlock<Dynamic, Dynamic, XprType>(get(), start_row, start_col, block_rows, block_cols);
     }
+    // other block-type accessors
+    BinMtxBlock<Dynamic, Dynamic, XprType> topRows(int n) { return block(0, 0, n, cols()); }
+    BinMtxBlock<Dynamic, Dynamic, XprType> bottomRows(int n) { return block(rows() - n, 0, n, cols()); }
+    BinMtxBlock<Dynamic, Dynamic, XprType> leftCols(int n) { return block(0, 0, rows(), n); }
+    BinMtxBlock<Dynamic, Dynamic, XprType> rightCols(int n) { return block(0, cols() - n, rows(), n); }
+
     // visitors support
     inline bool all() const { return visit_apply_<all_visitor<XprType>, linear_bitpack_visit>(); }
     inline bool any() const { return visit_apply_<any_visitor<XprType>, linear_bitpack_visit>(); }
