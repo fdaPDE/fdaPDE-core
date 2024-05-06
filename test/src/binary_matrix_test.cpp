@@ -70,7 +70,7 @@ TEST(binary_matrix_test, dynamic_sized_matrix) {
                 EXPECT_TRUE(m(i, j) == false);
             }
         }
-    }
+    }    
     // set back to false, and check all is false
     m.clear(3, 47);
     for (int i = 0; i < m.rows(); ++i) {
@@ -245,7 +245,7 @@ TEST(binary_matrix_test, block_repeat) {
     BinaryMatrix<Dynamic> m1 = BinaryMatrix<Dynamic>::Ones(3, 4);
     m1.row(1).clear();
     m1.set(1, 1);
-    BinaryMatrix<Dynamic> m2 = m1.blk_repeat(2, 4);
+    BinaryMatrix<Dynamic> m2 = m1.repeat(2, 4);
     EXPECT_TRUE(m2.rows() == 6);
     EXPECT_TRUE(m2.cols() == 16);
     // check equality
@@ -266,7 +266,7 @@ TEST(binary_matrix_test, block_repeat) {
     v1.set(4);
     BinaryMatrix<Dynamic> res2(10,10);
     res2.row(4).set();
-    EXPECT_TRUE(v1.blk_repeat(1, 10) == res2);
+    EXPECT_TRUE(v1.repeat(1, 10) == res2);
 }
 
 TEST(binary_matrix_test, eigen_assignment_and_construct) {
@@ -289,4 +289,28 @@ TEST(binary_matrix_test, eigen_assignment_and_construct) {
     EXPECT_TRUE(m2.cols() == 5);
     EXPECT_TRUE(m2.count() == 4);
     EXPECT_TRUE(m2(1, 2) && m2(2, 3) && m2(4, 4) && m2(3, 4));
+}
+
+TEST(binary_matrix_test, reshaped) {
+    BinaryMatrix<Dynamic> m1(5, 20);
+    m1.set(3, 15);
+    m1.set(4, 19);
+    BinaryMatrix<Dynamic> m2 = m1.reshaped(4, 25);
+    EXPECT_TRUE(m2.rows() == 4);
+    EXPECT_TRUE(m2.cols() == 25);
+    EXPECT_TRUE(m2.count() == 2);
+    EXPECT_TRUE(m2.size() == m1.size());
+    // check correctly reshaped
+    for (int i = 0; i < m2.rows(); ++i) {
+        for (int j = 0; j < m2.cols(); ++j) {
+            if (i == 3 && j == 0)  { EXPECT_TRUE(m2(i, j) == true); }
+	    if (i == 3 && j == 24) { EXPECT_TRUE(m2(i, j) == true); }
+        }
+    }
+    // reshape and then repeat
+    BinaryMatrix<Dynamic> m3 = m1.vector_view().repeat(1, 10);
+    BinaryMatrix<Dynamic> m4(100, 10);
+    m4.row(75).set();
+    m4.row(99).set();
+    EXPECT_TRUE(m3 == m4);
 }

@@ -20,6 +20,8 @@
 #include "../utils/assert.h"
 #include "../utils/symbols.h"
 
+#include <bitset>
+
 namespace fdapde {
 namespace core {
 
@@ -210,7 +212,7 @@ template <int Rows, int Cols = Rows> class BinaryMatrix : public BinMtxBase<Rows
     inline int pack_of(int i, int j) const { return (i * Base::n_cols_ + j) / PackSize; }
 };
 
-// unary bitwise operation of binary expressions
+// unary bitwise operation on binary expression
 template <int Rows, int Cols, typename XprTypeNested, typename UnaryBitwiseOp, typename UnaryLogicalOp>
 struct BinMtxUnaryOp :
     public BinMtxBase<Rows, Cols, BinMtxUnaryOp<Rows, Cols, XprTypeNested, UnaryBitwiseOp, UnaryLogicalOp>> {
@@ -228,7 +230,7 @@ struct BinMtxUnaryOp :
     BitPackType bitpack(int i) const { return f_bitwise_(op_.bitpack(i)); }
 };
 
-// binary bitwise operations between binary expression
+// binary bitwise operations on binary expressions
 template <int Rows, int Cols, typename Lhs, typename Rhs, typename BinaryOperation>
 struct BinMtxBinaryOp : public BinMtxBase<Rows, Cols, BinMtxBinaryOp<Rows, Cols, Lhs, Rhs, BinaryOperation>> {
     using XprType = BinMtxBinaryOp<Rows, Cols, Lhs, Rhs, BinaryOperation>;
@@ -425,9 +427,9 @@ template <typename XprType> struct count_visitor {
   
 // a non-writable expression of a block-repeat operation
 template <int Rows, int Cols, typename XprTypeNested>
-class BinMtxBlockRepeatOp : public BinMtxBase<Rows, Cols, BinMtxBlockRepeatOp<Rows, Cols, XprTypeNested>> {
+class BinMtxRepeatOp : public BinMtxBase<Rows, Cols, BinMtxRepeatOp<Rows, Cols, XprTypeNested>> {
    public:
-    using XprType = BinMtxBlockRepeatOp<Rows, Cols, XprTypeNested>;
+    using XprType = BinMtxRepeatOp<Rows, Cols, XprTypeNested>;
     using Base = BinMtxBase<Rows, Cols, XprType>;
     using BitPackType = typename Base::BitPackType;
     static constexpr int PackSize = Base::PackSize;   // number of bits in a packet
@@ -435,8 +437,9 @@ class BinMtxBlockRepeatOp : public BinMtxBase<Rows, Cols, BinMtxBlockRepeatOp<Ro
     using Base::n_cols_;
     using Base::n_rows_;
 
-    BinMtxBlockRepeatOp(const XprTypeNested& xpr, int rep_row, int rep_col) :
-        Base(xpr.rows() * rep_row, xpr.cols() * rep_col), xpr_(xpr), rep_row_(rep_row), rep_col_(rep_col) { }
+    BinMtxRepeatOp(const XprTypeNested& xpr, int rep_row, int rep_col) :
+        Base(xpr.rows() * rep_row, xpr.cols() * rep_col), xpr_(xpr), rep_row_(rep_row), rep_col_(rep_col) {
+    }
     bool operator()(int i, int j) const {
         fdapde_assert(i < n_rows_ && j < n_cols_);
         return xpr_(i % xpr_.rows(), j % xpr_.cols());
@@ -454,6 +457,31 @@ class BinMtxBlockRepeatOp : public BinMtxBase<Rows, Cols, BinMtxBlockRepeatOp<Ro
     // internal data
     typename internals::ref_select<const XprTypeNested>::type xpr_;
     int rep_row_, rep_col_;
+};
+
+// reshaped operation
+template <int Rows, int Cols, typename XprTypeNested>
+class BinMtxReshapedOp : public BinMtxBase<Rows, Cols, BinMtxReshapedOp<Rows, Cols, XprTypeNested>> {
+public:
+    using XprType = BinMtxReshapedOp<Rows, Cols, XprTypeNested>;
+    using Base = BinMtxBase<Rows, Cols, XprType>;
+    using BitPackType = typename Base::BitPackType;
+    static constexpr int PackSize = Base::PackSize;   // number of bits in a packet
+    static constexpr int NestAsRef = 0;   // whether to store this node by reference or by copy in an expression
+  
+    BinMtxReshapedOp(const XprTypeNested& xpr, int reshaped_rows, int reshaped_cols) :
+        Base(reshaped_rows, reshaped_cols), xpr_(xpr), reshaped_rows_(reshaped_rows), reshaped_cols_(reshaped_cols) {
+        fdapde_assert(reshaped_rows * reshaped_cols == xpr.rows() * xpr.cols());
+    }
+    bool operator()(int i, int j) const {
+        fdapde_assert(i < reshaped_rows_ && j < reshaped_cols_);
+        return xpr_((i * reshaped_cols_ + j) / xpr_.cols(), (i * reshaped_cols_ + j) % xpr_.cols());
+    }
+    BitPackType bitpack(int i) const { return xpr_.bitpack(i); }   // no changes in storage layout
+   private:
+    // internal data
+    typename internals::ref_select<const XprTypeNested>::type xpr_;
+    int reshaped_rows_, reshaped_cols_;
 };
 
 // base class of any binary matrix expression
@@ -552,9 +580,14 @@ template <int Rows, int Cols, typename XprType> class BinMtxBase {
         return masked_mtx;
     }
     // block-repeat operation
-    BinMtxBlockRepeatOp<Dynamic, Dynamic, XprType> blk_repeat(int rep_row, int rep_col) const {
-        return BinMtxBlockRepeatOp<Dynamic, Dynamic, XprType>(get(), rep_row, rep_col);
+    BinMtxRepeatOp<Dynamic, Dynamic, XprType> repeat(int rep_row, int rep_col) const {
+        return BinMtxRepeatOp<Dynamic, Dynamic, XprType>(get(), rep_row, rep_col);
     }
+    // reshape a binary matrix to another matrix of different sizes
+    BinMtxReshapedOp<Dynamic, Dynamic, XprType> reshaped(int n_row, int n_col) const {
+        return BinMtxReshapedOp<Dynamic, Dynamic, XprType>(get(), n_row, n_col);
+    }
+    BinMtxReshapedOp<Dynamic, Dynamic, XprType> vector_view() const { return reshaped(get().size(), 1); }
    private:
     template <typename Visitor, template <typename, typename> typename VisitStrategy> inline auto visit_apply_() const {
         Visitor visitor;
