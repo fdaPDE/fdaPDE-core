@@ -241,21 +241,31 @@ void FEMSolverBase<D, E, F, Ts...>::init(const PDE& pde) {
 template <typename D, typename E, typename F, typename... Ts>
 template <typename PDE>
 void FEMSolverBase<D, E, F, Ts...>::set_dirichlet_bc(const PDE& pde) {
-    // std::cout << "called Dirichlet" << std::endl;
     fdapde_static_assert(is_pde<PDE>::value, THIS_METHOD_IS_FOR_PDE_ONLY);
     if (!is_init) throw std::runtime_error("solver must be initialized first!");
     for (auto it = boundary_dofs_begin_Dirichlet(); it != boundary_dofs_end_Dirichlet(); ++it) {
+        // standard application of Dirichlet boundary conditions
         stiff_.row(*it) *= 0;            // zero all entries of this row
         stiff_.coeffRef(*it, *it) = 1;   // set diagonal element to 1 to impose equation u_j = b_j
+        // penalty method for Dirichlet boundary conditions (preferrable with direct solvers for pivoting)
+        // stiff_.coeffRef(*it, *it) = 1e30;
 
         // TODO: currently only space-only case supported (reason of [0] below)
+        
+        // satndard application of Dirichlet boundary conditions
         force_.coeffRef(*it, 0) = pde.dirichlet_boundary_data()(*it, 0);   // impose boundary value on forcing term
+        // penalty method for Dirichlet boundary conditions
+        // force_.coeffRef(*it, 0) = 1e30 * pde.dirichlet_boundary_data()(*it, 0);
+        
         // iterate over time steps if a space-time PDE is supplied
         if constexpr (is_parabolic<E>::value) {
             std::size_t n = n_dofs_;   // degrees of freedom in space
             std::size_t m = pde.forcing_data().cols();  // number of time points
             for (std::size_t i = 1; i < m; ++i) {
+                // standard application of Dirichlet boundary conditions
                 force_.coeffRef((*it) + n*i, 0) = pde.dirichlet_boundary_data()(*it, i);   // impose boundary value on forcing term
+                // penalty method for Dirichlet boundary conditions
+                // force_.coeffRef((*it) + n*i, 0) = 1e30 * pde.dirichlet_boundary_data()(*it, i);
             }
         }
     }

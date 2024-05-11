@@ -106,6 +106,7 @@ class PDE {
     void set_neumann_bc(const ForcingType& data, const double diffusion = 1.) { neumann_boundary_data_ = data; diffusion_coefficient_ = diffusion; }
     void set_robin_bc(const ForcingType& data, const DVector<double> constants, const double diffusion = 1.) { robin_boundary_data_ = data; robin_constants_ = constants; diffusion_coefficient_ = diffusion; }
     void set_initial_condition(const DVector<double>& data) { initial_condition_ = data; };
+    void set_stab_param(const double delta) { solver_.set_stab_param(delta); }
     // getters
     const SpaceDomainType& domain() const { return domain_; }
     const DVector<double>& time_domain() const { return time_domain_; }

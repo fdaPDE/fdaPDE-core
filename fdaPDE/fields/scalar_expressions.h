@@ -93,6 +93,16 @@ template <int N> class Scalar : public ScalarExpr<N, Scalar<N>> {
     inline double operator()(const typename Base::VectorType& p) const { return value_; };
 };
 
+// class for the expression template of the SUPG method
+template <int N> class ElementLength : public ScalarExpr<N, ElementLength<N>> {
+    private:
+     std::shared_ptr<double> h_;
+    public:
+     ElementLength() = default;
+     ElementLength(const std::shared_ptr<double>& h) : h_(h) { }
+     inline double operator()(const typename ScalarExpr<N, ElementLength<N>>::VectorType& p) const { return *h_; }
+};
+
 // wraps an n_rows x 1 vector of data, acts as a double once forwarded the matrix row
 template <int N> class DiscretizedScalarField : public ScalarExpr<N, DiscretizedScalarField<N>> {
    private:

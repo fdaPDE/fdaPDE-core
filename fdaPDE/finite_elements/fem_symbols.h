@@ -36,7 +36,7 @@ struct FEM { };
     /* for non-linear operators, the current approximated solution */                                                  \
     auto f = *std::get<5>(mem_buff);                                                                                   \
     /* for transport dominated PDEs */                                                                                 \
-    auto h = std::get<6>(mem_buff);
+    auto h = *std::get<6>(mem_buff);
 
 // finite element order type (just a type wrapper around an int)
 template <int R> struct fem_order {
@@ -47,18 +47,36 @@ template <int R> struct fem_order {
 template<typename... Args>
 class PDEparameters final {
 public:
-    PDEparameters(PDEparameters const &) = delete;
-    PDEparameters &operator=(PDEparameters const &) = delete;
     static PDEparameters &getInstance( const Args &... data) {
-        static PDEparameters instance(data...);
-        return instance;
+        if (!instance_){
+            instance_ = new PDEparameters(data...);
+        }
+        return *instance_;
     }
-    // getter to the first element of the tuple
-    std::tuple<Args...> getData(void) const { return data_; }
+
+    // getter fot the tuple
+    std::tuple<Args...> getData(void) const {
+        return data_;
+    }
+
+    // static destructor
+    static void destroyInstance(){
+        delete instance_;
+        instance_ = nullptr;
+    }
+
 private:
-    explicit PDEparameters(const Args &... data) : data_(std::make_tuple(data...)) {}
-    std::tuple<Args...> data_;
+    PDEparameters(PDEparameters const &) = delete;              // Delete copy constructor
+    PDEparameters &operator=(PDEparameters const &) = delete;   // Delete assignment operator
+    explicit PDEparameters(const Args &... data) : data_(std::make_tuple(data...)) {}   // Private constructor
+    ~PDEparameters() = default;   // Default destructor
+
+    std::tuple<Args...> data_;      // data tuple
+
+    static PDEparameters *instance_; // pointer to the instance
 };
+template <typename... Args>
+PDEparameters<Args...>* PDEparameters<Args...>::instance_ = nullptr;
 
 }   // namespace core
 }   // namespace fdapde

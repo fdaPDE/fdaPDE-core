@@ -27,10 +27,14 @@ using fdapde::core::Element;
 using fdapde::core::FEM;
 using fdapde::core::fem_order;
 using fdapde::core::laplacian;
+using fdapde::core::NonLinearReaction;
+using fdapde::core::LagrangianBasis;
+using fdapde::core::non_linear_op;
+using fdapde::core::diffusion;
 using fdapde::core::make_pde;
 using fdapde::core::PDE;
 using fdapde::core::ScalarField;
-using fdapde::core::PDEparameters; // ADDED
+using fdapde::core::PDEparameters;
 
 #include "utils/mesh_loader.h"
 using fdapde::testing::MeshLoader;

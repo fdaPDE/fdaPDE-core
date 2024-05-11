@@ -27,6 +27,8 @@ using fdapde::core::Element;
 using fdapde::core::FEM;
 using fdapde::core::fem_order;
 using fdapde::core::laplacian;
+using fdapde::core::diffusion;
+using fdapde::core::reaction;
 using fdapde::core::make_pde;
 using fdapde::core::PDE;
 using fdapde::core::ScalarField;
@@ -139,6 +141,7 @@ TEST(fem_pde_test, advection_diffusion_isotropic_order1) {
     beta_ << -alpha_, 0.;
 
     // save parameters in the PDEparameters singleton, these will be retrieved by the solver (MANDATORY WITH ADVECTION TERM!!)
+    PDEparameters<double, decltype(beta_)>::destroyInstance();
     PDEparameters<double, decltype(beta_)> &PDEparams = PDEparameters<double, decltype(beta_)>::getInstance(1., beta_);
 
     auto L = -laplacian<FEM>() + advection<FEM>(beta_);
@@ -205,6 +208,7 @@ TEST(fem_pde_test, advection_diffusion_isotropic_order2) {
     beta_ << -alpha_, 0.;
 
     // save parameters in the PDEparameters singleton, these will be retrieved by the solver (MANDATORY WITH ADVECTION TERM!!)
+    PDEparameters<double, decltype(beta_)>::destroyInstance();
     PDEparameters<double, decltype(beta_)> &PDEparams = PDEparameters<double, decltype(beta_)>::getInstance(1.0, beta_);
 
     auto L = -laplacian<FEM>() + advection<FEM>(beta_);   // -\Delta + dot(beta_, \nabla)
@@ -415,13 +419,15 @@ TEST(fem_pde_test, advection_diffusion_reaction_non_isotropic_order_2) {
     double c_ = 2;
 
     // save parameters in the PDEparameters singleton, these will be retrieved by the solver (MANDATORY WITH ADVECTION TERM!!)
-    PDEparameters<decltype(K_), decltype(b_)> &PDEparams = PDEparameters<decltype(K_), decltype(b_)>::getInstance(K_, b_);
+    PDEparameters<decltype(K_), decltype(b_), decltype(c_)>::destroyInstance();
+    PDEparameters<decltype(K_), decltype(b_), decltype(c_)> &PDEparams = 
+                PDEparameters<decltype(K_), decltype(b_), decltype(c_)>::getInstance(K_, b_, c_);
 
     auto L = -diffusion<FEM>(K_) + advection<FEM>(b_) + reaction<FEM>(c_);
     // load sample mesh for order 1 basis
     MeshLoader<Mesh2D> unit_square("unit_square");
 
-    PDE<decltype(unit_square.mesh), decltype(L), ScalarField<2>, FEM, fem_order<2>, decltype(K_), decltype(b_)> pde_(unit_square.mesh, L);
+    PDE<decltype(unit_square.mesh), decltype(L), ScalarField<2>, FEM, fem_order<2>, decltype(K_), decltype(b_), decltype(c_)> pde_(unit_square.mesh, L);
     pde_.set_forcing(forcing);
 
     // compute boundary condition and exact solution
@@ -444,6 +450,7 @@ TEST(fem_pde_test, advection_diffusion_reaction_non_isotropic_order_2) {
     DMatrix<double> error_ = solution_ex - pde_.solution();
     double error_L2 = (pde_.mass() * error_.cwiseProduct(error_)).sum();
     EXPECT_TRUE(error_L2 < 1e-5);
+    std::cout << "error_L2 = " << error_L2 << std::endl;
 }
 
 // ADDED TEST (NonLinear PDE)
@@ -473,7 +480,7 @@ TEST(fem_pde_test, non_linear_2) {
     NonLinearReaction<2, LagrangianBasis<decltype(unit_square.mesh),2>::ReferenceBasis> non_linear_reaction(h_);
 
     // differential operator
-        auto L = -nu*laplacian<FEM>() + non_linear_op<FEM>(non_linear_reaction);
+    auto L = -nu*laplacian<FEM>() + non_linear_op<FEM>(non_linear_reaction);
 
     PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<2>> pde_(unit_square.mesh, L, h_);
 

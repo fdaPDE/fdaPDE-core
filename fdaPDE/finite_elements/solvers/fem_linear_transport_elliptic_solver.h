@@ -42,6 +42,9 @@ struct FEMLinearTransportEllipticSolver : public FEMSolverBase<D, E, F, Ts...> {
     using ReferenceBasis = typename FunctionalBasis::ReferenceBasis;
     using Quadrature = typename ReferenceBasis::Quadrature;
 
+    double delta_ = 1.;
+    void set_stab_param(const double delta) { delta_ = delta; }
+
     template <typename PDE> void solve(const PDE& pde) {
         fdapde_static_assert(is_pde<PDE>::value, THIS_METHOD_IS_FOR_PDE_ONLY);
         if (!this->is_init) throw std::runtime_error("solver must be initialized first!");
@@ -51,48 +54,91 @@ struct FEMLinearTransportEllipticSolver : public FEMSolverBase<D, E, F, Ts...> {
         SystemSolverType solver;
 
         SpMatrix<double> stab_(this->n_dofs_, this->n_dofs_);
-        DVector<double> stab_rhs_(this->n_dofs_);   // todo: initialize it with zeroes
-        for (size_t i=0; i<this->n_dofs_; ++i) stab_rhs_(i, 0) = 0.;
+        stab_.setZero();
+        DVector<double> stab_rhs_ = DVector<double>::Zero(this->n_dofs_);
 
         // if there's an advection term -> stabilization
         if constexpr (fdapde::core::is_advection<E>::value){
 
-            // initialize empty value with the CORRECT TYPE using default constructor
-            auto mu_temp = std::tuple_element_t<1, SolverArgs>();
-            auto b_temp = std::tuple_element_t<2, SolverArgs>();
-            // auto f_temp = std::tuple_element_t<3, SolverArgs>();
+            // diffusion - advection - reaction equation
+            if constexpr (fdapde::core::is_reaction<E>::value){ 
 
-            // retrieve the values of the PDE parameters from the singleton
-            PDEparameters<decltype(mu_temp), decltype(b_temp)> &PDEparams =
-                    PDEparameters<decltype(mu_temp), decltype(b_temp)>::getInstance(mu_temp, b_temp);
+                // initialize empty value with the CORRECT TYPE using default constructor
+                auto mu_temp = std::tuple_element_t<1, SolverArgs>();
+                auto b_temp = std::tuple_element_t<2, SolverArgs>();
+                auto c_temp = std::tuple_element_t<3, SolverArgs>();
 
-            auto mu = std::get<0>(PDEparams.getData());
-            auto b = std::get<1>(PDEparams.getData());
+                // retrieve the values of the PDE parameters from the singleton
+                PDEparameters<decltype(mu_temp), decltype(b_temp), decltype(c_temp)> &PDEparams =
+                        PDEparameters<decltype(mu_temp), decltype(b_temp), decltype(c_temp)>::getInstance(mu_temp, b_temp, c_temp);
 
-            // std::cout << "type of b is: " << typeid(b).name() << std::endl;
-            // std::cout << "b.norm() is: " << b.norm() << std::endl;
+                auto mu = std::get<0>(PDEparams.getData());
+                auto b = std::get<1>(PDEparams.getData());
+                auto c = std::get<2>(PDEparams.getData());
 
-            // add stabilization method IF IT IS NECESSARY
-            // I cannot avoid having introduced a getter in lagrangian_basis.h, domain_ is declared private
-            double h = this->basis_.get_element_size(); //todo: take the maximum of every element...
-            // double Pe = b.norm() * h / (2 * mu);
-            // todo: check Peclet number and decide whether to use stabilizer
+                Assembler<FEM, DomainType, ReferenceBasis, Quadrature> assembler(pde.domain(), this->integrator_,
+                                                                                 this->n_dofs_, this->dofs_);
 
-            Assembler<FEM, DomainType, ReferenceBasis, Quadrature> assembler(pde.domain(), this->integrator_,
-                                                                             this->n_dofs_, this->dofs_);
+                double normb = 0;
+                if constexpr (std::is_base_of<VectorBase, decltype(b)>::value) {
+                    normb = assembler.normVectorField(b);
+                } else {
+                    normb = b.norm();
+                }
 
-            // streamline diffusion
-            // auto StreamDiff = streamline_diffusion<FEM>(b);
-            // stab_ = assembler.discretize_operator(StreamDiff); // stabilization matrix
+                double h = std::sqrt(this-> basis_.get_element_size() * 2); // assuming triangles
 
-            // strong staibilizer (GLS-SUPG-DW) [...]
-            auto StrongStab = SUPG<FEM, decltype(PDEparams.getData())>(PDEparams.getData());
-            stab_ = assembler.discretize_operator(StrongStab); // stabilization matrix
-            // prepare a tuple containing b and pde forcing_data and send it to the operator SUPG_RHS
-            auto b_and_forcing = std::make_tuple(b, pde.forcing_data());
-            auto StrongStabRHS = SUPG_RHS<FEM, decltype(b_and_forcing)>(b_and_forcing);
-            stab_rhs_ = assembler.discretize_SUPG_RHS(StrongStabRHS); // stabilization rhs
-        }
+                double Pe = 0;
+                std::cout << "mu is a double: " << std::is_same<decltype(mu), double>::value << std::endl;
+                if constexpr (std::is_same<decltype(mu), double>::value) {
+                    Pe = normb * h * 0.5 / mu;
+                }else{
+                    Pe = normb * h * 0.5 / mu.norm();
+                }
+                // Pe = normb * h * 0.5 / mu.norm();
+                std::cout << "Pe: " << Pe << std::endl;
+
+                if (Pe > 1) {
+                    auto SUPGtuple = std::make_tuple(mu, b, c, normb, delta_);
+                    auto StrongStab = SUPG_ADV_DIFF_REACT<FEM, decltype(SUPGtuple)>(SUPGtuple);
+                    
+                    stab_ = assembler.discretize_operator(StrongStab);
+                    stab_rhs_ = assembler.discretize_SUPG_RHS(b, normb, pde.forcing_data(), delta_);
+                }
+            
+            }  else {   // diffusion - advection equation
+                // initialize empty value with the CORRECT TYPE using default constructor
+                auto mu_temp = std::tuple_element_t<1, SolverArgs>();
+                auto b_temp = std::tuple_element_t<2, SolverArgs>();
+
+                PDEparameters<decltype(mu_temp), decltype(b_temp)> &PDEparams =
+                        PDEparameters<decltype(mu_temp), decltype(b_temp)>::getInstance(mu_temp, b_temp);
+
+                auto mu = std::get<0>(PDEparams.getData());
+                auto b = std::get<1>(PDEparams.getData());
+
+                Assembler<FEM, DomainType, ReferenceBasis, Quadrature> assembler(pde.domain(), this->integrator_,
+                                                                                 this->n_dofs_, this->dofs_);
+
+                double normb = 0;
+                if constexpr (std::is_base_of<VectorBase, decltype(b)>::value) {
+                    normb = assembler.normVectorField(b);
+                } else {
+                    normb = b.norm();
+                }
+
+                double h = std::sqrt(this-> basis_.get_element_size() * 2);
+                double Pe = normb * h / (2 * mu);
+
+                if (Pe > 1) {
+                    auto SUPGtuple = std::make_tuple(mu, b, normb, delta_);
+                    auto StrongStab = SUPG_ADV_DIFF<FEM, decltype(SUPGtuple)>(SUPGtuple);
+                    
+                    stab_ = assembler.discretize_operator(StrongStab);
+                    stab_rhs_ = assembler.discretize_SUPG_RHS(b, normb, pde.forcing_data(), delta_);
+                }
+            }   // end is_reaction
+        }   // end is_advection
 
         solver.compute(this->stiff_ + stab_);
         // stop if something was wrong
@@ -101,11 +147,6 @@ struct FEMLinearTransportEllipticSolver : public FEMSolverBase<D, E, F, Ts...> {
             return;
         }
 
-        // solve FEM linear system arising from the generalized Petrov Galerkin
-        // streamline diffusion
-        // this->solution_ = solver.solve(this->force_);
-
-        // strong stabilizers [...]
         this->solution_ = solver.solve(this->force_ + stab_rhs_);
 
         this->success = true;

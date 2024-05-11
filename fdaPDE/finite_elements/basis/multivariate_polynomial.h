@@ -24,6 +24,8 @@
 #include "../../fields/scalar_expressions.h"
 #include "../../fields/vector_field.h"
 
+#include <unordered_set>
+
 namespace fdapde {
 namespace core {
 
