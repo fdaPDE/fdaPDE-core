@@ -450,7 +450,7 @@ TEST(fem_pde_test, advection_diffusion_reaction_non_isotropic_order_2) {
     DMatrix<double> error_ = solution_ex - pde_.solution();
     double error_L2 = (pde_.mass() * error_.cwiseProduct(error_)).sum();
     EXPECT_TRUE(error_L2 < 1e-5);
-    std::cout << "error_L2 = " << error_L2 << std::endl;
+    // std::cout << "error_L2 = " << error_L2 << std::endl;
 }
 
 // ADDED TEST (NonLinear PDE)

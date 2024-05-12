@@ -89,14 +89,12 @@ struct FEMLinearTransportEllipticSolver : public FEMSolverBase<D, E, F, Ts...> {
                 double h = std::sqrt(this-> basis_.get_element_size() * 2); // assuming triangles
 
                 double Pe = 0;
-                std::cout << "mu is a double: " << std::is_same<decltype(mu), double>::value << std::endl;
                 if constexpr (std::is_same<decltype(mu), double>::value) {
                     Pe = normb * h * 0.5 / mu;
                 }else{
                     Pe = normb * h * 0.5 / mu.norm();
                 }
-                // Pe = normb * h * 0.5 / mu.norm();
-                std::cout << "Pe: " << Pe << std::endl;
+                // std::cout << "Pe: " << Pe << std::endl;
 
                 if (Pe > 1) {
                     auto SUPGtuple = std::make_tuple(mu, b, c, normb, delta_);
