@@ -41,8 +41,11 @@ template <typename D, typename E, typename F, typename... Ts> class SplineSolver
     // constructor
     SplineSolverBase() = default;
     SplineSolverBase(const DomainType& domain) : domain_(&domain), basis_(domain.nodes()) {
-        Triangulation<1, 1> reference_interval(-1, 1, domain.n_nodes());
-        reference_basis_ = FunctionalBasis(reference_interval.nodes());
+        // map domain nodes on reference interval [-1, 1]
+        DVector<double> nodes = domain.nodes();
+        double a = domain.nodes()[0], b = domain.nodes()[domain.n_nodes() - 1];
+        for (int i = 0; i < nodes.rows(); ++i) { nodes[i] = 1 / (b - a) * (2 * nodes[i] - (b + a)); }
+        reference_basis_ = FunctionalBasis(nodes);
     };
     // getters
     const DMatrix<double>& solution() const { return solution_; }

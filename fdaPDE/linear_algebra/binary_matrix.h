@@ -126,6 +126,14 @@ template <int Rows, int Cols = Rows> class BinaryMatrix : public BinMtxBase<Rows
         for (int k = 0; k < result.bitpacks(); ++k) { result.bitpack(k) = -1; }
         return result;
     }
+    // construct identity matrix
+    static BinaryMatrix<Rows, Cols> Identity(int i, int j) {
+        fdapde_static_assert(Rows != 1 && Cols != 1, THIS_METHOD_IS_ONLY_FOR_MATRICES);
+        BinaryMatrix<Rows, Cols> result;
+        result.resize(i, j);
+        for (int k = 0; k < j && k < i; ++k) { result.set(k, k); }
+        return result;
+    }
 
     template <int Rows_ = Rows, int Cols_ = Cols>
     typename std::enable_if<Rows_ == Dynamic || Cols_ == Dynamic, void>::type

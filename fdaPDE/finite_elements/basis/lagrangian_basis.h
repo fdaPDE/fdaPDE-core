@@ -91,8 +91,8 @@ template <typename MeshType, int Order> class LagrangianBasis {
         }
     };
     LagrangianElement<MeshType::local_dim, Order> ref_basis_ {};
-    void enumerate_dofs() requires(Order <= 2) {       // produce the matrix of dof coordinates
-        if (size_ != 0) return;   // return early if dofs already computed
+    void enumerate_dofs() requires(Order <= 2) {    // produce the matrix of dof coordinates
+        if (size_ != 0) return;    // return early if dofs already computed
         if constexpr (Order == 1) {
             size_ = domain_->n_nodes();
             dofs_ = domain_->cells();

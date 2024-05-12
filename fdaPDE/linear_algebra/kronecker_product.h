@@ -138,8 +138,8 @@ class evaluator<KroneckerTensorProduct<Lhs_, Rhs_, Dense, Dense>> :
     typedef typename XprType::CoeffReturnType CoeffReturnType;
 
     enum {   // required compile time constants
-        CoeffReadCost = evaluator<typename std::decay<LhsNested>::type>::CoeffReadCost +
-                        evaluator<typename std::decay<RhsNested>::type>::CoeffReadCost,
+        CoeffReadCost = int(evaluator<typename std::decay<LhsNested>::type>::CoeffReadCost) +
+                        int(evaluator<typename std::decay<RhsNested>::type>::CoeffReadCost),
         Flags = Eigen::ColMajor   // only ColMajor storage orders accepted
     };
     // Kronecker product operands
@@ -168,7 +168,7 @@ class evaluator<KroneckerTensorProduct<Lhs_, Rhs_, Sparse, Sparse>> :
     typedef typename evaluator<Rhs_>::InnerIterator RhsIterator;
 
     enum {   // required compile time constants
-        CoeffReadCost = evaluator<Lhs_>::CoeffReadCost + evaluator<Rhs_>::CoeffReadCost,
+        CoeffReadCost = int(evaluator<Lhs_>::CoeffReadCost) + int(evaluator<Rhs_>::CoeffReadCost),
         Flags = Eigen::ColMajor   // only ColMajor storage orders accepted
     };
     // Kronecker product operands
