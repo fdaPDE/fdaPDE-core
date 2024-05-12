@@ -78,8 +78,8 @@ public:
             f_prev = this->solution_.col(i);
 
             // Execute nonlinear loop to solve nonlinear system via fixedpoint method.
-            for (std::size_t j = 0; j < MaxIter_; ++j) {
-                // std::cout << "Fixed Point iteration = " << j << std::endl;
+            for (std::size_t j = 1; j < MaxIter_; ++j) {
+                // std::cout << "Time = " << i << " Fixed Point iteration = " << j << std::endl;
                 
                 // Update the system matrix for the next iteration.
                 Assembler<FEM, DomainType, ReferenceBasis, Quadrature> assembler(pde.domain(), this->integrator_, this->n_dofs_, this->dofs_, f_prev);

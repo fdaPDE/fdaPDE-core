@@ -27,37 +27,36 @@
 namespace fdapde{
 namespace core{
 
-    template <int N, typename B>
-    class NonLinearReaction : public NonLinearityBase<N, B>,
-                              public ScalarExpr<N, NonLinearReaction<N, B>>  {
+    template <int M, typename B>
+    class NonLinearReaction : public NonLinearityBase<M, B>,
+                              public ScalarExpr<M, NonLinearReaction<M, B>>  {
     public:
         typedef std::shared_ptr<DVector<double>> VecP;
         
         NonLinearReaction() = default;
-        NonLinearReaction(std::function<double(SVector<N>, SVector<1>)> h_) : NonLinearityBase<N,B>(h_){}
+        NonLinearReaction(std::function<double(SVector<1>)> h_) : NonLinearityBase<M,B>(h_){}
 
         auto operator()(VecP f_prev) const{
             this->f_prev_ = f_prev;
             return *this;
         }
 
-        double operator()(const SVector<N>& x) const{
-            return this->h(x, this->f(x));
+        double operator()(const SVector<M>& x) const{
+            return this->h(this->f(x));
         }
     }; // end of NonLinearReaction
 
-    template <int N, typename B>
-    class NonLinearReactionPrime: public NonLinearityBase<N, B>,
-                                  public ScalarExpr<N, NonLinearReactionPrime<N, B>>  {
+    template <int M, typename B>
+    class NonLinearReactionPrime: public NonLinearityBase<M, B>,
+                                  public ScalarExpr<M, NonLinearReactionPrime<M, B>>  {
     public:
         typedef std::shared_ptr<DVector<double>> VecP;
     
         NonLinearReactionPrime() = default;
-        NonLinearReactionPrime(std::function<double(SVector<N>, SVector<1>)> h_) : NonLinearityBase<N,B>(h_){}
+        NonLinearReactionPrime(std::function<double(SVector<1>)> h_) : NonLinearityBase<M,B>(h_){}
 
-        double operator()(const SVector<N>& x) const{
-            std::function<double(SVector<1>)> lambda_fun = [&] (SVector<1> ff) -> double {return this->h(x, ff);};
-            ScalarField<1> lambda_field(lambda_fun);
+        double operator()(const SVector<M>& x) const{
+            ScalarField<1> lambda_field(this->h);
             SVector<1> au;
             au << this->f(x);
             return lambda_field.derive()(au)[0] * this->f(x)[0];    // per newton method

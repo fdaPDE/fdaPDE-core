@@ -33,9 +33,9 @@
 #include "src/vector_space_test.cpp"
 #include "src/binary_matrix_test.cpp"
 // finite_elements
-#include "src/fem_pde_boundary_condition_test.cpp"
 #include "src/fem_operators_test.cpp"
 #include "src/fem_pde_test.cpp"
+#include "src/fem_pde_boundary_condition_test.cpp"
 #include "src/integration_test.cpp"
 #include "src/lagrangian_basis_test.cpp"
 #include "src/fem_pde_transport_test.cpp"

@@ -109,7 +109,7 @@ public:
 
             // 2) Execute nonlinear loop to solve nonlinear system
             for (std::size_t j = 1; j < MaxIter_; ++j) {
-                // std::cout << "Newton iteration = " << j << std::endl;
+                // std::cout << "Time = " << i << " Newton iteration = " << j << std::endl;
 
                 // Update the system matrix for the next iteration.
                 Assembler<FEM, DomainType, ReferenceBasis, Quadrature> assembler(pde.domain(), this->integrator_, this->n_dofs_, this->dofs_, f_prev);

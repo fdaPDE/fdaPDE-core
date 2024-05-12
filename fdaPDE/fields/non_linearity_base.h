@@ -25,7 +25,7 @@
 namespace fdapde{
 namespace core{
 
-    template <int N, typename B>
+    template <int M, typename B>
     class NonLinearityBase {
     protected:
         static constexpr std::size_t n_basis_ = B::n_basis;
@@ -33,10 +33,10 @@ namespace core{
 
         B basis_ {};  //calls default constructor
         mutable VecP f_prev_;  // pointer to vector containing the solution on one element at the previous time step
-        std::function<double(SVector<N>, SVector<1>)> h = [](SVector<N> x, SVector<1> ff) -> double {return 1 - ff[0];};
+        std::function<double(SVector<1>)> h = [](SVector<1> ff) -> double {return 1 - ff[0];};
 
         // protected method that preforms $\sum_i {f_i*\psi_i(x)}$
-        SVector<1> f(const SVector<N>& x) const{
+        SVector<1> f(const SVector<M>& x) const{
             SVector<1> result;
             result[0] = 0;
             for (std::size_t i = 0; i < n_basis_; i++){
@@ -47,10 +47,10 @@ namespace core{
     public:
         // constructor
         NonLinearityBase() = default;
-        NonLinearityBase(std::function<double(SVector<N>, SVector<1>)> h_) : h(h_) {}
+        NonLinearityBase(std::function<double(SVector<1>)> h_) : h(h_) {}
 
         //setter for the nonlinear function
-        void set_nonlinearity(std::function<double(SVector<N>, SVector<1>)> h_) {h = h_;}
+        void set_nonlinearity(std::function<double(SVector<1>)> h_) {h = h_;}
     }; // end of NonLinearityBase
         
 

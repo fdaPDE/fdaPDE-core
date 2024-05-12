@@ -88,23 +88,23 @@ class PDE {
         domain_(domain), time_domain_(t), diff_op_(diff_op), forcing_data_(forcing_data), solver_(domain, BMtrx) { }
     
     fdapde_enable_constructor_if(is_stationary, OperatorType) PDE(const D& domain, E diff_op,
-      const std::function<double(SVector<N>, SVector<1>)>& non_linear_reaction) :
+      const std::function<double(SVector<1>)>& non_linear_reaction) :
         domain_(domain), diff_op_(diff_op), solver_(domain), non_linear_reaction_(non_linear_reaction) { }
     fdapde_enable_constructor_if(is_parabolic, OperatorType) PDE(const D& domain, const TimeDomainType& t, E diff_op,
-      const std::function<double(SVector<N>, SVector<1>)>& non_linear_reaction) :
+      const std::function<double(SVector<1>)>& non_linear_reaction) :
         domain_(domain), time_domain_(t), diff_op_(diff_op), solver_(domain), non_linear_reaction_(non_linear_reaction) { }
     fdapde_enable_constructor_if(is_stationary, OperatorType) PDE(const D& domain, E diff_op,
-      const std::function<double(SVector<N>, SVector<1>)>& non_linear_reaction, const DMatrix<short int>& BMtrx) :
+      const std::function<double(SVector<1>)>& non_linear_reaction, const DMatrix<short int>& BMtrx) :
         domain_(domain), diff_op_(diff_op), solver_(domain, BMtrx), non_linear_reaction_(non_linear_reaction) { }
     fdapde_enable_constructor_if(is_parabolic, OperatorType) PDE(const D& domain, const TimeDomainType& t, E diff_op,
-      const std::function<double(SVector<N>, SVector<1>)>& non_linear_reaction, const DMatrix<short int>& BMtrx) :
+      const std::function<double(SVector<1>)>& non_linear_reaction, const DMatrix<short int>& BMtrx) :
         domain_(domain), time_domain_(t), diff_op_(diff_op), solver_(domain, BMtrx), non_linear_reaction_(non_linear_reaction) { }
     // setters
     void set_forcing(const ForcingType& forcing_data) { forcing_data_ = forcing_data; }
     void set_differential_operator(OperatorType diff_op) { diff_op_ = diff_op; }
     void set_dirichlet_bc(const DMatrix<double>& data) { dirichlet_boundary_data_ = data; }
-    void set_neumann_bc(const ForcingType& data, const double diffusion = 1.) { neumann_boundary_data_ = data; diffusion_coefficient_ = diffusion; }
-    void set_robin_bc(const ForcingType& data, const DVector<double> constants, const double diffusion = 1.) { robin_boundary_data_ = data; robin_constants_ = constants; diffusion_coefficient_ = diffusion; }
+    void set_neumann_bc(const DMatrix<double>& data, const double diffusion = 1.) { neumann_boundary_data_ = data; diffusion_coefficient_ = diffusion; }
+    void set_robin_bc(const DMatrix<double>& data, const DVector<double> constants, const double diffusion = 1.) { robin_boundary_data_ = data; robin_constants_ = constants; diffusion_coefficient_ = diffusion; }
     void set_initial_condition(const DVector<double>& data) { initial_condition_ = data; };
     void set_stab_param(const double delta) { solver_.set_stab_param(delta); }
     // getters
@@ -121,7 +121,7 @@ class PDE {
     const Quadrature& integrator() const { return solver_.integrator(); }
     const ForceQuadrature& force_integrator() const { return solver_.force_integrator(); }
     const FunctionalBasis& basis() const { return solver_.basis(); }
-    const std::function<double(SVector<N>, SVector<1>)>& non_linear_reaction() const {return non_linear_reaction_; }
+    const std::function<double(SVector<1>)>& non_linear_reaction() const {return non_linear_reaction_; }
     // evaluates the functional basis defined over the pyhisical domain on a given set of locations
     template <template <typename> typename EvaluationPolicy>
     std::pair<SpMatrix<double>, DVector<double>> eval_functional_basis(const DMatrix<double>& locs) const {
@@ -154,8 +154,8 @@ class PDE {
     DMatrix<double> neumann_boundary_data_;    // Neumann boundary conditions
     DMatrix<double> robin_boundary_data_;      // Robin boundary conditions
     DMatrix<double> robin_constants_;          // constants needed to impose Robin boundary conditions
-    double diffusion_coefficient_;    // constants needed to impose Robin and Neumann boundary conditions
-    std::function<double(SVector<N>, SVector<1>)> non_linear_reaction_ ; // ... 
+    double diffusion_coefficient_;             // constants needed to impose Robin and Neumann boundary conditions
+    std::function<double(SVector<1>)> non_linear_reaction_ ; // ... 
 };
 
 // type-erasure wrapper (we require ForcingType_ to be convertible to a DMatrix<double>)
