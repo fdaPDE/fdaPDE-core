@@ -163,7 +163,7 @@ TEST(integration_test, integrate_over_Dirichlet_boundary_2D_order1) {
 // test integration over Neumann boundary
 TEST(integration_test, integrate_over_Neumann_boundary_surface_order1) {
     // load sample mesh
-    MeshLoader<SurfaceMesh> domain("unit_square_surface");
+    MeshLoader<SurfaceMesh> domain("square_surface");
     Integrator<FEM, 2, 1> integrator {};
     // Matrix defining the type of boundary
     auto M = DMatrix<short int>::Ones(domain.mesh.n_nodes(), 1);  // all ones means a fully Neumann boundary

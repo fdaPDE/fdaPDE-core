@@ -281,7 +281,7 @@ TEST(fem_pde_boundary_condition_test, laplacian_dirichlet_neumann_surface) {
     // double b = 3;
     // auto robin_expr = [&](SVector<3> x) -> double { return a*(1 + x[0]*x[0] + 2*x[1]*x[1] + 3*x[2]*x[2]) + b*4*x[1]; };
 
-    MeshLoader<SurfaceMesh> domain("unit_square_surface");
+    MeshLoader<SurfaceMesh> domain("square_surface");
     // define the Neumann and Dirichlet boundary with a DMatrix (=0 if Dirichlet, =1 if Neumann, =2 if Robin)
     // we have Neumann boundary when y=0 and y=1 (upper and lower sides)
     DMatrix<short int> boundary_matrix = DMatrix<short int>::Zero(domain.mesh.n_nodes(), 1) ; // has all zeros
@@ -1017,7 +1017,7 @@ TEST(fem_pde_boundary_condition_test, deSolve_1D) {
     }
 
     EXPECT_TRUE(1);
-} */
+}
 
 TEST(fem_pde_boundary_condition_test, deSolve_2D) {
     // parameters for the problem
@@ -1117,4 +1117,4 @@ TEST(fem_pde_boundary_condition_test, deSolve_2D) {
     // std::cout << " ErrorL2 = " << std::sqrt(error_L2) << std::endl;
 
     EXPECT_TRUE(1);
-}
+} */
