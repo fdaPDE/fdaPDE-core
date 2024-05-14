@@ -25,7 +25,7 @@
 #include "fem_nonlinear_broyden_solver.h"
 #include "fem_nonlinear_newton_solver.h"
 #include "fem_nonlinear_solver.h"
-#include "fem_linear_transport_elliptic_solver.h"   //ADDED
+// #include "fem_linear_transport_elliptic_solver.h"
 #include "euler_semi_implicit.h"
 #include "euler_implicit_fixedpoint.h"
 #include "euler_implicit_newton.h"

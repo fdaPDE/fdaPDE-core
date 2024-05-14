@@ -240,7 +240,7 @@ void FEMSolverBase<D, E, F, Ts...>::init(const PDE& pde) {
     mass_ = assembler_stiff.discretize_operator(Reaction<FEM, double>(1.0));
 
     // assemble stabilization matrix (if needed)
-    if constexpr (is_advection<E>::value) {
+    if constexpr (is_advection<E>::value && !is_parabolic<E>::value) {
         typedef std::tuple<Ts...> SolverArgs;
         SpMatrix<double> stab_(this->n_dofs_, this->n_dofs_);
         stab_.setZero();

@@ -40,7 +40,7 @@
 #include "finite_elements/solvers/fem_nonlinear_broyden_solver.h"
 #include "finite_elements/solvers/fem_nonlinear_newton_solver.h"
 #include "finite_elements/solvers/fem_linear_parabolic_solver.h"
-#include "finite_elements/solvers/fem_linear_transport_elliptic_solver.h"
+// #include "finite_elements/solvers/fem_linear_transport_elliptic_solver.h"
 #include "finite_elements/solvers/euler_semi_implicit.h"
 #include "finite_elements/solvers/euler_implicit_fixedpoint.h"
 #include "finite_elements/solvers/euler_implicit_newton.h"
