@@ -21,6 +21,9 @@
 
 #include "../../utils/symbols.h"
 #include "fem_solver_base.h"
+#include "../fem_symbols.h"
+
+#include <Eigen/IterativeLinearSolvers>
 
 namespace fdapde {
 namespace core {
@@ -30,7 +33,7 @@ struct FEMLinearEllipticSolver : public FEMSolverBase<D, E, F, Ts...> {
     using Base = FEMSolverBase<D, E, F, Ts...>;
     FEMLinearEllipticSolver(const D& domain) : Base(domain){ }
     FEMLinearEllipticSolver(const D& domain, const DMatrix<short int>& BMtrx) : Base(domain, BMtrx){ }
-  
+    
     // solves linear system stiff_*u = force_
     template <typename PDE> void solve(const PDE& pde) {
         fdapde_static_assert(is_pde<PDE>::value, THIS_METHOD_IS_FOR_PDE_ONLY);
@@ -38,6 +41,14 @@ struct FEMLinearEllipticSolver : public FEMSolverBase<D, E, F, Ts...> {
 
         typedef Eigen::SparseLU<SpMatrix<double>, Eigen::COLAMDOrdering<int>> SystemSolverType;
         SystemSolverType solver;
+
+        // Eigen gmres solver
+        // Eigen::GMRES<SpMatrix<double>, Eigen::IdentityPreconditioner> GMRESsolver;
+        // DVector<double> x = DVector<double>::Zero(this->n_dofs_);
+        // x = GMRESsolver.compute(this->stiff_).solve(this->force_);
+        // this->solution_ = x;
+
+        // Eigen sparse LU solver
         solver.compute(this->stiff_);
         // stop if something was wrong
         if (solver.info() != Eigen::Success) {

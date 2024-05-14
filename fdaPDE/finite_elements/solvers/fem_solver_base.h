@@ -72,6 +72,7 @@ template <typename D, typename E, typename F, typename... Ts> class FEMSolverBas
     template <typename PDE> void set_dirichlet_bc(const PDE& pde);
     template <typename PDE> void set_neumann_bc(const PDE& pde);
     template <typename PDE> void set_robin_bc(const PDE& pde);
+    void set_stab_param(const double delta) { delta_ = delta; }
     
     struct boundary_dofs_iterator {   // range-for loop over boundary dofs
        private:
@@ -180,6 +181,7 @@ template <typename D, typename E, typename F, typename... Ts> class FEMSolverBas
     SpMatrix<double> stiff_;                     // [stiff_]_{ij} = a(\psi_i, \psi_j), being a(.,.) the bilinear form
     SpMatrix<double> mass_;                      // mass matrix, [mass_]_{ij} = \int_D (\psi_i * \psi_j)
     SpMatrix<double> robin_;                     // Robin b.c.s boundary mass matrix, [robin_]_{ij} = \int_\Gamma_{Robin} (\mu * a/b * \psi_i * \psi_j)
+    double delta_ = 1.;                          // stabilization parameter
 
     std::size_t n_dofs_ = 0;        // degrees of freedom, i.e. the maximum ID in the dof_table_
     DMatrix<int> dofs_;             // for each element, the degrees of freedom associated to it
@@ -202,7 +204,8 @@ void FEMSolverBase<D, E, F, Ts...>::init(const PDE& pde) {
     boundary_dofs_Dirichlet_ = basis_.boundary_dofs_Dirichlet();
     boundary_dofs_Neumann_ = basis_.boundary_dofs_Neumann();
     boundary_dofs_Robin_ = basis_.boundary_dofs_Robin();
-    // assemble discretization matrix for given operator
+    
+    // assemble stiffness matrix for given operator
     Assembler<FEM, DomainType, ReferenceBasis, Quadrature> assembler_stiff(pde.domain(), integrator_, n_dofs_, dofs_);
     if constexpr(is_nonlinear<E>::value){
       if (is_empty(solution_)) solution_ = pde.initial_condition();
@@ -210,6 +213,7 @@ void FEMSolverBase<D, E, F, Ts...>::init(const PDE& pde) {
     }
     stiff_ = assembler_stiff.discretize_operator(pde.differential_operator());
     stiff_.makeCompressed();
+
     // assemble forcing vector
     std::size_t n = n_dofs_;   // degrees of freedom in space
     std::size_t m;             // number of time points
@@ -231,8 +235,95 @@ void FEMSolverBase<D, E, F, Ts...>::init(const PDE& pde) {
         force_.resize(n * m, 1);
         force_.block(0, 0, n, 1) = assembler_force.discretize_forcing(pde.forcing_data());
     }
+    
     // compute mass matrix [mass]_{ij} = \int_{\Omega} \phi_i \phi_j
     mass_ = assembler_stiff.discretize_operator(Reaction<FEM, double>(1.0));
+
+    // assemble stabilization matrix (if needed)
+    if constexpr (is_advection<E>::value) {
+        typedef std::tuple<Ts...> SolverArgs;
+        SpMatrix<double> stab_(this->n_dofs_, this->n_dofs_);
+        stab_.setZero();
+        DVector<double> stab_rhs_ = DVector<double>::Zero(this->n_dofs_);
+        if constexpr (is_reaction<E>::value) {  // diffusion - advection - reaction equation
+            // initialize empty value with the CORRECT TYPE using default constructor
+            auto mu_temp = std::tuple_element_t<1, SolverArgs>();
+            auto b_temp = std::tuple_element_t<2, SolverArgs>();
+            auto c_temp = std::tuple_element_t<3, SolverArgs>();
+            // retrieve the values of the PDE parameters from the singleton
+            PDEparameters<decltype(mu_temp), decltype(b_temp), decltype(c_temp)> &PDEparams =
+                PDEparameters<decltype(mu_temp), decltype(b_temp), decltype(c_temp)>::getInstance(mu_temp, b_temp, c_temp);
+            // get the actual parameters
+            auto mu = std::get<0>(PDEparams.getData());
+            auto b = std::get<1>(PDEparams.getData());
+            auto c = std::get<2>(PDEparams.getData());
+            // compute first the normb of b to compute the Peclet number
+            Assembler<FEM, DomainType, ReferenceBasis, Quadrature> assembler_stab(pde.domain(), integrator_, n_dofs_, dofs_);
+            double normb = 0;
+            if constexpr (std::is_base_of<VectorBase, decltype(b)>::value) {
+                normb = assembler_stab.normVectorField(b);
+            } else {
+                normb = b.norm();
+            }
+            double h = std::sqrt(this-> basis_.get_element_size() * 2); // assuming triangles
+            // compute the Peclet number
+            double Pe = 0;
+            if constexpr (std::is_same<decltype(mu), double>::value) {
+                Pe = normb * h * 0.5 / mu;
+            }else{
+                Pe = normb * h * 0.5 / mu.norm();
+            }
+            if (Pe > 1) {
+                auto SUPGtuple = std::make_tuple(mu, b, c, normb, delta_);
+                auto StrongStab = SUPG_ADV_DIFF_REACT<FEM, decltype(SUPGtuple)>(SUPGtuple);
+                
+                stab_ = assembler_stab.discretize_operator(StrongStab);
+                stab_rhs_ = assembler_stab.discretize_SUPG_RHS(b, normb, pde.forcing_data(), delta_);
+            }
+
+        }  else {   // diffusion - advection equation 
+        // TODO: avoid this code repetition
+            // initialize empty value with the CORRECT TYPE using default constructor
+            auto mu_temp = std::tuple_element_t<1, SolverArgs>();
+            auto b_temp = std::tuple_element_t<2, SolverArgs>();
+
+            PDEparameters<decltype(mu_temp), decltype(b_temp)> &PDEparams =
+                    PDEparameters<decltype(mu_temp), decltype(b_temp)>::getInstance(mu_temp, b_temp);
+
+            auto mu = std::get<0>(PDEparams.getData());
+            auto b = std::get<1>(PDEparams.getData());
+
+            Assembler<FEM, DomainType, ReferenceBasis, Quadrature> assembler(pde.domain(), this->integrator_,
+                                                                                this->n_dofs_, this->dofs_);
+
+            double normb = 0;
+            if constexpr (std::is_base_of<VectorBase, decltype(b)>::value) {
+                normb = assembler.normVectorField(b);
+            } else {
+                normb = b.norm();
+            }
+
+            double h = std::sqrt(this-> basis_.get_element_size() * 2);
+            double Pe = 0;
+            if constexpr (std::is_same<decltype(mu), double>::value) {
+                Pe = normb * h * 0.5 / mu;
+            }else{
+                Pe = normb * h * 0.5 / mu.norm();
+            }
+
+            if (Pe > 1) {
+                auto SUPGtuple = std::make_tuple(mu, b, normb, delta_);
+                auto StrongStab = SUPG_ADV_DIFF<FEM, decltype(SUPGtuple)>(SUPGtuple);
+                
+                stab_ = assembler.discretize_operator(StrongStab);
+                stab_rhs_ = assembler.discretize_SUPG_RHS(b, normb, pde.forcing_data(), delta_);
+            }
+        }   // end is_reaction
+        // SUPG STABILIZATION HERE!
+        stiff_ += stab_;
+        force_ += stab_rhs_;
+    }   // end is_advection
+
     is_init = true;
     return;
 }
