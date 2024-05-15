@@ -577,7 +577,7 @@ TEST(fem_pde_boundary_condition_test, space_time_dirichlet_neumann_2D) {
     double a = 17;
     double b = 32;
     auto robin_expr = [&](SVector<2> x, double t) -> double { 
-        return a*(std::cos(pi*x[0])*std::cos(pi*x[1]) + 2)*std::exp(-t) - b*pi*std::sin(pi*x[0])*std::cos(pi*x[1])*std::exp(-t);
+        return a*(std::cos(pi*x[0])*std::cos(pi*x[1]) + 2)*std::exp(-t) - 3*b*pi*std::sin(pi*x[0])*std::cos(pi*x[1])*std::exp(-t);
     };
 
     MeshLoader<Mesh2D> unit_square("unit_square_16");
@@ -639,7 +639,7 @@ TEST(fem_pde_boundary_condition_test, space_time_dirichlet_neumann_2D) {
     }
     DVector<double> robin_constants(2,1);
     robin_constants << a, b;
-    pde_.set_robin_bc(f_robin, robin_constants, K_(0,0));
+    pde_.set_robin_bc(f_robin, robin_constants);
 
     // init solver and solve differential problem
     pde_.init();
@@ -667,12 +667,121 @@ TEST(fem_pde_boundary_condition_test, space_time_dirichlet_neumann_2D) {
     EXPECT_TRUE(error_L2.maxCoeff() < 1e-7);
 }
 
+TEST(fem_pde_boundary_condition_test, space_time_dirichlet_neumann_surface) {
+
+    // exact solution
+    int M = 41;
+    DMatrix<double> times(M, 1);
+    double time_max = 100;
+    for (int j = 0; j < M; ++j) { times(j) = time_max / (M - 1) * j; }
+
+    int num_refinements = 1;
+    DMatrix<double> error_L2 = DMatrix<double>::Zero(M, num_refinements);
+
+    auto solution_expr = [](SVector<3> x, double t) -> double {
+        return (1 + x[0]*x[0] + x[1]*x[1] + x[2]*x[2]) * std::exp(-t);
+    };
+    auto forcing_expr = [&](SVector<3> x, double t) -> double {
+        return -(1 + x[0]*x[0] + x[1]*x[1] + x[2]*x[2])*std::exp(-t) - 6*std::exp(-t) - 7*solution_expr(x, t)*(1 - solution_expr(x, t));
+    };
+    // auto neumann_expr = [](SVector<3> x, double t) -> double { 
+    //     return 2*x[1]*t;
+    // }
+    // Robin data
+    double a = 0.6;
+    double b = 1.7;
+    auto robin_expr = [&](SVector<3> x, double t) -> double { 
+        return a*solution_expr(x, t) + b*(2*x[1]*t);
+    };
+
+    MeshLoader<SurfaceMesh> domain("surface_unit_cube_10");
+    // define the boundary conditions with a DMatrix (=0 if Dirichlet, =1 if Neumann, =2 if Robin)
+    DMatrix<short int> boundary_matrix = DMatrix<short int>::Ones(domain.mesh.n_nodes(), 1)*2 ;
+
+    // non linear reaction h_(u)*u
+    std::function<double(SVector<1>)> h_ = [&](SVector<1> ff) -> double {return 7*(1 - ff[0]);};
+
+    // build the non-linearity object # N=3
+    NonLinearReaction<2, LagrangianBasis<decltype(domain.mesh),1>::ReferenceBasis> non_linear_reaction(h_);
+
+    // differential operator
+    auto L = dt<FEM>() - laplacian<FEM>() - non_linear_op<FEM>(non_linear_reaction);
+
+    PDE<decltype(domain.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(domain.mesh, times, L, h_);//, boundary_matrix);
+    
+    // compute boundary condition and exact solution
+    DMatrix<double> nodes_ = pde_.dof_coords();
+    DMatrix<double> dirichlet_bc(nodes_.rows(), M);
+    DMatrix<double> solution_ex(nodes_.rows(), M);
+    DMatrix<double> initial_condition(nodes_.rows(), 1);
+
+    for (int i = 0; i < nodes_.rows(); ++i) {
+        for (int j = 0; j < M; ++j) {
+            dirichlet_bc(i, j) = solution_expr(nodes_.row(i), times(j));
+            solution_ex(i, j) = solution_expr(nodes_.row(i), times(j));
+        }
+    }
+    for (int i = 0; i < nodes_.rows(); ++i) { initial_condition(i) = solution_expr(nodes_.row(i), times(0)); }
+
+    // set dirichlet conditions
+    // pde_.set_dirichlet_bc(dirichlet_bc);
+
+    // set initial condition
+    pde_.set_initial_condition(initial_condition);
+
+    // request quadrature nodes and evaluate forcing on them
+    DMatrix<double> quadrature_nodes = pde_.force_quadrature_nodes();
+    DMatrix<double> f(quadrature_nodes.rows(), M);
+    for (int i = 0; i < quadrature_nodes.rows(); ++i) {
+        for (int j = 0; j < M; ++j) { f(i, j) = forcing_expr(quadrature_nodes.row(i), times(j)); }
+    }
+    pde_.set_forcing(f);
+    DMatrix<double> boundary_quadrature_nodes = pde_.boundary_quadrature_nodes();
+    // DMatrix<double> f_neumann(boundary_quadrature_nodes.rows(), M);
+    // for (auto i=0; i< boundary_quadrature_nodes.rows(); ++i){
+    //     for (int j = 0; j < M; ++j) f_neumann(i, j) = neumann_expr(boundary_quadrature_nodes.row(i), times(j));
+    // }
+    // pde_.set_neumann_bc(f_neumann);
+    DMatrix<double> f_robin(boundary_quadrature_nodes.rows(), M);
+    for (int i=0; i< boundary_quadrature_nodes.rows(); ++i){
+        for (int j = 0; j < M; ++j) { f_robin(i, j) = robin_expr(boundary_quadrature_nodes.row(i), times(j)); }
+    }
+    DVector<double> robin_constants(2,1);
+    robin_constants << a, b;
+    // pde_.set_robin_bc(f_robin, robin_constants);
+
+    // init solver and solve differential problem
+    pde_.init();
+    pde_.solve();
+
+    // check computed error within theoretical expectations
+    // std::cout << "L2 errors:" << std::endl;
+    DMatrix<double> error_(nodes_.rows(), 1);
+    for (int j = 0; j < M; ++j) {
+        error_ = solution_ex.col(j) - pde_.solution().col(j);
+        error_L2(j, 0) = (pde_.mass() * error_.cwiseProduct(error_)).sum();
+        // std::cout << "t = " << j << " ErrorL2 = " << std::sqrt(error_L2(j,0)) << std::endl;
+    }
+
+    // std::ofstream file("ESI_P1_space_time_RD_2.5D_cube_T100_dt2.5.txt");    //it will be exported in the current build directory
+    // if (file.is_open()){
+    //     for(int i = 0; i < pde_.solution().col(M-1).rows(); ++i)
+    //         file << std::setprecision(15) << pde_.solution().col(M-1)(i) << '\n';
+    //     file << std::sqrt(error_L2(M-1,0));
+    //     file.close();
+    // } else {
+    //     std::cerr << "test unable to save solution" << std::endl;
+    // }
+
+    EXPECT_TRUE(error_L2.maxCoeff() < 1e-7);
+}
+
 TEST(fem_pde_boundary_condition_test, space_time_dirichlet_neumann_3D) {
 
     // exact solution
-    int M = 101;
+    int M = 6;
     DMatrix<double> times(M, 1);
-    double time_max = 1e-3;
+    double time_max = 5;
     for (int j = 0; j < M; ++j) { times(j) = time_max / (M - 1) * j; }
 
     int num_refinements = 1;
@@ -695,24 +804,24 @@ TEST(fem_pde_boundary_condition_test, space_time_dirichlet_neumann_3D) {
         return a*solution_expr(x,t) + b*2*x[2]*t;
     };
 
-    MeshLoader<Mesh3D> domain("unit_cube_14");
+    MeshLoader<Mesh3D> domain("little_cube_100");
     // define the Neumann and Dirichlet boundary with a DMatrix (=0 if Dirichlet, =1 if Neumann, =2 if Robin)
     // considering the unit cube,
     // we have Neumann boundary when z=0 and z=1 (upper and lower sides)
     DMatrix<short int> boundary_matrix = DMatrix<short int>::Zero(domain.mesh.n_nodes(), 1) ; // has all zeros
-    for (size_t j=1; j<225; ++j) boundary_matrix(j, 0) = 2;
-    for (size_t j=3152; j<3375; ++j) boundary_matrix(j, 0) = 2;
+    for (size_t j=0; j<121; ++j) boundary_matrix(j, 0) = 2;
+    for (size_t j=1210; j<1331; ++j) boundary_matrix(j, 0) = 2;
     // set the Dirichlet nodes at the edges
-    for (size_t j=0; j<15; j++) {
-        boundary_matrix(15*j, 0) = 0;      // lower face, points with x=0
-        boundary_matrix(14 + j*15, 0) = 0; // lower face, points with x=1
+    for (size_t j=0; j<11; j++) {
+        boundary_matrix(11*j, 0) = 0;      // lower face, points with x=0
+        boundary_matrix(10 + j*11, 0) = 0; // lower face, points with x=1
         boundary_matrix(j, 0) = 0;         // lower face, points with y=0
-        boundary_matrix(210 + j, 0) = 0;   // lower face, points with y=1
+        boundary_matrix(110 + j, 0) = 0;   // lower face, points with y=1
 
-        boundary_matrix(3150 + 15*j, 0) = 0; // upper face, points with x=0
-        boundary_matrix(3164 + 15*j, 0) = 0; // upper face, points with x=1
-        boundary_matrix(3150 + j, 0) = 0;    // upper face, points with y=0
-        boundary_matrix(3360 + j, 0) = 0;    // upper face, points with y=1
+        boundary_matrix(1210 + 11*j, 0) = 0; // upper face, points with x=0
+        boundary_matrix(1220 + 11*j, 0) = 0; // upper face, points with x=1
+        boundary_matrix(1210 + j, 0) = 0;    // upper face, points with y=0
+        boundary_matrix(1320 + j, 0) = 0;    // upper face, points with y=1
     }
 
     // non linear reaction h_(u)*u
@@ -777,7 +886,7 @@ TEST(fem_pde_boundary_condition_test, space_time_dirichlet_neumann_3D) {
         // std::cout << "t = " << j << " ErrorL2 = " << std::sqrt(error_L2(j,0)) << std::endl;
     }
 
-    // std::ofstream file("ESI_P1_space_time_RD_3D_h20_T20_dt2.txt");    //it will be exported in the current build directory
+    // std::ofstream file("ESI_P1_space_time_RD_3D_lc_h10_T1_M11.txt");    //it will be exported in the current build directory
     // if (file.is_open()){
     //     for(int i = 0; i < pde_.solution().col(M-1).rows(); ++i)
     //         file << std::setprecision(15) << pde_.solution().col(M-1)(i) << '\n';
@@ -798,7 +907,7 @@ TEST(fem_pde_boundary_condition_test, dirichlet_robin_1D) {
     // Robin data
     double a = 32;
     double b = 4;
-    auto robin_expr = [&](SVector<1> x) -> double { return a*(std::cos(1) + std::sin(1)) + b*2*std::cos(1); };
+    auto robin_expr = [&](SVector<1> x) -> double { return a*(std::cos(1) + std::sin(1)) + 5*b*2*std::cos(1); };
 
     Mesh1D domain(0.0, 1.0, 10);
     // define the Neumann and Dirichlet boundary with a DMatrix (=0 if Dirichlet, =1 if Neumann, =2 if Robin)
@@ -839,7 +948,7 @@ TEST(fem_pde_boundary_condition_test, dirichlet_robin_1D) {
     }
     DVector<double> robin_constants(2,1);
     robin_constants << a, b;
-    pde_.set_robin_bc(f_robin, robin_constants, D(0,0));
+    pde_.set_robin_bc(f_robin, robin_constants);
     // init solver and solve differential problem
     pde_.init();
     pde_.solve();
@@ -936,7 +1045,7 @@ TEST(fem_pde_boundary_condition_test, deSolve_1D) {
     for (auto i=0; i< boundary_quadrature_nodes.rows(); ++i){
         for (int j = 0; j < M; ++j) { f_neumann(i, j) = neumann_expr(boundary_quadrature_nodes.row(i), times(j)); }
     }
-    pde_.set_neumann_bc(f_neumann, D(0,0));
+    pde_.set_neumann_bc(f_neumann);
 
     DMatrix<double> f_robin(boundary_quadrature_nodes.rows(), M);
     for (auto i=0; i< boundary_quadrature_nodes.rows(); ++i){
@@ -944,7 +1053,7 @@ TEST(fem_pde_boundary_condition_test, deSolve_1D) {
     }
     DVector<double> robin_constants(2,1);
     robin_constants << b[0], D(0,0);
-    pde_.set_robin_bc(f_robin, robin_constants, D(0,0));
+    pde_.set_robin_bc(f_robin, robin_constants);
 
     // init solver and solve differential problem
     pde_.init();
@@ -982,39 +1091,39 @@ TEST(fem_pde_boundary_condition_test, deSolve_1D) {
 
 
     // compute L2 difference at the final time wrt. FreeFem++ solution
-    DMatrix<double> freefem_solution = DMatrix<double>::Zero(nodes_.rows(), M);
-    std::ifstream file("../../../R script/1D deSolve/freefem/desolve_1D_ESI_PREinterpolation_freefem.txt");
-    double number;
-    int j = 0;
-    int i = 0;
-    while (file >> number) {
-        freefem_solution(i,j) = number;
-        i++;
-        if(i == nodes_.rows()) {i=0; j++;}
-    }
-    file.close();
-    std::cout << freefem_solution.col(0) << std::endl;
-    std::cout << '\n'<< '\n'<< '\n' << std::endl;
-    std::cout << freefem_solution.col(1) << std::endl;
-    std::cout << '\n'<< '\n'<< '\n' << std::endl;
-    std::cout << freefem_solution.col(M-1) << std::endl;
+    // DMatrix<double> freefem_solution = DMatrix<double>::Zero(nodes_.rows(), M);
+    // std::ifstream file("../../../R script/1D deSolve/freefem/desolve_1D_ESI_PREinterpolation_freefem.txt");
+    // double number;
+    // int j = 0;
+    // int i = 0;
+    // while (file >> number) {
+    //     freefem_solution(i,j) = number;
+    //     i++;
+    //     if(i == nodes_.rows()) {i=0; j++;}
+    // }
+    // file.close();
+    // std::cout << freefem_solution.col(0) << std::endl;
+    // std::cout << '\n'<< '\n'<< '\n' << std::endl;
+    // std::cout << freefem_solution.col(1) << std::endl;
+    // std::cout << '\n'<< '\n'<< '\n' << std::endl;
+    // std::cout << freefem_solution.col(M-1) << std::endl;
 
-    DMatrix<double> error_(nodes_.rows(), 1);
-    DMatrix<double> error_L2 = DMatrix<double>::Zero(M, 1);
-    for (int j = 0; j < M; ++j) {
-        error_ = freefem_solution.col(j) - pde_.solution().col(j);
-        error_L2(j, 0) = (pde_.mass() * error_.cwiseProduct(error_)).sum();
-        std::cout << "t = " << j << " ErrorL2 = " << std::sqrt(error_L2(j,0)) << std::endl;
-    }
-    std::ofstream file2("ESI_femR_freefem_L2errors.txt");    //it will be exported in the current build directory
-    if (file2.is_open()){
-        for (int j = 0; j < M; ++j) {
-            file2 << std::setprecision(15) << std::sqrt(error_L2(j,0)) << '\n';
-        }
-        file2.close();
-    } else {
-        std::cerr << "test unable to save solution" << std::endl;
-    }
+    // DMatrix<double> error_(nodes_.rows(), 1);
+    // DMatrix<double> error_L2 = DMatrix<double>::Zero(M, 1);
+    // for (int j = 0; j < M; ++j) {
+    //     error_ = freefem_solution.col(j) - pde_.solution().col(j);
+    //     error_L2(j, 0) = (pde_.mass() * error_.cwiseProduct(error_)).sum();
+    //     std::cout << "t = " << j << " ErrorL2 = " << std::sqrt(error_L2(j,0)) << std::endl;
+    // }
+    // std::ofstream file2("ESI_femR_freefem_L2errors.txt");    //it will be exported in the current build directory
+    // if (file2.is_open()){
+    //     for (int j = 0; j < M; ++j) {
+    //         file2 << std::setprecision(15) << std::sqrt(error_L2(j,0)) << '\n';
+    //     }
+    //     file2.close();
+    // } else {
+    //     std::cerr << "test unable to save solution" << std::endl;
+    // }
 
     EXPECT_TRUE(1);
 }
@@ -1067,7 +1176,7 @@ TEST(fem_pde_boundary_condition_test, deSolve_2D) {
     for (auto i=0; i< boundary_quadrature_nodes.rows(); ++i){
         f_neumann(i) = neumann_expr(boundary_quadrature_nodes.row(i));
     }
-    pde_.set_neumann_bc(f_neumann, mu);
+    pde_.set_neumann_bc(f_neumann);
 
     // init solver and solve differential problem
     pde_.init();
