@@ -28,6 +28,7 @@
 #include "../utils/type_erasure.h"
 #include "differential_operators.h"
 #include "symbols.h"
+#include "../finite_elements/fem_assembler.h"
 
 namespace fdapde {
 namespace core {
@@ -103,8 +104,8 @@ class PDE {
     void set_forcing(const ForcingType& forcing_data) { forcing_data_ = forcing_data; }
     void set_differential_operator(OperatorType diff_op) { diff_op_ = diff_op; }
     void set_dirichlet_bc(const DMatrix<double>& data) { dirichlet_boundary_data_ = data; }
-    void set_neumann_bc(const DMatrix<double>& data, const double diffusion = 1.) { neumann_boundary_data_ = data; diffusion_coefficient_ = diffusion; }
-    void set_robin_bc(const DMatrix<double>& data, const DVector<double> constants, const double diffusion = 1.) { robin_boundary_data_ = data; robin_constants_ = constants; diffusion_coefficient_ = diffusion; }
+    void set_neumann_bc(const DMatrix<double>& data) { neumann_boundary_data_ = data; }
+    void set_robin_bc(const DMatrix<double>& data, const DVector<double> constants) { robin_boundary_data_ = data; robin_constants_ = constants; }
     void set_initial_condition(const DVector<double>& data) { initial_condition_ = data; };
     void set_stab_param(const double delta) { solver_.set_stab_param(delta); }
     // getters
@@ -117,7 +118,6 @@ class PDE {
     const DMatrix<double>& neumann_boundary_data() const { return neumann_boundary_data_; };
     const DMatrix<double>& robin_boundary_data() const { return robin_boundary_data_; };
     const DVector<double> robin_constants() const { return robin_constants_; };
-    const double diffusion_coefficient() const { return diffusion_coefficient_; };
     const Quadrature& integrator() const { return solver_.integrator(); }
     const ForceQuadrature& force_integrator() const { return solver_.force_integrator(); }
     const FunctionalBasis& basis() const { return solver_.basis(); }
@@ -131,6 +131,15 @@ class PDE {
     const DMatrix<double>& solution() const { return solver_.solution(); };   // PDE solution
     const DMatrix<double>& force() const { return solver_.force(); };         // rhs of discrete linear system
     const SpMatrix<double>& stiff() const { return solver_.stiff(); };        // stiff matrix
+    const SpMatrix<double>& stiff(const DVector<double>& f) const { // [stiff_]_{ij} = a(\psi_i, \psi_j), being a(.,.) the bilinear form (NEEDED IN STATISTICAL FRAMEWORK WHEN TRHERE'S A NONLINARITY)
+        if constexpr(!is_nonlinear<E>::value) return stiff();
+        
+        // if the pde is nonlinear, it returns the stiff matrix evaluated in the solution at the previous time f
+        Assembler<FEM, SpaceDomainType, decltype(FunctionalBasis::ReferenceBasis), Quadrature> assembler_stiff(domain_, integrator(), n_dofs(), basis().dofs(), f);
+        return assembler_stiff.discretize_operator(diff_op_);
+    }
+    const DMatrix<double>& force_neumann(const int k) const { return solver_.force_neumann().col(k); }  // neumann force at time k
+    const DMatrix<double>& force_robin(const int k) const { return solver_.force_robin().col(k); }      // robin force at time k
     const SpMatrix<double>& mass() const { return solver_.mass(); };          // mass matrix
     DMatrix<double> dof_coords() { return solver_.dofs_coords(); }
     DMatrix<double> quadrature_nodes() const { return integrator().quadrature_nodes(domain_); };
@@ -154,7 +163,6 @@ class PDE {
     DMatrix<double> neumann_boundary_data_;    // Neumann boundary conditions
     DMatrix<double> robin_boundary_data_;      // Robin boundary conditions
     DMatrix<double> robin_constants_;          // constants needed to impose Robin boundary conditions
-    double diffusion_coefficient_;             // constants needed to impose Robin and Neumann boundary conditions
     std::function<double(SVector<1>)> non_linear_reaction_ ; // ... 
 };
 

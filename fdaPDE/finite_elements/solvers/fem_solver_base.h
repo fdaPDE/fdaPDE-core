@@ -55,6 +55,8 @@ template <typename D, typename E, typename F, typename... Ts> class FEMSolverBas
     // getters
     const DMatrix<double>& solution() const { return solution_; }
     const DMatrix<double>& force() const { return force_; }
+    const DMatrix<double>& force_neumann() const { return force_neumann_; }
+    const DMatrix<double>& force_robin() const { return force_robin_; }
     const SpMatrix<double>& stiff() const { return stiff_; }
     const SpMatrix<double>& mass() const { return mass_; }
     const Quadrature& integrator() const { return integrator_; }
@@ -70,7 +72,9 @@ template <typename D, typename E, typename F, typename... Ts> class FEMSolverBas
 
     template <typename PDE> void init(const PDE& pde);
     template <typename PDE> void set_dirichlet_bc(const PDE& pde);
+    template <typename PDE> void build_neumann_force(const PDE& pde);
     template <typename PDE> void set_neumann_bc(const PDE& pde);
+    template <typename PDE> void build_robin_force(const PDE& pde);
     template <typename PDE> void set_robin_bc(const PDE& pde);
     void set_stab_param(const double delta) { delta_ = delta; }
     
@@ -178,6 +182,8 @@ template <typename D, typename E, typename F, typename... Ts> class FEMSolverBas
     ReferenceBasis reference_basis_ {};          // function basis on the reference unit simplex
     DMatrix<double> solution_;                   // vector of coefficients of the approximate solution
     DMatrix<double> force_;                      // discretized force [u]_i = \int_D f*\psi_i
+    DMatrix<double> force_neumann_;              // discretized Neumann force [u]_{ij} = \int_\Gamma_{Neumann} f_neumman(@time=j)*\psi_i
+    DMatrix<double> force_robin_;                // discretized Robin force [u]_{ij} = \int_\Gamma_{Robin} (1/b * f_robin(@time=j) * \psi_i)
     SpMatrix<double> stiff_;                     // [stiff_]_{ij} = a(\psi_i, \psi_j), being a(.,.) the bilinear form
     SpMatrix<double> mass_;                      // mass matrix, [mass_]_{ij} = \int_D (\psi_i * \psi_j)
     SpMatrix<double> robin_;                     // Robin b.c.s boundary mass matrix, [robin_]_{ij} = \int_\Gamma_{Robin} (\mu * a/b * \psi_i * \psi_j)
@@ -324,6 +330,10 @@ void FEMSolverBase<D, E, F, Ts...>::init(const PDE& pde) {
         force_ += stab_rhs_;
     }   // end is_advection
 
+    // build Neumann and Robin force vectors
+    build_neumann_force(pde);
+    build_robin_force(pde);
+
     is_init = true;
     return;
 }
@@ -363,13 +373,12 @@ void FEMSolverBase<D, E, F, Ts...>::set_dirichlet_bc(const PDE& pde) {
     return;
 }
 
-// impose Neumann boundary conditions
+// build Neumann forcing vector
 template <typename D, typename E, typename F, typename... Ts>
 template <typename PDE>
-void FEMSolverBase<D, E, F, Ts...>::set_neumann_bc(const PDE& pde) {
+void FEMSolverBase<D, E, F, Ts...>::build_neumann_force(const PDE& pde) {
     // std::cout << "called Neumann" << std::endl;
     fdapde_static_assert(is_pde<PDE>::value, THIS_METHOD_IS_FOR_PDE_ONLY);
-    if (!is_init) throw std::runtime_error("solver must be initialized first!");
 
     // allocate space for result vector
     DVector<double> neumann_forcing {};
@@ -378,6 +387,7 @@ void FEMSolverBase<D, E, F, Ts...>::set_neumann_bc(const PDE& pde) {
     std::size_t n = n_dofs_;   // degrees of freedom in space
     std::size_t m = 1;
     if constexpr (is_parabolic<E>::value) m = pde.forcing_data().cols();  // number of time points
+    force_neumann_ = DMatrix<double>::Zero(n, m);
 
     int i;   // index we need to count the number of facets on the boundary
 
@@ -399,7 +409,7 @@ void FEMSolverBase<D, E, F, Ts...>::set_neumann_bc(const PDE& pde) {
                         // we assume pde.neumann_boundary_data() given as vector of values with the assumption that
                         // pde.neumann_boundary_data()[boundary_integration_table_.num_nodes*e.ID() + iq] equals the discretized field at the iq-th quadrature
                         // node.
-                        integral_value += pde.diffusion_coefficient() * pde.neumann_boundary_data()(i, k);
+                        integral_value += pde.neumann_boundary_data()(i, k);
 
                         // correct for measure of domain (facet e)
                         neumann_forcing[ID] += integral_value;
@@ -407,7 +417,7 @@ void FEMSolverBase<D, E, F, Ts...>::set_neumann_bc(const PDE& pde) {
                 }
             }
             for (auto it = boundary_dofs_begin_Neumann(); it != boundary_dofs_end_Neumann(); ++it) {
-                force_.coeffRef((*it) + n*k, 0) += neumann_forcing(*it, 0);
+                force_neumann_.coeffRef(*it, k) += neumann_forcing(*it, 0);
             }
         }
     }
@@ -445,7 +455,7 @@ void FEMSolverBase<D, E, F, Ts...>::set_neumann_bc(const PDE& pde) {
                                 // we assume pde.neumann_boundary_data() given as vector of values with the assumption that
                                 // pde.neumann_boundary_data()[boundary_integration_table_.num_nodes*i + iq] equals the discretized 
                                 // field at the iq-th quadrature node.
-                                integral_value += pde.diffusion_coefficient() * (pde.neumann_boundary_data()(boundary_integration_table_.num_nodes * i + iq, k) * boundary_reference_basis[jj](p)) * boundary_integration_table_.weights[iq]; 
+                                integral_value += (pde.neumann_boundary_data()(boundary_integration_table_.num_nodes * i + iq, k) * boundary_reference_basis[jj](p)) * boundary_integration_table_.weights[iq]; 
                             }
                             // correct for measure of domain (facet e)
                             neumann_forcing[basis_.dof_boundary_table()(i, jj)] += integral_value * (*it).measure();
@@ -454,8 +464,31 @@ void FEMSolverBase<D, E, F, Ts...>::set_neumann_bc(const PDE& pde) {
                 }
             }
             for (auto it = boundary_dofs_begin_Neumann(); it != boundary_dofs_end_Neumann(); ++it) {
-                force_.coeffRef((*it) + n*k, 0) += neumann_forcing(*it, 0);
+                force_neumann_.coeffRef(*it, k) += neumann_forcing(*it, 0);
             }
+        }
+    }
+
+    return;
+}
+
+
+// impose Neumann boundary conditions
+template <typename D, typename E, typename F, typename... Ts>
+template <typename PDE>
+void FEMSolverBase<D, E, F, Ts...>::set_neumann_bc(const PDE& pde) {
+    // std::cout << "called Neumann" << std::endl;
+    fdapde_static_assert(is_pde<PDE>::value, THIS_METHOD_IS_FOR_PDE_ONLY);
+    if (!is_init) throw std::runtime_error("solver must be initialized first!");
+
+    std::size_t n = n_dofs_;   // degrees of freedom in space
+    std::size_t m = 1;
+    if constexpr (is_parabolic<E>::value) m = pde.forcing_data().cols();  // number of time points
+
+    // for each timestep
+    for (std::size_t k=0; k<m; k++){
+        for (auto it = boundary_dofs_begin_Neumann(); it != boundary_dofs_end_Neumann(); ++it) {
+            force_.coeffRef((*it) + n*k, 0) += force_neumann_.coeffRef(*it, k);
         }
     }
 
@@ -466,10 +499,9 @@ void FEMSolverBase<D, E, F, Ts...>::set_neumann_bc(const PDE& pde) {
 // impose Robin boundary conditions
 template <typename D, typename E, typename F, typename... Ts>
 template <typename PDE>
-void FEMSolverBase<D, E, F, Ts...>::set_robin_bc(const PDE& pde) {
+void FEMSolverBase<D, E, F, Ts...>::build_robin_force(const PDE& pde) {
     // std::cout << "called Robin" << std::endl;
     fdapde_static_assert(is_pde<PDE>::value, THIS_METHOD_IS_FOR_PDE_ONLY);
-    if (!is_init) throw std::runtime_error("solver must be initialized first!");
 
     DVector<double> robin_forcing {};
     robin_forcing.resize(n_dofs_, 1);   // there are as many basis functions as degrees of freedom on the mesh
@@ -478,6 +510,7 @@ void FEMSolverBase<D, E, F, Ts...>::set_robin_bc(const PDE& pde) {
     std::size_t n = n_dofs_;   // degrees of freedom in space
     std::size_t m = 1;
     if constexpr (is_parabolic<E>::value) m = pde.forcing_data().cols();  // number of time points
+    force_robin_ = DMatrix<double>::Zero(n, m);
 
     int i;   // index we need to count the number of facets on the boundary
 
@@ -496,7 +529,7 @@ void FEMSolverBase<D, E, F, Ts...>::set_robin_bc(const PDE& pde) {
                         // integrate pde.robin_boundary_data()*phi over the facet (*it)
                         double integral_value = 0;
 
-                        integral_value += pde.diffusion_coefficient() * pde.robin_boundary_data()(i, k);
+                        integral_value += pde.robin_boundary_data()(i, k);
 
                         // correct for measure of domain (facet e)
                         robin_forcing[ID] += integral_value / pde.robin_constants()[1];
@@ -504,10 +537,9 @@ void FEMSolverBase<D, E, F, Ts...>::set_robin_bc(const PDE& pde) {
                 }
             }
             for (auto it = boundary_dofs_begin_Robin(); it != boundary_dofs_end_Robin(); ++it) {
-                force_.coeffRef((*it) + n*k, 0) += robin_forcing(*it, 0);
+                force_robin_.coeffRef(*it, k) += robin_forcing(*it, 0);
                 if (k == 0) { // to do only once
-                    robin_.coeffRef((*it), (*it)) += pde.diffusion_coefficient() * pde.robin_constants()[0]/pde.robin_constants()[1];
-                    // stiff_.coeffRef((*it), (*it)) += pde.diffusion_coefficient() * pde.robin_constants()[0]/pde.robin_constants()[1];
+                    robin_.coeffRef((*it), (*it)) += pde.robin_constants()[0]/pde.robin_constants()[1];
                 }
             }
         }
@@ -548,7 +580,7 @@ void FEMSolverBase<D, E, F, Ts...>::set_robin_bc(const PDE& pde) {
                                 // we assume pde.robin_boundary_data() given as vector of values with the assumption that
                                 // pde.robin_boundary_data()[boundary_integration_table_.num_nodes*i + iq] equals the discretized 
                                 // field at the iq-th quadrature node.
-                                force_integral_value += pde.diffusion_coefficient() * ((pde.robin_boundary_data()(boundary_integration_table_.num_nodes * i + iq, k)) * boundary_reference_basis[jj](p)) * boundary_integration_table_.weights[iq];
+                                force_integral_value += ((pde.robin_boundary_data()(boundary_integration_table_.num_nodes * i + iq, k)) * boundary_reference_basis[jj](p)) * boundary_integration_table_.weights[iq];
                             }
                             // correct for measure of domain (facet e)
                             robin_forcing[basis_.dof_boundary_table()(i, jj)] += force_integral_value * (*it).measure() / pde.robin_constants()[1];
@@ -559,11 +591,10 @@ void FEMSolverBase<D, E, F, Ts...>::set_robin_bc(const PDE& pde) {
                                     double mass_integral_value = 0;
                                     for (size_t iq = 0; iq < boundary_integration_table_.num_nodes; ++iq) {
                                         const SVector<Mb>& p = boundary_integration_table_.nodes[iq];
-                                        mass_integral_value += pde.diffusion_coefficient() * boundary_reference_basis[jj](p) * boundary_reference_basis[ii](p) * boundary_integration_table_.weights[iq];
+                                        mass_integral_value += boundary_reference_basis[jj](p) * boundary_reference_basis[ii](p) * boundary_integration_table_.weights[iq];
                                     }
                                     // correct for measure of domain (facet e)
                                     robin_.coeffRef(basis_.dof_boundary_table()(i, ii), basis_.dof_boundary_table()(i, jj)) += mass_integral_value * (*it).measure() * pde.robin_constants()[0]/pde.robin_constants()[1];
-                                    // stiff_.coeffRef(basis_.dof_boundary_table()(i, ii), basis_.dof_boundary_table()(i, jj)) += mass_integral_value * (*it).measure() * pde.robin_constants()[0]/pde.robin_constants()[1];
                                 }
                             }
                         }
@@ -571,14 +602,36 @@ void FEMSolverBase<D, E, F, Ts...>::set_robin_bc(const PDE& pde) {
                 }
             }
             for (auto it = boundary_dofs_begin_Robin(); it != boundary_dofs_end_Robin(); ++it) {
-                force_.coeffRef((*it) + n*k, 0) += robin_forcing(*it, 0);
+                force_robin_.coeffRef(*it, k) += robin_forcing(*it, 0);
             }
+        }
+    }
+
+    return;
+}
+
+
+// impose Robin boundary conditions
+template <typename D, typename E, typename F, typename... Ts>
+template <typename PDE>
+void FEMSolverBase<D, E, F, Ts...>::set_robin_bc(const PDE& pde) {
+    // std::cout << "called Robin" << std::endl;
+    fdapde_static_assert(is_pde<PDE>::value, THIS_METHOD_IS_FOR_PDE_ONLY);
+    if (!is_init) throw std::runtime_error("solver must be initialized first!");
+
+    std::size_t n = n_dofs_;   // degrees of freedom in space
+    std::size_t m = 1;
+    if constexpr (is_parabolic<E>::value) m = pde.forcing_data().cols();  // number of time points
+
+    // for each timestep
+    for (std::size_t k=0; k<m; k++){
+        for (auto it = boundary_dofs_begin_Robin(); it != boundary_dofs_end_Robin(); ++it) {
+            force_.coeffRef((*it) + n*k, 0) += force_robin_.coeffRef(*it, k);
         }
     }
     stiff_ += robin_;
 
     return;
-
 }
 
 }   // namespace core
