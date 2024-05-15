@@ -131,7 +131,7 @@ class PDE {
     const DMatrix<double>& solution() const { return solver_.solution(); };   // PDE solution
     const DMatrix<double>& force() const { return solver_.force(); };         // rhs of discrete linear system
     const SpMatrix<double>& stiff() const { return solver_.stiff(); };        // stiff matrix
-    const SpMatrix<double>& stiff(const DVector<double>& f) const { // [stiff_]_{ij} = a(\psi_i, \psi_j), being a(.,.) the bilinear form (NEEDED IN STATISTICAL FRAMEWORK WHEN TRHERE'S A NONLINARITY)
+    const SpMatrix<double>& stiff_step(const DVector<double>& f) const { // [stiff_]_{ij} = a(\psi_i, \psi_j), being a(.,.) the bilinear form (NEEDED IN STATISTICAL FRAMEWORK WHEN TRHERE'S A NONLINARITY)
         if constexpr(!is_nonlinear<E>::value) return stiff();
         
         // if the pde is nonlinear, it returns the stiff matrix evaluated in the solution at the previous time f
