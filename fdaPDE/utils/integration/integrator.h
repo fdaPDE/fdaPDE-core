@@ -619,6 +619,7 @@ template <int R> class Integrator<SPLINE, 1, R> {
         return quadrature_nodes;
     }
     std::size_t num_nodes() const { return integration_table_.num_nodes; }
+    DMatrix<double> boundary_quadrature_nodes(const Mesh<1, 1>& m) const {return quadrature_nodes(m); }  // TODO
 };
 
 }   // namespace core

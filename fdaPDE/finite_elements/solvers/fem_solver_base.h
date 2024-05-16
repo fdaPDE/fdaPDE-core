@@ -59,6 +59,7 @@ template <typename D, typename E, typename F, typename... Ts> class FEMSolverBas
     const DMatrix<double>& force_robin() const { return force_robin_; }
     const SpMatrix<double>& stiff() const { return stiff_; }
     const SpMatrix<double>& mass() const { return mass_; }
+    const SpMatrix<double>& mass_robin() const { return robin_; }
     const Quadrature& integrator() const { return integrator_; }
     const ForceQuadrature& force_integrator() const { return force_integrator_; }
     const ReferenceBasis& reference_basis() const { return reference_basis_; }

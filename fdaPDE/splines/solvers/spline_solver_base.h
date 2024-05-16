@@ -73,7 +73,10 @@ template <typename D, typename E, typename F, typename... Ts> class SplineSolver
     template <typename PDE> void set_dirichlet_bc(const PDE& pde) { return; }; // TODO
     template <typename PDE> void set_neumann_bc(const PDE& pde) { return; } // TODO
     template <typename PDE> void set_robin_bc(const PDE& pde) { return; } // TODO
-    const DMatrix<int>& matrix_bc_Dirichlet() const { return DMatrix<int>::Zero(n_dofs(), n_dofs()); } // TODO
+    const DMatrix<int> matrix_bc_Dirichlet() const { return DMatrix<int>::Zero(n_dofs(), n_dofs()); } // TODO
+    const DMatrix<double> force_neumann() const { return DMatrix<double>::Zero(n_dofs(), 0); } // TODO
+    const DMatrix<double> force_robin() const { return DMatrix<double>::Zero(n_dofs(), 0); } // TODO
+    const SpMatrix<double> mass_robin() const { return SpMatrix<double>(n_dofs(), n_dofs()); } // TODO
    protected:
     const DomainType* domain_;
     Quadrature integrator_ {};   // default to a quadrature rule which is exact for the considered spline order

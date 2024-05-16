@@ -139,9 +139,10 @@ class PDE {
         Assembler<FEM, SpaceDomainType, decltype(FunctionalBasis::ReferenceBasis), Quadrature> assembler_stiff(domain_, integrator(), n_dofs(), basis().dofs(), f);
         return assembler_stiff.discretize_operator(diff_op_);
     }
-    const DMatrix<double>& force_neumann(const int k) const { return solver_.force_neumann().col(k); }  // neumann force at time k
-    const DMatrix<double>& force_robin(const int k) const { return solver_.force_robin().col(k); }      // robin force at time k
-    const SpMatrix<double>& mass() const { return solver_.mass(); };          // mass matrix
+    const DMatrix<double>& u_neumann() const { return solver_.force_neumann(); }  // neumann force at time-step k
+    const DMatrix<double>& u_robin() const { return solver_.force_robin(); }      // robin force at time-step k
+    const SpMatrix<double>& mass() const { return solver_.mass(); };              // mass matrix
+    const SpMatrix<double>& mass_robin() const { return solver_.mass_robin(); };  // mass boundary matrix associated to Robin bcs
     DMatrix<double> dof_coords() { return solver_.dofs_coords(); }
     DMatrix<double> quadrature_nodes() const { return integrator().quadrature_nodes(domain_); };
     DMatrix<double> force_quadrature_nodes() const { return force_integrator().quadrature_nodes(domain_); };
@@ -172,18 +173,22 @@ struct I_PDE {
     void init()  { invoke<void, 0>(*this); }
     void solve() { invoke<void, 1>(*this); }
     // getters
-    decltype(auto) solution()                const { return invoke<const DMatrix<double>& , 2>(*this); }
-    decltype(auto) force()                   const { return invoke<const DMatrix<double>& , 3>(*this); }
-    decltype(auto) stiff()                   const { return invoke<const SpMatrix<double>&, 4>(*this); }
-    decltype(auto) mass()                    const { return invoke<const SpMatrix<double>&, 5>(*this); }
-    decltype(auto) quadrature_nodes()        const { return invoke<DMatrix<double>        , 6>(*this); }
-    decltype(auto) n_dofs()                  const { return invoke<std::size_t            , 7>(*this); }
-    decltype(auto) dof_coords()              const { return invoke<DMatrix<double>        , 8>(*this); }
-    decltype(auto) forcing_data()            const { return invoke<const DMatrix<double>& , 9>(*this); }
-    decltype(auto) time_domain()             const { return invoke<const DVector<double>& , 10>(*this); }
-    decltype(auto) initial_condition()       const { return invoke<const DVector<double>& , 11>(*this); }
-    decltype(auto) matrix_bc_Dirichlet()     const { return invoke<const DMatrix<int>&    , 18>(*this); }
-    decltype(auto) dirichlet_boundary_data() const { return invoke<const DMatrix<double>& , 19>(*this); }
+    decltype(auto) solution()                  const { return invoke<const DMatrix<double>& , 2>(*this); }
+    decltype(auto) force()                     const { return invoke<const DMatrix<double>& , 3>(*this); }
+    decltype(auto) stiff()                     const { return invoke<const SpMatrix<double>&, 4>(*this); }
+    decltype(auto) mass()                      const { return invoke<const SpMatrix<double>&, 5>(*this); }
+    decltype(auto) quadrature_nodes()          const { return invoke<DMatrix<double>        , 6>(*this); }
+    decltype(auto) n_dofs()                    const { return invoke<std::size_t            , 7>(*this); }
+    decltype(auto) dof_coords()                const { return invoke<DMatrix<double>        , 8>(*this); }
+    decltype(auto) forcing_data()              const { return invoke<const DMatrix<double>& , 9>(*this); }
+    decltype(auto) time_domain()               const { return invoke<const DVector<double>& , 10>(*this); }
+    decltype(auto) initial_condition()         const { return invoke<const DVector<double>& , 11>(*this); }
+    decltype(auto) matrix_bc_Dirichlet()       const { return invoke<const DMatrix<int>&    , 18>(*this); }
+    decltype(auto) dirichlet_boundary_data()   const { return invoke<const DMatrix<double>& , 19>(*this); }
+    decltype(auto) u_neumann()                 const { return invoke<const DMatrix<double>& , 20>(*this); }
+    decltype(auto) u_robin()                   const { return invoke<const DMatrix<double>& , 21>(*this); }
+    decltype(auto) boundary_quadrature_nodes() const { return invoke<DMatrix<double>        , 22>(*this); }
+    decltype(auto) mass_robin()                const { return invoke<const SpMatrix<double>&, 23>(*this); }
   
     struct eval_basis_ret_type { SpMatrix<double> Psi; DVector<double> D; };
     std::optional<eval_basis_ret_type> eval_basis(eval e, const DMatrix<double>& locs) const {
@@ -201,6 +206,8 @@ struct I_PDE {
     void set_dirichlet_bc(const DMatrix<double>& data) { fdapde::invoke<void, 15>(*this, data); }
     void set_initial_condition(const DVector<double>& data) { fdapde::invoke<void, 16>(*this, data); }
     template <typename E> void set_differential_operator(E diff_op) { fdapde::invoke<void, 17>(*this, diff_op); }
+    void set_neumann_bc(const DMatrix<double>& data) { fdapde::invoke<void, 24>(*this, data); }
+    void set_robin_bc(const DMatrix<double>& data, const DVector<double> constants) { fdapde::invoke<void, 25>(*this, data, constants); }
 
     // function pointers forwardings
     template <typename T>
@@ -212,8 +219,11 @@ struct I_PDE {
       &T::template eval_functional_basis<pointwise_evaluation>, &T::template eval_functional_basis<areal_evaluation>,
       // setters
       &T::set_forcing, &T::set_dirichlet_bc, &T::set_initial_condition, &T::set_differential_operator,
-      // getters
-      &T::matrix_bc_Dirichlet, &T::dirichlet_boundary_data>;
+      // getters pt 2
+      &T::matrix_bc_Dirichlet, &T::dirichlet_boundary_data, &T::u_neumann, &T::u_robin, &T::boundary_quadrature_nodes,
+      &T::mass_robin,
+      // setters pt 2
+      &T::set_neumann_bc, &T::set_robin_bc>;
 };
 using pde_ptr = fdapde::erase<fdapde::heap_storage, I_PDE>; // type-erased wrapper for PDEs
 
