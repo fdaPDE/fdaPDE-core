@@ -122,6 +122,7 @@ class PDE {
     const ForceQuadrature& force_integrator() const { return solver_.force_integrator(); }
     const FunctionalBasis& basis() const { return solver_.basis(); }
     const std::function<double(SVector<1>)>& non_linear_reaction() const {return non_linear_reaction_; }
+    const DMatrix<int>& matrix_bc_Dirichlet() const { return solver_.matrix_bc_Dirichlet(); }
     // evaluates the functional basis defined over the pyhisical domain on a given set of locations
     template <template <typename> typename EvaluationPolicy>
     std::pair<SpMatrix<double>, DVector<double>> eval_functional_basis(const DMatrix<double>& locs) const {
@@ -171,16 +172,18 @@ struct I_PDE {
     void init()  { invoke<void, 0>(*this); }
     void solve() { invoke<void, 1>(*this); }
     // getters
-    decltype(auto) solution()          const { return invoke<const DMatrix<double>& , 2>(*this); }
-    decltype(auto) force()             const { return invoke<const DMatrix<double>& , 3>(*this); }
-    decltype(auto) stiff()             const { return invoke<const SpMatrix<double>&, 4>(*this); }
-    decltype(auto) mass()              const { return invoke<const SpMatrix<double>&, 5>(*this); }
-    decltype(auto) quadrature_nodes()  const { return invoke<DMatrix<double>        , 6>(*this); }
-    decltype(auto) n_dofs()            const { return invoke<std::size_t            , 7>(*this); }
-    decltype(auto) dof_coords()        const { return invoke<DMatrix<double>        , 8>(*this); }
-    decltype(auto) forcing_data()      const { return invoke<const DMatrix<double>& , 9>(*this); }
-    decltype(auto) time_domain()       const { return invoke<const DVector<double>&, 10>(*this); }
-    decltype(auto) initial_condition() const { return invoke<const DVector<double>&, 11>(*this); }
+    decltype(auto) solution()                const { return invoke<const DMatrix<double>& , 2>(*this); }
+    decltype(auto) force()                   const { return invoke<const DMatrix<double>& , 3>(*this); }
+    decltype(auto) stiff()                   const { return invoke<const SpMatrix<double>&, 4>(*this); }
+    decltype(auto) mass()                    const { return invoke<const SpMatrix<double>&, 5>(*this); }
+    decltype(auto) quadrature_nodes()        const { return invoke<DMatrix<double>        , 6>(*this); }
+    decltype(auto) n_dofs()                  const { return invoke<std::size_t            , 7>(*this); }
+    decltype(auto) dof_coords()              const { return invoke<DMatrix<double>        , 8>(*this); }
+    decltype(auto) forcing_data()            const { return invoke<const DMatrix<double>& , 9>(*this); }
+    decltype(auto) time_domain()             const { return invoke<const DVector<double>& , 10>(*this); }
+    decltype(auto) initial_condition()       const { return invoke<const DVector<double>& , 11>(*this); }
+    decltype(auto) matrix_bc_Dirichlet()     const { return invoke<const DMatrix<int>&    , 18>(*this); }
+    decltype(auto) dirichlet_boundary_data() const { return invoke<const DMatrix<double>& , 19>(*this); }
   
     struct eval_basis_ret_type { SpMatrix<double> Psi; DVector<double> D; };
     std::optional<eval_basis_ret_type> eval_basis(eval e, const DMatrix<double>& locs) const {
@@ -208,7 +211,9 @@ struct I_PDE {
       &T::time_domain, &T::initial_condition,
       &T::template eval_functional_basis<pointwise_evaluation>, &T::template eval_functional_basis<areal_evaluation>,
       // setters
-      &T::set_forcing, &T::set_dirichlet_bc, &T::set_initial_condition, &T::set_differential_operator>;
+      &T::set_forcing, &T::set_dirichlet_bc, &T::set_initial_condition, &T::set_differential_operator,
+      // getters
+      &T::matrix_bc_Dirichlet, &T::dirichlet_boundary_data>;
 };
 using pde_ptr = fdapde::erase<fdapde::heap_storage, I_PDE>; // type-erased wrapper for PDEs
 

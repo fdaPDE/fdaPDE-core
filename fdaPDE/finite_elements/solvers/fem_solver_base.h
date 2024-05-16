@@ -66,6 +66,7 @@ template <typename D, typename E, typename F, typename... Ts> class FEMSolverBas
     std::size_t n_dofs() const { return n_dofs_; }   // number of degrees of freedom (FEM linear system's unknowns)
     const DMatrix<int>& dofs() const { return dofs_; }
     DMatrix<double> dofs_coords() { return basis_.dofs_coords(); };   // computes the physical coordinates of dofs
+    const DMatrix<int>& matrix_bc_Dirichlet() const { return boundary_dofs_Dirichlet_; }
     // flags
     bool is_init = false;   // notified true if initialization occurred with no errors
     bool success = false;   // notified true if problem solved with no errors
