@@ -352,8 +352,6 @@ void FEMSolverBase<D, E, F, Ts...>::set_dirichlet_bc(const PDE& pde) {
         stiff_.coeffRef(*it, *it) = 1;   // set diagonal element to 1 to impose equation u_j = b_j
         // penalty method for Dirichlet boundary conditions (preferrable with direct solvers for pivoting)
         // stiff_.coeffRef(*it, *it) = 1e30;
-
-        // TODO: currently only space-only case supported (reason of [0] below)
         
         // satndard application of Dirichlet boundary conditions
         force_.coeffRef(*it, 0) = pde.dirichlet_boundary_data()(*it, 0);   // impose boundary value on forcing term
@@ -366,7 +364,7 @@ void FEMSolverBase<D, E, F, Ts...>::set_dirichlet_bc(const PDE& pde) {
             std::size_t m = pde.forcing_data().cols();  // number of time points
             for (std::size_t i = 1; i < m; ++i) {
                 // standard application of Dirichlet boundary conditions
-                force_.coeffRef((*it) + n*i, 0) = pde.dirichlet_boundary_data()(*it, i);   // impose boundary value on forcing term
+                force_.coeffRef((*it) + n*i, 0) = pde.dirichlet_boundary_data()((*it) + n*i, 0);   // impose boundary value on forcing term
                 // penalty method for Dirichlet boundary conditions
                 // force_.coeffRef((*it) + n*i, 0) = 1e30 * pde.dirichlet_boundary_data()(*it, i);
             }
@@ -389,7 +387,7 @@ void FEMSolverBase<D, E, F, Ts...>::build_neumann_force(const PDE& pde) {
     std::size_t n = n_dofs_;   // degrees of freedom in space
     std::size_t m = 1;
     if constexpr (is_parabolic<E>::value) m = pde.forcing_data().cols();  // number of time points
-    force_neumann_ = DMatrix<double>::Zero(n, m);
+    force_neumann_ = DMatrix<double>::Zero(n * m, 1);
 
     int i;   // index we need to count the number of facets on the boundary
 
@@ -419,7 +417,7 @@ void FEMSolverBase<D, E, F, Ts...>::build_neumann_force(const PDE& pde) {
                 }
             }
             for (auto it = boundary_dofs_begin_Neumann(); it != boundary_dofs_end_Neumann(); ++it) {
-                force_neumann_.coeffRef(*it, k) += neumann_forcing(*it, 0);
+                force_neumann_.coeffRef((*it) + n*k, 0) += neumann_forcing(*it, 0);
             }
         }
     }
@@ -466,7 +464,7 @@ void FEMSolverBase<D, E, F, Ts...>::build_neumann_force(const PDE& pde) {
                 }
             }
             for (auto it = boundary_dofs_begin_Neumann(); it != boundary_dofs_end_Neumann(); ++it) {
-                force_neumann_.coeffRef(*it, k) += neumann_forcing(*it, 0);
+                force_neumann_.coeffRef((*it) + n*k, 0) += neumann_forcing(*it, 0);
             }
         }
     }
@@ -490,7 +488,7 @@ void FEMSolverBase<D, E, F, Ts...>::set_neumann_bc(const PDE& pde) {
     // for each timestep
     for (std::size_t k=0; k<m; k++){
         for (auto it = boundary_dofs_begin_Neumann(); it != boundary_dofs_end_Neumann(); ++it) {
-            force_.coeffRef((*it) + n*k, 0) += force_neumann_.coeffRef(*it, k);
+            force_.coeffRef((*it) + n*k, 0) += force_neumann_.coeffRef((*it) + n*k, 0);
         }
     }
 
@@ -512,7 +510,7 @@ void FEMSolverBase<D, E, F, Ts...>::build_robin_force(const PDE& pde) {
     std::size_t n = n_dofs_;   // degrees of freedom in space
     std::size_t m = 1;
     if constexpr (is_parabolic<E>::value) m = pde.forcing_data().cols();  // number of time points
-    force_robin_ = DMatrix<double>::Zero(n, m);
+    force_robin_ = DMatrix<double>::Zero(n * m, 1);
 
     int i;   // index we need to count the number of facets on the boundary
 
@@ -539,7 +537,7 @@ void FEMSolverBase<D, E, F, Ts...>::build_robin_force(const PDE& pde) {
                 }
             }
             for (auto it = boundary_dofs_begin_Robin(); it != boundary_dofs_end_Robin(); ++it) {
-                force_robin_.coeffRef(*it, k) += robin_forcing(*it, 0);
+                force_robin_.coeffRef((*it) + n*k, 0) += robin_forcing(*it, 0);
                 if (k == 0) { // to do only once
                     robin_.coeffRef((*it), (*it)) += pde.robin_constants()[0]/pde.robin_constants()[1];
                 }
@@ -604,7 +602,7 @@ void FEMSolverBase<D, E, F, Ts...>::build_robin_force(const PDE& pde) {
                 }
             }
             for (auto it = boundary_dofs_begin_Robin(); it != boundary_dofs_end_Robin(); ++it) {
-                force_robin_.coeffRef(*it, k) += robin_forcing(*it, 0);
+                force_robin_.coeffRef((*it) + n*k, 0) += robin_forcing(*it, 0);
             }
         }
     }
@@ -628,7 +626,7 @@ void FEMSolverBase<D, E, F, Ts...>::set_robin_bc(const PDE& pde) {
     // for each timestep
     for (std::size_t k=0; k<m; k++){
         for (auto it = boundary_dofs_begin_Robin(); it != boundary_dofs_end_Robin(); ++it) {
-            force_.coeffRef((*it) + n*k, 0) += force_robin_.coeffRef(*it, k);
+            force_.coeffRef((*it) + n*k, 0) += force_robin_.coeffRef((*it) + n*k, 0);
         }
     }
     stiff_ += robin_;

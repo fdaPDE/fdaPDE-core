@@ -95,7 +95,7 @@ public:
             // for (auto it = this->boundary_dofs_begin_Dirichlet(); it != this->boundary_dofs_end_Dirichlet(); ++it) {
             //     K.row(*it) *= 0;            // zero all entries of this row
             //     K.coeffRef(*it, *it) = 1;   // set diagonal element to 1 to impose equation u_j = b_j
-            //     rhs[*it] = pde.dirichlet_boundary_data()(*it, i + 1);
+            //     rhs[*it] = pde.dirichlet_boundary_data()((*it) + n*(i+1), 0);
             // }
             // K.makeCompressed();
             
@@ -133,7 +133,7 @@ public:
                 for (auto it = this->boundary_dofs_begin_Dirichlet(); it != this->boundary_dofs_end_Dirichlet(); ++it) {
                     K.row(*it) *= 0;            // zero all entries of this row
                     K.coeffRef(*it, *it) = 1;   // set diagonal element to 1 to impose equation u_j = b_j
-                    rhs[*it] = pde.dirichlet_boundary_data()(*it, i + 1);
+                    rhs[*it] = pde.dirichlet_boundary_data()((*it) + n*(i+1), 0);
                 }
                 K.makeCompressed();
 

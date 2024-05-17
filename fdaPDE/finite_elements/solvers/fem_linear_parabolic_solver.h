@@ -64,7 +64,7 @@ class FEMLinearParabolicSolver : public FEMSolverBase<D, E, F, Ts...> {
             rhs = ((this->mass_) / deltaT_) * this->solution_.col(i) + this->force_.block(n * (i + 1), 0, n, 1);
             // impose boundary conditions
             for (auto it = this->boundary_dofs_begin_Dirichlet(); it != this->boundary_dofs_end_Dirichlet(); ++it) {
-                rhs[*it] = pde.dirichlet_boundary_data()(*it, i + 1);
+                rhs[*it] = pde.dirichlet_boundary_data()((*it) + n*(i+1), 0);
             }
             this->solution_.col(i + 1) = solver.solve(rhs);   // append time step solution to solution matrix
         }

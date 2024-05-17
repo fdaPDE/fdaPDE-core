@@ -103,7 +103,14 @@ class PDE {
     // setters
     void set_forcing(const ForcingType& forcing_data) { forcing_data_ = forcing_data; }
     void set_differential_operator(OperatorType diff_op) { diff_op_ = diff_op; }
-    void set_dirichlet_bc(const DMatrix<double>& data) { dirichlet_boundary_data_ = data; }
+    void set_dirichlet_bc(const DMatrix<double>& data) {
+        size_t n = data.rows();
+        size_t m = data.cols();
+        dirichlet_boundary_data_.resize(n * m, 1);
+        for (std::size_t i = 0; i < m; ++i) {
+            dirichlet_boundary_data_.block(n * i, 0, n, 1) = data.col(i);
+        }
+    }
     void set_neumann_bc(const DMatrix<double>& data) { neumann_boundary_data_ = data; }
     void set_robin_bc(const DMatrix<double>& data, const DVector<double> constants) { robin_boundary_data_ = data; robin_constants_ = constants; }
     void set_initial_condition(const DVector<double>& data) { initial_condition_ = data; };
@@ -139,8 +146,8 @@ class PDE {
         Assembler<FEM, SpaceDomainType, decltype(FunctionalBasis::ReferenceBasis), Quadrature> assembler_stiff(domain_, integrator(), n_dofs(), basis().dofs(), f);
         return assembler_stiff.discretize_operator(diff_op_);
     }
-    const DMatrix<double>& u_neumann() const { return solver_.force_neumann(); }  // neumann force at time-step k
-    const DMatrix<double>& u_robin() const { return solver_.force_robin(); }      // robin force at time-step k
+    const DMatrix<double>& force_neumann() const { return solver_.force_neumann(); }  // neumann force at time-step k
+    const DMatrix<double>& force_robin() const { return solver_.force_robin(); }      // robin force at time-step k
     const SpMatrix<double>& mass() const { return solver_.mass(); };              // mass matrix
     const SpMatrix<double>& mass_robin() const { return solver_.mass_robin(); };  // mass boundary matrix associated to Robin bcs
     DMatrix<double> dof_coords() { return solver_.dofs_coords(); }
@@ -185,8 +192,8 @@ struct I_PDE {
     decltype(auto) initial_condition()         const { return invoke<const DVector<double>& , 11>(*this); }
     decltype(auto) matrix_bc_Dirichlet()       const { return invoke<const DMatrix<int>&    , 18>(*this); }
     decltype(auto) dirichlet_boundary_data()   const { return invoke<const DMatrix<double>& , 19>(*this); }
-    decltype(auto) u_neumann()                 const { return invoke<const DMatrix<double>& , 20>(*this); }
-    decltype(auto) u_robin()                   const { return invoke<const DMatrix<double>& , 21>(*this); }
+    decltype(auto) force_neumann()                 const { return invoke<const DMatrix<double>& , 20>(*this); }
+    decltype(auto) force_robin()                   const { return invoke<const DMatrix<double>& , 21>(*this); }
     decltype(auto) boundary_quadrature_nodes() const { return invoke<DMatrix<double>        , 22>(*this); }
     decltype(auto) mass_robin()                const { return invoke<const SpMatrix<double>&, 23>(*this); }
   
@@ -220,7 +227,7 @@ struct I_PDE {
       // setters
       &T::set_forcing, &T::set_dirichlet_bc, &T::set_initial_condition, &T::set_differential_operator,
       // getters pt 2
-      &T::matrix_bc_Dirichlet, &T::dirichlet_boundary_data, &T::u_neumann, &T::u_robin, &T::boundary_quadrature_nodes,
+      &T::matrix_bc_Dirichlet, &T::dirichlet_boundary_data, &T::force_neumann, &T::force_robin, &T::boundary_quadrature_nodes,
       &T::mass_robin,
       // setters pt 2
       &T::set_neumann_bc, &T::set_robin_bc>;
