@@ -79,6 +79,14 @@ template <typename D, typename E, typename F, typename... Ts> class FEMSolverBas
     template <typename PDE> void build_robin_force(const PDE& pde);
     template <typename PDE> void set_robin_bc(const PDE& pde);
     void set_stab_param(const double delta) { delta_ = delta; }
+    template <typename PDE> const SpMatrix<double> stiff_step(const PDE& pde, const DVector<double>& f) const { // returns the stiff matrix evaluated in f (usuful when we have a nonlinearity)
+        if (!is_init) throw std::runtime_error("solver must be initialized first!");
+        
+        if constexpr(!is_nonlinear<E>::value) return stiff(); 
+        // if the pde is nonlinear, it returns the stiff matrix evaluated in f
+        Assembler<FEM, DomainType, ReferenceBasis, Quadrature> assembler_stiff(pde.domain(), integrator_, n_dofs_, dofs_, f);
+        return assembler_stiff.discretize_operator(pde.differential_operator());
+    }
     
     struct boundary_dofs_iterator {   // range-for loop over boundary dofs
        private:

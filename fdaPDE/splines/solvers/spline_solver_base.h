@@ -73,10 +73,11 @@ template <typename D, typename E, typename F, typename... Ts> class SplineSolver
     template <typename PDE> void set_dirichlet_bc(const PDE& pde) { return; }; // TODO
     template <typename PDE> void set_neumann_bc(const PDE& pde) { return; } // TODO
     template <typename PDE> void set_robin_bc(const PDE& pde) { return; } // TODO
-    const DMatrix<int> matrix_bc_Dirichlet() const { return DMatrix<int>::Zero(n_dofs(), n_dofs()); } // TODO
-    const DMatrix<double> force_neumann() const { return DMatrix<double>::Zero(n_dofs(), 0); } // TODO
-    const DMatrix<double> force_robin() const { return DMatrix<double>::Zero(n_dofs(), 0); } // TODO
-    const SpMatrix<double> mass_robin() const { return SpMatrix<double>(n_dofs(), n_dofs()); } // TODO
+    const DMatrix<int>& matrix_bc_Dirichlet() const { return boundary_dofs_Dirichlet_; } // TODO
+    const DMatrix<double>& force_neumann() const { return force_neumann_; } // TODO
+    const DMatrix<double>& force_robin() const { return force_robin_; } // TODO
+    const SpMatrix<double>& mass_robin() const { return robin_; } // TODO
+    template <typename PDE> const SpMatrix<double> stiff_step(const PDE& pde, const DVector<double>& f) const { return SpMatrix<double>(n_dofs(), n_dofs()); }// TODO
    protected:
     const DomainType* domain_;
     Quadrature integrator_ {};   // default to a quadrature rule which is exact for the considered spline order
@@ -85,6 +86,10 @@ template <typename D, typename E, typename F, typename... Ts> class SplineSolver
     DMatrix<double> force_;      // discretized force [u]_i = \int_D f*\phi_i
     SpMatrix<double> stiff_;     // [R1_]_{ij} = a(\phi_i, \phi_j), being a(.,.) the bilinear form
     SpMatrix<double> mass_;      // mass matrix, [R0_]_{ij} = \int_D (\phi_i * \phi_j)
+    DMatrix<int> boundary_dofs_Dirichlet_; // TODO
+    DMatrix<double> force_neumann_;        // TODO
+    DMatrix<double> force_robin_;          // TODO
+    SpMatrix<double> robin_;               // TODO
 };
 
 }   // namespace core

@@ -139,13 +139,7 @@ class PDE {
     const DMatrix<double>& solution() const { return solver_.solution(); };   // PDE solution
     const DMatrix<double>& force() const { return solver_.force(); };         // rhs of discrete linear system
     const SpMatrix<double>& stiff() const { return solver_.stiff(); };        // stiff matrix
-    const SpMatrix<double>& stiff_step(const DVector<double>& f) const { // [stiff_]_{ij} = a(\psi_i, \psi_j), being a(.,.) the bilinear form (NEEDED IN STATISTICAL FRAMEWORK WHEN TRHERE'S A NONLINARITY)
-        if constexpr(!is_nonlinear<E>::value) return stiff();
-        
-        // if the pde is nonlinear, it returns the stiff matrix evaluated in the solution at the previous time f
-        Assembler<FEM, SpaceDomainType, decltype(FunctionalBasis::ReferenceBasis), Quadrature> assembler_stiff(domain_, integrator(), n_dofs(), basis().dofs(), f);
-        return assembler_stiff.discretize_operator(diff_op_);
-    }
+    const SpMatrix<double> stiff_step(const DVector<double>& f) const { return solver_.stiff_step(*this, f); };   // stiff matrix evaluated in f (usuful when we have a nonlinearity)
     const DMatrix<double>& force_neumann() const { return solver_.force_neumann(); }  // neumann force at time-step k
     const DMatrix<double>& force_robin() const { return solver_.force_robin(); }      // robin force at time-step k
     const SpMatrix<double>& mass() const { return solver_.mass(); };              // mass matrix
@@ -192,10 +186,11 @@ struct I_PDE {
     decltype(auto) initial_condition()         const { return invoke<const DVector<double>& , 11>(*this); }
     decltype(auto) matrix_bc_Dirichlet()       const { return invoke<const DMatrix<int>&    , 18>(*this); }
     decltype(auto) dirichlet_boundary_data()   const { return invoke<const DMatrix<double>& , 19>(*this); }
-    decltype(auto) force_neumann()                 const { return invoke<const DMatrix<double>& , 20>(*this); }
-    decltype(auto) force_robin()                   const { return invoke<const DMatrix<double>& , 21>(*this); }
+    decltype(auto) force_neumann()             const { return invoke<const DMatrix<double>& , 20>(*this); }
+    decltype(auto) force_robin()               const { return invoke<const DMatrix<double>& , 21>(*this); }
     decltype(auto) boundary_quadrature_nodes() const { return invoke<DMatrix<double>        , 22>(*this); }
     decltype(auto) mass_robin()                const { return invoke<const SpMatrix<double>&, 23>(*this); }
+    decltype(auto) stiff_step(const DVector<double>& f) const { return invoke<const SpMatrix<double>&, 24>(*this, f); }
   
     struct eval_basis_ret_type { SpMatrix<double> Psi; DVector<double> D; };
     std::optional<eval_basis_ret_type> eval_basis(eval e, const DMatrix<double>& locs) const {
@@ -213,8 +208,8 @@ struct I_PDE {
     void set_dirichlet_bc(const DMatrix<double>& data) { fdapde::invoke<void, 15>(*this, data); }
     void set_initial_condition(const DVector<double>& data) { fdapde::invoke<void, 16>(*this, data); }
     template <typename E> void set_differential_operator(E diff_op) { fdapde::invoke<void, 17>(*this, diff_op); }
-    void set_neumann_bc(const DMatrix<double>& data) { fdapde::invoke<void, 24>(*this, data); }
-    void set_robin_bc(const DMatrix<double>& data, const DVector<double> constants) { fdapde::invoke<void, 25>(*this, data, constants); }
+    void set_neumann_bc(const DMatrix<double>& data) { fdapde::invoke<void, 25>(*this, data); }
+    void set_robin_bc(const DMatrix<double>& data, const DVector<double> constants) { fdapde::invoke<void, 26>(*this, data, constants); }
 
     // function pointers forwardings
     template <typename T>
@@ -228,7 +223,7 @@ struct I_PDE {
       &T::set_forcing, &T::set_dirichlet_bc, &T::set_initial_condition, &T::set_differential_operator,
       // getters pt 2
       &T::matrix_bc_Dirichlet, &T::dirichlet_boundary_data, &T::force_neumann, &T::force_robin, &T::boundary_quadrature_nodes,
-      &T::mass_robin,
+      &T::mass_robin, &T::stiff_step,
       // setters pt 2
       &T::set_neumann_bc, &T::set_robin_bc>;
 };
