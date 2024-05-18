@@ -23,13 +23,12 @@
 namespace fdapde {
 namespace core {
 
-// a type-erasure wrapper for an optimization algorithm optimizing objectives of type F
+// a type-erasure wrapper for an optimization algorithm optimizing F
 template <typename F> struct Optimizer__ {
     static constexpr int N = F::DomainDimension;
     using VectorType = typename std::conditional<N == Dynamic, DVector<double>, SVector<N>>::type;
-    // function pointers forwardings
     template <typename O> using fn_ptrs = fdapde::mem_fn_ptrs<&O::template optimize<F>, &O::optimum, &O::value>;
-    // implementation
+    // forwards
     template <typename T> VectorType optimize(F& objective, const T& x0) {
         return fdapde::invoke<VectorType, 0>(*this, objective, x0);
     }

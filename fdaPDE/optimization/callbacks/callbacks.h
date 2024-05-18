@@ -25,7 +25,8 @@ namespace core {
 // define detection-idiom based extension traits
 define_has(pre_update_step);
 define_has(post_update_step);
-
+define_has(opt_stopping_criterion);
+  
 template <typename Opt, typename Obj, typename... Args>
 bool execute_pre_update_step(Opt& optimizer, Obj& objective, std::tuple<Args...>& callbacks) {
     bool b = false;
@@ -47,6 +48,15 @@ bool execute_post_update_step(Opt& optimizer, Obj& objective, std::tuple<Args...
         }
     };
     std::apply([&](auto&&... callback) { (exec_callback(callback), ...); }, callbacks);
+    return b;
+}
+
+template <typename Opt, typename Obj>
+bool execute_obj_stopping_criterion(Opt& optimizer, Obj& objective) {
+    bool b = false;
+    if constexpr (has_opt_stopping_criterion<std::decay_t<Obj>, bool(Opt&)>::value) {
+        b |= objective.opt_stopping_criterion(optimizer);
+    }
     return b;
 }
 

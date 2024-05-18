@@ -55,6 +55,7 @@ template <typename... Ts> class BlockFrame {
     // getter to raw data
     const std::tuple<std::unordered_map<std::string, DMatrix<Ts>>...>& data() const { return data_; }
     int rows() const { return rows_; }
+    int cols() const { return columns_.size(); }
     // return the names of columns corresponding to modified data
     std::vector<std::string> dirty_cols() const {
         std::vector<std::string> result;
