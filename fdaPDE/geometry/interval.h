@@ -18,6 +18,7 @@
 #define __INTERVAL_H__
 
 #include "segment.h"
+#include "../linear_algebra/binary_matrix.h"
 
 namespace fdapde {
 namespace core {
