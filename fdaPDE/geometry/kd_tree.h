@@ -33,11 +33,11 @@ template <int K> class KDTree {
     using Container    = BinaryTree<int>;
     using node_type    = Container::node_type;
     using node_pointer = Container::node_pointer;
-    using iterator     = Container::dfs_iterator;
     using data_type = Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic>;
     Container kdtree_;   // the actual BinaryTree container
     data_type data_;     // set of data indexed by this tree
    public:
+    using iterator = Container::dfs_iterator;
     // computes the kd-tree structure for a set of points
     KDTree() = default;
     template <typename DataType_> explicit KDTree(DataType_&& data) : data_(std::forward<DataType_>(data)) {

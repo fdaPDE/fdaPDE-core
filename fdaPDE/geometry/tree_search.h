@@ -32,6 +32,14 @@ template <typename MeshType> class TreeSearch {
     KDTree<2 * embed_dim> tree_;
     const MeshType* mesh_;
     SVector<embed_dim> c_;   // normalization constants
+    // build search query for point p
+    KDTree<2 * embed_dim>::RangeType query(const SVector<embed_dim>& p) const {
+        SVector<embed_dim> scaled_p = (p - mesh_->range().row(0).transpose()).array() * c_.array();
+        SVector<2 * embed_dim> ll, ur;
+        ll << SVector<embed_dim>::Zero(), scaled_p;
+        ur << scaled_p, SVector<embed_dim>::Ones();
+        return {ll, ur};
+    }
    public:
     TreeSearch() = default;
     TreeSearch(const MeshType* mesh) : mesh_(mesh) {
@@ -50,16 +58,19 @@ template <typename MeshType> class TreeSearch {
         }
         tree_ = KDTree<2 * embed_dim>(std::move(data));   // organize elements in a KD-tree structure
     }
-    // finds element containing p, returns nullptr if element not found
+    // finds all the elements containing p
+    std::unordered_set<int> all_locate(const SVector<embed_dim>& p) const {
+        std::unordered_set<int> result;
+        for (int id : tree_.range_search(query(p))) {
+            typename MeshType::CellType c = mesh_->cell(id);
+            if (c.contains(p)) { result.insert(c.id()); }
+        }
+        return result;
+    }
+    // finds element containing p, returns -1 if element not found
     int locate(const SVector<embed_dim>& p) const {
-        // build search query
-        SVector<embed_dim> scaled_p = (p - mesh_->range().row(0).transpose()).array() * c_.array();
-        SVector<2 * embed_dim> ll, ur;
-        ll << SVector<embed_dim>::Zero(), scaled_p;
-        ur << scaled_p, SVector<embed_dim>::Ones();
-        auto found = tree_.range_search({ll, ur});
         // exhaustively scan the query results to get the searched mesh element
-        for (int id : found) {
+        for (int id : tree_.range_search(query(p))) {
             typename MeshType::CellType c = mesh_->cell(id);
             if (c.contains(p)) { return c.id(); }
         }

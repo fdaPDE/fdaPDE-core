@@ -239,6 +239,21 @@ TEST(binary_matrix_test, visitors) {
     v2.clear(300);
     v2.set(499);
     EXPECT_TRUE(v2.any());
+
+    // static sized
+    BinaryVector<3> v3;
+    for (int i = 0; i < 3; ++i) v3.set(i);
+    EXPECT_TRUE(v3.all());
+    v3.clear(1);
+    EXPECT_FALSE(v3.all());    
+    for (int i = 0; i < 3; ++i) v3.clear(i);
+    EXPECT_FALSE(v3.any());
+    // dynamic sized (one bitpack only)
+    BinaryVector<Dynamic> v4(3);
+    for (int i = 0; i < 3; ++i) v4.set(i);
+    EXPECT_TRUE(v4.all());
+    for (int i = 0; i < 3; ++i) v4.clear(i);
+    EXPECT_FALSE(v4.any());
 }
 
 TEST(binary_matrix_test, block_repeat) {

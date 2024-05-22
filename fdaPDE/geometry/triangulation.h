@@ -68,7 +68,7 @@ template <int M, int N, typename Derived> class TriangulationBase {
     int n_nodes() const { return n_nodes_; }
     int n_boundary_nodes() const { return nodes_markers_.count(); }
     SMatrix<2, N> range() const { return range_; }
-  
+
     // iterators over cells
     class cell_iterator : public index_based_iterator<cell_iterator, CellType> {
         using Base = index_based_iterator<cell_iterator, CellType>;
@@ -252,6 +252,11 @@ template <int N> class Triangulation<2, N> : public TriangulationBase<2, N, Tria
     DVector<int> locate(const DMatrix<double>& points) const {
         if (!location_policy_.has_value()) location_policy_ = LocationPolicy(this);
         return location_policy_->locate(points);
+    }
+    // computes the set of elements which have node id as vertex
+    std::unordered_set<int> node_patch(int id) const {
+        if (!location_policy_.has_value()) location_policy_ = LocationPolicy(this);
+        return location_policy_->all_locate(Base::node(id));
     }
    protected:
     std::vector<int> edges_ {};                        // nodes (as row indexes in nodes_ matrix) composing each edge
@@ -460,9 +465,10 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
         if (!location_policy_.has_value()) location_policy_ = LocationPolicy(this);
         return location_policy_->locate(points);
     }
-    int locate(const SVector<embed_dim>& p) const {
+    // computes the set of elements which have node id as vertex
+    std::unordered_set<int> node_patch(int id) const {
         if (!location_policy_.has_value()) location_policy_ = LocationPolicy(this);
-        return location_policy_->locate(p);
+        return location_policy_->all_locate(Base::node(id));
     }
    protected:
     std::vector<int> faces_, edges_;   // nodes (as row indexes in nodes_ matrix) composing each face and edge

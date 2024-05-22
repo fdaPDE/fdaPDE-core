@@ -18,7 +18,9 @@
 #define __SIMPLEX_H__
 
 #include <optional>
+#include <numeric>
 
+#include "../linear_algebra/binary_matrix.h"
 #include "../utils/symbols.h"
 #include "hyperplane.h"
 #include "utils.h"
@@ -49,7 +51,6 @@ template <int Order_, int EmbedDim_> class Simplex {
         for (int i = 0; i < embed_dim; ++i) coords(i, i + 1) = 1;
         return Simplex(coords);
     }
-
     // getters
     NodeType node(int v) const { return coords_.col(v); }
     NodeType operator[](int v) const { return coords_.col(v); }
@@ -151,6 +152,34 @@ template <int Order_, int EmbedDim_> class Simplex {
     };
     boundary_iterator boundary_begin() const requires(Order_ >= 1) { return boundary_iterator(0, this); }
     boundary_iterator boundary_end() const requires(Order_ >= 1) { return boundary_iterator(Order_ + 1, this); }
+
+    // finds the best approximation of p in the simplex (q \in simplex : q = \argmin_{t \in simplex}{\norm{t - p}})
+    SVector<embed_dim> nearest(const SVector<embed_dim>& p) const {
+        SVector<local_dim + 1> q = barycentric_coords(p);
+	// check if point inside simplex
+        if constexpr (local_dim != embed_dim) {
+            if (
+              (q.array() > -fdapde::machine_epsilon).all() && supporting_plane().distance(p) < fdapde::machine_epsilon)
+                return p;
+        } else {
+            if ((q.array() > -fdapde::machine_epsilon).all()) return p;
+        }
+        if constexpr (Order_ == 1) {   // end of recursion
+            if (q[0] < 0) return coords_.col(1);
+            return coords_.col(0);
+        } else {
+            // find nearest face
+            std::array<double, n_nodes> dst;
+            for (int i = 0; i < n_nodes; ++i) { dst[i] = (coords_.col(i) - p).norm(); }
+            std::array<int, n_nodes> idx;
+            std::iota(idx.begin(), idx.end(), 0);
+            std::sort(idx.begin(), idx.end(), [&](int a, int b) { return dst[a] < dst[b]; });
+	    // recurse on Order_ - 1 subsimplex
+            Simplex<Order_ - 1, embed_dim> s(coords_(Eigen::all, std::vector<int>(idx.begin(), idx.end() - 1)));
+            return s.nearest(p);
+        }
+    }
+  
    protected:
     void initialize() {
       for (int j = 0; j < n_nodes - 1; ++j) { J_.col(j) = coords_.col(j + 1) - coords_.col(0); }

@@ -40,6 +40,10 @@ namespace fdapde {
 constexpr int Dynamic = -1;       // used when the size of a vector or matrix is not known at compile time
 constexpr int random_seed = -1;   // signals that a random seed is used somewhere
 
+// algorithm computation policies
+struct Exact { };
+struct NotExact { };
+
 template <int N, typename T = double> struct static_dynamic_vector_selector {
     using type = typename std::conditional<N == Dynamic, DVector<T>, SVector<N, T>>::type;
 };

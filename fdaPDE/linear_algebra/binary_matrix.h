@@ -90,21 +90,22 @@ template <int Rows, int Cols = Rows> class BinaryMatrix : public BinMtxBase<Rows
             }
         }
     }
-    // construct from STL iterator
-    template <typename Iter> BinaryMatrix(Iter begin, Iter end, int n_rows, int n_cols) : Base(n_rows, n_cols) {
+    // construct from iterator pair
+    template <typename Iterator>
+    BinaryMatrix(Iterator begin, Iterator end, int n_rows, int n_cols) : Base(n_rows, n_cols) {
         fdapde_static_assert(
           Rows == fdapde::Dynamic && Cols == fdapde::Dynamic, THIS_METHOD_IS_ONLY_FOR_DYNAMIC_SIZED_MATRICES);
         resize(n_rows, n_cols);   // reserve space
         int i = 0, size = n_rows * n_cols;
-        for (Iter it = begin; it != end || i < size; ++it, ++i) {
+        for (Iterator it = begin; it != end || i < size; ++it, ++i) {
             if (*it) set(i / n_rows, i % n_cols);
         }
     }
-    template <typename Iter> BinaryMatrix(Iter begin, Iter end, int n_rows) : BinaryMatrix(n_rows, 1) {
+    template <typename Iterator> BinaryMatrix(Iterator begin, Iterator end, int n_rows) : BinaryMatrix(n_rows, 1) {
         fdapde_static_assert(Rows == Dynamic && Cols == 1, THIS_METHOD_IS_ONLY_FOR_VECTORS);
         resize(n_rows);   // reserve space
         int i = 0;
-        for (Iter it = begin; it != end || i < n_rows; ++it, ++i) {
+        for (Iterator it = begin; it != end || i < n_rows; ++it, ++i) {
             if (*it) set(i);
         }
     }
@@ -112,7 +113,7 @@ template <int Rows, int Cols = Rows> class BinaryMatrix : public BinMtxBase<Rows
     // constructs a matrix of ones
     static BinaryMatrix<Rows, Cols> Ones(int i, int j) {
         BinaryMatrix<Rows, Cols> result;
-        result.resize(i, j);
+        if constexpr(Rows == Dynamic || Cols == Dynamic) result.resize(i, j);
         for (int k = 0; k < result.bitpacks(); ++k) { result.bitpack(k) = -1; }
         return result;
     }
@@ -365,7 +366,7 @@ template <typename XprType, typename Visitor> struct linear_bitpack_visit {
         int size = xpr.size();
         if (size == 0) return;
         if (size < PackSize) {
-            visitor.apply(xpr.bitpack(0), size);
+            visitor.apply(xpr.bitpack(0), PackSize - size);
             return;
         }
         int k = 0, i = 0;   // k: current bitpack, i: maximum coefficient index processed
@@ -413,7 +414,9 @@ template <typename XprType> struct all_visitor {
     static constexpr int PackSize = XprType::PackSize;   // number of bits in a packet
     bool res = true;
     inline void apply(BitPackType b) { res &= (~b == 0); }
-    inline void apply(BitPackType b, int size) { res &= (~((((BitPackType)1 << (size - 1)) - 1) | b) == 0); }
+    inline void apply(BitPackType b, int size) {
+        res &= ((((BitPackType)1 << (PackSize - size)) - 1) & b) == (((BitPackType)1 << (PackSize - size)) - 1);
+    }
     operator bool() const { return res == false; }   // stop if already false
 };
 // evaluates true if at least one coefficient in the binary expression is true
@@ -516,6 +519,16 @@ template <int Rows, int Cols, typename XprType> class BinMtxBase {
     bool operator()(int i, int j) const {
         fdapde_assert(i < n_rows_ && j < n_cols_);
         return get().operator()(i, j);
+    }
+    // returns all the indices (in row-major order) having coefficients equal to b
+    std::vector<int> which(bool b) const {
+        std::vector<int> result;
+        for (int i = 0; i < n_rows_; ++i) {
+            for (int j = 0; j < n_cols_; ++j) {
+                if (get()(i, j) == b) result.push_back(i * n_cols_ + j);
+            }
+        }
+        return result;
     }
     // access to i-th bitpack of the expression
     BitPackType bitpack(int i) const { return get().bitpack(i); }
@@ -642,6 +655,11 @@ bool operator!=(const BinMtxBase<Rows1, Cols1, XprType1>& op1, const BinMtxBase<
 
 // alias export for binary vectors
 template <int Rows> using BinaryVector = BinaryMatrix<Rows, 1>;
+
+// out-of-class which function
+template <int Rows, int Cols, typename XprType> std::vector<int> which(const BinMtxBase<Rows, Cols, XprType>& mtx) {
+    return mtx.which(true);
+}
 
 }   // namespace core
 }   // namespace fdapde
