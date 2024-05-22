@@ -39,6 +39,7 @@ template <typename D, typename E, typename F, typename... Ts> class SplineSolver
     using DomainType = D;
     using FunctionalBasis = SplineBasis<spline_order>;
     using Quadrature = typename FunctionalBasis::Quadrature;
+    using ForceQuadrature = Integrator<FEM, D::local_dimension, 2>;  // quadrature to assemble the force (higher grade)
     // constructor
     SplineSolverBase() = default;
     SplineSolverBase(const DomainType& domain) : domain_(&domain), basis_(domain.nodes()) {};
@@ -78,6 +79,7 @@ template <typename D, typename E, typename F, typename... Ts> class SplineSolver
     const DMatrix<double>& force_robin() const { return force_robin_; } // TODO
     const SpMatrix<double>& mass_robin() const { return robin_; } // TODO
     template <typename PDE> const SpMatrix<double> stiff_step(const PDE& pde, const DVector<double>& f) const { return SpMatrix<double>(n_dofs(), n_dofs()); }// TODO
+    const ForceQuadrature& force_integrator() const { return force_integrator_; } // TODO
    protected:
     const DomainType* domain_;
     Quadrature integrator_ {};   // default to a quadrature rule which is exact for the considered spline order
@@ -90,6 +92,7 @@ template <typename D, typename E, typename F, typename... Ts> class SplineSolver
     DMatrix<double> force_neumann_;        // TODO
     DMatrix<double> force_robin_;          // TODO
     SpMatrix<double> robin_;               // TODO
+    ForceQuadrature force_integrator_ {};  // TODO      // default to a quadrature rule which is of order 2
 };
 
 }   // namespace core

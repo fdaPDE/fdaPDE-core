@@ -110,7 +110,7 @@ template <typename DomainType, int order> class LagrangianBasis {
 
     // constructor
     LagrangianBasis() = default;
-    LagrangianBasis(const DomainType& domain) : domain_(&domain) { BMtrx_=DMatrix<short int>::Zero(domain_->n_nodes(), 1); enumerate_dofs(); }; // if no binary matrix is passed, we assume Dirichlet bc
+    LagrangianBasis(const DomainType& domain) : domain_(&domain) { BMtrx_=DMatrix<short int>::Ones(domain_->n_nodes(), 1); enumerate_dofs(); }; // if no binary matrix is passed, we assume homogeneous Neumann bc
     LagrangianBasis(const DomainType& domain, const DMatrix<short int> BMtrx) : domain_(&domain), BMtrx_(BMtrx) { enumerate_dofs(); };
 
     // returns a pair of matrices (\Psi, D) where: \Psi is the matrix of basis functions evaluations according

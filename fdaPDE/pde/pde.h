@@ -190,7 +190,8 @@ struct I_PDE {
     decltype(auto) force_robin()               const { return invoke<const DMatrix<double>& , 21>(*this); }
     decltype(auto) boundary_quadrature_nodes() const { return invoke<DMatrix<double>        , 22>(*this); }
     decltype(auto) mass_robin()                const { return invoke<const SpMatrix<double>&, 23>(*this); }
-    decltype(auto) stiff_step(const DVector<double>& f) const { return invoke<const SpMatrix<double>&, 24>(*this, f); }
+    decltype(auto) stiff_step(const DVector<double>& f) const { return invoke<const SpMatrix<double>, 24>(*this, f); }
+    decltype(auto) force_quadrature_nodes()    const { return invoke<DMatrix<double>        , 25>(*this); }
   
     struct eval_basis_ret_type { SpMatrix<double> Psi; DVector<double> D; };
     std::optional<eval_basis_ret_type> eval_basis(eval e, const DMatrix<double>& locs) const {
@@ -208,8 +209,8 @@ struct I_PDE {
     void set_dirichlet_bc(const DMatrix<double>& data) { fdapde::invoke<void, 15>(*this, data); }
     void set_initial_condition(const DVector<double>& data) { fdapde::invoke<void, 16>(*this, data); }
     template <typename E> void set_differential_operator(E diff_op) { fdapde::invoke<void, 17>(*this, diff_op); }
-    void set_neumann_bc(const DMatrix<double>& data) { fdapde::invoke<void, 25>(*this, data); }
-    void set_robin_bc(const DMatrix<double>& data, const DVector<double> constants) { fdapde::invoke<void, 26>(*this, data, constants); }
+    void set_neumann_bc(const DMatrix<double>& data) { fdapde::invoke<void, 26>(*this, data); }
+    void set_robin_bc(const DMatrix<double>& data, const DVector<double> constants) { fdapde::invoke<void, 27>(*this, data, constants); }
 
     // function pointers forwardings
     template <typename T>
@@ -223,7 +224,7 @@ struct I_PDE {
       &T::set_forcing, &T::set_dirichlet_bc, &T::set_initial_condition, &T::set_differential_operator,
       // getters pt 2
       &T::matrix_bc_Dirichlet, &T::dirichlet_boundary_data, &T::force_neumann, &T::force_robin, &T::boundary_quadrature_nodes,
-      &T::mass_robin, &T::stiff_step,
+      &T::mass_robin, &T::stiff_step, &T::force_quadrature_nodes,
       // setters pt 2
       &T::set_neumann_bc, &T::set_robin_bc>;
 };

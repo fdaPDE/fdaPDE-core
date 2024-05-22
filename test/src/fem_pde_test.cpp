@@ -48,9 +48,11 @@ TEST(fem_pde_test, laplacian_isotropic_order1) {
     auto solution_expr = [](SVector<2> x) -> double { return x[0] + x[1]; };
 
     MeshLoader<Mesh2D> unit_square("unit_square");
+    // define the boundary with a DMatrix (=0 if Dirichlet, =1 if Neumann, =2 if Robin)
+    DMatrix<short int> boundary_matrix = DMatrix<short int>::Zero(unit_square.mesh.n_nodes(), 1);
     auto L = -laplacian<FEM>();
     // instantiate a type-erased wrapper for this pde
-    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_square.mesh, L);
+    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_square.mesh, L, boundary_matrix);
     
     // compute boundary condition and exact solution
     DMatrix<double> nodes_ = pde_.dof_coords();
@@ -86,9 +88,11 @@ TEST(fem_pde_test, laplacian_isotropic_order2_callable_force) {
     ScalarField<2> forcing(forcing_expr);   // wrap lambda expression in ScalarField object
 
     MeshLoader<Mesh2D> unit_square("unit_square");
+    // define the boundary with a DMatrix (=0 if Dirichlet, =1 if Neumann, =2 if Robin)
+    DMatrix<short int> boundary_matrix = DMatrix<short int>::Zero(unit_square.mesh.n_nodes(), 1);
     auto L = -laplacian<FEM>();
     // initialize PDE with callable forcing term
-    PDE<decltype(unit_square.mesh), decltype(L), ScalarField<2>, FEM, fem_order<2>> pde_(unit_square.mesh, L);
+    PDE<decltype(unit_square.mesh), decltype(L), ScalarField<2>, FEM, fem_order<2>> pde_(unit_square.mesh, L, boundary_matrix);
     pde_.set_forcing(forcing);
     // compute boundary condition and exact solution
     DMatrix<double> nodes_ = pde_.dof_coords();
@@ -147,8 +151,10 @@ TEST(fem_pde_test, advection_diffusion_isotropic_order1) {
     auto L = -laplacian<FEM>() + advection<FEM>(beta_);
     // load sample mesh for order 1 basis
     MeshLoader<Mesh2D> unit_square("unit_square");
-    // PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>, double, decltype(beta_)> pde_(unit_square.mesh, L);
-    PDE<decltype(unit_square.mesh), decltype(L), ScalarField<2>, FEM, fem_order<1>, double, decltype(beta_)> pde_(unit_square.mesh, L);
+    // define the boundary with a DMatrix (=0 if Dirichlet, =1 if Neumann, =2 if Robin)
+    DMatrix<short int> boundary_matrix = DMatrix<short int>::Zero(unit_square.mesh.n_nodes(), 1);
+    // PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>, double, decltype(beta_)> pde_(unit_square.mesh, L, boundary_matrix);
+    PDE<decltype(unit_square.mesh), decltype(L), ScalarField<2>, FEM, fem_order<1>, double, decltype(beta_)> pde_(unit_square.mesh, L, boundary_matrix);
     pde_.set_forcing(forcing);
     // pde_.set_differential_operator(L);
 
@@ -214,8 +220,10 @@ TEST(fem_pde_test, advection_diffusion_isotropic_order2) {
     auto L = -laplacian<FEM>() + advection<FEM>(beta_);   // -\Delta + dot(beta_, \nabla)
     // load sample mesh for order 1 basis
     MeshLoader<Mesh2D> unit_square("unit_square");
+    // define the boundary with a DMatrix (=0 if Dirichlet, =1 if Neumann, =2 if Robin)
+    DMatrix<short int> boundary_matrix = DMatrix<short int>::Zero(unit_square.mesh.n_nodes(), 1);
 
-    PDE<decltype(unit_square.mesh), decltype(L), ScalarField<2>, FEM, fem_order<2>, double, decltype(beta_)> pde_(unit_square.mesh, L);
+    PDE<decltype(unit_square.mesh), decltype(L), ScalarField<2>, FEM, fem_order<2>, double, decltype(beta_)> pde_(unit_square.mesh, L, boundary_matrix);
     pde_.set_forcing(forcing);
 
     // compute boundary condition and exact solution
@@ -264,8 +272,10 @@ TEST(fem_pde_test, parabolic_isotropic_order2) {
     };
 
     MeshLoader<Mesh2D> unit_square("unit_square");
+    // define the boundary with a DMatrix (=0 if Dirichlet, =1 if Neumann, =2 if Robin)
+    DMatrix<short int> boundary_matrix = DMatrix<short int>::Zero(unit_square.mesh.n_nodes(), 1);
     auto L = dt<FEM>() - laplacian<FEM>();
-    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<2>> pde_(unit_square.mesh, times);
+    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<2>> pde_(unit_square.mesh, times, boundary_matrix);
     pde_.set_differential_operator(L);
 
     // compute boundary condition and exact solution
@@ -351,8 +361,10 @@ TEST(fem_pde_test, parabolic_isotropic_order1_convergence) {
     for (int n = 0; n < num_refinements; ++n) {
         std::string domain_name = "unit_square_" + std::to_string(N(n));
         MeshLoader<Mesh2D> unit_square(domain_name);
+        // define the boundary with a DMatrix (=0 if Dirichlet, =1 if Neumann, =2 if Robin)
+        DMatrix<short int> boundary_matrix = DMatrix<short int>::Zero(unit_square.mesh.n_nodes(), 1);
         auto L = dt<FEM>() - laplacian<FEM>();
-        PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_square.mesh, times);
+        PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_square.mesh, times, boundary_matrix);
         pde_.set_differential_operator(L);
 
         // compute boundary condition and exact solution
@@ -426,8 +438,10 @@ TEST(fem_pde_test, advection_diffusion_reaction_non_isotropic_order_2) {
     auto L = -diffusion<FEM>(K_) + advection<FEM>(b_) + reaction<FEM>(c_);
     // load sample mesh for order 1 basis
     MeshLoader<Mesh2D> unit_square("unit_square");
+    // define the boundary with a DMatrix (=0 if Dirichlet, =1 if Neumann, =2 if Robin)
+    DMatrix<short int> boundary_matrix = DMatrix<short int>::Zero(unit_square.mesh.n_nodes(), 1);
 
-    PDE<decltype(unit_square.mesh), decltype(L), ScalarField<2>, FEM, fem_order<2>, decltype(K_), decltype(b_), decltype(c_)> pde_(unit_square.mesh, L);
+    PDE<decltype(unit_square.mesh), decltype(L), ScalarField<2>, FEM, fem_order<2>, decltype(K_), decltype(b_), decltype(c_)> pde_(unit_square.mesh, L, boundary_matrix);
     pde_.set_forcing(forcing);
 
     // compute boundary condition and exact solution
@@ -472,6 +486,8 @@ TEST(fem_pde_test, non_linear_2) {
 
     // load sample mesh for order 1 basis
     MeshLoader<Mesh2D> unit_square("unit_square_32");
+    // define the boundary with a DMatrix (=0 if Dirichlet, =1 if Neumann, =2 if Robin)
+    DMatrix<short int> boundary_matrix = DMatrix<short int>::Zero(unit_square.mesh.n_nodes(), 1);
 
     // non linear reaction h_(u)*u
     std::function<double(SVector<1>)> h_ = [](SVector<1> ff) -> double {return 1 - ff[0];};
@@ -482,7 +498,7 @@ TEST(fem_pde_test, non_linear_2) {
     // differential operator
     auto L = -nu*laplacian<FEM>() + non_linear_op<FEM>(non_linear_reaction);
 
-    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<2>> pde_(unit_square.mesh, L, h_);
+    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<2>> pde_(unit_square.mesh, L, h_, boundary_matrix);
 
     // compute boundary condition and exact solution
     DMatrix<double> nodes_ = pde_.dof_coords();
@@ -549,6 +565,8 @@ TEST(fem_pde_test, non_linear_1) {
 
     // load sample mesh for order 1 basis
     MeshLoader<Mesh2D> unit_square("unit_square_32");
+    // define the boundary with a DMatrix (=0 if Dirichlet, =1 if Neumann, =2 if Robin)
+    DMatrix<short int> boundary_matrix = DMatrix<short int>::Zero(unit_square.mesh.n_nodes(), 1);
 
     // non linear reaction h_(u)*u
         std::function<double(SVector<1>)> h_ = [](SVector<1> ff) -> double {return 1 - ff[0];};
@@ -559,7 +577,7 @@ TEST(fem_pde_test, non_linear_1) {
     // differential operator
     auto L = -nu*laplacian<FEM>() + non_linear_op<FEM>(non_linear_reaction);
 
-    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_square.mesh, L, h_);
+    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_square.mesh, L, h_, boundary_matrix);
     
     // compute boundary condition and exact solution
     DMatrix<double> nodes_ = pde_.dof_coords();
@@ -680,6 +698,8 @@ TEST(fem_pde_test, space_time) {
     };
 
     MeshLoader<Mesh2D> unit_square("unit_square_16");
+    // define the boundary with a DMatrix (=0 if Dirichlet, =1 if Neumann, =2 if Robin)
+    DMatrix<short int> boundary_matrix = DMatrix<short int>::Zero(unit_square.mesh.n_nodes(), 1);
 
     // non linear reaction h_(u)*u
     std::function<double(SVector<1>)> h_ = [&](SVector<1> ff) -> double {return 1 - ff[0];};
@@ -689,7 +709,7 @@ TEST(fem_pde_test, space_time) {
     // differential operator
     auto L = dt<FEM>() - laplacian<FEM>() - non_linear_op<FEM>(non_linear_reaction);
 
-    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_square.mesh, times, L, h_);
+    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_square.mesh, times, L, h_, boundary_matrix);
     
     // compute boundary condition and exact solution
     DMatrix<double> nodes_ = pde_.dof_coords();
@@ -762,6 +782,8 @@ TEST(fem_pde_test, space_time) {
     };
 
     MeshLoader<Mesh2D> unit_square("unit_square_128");
+    // define the boundary with a DMatrix (=0 if Dirichlet, =1 if Neumann, =2 if Robin)
+    DMatrix<short int> boundary_matrix = DMatrix<short int>::Zero(unit_square.mesh.n_nodes(), 1);
 
     // non linear reaction h_(u)*u
     std::function<double(SVector<1>)> h_ = [&](SVector<1> ff) -> double {return 1 - ff[0];};
@@ -779,7 +801,7 @@ TEST(fem_pde_test, space_time) {
     // differential operator
     auto L = dt<FEM>() - diffusion<FEM>(K_) + advection<FEM>(b_) + reaction<FEM>(c_) - non_linear_op<FEM>(non_linear_reaction);
 
-    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_square.mesh, times, L, h_);
+    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_square.mesh, times, L, h_, boundary_matrix);
     
     // compute boundary condition and exact solution
     DMatrix<double> nodes_ = pde_.dof_coords();
@@ -853,6 +875,8 @@ TEST(fem_pde_test, travelling_waves) {
     };
 
     MeshLoader<Mesh2D> unit_square("unit_square_16");
+    // define the boundary with a DMatrix (=0 if Dirichlet, =1 if Neumann, =2 if Robin)
+    DMatrix<short int> boundary_matrix = DMatrix<short int>::Zero(unit_square.mesh.n_nodes(), 1);
 
     // non linear reaction h_(u)*u
     std::function<double(SVector<1>)> h_ = [&](SVector<1> ff) -> double {return 1 - ff[0];};
@@ -863,7 +887,7 @@ TEST(fem_pde_test, travelling_waves) {
     double d = 1e-3;
     auto L = dt<FEM>() - d*laplacian<FEM>() - non_linear_op<FEM>(non_linear_reaction);
 
-    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_square.mesh, times, L, h_);
+    PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_square.mesh, times, L, h_, boundary_matrix);
     
     // compute boundary condition and exact solution
     DMatrix<double> nodes_ = pde_.dof_coords();

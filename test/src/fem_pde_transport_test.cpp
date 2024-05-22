@@ -77,9 +77,11 @@ TEST(transport_test, TestCase0) {
 
     auto L = - mu * laplacian<FEM>() + advection<FEM>(b);
     MeshLoader<Mesh2D> unit_square("unit_square_32");
+    // define the boundary with a DMatrix (=0 if Dirichlet, =1 if Neumann, =2 if Robin)
+    DMatrix<short int> boundary_matrix = DMatrix<short int>::Zero(unit_square.mesh.n_nodes(), 1);
 
     PDE< decltype(unit_square.mesh), decltype(L), ScalarField<2>, FEM, fem_order<femOrder>, decltype(mu),
-            decltype(b)> pde_( unit_square.mesh, L); //, forcing);
+            decltype(b)> pde_( unit_square.mesh, L, boundary_matrix); //, forcing);
     pde_.set_forcing(forcing);
 
     // compute boundary condition and exact solution
@@ -143,9 +145,11 @@ TEST(transport_test, TestCase1) {
     auto L = - nu * laplacian<FEM>() + advection<FEM>(b); // + reaction<FEM>(c);
 
     MeshLoader<Mesh2D> unit_square("unit_square_32");
+    // define the boundary with a DMatrix (=0 if Dirichlet, =1 if Neumann, =2 if Robin)
+    DMatrix<short int> boundary_matrix = DMatrix<short int>::Zero(unit_square.mesh.n_nodes(), 1);
 
     PDE< decltype(unit_square.mesh), decltype(L), ScalarField<2>, FEM, fem_order<femOrder>, decltype(nu),
-            decltype(b)> pde_( unit_square.mesh, L); //, forcing);
+            decltype(b)> pde_( unit_square.mesh, L, boundary_matrix); //, forcing);
     pde_.set_forcing(forcing);
 
     // compute boundary condition and exact solution
@@ -188,6 +192,8 @@ TEST(transport_test, TestCase2){
 
     // define domain
     MeshLoader<Mesh2D> domain("unit_square_32");
+    // define the boundary with a DMatrix (=0 if Dirichlet, =1 if Neumann, =2 if Robin)
+    DMatrix<short int> boundary_matrix = DMatrix<short int>::Zero(domain.mesh.n_nodes(), 1);
 
     // define vector field containing transport data
     VectorField<2> b_callable;
@@ -225,7 +231,7 @@ TEST(transport_test, TestCase2){
     auto L = -mu*laplacian<FEM>() + advection<FEM>(b_discretized);
 
     PDE< decltype(domain.mesh), decltype(L), ScalarField<2>, FEM, fem_order<femOrder>, decltype(mu),
-            decltype(b_discretized)> pde_( domain.mesh, L); //, forcing );
+            decltype(b_discretized)> pde_( domain.mesh, L, boundary_matrix); //, forcing );
     pde_.set_forcing(forcing);
 
     // compute boundary condition and exact solution
@@ -267,6 +273,8 @@ TEST(transport_test, TestCase3){
 
     // define domain
     MeshLoader<Mesh2D> domain("unit_square_32");
+    // define the boundary with a DMatrix (=0 if Dirichlet, =1 if Neumann, =2 if Robin)
+    DMatrix<short int> boundary_matrix = DMatrix<short int>::Zero(domain.mesh.n_nodes(), 1);
 
     // define vector field containing transport data
     VectorField<2> b_callable;
@@ -303,7 +311,7 @@ TEST(transport_test, TestCase3){
     auto L = -mu*laplacian<FEM>() + advection<FEM>(b_discretized) + reaction<FEM>(c);
 
     PDE< decltype(domain.mesh), decltype(L), ScalarField<2>, FEM, fem_order<femOrder>, decltype(mu),
-            decltype(b_discretized), decltype(c)> pde_( domain.mesh, L); //, forcing );
+            decltype(b_discretized), decltype(c)> pde_( domain.mesh, L, boundary_matrix); //, forcing );
     pde_.set_forcing(forcing);
 
     // compute boundary condition and exact solution
@@ -362,9 +370,11 @@ TEST(transport_test, TestCase4) {
 
     auto L = - mu * laplacian<FEM>() + advection<FEM>(b);
     MeshLoader<Mesh2D> unit_square("unit_square_16");
+    // define the boundary with a DMatrix (=0 if Dirichlet, =1 if Neumann, =2 if Robin)
+    DMatrix<short int> boundary_matrix = DMatrix<short int>::Zero(unit_square.mesh.n_nodes(), 1);
 
     PDE< decltype(unit_square.mesh), decltype(L), ScalarField<2>, FEM, fem_order<femOrder>, decltype(mu),
-            decltype(b)> pde_( unit_square.mesh, L); //, forcing);
+            decltype(b)> pde_( unit_square.mesh, L, boundary_matrix); //, forcing);
     pde_.set_forcing(forcing);
 
     // compute boundary condition and exact solution
@@ -432,6 +442,8 @@ TEST(transport_test, convergence_test_0) {
     for (int n = 0; n < num_refinements; ++n) {
         std::string domain_name = "unit_square_" + std::to_string(N(n));
         MeshLoader<Mesh2D> domain(domain_name);
+        // define the boundary with a DMatrix (=0 if Dirichlet, =1 if Neumann, =2 if Robin)
+        DMatrix<short int> boundary_matrix = DMatrix<short int>::Zero(domain.mesh.n_nodes(), 1);
 
         // dicretize b_callable -> discretized_vector_field
         Integrator<FEM, 2, femOrder> integrator;
@@ -459,7 +471,7 @@ TEST(transport_test, convergence_test_0) {
 
         // PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_square.mesh, times);
         PDE< decltype(domain.mesh), decltype(L), ScalarField<2>, FEM, fem_order<femOrder>, decltype(nu),
-            decltype(b_discretized), decltype(c)> pde_( domain.mesh, L); //, forcing );
+            decltype(b_discretized), decltype(c)> pde_( domain.mesh, L, boundary_matrix); //, forcing );
         pde_.set_forcing(forcing);
 
         // compute boundary condition and exact solution
@@ -537,6 +549,8 @@ TEST(transport_test, convergence_test_1) {
     for (int n = 0; n < num_refinements; ++n) {
         std::string domain_name = "unit_square_" + std::to_string(N(n));
         MeshLoader<Mesh2D> domain(domain_name);
+        // define the boundary with a DMatrix (=0 if Dirichlet, =1 if Neumann, =2 if Robin)
+        DMatrix<short int> boundary_matrix = DMatrix<short int>::Zero(domain.mesh.n_nodes(), 1);
 
         // dicretize b_callable -> discretized_vector_field
         Integrator<FEM, 2, femOrder> integrator;
@@ -564,7 +578,7 @@ TEST(transport_test, convergence_test_1) {
 
         // PDE<decltype(unit_square.mesh), decltype(L), DMatrix<double>, FEM, fem_order<1>> pde_(unit_square.mesh, times);
         PDE< decltype(domain.mesh), decltype(L), ScalarField<2>, FEM, fem_order<femOrder>, decltype(nu),
-            decltype(b_discretized), decltype(c)> pde_( domain.mesh, L); //, forcing );
+            decltype(b_discretized), decltype(c)> pde_( domain.mesh, L, boundary_matrix); //, forcing );
         pde_.set_forcing(forcing);  
 
         // compute boundary condition and exact solution
@@ -642,6 +656,8 @@ TEST(transport_test, convergence_test_2) {
     for (int n = 0; n < num_refinements; ++n) {
         std::string domain_name = "unit_square_" + std::to_string(N(n));
         MeshLoader<Mesh2D> domain(domain_name);
+        // define the boundary with a DMatrix (=0 if Dirichlet, =1 if Neumann, =2 if Robin)
+        DMatrix<short int> boundary_matrix = DMatrix<short int>::Zero(domain.mesh.n_nodes(), 1);
 
         // dicretize b_callable -> discretized_vector_field
         Integrator<FEM, 2, femOrder> integrator;
@@ -668,7 +684,7 @@ TEST(transport_test, convergence_test_2) {
         auto L = -nu*laplacian<FEM>() + advection<FEM>(b_discretized) + reaction<FEM>(c);
 
         PDE< decltype(domain.mesh), decltype(L), ScalarField<2>, FEM, fem_order<femOrder>, decltype(nu),
-            decltype(b_discretized), decltype(c)> pde_( domain.mesh, L); //, forcing );
+            decltype(b_discretized), decltype(c)> pde_( domain.mesh, L, boundary_matrix); //, forcing );
         pde_.set_forcing(forcing);
 
         // compute boundary condition and exact solution

@@ -245,10 +245,11 @@ TEST(lagrangian_basis_test, order1_dirichlet_neumann) {
     MeshLoader<Mesh2D> domain("unit_square_16");
     // create lagrangian basis over domain
     LagrangianBasis<Mesh2D, 1> basis1(domain.mesh);
-    // without passing a BinaryMatrix to the constructor to identify Dirichlet and Neumann boundaries, Dirichlet bc.s should be assumed everywhere
+    // without passing a BinaryMatrix to the constructor to identify Dirichlet and Neumann boundaries, Neumann bc.s should be assumed everywhere
     for (size_t i=0; i<basis1.boundary_dofs().rows(); ++i) {
-        EXPECT_TRUE(basis1.boundary_dofs()(i,0) == basis1.boundary_dofs_Dirichlet()(i,0));
-        EXPECT_TRUE(basis1.boundary_dofs_Neumann()(i,0) == 0);
+        EXPECT_TRUE(basis1.boundary_dofs()(i,0) == basis1.boundary_dofs_Neumann()(i,0));
+        EXPECT_TRUE(basis1.boundary_dofs_Dirichlet()(i,0) == 0);
+        EXPECT_TRUE(basis1.boundary_dofs_Robin()(i,0) == 0);
     }
 
     // create lagrangian basis over domain passing a DMatrix to the constructor to identify Dirichlet(0), Neumann(1) and Robin(2) boundaries
@@ -282,10 +283,10 @@ TEST(lagrangian_basis_test, order2_dirichlet_neumann) {
     MeshLoader<Mesh2D> domain("unit_square_16");
     // create lagrangian basis over domain
     LagrangianBasis<Mesh2D, 2> basis1(domain.mesh);
-    // without passing a DMatrix to the constructor to identify Dirichlet, Neumann and Robin boundaries, Dirichlet bc.s should be assumed everywhere
+    // without passing a DMatrix to the constructor to identify Dirichlet, Neumann and Robin boundaries, Neumann bc.s should be assumed everywhere
     for (size_t i=0; i<basis1.boundary_dofs().rows(); ++i) {
-        EXPECT_TRUE(basis1.boundary_dofs()(i,0) == basis1.boundary_dofs_Dirichlet()(i,0));
-        EXPECT_TRUE(basis1.boundary_dofs_Neumann()(i,0) == 0);
+        EXPECT_TRUE(basis1.boundary_dofs()(i,0) == basis1.boundary_dofs_Neumann()(i,0));
+        EXPECT_TRUE(basis1.boundary_dofs_Dirichlet()(i,0) == 0);
         EXPECT_TRUE(basis1.boundary_dofs_Robin()(i,0) == 0);
     }
 
