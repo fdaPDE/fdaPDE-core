@@ -490,12 +490,14 @@ template <int M, int R> class Integrator<FEM, M, R> {
         double hK = std::sqrt(e.measure()*2);   // characteristic length of element e
         double tauK = delta * (0.5*hK/normb);
         for (size_t iq = 0; iq < integration_table_.num_nodes; ++iq) {
+            const SVector<M>& p = integration_table_.nodes[iq];
             if constexpr (std::is_base_of<VectorBase, T>::value) {
                 // space-varying case: forward the quadrature node index to non-constant coefficients
                 b.forward(integration_table_.num_nodes * e.ID() + iq);
             }
-            SVector<N> p = e.barycentric_matrix() * integration_table_.nodes[iq] + e.coords()[0];   // map quadrature point onto e
-            value += tauK * forcing(p) * ( (invJ * nabla_psi_i).dot(b) )(p) * integration_table_.weights[iq];
+            // SVector<N> p = e.barycentric_matrix() * integration_table_.nodes[iq] + e.coords()[0];   // map quadrature point onto e
+            SVector<N> Jp = e.barycentric_matrix() * p + e.coords()[0];   // map quadrature point on physical element e
+            value += (tauK * forcing(Jp) * ( (invJ * nabla_psi_i).dot(b) )(p) )* integration_table_.weights[iq];
         }
         // correct for measure of domain (element e)
         return value * e.measure();
