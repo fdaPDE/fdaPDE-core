@@ -253,8 +253,8 @@ template <int N> class Triangulation<2, N> : public TriangulationBase<2, N, Tria
         if (!location_policy_.has_value()) location_policy_ = LocationPolicy(this);
         return location_policy_->locate(points);
     }
-    // computes the set of elements which have node id as vertex
-    std::unordered_set<int> node_patch(int id) const {
+    // the set of cells which have node id as vertex
+    std::vector<int> node_patch(int id) const {
         if (!location_policy_.has_value()) location_policy_ = LocationPolicy(this);
         return location_policy_->all_locate(Base::node(id));
     }
@@ -466,7 +466,7 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
         return location_policy_->locate(points);
     }
     // computes the set of elements which have node id as vertex
-    std::unordered_set<int> node_patch(int id) const {
+    std::vector<int> node_patch(int id) const {
         if (!location_policy_.has_value()) location_policy_ = LocationPolicy(this);
         return location_policy_->all_locate(Base::node(id));
     }

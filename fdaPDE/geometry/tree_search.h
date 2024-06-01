@@ -59,11 +59,11 @@ template <typename MeshType> class TreeSearch {
         tree_ = KDTree<2 * embed_dim>(std::move(data));   // organize elements in a KD-tree structure
     }
     // finds all the elements containing p
-    std::unordered_set<int> all_locate(const SVector<embed_dim>& p) const {
-        std::unordered_set<int> result;
+    std::vector<int> all_locate(const SVector<embed_dim>& p) const {
+        std::vector<int> result;
         for (int id : tree_.range_search(query(p))) {
             typename MeshType::CellType c = mesh_->cell(id);
-            if (c.contains(p)) { result.insert(c.id()); }
+            if (c.contains(p)) { result.push_back(c.id()); }
         }
         return result;
     }

@@ -23,15 +23,20 @@
 namespace fdapde {
 namespace core {
 
-template <typename Policy> struct Project;
+template <typename TriangulationType> class Projection {
+   private:
+    const TriangulationType* mesh_;
+    mutable std::optional<KDTree<TriangulationType::embed_dim>> tree_;
+   public:
+    Projection() = default;
+    explicit Projection(const TriangulationType& mesh) : mesh_(&mesh) { }
 
-template <> struct Project<Exact> {
-    template <typename MeshType> static DMatrix<double> compute(const DMatrix<double>& points, const MeshType& mesh) {
+    DMatrix<double> operator()(const DMatrix<double>& points, tag_exact) const {
         DVector<double> best = DVector<double>::Constant(points.rows(), std::numeric_limits<double>::max());
-        DMatrix<double> proj(points.rows(), MeshType::embed_dim);
-        for (typename MeshType::cell_iterator it = mesh.cells_begin(); it != mesh.cells_end(); ++it) {
+        DMatrix<double> proj(points.rows(), TriangulationType::embed_dim);
+        for (typename TriangulationType::cell_iterator it = mesh_->cells_begin(); it != mesh_->cells_end(); ++it) {
             for (int i = 0; i < points.rows(); ++i) {
-                SVector<MeshType::embed_dim> proj_point = it->nearest(points.row(i));
+                SVector<TriangulationType::embed_dim> proj_point = it->nearest(points.row(i));
                 double dist = (proj_point - points.row(i).transpose()).norm();
                 if (dist < best[i]) {
                     best[i] = dist;
@@ -41,20 +46,18 @@ template <> struct Project<Exact> {
         }
         return proj;
     }
-};
 
-template <> struct Project<NotExact> {
-    template <typename MeshType> static DMatrix<double> compute(const DMatrix<double>& points, const MeshType& mesh) {
-        DMatrix<double> proj(points.rows(), MeshType::embed_dim);
+    DMatrix<double> operator()(const DMatrix<double>& points, tag_not_exact) const {
+        DMatrix<double> proj(points.rows(), TriangulationType::embed_dim);
         // build kdtree of mesh nodes for fast nearest neighborhood searches
-        KDTree<MeshType::embed_dim> tree_(mesh.nodes());
+        if (!tree_.has_value()) tree_ = KDTree<TriangulationType::embed_dim>(mesh_->nodes());
         for (int i = 0; i < points.rows(); ++i) {
             // find nearest mesh node (in euclidean sense, approximation)
-            typename KDTree<MeshType::embed_dim>::iterator it = tree_.nn_search(points.row(i));
+            typename KDTree<TriangulationType::embed_dim>::iterator it = tree_->nn_search(points.row(i));
             // search nearest element in the node patch
             double best = std::numeric_limits<double>::max();
-            for (int j : mesh.node_patch(*it)) {
-                SVector<MeshType::embed_dim> proj_point = mesh.cell(j).nearest(points.row(i));
+            for (int j : mesh_->node_patch(*it)) {
+                SVector<TriangulationType::embed_dim> proj_point = mesh_->cell(j).nearest(points.row(i));
                 double dist = (proj_point - points.row(i).transpose()).norm();
                 if (dist < best) {
                     best = dist;
@@ -64,6 +67,7 @@ template <> struct Project<NotExact> {
         }
         return proj;
     }
+    DMatrix<double> operator()(const DMatrix<double>& points) const { return operator()(points, fdapde::NotExact); }
 };
 
 }   // namespace core

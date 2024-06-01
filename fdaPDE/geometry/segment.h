@@ -44,7 +44,7 @@ template <typename Triangulation> class Segment : public Simplex<Triangulation::
     DVector<int> node_ids() const { return mesh_->cells().row(id_); }
     bool on_boundary() const { return boundary_; }
     operator bool() const { return mesh_ != nullptr; }
-   private:
+   protected:
     int id_ = 0;   // segment ID in the physical mesh
     const Triangulation* mesh_ = nullptr;
     bool boundary_ = false;   // true if the element has at least one vertex on the boundary
