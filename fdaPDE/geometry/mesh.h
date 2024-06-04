@@ -368,12 +368,13 @@ template <> class Mesh<1, 1> {
     int n_elements_ = 0;
     SVector<2> range_ {};   // mesh bounding box (minimum and maximum coordinates of interval)
     DMatrix<int> neighbors_ {};
+    DMatrix<int> boundary_ {};
 
     // precomputed set of elements
     std::vector<Element<1, 1>> elements_cache_ {};
    public:
     Mesh() = default;
-    Mesh(const DVector<double>& nodes) : nodes_(nodes) {
+    Mesh(const DVector<double>& nodes, [[maybe_unused]] const DMatrix<int>& cells, [[maybe_unused]] const DMatrix<int>& boundary) : nodes_(nodes) {
         // store number of nodes and elements
         n_nodes_ = nodes_.rows();
         n_elements_ = n_nodes_ - 1;
@@ -403,10 +404,13 @@ template <> class Mesh<1, 1> {
               i, std::array<int, 2> {i, i + 1}, std::array<SVector<1>, 2> {node(i), node(i + 1)},
               std::array<int, 2> {neighbors_(i, 0), neighbors_(i, 1)}, boundary);
         }
+        boundary_ = DMatrix<int>::Zero(n_nodes_, 1);
+        boundary_(0,0) = 1;
+        boundary_(n_nodes_ - 1, 0) = 1;
         return;
     };
     // construct from interval's bounds [a, b] and the number of subintervals n into which split [a, b]
-    Mesh(double a, double b, std::size_t n) : Mesh(DVector<double>::LinSpaced(n + 1, a, b)) { }
+    // Mesh(double a, double b, std::size_t n) : Mesh(DVector<double>::LinSpaced(n + 1, a, b)) { }
 
     // getters
     const Element<1, 1>& element(int ID) const { return elements_cache_[ID]; }
@@ -419,6 +423,8 @@ template <> class Mesh<1, 1> {
     int n_elements() const { return n_elements_; }
     int n_nodes() const { return n_nodes_; }
     SVector<2> range() const { return range_; }
+    const DMatrix<int>& boundary() const { return boundary_; }
+    int n_edges() const { return n_nodes_; }
 
     // iterators support
     struct iterator {   // range-for loop over mesh elements
@@ -477,7 +483,8 @@ template <> class Mesh<1, 1> {
         local_dimension = 1,
         embedding_dimension = 1,
         n_vertices = 2,
-        n_neighbors_per_element = 2
+        n_neighbors_per_element = 2,
+        n_facets_per_element = 2
     };
 };
 
