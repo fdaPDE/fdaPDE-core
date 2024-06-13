@@ -374,7 +374,7 @@ template <> class Mesh<1, 1> {
     std::vector<Element<1, 1>> elements_cache_ {};
    public:
     Mesh() = default;
-    Mesh(const DVector<double>& nodes, [[maybe_unused]] const DMatrix<int>& cells, [[maybe_unused]] const DMatrix<int>& boundary) : nodes_(nodes) {
+    Mesh(const DVector<double>& nodes, const DMatrix<int>& cells = DMatrix<int>{}, const DMatrix<int>& boundary = DMatrix<int>{}) : nodes_(nodes) {
         // store number of nodes and elements
         n_nodes_ = nodes_.rows();
         n_elements_ = n_nodes_ - 1;
@@ -410,7 +410,7 @@ template <> class Mesh<1, 1> {
         return;
     };
     // construct from interval's bounds [a, b] and the number of subintervals n into which split [a, b]
-    // Mesh(double a, double b, std::size_t n) : Mesh(DVector<double>::LinSpaced(n + 1, a, b)) { }
+    Mesh(double a, double b, std::size_t n) : Mesh(DVector<double>::LinSpaced(n + 1, a, b)) { }
 
     // getters
     const Element<1, 1>& element(int ID) const { return elements_cache_[ID]; }
