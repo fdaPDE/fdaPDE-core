@@ -366,11 +366,13 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
                         if (it == edges_map.end()) {
                             edges_.insert(edges_.end(), edge.begin(), edge.end());
                             face_to_edges_.push_back(edge_id);
+                            edge_to_cells_[edge_id].insert(i);   // store (edge, cell) binding
                             edges_map.emplace(edge, edge_id);
 			    edges_markers.push_back(nodes_markers_[edge[0]] && nodes_markers_[edge[1]]);
                             edge_id++;
                         } else {
                             face_to_edges_.push_back(edges_map.at(edge));
+			    edge_to_cells_[edges_map.at(edge)].insert(i);   // store (edge, cell) binding
                         }
                     }
                 } else {
@@ -378,6 +380,10 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
                     // elements k and i are neighgbors (they share a face)
                     neighbors_(k, node_opposite_to_face(h, k)) = i;
                     neighbors_(i, node_opposite_to_face(h, i)) = k;
+		    // store (edge, cell) binding for each edge of this face
+                    for (int edge = 0; edge < n_edges_per_face; edge++) {
+                        edge_to_cells_.at(face_to_edges_[h * n_edges_per_face + edge]).insert(i);
+                    }
                     cell_to_faces_(i, j) = h;
 		    face_to_cells_[2 * h + 1] = i;
 		    faces_markers[h] = false;
@@ -404,6 +410,10 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
     Eigen::Map<const DMatrix<int, Eigen::RowMajor>> face_to_edges() const {
         return Eigen::Map<const DMatrix<int, Eigen::RowMajor>>(face_to_edges_.data(), n_faces_, n_edges_per_face);
     }
+    Eigen::Map<const DMatrix<int, Eigen::RowMajor>> face_to_cells() const {
+        return Eigen::Map<const DMatrix<int, Eigen::RowMajor>>(face_to_cells_.data(), n_faces_, 2);
+    }
+    const std::unordered_map<int, std::unordered_set<int>>& edge_to_cells() const { return edge_to_cells_; }
     const BinaryVector<Dynamic>& boundary_faces() const { return faces_markers_; }
     int n_faces() const { return n_faces_; }
     int n_edges() const { return n_edges_; }
@@ -473,10 +483,11 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
    protected:
     std::vector<int> faces_, edges_;   // nodes (as row indexes in nodes_ matrix) composing each face and edge
     std::vector<int> face_to_cells_;   // for each face, the ids of adjacent cells
-    DMatrix<int, Eigen::RowMajor> cell_to_faces_ {};   // ids of faces composing each cell
-    std::vector<int> face_to_edges_;                   // ids of edges composing each face
-    BinaryVector<fdapde::Dynamic> faces_markers_ {};   // j-th element is 1 \iff face j is on boundary
-    BinaryVector<fdapde::Dynamic> edges_markers_ {};   // j-th element is 1 \iff edge j is on boundary
+    std::unordered_map<int, std::unordered_set<int>> edge_to_cells_;   // for each edge, the ids of insisting cells
+    DMatrix<int, Eigen::RowMajor> cell_to_faces_ {};            // ids of faces composing each cell
+    std::vector<int> face_to_edges_;                            // ids of edges composing each face
+    BinaryVector<fdapde::Dynamic> faces_markers_ {};            // j-th element is 1 \iff face j is on boundary
+    BinaryVector<fdapde::Dynamic> edges_markers_ {};            // j-th element is 1 \iff edge j is on boundary
     int n_faces_ = 0, n_edges_ = 0;
     mutable std::optional<LocationPolicy> location_policy_ {};
 };

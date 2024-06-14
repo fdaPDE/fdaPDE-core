@@ -62,6 +62,7 @@ class Tetrahedron : public Simplex<Triangulation::local_dim, Triangulation::embe
       bool on_boundary() const { return mesh_->is_edge_on_boundary(edge_id_); }
       DVector<int> node_ids() const { return mesh_->edges().row(edge_id_); }
       int id() const { return edge_id_; }
+      const std::unordered_set<int>& adjacent_cells() const { return mesh_->edge_to_cells().at(edge_id_); }
     };
     // a triangulation-aware view of a tetrahedron face
     class FaceType : public Simplex<2, Triangulation::embed_dim> {
@@ -80,6 +81,7 @@ class Tetrahedron : public Simplex<Triangulation::local_dim, Triangulation::embe
       DVector<int> edge_ids() const { return mesh_->face_to_edges().row(face_id_); }
       int id() const { return face_id_; }
       EdgeType edge(int n) const { return EdgeType(mesh_->face_to_edges()(face_id_, n), mesh_); }
+      DVector<int> adjacent_cells() const { return mesh_->face_to_cells().row(face_id_); }
     };
 
     // getters
@@ -128,7 +130,7 @@ class Tetrahedron : public Simplex<Triangulation::local_dim, Triangulation::embe
     face_iterator faces_begin() const { return face_iterator(0, this); }
     face_iterator faces_end() const { return face_iterator(this->n_faces, this); }
    private:
-    int id_ = 0;                     // tetrahedron identifier in the physical mesh
+    int id_ = 0;                    // tetrahedron identifier in the physical mesh
     std::array<int, 6> edge_ids_;   // edges identifiers int the physical mesh
     const Triangulation* mesh_ = nullptr;
     bool boundary_ = false;   // true if the element has at least one vertex on the boundary
