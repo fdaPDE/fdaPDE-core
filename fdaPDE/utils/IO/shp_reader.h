@@ -60,8 +60,7 @@ class shp_reader {
     };
     struct sf_point_t {
         int record_number;
-        int shape_type = ShapeType::Point;
-        double x, y;
+        double x, y, z, m;
 
         sf_point_t() = default;
         sf_point_t(double x_, double y_) : x(x_), y(y_) { }
@@ -70,14 +69,28 @@ class shp_reader {
             x = read<double>(file.buff_, file.head_, LittleEndian);
             y = read<double>(file.buff_, file.head_, LittleEndian);
         }
-        friend std::ostream& operator<<(std::ostream& os, const sf_point_t& p) {
-            os << "(" << p.x << "," << p.y << ")";
-            return os;
+    };
+    struct sf_multipoint_t {
+        int record_number;
+        std::array<double, 4> bbox;   // x_min, y_min, x_max, y_max
+        int n_points;                 // number of points in the record
+        std::vector<double> x, y;     // points coordinates
+
+        sf_multipoint_t() = default;
+        sf_multipoint_t(int record_number_, shp_reader& file) : record_number(record_number_) {
+            // multipoint specific content
+            for (int i = 0; i < 4; ++i) { bbox[i] = read<double>(file.buff_, file.head_, LittleEndian); }
+            n_points = read<std::int32_t>(file.buff_, file.head_, LittleEndian);
+            x.resize(n_points);
+            y.resize(n_points);
+            for (int i = 0; i < n_points; ++i) {
+                x[i] = read<double>(file.buff_, file.head_, LittleEndian);
+                y[i] = read<double>(file.buff_, file.head_, LittleEndian);
+            }
         }
     };
     struct sf_polygon_t {
         int record_number;
-        int shape_type = ShapeType::Polygon;
         std::array<double, 4> bbox;              // x_min, y_min, x_max, y_max
         int n_rings;                             // number of closed polygons in the record
         int n_points;                            // overall number of points
@@ -134,13 +147,21 @@ class shp_reader {
         ring_iterator begin() const { return ring_iterator(this, 0); }
         ring_iterator end() const { return ring_iterator(this, n_rings); }
     };
+    // a polyline has the same layout of a polygon, where rings are not necessarily closed (and can self-intersect)
+    struct sf_polyline_t : public sf_polygon_t {
+        sf_polyline_t() = default;
+        sf_polyline_t(int record_number_, shp_reader& file) : sf_polygon_t(record_number_, file) { }
+    };
 
     std::string file_name_;
+    std::string shape_string_;
     int n_records_;
     sf_header_t header_;     // shapefile header
     int head_ = 0;           // currently pointed byte in buff_
     char* buff_ = nullptr;   // loaded binary data
-    std::variant<std::vector<sf_point_t>, std::vector<sf_polygon_t>> data_ {};
+    std::variant<
+      std::vector<sf_point_t>, std::vector<sf_polyline_t>, std::vector<sf_polygon_t>, std::vector<sf_multipoint_t>>
+      data_ {};
    public:
     // supported shapefile format
     // all the non-null shapes in a shapefile are required to be of the same shape type (cit. Shapefile standard)
@@ -164,10 +185,25 @@ class shp_reader {
             for (int i = 0; i < 8; ++i) { header_.bbox[i] = read<double>(buff_, head_, LittleEndian); }
             head_ = 0;   // reset head_ pointer
             delete[] buff_;
-
 	    // initialize variant
-            if (header_.shape_type == ShapeType::Point)   { data_ = std::vector<sf_point_t>(); }
-            if (header_.shape_type == ShapeType::Polygon) { data_ = std::vector<sf_polygon_t>(); }
+            switch (header_.shape_type) {
+            case ShapeType::Point:
+                data_ = std::vector<sf_point_t>();
+		shape_string_ = "POINT";
+                break;
+            case ShapeType::PolyLine:
+                data_ = std::vector<sf_polyline_t>();
+		shape_string_ = "POLYLINE";
+                break;
+            case ShapeType::Polygon:
+                data_ = std::vector<sf_polygon_t>();
+		shape_string_ = "POLYGON";
+                break;
+            case ShapeType::MultiPoint:
+                data_ = std::vector<sf_multipoint_t>();
+		shape_string_ = "MULTIPOINT";
+                break;
+            }
             // read records
             buff_ = new char[header_.file_length - header_.size];
             file.read(buff_, header_.file_length - header_.size);
@@ -176,8 +212,20 @@ class shp_reader {
                 int record_number = read<std::int32_t>(buff_, head_, BigEndian);
                 skip(4);   // skip content-length field (4 bytes)
                 int shape_type = read<std::int32_t>(buff_, head_, LittleEndian);
-		if (shape_type == ShapeType::Point)   { std::get<0>(data_).emplace_back(record_number, *this); }
-                if (shape_type == ShapeType::Polygon) { std::get<1>(data_).emplace_back(record_number, *this); }
+                switch (shape_type) {   // dispatch to correct processing logic
+                case ShapeType::Point:
+                    std::get<0>(data_).emplace_back(record_number, *this);
+                    break;
+		case ShapeType::PolyLine:
+                    std::get<1>(data_).emplace_back(record_number, *this);
+                    break;
+                case ShapeType::Polygon:
+                    std::get<2>(data_).emplace_back(record_number, *this);
+                    break;
+                case ShapeType::MultiPoint:
+                    std::get<3>(data_).emplace_back(record_number, *this);
+                    break;
+                }
                 n_records_++;
             }
             file.close();
@@ -188,17 +236,14 @@ class shp_reader {
     }
     // getters
     int shape_type() const { return header_.shape_type; }
+    std::string shape_string() const { return shape_string_; }
     std::array<double, 4> bbox() const { return {header_.bbox[0], header_.bbox[1], header_.bbox[2], header_.bbox[3]}; }
     int n_records() const { return n_records_; }
     const sf_header_t& header() const { return header_; }
-    const std::vector<sf_point_t>& points() const {
-        fdapde_assert(shape_type() == ShapeType::Point);
-        return std::get<0>(data_);
-    }  
-    const std::vector<sf_polygon_t>& polygons() const {
-        fdapde_assert(shape_type() == ShapeType::Polygon);
-        return std::get<1>(data_);
-    }
+    const std::vector<sf_point_t>& points() const { return std::get<0>(data_); }
+    const std::vector<sf_polyline_t>& polylines() const { return std::get<1>(data_); }
+    const std::vector<sf_polygon_t>& polygons() const { return std::get<2>(data_); }
+    const std::vector<sf_multipoint_t>& multipoints() const { return std::get<3>(data_); }
 };
 
 // .dbf reader. file specification dBase level 5
@@ -338,22 +383,7 @@ class ShapeFile {
     std::vector<char> types() const { return dbf_.types(); }
     friend std::ostream& operator<<(std::ostream& os, const ShapeFile& sf) {
         os << "file:              " << sf.folder_name_ << std::endl;
-        std::string shape = "";
-        switch (sf.shp().header().shape_type) {
-        case int(shp_reader::ShapeType::Point):
-            shape = "POINT";
-            break;
-        case int(shp_reader::ShapeType::Polygon):
-            shape = "POLYGON";
-            break;
-        case int(shp_reader::ShapeType::PolyLine):
-            shape = "POLYLINE";
-            break;
-        case int(shp_reader::ShapeType::MultiPoint):
-            shape = "MULTIPOINT";
-            break;
-        }
-        os << "shape_type:        " << shape << std::endl;
+        os << "shape_type:        " << sf.shp().shape_string() << std::endl;
         os << "file size:         " << sf.shp().header().file_length * 2 << " Bytes" << std::endl;
         os << "number of records: " << sf.shp().n_records() << std::endl;
         os << "bounding box:      "
