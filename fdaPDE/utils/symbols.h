@@ -41,8 +41,8 @@ constexpr int Dynamic = -1;       // used when the size of a vector or matrix is
 constexpr int random_seed = -1;   // signals that a random seed is used somewhere
 
 // algorithm computation policies
-static struct tag_exact { } Exact;
-static struct tag_not_exact { } NotExact;
+[[maybe_unused]] static struct tag_exact { } Exact;
+[[maybe_unused]] static struct tag_not_exact { } NotExact;
 
 template <int N, typename T = double> struct static_dynamic_vector_selector {
     using type = typename std::conditional<N == Dynamic, DVector<T>, SVector<N, T>>::type;
