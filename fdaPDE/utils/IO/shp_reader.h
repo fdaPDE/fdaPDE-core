@@ -29,6 +29,9 @@
 
 namespace fdapde {
 
+// implementation of shapefile reader according to the ESRI standard described at
+// https://www.esri.com/content/dam/esrisites/sitecore-archive/Files/Pdfs/library/whitepapers/pdfs/shapefile.pdf
+
 [[maybe_unused]] static struct tag_big_endian { } BigEndian;
 [[maybe_unused]] static struct tag_little_endian { } LittleEndian;
   
@@ -108,6 +111,21 @@ class shp_reader {
         }
     };
     struct sf_polygon_t {
+       private:
+        void
+        read_zm_block(int n_points, std::array<double, 2>& range, std::vector<sf_point_t>& points, shp_reader& file) {
+            range[0] = read<double>(file.buff_, file.head_, LittleEndian);
+            range[1] = read<double>(file.buff_, file.head_, LittleEndian);
+            for (int i = 0; i < n_points; ++i) {
+                if (file.shape_type() == ShapeType::PolygonZ || file.shape_type() == ShapeType::PolyLineZ) {
+                    points[i].z = read<double>(file.buff_, file.head_, LittleEndian);
+                }
+                if (file.shape_type() == ShapeType::PolygonM || file.shape_type() == ShapeType::PolyLineM) {
+                    points[i].m = read<double>(file.buff_, file.head_, LittleEndian);
+                }
+            }
+        }
+       public:
         int record_number;
         std::array<double, 4> bbox;               // x_min, y_min, x_max, y_max
         std::array<double, 2> m_range, z_range;   // m_min, m_max, z_min, z_max
@@ -142,17 +160,11 @@ class shp_reader {
                 points.emplace_back(x, y);
             }
             if (file.shape_type() == ShapeType::PolygonM || file.shape_type() == ShapeType::PolyLineM) {
-                m_range[0] = read<double>(file.buff_, file.head_, LittleEndian);
-                m_range[1] = read<double>(file.buff_, file.head_, LittleEndian);
-                for (int i = 0; i < n_points; ++i) points[i].m = read<double>(file.buff_, file.head_, LittleEndian);
+                read_zm_block(n_points, m_range, points, file);
             }
             if (file.shape_type() == ShapeType::PolygonZ || file.shape_type() == ShapeType::PolyLineZ) {
-                z_range[0] = read<double>(file.buff_, file.head_, LittleEndian);
-                z_range[1] = read<double>(file.buff_, file.head_, LittleEndian);
-                for (int i = 0; i < n_points; ++i) points[i].z = read<double>(file.buff_, file.head_, LittleEndian);
-                m_range[0] = read<double>(file.buff_, file.head_, LittleEndian);
-                m_range[1] = read<double>(file.buff_, file.head_, LittleEndian);
-                for (int i = 0; i < n_points; ++i) points[i].m = read<double>(file.buff_, file.head_, LittleEndian);
+                read_zm_block(n_points, z_range, points, file);
+                read_zm_block(n_points, m_range, points, file);
             }
         }
         // iterator over rings
