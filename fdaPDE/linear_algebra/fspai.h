@@ -145,6 +145,11 @@ class FSPAI {
     const Eigen::SparseMatrix<double>& getL() const { return L_; }
     // returns the approximate inverse of A_
     Eigen::SparseMatrix<double> getInverse() const { return L_ * L_.transpose(); }
+    }
+    // returns the approximate inverse of the Cholesky factor of matrix A_
+    const Eigen::SparseMatrix<double>& getL() const { return L_; }
+    // returns the approximate inverse of A_
+    Eigen::SparseMatrix<double> getInverse() const { return L_ * L_.transpose(); }
 
     // compute the Factorize Sparse Approximate Inverse of A using a K-condition number minimization method
     // alpha:   number of sparsity pattern updates to compute for each column k of A_
