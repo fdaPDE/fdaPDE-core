@@ -33,11 +33,11 @@ template <int K> class KDTree {
     using Container    = BinaryTree<int>;
     using node_type    = Container::node_type;
     using node_pointer = Container::node_pointer;
-    using iterator     = Container::dfs_iterator;
     using data_type = Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic>;
     Container kdtree_;   // the actual BinaryTree container
     data_type data_;     // set of data indexed by this tree
    public:
+    using iterator = Container::dfs_iterator;
     // computes the kd-tree structure for a set of points
     KDTree() = default;
     template <typename DataType_> explicit KDTree(DataType_&& data) : data_(std::forward<DataType_>(data)) {
@@ -120,12 +120,6 @@ template <int K> class KDTree {
     // solves a (rectangular) range query in a K-dimensional euclidean space
     struct RangeType {
         SVector<K> ll, ur;   // lower-left and upper-right corner
-        RangeType(const SVector<K>& ll_, const SVector<K>& ur_) : ll(ll_), ur(ur_) {
-            bool WELL_FORMED_QUERY = true;
-            for (int i = 0; i < K; ++i)
-                if (ll[i] > ur[i]) WELL_FORMED_QUERY = false;
-            fdapde_assert(WELL_FORMED_QUERY);
-        }
     };
     // returns a set of iterators to the nodes contained in the query
     std::unordered_set<int> range_search(const RangeType& query) const {

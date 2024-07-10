@@ -108,6 +108,23 @@ template <> struct IntegratorTable<1, 3, GaussLegendre> {
     };
 };
 
+// 5 point formula, Gauss-Legendre rule on interval [-1,1]
+template <> struct IntegratorTable<1, 5, GaussLegendre> {
+    enum {
+        input_dim = 1, // input space dimension of integrand field
+        num_nodes = 5  // number of qudrature nodes
+    };
+    // position of nodes (in barycentric coordinates)
+    std::array<SVector<1>, 5> nodes = {
+        SVector<1>(-0.906179845938664), SVector<1>(-0.538469310105683), SVector<1>(0.000000000000000),
+	SVector<1>( 0.538469310105683), SVector<1>( 0.906179845938664)
+    };
+    // weights of the quadrature rule
+    std::array<double, 5> weights = {
+        0.236926885056189, 0.478628670499366, 0.568888888888889, 0.478628670499366, 0.236926885056189
+    };
+};
+  
 // 2D triangular elements
 // reference element: simplex of vertices (0,0), (1,0), (0,1)
 

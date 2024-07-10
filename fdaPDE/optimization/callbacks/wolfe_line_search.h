@@ -28,7 +28,7 @@ class WolfeLineSearch {
    private:
     double alpha_ = 1.0;
     double alpha_max_ = std::numeric_limits<double>::infinity(), alpha_min_ = 0;
-    double c1_ = 1e-4, c2_ = 0.5;
+    double c1_ = 1e-4, c2_ = 0.9;
    public:
     // constructors
     WolfeLineSearch() = default;

@@ -14,10 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <fdaPDE/core.h>
-#include <fdaPDE/linear_algebra.h>
-#include <fdaPDE/utils.h>
 #include <gtest/gtest.h>   // testing framework
+#include "../../fdaPDE/linear_algebra/binary_matrix.h"
 using fdapde::Dynamic;
 using fdapde::core::BinaryMatrix;
 using fdapde::core::BinaryVector;
@@ -72,7 +70,7 @@ TEST(binary_matrix_test, dynamic_sized_matrix) {
                 EXPECT_TRUE(m(i, j) == false);
             }
         }
-    }
+    }    
     // set back to false, and check all is false
     m.clear(3, 47);
     for (int i = 0; i < m.rows(); ++i) {
@@ -241,13 +239,28 @@ TEST(binary_matrix_test, visitors) {
     v2.clear(300);
     v2.set(499);
     EXPECT_TRUE(v2.any());
+
+    // static sized
+    BinaryVector<3> v3;
+    for (int i = 0; i < 3; ++i) v3.set(i);
+    EXPECT_TRUE(v3.all());
+    v3.clear(1);
+    EXPECT_FALSE(v3.all());    
+    for (int i = 0; i < 3; ++i) v3.clear(i);
+    EXPECT_FALSE(v3.any());
+    // dynamic sized (one bitpack only)
+    BinaryVector<Dynamic> v4(3);
+    for (int i = 0; i < 3; ++i) v4.set(i);
+    EXPECT_TRUE(v4.all());
+    for (int i = 0; i < 3; ++i) v4.clear(i);
+    EXPECT_FALSE(v4.any());
 }
 
 TEST(binary_matrix_test, block_repeat) {
     BinaryMatrix<Dynamic> m1 = BinaryMatrix<Dynamic>::Ones(3, 4);
     m1.row(1).clear();
     m1.set(1, 1);
-    BinaryMatrix<Dynamic> m2 = m1.blk_repeat(2, 4);
+    BinaryMatrix<Dynamic> m2 = m1.repeat(2, 4);
     EXPECT_TRUE(m2.rows() == 6);
     EXPECT_TRUE(m2.cols() == 16);
     // check equality
@@ -268,5 +281,51 @@ TEST(binary_matrix_test, block_repeat) {
     v1.set(4);
     BinaryMatrix<Dynamic> res2(10,10);
     res2.row(4).set();
-    EXPECT_TRUE(v1.blk_repeat(1, 10) == res2);
+    EXPECT_TRUE(v1.repeat(1, 10) == res2);
+}
+
+TEST(binary_matrix_test, eigen_assignment_and_construct) {
+    DMatrix<int> e1(5, 5);
+    e1.setZero();
+    e1(1, 2) = 4;
+    e1(2, 3) = 5;
+    e1(4, 4) = 6;
+    e1(3, 4) = 7;
+
+    BinaryMatrix<Dynamic> m1(e1);
+    EXPECT_TRUE(m1.rows() == 5);
+    EXPECT_TRUE(m1.cols() == 5);
+    EXPECT_TRUE(m1.count() == 4);
+    EXPECT_TRUE(m1(1, 2) && m1(2, 3) && m1(4, 4) && m1(3, 4));
+
+    BinaryMatrix<Dynamic> m2;
+    m2 = e1;
+    EXPECT_TRUE(m2.rows() == 5);
+    EXPECT_TRUE(m2.cols() == 5);
+    EXPECT_TRUE(m2.count() == 4);
+    EXPECT_TRUE(m2(1, 2) && m2(2, 3) && m2(4, 4) && m2(3, 4));
+}
+
+TEST(binary_matrix_test, reshaped) {
+    BinaryMatrix<Dynamic> m1(5, 20);
+    m1.set(3, 15);
+    m1.set(4, 19);
+    BinaryMatrix<Dynamic> m2 = m1.reshaped(4, 25);
+    EXPECT_TRUE(m2.rows() == 4);
+    EXPECT_TRUE(m2.cols() == 25);
+    EXPECT_TRUE(m2.count() == 2);
+    EXPECT_TRUE(m2.size() == m1.size());
+    // check correctly reshaped
+    for (int i = 0; i < m2.rows(); ++i) {
+        for (int j = 0; j < m2.cols(); ++j) {
+            if (i == 3 && j == 0)  { EXPECT_TRUE(m2(i, j) == true); }
+	    if (i == 3 && j == 24) { EXPECT_TRUE(m2(i, j) == true); }
+        }
+    }
+    // reshape and then repeat
+    BinaryMatrix<Dynamic> m3 = m1.vector_view().repeat(1, 10);
+    BinaryMatrix<Dynamic> m4(100, 10);
+    m4.row(75).set();
+    m4.row(99).set();
+    EXPECT_TRUE(m3 == m4);
 }

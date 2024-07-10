@@ -26,8 +26,8 @@
 #include "src/type_erasure_test.cpp"
 #include "src/binary_tree_test.cpp"
 // geometry
-#include "src/element_test.cpp"
-#include "src/mesh_test.cpp"
+#include "src/simplex_test.cpp"
+// #include "src/triangulation_test.cpp"
 #include "src/point_location_test.cpp"
 #include "src/kd_tree_test.cpp"
 // #include "src/voronoi_test.cpp"

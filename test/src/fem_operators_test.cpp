@@ -21,7 +21,6 @@
 #include <fdaPDE/fields.h>
 #include <fdaPDE/geometry.h>
 #include <fdaPDE/finite_elements.h>
-using fdapde::core::Element;
 using fdapde::core::Integrator;
 using fdapde::core::LagrangianBasis;
 using fdapde::core::FEM;
@@ -30,6 +29,7 @@ using fdapde::core::Matrix;
 using fdapde::core::MatrixPtr;
 using fdapde::core::ScalarPtr;
 using fdapde::core::VectorPtr;
+using fdapde::core::ct_nnodes;
 
 #include "utils/mesh_loader.h"
 using fdapde::testing::MESH_TYPE_LIST;
@@ -40,21 +40,21 @@ using fdapde::testing::almost_equal;
 // test integration of Laplacian weak form for a LagrangianElement of order 2
 TEST(fem_operators_test, laplacian_order_2) {
     // load sample mesh, request an order 2 basis support
-    MeshLoader<Mesh2D> CShaped("c_shaped");
-    auto e = CShaped.mesh.element(175);   // reference element for this test
+    MeshLoader<Triangulation<2, 2>> CShaped("c_shaped");
+    auto e = CShaped.mesh.cell(175);   // reference element for this test
     Integrator<FEM, 2, 2> integrator {};
 
     // define differential operator
     auto L = -laplacian<FEM>();
     // define functional space
-    auto basis = LagrangianBasis<Mesh2D, 2>::ref_basis();
+    auto basis = LagrangianBasis<Triangulation<2, 2>, 2>::ref_basis();
 
-    using BasisType = typename LagrangianBasis<Mesh2D, 2>::ReferenceBasis::ElementType;
+    using BasisType = typename LagrangianBasis<Triangulation<2, 2>, 2>::ReferenceBasis::ElementType;
     using NablaType = decltype(std::declval<BasisType>().derive());
     BasisType buff_psi_i, buff_psi_j;
     NablaType buff_nabla_psi_i, buff_nabla_psi_j;
     Matrix<2, 2, 2> buff_invJ;
-    DVector<double> f(ct_nnodes(Mesh2D::local_dimension, 2));
+    DVector<double> f(ct_nnodes(Triangulation<2, 2>::local_dim, 2));
     // prepare buffer to be sent to bilinear form
     auto mem_buffer = std::make_tuple(
       ScalarPtr(&buff_psi_i), ScalarPtr(&buff_psi_j), VectorPtr(&buff_nabla_psi_i), VectorPtr(&buff_nabla_psi_j),
@@ -62,7 +62,7 @@ TEST(fem_operators_test, laplacian_order_2) {
 
     // develop bilinear form expression in an integrable field
     auto weak_form = L.integrate(mem_buffer);
-    buff_invJ = e.inv_barycentric_matrix().transpose();
+    buff_invJ = e.invJ().transpose();
 
     std::vector<double> integrals;
 
@@ -72,7 +72,7 @@ TEST(fem_operators_test, laplacian_order_2) {
         for (int j = 0; j < basis.size(); ++j) {
             buff_psi_j = basis[j];
             buff_nabla_psi_j = buff_psi_j.derive();
-            double value = integrator.template integrate<decltype(L)>(e, weak_form);
+            double value = integrator.template integrate_weak_form<decltype(L)>(e, weak_form);
             integrals.push_back(value);
         }
     }

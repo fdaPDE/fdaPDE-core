@@ -17,14 +17,17 @@
 #ifndef __FDAPDE_GEOMETRY_MODULE_H__
 #define __FDAPDE_GEOMETRY_MODULE_H__
 
-#include "geometry/mesh.h"
-#include "geometry/element.h"
 #include "geometry/hyperplane.h"
-// #include "geometry/voronoi.h"
+#include "geometry/interval.h"
 #include "geometry/kd_tree.h"
-#include "geometry/point_location/point_location.h"
-#include "geometry/point_location/naive_search.h"
-#include "geometry/point_location/barycentric_walk.h"
-#include "geometry/point_location/tree_search.h"
+#include "geometry/segment.h"
+#include "geometry/simplex.h"
+#include "geometry/tetrahedron.h"
+#include "geometry/tree_search.h"
+#include "geometry/triangle.h"
+#include "geometry/triangulation.h"
+#include "geometry/utils.h"
+#include "geometry/voronoi.h"
+#include "geometry/walk_search.h"
 
 #endif   // __FDAPDE_GEOMETRY_MODULE_H__

@@ -29,9 +29,10 @@ template <int N, typename... Args> class BFGS {
    private:
     using VectorType = typename std::conditional<N == Dynamic, DVector<double>, SVector<N>>::type;
     using MatrixType = typename std::conditional<N == Dynamic, DMatrix<double>, SMatrix<N>>::type;
-    std::size_t max_iter_;   // maximum number of iterations before forced stop
-    double tol_;             // tolerance on error before forced stop
-    double step_;            // update step
+    int max_iter_;     // maximum number of iterations before forced stop
+    int n_iter_ = 0;   // current iteration number
+    double tol_;       // tolerance on error before forced stop
+    double step_;      // update step
     std::tuple<Args...> callbacks_;
 
     VectorType optimum_;
@@ -44,8 +45,8 @@ template <int N, typename... Args> class BFGS {
     // constructor
     BFGS() = default;
     template <int N_ = sizeof...(Args), typename std::enable_if<N_ != 0, int>::type = 0>
-    BFGS(std::size_t max_iter, double tol, double step) : max_iter_(max_iter), tol_(tol), step_(step) { }
-    BFGS(std::size_t max_iter, double tol, double step, Args&&... callbacks) :
+    BFGS(int max_iter, double tol, double step) : max_iter_(max_iter), tol_(tol), step_(step) { }
+    BFGS(int max_iter, double tol, double step, Args&&... callbacks) :
         max_iter_(max_iter), tol_(tol), step_(step), callbacks_(std::make_tuple(std::forward<Args>(callbacks)...)) { }
     // copy semantic
     BFGS(const BFGS& other) :
@@ -58,17 +59,17 @@ template <int N, typename... Args> class BFGS {
         return *this;
     }
 
-    template <typename F> VectorType optimize(F& objective, const VectorType& x0) {
+    template <typename F> VectorType optimize(F& obj, const VectorType& x0) {
         static_assert(
           std::is_same<decltype(std::declval<F>().operator()(VectorType())), double>::value,
           "F_IS_NOT_A_FUNCTOR_ACCEPTING_A_VECTORTYPE");
         bool stop = false;   // asserted true in case of forced stop
         VectorType zero;     // either statically or dynamically allocated depending on N
-        std::size_t n_iter = 0;
         double error = 0;
+	auto grad = obj.derive();
+	n_iter_ = 0;
         h = step_;
-        x_old = x0;
-        x_new = x0;
+        x_old = x0, x_new = x0;
         if constexpr (N == Dynamic) {   // inv_hessian approximated with identity matrix
             inv_hessian = MatrixType::Identity(x0.rows(), x0.rows());
 	    zero = VectorType::Zero(x0.rows());
@@ -76,20 +77,24 @@ template <int N, typename... Args> class BFGS {
             inv_hessian = MatrixType::Identity();
 	    zero = VectorType::Zero();
 	}
-        grad_old = objective.derive()(x_old);
-        if (grad_old.isApprox(zero)) stop = true;   // already at stationary point
+        grad_old = grad(x_old);
+        if (grad_old.isApprox(zero)) {   // already at stationary point
+            optimum_ = x_old;
+            value_ = obj(optimum_);
+            return optimum_;
+        }
         error = grad_old.norm();
-	
-        while (n_iter < max_iter_ && error > tol_ && !stop) {
+
+        while (n_iter_ < max_iter_ && error > tol_ && !stop) {
             // compute update direction
             update = -inv_hessian * grad_old;
-            stop |= execute_pre_update_step(*this, objective, callbacks_);
+            stop |= execute_pre_update_step(*this, obj, callbacks_);
             // update along descent direction
             x_new = x_old + h * update;
-            grad_new = objective.derive()(x_new);
+            grad_new = grad(x_new);
             if (grad_new.isApprox(zero)) {   // already at stationary point
                 optimum_ = x_old;
-                value_ = objective(optimum_);
+                value_ = obj(optimum_);
                 return optimum_;
             }
             // update inverse hessian approximation
@@ -103,20 +108,20 @@ template <int N, typename... Args> class BFGS {
             inv_hessian += (U - V);
             // prepare next iteration
             error = grad_new.norm();
-            stop |= execute_post_update_step(*this, objective, callbacks_);
+            stop |= (execute_post_update_step(*this, obj, callbacks_) || execute_obj_stopping_criterion(*this, obj));
             x_old = x_new;
             grad_old = grad_new;
-            n_iter++;
-        }
-
+            n_iter_++;
+        }	
         optimum_ = x_old;
-        value_ = objective(optimum_);
+        value_ = obj(optimum_);
         return optimum_;
     }
 
     // getters
     VectorType optimum() const { return optimum_; }
     double value() const { return value_; }
+    int n_iter() const { return n_iter_; }
 };
 
 }   // namespace core

@@ -33,20 +33,26 @@ namespace core {
 template <typename D, typename E, typename F, typename... Ts> class SplineSolverBase {
    public:
     typedef std::tuple<Ts...> SolverArgs;
-    enum {
-        spline_order = std::tuple_element<0, SolverArgs>::type::value
-    };
+    static constexpr int spline_order = std::tuple_element<0, SolverArgs>::type::value;
     using DomainType = D;
     using FunctionalBasis = SplineBasis<spline_order>;
     using Quadrature = typename FunctionalBasis::Quadrature;
+    using ReferenceBasis = SplineBasis<spline_order>;
     // constructor
     SplineSolverBase() = default;
-    SplineSolverBase(const DomainType& domain) : domain_(&domain), basis_(domain.nodes()) {};
+    SplineSolverBase(const DomainType& domain) : domain_(&domain), basis_(domain.nodes()) {
+        // map domain nodes on reference interval [-1, 1]
+        DVector<double> nodes = domain.nodes();
+        double a = domain.nodes()[0], b = domain.nodes()[domain.n_nodes() - 1];
+        for (int i = 0; i < nodes.rows(); ++i) { nodes[i] = 1 / (b - a) * (2 * nodes[i] - (b + a)); }
+        reference_basis_ = FunctionalBasis(nodes);
+    };
     // getters
     const DMatrix<double>& solution() const { return solution_; }
     const DMatrix<double>& force() const { return force_; }
     const SpMatrix<double>& mass() const { return mass_; }
     const Quadrature& integrator() const { return integrator_; }
+    const ReferenceBasis& reference_basis() const { return reference_basis_; }
     const FunctionalBasis& basis() const { return basis_; }
     std::size_t n_dofs() const { return basis_.size(); }   // number of degrees of freedom (linear system's unknowns)
     DMatrix<double> dofs_coords() { return domain_->nodes(); };
@@ -73,12 +79,13 @@ template <typename D, typename E, typename F, typename... Ts> class SplineSolver
     template <typename PDE> void set_dirichlet_bc([[maybe_unused]] const PDE& pde) { return; } // TODO
    protected:
     const DomainType* domain_;
-    Quadrature integrator_ {};   // default to a quadrature rule which is exact for the considered spline order
-    FunctionalBasis basis_ {};   // basis system defined over the domain of definition
-    DMatrix<double> solution_;   // vector of coefficients of the approximate solution
-    DMatrix<double> force_;      // discretized force [u]_i = \int_D f*\phi_i
-    SpMatrix<double> stiff_;     // [R1_]_{ij} = a(\phi_i, \phi_j), being a(.,.) the bilinear form
-    SpMatrix<double> mass_;      // mass matrix, [R0_]_{ij} = \int_D (\phi_i * \phi_j)
+    Quadrature integrator_ {};            // default to a quadrature rule which is exact for the considered spline order
+    FunctionalBasis basis_ {};            // basis system defined over the domain of definition
+    ReferenceBasis reference_basis_ {};   // spline system on the interval [-1, 1]
+    DMatrix<double> solution_;            // vector of coefficients of the approximate solution
+    DMatrix<double> force_;               // discretized force [u]_i = \int_D f*\phi_i
+    SpMatrix<double> stiff_;              // [R1_]_{ij} = a(\phi_i, \phi_j), being a(.,.) the bilinear form
+    SpMatrix<double> mass_;               // mass matrix, [R0_]_{ij} = \int_D (\phi_i * \phi_j)
 };
 
 }   // namespace core

@@ -40,6 +40,10 @@ namespace fdapde {
 constexpr int Dynamic = -1;       // used when the size of a vector or matrix is not known at compile time
 constexpr int random_seed = -1;   // signals that a random seed is used somewhere
 
+// algorithm computation policies
+[[maybe_unused]] static struct tag_exact { } Exact;
+[[maybe_unused]] static struct tag_not_exact { } NotExact;
+
 template <int N, typename T = double> struct static_dynamic_vector_selector {
     using type = typename std::conditional<N == Dynamic, DVector<T>, SVector<N, T>>::type;
 };
@@ -157,6 +161,8 @@ template <typename T> class SparseLU {
 
 // test for floating point equality based on relative error.
 constexpr double DOUBLE_TOLERANCE = 50 * std::numeric_limits<double>::epsilon();   // approx 10^-14
+constexpr double machine_epsilon  = 10 * std::numeric_limits<double>::epsilon();
+
 template <typename T>
 typename std::enable_if<!std::numeric_limits<T>::is_integer, bool>::type almost_equal(T a, T b, T epsilon) {
     return std::fabs(a - b) < epsilon ||
@@ -185,7 +191,7 @@ template <typename XprType> struct ref_select {
       XprType::NestAsRef == 0, std::remove_reference_t<XprType>, std::add_lvalue_reference_t<XprType>>::type;
 };
 }   // namespace internals
-  
+
 }   // namespace fdapde
 
 #endif   // __FDAPDE_SYMBOLS_H__

@@ -35,14 +35,10 @@ namespace core {
 // base class for the definition of a general solver based on the Finite Element Method
 template <typename D, typename E, typename F, typename... Ts> class FEMSolverBase {
    public:
-    typedef std::tuple<Ts...> SolverArgs;
-    enum {
-        fem_order = std::tuple_element<0, SolverArgs>::type::value,
-        n_dof_per_element = ct_nnodes(D::local_dimension, fem_order),
-        n_dof_per_edge = fem_order - 1,
-        n_dof_internal =
-          n_dof_per_element - (D::local_dimension + 1) - D::n_facets_per_element * (fem_order - 1)   // > 0 \iff R > 2
-    };
+    using SolverArgs = std::tuple<Ts...>;
+    static constexpr int fem_order = std::tuple_element<0, SolverArgs>::type::value;
+    static constexpr int n_dof_per_element = ct_nnodes(D::local_dim, fem_order);
+    static constexpr int n_dof_per_edge = fem_order - 1;
     using DomainType = D;
     using FunctionalBasis = LagrangianBasis<DomainType, fem_order>;
     using ReferenceBasis = typename FunctionalBasis::ReferenceBasis;
@@ -71,15 +67,15 @@ template <typename D, typename E, typename F, typename... Ts> class FEMSolverBas
     struct boundary_dofs_iterator {   // range-for loop over boundary dofs
        private:
         friend FEMSolverBase;
-        const FEMSolverBase* fem_solver_;
+        const FEMSolverBase* solver_;
         int index_;   // current boundary dof
-        boundary_dofs_iterator(const FEMSolverBase* fem_solver, int index) : fem_solver_(fem_solver), index_(index) { }
+        boundary_dofs_iterator(const FEMSolverBase* solver, int index) : solver_(solver), index_(index) { }
        public:
         // fetch next boundary dof
         boundary_dofs_iterator& operator++() {
             index_++;
             // scan until all nodes have been visited or a boundary node is not found
-            for (; index_ < fem_solver_->n_dofs_ && fem_solver_->boundary_dofs_(index_,0) == 0; ++index_);
+            for (; index_ < solver_->n_dofs_ && !solver_->boundary_dofs_[index_]; ++index_);
             return *this;
         }
         int operator*() const { return index_; }
@@ -90,17 +86,16 @@ template <typename D, typename E, typename F, typename... Ts> class FEMSolverBas
     boundary_dofs_iterator boundary_dofs_begin() const { return boundary_dofs_iterator(this, 0); }
     boundary_dofs_iterator boundary_dofs_end() const { return boundary_dofs_iterator(this, n_dofs_); }
    protected:
-    Quadrature integrator_ {};            // default to a quadrature rule which is exact for the considered FEM order
-    FunctionalBasis basis_ {};            // basis system defined over the pyhisical domain
-    ReferenceBasis reference_basis_ {};   // function basis on the reference unit simplex
-    DMatrix<double> solution_;            // vector of coefficients of the approximate solution
-    DMatrix<double> force_;               // discretized force [u]_i = \int_D f*\psi_i
-    SpMatrix<double> stiff_;              // [stiff_]_{ij} = a(\psi_i, \psi_j), being a(.,.) the bilinear form
-    SpMatrix<double> mass_;               // mass matrix, [mass_]_{ij} = \int_D (\psi_i * \psi_j)
-
-    int n_dofs_ = 0;                // degrees of freedom, i.e. the maximum ID in the dof_table_
-    DMatrix<int> dofs_;             // for each element, the degrees of freedom associated to it
-    DMatrix<int> boundary_dofs_;    // unknowns on the boundary of the domain, for boundary conditions prescription
+    Quadrature integrator_ {};              // default to a quadrature rule which is exact for the considered FEM order
+    FunctionalBasis basis_ {};              // basis system defined over the pyhisical domain
+    ReferenceBasis reference_basis_ {};     // function basis on the reference unit simplex
+    DMatrix<double> solution_;              // vector of coefficients of the approximate solution
+    DMatrix<double> force_;                 // discretized force [u]_i = \int_D f*\psi_i
+    SpMatrix<double> stiff_;                // [stiff_]_{ij} = a(\psi_i, \psi_j), being a(.,.) the bilinear form
+    SpMatrix<double> mass_;                 // mass matrix, [mass_]_{ij} = \int_D (\psi_i * \psi_j)
+    int n_dofs_ = 0;                        // degrees of freedom, i.e. the maximum ID in the dof_table_
+    DMatrix<int> dofs_;                     // for each element, the degrees of freedom associated to it
+    BinaryVector<Dynamic> boundary_dofs_;   // unknowns on the boundary of the domain
 };
 
 // implementative details

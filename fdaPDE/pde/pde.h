@@ -21,7 +21,6 @@
 #include <unordered_map>
 #include <optional>
 
-#include "../geometry/mesh.h"
 #include "../utils/symbols.h"
 #include "../utils/integration/integrator.h"
 #include "differential_expressions.h"
@@ -42,17 +41,18 @@ class PDE {
    public:
     using SpaceDomainType = D;                // triangulated spatial domain
     using TimeDomainType = DVector<double>;   // time-interval [0,T] (for time-dependent PDEs)
-    static constexpr int M = SpaceDomainType::local_dimension;
-    static constexpr int N = SpaceDomainType::embedding_dimension;
+    static constexpr int M = SpaceDomainType::local_dim;
+    static constexpr int N = SpaceDomainType::embed_dim;
     using OperatorType = E;   // differential operator in its strong-formulation
     static_assert(std::is_base_of<DifferentialExpr<OperatorType>, OperatorType>::value);
     using ForcingType = F;   // type of forcing object (either a matrix or a callable object)
     static_assert(
       std::is_same<DMatrix<double>, ForcingType>::value ||
-      std::is_base_of<ScalarExpr<SpaceDomainType::embedding_dimension, ForcingType>, ForcingType>::value);
+      std::is_base_of<ScalarExpr<N, ForcingType>, ForcingType>::value);
     using SolverType = typename pde_solver_selector<S, SpaceDomainType, OperatorType, ForcingType, Ts...>::type;
     using FunctionalBasis = typename SolverType::FunctionalBasis;   // function space approximating the solution space
     using Quadrature = typename SolverType::Quadrature;             // quadrature for numerical integral approximations
+    using ReferenceBasis = typename SolverType::ReferenceBasis;
 
     // space-only constructors
     PDE(const D& domain) requires(is_stationary<OperatorType>::value) : domain_(domain), solver_(domain) { }
@@ -84,6 +84,7 @@ class PDE {
     const DMatrix<double>& boundary_data() const { return boundary_data_; };
     const Quadrature& integrator() const { return solver_.integrator(); }
     const FunctionalBasis& basis() const { return solver_.basis(); }
+    const ReferenceBasis& reference_basis() const { return solver_.reference_basis(); }
     // evaluates the functional basis defined over the pyhisical domain on a given set of locations
     template <template <typename> typename EvaluationPolicy>
     std::pair<SpMatrix<double>, DVector<double>> eval_functional_basis(const DMatrix<double>& locs) const {
@@ -95,6 +96,7 @@ class PDE {
     const SpMatrix<double>& stiff() const { return solver_.stiff(); };
     const SpMatrix<double>& mass() const { return solver_.mass(); };
     DMatrix<double> dof_coords() { return solver_.dofs_coords(); }
+    const DMatrix<int>& dofs() const { return solver_.dofs(); }
     DMatrix<double> quadrature_nodes() const { return integrator().quadrature_nodes(domain_); };
     void init() { solver_.init(*this); };   // initializes the solver
     void solve() {                          // solves the PDE

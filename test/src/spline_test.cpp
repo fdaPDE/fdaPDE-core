@@ -27,7 +27,7 @@ using fdapde::core::reaction;
 using fdapde::core::SPLINE;
 using fdapde::core::SplineBasis;
 using fdapde::core::spline_order;
-using fdapde::core::Mesh;
+using fdapde::core::Triangulation;
 using fdapde::core::PDE;
 
 #include "utils/utils.h"
@@ -82,10 +82,10 @@ TEST(spline_test, cubic_spline_second_derivative) {
 }
 
 TEST(spline_test, cubic_spline_reaction_operator) {
-    Mesh<1, 1> unit_interval(0, 2, 10);
+    Triangulation<1, 1> unit_interval(0, 2, 10);
     // define PDE
     auto L = reaction<SPLINE>(1.0);
-    PDE<Mesh<1, 1>, decltype(L), DMatrix<double>, SPLINE, spline_order<3>> pde_(unit_interval, L);
+    PDE<Triangulation<1, 1>, decltype(L), DMatrix<double>, SPLINE, spline_order<3>> pde_(unit_interval, L);
     pde_.init();
     // load expected data from file
     SpMatrix<double> expected;
@@ -94,10 +94,10 @@ TEST(spline_test, cubic_spline_reaction_operator) {
 }
 
 TEST(spline_test, cubic_spline_bilaplacian_operator) {
-    Mesh<1, 1> unit_interval(0, 2, 10);
+    Triangulation<1, 1> unit_interval(0, 2, 10);
     // define PDE
     auto L = -bilaplacian<SPLINE>();
-    PDE<Mesh<1, 1>, decltype(L), DMatrix<double>, SPLINE, spline_order<3>> pde_(unit_interval, L);
+    PDE<Triangulation<1, 1>, decltype(L), DMatrix<double>, SPLINE, spline_order<3>> pde_(unit_interval, L);
     pde_.init();
     // load expected data from file
     SpMatrix<double> expected;

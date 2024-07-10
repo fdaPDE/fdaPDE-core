@@ -19,9 +19,7 @@
 
 #include <fdaPDE/utils.h>
 #include <fdaPDE/geometry.h>
-using fdapde::core::Element;
-using fdapde::core::Mesh;
-using fdapde::core::NaiveSearch;
+using fdapde::core::Triangulation;
 using fdapde::core::BarycentricWalk;
 using fdapde::core::TreeSearch;
 
@@ -37,45 +35,31 @@ template <typename E> struct point_location_test : public ::testing::Test {
 };
 TYPED_TEST_SUITE(point_location_test, MESH_TYPE_LIST);
 
-TYPED_TEST(point_location_test, naive_search) {
+TYPED_TEST(point_location_test, tree_search) {
     // build search engine
-    NaiveSearch<TestFixture::M, TestFixture::N> engine(this->mesh_loader.mesh);
+    TreeSearch<Triangulation<TestFixture::M, TestFixture::N>> engine(&this->mesh_loader.mesh);
     // build test set
     std::vector<std::pair<int, SVector<TestFixture::N>>> test_set = this->mesh_loader.sample(100);
     // test all queries in test set
     std::size_t matches = 0;
     for (auto query : test_set) {
         auto e = engine.locate(query.second);
-        if (e != nullptr && e->ID() == query.first) matches++;
-    }
-    EXPECT_EQ(matches, 100);
-}
-
-TYPED_TEST(point_location_test, alternating_digital_tree) {
-    // build search engine
-    TreeSearch<TestFixture::M, TestFixture::N> engine(this->mesh_loader.mesh);
-    // build test set
-    std::vector<std::pair<int, SVector<TestFixture::N>>> test_set = this->mesh_loader.sample(100);
-    // test all queries in test set
-    std::size_t matches = 0;
-    for (auto query : test_set) {
-        auto e = engine.locate(query.second);
-        if (e != nullptr && e->ID() == query.first) { matches++; }
+        if (e != -1 && this->mesh_loader.mesh.cell(e).id() == query.first) { matches++; }
     }
     EXPECT_EQ(matches, 100);
 }
 
 // barycentric walk cannot be applied to manifold mesh, filter out manifold cases at compile time
-TYPED_TEST(point_location_test, barycentric_walk) {
+TYPED_TEST(point_location_test, walk_search) {
     if constexpr (TestFixture::N == TestFixture::M) {
-        BarycentricWalk<TestFixture::M, TestFixture::N> engine(this->mesh_loader.mesh);
+        BarycentricWalk<Triangulation<TestFixture::M, TestFixture::N>> engine(&this->mesh_loader.mesh);
         // build test set
         std::vector<std::pair<int, SVector<TestFixture::N>>> test_set = this->mesh_loader.sample(100);
         // test all queries in test set
         std::size_t matches = 0;
         for (auto query : test_set) {
             auto e = engine.locate(query.second);
-            if (e != nullptr && e->ID() == query.first) matches++;
+            if (e != -1 && this->mesh_loader.mesh.cell(e).id() == query.first) matches++;
         }
         EXPECT_EQ(matches, 100);
     } else {
@@ -90,7 +74,7 @@ TEST(point_location_test, 1D_binary_search) {
     DVector<double> mesh_nodes(nodes.size());
     for (std::size_t i = 0; i < nodes.size(); ++i) { mesh_nodes[i] = nodes[i]; }
     // create mesh
-    Mesh<1, 1> unit_interval(mesh_nodes);
+    Triangulation<1, 1> unit_interval(mesh_nodes);
 
     // build test set
     std::vector<std::pair<int, SVector<1>>> test_set;
