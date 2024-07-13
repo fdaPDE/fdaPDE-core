@@ -26,7 +26,7 @@ namespace core {
 template <typename Triangulation>
 class Tetrahedron : public Simplex<Triangulation::local_dim, Triangulation::embed_dim> {
     fdapde_static_assert(
-      Triangulation::local_dim == 3 && Triangulation::embed_dim == 3, THIS_CLASS_IS_ONLY_FOR_TETRAHEDRAL_MESHES_ONLY);
+      Triangulation::local_dim == 3 && Triangulation::embed_dim == 3, THIS_CLASS_IS_FOR_TETRAHEDRAL_MESHES_ONLY);
    public:
     // constructor
     Tetrahedron() = default;

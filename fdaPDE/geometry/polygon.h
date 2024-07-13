@@ -14,21 +14,32 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FEM_SYMBOLS_H__
-#define __FEM_SYMBOLS_H__
+#ifndef __POLYGON_H__
+#define __POLYGON_H__
 
 namespace fdapde {
 namespace core {
 
-// finite element strategy tag for PDE discretization
-struct FEM { };
+  // a polygon is an ordered set of edges
+  // we assume points already sorted counter-clockwise
+  
+class Polygon {
+private:
+  DMatrix<double> points_;
+public:
+  Polygon() = default;
+  Polygon(const DMatrix<double>& points) : points_(points) { fdapde_assert(points.cols() == 2); }
+  template <typename InputIterator> Polygon(InputIterator first, InputIterator last) {
+      int i = 0;
+      points_.resize(std::distance(last, first), 2);
+      for (InputIterator it = first; it != last; ++it) { points_.row(i++) = *it; }
+  }
+  
+  
 
-// finite element order type (just a type wrapper around an int)
-template <int R> struct fem_order {
-    static constexpr int value = R;
 };
 
 }   // namespace core
 }   // namespace fdapde
 
-#endif   // __FEM_SYMBOLS_H__
+#endif // __POLYGON_H__

@@ -30,6 +30,7 @@ constexpr int ct_factorial(const int n) { return n ? (n * ct_factorial(n - 1)) :
 
 // compile time evaluation of the binomial coefficient N over M
 constexpr int ct_binomial_coefficient(const int N, const int M) {
+    if (M == 0) return 1;
     return ct_factorial(N) / (ct_factorial(M) * ct_factorial(N - M));
 }
 

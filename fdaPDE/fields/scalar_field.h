@@ -65,9 +65,14 @@ class ScalarField : public ScalarExpr<N, ScalarField<N, F>> {
     }
     template <typename E>
     ScalarField& operator=(const ScalarExpr<N, E>& f)
-        requires(std::is_same<FieldType, std::function<double(VectorType)>>::value) {
-        E op = f.get();
-        f_ = [op](VectorType x) -> double { return op(x); };
+        requires(std::is_same<FieldType, E>::value ||
+		 std::is_same<FieldType, std::function<double(VectorType)>>::value) {
+        if constexpr(std::is_same<FieldType, E>::value) {
+	    f_ = f.get();
+        } else {
+            E op = f.get();
+            f_ = [op](VectorType x) -> double { return op(x); };
+        }
         return *this;
     }
     // assignment from lambda expression

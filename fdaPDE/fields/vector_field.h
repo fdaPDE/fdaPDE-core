@@ -46,7 +46,7 @@ class VectorField : public VectorExpr<M, N, VectorField<M, N, F>> {
     // constructors
     VectorField() requires(N != Dynamic) { field_.resize(N); }
     VectorField(int m, int n) requires(N == Dynamic) : Base(m, n) { field_.resize(n, ScalarField<M, FieldType>(m)); }
-    VectorField(const std::vector<FieldType>& v) {
+    explicit VectorField(const std::vector<FieldType>& v) {
         fdapde_assert(int(v.size()) == outer_size());
         field_.reserve(v.size());
         for (std::size_t i = 0; i < v.size(); ++i) { field_.emplace_back(v[i]); }

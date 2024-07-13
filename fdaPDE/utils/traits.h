@@ -81,6 +81,18 @@ template <typename T1> struct unique_types<T1> {
     static constexpr bool value = true;
 };
 
+// trait to detect wheter all types in a parameter pack are the same type
+template <typename... Ts> struct same_types;
+template <typename T1, typename T2, typename... Ts> struct same_types<T1, T2, Ts...> {
+    static constexpr bool value = std::is_same<T1, T2>::value && same_types<T1, Ts...>::value;
+};
+template <typename T1, typename T2> struct same_types<T1, T2> {
+    static constexpr bool value = std::is_same<T1, T2>::value;
+};
+template <typename T1> struct same_types<T1> {
+    static constexpr bool value = true;
+};
+
 // obtain index of type in tuple (assume types are unique in the std::tuple)
 template <typename T, typename tuple> struct index_of;
 template <typename T, typename... Ts> struct index_of<T, std::tuple<Ts...>> {

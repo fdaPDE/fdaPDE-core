@@ -21,6 +21,7 @@
 #include <Eigen/Sparse>
 #include <memory>
 #include "traits.h"
+#include "assert.h"
 
 // static structures, allocated on stack at compile time.
 template <int N, typename T = double> using SVector = Eigen::Matrix<T, N, 1>;
@@ -158,6 +159,17 @@ template <typename T> class SparseLU {
     Eigen::ComputationInfo info() const { return solver_->info(); }
     operator bool() const { return computed_; }  
 };
+
+// reverse a std::unordered_map (if the map represents a bijection)
+template <typename V, typename W> std::unordered_map<V, W> reverse(const std::unordered_map<W, V>& in) {
+    std::unordered_map<V, W> out;
+    for (const auto& [key, value] : in) {
+        fdapde_assert(
+          out.find(value) == out.end());   // if this is not passed, in is not a bijection, cannot be inverted
+        out[value] = key;
+    }
+    return out;
+}
 
 // test for floating point equality based on relative error.
 constexpr double DOUBLE_TOLERANCE = 50 * std::numeric_limits<double>::epsilon();   // approx 10^-14

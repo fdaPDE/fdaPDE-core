@@ -16,14 +16,19 @@
 
 #ifndef __FDAPDE_ASSERT_H__
 #define __FDAPDE_ASSERT_H__
-
-namespace fdapde {
   
-// throw an exception if condition is not met
-#define fdapde_assert(condition)                                                                                       \
-    if (!(condition)) throw std::runtime_error("Condition " #condition " failed")
+namespace fdapde {
 
-// static assert with message
+namespace internal {
+void fdapde_assert_failed_(const char* str, const char* file, int line) {
+    std::cerr << file << ":" << line << ". Assertion: '" << str << "' failed." << std::endl;
+    abort();
+}
+};   // namespace internal
+
+#define fdapde_assert(condition)                                                                                       \
+    if (!(condition)) { internal::fdapde_assert_failed_(#condition, __FILE__, __LINE__); }
+
 #define fdapde_static_assert(condition, message) static_assert(condition, #message)
 
 }   // namespace fdapde

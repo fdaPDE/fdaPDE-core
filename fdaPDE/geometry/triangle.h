@@ -40,26 +40,27 @@ template <typename Triangulation> class Triangle : public Simplex<Triangulation:
     }
     // a triangulation-aware view of a triangle edge
     class EdgeType : public Simplex<Triangulation::local_dim, Triangulation::embed_dim>::BoundaryCellType {
-    private:
-      int edge_id_;
-      const Triangulation* mesh_;
-    public:
-      using CoordsType = SMatrix<Triangulation::embed_dim, Triangulation::local_dim>;
-      EdgeType() = default;
-      EdgeType(int edge_id, const Triangulation* mesh) : edge_id_(edge_id), mesh_(mesh) {
-	for (int i = 0; i < this->n_nodes; ++i) { this->coords_.col(i) = mesh_->node(mesh_->edges()(edge_id_, i)); }
-	this->initialize();
-      }
-      bool on_boundary() const { return mesh_->is_edge_on_boundary(edge_id_); }
-      DVector<int> node_ids() const { return mesh_->edges().row(edge_id_); }
-      int id() const { return edge_id_; }
-      DVector<int> adjacent_cells() const { return mesh_->edge_to_cells().row(edge_id_); }
+       private:
+        int edge_id_;
+        const Triangulation* mesh_;
+       public:
+        using CoordsType = SMatrix<Triangulation::embed_dim, Triangulation::local_dim>;
+        EdgeType() = default;
+        EdgeType(int edge_id, const Triangulation* mesh) : edge_id_(edge_id), mesh_(mesh) {
+            for (int i = 0; i < this->n_nodes; ++i) { this->coords_.col(i) = mesh_->node(mesh_->edges()(edge_id_, i)); }
+            this->initialize();
+        }
+        bool on_boundary() const { return mesh_->is_edge_on_boundary(edge_id_); }
+        DVector<int> node_ids() const { return mesh_->edges().row(edge_id_); }
+        int id() const { return edge_id_; }
+        DVector<int> adjacent_cells() const { return mesh_->edge_to_cells().row(edge_id_); }
     };
-  
+
     // getters
     int id() const { return id_; }
     DVector<int> neighbors() const { return mesh_->neighbors().row(id_); }
     DVector<int> node_ids() const { return mesh_->cells().row(id_); }
+    DVector<int> edge_ids() const { return mesh_->cell_to_edges().row(id_); }
     bool on_boundary() const { return boundary_; }
     operator bool() const { return mesh_ != nullptr; }
     EdgeType edge(int n) const {

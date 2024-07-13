@@ -27,5 +27,6 @@
 #include "fields/scalar_field.h"
 #include "fields/vector_expressions.h"
 #include "fields/vector_field.h"
+#include "fields/polynomial.h"
 
 #endif   // __FDAPDE_FIELDS_MODULE_H__

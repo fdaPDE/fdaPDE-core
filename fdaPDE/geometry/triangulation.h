@@ -42,7 +42,16 @@ template <int M, int N, typename Derived> class TriangulationBase {
     static constexpr int n_neighbors_per_cell = local_dim + 1;
     static constexpr bool is_manifold = !(local_dim == embed_dim);
     using CellType = std::conditional_t<M == 2, Triangle<Derived>, Tetrahedron<Derived>>;
-    using NodeType = SVector<embed_dim>;
+    class NodeType {   // triangulation node abstraction
+        int id_;
+        const Derived* mesh_;
+       public:
+        NodeType() = default;
+        NodeType(int id, const Derived* mesh) : id_(id), mesh_(mesh) { }
+        int id() const { return id_; }
+        SVector<embed_dim> coords() const { return mesh_->node(id_); }
+        std::vector<int> patch() const { return mesh_->node_patch(id_); }
+    };
 
     TriangulationBase() = default;
     TriangulationBase(const DMatrix<double>& nodes, const DMatrix<int>& cells, const DMatrix<int>& boundary) :
@@ -58,7 +67,7 @@ template <int M, int N, typename Derived> class TriangulationBase {
     }
     // getters
     CellType cell(int id) const { return CellType(id, static_cast<const Derived*>(this)); }
-    NodeType node(int id) const { return nodes_.row(id); }
+    SVector<embed_dim> node(int id) const { return nodes_.row(id); }
     bool is_node_on_boundary(int id) const { return nodes_markers_[id]; }
     const DMatrix<double>& nodes() const { return nodes_; }
     const DMatrix<int, Eigen::RowMajor>& cells() const { return cells_; }
@@ -85,27 +94,27 @@ template <int M, int N, typename Derived> class TriangulationBase {
         }
     };
     cell_iterator cells_begin() const { return cell_iterator(0, static_cast<const Derived*>(this)); }
-    cell_iterator cells_end() const { return cell_iterator(n_cells_, static_cast<const Derived*>(this)); }
+    cell_iterator cells_end() const { return cell_iterator(n_cells_, static_cast<const Derived*>(this)); }      
     // iterator over boundary nodes
-    class boundary_node_iterator : public index_based_iterator<boundary_node_iterator, int> {
-        using Base = index_based_iterator<boundary_node_iterator, int>;
+    class boundary_node_iterator : public index_based_iterator<boundary_node_iterator, NodeType> {
+        using Base = index_based_iterator<boundary_node_iterator, NodeType>;
         using Base::index_;
         const Derived* mesh_;
        public:
         boundary_node_iterator(int index, const Derived* mesh) : Base(index, 0, mesh->n_nodes_), mesh_(mesh) {
             for (; index_ < mesh_->n_nodes_ && !mesh_->nodes_markers_[index_] != true; ++index_);
-            this->val_ = index_;
+            this->val_ = NodeType(index_, mesh_);
         }
         boundary_node_iterator& operator++() {
             index_++;
             for (; index_ < mesh_->n_nodes_ && !mesh_->nodes_markers_[index_] != true; ++index_);
-            this->val_ = index_;
+            this->val_ = NodeType(index_, mesh_);
             return *this;
         }
         boundary_node_iterator& operator--() {
             --index_;
             for (; index_ >= 0 && !mesh_->nodes_markers_[index_] != true; --index_);
-            this->val_ = index_;
+            this->val_ = NodeType(index_, mesh_);
             return *this;
         }
     };
@@ -261,7 +270,7 @@ template <int N> class Triangulation<2, N> : public TriangulationBase<2, N, Tria
    protected:
     std::vector<int> edges_ {};                        // nodes (as row indexes in nodes_ matrix) composing each edge
     std::vector<int> edge_to_cells_ {};                // for each edge, the ids of adjacent cells
-    DMatrix<int, Eigen::RowMajor> cell_to_edges_ {};   // ids of edges composing each face
+    DMatrix<int, Eigen::RowMajor> cell_to_edges_ {};   // ids of edges composing each cell
     BinaryVector<fdapde::Dynamic> edges_markers_ {};   // j-th element is 1 \iff edge j is on boundary
     int n_edges_ = 0;
     mutable std::optional<LocationPolicy> location_policy_ {};
@@ -290,7 +299,7 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
             next_();
         }
         iterator(int index, int begin, int end, const Triangulation* mesh) :
-            iterator(index, begin, end, mesh, BinaryVector<fdapde::Dynamic>::Ones(mesh->n_edges_)) { }
+            iterator(index, begin, end, mesh, BinaryVector<fdapde::Dynamic>::Ones(end - begin)) { }
         Iterator& operator++() {
             next_();
             return static_cast<Iterator&>(*this);
@@ -309,6 +318,7 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
     static constexpr int n_nodes_per_edge = 2;
     static constexpr int n_edges_per_face = 3;
     static constexpr int n_faces_per_cell = 4;
+    static constexpr int n_edges_per_cell = 6;
     using FaceType = typename Base::CellType::FaceType;
     using EdgeType = typename Base::CellType::EdgeType;
     using LocationPolicy = TreeSearch<Triangulation<3, 3>>;
@@ -435,6 +445,8 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
         face_iterator(int index, const Triangulation* mesh) :
             iterator<face_iterator, FaceType>(index, 0, mesh->n_faces_, mesh) { }
     };
+    face_iterator faces_begin() const { return face_iterator(0, this); }
+    face_iterator faces_end() const { return face_iterator(n_faces_, this); }
     // iterator over boundary faces
     struct boundary_face_iterator : public face_iterator {
         boundary_face_iterator(int index, const Triangulation* mesh) :
@@ -444,11 +456,14 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
     boundary_face_iterator boundary_faces_end() const { return boundary_face_iterator(n_faces_, this); }
 
     // provides the surface triangular mesh of this 3D triangulation
-    Triangulation<2, 3> surface() const {
+    struct SurfaceReturnType {
+        Triangulation<2, 3> triangulation;
+        std::unordered_map<int, int> node_map;
+    };
+    SurfaceReturnType surface() const {
         DMatrix<double> nodes(n_boundary_nodes(), FaceType::n_nodes);
         DMatrix<int> cells(n_boundary_faces(), FaceType::n_nodes), boundary(n_boundary_nodes(), 1);
         std::unordered_map<int, int> node_map;   // bounds node ids in the 3D mesh to rescaled ids on the surface mesh
-
         // compute nodes, cells and boundary matrices
         int i = 0, j = 0;
         for (boundary_face_iterator it = boundary_faces_begin(); it != boundary_faces_end(); ++it) {
@@ -467,7 +482,7 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
             }
 	    i++;
         }
-	return Triangulation<2, 3>(nodes, cells, boundary);
+	return {Triangulation<2, 3>(nodes, cells, boundary), fdapde::reverse(node_map)};
     }
 
     // point location

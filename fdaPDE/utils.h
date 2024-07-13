@@ -26,8 +26,8 @@
 #include "utils/data_structures/binary_tree.h"
 #include "utils/data_structures/block_frame.h"
 #include "utils/data_structures/block_vector.h"
-#include "utils/integration/integrator.h"
-#include "utils/integration/integrator_tables.h"
+/* #include "utils/integration/integrator.h" */
+/* #include "utils/integration/integrator_tables.h" */
 #include "utils/IO/csv_reader.h"
 
 #endif   // __FDAPDE_UTILS_MODULE_H__

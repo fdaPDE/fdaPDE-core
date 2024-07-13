@@ -127,7 +127,7 @@ template <int Order_, int EmbedDim_> class Simplex {
         return ContainsReturnType::INSIDE;
     }
 
-    // iterator over boundary
+    // iterator over boundary faces
     class boundary_iterator : public index_based_iterator<boundary_iterator, BoundaryCellType> {
         using Base = index_based_iterator<boundary_iterator, BoundaryCellType>;
         using Base::index_;
