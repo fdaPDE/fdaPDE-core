@@ -71,7 +71,7 @@ class FSPAI {
     Eigen::Matrix<double, Eigen::Dynamic, 1> bk_;   // value of Ak(tildeJk). Stored here to avoid expensive copies
 
     // build system matrix A(p1, p2) given sparsity patterns p1 and p2. The result is a |p1| x |p2| dense matrix
-    void extractSystem(const column_sparsity_pattern& p1, const column_sparsity_pattern& p2, const Eigen::Index& k) {
+    void extractSystem(const column_sparsity_pattern& p1, const column_sparsity_pattern& p2, const Eigen::Index& k){
             // resize memory buffers
     Ak_.resize(p1.size(), p2.size());
     bk_.resize(p2.size(), 1);
@@ -88,21 +88,21 @@ class FSPAI {
     // update approximate inverse of column k
     void updateApproximateInverse(
       const Eigen::Index& k, const DVector<double>& bk, const DVector<double>& yk,
-      const column_sparsity_pattern& tildeJk) {
-    // compute diagonal entry l_kk
-    double l_kk = 1.0 / (std::sqrt(A_.coeff(k, k) - bk.transpose().dot(yk)));
-    Lk_[k] = l_kk;
+      const column_sparsity_pattern& tildeJk){
+      // compute diagonal entry l_kk
+      double l_kk = 1.0 / (std::sqrt(A_.coeff(k, k) - bk.transpose().dot(yk)));
+      Lk_[k] = l_kk;
 
-    // update other entries according to current sparsity pattern tildeJk
-    for (auto it = std::make_pair(tildeJk.begin(), 0); it.first != tildeJk.end(); ++it.first, ++it.second) {
-        Lk_[*it.first] = -l_kk * yk[it.second];
-    }
-    return;
+      // update other entries according to current sparsity pattern tildeJk
+      for (auto it = std::make_pair(tildeJk.begin(), 0); it.first != tildeJk.end(); ++it.first, ++it.second) {
+          Lk_[*it.first] = -l_kk * yk[it.second];
       }
+      return;
+    }
     // select candidate indexes for sparsity pattern update for column k (this reflects in a modification to the hatJk_
     // structure)
-    void selectCandidates(const Eigen::Index& k) {
-        // computation of candidate rows to enter in the sparsity pattern of column Lk_
+    void selectCandidates(const Eigen::Index& k){
+            // computation of candidate rows to enter in the sparsity pattern of column Lk_
     for (auto row = deltaPattern_.begin(); row != deltaPattern_.end(); ++row) {
         for (auto j = sparsityPattern_.at(*row).begin(); j != sparsityPattern_.at(*row).end(); ++j)
             if (*j > k) { candidateSet_.insert(*j); }
@@ -123,10 +123,11 @@ class FSPAI {
     }
     return;
     }
+
    public:
     // constructor
-    FSPAI(const Eigen::SparseMatrix<double>& A) : A_(A) {
-            // initialize the sparsity pattern to the identity matrix
+    FSPAI(const Eigen::SparseMatrix<double>& A): A_(A), n_(A.rows()) {
+    // initialize the sparsity pattern to the identity matrix
     J_.resize(n_);
     for (std::size_t i = 0; i < static_cast<std::size_t>(n_); ++i) { J_[i].insert(i); }
 
@@ -145,18 +146,13 @@ class FSPAI {
     const Eigen::SparseMatrix<double>& getL() const { return L_; }
     // returns the approximate inverse of A_
     Eigen::SparseMatrix<double> getInverse() const { return L_ * L_.transpose(); }
-    }
-    // returns the approximate inverse of the Cholesky factor of matrix A_
-    const Eigen::SparseMatrix<double>& getL() const { return L_; }
-    // returns the approximate inverse of A_
-    Eigen::SparseMatrix<double> getInverse() const { return L_ * L_.transpose(); }
 
     // compute the Factorize Sparse Approximate Inverse of A using a K-condition number minimization method
     // alpha:   number of sparsity pattern updates to compute for each column k of A_
     // beta:    number of indexes to augment the sparsity pattern of Lk_ per update step
     // epsilon: do not consider an entry of A_ as valid if it causes a reduction to its K-condition number lower than
     // epsilon
-    void compute(unsigned alpha, unsigned beta, double epsilon) {
+    void compute(unsigned alpha, unsigned beta, double epsilon){
             // eigen requires a list of triplet to construct a sparse matrix in an efficient way
     std::list<Eigen::Triplet<double>> tripetList;
 
@@ -251,8 +247,10 @@ class FSPAI {
     // build final result
     L_.setFromTriplets(tripetList.begin(), tripetList.end());
     return;
+
     }
 };
+
 
 }   // namespace core
 }   // namespace fdapde
