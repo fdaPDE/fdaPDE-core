@@ -16,9 +16,13 @@
 
 #ifndef __FDAPDE_ASSERT_H__
 #define __FDAPDE_ASSERT_H__
-  
+
+#include <iostream>
+
 namespace fdapde {
 
+#define FDAPDE_COMMA ,
+  
 namespace internal {
 void fdapde_assert_failed_(const char* str, const char* file, int line) {
     std::cerr << file << ":" << line << ". Assertion: '" << str << "' failed." << std::endl;

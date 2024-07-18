@@ -20,8 +20,6 @@
 #include "../utils/assert.h"
 #include "../utils/symbols.h"
 
-#include <bitset>
-
 namespace fdapde {
 namespace core {
 
@@ -298,9 +296,7 @@ class BinMtxBlock : public BinMtxBase<BlockRows, BlockCols, BinMtxBlock<BlockRow
           BlockCols >= 0 && start_col_ + BlockCols <= xpr_.cols());
     }
     // dynamic-sized constructor
-    BinMtxBlock(
-      XprTypeNested& xpr, int start_row, int start_col, int block_rows,
-      int block_cols) :
+    BinMtxBlock(XprTypeNested& xpr, int start_row, int start_col, int block_rows, int block_cols) :
         Base(block_rows, block_cols), xpr_(xpr), start_row_(start_row), start_col_(start_col) {
         fdapde_assert(BlockRows == Dynamic || BlockCols == Dynamic);
         fdapde_assert(

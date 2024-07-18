@@ -18,30 +18,16 @@
 #define __SMW_H__
 
 #include <Eigen/LU>
-#include <Eigen/SparseLU>
 
 #include "../utils/symbols.h"
 
 namespace fdapde {
 namespace core {
 
-// A general implementation of a system solver using the Sherman–Morrison–Woodbury formula for matrix inversion
-
-// Given  a linear system Mx = b, under the assumption that we are able to decompose matrix M as (A + UCV), according
-// to the Shermann-Morrison-Woodbury formula we have
-//
-//        M^{-1} = (A + UCV)^{-1} = A^{-1} - A^{-1}*U*(C^{-1} + V*A^{-1}*U)^{-1}*V*A^{-1}
-//
-// If A is sparse and C a small dense matrix, computing M^{-1} using the above decomposition is much more efficient
-// than computing M^{-1} directly
-
-template <typename SparseSolver = fdapde::SparseLU<SpMatrix<double>>,
-	  typename DenseSolver  = Eigen::PartialPivLU<DMatrix<double>>>
+// linear system solver based on the Sherman–Morrison–Woodbury formula
 struct SMW {
-    // constructor
-    SMW() = default;
-
-    // solves linear system (A + U*C^{-1}*V)x = b, assume to supply the already computed inversion of the dense matrix C
+    // solves linear system (A + U*C^{-1}*V)x = b, given already computed inversion of dense matrix C
+    template <typename SparseSolver>
     DMatrix<double> solve(
       const SparseSolver& invA, const DMatrix<double>& U, const DMatrix<double>& invC, const DMatrix<double>& V,
       const DMatrix<double>& b) {
@@ -50,7 +36,7 @@ struct SMW {
         DMatrix<double> Y = invA.solve(U);
         // compute dense matrix G = C^{-1} + V*A^{-1}*U = C^{-1} + V*y
         DMatrix<double> G = invC + V * Y;
-        DenseSolver invG;
+        Eigen::PartialPivLU<DMatrix<double>> invG;
         invG.compute(G);   // factorize qxq dense matrix G
         DMatrix<double> t = invG.solve(V * y);
         // v = A^{-1}*U*t = A^{-1}*U*(C^{-1} + V*A^{-1}*U)^{-1}*V*A^{-1}*b by solving linear system A*v = U*t

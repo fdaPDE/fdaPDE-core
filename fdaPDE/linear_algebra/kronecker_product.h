@@ -27,26 +27,28 @@ namespace core {
 template <typename Lhs_, typename Rhs_, typename LhsStorageKind_, typename RhsStorageKind_>
 struct KroneckerTensorProduct;
 
-// dense-dense Kronecker tensor product
-template <typename Lhs_, typename Rhs_>
-struct KroneckerTensorProduct<Lhs_, Rhs_, Eigen::Dense, Eigen::Dense> :
-    public Eigen::MatrixBase<KroneckerTensorProduct<Lhs_, Rhs_, Eigen::Dense, Eigen::Dense>> {
-    using XprType = KroneckerTensorProduct<Lhs_, Rhs_, Eigen::Dense, Eigen::Dense>;
-    using Lhs       = typename Eigen::internal::traits<XprType>::Lhs;
-    using Rhs       = typename Eigen::internal::traits<XprType>::Rhs;
+template <typename XprType_> KroneckerTensorProductBase {
+    using XprType = XprType_;
+    using Lhs = typename Eigen::internal::traits<XprType>::Lhs;
+    using Rhs = typename Eigen::internal::traits<XprType>::Rhs;
     using LhsNested = typename Eigen::internal::ref_selector<Lhs>::type;
     using RhsNested = typename Eigen::internal::ref_selector<Rhs>::type;
-    using Nested    = typename Eigen::internal::ref_selector<XprType>::type;
-    // expression operands
+    using Nested = typename Eigen::internal::ref_selector<XprType>::type;
     LhsNested lhs_;
     RhsNested rhs_;
-    // constructor
-    KroneckerTensorProduct(const Lhs& lhs, const Rhs& rhs) : lhs_(lhs), rhs_(rhs) {};
+    KroneckerTensorProductBase(const Lhs& lhs, const Rhs& rhs) : lhs_(lhs), rhs_(rhs) { }
     inline Eigen::Index rows() const { return lhs_.rows() * rhs_.rows(); }
     inline Eigen::Index cols() const { return lhs_.cols() * rhs_.cols(); }
 };
-
-// returns the kronecker product between lhs and rhs as an eigen expression (dense-dense version)
+  
+// dense-dense Kronecker tensor product
+template <typename Lhs_, typename Rhs_>
+struct KroneckerTensorProduct<Lhs_, Rhs_, Eigen::Dense, Eigen::Dense> :
+    public Eigen::MatrixBase<KroneckerTensorProduct<Lhs_, Rhs_, Eigen::Dense, Eigen::Dense>>,
+    public KroneckerTensorProductBase<KroneckerTensorProduct<Lhs_, Rhs_, Eigen::Dense, Eigen::Dense>> {
+    using Base = KroneckerTensorProductBase<KroneckerTensorProduct<Lhs_, Rhs_, Eigen::Dense, Eigen::Dense>>;
+    KroneckerTensorProduct(const Lhs& lhs, const Rhs& rhs) : Base(lhs, rhs) {};
+};
 template <typename Lhs, typename Rhs>
 KroneckerTensorProduct<Lhs, Rhs, Eigen::Dense, Eigen::Dense>
 Kronecker(const Eigen::MatrixBase<Lhs>& lhs, const Eigen::MatrixBase<Rhs>& rhs) {
@@ -56,23 +58,11 @@ Kronecker(const Eigen::MatrixBase<Lhs>& lhs, const Eigen::MatrixBase<Rhs>& rhs) 
 // sparse-sparse Kronecker tensor product.
 template <typename Lhs_, typename Rhs_>
 struct KroneckerTensorProduct<Lhs_, Rhs_, Eigen::Sparse, Eigen::Sparse> :
-    public Eigen::SparseMatrixBase<KroneckerTensorProduct<Lhs_, Rhs_, Eigen::Sparse, Eigen::Sparse>> {
-    using XprType = KroneckerTensorProduct<Lhs_, Rhs_, Eigen::Sparse, Eigen::Sparse>;
-    using Lhs       = typename Eigen::internal::traits<XprType>::Lhs;
-    using Rhs       = typename Eigen::internal::traits<XprType>::Rhs;
-    using LhsNested = typename Eigen::internal::ref_selector<Lhs>::type;
-    using RhsNested = typename Eigen::internal::ref_selector<Rhs>::type;
-    using Nested    = typename Eigen::internal::ref_selector<XprType>::type;
-    // expression operands
-    LhsNested lhs_;
-    RhsNested rhs_;
-    // constructor
-    KroneckerTensorProduct(const Lhs& lhs, const Rhs& rhs) : lhs_(lhs), rhs_(rhs) {};
-    inline Eigen::Index rows() const { return lhs_.rows() * rhs_.rows(); }
-    inline Eigen::Index cols() const { return lhs_.cols() * rhs_.cols(); }
+    public Eigen::SparseMatrixBase<KroneckerTensorProduct<Lhs_, Rhs_, Eigen::Sparse, Eigen::Sparse>>,
+    public KroneckerTensorProductBase<KroneckerTensorProduct<Lhs_, Rhs_, Eigen::Sparse, Eigen::Sparse>> {
+    using Base = KroneckerTensorProductBase<KroneckerTensorProduct<Lhs_, Rhs_, Eigen::Sparse, Eigen::Sparse>>;
+    KroneckerTensorProduct(const Lhs& lhs, const Rhs& rhs) : Base(lhs, rhs) {};
 };
-
-// returns the kronecker product between lhs and rhs as an eigen expression (sparse-sparse version)
 template <typename Lhs, typename Rhs>
 KroneckerTensorProduct<Lhs, Rhs, Eigen::Sparse, Eigen::Sparse>
 Kronecker(const Eigen::SparseMatrixBase<Lhs>& lhs, const Eigen::SparseMatrixBase<Rhs>& rhs) {
@@ -107,17 +97,20 @@ template <typename Lhs_, typename Rhs_> struct traits<KroneckerTensorProduct<Lhs
       StorageKind;
     typedef typename promote_index_type<typename LhsTraits::StorageIndex, typename RhsTraits::StorageIndex>::type
       StorageIndex;
-
     enum {   // definition of required compile time informations
         Flags = Eigen::ColMajor,
-        RowsAtCompileTime    = (Lhs::RowsAtCompileTime == Dynamic || Rhs::RowsAtCompileTime == Dynamic) ?
-                                 Dynamic : int(Lhs::RowsAtCompileTime) * int(Rhs::RowsAtCompileTime),
-        ColsAtCompileTime    = (Lhs::ColsAtCompileTime == Dynamic || Rhs::ColsAtCompileTime == Dynamic) ?
-                                 Dynamic : int(Lhs::ColsAtCompileTime) * int(Rhs::ColsAtCompileTime),
+        RowsAtCompileTime = (Lhs::RowsAtCompileTime == Dynamic || Rhs::RowsAtCompileTime == Dynamic) ?
+                              Dynamic :
+                              int(Lhs::RowsAtCompileTime) * int(Rhs::RowsAtCompileTime),
+        ColsAtCompileTime = (Lhs::ColsAtCompileTime == Dynamic || Rhs::ColsAtCompileTime == Dynamic) ?
+                              Dynamic :
+                              int(Lhs::ColsAtCompileTime) * int(Rhs::ColsAtCompileTime),
         MaxRowsAtCompileTime = (Lhs::MaxRowsAtCompileTime == Dynamic || Rhs::MaxRowsAtCompileTime == Dynamic) ?
-                                 Dynamic : int(Lhs::MaxRowsAtCompileTime) * int(Rhs::MaxRowsAtCompileTime),
+                                 Dynamic :
+                                 int(Lhs::MaxRowsAtCompileTime) * int(Rhs::MaxRowsAtCompileTime),
         MaxColsAtCompileTime = (Lhs::MaxColsAtCompileTime == Dynamic || Rhs::MaxColsAtCompileTime == Dynamic) ?
-                                 Dynamic : int(Lhs::MaxColsAtCompileTime) * int(Rhs::MaxColsAtCompileTime)
+                                 Dynamic :
+                                 int(Lhs::MaxColsAtCompileTime) * int(Rhs::MaxColsAtCompileTime)
     };
 };
 
@@ -136,7 +129,6 @@ class evaluator<KroneckerTensorProduct<Lhs_, Rhs_, Dense, Dense>> :
     typedef typename nested_eval<Lhs_, 1>::type LhsNested;
     typedef typename nested_eval<Rhs_, 1>::type RhsNested;
     typedef typename XprType::CoeffReturnType CoeffReturnType;
-
     enum {   // required compile time constants
         CoeffReadCost = int(evaluator<typename std::decay<LhsNested>::type>::CoeffReadCost) +
                         int(evaluator<typename std::decay<RhsNested>::type>::CoeffReadCost),
@@ -145,8 +137,6 @@ class evaluator<KroneckerTensorProduct<Lhs_, Rhs_, Dense, Dense>> :
     // Kronecker product operands
     evaluator<typename std::decay<LhsNested>::type> lhs_;
     evaluator<typename std::decay<RhsNested>::type> rhs_;
-
-    // constructor
     evaluator(const XprType& xpr) : lhs_(xpr.lhs_), rhs_(xpr.rhs_), xpr_(xpr) { }
     // evaluate the (i,j)-th element of the kronecker product between lhs and rhs
     CoeffReturnType coeff(Eigen::Index row, Eigen::Index col) const {
@@ -166,7 +156,6 @@ class evaluator<KroneckerTensorProduct<Lhs_, Rhs_, Sparse, Sparse>> :
     typedef KroneckerTensorProduct<Lhs_, Rhs_, Sparse, Sparse> XprType;
     typedef typename evaluator<Lhs_>::InnerIterator LhsIterator;
     typedef typename evaluator<Rhs_>::InnerIterator RhsIterator;
-
     enum {   // required compile time constants
         CoeffReadCost = int(evaluator<Lhs_>::CoeffReadCost) + int(evaluator<Rhs_>::CoeffReadCost),
         Flags = Eigen::ColMajor   // only ColMajor storage orders accepted
@@ -177,8 +166,7 @@ class evaluator<KroneckerTensorProduct<Lhs_, Rhs_, Sparse, Sparse>> :
     // rhs sizes
     Index rhs_outer_, rhs_inner_;
     inline Index nonZerosEstimate() const { return lhs_.nonZerosEstimate() * rhs_.nonZerosEstimate(); }
-
-    // Definition of InnerIterator providing the kronecker tensor product of the operands.
+    // InnerIterator providing the kronecker tensor product of the operands.
     class InnerIterator {
        public:
         // usefull typedefs
@@ -195,7 +183,6 @@ class evaluator<KroneckerTensorProduct<Lhs_, Rhs_, Sparse, Sparse>> :
             if (!rhs_it) rhs_empty = true;
             this->operator++();   // init iterator
         };
-
         InnerIterator& operator++() {
             if (rhs_empty) {
                 m_index = -1;
