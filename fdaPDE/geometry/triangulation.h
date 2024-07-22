@@ -286,29 +286,27 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
         using Base::index_;
         const Triangulation* mesh_;
         BinaryVector<fdapde::Dynamic> filter_;
-        void next_() {
-            for (; index_ < Base::end_ && !filter_[index_]; ++index_);
-            if (index_ == Base::end_) return;
-            Base::val_ = ValueType(index_, mesh_);
-            index_++;
-        }
        public:
         iterator(
           int index, int begin, int end, const Triangulation* mesh, const BinaryVector<fdapde::Dynamic>& filter) :
             Base(index, begin, end), mesh_(mesh), filter_(filter) {
-            next_();
+            for (; index_ < Base::end_ && !filter_[index_]; ++index_);
+            if (index_ != Base::end_) { Base::val_ = ValueType(index_, mesh_); }
         }
         iterator(int index, int begin, int end, const Triangulation* mesh) :
             iterator(index, begin, end, mesh, BinaryVector<fdapde::Dynamic>::Ones(end - begin)) { }
         Iterator& operator++() {
-            next_();
+            index_++;
+            for (; index_ < Base::end_ && !filter_[index_]; ++index_);
+            if (index_ == Base::end_) return static_cast<Iterator&>(*this);
+            Base::val_ = ValueType(index_, mesh_);
             return static_cast<Iterator&>(*this);
         }
         Iterator& operator--() {
-            for (; index_ >= Base::begin_ && !filter_[index_]; --index_);
+            index_--;
+            for (; index_ >= 0 && !filter_[index_]; --index_);
             if (index_ == -1) return static_cast<Iterator&>(*this);
             Base::val_ = ValueType(index_, mesh_);
-            index_--;
             return static_cast<Iterator&>(*this);
         }
     };
@@ -387,7 +385,7 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
                     }
                 } else {
                     const auto& [h, k] = it->second;
-                    // elements k and i are neighgbors (they share a face)
+                    // elements k and i are neighgbors (they share face with id h)
                     neighbors_(k, node_opposite_to_face(h, k)) = i;
                     neighbors_(i, node_opposite_to_face(h, i)) = k;
 		    // store (edge, cell) binding for each edge of this face
@@ -458,21 +456,24 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
     // provides the surface triangular mesh of this 3D triangulation
     struct SurfaceReturnType {
         Triangulation<2, 3> triangulation;
-        std::unordered_map<int, int> node_map;
+        std::unordered_map<int, int> node_map, face_map;
     };
     SurfaceReturnType surface() const {
         DMatrix<double> nodes(n_boundary_nodes(), FaceType::n_nodes);
         DMatrix<int> cells(n_boundary_faces(), FaceType::n_nodes), boundary(n_boundary_nodes(), 1);
         std::unordered_map<int, int> node_map;   // bounds node ids in the 3D mesh to rescaled ids on the surface mesh
+        std::unordered_map<int, int> face_map;   // bounds face ids in the 3D mesh to rescaled ids on the surface mesh
         // compute nodes, cells and boundary matrices
         int i = 0, j = 0;
         for (boundary_face_iterator it = boundary_faces_begin(); it != boundary_faces_end(); ++it) {
+   	    int cell_id = it->adjacent_cells()[0] > -1 ? it->adjacent_cells()[0] : it->adjacent_cells()[1];
+            face_map[cell_id] = i;
             DVector<int> face_nodes = it->node_ids();
             for (int k = 0; k < FaceType::n_nodes; ++k) {
                 int node_id = face_nodes[k];
                 if (node_map.find(node_id) != node_map.end()) {
-                    cells(i, k) = node_map[node_id];
-                } else {
+                    cells(i, k) = node_map.at(node_id);
+                } else {   // never visited face
                     nodes.row(j) = nodes_.row(node_id);
 		    boundary(j, 0) = is_node_on_boundary(node_id);
                     cells(i, k) = j;
@@ -482,7 +483,7 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
             }
 	    i++;
         }
-	return {Triangulation<2, 3>(nodes, cells, boundary), fdapde::reverse(node_map)};
+	return {Triangulation<2, 3>(nodes, cells, boundary), fdapde::reverse(node_map), fdapde::reverse(face_map)};
     }
 
     // point location
