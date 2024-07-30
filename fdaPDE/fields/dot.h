@@ -14,17 +14,14 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __PDE_ASSEMBLER_H__
-#define __PDE_ASSEMBLER_H__
+#ifndef __DOT_H__
+#define __DOT_H__
+
+#include "../utils/symbols.h"
+#include "scalar_field.h"
 
 namespace fdapde {
-namespace core {
 
-// generic algorithm for the assembly of the discretization matrix of a differential operator
-// to be partially specialized with respect to T
-template <typename T, typename... Ts> class Assembler { };
-
-}   // namespace core
 }   // namespace fdapde
 
-#endif   // __PDE_ASSEMBLER_H__
+#endif   // __DOT_H__

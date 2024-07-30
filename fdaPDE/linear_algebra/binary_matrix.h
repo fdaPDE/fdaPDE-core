@@ -290,7 +290,8 @@ class BinMtxBlock : public BinMtxBase<BlockRows, BlockCols, BinMtxBlock<BlockRow
     // fixed-sized constructor
     BinMtxBlock(XprTypeNested& xpr, int start_row, int start_col) :
         Base(BlockRows, BlockCols), xpr_(xpr), start_row_(start_row), start_col_(start_col) {
-        fdapde_static_assert(BlockRows != Dynamic && BlockCols != Dynamic, THIS_METHOD_IS_ONLY_FOR_FIXED_SIZE);
+        fdapde_static_assert(
+          BlockRows != Dynamic && BlockCols != Dynamic, THIS_METHOD_IS_ONLY_FOR_STATIC_SIZED_MATRIX_BLOCKS);
         fdapde_assert(
           start_row_ >= 0 && BlockRows >= 0 && start_row_ + BlockRows <= xpr_.rows() && start_col_ >= 0 &&
           BlockCols >= 0 && start_col_ + BlockCols <= xpr_.cols());

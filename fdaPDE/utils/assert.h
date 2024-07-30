@@ -35,6 +35,9 @@ void fdapde_assert_failed_(const char* str, const char* file, int line) {
 
 #define fdapde_static_assert(condition, message) static_assert(condition, #message)
 
+#define fdapde_constexpr_assert(condition)                                                                             \
+    if (!(condition)) { throw std::logic_error(#condition); }
+
 }   // namespace fdapde
 
 #endif   // __FDAPDE_ASSERT_H__

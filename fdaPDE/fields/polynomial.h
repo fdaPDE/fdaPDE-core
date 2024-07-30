@@ -21,7 +21,7 @@
 
 #include "../fields/scalar_expressions.h"
 #include "../fields/vector_field.h"
-#include "../utils/compile_time.h"
+#include "../utils/combinatorics.h"
 #include "../utils/symbols.h"
 
 namespace fdapde {

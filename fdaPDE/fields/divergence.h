@@ -14,17 +14,19 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_PDE_MODULE_H__
-#define __FDAPDE_PDE_MODULE_H__
+#ifndef __DIVERGENCE_H__
+#define __DIVERGENCE_H__
 
-#include "pde/pde.h"
-#include "pde/differential_operators.h"
-#include "pde/differential_expressions.h"
+#include "scalar_field.h"
 
-#include "utils/integration/integrator.h"
-#include "utils/integration/integrator_tables.h"
+namespace fdapde {
 
-#include "finite_elements.h"
-#include "splines.h"
+  // vector field required
+  template <typename Derived>
+  class Divergence {
+    
+  };
+  
+};
 
-#endif   // __FDAPDE_PDE_MODULE_H__
+#endif // __DIVERGENCE_H__

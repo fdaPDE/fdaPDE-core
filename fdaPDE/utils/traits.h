@@ -27,6 +27,11 @@ template <typename T, typename... Args> struct subscript_result_of {
     using type = decltype(std::declval<T>().operator[](std::declval<Args>()...));
 };
 
+template <typename Fn, typename Arg>
+concept is_subscriptable = requires(Fn fn, Arg arg) {
+    { fn.operator[](arg) };
+};
+
 // trait to detect if a type is a base of a template
 template <template <typename...> typename B, typename D> struct is_base_of_template {
     using U = typename std::decay<D>::type;
