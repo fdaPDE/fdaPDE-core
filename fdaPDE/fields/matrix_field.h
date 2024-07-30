@@ -27,14 +27,17 @@ namespace fdapde {
 template <int Size, typename Derived> class MatrixBase;
 
 template <typename Lhs, typename Rhs>
-class MatrixProduct : public fdapde::MatrixBase<Lhs::StaticInnerSize, Lhs::Rows, Rhs::Cols, MatrixProduct<Lhs, Rhs>> {
+class MatrixProduct : public fdapde::MatrixBase<Lhs::StaticInnerSize, MatrixProduct<Lhs, Rhs>> {
     fdapde_static_assert(
-      Lhs::StaticInnerSize == Rhs::StaticInnerSize, YOU_MIXED_MATRICES_WITH_DIFFERENT_STATIC_INNER_SIZE);
+      Lhs::StaticInnerSize == Dynamic || Rhs::StaticInnerSize == Dynamic ||
+        (Lhs::StaticInnerSize != Dynamic && Rhs::StaticInnerSize != Dynamic &&
+         Lhs::StaticInnerSize == Rhs::StaticInnerSize),
+      YOU_MIXED_MATRICES_WITH_DIFFERENT_STATIC_INNER_SIZE);
     fdapde_static_assert(
       std::is_same_v<typename Lhs::InnerVectorType FDAPDE_COMMA typename Rhs::InnerVectorType>,
       YOU_MIXED_MATRICES_WITH_DIFFERENT_INNER_VECTOR_TYPES);
    public:
-    using Base = MatrixBase<Lhs::StaticInnerSize, Lhs::Rows, Rhs::Cols, MatrixProduct<Lhs, Rhs>>;
+    using Base = MatrixBase<Lhs::StaticInnerSize, MatrixProduct<Lhs, Rhs>>;
     using InnerVectorType = typename Lhs::InnerVectorType;
     using Scalar = decltype(std::declval<typename Lhs::Scalar>() * std::declval<typename Rhs::Scalar>());
     static constexpr int StaticInnerSize = Lhs::StaticInnerSize;
@@ -49,22 +52,65 @@ class MatrixProduct : public fdapde::MatrixBase<Lhs::StaticInnerSize, Lhs::Rows,
     }
     MatrixProduct(const Lhs& lhs, const Rhs& rhs) requires(Rows == Dynamic || Cols == Dynamic)
         : Base(), lhs_(lhs), rhs_(rhs) {
-        fdapde_assert(lhs_.cols() == rhs_.rows());
+        fdapde_assert(lhs_.cols() == rhs_.rows() && lhs_.inner_size() == rhs_.inner_size());
     }
-    constexpr int rows() const { return rhs.rows(); }
-    constexpr int cols() const { return lhs.cols(); }
-    constexpr int inner_size() const { lhs.inner_size(); }
+    constexpr int rows() const { return lhs_.rows(); }
+    constexpr int cols() const { return rhs_.cols(); }
+    constexpr int inner_size() const { lhs_.inner_size(); }
     constexpr int size() const { return rows() * cols(); }
 
-      // for matrix multiplication, is more convenient to evaluate the two operands at p, and take the product of the evaluations
-      // in this way, we do not evaluate the same field more than once. For eval_at
+    // for matrix multiplication, it is more convenient to evaluate the two operands at p, and take the product of the
+    // evaluations
+    template <typename VectorType, typename Dest> constexpr void eval_at(const VectorType& p, Dest& dest) const {
+        fdapde_static_assert(
+          std::is_invocable_v<Dest FDAPDE_COMMA int FDAPDE_COMMA int> ||
+            fdapde::is_subscriptable<Dest FDAPDE_COMMA int>,
+          DESTINATION_TYPE_MUST_EITHER_EXPOSE_A_MATRIX_LIKE_ACCESS_OPERATOR_OR_A_SUBSCRIPT_OPERATOR);
 
+        // store evaluations in temporaries (O(n) function calls)
+        using LhsStorageType = std::conditional_t<
+          Lhs::Rows == Dynamic || Lhs::Cols == Dynamic, std::vector<Scalar>,
+          std::array<Scalar, int(Lhs::Rows) * int(Lhs::Cols)>>;
+        using RhsStorageType = std::conditional_t<
+          Rhs::Rows == Dynamic || Rhs::Cols == Dynamic, std::vector<Scalar>,
+          std::array<Scalar, int(Rhs::Rows) * int(Rhs::Cols)>>;
+        LhsStorageType lhs_temp;
+        RhsStorageType rhs_temp;
+        if constexpr (Lhs::Rows == Dynamic || Lhs::Cols == Dynamic) lhs_temp.resize(lhs_.size());
+        if constexpr (Rhs::Rows == Dynamic || Rhs::Cols == Dynamic) rhs_temp.resize(rhs_.size());
+        for (int i = 0; i < lhs_.rows(); ++i) {
+            for (int j = 0; j < lhs_.cols(); ++j) { lhs_temp[i * lhs_.cols() + j] = lhs_.eval(i, j, p); }
+        }
+        for (int i = 0; i < rhs_.cols(); ++i) {   // store col major to exploit cache locality in matrix product
+            for (int j = 0; j < rhs_.rows(); ++j) { rhs_temp[i * rhs_.rows() + j] = rhs_.eval(j, i, p); }
+        }
+        // perform standard matrix-matrix product
+        for (int i = 0; i < rows(); ++i) {
+            for (int j = 0; j < cols(); ++j) {
+                Scalar res = 0;
+                for (int k = 0; k < lhs_.cols(); ++k) {
+                    res += lhs_temp[i * lhs_.cols() + k] * rhs_temp[j * rhs_.rows() + k];
+		}
+                if constexpr (std::is_invocable_v<Dest, int, int>) {
+                    dest(i, j) = res;
+                } else {
+                    dest[i * cols() + j] = res;
+                }
+            }
+	}
+        return;
+    }  
     constexpr auto operator()(int i, int j) const {
         return [i, j, this](const InnerVectorType& p) {
             Scalar res = 0;
-            for (int k = 0; k < lhs_.cols(); ++i) { res += lhs_.eval(i, k, p) * rhs_.eval(k, j, p); } // check if this is ok for vector^T * matrix and matrix * vector
+            for (int k = 0; k < lhs_.cols(); ++k) { res += lhs_.eval(i, k, p) * rhs_.eval(k, j, p); }
             return res;
-        }
+        };
+    }
+    constexpr Scalar eval(int i, int j, const InnerVectorType& p) const {
+        Scalar res = 0;
+        for (int k = 0; k < lhs_.cols(); ++k) { res += lhs_.eval(i, k, p) * rhs_.eval(k, j, p); }
+        return res;
     }
     template <typename... Args> constexpr MatrixProduct<Lhs, Rhs>& forward(Args&&... args) {
         lhs_.forward(std::forward<Args>(args)...);
@@ -337,7 +383,7 @@ class MatrixField :
     int n_rows_ = 0, n_cols_ = 0;
    public:
     using FunctorType = std::decay_t<FunctorType_>;
-    using InnerVectorType = std::tuple_element_t<0, typename traits::ArgsType>;
+    using InnerVectorType = std::decay_t<std::tuple_element_t<0, typename traits::ArgsType>>;
     using Scalar = typename std::invoke_result<FunctorType, InnerVectorType>::type;
     static constexpr int StaticInnerSize = StaticInnerSize_;   // dimensionality of base space (can be Dynamic)
     static constexpr int NestAsRef = 0;
@@ -439,15 +485,15 @@ class MatrixField :
     // getters
     constexpr Scalar eval(int i, int j, const InnerVectorType& p) const {
         if constexpr (is_dynamic_sized<This>::value) { fdapde_assert(p.size() == inner_size_); }
-        return data_[i * rows() + j](p);
+        return data_[i * cols() + j](p);
     }
     constexpr Scalar eval(int i, const InnerVectorType& p) const {
         fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_ONLY_FOR_VECTORS);
         if constexpr (is_dynamic_sized<This>::value) { fdapde_assert(p.size() == inner_size_); }
         return data_[i](p);
     }
-    constexpr const FunctorType& operator()(int i, int j) const { return data_[i * rows() + j]; }
-    constexpr FunctorType& operator()(int i, int j) { return data_[i * rows() + j]; }
+    constexpr const FunctorType& operator()(int i, int j) const { return data_[i * cols() + j]; }
+    constexpr FunctorType& operator()(int i, int j) { return data_[i * cols() + j]; }
     constexpr const FunctorType& operator[](int i) const {
         fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_ONLY_FOR_VECTORS);
         return data_[i];
@@ -510,7 +556,7 @@ template <int StaticInnerSize, typename Derived> struct MatrixBase {
                 if constexpr (std::is_invocable_v<Dest, int, int>) {
                     dest(i, j) = derived().eval(i, j, p);
                 } else {
-                    dest[i * derived().rows() + j] = derived().eval(i, j, p);
+                    dest[i * derived().cols() + j] = derived().eval(i, j, p);
                 }
             }
         }
@@ -557,7 +603,7 @@ template <int StaticInnerSize, typename Derived> struct MatrixBase {
     MatrixBlock<Dynamic, Dynamic, Derived> right_cols(int n) {
         return block(0, derived().cols() - n, derived().rows(), n);
     }
-  // all constexpr-variants
+    // all constexpr-variants
 
     // MatrixNegationOp<M, N, K, E> operator-() const { return MatrixNegationOp<M, N, K, E>(get()); }
 
@@ -565,17 +611,14 @@ template <int StaticInnerSize, typename Derived> struct MatrixBase {
     // diagonal
     // triangular views
     // if vector, take jacobian
-  // unary negation -M
-  // norms
-  // multiplication by fixed matrices, vectors (could be arrays, cexpr::Matrix, SMatrix, ...)
-  // dot product
-  // rowwise, colwise iterators
-  
+    // unary negation -M
+    // norms
+    // multiplication by fixed matrices, vectors (could be arrays, cexpr::Matrix, SMatrix, ...)
+    // dot product
+    // rowwise, colwise iterators
+    // inverse (?)
 };
 
-
-
-  
 }   // namespace fdapde
 
 #endif   // __MATRIX_FIELD_H__
