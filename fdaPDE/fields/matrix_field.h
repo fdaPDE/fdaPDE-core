@@ -21,26 +21,29 @@
 #include <type_traits>
 
 #include "../utils/symbols.h"
+#include "norm.h"
+#include "divergence.h"
+#include "dot.h"
 
 namespace fdapde {
   
 template <int Size, typename Derived> class MatrixBase;
 
 template <typename Lhs, typename Rhs>
-class MatrixProduct : public fdapde::MatrixBase<Lhs::StaticInnerSize, MatrixProduct<Lhs, Rhs>> {
+class MatrixProduct : public fdapde::MatrixBase<Lhs::StaticInputSize, MatrixProduct<Lhs, Rhs>> {
     fdapde_static_assert(
-      Lhs::StaticInnerSize == Dynamic || Rhs::StaticInnerSize == Dynamic ||
-        (Lhs::StaticInnerSize != Dynamic && Rhs::StaticInnerSize != Dynamic &&
-         Lhs::StaticInnerSize == Rhs::StaticInnerSize),
-      YOU_MIXED_MATRICES_WITH_DIFFERENT_STATIC_INNER_SIZE);
+      Lhs::StaticInputSize == Dynamic || Rhs::StaticInputSize == Dynamic ||
+        (Lhs::StaticInputSize != Dynamic && Rhs::StaticInputSize != Dynamic &&
+         Lhs::StaticInputSize == Rhs::StaticInputSize),
+      YOU_MIXED_MATRICES_WITH_DIFFERENT_INPUT_SIZE);
     fdapde_static_assert(
-      std::is_same_v<typename Lhs::InnerVectorType FDAPDE_COMMA typename Rhs::InnerVectorType>,
-      YOU_MIXED_MATRICES_WITH_DIFFERENT_INNER_VECTOR_TYPES);
+      std::is_same_v<typename Lhs::InputType FDAPDE_COMMA typename Rhs::InputType>,
+      YOU_MIXED_MATRICES_WITH_DIFFERENT_INPUT_TYPES);
    public:
-    using Base = MatrixBase<Lhs::StaticInnerSize, MatrixProduct<Lhs, Rhs>>;
-    using InnerVectorType = typename Lhs::InnerVectorType;
+    using Base = MatrixBase<Lhs::StaticInputSize, MatrixProduct<Lhs, Rhs>>;
+    using InputType = typename Lhs::InputType;
     using Scalar = decltype(std::declval<typename Lhs::Scalar>() * std::declval<typename Rhs::Scalar>());
-    static constexpr int StaticInnerSize = Lhs::StaticInnerSize;
+    static constexpr int StaticInputSize = Lhs::StaticInputSize;
     static constexpr int Rows = Lhs::Rows;
     static constexpr int Cols = Rhs::Cols;
     static constexpr int NestAsRef = 0;
@@ -52,11 +55,11 @@ class MatrixProduct : public fdapde::MatrixBase<Lhs::StaticInnerSize, MatrixProd
     }
     MatrixProduct(const Lhs& lhs, const Rhs& rhs) requires(Rows == Dynamic || Cols == Dynamic)
         : Base(), lhs_(lhs), rhs_(rhs) {
-        fdapde_assert(lhs_.cols() == rhs_.rows() && lhs_.inner_size() == rhs_.inner_size());
+        fdapde_assert(lhs_.cols() == rhs_.rows() && lhs_.input_size() == rhs_.input_size());
     }
     constexpr int rows() const { return lhs_.rows(); }
     constexpr int cols() const { return rhs_.cols(); }
-    constexpr int inner_size() const { lhs_.inner_size(); }
+    constexpr int input_size() const { lhs_.input_size(); }
     constexpr int size() const { return rows() * cols(); }
 
     // for matrix multiplication, it is more convenient to evaluate the two operands at p, and take the product of the
@@ -101,13 +104,13 @@ class MatrixProduct : public fdapde::MatrixBase<Lhs::StaticInnerSize, MatrixProd
         return;
     }  
     constexpr auto operator()(int i, int j) const {
-        return [i, j, this](const InnerVectorType& p) {
+        return [i, j, this](const InputType& p) {
             Scalar res = 0;
             for (int k = 0; k < lhs_.cols(); ++k) { res += lhs_.eval(i, k, p) * rhs_.eval(k, j, p); }
             return res;
         };
     }
-    constexpr Scalar eval(int i, int j, const InnerVectorType& p) const {
+    constexpr Scalar eval(int i, int j, const InputType& p) const {
         Scalar res = 0;
         for (int k = 0; k < lhs_.cols(); ++k) { res += lhs_.eval(i, k, p) * rhs_.eval(k, j, p); }
         return res;
@@ -123,21 +126,21 @@ class MatrixProduct : public fdapde::MatrixBase<Lhs::StaticInnerSize, MatrixProd
 };
 template <typename Lhs, typename Rhs>
 constexpr MatrixProduct<Lhs, Rhs>
-operator*(const MatrixBase<Lhs::StaticInnerSize, Lhs>& lhs, const MatrixBase<Rhs::StaticInnerSize, Rhs>& rhs) {
+operator*(const MatrixBase<Lhs::StaticInputSize, Lhs>& lhs, const MatrixBase<Rhs::StaticInputSize, Rhs>& rhs) {
     return MatrixProduct<Lhs, Rhs> {lhs.derived(), rhs.derived()};
 }
 
 template <int BlockRows_, int BlockCols_, typename Derived>
-class MatrixBlock : public fdapde::MatrixBase<Derived::StaticInnerSize, MatrixBlock<BlockRows_, BlockCols_, Derived>> {
+class MatrixBlock : public fdapde::MatrixBase<Derived::StaticInputSize, MatrixBlock<BlockRows_, BlockCols_, Derived>> {
     fdapde_static_assert(
       (BlockRows_ == Dynamic || (Derived::Rows == Dynamic || (BlockRows_ > 0 && BlockRows_ <= Derived::Rows))) &&
         (BlockCols_ == Dynamic || (Derived::Cols == Dynamic || (BlockCols_ > 0 && BlockCols_ <= Derived::Cols))),
       INVALID_BLOCK_SIZES);
    public:
-    using Base = MatrixBase<Derived::StaticInnerSize, MatrixBlock<BlockRows_, BlockCols_, Derived>>;
-    using InnerVectorType = typename Derived::InnerVectorType;
+    using Base = MatrixBase<Derived::StaticInputSize, MatrixBlock<BlockRows_, BlockCols_, Derived>>;
+    using InputType = typename Derived::InputType;
     using Scalar = typename Derived::Scalar;
-    static constexpr int StaticInnerSize = Derived::StaticInnerSize;
+    static constexpr int StaticInputSize = Derived::StaticInputSize;
     static constexpr int Rows = BlockRows_;
     static constexpr int Cols = BlockCols_;
     static constexpr int NestAsRef = 0;
@@ -177,7 +180,7 @@ class MatrixBlock : public fdapde::MatrixBase<Derived::StaticInnerSize, MatrixBl
 
     constexpr int rows() const { return block_rows_; }
     constexpr int cols() const { return block_cols_; }
-    constexpr int inner_size() const { return xpr_.inner_size(); }
+    constexpr int input_size() const { return xpr_.input_size(); }
     constexpr int size() const { return rows() * cols(); }
     constexpr auto operator()(int i, int j) const { return xpr_(start_row_ + i, start_col_ + j); }
     constexpr auto operator[](int i) const {
@@ -185,10 +188,10 @@ class MatrixBlock : public fdapde::MatrixBase<Derived::StaticInnerSize, MatrixBl
         if constexpr (Rows == 1) return xpr_(start_row_, start_col_ + i);
         if constexpr (Cols == 1) return xpr_(start_row_ + i, start_col_);
     }
-    constexpr Scalar eval(int i, int j, const InnerVectorType& p) const {
+    constexpr Scalar eval(int i, int j, const InputType& p) const {
         return xpr_.eval(start_row_ + i, start_col_ + j, p);
     }
-    constexpr Scalar eval(int i, const InnerVectorType& p) const {
+    constexpr Scalar eval(int i, const InputType& p) const {
         fdapde_static_assert(BlockRows_ == 1 || BlockCols_ == 1, THIS_METHOD_IS_ONLY_FOR_ROW_OR_COLUMN_BLOCKS);
         if constexpr (Rows == 1) return xpr_.eval(start_row_, start_col_ + i, p);
         if constexpr (Cols == 1) return xpr_.eval(start_row_ + i, start_col_, p);
@@ -231,22 +234,25 @@ class MatrixBlock : public fdapde::MatrixBase<Derived::StaticInnerSize, MatrixBl
 };
 
 template <typename Lhs, typename Rhs, typename BinaryOperation>
-class MatrixBinOp : public fdapde::MatrixBase<Lhs::StaticInnerSize, MatrixBinOp<Lhs, Rhs, BinaryOperation>> {
+class MatrixBinOp : public fdapde::MatrixBase<Lhs::StaticInputSize, MatrixBinOp<Lhs, Rhs, BinaryOperation>> {
     fdapde_static_assert(
-      Lhs::StaticInnerSize == Rhs::StaticInnerSize && Lhs::Rows == Rhs::Rows && Lhs::Cols == Rhs::Cols,
+      (Lhs::StaticInputSize == Dynamic || Rhs::StaticInputSize == Dynamic ||
+       Lhs::StaticInputSize == Rhs::StaticInputSize) &&
+        (Lhs::Rows == Dynamic || Rhs::Rows == Dynamic || Lhs::Rows == Rhs::Rows) &&
+        (Lhs::Cols == Dynamic || Rhs::Cols == Dynamic || Lhs::Cols == Rhs::Cols),
       YOU_MIXED_MATRIX_FIELDS_OF_DIFFERENT_SIZES);
     fdapde_static_assert(
-      std::is_same_v<typename Lhs::InnerVectorType FDAPDE_COMMA typename Rhs::InnerVectorType>,
-      YOU_MIXED_MATRIX_FIELDS_WITH_DIFFERENT_INNER_VECTOR_TYPE);
+      std::is_same_v<typename Lhs::InputType FDAPDE_COMMA typename Rhs::InputType>,
+      YOU_MIXED_MATRIX_FIELDS_WITH_DIFFERENT_INPUT_TYPE);
     typename internals::ref_select<const Lhs>::type lhs_;
     typename internals::ref_select<const Rhs>::type rhs_;
     BinaryOperation op_;
    public:
-    using Base = MatrixBase<Lhs::StaticInnerSize, MatrixBinOp<Lhs, Rhs, BinaryOperation>>;
-    using InnerVectorType = typename Lhs::InnerVectorType;
+    using Base = MatrixBase<Lhs::StaticInputSize, MatrixBinOp<Lhs, Rhs, BinaryOperation>>;
+    using InputType = typename Lhs::InputType;
     using Scalar = decltype(std::declval<BinaryOperation>().operator()(
       std::declval<typename Lhs::Scalar>(), std::declval<typename Rhs::Scalar>()));
-    static constexpr int StaticInnerSize = Lhs::StaticInnerSize;
+    static constexpr int StaticInputSize = Lhs::StaticInputSize;
     static constexpr int Rows = Lhs::Rows;
     static constexpr int Cols = Lhs::Cols;
     static constexpr int NestAsRef = 0;
@@ -254,29 +260,29 @@ class MatrixBinOp : public fdapde::MatrixBase<Lhs::StaticInnerSize, MatrixBinOp<
     using Base::operator();
 
     constexpr MatrixBinOp(const Lhs& lhs, const Rhs& rhs, BinaryOperation op)
-        requires(StaticInnerSize != Dynamic && Rows != Dynamic && Cols != Dynamic)
+        requires(StaticInputSize != Dynamic && Rows != Dynamic && Cols != Dynamic)
         : Base(), lhs_(lhs), rhs_(rhs), op_(op) { }
     MatrixBinOp(const Lhs& lhs, const Rhs& rhs, BinaryOperation op)
-        requires(StaticInnerSize == Dynamic || Rows == Dynamic || Cols == Dynamic)
+        requires(StaticInputSize == Dynamic || Rows == Dynamic || Cols == Dynamic)
         : lhs_(lhs), rhs_(rhs), op_(op) {
         fdapde_assert(
-          (lhs.inner_size() == rhs.inner_size()) && (Rows != Dynamic || lhs.rows() == rhs.rows()) &&
+          (lhs.input_size() == rhs.input_size()) && (Rows != Dynamic || lhs.rows() == rhs.rows()) &&
           (Cols != Dynamic || lhs.cols() == rhs.cols()));
     }
 
-    constexpr Scalar eval(int i, int j, const InnerVectorType& p) const {
+    constexpr Scalar eval(int i, int j, const InputType& p) const {
         return op_(lhs_.eval(i, j, p), rhs_.eval(i, j, p));
     }
-    constexpr Scalar eval(int i, const InnerVectorType& p) const {
+    constexpr Scalar eval(int i, const InputType& p) const {
         fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_ONLY_FOR_ROW_OR_COLUMN_MATRICES);
         return op_(lhs_.eval(i, p), rhs_.eval(i, p));
     }
     constexpr auto operator()(int i, int j) const {
-        return [i, j, this](const InnerVectorType& p) { return op_(lhs_.eval(i, j, p), rhs_.eval(i, j, p)); };
+        return [i, j, this](const InputType& p) { return op_(lhs_.eval(i, j, p), rhs_.eval(i, j, p)); };
     }
     constexpr Scalar operator[](int i) const {
         fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_ONLY_FOR_ROW_OR_COLUMN_MATRICES);
-	return [i, this](const InnerVectorType& p) { return op_(lhs_.eval(i, p), rhs_.eval(i, p)); };;
+	return [i, this](const InputType& p) { return op_(lhs_.eval(i, p), rhs_.eval(i, p)); };;
     }  
     template <typename... Args> constexpr MatrixBinOp<Lhs, Rhs, BinaryOperation>& forward(Args&&... args) {
         lhs_.forward(std::forward<Args>(args)...);
@@ -285,24 +291,24 @@ class MatrixBinOp : public fdapde::MatrixBase<Lhs::StaticInnerSize, MatrixBinOp<
     }
     constexpr int rows() const { return lhs_.rows(); }
     constexpr int cols() const { return lhs_.cols(); }
-    constexpr int inner_size() const { return lhs_.inner_size(); }
+    constexpr int input_size() const { return lhs_.input_size(); }
     constexpr int size() const { return lhs_.size(); }
 };
 template <typename Lhs, typename Rhs>
 constexpr MatrixBinOp<Lhs, Rhs, std::plus<>>
-operator+(const MatrixBase<Lhs::StaticInnerSize, Lhs>& lhs, const MatrixBase<Rhs::StaticInnerSize, Rhs>& rhs) {
+operator+(const MatrixBase<Lhs::StaticInputSize, Lhs>& lhs, const MatrixBase<Rhs::StaticInputSize, Rhs>& rhs) {
     return MatrixBinOp<Lhs, Rhs, std::plus<>>{lhs.derived(), rhs.derived(), std::plus<>()};
 }
 template <typename Lhs, typename Rhs>
 constexpr MatrixBinOp<Lhs, Rhs, std::minus<>>
-operator-(const MatrixBase<Lhs::StaticInnerSize, Lhs>& lhs, const MatrixBase<Rhs::StaticInnerSize, Rhs>& rhs) {
+operator-(const MatrixBase<Lhs::StaticInputSize, Lhs>& lhs, const MatrixBase<Rhs::StaticInputSize, Rhs>& rhs) {
     return MatrixBinOp<Lhs, Rhs, std::minus<>>{lhs.derived(), rhs.derived(), std::minus<>()};
 }
 
 template <typename Lhs, typename Rhs, typename BinaryOperation>
 class MatrixCoeffWiseOp :
     public fdapde::MatrixBase<
-      std::conditional_t<std::is_arithmetic_v<Lhs>, Rhs, Lhs>::StaticInnerSize,
+      std::conditional_t<std::is_arithmetic_v<Lhs>, Rhs, Lhs>::StaticInputSize,
       MatrixCoeffWiseOp<Lhs, Rhs, BinaryOperation>> {
     using CoeffType_ = std::conditional_t<std::is_arithmetic_v<Lhs>, Lhs, Rhs>;
     using Derived = std::conditional_t<std::is_arithmetic_v<Lhs>, Rhs, Lhs>;
@@ -310,11 +316,11 @@ class MatrixCoeffWiseOp :
     CoeffType_ coeff_;
     BinaryOperation op_;
    public:
-    static constexpr int StaticInnerSize = Derived::StaticInnerSize;
-    using Base = MatrixBase<StaticInnerSize, MatrixCoeffWiseOp<Lhs, Rhs, BinaryOperation>>;
+    static constexpr int StaticInputSize = Derived::StaticInputSize;
+    using Base = MatrixBase<StaticInputSize, MatrixCoeffWiseOp<Lhs, Rhs, BinaryOperation>>;
     using Scalar = decltype(std::declval<BinaryOperation>().operator()(
       std::declval<typename Derived::Scalar>(), std::declval<CoeffType_>()));
-    using InnerVectorType = typename Derived::InnerVectorType;
+    using InputType = typename Derived::InputType;
     static constexpr int Rows = Derived::Rows;
     static constexpr int Cols = Derived::Cols;
     static constexpr int NestAsRef = 0;
@@ -323,17 +329,17 @@ class MatrixCoeffWiseOp :
 
     constexpr MatrixCoeffWiseOp(const Derived& xpr, CoeffType_ coeff, BinaryOperation op)
         : Base(), xpr_(xpr), coeff_(coeff), op_(op) { }
-    constexpr Scalar eval(int i, int j, const InnerVectorType& p) const { return op_(xpr_.eval(i, j, p), coeff_); }
-    constexpr Scalar eval(int i, const InnerVectorType& p) const {
+    constexpr Scalar eval(int i, int j, const InputType& p) const { return op_(xpr_.eval(i, j, p), coeff_); }
+    constexpr Scalar eval(int i, const InputType& p) const {
         fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_ONLY_FOR_ROW_OR_COLUMN_MATRICES);
         return op_(xpr_.eval(i, p), coeff_);
     }
     constexpr auto operator()(int i, int j) const {
-        return [i, j, this](const InnerVectorType& p) { return op_(xpr_.eval(i, j, p), coeff_); };
+        return [i, j, this](const InputType& p) { return op_(xpr_.eval(i, j, p), coeff_); };
     }
     constexpr Scalar operator[](int i) const {
         fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_ONLY_FOR_ROW_OR_COLUMN_MATRICES);
-        return [i, this](const InnerVectorType& p) { return op_(xpr_.eval(i, p), coeff_); };
+        return [i, this](const InputType& p) { return op_(xpr_.eval(i, p), coeff_); };
     }
     template <typename... Args> constexpr MatrixCoeffWiseOp<Lhs, Rhs, BinaryOperation>& forward(Args&&... args) {
         xpr_.forward(std::forward<Args>(args)...);
@@ -341,7 +347,7 @@ class MatrixCoeffWiseOp :
     }
     constexpr int rows() const { return xpr_.rows(); }
     constexpr int cols() const { return xpr_.cols(); }
-    constexpr int inner_size() const { return xpr_.inner_size(); }
+    constexpr int input_size() const { return xpr_.input_size(); }
     constexpr int size() const { return xpr_.size(); }
 };
 
@@ -364,17 +370,17 @@ constexpr MatrixCoeffWiseOp<Derived, Coeff, std::divides<>> operator/(const Matr
 }
   
 template <
-  int StaticInnerSize_, int Rows_, int Cols_,
-  typename FunctorType_ = std::function<double(static_dynamic_vector_selector_t<StaticInnerSize_>)>>
+  int StaticInputSize_, int Rows_, int Cols_,
+  typename FunctorType_ = std::function<double(static_dynamic_vector_selector_t<StaticInputSize_>)>>
 class MatrixField :
-    public fdapde::MatrixBase<StaticInnerSize_, MatrixField<StaticInnerSize_, Rows_, Cols_, FunctorType_>> {
+    public fdapde::MatrixBase<StaticInputSize_, MatrixField<StaticInputSize_, Rows_, Cols_, FunctorType_>> {
     template <typename T> struct is_dynamic_sized {
-        static constexpr bool value = (StaticInnerSize_ == Dynamic || Rows_ == Dynamic || Cols_ == Dynamic);
+        static constexpr bool value = (StaticInputSize_ == Dynamic || Rows_ == Dynamic || Cols_ == Dynamic);
     };
-    using This = MatrixField<StaticInnerSize_, Rows_, Cols_, FunctorType_>;
+    using This = MatrixField<StaticInputSize_, Rows_, Cols_, FunctorType_>;
     using StorageType = typename std::conditional<
       is_dynamic_sized<This>::value, std::vector<FunctorType_>, std::array<FunctorType_, Rows_ * Cols_>>::type;
-    using Base = MatrixBase<StaticInnerSize_, MatrixField<StaticInnerSize_, Rows_, Cols_, FunctorType_>>;
+    using Base = MatrixBase<StaticInputSize_, MatrixField<StaticInputSize_, Rows_, Cols_, FunctorType_>>;
     using traits = fn_ptr_traits<&FunctorType_::operator()>;
     fdapde_static_assert(traits::n_args == 1, PROVIDED_FUNCTOR_MUST_ACCEPT_ONLY_ONE_ARGUMENT);
 
@@ -383,9 +389,9 @@ class MatrixField :
     int n_rows_ = 0, n_cols_ = 0;
    public:
     using FunctorType = std::decay_t<FunctorType_>;
-    using InnerVectorType = std::decay_t<std::tuple_element_t<0, typename traits::ArgsType>>;
-    using Scalar = typename std::invoke_result<FunctorType, InnerVectorType>::type;
-    static constexpr int StaticInnerSize = StaticInnerSize_;   // dimensionality of base space (can be Dynamic)
+    using InputType = std::decay_t<std::tuple_element_t<0, typename traits::ArgsType>>;
+    using Scalar = typename std::invoke_result<FunctorType, InputType>::type;
+    static constexpr int StaticInputSize = StaticInputSize_;   // dimensionality of base space (can be Dynamic)
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 0;
     static constexpr int Rows = Rows_;
@@ -393,7 +399,7 @@ class MatrixField :
     using Base::operator();
     // static sized constructor
     constexpr MatrixField() requires(!is_dynamic_sized<This>::value)
-        : Base(), data_(), inner_size_(StaticInnerSize), n_rows_(Rows), n_cols_(Cols) { }
+        : Base(), data_(), inner_size_(StaticInputSize), n_rows_(Rows), n_cols_(Cols) { }
     // dynamic sized constructor
     MatrixField() requires(is_dynamic_sized<This>::value)
         : Base(), data_(), inner_size_(0), n_rows_(0), n_cols_(0) { }
@@ -411,7 +417,7 @@ class MatrixField :
         requires(!is_dynamic_sized<This>::value)
         : Base(), data_() {
         fdapde_static_assert(
-          StaticInnerSize == Size_ && Rows == RhsDerived::Row && Cols == RhsDerived::Cols &&
+          StaticInputSize == Size_ && Rows == RhsDerived::Row && Cols == RhsDerived::Cols &&
             std::is_convertible_v<typename RhsDerived::FunctorType FDAPDE_COMMA FunctorType>,
           INVALID_RHS_SIZE_OR_NON_CONVERTIBLE_FUNCTOR_TYPE);
         for (int i = 0; i < Rows; ++i) {
@@ -423,8 +429,8 @@ class MatrixField :
         requires(is_dynamic_sized<This>::value)
         : Base(other.rows(), other.cols()) {
         fdapde_static_assert(
-          StaticInnerSize == Size_ && std::is_convertible_v<typename RhsDerived::FunctorType FDAPDE_COMMA FunctorType>,
-          INVALID_STATIC_INNER_SIZE_OR_NON_CONVERTIBLE_FUNCTOR_TYPE);
+          StaticInputSize == Size_ && std::is_convertible_v<typename RhsDerived::FunctorType FDAPDE_COMMA FunctorType>,
+          INVALID_INPUT_SIZE_OR_NON_CONVERTIBLE_FUNCTOR_TYPE);
 	fdapde_assert(rows() == other.rows() && cols() == other.cols());
         for (int i = 0; i < n_rows_; ++i) {
             for (int j = 0; j < n_cols_; ++j) { operator()(i, j) = other(i, j); }
@@ -433,10 +439,10 @@ class MatrixField :
 
     // assignment
     template <int Size_, typename RhsDerived>
-    constexpr MatrixField<StaticInnerSize, Rows, Cols, FunctorType>& operator=(const MatrixBase<Size_, RhsDerived>& rhs)
+    constexpr MatrixField<StaticInputSize, Rows, Cols, FunctorType>& operator=(const MatrixBase<Size_, RhsDerived>& rhs)
         requires(Rows != Dynamic && Cols != Dynamic) {
         fdapde_static_assert(
-          StaticInnerSize_ == Size_ && Rows == RhsDerived::Rows && Cols == RhsDerived::Cols &&
+          StaticInputSize_ == Size_ && Rows == RhsDerived::Rows && Cols == RhsDerived::Cols &&
             std::is_convertible_v<typename RhsDerived::FunctorType FDAPDE_COMMA FunctorType>,
           INVALID_RHS_SIZE_OR_NON_CONVERTIBLE_RHS_FUNCTOR_TYPE_IN_ASSIGNMENT);
         for (int i = 0; i < Rows; ++i) {
@@ -445,8 +451,8 @@ class MatrixField :
         return *this;
     }
     template <int Size_, typename RhsDerived>
-    MatrixField<StaticInnerSize, Rows, Cols, FunctorType>& operator=(const MatrixBase<Size_, RhsDerived>& rhs)
-        requires(StaticInnerSize == Dynamic || Rows == Dynamic || Cols == Dynamic) {
+    MatrixField<StaticInputSize, Rows, Cols, FunctorType>& operator=(const MatrixBase<Size_, RhsDerived>& rhs)
+        requires(StaticInputSize == Dynamic || Rows == Dynamic || Cols == Dynamic) {
         using RhsFunctorType =
           decltype(std::declval<RhsDerived>().operator()(std::declval<int>(), std::declval<int>()));
         fdapde_static_assert(
@@ -454,7 +460,7 @@ class MatrixField :
           NON_CONVERTIBLE_RHS_FUNCTOR_TYPE_IN_ASSIGNMENT);
         if constexpr (Rows == Dynamic) n_rows_ = rhs.derived().rows();
         if constexpr (Cols == Dynamic) n_cols_ = rhs.derived().cols();
-        if constexpr (StaticInnerSize == Dynamic) inner_size_ = rhs.derived().inner_size();
+        if constexpr (StaticInputSize == Dynamic) inner_size_ = rhs.derived().input_size();
         data_.resize(n_rows_ * n_cols_);
         for (int i = 0; i < n_cols_; ++i) {
             for (int j = 0; j < n_rows_; ++j) { operator()(i, j) = rhs.derived()(i, j); }
@@ -468,7 +474,7 @@ class MatrixField :
         if constexpr (Rows == Dynamic) n_rows_ = rows;
         if constexpr (Cols == Dynamic) n_cols_ = cols;
         data_ = std::vector<FunctorType>(n_rows_ * n_cols_);
-        if constexpr (StaticInnerSize == Dynamic) inner_size_ = inner_size;
+        if constexpr (StaticInputSize == Dynamic) inner_size_ = inner_size;
         return;
     }
     void resize(int inner_size, int size) {
@@ -479,15 +485,15 @@ class MatrixField :
         if constexpr (Rows == Dynamic) n_rows_ = size;
         n_cols_ = 1;
         data_ = std::vector<FunctorType>(n_rows_ * n_cols_);
-        if constexpr (StaticInnerSize == Dynamic) inner_size_ = inner_size;
+        if constexpr (StaticInputSize == Dynamic) inner_size_ = inner_size;
         return;
     }
     // getters
-    constexpr Scalar eval(int i, int j, const InnerVectorType& p) const {
+    constexpr Scalar eval(int i, int j, const InputType& p) const {
         if constexpr (is_dynamic_sized<This>::value) { fdapde_assert(p.size() == inner_size_); }
         return data_[i * cols() + j](p);
     }
-    constexpr Scalar eval(int i, const InnerVectorType& p) const {
+    constexpr Scalar eval(int i, const InputType& p) const {
         fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_ONLY_FOR_VECTORS);
         if constexpr (is_dynamic_sized<This>::value) { fdapde_assert(p.size() == inner_size_); }
         return data_[i](p);
@@ -504,19 +510,19 @@ class MatrixField :
     }
     constexpr int rows() const { return n_rows_; }
     constexpr int cols() const { return n_cols_; }
-    constexpr int inner_size() const { return inner_size_; }
+    constexpr int input_size() const { return inner_size_; }
     constexpr int size() const { return n_rows_ * n_cols_; }
 };
 
-template <int StaticInnerSize, int Rows, typename Derived>
-using VectorField = MatrixField<StaticInnerSize, Rows, 1, Derived>;
+template <int StaticInputSize, int Rows, typename Derived>
+using VectorField = MatrixField<StaticInputSize, Rows, 1, Derived>;
 
 template <typename Derived>
-struct MatrixTranspose : public fdapde::MatrixBase<Derived::StaticInnerSize, MatrixTranspose<Derived>> {
-    using Base = MatrixBase<Derived::StaticInnerSize, MatrixTranspose<Derived>>;
+struct MatrixTranspose : public fdapde::MatrixBase<Derived::StaticInputSize, MatrixTranspose<Derived>> {
+    using Base = MatrixBase<Derived::StaticInputSize, MatrixTranspose<Derived>>;
     using Scalar = typename Derived::Scalar;
-    using InnerVectorType = typename Derived::InnerVectorType;
-    static constexpr int StaticInnerSize = Derived::StaticInnerSize;
+    using InputType = typename Derived::InputType;
+    static constexpr int StaticInputSize = Derived::StaticInputSize;
     static constexpr int Rows = Derived::Cols;
     static constexpr int Cols = Derived::Rows;
     static constexpr int NestAsRef = 0;
@@ -524,8 +530,8 @@ struct MatrixTranspose : public fdapde::MatrixBase<Derived::StaticInnerSize, Mat
     using Base::operator();
 
     constexpr explicit MatrixTranspose(const Derived& xpr) : Base(), xpr_(xpr) { }
-    constexpr Scalar eval(int i, int j, const InnerVectorType& p) const { return xpr_.eval(j, i, p); }
-    constexpr Scalar eval(int i, const InnerVectorType& p) const {
+    constexpr Scalar eval(int i, int j, const InputType& p) const { return xpr_.eval(j, i, p); }
+    constexpr Scalar eval(int i, const InputType& p) const {
         fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_ONLY_FOR_VECTORS);
         return xpr_.eval(i, p);
     }
@@ -533,14 +539,14 @@ struct MatrixTranspose : public fdapde::MatrixBase<Derived::StaticInnerSize, Mat
     constexpr const auto& operator[](int i) const { return xpr_[i]; }
     constexpr int rows() const { return xpr_.cols(); }
     constexpr int cols() const { return xpr_.rows(); }
-    constexpr int inner_size() const { return xpr_.inner_size(); }
+    constexpr int input_size() const { return xpr_.input_size(); }
     constexpr int size() const { return xpr_.size(); }  
    protected:
     typename internals::ref_select<const Derived>::type xpr_;
 };
   
 // base class for matrix expressions
-template <int StaticInnerSize, typename Derived> struct MatrixBase {
+template <int StaticInputSize, typename Derived> struct MatrixBase {
     constexpr MatrixBase() = default;
 
     constexpr const Derived& derived() const { return static_cast<const Derived&>(*this); }
@@ -565,11 +571,11 @@ template <int StaticInnerSize, typename Derived> struct MatrixBase {
     // evaluate the expression at point p
     template <typename VectorType> auto operator()(VectorType&& p) const {
         fdapde_static_assert(
-          std::is_convertible_v<VectorType FDAPDE_COMMA typename Derived::InnerVectorType>,
+          std::is_convertible_v<VectorType FDAPDE_COMMA typename Derived::InputType>,
           INVALID_FUNCTOR_CALL_YOU_PASSED_AN_INVALID_ARGUMENT);
         typename static_dynamic_matrix_selector<Derived::Rows, Derived::Cols>::type out;
-        if constexpr (StaticInnerSize == Dynamic) {
-            fdapde_assert(p.size() == derived().inner_size());
+        if constexpr (StaticInputSize == Dynamic) {
+            fdapde_assert(p.size() == derived().input_size());
             out.resize(derived().rows(), derived().cols());
         }
         for (int i = 0; i < derived().rows(); ++i) {
@@ -603,22 +609,33 @@ template <int StaticInnerSize, typename Derived> struct MatrixBase {
     MatrixBlock<Dynamic, Dynamic, Derived> right_cols(int n) {
         return block(0, derived().cols() - n, derived().rows(), n);
     }
-    // all constexpr-variants
-
-    // MatrixNegationOp<M, N, K, E> operator-() const { return MatrixNegationOp<M, N, K, E>(get()); }
-
-    // rows, cols, blocks, ...
-    // diagonal
-    // triangular views
-    // if vector, take jacobian
-    // unary negation -M
-    // norms
-    // multiplication by fixed matrices, vectors (could be arrays, cexpr::Matrix, SMatrix, ...)
+    // unary minus
+    constexpr MatrixCoeffWiseOp<Derived, int, std::multiplies<>> operator-() const { return -1 * derived(); }
+    // matrix norm
+    constexpr MatrixNorm<2, Derived, 0> norm() const { return MatrixNorm<2, Derived, 0>(derived()); }
+    constexpr MatrixNorm<2, Derived, 1> squared_norm() const { return MatrixNorm<2, Derived, 1>(derived()); }
+    template <int Order> constexpr MatrixNorm<Order, Derived, 0> lp_norm() const {
+        return MatrixNorm<Order, Derived, 0>(derived());
+    }
+    // vector field divergence
+    constexpr Divergence<Derived> divergence() const {
+        fdapde_static_assert(Derived::Cols == 1, THIS_METHOD_IS_FOR_VECTOR_FIELDS_ONLY);
+        return Divergence<Derived>(derived());
+    }
     // dot product
-    // rowwise, colwise iterators
-    // inverse (?)
+    template <int RhsStaticInputSize, typename Rhs>
+    constexpr DotProduct<Derived, Rhs> dot(const MatrixBase<RhsStaticInputSize, Rhs>& rhs) const {
+        return DotProduct<Derived, Rhs>(derived(), rhs.derived());
+    }  
 };
 
+    // diagonal
+    // triangular views, simmetric views (interesting since half the number of evaluations...)
+    // if vector, take jacobian
+    // multiplication by fixed matrices, vectors (could be arrays, cexpr::Matrix, SMatrix, ...)
+    // rowwise, colwise iterators (?)
+    // inverse (?)
+  
 }   // namespace fdapde
 
 #endif   // __MATRIX_FIELD_H__

@@ -17,8 +17,11 @@
 #ifndef __FDAPDE_FIELDS_MODULE_H__
 #define __FDAPDE_FIELDS_MODULE_H__
 
-/* #include "fields/dot_product.h" */
-#include "fields/laplace.h"
+#include "fields/dot.h"
+#include "fields/laplacian.h"
+#include "fields/gradient.h"
+#include "fields/divergence.h"
+#include "fields/norm.h"
 #include "fields/matrix_field.h"
 #include "fields/scalar_field.h"
 /* #include "fields/polynomial.h" */
