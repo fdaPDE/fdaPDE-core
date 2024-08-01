@@ -20,6 +20,7 @@
 #include "fields/divergence.h"
 #include "fields/dot.h"
 #include "fields/gradient.h"
+#include "fields/hessian.h"
 #include "fields/laplacian.h"
 #include "fields/matrix_field.h"
 #include "fields/norm.h"

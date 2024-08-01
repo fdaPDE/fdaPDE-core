@@ -21,6 +21,7 @@
 #include <type_traits>
 
 #include "../utils/symbols.h"
+#include "../linear_algebra/constexpr_matrix.h"
 #include "norm.h"
 #include "divergence.h"
 #include "dot.h"
@@ -35,7 +36,7 @@ class MatrixProduct : public fdapde::MatrixBase<Lhs::StaticInputSize, MatrixProd
       Lhs::StaticInputSize == Dynamic || Rhs::StaticInputSize == Dynamic ||
         (Lhs::StaticInputSize != Dynamic && Rhs::StaticInputSize != Dynamic &&
          Lhs::StaticInputSize == Rhs::StaticInputSize),
-      YOU_MIXED_MATRICES_WITH_DIFFERENT_INPUT_SIZE);
+      YOU_MIXED_MATRICES_WITH_DIFFERENT_INPUT_SIZES);
     fdapde_static_assert(
       std::is_same_v<typename Lhs::InputType FDAPDE_COMMA typename Rhs::InputType>,
       YOU_MIXED_MATRICES_WITH_DIFFERENT_INPUT_TYPES);
@@ -540,11 +541,144 @@ struct MatrixTranspose : public fdapde::MatrixBase<Derived::StaticInputSize, Mat
     constexpr int rows() const { return xpr_.cols(); }
     constexpr int cols() const { return xpr_.rows(); }
     constexpr int input_size() const { return xpr_.input_size(); }
-    constexpr int size() const { return xpr_.size(); }  
+    constexpr int size() const { return xpr_.size(); }
+    template <typename... Args> constexpr MatrixTranspose<Derived>& forward(Args&&... args) {
+        xpr_.forward(std::forward<Args>(args)...);
+        return *this;
+    }
    protected:
     typename internals::ref_select<const Derived>::type xpr_;
 };
-  
+
+template <typename Derived>
+struct MatrixDiagonalBlock : public fdapde::MatrixBase<Derived::StaticInputSize, MatrixDiagonalBlock<Derived>> {
+    fdapde_static_assert(Derived::Rows == Derived::Cols, DIAGONAL_BLOCK_DEFINED_ONLY_FOR_SQUARED_MATRICES);
+    using Base = MatrixBase<Derived::StaticInputSize, MatrixDiagonalBlock<Derived>>;
+    using Scalar = typename Derived::Scalar;
+    using InputType = typename Derived::InputType;
+    static constexpr int StaticInputSize = Derived::StaticInputSize;
+    static constexpr int Rows = Derived::Rows;
+    static constexpr int Cols = Derived::Cols;
+    static constexpr int NestAsRef = 0;
+    static constexpr int ReadOnly = 1;
+    using Base::operator();
+
+    constexpr explicit MatrixDiagonalBlock(const Derived& xpr) : Base(), xpr_(xpr) { }
+    constexpr Scalar eval(int i, int j, const InputType& p) const { return i != j ? Scalar(0) : xpr_.eval(i, j, p); }
+    constexpr const auto& operator[](int i) const { return xpr_(i, i); }
+    constexpr auto& operator[](int i) { return xpr_(i, i); }
+    constexpr int rows() const { return xpr_.rows(); }
+    constexpr int cols() const { return xpr_.cols(); }
+    constexpr int input_size() const { return xpr_.input_size(); }
+    constexpr int size() const { return xpr_.size(); }
+    template <typename... Args> constexpr MatrixDiagonalBlock<Derived>& forward(Args&&... args) {
+        xpr_.forward(std::forward<Args>(args)...);
+        return *this;
+    }
+    // diagonal assignment
+    template <int Size_, typename RhsDerived>
+    constexpr MatrixDiagonalBlock<Derived>& operator=(const MatrixBase<Size_, RhsDerived>& rhs)
+        requires(Rows != Dynamic && Cols != Dynamic) {
+        fdapde_static_assert(Derived::ReadOnly != 0, BLOCK_ASSIGNMENT_TO_A_READ_ONLY_EXPRESSION_IS_INVALID);
+        fdapde_static_assert(
+          RhsDerived::Cols == 1 && RhsDerived::Rows == Rows &&
+            std::is_convertible_v<typename RhsDerived::FunctorType FDAPDE_COMMA typename Derived::FunctorType>,
+          VECTOR_FIELD_REQUIRED_OR_YOU_ARE_TRYING_TO_ASSIGN_A_BLOCK_WITH_NON_CONVERTIBLE_FUNCTOR_TYPE);
+        for (int i = 0; i < xpr_.rows(); ++i) { xpr_(i, i) = rhs[i]; }
+        return *this;
+    }
+    template <int Size_, typename RhsDerived>
+    MatrixDiagonalBlock<Derived>& operator=(const MatrixBase<Size_, RhsDerived>& rhs)
+        requires(Rows == Dynamic || Cols == Dynamic) {
+        fdapde_static_assert(Derived::ReadOnly != 0, BLOCK_ASSIGNMENT_TO_A_READ_ONLY_EXPRESSION_IS_INVALID);
+        fdapde_static_assert(
+          std::is_convertible_v<typename RhsDerived::FunctorType FDAPDE_COMMA typename Derived::FunctorType>,
+          YOU_ARE_TRYING_TO_ASSIGN_A_BLOCK_WITH_NON_CONVERTIBLE_COEFFICIENT_TYPE);
+        fdapde_assert(rhs.rows() == xpr_.rows() && rhs.cols() == 1);
+        for (int i = 0; i < xpr_.rows(); ++i) { xpr_(i, i) = rhs[i]; }
+        return *this;
+    }
+   protected:
+    typename internals::ref_select<Derived>::type xpr_;
+};
+
+template <typename Derived, int ViewMode>
+struct MatrixSymmetricView :
+    public fdapde::MatrixBase<Derived::StaticInputSize, MatrixSymmetricView<Derived, ViewMode>> {
+    fdapde_static_assert(
+      (Derived::Rows == Dynamic || Derived::Cols == Dynamic) || Derived::Rows == Derived::Cols,
+      SYMMETRIC_MATRIX_CONCEPT_DEFINED_ONLY_FOR_SQUARED_MATRICES);
+    fdapde_static_assert(
+      ViewMode == fdapde::Upper || ViewMode == fdapde::Lower, SYMMETRIC_VIEWS_MUST_BE_EITHER_LOWER_OR_UPPER);
+    using Base = MatrixBase<Derived::StaticInputSize, MatrixSymmetricView<Derived, ViewMode>>;
+    using Scalar = typename Derived::Scalar;
+    using InputType = typename Derived::InputType;
+    static constexpr int StaticInputSize = Derived::StaticInputSize;
+    static constexpr int Rows = Derived::Rows;
+    static constexpr int Cols = Derived::Cols;
+    static constexpr int NestAsRef = 0;
+    static constexpr int ReadOnly = 1;
+    using Base::operator();
+
+    constexpr MatrixSymmetricView() = default;
+    constexpr MatrixSymmetricView(const Derived& xpr) requires(Rows != Dynamic && Cols != Dynamic)
+        : Base(), xpr_(xpr) { }
+    MatrixSymmetricView(const Derived& xpr) requires(Rows == Dynamic || Cols == Dynamic) : Base(), xpr_(xpr) {
+        fdapde_assert(xpr_.rows() == xpr_.cols());
+    }
+
+    template <typename InputType, typename Dest> constexpr void eval_at(const InputType& p, Dest& dest) const {
+        fdapde_static_assert(
+          std::is_invocable_v<Dest FDAPDE_COMMA int FDAPDE_COMMA int> ||
+            fdapde::is_subscriptable<Dest FDAPDE_COMMA int>,
+          DESTINATION_TYPE_MUST_EITHER_EXPOSE_A_MATRIX_LIKE_ACCESS_OPERATOR_OR_A_SUBSCRIPT_OPERATOR);
+        // just evaluate half of the coefficients
+        Scalar tmp = 0;
+        int row = 0, col = 0;
+        for (int i = 0; i < xpr_.rows(); ++i) {
+            for (int j = 0; j < i; ++j) {
+                if constexpr (ViewMode == fdapde::Lower) { row = i; col = j; }
+                if constexpr (ViewMode == fdapde::Upper) { row = j; col = i; }
+		tmp = xpr_.eval(row, col, p);
+                if constexpr (std::is_invocable_v<Dest, int, int>) {
+                    dest(row, col) = tmp;
+                    dest(col, row) = tmp;
+                } else {
+                    dest[row * xpr_.cols() + col] = tmp;
+                    dest[col * xpr_.cols() + row] = tmp;
+                }
+            }
+        }
+        // evaluate coefficients on the diagonal
+        for (int i = 0; i < xpr_.rows(); ++i) {
+            if constexpr (std::is_invocable_v<Dest, int, int>) {
+                dest(i, i) = xpr_.eval(i, i, p);
+            } else {
+                dest[i * xpr_.cols() + i] = xpr_.eval(i, i, p);
+            }
+        }
+        return;
+    }
+    constexpr int rows() const { return xpr_.rows(); }
+    constexpr int cols() const { return xpr_.cols(); }
+    constexpr int input_size() const { return xpr_.input_size(); }
+    constexpr int size() const { return xpr_.size(); }
+    template <typename... Args> constexpr MatrixSymmetricView<Derived, ViewMode>& forward(Args&&... args) {
+        xpr_.forward(std::forward<Args>(args)...);
+        return *this;
+    }
+    constexpr auto operator()(int i, int j) const {
+        if constexpr (ViewMode == fdapde::Lower) return i < j ? xpr_(j, i) : xpr_(i, j);
+        if constexpr (ViewMode == fdapde::Upper) return i > j ? xpr_(j, i) : xpr_(i, j);
+    }
+    constexpr Scalar eval(int i, int j, const InputType& p) const {
+        if constexpr (ViewMode == fdapde::Lower) return i < j ? xpr_.eval(j, i, p) : xpr_.eval(i, j, p);
+        if constexpr (ViewMode == fdapde::Upper) return i > j ? xpr_.eval(j, i, p) : xpr_.eval(i, j, p);
+    }
+   protected:
+    typename internals::ref_select<Derived>::type xpr_;
+};
+
 // base class for matrix expressions
 template <int StaticInputSize, typename Derived> struct MatrixBase {
     constexpr MatrixBase() = default;
@@ -552,7 +686,7 @@ template <int StaticInputSize, typename Derived> struct MatrixBase {
     constexpr const Derived& derived() const { return static_cast<const Derived&>(*this); }
     constexpr Derived& derived() { return static_cast<Derived&>(*this); }
     // evaluate the expression at point p storing result in dest
-    template <typename VectorType, typename Dest> constexpr void eval_at(const VectorType& p, Dest& dest) const {
+    template <typename InputType, typename Dest> constexpr void eval_at(const InputType& p, Dest& dest) const {
         fdapde_static_assert(
           std::is_invocable_v<Dest FDAPDE_COMMA int FDAPDE_COMMA int> ||
             fdapde::is_subscriptable<Dest FDAPDE_COMMA int>,
@@ -569,18 +703,19 @@ template <int StaticInputSize, typename Derived> struct MatrixBase {
         return;
     }
     // evaluate the expression at point p
-    template <typename VectorType> auto operator()(VectorType&& p) const {
+    template <typename InputType> constexpr auto operator()(InputType&& p) const {
         fdapde_static_assert(
-          std::is_convertible_v<VectorType FDAPDE_COMMA typename Derived::InputType>,
-          INVALID_FUNCTOR_CALL_YOU_PASSED_AN_INVALID_ARGUMENT);
-        typename static_dynamic_matrix_selector<Derived::Rows, Derived::Cols>::type out;
+          std::is_convertible_v<InputType FDAPDE_COMMA typename Derived::InputType>,
+          CANNOT_INVOKE_EXPRESSION_WITH_THIS_INPUT_TYPE);
+        using Scalar = typename Derived::Scalar;
+        typename std::conditional<
+          Derived::Rows == Dynamic || Derived::Cols == Dynamic, DMatrix<Scalar>,
+          cexpr::Matrix<Scalar, Derived::Rows, Derived::Cols>>::type out;
         if constexpr (StaticInputSize == Dynamic) {
             fdapde_assert(p.size() == derived().input_size());
             out.resize(derived().rows(), derived().cols());
         }
-        for (int i = 0; i < derived().rows(); ++i) {
-            for (int j = 0; j < derived().cols(); ++j) { out(i, j) = derived().eval(i, j, p); }
-        }
+        eval_at(p, out);
         return out;
     }
     template <typename... Args> constexpr Derived& forward([[maybe_unused]] Args&&... args) { return derived(); }
@@ -626,15 +761,20 @@ template <int StaticInputSize, typename Derived> struct MatrixBase {
     template <int RhsStaticInputSize, typename Rhs>
     constexpr DotProduct<Derived, Rhs> dot(const MatrixBase<RhsStaticInputSize, Rhs>& rhs) const {
         return DotProduct<Derived, Rhs>(derived(), rhs.derived());
-    }  
+    }
+    // diagonal
+    constexpr MatrixDiagonalBlock<Derived> diagonal() const { return MatrixDiagonalBlock<Derived>(derived()); }
+    // symmetric view
+    template <int ViewMode> constexpr MatrixSymmetricView<Derived, ViewMode> symmetric_view() const {
+        return MatrixSymmetricView<Derived, ViewMode>(derived());
+    }
 };
 
-    // diagonal
-    // triangular views, simmetric views (interesting since half the number of evaluations...)
-    // if vector, take jacobian
-    // multiplication by fixed matrices, vectors (could be arrays, cexpr::Matrix, SMatrix, ...)
-    // rowwise, colwise iterators (?)
-    // inverse (?)
+// triangular views (?)
+// if vector, take jacobian
+// multiplication by fixed matrices, vectors (could be arrays, cexpr::Matrix, SMatrix, ...)
+// rowwise, colwise iterators (?)
+// inverse (?)
   
 }   // namespace fdapde
 

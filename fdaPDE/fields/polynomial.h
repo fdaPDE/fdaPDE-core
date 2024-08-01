@@ -162,6 +162,7 @@ class Polynomial : public ScalarBase<StaticInputSize_, Polynomial<StaticInputSiz
     constexpr const std::array<double, n_monomials>& coeff_vector() const { return coeff_vector_; }
     constexpr std::array<double, n_monomials>& coeff_vector() { return coeff_vector_; }
     constexpr int order() const { return Order; }
+    constexpr int input_size() const { return StaticInputSize; }
 };
 
 template <int StaticInputSize, int Order> constexpr auto grad(const Polynomial<StaticInputSize, Order>& poly) {
