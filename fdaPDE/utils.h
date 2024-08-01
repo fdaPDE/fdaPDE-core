@@ -17,15 +17,14 @@
 #ifndef __FDAPDE_UTILS_MODULE_H__
 #define __FDAPDE_UTILS_MODULE_H__
 
-#include "utils/symbols.h"
 #include "utils/assert.h"
-#include "utils/compile_time.h"
-#include "utils/traits.h"
-#include "utils/type_erasure.h"
-#include "utils/combinatorics.h"
+#include "utils/constexpr.h"
 #include "utils/data_structures/binary_tree.h"
 #include "utils/data_structures/block_frame.h"
 #include "utils/data_structures/block_vector.h"
+#include "utils/symbols.h"
+#include "utils/traits.h"
+#include "utils/type_erasure.h"
 /* #include "utils/integration/integrator.h" */
 /* #include "utils/integration/integrator_tables.h" */
 #include "utils/IO/csv_reader.h"

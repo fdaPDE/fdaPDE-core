@@ -61,9 +61,7 @@ class Gradient : public MatrixBase<Derived::StaticInputSize, Gradient<Derived>> 
     typename internals::ref_select<Derived>::type xpr_;
 };
 
-template <typename XprType> constexpr Gradient<std::decay_t<XprType>> grad(XprType&& xpr) {
-    return Gradient<std::decay_t<XprType>>(xpr);
-}
+template <typename XprType> constexpr Gradient<XprType> grad(const XprType& xpr) { return Gradient<XprType>(xpr); }
 
 }   // namespace fdapde
 

@@ -17,8 +17,6 @@
 #ifndef __CONSTEXPR_MATRIX_H__
 #define __CONSTEXPR_MATRIX_H__
 
-#include <fdaPDE/utils.h>
-
 #include <array>
 
 namespace fdapde {
