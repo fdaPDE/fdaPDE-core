@@ -45,6 +45,12 @@ constexpr int random_seed = -1;   // signals that a random seed is used somewher
 [[maybe_unused]] static struct tag_exact { } Exact;
 [[maybe_unused]] static struct tag_not_exact { } NotExact;
 
+// matrix related symbols
+[[maybe_unused]] constexpr int Upper = 0;       // lower triangular view of matrix
+[[maybe_unused]] constexpr int Lower = 1;       // upper triangular view of matrix
+[[maybe_unused]] constexpr int UnitUpper = 2;   // lower triangular view of matrix with ones on the diagonal
+[[maybe_unused]] constexpr int UnitLower = 3;   // upper triangular view of matrix with ones on the diagonal
+  
 template <int N, typename T = double> struct static_dynamic_vector_selector {
     using type = typename std::conditional<N == Dynamic, DVector<T>, SVector<N, T>>::type;
 };
@@ -197,11 +203,21 @@ constexpr double log1pexp(double x) {
 }
 
 namespace internals {
-// if XprType has its NestAsRef bit set, returns the type XprType&, otherwise return XprType
-template <typename XprType> struct ref_select {
-    using type = typename std::conditional<
-      XprType::NestAsRef == 0, std::remove_reference_t<XprType>, std::add_lvalue_reference_t<XprType>>::type;
+
+template <typename XprType>
+concept has_nest_as_ref_bit = requires(XprType t) { XprType::NestAsRef; };
+
+template <typename XprType, bool v> struct ref_select_impl;
+template <typename XprType> struct ref_select_impl<XprType, true> {
+    using type = std::conditional_t<
+      XprType::NestAsRef == 0, std::remove_reference_t<XprType>, std::add_lvalue_reference_t<XprType>>;
 };
+template <typename XprType> struct ref_select_impl<XprType, false> {
+    using type = XprType;
+};
+// if XprType has its NestAsRef bit set, returns the type XprType&, otherwise return XprType
+template <typename XprType> struct ref_select : ref_select_impl<XprType, has_nest_as_ref_bit<XprType>> { };
+
 }   // namespace internals
 
 }   // namespace fdapde

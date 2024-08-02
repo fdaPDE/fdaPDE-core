@@ -769,12 +769,223 @@ template <int StaticInputSize, typename Derived> struct MatrixBase {
         return MatrixSymmetricView<Derived, ViewMode>(derived());
     }
 };
+  
+// integration with Eigen types (these expressions are never constexpr-enabled, since Eigen types are not)
 
-// triangular views (?)
-// if vector, take jacobian
-// multiplication by fixed matrices, vectors (could be arrays, cexpr::Matrix, SMatrix, ...)
-// rowwise, colwise iterators (?)
-// inverse (?)
+namespace internals {
+
+template <typename Lhs, typename Rhs, typename FieldType_ = std::conditional_t<is_eigen_dense_v<Lhs>, Rhs, Lhs>>
+class matrix_eigen_product_impl :
+    public fdapde::MatrixBase<FieldType_::StaticInputSize, matrix_eigen_product_impl<Lhs, Rhs>> {
+    using FieldType = std::conditional_t<is_eigen_dense_v<Lhs>, Rhs, Lhs>;
+    using EigenType = std::conditional_t<is_eigen_dense_v<Lhs>, Lhs, Rhs>;
+    static constexpr bool is_field_lhs = std::is_same_v<FieldType, Lhs>;
+    fdapde_static_assert(
+      FieldType::Rows == Dynamic || FieldType::Cols == Dynamic || EigenType::RowsAtCompileTime == Dynamic ||
+        EigenType::ColsAtCompileTime == Dynamic || (is_field_lhs && FieldType::Cols == EigenType::RowsAtCompileTime) ||
+        (!is_field_lhs && EigenType::ColsAtCompileTime == FieldType::Rows),
+      INVALID_OPERAND_DIMENSIONS_FOR_MATRIX_PRODUCT);
+   public:
+    using Base = MatrixBase<FieldType::StaticInputSize, matrix_eigen_product_impl<Lhs, Rhs>>;
+    using InputType = typename FieldType::InputType;
+    using Scalar = decltype(std::declval<typename FieldType::Scalar>() * std::declval<typename EigenType::Scalar>());
+    static constexpr int StaticInputSize = FieldType::StaticInputSize;
+    static constexpr int Rows = is_field_lhs ? FieldType::Rows : EigenType::RowsAtCompileTime;
+    static constexpr int Cols = is_field_lhs ? EigenType::ColsAtCompileTime : FieldType::Cols;
+    static constexpr int NestAsRef = 0;
+    using Base::operator();
+
+    matrix_eigen_product_impl(const Lhs& lhs, const Rhs& rhs) : Base(), lhs_(lhs), rhs_(rhs) {
+        if constexpr (
+          FieldType::Rows == Dynamic || FieldType::Cols == Dynamic || EigenType::RowsAtCompileTime == Dynamic ||
+          EigenType::ColsAtCompileTime == Dynamic) {
+            fdapde_assert(lhs.cols() == rhs.rows());
+        }
+    }
+    int rows() const { return lhs_.rows(); }
+    int cols() const { return rhs_.cols(); }
+    constexpr int input_size() const {
+        if constexpr (is_field_lhs)  return lhs_.input_size();
+        else return rhs_.input_size();
+    }
+    int size() const { return lhs_.rows() * rhs_.cols(); }
+
+    template <typename VectorType, typename Dest> constexpr void eval_at(const VectorType& p, Dest& dest) const {
+        fdapde_static_assert(
+          std::is_invocable_v<Dest FDAPDE_COMMA int FDAPDE_COMMA int> ||
+            fdapde::is_subscriptable<Dest FDAPDE_COMMA int>,
+          DESTINATION_TYPE_MUST_EITHER_EXPOSE_A_MATRIX_LIKE_ACCESS_OPERATOR_OR_A_SUBSCRIPT_OPERATOR);
+
+        // evaluate Lhs field in temporary
+        constexpr bool is_dynamic_storage = FieldType::Rows == Dynamic || FieldType::Cols == Dynamic ||
+                                            EigenType::RowsAtCompileTime == Dynamic ||
+                                            EigenType::ColsAtCompileTime == Dynamic;
+        using FieldStorageType = std::conditional_t<is_dynamic_storage, DMatrix<Scalar>, SMatrix<Rows, Cols, Scalar>>;
+        FieldStorageType field_;
+	int rows_ = is_field_lhs ? lhs_.rows() : rhs_.rows();
+	int cols_ = is_field_lhs ? rhs_.rows() : rhs_.cols();
+        if constexpr (is_dynamic_storage) field_.resize(rows_, cols_);
+        for (int i = 0; i < rows_; ++i) {
+            for (int j = 0; j < cols_; ++j) {
+	        if constexpr(is_field_lhs) field_(i, j) = lhs_.eval(i, j, p);
+	        else field_(i, j) = rhs_.eval(i, j, p);
+	    }
+        }
+        // perform standard matrix-matrix product using Eigen implementation
+        if constexpr (std::is_invocable_v<Dest, int, int>) {
+	    if constexpr (is_field_lhs) dest = field_ * rhs_;
+	    else dest = lhs_ * field_;
+        } else {
+            using ProductResultType =
+              std::conditional_t<is_dynamic_storage, DMatrix<Scalar>, SMatrix<Rows, Cols, Scalar>>;
+            Eigen::Map<ProductResultType> map(dest, rows(), cols());
+	    if constexpr (is_field_lhs) map = field_ * rhs_;
+	    else map = lhs_ * field_;
+        }
+    }
+    auto operator()(int i, int j) const {
+        return [i, j, this](const InputType& p) {
+            Scalar res = 0;
+            for (int k = 0; k < lhs_.cols(); ++k) {
+	        if constexpr (is_field_lhs)  res += lhs_.eval(i, k, p) * rhs_(k, j);
+	        else res += lhs_(i, k) * rhs_.eval(k, j, p);
+	    }
+            return res;
+        };
+    }
+    constexpr Scalar eval(int i, int j, const InputType& p) const {
+        Scalar res = 0;
+        for (int k = 0; k < lhs_.cols(); ++k) {
+	    if constexpr (is_field_lhs)  res += lhs_.eval(i, k, p) * rhs_(k, j);
+	    else res += lhs_(i, k) * rhs_.eval(k, j, p);
+	}
+        return res;
+    }
+   protected:
+    std::conditional_t<is_eigen_dense_v<Lhs>, const Lhs&, typename internals::ref_select<const Lhs>::type> lhs_;
+    std::conditional_t<is_eigen_dense_v<Rhs>, const Rhs&, typename internals::ref_select<const Rhs>::type> rhs_;
+};
+
+template <
+  typename Lhs, typename Rhs, typename BinaryOperation,
+  typename FieldType_ = std::conditional_t<is_eigen_dense_v<Lhs>, Rhs, Lhs>>
+class matrix_eigen_binary_op_impl :
+    public fdapde::MatrixBase<FieldType_::StaticInputSize, matrix_eigen_binary_op_impl<Lhs, Rhs, BinaryOperation>> {
+    using FieldType = std::conditional_t<is_eigen_dense_v<Lhs>, Rhs, Lhs>;
+    using EigenType = std::conditional_t<is_eigen_dense_v<Lhs>, Lhs, Rhs>;
+    static constexpr bool is_field_lhs = std::is_same_v<FieldType, Lhs>;
+    fdapde_static_assert(
+      FieldType::Rows == Dynamic || FieldType::Cols == Dynamic || EigenType::RowsAtCompileTime == Dynamic ||
+        EigenType::ColsAtCompileTime == Dynamic ||
+        (FieldType::Rows == EigenType::RowsAtCompileTime && FieldType::Cols == EigenType::ColsAtCompileTime),
+      INVALID_OPERAND_DIMENSIONS_FOR_MATRIX_PRODUCT);
+   public:
+    using Base = MatrixBase<FieldType::StaticInputSize, matrix_eigen_binary_op_impl<Lhs, Rhs, BinaryOperation>>;
+    using InputType = typename FieldType::InputType;
+    using Scalar = decltype(std::declval<BinaryOperation>().operator()(
+      std::declval<typename FieldType::Scalar>(), std::declval<typename EigenType::Scalar>()));
+    static constexpr int StaticInputSize = FieldType::StaticInputSize;
+    static constexpr int Rows = FieldType::Rows;
+    static constexpr int Cols = FieldType::Cols;
+    static constexpr int NestAsRef = 0;
+    using Base::operator();
+
+    matrix_eigen_binary_op_impl(const Lhs& lhs, const Rhs& rhs, BinaryOperation op) :
+        Base(), lhs_(lhs), rhs_(rhs), op_(op) {
+        if constexpr (
+          FieldType::Rows == Dynamic || FieldType::Cols == Dynamic || EigenType::RowsAtCompileTime == Dynamic ||
+          EigenType::ColsAtCompileTime == Dynamic) {
+            fdapde_assert(lhs.rows() == rhs.rows() && lhs.cols() == rhs.cols());
+        }
+    }
+    int rows() const { return lhs_.rows(); }
+    int cols() const { return lhs_.cols(); }
+    constexpr int input_size() const {
+        if constexpr (is_field_lhs)  return lhs_.input_size();
+        else return rhs_.input_size();
+    }
+    int size() const { return lhs_.size(); }
+    Scalar eval(int i, int j, const InputType& p) const {
+        if constexpr(is_field_lhs) return op_(lhs_.eval(i, j, p), rhs_(i, j));
+        else return op_(lhs_(i, j), rhs_.eval(i, j, p));
+    }
+    constexpr Scalar eval(int i, const InputType& p) const {
+        fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_ONLY_FOR_ROW_OR_COLUMN_MATRICES);
+        if constexpr(is_field_lhs) return op_(lhs_.eval(i, p), rhs_[i]);
+        else return op_(lhs_[i], rhs_.eval(i, p));
+    }
+    constexpr auto operator()(int i, int j) const {
+        return [i, j, this](const InputType& p) {
+            if constexpr (is_field_lhs) return op_(lhs_.eval(i, j, p), rhs_(i, j));
+            else return op_(lhs_(i, j), rhs_.eval(i, j, p));
+        };
+    }
+    constexpr Scalar operator[](int i) const {
+        fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_ONLY_FOR_ROW_OR_COLUMN_MATRICES);
+        return [i, this](const InputType& p) {
+            if constexpr (is_field_lhs) return op_(lhs_.eval(i, p), rhs_[i]);
+            else return op_(lhs_[i], rhs_.eval(i, p));
+        };
+    }
+   protected:
+    std::conditional_t<is_eigen_dense_v<Lhs>, const Lhs&, typename internals::ref_select<const Lhs>::type> lhs_;
+    std::conditional_t<is_eigen_dense_v<Rhs>, const Rhs&, typename internals::ref_select<const Rhs>::type> rhs_;
+    BinaryOperation op_;
+};
+
+}   // namespace internals
+
+// Eigen matrix - matrix field product
+template <typename Lhs, typename Rhs>
+struct MatrixProduct<Lhs, Eigen::MatrixBase<Rhs>> : public internals::matrix_eigen_product_impl<Lhs, Rhs> {
+    MatrixProduct(const Lhs& lhs, const Rhs& rhs) : internals::matrix_eigen_product_impl<Lhs, Rhs>(lhs, rhs) { }
+};
+template <typename Lhs, typename Rhs>
+struct MatrixProduct<Eigen::MatrixBase<Lhs>, Rhs> : public internals::matrix_eigen_product_impl<Lhs, Rhs> {
+    MatrixProduct(const Lhs& lhs, const Rhs& rhs) : internals::matrix_eigen_product_impl<Lhs, Rhs>(lhs, rhs) { } // add forward methods
+};
+  
+template <typename Lhs, typename Rhs>
+MatrixProduct<Lhs, Eigen::MatrixBase<Rhs>>
+operator*(const fdapde::MatrixBase<Lhs::StaticInputSize, Lhs>& lhs, const Eigen::MatrixBase<Rhs>& rhs) {
+    return MatrixProduct<Lhs, Eigen::MatrixBase<Rhs>> {lhs.derived(), rhs.derived()};
+}
+template <typename Lhs, typename Rhs>
+MatrixProduct<Eigen::MatrixBase<Lhs>, Rhs>
+operator*(const Eigen::MatrixBase<Lhs>& lhs, const fdapde::MatrixBase<Rhs::StaticInputSize, Rhs>& rhs) {
+    return MatrixProduct<Eigen::MatrixBase<Lhs>, Rhs> {lhs.derived(), rhs.derived()};
+}
+
+// Eigen matrix - matrix field binary addition and subtraction
+template <typename Lhs, typename Rhs, typename BinaryOperation>
+struct MatrixBinOp<Lhs, Eigen::MatrixBase<Rhs>, BinaryOperation> :
+    public internals::matrix_eigen_binary_op_impl<Lhs, Rhs, BinaryOperation> {
+    MatrixBinOp(const Lhs& lhs, const Rhs& rhs, BinaryOperation op) :
+        internals::matrix_eigen_binary_op_impl<Lhs, Rhs, BinaryOperation>(lhs, rhs, op) { }
+};
+template <typename Lhs, typename Rhs, typename BinaryOperation>
+struct MatrixBinOp<Eigen::MatrixBase<Lhs>, Rhs, BinaryOperation> :
+    public internals::matrix_eigen_binary_op_impl<Lhs, Rhs, BinaryOperation> {
+    MatrixBinOp(const Lhs& lhs, const Rhs& rhs, BinaryOperation op) :
+        internals::matrix_eigen_binary_op_impl<Lhs, Rhs, BinaryOperation>(lhs, rhs, op) { }
+};
+
+#define FDAPDE_DEFINE_FIELD_EIGEN_BIN_OP(OPERATOR, FUNCTOR)                                                            \
+    template <typename Lhs, typename Rhs>                                                                              \
+    MatrixBinOp<Lhs, Eigen::MatrixBase<Rhs>, FUNCTOR> OPERATOR(                                                        \
+      const fdapde::MatrixBase<Lhs::StaticInputSize, Lhs>& lhs, const Eigen::MatrixBase<Rhs>& rhs) {                   \
+        return MatrixBinOp<Lhs, Eigen::MatrixBase<Rhs>, FUNCTOR> {lhs.derived(), rhs.derived(), FUNCTOR()};            \
+    }                                                                                                                  \
+    template <typename Lhs, typename Rhs>                                                                              \
+    MatrixBinOp<Eigen::MatrixBase<Lhs>, Rhs, FUNCTOR> OPERATOR(                                                        \
+      const Eigen::MatrixBase<Lhs>& lhs, const fdapde::MatrixBase<Rhs::StaticInputSize, Rhs>& rhs) {                   \
+        return MatrixBinOp<Eigen::MatrixBase<Lhs>, Rhs, FUNCTOR> {lhs.derived(), rhs.derived(), FUNCTOR()};            \
+    }
+FDAPDE_DEFINE_FIELD_EIGEN_BIN_OP(operator+, std::plus<> )
+FDAPDE_DEFINE_FIELD_EIGEN_BIN_OP(operator-, std::minus<>)
+
+// integration with cexpr linear algebra
+
   
 }   // namespace fdapde
 

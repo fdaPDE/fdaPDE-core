@@ -49,11 +49,6 @@ struct Transpose : public MatrixBase<Derived::Rows, Derived::Cols, Transpose<Der
     typename internals::ref_select<const Derived>::type xpr_;
 };
 
-[[maybe_unused]] constexpr int Upper = 0;       // lower triangular view of matrix
-[[maybe_unused]] constexpr int Lower = 1;       // upper triangular view of matrix
-[[maybe_unused]] constexpr int UnitUpper = 2;   // lower triangular view of matrix with ones on the diagonal
-[[maybe_unused]] constexpr int UnitLower = 3;   // upper triangular view of matrix with ones on the diagonal
-
 template <typename Derived, int ViewMode>
 struct TriangularView : public MatrixBase<Derived::Rows, Derived::Cols, TriangularView<Derived, ViewMode>> {
     using XprType = TriangularView<Derived, ViewMode>;

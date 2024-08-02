@@ -195,8 +195,14 @@ struct fn_ptr_traits_impl<R (T::*)(Args...) const> : public fn_ptr_traits_base<R
 };
 template <auto FnPtr> struct fn_ptr_traits : public fn_ptr_traits_impl<decltype(FnPtr)> { };
 
+// trait to detect if T is an Eigen dense matrix
+template <typename T> struct is_eigen_dense {
+  static constexpr bool value = std::is_base_of<Eigen::MatrixBase<T>, T>::value;
+};
+template <typename T> constexpr bool is_eigen_dense_v = is_eigen_dense<T>::value;
+  
 // trait to detect if T is an Eigen vector
-template <typename T> class is_eigen_vector {
+template <typename T> class is_eigen_dense_vector {
    private:
     static constexpr bool check_() {
         if constexpr (std::is_base_of<Eigen::MatrixBase<T>, T>::value) {
@@ -206,10 +212,10 @@ template <typename T> class is_eigen_vector {
         return false;
     }
    public:
-    // check if T is an eigen matrix and if it has exactly one column, otherwise return false
     static constexpr bool value = check_();
 };
-  
+template <typename T> constexpr bool is_eigen_dense_vector_v = is_eigen_dense_vector<T>::value;
+
 }   // namespace fdapde
 
 #endif   // __FDAPDE_TRAITS_H__
