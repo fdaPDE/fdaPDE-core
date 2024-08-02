@@ -40,10 +40,6 @@ template <typename Derived> class Laplacian : public ScalarBase<Derived::StaticI
         return res;
     }
     constexpr int input_size() const { return xpr_.input_size(); }
-    template <typename... Args> Laplacian<Derived>& forward(Args&&... args) {
-        xpr_.forward(std::forward<Args>(args)...);
-        return *this;
-    }
    private:
     using StorageType = typename std::conditional_t<
       StaticInputSize == Dynamic, std::vector<FunctorType>, std::array<FunctorType, StaticInputSize>>;

@@ -42,10 +42,6 @@ template <typename Derived> class Divergence : public ScalarBase<Derived::Static
         return div_;
     }
     constexpr int input_size() const { return xpr_.input_size(); }
-    template <typename... Args> Divergence<Derived>& forward(Args&&... args) {
-        xpr_.forward(std::forward<Args>(args)...);
-        return *this;
-    }
    private:
     using StorageType = typename std::conditional<
       Derived::StaticInputSize == Dynamic, std::vector<FunctorType>, std::array<FunctorType, StaticInputSize>>::type;

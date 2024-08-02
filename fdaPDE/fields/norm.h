@@ -48,10 +48,6 @@ class MatrixNorm : public ScalarBase<Derived::StaticInputSize, MatrixNorm<Order,
         if constexpr (Order >= 3) return std::pow(norm_, 1. / Order);
     }
     constexpr int input_size() const { return xpr_.input_size(); }
-    template <typename... Args> MatrixNorm<Order, Derived, PowerFlag>& forward(Args&&... args) {
-        xpr_.forward(std::forward<Args>(args)...);
-        return *this;
-    }
    private:
     typename internals::ref_select<const Derived>::type xpr_;
 };

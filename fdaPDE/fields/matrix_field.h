@@ -116,11 +116,6 @@ class MatrixProduct : public fdapde::MatrixBase<Lhs::StaticInputSize, MatrixProd
         for (int k = 0; k < lhs_.cols(); ++k) { res += lhs_.eval(i, k, p) * rhs_.eval(k, j, p); }
         return res;
     }
-    template <typename... Args> constexpr MatrixProduct<Lhs, Rhs>& forward(Args&&... args) {
-        lhs_.forward(std::forward<Args>(args)...);
-        rhs_.forward(std::forward<Args>(args)...);
-        return *this;
-    }
    protected:
     typename internals::ref_select<const Lhs>::type lhs_;
     typename internals::ref_select<const Rhs>::type rhs_;
@@ -196,10 +191,6 @@ class MatrixBlock : public fdapde::MatrixBase<Derived::StaticInputSize, MatrixBl
         fdapde_static_assert(BlockRows_ == 1 || BlockCols_ == 1, THIS_METHOD_IS_ONLY_FOR_ROW_OR_COLUMN_BLOCKS);
         if constexpr (Rows == 1) return xpr_.eval(start_row_, start_col_ + i, p);
         if constexpr (Cols == 1) return xpr_.eval(start_row_ + i, start_col_, p);
-    }
-    template <typename... Args> constexpr MatrixBlock<BlockRows_, BlockCols_, Derived>& forward(Args&&... args) {
-        xpr_.forward(std::forward<Args>(args)...);
-        return *this;
     }
     // block assignment
     template <int Size_, typename RhsDerived>
@@ -285,11 +276,6 @@ class MatrixBinOp : public fdapde::MatrixBase<Lhs::StaticInputSize, MatrixBinOp<
         fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_ONLY_FOR_ROW_OR_COLUMN_MATRICES);
 	return [i, this](const InputType& p) { return op_(lhs_.eval(i, p), rhs_.eval(i, p)); };;
     }  
-    template <typename... Args> constexpr MatrixBinOp<Lhs, Rhs, BinaryOperation>& forward(Args&&... args) {
-        lhs_.forward(std::forward<Args>(args)...);
-        rhs_.forward(std::forward<Args>(args)...);
-        return *this;
-    }
     constexpr int rows() const { return lhs_.rows(); }
     constexpr int cols() const { return lhs_.cols(); }
     constexpr int input_size() const { return lhs_.input_size(); }
@@ -341,10 +327,6 @@ class MatrixCoeffWiseOp :
     constexpr Scalar operator[](int i) const {
         fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_ONLY_FOR_ROW_OR_COLUMN_MATRICES);
         return [i, this](const InputType& p) { return op_(xpr_.eval(i, p), coeff_); };
-    }
-    template <typename... Args> constexpr MatrixCoeffWiseOp<Lhs, Rhs, BinaryOperation>& forward(Args&&... args) {
-        xpr_.forward(std::forward<Args>(args)...);
-        return *this;
     }
     constexpr int rows() const { return xpr_.rows(); }
     constexpr int cols() const { return xpr_.cols(); }
@@ -542,10 +524,6 @@ struct MatrixTranspose : public fdapde::MatrixBase<Derived::StaticInputSize, Mat
     constexpr int cols() const { return xpr_.rows(); }
     constexpr int input_size() const { return xpr_.input_size(); }
     constexpr int size() const { return xpr_.size(); }
-    template <typename... Args> constexpr MatrixTranspose<Derived>& forward(Args&&... args) {
-        xpr_.forward(std::forward<Args>(args)...);
-        return *this;
-    }
    protected:
     typename internals::ref_select<const Derived>::type xpr_;
 };
@@ -571,10 +549,6 @@ struct MatrixDiagonalBlock : public fdapde::MatrixBase<Derived::StaticInputSize,
     constexpr int cols() const { return xpr_.cols(); }
     constexpr int input_size() const { return xpr_.input_size(); }
     constexpr int size() const { return xpr_.size(); }
-    template <typename... Args> constexpr MatrixDiagonalBlock<Derived>& forward(Args&&... args) {
-        xpr_.forward(std::forward<Args>(args)...);
-        return *this;
-    }
     // diagonal assignment
     template <int Size_, typename RhsDerived>
     constexpr MatrixDiagonalBlock<Derived>& operator=(const MatrixBase<Size_, RhsDerived>& rhs)
@@ -663,10 +637,6 @@ struct MatrixSymmetricView :
     constexpr int cols() const { return xpr_.cols(); }
     constexpr int input_size() const { return xpr_.input_size(); }
     constexpr int size() const { return xpr_.size(); }
-    template <typename... Args> constexpr MatrixSymmetricView<Derived, ViewMode>& forward(Args&&... args) {
-        xpr_.forward(std::forward<Args>(args)...);
-        return *this;
-    }
     constexpr auto operator()(int i, int j) const {
         if constexpr (ViewMode == fdapde::Lower) return i < j ? xpr_(j, i) : xpr_(i, j);
         if constexpr (ViewMode == fdapde::Upper) return i > j ? xpr_(j, i) : xpr_(i, j);
@@ -718,8 +688,6 @@ template <int StaticInputSize, typename Derived> struct MatrixBase {
         eval_at(p, out);
         return out;
     }
-    template <typename... Args> constexpr Derived& forward([[maybe_unused]] Args&&... args) { return derived(); }
-
     // transpose
     constexpr MatrixTranspose<Derived> transpose() const { return MatrixTranspose<Derived>(derived()); }
     // block operations
@@ -761,6 +729,9 @@ template <int StaticInputSize, typename Derived> struct MatrixBase {
     template <int RhsStaticInputSize, typename Rhs>
     constexpr DotProduct<Derived, Rhs> dot(const MatrixBase<RhsStaticInputSize, Rhs>& rhs) const {
         return DotProduct<Derived, Rhs>(derived(), rhs.derived());
+    }
+    template <typename Rhs> DotProduct<Derived, Eigen::MatrixBase<Rhs>> dot(const Eigen::MatrixBase<Rhs>& rhs) const {
+        return DotProduct<Derived, Eigen::MatrixBase<Rhs>>(derived(), rhs.derived());
     }
     // diagonal
     constexpr MatrixDiagonalBlock<Derived> diagonal() const { return MatrixDiagonalBlock<Derived>(derived()); }
@@ -942,7 +913,7 @@ struct MatrixProduct<Lhs, Eigen::MatrixBase<Rhs>> : public internals::matrix_eig
 };
 template <typename Lhs, typename Rhs>
 struct MatrixProduct<Eigen::MatrixBase<Lhs>, Rhs> : public internals::matrix_eigen_product_impl<Lhs, Rhs> {
-    MatrixProduct(const Lhs& lhs, const Rhs& rhs) : internals::matrix_eigen_product_impl<Lhs, Rhs>(lhs, rhs) { } // add forward methods
+    MatrixProduct(const Lhs& lhs, const Rhs& rhs) : internals::matrix_eigen_product_impl<Lhs, Rhs>(lhs, rhs) { }
 };
   
 template <typename Lhs, typename Rhs>

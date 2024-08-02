@@ -49,10 +49,6 @@ template <typename Derived> class Gradient : public fdapde::MatrixBase<Derived::
     constexpr int cols() const { return Cols; }
     constexpr int input_size() const { return xpr_.input_size(); }
     constexpr int size() const { return Rows; }
-    template <typename... Args> Gradient<Derived>& forward(Args&&... args) {
-        xpr_.forward(std::forward<Args>(args)...);
-        return *this;
-    }
    private:
     using StorageType = typename std::conditional_t<
       Derived::StaticInputSize == Dynamic, std::vector<FunctorType>, std::array<FunctorType, StaticInputSize>>;

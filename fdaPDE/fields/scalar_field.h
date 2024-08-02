@@ -43,10 +43,6 @@ class ScalarUnaryOp : public ScalarBase<Derived::StaticInputSize, ScalarUnaryOp<
         return op_(derived_(p));
     }
     constexpr int input_size() const { return derived_.input_size(); }
-    template <typename... Args> constexpr ScalarUnaryOp<Derived, UnaryFunctor>& forward(Args&&... args) {
-        derived_.forward(std::forward<Args>(args)...);
-        return *this;
-    }
 };
 template <int Size, typename Derived> constexpr auto sin(const ScalarBase<Size, Derived>& f) {
     return ScalarUnaryOp<Derived, decltype([](typename Derived::Scalar x) { return std::sin(x); })>(f.derived());
@@ -112,11 +108,6 @@ class ScalarBinOp : public ScalarBase<Lhs::StaticInputSize, ScalarBinOp<Lhs, Rhs
         return op_(lhs_(p), rhs_(p));
     }
     constexpr int input_size() const { return lhs_.input_size(); }
-    template <typename... Args> constexpr ScalarBinOp<Lhs, Rhs, BinaryOperation>& forward(Args&&... args) {
-        lhs_.forward(std::forward<Args>(args)...);
-        rhs_.forward(std::forward<Args>(args)...);
-        return *this;
-    }
 };
 
 template <int Size, typename Lhs, typename Rhs>
@@ -174,10 +165,6 @@ struct ScalarCoeffOp :
         }
     }
     constexpr int input_size() const { return derived_.input_size(); }
-    template <typename... Args> constexpr ScalarCoeffOp<Lhs, Rhs, BinaryOperation>& forward(Args&&... args) {
-        derived_.forward(std::forward<Args>(args)...);
-        return *this;
-    }
 };
 
 #define FDAPDE_DEFINE_SCALAR_COEFF_OP(OPERATOR, FUNCTOR)                                                               \
@@ -257,10 +244,6 @@ class ScalarField : public ScalarBase<Size, ScalarField<Size, FunctorType_>> {
     // evaluation at point
     constexpr double operator()(const InputType& x) const { return f_(x); }
     constexpr double operator()(const InputType& x) { return f_(x); }
-    template <typename... Args> constexpr ScalarField<Size, FunctorType_>& forward(Args&&... args) {
-        if constexpr (std::is_invocable_v<FunctorType_, Args&&...>) f_(std::forward<Args>(args)...);
-        return *this;
-    }
     void resize(int dynamic_input_size) {
         fdapde_static_assert(StaticInputSize == Dynamic, YOU_CALLED_A_DYNAMIC_METHOD_ON_A_STATIC_SIZED_FIELD);
         dynamic_input_size_ = dynamic_input_size;
@@ -362,7 +345,6 @@ template <int Size, typename Derived> struct ScalarBase {;
   
     constexpr const Derived& derived() const { return static_cast<const Derived&>(*this); }
     constexpr Derived& derived() { return static_cast<Derived&>(*this); }
-    template <typename... Args> constexpr Derived& forward([[maybe_unused]] Args&&... args) { return derived(); }
     constexpr auto operator-() const {   // unary minus
         return ScalarUnaryOp<Derived, decltype([](typename Derived::Scalar x) { return -x; })>(derived());
     }
