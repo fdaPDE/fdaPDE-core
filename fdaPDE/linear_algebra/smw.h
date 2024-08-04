@@ -22,7 +22,6 @@
 #include "../utils/symbols.h"
 
 namespace fdapde {
-namespace core {
 
 // linear system solver based on the Sherman–Morrison–Woodbury formula
 struct SMW {
@@ -45,7 +44,6 @@ struct SMW {
     }
 };
 
-}   // namespace core
 }   // namespace fdapde
 
 #endif   // _SMW_H__

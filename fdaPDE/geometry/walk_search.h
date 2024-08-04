@@ -21,7 +21,6 @@
 #include <unordered_set>
 
 namespace fdapde {
-namespace core {
 
 // barycentric walk strategy for point location problem, works only for 2D and 3D *convex* triangualtions
 template <typename MeshType> class BarycentricWalk {
@@ -62,7 +61,6 @@ template <typename MeshType> class BarycentricWalk {
     }
 };
 
-}   // namespace core
 }   // namespace fdapde
 
 #endif   // __BARYCENTRIC_WALK_H__

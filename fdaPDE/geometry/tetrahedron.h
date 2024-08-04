@@ -21,7 +21,6 @@
 #include "simplex.h"
 
 namespace fdapde {
-namespace core {
 
 template <typename Triangulation>
 class Tetrahedron : public Simplex<Triangulation::local_dim, Triangulation::embed_dim> {
@@ -136,7 +135,6 @@ class Tetrahedron : public Simplex<Triangulation::local_dim, Triangulation::embe
     bool boundary_ = false;   // true if the element has at least one vertex on the boundary
 };
 
-}   // namespace core
 }   // namespace fdapde
 
 #endif   // __TETRAHEDRON_H__

@@ -21,7 +21,6 @@
 #include "kd_tree.h"
 
 namespace fdapde {
-namespace core {
 
 // tree-based point location over triangulation. Based on "J. Bonet, J. Peraire (1991), An alternating digital tree
 // (ADT) algorithm for 3D geometric searching and intersection problems"
@@ -84,7 +83,6 @@ template <typename MeshType> class TreeSearch {
     }
 };
 
-}   // namespace core
 }   // namespace fdapde
 
 #endif   // __TREE_SEARCH_H__

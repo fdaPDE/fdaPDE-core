@@ -22,8 +22,8 @@
 #include "optimization/newton.h"
 #include "optimization/gradient_descent.h"
 #include "optimization/bfgs.h"
-#include "optimization/callbacks/callbacks.h"
-#include "optimization/callbacks/backtracking_line_search.h"
-#include "optimization/callbacks/wolfe_line_search.h"
+#include "optimization/callbacks.h"
+#include "optimization/backtracking_line_search.h"
+#include "optimization/wolfe_line_search.h"
 
 #endif   // __FDAPDE_OPTIMIZATION_MODULE_H__

@@ -21,7 +21,6 @@
 #include "../utils/symbols.h"
 
 namespace fdapde {
-namespace core {
 
 template <typename TriangulationType> class Projection {
    private:
@@ -70,7 +69,6 @@ template <typename TriangulationType> class Projection {
     DMatrix<double> operator()(const DMatrix<double>& points) const { return operator()(points, fdapde::NotExact); }
 };
 
-}   // namespace core
 }   // namespace fdapde
 
 #endif // __PROJECT_H__

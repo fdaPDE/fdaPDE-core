@@ -22,7 +22,6 @@
 #include "callbacks/callbacks.h"
 
 namespace fdapde {
-namespace core {
 
 // searches for the point in a given grid minimizing a given nonlinear objective
 template <int N, typename... Args> class Grid {
@@ -44,9 +43,9 @@ template <int N, typename... Args> class Grid {
         return *this;
     }
     template <typename F> VectorType optimize(F& objective, const GridType& grid) {
-        static_assert(
-          std::is_same<decltype(std::declval<F>().operator()(VectorType())), double>::value,
-          "F_IS_NOT_A_FUNCTOR_ACCEPTING_A_VECTORTYPE");
+        fdapde_static_assert(
+          std::is_same<decltype(std::declval<F>().operator()(VectorType())) FDAPDE_COMMA double>::value,
+          INVALID_CALL_TO_OPTIMIZE_OBJECTIVE_FUNCTOR_NOT_ACCEPTING_VECTORTYPE);
         bool stop = false;   // asserted true in case of forced stop
         // algorithm initialization
         x_current = grid.row(0);
@@ -70,7 +69,6 @@ template <int N, typename... Args> class Grid {
     double value() const { return value_; }
 };
 
-}   // namespace core
 }   // namespace fdapde
 
 #endif   // __GRID_H__

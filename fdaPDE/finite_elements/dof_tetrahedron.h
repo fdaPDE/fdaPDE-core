@@ -18,7 +18,6 @@
 #define __DOF_TETRAHEDRON_H__
 
 namespace fdapde {
-namespace core {
 
 template <typename DofHandler> class DofTetrahedron : public Tetrahedron<typename DofHandler::TriangulationType> {
     fdapde_static_assert(
@@ -160,7 +159,6 @@ template <typename DofHandler> class DofTetrahedron : public Tetrahedron<typenam
     face_iterator faces_end() const { return face_iterator(this->n_faces, this); }
 };
 
-}   // namespace core
 }   // namespace fdapde
 
 #endif // __DOF_TETRAHEDRON_H__

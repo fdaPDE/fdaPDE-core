@@ -21,13 +21,12 @@
 #include <type_traits>
 
 namespace fdapde {
-namespace core {
 
 // Eigen-compatible implementation of the Kronecker tensor product between matrices.
 template <typename Lhs_, typename Rhs_, typename LhsStorageKind_, typename RhsStorageKind_>
 struct KroneckerTensorProduct;
 
-template <typename XprType_> KroneckerTensorProductBase {
+template <typename XprType_> struct KroneckerTensorProductBase {
     using XprType = XprType_;
     using Lhs = typename Eigen::internal::traits<XprType>::Lhs;
     using Rhs = typename Eigen::internal::traits<XprType>::Rhs;
@@ -236,7 +235,6 @@ class evaluator<KroneckerTensorProduct<Lhs_, Rhs_, Sparse, Sparse>> :
     const XprType& xpr_;
 };
 
-}   // namespace internal
 }   // namespace Eigen
 
 #endif   // __KRONECKER_PRODUCT_H__

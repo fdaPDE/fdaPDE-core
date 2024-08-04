@@ -18,7 +18,6 @@
 #define __DOF_TRIANGLE_H__
 
 namespace fdapde {
-namespace core {
 
 // definition of dof-informed triangle, i.e. a triangle with attached dofs
 template <typename DofHandler>
@@ -98,7 +97,6 @@ class DofTriangle : public Triangle<typename DofHandler::TriangulationType> {
     edge_iterator edges_end() const { return edge_iterator(this->n_edges, this); }
 };
 
-}   // namespace core
 }   // namespace fdapde
 
 #endif // __DOF_TRIANGLE_H__

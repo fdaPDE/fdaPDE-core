@@ -21,7 +21,6 @@
 #include "simplex.h"
 
 namespace fdapde {
-namespace core {
 
 // a mesh aware view of a segment
 template <typename Triangulation> class Segment : public Simplex<Triangulation::local_dim, Triangulation::embed_dim> {
@@ -50,7 +49,6 @@ template <typename Triangulation> class Segment : public Simplex<Triangulation::
     bool boundary_ = false;   // true if the element has at least one vertex on the boundary
 };
 
-}   // namespace core
 }   // namespace fdapde
 
 #endif   // __SEGMENT_H__

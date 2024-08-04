@@ -17,11 +17,10 @@
 #ifndef __MESH_UTILS_H__
 #define __MESH_UTILS_H__
 
-#include "../utils/combinatorics.h"
+#include "../utils/constexpr.h"
 #include "../utils/symbols.h"
 
 namespace fdapde {
-namespace core {
 
 // trait to detect if a mesh is a manifold
 template <int M, int N> struct is_manifold {
@@ -39,11 +38,6 @@ DEFINE_MESH_TYPE_DETECTION_TRAIT(1, 2, network);   // is_network<M, N>
 DEFINE_MESH_TYPE_DETECTION_TRAIT(2, 2, 2d);        // is_2d<M, N>
 DEFINE_MESH_TYPE_DETECTION_TRAIT(2, 3, surface);   // is_surface<M, N>
 DEFINE_MESH_TYPE_DETECTION_TRAIT(3, 3, 3d);        // is_3d<M, N>
-
-constexpr int ct_nnodes(const int M, const int R) { return ct_factorial(M + R) / (ct_factorial(M) * ct_factorial(R)); }
-constexpr int ct_nvertices(const int M) { return M + 1; }
-constexpr int ct_nedges(const int M) { return (M * (M + 1)) / 2; }
-constexpr int ct_nneighbors(const int M) { return (M == 1) ? fdapde::Dynamic : (M + 1); }
 
 // sorts a range of points in clockwise order around their geometrical center
 template <typename T> struct clockwise_order {
@@ -116,7 +110,6 @@ template <typename Iterator, typename ValueType> class index_based_iterator {
     friend bool operator==(const This& lhs, const This& rhs) { return lhs.index_ == rhs.index_; }
 };
 
-}   // namespace core
 }   // namespace fdapde
 
 #endif   // __MESH_UTILS_H__

@@ -21,7 +21,6 @@
 #include "../utils/symbols.h"
 
 namespace fdapde {
-namespace core {
 
 // forward declarations
 template <int Rows, int Cols, typename E> class BinMtxBase;
@@ -658,7 +657,6 @@ template <int Rows, int Cols, typename XprType> std::vector<int> which(const Bin
     return mtx.which(true);
 }
 
-}   // namespace core
 }   // namespace fdapde
 
 #endif   // __BINARY_MATRIX_H__

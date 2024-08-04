@@ -17,12 +17,12 @@
 #ifndef __FE_P_H__
 #define __FE_P_H__
 
+#include "../linear_algebra/constexpr_matrix.h"
 #include "../utils/symbols.h"
-#include "../utils/traits.h"
 #include "lagrange_basis.h"
+#include "../geometry/simplex.h"
 
 namespace fdapde {
-namespace core {
 
 // representation of the finite element space P_h^K = { v \in H^1(D) : v_{e} \in P^K \forall e \in T_h }
 template <int Order> struct FE_P {
@@ -41,67 +41,84 @@ template <int Order> struct FE_P {
         using BasisType = LagrangeBasis<local_dim, Order>;
         using BasisElementType = typename BasisType::PolynomialType;
 
-        dof_descriptor() {
+        constexpr dof_descriptor() : dofs_phys_coords_(), dofs_bary_coords_() {
             // compute dofs physical coordinates on reference cell
-            ReferenceCell reference_simplex = ReferenceCell::Unit();
-            dofs_phys_coords_.topRows(ReferenceCell::n_nodes) = reference_simplex.nodes().transpose();
-            int j = ReferenceCell::n_nodes;
+            constexpr int n_nodes = local_dim + 1;
+            cexpr::Matrix<double, local_dim, n_nodes> reference_simplex;
+            reference_simplex.setZero();
+            for (int i = 0; i < local_dim; ++i) { reference_simplex(i, i + 1) = 1; }
+            dofs_phys_coords_.template topRows<n_nodes>(0) = reference_simplex.transpose();
+            int j = n_nodes;
+            // constexpr enumeration of reference simplex edges
+            auto edge_enumerate = [&, this]() {
+                std::vector<bool> bitmask(n_nodes, 0);
+                std::fill_n(bitmask.begin(), 2, 1);
+                cexpr::Matrix<double, local_dim, 2> edge_coords;
+                for (int i = 0; i < ReferenceCell::n_edges; ++i) {
+                    for (int k = 0, h = 0; k < n_nodes; ++k) {
+                        if (bitmask[k]) edge_coords.col(h++) = reference_simplex.col(k);
+                    }
+                    for (int k = 0; k < n_dofs_per_edge; ++k) {
+                        dofs_phys_coords_.row(j++) =
+                          (edge_coords.col(0) + (k + 1) * (edge_coords.col(1) - edge_coords.col(0)) / Order)
+                            .transpose();
+                    }
+                    std::prev_permutation(bitmask.begin(), bitmask.end());
+                }
+            };
+	    
             if constexpr (local_dim == 1) {
                 if constexpr (n_dofs_internal > 0) {
                     for (int i = 0; i < n_dofs_internal; ++i) { dofs_phys_coords_[j++] = (i + 1) * 1. / Order; }
                 }
             }
             if constexpr (local_dim == 2) {
-                if constexpr (n_dofs_per_edge > 0) {
-                    for (typename ReferenceCell::boundary_iterator it = reference_simplex.boundary_begin();
-                         it != reference_simplex.boundary_end(); ++it) {
-                        for (int i = 0; i < n_dofs_per_edge; ++i) {
-                            dofs_phys_coords_.row(j++) = it->node(0) + (i + 1) * (it->node(1) - it->node(0)) / Order;
-                        }
-                    }
+                if constexpr (n_dofs_per_edge > 0) { edge_enumerate(); }
+                if constexpr (n_dofs_internal > 0) {
+                    // add simplex barycenter
+                    dofs_phys_coords_.row(j++) =
+                      (reference_simplex.col(1) + reference_simplex.col(2)) * 1.0 / (local_dim + 1);
                 }
-                if constexpr (n_dofs_internal > 0) { dofs_phys_coords_.row(j++) = reference_simplex.barycenter(); }
             }
             if constexpr (local_dim == 3) {
-                if constexpr (n_dofs_per_edge > 0) {
-                    // cycle over unit tetrahedron edges
-                    std::vector<bool> bitmask(ReferenceCell::n_nodes, 0);
-                    std::fill_n(bitmask.begin(), 2, 1);   // each edge is made by 2 nodes
-                    SMatrix<local_dim, 2> coords;
-                    for (int h = 0; h < ReferenceCell::n_edges; ++h) {
-                        for (int i = 0, h = 0; i < ReferenceCell::n_nodes; ++i) {
-                            if (bitmask[i]) coords.col(h++) = reference_simplex.nodes().col(i);
-                        }
-                        for (int i = 0; i < n_dofs_per_edge; ++i) {
-                            dofs_phys_coords_.row(j++) =
-                              coords.col(0) + (i + 1) * (coords.col(1) - coords.col(0)) / Order;
-                        }
-                        std::prev_permutation(bitmask.begin(), bitmask.end());
-                    }
-                }
+                if constexpr (n_dofs_per_edge > 0) { edge_enumerate(); }
                 if constexpr (n_dofs_per_face > 0) {
-                    for (typename ReferenceCell::boundary_iterator it = reference_simplex.boundary_begin();
-                         it != reference_simplex.boundary_end(); ++it) {
-                        dofs_phys_coords_.row(j++) = it->barycenter();
+                    // add barycenter of tetrahedron faces
+                    std::vector<bool> bitmask(n_nodes, 0);
+                    std::fill_n(bitmask.begin(), ReferenceCell::n_nodes_per_face, 1);
+                    cexpr::Matrix<double, local_dim, 3> face_coords;
+                    for (int i = 0; i < ReferenceCell::n_faces; ++i) {
+                        for (int k = 0, h = 0; k < n_nodes; ++k) {
+                            if (bitmask[k]) face_coords.col(h++) = reference_simplex.col(k);
+                        }
+                        cexpr::Matrix<double, local_dim, 2> J;
+                        for (int k = 0; k < 2; ++k) J.col(k) = face_coords.col(k + 1) - face_coords.col(0);
+                        dofs_phys_coords_.row(j++) =
+                          (J * cexpr::Vector<double, 2>::Constant(1.0 / (local_dim + 1))) + face_coords.col(0);
+                        std::prev_permutation(bitmask.begin(), bitmask.end());
                     }
                 }
             }
             // compute barycentric coordinates
-            dofs_bary_coords_.rightCols(local_dim) = dofs_phys_coords_;
+            dofs_bary_coords_.template rightCols<local_dim>(1) = dofs_phys_coords_;
             if constexpr (local_dim == 1) {
                 for (int i = 0; i < dofs_bary_coords_.rows(); ++i) {
                     dofs_bary_coords_(i, 0) = 1 - dofs_bary_coords_(i, 1);
                 }
             } else {
-                dofs_bary_coords_.col(0) = (1 - dofs_bary_coords_.rowwise().sum().array()).matrix();
+                for (int i = 0; i < n_dofs_per_cell; ++i) {
+                    double sum = 0;
+                    for (int j = 0; j < local_dim; ++j) sum += dofs_bary_coords_(i, j);
+                    dofs_bary_coords_(i, 0) = 1 - sum;
+                }
             }
         }
         // getters
-        const SMatrix<n_dofs_per_cell, local_dim>& dofs_phys_coords() const { return dofs_phys_coords_; }
-        const SMatrix<n_dofs_per_cell, local_dim + 1>& dofs_bary_coords() const { return dofs_bary_coords_; }
+        constexpr const auto& dofs_phys_coords() const { return dofs_phys_coords_; }
+        constexpr const auto& dofs_bary_coords() const { return dofs_bary_coords_; }
        private:
-        SMatrix<n_dofs_per_cell, local_dim> dofs_phys_coords_;       // dofs physical coordinates over reference simplex
-        SMatrix<n_dofs_per_cell, local_dim + 1> dofs_bary_coords_;   // dofs barycentric coordinates
+        cexpr::Matrix<double, n_dofs_per_cell, local_dim> dofs_phys_coords_;       // dofs physical coordinates
+        cexpr::Matrix<double, n_dofs_per_cell, local_dim + 1> dofs_bary_coords_;   // dofs barycentric coordinates
     };
 
     template <int LocalDim> using cell_dof_descriptor = dof_descriptor<LocalDim>;
@@ -113,7 +130,6 @@ template <int Order> struct FE_P {
 [[maybe_unused]] static struct P2_ : FE_P<2> { } P2;
 [[maybe_unused]] static struct P3_ : FE_P<3> { } P3;
     
-}   // namespace core
 }   // namespace fdapde
 
 #endif   // __FE_P_H__

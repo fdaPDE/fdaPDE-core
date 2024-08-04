@@ -22,7 +22,7 @@
 #include <vector>
 
 #include "../linear_algebra/binary_matrix.h"
-#include "../utils/combinatorics.h"
+#include "../utils/constexpr.h"
 #include "../utils/symbols.h"
 #include "triangle.h"
 #include "tetrahedron.h"
@@ -30,7 +30,6 @@
 #include "utils.h"
 
 namespace fdapde {
-namespace core {
 
 template <int M, int N> class Triangulation;
 template <int M, int N, typename Derived> class TriangulationBase {
@@ -156,7 +155,7 @@ template <int N> class Triangulation<2, N> : public TriangulationBase<2, N, Tria
         struct edge_info {
             int edge_id, face_id;   // for each edge, its ID and the ID of one of the cells insisting on it
         };
-        auto edge_pattern = combinations<n_nodes_per_edge, Base::n_nodes_per_cell>();
+        auto edge_pattern = cexpr::combinations<n_nodes_per_edge, Base::n_nodes_per_cell>();
         std::unordered_map<edge_t, edge_info, hash_t> edges_map;
 	std::vector<bool> edges_markers;
         edge_t edge;
@@ -332,8 +331,8 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
             int face_id, cell_id;   // for each face, its ID and the ID of one of the faces insisting on it
         };
 	typedef int edge_info;
-        auto face_pattern = combinations<n_nodes_per_face, n_nodes_per_cell>();
-        auto edge_pattern = combinations<n_nodes_per_edge, n_nodes_per_face>();
+        auto face_pattern = cexpr::combinations<n_nodes_per_face, n_nodes_per_cell>();
+        auto edge_pattern = cexpr::combinations<n_nodes_per_edge, n_nodes_per_face>();
         std::unordered_map<edge_t, edge_info, fdapde::std_array_hash<int, n_nodes_per_edge>> edges_map;
         std::unordered_map<face_t, face_info, fdapde::std_array_hash<int, n_nodes_per_face>> faces_map;
 	std::vector<bool> faces_markers, edges_markers;
@@ -508,7 +507,6 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
     mutable std::optional<LocationPolicy> location_policy_ {};
 };
 
-}   // namespace core
 }   // namespace fdapde
 
 #endif   // __TRIANGULATION_H__

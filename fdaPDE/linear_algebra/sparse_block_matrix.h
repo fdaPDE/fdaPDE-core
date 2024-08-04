@@ -23,7 +23,6 @@
 #include "../utils/assert.h"
 
 namespace fdapde {
-namespace core {
 
 // A C++20 Eigen-compatible SparseBlockMatrix implementation (only ColMajor support). Use Eigen naming conventions
 template <typename Scalar_, int Rows_, int Cols_, int Options_ = Eigen::ColMajor, typename StorageIndex_ = int>
@@ -220,7 +219,6 @@ struct evaluator<SparseBlockMatrix<Scalar_, Rows_, Cols_, Options_, StorageIndex
     const SparseBlockMatrix<Scalar_, Rows_, Cols_, Options_, StorageIndex_>& xpr_;
 };
 
-}   // namespace internal
 }   // namespace Eigen
 
 #endif   // __SPARSE_BLOCK_MATRIX_H__

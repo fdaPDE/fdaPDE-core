@@ -18,11 +18,9 @@
 #define __FE_ASSEMBLER_H__
 
 namespace fdapde {
-namespace core {
 
   
     
-}   // namespace core
 }   // namespace fdapde
 
 #endif   // __FE_ASSEMBLER_H__

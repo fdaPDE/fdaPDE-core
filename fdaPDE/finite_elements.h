@@ -17,31 +17,5 @@
 #ifndef __FDAPDE_FINITE_ELEMENTS_MODULE_H__
 #define __FDAPDE_FINITE_ELEMENTS_MODULE_H__
 
-#ifndef __FDAPDE_PDE_MODULE_H__
-#define __FDAPDE_PDE_MODULE_H__
-
-#include "pde/pde.h"
-#include "pde/differential_operators.h"
-#include "pde/differential_expressions.h"
-
-#include "utils/integration/integrator.h"
-#include "utils/integration/integrator_tables.h"
-
-#endif
-
-#include "finite_elements/fem_symbols.h"
-#include "finite_elements/fem_assembler.h"
-#include "finite_elements/basis/multivariate_polynomial.h"
-#include "finite_elements/basis/lagrangian_basis.h"
-#include "finite_elements/basis/reference_element.h"
-#include "finite_elements/solvers/fem_solver_base.h"
-#include "finite_elements/solvers/fem_solver_selector.h"
-#include "finite_elements/solvers/fem_linear_elliptic_solver.h"
-#include "finite_elements/solvers/fem_linear_parabolic_solver.h"
-#include "finite_elements/operators/laplacian.h"
-#include "finite_elements/operators/diffusion.h"
-#include "finite_elements/operators/advection.h"
-#include "finite_elements/operators/reaction.h"
-#include "finite_elements/operators/dt.h"
 
 #endif   // __FDAPDE_FINITE_ELEMENTS_MODULE_H__

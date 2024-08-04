@@ -20,7 +20,6 @@
 #include "../../utils/symbols.h"
 
 namespace fdapde {
-namespace core {
 
 // implementation of the backatracking line search method for step selection
 class BacktrackingLineSearch {
@@ -48,7 +47,6 @@ class BacktrackingLineSearch {
     }
 };
 
-}   // namespace core
 }   // namespace fdapde
 
 #endif   // __BACKTRACKING_LINE_SEARCH_H__

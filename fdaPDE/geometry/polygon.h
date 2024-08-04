@@ -18,7 +18,6 @@
 #define __POLYGON_H__
 
 namespace fdapde {
-namespace core {
 
   // a polygon is an ordered set of edges
   // we assume points already sorted counter-clockwise
@@ -39,7 +38,6 @@ public:
 
 };
 
-}   // namespace core
 }   // namespace fdapde
 
 #endif // __POLYGON_H__

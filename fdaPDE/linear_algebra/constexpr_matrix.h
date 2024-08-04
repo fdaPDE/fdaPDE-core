@@ -28,9 +28,9 @@ namespace cexpr {
 template <int Rows, int Cols, typename Derived> struct MatrixBase;
 
 template <typename Derived>
-struct Transpose : public MatrixBase<Derived::Rows, Derived::Cols, Transpose<Derived>> {
+struct Transpose : public MatrixBase<Derived::Cols, Derived::Rows, Transpose<Derived>> {
     using XprType = Transpose<Derived>;
-    using Base = MatrixBase<Derived::Rows, Derived::Cols, XprType>;
+    using Base = MatrixBase<Derived::Cols, Derived::Rows, XprType>;
     using Scalar = typename Derived::Scalar;
     static constexpr int Rows = Derived::Cols;
     static constexpr int Cols = Derived::Rows;
@@ -112,6 +112,51 @@ operator-(const MatrixBase<Op1::Rows, Op1::Cols, Op1>& op1, const MatrixBase<Op2
     return MatrixBinOp<Op1, Op2, std::minus<>> {op1.derived(), op2.derived(), std::minus<>()};
 }
 
+template <typename Lhs, typename Rhs, typename BinaryOperation>
+struct MatrixCoeffWiseOp :
+    public MatrixBase<
+      std::conditional_t<std::is_arithmetic_v<Lhs>, Rhs, Lhs>::Rows,
+      std::conditional_t<std::is_arithmetic_v<Lhs>, Rhs, Lhs>::Cols, MatrixCoeffWiseOp<Lhs, Rhs, BinaryOperation>> {
+    using CoeffType_ = std::conditional_t<std::is_arithmetic_v<Lhs>, Lhs, Rhs>;
+   public:
+    using XprType = std::conditional_t<std::is_arithmetic_v<Lhs>, Rhs, Lhs>;
+    using Base = MatrixCoeffWiseOp<Lhs, Rhs, BinaryOperation>;
+    using Scalar = decltype(std::declval<BinaryOperation>().operator()(
+      std::declval<typename XprType::Scalar>(), std::declval<CoeffType_>()));
+    static constexpr int Rows = XprType::Rows;
+    static constexpr int Cols = XprType::Cols;
+    static constexpr int NestAsRef = 0;
+
+    constexpr MatrixCoeffWiseOp(const XprType& xpr, CoeffType_ coeff, BinaryOperation op) :
+        xpr_(xpr), coeff_(coeff), op_(op) { }
+    constexpr Scalar operator()(int i, int j) const { return op_(xpr_(i, j), coeff_); }
+    constexpr int rows() const { return xpr_.rows(); }
+    constexpr int cols() const { return xpr_.cols(); }
+   protected:
+    typename internals::ref_select<const XprType>::type xpr_;
+    CoeffType_ coeff_;
+    BinaryOperation op_;
+};
+
+template <typename XprType, typename Coeff>
+constexpr MatrixCoeffWiseOp<XprType, Coeff, std::multiplies<>>
+operator*(const MatrixBase<XprType::Rows, XprType::Cols, XprType>& lhs, Coeff rhs)
+    requires(std::is_arithmetic_v<Coeff>) {
+    return MatrixCoeffWiseOp<XprType, Coeff, std::multiplies<>> {lhs.derived(), rhs, std::multiplies<>()};
+}
+template <typename XprType, typename Coeff>
+constexpr MatrixCoeffWiseOp<Coeff, XprType, std::multiplies<>>
+operator*(Coeff lhs, const MatrixBase<XprType::Rows, XprType::Cols, XprType>& rhs)
+    requires(std::is_arithmetic_v<Coeff>) {
+    return MatrixCoeffWiseOp<Coeff, XprType, std::multiplies<>> {rhs.derived(), lhs, std::multiplies<>()};
+}
+template <typename XprType, typename Coeff>
+constexpr MatrixCoeffWiseOp<XprType, Coeff, std::divides<>>
+operator/(const MatrixBase<XprType::Rows, XprType::Cols, XprType>& lhs, Coeff rhs)
+    requires(std::is_arithmetic_v<Coeff>) {
+    return MatrixCoeffWiseOp<XprType, Coeff, std::divides<>> {lhs.derived(), rhs, std::divides<>()};
+}
+
 template <typename Lhs, typename Rhs>
 struct MatrixProduct : public MatrixBase<Lhs::Rows, Rhs::Cols, MatrixProduct<Lhs, Rhs>> {
     fdapde_static_assert(
@@ -183,16 +228,16 @@ class MatrixBlock : public MatrixBase<BlockRows_, BlockCols_, MatrixBlock<BlockR
     typename internals::ref_select<Derived>::type xpr_;
 };
 
-template <typename Scalar_, int Rows_, int Cols_>
-class Matrix : public MatrixBase<Rows_, Cols_, Matrix<Scalar_, Rows_, Cols_>> {
+template <typename Scalar_, int Rows_, int Cols_, int NestAsRefBit_ = 1>
+class Matrix : public MatrixBase<Rows_, Cols_, Matrix<Scalar_, Rows_, Cols_, NestAsRefBit_>> {
     fdapde_static_assert(Rows_ > 0 && Cols_ > 0, EMPTY_MATRIX_IS_ILL_FORMED);
    public:
-    using XprType = Matrix<Scalar_, Rows_, Cols_>;
+    using XprType = Matrix<Scalar_, Rows_, Cols_, NestAsRefBit_>;
     using Base = MatrixBase<Rows_, Cols_, XprType>;
     using Scalar = Scalar_;
     static constexpr int Rows = Rows_;
     static constexpr int Cols = Cols_;
-    static constexpr int NestAsRef = 1;   // whether to store this node by reference or by copy in an expression
+    static constexpr int NestAsRef = NestAsRefBit_;   // whether to store this node by ref or by copy in an expression
 
     constexpr Matrix() : data_() {};
     constexpr explicit Matrix(const std::array<Scalar, Rows * Cols>& data) : data_(data) { }
@@ -270,6 +315,14 @@ class Matrix : public MatrixBase<Rows_, Cols_, Matrix<Scalar_, Rows_, Cols_>> {
         }
         return *this;
     }
+    constexpr void setConstant(Scalar c) {
+        for (int i = 0; i < Rows; ++i) {
+            for (int j = 0; j < Cols; ++j) { operator()(i, j) = c; }
+        }
+	return;
+    }
+    constexpr void setZero() { setConstant(Scalar(0)); }
+    constexpr void setOnes() { setConstant(Scalar(1)); }
    private:
     std::array<Scalar, Rows * Cols> data_;
 };
@@ -358,7 +411,7 @@ template <int Rows, int Cols, typename Derived> struct MatrixBase {
         return block<Rows, BlockCols>(0, i);
     }
     template <int BlockCols> constexpr MatrixBlock<Rows, BlockCols, Derived> rightCols(int i) {
-        return block<Rows, BlockCols>(0, Cols - i);
+        return block<Rows, BlockCols>(0, Cols - i - 1);
     }
     // dot product
     template <int RhsRows, typename RhsDerived>
@@ -438,7 +491,9 @@ template <int Size_> struct PermutationMatrix {
         fdapde_static_assert(Cols == RhsRows, INVALID_OPERAND_DIMENSIONS_FOR_MATRIX_MATRIX_PRODUCT);
         using Scalar = typename RhsType::Scalar;
         Matrix<Scalar, Rows, RhsCols> permuted;
-        for (int i = 0; i < Size_; ++i) { permuted.row(i) = rhs.row(permutation_[i]); }
+        for (int i = 0; i < Rows; ++i) {
+            for (int j = 0; j < RhsCols; ++j) { permuted(i, j) = rhs.derived().operator()(permutation_[i], j); }
+        }
         return permuted;
     }
     // right multiplication by permutation matrix
@@ -448,7 +503,9 @@ template <int Size_> struct PermutationMatrix {
         fdapde_static_assert(Cols == RhsRows, INVALID_OPERANDS_DIMENSION_FOR_MATRIX_MATRIX_PRODUCT);
         using Scalar = typename RhsType::Scalar;
         Matrix<Scalar, Rows, RhsCols> permuted;
-        for (int i = 0; i < Size_; ++i) { permuted.col(i) = rhs.col(rhs.permutation()[i]); }
+        for (int i = 0; i < Rows; ++i) {
+            for (int j = 0; j < RhsCols; ++j) { permuted(j, i) = lhs.derived().operator()(j, rhs.permutation()[i]); }
+        }
         return permuted;
     }
     constexpr const std::array<int, Size_>& permutation() const { return permutation_; }
@@ -504,33 +561,40 @@ template <typename MatrixType> class PartialPivLU {
     PermutationMatrix<Size> P_;
    public:
     constexpr PartialPivLU() : m_(), P_() {};
-    constexpr PartialPivLU(const MatrixType& m) : m_(m) { }
+    template <typename XprType> constexpr PartialPivLU(const MatrixBase<Size, Size, XprType>& m) : m_() { compute(m); }
 
     // computes the LU factorization of matrix m with partial (row) pivoting
     template <typename XprType> constexpr void compute(const MatrixBase<Size, Size, XprType>& m) {
         m_ = m;
         std::array<int, Size> P;
+        for (int i = 0; i < Size; ++i) { P[i] = i; }
         int pivot_index = 0;
-        for (int i = 0; i < Size; ++i) {
+        int h, k;
+        for (int i = 0; i < Size - 1; ++i) {
             // find pivotal element
-            Scalar pivot = 0;
+            Scalar pivot = -std::numeric_limits<Scalar>::infinity();
             for (int j = i; j < Size; ++j) {
-                if (pivot < std::abs(m_(j, i))) {
-                    pivot = std::abs(m_(j, i));
+                Scalar abs_ = std::abs(m_(P[j], i));
+                if (pivot < abs_) {
+                    pivot = abs_;
                     pivot_index = j;
                 }
             }
             // perform gaussian elimination step in place
-            P[i] = pivot_index;
             for (int j = i; j < Size; ++j) {
-                if (j != pivot_index) {
-                    Scalar l = m_(j, i) / m_(pivot_index, i);
-                    for (int k = i + 1; k < Size; ++k) { m_(j, k) = m_(j, k) - l * m_(pivot_index, k); }
-                    m_(j, i) = l;
+                if (P[j] != P[pivot_index]) {   // avoid to subtract row with itself
+                    Scalar l = m_(P[j], i) / m_(P[pivot_index], i);
+                    m_(P[j], i) = l;
+                    for (int k = i + 1; k < Size; ++k) { m_(P[j], k) = m_(P[j], k) - l * m_(P[pivot_index], k); }
                 }
             }
+            // swap rows
+            h = P[i], k = P[pivot_index];
+            P[pivot_index] = h;
+            P[i] = k;
         }
         P_ = PermutationMatrix<Size>(P);
+	m_ = P_ * m_;
     }
     constexpr PermutationMatrix<Size> P() const { return P_; }
     // solve linear system Ax = b using A factorization PA = LU
@@ -547,7 +611,7 @@ template <typename MatrixType> class PartialPivLU {
     }
 };
 
-}   // namespace core
+}   // namespace cexpr
 }   // namespace fdapde
 
 #endif   // _CONSTEXPR_MATRIX_H__

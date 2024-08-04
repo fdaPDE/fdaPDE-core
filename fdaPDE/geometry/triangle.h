@@ -21,7 +21,6 @@
 #include "simplex.h"
 
 namespace fdapde {
-namespace core {
 
 // an element is a geometric object bounded to a mesh. It carries both geometrical and connectivity informations
 template <typename Triangulation> class Triangle : public Simplex<Triangulation::local_dim, Triangulation::embed_dim> {
@@ -92,7 +91,6 @@ template <typename Triangulation> class Triangle : public Simplex<Triangulation:
     bool boundary_ = false;   // true if the element has at least one vertex on the boundary
 };
 
-}   // namespace core
 }   // namespace fdapde
 
 #endif   // __TRIANGLE_H__

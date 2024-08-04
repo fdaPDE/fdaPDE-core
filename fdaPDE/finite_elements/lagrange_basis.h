@@ -17,56 +17,54 @@
 #ifndef __LAGRANGE_BASIS_H__
 #define __LAGRANGE_BASIS_H__
 
-#include "../utils/compile_time.h"
-#include "../utils/symbols.h"
 #include "../fields/polynomial.h"
+#include "../linear_algebra/constexpr_matrix.h"
+#include "../utils/symbols.h"
 
 namespace fdapde {
-namespace core {
 
 // given N+1 nodes n_0, n_1, n_2, ..., n_N, this class represents the set {l_0(x), l_1(x), ..., l_N(x) : l_j(n_i) = 1
 // \iff i = j, 0 otherwise}. this polynomial system makes a basis for the set of polynomials up to order R in R^N
-template <int N, int R> class LagrangeBasis {
+template <int StaticInputSize_, int Order_> class LagrangeBasis {
    private:
-    std::array<Polynomial<N, R>, ct_binomial_coefficient(N + R, R)> basis_;
-    Eigen::Matrix<double, Eigen::Dynamic, N> nodes_;
+    static constexpr int n_basis = cexpr::binomial_coefficient(StaticInputSize_ + Order_, Order_);
+    std::array<Polynomial<StaticInputSize_, Order_>, n_basis> basis_;
    public:
-    using PolynomialType = Polynomial<N, R>;
-    static constexpr int n_basis = ct_binomial_coefficient(N + R, R);
-    static constexpr int order = R;
+    static constexpr int StaticInputSize = StaticInputSize_;
+    static constexpr int Order = Order_;
+    using PolynomialType = Polynomial<StaticInputSize, Order>;
     // constructors
-    LagrangeBasis() = default;
-    explicit LagrangeBasis(const Eigen::Matrix<double, Eigen::Dynamic, N>& nodes) : nodes_(nodes) {
-        fdapde_assert(nodes.rows() == ct_binomial_coefficient(N + R, R));
+    constexpr LagrangeBasis() = default;
+    template <int n_nodes>
+    constexpr explicit LagrangeBasis(const cexpr::Matrix<double, n_nodes, StaticInputSize>& nodes) {
+        fdapde_static_assert(n_nodes == n_basis, WRONG_NUMBER_OF_NODES_FOR_DEFINITION_OF_LAGRANGE_BASIS);
         // build Vandermonde matrix
-        constexpr auto poly_table = Polynomial<N, R>::ct_poly_exp();
-        SMatrix<n_basis> V = Eigen::Matrix<double, n_basis, n_basis>::Ones();
+        constexpr auto poly_table = Polynomial<StaticInputSize, Order>::poly_exponents();
+	cexpr::Matrix<double, n_basis, n_basis> V = cexpr::Matrix<double, n_basis, n_basis>::Ones();
         for (int i = 0; i < n_basis; ++i) {
             for (int j = 1; j < n_basis; ++j) {
-                for (int k = 0; k < N; ++k) {
-                    int exp = poly_table[j][k];
+                for (int k = 0; k < StaticInputSize; ++k) {
+                    int exp = poly_table(j, k);
                     if (exp) V(i, j) *= std::pow(nodes(i, k), exp);
                 }
             }
         }
         // solve the vandermonde system V*a = b_i with b_i[j] = 1 \iff j = i, 0 otherwise
-        Eigen::PartialPivLU<SMatrix<n_basis>> invV(V);
-        SVector<n_basis> b = Eigen::Matrix<double, n_basis, 1>::Zero();   // rhs of linear system
+        cexpr::PartialPivLU<cexpr::Matrix<double, n_basis, n_basis>> invV(V);
+	cexpr::Vector<double, n_basis> b = cexpr::Matrix<double, n_basis, 1>::Zero();   // rhs of linear system
         for (int i = 0; i < n_basis; ++i) {
             b[i] = 1;
             // solve linear system V*a = b
-            SVector<n_basis> a = invV.solve(b);
-            basis_[i] = Polynomial<N, R>(a);
+	    cexpr::Vector<double, n_basis> a = invV.solve(b);
+            basis_[i] = Polynomial<StaticInputSize, Order>(a);
             b[i] = 0;
         }
     }
     // getters
-    const Polynomial<N, R>& operator[](int i) const { return basis_[i]; }   // i-th lagrange polynomial
-    const Eigen::Matrix<double, Eigen::Dynamic, N>& nodes() const { return nodes_; }
-    int size() const { return basis_.size(); }
+    constexpr const Polynomial<StaticInputSize, Order>& operator[](int i) const { return basis_[i]; }
+    constexpr int size() const { return basis_.size(); }
 };
 
-}   // namespace core
 }   // namespace fdapde
 
 #endif   // __LAGRANGE_BASIS_H__

@@ -24,7 +24,6 @@
 #include "../utils/symbols.h"
 
 namespace fdapde {
-namespace core {
 
 // returns the lumped matrix of a sparse expression. row-sum lumping operator
 template <typename ExprType> SpMatrix<typename ExprType::Scalar> lump(const Eigen::SparseMatrixBase<ExprType>& expr) {
@@ -50,7 +49,6 @@ template <typename ExprType> DiagMatrix<typename ExprType::Scalar> lump(const Ei
     return lumped_matrix.asDiagonal();
 }
 
-}   // namespace core
 }   // namespace fdapde
 
 #endif   // __LUMPING_H__

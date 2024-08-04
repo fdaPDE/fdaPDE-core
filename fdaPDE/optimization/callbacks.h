@@ -14,13 +14,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __EXTENSION_H__
-#define __EXTENSION_H__
+#ifndef __OPTIMIZER_CALLBACKS_H__
+#define __OPTIMIZER_CALLBACKS_H__
 
 #include "../../utils/traits.h"
 
 namespace fdapde {
-namespace core {
 
 // define detection-idiom based extension traits
 define_has(pre_update_step);
@@ -60,7 +59,6 @@ bool execute_obj_stopping_criterion(Opt& optimizer, Obj& objective) {
     return b;
 }
 
-}   // namespace core
 }   // namespace fdapde
 
-#endif   // __EXTENSION_H__
+#endif   // __OPTIMIZER_CALLBACKS_H__

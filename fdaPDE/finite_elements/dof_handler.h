@@ -24,7 +24,6 @@
 #include "dof_tetrahedron.h"
 
 namespace fdapde {
-namespace core {
 
 enum Boundary : short { All = -1, Dirichlet = 1, Neumann = 2, Robin = 3 };    // value 0 is for NOT-boundary nodes
   
@@ -488,7 +487,6 @@ template <> class DofHandler<3, 3> : public DofHandlerBase<3, 3, DofHandler<3, 3
 // template argument deduction guide
 template <int LocalDim, int EmbedDim> DofHandler(Triangulation<LocalDim, EmbedDim>) -> DofHandler<LocalDim, EmbedDim>;
 
-}   // namespace core
 }   // namespace fdapde
 
 #endif   // __DOF_HANDLER_H__

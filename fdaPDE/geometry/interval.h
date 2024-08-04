@@ -21,7 +21,6 @@
 #include "../linear_algebra/binary_matrix.h"
 
 namespace fdapde {
-namespace core {
   
 // template specialization for 1D meshes (bounded intervals)
 template <int M, int N> class Triangulation;
@@ -133,7 +132,6 @@ template <> class Triangulation<1, 1> {
     int n_nodes_ = 0, n_cells_ = 0;
 };
 
-}   // namespace core
 }   // namespace fdapde
 
 #endif   // __INTERVAL_H__

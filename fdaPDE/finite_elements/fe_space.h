@@ -21,7 +21,6 @@
 #include "dof_handler.h"
 
 namespace fdapde {
-namespace core {
 
 template <typename TriangulationType, typename FeType_, int NComponents> class FiniteElementSpace {
    public:
@@ -101,7 +100,6 @@ FiniteElementSpace(const TriangulationType&, FEType_) -> FiniteElementSpace<Tria
 //     return (i % n_components == j) ? basis_[j].derive()(p) : SVector<local_dim>::Zero();
 // }
   
-}   // namespace core
 }   // namespace fdapde
 
 #endif   // __FE_SPACE_H__

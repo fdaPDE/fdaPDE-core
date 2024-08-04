@@ -20,7 +20,6 @@
 #include "../../utils/symbols.h"
 
 namespace fdapde {
-namespace core {
 
 // implementation of the Wolfe line search method for step selection
 // check "Jorge Nocedal, Stephen J. Wright (2006), Numerical Optimization"
@@ -61,7 +60,6 @@ class WolfeLineSearch {
     }
 };
 
-}   // namespace core
 }   // namespace fdapde
 
 #endif   // __WOLFE_LINE_SEARCH_H__

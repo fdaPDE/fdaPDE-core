@@ -26,7 +26,6 @@
 #include "utils.h"
 
 namespace fdapde {
-namespace core {
 
 // The convex-hull of EmbedDim_ + 1 points in \mathbb{R}^EmbedDim.
 // A point (Order 0), line (Order 1), triangle (Order 2), tetrahedron (Order 3) embedded in \mathbb{R}^EmbedDim
@@ -185,7 +184,7 @@ template <int Order_, int EmbedDim_> class Simplex {
       for (int j = 0; j < n_nodes - 1; ++j) { J_.col(j) = coords_.col(j + 1) - coords_.col(0); }
         if constexpr (embed_dim == local_dim) {
             invJ_ = J_.inverse();
-            measure_ = std::abs(J_.determinant()) / (ct_factorial(local_dim));
+            measure_ = std::abs(J_.determinant()) / (cexpr::factorial(local_dim));
         } else {   // generalized Penrose inverse for manifolds
             invJ_ = (J_.transpose() * J_).inverse() * J_.transpose();
             if constexpr (local_dim == 2) measure_ = 0.5 * J_.col(0).cross(J_.col(1)).norm();
@@ -202,7 +201,6 @@ template <int Order_, int EmbedDim_> class Simplex {
     SMatrix<local_dim, embed_dim> invJ_;   // J^{-1} (Penrose pseudo-inverse for manifold)
 };
 
-}   // namespace core
 }   // namespace fdapde
 
 #endif   // __SIMPLEX_H__

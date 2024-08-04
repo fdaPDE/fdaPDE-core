@@ -21,7 +21,6 @@
 #include "../linear_algebra/binary_matrix.h"
 
 namespace fdapde {
-namespace core {
   
 // template specialization for 1D meshes (bounded intervals)
 template <int M, int N> class Triangulation;
@@ -131,7 +130,6 @@ template <> class Triangulation<1, 2> {
     mutable std::optional<LocationPolicy> location_policy_ {};
 };
 
-}   // namespace core
 }   // namespace fdapde
 
 #endif   // __LINEAR_NETWORK_H__
