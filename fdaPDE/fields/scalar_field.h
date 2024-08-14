@@ -25,24 +25,27 @@ namespace fdapde {
 
 template <int StaticInputSize, typename Derived> struct ScalarBase;
   
-template <typename Derived, typename UnaryFunctor>
-class ScalarUnaryOp : public ScalarBase<Derived::StaticInputSize, ScalarUnaryOp<Derived, UnaryFunctor>> {
-   private:
-    typename internals::ref_select<const Derived>::type derived_;
-    UnaryFunctor op_;
-   public:
+template <typename Derived_, typename UnaryFunctor>
+struct ScalarUnaryOp : public ScalarBase<Derived_::StaticInputSize, ScalarUnaryOp<Derived_, UnaryFunctor>> {
+    using Derived = Derived_;
     using Base = ScalarBase<Derived::StaticInputSize, ScalarUnaryOp<Derived, UnaryFunctor>>;
     using InputType = typename Derived::InputType;
-    using Scalar = typename Derived::Scalar;
+    using Scalar = decltype(std::declval<UnaryFunctor>().operator()(std::declval<typename Derived::Scalar>()));
     static constexpr int StaticInputSize = Derived::StaticInputSize;
     static constexpr int NestAsRef = 0;
+    static constexpr int XprBits = Derived::XprBits;
 
-    constexpr ScalarUnaryOp(const Derived& derived, const UnaryFunctor& op) : Base(), derived_(derived), op_(op) { }
+    constexpr ScalarUnaryOp(const Derived_& derived, const UnaryFunctor& op) : Base(), derived_(derived), op_(op) { }
+    constexpr ScalarUnaryOp(const Derived_& derived) : ScalarUnaryOp(derived, UnaryFunctor()) { }
     constexpr Scalar operator()(const InputType& p) const {
         if constexpr (StaticInputSize == Dynamic) { fdapde_assert(p.rows() == Base::input_size()); }
         return op_(derived_(p));
     }
     constexpr int input_size() const { return derived_.input_size(); }
+    constexpr const Derived& derived() const { return derived_; }
+   private:
+    typename internals::ref_select<const Derived>::type derived_;
+    UnaryFunctor op_;
 };
 template <int Size, typename Derived> constexpr auto sin(const ScalarBase<Size, Derived>& f) {
     return ScalarUnaryOp<Derived, decltype([](typename Derived::Scalar x) { return std::sin(x); })>(f.derived());
@@ -76,38 +79,43 @@ template <int Size, typename Derived> constexpr auto pow(const ScalarBase<Size, 
     return ScalarUnaryOp<Derived, internals::pow_t>(f.derived(), internals::pow_t(i));
 }
 
-template <typename Lhs, typename Rhs, typename BinaryOperation>
-class ScalarBinOp : public ScalarBase<Lhs::StaticInputSize, ScalarBinOp<Lhs, Rhs, BinaryOperation>> {
+template <typename Lhs_, typename Rhs_, typename BinaryOperation>
+class ScalarBinOp : public ScalarBase<Lhs_::StaticInputSize, ScalarBinOp<Lhs_, Rhs_, BinaryOperation>> {
     fdapde_static_assert(
-      Lhs::StaticInputSize == Rhs::StaticInputSize, YOU_MIXED_SCALAR_FUNCTIONS_WITH_DIFFERENT_STATIC_INNER_SIZE);
+      Lhs_::StaticInputSize == Rhs_::StaticInputSize, YOU_MIXED_SCALAR_FUNCTIONS_WITH_DIFFERENT_STATIC_INNER_SIZE);
     fdapde_static_assert(
-      std::is_same_v<typename Lhs::InputType FDAPDE_COMMA typename Rhs::InputType>,
+      std::is_same_v<typename Lhs_::InputType FDAPDE_COMMA typename Rhs_::InputType>,
       YOU_MIXED_SCALAR_FIELDS_WITH_DIFFERENT_VECTOR_TYPES);
     fdapde_static_assert(
-      std::is_same_v<typename Lhs::Scalar FDAPDE_COMMA typename Rhs::Scalar>,
+      std::is_same_v<typename Lhs_::Scalar FDAPDE_COMMA typename Rhs_::Scalar>,
       YOU_MIXED_SCALAR_FIELDS_WITH_DIFFERENT_SCALAR_TYPES);
-   private:
-    typename internals::ref_select<const Lhs>::type lhs_;
-    typename internals::ref_select<const Rhs>::type rhs_;
-    BinaryOperation op_;
    public:
-    using Base = ScalarBase<Lhs::StaticInputSize, ScalarBinOp<Lhs, Rhs, BinaryOperation>>;
-    using InputType = typename Lhs::InputType;
-    using Scalar = typename Lhs::Scalar;
-    static constexpr int StaticInputSize = Lhs::StaticInputSize;
+    using LhsDerived = Lhs_;
+    using RhsDerived = Rhs_;
+    using Base = ScalarBase<LhsDerived::StaticInputSize, ScalarBinOp<LhsDerived, RhsDerived, BinaryOperation>>;
+    using InputType = typename LhsDerived::InputType;
+    using Scalar = typename LhsDerived::Scalar;
+    static constexpr int StaticInputSize = LhsDerived::StaticInputSize;
     static constexpr int NestAsRef = 0;
+    static constexpr int XprBits = LhsDerived::XprBits | RhsDerived::XprBits;
 
-    ScalarBinOp(const Lhs& lhs, const Rhs& rhs, BinaryOperation op) requires(StaticInputSize == Dynamic) :
+    ScalarBinOp(const Lhs_& lhs, const Rhs_& rhs, BinaryOperation op) requires(StaticInputSize == Dynamic) :
         Base(), lhs_(lhs), rhs_(rhs), op_(op) {
         fdapde_assert(lhs.input_size() == rhs.input_size());
     }
-    constexpr ScalarBinOp(const Lhs& lhs, const Rhs& rhs, BinaryOperation op) requires(StaticInputSize != Dynamic) :
+    constexpr ScalarBinOp(const Lhs_& lhs, const Rhs_& rhs, BinaryOperation op) requires(StaticInputSize != Dynamic) :
         Base(), lhs_(lhs), rhs_(rhs), op_(op) { }
-    constexpr double operator()(const InputType& p) const {
+    constexpr Scalar operator()(const InputType& p) const {
         if constexpr (StaticInputSize == Dynamic) { fdapde_assert(p.rows() == Base::input_size()); }
         return op_(lhs_(p), rhs_(p));
     }
     constexpr int input_size() const { return lhs_.input_size(); }
+    constexpr const LhsDerived& lhs() const { return lhs_; }
+    constexpr const RhsDerived& rhs() const { return rhs_; }
+   private:
+    typename internals::ref_select<const LhsDerived>::type lhs_;
+    typename internals::ref_select<const RhsDerived>::type rhs_;
+    BinaryOperation op_;
 };
 
 template <int Size, typename Lhs, typename Rhs>
@@ -137,26 +145,20 @@ struct ScalarCoeffOp :
       std::conditional_t<std::is_arithmetic_v<Lhs>, Rhs, Lhs>::StaticInputSize,
       ScalarCoeffOp<Lhs, Rhs, BinaryOperation>> {
     using CoeffType = std::conditional_t<std::is_arithmetic_v<Lhs>, Lhs, Rhs>;
-    using Derived = std::conditional_t<std::is_arithmetic_v<Lhs>, Rhs, Lhs>;
+    using Derived   = std::conditional_t<std::is_arithmetic_v<Lhs>, Rhs, Lhs>;
     fdapde_static_assert(
       std::is_convertible_v<CoeffType FDAPDE_COMMA typename Derived::Scalar> && std::is_arithmetic_v<CoeffType>,
       COEFFICIENT_IN_BINARY_OPERATION_NOT_CONVERTIBLE_TO_SCALAR_TYPE);
-   private:
-    typename internals::ref_select<const Derived>::type derived_;
-    BinaryOperation op_;
-    CoeffType coeff_;
-    static constexpr bool is_coeff_lhs =
-      std::is_arithmetic_v<Lhs>;   // whether to perform op_(xpr_(p), coeff) or op_(coeff, xpr_(p))
-   public:
     using Base = ScalarBase<Derived::StaticInputSize, ScalarCoeffOp<Lhs, Rhs, BinaryOperation>>;
     using InputType = typename Derived::InputType;
     using Scalar = typename Derived::Scalar;
     static constexpr int StaticInputSize = Derived::StaticInputSize;
     static constexpr int NestAsRef = 0;
+    static constexpr int XprBits = Derived::XprBits;
 
     constexpr ScalarCoeffOp(const Derived& derived, CoeffType coeff, BinaryOperation op) :
         Base(), derived_(derived), coeff_(coeff), op_(op) { }
-    constexpr double operator()(const InputType& p) const {
+    constexpr Scalar operator()(const InputType& p) const {
         if constexpr (StaticInputSize == Dynamic) { fdapde_assert(p.rows() == Base::input_size()); }
         if constexpr (is_coeff_lhs) {
             return op_(coeff_, derived_(p));
@@ -165,6 +167,13 @@ struct ScalarCoeffOp :
         }
     }
     constexpr int input_size() const { return derived_.input_size(); }
+    constexpr const Derived& derived() const { return derived_; }
+   private:
+    typename internals::ref_select<const Derived>::type derived_;
+    BinaryOperation op_;
+    CoeffType coeff_;
+    static constexpr bool is_coeff_lhs =
+      std::is_arithmetic_v<Lhs>;   // whether to perform op_(xpr_(p), coeff) or op_(coeff, xpr_(p))
 };
 
 #define FDAPDE_DEFINE_SCALAR_COEFF_OP(OPERATOR, FUNCTOR)                                                               \
@@ -197,6 +206,7 @@ class ScalarField : public ScalarBase<Size, ScalarField<Size, FunctorType_>> {
     using Scalar = typename std::invoke_result<FunctorType, InputType>::type;
     static constexpr int StaticInputSize = Size;      // dimensionality of base space (can be Dynamic)
     static constexpr int NestAsRef = 0;               // whether to store the node by reference of by copy
+    static constexpr int XprBits = 0;                 // bits which carries implementation specific informations
 
     constexpr ScalarField() requires(StaticInputSize != Dynamic) : f_() { }
     explicit ScalarField(int n) requires(StaticInputSize == Dynamic)
@@ -242,8 +252,8 @@ class ScalarField : public ScalarBase<Size, ScalarField<Size, FunctorType_>> {
     static constexpr ConstantFunction Zero() { return ConstantFunction(0.0); }
     constexpr int input_size() const { return StaticInputSize == Dynamic ? dynamic_input_size_ : StaticInputSize; }
     // evaluation at point
-    constexpr double operator()(const InputType& x) const { return f_(x); }
-    constexpr double operator()(const InputType& x) { return f_(x); }
+    constexpr Scalar operator()(const InputType& x) const { return f_(x); }
+    constexpr Scalar operator()(const InputType& x) { return f_(x); }
     void resize(int dynamic_input_size) {
         fdapde_static_assert(StaticInputSize == Dynamic, YOU_CALLED_A_DYNAMIC_METHOD_ON_A_STATIC_SIZED_FIELD);
         dynamic_input_size_ = dynamic_input_size;
@@ -255,22 +265,19 @@ class ScalarField : public ScalarBase<Size, ScalarField<Size, FunctorType_>> {
 
 template <typename Derived, int Order> struct PartialDerivative;
 
-template <typename Derived>
-struct PartialDerivative<Derived, 1> : public ScalarBase<Derived::StaticInputSize, PartialDerivative<Derived, 1>> {
-   private:
-    typename internals::ref_select<Derived>::type f_;
-    int i_;
-    double h_ = 1e-3;
-   public:
+template <typename Derived_>
+struct PartialDerivative<Derived_, 1> : public ScalarBase<Derived_::StaticInputSize, PartialDerivative<Derived_, 1>> {
+    using Derived = Derived_;
     using Base = ScalarBase<Derived::StaticInputSize, PartialDerivative<Derived, 1>>;
     using InputType = std::decay_t<typename Derived::InputType>;
     using Scalar = typename Derived::Scalar;
     static constexpr int StaticInputSize = Derived::StaticInputSize;
     static constexpr int NestAsRef = 0;
-  
+    static constexpr int XprBits = Derived::XprBits;
+
     constexpr PartialDerivative() = default;
-    constexpr PartialDerivative(const Derived& f, int i) : Base(), f_(f), i_(i) { }
-    constexpr PartialDerivative(const Derived& f, int i, double h) : Base(), f_(f), i_(i), h_(h) { }
+    constexpr PartialDerivative(const Derived_& f, int i) : Base(), f_(f), i_(i) { }
+    constexpr PartialDerivative(const Derived_& f, int i, double h) : Base(), f_(f), i_(i), h_(h) { }
     constexpr Scalar operator()(InputType x) const {
         if constexpr (std::is_arithmetic<InputType>::value) {
             return (f_(x + h_) - f_(x - h_)) / (2 * h_);
@@ -283,20 +290,22 @@ struct PartialDerivative<Derived, 1> : public ScalarBase<Derived::StaticInputSiz
         }
     }
     constexpr int input_size() const { return f_.input_size(); }
-};
-
-template <typename Derived>
-struct PartialDerivative<Derived, 2> : public ScalarBase<Derived::StaticInputSize, PartialDerivative<Derived, 2>> {
+    constexpr const Derived& derived() const { return f_; }
    private:
     typename internals::ref_select<Derived>::type f_;
-    int i_, j_;
+    int i_;
     double h_ = 1e-3;
-   public:
+};
+
+template <typename Derived_>
+struct PartialDerivative<Derived_, 2> : public ScalarBase<Derived_::StaticInputSize, PartialDerivative<Derived_, 2>> {
+    using Derived = Derived_;
     using Base = ScalarBase<Derived::StaticInputSize, PartialDerivative<Derived, 2>>;
     using InputType = std::decay_t<typename Derived::InputType>;
     using Scalar = typename Derived::Scalar;
     static constexpr int StaticInputSize = Derived::StaticInputSize;
     static constexpr int NestAsRef = 0;
+    static constexpr int XprBits = Derived::XprBits;
 
     constexpr PartialDerivative() = default;
     constexpr PartialDerivative(const Derived& f, int i, int j) : Base(), f_(f), i_(i), j_(j) { }
@@ -335,12 +344,14 @@ struct PartialDerivative<Derived, 2> : public ScalarBase<Derived::StaticInputSiz
         }
     }
     constexpr int input_size() const { return f_.input_size(); }
+    constexpr const Derived& derived() const { return f_; }
+   private:
+    typename internals::ref_select<Derived>::type f_;
+    int i_, j_;
+    double h_ = 1e-3;
 };
 
-template <typename Derived> class Gradient;
-template <typename Derived> class Hessian;
-
-template <int Size, typename Derived> struct ScalarBase {;
+template <int Size, typename Derived> struct ScalarBase {
     constexpr ScalarBase() = default;
   
     constexpr const Derived& derived() const { return static_cast<const Derived&>(*this); }
@@ -354,12 +365,12 @@ template <int Size, typename Derived> struct ScalarBase {;
     constexpr PartialDerivative<Derived, 1> partial(int i) const requires(Size > 1 || Size == Dynamic) {
         return PartialDerivative<Derived, 1>(derived(), i, step_);
     }
-    constexpr PartialDerivative<Derived, 1> partial() const requires(Size == 1) { return {derived(), 0, step_}; }
     constexpr PartialDerivative<Derived, 2> partial(int i, int j) const requires(Size > 1 || Size == Dynamic) {
         return PartialDerivative<Derived, 2>(derived(), i, j, step_);
     }
-    constexpr Gradient<Derived> gradient() const { return Gradient<Derived>(derived()); }
-    constexpr Hessian<Derived> hessian() const { return Hessian<Derived>(derived()); }
+    constexpr auto gradient() const { return Gradient<Derived>(derived()); }
+    constexpr auto hessian() const { return Hessian<Derived>(derived()); }
+    constexpr auto laplacian() const { return Laplacian<Derived>(derived()); }
    protected:
     double step_ = 1e-3;   // step size used in derivative approximation
 };

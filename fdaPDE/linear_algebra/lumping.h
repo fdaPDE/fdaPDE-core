@@ -17,9 +17,6 @@
 #ifndef __LUMPING_H__
 #define __LUMPING_H__
 
-#include <Eigen/Core>
-#include <Eigen/Sparse>
-
 #include "../utils/assert.h"
 #include "../utils/symbols.h"
 

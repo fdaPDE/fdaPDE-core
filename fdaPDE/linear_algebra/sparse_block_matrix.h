@@ -126,14 +126,13 @@ struct SparseBlockMatrix :
     int cols_ = 0, rows_ = 0;                      // matrix dimensions
 };
 
-}   // namespace core
 }   // namespace fdapde
 
 // definition of proper symbols in Eigen::internal namespace
 namespace Eigen {
 namespace internal {
 // import symbols from fdapde namespace
-using fdapde::core::SparseBlockMatrix;
+using fdapde::SparseBlockMatrix;
 
 // trait definition
 template <typename Scalar_, int Rows_, int Cols_, int Options_, typename StorageIndex_>
@@ -219,6 +218,7 @@ struct evaluator<SparseBlockMatrix<Scalar_, Rows_, Cols_, Options_, StorageIndex
     const SparseBlockMatrix<Scalar_, Rows_, Cols_, Options_, StorageIndex_>& xpr_;
 };
 
+}   // namespace internal
 }   // namespace Eigen
 
 #endif   // __SPARSE_BLOCK_MATRIX_H__

@@ -21,14 +21,16 @@
 
 namespace fdapde {
 
-template <typename Derived> class Laplacian : public ScalarBase<Derived::StaticInputSize, Laplacian<Derived>> {
+template <typename Derived_> class Laplacian : public ScalarBase<Derived_::StaticInputSize, Laplacian<Derived_>> {
    public:
+    using Derived = Derived_;
     using Base = ScalarBase<Derived::StaticInputSize, Laplacian<Derived>>;
     using FunctorType = PartialDerivative<Derived, 2>;
     using InputType = typename Derived::InputType;
     using Scalar = typename Derived::Scalar;
     static constexpr int StaticInputSize = Derived::StaticInputSize;
     static constexpr int NestAsRef = 0;
+    static constexpr int XprBits = Derived::XprBits;
 
     constexpr Laplacian(const Derived& xpr) : Base(), xpr_(xpr) {
         if constexpr (StaticInputSize == Dynamic) data_.resize(xpr_.input_size());
@@ -40,6 +42,7 @@ template <typename Derived> class Laplacian : public ScalarBase<Derived::StaticI
         return res;
     }
     constexpr int input_size() const { return xpr_.input_size(); }
+    constexpr const Derived& derived() const { return xpr_; }
    private:
     using StorageType = typename std::conditional_t<
       StaticInputSize == Dynamic, std::vector<FunctorType>, std::array<FunctorType, StaticInputSize>>;

@@ -21,9 +21,10 @@
 
 namespace fdapde {
 
-template <typename Derived> class Divergence : public ScalarBase<Derived::StaticInputSize, Divergence<Derived>> {
-    fdapde_static_assert(Derived::Cols == 1, DIVERGENCE_OPERATOR_IS_FOR_VECTOR_FIELDS_ONLY);
+template <typename Derived_> class Divergence : public ScalarBase<Derived_::StaticInputSize, Divergence<Derived_>> {
+    fdapde_static_assert(Derived_::Cols == 1, DIVERGENCE_OPERATOR_IS_FOR_VECTOR_FIELDS_ONLY);
    public:
+    using Derived = Derived_;
     using Base = ScalarBase<Derived::StaticInputSize, Divergence<Derived>>;
     using FunctorType =
       PartialDerivative<std::decay_t<decltype(std::declval<Derived>().operator[](std::declval<int>()))>, 1>;
@@ -31,8 +32,9 @@ template <typename Derived> class Divergence : public ScalarBase<Derived::Static
     using Scalar = typename Derived::Scalar;
     static constexpr int StaticInputSize = Derived::StaticInputSize;
     static constexpr int NestAsRef = 0;
+    static constexpr int XprBits = FunctorType::XprBits;
 
-    explicit constexpr Divergence(const Derived& xpr) : Base(), data_(), xpr_(xpr) {
+    explicit constexpr Divergence(const Derived_& xpr) : Base(), data_(), xpr_(xpr) {
         if constexpr (StaticInputSize == Dynamic) data_.resize(xpr_.rows());
         for (int i = 0; i < xpr_.rows(); ++i) { data_[i] = FunctorType(xpr_[i], i); }
     }
@@ -42,6 +44,7 @@ template <typename Derived> class Divergence : public ScalarBase<Derived::Static
         return div_;
     }
     constexpr int input_size() const { return xpr_.input_size(); }
+    constexpr const Derived& derived() const { return xpr_; }
    private:
     using StorageType = typename std::conditional<
       Derived::StaticInputSize == Dynamic, std::vector<FunctorType>, std::array<FunctorType, StaticInputSize>>::type;

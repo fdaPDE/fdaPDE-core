@@ -22,16 +22,18 @@
 
 namespace fdapde {
 
-template <typename Derived> class Gradient : public fdapde::MatrixBase<Derived::StaticInputSize, Gradient<Derived>> {
+template <typename Derived_> class Gradient : public fdapde::MatrixBase<Derived_::StaticInputSize, Gradient<Derived_>> {
    public:
+    using Derived = Derived_;
     using Base = MatrixBase<Derived::StaticInputSize, Gradient<Derived>>;
     using FunctorType = PartialDerivative<std::decay_t<Derived>, 1>;
-    using InputType = typename Derived::InputType;
-    using Scalar = typename Derived::Scalar;
+    using InputType = typename FunctorType::InputType;
+    using Scalar = typename FunctorType::Scalar;
     static constexpr int StaticInputSize = Derived::StaticInputSize;
     static constexpr int Rows = Derived::StaticInputSize;
     static constexpr int Cols = 1;
     static constexpr int NestAsRef = 0;
+    static constexpr int XprBits = FunctorType::XprBits;
     using Base::operator();
 
     explicit constexpr Gradient(const Derived& xpr) : Base(), xpr_(xpr) {
@@ -49,6 +51,7 @@ template <typename Derived> class Gradient : public fdapde::MatrixBase<Derived::
     constexpr int cols() const { return Cols; }
     constexpr int input_size() const { return xpr_.input_size(); }
     constexpr int size() const { return Rows; }
+    constexpr const Derived& derived() const { return xpr_; }
    private:
     using StorageType = typename std::conditional_t<
       Derived::StaticInputSize == Dynamic, std::vector<FunctorType>, std::array<FunctorType, StaticInputSize>>;

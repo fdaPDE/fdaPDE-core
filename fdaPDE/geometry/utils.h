@@ -74,6 +74,7 @@ template <typename Iterator, typename ValueType> class index_based_iterator {
     using difference_type   = std::ptrdiff_t;
     using iterator_category = std::bidirectional_iterator_tag;
 
+    index_based_iterator() = default;
     index_based_iterator(int index, int begin, int end) : index_(index), begin_(begin), end_(end) { }
     reference operator*() const { return val_; }
     pointer operator->() const { return &val_; }
@@ -108,6 +109,7 @@ template <typename Iterator, typename ValueType> class index_based_iterator {
     }
     friend bool operator!=(const This& lhs, const This& rhs) { return lhs.index_ != rhs.index_; }
     friend bool operator==(const This& lhs, const This& rhs) { return lhs.index_ == rhs.index_; }
+    int index() const { return index_; }
 };
 
 }   // namespace fdapde

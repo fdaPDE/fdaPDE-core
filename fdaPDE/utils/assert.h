@@ -23,15 +23,17 @@ namespace fdapde {
 
 #define FDAPDE_COMMA ,
   
-namespace internal {
+namespace internals {
+  
 void fdapde_assert_failed_(const char* str, const char* file, int line) {
     std::cerr << file << ":" << line << ". Assertion: '" << str << "' failed." << std::endl;
     abort();
 }
-};   // namespace internal
+  
+}   // namespace internals
 
 #define fdapde_assert(condition)                                                                                       \
-    if (!(condition)) { internal::fdapde_assert_failed_(#condition, __FILE__, __LINE__); }
+    if (!(condition)) { fdapde::internals::fdapde_assert_failed_(#condition, __FILE__, __LINE__); }
 
 #define fdapde_static_assert(condition, message) static_assert(condition, #message)
 

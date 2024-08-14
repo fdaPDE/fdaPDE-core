@@ -26,10 +26,8 @@ namespace fdapde {
 // given N+1 nodes n_0, n_1, n_2, ..., n_N, this class represents the set {l_0(x), l_1(x), ..., l_N(x) : l_j(n_i) = 1
 // \iff i = j, 0 otherwise}. this polynomial system makes a basis for the set of polynomials up to order R in R^N
 template <int StaticInputSize_, int Order_> class LagrangeBasis {
-   private:
-    static constexpr int n_basis = cexpr::binomial_coefficient(StaticInputSize_ + Order_, Order_);
-    std::array<Polynomial<StaticInputSize_, Order_>, n_basis> basis_;
    public:
+    static constexpr int n_basis = cexpr::binomial_coefficient(StaticInputSize_ + Order_, Order_);
     static constexpr int StaticInputSize = StaticInputSize_;
     static constexpr int Order = Order_;
     using PolynomialType = Polynomial<StaticInputSize, Order>;
@@ -63,6 +61,8 @@ template <int StaticInputSize_, int Order_> class LagrangeBasis {
     // getters
     constexpr const Polynomial<StaticInputSize, Order>& operator[](int i) const { return basis_[i]; }
     constexpr int size() const { return basis_.size(); }
+   private:
+    std::array<Polynomial<StaticInputSize_, Order_>, n_basis> basis_;
 };
 
 }   // namespace fdapde

@@ -21,14 +21,16 @@
 
 namespace fdapde {
 
-template <int Order, typename Derived, int PowerFlag = 0>
-class MatrixNorm : public ScalarBase<Derived::StaticInputSize, MatrixNorm<Order, Derived, PowerFlag>> {
+template <int Order, typename Derived_, int PowerFlag = 0>
+class MatrixNorm : public ScalarBase<Derived_::StaticInputSize, MatrixNorm<Order, Derived_, PowerFlag>> {
    public:
+    using Derived = Derived_;
     using Base = ScalarBase<Derived::StaticInputSize, MatrixNorm<Order, Derived, PowerFlag>>;
     using InputType = typename Derived::InputType;
     using Scalar = typename Derived::Scalar;
     static constexpr int StaticInputSize = Derived::StaticInputSize;
     static constexpr int NestAsRef = 0;
+    static constexpr int XprBits = Derived::XprBits;
 
     explicit constexpr MatrixNorm(const Derived& xpr) : Base(), xpr_(xpr) { }
     constexpr Scalar operator()(const InputType& p) const {
@@ -48,6 +50,7 @@ class MatrixNorm : public ScalarBase<Derived::StaticInputSize, MatrixNorm<Order,
         if constexpr (Order >= 3) return std::pow(norm_, 1. / Order);
     }
     constexpr int input_size() const { return xpr_.input_size(); }
+    constexpr const Derived& derived() const { return xpr_; }
    private:
     typename internals::ref_select<const Derived>::type xpr_;
 };

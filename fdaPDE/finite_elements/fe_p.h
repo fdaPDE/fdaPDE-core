@@ -17,15 +17,16 @@
 #ifndef __FE_P_H__
 #define __FE_P_H__
 
+#include "../geometry/simplex.h"
 #include "../linear_algebra/constexpr_matrix.h"
 #include "../utils/symbols.h"
+#include "fe_integration.h"
 #include "lagrange_basis.h"
-#include "../geometry/simplex.h"
 
 namespace fdapde {
 
 // representation of the finite element space P_h^K = { v \in H^1(D) : v_{e} \in P^K \forall e \in T_h }
-template <int Order> struct FE_P {
+template <int Order> struct FeP {
     static constexpr int order = Order;
     fdapde_static_assert(Order < 4, THIS_CLASS_SUPPORTS_LAGRANGE_ELEMENTS_UP_TO_ORDER_THREE);
 
@@ -39,7 +40,7 @@ template <int Order> struct FE_P {
         static constexpr int n_dofs_per_cell = ReferenceCell::n_nodes + n_dofs_per_edge * ReferenceCell::n_edges +
                                                n_dofs_per_face * ReferenceCell::n_faces + n_dofs_internal;
         using BasisType = LagrangeBasis<local_dim, Order>;
-        using BasisElementType = typename BasisType::PolynomialType;
+        using ElementType = typename BasisType::PolynomialType;
 
         constexpr dof_descriptor() : dofs_phys_coords_(), dofs_bary_coords_() {
             // compute dofs physical coordinates on reference cell
@@ -66,7 +67,7 @@ template <int Order> struct FE_P {
                     std::prev_permutation(bitmask.begin(), bitmask.end());
                 }
             };
-	    
+	    // enumerate dofs on reference cell
             if constexpr (local_dim == 1) {
                 if constexpr (n_dofs_internal > 0) {
                     for (int i = 0; i < n_dofs_internal; ++i) { dofs_phys_coords_[j++] = (i + 1) * 1. / Order; }
@@ -121,14 +122,26 @@ template <int Order> struct FE_P {
         cexpr::Matrix<double, n_dofs_per_cell, local_dim + 1> dofs_bary_coords_;   // dofs barycentric coordinates
     };
 
+    // select quadrature which optimally integrates (Order + 1) polynomials
+    template <int LocalDim> class select_cell_quadrature {
+        static constexpr int select_quadrature_() {
+            if (LocalDim == 1) return Order == 1 ? 2 : (Order == 2 ? 3 : 3);
+            if (LocalDim == 2) return Order == 1 ? 3 : (Order == 2 ? 6 : 6);
+            if (LocalDim == 3) return Order == 1 ? 4 : (Order == 2 ? 5 : 5);
+        }
+       public:
+        using type = internals::fe_quadrature_simplex<LocalDim, select_quadrature_()>;
+    };
+  
     template <int LocalDim> using cell_dof_descriptor = dof_descriptor<LocalDim>;
     template <int LocalDim> using face_dof_descriptor = dof_descriptor<LocalDim - 1>;
+    template <int LocalDim> using select_cell_quadrature_t = typename select_cell_quadrature<LocalDim>::type;
 };
   
 // lagrange finite element alias
-[[maybe_unused]] static struct P1_ : FE_P<1> { } P1;
-[[maybe_unused]] static struct P2_ : FE_P<2> { } P2;
-[[maybe_unused]] static struct P3_ : FE_P<3> { } P3;
+[[maybe_unused]] static struct P1_ : FeP<1> { } P1;
+[[maybe_unused]] static struct P2_ : FeP<2> { } P2;
+[[maybe_unused]] static struct P3_ : FeP<3> { } P3;
     
 }   // namespace fdapde
 

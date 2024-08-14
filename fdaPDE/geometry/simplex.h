@@ -99,7 +99,19 @@ template <int Order_, int EmbedDim_> class Simplex {
     }
     // simplex's circumcircle radius
     double circumradius() const { return (circumcenter() - coords_.col(0)).norm(); }
-  
+
+    // simplex's diameter (length of the longest side)
+    double diameter() const {
+        double max_length = -1;
+        for (int i = 0; i < n_nodes - 1; ++i) {
+            SVector<embed_dim> c = coords_.col(i);
+            for (int j = i + 1; j < n_nodes; ++j) {
+                double length = (c - coords_.col(j)).norm();
+                if (length > max_length) max_length = length;
+            }
+        }
+        return max_length;
+    }
     // (hyper)plane passing thorught the simplex
     HyperPlane<local_dim, embed_dim> supporting_plane() const requires(local_dim != embed_dim) {
         if (!plane_.has_value()) { plane_ = HyperPlane<local_dim, embed_dim>(coords_); }
@@ -181,7 +193,7 @@ template <int Order_, int EmbedDim_> class Simplex {
   
    protected:
     void initialize() {
-      for (int j = 0; j < n_nodes - 1; ++j) { J_.col(j) = coords_.col(j + 1) - coords_.col(0); }
+        for (int j = 0; j < n_nodes - 1; ++j) { J_.col(j) = coords_.col(j + 1) - coords_.col(0); }
         if constexpr (embed_dim == local_dim) {
             invJ_ = J_.inverse();
             measure_ = std::abs(J_.determinant()) / (cexpr::factorial(local_dim));

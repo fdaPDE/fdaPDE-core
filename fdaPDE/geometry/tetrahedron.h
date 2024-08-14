@@ -17,6 +17,7 @@
 #ifndef __TETRAHEDRON_H__
 #define __TETRAHEDRON_H__
 
+#include <unordered_set>
 #include "../utils/symbols.h"
 #include "simplex.h"
 

@@ -261,6 +261,10 @@ template <int N> class Triangulation<2, N> : public TriangulationBase<2, N, Tria
         if (!location_policy_.has_value()) location_policy_ = LocationPolicy(this);
         return location_policy_->locate(points);
     }
+    int locate(const SVector<embed_dim>& p) const {
+        if (!location_policy_.has_value()) location_policy_ = LocationPolicy(this);
+        return location_policy_->locate(p);
+    }
     // the set of cells which have node id as vertex
     std::vector<int> node_patch(int id) const {
         if (!location_policy_.has_value()) location_policy_ = LocationPolicy(this);
@@ -489,6 +493,10 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
     DVector<int> locate(const DMatrix<double>& points) const {
         if (!location_policy_.has_value()) location_policy_ = LocationPolicy(this);
         return location_policy_->locate(points);
+    }
+    int locate(const SVector<embed_dim>& p) const {
+        if (!location_policy_.has_value()) location_policy_ = LocationPolicy(this);
+        return location_policy_->locate(p);
     }
     // computes the set of elements which have node id as vertex
     std::vector<int> node_patch(int id) const {

@@ -17,6 +17,8 @@
 #ifndef __DOF_TETRAHEDRON_H__
 #define __DOF_TETRAHEDRON_H__
 
+#include "../geometry/tetrahedron.h"
+
 namespace fdapde {
 
 template <typename DofHandler> class DofTetrahedron : public Tetrahedron<typename DofHandler::TriangulationType> {

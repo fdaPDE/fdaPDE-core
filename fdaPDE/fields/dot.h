@@ -36,21 +36,24 @@ template <typename Lhs, typename Rhs> class DotProduct : public ScalarBase<Lhs::
       std::is_same_v<typename Lhs::InputType FDAPDE_COMMA typename Rhs::InputType>,
       YOU_MIXED_MATRIX_FIELDS_WITH_DIFFERENT_INPUT_TYPE);
    public:
-    using Base = ScalarBase<Lhs::StaticInputSize, DotProduct<Lhs, Rhs>>;
-    using InputType = typename Lhs::InputType;
-    using Scalar = decltype(std::declval<typename Lhs::Scalar>() * std::declval<typename Rhs::Scalar>());
-    static constexpr int StaticInputSize = Lhs::StaticInputSize;
+    using LhsDerived = Lhs;
+    using RhsDerived = Rhs;
+    using Base = ScalarBase<LhsDerived::StaticInputSize, DotProduct<Lhs, Rhs>>;
+    using InputType = typename LhsDerived::InputType;
+    using Scalar = decltype(std::declval<typename LhsDerived::Scalar>() * std::declval<typename RhsDerived::Scalar>());
+    static constexpr int StaticInputSize = LhsDerived::StaticInputSize;
     static constexpr int NestAsRef = 0;
+    static constexpr int XprBits = LhsDerived::XprBits | RhsDerived::XprBits;
 
     constexpr DotProduct(const Lhs& lhs, const Rhs& rhs) : lhs_(lhs), rhs_(rhs) {
-        if constexpr (Lhs::Cols == Dynamic || Rhs::Cols == Dynamic) {
+        if constexpr (LhsDerived::Cols == Dynamic || RhsDerived::Cols == Dynamic) {
             fdapde_assert(
               (lhs.cols() == 1 &&
                ((rhs.cols() == 1 && lhs_.rows() == rhs_.rows()) || (rhs.rows() == 1 && lhs_.rows() == rhs_.cols()))) ||
               (lhs.rows() == 1 &&
                ((rhs.rows() == 1 && lhs.cols() == rhs.cols()) || (rhs.cols() == 1 && lhs.cols() == rhs.rows()))));
         }
-        if constexpr (Lhs::StaticInputSize == Dynamic || Rhs::StaticInputSize == Dynamic) {
+        if constexpr (LhsDerived::StaticInputSize == Dynamic || RhsDerived::StaticInputSize == Dynamic) {
             fdapde_assert(lhs_.input_size() == rhs_.input_size());
         }
     }
@@ -61,13 +64,15 @@ template <typename Lhs, typename Rhs> class DotProduct : public ScalarBase<Lhs::
         return dot_;
     }
     constexpr int input_size() const { return lhs_.input_size(); }
+    constexpr const LhsDerived& lhs() const { return lhs_; }
+    constexpr const RhsDerived& rhs() const { return rhs_; }
    private:
-    typename internals::ref_select<const Lhs>::type lhs_;
-    typename internals::ref_select<const Rhs>::type rhs_;
+    typename internals::ref_select<const LhsDerived>::type lhs_;
+    typename internals::ref_select<const RhsDerived>::type rhs_;
 };
 
 template <typename Lhs, typename Rhs>
-constexpr DotProduct<Lhs, Rhs> dot(
+constexpr DotProduct<Lhs, Rhs> inner(
   const fdapde::MatrixBase<Lhs::StaticInputSize, Lhs>& lhs, const fdapde::MatrixBase<Rhs::StaticInputSize, Rhs>& rhs) {
     return DotProduct<Lhs, Rhs>(lhs.derived(), rhs.derived());
 }
@@ -138,12 +143,12 @@ struct DotProduct<Eigen::MatrixBase<Lhs>, Rhs> : public internals::dot_product_e
 
 template <typename Lhs, typename Rhs>
 constexpr DotProduct<Lhs, Eigen::MatrixBase<Rhs>>
-dot(const fdapde::MatrixBase<Lhs::StaticInputSize, Lhs>& lhs, const Eigen::MatrixBase<Rhs>& rhs) {
+inner(const fdapde::MatrixBase<Lhs::StaticInputSize, Lhs>& lhs, const Eigen::MatrixBase<Rhs>& rhs) {
     return DotProduct<Lhs, Eigen::MatrixBase<Rhs>>(lhs.derived(), rhs.derived());
 }
 template <typename Lhs, typename Rhs>
 constexpr DotProduct<Eigen::MatrixBase<Lhs>, Rhs>
-dot(const Eigen::MatrixBase<Lhs>& lhs, const fdapde::MatrixBase<Lhs::StaticInputSize, Lhs>& rhs) {
+inner(const Eigen::MatrixBase<Lhs>& lhs, const fdapde::MatrixBase<Lhs::StaticInputSize, Lhs>& rhs) {
     return DotProduct<Eigen::MatrixBase<Lhs>, Rhs>(lhs.derived(), rhs.derived());
 }
 

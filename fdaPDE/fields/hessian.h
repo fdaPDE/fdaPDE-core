@@ -22,8 +22,9 @@
 
 namespace fdapde {
 
-template <typename Derived> class Hessian : public fdapde::MatrixBase<Derived::StaticInputSize, Hessian<Derived>> {
+template <typename Derived_> class Hessian : public fdapde::MatrixBase<Derived_::StaticInputSize, Hessian<Derived_>> {
    public:
+    using Derived = Derived_;
     using Base = MatrixBase<Derived::StaticInputSize, Hessian<Derived>>;
     using FunctorType = PartialDerivative<std::decay_t<Derived>, 2>;
     using InputType = typename Derived::InputType;
@@ -32,9 +33,10 @@ template <typename Derived> class Hessian : public fdapde::MatrixBase<Derived::S
     static constexpr int Rows = Derived::StaticInputSize;
     static constexpr int Cols = Derived::StaticInputSize;
     static constexpr int NestAsRef = 0;
+    static constexpr int XprBits = Derived::XprBits;
     using Base::operator();
 
-    explicit constexpr Hessian(const Derived& xpr) : Base(), xpr_(), data_() {
+    explicit constexpr Hessian(const Derived& xpr) : Base(), derived_(xpr), xpr_(), data_() {
         if constexpr (StaticInputSize == Dynamic) data_.resize(xpr_.input_size(), xpr_.input_size(), xpr_.input_size());
         for (int i = 0; i < xpr.input_size(); ++i) {
             for (int j = 0; j <= i; ++j) { data_(i, j) = PartialDerivative<std::decay_t<Derived>, 2>(xpr, i, j); }
@@ -52,9 +54,11 @@ template <typename Derived> class Hessian : public fdapde::MatrixBase<Derived::S
     constexpr int cols() const { return data_.cols(); }
     constexpr int input_size() const { return data_.input_size(); }
     constexpr int size() const { return data_.size(); }
+    constexpr const Derived& derived() const { return derived_; }
    private:
     MatrixField<StaticInputSize, Rows, Cols, FunctorType> data_;
     MatrixSymmetricView<MatrixField<StaticInputSize, Rows, Cols, FunctorType>, fdapde::Lower> xpr_;
+    typename internals::ref_select<Derived>::type derived_;
 };
 
 }   // namespace fdapde

@@ -41,11 +41,11 @@ template <typename XprType_> struct KroneckerTensorProductBase {
 };
   
 // dense-dense Kronecker tensor product
-template <typename Lhs_, typename Rhs_>
-struct KroneckerTensorProduct<Lhs_, Rhs_, Eigen::Dense, Eigen::Dense> :
-    public Eigen::MatrixBase<KroneckerTensorProduct<Lhs_, Rhs_, Eigen::Dense, Eigen::Dense>>,
-    public KroneckerTensorProductBase<KroneckerTensorProduct<Lhs_, Rhs_, Eigen::Dense, Eigen::Dense>> {
-    using Base = KroneckerTensorProductBase<KroneckerTensorProduct<Lhs_, Rhs_, Eigen::Dense, Eigen::Dense>>;
+template <typename Lhs, typename Rhs>
+struct KroneckerTensorProduct<Lhs, Rhs, Eigen::Dense, Eigen::Dense> :
+    public Eigen::MatrixBase<KroneckerTensorProduct<Lhs, Rhs, Eigen::Dense, Eigen::Dense>>,
+    public KroneckerTensorProductBase<KroneckerTensorProduct<Lhs, Rhs, Eigen::Dense, Eigen::Dense>> {
+    using Base = KroneckerTensorProductBase<KroneckerTensorProduct<Lhs, Rhs, Eigen::Dense, Eigen::Dense>>;
     KroneckerTensorProduct(const Lhs& lhs, const Rhs& rhs) : Base(lhs, rhs) {};
 };
 template <typename Lhs, typename Rhs>
@@ -55,11 +55,11 @@ Kronecker(const Eigen::MatrixBase<Lhs>& lhs, const Eigen::MatrixBase<Rhs>& rhs) 
 }
 
 // sparse-sparse Kronecker tensor product.
-template <typename Lhs_, typename Rhs_>
-struct KroneckerTensorProduct<Lhs_, Rhs_, Eigen::Sparse, Eigen::Sparse> :
-    public Eigen::SparseMatrixBase<KroneckerTensorProduct<Lhs_, Rhs_, Eigen::Sparse, Eigen::Sparse>>,
-    public KroneckerTensorProductBase<KroneckerTensorProduct<Lhs_, Rhs_, Eigen::Sparse, Eigen::Sparse>> {
-    using Base = KroneckerTensorProductBase<KroneckerTensorProduct<Lhs_, Rhs_, Eigen::Sparse, Eigen::Sparse>>;
+template <typename Lhs, typename Rhs>
+struct KroneckerTensorProduct<Lhs, Rhs, Eigen::Sparse, Eigen::Sparse> :
+    public Eigen::SparseMatrixBase<KroneckerTensorProduct<Lhs, Rhs, Eigen::Sparse, Eigen::Sparse>>,
+    public KroneckerTensorProductBase<KroneckerTensorProduct<Lhs, Rhs, Eigen::Sparse, Eigen::Sparse>> {
+    using Base = KroneckerTensorProductBase<KroneckerTensorProduct<Lhs, Rhs, Eigen::Sparse, Eigen::Sparse>>;
     KroneckerTensorProduct(const Lhs& lhs, const Rhs& rhs) : Base(lhs, rhs) {};
 };
 template <typename Lhs, typename Rhs>
@@ -68,7 +68,6 @@ Kronecker(const Eigen::SparseMatrixBase<Lhs>& lhs, const Eigen::SparseMatrixBase
     return KroneckerTensorProduct<Lhs, Rhs, Eigen::Sparse, Eigen::Sparse>(lhs.derived(), rhs.derived());
 }
 
-}   // namespace core
 }   // namespace fdapde
 
 // definition of proper symbols in Eigen::internal namespace
@@ -76,7 +75,7 @@ namespace Eigen {
 namespace internal {
 
 // import symbols from fdapde namespace
-using fdapde::core::KroneckerTensorProduct;
+using fdapde::KroneckerTensorProduct;
 
 // template specialization for KroneckerProduct traits (required by Eigen).
 template <typename Lhs_, typename Rhs_> struct traits<KroneckerTensorProduct<Lhs_, Rhs_, Dense, Dense>> {
@@ -235,6 +234,7 @@ class evaluator<KroneckerTensorProduct<Lhs_, Rhs_, Sparse, Sparse>> :
     const XprType& xpr_;
 };
 
+}   // namespace internal
 }   // namespace Eigen
 
 #endif   // __KRONECKER_PRODUCT_H__

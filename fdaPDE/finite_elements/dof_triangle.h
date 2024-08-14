@@ -17,6 +17,8 @@
 #ifndef __DOF_TRIANGLE_H__
 #define __DOF_TRIANGLE_H__
 
+#include "../geometry/triangle.h"
+
 namespace fdapde {
 
 // definition of dof-informed triangle, i.e. a triangle with attached dofs

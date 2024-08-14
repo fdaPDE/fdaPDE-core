@@ -38,6 +38,7 @@ class Polynomial : public ScalarBase<StaticInputSize_, Polynomial<StaticInputSiz
     using InputType = cexpr::Vector<Scalar, StaticInputSize_>;
     static constexpr int StaticInputSize = StaticInputSize_;
     static constexpr int NestAsRef = 0;
+    static constexpr int XprBits = 0;
     static constexpr int Order = Order_;
 
     // computes the table of monomial exponents (i1, i2, ..., iN)_j for a polynomial of degree Order over
@@ -107,7 +108,7 @@ class Polynomial : public ScalarBase<StaticInputSize_, Polynomial<StaticInputSiz
         constexpr Scalar operator()(const InputType& p) const {
             if constexpr (Order == 0) return 0;
             if constexpr (Order == 1) {   // polynomials of form: c_0 + c_1*x_1 + c_2*x_2 + ... + c_N*x_N
-                return coeff_vector_[i_];
+                return coeff_vector_[i_ + 1];
             } else {
                 Scalar value = 0;
                 // cycle over monomials
@@ -138,7 +139,7 @@ class Polynomial : public ScalarBase<StaticInputSize_, Polynomial<StaticInputSiz
         for (int i = 0; i < StaticInputSize; ++i) { gradient_[i] = Derivative(coeff_vector_, i); }
     }
     // evaluate polynomial at point
-    constexpr Scalar operator()(const InputType& p) const {
+    template <typename InputType_> constexpr Scalar operator()(const InputType_& p) const {
         Scalar value = coeff_vector_[0];
         if constexpr (Order == 0) return value;
         if constexpr (Order == 1) {   // polynomials of form: c_0 + c_1*x_1 + c_2*x_2 + ... + c_N*x_N
