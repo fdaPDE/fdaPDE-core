@@ -114,11 +114,9 @@ class ScalarBinOp : public ScalarBase<Lhs_::StaticInputSize, ScalarBinOp<Lhs_, R
     constexpr int input_size() const { return lhs_.input_size(); }
     constexpr const LhsDerived& lhs() const { return lhs_; }
     constexpr const RhsDerived& rhs() const { return rhs_; }
-    constexpr LhsDerived& lhs() { return lhs_; }
-    constexpr RhsDerived& rhs() { return rhs_; }
    private:
-    typename internals::ref_select<LhsDerived>::type lhs_;
-    typename internals::ref_select<RhsDerived>::type rhs_;
+    typename internals::ref_select<const LhsDerived>::type lhs_;
+    typename internals::ref_select<const RhsDerived>::type rhs_;
     BinaryOperation op_;
 };
 
@@ -185,11 +183,11 @@ struct ScalarCoeffOp :
             return rhs_.input_size();
         }
     }
-    constexpr LhsDerived& lhs() { return lhs_; }
-    constexpr RhsDerived& rhs() { return rhs_; }
+    constexpr const LhsDerived& lhs() const { return lhs_; }
+    constexpr const RhsDerived& rhs() const { return rhs_; }
    private:
-    typename internals::ref_select<LhsDerived>::type lhs_;
-    typename internals::ref_select<RhsDerived>::type rhs_;
+    typename internals::ref_select<const LhsDerived>::type lhs_;
+    typename internals::ref_select<const RhsDerived>::type rhs_;
     BinaryOperation op_;
 };
   

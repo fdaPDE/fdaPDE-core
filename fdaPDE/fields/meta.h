@@ -34,31 +34,32 @@ template <typename T>
 concept is_xpr_leaf = !is_unary_xpr_op<T> && !is_binary_xpr_op<T>;
 
 // wraps all leafs in Xpr which satisfies boolean condition C with template type T
-template <template <typename> typename T, typename C, typename Xpr> constexpr auto xpr_wrap(Xpr xpr) {
-    if constexpr (is_binary_xpr_op<Xpr>) {
-        if constexpr (is_coeff_xpr_op<Xpr>) {
-            if constexpr (Xpr::is_coeff_lhs) {
-                return ScalarCoeffOp(xpr.lhs(), xpr_wrap<T, C>(xpr.rhs()), typename Xpr::BinaryOp());
+template <template <typename> typename T, typename C, typename Xpr> constexpr auto xpr_wrap(Xpr&& xpr) {
+    using Xpr_ = std::decay_t<Xpr>;
+    if constexpr (is_binary_xpr_op<Xpr_>) {
+        if constexpr (is_coeff_xpr_op<Xpr_>) {
+            if constexpr (Xpr_::is_coeff_lhs) {
+                return ScalarCoeffOp(xpr.lhs(), xpr_wrap<T, C>(xpr.rhs()), typename Xpr_::BinaryOp());
             } else {
-                return ScalarCoeffOp(xpr_wrap<T, C>(xpr.lhs()), xpr.rhs(), typename Xpr::BinaryOp());
+                return ScalarCoeffOp(xpr_wrap<T, C>(xpr.lhs()), xpr.rhs(), typename Xpr_::BinaryOp());
             }
-        } else if constexpr (requires (Xpr xpr) { typename Xpr::BinaryOp; }){
-            return ScalarBinOp(xpr_wrap<T, C>(xpr.lhs()), xpr_wrap<T, C>(xpr.rhs()), typename Xpr::BinaryOp());
-        } else {   // Xpr is a non-trivial binary node
+        } else if constexpr (requires (Xpr_ xpr) { typename Xpr_::BinaryOp; }){
+            return ScalarBinOp(xpr_wrap<T, C>(xpr.lhs()), xpr_wrap<T, C>(xpr.rhs()), typename Xpr_::BinaryOp());
+        } else {   // Xpr_ is a non-trivial binary node
             return
-              typename Xpr::template Meta<decltype(xpr_wrap<T, C>(xpr.lhs())), decltype(xpr_wrap<T, C>(xpr.rhs()))>(
+              typename Xpr_::template Meta<decltype(xpr_wrap<T, C>(xpr.lhs())), decltype(xpr_wrap<T, C>(xpr.rhs()))>(
                 xpr_wrap<T, C>(xpr.lhs()), xpr_wrap<T, C>(xpr.rhs()));
         }
     }
-    if constexpr (is_unary_xpr_op<Xpr>) {
-        if constexpr (requires(Xpr xpr) { typename Xpr::UnaryOp; }) {
-            return ScalarUnaryOp(xpr_wrap<T, C>(xpr.derived()), typename Xpr::UnaryOp());
-        } else {   // Xpr is a non-trivial unary node
-	  return typename Xpr::template Meta<decltype(xpr_wrap<T, C>(xpr.derived()))>(xpr_wrap<T, C>(xpr.derived()));
+    if constexpr (is_unary_xpr_op<Xpr_>) {
+        if constexpr (requires(Xpr_ xpr) { typename Xpr_::UnaryOp; }) {
+            return ScalarUnaryOp(xpr_wrap<T, C>(xpr.derived()), typename Xpr_::UnaryOp());
+        } else {   // Xpr_ is a non-trivial unary node
+	  return typename Xpr_::template Meta<decltype(xpr_wrap<T, C>(xpr.derived()))>(xpr_wrap<T, C>(xpr.derived()));
         }
     }
-    if constexpr (is_xpr_leaf<Xpr> &&  C {}.template operator()<Xpr>()) { return T<Xpr>(xpr); }
-    if constexpr (is_xpr_leaf<Xpr> && !C {}.template operator()<Xpr>()) { return xpr; }
+    if constexpr (is_xpr_leaf<Xpr_> &&  C {}.template operator()<Xpr_>()) { return T<Xpr_>(xpr); }
+    if constexpr (is_xpr_leaf<Xpr_> && !C {}.template operator()<Xpr_>()) { return xpr; }
 }
 
 // finds wheter at least one node in Xpr satisfies boolean condition C

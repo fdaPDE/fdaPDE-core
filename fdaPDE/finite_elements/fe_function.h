@@ -139,7 +139,7 @@ class FeFunction : public fdapde::ScalarBase<FeSpace_::local_dim, FeFunction<FeS
     using InputType = SVector<FeSpace::local_dim>;
     using Scalar = double;
     static constexpr int StaticInputSize = FeSpace::local_dim;
-    static constexpr int NestAsRef = 0;
+    static constexpr int NestAsRef = 1;
     static constexpr int local_dim = Triangulation::local_dim;
     static constexpr int embed_dim = Triangulation::embed_dim;
     static constexpr int XprBits = 0;

@@ -270,7 +270,7 @@ template <typename Triangulation_, typename Form_, typename... Quadrature_> clas
         DVector<int> active_dofs;
         std::array<cexpr::Matrix<double, local_dim, n_quadrature_nodes>, n_basis>
           shape_grad;   // gradient of shape functions mapped on physical cell
-        std::unordered_map<void*, DMatrix<double>> fe_map_buff;   // evaluation of FeMap nodes at quadrature points
+        std::unordered_map<const void*, DMatrix<double>> fe_map_buff;   // evaluation of FeMap nodes at quadrature nodes
 	
         // distribute quadrature nodes on physical mesh (if required)
         DMatrix<double> quad_nodes;
@@ -290,15 +290,15 @@ template <typename Triangulation_, typename Form_, typename... Quadrature_> clas
             // evaluate FeMap nodes at quadrature nodes
             meta::xpr_apply_if<
               decltype([]<typename Xpr_, typename... Args>(Xpr_& xpr, Args&&... args) {
-                  xpr.subscribe(std::forward<Args>(args)...);
+                  xpr.init(std::forward<Args>(args)...);
                   return;
               }),
               decltype([]<typename Xpr_>() {
-                  return requires(Xpr_ xpr) { xpr.subscribe(fe_map_buff, quad_nodes, begin, end); };
+                  return requires(Xpr_ xpr) { xpr.init(fe_map_buff, quad_nodes, begin, end); };
               })>(form_, fe_map_buff, quad_nodes, begin, end);
         }
 
-	// start assembly loop
+        // start assembly loop
         internals::fe_assembler_packet<local_dim> fe_packet;
         for (iterator it = begin; it != end; ++it) {
             fe_packet.cell_measure = it->measure();

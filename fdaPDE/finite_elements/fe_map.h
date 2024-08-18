@@ -50,8 +50,9 @@ struct FeMap :
     constexpr FeMap() = default;
     constexpr FeMap(const Derived_& xpr) : xpr_(xpr) { }
     template <typename CellIterator>
-    void subscribe(
-      std::unordered_map<void*, DMatrix<double>>& buff, const DMatrix<double>& nodes, CellIterator, CellIterator) {
+    void init(
+      std::unordered_map<void*, DMatrix<double>>& buff, const DMatrix<double>& nodes, CellIterator,
+      CellIterator) const {
         void* ptr = reinterpret_cast<void*>(this);
         if (buff.find(ptr) == buff.end()) {
             DMatrix<double> mapped(nodes.rows(), Rows * Cols);
@@ -61,6 +62,8 @@ struct FeMap :
                 for (int i = 0, n = nodes.rows(); i < n; ++i) { mapped.row(i) = xpr_(nodes.row(i)); }
             }
             buff[ptr] = mapped;
+            map_ = &buff[ptr];
+        } else {
             map_ = &buff[ptr];
         }
     }
@@ -76,7 +79,7 @@ struct FeMap :
     constexpr int input_size() const { return StaticInputSize; }
    private:
     typename internals::ref_select<const Derived>::type xpr_;
-    const DMatrix<Scalar>* map_;
+    mutable const DMatrix<Scalar>* map_;
 };
 
 // FeMap specialization for FeFunction types
@@ -94,13 +97,13 @@ struct FeMap<FeFunction<FeSpace>> :
     static constexpr int XprBits = Derived::XprBits | bilinear_bits::compute_physical_quad_nodes;
 
     FeMap() = default;
-    FeMap(const Derived& xpr) : xpr_(xpr) { }
+    FeMap(const Derived& xpr) : xpr_(&xpr) { }
     // fast subscribe routine which bypasses the point location step (quadrature nodes are not arbitrary points)
     template <typename CellIterator>
-    void subscribe(
-      std::unordered_map<void*, DMatrix<double>>& buff, const DMatrix<double>& nodes, CellIterator begin,
-      CellIterator end) {
-        void* ptr = reinterpret_cast<void*>(this);
+    void init(
+      std::unordered_map<const void*, DMatrix<double>>& buff, const DMatrix<double>& nodes, CellIterator begin,
+      CellIterator end) const {
+        const void* ptr = reinterpret_cast<const void*>(xpr_);
         if (buff.find(ptr) == buff.end()) {
             DMatrix<double> mapped(nodes.rows(), 1);
 	    int n_cells = end.index() - begin.index();
@@ -108,16 +111,18 @@ struct FeMap<FeFunction<FeSpace>> :
 	    int cell_id = begin.index();
             for (int i = 0, n = nodes.rows(); i < n; ++i) {
                 // map node to reference cell and evaluate
-                auto cell = xpr_.fe_space().dof_handler().cell(cell_id + i / n_quad_nodes);
+                auto cell = xpr_->fe_space().dof_handler().cell(cell_id + i / n_quad_nodes);
                 SVector<FeSpace::local_dim> ref_node = cell.invJ() * (nodes.row(i).transpose() - cell.node(0));
                 DVector<int> active_dofs = cell.dofs();
                 Scalar value = 0;
-                for (int i = 0, n = xpr_.fe_space().n_basis(); i < n; ++i) {
-                    value += xpr_.coeff()[active_dofs[i]] * xpr_.fe_space().eval(i, ref_node);
+                for (int i = 0, n = xpr_->fe_space().n_basis(); i < n; ++i) {
+                    value += xpr_->coeff()[active_dofs[i]] * xpr_->fe_space().eval(i, ref_node);
                 }
                 mapped(i, 0) = value;
             }
             buff[ptr] = mapped;
+            map_ = &buff[ptr];
+        } else {
             map_ = &buff[ptr];
         }
     }
@@ -128,8 +133,8 @@ struct FeMap<FeFunction<FeSpace>> :
     constexpr const Derived& derived() const { return xpr_; }
     constexpr int input_size() const { return StaticInputSize; }
    private:
-    Derived xpr_;
-    const DMatrix<Scalar>* map_;
+    const Derived* xpr_;
+    mutable const DMatrix<Scalar>* map_;
 };
 
 }   // namespace fdapde
