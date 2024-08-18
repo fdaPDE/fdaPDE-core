@@ -24,6 +24,7 @@ namespace fdapde {
 template <typename Derived_> class Laplacian : public ScalarBase<Derived_::StaticInputSize, Laplacian<Derived_>> {
    public:
     using Derived = Derived_;
+    template <typename T> using Meta = Laplacian<T>;
     using Base = ScalarBase<Derived::StaticInputSize, Laplacian<Derived>>;
     using FunctorType = PartialDerivative<Derived, 2>;
     using InputType = typename Derived::InputType;

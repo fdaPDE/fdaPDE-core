@@ -25,6 +25,7 @@ namespace fdapde {
 template <typename Derived_> class Hessian : public fdapde::MatrixBase<Derived_::StaticInputSize, Hessian<Derived_>> {
    public:
     using Derived = Derived_;
+    template <typename T> using Meta = Hessian<T>;
     using Base = MatrixBase<Derived::StaticInputSize, Hessian<Derived>>;
     using FunctorType = PartialDerivative<std::decay_t<Derived>, 2>;
     using InputType = typename Derived::InputType;

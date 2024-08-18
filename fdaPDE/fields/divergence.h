@@ -25,6 +25,7 @@ template <typename Derived_> class Divergence : public ScalarBase<Derived_::Stat
     fdapde_static_assert(Derived_::Cols == 1, DIVERGENCE_OPERATOR_IS_FOR_VECTOR_FIELDS_ONLY);
    public:
     using Derived = Derived_;
+    template <typename T> using Meta = Divergence<T>;
     using Base = ScalarBase<Derived::StaticInputSize, Divergence<Derived>>;
     using FunctorType =
       PartialDerivative<std::decay_t<decltype(std::declval<Derived>().operator[](std::declval<int>()))>, 1>;

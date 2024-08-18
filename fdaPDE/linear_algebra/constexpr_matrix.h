@@ -366,7 +366,8 @@ class Matrix : public MatrixBase<Rows_, Cols_, Matrix<Scalar_, Rows_, Cols_, Nes
     }
     constexpr int rows() const { return Rows; }
     constexpr int cols() const { return Cols; }
-    constexpr const std::array<Scalar, Rows * Cols>& data() const { return data_; }
+    constexpr const Scalar* data() const { return data_.data(); }
+    Scalar* data() { return data_.data(); }
     // assignment operator
     template <int RhsRows_, int RhsCols_, typename RhsXprType>
     constexpr Matrix<Scalar_, Rows_, Cols_, NestAsRefBit_>&
@@ -722,11 +723,11 @@ template <typename MatrixType> class PartialPivLU {
 };
 
 // maps an existing array of data to a cepxr::Matrix. This can be used also to integrate Eigen with cexpr linear algebra
-  template <typename Scalar_, int Rows_, int Cols_>
-  class Map : public MatrixBase<Rows_, Cols_, Map<Scalar_, Rows_, Cols_>> {
+template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_ = fdapde::ColMajor>
+class Map : public MatrixBase<Rows_, Cols_, Map<Scalar_, Rows_, Cols_>> {
     fdapde_static_assert(Rows_ > 0 && Cols_ > 0, YOU_ARE_MAPPING_DATA_TO_AN_EMPTY_MATRIX);
-  public:
-    using XprType = Map<Scalar_, Rows_, Cols_>;
+   public:
+    using XprType = Map<Scalar_, Rows_, Cols_, StorageOrder_>;
     using Base = MatrixBase<Rows_, Cols_, XprType>;
     using Scalar = Scalar_;
     static constexpr int Rows = Rows_;
@@ -736,13 +737,17 @@ template <typename MatrixType> class PartialPivLU {
     constexpr Map() : data_() { }
     constexpr Map(Scalar_* data) : data_(data) { }
     // const access
-    constexpr Scalar operator()(int i, int j) const { return data_[i * Cols + j]; }
+    constexpr Scalar operator()(int i, int j) const {
+        return data_[(StorageOrder_ == RowMajor ? (i * Cols + j) : (j * Rows + i))];
+    }
     constexpr Scalar operator[](int i) const {
         fdapde_static_assert(Cols == 1 || Rows == 1, THIS_METHOD_IS_ONLY_FOR_CONSTEXPR_ROW_OR_COLUMN_VECTORS);
         return data_[i];
     }
     // non-const access
-    constexpr Scalar& operator()(int i, int j) { return data_[i * Cols + j]; }
+    constexpr Scalar& operator()(int i, int j) {
+        return data_[(StorageOrder_ == RowMajor ? (i * Cols + j) : (j * Rows + i))];
+    }
     constexpr Scalar& operator[](int i) {
         fdapde_static_assert(Cols == 1 || Rows == 1, THIS_METHOD_IS_ONLY_FOR_CONSTEXPR_ROW_OR_COLUMN_VECTORS);
         return data_[i];
@@ -764,8 +769,8 @@ template <typename MatrixType> class PartialPivLU {
     }
    private:
     Scalar_* data_;
-  };
-  
+};
+
 }   // namespace cexpr
 }   // namespace fdapde
 

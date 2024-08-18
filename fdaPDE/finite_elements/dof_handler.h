@@ -61,6 +61,7 @@ template <int LocalDim, int EmbedDim, typename Derived> class DofHandlerBase {
     }
     DVector<int> active_dofs(int cell_id) const { return dofs_.row(cell_id); }
     bool has_markers() const { return is_empty(dofs_markers_); }
+    operator bool() const { return n_dofs_ != 0; }
 
     // iterates over geometric cells coupled with dofs informations
     class cell_iterator : public index_based_iterator<cell_iterator, CellType> {

@@ -38,6 +38,7 @@ template <typename Lhs, typename Rhs> class DotProduct : public ScalarBase<Lhs::
    public:
     using LhsDerived = Lhs;
     using RhsDerived = Rhs;
+    template <typename T1, typename T2> using Meta = DotProduct<T1, T2>;
     using Base = ScalarBase<LhsDerived::StaticInputSize, DotProduct<Lhs, Rhs>>;
     using InputType = typename LhsDerived::InputType;
     using Scalar = decltype(std::declval<typename LhsDerived::Scalar>() * std::declval<typename RhsDerived::Scalar>());
@@ -72,7 +73,7 @@ template <typename Lhs, typename Rhs> class DotProduct : public ScalarBase<Lhs::
 };
 
 template <typename Lhs, typename Rhs>
-constexpr DotProduct<Lhs, Rhs> inner(
+constexpr DotProduct<Lhs, Rhs> dot(
   const fdapde::MatrixBase<Lhs::StaticInputSize, Lhs>& lhs, const fdapde::MatrixBase<Rhs::StaticInputSize, Rhs>& rhs) {
     return DotProduct<Lhs, Rhs>(lhs.derived(), rhs.derived());
 }
@@ -100,6 +101,7 @@ class dot_product_eigen_impl : public ScalarBase<FieldType_::StaticInputSize, do
     using Scalar = decltype(std::declval<typename FieldType::Scalar>() * std::declval<typename EigenType::Scalar>());
     static constexpr int StaticInputSize = FieldType::StaticInputSize;
     static constexpr int NestAsRef = 0;
+    static constexpr int XprBits = FieldType::XprBits;
 
     dot_product_eigen_impl(const Lhs& lhs, const Rhs& rhs) : Base(), lhs_(lhs), rhs_(rhs) {
         if constexpr (
@@ -143,12 +145,12 @@ struct DotProduct<Eigen::MatrixBase<Lhs>, Rhs> : public internals::dot_product_e
 
 template <typename Lhs, typename Rhs>
 constexpr DotProduct<Lhs, Eigen::MatrixBase<Rhs>>
-inner(const fdapde::MatrixBase<Lhs::StaticInputSize, Lhs>& lhs, const Eigen::MatrixBase<Rhs>& rhs) {
+dot(const fdapde::MatrixBase<Lhs::StaticInputSize, Lhs>& lhs, const Eigen::MatrixBase<Rhs>& rhs) {
     return DotProduct<Lhs, Eigen::MatrixBase<Rhs>>(lhs.derived(), rhs.derived());
 }
 template <typename Lhs, typename Rhs>
 constexpr DotProduct<Eigen::MatrixBase<Lhs>, Rhs>
-inner(const Eigen::MatrixBase<Lhs>& lhs, const fdapde::MatrixBase<Lhs::StaticInputSize, Lhs>& rhs) {
+dot(const Eigen::MatrixBase<Lhs>& lhs, const fdapde::MatrixBase<Rhs::StaticInputSize, Rhs>& rhs) {
     return DotProduct<Eigen::MatrixBase<Lhs>, Rhs>(lhs.derived(), rhs.derived());
 }
 

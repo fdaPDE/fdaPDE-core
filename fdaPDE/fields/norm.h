@@ -25,6 +25,7 @@ template <int Order, typename Derived_, int PowerFlag = 0>
 class MatrixNorm : public ScalarBase<Derived_::StaticInputSize, MatrixNorm<Order, Derived_, PowerFlag>> {
    public:
     using Derived = Derived_;
+    template <typename T> using Meta = MatrixNorm<Order, T, PowerFlag>;
     using Base = ScalarBase<Derived::StaticInputSize, MatrixNorm<Order, Derived, PowerFlag>>;
     using InputType = typename Derived::InputType;
     using Scalar = typename Derived::Scalar;
