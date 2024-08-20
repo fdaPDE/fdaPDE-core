@@ -81,7 +81,7 @@ struct TrialFunction : public fdapde::ScalarBase<FeSpace_::local_dim, TrialFunct
 
     // norm evaluation
     double l2_squared_norm() {
-        internals::fe_assembler_mass_loop<DofHandler<local_dim, embed_dim>, typename TrialSpace::FeType> assembler(
+        internals::fe_mass_assembly_loop<DofHandler<local_dim, embed_dim>, typename TrialSpace::FeType> assembler(
           fe_space_->dof_handler());
         return coeff_.dot(assembler.run() * coeff_);
     }
@@ -164,7 +164,7 @@ class FeFunction : public fdapde::ScalarBase<FeSpace_::local_dim, FeFunction<FeS
     }
     // norms of fe functions
     double l2_squared_norm() {
-        internals::fe_assembler_mass_loop<DofHandler<local_dim, embed_dim>, typename FeSpace::FeType> assembler(
+        internals::fe_mass_assembly_loop<DofHandler<local_dim, embed_dim>, typename FeSpace::FeType> assembler(
           fe_space_->dof_handler());
         return coeff_.dot(assembler.run() * coeff_);
     }
