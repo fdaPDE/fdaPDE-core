@@ -88,6 +88,7 @@ template <int M, int N, typename Derived> class TriangulationBase {
             return *this;
         }
        public:
+        using TriangulationType = Derived;
         cell_iterator(int index, const Derived* mesh) : Base(index, 0, mesh->n_cells_), mesh_(mesh) {
             if (index_ < mesh_->n_cells_) operator()(index_);
         }

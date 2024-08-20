@@ -35,6 +35,7 @@ struct TestFunction : public fdapde::ScalarBase<FeSpace_::local_dim, TestFunctio
     constexpr TestFunction(FeSpace_& fe_space) : fe_space_(&fe_space) { }
     constexpr Scalar operator()(const InputType& fe_packet) const { return fe_packet.test_value; }
     constexpr TestSpace& fe_space() { return *fe_space_; }
+    constexpr const TestSpace& fe_space() const { return *fe_space_; }
     constexpr int input_size() const { return StaticInputSize; }
 
     struct FirstPartialDerivative : fdapde::ScalarBase<TestSpace::local_dim, FirstPartialDerivative> {
@@ -96,6 +97,7 @@ struct TrialFunction : public fdapde::ScalarBase<FeSpace_::local_dim, TrialFunct
     constexpr Scalar operator()(const InputType& fe_packet) const { return fe_packet.trial_value; }
     // getters
     constexpr TrialSpace& fe_space() { return *fe_space_; }
+    constexpr const TrialSpace& fe_space() const { return *fe_space_; }
     const DVector<double>& coeff() const { return coeff_; }
     constexpr int input_size() const { return StaticInputSize; }
     void set_coeff(const DVector<double>& coeff) { coeff_ = coeff; }
@@ -181,11 +183,19 @@ class FeFunction : public fdapde::ScalarBase<FeSpace_::local_dim, FeFunction<FeS
     constexpr const FeSpace& fe_space() const { return *fe_space_; }
     constexpr int input_size() const { return StaticInputSize; }
     void set_coeff(const DVector<double>& coeff) { coeff_ = coeff; }
+
+    // linear algebra between FeFunctions
+    friend constexpr FeFunction<FeSpace_> operator+(FeFunction<FeSpace_>& lhs, FeFunction<FeSpace_>& rhs) {
+        return FeFunction<FeSpace_>(lhs.fe_space(), lhs.coeff() + rhs.coeff());
+    }
+    friend constexpr FeFunction<FeSpace_> operator-(FeFunction<FeSpace_>& lhs, FeFunction<FeSpace_>& rhs) {
+        return FeFunction<FeSpace_>(lhs.fe_space(), lhs.coeff() - rhs.coeff());
+    }
    private:
     DVector<double> coeff_;
     FeSpace* fe_space_;
 };
-  
+
 }   // namespace fdapde
 
 #endif   // __FE_FUNCTION_H__

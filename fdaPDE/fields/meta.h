@@ -78,45 +78,46 @@ template <typename C, typename Xpr> static constexpr bool xpr_find() {
 template <typename C, typename Xpr> static constexpr bool xpr_find(Xpr xpr) { return xpr_find<C, std::decay_t<Xpr>>(); }
 
 // query Xpr to return the result of F on the first node in Xpr satisfying boolean condition C
-template <typename F, typename C, typename Xpr, typename... Ts>
-constexpr decltype(auto) xpr_query(Xpr&& xpr, Ts&&... ts) {
+template <typename F, typename C, typename Xpr, typename... Args>
+constexpr decltype(auto) xpr_query(Xpr&& xpr, Args&&... args) {
     using Xpr_ = std::decay_t<Xpr>;
     if constexpr (C {}.template operator()<Xpr_>()) {
-        return F {}(xpr, std::forward<Ts>(ts)...);
+        return F {}(xpr, std::forward<Args>(args)...);
     } else {
         if constexpr (is_binary_xpr_op<Xpr_>) {
             if constexpr (xpr_find<C, typename Xpr_::LhsDerived>()) {
-                return xpr_query<F, C>(xpr.lhs(), std::forward<Ts>(ts)...);
+                return xpr_query<F, C>(xpr.lhs(), std::forward<Args>(args)...);
             }
             if constexpr (xpr_find<C, typename Xpr_::RhsDerived>()) {
-                return xpr_query<F, C>(xpr.rhs(), std::forward<Ts>(ts)...);
+                return xpr_query<F, C>(xpr.rhs(), std::forward<Args>(args)...);
             }
         } else if constexpr (xpr_find<C, typename Xpr_::Derived>()) {
-            return xpr_query<F, C>(xpr.derived(), std::forward<Ts>(ts)...);
+            return xpr_query<F, C>(xpr.derived(), std::forward<Args>(args)...);
         }
     }
 }
 
 // apply functor F to all nodes in Xpr satisfying condition C
-template <typename F, typename C, typename Xpr, typename... Ts> constexpr void xpr_apply_if(Xpr&& xpr, Ts&&... ts) {
+template <typename F, typename C, typename Xpr, typename... Args>
+constexpr void xpr_apply_if(Xpr&& xpr, Args&&... args) {
     using Xpr_ = std::decay_t<Xpr>;
     if constexpr (C {}.template operator()<Xpr_>()) {
-        F {}(xpr, std::forward<Ts>(ts)...);
+        F {}(xpr, std::forward<Args>(args)...);
     } else {
         if constexpr (is_binary_xpr_op<Xpr_>) {
             if constexpr (xpr_find<C, typename Xpr_::LhsDerived>()) {
-                xpr_apply_if<F, C>(xpr.lhs(), std::forward<Ts>(ts)...);
+                xpr_apply_if<F, C>(xpr.lhs(), std::forward<Args>(args)...);
             }
             if constexpr (xpr_find<C, typename Xpr_::RhsDerived>()) {
-                xpr_apply_if<F, C>(xpr.rhs(), std::forward<Ts>(ts)...);
+                xpr_apply_if<F, C>(xpr.rhs(), std::forward<Args>(args)...);
             }
         } else if constexpr (xpr_find<C, typename Xpr_::Derived>()) {
-            xpr_apply_if<F, C>(xpr.derived(), std::forward<Ts>(ts)...);
+            xpr_apply_if<F, C>(xpr.derived(), std::forward<Args>(args)...);
         }
     }
     return;
 }
-  
+
 }   // namespace meta
 }   // namespace fdapde
 

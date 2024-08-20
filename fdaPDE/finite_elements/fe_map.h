@@ -35,9 +35,12 @@ struct FeMap :
     using OutputType = decltype(std::declval<Derived_>().operator()(std::declval<typename Derived_::InputType>()));
     static constexpr bool is_scalar =
       std::is_base_of_v<fdapde::ScalarBase<Derived_::StaticInputSize, Derived_>, Derived_>;
+  using Derived = std::decay_t<Derived_>;
    public:
-    using Derived = std::decay_t<Derived_>;
-    using Base = ScalarBase<Derived::StaticInputSize, FeMap<Derived>>;
+    using Base = std::conditional_t<
+      std::is_base_of_v<fdapde::ScalarBase<Derived::StaticInputSize, Derived>, Derived>,
+      fdapde::ScalarBase<Derived::StaticInputSize, FeMap<Derived>>,
+      fdapde::MatrixBase<Derived::StaticInputSize, FeMap<Derived>>>;
     using InputType = internals::fe_assembler_packet<Derived::StaticInputSize>;
     using Scalar = double;
     static constexpr int StaticInputSize = Derived::StaticInputSize;
@@ -48,18 +51,18 @@ struct FeMap :
     static constexpr int Cols = []() { if constexpr(is_scalar) return 1; else return Derived::Cols; }();
 
     constexpr FeMap() = default;
-    constexpr FeMap(const Derived_& xpr) : xpr_(xpr) { }
+    constexpr FeMap(const Derived_& xpr) : xpr_(&xpr) { }
     template <typename CellIterator>
     void init(
-      std::unordered_map<void*, DMatrix<double>>& buff, const DMatrix<double>& nodes, CellIterator,
-      CellIterator) const {
-        void* ptr = reinterpret_cast<void*>(this);
+      std::unordered_map<const void*, DMatrix<double>>& buff, const DMatrix<double>& nodes,
+      [[maybe_unused]] CellIterator begin, [[maybe_unused]] CellIterator end) const {
+        const void* ptr = reinterpret_cast<const void*>(xpr_);
         if (buff.find(ptr) == buff.end()) {
             DMatrix<double> mapped(nodes.rows(), Rows * Cols);
             if constexpr (is_scalar) {
-                for (int i = 0, n = nodes.rows(); i < n; ++i) { mapped(i, 0)  = xpr_(nodes.row(i)); }
+                for (int i = 0, n = nodes.rows(); i < n; ++i) { mapped(i, 0)  = xpr_->operator()(nodes.row(i)); }
             } else {
-                for (int i = 0, n = nodes.rows(); i < n; ++i) { mapped.row(i) = xpr_(nodes.row(i)); }
+                for (int i = 0, n = nodes.rows(); i < n; ++i) { mapped.row(i) = xpr_->operator()(nodes.row(i)); }
             }
             buff[ptr] = mapped;
             map_ = &buff[ptr];
@@ -78,7 +81,7 @@ struct FeMap :
     constexpr const Derived& derived() const { return xpr_; }
     constexpr int input_size() const { return StaticInputSize; }
    private:
-    typename internals::ref_select<const Derived>::type xpr_;
+    const Derived* xpr_;
     mutable const DMatrix<Scalar>* map_;
 };
 
