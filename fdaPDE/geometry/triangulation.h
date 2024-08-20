@@ -31,6 +31,14 @@
 
 namespace fdapde {
 
+// public iterator types
+template <typename Triangulation> struct CellIterator : public Triangulation::cell_iterator {
+    CellIterator(int index, const Triangulation* mesh) : Triangulation::cell_iterator(index, mesh) { }
+};
+template <typename Triangulation> struct BoundaryIterator : public Triangulation::boundary_face_iterator {
+    BoundaryIterator(int index, const Triangulation* mesh) : Triangulation::boundary_face_iterator(index, mesh) { }
+};
+
 template <int M, int N> class Triangulation;
 template <int M, int N, typename Derived> class TriangulationBase {
    public:
@@ -41,6 +49,7 @@ template <int M, int N, typename Derived> class TriangulationBase {
     static constexpr int n_neighbors_per_cell = local_dim + 1;
     static constexpr bool is_manifold = !(local_dim == embed_dim);
     using CellType = std::conditional_t<M == 2, Triangle<Derived>, Tetrahedron<Derived>>;
+    using TriangulationType = Derived;
     class NodeType {   // triangulation node abstraction
         int id_;
         const Derived* mesh_;
@@ -93,8 +102,10 @@ template <int M, int N, typename Derived> class TriangulationBase {
             if (index_ < mesh_->n_cells_) operator()(index_);
         }
     };
-    cell_iterator cells_begin() const { return cell_iterator(0, static_cast<const Derived*>(this)); }
-    cell_iterator cells_end() const { return cell_iterator(n_cells_, static_cast<const Derived*>(this)); }      
+    CellIterator<Derived> cells_begin() const { return CellIterator<Derived>(0, static_cast<const Derived*>(this)); }
+    CellIterator<Derived> cells_end() const {
+        return CellIterator<Derived>(n_cells_, static_cast<const Derived*>(this));
+    }
     // iterator over boundary nodes
     class boundary_node_iterator : public index_based_iterator<boundary_node_iterator, NodeType> {
         using Base = index_based_iterator<boundary_node_iterator, NodeType>;
@@ -256,7 +267,13 @@ template <int N> class Triangulation<2, N> : public TriangulationBase<2, N, Tria
     };
     boundary_edge_iterator boundary_edges_begin() const { return boundary_edge_iterator(0, this); }
     boundary_edge_iterator boundary_edges_end() const { return boundary_edge_iterator(n_edges_, this); }
-
+    using boundary_face_iterator = boundary_edge_iterator;   // outside view of 2D boundary
+    BoundaryIterator<Triangulation<2, N>> boundary_begin() const {
+        return BoundaryIterator<Triangulation<2, N>>(0, this);
+    }
+    BoundaryIterator<Triangulation<2, N>> boundary_end() const {
+        return BoundaryIterator<Triangulation<2, N>>(n_edges_, this);
+    }
     // point location
     DVector<int> locate(const DMatrix<double>& points) const {
         if (!location_policy_.has_value()) location_policy_ = LocationPolicy(this);
@@ -456,8 +473,13 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
     };
     boundary_face_iterator boundary_faces_begin() const { return boundary_face_iterator(0, this); }
     boundary_face_iterator boundary_faces_end() const { return boundary_face_iterator(n_faces_, this); }
-
-    // provides the surface triangular mesh of this 3D triangulation
+    BoundaryIterator<Triangulation<3, 3>> boundary_begin() const {
+        return BoundaryIterator<Triangulation<3, 3>>(0, this);
+    }
+    BoundaryIterator<Triangulation<3, 3>> boundary_end() const {
+        return BoundaryIterator<Triangulation<3, 3>>(n_faces_, this);
+    }
+    // compute the surface triangular mesh of this 3D triangulation
     struct SurfaceReturnType {
         Triangulation<2, 3> triangulation;
         std::unordered_map<int, int> node_map, cell_map;

@@ -296,9 +296,10 @@ template <typename Triangulation_, typename Form_, int Options, typename... Quad
         for (typename fe_traits::geo_iterator it = begin_; it != end_; ++it) {
             for (int j = 0; j < n_quadrature_nodes; ++j) {
                 quad_nodes.row(i * n_quadrature_nodes + j) =
-                  it->J() * Eigen::Map<const SMatrix<n_quadrature_nodes, local_dim>>(quadrature_.nodes.data())
-                              .row(j)
-                              .transpose() +
+                  it->J() *
+                    Eigen::Map<const SMatrix<n_quadrature_nodes, Quadrature::local_dim>>(quadrature_.nodes.data())
+                      .row(j)
+                      .transpose() +
                   it->node(0);
             }
             i++;
@@ -316,7 +317,7 @@ template <typename Triangulation_, typename Form_, int Options, typename... Quad
     Form form_;
     Quadrature quadrature_ {};
     DofHandler<local_dim, embed_dim> dof_handler_;
-    typename Triangulation::cell_iterator begin_, end_;
+    typename fe_traits::geo_iterator begin_, end_;
 };
 
 template <typename Triangulation_, typename Form_, int Options, typename... Quadrature_>
@@ -338,7 +339,7 @@ class fe_galerkin_assembly_loop : public fe_assembler_base<Triangulation_, Form_
    public:
     fe_galerkin_assembly_loop() = default;
     fe_galerkin_assembly_loop(
-      const Form_& form, typename Triangulation_::cell_iterator begin, typename Triangulation_::cell_iterator end,
+      const Form_& form, typename Base::fe_traits::geo_iterator begin, typename Base::fe_traits::geo_iterator end,
       const Quadrature_&... quadrature) requires(sizeof...(quadrature) <= 1)
         : Base(form, begin, end, quadrature...) { }
 
@@ -419,7 +420,7 @@ class fe_forcing_assembly_loop : public fe_assembler_base<Triangulation_, Form_,
    public:
     fe_forcing_assembly_loop() = default;
     fe_forcing_assembly_loop(
-      const Form_& form, typename Triangulation_::cell_iterator begin, typename Triangulation_::cell_iterator end,
+      const Form_& form, typename Base::fe_traits::geo_iterator begin, typename Base::fe_traits::geo_iterator end,
       const Quadrature_&... quadrature) requires(sizeof...(quadrature) <= 1)
         : Base(form, begin, end, quadrature...) { }
 
@@ -462,49 +463,61 @@ class fe_forcing_assembly_loop : public fe_assembler_base<Triangulation_, Form_,
 
 }   // namespace internals
 
-template <typename Triangulation, typename... Quadrature> class FeCellAssembler {
+template <typename Triangulation, int Options, typename... Quadrature> class FeGalerkinAssembler {
     fdapde_static_assert(
       sizeof...(Quadrature) < 2, YOU_CAN_PROVIDE_AT_MOST_ONE_QUADRATURE_FORMULA_TO_A_FE_CELL_ASSEMBLER);
     std::tuple<Quadrature...> quadrature_;
-    typename Triangulation::cell_iterator begin_, end_;
+    std::conditional_t<
+      Options == CellMajor, typename Triangulation::cell_iterator, typename Triangulation::boundary_face_iterator>
+      begin_, end_;
    public:
-    FeCellAssembler(
-      const Triangulation::cell_iterator& begin, const Triangulation::cell_iterator& end,
-      const Quadrature&... quadrature) :
+    FeGalerkinAssembler() = default;
+    template <typename Iterator>
+    FeGalerkinAssembler(const Iterator& begin, const Iterator& end, const Quadrature&... quadrature) :
         begin_(begin), end_(end), quadrature_(std::make_tuple(quadrature...)) { }
 
     template <typename Form> auto operator()(const Form& form) const {
         static constexpr bool has_trial_space = meta::xpr_find<
           decltype([]<typename Xpr_>() { return requires { typename Xpr_::TrialSpace; }; }), std::decay_t<Form>>();
-        static constexpr bool has_test_space = meta::xpr_find<
-          decltype([]<typename Xpr_>() { return requires { typename Xpr_::TestSpace; }; }), std::decay_t<Form>>();
+        static constexpr bool has_test_space  = meta::xpr_find<
+          decltype([]<typename Xpr_>() { return requires { typename Xpr_::TestSpace; };  }), std::decay_t<Form>>();
 
         if constexpr (has_trial_space && has_test_space) {   // bilinear form discretization
             if constexpr (sizeof...(Quadrature) == 0) {
-	      return internals::fe_galerkin_assembly_loop<Triangulation, Form, CellMajor> {form, begin_, end_};
+	      return internals::fe_galerkin_assembly_loop<Triangulation, Form, Options> {form, begin_, end_};
             } else {
                 return internals::fe_galerkin_assembly_loop<
-                  Triangulation, Form, CellMajor, std::tuple_element_t<0, std::tuple<Quadrature...>>> {
+                  Triangulation, Form, Options, std::tuple_element_t<0, std::tuple<Quadrature...>>> {
                   form, begin_, end_, std::get<0>(quadrature_)};
             }
         } else {   // functional (forcing-term like) discretization
             if constexpr (sizeof...(Quadrature) == 0) {
-                return internals::fe_forcing_assembly_loop<Triangulation, Form, CellMajor> {form, begin_, end_};
+                return internals::fe_forcing_assembly_loop<Triangulation, Form, Options> {form, begin_, end_};
             } else {
                 return internals::fe_forcing_assembly_loop<
-                  Triangulation, Form, CellMajor, std::tuple_element_t<0, std::tuple<Quadrature...>>> {
+                  Triangulation, Form, Options, std::tuple_element_t<0, std::tuple<Quadrature...>>> {
                   form, begin_, end_, std::get<0>(quadrature_)};
             }
         }
     }
 };
 
-template <typename Triangulation> FeCellAssembler<Triangulation> integral(const Triangulation& triangulation) {
-    return FeCellAssembler<Triangulation>(triangulation.cells_begin(), triangulation.cells_end());
+template <typename Triangulation, typename... Quadrature>
+using FeCellGalerkinAssembler = FeGalerkinAssembler<Triangulation, CellMajor, Quadrature...>;
+template <typename Triangulation, typename... Quadrature>
+using FeFaceGalerkinAssembler = FeGalerkinAssembler<Triangulation, FaceMajor, Quadrature...>;
+
+template <typename Triangulation> FeCellGalerkinAssembler<Triangulation> integral(const Triangulation& triangulation) {
+    return FeCellGalerkinAssembler<Triangulation>(triangulation.cells_begin(), triangulation.cells_end());
 }
-template <typename CellIterator>
-FeCellAssembler<typename CellIterator::TriangulationType> integral(const CellIterator& begin, const CellIterator& end) {
-    return FeCellAssembler<typename CellIterator::TriangulationType>(begin, end);
+template <typename Triangulation>
+auto integral(const CellIterator<Triangulation>& begin, const CellIterator<Triangulation>& end) {
+    return FeCellGalerkinAssembler<Triangulation>(begin, end);
+}
+// surface integration
+template <typename Triangulation>
+auto integral(const BoundaryIterator<Triangulation>& begin, const BoundaryIterator<Triangulation>& end) {
+    return FeFaceGalerkinAssembler<Triangulation>(begin, end);
 }
 
 }   // namespace fdapde

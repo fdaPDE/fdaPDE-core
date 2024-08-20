@@ -320,6 +320,7 @@ template <int EmbedDim> class DofHandler<2, EmbedDim> : public DofHandlerBase<2,
     boundary_edge_iterator boundary_edges_end() const {
         return boundary_edge_iterator(triangulation_->n_edges(), this);
     }
+    using boundary_face_iterator = boundary_edge_iterator;
    private:
     int n_dofs_per_edge_ = 0, n_dofs_per_cell_ = 0, n_dofs_internal_per_cell_ = 0;
     std::unordered_map<int, std::vector<int>> edge_to_dofs_;   // for each edge, the dofs which are not on its nodes

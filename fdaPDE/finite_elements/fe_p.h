@@ -136,6 +136,7 @@ template <int Order> struct FeP {
     template <int LocalDim> using cell_dof_descriptor = dof_descriptor<LocalDim>;
     template <int LocalDim> using face_dof_descriptor = dof_descriptor<LocalDim - 1>;
     template <int LocalDim> using select_cell_quadrature_t = typename select_cell_quadrature<LocalDim>::type;
+    template <int LocalDim> using select_face_quadrature_t = typename select_cell_quadrature<LocalDim - 1>::type;
 };
   
 // lagrange finite element alias
