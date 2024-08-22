@@ -35,7 +35,6 @@ template <typename Derived_> class Hessian : public fdapde::MatrixBase<Derived_:
     static constexpr int Cols = Derived::StaticInputSize;
     static constexpr int NestAsRef = 0;
     static constexpr int XprBits = Derived::XprBits;
-    using Base::operator();
 
     explicit constexpr Hessian(const Derived& xpr) : Base(), derived_(xpr), xpr_(), data_() {
         if constexpr (StaticInputSize == Dynamic) data_.resize(xpr_.input_size(), xpr_.input_size(), xpr_.input_size());
@@ -56,6 +55,8 @@ template <typename Derived_> class Hessian : public fdapde::MatrixBase<Derived_:
     constexpr int input_size() const { return data_.input_size(); }
     constexpr int size() const { return data_.size(); }
     constexpr const Derived& derived() const { return derived_; }
+    // evaluation at point
+    constexpr auto operator()(const InputType& p) const { return Base::call_(p); }
    private:
     MatrixField<StaticInputSize, Rows, Cols, FunctorType> data_;
     MatrixSymmetricView<MatrixField<StaticInputSize, Rows, Cols, FunctorType>, fdapde::Lower> xpr_;

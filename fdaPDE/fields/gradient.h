@@ -35,7 +35,6 @@ template <typename Derived_> class Gradient : public fdapde::MatrixBase<Derived_
     static constexpr int Cols = 1;
     static constexpr int NestAsRef = 0;
     static constexpr int XprBits = FunctorType::XprBits;
-    using Base::operator();
 
     explicit constexpr Gradient(const Derived& xpr) : Base(), xpr_(xpr) {
         if constexpr (StaticInputSize == Dynamic) data_.resize(xpr_.input_size());
@@ -53,6 +52,8 @@ template <typename Derived_> class Gradient : public fdapde::MatrixBase<Derived_
     constexpr int input_size() const { return xpr_.input_size(); }
     constexpr int size() const { return Rows; }
     constexpr const Derived& derived() const { return xpr_; }
+    // evaluation at point
+    constexpr auto operator()(const InputType& p) const { return Base::call_(p); }
    private:
     using StorageType = typename std::conditional_t<
       Derived::StaticInputSize == Dynamic, std::vector<FunctorType>, std::array<FunctorType, StaticInputSize>>;

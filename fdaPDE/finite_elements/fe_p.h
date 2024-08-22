@@ -109,7 +109,7 @@ template <int Order> struct FeP {
             } else {
                 for (int i = 0; i < n_dofs_per_cell; ++i) {
                     double sum = 0;
-                    for (int j = 0; j < local_dim; ++j) sum += dofs_bary_coords_(i, j);
+                    for (int j = 0; j < local_dim; ++j) sum += dofs_bary_coords_(i, j + 1);
                     dofs_bary_coords_(i, 0) = 1 - sum;
                 }
             }

@@ -24,11 +24,11 @@
 namespace fdapde {
 
 template <int StaticInputSize, typename Derived> struct ScalarBase;
-  
+
 template <typename Derived_, typename UnaryFunctor>
 struct ScalarUnaryOp : public ScalarBase<Derived_::StaticInputSize, ScalarUnaryOp<Derived_, UnaryFunctor>> {
     using Derived = Derived_;
-    using UnaryOp = UnaryFunctor;
+    template <typename T> using Meta = ScalarUnaryOp<T, UnaryFunctor>;
     using Base = ScalarBase<Derived::StaticInputSize, ScalarUnaryOp<Derived, UnaryFunctor>>;
     using InputType = typename Derived::InputType;
     using Scalar = decltype(std::declval<UnaryFunctor>().operator()(std::declval<typename Derived::Scalar>()));
@@ -37,7 +37,7 @@ struct ScalarUnaryOp : public ScalarBase<Derived_::StaticInputSize, ScalarUnaryO
     static constexpr int XprBits = Derived::XprBits;
 
     constexpr ScalarUnaryOp(const Derived_& derived, const UnaryFunctor& op) : Base(), derived_(derived), op_(op) { }
-    constexpr ScalarUnaryOp(const Derived_& derived) : ScalarUnaryOp(derived, UnaryFunctor()) { }
+    constexpr ScalarUnaryOp(const Derived_& derived) : ScalarUnaryOp(derived, UnaryFunctor {}) { }
     constexpr Scalar operator()(const InputType& p) const {
         if constexpr (StaticInputSize == Dynamic) { fdapde_assert(p.rows() == Base::input_size()); }
         return op_(derived_(p));
@@ -90,7 +90,7 @@ class ScalarBinOp : public ScalarBase<Lhs_::StaticInputSize, ScalarBinOp<Lhs_, R
    public:
     using LhsDerived = Lhs_;
     using RhsDerived = Rhs_;
-    using BinaryOp = BinaryOperation;
+    template <typename T1, typename T2> using Meta = ScalarBinOp<T1, T2, BinaryOperation>;
     using Base = ScalarBase<LhsDerived::StaticInputSize, ScalarBinOp<LhsDerived, RhsDerived, BinaryOperation>>;
     using InputType = typename LhsDerived::InputType;
     using Scalar = typename LhsDerived::Scalar;
@@ -104,6 +104,7 @@ class ScalarBinOp : public ScalarBase<Lhs_::StaticInputSize, ScalarBinOp<Lhs_, R
     }
     constexpr ScalarBinOp(const Lhs_& lhs, const Rhs_& rhs, BinaryOperation op) requires(StaticInputSize != Dynamic) :
         Base(), lhs_(lhs), rhs_(rhs), op_(op) { }
+    constexpr ScalarBinOp(const Lhs_& lhs, const Rhs_& rhs) : ScalarBinOp(lhs, rhs, BinaryOperation {}) { }
     constexpr Scalar operator()(const InputType& p) const {
         fdapde_static_assert(
           std::is_same_v<typename Lhs_::InputType FDAPDE_COMMA typename Rhs_::InputType>,
@@ -156,7 +157,7 @@ struct ScalarCoeffOp :
       COEFFICIENT_IN_BINARY_OPERATION_NOT_CONVERTIBLE_TO_SCALAR_TYPE);
     using LhsDerived = Lhs_;
     using RhsDerived = Rhs_;
-    using BinaryOp = BinaryOperation;
+    template <typename T1, typename T2> using Meta = ScalarCoeffOp<T1, T2, BinaryOperation>;
     static constexpr bool is_coeff_lhs =
       std::is_arithmetic_v<Lhs_>;   // whether to perform op_(xpr_(p), coeff) or op_(coeff, xpr_(p))
     using Base = ScalarBase<Derived::StaticInputSize, ScalarCoeffOp<LhsDerived, RhsDerived, BinaryOperation>>;
@@ -168,6 +169,7 @@ struct ScalarCoeffOp :
 
     constexpr ScalarCoeffOp(const Lhs_& lhs, const Rhs_& rhs, BinaryOperation op) :
         Base(), lhs_(lhs), rhs_(rhs), op_(op) { }
+    constexpr ScalarCoeffOp(const Lhs_& lhs, const Rhs_& rhs) : ScalarCoeffOp(lhs, rhs, BinaryOperation {}) { }
     constexpr Scalar operator()(const InputType& p) const {
         if constexpr (StaticInputSize == Dynamic) { fdapde_assert(p.rows() == Base::input_size()); }
         if constexpr (is_coeff_lhs) {
@@ -283,6 +285,7 @@ template <typename Derived, int Order> struct PartialDerivative;
 template <typename Derived_>
 struct PartialDerivative<Derived_, 1> : public ScalarBase<Derived_::StaticInputSize, PartialDerivative<Derived_, 1>> {
     using Derived = Derived_;
+    template <typename T> using Meta = PartialDerivative<T, 1>;
     using Base = ScalarBase<Derived::StaticInputSize, PartialDerivative<Derived, 1>>;
     using InputType = std::decay_t<typename Derived::InputType>;
     using Scalar = typename Derived::Scalar;
@@ -315,6 +318,7 @@ struct PartialDerivative<Derived_, 1> : public ScalarBase<Derived_::StaticInputS
 template <typename Derived_>
 struct PartialDerivative<Derived_, 2> : public ScalarBase<Derived_::StaticInputSize, PartialDerivative<Derived_, 2>> {
     using Derived = Derived_;
+    template <typename T> using Meta = PartialDerivative<T, 2>;
     using Base = ScalarBase<Derived::StaticInputSize, PartialDerivative<Derived, 2>>;
     using InputType = std::decay_t<typename Derived::InputType>;
     using Scalar = typename Derived::Scalar;

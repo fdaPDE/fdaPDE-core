@@ -58,6 +58,7 @@ struct FeMap :
       [[maybe_unused]] CellIterator begin, [[maybe_unused]] CellIterator end) const {
         const void* ptr = reinterpret_cast<const void*>(xpr_);
         if (buff.find(ptr) == buff.end()) {
+
             DMatrix<double> mapped(nodes.rows(), Rows * Cols);
             if constexpr (is_scalar) {
                 for (int i = 0, n = nodes.rows(); i < n; ++i) { mapped(i, 0)  = xpr_->operator()(nodes.row(i)); }

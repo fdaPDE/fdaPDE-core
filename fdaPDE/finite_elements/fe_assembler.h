@@ -94,7 +94,7 @@ template <typename DofHandler, typename FeType> class fe_mass_assembly_loop {
     fe_mass_assembly_loop() = default;
     fe_mass_assembly_loop(DofHandler& dof_handler) : dof_handler_(&dof_handler) { }
 
-    SpMatrix<double> run() {
+    SpMatrix<double> assemble() {
         if (!dof_handler_) dof_handler_->enumerate(FeType {});
         SpMatrix<double> assembled_mat(dof_handler_->n_dofs(), dof_handler_->n_dofs());
         std::vector<Eigen::Triplet<double>> triplet_list;
@@ -146,7 +146,7 @@ template <typename DofHandler, typename FeType> class fe_grad_grad_assembly_loop
     fe_grad_grad_assembly_loop() = default;
     fe_grad_grad_assembly_loop(DofHandler& dof_handler) : dof_handler_(&dof_handler) { }
 
-    SpMatrix<double> run() {
+    SpMatrix<double> assemble() {
         if (!dof_handler_) dof_handler_->enumerate(FeType {});
         SpMatrix<double> assembled_mat(dof_handler_->n_dofs(), dof_handler_->n_dofs());
 	// prepare assembly loop
@@ -296,7 +296,7 @@ struct fe_assembler_base {
     using DofHandler_ = DofHandler<local_dim, embed_dim>;
     void distribute_quadrature_nodes(
       std::unordered_map<const void*, DMatrix<double>>& fe_map_buff, typename fe_traits::dof_iterator begin,
-      typename fe_traits::dof_iterator end) {
+      typename fe_traits::dof_iterator end) const {
         DMatrix<double> quad_nodes;
         quad_nodes.resize(n_quadrature_nodes * (end_.index() - begin_.index()), embed_dim);
         int i = 0;
@@ -311,6 +311,7 @@ struct fe_assembler_base {
             }
             i++;
         }
+
         // evaluate FeMap nodes at quadrature nodes
         meta::xpr_apply_if<
           decltype([]<typename Xpr_, typename... Args>(Xpr_& xpr, Args&&... args) {
@@ -352,16 +353,16 @@ class fe_matrix_assembly_loop :
       const Quadrature_&... quadrature) requires(sizeof...(quadrature) <= 1)
         : Base(form, begin, end, quadrature...) { }
 
-    SpMatrix<double> run() const {
+    SpMatrix<double> assemble() const {
         SpMatrix<double> assembled_mat(dof_handler_.n_dofs(), dof_handler_.n_dofs());
         std::vector<Eigen::Triplet<double>> triplet_list;
-	run(triplet_list);
+	assemble(triplet_list);
 	// linearity of the integral is implicitly used here, as duplicated triplets are summed up (see Eigen docs)
         assembled_mat.setFromTriplets(triplet_list.begin(), triplet_list.end());
         assembled_mat.makeCompressed();
         return assembled_mat;
     }
-    void run(std::vector<Eigen::Triplet<double>>& triplet_list) const {
+    void assemble(std::vector<Eigen::Triplet<double>>& triplet_list) const {
         using iterator = typename Base::fe_traits::dof_iterator;
         iterator begin(Base::begin_.index(), &dof_handler_);
         iterator end  (Base::end_.index(),   &dof_handler_);
@@ -389,6 +390,7 @@ class fe_matrix_assembly_loop :
                     }
                 }
             }
+
             // perform integration of weak form for (i, j)-th basis pair
             active_dofs = it->dofs();
             for (int i = 0; i < n_basis; ++i) {       // trial function loop
@@ -438,13 +440,13 @@ class fe_vector_assembly_loop :
       const Quadrature_&... quadrature) requires(sizeof...(quadrature) <= 1)
         : Base(form, begin, end, quadrature...) { }
 
-    DVector<double> run() const {
+    DVector<double> assemble() const {
         DVector<double> assembled_vec(dof_handler_.n_dofs());
         assembled_vec.setZero();
-        run(assembled_vec);
+        assemble(assembled_vec);
         return assembled_vec;
     }
-    void run(DVector<double>& assembled_vec) const {
+    void assemble(DVector<double>& assembled_vec) const {
         using iterator = typename Base::fe_traits::dof_iterator;
         iterator begin(Base::begin_.index(), &dof_handler_);
         iterator end  (Base::end_.index(),   &dof_handler_);
@@ -492,11 +494,11 @@ struct fe_assembly_add_op : public fe_assembly_xpr_base<fe_assembly_add_op<Lhs, 
     fe_assembly_add_op(const Lhs& lhs, const Rhs& rhs) : lhs_(lhs), rhs_(rhs) {
         fdapde_assert(lhs.n_dofs() == rhs.n_dofs());
     }
-    OutputType run() const {
+    OutputType assemble() const {
         if constexpr (std::is_same_v<OutputType, SpMatrix<double>>) {
             SpMatrix<double> assembled_mat(lhs_.n_dofs(), lhs_.n_dofs());
             std::vector<Eigen::Triplet<double>> triplet_list;
-            run(triplet_list);
+            assemble(triplet_list);
             // linearity of the integral is implicitly used here, as duplicated triplets are summed up (see Eigen docs)
             assembled_mat.setFromTriplets(triplet_list.begin(), triplet_list.end());
             assembled_mat.makeCompressed();
@@ -504,13 +506,13 @@ struct fe_assembly_add_op : public fe_assembly_xpr_base<fe_assembly_add_op<Lhs, 
         } else {
             DVector<double> assembled_vec(lhs_.n_dofs());
             assembled_vec.setZero();
-            run(assembled_vec);
+            assemble(assembled_vec);
             return assembled_vec;
         }
     }
     template <typename T> void run(T& assembly_buff) const {
-        lhs_.run(assembly_buff);
-        rhs_.run(assembly_buff);
+        lhs_.assemble(assembly_buff);
+        rhs_.assemble(assembly_buff);
         return;
     }
     constexpr int n_dofs() const { return lhs_.n_dofs(); }

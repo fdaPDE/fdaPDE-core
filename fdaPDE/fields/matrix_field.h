@@ -20,11 +20,12 @@
 #include <array>
 #include <type_traits>
 
-#include "../utils/symbols.h"
 #include "../linear_algebra/constexpr_matrix.h"
-#include "norm.h"
+#include "../utils/symbols.h"
 #include "divergence.h"
 #include "dot.h"
+#include "meta.h"
+#include "norm.h"
 
 namespace fdapde {
   
@@ -41,6 +42,9 @@ class MatrixProduct : public fdapde::MatrixBase<Lhs::StaticInputSize, MatrixProd
       std::is_same_v<typename Lhs::InputType FDAPDE_COMMA typename Rhs::InputType>,
       YOU_MIXED_MATRICES_WITH_DIFFERENT_INPUT_TYPES);
    public:
+    using LhsDerived = Lhs;
+    using RhsDerived = Rhs;
+    template <typename T1, typename T2> using Meta = MatrixProduct<T1, T2>;
     using Base = MatrixBase<Lhs::StaticInputSize, MatrixProduct<Lhs, Rhs>>;
     using InputType = typename Lhs::InputType;
     using Scalar = decltype(std::declval<typename Lhs::Scalar>() * std::declval<typename Rhs::Scalar>());
@@ -49,7 +53,6 @@ class MatrixProduct : public fdapde::MatrixBase<Lhs::StaticInputSize, MatrixProd
     static constexpr int Cols = Rhs::Cols;
     static constexpr int NestAsRef = 0;
     static constexpr int XprBits = Lhs::XprBits | Rhs::XprBits;
-    using Base::operator();
 
     constexpr MatrixProduct(const Lhs& lhs, const Rhs& rhs) requires(Rows != Dynamic && Cols != Dynamic)
         : Base(), lhs_(lhs), rhs_(rhs) {
@@ -63,7 +66,9 @@ class MatrixProduct : public fdapde::MatrixBase<Lhs::StaticInputSize, MatrixProd
     constexpr int cols() const { return rhs_.cols(); }
     constexpr int input_size() const { lhs_.input_size(); }
     constexpr int size() const { return rows() * cols(); }
-
+    constexpr const Lhs& lhs() const { return lhs_; }
+    constexpr const Rhs& rhs() const { return rhs_; }
+  
     // for matrix multiplication, it is more convenient to evaluate the two operands at p, and take the product of the
     // evaluations
     template <typename Dest> constexpr void eval_at(const InputType& p, Dest& dest) const {
@@ -117,6 +122,8 @@ class MatrixProduct : public fdapde::MatrixBase<Lhs::StaticInputSize, MatrixProd
         for (int k = 0; k < lhs_.cols(); ++k) { res += lhs_.eval(i, k, p) * rhs_.eval(k, j, p); }
         return res;
     }
+    // evaluation at point
+    constexpr auto operator()(const InputType& p) const { return Base::call_(p); }
    protected:
     typename internals::ref_select<const Lhs>::type lhs_;
     typename internals::ref_select<const Rhs>::type rhs_;
@@ -127,13 +134,16 @@ operator*(const MatrixBase<Lhs::StaticInputSize, Lhs>& lhs, const MatrixBase<Rhs
     return MatrixProduct<Lhs, Rhs> {lhs.derived(), rhs.derived()};
 }
 
-template <int BlockRows_, int BlockCols_, typename Derived>
-class MatrixBlock : public fdapde::MatrixBase<Derived::StaticInputSize, MatrixBlock<BlockRows_, BlockCols_, Derived>> {
+template <int BlockRows_, int BlockCols_, typename Derived_>
+class MatrixBlock :
+    public fdapde::MatrixBase<Derived_::StaticInputSize, MatrixBlock<BlockRows_, BlockCols_, Derived_>> {
     fdapde_static_assert(
-      (BlockRows_ == Dynamic || (Derived::Rows == Dynamic || (BlockRows_ > 0 && BlockRows_ <= Derived::Rows))) &&
-        (BlockCols_ == Dynamic || (Derived::Cols == Dynamic || (BlockCols_ > 0 && BlockCols_ <= Derived::Cols))),
+      (BlockRows_ == Dynamic || (Derived_::Rows == Dynamic || (BlockRows_ > 0 && BlockRows_ <= Derived_::Rows))) &&
+        (BlockCols_ == Dynamic || (Derived_::Cols == Dynamic || (BlockCols_ > 0 && BlockCols_ <= Derived_::Cols))),
       INVALID_BLOCK_SIZES);
    public:
+    using Derived = Derived_;
+    template <typename T> using Meta = MatrixBlock<BlockRows_, BlockCols_, T>;
     using Base = MatrixBase<Derived::StaticInputSize, MatrixBlock<BlockRows_, BlockCols_, Derived>>;
     using InputType = typename Derived::InputType;
     using Scalar = typename Derived::Scalar;
@@ -143,7 +153,6 @@ class MatrixBlock : public fdapde::MatrixBase<Derived::StaticInputSize, MatrixBl
     static constexpr int NestAsRef = 0;
     static constexpr int XprBits = Derived::XprBits;
     static constexpr int ReadOnly = Derived::ReadOnly;
-    using Base::operator();
 
     // row/column constructor
     constexpr MatrixBlock(const Derived& xpr, int i) :
@@ -180,6 +189,7 @@ class MatrixBlock : public fdapde::MatrixBase<Derived::StaticInputSize, MatrixBl
     constexpr int cols() const { return block_cols_; }
     constexpr int input_size() const { return xpr_.input_size(); }
     constexpr int size() const { return rows() * cols(); }
+    constexpr const Derived& derived() const { return xpr_; }
     constexpr auto operator()(int i, int j) const { return xpr_(start_row_ + i, start_col_ + j); }
     constexpr auto operator[](int i) const {
         fdapde_static_assert(BlockRows_ == 1 || BlockCols_ == 1, THIS_METHOD_IS_ONLY_FOR_ROW_OR_COLUMN_BLOCKS);
@@ -220,7 +230,9 @@ class MatrixBlock : public fdapde::MatrixBase<Derived::StaticInputSize, MatrixBl
             for (int j = 0; j < xpr_.cols(); ++j) { xpr_(start_row_ + i, start_col_ + j) = rhs(i, j); }
         }
 	return *this;
-    }  
+    }
+    // evaluation at point
+    constexpr auto operator()(const InputType& p) const { return Base::call_(p); }
    private:
     int start_row_ = 0, start_col_ = 0;
     int block_rows_ = 0, block_cols_ = 0;
@@ -242,6 +254,9 @@ class MatrixBinOp : public fdapde::MatrixBase<Lhs::StaticInputSize, MatrixBinOp<
     typename internals::ref_select<const Rhs>::type rhs_;
     BinaryOperation op_;
    public:
+    using LhsDerived = Lhs;
+    using RhsDerived = Rhs;
+    template <typename T1, typename T2> using Meta = MatrixBinOp<T1, T2, BinaryOperation>;
     using Base = MatrixBase<Lhs::StaticInputSize, MatrixBinOp<Lhs, Rhs, BinaryOperation>>;
     using InputType = typename Lhs::InputType;
     using Scalar = decltype(std::declval<BinaryOperation>().operator()(
@@ -252,7 +267,6 @@ class MatrixBinOp : public fdapde::MatrixBase<Lhs::StaticInputSize, MatrixBinOp<
     static constexpr int NestAsRef = 0;
     static constexpr int XprBits = Lhs::XprBits | Rhs::XprBits;
     static constexpr int ReadOnly = 1;
-    using Base::operator();
 
     constexpr MatrixBinOp(const Lhs& lhs, const Rhs& rhs, BinaryOperation op)
         requires(StaticInputSize != Dynamic && Rows != Dynamic && Cols != Dynamic)
@@ -264,6 +278,7 @@ class MatrixBinOp : public fdapde::MatrixBase<Lhs::StaticInputSize, MatrixBinOp<
           (lhs.input_size() == rhs.input_size()) && (Rows != Dynamic || lhs.rows() == rhs.rows()) &&
           (Cols != Dynamic || lhs.cols() == rhs.cols()));
     }
+    MatrixBinOp(const Lhs& lhs, const Rhs& rhs) : MatrixBinOp(lhs, rhs, BinaryOperation {}) { }
 
     constexpr Scalar eval(int i, int j, const InputType& p) const {
         return op_(lhs_.eval(i, j, p), rhs_.eval(i, j, p));
@@ -283,6 +298,10 @@ class MatrixBinOp : public fdapde::MatrixBase<Lhs::StaticInputSize, MatrixBinOp<
     constexpr int cols() const { return lhs_.cols(); }
     constexpr int input_size() const { return lhs_.input_size(); }
     constexpr int size() const { return lhs_.size(); }
+    constexpr const Lhs& lhs() const { return lhs_; }
+    constexpr const Rhs& rhs() const { return rhs_; }
+    // evaluation at point
+    constexpr auto operator()(const InputType& p) const { return Base::call_(p); }
 };
 template <typename Lhs, typename Rhs>
 constexpr MatrixBinOp<Lhs, Rhs, std::plus<>>
@@ -298,62 +317,133 @@ operator-(const MatrixBase<Lhs::StaticInputSize, Lhs>& lhs, const MatrixBase<Rhs
 template <typename Lhs, typename Rhs, typename BinaryOperation>
 class MatrixCoeffWiseOp :
     public fdapde::MatrixBase<
-      std::conditional_t<std::is_arithmetic_v<Lhs>, Rhs, Lhs>::StaticInputSize,
+      std::conditional_t<std::is_arithmetic_v<Lhs> || meta::is_scalar_field_v<Lhs>, Rhs, Lhs>::StaticInputSize,
       MatrixCoeffWiseOp<Lhs, Rhs, BinaryOperation>> {
-    using CoeffType_ = std::conditional_t<std::is_arithmetic_v<Lhs>, Lhs, Rhs>;
-    using Derived = std::conditional_t<std::is_arithmetic_v<Lhs>, Rhs, Lhs>;
-    typename internals::ref_select<const Derived>::type xpr_;
-    CoeffType_ coeff_;
-    BinaryOperation op_;
    public:
+    static constexpr bool is_coeff_lhs = std::is_arithmetic_v<Lhs> || meta::is_scalar_field_v<Lhs>;
+   private:
+    // keep this private to avoid to consider ScalarCoeffOp as a unary node
+    using Derived = std::conditional_t<is_coeff_lhs, Rhs, Lhs>;
+    const Derived& derived() const { if constexpr(is_coeff_lhs) return rhs_; else return lhs_; }
+   public:
+    using LhsDerived = Lhs;
+    using RhsDerived = Rhs;
+    template <typename T1, typename T2> using Meta = MatrixCoeffWiseOp<T1, T2, BinaryOperation>;
+    using CoeffType = std::conditional_t<is_coeff_lhs, Lhs, Rhs>;
+    static constexpr bool is_coeff_scalar_field = meta::is_scalar_field_v<CoeffType>;
     static constexpr int StaticInputSize = Derived::StaticInputSize;
     using Base = MatrixBase<StaticInputSize, MatrixCoeffWiseOp<Lhs, Rhs, BinaryOperation>>;
     using Scalar = decltype(std::declval<BinaryOperation>().operator()(
-      std::declval<typename Derived::Scalar>(), std::declval<CoeffType_>()));
+      std::declval<typename Derived::Scalar>(), std::declval<decltype([]() {
+          if constexpr (meta::is_scalar_field_v<CoeffType>) {
+              return typename CoeffType::Scalar {};
+          } else {
+              return CoeffType {};
+          }
+      }())>()));
     using InputType = typename Derived::InputType;
     static constexpr int Rows = Derived::Rows;
     static constexpr int Cols = Derived::Cols;
     static constexpr int NestAsRef = 0;
-    static constexpr int XprBits = Derived::XprBits;
+    static constexpr int XprBits = []() {
+        if constexpr (is_coeff_scalar_field) {
+            return Lhs::XprBits | Rhs::XprBits;
+        } else {
+            return Derived::XprBits;
+        }
+    }();
     static constexpr int ReadOnly = 1;
-    using Base::operator();
 
-    constexpr MatrixCoeffWiseOp(const Derived& xpr, CoeffType_ coeff, BinaryOperation op)
-        : Base(), xpr_(xpr), coeff_(coeff), op_(op) { }
-    constexpr Scalar eval(int i, int j, const InputType& p) const { return op_(xpr_.eval(i, j, p), coeff_); }
-    constexpr Scalar eval(int i, const InputType& p) const {
+    constexpr MatrixCoeffWiseOp(const Lhs& lhs, const Rhs& rhs, BinaryOperation op) :
+        Base(), lhs_(lhs), rhs_(rhs), op_(op) { }
+    constexpr MatrixCoeffWiseOp(const Lhs& lhs, const Rhs& rhs) : MatrixCoeffWiseOp(lhs, rhs, BinaryOperation {}) { }
+    template <typename InputType_> constexpr Scalar eval(int i, int j, const InputType_& p) const {
+        fdapde_static_assert(
+          std::is_arithmetic_v<CoeffType> || std::is_invocable_v<CoeffType FDAPDE_COMMA InputType>,
+          COEFFICIENT_IS_NOT_AN_ARITHMETIC_TYPE_AND_IS_NOT_INVOCABLE_AT_INPUT_TYPE);
+        if constexpr (is_coeff_lhs) {
+            if constexpr (meta::is_scalar_field_v<LhsDerived>) {
+                return op_(lhs_(p), rhs_.eval(i, j, p));
+            } else {
+                return op_(lhs_, rhs_.eval(i, j, p));
+            }
+        } else {
+            if constexpr (meta::is_scalar_field_v<RhsDerived>) {
+                return op_(lhs_.eval(i, j, p), rhs_(p));
+            } else {
+                return op_(lhs_.eval(i, j, p), rhs_);
+            }	  
+	}
+    }
+    template <typename InputType_> constexpr Scalar eval(int i, const InputType_& p) const {
         fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_ONLY_FOR_ROW_OR_COLUMN_MATRICES);
-        return op_(xpr_.eval(i, p), coeff_);
+        fdapde_static_assert(
+          std::is_arithmetic_v<CoeffType> || std::is_invocable_v<CoeffType FDAPDE_COMMA InputType>,
+          COEFFICIENT_IS_NOT_AN_ARITHMETIC_TYPE_AND_IS_NOT_INVOCABLE_AT_INPUT_TYPE);
+        if constexpr (is_coeff_lhs) {
+            if constexpr (meta::is_scalar_field_v<LhsDerived>) {
+                return op_(lhs_(p), rhs_.eval(i, p));
+            } else {
+                return op_(lhs_, rhs_.eval(i, p));
+            }
+        } else {
+            if constexpr (meta::is_scalar_field_v<RhsDerived>) {
+                return op_(lhs_.eval(i, p), rhs_(p));
+            } else {
+                return op_(lhs_.eval(i, p), rhs_);
+            }
+        }
     }
     constexpr auto operator()(int i, int j) const {
-        return [i, j, this](const InputType& p) { return op_(xpr_.eval(i, j, p), coeff_); };
+        return [i, j, this](const InputType& p) { this->eval(i, j, p); };
     }
     constexpr Scalar operator[](int i) const {
         fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_ONLY_FOR_ROW_OR_COLUMN_MATRICES);
-        return [i, this](const InputType& p) { return op_(xpr_.eval(i, p), coeff_); };
+        return [i, this](const InputType& p) { this->eval(i, p); };
     }
-    constexpr int rows() const { return xpr_.rows(); }
-    constexpr int cols() const { return xpr_.cols(); }
-    constexpr int input_size() const { return xpr_.input_size(); }
-    constexpr int size() const { return xpr_.size(); }
+    constexpr int rows() const { return derived().rows(); }
+    constexpr int cols() const { return derived().cols(); }
+    constexpr int input_size() const { return derived().input_size(); }
+    constexpr int size() const { return derived().size(); }
+    constexpr const LhsDerived& lhs() const { return lhs_; }
+    constexpr const RhsDerived& rhs() const { return rhs_; }
+    // evaluation at point
+    constexpr auto operator()(const InputType& p) const { return Base::call_(p); }
+   protected:
+    typename internals::ref_select<const LhsDerived>::type lhs_;
+    typename internals::ref_select<const RhsDerived>::type rhs_;
+    BinaryOperation op_;
 };
 
-template <int Size, typename Derived, typename Coeff>
-constexpr MatrixCoeffWiseOp<Derived, Coeff, std::multiplies<>>
-operator*(const MatrixBase<Size, Derived>& lhs, Coeff rhs)
-    requires(std::is_arithmetic_v<Coeff>) {
-    return MatrixCoeffWiseOp<Derived, Coeff, std::multiplies<>> {lhs.derived(), rhs, std::multiplies<>()};
+template <int Size, typename Lhs, typename Rhs>
+constexpr MatrixCoeffWiseOp<Lhs, Rhs, std::multiplies<>>
+operator*(const MatrixBase<Size, Lhs>& lhs, const Rhs& rhs)
+    requires(std::is_arithmetic_v<Rhs> || meta::is_scalar_field_v<Rhs>) {
+    if constexpr (meta::is_scalar_field_v<Rhs>) {
+        return MatrixCoeffWiseOp<Lhs, Rhs, std::multiplies<>>(lhs.derived(), rhs.derived(), std::multiplies<>());
+    } else {
+        return MatrixCoeffWiseOp<Lhs, Rhs, std::multiplies<>>(lhs.derived(), rhs, std::multiplies<>());
+    }
 }
-template <int Size, typename Derived, typename Coeff>
-constexpr MatrixCoeffWiseOp<Coeff, Derived, std::multiplies<>>
-operator*(Coeff lhs, const MatrixBase<Size, Derived>& rhs)
-    requires(std::is_arithmetic_v<Coeff>) {
-    return MatrixCoeffWiseOp<Coeff, Derived, std::multiplies<>> {rhs.derived(), lhs, std::multiplies<>()};
+template <int Size, typename Lhs, typename Rhs>
+constexpr MatrixCoeffWiseOp<Lhs, Rhs, std::multiplies<>>
+operator*(const Lhs& lhs, const MatrixBase<Size, Rhs>& rhs)
+    requires(std::is_arithmetic_v<Lhs> || meta::is_scalar_field_v<Lhs>) {
+    if constexpr (meta::is_scalar_field_v<Lhs>) {
+        return MatrixCoeffWiseOp<Lhs, Rhs, std::multiplies<>>(lhs.derived(), rhs.derived(), std::multiplies<>());
+    } else {
+        return MatrixCoeffWiseOp<Lhs, Rhs, std::multiplies<>>(lhs, rhs.derived(), std::multiplies<>());
+    }
 }
-template <int Size, typename Derived, typename Coeff>
-constexpr MatrixCoeffWiseOp<Derived, Coeff, std::divides<>> operator/(const MatrixBase<Size, Derived>& lhs, Coeff rhs)
-    requires(std::is_arithmetic_v<Coeff>) {
-    return MatrixCoeffWiseOp<Derived, Coeff, std::divides<>> {lhs.derived(), rhs, std::divides<>()};
+template <int Size, typename Lhs, typename Rhs>
+constexpr MatrixCoeffWiseOp<Lhs, Rhs, std::divides<>>
+operator*(const MatrixBase<Size, Lhs>& lhs, const Rhs& rhs)
+    requires(std::is_arithmetic_v<Rhs> || meta::is_scalar_field_v<Rhs>) {
+    if constexpr (meta::is_scalar_field_v<Rhs>) {
+        return MatrixCoeffWiseOp<Lhs, Rhs, std::divides<>>(lhs.derived(), rhs.derived(), std::divides<>());
+    } else {
+        return MatrixCoeffWiseOp<Lhs, Rhs, std::divides<>>(lhs.derived(), rhs, std::divides<>());
+    }
 }
   
 template <
@@ -384,7 +474,7 @@ class MatrixField :
     static constexpr int ReadOnly = 0;
     static constexpr int Rows = Rows_;
     static constexpr int Cols = Cols_;
-    using Base::operator();
+  
     // static sized constructor
     constexpr MatrixField() requires(!is_dynamic_sized<This>::value)
         : Base(), data_(), inner_size_(StaticInputSize), n_rows_(Rows), n_cols_(Cols) { }
@@ -496,6 +586,8 @@ class MatrixField :
         fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_ONLY_FOR_VECTORS);
         return data_[i];
     }
+    // evaluation at point
+    constexpr auto operator()(const InputType& p) const { return Base::call_(p); }
     constexpr int rows() const { return n_rows_; }
     constexpr int cols() const { return n_cols_; }
     constexpr int input_size() const { return inner_size_; }
@@ -505,8 +597,10 @@ class MatrixField :
 template <int StaticInputSize, int Rows, typename Derived>
 using VectorField = MatrixField<StaticInputSize, Rows, 1, Derived>;
 
-template <typename Derived>
-struct MatrixTranspose : public fdapde::MatrixBase<Derived::StaticInputSize, MatrixTranspose<Derived>> {
+template <typename Derived_>
+struct MatrixTranspose : public fdapde::MatrixBase<Derived_::StaticInputSize, MatrixTranspose<Derived_>> {
+    using Derived = Derived_;
+    template <typename T> using Meta = MatrixTranspose<T>;
     using Base = MatrixBase<Derived::StaticInputSize, MatrixTranspose<Derived>>;
     using Scalar = typename Derived::Scalar;
     using InputType = typename Derived::InputType;
@@ -516,7 +610,6 @@ struct MatrixTranspose : public fdapde::MatrixBase<Derived::StaticInputSize, Mat
     static constexpr int NestAsRef = 0;
     static constexpr int XprBits = Derived::XprBits;
     static constexpr int ReadOnly = 1;
-    using Base::operator();
 
     constexpr explicit MatrixTranspose(const Derived& xpr) : Base(), xpr_(xpr) { }
     constexpr Scalar eval(int i, int j, const InputType& p) const { return xpr_.eval(j, i, p); }
@@ -530,13 +623,18 @@ struct MatrixTranspose : public fdapde::MatrixBase<Derived::StaticInputSize, Mat
     constexpr int cols() const { return xpr_.rows(); }
     constexpr int input_size() const { return xpr_.input_size(); }
     constexpr int size() const { return xpr_.size(); }
+    constexpr const Derived& derived() const { return xpr_; }
+    // evaluation at point
+    constexpr auto operator()(const InputType& p) const { return Base::call_(p); }
    protected:
     typename internals::ref_select<const Derived>::type xpr_;
 };
 
-template <typename Derived>
-struct MatrixDiagonalBlock : public fdapde::MatrixBase<Derived::StaticInputSize, MatrixDiagonalBlock<Derived>> {
-    fdapde_static_assert(Derived::Rows == Derived::Cols, DIAGONAL_BLOCK_DEFINED_ONLY_FOR_SQUARED_MATRICES);
+template <typename Derived_>
+struct MatrixDiagonalBlock : public fdapde::MatrixBase<Derived_::StaticInputSize, MatrixDiagonalBlock<Derived_>> {
+    fdapde_static_assert(Derived_::Rows == Derived_::Cols, DIAGONAL_BLOCK_DEFINED_ONLY_FOR_SQUARED_MATRICES);
+    using Derived = Derived_;
+    template <typename T> using Meta = MatrixDiagonalBlock<T>;  
     using Base = MatrixBase<Derived::StaticInputSize, MatrixDiagonalBlock<Derived>>;
     using Scalar = typename Derived::Scalar;
     using InputType = typename Derived::InputType;
@@ -546,7 +644,6 @@ struct MatrixDiagonalBlock : public fdapde::MatrixBase<Derived::StaticInputSize,
     static constexpr int NestAsRef = 0;
     static constexpr int XprBits = Derived::XprBits;
     static constexpr int ReadOnly = 1;
-    using Base::operator();
 
     constexpr explicit MatrixDiagonalBlock(const Derived& xpr) : Base(), xpr_(xpr) { }
     constexpr Scalar eval(int i, int j, const InputType& p) const { return i != j ? Scalar(0) : xpr_.eval(i, j, p); }
@@ -556,6 +653,7 @@ struct MatrixDiagonalBlock : public fdapde::MatrixBase<Derived::StaticInputSize,
     constexpr int cols() const { return xpr_.cols(); }
     constexpr int input_size() const { return xpr_.input_size(); }
     constexpr int size() const { return xpr_.size(); }
+    constexpr const Derived& derived() const { return xpr_; }
     // diagonal assignment
     template <int Size_, typename RhsDerived>
     constexpr MatrixDiagonalBlock<Derived>& operator=(const MatrixBase<Size_, RhsDerived>& rhs)
@@ -579,18 +677,22 @@ struct MatrixDiagonalBlock : public fdapde::MatrixBase<Derived::StaticInputSize,
         for (int i = 0; i < xpr_.rows(); ++i) { xpr_(i, i) = rhs[i]; }
         return *this;
     }
+    // evaluation at point
+    constexpr auto operator()(const InputType& p) const { return Base::call_(p); }
    protected:
     typename internals::ref_select<Derived>::type xpr_;
 };
 
-template <typename Derived, int ViewMode>
+template <typename Derived_, int ViewMode>
 struct MatrixSymmetricView :
-    public fdapde::MatrixBase<Derived::StaticInputSize, MatrixSymmetricView<Derived, ViewMode>> {
+    public fdapde::MatrixBase<Derived_::StaticInputSize, MatrixSymmetricView<Derived_, ViewMode>> {
     fdapde_static_assert(
-      (Derived::Rows == Dynamic || Derived::Cols == Dynamic) || Derived::Rows == Derived::Cols,
+      (Derived_::Rows == Dynamic || Derived_::Cols == Dynamic) || Derived_::Rows == Derived_::Cols,
       SYMMETRIC_MATRIX_CONCEPT_DEFINED_ONLY_FOR_SQUARED_MATRICES);
     fdapde_static_assert(
       ViewMode == fdapde::Upper || ViewMode == fdapde::Lower, SYMMETRIC_VIEWS_MUST_BE_EITHER_LOWER_OR_UPPER);
+    using Derived = Derived_;
+    template <typename T> using Meta = MatrixSymmetricView<T, ViewMode>;
     using Base = MatrixBase<Derived::StaticInputSize, MatrixSymmetricView<Derived, ViewMode>>;
     using Scalar = typename Derived::Scalar;
     using InputType = typename Derived::InputType;
@@ -600,7 +702,6 @@ struct MatrixSymmetricView :
     static constexpr int NestAsRef = 0;
     static constexpr int XprBits = Derived::XprBits;
     static constexpr int ReadOnly = 1;
-    using Base::operator();
 
     constexpr MatrixSymmetricView() = default;
     constexpr MatrixSymmetricView(const Derived& xpr) requires(Rows != Dynamic && Cols != Dynamic)
@@ -645,6 +746,7 @@ struct MatrixSymmetricView :
     constexpr int cols() const { return xpr_.cols(); }
     constexpr int input_size() const { return xpr_.input_size(); }
     constexpr int size() const { return xpr_.size(); }
+    constexpr const Derived& derived() const { return xpr_; }
     constexpr auto operator()(int i, int j) const {
         if constexpr (ViewMode == fdapde::Lower) return i < j ? xpr_(j, i) : xpr_(i, j);
         if constexpr (ViewMode == fdapde::Upper) return i > j ? xpr_(j, i) : xpr_(i, j);
@@ -653,12 +755,28 @@ struct MatrixSymmetricView :
         if constexpr (ViewMode == fdapde::Lower) return i < j ? xpr_.eval(j, i, p) : xpr_.eval(i, j, p);
         if constexpr (ViewMode == fdapde::Upper) return i > j ? xpr_.eval(j, i, p) : xpr_.eval(i, j, p);
     }
+    // evaluation at point
+    constexpr auto operator()(const InputType& p) const { return Base::call_(p); }
    protected:
     typename internals::ref_select<Derived>::type xpr_;
 };
 
 // base class for matrix expressions
 template <int StaticInputSize, typename Derived> struct MatrixBase {
+   private:
+    template <typename InputType_> constexpr auto call_(const InputType_& p) const {
+        typename std::conditional<
+          Derived::Rows == Dynamic || Derived::Cols == Dynamic, DMatrix<typename Derived::Scalar>,
+          cexpr::Matrix<typename Derived::Scalar, Derived::Rows, Derived::Cols>>::type out;
+        if constexpr (Derived::StaticInputSize == Dynamic) { fdapde_assert(p.size() == derived().input_size()); }
+        if constexpr (Derived::Rows == Dynamic || Derived::Cols == Dynamic) {
+            out.resize(derived().rows(), derived().cols());
+        }
+        eval_at(p, out);
+        return out;
+    }
+   public:
+    friend Derived;
     constexpr MatrixBase() = default;
 
     constexpr const Derived& derived() const { return static_cast<const Derived&>(*this); }
@@ -679,22 +797,6 @@ template <int StaticInputSize, typename Derived> struct MatrixBase {
             }
         }
         return;
-    }
-    // evaluate the expression at point p
-    template <typename InputType> constexpr auto operator()(InputType&& p) const {
-        fdapde_static_assert(
-          std::is_convertible_v<InputType FDAPDE_COMMA typename Derived::InputType>,
-          CANNOT_INVOKE_EXPRESSION_WITH_THIS_INPUT_TYPE);
-        using Scalar = typename Derived::Scalar;
-        typename std::conditional<
-          Derived::Rows == Dynamic || Derived::Cols == Dynamic, DMatrix<Scalar>,
-          cexpr::Matrix<Scalar, Derived::Rows, Derived::Cols>>::type out;
-        if constexpr (StaticInputSize == Dynamic) {
-            fdapde_assert(p.size() == derived().input_size());
-            out.resize(derived().rows(), derived().cols());
-        }
-        eval_at(p, out);
-        return out;
     }
     // transpose
     constexpr MatrixTranspose<Derived> transpose() const { return MatrixTranspose<Derived>(derived()); }
@@ -773,7 +875,6 @@ class matrix_eigen_product_impl :
     static constexpr int Cols = is_field_lhs ? EigenType::ColsAtCompileTime : FieldType::Cols;
     static constexpr int NestAsRef = 0;
     static constexpr int XprBits = FieldType::XprBits;
-    using Base::operator();
 
     matrix_eigen_product_impl(const Lhs& lhs, const Rhs& rhs) : Base(), lhs_(lhs), rhs_(rhs) {
         if constexpr (
@@ -855,6 +956,8 @@ class matrix_eigen_product_impl :
         }
         return res;
     }
+    // evaluation at point
+    constexpr auto operator()(const InputType& p) const { return Base::call_(p); }
    protected:
     std::conditional_t<is_eigen_dense_v<Lhs>, const Lhs&, typename internals::ref_select<const Lhs>::type> lhs_;
     std::conditional_t<is_eigen_dense_v<Rhs>, const Rhs&, typename internals::ref_select<const Rhs>::type> rhs_;
@@ -883,7 +986,6 @@ class matrix_eigen_binary_op_impl :
     static constexpr int Cols = FieldType::Cols;
     static constexpr int NestAsRef = 0;
     static constexpr int XprBits = FieldType::XprBits;
-    using Base::operator();
 
     matrix_eigen_binary_op_impl(const Lhs& lhs, const Rhs& rhs, BinaryOperation op) :
         Base(), lhs_(lhs), rhs_(rhs), op_(op) {
@@ -922,6 +1024,8 @@ class matrix_eigen_binary_op_impl :
             else return op_(lhs_[i], rhs_.eval(i, p));
         };
     }
+    // evaluation at point
+    constexpr auto operator()(const InputType& p) const { return Base::call_(p); }
    protected:
     std::conditional_t<is_eigen_dense_v<Lhs>, const Lhs&, typename internals::ref_select<const Lhs>::type> lhs_;
     std::conditional_t<is_eigen_dense_v<Rhs>, const Rhs&, typename internals::ref_select<const Rhs>::type> rhs_;

@@ -33,43 +33,69 @@ concept is_coeff_xpr_op = is_binary_xpr_op<T> && requires(T t) { typename T::Coe
 template <typename T>
 concept is_xpr_leaf = !is_unary_xpr_op<T> && !is_binary_xpr_op<T>;
 
+template <typename Xpr> struct is_scalar_field {
+    static constexpr bool value = []() {
+        if constexpr (requires(Xpr lhs) { Xpr::StaticInputSize; }) {
+            return std::is_base_of_v<ScalarBase<Xpr::StaticInputSize, Xpr>, Xpr>;
+        } else {
+            return false;
+        }
+    }();
+};
+template <typename Xpr> static constexpr bool is_scalar_field_v = is_scalar_field<Xpr>::value;
+template <typename Xpr> struct is_matrix_field {
+    static constexpr bool value = []() {
+        if constexpr (requires(Xpr lhs) { Xpr::StaticInputSize; }) {
+            return std::is_base_of_v<MatrixBase<Xpr::StaticInputSize, Xpr>, Xpr>;
+        } else {
+            return false;
+        }
+    }();
+};
+template <typename Xpr> static constexpr bool is_matrix_field_v = is_matrix_field<Xpr>::value;
+
+  
 // wraps all leafs in Xpr which satisfies boolean condition C with template type T
 template <template <typename> typename T, typename C, typename Xpr> constexpr auto xpr_wrap(Xpr&& xpr) {
     using Xpr_ = std::decay_t<Xpr>;
-    if constexpr (is_binary_xpr_op<Xpr_>) {
-        if constexpr (is_coeff_xpr_op<Xpr_>) {
-            if constexpr (Xpr_::is_coeff_lhs) {
-                return ScalarCoeffOp(xpr.lhs(), xpr_wrap<T, C>(xpr.rhs()), typename Xpr_::BinaryOp());
-            } else {
-                return ScalarCoeffOp(xpr_wrap<T, C>(xpr.lhs()), xpr.rhs(), typename Xpr_::BinaryOp());
-            }
-        } else if constexpr (requires (Xpr_ xpr) { typename Xpr_::BinaryOp; }){
-            return ScalarBinOp(xpr_wrap<T, C>(xpr.lhs()), xpr_wrap<T, C>(xpr.rhs()), typename Xpr_::BinaryOp());
-        } else {   // Xpr_ is a non-trivial binary node
+    if constexpr (!(is_scalar_field_v<Xpr_> || is_matrix_field_v<Xpr_>)) {
+        return xpr;
+    } else {
+        if constexpr (is_binary_xpr_op<Xpr_>) {
             return
               typename Xpr_::template Meta<decltype(xpr_wrap<T, C>(xpr.lhs())), decltype(xpr_wrap<T, C>(xpr.rhs()))>(
                 xpr_wrap<T, C>(xpr.lhs()), xpr_wrap<T, C>(xpr.rhs()));
         }
-    }
-    if constexpr (is_unary_xpr_op<Xpr_>) {
-        if constexpr (requires(Xpr_ xpr) { typename Xpr_::UnaryOp; }) {
-            return ScalarUnaryOp(xpr_wrap<T, C>(xpr.derived()), typename Xpr_::UnaryOp());
-        } else {   // Xpr_ is a non-trivial unary node
-	  return typename Xpr_::template Meta<decltype(xpr_wrap<T, C>(xpr.derived()))>(xpr_wrap<T, C>(xpr.derived()));
+        if constexpr (is_unary_xpr_op<Xpr_>) {
+            return typename Xpr_::template Meta<decltype(xpr_wrap<T, C>(xpr.derived()))>(xpr_wrap<T, C>(xpr.derived()));
+        }
+        if constexpr (is_xpr_leaf<Xpr_>) {
+            if constexpr (C {}.template operator()<Xpr_>()) {
+                return T<Xpr_>(xpr);
+            } else {
+                return xpr;
+            }
         }
     }
-    if constexpr (is_xpr_leaf<Xpr_> &&  C {}.template operator()<Xpr_>()) { return T<Xpr_>(xpr); }
-    if constexpr (is_xpr_leaf<Xpr_> && !C {}.template operator()<Xpr_>()) { return xpr; }
 }
 
 // finds wheter at least one node in Xpr satisfies boolean condition C
 template <typename C, typename Xpr> static constexpr bool xpr_find() {
     if constexpr (is_binary_xpr_op<Xpr>) {
         if constexpr (is_coeff_xpr_op<Xpr>) {
-	    if constexpr (Xpr::is_coeff_lhs) return xpr_find<C, typename Xpr::RhsDerived>();
-	    else return xpr_find<C, typename Xpr::LhsDerived>();
+            if constexpr (requires(Xpr xpr) { Xpr::is_coeff_scalar_field; }) {   // MatrixCoeffWiseOp
+                if constexpr (Xpr::is_coeff_scalar_field) {
+                    return xpr_find<C, typename Xpr::LhsDerived>() || xpr_find<C, typename Xpr::RhsDerived>();
+                }
+            } else {
+                if constexpr (Xpr::is_coeff_lhs) {
+                    return xpr_find<C, typename Xpr::RhsDerived>();
+                } else {
+                    return xpr_find<C, typename Xpr::LhsDerived>();
+                }
+            }
         } else {
-	    return xpr_find<C, typename Xpr::LhsDerived>() || xpr_find<C, typename Xpr::RhsDerived>();
+            return xpr_find<C, typename Xpr::LhsDerived>() || xpr_find<C, typename Xpr::RhsDerived>();
         }
     }
     if constexpr (is_unary_xpr_op<Xpr>) { return xpr_find<C, typename Xpr::Derived>(); }
