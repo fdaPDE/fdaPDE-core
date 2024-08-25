@@ -98,7 +98,30 @@ template <> struct fe_quadrature_simplex<2, 6> {
 	0.223381589678011, 0.223381589678011, 0.223381589678011,
 	0.109951743655322, 0.109951743655322, 0.109951743655322}
     };
-};  
+};
+
+// 2D 6 point formula
+template <> struct fe_quadrature_simplex<2, 7> {
+    static constexpr int local_dim = 2;
+    static constexpr int n_nodes = 7;
+
+    static constexpr cexpr::Matrix<double, n_nodes, local_dim> nodes {
+      std::array<double, n_nodes * local_dim> {
+	0.333333333333333, 0.333333333333333,
+	0.101286507323456, 0.101286507323456,
+	0.101286507323456, 0.797426985353087,
+	0.797426985353087, 0.101286507323456,
+	0.470142064105115, 0.470142064105115,
+	0.470142064105115, 0.059715871789770,
+	0.059715871789770, 0.470142064105115}
+    };
+    static constexpr cexpr::Vector<double, n_nodes> weights {
+      std::array<double, n_nodes> {
+	0.225000000000000, 0.125939180544827, 0.125939180544827,
+	0.125939180544827, 0.132394152788506, 0.132394152788506,
+	0.132394152788506}
+    };
+};
   
 }   // namespace internals
 }   // namespace fdapde

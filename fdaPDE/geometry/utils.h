@@ -61,24 +61,36 @@ template <typename T> struct clockwise_order {
 };
 
 template <typename Iterator, typename ValueType> class index_based_iterator {
-   protected:
     using This = index_based_iterator<Iterator, ValueType>;
-    int index_;
-    int begin_, end_;
-    ValueType val_;
    public:
-    using value_type        = ValueType;
-    using pointer           = const ValueType*;
-    using reference         = const ValueType&;
+    using value_type = ValueType;
+    using pointer = std::conditional_t<
+      std::is_pointer_v<ValueType>, std::decay_t<ValueType>, std::add_pointer_t<std::decay_t<ValueType>>>;
+    using reference = std::conditional_t<
+      std::is_pointer_v<ValueType>, std::add_lvalue_reference_t<std::remove_pointer_t<std::decay_t<ValueType>>>,
+      std::add_lvalue_reference_t<std::decay_t<ValueType>>>;
     using size_type         = std::size_t;
     using difference_type   = std::ptrdiff_t;
     using iterator_category = std::bidirectional_iterator_tag;
 
     index_based_iterator() = default;
     index_based_iterator(int index, int begin, int end) : index_(index), begin_(begin), end_(end) { }
-    reference operator*() const { return val_; }
-    pointer operator->() const { return &val_; }
-
+    reference operator*() { if constexpr(std::is_pointer_v<ValueType>) { return *val_; } else { return val_; } }
+    const reference operator*() const {
+        if constexpr (std::is_pointer_v<ValueType>) {
+            return *val_;
+        } else {
+            return val_;
+        }
+    }
+    pointer operator->() { if constexpr(std::is_pointer_v<ValueType>) { return val_; } else { return &val_; } }
+    const pointer operator->() const {
+        if constexpr (std::is_pointer_v<ValueType>) {
+            return val_;
+        } else {
+            return &val_;
+        }
+    }
     Iterator operator++(int) {
         Iterator tmp(index_, static_cast<Iterator*>(this));
         ++(static_cast<Iterator&>(*this));
@@ -110,6 +122,10 @@ template <typename Iterator, typename ValueType> class index_based_iterator {
     friend bool operator!=(const This& lhs, const This& rhs) { return lhs.index_ != rhs.index_; }
     friend bool operator==(const This& lhs, const This& rhs) { return lhs.index_ == rhs.index_; }
     int index() const { return index_; }
+   protected:
+    int index_;
+    int begin_, end_;
+    value_type val_;
 };
 
 }   // namespace fdapde

@@ -28,22 +28,18 @@ namespace fdapde {
 template <typename Derived_>
 struct FeMap :
     public std::conditional_t<
-      std::is_base_of_v<fdapde::ScalarBase<Derived_::StaticInputSize, Derived_>, Derived_>,
-      fdapde::ScalarBase<Derived_::StaticInputSize, FeMap<Derived_>>,
-      fdapde::MatrixBase<Derived_::StaticInputSize, FeMap<Derived_>>> {
+      meta::is_scalar_field_v<Derived_>, ScalarBase<Derived_::StaticInputSize, FeMap<Derived_>>,
+      MatrixBase<Derived_::StaticInputSize, FeMap<Derived_>>> {
    private:
     using OutputType = decltype(std::declval<Derived_>().operator()(std::declval<typename Derived_::InputType>()));
-    static constexpr bool is_scalar =
-      std::is_base_of_v<fdapde::ScalarBase<Derived_::StaticInputSize, Derived_>, Derived_>;
-  using Derived = std::decay_t<Derived_>;
+    static constexpr bool is_scalar = meta::is_scalar_field_v<Derived_>;
+    using Derived = std::decay_t<Derived_>;
    public:
-    using Base = std::conditional_t<
-      std::is_base_of_v<fdapde::ScalarBase<Derived::StaticInputSize, Derived>, Derived>,
-      fdapde::ScalarBase<Derived::StaticInputSize, FeMap<Derived>>,
-      fdapde::MatrixBase<Derived::StaticInputSize, FeMap<Derived>>>;
     using InputType = internals::fe_assembler_packet<Derived::StaticInputSize>;
     using Scalar = double;
     static constexpr int StaticInputSize = Derived::StaticInputSize;
+    using Base = std::conditional_t<
+      is_scalar, ScalarBase<StaticInputSize, FeMap<Derived>>, MatrixBase<StaticInputSize, FeMap<Derived>>>;
     static constexpr int NestAsRef = 0;
     static constexpr int XprBits = Derived::XprBits | bilinear_bits::compute_physical_quad_nodes;
     static constexpr int ReadOnly = 1;
@@ -58,7 +54,6 @@ struct FeMap :
       [[maybe_unused]] CellIterator begin, [[maybe_unused]] CellIterator end) const {
         const void* ptr = reinterpret_cast<const void*>(xpr_);
         if (buff.find(ptr) == buff.end()) {
-
             DMatrix<double> mapped(nodes.rows(), Rows * Cols);
             if constexpr (is_scalar) {
                 for (int i = 0, n = nodes.rows(); i < n; ++i) { mapped(i, 0)  = xpr_->operator()(nodes.row(i)); }

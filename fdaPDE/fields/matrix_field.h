@@ -320,16 +320,17 @@ class MatrixCoeffWiseOp :
       std::conditional_t<std::is_arithmetic_v<Lhs> || meta::is_scalar_field_v<Lhs>, Rhs, Lhs>::StaticInputSize,
       MatrixCoeffWiseOp<Lhs, Rhs, BinaryOperation>> {
    public:
+    using LhsDerived = Lhs;
+    using RhsDerived = Rhs;
+    template <typename T1, typename T2> using Meta = MatrixCoeffWiseOp<T1, T2, BinaryOperation>;
     static constexpr bool is_coeff_lhs = std::is_arithmetic_v<Lhs> || meta::is_scalar_field_v<Lhs>;
+    using CoeffType = std::conditional_t<is_coeff_lhs, Lhs, Rhs>;
    private:
     // keep this private to avoid to consider ScalarCoeffOp as a unary node
     using Derived = std::conditional_t<is_coeff_lhs, Rhs, Lhs>;
     const Derived& derived() const { if constexpr(is_coeff_lhs) return rhs_; else return lhs_; }
+    const CoeffType& coeff() const { if constexpr(is_coeff_lhs) return lhs_; else return rhs_; }
    public:
-    using LhsDerived = Lhs;
-    using RhsDerived = Rhs;
-    template <typename T1, typename T2> using Meta = MatrixCoeffWiseOp<T1, T2, BinaryOperation>;
-    using CoeffType = std::conditional_t<is_coeff_lhs, Lhs, Rhs>;
     static constexpr bool is_coeff_scalar_field = meta::is_scalar_field_v<CoeffType>;
     static constexpr int StaticInputSize = Derived::StaticInputSize;
     using Base = MatrixBase<StaticInputSize, MatrixCoeffWiseOp<Lhs, Rhs, BinaryOperation>>;
@@ -357,6 +358,31 @@ class MatrixCoeffWiseOp :
     constexpr MatrixCoeffWiseOp(const Lhs& lhs, const Rhs& rhs, BinaryOperation op) :
         Base(), lhs_(lhs), rhs_(rhs), op_(op) { }
     constexpr MatrixCoeffWiseOp(const Lhs& lhs, const Rhs& rhs) : MatrixCoeffWiseOp(lhs, rhs, BinaryOperation {}) { }
+
+    template <typename Dest>
+    constexpr void eval_at(const InputType& p, Dest& dest) const
+        requires(is_coeff_scalar_field) {
+        fdapde_static_assert(
+          std::is_invocable_v<Dest FDAPDE_COMMA int FDAPDE_COMMA int> ||
+            fdapde::is_subscriptable<Dest FDAPDE_COMMA int>,
+          DESTINATION_TYPE_MUST_EITHER_EXPOSE_A_MATRIX_LIKE_ACCESS_OPERATOR_OR_A_SUBSCRIPT_OPERATOR);
+        // store evaluation of scalar field in temporary (just one invocation)
+        Scalar tmp = coeff()(p);
+        // perform standard scalar-matrix product
+        Scalar res = 0;
+        for (int i = 0; i < rows(); ++i) {
+            for (int j = 0; j < cols(); ++j) {
+                if constexpr (is_coeff_lhs)  { res = op_(tmp, derived().eval(i, j, p)); }
+                if constexpr (!is_coeff_lhs) { res = op_(derived().eval(i, j, p), tmp); }
+                if constexpr (std::is_invocable_v<Dest, int, int>) {
+                    dest(i, j) = res;
+                } else {
+                    dest[i * cols() + j] = res;
+                }
+            }
+        }
+        return;
+    }
     template <typename InputType_> constexpr Scalar eval(int i, int j, const InputType_& p) const {
         fdapde_static_assert(
           std::is_arithmetic_v<CoeffType> || std::is_invocable_v<CoeffType FDAPDE_COMMA InputType>,

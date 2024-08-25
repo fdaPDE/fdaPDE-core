@@ -44,7 +44,7 @@ template <typename Xpr> constexpr decltype(auto) trial_space(Xpr&& xpr) {
       decltype([]<typename Xpr_>() { return requires { typename Xpr_::TrialSpace; }; }), std::decay_t<Xpr>>();
     fdapde_static_assert(found, NO_TRIAL_SPACE_FOUND_IN_EXPRESSION);
     return meta::xpr_query<
-      decltype([]<typename Xpr_>(Xpr_&& xpr) { return xpr.fe_space(); }),
+      decltype([]<typename Xpr_>(Xpr_&& xpr) -> auto& { return xpr.fe_space(); }),
       decltype([]<typename Xpr_>() { return requires { typename Xpr_::TrialSpace; }; })>(std::forward<Xpr>(xpr));
 }
 // detect test space from bilinear form
@@ -53,7 +53,7 @@ template <typename Xpr> constexpr decltype(auto) test_space(Xpr&& xpr) {
       decltype([]<typename Xpr_>() { return requires { typename Xpr_::TestSpace; }; }), std::decay_t<Xpr>>();
     fdapde_static_assert(found, NO_TEST_SPACE_FOUND_IN_EXPRESSION);
     return meta::xpr_query<
-      decltype([]<typename Xpr_>(Xpr_&& xpr) { return xpr.fe_space(); }),
+      decltype([]<typename Xpr_>(Xpr_&& xpr) -> auto& { return xpr.fe_space(); }),
       decltype([]<typename Xpr_>() { return requires { typename Xpr_::TestSpace; }; })>(std::forward<Xpr>(xpr));
 }
 
@@ -112,7 +112,7 @@ template <typename DofHandler, typename FeType> class fe_mass_assembly_loop {
         // linearity of the integral is implicitly used here, as duplicated triplets are summed up (see Eigen docs)
         assembled_mat.setFromTriplets(triplet_list.begin(), triplet_list.end());
         assembled_mat.makeCompressed();
-        return assembled_mat.selfadjointView<Eigen::Upper>();
+	return assembled_mat.selfadjointView<Eigen::Upper>();
     }
     constexpr int n_dofs() const { return dof_handler_->n_dofs(); }
 };
@@ -178,7 +178,7 @@ template <typename DofHandler, typename FeType> class fe_grad_grad_assembly_loop
         // linearity of the integral is implicitly used here, as duplicated triplets are summed up (see Eigen docs)
         assembled_mat.setFromTriplets(triplet_list.begin(), triplet_list.end());
         assembled_mat.makeCompressed();
-        return assembled_mat.selfadjointView<Eigen::Upper>();
+	return assembled_mat.selfadjointView<Eigen::Upper>();
     }
 };
 
@@ -252,19 +252,19 @@ struct fe_assembler_base {
         form_(meta::xpr_wrap<FeMap, decltype([]<typename Xpr>() {
                                  return !std::is_invocable_v<Xpr, fe_assembler_packet<Xpr::StaticInputSize>>;
                              })>(form)),
-        quadrature_([... quadrature = std::forward<Quadrature_>(quadrature)]() {
+        quadrature_([... quadrature = std::forward<const Quadrature_>(quadrature)]() {
             if constexpr (sizeof...(quadrature) == 1) {
                 return std::get<0>(std::make_tuple(quadrature...));
             } else {
                 return Quadrature {};
             }
         }()),
-        dof_handler_(test_space(form_).dof_handler()),
+        dof_handler_(&test_space(form_).dof_handler()),
         begin_(begin),
         end_(end) {
-        if (!dof_handler_) dof_handler_.enumerate(FeType {});
+        fdapde_assert(dof_handler_->n_dofs() > 0);
     }
-    constexpr int n_dofs() const { return dof_handler_.n_dofs(); }
+    constexpr int n_dofs() const { return dof_handler_->n_dofs(); }
    protected:
     // compile-time evaluation of \psi_i(q_j), i = 1, ..., n_basis, j = 1, ..., n_quadrature_nodes
     static constexpr cexpr::Matrix<double, n_basis, n_quadrature_nodes> shape_values_ {[]() {
@@ -293,23 +293,22 @@ struct fe_assembler_base {
         return shape_grad_;
     }()};
 
-    using DofHandler_ = DofHandler<local_dim, embed_dim>;
     void distribute_quadrature_nodes(
       std::unordered_map<const void*, DMatrix<double>>& fe_map_buff, typename fe_traits::dof_iterator begin,
       typename fe_traits::dof_iterator end) const {
         DMatrix<double> quad_nodes;
         quad_nodes.resize(n_quadrature_nodes * (end_.index() - begin_.index()), embed_dim);
-        int i = 0;
+        int local_cell_id = 0;
         for (typename fe_traits::geo_iterator it = begin_; it != end_; ++it) {
-            for (int j = 0; j < n_quadrature_nodes; ++j) {
-                quad_nodes.row(i * n_quadrature_nodes + j) =
+            for (int q_k = 0; q_k < n_quadrature_nodes; ++q_k) {
+                quad_nodes.row(local_cell_id * n_quadrature_nodes + q_k) =
                   it->J() *
                     Eigen::Map<const SMatrix<n_quadrature_nodes, Quadrature::local_dim>>(quadrature_.nodes.data())
-                      .row(j)
+                      .row(q_k)
                       .transpose() +
                   it->node(0);
             }
-            i++;
+            local_cell_id++;
         }
 
         // evaluate FeMap nodes at quadrature nodes
@@ -324,7 +323,7 @@ struct fe_assembler_base {
     }
     Form form_;
     Quadrature quadrature_ {};
-    DofHandler<local_dim, embed_dim> dof_handler_;
+    const DofHandler<local_dim, embed_dim>* dof_handler_;
     typename fe_traits::geo_iterator begin_, end_;
 };
 
@@ -354,7 +353,7 @@ class fe_matrix_assembly_loop :
         : Base(form, begin, end, quadrature...) { }
 
     SpMatrix<double> assemble() const {
-        SpMatrix<double> assembled_mat(dof_handler_.n_dofs(), dof_handler_.n_dofs());
+        SpMatrix<double> assembled_mat(dof_handler_->n_dofs(), dof_handler_->n_dofs());
         std::vector<Eigen::Triplet<double>> triplet_list;
 	assemble(triplet_list);
 	// linearity of the integral is implicitly used here, as duplicated triplets are summed up (see Eigen docs)
@@ -364,8 +363,8 @@ class fe_matrix_assembly_loop :
     }
     void assemble(std::vector<Eigen::Triplet<double>>& triplet_list) const {
         using iterator = typename Base::fe_traits::dof_iterator;
-        iterator begin(Base::begin_.index(), &dof_handler_);
-        iterator end  (Base::end_.index(),   &dof_handler_);
+        iterator begin(Base::begin_.index(), dof_handler_);
+        iterator end  (Base::end_.index(),   dof_handler_);
         // prepare assembly loop
         DVector<int> active_dofs;
         std::array<cexpr::Matrix<double, local_dim, n_quadrature_nodes>, n_basis>
@@ -378,6 +377,7 @@ class fe_matrix_assembly_loop :
 	
         // start assembly loop
         internals::fe_assembler_packet<local_dim> fe_packet;
+	int local_cell_id = 0;
         for (iterator it = begin; it != end; ++it) {
             fe_packet.cell_measure = it->measure();
             // if constexpr (WeakForm::Flags & UpdateCellDiameter) fe_data.cell_diameter = cell->diameter();
@@ -405,13 +405,14 @@ class fe_matrix_assembly_loop :
                             fe_packet.test_grad  = shape_grad[j].col(q_k);
                         }
                         if constexpr (Form::XprBits & bilinear_bits::compute_physical_quad_nodes) {
-                            fe_packet.quad_node_id = it->id() * n_quadrature_nodes + q_k;
+                            fe_packet.quad_node_id = local_cell_id * n_quadrature_nodes + q_k;
                         }
                         value += Base::Quadrature::weights[q_k] * form_(fe_packet);
                     }
                     triplet_list.emplace_back(active_dofs[i], active_dofs[j], value * fe_packet.cell_measure);
                 }
             }
+	    local_cell_id++;
         }
         return;
     }
@@ -441,15 +442,15 @@ class fe_vector_assembly_loop :
         : Base(form, begin, end, quadrature...) { }
 
     DVector<double> assemble() const {
-        DVector<double> assembled_vec(dof_handler_.n_dofs());
+        DVector<double> assembled_vec(dof_handler_->n_dofs());
         assembled_vec.setZero();
         assemble(assembled_vec);
         return assembled_vec;
     }
     void assemble(DVector<double>& assembled_vec) const {
         using iterator = typename Base::fe_traits::dof_iterator;
-        iterator begin(Base::begin_.index(), &dof_handler_);
-        iterator end  (Base::end_.index(),   &dof_handler_);
+        iterator begin(Base::begin_.index(), dof_handler_);
+        iterator end  (Base::end_.index(),   dof_handler_);
         // prepare assembly loop
         DVector<int> active_dofs;
         std::unordered_map<const void*, DMatrix<double>> fe_map_buff;   // evaluation of FeMap nodes at quadrature nodes
@@ -460,6 +461,7 @@ class fe_vector_assembly_loop :
 	
         // start assembly loop
         internals::fe_assembler_packet<local_dim> fe_packet;
+	int local_cell_id = 0;
         for (iterator it = begin; it != end; ++it) {
             fe_packet.cell_measure = it->measure();
             active_dofs = it->dofs();
@@ -469,12 +471,13 @@ class fe_vector_assembly_loop :
                     // update fe_packet
                     fe_packet.test_value = Base::shape_values_(i, q_k);
                     if constexpr (Form::XprBits & bilinear_bits::compute_physical_quad_nodes) {
-                        fe_packet.quad_node_id = it->id() * n_quadrature_nodes + q_k;
+                        fe_packet.quad_node_id = local_cell_id * n_quadrature_nodes + q_k;
                     }
                     value += Base::Quadrature::weights[q_k] * form_(fe_packet);
                 }
                 assembled_vec[active_dofs[i]] += value * fe_packet.cell_measure;
             }
+	    local_cell_id++;
         }
         return;
     }
@@ -488,9 +491,9 @@ template <typename Derived> struct fe_assembly_xpr_base {
 template <typename Lhs, typename Rhs>
 struct fe_assembly_add_op : public fe_assembly_xpr_base<fe_assembly_add_op<Lhs, Rhs>> {
     fdapde_static_assert(
-      std::is_same_v<decltype(std::declval<Lhs>().run()) FDAPDE_COMMA decltype(std::declval<Rhs>().run())>,
+      std::is_same_v<decltype(std::declval<Lhs>().assemble()) FDAPDE_COMMA decltype(std::declval<Rhs>().assemble())>,
       YOU_ARE_SUMMING_NON_COMPATIBLE_ASSEMBLY_LOOPS);
-    using OutputType = decltype(std::declval<Lhs>().run());
+    using OutputType = decltype(std::declval<Lhs>().assemble());
     fe_assembly_add_op(const Lhs& lhs, const Rhs& rhs) : lhs_(lhs), rhs_(rhs) {
         fdapde_assert(lhs.n_dofs() == rhs.n_dofs());
     }
@@ -510,7 +513,7 @@ struct fe_assembly_add_op : public fe_assembly_xpr_base<fe_assembly_add_op<Lhs, 
             return assembled_vec;
         }
     }
-    template <typename T> void run(T& assembly_buff) const {
+    template <typename T> void assemble(T& assembly_buff) const {
         lhs_.assemble(assembly_buff);
         rhs_.assemble(assembly_buff);
         return;
@@ -571,17 +574,22 @@ using FeCellGalerkinAssembler = FeGalerkinAssembler<Triangulation, CellMajor, Qu
 template <typename Triangulation, typename... Quadrature>
 using FeFaceGalerkinAssembler = FeGalerkinAssembler<Triangulation, FaceMajor, Quadrature...>;
 
-template <typename Triangulation> FeCellGalerkinAssembler<Triangulation> integral(const Triangulation& triangulation) {
-    return FeCellGalerkinAssembler<Triangulation>(triangulation.cells_begin(), triangulation.cells_end());
+template <typename Triangulation, typename... Quadrature>
+auto integral(const Triangulation& triangulation, Quadrature... quadrature) {
+    return FeCellGalerkinAssembler<Triangulation, Quadrature...>(
+      triangulation.cells_begin(), triangulation.cells_end(), quadrature...);
 }
-template <typename Triangulation>
-auto integral(const CellIterator<Triangulation>& begin, const CellIterator<Triangulation>& end) {
-    return FeCellGalerkinAssembler<Triangulation>(begin, end);
+template <typename Triangulation, typename... Quadrature>
+auto integral(
+  const CellIterator<Triangulation>& begin, const CellIterator<Triangulation>& end, Quadrature... quadrature) {
+    return FeCellGalerkinAssembler<Triangulation, Quadrature...>(begin, end, quadrature...);
 }
 // surface integration
-template <typename Triangulation>
-auto integral(const BoundaryIterator<Triangulation>& begin, const BoundaryIterator<Triangulation>& end) {
-    return FeFaceGalerkinAssembler<Triangulation>(begin, end);
+template <typename Triangulation, typename... Quadrature>
+auto integral(
+  const BoundaryIterator<Triangulation, Quadrature...>& begin, const BoundaryIterator<Triangulation>& end,
+  Quadrature... quadrature) {
+    return FeFaceGalerkinAssembler<Triangulation>(begin, end, quadrature...);
 }
 
 }   // namespace fdapde

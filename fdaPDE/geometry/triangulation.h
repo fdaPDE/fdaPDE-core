@@ -39,6 +39,8 @@ template <typename Triangulation> struct BoundaryIterator : public Triangulation
     BoundaryIterator(int index, const Triangulation* mesh) : Triangulation::boundary_face_iterator(index, mesh) { }
 };
 
+[[maybe_unused]] static constexpr int cache_cells = 0x0001;
+
 template <int M, int N> class Triangulation;
 template <int M, int N, typename Derived> class TriangulationBase {
    public:
@@ -62,8 +64,9 @@ template <int M, int N, typename Derived> class TriangulationBase {
     };
 
     TriangulationBase() = default;
-    TriangulationBase(const DMatrix<double>& nodes, const DMatrix<int>& cells, const DMatrix<int>& boundary) :
-        nodes_(nodes), cells_(cells), nodes_markers_(boundary) {
+    TriangulationBase(
+      const DMatrix<double>& nodes, const DMatrix<int>& cells, const DMatrix<int>& boundary, int flags) :
+        nodes_(nodes), cells_(cells), nodes_markers_(boundary), flags_(flags) {
         // store number of nodes and number of cells
         n_nodes_ = nodes_.rows();
         n_cells_ = cells_.rows();
@@ -73,8 +76,9 @@ template <int M, int N, typename Derived> class TriangulationBase {
         // -1 in neighbors_'s column i implies no neighbor adjacent to the edge opposite to vertex i
         neighbors_ = DMatrix<int>::Constant(n_cells_, n_neighbors_per_cell, -1);
     }
+    TriangulationBase(const DMatrix<double>& nodes, const DMatrix<int>& cells, const DMatrix<int>& boundary) :
+        TriangulationBase(nodes, cells, boundary, /*flags = */ 0) { }
     // getters
-    CellType cell(int id) const { return CellType(id, static_cast<const Derived*>(this)); }
     SVector<embed_dim> node(int id) const { return nodes_.row(id); }
     bool is_node_on_boundary(int id) const { return nodes_markers_[id]; }
     const DMatrix<double>& nodes() const { return nodes_; }
@@ -87,13 +91,13 @@ template <int M, int N, typename Derived> class TriangulationBase {
     SMatrix<2, N> range() const { return range_; }
 
     // iterators over cells
-    class cell_iterator : public index_based_iterator<cell_iterator, CellType> {
-        using Base = index_based_iterator<cell_iterator, CellType>;
+    class cell_iterator : public index_based_iterator<cell_iterator, const CellType*> {
+        using Base = index_based_iterator<cell_iterator, const CellType*>;
         using Base::index_;
         friend Base;
         const Derived* mesh_;
         cell_iterator& operator()(int i) {
-            Base::val_ = mesh_->cell(i);
+            Base::val_ = &(mesh_->cell(i));
             return *this;
         }
        public:
@@ -142,6 +146,7 @@ template <int M, int N, typename Derived> class TriangulationBase {
     BinaryVector<fdapde::Dynamic> nodes_markers_ {};   // j-th element is 1 \iff node j is on boundary
     SMatrix<2, embed_dim> range_ {};                   // mesh bounding box (column i maps to the i-th dimension)
     int n_nodes_ = 0, n_cells_ = 0;
+    int flags_ = 0;
 };
 
 // face-based storage
@@ -160,8 +165,13 @@ template <int N> class Triangulation<2, N> : public TriangulationBase<2, N, Tria
     using Base::n_cells_;    // N: number of triangles
 
     Triangulation() = default;
-    Triangulation(const DMatrix<double>& nodes, const DMatrix<int>& faces, const DMatrix<int>& boundary) :
-        Base(nodes, faces, boundary) {
+    Triangulation(
+      const DMatrix<double>& nodes, const DMatrix<int>& faces, const DMatrix<int>& boundary, int flags = 0) :
+        Base(nodes, faces, boundary, flags) {
+        if (Base::flags_ & cache_cells) {   // populate cache if cell caching is active
+            cell_cache_.reserve(n_cells_);
+            for (int i = 0; i < n_cells_; ++i) { cell_cache_.emplace_back(i, this); }
+        }
         using edge_t = std::array<int, n_nodes_per_edge>;
         using hash_t = fdapde::std_array_hash<int, n_nodes_per_edge>;
         struct edge_info {
@@ -215,6 +225,14 @@ template <int N> class Triangulation<2, N> : public TriangulationBase<2, N, Tria
         return;
     }
     // getters
+    const typename Base::CellType& cell(int id) const {
+        if (Base::flags_ & cache_cells) {   // cell caching enabled
+            return cell_cache_[id];
+        } else {
+            cell_ = typename Base::CellType(id, this);
+            return cell_;
+        }
+    }
     bool is_edge_on_boundary(int id) const { return edges_markers_[id]; }
     Eigen::Map<const DMatrix<int, Eigen::RowMajor>> edges() const {
         return Eigen::Map<const DMatrix<int, Eigen::RowMajor>>(edges_.data(), n_edges_, n_nodes_per_edge);
@@ -295,6 +313,9 @@ template <int N> class Triangulation<2, N> : public TriangulationBase<2, N, Tria
     BinaryVector<fdapde::Dynamic> edges_markers_ {};   // j-th element is 1 \iff edge j is on boundary
     int n_edges_ = 0;
     mutable std::optional<LocationPolicy> location_policy_ {};
+    // cell caching
+    std::vector<typename Base::CellType> cell_cache_;
+    mutable typename Base::CellType cell_;   // used in case cell caching is off
 };
 
 // face-based storage
@@ -345,8 +366,13 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
     using Base::local_dim;
 
     Triangulation() = default;
-    Triangulation(const DMatrix<double>& nodes, const DMatrix<int>& cells, const DMatrix<int>& boundary) :
-        Base(nodes, cells, boundary) {
+    Triangulation(
+      const DMatrix<double>& nodes, const DMatrix<int>& cells, const DMatrix<int>& boundary, int flags = 0) :
+        Base(nodes, cells, boundary, flags) {
+        if (Base::flags_ & cache_cells) {   // populate cache if cell caching is active
+            cell_cache_.reserve(n_cells_);
+            for (int i = 0; i < n_cells_; ++i) { cell_cache_.emplace_back(i, this); }
+        }
         using face_t = std::array<int, n_nodes_per_face>;
         using edge_t = std::array<int, n_nodes_per_edge>;
         struct face_info {
@@ -427,6 +453,14 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
         return;
     }
     // getters
+    const typename Base::CellType& cell(int id) const {
+        if (Base::flags_ & cache_cells) {   // cell caching enabled
+            return cell_cache_[id];
+        } else {
+            cell_ = typename Base::CellType(id, this);
+            return cell_;
+        }
+    }
     bool is_face_on_boundary(int id) const { return faces_markers_[id]; }
     const DMatrix<int, Eigen::RowMajor>& neighbors() const { return neighbors_; }
     Eigen::Map<const DMatrix<int, Eigen::RowMajor>> faces() const {
@@ -536,6 +570,9 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
     BinaryVector<fdapde::Dynamic> edges_markers_ {};            // j-th element is 1 \iff edge j is on boundary
     int n_faces_ = 0, n_edges_ = 0;
     mutable std::optional<LocationPolicy> location_policy_ {};
+    // cell caching
+    std::vector<typename Base::CellType> cell_cache_;
+    mutable typename Base::CellType cell_;   // used in case cell caching is off
 };
 
 }   // namespace fdapde

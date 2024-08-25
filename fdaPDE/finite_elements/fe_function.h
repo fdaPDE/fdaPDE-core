@@ -166,14 +166,14 @@ class FeFunction : public fdapde::ScalarBase<FeSpace_::local_dim, FeFunction<FeS
     double l2_squared_norm() {
         internals::fe_mass_assembly_loop<DofHandler<local_dim, embed_dim>, typename FeSpace::FeType> assembler(
           fe_space_->dof_handler());
-        return coeff_.dot(assembler.run() * coeff_);
+        return coeff_.dot(assembler.assemble() * coeff_);
     }
     double l2_norm() { return std::sqrt(l2_squared_norm()); }
     double h1_squared_norm() const {   // Sobolev H^1 norm of finite element function
         TrialFunction u(*fe_space_);
         TestFunction  v(*fe_space_);
-        auto assembler = integrate(fe_space_->triangulation())(u * v + inner(grad(u), grad(v)));
-        return coeff_.dot(assembler.run() * coeff_);
+        auto a = integrate(fe_space_->triangulation())(u * v + inner(grad(u), grad(v)));
+        return coeff_.dot(a.assemble() * coeff_);
     }
     double h1_norm() const { return std::sqrt(h1_squared_norm()); }
 
@@ -190,6 +190,16 @@ class FeFunction : public fdapde::ScalarBase<FeSpace_::local_dim, FeFunction<FeS
     }
     friend constexpr FeFunction<FeSpace_> operator-(FeFunction<FeSpace_>& lhs, FeFunction<FeSpace_>& rhs) {
         return FeFunction<FeSpace_>(lhs.fe_space(), lhs.coeff() - rhs.coeff());
+    }
+    // assignment from expansion coefficient vector
+    FeFunction& operator=(const DVector<double> coeff) {
+        fdapde_assert(coeff.size() > 0 && coeff.size() == fe_space_->n_dofs());
+        coeff_ = coeff;
+        return *this;
+    }
+    // static constructors
+    static constexpr FeFunction<FeSpace_> Zero(FeSpace_& fe_space) {
+        return FeFunction<FeSpace_>(fe_space, DVector<Scalar>::Zero(fe_space.n_dofs()));
     }
    private:
     DVector<double> coeff_;

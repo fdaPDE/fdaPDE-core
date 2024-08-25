@@ -23,36 +23,37 @@
 #include "../utils/symbols.h"
 #include "dof_tetrahedron.h"
 #include "dof_triangle.h"
+#include "dof_constraints.h"
 
 namespace fdapde {
 
-enum Boundary : short { All = -1, Dirichlet = 1, Neumann = 2, Robin = 3 };    // value 0 is for NOT-boundary nodes
-  
+[[maybe_unused]] static constexpr int BoundaryAll = -1;
+
 template <int LocalDim, int EmbedDim> class DofHandler;
 template <int LocalDim, int EmbedDim, typename Derived> class DofHandlerBase {
    public:
     using TriangulationType = Triangulation<LocalDim, EmbedDim>;
     using CellType = std::conditional_t<LocalDim == 2, DofTriangle<Derived>, DofTetrahedron<Derived>>;
-    using MarkerType = short;
     static constexpr int n_nodes_per_cell = TriangulationType::n_nodes_per_cell;
     static constexpr int local_dim = TriangulationType::local_dim;
     static constexpr int embed_dim = TriangulationType::embed_dim;
     DofHandlerBase() = default;
-    DofHandlerBase(const TriangulationType& triangulation) : triangulation_(&triangulation) { }
+    DofHandlerBase(const TriangulationType& triangulation) :
+        triangulation_(&triangulation), dof_constraints_(static_cast<Derived&>(*this)) { }
     // getters
     CellType cell(int id) const { return CellType(id, static_cast<const Derived*>(this)); }
     const DMatrix<int, Eigen::RowMajor>& dofs() const { return dofs_; }
     int n_dofs() const { return n_dofs_; }
     bool is_dof_on_boundary(int i) const { return boundary_dofs_[i]; }
-    MarkerType dof_marker(int i) const { return dofs_markers_[i]; }
+    int dof_marker(int i) const { return dofs_markers_[i]; }
     const TriangulationType* triangulation() const { return triangulation_; }
     int n_boundary_dofs() const { return boundary_dofs_.count(); }
-    int n_boundary_dofs(MarkerType marker) const {
+    int n_boundary_dofs(int marker) const {
         int i = 0, sum = 0;
         for (auto dof_marker : dofs_markers_) { sum += (dof_marker == marker && boundary_dofs_[i++]) ? 1 : 0; }
         return sum;
     }
-    std::vector<int> filter_dofs_by_marker(MarkerType marker) const {
+    std::vector<int> filter_dofs_by_marker(int marker) const {
         std::vector<int> result;
         for (int i = 0; i < n_dofs_; ++i) {
             if (dofs_markers_[i] == marker) result.push_back(i);
@@ -95,8 +96,8 @@ template <int LocalDim, int EmbedDim, typename Derived> class DofHandlerBase {
         BoundaryDofType() = default;
         BoundaryDofType(int id, const Derived* dof_handler) : id_(id), dof_handler_(dof_handler) { }
         int id() const { return id_; }
-        MarkerType marker() const { return dof_handler_->dofs_markers_[id_]; }
-        MarkerType& marker() { return dof_handler_->dofs_markers_[id_]; }
+        int marker() const { return dof_handler_->dofs_markers_[id_]; }
+        int& marker() { return dof_handler_->dofs_markers_[id_]; }
         SVector<embed_dim> coord() const {
 	    int cell_id = dof_handler_->dofs_to_cell()[id_];   // id of cell containing this dof
             int j = 0;   // local dof numbering
@@ -111,19 +112,19 @@ template <int LocalDim, int EmbedDim, typename Derived> class DofHandlerBase {
         using Base = index_based_iterator<boundary_dofs_iterator, BoundaryDofType>;
         using Base::index_;
         const Derived* dof_handler_;
-        MarkerType marker_;
+        int marker_;
        public:
-        boundary_dofs_iterator(int index, const Derived* dof_handler, MarkerType marker) :
+        boundary_dofs_iterator(int index, const Derived* dof_handler, int marker) :
             Base(index, 0, dof_handler->n_dofs()), dof_handler_(dof_handler), marker_(marker) {
             for (; index_ < dof_handler_->n_dofs() && !dof_handler_->boundary_dofs_[index_] &&
-                   (!(dof_handler_->dof_marker(index_) == marker_) || marker_ == MarkerType(Boundary::All));
+                   (!(dof_handler_->dof_marker(index_) == marker_) || marker_ == BoundaryAll);
                  ++index_);
             this->val_ = BoundaryDofType(index_, dof_handler_);
         }
         boundary_dofs_iterator& operator++() {
             index_++;
             for (; index_ < dof_handler_->n_dofs() && !dof_handler_->boundary_dofs_[index_] &&
-                   (!(dof_handler_->dof_marker(index_) == marker_) || marker_ == MarkerType(Boundary::All));
+                   (!(dof_handler_->dof_marker(index_) == marker_) || marker_ == BoundaryAll);
                  ++index_);
             this->val_ = BoundaryDofType(index_, dof_handler_);
             return *this;
@@ -131,29 +132,37 @@ template <int LocalDim, int EmbedDim, typename Derived> class DofHandlerBase {
         boundary_dofs_iterator& operator--() {
             --index_;
             for (; index_ >= 0 && !dof_handler_->boundary_dofs_[index_] &&
-                   (!(dof_handler_->dof_marker(index_) == marker_) || marker_ == MarkerType(Boundary::All));
+                   (!(dof_handler_->dof_marker(index_) == marker_) || marker_ == BoundaryAll);
                  --index_);
             this->val_ = BoundaryDofType(index_, dof_handler_);
             return *this;
         }
     };
-    boundary_dofs_iterator boundary_dofs_begin(MarkerType marker) const {
+    boundary_dofs_iterator boundary_dofs_begin(int marker) const {
         return boundary_dofs_iterator(0, static_cast<const Derived*>(this), marker);
     }
-    boundary_dofs_iterator boundary_dofs_end(MarkerType marker) const {
+    boundary_dofs_iterator boundary_dofs_end(int marker) const {
         return boundary_dofs_iterator(n_dofs_, static_cast<const Derived*>(this), marker);
     }
-    boundary_dofs_iterator boundary_dofs_begin() const { return boundary_dofs_begin(Boundary::All); }
-    boundary_dofs_iterator boundary_dofs_end() const { return boundary_dofs_end(Boundary::All); }
+    boundary_dofs_iterator boundary_dofs_begin() const { return boundary_dofs_begin(BoundaryAll); }
+    boundary_dofs_iterator boundary_dofs_end() const { return boundary_dofs_end(BoundaryAll); }
     // setters
-    void set_dofs_markers(const DVector<MarkerType>& dofs_markers) {
+    void set_dofs_markers(const DVector<int>& dofs_markers) {
       fdapde_assert(dofs_markers.rows() == n_dofs_);
       dofs_markers_ = dofs_markers;
     }
-    template <typename Iterator> void set_dofs_markers(const Iterator& begin, const Iterator& end, MarkerType marker) {
+    template <typename Iterator> void set_dofs_markers(const Iterator& begin, const Iterator& end, int marker) {
         for (auto it = begin; it != end; ++it) it->marker() = marker;
     }
-    void set_dofs_markers(MarkerType marker) { set_dofs_markers(boundary_dofs_begin(), boundary_dofs_end(), marker); }
+    void set_dofs_markers(int marker) { set_dofs_markers(boundary_dofs_begin(), boundary_dofs_end(), marker); }
+    // dofs constaints handling
+    template <typename Data> void set_dirichlet_constraint(int on, const Data& g) {
+        dof_constraints_.set_dirichlet_constraint(on, g);
+    }
+    template <typename Data> void set_dirichlet_constaint(const Data& g) { set_dirichlet_constraint(BoundaryAll, g); }
+    void enforce_constraints(SpMatrix<double>& A, DVector<double>& b) const {
+        dof_constraints_.enforce_constraints(A, b);
+    }
     DMatrix<double> dofs_coords() const {   // computes degrees of freedom's physical coordinates
         // allocate space
         DMatrix<double> coords;
@@ -179,8 +188,9 @@ template <int LocalDim, int EmbedDim, typename Derived> class DofHandlerBase {
     const TriangulationType* triangulation_;
     DMatrix<int, Eigen::RowMajor> dofs_;
     BinaryVector<fdapde::Dynamic> boundary_dofs_;   // whether the i-th dof is on boundary or not
-    std::vector<int> dofs_to_cell_;                // for each dof, the id of (one of) the cell containing it
-    DVector<MarkerType> dofs_markers_;
+    std::vector<int> dofs_to_cell_;                 // for each dof, the id of (one of) the cell containing it
+    DofConstraints<local_dim, embed_dim> dof_constraints_;
+    DVector<int> dofs_markers_;
     int n_dofs_ = 0;
     DMatrix<double> reference_dofs_barycentric_coords_;
 
@@ -238,7 +248,7 @@ template <int LocalDim, int EmbedDim, typename Derived> class DofHandlerBase {
         for (int i = 0; i < triangulation_->n_cells(); ++i) {
             for (int j = 0; j < dof_descriptor::n_dofs_per_cell; ++j) dofs_to_cell_[dofs_(i, j)] = i;
         }
-	dofs_markers_ = DVector<MarkerType>::Constant(n_dofs_, Boundary::All); // -----------------------------------
+	dofs_markers_ = DVector<int>::Constant(n_dofs_, BoundaryAll);
         return;
     }
 };
@@ -247,7 +257,6 @@ template <int EmbedDim> class DofHandler<2, EmbedDim> : public DofHandlerBase<2,
    public:
     using Base = DofHandlerBase<2, EmbedDim, DofHandler<2, EmbedDim>>;
     using TriangulationType = typename Base::TriangulationType;
-    using MarkerType = typename Base::MarkerType;
     using CellType = typename Base::CellType;
     using Base::dofs_;
     using Base::n_dofs_;
@@ -351,7 +360,6 @@ template <int EmbedDim> class DofHandler<2, EmbedDim> : public DofHandlerBase<2,
 template <> class DofHandler<3, 3> : public DofHandlerBase<3, 3, DofHandler<3, 3>> {
    private:
     using Base = DofHandlerBase<3, 3, DofHandler<3, 3>>;
-    using MarkerType = typename Base::MarkerType;
     using CellType = typename Base::CellType;
     using Base::n_dofs_;
     using Base::triangulation_;
@@ -484,7 +492,6 @@ template <> class DofHandler<3, 3> : public DofHandlerBase<3, 3, DofHandler<3, 3
 //    private:
 //     using Base = DofHandlerBase<1, EmbedDim, DofHandler<1, EmbedDim>>;
 //     using TriangulationType = typename Base::TriangulationType;
-//     using MarkerType = typename Base::MarkerType;
 //     using CellType = DofHandlerCell<Segment<Triangulation<1, EmbedDim>>>;
 //     using Base::n_dofs_;
 //     using Base::triangulation_;

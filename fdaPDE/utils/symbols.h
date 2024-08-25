@@ -74,16 +74,28 @@ using static_dynamic_matrix_selector_t = typename static_dynamic_matrix_selector
 // this is compatible to Eigen::setFromTriplets() method used for the sparse matrix construction
 template <typename T> class Triplet {
    private:
-    Eigen::Index row_, col_;
+    int row_, col_;
     T value_;
    public:
     Triplet() = default;
-    Triplet(const Eigen::Index& row, const Eigen::Index& col, const T& value) : row_(row), col_(col), value_(value) {};
+    Triplet(int row, int col, const T& value) : row_(row), col_(col), value_(value) { }
 
-    const Eigen::Index& row() const { return row_; }
-    const Eigen::Index& col() const { return col_; }
+    int row() const { return row_; }
+    int col() const { return col_; }
     const T& value() const { return value_; }
     T& value() { return value_; }   // allow for modifications of stored value, this not allowed by Eigen::Triplet
+};
+template <typename T> class Duplet {
+   private:
+    int row_;
+    T value_;
+   public:
+    Duplet() = default;
+    Duplet(int row, const T& value) : row_(row), value_(value) { }
+
+    int row() const { return row_; }
+    const T& value() const { return value_; }
+    T& value() { return value_; }
 };
 
 // hash function for std::pair (allow pairs as key of unordered_map). inspired from boost::hash
