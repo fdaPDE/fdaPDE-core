@@ -249,7 +249,7 @@ template <int LocalDim, int EmbedDim, typename Derived> class DofHandlerBase {
         for (int i = 0; i < triangulation_->n_cells(); ++i) {
             for (int j = 0; j < dof_descriptor::n_dofs_per_cell; ++j) dofs_to_cell_[dofs_(i, j)] = i;
         }
-        dofs_markers_ = std::vector<int>(n_dofs_, NodeUnmarked);
+        dofs_markers_ = std::vector<int>(n_dofs_, Unmarked);
         return;
     }
 };

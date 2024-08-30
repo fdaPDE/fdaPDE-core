@@ -34,15 +34,18 @@ namespace fdapde {
 // public iterator types
 template <typename Triangulation> struct CellIterator : public Triangulation::cell_iterator {
     CellIterator(int index, const Triangulation* mesh) : Triangulation::cell_iterator(index, mesh) { }
+    CellIterator(int index, const Triangulation* mesh, int marker) :
+        Triangulation::cell_iterator(index, mesh, marker) { }
 };
 template <typename Triangulation> struct BoundaryIterator : public Triangulation::boundary_iterator {
+    BoundaryIterator(int index, const Triangulation* mesh) : Triangulation::boundary_iterator(index, mesh) { }
     BoundaryIterator(int index, const Triangulation* mesh, int marker) :
         Triangulation::boundary_iterator(index, mesh, marker) { }
 };
 
 [[maybe_unused]] static constexpr int cache_cells = 0x0001;
 [[maybe_unused]] static constexpr int BoundaryAll = -1;
-[[maybe_unused]] static constexpr int NodeUnmarked = -2;
+[[maybe_unused]] static constexpr int Unmarked = -2;
   
 template <int M, int N> class Triangulation;
 template <int M, int N, typename Derived> class TriangulationBase {
@@ -93,9 +96,9 @@ template <int M, int N, typename Derived> class TriangulationBase {
     int n_boundary_nodes() const { return nodes_markers_.count(); }
     SMatrix<2, N> range() const { return range_; }
 
-    // iterators over cells
-    class cell_iterator : public internals::index_iterator<cell_iterator, const CellType*> {
-        using Base = internals::index_iterator<cell_iterator, const CellType*>;
+    // iterators over cells (possibly filtered by marker)
+    class cell_iterator : public internals::filtering_iterator<cell_iterator, const CellType*> {
+        using Base = internals::filtering_iterator<cell_iterator, const CellType*>;
         using Base::index_;
         friend Base;
         const Derived* mesh_;
@@ -106,15 +109,68 @@ template <int M, int N, typename Derived> class TriangulationBase {
         }
        public:
         using TriangulationType = Derived;
-        cell_iterator(int index, const Derived* mesh) : Base(index, 0, mesh->n_cells_), mesh_(mesh), marker_(0) {
-            if (index_ < mesh_->n_cells_) operator()(index_);
+        cell_iterator(int index, const Derived* mesh, const BinaryVector<fdapde::Dynamic>& filter, int marker) :
+            Base(index, 0, mesh->n_cells_, filter), mesh_(mesh), marker_(marker) {
+            for (; index_ < Base::end_ && !filter[index_]; ++index_);
+            if (index_ != Base::end_) { operator()(index_); }
         }
+        cell_iterator(int index, const Derived* mesh) :   // apply no filter
+            cell_iterator(index, mesh, BinaryVector<fdapde::Dynamic>::Ones(mesh->n_cells_), Unmarked) { }
+        cell_iterator(int index, const Derived* mesh, int marker) :   // fast construction for end iterators
+            Base(index, 0, mesh->n_cells_), marker_(marker) { }
         int marker() const { return marker_; }
     };
     CellIterator<Derived> cells_begin() const { return CellIterator<Derived>(0, static_cast<const Derived*>(this)); }
     CellIterator<Derived> cells_end() const {
-        return CellIterator<Derived>(n_cells_, static_cast<const Derived*>(this));
+        return CellIterator<Derived>(n_cells_, static_cast<const Derived*>(this), Unmarked);
     }
+    CellIterator<Derived> cells_begin(int marker) const {
+        fdapde_assert(marker >= 0 && cells_markers_.size() != 0);
+        return CellIterator<Derived>(
+          0, static_cast<const Derived*>(this),
+          fdapde::make_binary_vector(cells_markers_.begin(), cells_markers_.end(), marker), marker);
+    }
+    CellIterator<Derived> cells_end(int marker) const {
+        fdapde_assert(marker >= 0 && cells_markers_.size() != 0);
+        return CellIterator<Derived>(0, static_cast<const Derived*>(this), marker);
+    }
+    // set cells markers
+    template <typename Lambda> void mark_cells(int marker, Lambda&& lambda)
+        requires(requires(Lambda lambda, CellType c) {
+        { lambda(c) } -> std::same_as<bool>; }) {
+        fdapde_assert(marker >= 0);
+	cells_markers_.resize(n_cells_, Unmarked);
+        for (cell_iterator it = cells_begin(); it != cells_end(); ++it) {
+            if (lambda(*it)) {
+                // give priority to highly marked cells
+                if (cells_markers_[it->id()] < marker) { cells_markers_[it->id()] = marker; }
+            }
+        }
+	return;
+    }
+    template <typename Iterator> void mark_cells(Iterator first, Iterator last) {
+        fdapde_static_assert(
+          std::is_convertible_v<typename Iterator::value_type FDAPDE_COMMA int>, INVALID_ITERATOR_RANGE);
+        int n_markers = std::distance(first, last);
+        bool all_markers_positive = std::all_of(first, last, [](auto marker) { return marker >= 0; });
+        fdapde_assert(n_markers == n_cells_ && all_markers_positive);
+        cells_markers_.resize(n_cells_, Unmarked);
+        for (int i = 0; i < n_cells_; ++i) {
+            int marker = *(first + i);
+            // give priority to highly marked cells
+            if (cells_markers_[i] < marker) { cells_markers_[i] = marker; }
+        }
+        return;
+    }
+    void mark_cells(int marker) {   // marks all unmarked cells
+        fdapde_assert(marker >= 0);
+        cells_markers_.resize(n_cells_, Unmarked);
+        for (auto it = cells_begin(); it != cells_end(); ++it) {
+            if (cells_markers_[it->id()] < marker) cells_markers_[it->id()] = marker;
+        }
+        return;
+    }
+    const std::vector<int>& cells_markers() const { return cells_markers_; }
     // iterator over boundary nodes
     class boundary_node_iterator : public internals::filtering_iterator<boundary_node_iterator, NodeType> {
         using Base = internals::filtering_iterator<boundary_node_iterator, NodeType>;
@@ -126,6 +182,7 @@ template <int M, int N, typename Derived> class TriangulationBase {
             return *this;
         }
        public:
+        using TriangulationType = Derived;
         boundary_node_iterator(int index, const Derived* mesh) :
             Base(index, 0, mesh->n_nodes_, mesh_->nodes_markers_), mesh_(mesh) {
             for (; index_ < Base::end_ && !mesh_->nodes_markers_[index_]; ++index_);
@@ -146,6 +203,7 @@ template <int M, int N, typename Derived> class TriangulationBase {
     SMatrix<2, embed_dim> range_ {};                   // mesh bounding box (column i maps to the i-th dimension)
     int n_nodes_ = 0, n_cells_ = 0;
     int flags_ = 0;
+    std::vector<int> cells_markers_;   // marker associated to the i-th cells
 };
 
 // face-based storage
@@ -221,7 +279,6 @@ template <int N> class Triangulation<2, N> : public TriangulationBase<2, N, Tria
         }
         n_edges_ = edges_.size() / n_nodes_per_edge;
         boundary_edges_ = BinaryVector<fdapde::Dynamic>(boundary_edges.begin(), boundary_edges.end(), n_edges_);
-	edges_markers_.resize(n_edges_, NodeUnmarked);
         return;
     }
     // getters
@@ -251,37 +308,38 @@ template <int N> class Triangulation<2, N> : public TriangulationBase<2, N, Tria
         using Base::index_;
         friend Base;
         const Triangulation* mesh_;
+        int marker_;
         edge_iterator& operator()(int i) {
             Base::val_ = EdgeType(i, mesh_);
             return *this;
         }
        public:
-        edge_iterator(int index, const Triangulation* mesh, const BinaryVector<fdapde::Dynamic>& filter) :
-            Base(index, 0, mesh->n_edges_, filter), mesh_(mesh) {
+        using TriangulationType = Triangulation<2, N>;
+        edge_iterator(int index, const Triangulation* mesh, const BinaryVector<fdapde::Dynamic>& filter, int marker) :
+            Base(index, 0, mesh->n_edges_, filter), mesh_(mesh), marker_(marker) {
             for (; index_ < Base::end_ && !filter[index_]; ++index_);
             if (index_ != Base::end_) { operator()(index_); }
         }
         edge_iterator(int index, const Triangulation* mesh) :   // apply no filter
-            edge_iterator(index, mesh, BinaryVector<fdapde::Dynamic>::Ones(mesh->n_edges_)) { }
+            edge_iterator(index, mesh, BinaryVector<fdapde::Dynamic>::Ones(mesh->n_edges_), Unmarked) { }
+        edge_iterator(int index, const Triangulation* mesh, int marker) :   // fast construction for end iterators
+            Base(index, 0, mesh->n_edges_), marker_(marker) { }
+        int marker() const { return marker_; }
     };
     edge_iterator edges_begin() const { return edge_iterator(0, this); }
-    edge_iterator edges_end() const { return edge_iterator(n_edges_, this); }
+    edge_iterator edges_end() const { return edge_iterator(n_edges_, this, Unmarked); }
     // iterator over boundary edges
     struct boundary_edge_iterator : public edge_iterator {
-       private:
-        int marker_;
-       public:
         boundary_edge_iterator(int index, const Triangulation* mesh) :
-            edge_iterator(index, mesh, mesh->boundary_edges_), marker_(BoundaryAll) { }
+            edge_iterator(index, mesh, mesh->boundary_edges_, BoundaryAll) { }
         boundary_edge_iterator(int index, const Triangulation* mesh, int marker) :   // filter boundary edges by marker
             edge_iterator(
               index, mesh,
               marker == BoundaryAll ?
                 mesh->boundary_edges_ :
                 mesh->boundary_edges_ &
-                  fdapde::make_binary_vector(mesh->edges_markers_.begin(), mesh->edges_markers_.end(), marker)),
-            marker_(marker) { }
-        int marker() const { return marker_; }
+                  fdapde::make_binary_vector(mesh->edges_markers_.begin(), mesh->edges_markers_.end(), marker),
+              marker) { }
     };
     boundary_edge_iterator boundary_edges_begin() const { return boundary_edge_iterator(0, this); }
     boundary_edge_iterator boundary_edges_end() const { return boundary_edge_iterator(n_edges_, this); }
@@ -298,15 +356,18 @@ template <int N> class Triangulation<2, N> : public TriangulationBase<2, N, Tria
     }
     const std::vector<int>& edges_markers() const { return edges_markers_; }
     // set boundary markers
-    template <typename Lambda>
-    void mark_boundary(int marker, Lambda&& lambda)
+    template <typename Lambda> void mark_boundary(int marker, Lambda&& lambda)
       requires(requires(Lambda lambda, EdgeType e) {
         { lambda(e) } -> std::same_as<bool>; }) {
         fdapde_assert(marker >= 0);
+        edges_markers_.resize(n_edges_, Unmarked);
         for (boundary_edge_iterator it = boundary_edges_begin(); it != boundary_edges_end(); ++it) {
-	  if (lambda(*it)) { edges_markers_[it->id()] = marker; }
+            if (lambda(*it)) {
+                // give priority to highly marked edges
+                if (edges_markers_[it->id()] < marker) { edges_markers_[it->id()] = marker; }
+            }
         }
-	return;
+        return;
     }
     template <typename Iterator> void mark_boundary(Iterator first, Iterator last) {
         fdapde_static_assert(
@@ -314,14 +375,21 @@ template <int N> class Triangulation<2, N> : public TriangulationBase<2, N, Tria
         int n_markers = std::distance(first, last);
 	bool all_markers_positive = std::all_of(first, last, [](auto marker) { return marker >= 0; });
         fdapde_assert(n_markers == n_edges() && all_markers_positive);
-        for (int i = 0; i < n_markers; ++i) { edges_markers_[i] = *(first + i); }
+	edges_markers_.resize(n_edges_, Unmarked);
+        for (int i = 0; i < n_edges_; ++i) {
+            int marker = *(first + i);
+            // give priority to highly marked edges
+            if (edges_markers_[i] < marker) { edges_markers_[i] = marker; }
+        }
         return;
     }
-    // marks all unmarked nodes
+    // marks all boundary edges
     void mark_boundary(int marker) {
         fdapde_assert(marker >= 0);
-        for (auto it = boundary_begin(NodeUnmarked); it != boundary_end(NodeUnmarked); ++it) {
-            edges_markers_[it->id()] = marker;
+	edges_markers_.resize(n_edges_, Unmarked);
+        for (auto it = boundary_begin(); it != boundary_end(); ++it) {
+            // give priority to highly marked edges
+            if (edges_markers_[it->id()] < marker) edges_markers_[it->id()] = marker;
         }
         return;
     }
@@ -453,7 +521,6 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
         n_edges_ = edges_.size() / n_nodes_per_edge;
         boundary_faces_ = BinaryVector<fdapde::Dynamic>(boundary_faces.begin(), boundary_faces.end(), n_faces_);
 	boundary_edges_ = BinaryVector<fdapde::Dynamic>(boundary_edges.begin(), boundary_edges.end(), n_edges_);
-	faces_markers_.resize(n_faces_, 0);
         return;
     }
     // getters
@@ -515,30 +582,38 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
         using Base::index_;
         friend Base;
         const Triangulation* mesh_;
+        int marker_;
         face_iterator& operator()(int i) {
             Base::val_ = FaceType(i, mesh_);
             return *this;
         }
        public:
-        face_iterator(int index, const Triangulation* mesh, const BinaryVector<fdapde::Dynamic>& filter) :
-            Base(index, 0, mesh->n_faces_, filter), mesh_(mesh) {
+        using TriangulationType = Triangulation<3, 3>;
+        face_iterator(int index, const Triangulation* mesh, const BinaryVector<fdapde::Dynamic>& filter, int marker) :
+            Base(index, 0, mesh->n_faces_, filter), mesh_(mesh), marker_(marker) {
             for (; index_ < Base::end_ && !filter[index_]; ++index_);
             if (index_ != Base::end_) { operator()(index_); }
         }
         face_iterator(int index, const Triangulation* mesh) :   // apply no filter
-            face_iterator(index, mesh, BinaryVector<fdapde::Dynamic>::Ones(mesh->n_edges_)) { }
+	  face_iterator(index, mesh, BinaryVector<fdapde::Dynamic>::Ones(mesh->n_edges_), Unmarked) { }
+        face_iterator(int index, const Triangulation* mesh, int marker) :   // fast construction for end iterators
+            Base(index, 0, mesh->n_faces_), marker_(marker) { }
+        int marker() const { return marker_; }
     };
     face_iterator faces_begin() const { return face_iterator(0, this); }
     face_iterator faces_end() const { return face_iterator(n_faces_, this); }
     // iterator over boundary faces
     struct boundary_face_iterator : public face_iterator {
         boundary_face_iterator(int index, const Triangulation* mesh) :
-            face_iterator(index, mesh, mesh->boundary_faces_) { }
+            face_iterator(index, mesh, mesh->boundary_faces_, BoundaryAll) { }
         boundary_face_iterator(int index, const Triangulation* mesh, int marker) :   // filter boundary faces by marker
             face_iterator(
               index, mesh,
-              mesh->boundary_faces_ &
-                fdapde::make_binary_vector(mesh->faces_markers_.begin(), mesh->faces_markers_.end(), marker)) { }
+              marker == BoundaryAll ?
+                mesh->boundary_faces_ :
+                mesh->boundary_faces_ &
+                  fdapde::make_binary_vector(mesh->faces_markers_.begin(), mesh->faces_markers_.end(), marker),
+              marker) { }
     };
     boundary_face_iterator boundary_faces_begin() const { return boundary_face_iterator(0, this); }
     boundary_face_iterator boundary_faces_end() const { return boundary_face_iterator(n_faces_, this); }
@@ -555,28 +630,40 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
     }
     const std::vector<int>& faces_markers() const { return faces_markers_; }
     // set boundary markers
-    template <typename Lambda>
-    void mark_boundary(int marker, Lambda&& lambda)
-      requires(requires(Lambda lambda, EdgeType e) {
+    template <typename Lambda> void mark_boundary(int marker, Lambda&& lambda)
+      requires(requires(Lambda lambda, FaceType e) {
         { lambda(e) } -> std::same_as<bool>; }) {
+        fdapde_assert(marker >= 0);
+        faces_markers_.resize(n_faces_, Unmarked);
         for (boundary_face_iterator it = boundary_faces_begin(); it != boundary_faces_end(); ++it) {
-            if (lambda(*it)) faces_markers_[it->id()] = marker;
+            if (lambda(*it)) {
+                // give priority to highly marked faces
+                if (faces_markers_[it->id()] < marker) { faces_markers_[it->id()] = marker; }
+            }
         }
+        return;
     }
     template <typename Iterator> void mark_boundary(Iterator first, Iterator last) {
         fdapde_static_assert(
           std::is_convertible_v<typename Iterator::value_type FDAPDE_COMMA int>, INVALID_ITERATOR_RANGE);
         int n_markers = std::distance(first, last);
-        bool all_markers_positive = std::all_of(first, last, [](auto marker) { return marker >= 0; });
+	bool all_markers_positive = std::all_of(first, last, [](auto marker) { return marker >= 0; });
         fdapde_assert(n_markers == n_faces() && all_markers_positive);
-        for (int i = 0; i < n_markers; ++i) { faces_markers_[i] = *(first + i); }
+	faces_markers_.resize(n_faces_, Unmarked);
+        for (int i = 0; i < n_faces_; ++i) {
+            int marker = *(first + i);
+            // give priority to highly marked faces
+            if (faces_markers_[i] < marker) { faces_markers_[i] = marker; }
+        }
         return;
     }
-    // marks all unmarked nodes
+    // marks all boundary faces
     void mark_boundary(int marker) {
         fdapde_assert(marker >= 0);
-        for (auto it = boundary_begin(NodeUnmarked); it != boundary_end(NodeUnmarked); ++it) {
-            faces_markers_[it->id()] = marker;
+	faces_markers_.resize(n_faces_, Unmarked);
+        for (auto it = boundary_begin(); it != boundary_end(); ++it) {
+            // give priority to highly marked faces
+            if (faces_markers_[it->id()] < marker) faces_markers_[it->id()] = marker;
         }
         return;
     }

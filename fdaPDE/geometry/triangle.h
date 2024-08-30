@@ -54,7 +54,9 @@ template <typename Triangulation> class Triangle : public Simplex<Triangulation:
         DVector<int> node_ids() const { return mesh_->edges().row(edge_id_); }
         int id() const { return edge_id_; }
         DVector<int> adjacent_cells() const { return mesh_->edge_to_cells().row(edge_id_); }
-        int marker() const { return mesh_->edges_markers()[edge_id_]; }   // mesh edge's marker
+        int marker() const {   // mesh edge's marker
+            return mesh_->edges_markers().size() > edge_id_ ? mesh_->edges_markers()[edge_id_] : Unmarked;
+        }
     };
 
     // getters
@@ -68,6 +70,8 @@ template <typename Triangulation> class Triangle : public Simplex<Triangulation:
         fdapde_assert(n < this->n_edges);
         return EdgeType(mesh_->cell_to_edges()(id_, n), mesh_);
     }
+    // cell marker
+    int marker() const { return mesh_->cells_markers().size() > id_ ? mesh_->cells_markers()[id_] : Unmarked; }
 
     // iterator over triangle edge
     class edge_iterator : public internals::index_iterator<edge_iterator, EdgeType> {

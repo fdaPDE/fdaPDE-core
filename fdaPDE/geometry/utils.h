@@ -117,6 +117,7 @@ class filtering_iterator : public index_iterator<IteratorType, ValueType> {
     using Base::index_;
     BinaryVector<fdapde::Dynamic> filter_;
    public:
+    filtering_iterator(int index, int begin, int end) : Base(index, begin, end) { }
     filtering_iterator(int index, int begin, int end, const BinaryVector<fdapde::Dynamic>& filter) :
         Base(index, begin, end), filter_(filter) { /* initialization is responsibility of IteratorType */ }
     IteratorType& operator++() {
