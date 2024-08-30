@@ -227,10 +227,9 @@ FDAPDE_DEFINE_SCALAR_COEFF_OP(operator/, std::divides<>   )
 
     constexpr ScalarField() requires(StaticInputSize != Dynamic) : f_() { }
     explicit ScalarField(int n) requires(StaticInputSize == Dynamic)
-        : Base(), f_() { }
+        : Base(), f_(), dynamic_input_size_(n) { }
     constexpr explicit ScalarField(const FunctorType& f) : f_(f) {};
-    template <typename Expr>
-    ScalarField(const ScalarBase<Size, Expr>& f) {
+    template <typename Expr> ScalarField(const ScalarBase<Size, Expr>& f) {
         fdapde_static_assert(
           std::is_same_v<FunctorType FDAPDE_COMMA std::function<Scalar(InputType)>> &&
             std::is_convertible_v<typename Expr::Scalar FDAPDE_COMMA Scalar>,
@@ -238,8 +237,7 @@ FDAPDE_DEFINE_SCALAR_COEFF_OP(operator/, std::divides<>   )
         Expr expr = f.get();
         f_ = [expr](const InputType& x) { return expr(x); };
     }
-    template <typename Expr>
-    ScalarField& operator=(const ScalarBase<Size, Expr>& f) {
+    template <typename Expr> ScalarField& operator=(const ScalarBase<Size, Expr>& f) {
         fdapde_static_assert(
           std::is_same_v<FunctorType FDAPDE_COMMA std::function<Scalar(InputType)>> &&
             std::is_convertible_v<typename Expr::Scalar FDAPDE_COMMA Scalar>,
@@ -249,8 +247,7 @@ FDAPDE_DEFINE_SCALAR_COEFF_OP(operator/, std::divides<>   )
         return *this;
     }
     // assignment from lambda expression
-    template <typename LamdaType>
-    ScalarField& operator=(const LamdaType& lambda) {
+    template <typename LamdaType> ScalarField& operator=(const LamdaType& lambda) {
         fdapde_static_assert(
           std::is_same_v<FunctorType FDAPDE_COMMA std::function<Scalar(InputType)>> &&
             std::is_convertible_v<
@@ -271,6 +268,17 @@ FDAPDE_DEFINE_SCALAR_COEFF_OP(operator/, std::divides<>   )
     // evaluation at point
     constexpr Scalar operator()(const InputType& x) const { return f_(x); }
     constexpr Scalar operator()(const InputType& x) { return f_(x); }
+    // evaluation at matrix of points
+    DVector<Scalar> eval_at(const DMatrix<double>& points) const {
+        fdapde_static_assert(
+          std::is_invocable_v<FunctorType FDAPDE_COMMA decltype(points.row(std::declval<int>()))>,
+          INVALID_SCALAR_FIELD_INVOCATION);
+        fdapde_assert(points.rows() > 0 && points.cols() == input_size());
+        DVector<Scalar> evals(points.rows());
+        for (int i = 0; i < points.rows(); ++i) { evals[i] = f_(points.row(i)); }
+        return evals;
+    }
+
     void resize(int dynamic_input_size) {
         fdapde_static_assert(StaticInputSize == Dynamic, YOU_CALLED_A_DYNAMIC_METHOD_ON_A_STATIC_SIZED_FIELD);
         dynamic_input_size_ = dynamic_input_size;

@@ -170,6 +170,13 @@ template <int Rows, int Cols = Rows> class BinaryMatrix : public BinMtxBase<Rows
         fdapde_static_assert(Cols == 1, THIS_METHOD_IS_ONLY_FOR_VECTORS);
         set(i, 0);
     }
+    void set() {   // sets all coeffients in the matrix
+        for (int i = 0; i < n_rows_; ++i) {
+            for (int j = 0; j < n_cols_; ++j) {
+                data_[pack_of(i, j)] |= (BitPackType(1) << ((i * Base::n_cols_ + j) % PackSize));
+            }
+        }
+    }  
     void clear(int i, int j) {   // clear (i,j)-th bit (sets to 0)
         fdapde_assert(i < n_rows_ && j < n_cols_);
         data_[pack_of(i, j)] &= ~(BitPackType(1) << ((i * Base::n_cols_ + j) % PackSize));
@@ -177,6 +184,13 @@ template <int Rows, int Cols = Rows> class BinaryMatrix : public BinMtxBase<Rows
     void clear(int i) {
         fdapde_static_assert(Cols == 1, THIS_METHOD_IS_ONLY_FOR_VECTORS);
         clear(i, 0);
+    }
+    void clear() {   // clears all coeffients in the matrix
+        for (int i = 0; i < n_rows_; ++i) {
+            for (int j = 0; j < n_cols_; ++j) {
+                data_[pack_of(i, j)] &= ~(BitPackType(1) << ((i * Base::n_cols_ + j) % PackSize));
+            }
+        }
     }
     // fast bitwise assignment from binary expression
     template <int Rows_, int Cols_, typename Rhs_> BinaryMatrix& operator=(const BinMtxBase<Rows_, Cols_, Rhs_>& rhs) {
@@ -655,6 +669,17 @@ template <int Rows> using BinaryVector = BinaryMatrix<Rows, 1>;
 // out-of-class which function
 template <int Rows, int Cols, typename XprType> std::vector<int> which(const BinMtxBase<Rows, Cols, XprType>& mtx) {
     return mtx.which(true);
+}
+
+// move the iterator first-last to a binary vector v such that v[i] = true \iff *(first + i) == c
+template <typename Iterator>
+BinaryVector<Dynamic> make_binary_vector(const Iterator& first, const Iterator& last, typename Iterator::value_type c) {
+    int n_rows = std::distance(first, last);
+    BinaryVector<Dynamic> vec(n_rows);
+    for (int i = 0; i < n_rows; ++i) {
+        if (*(first + i) == c) vec.set(i);
+    }
+    return vec;
 }
 
 }   // namespace fdapde

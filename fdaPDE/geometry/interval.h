@@ -76,8 +76,8 @@ template <> class Triangulation<1, 1> {
     SVector<2> range() const { return range_; }
 
     // iterators support
-    class cell_iterator : public index_based_iterator<cell_iterator, CellType> {
-        using Base = index_based_iterator<cell_iterator, CellType>;
+    class cell_iterator : public internals::index_iterator<cell_iterator, CellType> {
+        using Base = internals::index_iterator<cell_iterator, CellType>;
         using Base::index_;
         friend Base;
         const Triangulation* mesh_;

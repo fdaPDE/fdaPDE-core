@@ -22,41 +22,53 @@
 namespace fdapde {
 namespace internals {
 
+struct fe_quadrature_simplex_base { };
+template <typename T>
+concept is_fe_quadrature_simplex = std::is_base_of_v<fe_quadrature_simplex_base, T>;
+  
 template <int LocalDim, int Size> struct fe_quadrature_simplex;
 
 // 1D 2 point formula
-template <> struct fe_quadrature_simplex<1, 2> {
+template <> struct fe_quadrature_simplex<1, 2> : public fe_quadrature_simplex_base {
     static constexpr int local_dim = 1;
     static constexpr int n_nodes = 2;
 
     static constexpr cexpr::Vector<double, n_nodes> nodes {
-      std::array<double, n_nodes> {0.211324865405187, 0.788675134594812}
+      std::array<double, n_nodes> {
+	0.211324865405187,
+	0.788675134594812}
     };
     static constexpr cexpr::Vector<double, n_nodes> weights {
-      std::array<double, n_nodes> {0.500000000000000, 0.500000000000000}
+      std::array<double, n_nodes> {
+	0.500000000000000, 0.500000000000000}
     };
 };
 
 // 1D 3 point formula
-template <> struct fe_quadrature_simplex<1, 3> {
+template <> struct fe_quadrature_simplex<1, 3> : public fe_quadrature_simplex_base {
     static constexpr int local_dim = 1;
     static constexpr int n_nodes = 3;
 
     static constexpr cexpr::Vector<double, n_nodes> nodes {
-      std::array<double, n_nodes> {0.112701665379258, 0.500000000000000, 0.887298334620741}
+      std::array<double, n_nodes> {
+	0.112701665379258,
+	0.500000000000000,
+	0.887298334620741}
     };
     static constexpr cexpr::Vector<double, n_nodes> weights {
-      std::array<double, n_nodes> {0.277777777777778, 0.444444444444444, 0.277777777777778}
+      std::array<double, n_nodes> {
+	0.277777777777778, 0.444444444444444, 0.277777777777778}
     };
 };
 
 // 2D 1 point formula
-template <> struct fe_quadrature_simplex<2, 1> {
+template <> struct fe_quadrature_simplex<2, 1> : public fe_quadrature_simplex_base {
     static constexpr int local_dim = 2;
     static constexpr int n_nodes = 1;
 
     static constexpr cexpr::Matrix<double, n_nodes, local_dim> nodes {
-      std::array<double, n_nodes * local_dim> {0.333333333333333, 0.333333333333333}
+      std::array<double, n_nodes * local_dim> {
+	0.333333333333333, 0.333333333333333}
     };
     static constexpr cexpr::Vector<double, n_nodes> weights {
       std::array<double, n_nodes> {1.000000000000000}
@@ -64,7 +76,7 @@ template <> struct fe_quadrature_simplex<2, 1> {
 };
 
 // 2D 3 point formula
-template <> struct fe_quadrature_simplex<2, 3> {
+template <> struct fe_quadrature_simplex<2, 3> : public fe_quadrature_simplex_base {
     static constexpr int local_dim = 2;
     static constexpr int n_nodes = 3;
 
@@ -75,12 +87,13 @@ template <> struct fe_quadrature_simplex<2, 3> {
         0.166666666666667, 0.666666666666667}
     };
     static constexpr cexpr::Vector<double, n_nodes> weights {
-      std::array<double, n_nodes> {0.333333333333333, 0.333333333333333, 0.333333333333333}
+      std::array<double, n_nodes> {
+	0.333333333333333, 0.333333333333333, 0.333333333333333}
     };
 };
 
 // 2D 6 point formula
-template <> struct fe_quadrature_simplex<2, 6> {
+template <> struct fe_quadrature_simplex<2, 6> : public fe_quadrature_simplex_base {
     static constexpr int local_dim = 2;
     static constexpr int n_nodes = 6;
 
@@ -101,7 +114,7 @@ template <> struct fe_quadrature_simplex<2, 6> {
 };
 
 // 2D 6 point formula
-template <> struct fe_quadrature_simplex<2, 7> {
+template <> struct fe_quadrature_simplex<2, 7> : public fe_quadrature_simplex_base {
     static constexpr int local_dim = 2;
     static constexpr int n_nodes = 7;
 
@@ -124,6 +137,16 @@ template <> struct fe_quadrature_simplex<2, 7> {
 };
   
 }   // namespace internals
+
+// 1D formulas
+[[maybe_unused]] static struct QS1D2P_ : internals::fe_quadrature_simplex<1, 2> { } QS1D2P;
+[[maybe_unused]] static struct QS1D3P_ : internals::fe_quadrature_simplex<1, 3> { } QS1D3P;
+// 2D formulas
+[[maybe_unused]] static struct QS2D1P_ : internals::fe_quadrature_simplex<2, 1> { } QS2D1P;
+[[maybe_unused]] static struct QS2D3P_ : internals::fe_quadrature_simplex<2, 3> { } QS2D3P;
+[[maybe_unused]] static struct QS2D6P_ : internals::fe_quadrature_simplex<2, 6> { } QS2D6P;
+[[maybe_unused]] static struct QS2D7P_ : internals::fe_quadrature_simplex<2, 7> { } QS2D7P;
+  
 }   // namespace fdapde
 
 #endif   // __FE_INTEGRATION_H__

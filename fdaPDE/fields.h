@@ -26,5 +26,6 @@
 #include "fields/norm.h"
 #include "fields/polynomial.h"
 #include "fields/scalar_field.h"
+#include "fields/space_time_field.h"
 
 #endif   // __FDAPDE_FIELDS_MODULE_H__

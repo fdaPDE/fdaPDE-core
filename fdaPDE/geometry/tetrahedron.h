@@ -94,8 +94,8 @@ class Tetrahedron : public Simplex<Triangulation::local_dim, Triangulation::embe
     FaceType face(int n) const { return FaceType(mesh_->cell_to_faces()(id_, n), mesh_); }
 
     // iterator over tetrahedron edges
-    class edge_iterator : public index_based_iterator<edge_iterator, EdgeType> {
-        using Base = index_based_iterator<edge_iterator, EdgeType>;
+    class edge_iterator : public internals::index_iterator<edge_iterator, EdgeType> {
+        using Base = internals::index_iterator<edge_iterator, EdgeType>;
         using Base::index_;
         friend Base;
         const Tetrahedron* t_;
@@ -112,8 +112,8 @@ class Tetrahedron : public Simplex<Triangulation::local_dim, Triangulation::embe
     edge_iterator edges_begin() const { return edge_iterator(0, this); }
     edge_iterator edges_end() const { return edge_iterator(this->n_edges, this); }
     // iterator over tetrahedron faces
-    class face_iterator : public index_based_iterator<face_iterator, FaceType> {
-        using Base = index_based_iterator<face_iterator, FaceType>;
+    class face_iterator : public internals::index_iterator<face_iterator, FaceType> {
+        using Base = internals::index_iterator<face_iterator, FaceType>;
         using Base::index_;
         friend Base;
         const Tetrahedron* t_;

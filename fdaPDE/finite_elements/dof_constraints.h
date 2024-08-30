@@ -17,6 +17,8 @@
 #ifndef __DOF_CONSTRAINTS_H__
 #define __DOF_CONSTRAINTS_H__
 
+#include "../linear_algebra/binary_matrix.h"
+
 namespace fdapde {
 
 template <int LocalDim, int EmbedDim> class DofHandler;
@@ -32,14 +34,30 @@ template <int LocalDim, int EmbedDim> class DofConstraints {
     DofConstraints(const DofHandler<local_dim, embed_dim>& dof_handler) : dof_handler_(&dof_handler) { }
 
     // guarantees that the linear system Ax = b is such that all (affine) constraints are respected
+    void enforce_constraints(SpMatrix<double>& A) const {
+	BinaryMatrix<Dynamic> A_mask(A.rows(), A.cols());
+        for (const fdapde::Triplet<double>& triplet : constraint_pattern_) {
+            if (!A_mask(triplet.row(), triplet.col())) {   // guaratees only the first constraint is set
+                A.coeffRef(triplet.row(), triplet.col()) = triplet.value() * eps;
+                A_mask.set(triplet.row(), triplet.col());
+            }
+        }
+        return;
+    }
+    void enforce_constraints(DVector<double>& b) const {
+	BinaryVector<Dynamic> b_mask(b.rows());
+        for (const fdapde::Duplet<double>& duplet : constraint_values_) {
+            if (!b_mask[duplet.row()]) {
+                b[duplet.row()] = duplet.value() * eps;
+                b_mask.set(duplet.row());
+            }
+        }
+        return;
+    }
     void enforce_constraints(SpMatrix<double>& A, DVector<double>& b) const {
         fdapde_assert(A.rows() == b.rows());
-        // enforce constraint pattern on system matrix A
-        for (const fdapde::Triplet<double>& triplet : constraint_pattern_) {
-            A.coeffRef(triplet.row(), triplet.col()) = triplet.value() * eps;
-        }
-        // enforce constraint value on rhs vector b
-        for (const fdapde::Duplet<double>& duplet : constraint_values_) { b[duplet.row()] = duplet.value() * eps; }
+	enforce_constraints(A);
+	enforce_constraints(b);
         return;
     }
     // set dirichlet constraint type on boundary nodes marked on (diagonal constraint pattern)

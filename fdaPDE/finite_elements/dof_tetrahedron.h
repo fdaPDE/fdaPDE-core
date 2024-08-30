@@ -124,8 +124,8 @@ template <typename DofHandler> class DofTetrahedron : public Tetrahedron<typenam
         return FaceType(dof_handler_->triangulation()->cell_to_faces()(Base::id(), n), dof_handler_);
     }
     // iterator over tetrahedron edges
-    class edge_iterator : public index_based_iterator<edge_iterator, EdgeType> {
-        using Base = index_based_iterator<edge_iterator, EdgeType>;
+    class edge_iterator : public internals::index_iterator<edge_iterator, EdgeType> {
+        using Base = internals::index_iterator<edge_iterator, EdgeType>;
         using Base::index_;
         friend Base;
         const DofTetrahedron* t_;
@@ -142,8 +142,8 @@ template <typename DofHandler> class DofTetrahedron : public Tetrahedron<typenam
     edge_iterator edges_begin() const { return edge_iterator(0, this); }
     edge_iterator edges_end() const { return edge_iterator(this->n_edges, this); }
     // iterator over tetrahedron faces
-    class face_iterator : public index_based_iterator<face_iterator, FaceType> {
-        using Base = index_based_iterator<face_iterator, FaceType>;
+    class face_iterator : public internals::index_iterator<face_iterator, FaceType> {
+        using Base = internals::index_iterator<face_iterator, FaceType>;
         using Base::index_;
         friend Base;
         const DofTetrahedron* t_;

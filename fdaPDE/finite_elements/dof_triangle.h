@@ -80,8 +80,8 @@ class DofTriangle : public Triangle<typename DofHandler::TriangulationType> {
         fdapde_assert(n < Base::n_edges);
         return EdgeType(dof_handler_->triangulation()->cell_to_edges()(Base::id(), n), dof_handler_);
     }
-    class edge_iterator : public index_based_iterator<edge_iterator, EdgeType> {
-        using Base = index_based_iterator<edge_iterator, EdgeType>;
+    class edge_iterator : public internals::index_iterator<edge_iterator, EdgeType> {
+        using Base = internals::index_iterator<edge_iterator, EdgeType>;
         using Base::index_;
         friend Base;
         const DofTriangle* t_;

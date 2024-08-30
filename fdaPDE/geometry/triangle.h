@@ -25,6 +25,7 @@ namespace fdapde {
 // an element is a geometric object bounded to a mesh. It carries both geometrical and connectivity informations
 template <typename Triangulation> class Triangle : public Simplex<Triangulation::local_dim, Triangulation::embed_dim> {
     fdapde_static_assert(Triangulation::local_dim == 2, THIS_CLASS_IS_FOR_TRIANGULAR_MESHES_ONLY);
+    using Base = Simplex<Triangulation::local_dim, Triangulation::embed_dim>;
    public:
     // constructor
     Triangle() = default;
@@ -53,6 +54,7 @@ template <typename Triangulation> class Triangle : public Simplex<Triangulation:
         DVector<int> node_ids() const { return mesh_->edges().row(edge_id_); }
         int id() const { return edge_id_; }
         DVector<int> adjacent_cells() const { return mesh_->edge_to_cells().row(edge_id_); }
+        int marker() const { return mesh_->edges_markers()[edge_id_]; }   // mesh edge's marker
     };
 
     // getters
@@ -68,8 +70,8 @@ template <typename Triangulation> class Triangle : public Simplex<Triangulation:
     }
 
     // iterator over triangle edge
-    class edge_iterator : public index_based_iterator<edge_iterator, EdgeType> {
-        using Base = index_based_iterator<edge_iterator, EdgeType>;
+    class edge_iterator : public internals::index_iterator<edge_iterator, EdgeType> {
+        using Base = internals::index_iterator<edge_iterator, EdgeType>;
         using Base::index_;
         friend Base;
         const Triangle* t_;
@@ -79,7 +81,7 @@ template <typename Triangulation> class Triangle : public Simplex<Triangulation:
             return *this;
         }
        public:
-      edge_iterator(int index, const Triangle* t) : Base(index, 0, t_->n_edges), t_(t) {
+        edge_iterator(int index, const Triangle* t) : Base(index, 0, t_->n_edges), t_(t) {
             if (index_ < t_->n_edges) operator()(index_);
         }
     };

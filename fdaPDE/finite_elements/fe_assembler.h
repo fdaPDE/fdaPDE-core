@@ -21,6 +21,7 @@
 
 #include "../fields/meta.h"
 #include "../linear_algebra/constexpr_matrix.h"
+#include "fe_integration.h"
 
 namespace fdapde {
 
@@ -199,8 +200,8 @@ template <typename FunctionSpace_, typename... Quadrature_> class fe_face_assemb
             return std::get<0>(std::tuple<Quadrature_...>());
         }
     }());
-    using geo_iterator = typename Triangulation<local_dim, embed_dim>::boundary_face_iterator;
-    using dof_iterator = typename DofHandler<local_dim, embed_dim>::boundary_face_iterator;
+    using geo_iterator = typename Triangulation<local_dim, embed_dim>::boundary_iterator;
+    using dof_iterator = typename DofHandler<local_dim, embed_dim>::boundary_iterator;
 };
 
 // traits for integration \int_D (...)
@@ -217,6 +218,8 @@ template <typename FunctionSpace_, typename... Quadrature_> class fe_cell_assemb
             return std::get<0>(std::tuple<Quadrature_...>());
         }
     }());
+    fdapde_static_assert(
+      internals::is_fe_quadrature_simplex<Quadrature>, SUPPLIED_QUADRATURE_FORMULA_IS_NOT_FOR_SIMPLEX_INTEGRATION);
     using geo_iterator = typename Triangulation<local_dim, embed_dim>::cell_iterator;
     using dof_iterator = typename DofHandler<local_dim, embed_dim>::cell_iterator;
 };
@@ -363,8 +366,8 @@ class fe_matrix_assembly_loop :
     }
     void assemble(std::vector<Eigen::Triplet<double>>& triplet_list) const {
         using iterator = typename Base::fe_traits::dof_iterator;
-        iterator begin(Base::begin_.index(), dof_handler_);
-        iterator end  (Base::end_.index(),   dof_handler_);
+        iterator begin(Base::begin_.index(), dof_handler_, Base::begin_.marker());
+        iterator end  (Base::end_.index(),   dof_handler_, Base::end_.marker());
         // prepare assembly loop
         DVector<int> active_dofs;
         std::array<cexpr::Matrix<double, local_dim, n_quadrature_nodes>, n_basis>
@@ -449,8 +452,8 @@ class fe_vector_assembly_loop :
     }
     void assemble(DVector<double>& assembled_vec) const {
         using iterator = typename Base::fe_traits::dof_iterator;
-        iterator begin(Base::begin_.index(), dof_handler_);
-        iterator end  (Base::end_.index(),   dof_handler_);
+        iterator begin(Base::begin_.index(), dof_handler_, Base::begin_.marker());
+        iterator end  (Base::end_.index(),   dof_handler_, Base::end_.marker());
         // prepare assembly loop
         DVector<int> active_dofs;
         std::unordered_map<const void*, DMatrix<double>> fe_map_buff;   // evaluation of FeMap nodes at quadrature nodes
@@ -474,7 +477,7 @@ class fe_vector_assembly_loop :
                         fe_packet.quad_node_id = local_cell_id * n_quadrature_nodes + q_k;
                     }
                     value += Base::Quadrature::weights[q_k] * form_(fe_packet);
-                }
+                }		
                 assembled_vec[active_dofs[i]] += value * fe_packet.cell_measure;
             }
 	    local_cell_id++;
@@ -535,7 +538,7 @@ template <typename Triangulation, int Options, typename... Quadrature> class FeG
       sizeof...(Quadrature) < 2, YOU_CAN_PROVIDE_AT_MOST_ONE_QUADRATURE_FORMULA_TO_A_FE_CELL_ASSEMBLER);
     std::tuple<Quadrature...> quadrature_;
     std::conditional_t<
-      Options == CellMajor, typename Triangulation::cell_iterator, typename Triangulation::boundary_face_iterator>
+      Options == CellMajor, typename Triangulation::cell_iterator, typename Triangulation::boundary_iterator>
       begin_, end_;
    public:
     FeGalerkinAssembler() = default;
@@ -584,12 +587,16 @@ auto integral(
   const CellIterator<Triangulation>& begin, const CellIterator<Triangulation>& end, Quadrature... quadrature) {
     return FeCellGalerkinAssembler<Triangulation, Quadrature...>(begin, end, quadrature...);
 }
-// surface integration
+// boundary integration
 template <typename Triangulation, typename... Quadrature>
 auto integral(
-  const BoundaryIterator<Triangulation, Quadrature...>& begin, const BoundaryIterator<Triangulation>& end,
-  Quadrature... quadrature) {
-    return FeFaceGalerkinAssembler<Triangulation>(begin, end, quadrature...);
+  const BoundaryIterator<Triangulation>& begin, const BoundaryIterator<Triangulation>& end, Quadrature... quadrature) {
+    return FeFaceGalerkinAssembler<Triangulation, Quadrature...>(begin, end, quadrature...);
+}
+template <typename Triangulation, typename... Quadrature>
+auto integral(
+  const std::pair<BoundaryIterator<Triangulation>, BoundaryIterator<Triangulation>>& range, Quadrature... quadrature) {
+    return FeFaceGalerkinAssembler<Triangulation, Quadrature...>(range.first, range.second, quadrature...);
 }
 
 }   // namespace fdapde

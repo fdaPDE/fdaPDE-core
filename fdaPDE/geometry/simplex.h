@@ -139,8 +139,8 @@ template <int Order_, int EmbedDim_> class Simplex {
     }
 
     // iterator over boundary faces
-    class boundary_iterator : public index_based_iterator<boundary_iterator, BoundaryCellType> {
-        using Base = index_based_iterator<boundary_iterator, BoundaryCellType>;
+    class boundary_iterator : public internals::index_iterator<boundary_iterator, BoundaryCellType> {
+        using Base = internals::index_iterator<boundary_iterator, BoundaryCellType>;
         using Base::index_;
         friend Base;
         const Simplex* s_;

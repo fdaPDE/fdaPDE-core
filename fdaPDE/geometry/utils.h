@@ -21,23 +21,7 @@
 #include "../utils/symbols.h"
 
 namespace fdapde {
-
-// trait to detect if a mesh is a manifold
-template <int M, int N> struct is_manifold {
-    static constexpr bool value = (M != N);
-};
-
-// macro for the definition of mesh type detection
-#define DEFINE_MESH_TYPE_DETECTION_TRAIT(M_, N_, name)                                                                 \
-    template <int M, int N> struct is_##name {                                                                         \
-        static constexpr bool value =                                                                                  \
-          std::conditional<(M == M_ && N == N_), std::true_type, std::false_type>::type::value;                        \
-    };
-
-DEFINE_MESH_TYPE_DETECTION_TRAIT(1, 2, network);   // is_network<M, N>
-DEFINE_MESH_TYPE_DETECTION_TRAIT(2, 2, 2d);        // is_2d<M, N>
-DEFINE_MESH_TYPE_DETECTION_TRAIT(2, 3, surface);   // is_surface<M, N>
-DEFINE_MESH_TYPE_DETECTION_TRAIT(3, 3, 3d);        // is_3d<M, N>
+namespace internals {
 
 // sorts a range of points in clockwise order around their geometrical center
 template <typename T> struct clockwise_order {
@@ -60,8 +44,7 @@ template <typename T> struct clockwise_order {
     }
 };
 
-template <typename Iterator, typename ValueType> class index_based_iterator {
-    using This = index_based_iterator<Iterator, ValueType>;
+template <typename IteratorType, typename ValueType> class index_iterator {
    public:
     using value_type = ValueType;
     using pointer = std::conditional_t<
@@ -69,12 +52,12 @@ template <typename Iterator, typename ValueType> class index_based_iterator {
     using reference = std::conditional_t<
       std::is_pointer_v<ValueType>, std::add_lvalue_reference_t<std::remove_pointer_t<std::decay_t<ValueType>>>,
       std::add_lvalue_reference_t<std::decay_t<ValueType>>>;
-    using size_type         = std::size_t;
-    using difference_type   = std::ptrdiff_t;
+    using size_type = std::size_t;
+    using difference_type = std::ptrdiff_t;
     using iterator_category = std::bidirectional_iterator_tag;
 
-    index_based_iterator() = default;
-    index_based_iterator(int index, int begin, int end) : index_(index), begin_(begin), end_(end) { }
+    index_iterator() = default;
+    index_iterator(int index, int begin, int end) : index_(index), begin_(begin), end_(end) { }
     reference operator*() { if constexpr(std::is_pointer_v<ValueType>) { return *val_; } else { return val_; } }
     const reference operator*() const {
         if constexpr (std::is_pointer_v<ValueType>) {
@@ -91,43 +74,66 @@ template <typename Iterator, typename ValueType> class index_based_iterator {
             return &val_;
         }
     }
-    Iterator operator++(int) {
-        Iterator tmp(index_, static_cast<Iterator*>(this));
-        ++(static_cast<Iterator&>(*this));
+    IteratorType operator++(int) {
+        IteratorType tmp(index_, static_cast<IteratorType*>(this));
+        ++(derived());
         return tmp;
     }
-    Iterator operator--(int) {
-        Iterator tmp(index_, static_cast<Iterator*>(this));
-        --(static_cast<Iterator&>(*this));
+    IteratorType operator--(int) {
+        IteratorType tmp(index_, static_cast<IteratorType*>(this));
+        --(derived());
         return tmp;
     }
-    Iterator& operator++() {
+    IteratorType& operator++() {
         index_++;
-        if (index_ < end_) static_cast<Iterator&>(*this)(index_);
-        return static_cast<Iterator&>(*this);
+        if (index_ < end_) derived().operator()(index_);
+        return derived();
     }
-    Iterator& operator--() {
+    IteratorType& operator--() {
         --index_;
-        if (index_ >= begin_) static_cast<Iterator&>(*this)(index_);
-        return static_cast<Iterator&>(*this);
+        if (index_ >= begin_) derived().operator()(index_);
+        return derived();
     }
-    Iterator& operator+(int i) {
-        index_ = index_ + i;
-        return static_cast<Iterator&>(*this)(index_);
+    friend bool
+    operator!=(const index_iterator<IteratorType, ValueType>& lhs, const index_iterator<IteratorType, ValueType>& rhs) {
+        return lhs.index_ != rhs.index_;
     }
-    Iterator& operator-(int i) {
-        index_ = index_ - i;
-        return static_cast<Iterator&>(*this)(index_);
+    friend bool
+    operator==(const index_iterator<IteratorType, ValueType>& lhs, const index_iterator<IteratorType, ValueType>& rhs) {
+        return lhs.index_ == rhs.index_;
     }
-    friend bool operator!=(const This& lhs, const This& rhs) { return lhs.index_ != rhs.index_; }
-    friend bool operator==(const This& lhs, const This& rhs) { return lhs.index_ == rhs.index_; }
     int index() const { return index_; }
+    IteratorType& derived() { return static_cast<IteratorType&>(*this); }
    protected:
     int index_;
     int begin_, end_;
     value_type val_;
 };
 
+template <typename IteratorType, typename ValueType>
+class filtering_iterator : public index_iterator<IteratorType, ValueType> {
+    using Base = index_iterator<IteratorType, ValueType>;
+   protected:
+    using Base::index_;
+    BinaryVector<fdapde::Dynamic> filter_;
+   public:
+    filtering_iterator(int index, int begin, int end, const BinaryVector<fdapde::Dynamic>& filter) :
+        Base(index, begin, end), filter_(filter) { /* initialization is responsibility of IteratorType */ }
+    IteratorType& operator++() {
+        index_++;
+        for (; index_ < Base::end_ && !filter_[index_]; ++index_);
+        if (index_ == Base::end_) return Base::derived();
+        return Base::derived().operator()(index_);
+    }
+    IteratorType& operator--() {
+        index_--;
+        for (; index_ >= Base::begin_ && !filter_[index_]; --index_);
+        if (index_ == -1) return Base::derived();
+        return Base::derived().operator()(index_);
+    }
+};
+
+}   // namespace internals
 }   // namespace fdapde
 
 #endif   // __MESH_UTILS_H__
