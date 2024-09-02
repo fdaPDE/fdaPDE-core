@@ -78,7 +78,7 @@ template <int Order> struct FeP {
                 if constexpr (n_dofs_internal > 0) {
                     // add simplex barycenter
                     dofs_phys_coords_.row(j++) =
-                      (reference_simplex.col(1) + reference_simplex.col(2)) * 1.0 / (local_dim + 1);
+                      (reference_simplex.col(1) + reference_simplex.col(2)).transpose() * 1.0 / (local_dim + 1);
                 }
             }
             if constexpr (local_dim == 3) {
@@ -126,7 +126,7 @@ template <int Order> struct FeP {
     template <int LocalDim> class select_cell_quadrature {
         static constexpr int select_quadrature_() {
             if (LocalDim == 1) return Order == 1 ? 2 : (Order == 2 ? 3 : 3);
-            if (LocalDim == 2) return Order == 1 ? 3 : (Order == 2 ? 6 : 6);
+            if (LocalDim == 2) return Order == 1 ? 3 : (Order == 2 ? 6 : 12);
             if (LocalDim == 3) return Order == 1 ? 4 : (Order == 2 ? 5 : 5);
         }
        public:

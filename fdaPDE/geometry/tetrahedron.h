@@ -20,6 +20,7 @@
 #include <unordered_set>
 #include "../utils/symbols.h"
 #include "simplex.h"
+#include "utils.h"
 
 namespace fdapde {
 

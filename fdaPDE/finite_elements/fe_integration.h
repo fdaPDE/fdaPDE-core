@@ -34,13 +34,10 @@ template <> struct fe_quadrature_simplex<1, 2> : public fe_quadrature_simplex_ba
     static constexpr int n_nodes = 2;
 
     static constexpr cexpr::Vector<double, n_nodes> nodes {
-      std::array<double, n_nodes> {
-	0.211324865405187,
-	0.788675134594812}
+      std::array<double, n_nodes> {0.211324865405187, 0.788675134594812}
     };
     static constexpr cexpr::Vector<double, n_nodes> weights {
-      std::array<double, n_nodes> {
-	0.500000000000000, 0.500000000000000}
+      std::array<double, n_nodes> {0.500000000000000, 0.500000000000000}
     };
 };
 
@@ -50,14 +47,10 @@ template <> struct fe_quadrature_simplex<1, 3> : public fe_quadrature_simplex_ba
     static constexpr int n_nodes = 3;
 
     static constexpr cexpr::Vector<double, n_nodes> nodes {
-      std::array<double, n_nodes> {
-	0.112701665379258,
-	0.500000000000000,
-	0.887298334620741}
+      std::array<double, n_nodes> {0.112701665379258, 0.500000000000000, 0.887298334620741}
     };
     static constexpr cexpr::Vector<double, n_nodes> weights {
-      std::array<double, n_nodes> {
-	0.277777777777778, 0.444444444444444, 0.277777777777778}
+      std::array<double, n_nodes> {0.277777777777778, 0.444444444444444, 0.277777777777778}
     };
 };
 
@@ -67,8 +60,7 @@ template <> struct fe_quadrature_simplex<2, 1> : public fe_quadrature_simplex_ba
     static constexpr int n_nodes = 1;
 
     static constexpr cexpr::Matrix<double, n_nodes, local_dim> nodes {
-      std::array<double, n_nodes * local_dim> {
-	0.333333333333333, 0.333333333333333}
+      std::array<double, n_nodes * local_dim> {0.333333333333333, 0.333333333333333}
     };
     static constexpr cexpr::Vector<double, n_nodes> weights {
       std::array<double, n_nodes> {1.000000000000000}
@@ -82,9 +74,8 @@ template <> struct fe_quadrature_simplex<2, 3> : public fe_quadrature_simplex_ba
 
     static constexpr cexpr::Matrix<double, n_nodes, local_dim> nodes {
       std::array<double, n_nodes * local_dim> {
-        0.166666666666667, 0.166666666666667,
-        0.666666666666667, 0.166666666666667,
-        0.166666666666667, 0.666666666666667}
+	0.166666666666667, 0.166666666666667, 0.666666666666667, 0.166666666666667, 0.166666666666667,
+	0.666666666666667}
     };
     static constexpr cexpr::Vector<double, n_nodes> weights {
       std::array<double, n_nodes> {
@@ -99,40 +90,53 @@ template <> struct fe_quadrature_simplex<2, 6> : public fe_quadrature_simplex_ba
 
     static constexpr cexpr::Matrix<double, n_nodes, local_dim> nodes {
       std::array<double, n_nodes * local_dim> {
-	0.445948490915965, 0.445948490915965,
-	0.445948490915965, 0.108103018168070,
-	0.108103018168070, 0.445948490915965,
-	0.091576213509771, 0.091576213509771,
-	0.091576213509771, 0.816847572980459,
+	0.445948490915965, 0.445948490915965, 0.445948490915965, 0.108103018168070, 0.108103018168070,
+	0.445948490915965, 0.091576213509771, 0.091576213509771, 0.091576213509771, 0.816847572980459,
 	0.816847572980459, 0.091576213509771}
     };
     static constexpr cexpr::Vector<double, n_nodes> weights {
       std::array<double, n_nodes> {
-	0.223381589678011, 0.223381589678011, 0.223381589678011,
-	0.109951743655322, 0.109951743655322, 0.109951743655322}
+	0.223381589678011, 0.223381589678011, 0.223381589678011, 0.109951743655322, 0.109951743655322,
+	0.109951743655322}
     };
 };
 
-// 2D 6 point formula
+// 2D 7 point formula
 template <> struct fe_quadrature_simplex<2, 7> : public fe_quadrature_simplex_base {
     static constexpr int local_dim = 2;
     static constexpr int n_nodes = 7;
 
     static constexpr cexpr::Matrix<double, n_nodes, local_dim> nodes {
       std::array<double, n_nodes * local_dim> {
-	0.333333333333333, 0.333333333333333,
-	0.101286507323456, 0.101286507323456,
-	0.101286507323456, 0.797426985353087,
-	0.797426985353087, 0.101286507323456,
-	0.470142064105115, 0.470142064105115,
-	0.470142064105115, 0.059715871789770,
-	0.059715871789770, 0.470142064105115}
+	0.333333333333333, 0.333333333333333, 0.101286507323456, 0.101286507323456, 0.101286507323456,
+	0.797426985353087, 0.797426985353087, 0.101286507323456, 0.470142064105115, 0.470142064105115,
+	0.470142064105115, 0.059715871789770, 0.059715871789770, 0.470142064105115}
     };
     static constexpr cexpr::Vector<double, n_nodes> weights {
       std::array<double, n_nodes> {
-	0.225000000000000, 0.125939180544827, 0.125939180544827,
-	0.125939180544827, 0.132394152788506, 0.132394152788506,
-	0.132394152788506}
+	0.225000000000000, 0.125939180544827, 0.125939180544827, 0.125939180544827, 0.132394152788506,
+	0.132394152788506, 0.132394152788506}
+    };
+};
+
+// 2D 12 point formula
+template <> struct fe_quadrature_simplex<2, 12> : public fe_quadrature_simplex_base {
+    static constexpr int local_dim = 2;
+    static constexpr int n_nodes = 12;
+
+    static constexpr cexpr::Matrix<double, n_nodes, local_dim> nodes {
+      std::array<double, n_nodes * local_dim> {
+	0.873821971016996, 0.063089014491502, 0.063089014491502, 0.873821971016996, 0.063089014491502,
+	0.063089014491502, 0.501426509658179, 0.249286745170910, 0.249286745170910, 0.501426509658179,
+	0.249286745170910, 0.249286745170910, 0.636502499121399, 0.310352451033785, 0.636502499121399,
+	0.053145049844816, 0.310352451033785, 0.636502499121399, 0.310352451033785, 0.053145049844816,
+	0.053145049844816, 0.636502499121399, 0.053145049844816, 0.310352451033785}
+    };
+    static constexpr cexpr::Vector<double, n_nodes> weights {
+      std::array<double, n_nodes> {
+	0.050844906370207, 0.050844906370207, 0.050844906370207, 0.116786275726379, 0.116786275726379,
+	0.116786275726379, 0.082851075618374, 0.082851075618374, 0.082851075618374, 0.082851075618374,
+	0.082851075618374, 0.082851075618374}
     };
 };
   

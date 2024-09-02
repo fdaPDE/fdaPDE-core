@@ -21,6 +21,15 @@
 #include "../utils/symbols.h"
 
 namespace fdapde {
+
+// flgas
+[[maybe_unused]] static constexpr int cache_cells = 0x0001;
+
+// special marker values
+[[maybe_unused]] static constexpr int BoundaryAll = -1;
+[[maybe_unused]] static constexpr int TriangulationAll = -2;
+[[maybe_unused]] static constexpr int Unmarked = -3;
+
 namespace internals {
 
 // sorts a range of points in clockwise order around their geometrical center

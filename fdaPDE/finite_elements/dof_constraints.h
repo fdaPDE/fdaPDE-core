@@ -61,12 +61,12 @@ template <int LocalDim, int EmbedDim> class DofConstraints {
         return;
     }
     // set dirichlet constraint type on boundary nodes marked on (diagonal constraint pattern)
-    template <typename Callable> void set_dirichlet_constraint(int on, const Callable& g) {
-        int n_boundary_dofs = dof_handler_->n_boundary_dofs(on);
-        fdapde_assert(n_boundary_dofs > 0);
+    template <typename Callable> void set_dirichlet_constraint(int marker, const Callable& g) {
+        int n_boundary_dofs = dof_handler_->n_boundary_dofs(marker);
+        fdapde_assert(marker == BoundaryAll || n_boundary_dofs > 0);
         for (typename DofHandler<local_dim, embed_dim>::boundary_dofs_iterator it =
-               dof_handler_->boundary_dofs_begin(on);
-             it != dof_handler_->boundary_dofs_end(on); ++it) {
+               dof_handler_->boundary_dofs_begin(marker);
+             it != dof_handler_->boundary_dofs_end(marker); ++it) {
             int dof_id = it->id();
             constraint_pattern_.emplace_back(dof_id, dof_id, 1.0);
             constraint_values_.emplace_back(dof_id, g(it->coord()));

@@ -43,12 +43,14 @@ template <int LocalDim, int EmbedDim, typename Derived> class DofHandlerBase {
     const DMatrix<int, Eigen::RowMajor>& dofs() const { return dofs_; }
     int n_dofs() const { return n_dofs_; }
     bool is_dof_on_boundary(int i) const { return boundary_dofs_[i]; }
-    int dof_marker(int i) const { return dofs_markers_[i]; }
+    Eigen::Map<const DVector<int>> dofs_markers() const {
+        return Eigen::Map<const DVector<int>>(dofs_markers_.data(), n_dofs_, 1);
+    }
     const TriangulationType* triangulation() const { return triangulation_; }
     int n_boundary_dofs() const { return boundary_dofs_.count(); }
     int n_boundary_dofs(int marker) const {
         int i = 0, sum = 0;
-        for (auto dof_marker : dofs_markers_) { sum += (dof_marker == marker && boundary_dofs_[i++]) ? 1 : 0; }
+        for (int dof_marker : dofs_markers_) { sum += (dof_marker == marker && boundary_dofs_[i++]) ? 1 : 0; }
         return sum;
     }
     std::vector<int> filter_dofs_by_marker(int marker) const {
@@ -58,16 +60,15 @@ template <int LocalDim, int EmbedDim, typename Derived> class DofHandlerBase {
         }
         return result;
     }
-    DVector<int> active_dofs(int cell_id) const { return dofs_.row(cell_id); }
-    bool has_markers() const { return dofs_markers_.size() != 0; }
+    DVector<int> active_dofs(int cell_id) const { return dofs_.row(cell_id); }   // dofs located on cell with ID cell_id
     operator bool() const { return n_dofs_ != 0; }
     Eigen::Map<const DVector<int>> dofs_to_cell() const {
         return Eigen::Map<const DVector<int>>(dofs_to_cell_.data(), n_dofs_, 1);
     }
 
-    // iterates over geometric cells coupled with dofs informations
-    class cell_iterator : public internals::index_iterator<cell_iterator, CellType> {
-        using Base = internals::index_iterator<cell_iterator, CellType>;
+    // iterates over geometric cells coupled with dofs informations (possibly filtered by marker)
+    class cell_iterator : public internals::filtering_iterator<cell_iterator, CellType> {
+        using Base = internals::filtering_iterator<cell_iterator, CellType>;
         using Base::index_;
         friend Base;
         const Derived* dof_handler_;
@@ -78,17 +79,33 @@ template <int LocalDim, int EmbedDim, typename Derived> class DofHandlerBase {
         }
        public:
         cell_iterator() = default;
-      cell_iterator(int index, const Derived* dof_handler, int marker) :
-	  Base(index, 0, dof_handler->triangulation()->n_cells()), dof_handler_(dof_handler), marker_(marker) {
-            if (index_ < dof_handler_->triangulation()->n_cells()) operator()(index_);
+        cell_iterator(int index, const Derived* dof_handler, const BinaryVector<fdapde::Dynamic>& filter, int marker) :
+            Base(index, 0, dof_handler->triangulation()->n_cells(), filter),
+            dof_handler_(dof_handler),
+            marker_(marker) {
+            for (; index_ < Base::end_ && !filter[index_]; ++index_);
+            if (index_ != Base::end_) { operator()(index_); }
         }
+        cell_iterator(int index, const Derived* dof_handler, int marker) :
+            cell_iterator(
+              index, dof_handler,
+              marker == TriangulationAll ?
+                BinaryVector<fdapde::Dynamic>::Ones(dof_handler->triangulation()->n_cells()) :   // apply no filter
+                fdapde::make_binary_vector(
+                  dof_handler->triangulation()->cells_markers().begin(),
+                  dof_handler->triangulation()->cells_markers().end(), marker),
+              marker) { }
         int marker() const { return marker_; }
-    };
-    cell_iterator cells_begin() const { return cell_iterator(0, static_cast<const Derived*>(this)); }
-    cell_iterator cells_end() const {
-        return cell_iterator(triangulation_->n_cells(), static_cast<const Derived*>(this));
+    };  
+    cell_iterator cells_begin(int marker = TriangulationAll) const {
+        const std::vector<int>& cells_markers = triangulation_->cells_markers();
+        fdapde_assert(marker == TriangulationAll || (marker >= 0 && cells_markers.size() != 0));
+        return cell_iterator(0, static_cast<const Derived*>(this), marker);
     }
-
+    cell_iterator cells_end(int marker = TriangulationAll) const {
+        fdapde_assert(marker == TriangulationAll || (marker >= 0 && triangulation_->cells_markers().size() != 0));
+        return cell_iterator(triangulation_->n_cells(), static_cast<const Derived*>(this), marker);
+    }
     class BoundaryDofType {
         int id_;
         const Derived* dof_handler_;
@@ -97,7 +114,6 @@ template <int LocalDim, int EmbedDim, typename Derived> class DofHandlerBase {
         BoundaryDofType(int id, const Derived* dof_handler) : id_(id), dof_handler_(dof_handler) { }
         int id() const { return id_; }
         int marker() const { return dof_handler_->dofs_markers_[id_]; }
-        int& marker() { return dof_handler_->dofs_markers_[id_]; }
         SVector<embed_dim> coord() const {
 	    int cell_id = dof_handler_->dofs_to_cell()[id_];   // id of cell containing this dof
             int j = 0;   // local dof numbering
@@ -113,47 +129,34 @@ template <int LocalDim, int EmbedDim, typename Derived> class DofHandlerBase {
         using Base::index_;
         friend Base;
         const Derived* dof_handler_;
+        int marker_;
         boundary_dofs_iterator& operator()(int i) {
             Base::val_ = BoundaryDofType(i, dof_handler_);
             return *this;
         }
        public:
-        boundary_dofs_iterator(int index, const Derived* dof_handler, const BinaryVector<fdapde::Dynamic>& filter) :
-            Base(index, 0, dof_handler->n_dofs(), (filter & dof_handler->boundary_dofs_)), dof_handler_(dof_handler) {
-            for (; index_ < Base::end_ && !Base::filter_[index_]; ++index_);
+        boundary_dofs_iterator(
+          int index, const Derived* dof_handler, const BinaryVector<fdapde::Dynamic>& filter, int marker) :
+            Base(index, 0, dof_handler->n_dofs(), filter), dof_handler_(dof_handler), marker_(marker) {
+            for (; index_ < Base::end_ && !filter[index_]; ++index_);
             if (index_ != Base::end_) { operator()(index_); }
         }
-        boundary_dofs_iterator(int index, const Derived* dof_handler) :   // apply boundary filter
-	  Base(index, 0, dof_handler->n_dofs(), dof_handler->boundary_dofs_), dof_handler_(dof_handler) {
-            for (; index_ < Base::end_ && !dof_handler_->boundary_dofs_[index_]; ++index_);
-            if (index_ != Base::end_) { operator()(index_); }
-	}
+        boundary_dofs_iterator(int index, const Derived* dof_handler, int marker) :   // filter boundary dofs by marker
+            boundary_dofs_iterator(
+              index, dof_handler,
+              marker == BoundaryAll ? dof_handler->boundary_dofs_ :
+                                      dof_handler->boundary_dofs_ &
+                                        fdapde::make_binary_vector(
+                                          dof_handler->dofs_markers_.begin(), dof_handler->dofs_markers_.end(), marker),
+              marker) { }
+        int marker() const { return marker_; }
     };
-    boundary_dofs_iterator boundary_dofs_begin(int marker) const {
-        return boundary_dofs_iterator(
-          0, static_cast<const Derived*>(this),
-          fdapde::make_binary_vector(dofs_markers_.begin(), dofs_markers_.end(), marker));
+    boundary_dofs_iterator boundary_dofs_begin(int marker = BoundaryAll) const {
+        return boundary_dofs_iterator(0, static_cast<const Derived*>(this), marker);
     }
-    boundary_dofs_iterator boundary_dofs_end(int marker) const {
-        return boundary_dofs_iterator(
-          n_dofs_, static_cast<const Derived*>(this),
-          fdapde::make_binary_vector(dofs_markers_.begin(), dofs_markers_.end(), marker));
+    boundary_dofs_iterator boundary_dofs_end(int marker = BoundaryAll) const {
+      return boundary_dofs_iterator(n_dofs_, static_cast<const Derived*>(this), marker);
     }
-    boundary_dofs_iterator boundary_dofs_begin() const {
-        return boundary_dofs_iterator(0, static_cast<const Derived*>(this));
-    }
-    boundary_dofs_iterator boundary_dofs_end() const {
-        return boundary_dofs_end(n_dofs_, static_cast<const Derived*>(this));
-    }
-    // setters
-    void set_dofs_markers(const std::vector<int>& dofs_markers) {
-        fdapde_assert(dofs_markers.size() == n_dofs_);
-        dofs_markers_ = dofs_markers;
-    }
-    template <typename Iterator> void set_dofs_markers(const Iterator& begin, const Iterator& end, int marker) {
-        for (auto it = begin; it != end; ++it) it->marker() = marker;
-    }
-    void set_dofs_markers(int marker) { set_dofs_markers(boundary_dofs_begin(), boundary_dofs_end(), marker); }
     // dofs constaints handling
     template <typename Data> void set_dirichlet_constraint(int on, const Data& g) {
         dof_constraints_.set_dirichlet_constraint(on, g);
@@ -170,15 +173,16 @@ template <int LocalDim, int EmbedDim, typename Derived> class DofHandlerBase {
         coords.resize(n_dofs_, TriangulationType::embed_dim);
         std::unordered_set<int> visited;
         // cycle over all mesh elements
-        for (typename TriangulationType::cell_iterator e = triangulation_->cells_begin();
-             e != triangulation_->cells_end(); ++e) {
-            int cell_id = e->id();
+        for (typename TriangulationType::cell_iterator cell = triangulation_->cells_begin();
+             cell != triangulation_->cells_end(); ++cell) {
+            int cell_id = cell->id();
             for (int j = 0; j < static_cast<const Derived&>(*this).n_dofs_per_cell(); ++j) {
                 int dof = dofs_(cell_id, j);
                 if (visited.find(dof) == visited.end()) {
                     // map point from reference to physical element
                     coords.row(dof) =
-                      e->J() * reference_dofs_barycentric_coords_.rightCols(local_dim).row(j).transpose() + e->node(0);
+                      cell->J() * reference_dofs_barycentric_coords_.rightCols(local_dim).row(j).transpose() +
+                      cell->node(0);
                     visited.insert(dof);
                 }
             }
@@ -198,15 +202,19 @@ template <int LocalDim, int EmbedDim, typename Derived> class DofHandlerBase {
     // local enumeration of dofs on cell
     template <bool dof_sharing, typename Iterator, typename Map>
     void local_enumerate(
-      const Iterator& begin, const Iterator& end, [[maybe_unused]] Map& map, std::unordered_set<int>& boundary_dofs,
-      int cell_id, int table_offset, int n_dofs_to_insert) {
+      const Iterator& begin, const Iterator& end, [[maybe_unused]] Map& map,
+      std::unordered_set<std::pair<int, int>, fdapde::pair_hash>& boundary_dofs, int cell_id, int table_offset,
+      int n_dofs_to_insert) {
         if constexpr (dof_sharing) {
             for (auto jt = begin; jt != end; ++jt) {
                 if (map.find(jt->id()) == map.end()) {
                     for (int j = 0; j < n_dofs_to_insert; ++j) {
                         dofs_(cell_id, table_offset + j) = n_dofs_;
                         map[jt->id()].push_back(n_dofs_);
-                        if (jt->on_boundary()) boundary_dofs.insert(n_dofs_);
+                        if (jt->on_boundary()) {
+                            // inserted boundary dofs are marked with the corresponding geometrical boundary marker
+                            boundary_dofs.insert({n_dofs_, jt->marker()});
+                        }
                         n_dofs_++;
                         dofs_to_cell_.push_back(cell_id);
                     }
@@ -218,7 +226,7 @@ template <int LocalDim, int EmbedDim, typename Derived> class DofHandlerBase {
         } else {
             for (auto jt = begin; jt != end; ++jt) {
                 for (int j = 0; j < n_dofs_to_insert; ++j) {
-                    if (jt->on_boundary()) boundary_dofs.insert(n_dofs_);
+                    if (jt->on_boundary()) { boundary_dofs.insert({n_dofs_, jt->marker()}); }
                     dofs_(cell_id, table_offset + j) = n_dofs_++;
                     dofs_to_cell_.push_back(cell_id);
                 }
@@ -244,16 +252,16 @@ template <int LocalDim, int EmbedDim, typename Derived> class DofHandlerBase {
                 for (int j = 0; j < n_nodes_per_cell; ++j) { dofs_(i, j) = n_dofs_++; }
             }
         }
-	// update dof to cell mapping
-	dofs_to_cell_.resize(triangulation_->n_cells());
+	// update dof to cell mapping (here we copy just dofs associated to geometrical vertices)
+        dofs_to_cell_.resize(n_dofs_);
         for (int i = 0; i < triangulation_->n_cells(); ++i) {
-            for (int j = 0; j < dof_descriptor::n_dofs_per_cell; ++j) dofs_to_cell_[dofs_(i, j)] = i;
+            for (int j = 0; j < n_nodes_per_cell; ++j) { dofs_to_cell_[dofs_(i, j)] = i; }
         }
         dofs_markers_ = std::vector<int>(n_dofs_, Unmarked);
         return;
     }
 };
-
+  
 template <int EmbedDim> class DofHandler<2, EmbedDim> : public DofHandlerBase<2, EmbedDim, DofHandler<2, EmbedDim>> {
    public:
     using Base = DofHandlerBase<2, EmbedDim, DofHandler<2, EmbedDim>>;
@@ -272,29 +280,56 @@ template <int EmbedDim> class DofHandler<2, EmbedDim> : public DofHandlerBase<2,
         n_dofs_per_edge_ = dof_descriptor::n_dofs_per_edge;
         n_dofs_per_cell_ = TriangulationType::n_nodes_per_cell +
                            n_dofs_per_edge_ * TriangulationType::n_edges_per_cell + n_dofs_internal_per_cell_;
-        // move geometrical markers on boundary edges to dof markers on nodes. higher labeled nodes have higher priority
+        // move geometrical markers on boundary edges to dof markers on nodes. high labeled nodes have higher priority
         for (typename TriangulationType::edge_iterator it = triangulation_->boundary_edges_begin();
              it != triangulation_->boundary_edges_end(); ++it) {
             for (int node_id : it->node_ids()) {
                 int marker = it->marker();
+		// give priority to highly marked edges
                 if (marker > Base::dofs_markers_[node_id]) { Base::dofs_markers_[node_id] = marker; }
             }
         }
         // insert additional dofs if requested by the finite element
-        std::unordered_set<int> boundary_dofs;
+        std::unordered_set<std::pair<int, int>, fdapde::pair_hash> boundary_dofs;
+        auto edge_pattern =
+          cexpr::combinations<TriangulationType::n_nodes_per_edge, TriangulationType::n_nodes_per_cell>();
+
         if constexpr (dof_descriptor::n_dofs_per_edge > 0 || dof_descriptor::n_dofs_internal > 0) {
-            constexpr int n_edges_per_cell = TriangulationType::n_edges_per_cell;
+            constexpr int n_edges_per_cell = TriangulationType::n_edges_per_cell;	    
             for (typename TriangulationType::cell_iterator it = triangulation_->cells_begin();
                  it != triangulation_->cells_end(); ++it) {
+                int cell_id = it->id();
                 if constexpr (dof_descriptor::n_dofs_per_edge > 0) {
                     Base::template local_enumerate<dof_descriptor::dof_sharing>(
-                      it->edges_begin(), it->edges_end(), edge_to_dofs_, boundary_dofs, it->id(),
-                      Base::n_nodes_per_cell, n_dofs_per_edge_);
+                      it->edges_begin(), it->edges_end(), edge_to_dofs_, boundary_dofs, cell_id, Base::n_nodes_per_cell,
+                      n_dofs_per_edge_);
+
+                    if constexpr (dof_descriptor::n_dofs_per_edge > 1) {
+                        // reorder dofs to preserve numbering monotonicity on edge
+                        int offset = 0;
+                        for (int i = 0; i < edge_pattern.rows(); ++i) {   // cycle on edges
+                            if (dofs_(cell_id, edge_pattern(i, 0)) > dofs_(cell_id, edge_pattern(i, 1))) {
+                                // in-place swap
+                                offset = Base::n_nodes_per_cell + i * n_dofs_per_edge_;
+                                int k = 0, h = dof_descriptor::n_dofs_per_edge - 1;
+                                int tmp;
+                                while (k < h) {
+                                    tmp = dofs_(cell_id, offset + h);
+                                    dofs_(cell_id, offset + h) = dofs_(cell_id, offset + k);
+                                    dofs_(cell_id, offset + k) = tmp;
+                                    h--;
+                                    k++;
+                                }
+                            }
+                        }
+                    }
                 }
                 if constexpr (dof_descriptor::n_dofs_internal > 0) {
+                    // internal dofs are never shared
                     int table_offset = Base::n_nodes_per_cell + n_edges_per_cell * dof_descriptor::n_dofs_per_edge;
                     for (int j = 0; j < dof_descriptor::n_dofs_internal; ++j) {
                         dofs_(it->id(), table_offset + j) = n_dofs_++;
+                        Base::dofs_to_cell_.push_back(it->id());
                     }
                 }
             }
@@ -302,7 +337,13 @@ template <int EmbedDim> class DofHandler<2, EmbedDim> : public DofHandlerBase<2,
         // update boundary
         Base::boundary_dofs_.resize(n_dofs_);
         Base::boundary_dofs_.topRows(triangulation_->n_nodes()) = triangulation_->boundary_nodes();
-        for (auto it = boundary_dofs.begin(); it != boundary_dofs.end(); ++it) { Base::boundary_dofs_.set(*it); }
+        if constexpr (dof_descriptor::n_dofs_per_edge > 0 || dof_descriptor::n_dofs_internal > 0) {
+            Base::dofs_markers_.resize(n_dofs_, Unmarked);
+            for (auto it = boundary_dofs.begin(); it != boundary_dofs.end(); ++it) {
+                Base::boundary_dofs_.set(it->first);
+                Base::dofs_markers_[it->first] = it->second;
+            }
+        }
         return;
     }
     // getters

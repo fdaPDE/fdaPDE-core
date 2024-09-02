@@ -42,10 +42,6 @@ template <typename Triangulation> struct BoundaryIterator : public Triangulation
     BoundaryIterator(int index, const Triangulation* mesh, int marker) :
         Triangulation::boundary_iterator(index, mesh, marker) { }
 };
-
-[[maybe_unused]] static constexpr int cache_cells = 0x0001;
-[[maybe_unused]] static constexpr int BoundaryAll = -1;
-[[maybe_unused]] static constexpr int Unmarked = -2;
   
 template <int M, int N> class Triangulation;
 template <int M, int N, typename Derived> class TriangulationBase {
@@ -109,30 +105,27 @@ template <int M, int N, typename Derived> class TriangulationBase {
         }
        public:
         using TriangulationType = Derived;
+        cell_iterator() = default;
         cell_iterator(int index, const Derived* mesh, const BinaryVector<fdapde::Dynamic>& filter, int marker) :
             Base(index, 0, mesh->n_cells_, filter), mesh_(mesh), marker_(marker) {
             for (; index_ < Base::end_ && !filter[index_]; ++index_);
             if (index_ != Base::end_) { operator()(index_); }
         }
-        cell_iterator(int index, const Derived* mesh) :   // apply no filter
-            cell_iterator(index, mesh, BinaryVector<fdapde::Dynamic>::Ones(mesh->n_cells_), Unmarked) { }
-        cell_iterator(int index, const Derived* mesh, int marker) :   // fast construction for end iterators
-            Base(index, 0, mesh->n_cells_), marker_(marker) { }
+        cell_iterator(int index, const Derived* mesh, int marker) :
+            cell_iterator(
+              index, mesh,
+              marker == TriangulationAll ? BinaryVector<fdapde::Dynamic>::Ones(mesh->n_cells()) :   // apply no filter
+                fdapde::make_binary_vector(mesh->cells_markers().begin(), mesh->cells_markers().end(), marker),
+              marker) { }
         int marker() const { return marker_; }
     };
-    CellIterator<Derived> cells_begin() const { return CellIterator<Derived>(0, static_cast<const Derived*>(this)); }
-    CellIterator<Derived> cells_end() const {
-        return CellIterator<Derived>(n_cells_, static_cast<const Derived*>(this), Unmarked);
-    }
-    CellIterator<Derived> cells_begin(int marker) const {
-        fdapde_assert(marker >= 0 && cells_markers_.size() != 0);
-        return CellIterator<Derived>(
-          0, static_cast<const Derived*>(this),
-          fdapde::make_binary_vector(cells_markers_.begin(), cells_markers_.end(), marker), marker);
-    }
-    CellIterator<Derived> cells_end(int marker) const {
-        fdapde_assert(marker >= 0 && cells_markers_.size() != 0);
+    CellIterator<Derived> cells_begin(int marker = TriangulationAll) const {
+        fdapde_assert(marker == TriangulationAll || (marker >= 0 && cells_markers_.size() != 0));
         return CellIterator<Derived>(0, static_cast<const Derived*>(this), marker);
+    }
+    CellIterator<Derived> cells_end(int marker = TriangulationAll) const {
+        fdapde_assert(marker == TriangulationAll || (marker >= 0 && cells_markers_.size() != 0));
+        return CellIterator<Derived>(n_cells_, static_cast<const Derived*>(this), marker);
     }
     // set cells markers
     template <typename Lambda> void mark_cells(int marker, Lambda&& lambda)

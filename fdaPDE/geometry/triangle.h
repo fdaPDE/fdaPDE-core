@@ -19,6 +19,7 @@
 
 #include "../utils/symbols.h"
 #include "simplex.h"
+#include "utils.h"
 
 namespace fdapde {
 
