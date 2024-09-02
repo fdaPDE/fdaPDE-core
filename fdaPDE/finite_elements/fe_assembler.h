@@ -393,7 +393,6 @@ class fe_matrix_assembly_loop :
                     }
                 }
             }
-
             // perform integration of weak form for (i, j)-th basis pair
             active_dofs = it->dofs();
             for (int i = 0; i < n_basis; ++i) {       // trial function loop

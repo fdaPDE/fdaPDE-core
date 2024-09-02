@@ -33,11 +33,14 @@ template <int Order> struct FeP {
     template <int LocalDim> struct dof_descriptor {
         static constexpr int local_dim = LocalDim;
         using ReferenceCell = Simplex<local_dim, local_dim>;   // reference unit simplex
-        static constexpr bool dof_sharing = true;              // piecewise continuous finite elements
+        static constexpr bool dof_sharing = true;              // piecewise continuous finite element
+        static constexpr int fe_order = Order;
+        static constexpr int n_dofs_per_node = 1;
         static constexpr int n_dofs_per_edge = local_dim > 1 ? (Order - 1 < 0 ? 0 : (Order - 1)) : 0;
         static constexpr int n_dofs_per_face = local_dim > 2 ? (Order - 2 < 0 ? 0 : (Order - 2)) : 0;
         static constexpr int n_dofs_internal = local_dim < 3 ? (Order - local_dim < 0 ? 0 : (Order - local_dim)) : 0;
-        static constexpr int n_dofs_per_cell = ReferenceCell::n_nodes + n_dofs_per_edge * ReferenceCell::n_edges +
+        static constexpr int n_dofs_per_cell = n_dofs_per_node * ReferenceCell::n_nodes +
+                                               n_dofs_per_edge * ReferenceCell::n_edges +
                                                n_dofs_per_face * ReferenceCell::n_faces + n_dofs_internal;
         using BasisType = LagrangeBasis<local_dim, Order>;
         using ElementType = typename BasisType::PolynomialType;
@@ -121,7 +124,6 @@ template <int Order> struct FeP {
         cexpr::Matrix<double, n_dofs_per_cell, local_dim> dofs_phys_coords_;       // dofs physical coordinates
         cexpr::Matrix<double, n_dofs_per_cell, local_dim + 1> dofs_bary_coords_;   // dofs barycentric coordinates
     };
-
     // select quadrature which optimally integrates (Order + 1) polynomials
     template <int LocalDim> class select_cell_quadrature {
         static constexpr int select_quadrature_() {
@@ -132,14 +134,73 @@ template <int Order> struct FeP {
        public:
         using type = internals::fe_quadrature_simplex<LocalDim, select_quadrature_()>;
     };
-  
     template <int LocalDim> using cell_dof_descriptor = dof_descriptor<LocalDim>;
     template <int LocalDim> using face_dof_descriptor = dof_descriptor<LocalDim - 1>;
     template <int LocalDim> using select_cell_quadrature_t = typename select_cell_quadrature<LocalDim>::type;
     template <int LocalDim> using select_face_quadrature_t = typename select_cell_quadrature<LocalDim - 1>::type;
 };
-  
+
+// template specialization for P0 elements
+template <> struct FeP<0> {
+    static constexpr int order = 0;
+
+    template <int LocalDim> struct dof_descriptor {
+        static constexpr int local_dim = LocalDim;
+        using ReferenceCell = Simplex<local_dim, local_dim>;   // reference unit simplex
+        static constexpr bool dof_sharing = false;             // discontinuous finite element
+        static constexpr int fe_order = 0;
+        static constexpr int n_dofs_per_node = 0;
+        static constexpr int n_dofs_per_edge = 0;
+        static constexpr int n_dofs_per_face = 0;
+        static constexpr int n_dofs_internal = 1;
+        static constexpr int n_dofs_per_cell = n_dofs_internal;
+        using BasisType = LagrangeBasis<local_dim, 0>;
+        using ElementType = typename BasisType::PolynomialType;
+
+        constexpr dof_descriptor() : dofs_phys_coords_(), dofs_bary_coords_() {
+            // compute dofs physical coordinates on reference cell
+            constexpr int n_nodes = local_dim + 1;
+            cexpr::Matrix<double, local_dim, n_nodes> reference_simplex;
+            reference_simplex.setZero();
+            for (int i = 0; i < local_dim; ++i) { reference_simplex(i, i + 1) = 1; }
+	    // the unique dof is the simplex barycenter
+            if constexpr (local_dim == 1) { dofs_phys_coords_.row(0) = cexpr::Vector<double, 1>(0.5); }
+            if constexpr (local_dim == 2) {
+                dofs_phys_coords_.row(0) =
+                  (reference_simplex.col(1) + reference_simplex.col(2)).transpose() * 1.0 / (local_dim + 1);
+            }
+            if constexpr (local_dim == 3) {
+                dofs_phys_coords_.row(0) =
+                  (reference_simplex.col(1) + reference_simplex.col(2) + reference_simplex.col(3)).transpose() * 1.0 /
+                  (local_dim + 1);
+            }
+            // compute barycentric coordinates
+            dofs_bary_coords_.template rightCols<local_dim>(1) = dofs_phys_coords_;
+            if constexpr (local_dim == 1) {
+                dofs_bary_coords_(0, 0) = 0.5;
+            } else {
+                double sum = 0;
+                for (int j = 0; j < local_dim; ++j) sum += dofs_bary_coords_(0, j + 1);
+                dofs_bary_coords_(0, 0) = 1 - sum;
+            }
+        }
+        // getters
+        constexpr const auto& dofs_phys_coords() const { return dofs_phys_coords_; }
+        constexpr const auto& dofs_bary_coords() const { return dofs_bary_coords_; }
+       private:
+        cexpr::Matrix<double, n_dofs_per_cell, local_dim> dofs_phys_coords_;       // dofs physical coordinates
+        cexpr::Matrix<double, n_dofs_per_cell, local_dim + 1> dofs_bary_coords_;   // dofs barycentric coordinates
+    };
+    template <int LocalDim>
+    struct select_cell_quadrature : std::type_identity<internals::fe_quadrature_simplex<LocalDim, 1>> { };
+    template <int LocalDim> using cell_dof_descriptor = dof_descriptor<LocalDim>;
+    template <int LocalDim> using face_dof_descriptor = dof_descriptor<LocalDim - 1>;
+    template <int LocalDim> using select_cell_quadrature_t = typename select_cell_quadrature<LocalDim>::type;
+    template <int LocalDim> using select_face_quadrature_t = typename select_cell_quadrature<LocalDim - 1>::type;
+};
+
 // lagrange finite element alias
+[[maybe_unused]] static struct P0_ : FeP<0> { } P0;
 [[maybe_unused]] static struct P1_ : FeP<1> { } P1;
 [[maybe_unused]] static struct P2_ : FeP<2> { } P2;
 [[maybe_unused]] static struct P3_ : FeP<3> { } P3;

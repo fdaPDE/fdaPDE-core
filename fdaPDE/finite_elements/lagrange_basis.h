@@ -36,26 +36,30 @@ template <int StaticInputSize_, int Order_> class LagrangeBasis {
     template <int n_nodes>
     constexpr explicit LagrangeBasis(const cexpr::Matrix<double, n_nodes, StaticInputSize>& nodes) {
         fdapde_static_assert(n_nodes == n_basis, WRONG_NUMBER_OF_NODES_FOR_DEFINITION_OF_LAGRANGE_BASIS);
-        // build Vandermonde matrix
-        constexpr auto poly_table = Polynomial<StaticInputSize, Order>::poly_exponents();
-	cexpr::Matrix<double, n_basis, n_basis> V = cexpr::Matrix<double, n_basis, n_basis>::Ones();
-        for (int i = 0; i < n_basis; ++i) {
-            for (int j = 1; j < n_basis; ++j) {
-                for (int k = 0; k < StaticInputSize; ++k) {
-                    int exp = poly_table(j, k);
-                    if (exp) V(i, j) *= std::pow(nodes(i, k), exp);
+        if constexpr (Order_ > 0) {
+            // build Vandermonde matrix
+            constexpr auto poly_table = Polynomial<StaticInputSize, Order>::poly_exponents();
+            cexpr::Matrix<double, n_basis, n_basis> V = cexpr::Matrix<double, n_basis, n_basis>::Ones();
+            for (int i = 0; i < n_basis; ++i) {
+                for (int j = 1; j < n_basis; ++j) {
+                    for (int k = 0; k < StaticInputSize; ++k) {
+                        int exp = poly_table(j, k);
+                        if (exp) V(i, j) *= std::pow(nodes(i, k), exp);
+                    }
                 }
             }
-        }
-        // solve the vandermonde system V*a = b_i with b_i[j] = 1 \iff j = i, 0 otherwise
-        cexpr::PartialPivLU<cexpr::Matrix<double, n_basis, n_basis>> invV(V);
-	cexpr::Vector<double, n_basis> b = cexpr::Matrix<double, n_basis, 1>::Zero();   // rhs of linear system
-        for (int i = 0; i < n_basis; ++i) {
-            b[i] = 1;
-            // solve linear system V*a = b
-	    cexpr::Vector<double, n_basis> a = invV.solve(b);
-            basis_[i] = Polynomial<StaticInputSize, Order>(a);
-            b[i] = 0;
+            // solve the vandermonde system V*a = b_i with b_i[j] = 1 \iff j = i, 0 otherwise
+            cexpr::PartialPivLU<cexpr::Matrix<double, n_basis, n_basis>> invV(V);
+            cexpr::Vector<double, n_basis> b = cexpr::Matrix<double, n_basis, 1>::Zero();   // rhs of linear system
+            for (int i = 0; i < n_basis; ++i) {
+                b[i] = 1;
+                // solve linear system V*a = b
+                cexpr::Vector<double, n_basis> a = invV.solve(b);
+                basis_[i] = Polynomial<StaticInputSize, Order>(a);
+                b[i] = 0;
+            }
+        } else {
+            basis_[0] = Polynomial<StaticInputSize, 0>(cexpr::Vector<double, 1>(1));
         }
     }
     // getters
