@@ -241,7 +241,7 @@ template <int LocalDim, int EmbedDim, typename Derived> class DofHandlerBase {
           dof_descriptor::local_dim == TriangulationType::local_dim, YOU_PROVIDED_A_WRONG_FINITE_ELEMENT_DESCRIPTOR);
         fdapde_static_assert(
           dof_descriptor::n_dofs_per_cell > 0,
-          FINITE_ELEMENT_DESCRIPTION_REQUESTS_THE_INSERTION_OF_ZERO_DEGREES_OF_FREEDOM_PER_CELL);
+          FINITE_ELEMENT_DESCRIPTION_REQUESTS_THE_INSERTION_OF_AT_LEAST_ONE_DEGREE_OF_FREEDOM_PER_CELL);
         dofs_.resize(triangulation_->n_cells(), dof_descriptor::n_dofs_per_cell);
 	// copy coordinates of dofs defined on reference unit simplex
 	typename FEType::cell_dof_descriptor<TriangulationType::local_dim> fe;
@@ -344,23 +344,19 @@ template <int EmbedDim> class DofHandler<2, EmbedDim> : public DofHandlerBase<2,
                     for (int j = 0; j < dof_descriptor::n_dofs_internal; ++j) {
                         dofs_(cell_id, table_offset + j) = n_dofs_++;
                         Base::dofs_to_cell_.push_back(cell_id);
-			Base::dofs_markers_.push_back(Unmarked);
                     }
 		    // if the internal dofs are the unique inserted dofs, we must move the boundary marker to such dofs
 		    // this logic should be triggered only from order 0 elements
                     if constexpr (dof_descriptor::n_dofs_internal == dof_descriptor::n_dofs_per_cell) {
                         if (it->on_boundary()) {
                             // search for boundary marker
+                            int marker = Unmarked;
                             for (auto jt = it->edges_begin(); jt != it->edges_end(); ++jt) {
-                                if (jt->on_boundary()) {
-                                    int marker = jt->marker();
-                                    // all internal nodes share the same marker
-                                    if (marker > Base::dofs_markers_[dofs_(cell_id, table_offset)]) {
-                                        for (int j = 0; j < dof_descriptor::n_dofs_internal; ++j) {
-                                            boundary_dofs.insert({dofs_(cell_id, table_offset + j), marker});
-                                        }
-                                    }
-                                }
+                                if (jt->on_boundary() && jt->marker() > marker) { marker = jt->marker(); }
+                            }
+                            for (int j = 0; j < dof_descriptor::n_dofs_internal; ++j) {
+                                // all internal nodes share the same marker
+                                boundary_dofs.insert({dofs_(cell_id, table_offset + j), marker});
                             }
                         }
                     }
