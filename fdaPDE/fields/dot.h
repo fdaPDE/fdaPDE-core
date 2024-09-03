@@ -96,6 +96,9 @@ class dot_product_eigen_impl : public ScalarBase<FieldType_::StaticInputSize, do
         (EigenType::ColsAtCompileTime == 1 && FieldType::Cols == EigenType::RowsAtCompileTime))),
       INVALID_OPERAND_SIZES_FOR_DOT_PRODUCT);
    public:
+    using LhsDerived = Lhs;
+    using RhsDerived = Rhs;
+    template <typename T1, typename T2> using Meta = dot_product_eigen_impl<T1, T2>;
     using Base = ScalarBase<FieldType::StaticInputSize, dot_product_eigen_impl<Lhs, Rhs>>;
     using InputType = typename FieldType::InputType;
     using Scalar = decltype(std::declval<typename FieldType::Scalar>() * std::declval<typename EigenType::Scalar>());
@@ -127,6 +130,8 @@ class dot_product_eigen_impl : public ScalarBase<FieldType_::StaticInputSize, do
         if constexpr (is_field_lhs)  return lhs_.input_size();
         else return rhs_.input_size();
     }
+    constexpr const LhsDerived& lhs() const { return lhs_; }
+    constexpr const RhsDerived& rhs() const { return rhs_; }
    protected:
     std::conditional_t<is_eigen_dense_v<Lhs>, const Lhs&, typename internals::ref_select<const Lhs>::type> lhs_;
     std::conditional_t<is_eigen_dense_v<Rhs>, const Rhs&, typename internals::ref_select<const Rhs>::type> rhs_;

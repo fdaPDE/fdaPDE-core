@@ -893,6 +893,9 @@ class matrix_eigen_product_impl :
         (!is_field_lhs && EigenType::ColsAtCompileTime == FieldType::Rows),
       INVALID_OPERAND_DIMENSIONS_FOR_MATRIX_PRODUCT);
    public:
+    using LhsDerived = Lhs;
+    using RhsDerived = Rhs;
+    template <typename T1, typename T2> using Meta = matrix_eigen_product_impl<T1, T2>;
     using Base = MatrixBase<FieldType::StaticInputSize, matrix_eigen_product_impl<Lhs, Rhs>>;
     using InputType = typename FieldType::InputType;
     using Scalar = decltype(std::declval<typename FieldType::Scalar>() * std::declval<typename EigenType::Scalar>());
@@ -916,6 +919,8 @@ class matrix_eigen_product_impl :
         else return rhs_.input_size();
     }
     int size() const { return lhs_.rows() * rhs_.cols(); }
+    constexpr const LhsDerived& lhs() const { return lhs_; }
+    constexpr const RhsDerived& rhs() const { return rhs_; }
 
     template <typename Dest> constexpr void eval_at(const InputType& p, Dest& dest) const {
         fdapde_static_assert(
@@ -1003,6 +1008,9 @@ class matrix_eigen_binary_op_impl :
         (FieldType::Rows == EigenType::RowsAtCompileTime && FieldType::Cols == EigenType::ColsAtCompileTime),
       INVALID_OPERAND_DIMENSIONS_FOR_MATRIX_PRODUCT);
    public:
+    using LhsDerived = Lhs;
+    using RhsDerived = Rhs;
+    template <typename T1, typename T2> using Meta = matrix_eigen_binary_op_impl<T1, T2, BinaryOperation>;
     using Base = MatrixBase<FieldType::StaticInputSize, matrix_eigen_binary_op_impl<Lhs, Rhs, BinaryOperation>>;
     using InputType = typename FieldType::InputType;
     using Scalar = decltype(std::declval<BinaryOperation>().operator()(
@@ -1028,6 +1036,9 @@ class matrix_eigen_binary_op_impl :
         else return rhs_.input_size();
     }
     int size() const { return lhs_.size(); }
+    constexpr const LhsDerived& lhs() const { return lhs_; }
+    constexpr const RhsDerived& rhs() const { return rhs_; }
+  
     Scalar eval(int i, int j, const InputType& p) const {
         if constexpr(is_field_lhs) return op_(lhs_.eval(i, j, p), rhs_(i, j));
         else return op_(lhs_(i, j), rhs_.eval(i, j, p));
