@@ -24,6 +24,7 @@
 #include "../utils/symbols.h"
 #include "divergence.h"
 #include "dot.h"
+#include "jacobian.h"
 #include "meta.h"
 #include "norm.h"
 
@@ -860,6 +861,11 @@ template <int StaticInputSize, typename Derived> struct MatrixBase {
     constexpr Divergence<Derived> divergence() const {
         fdapde_static_assert(Derived::Cols == 1, THIS_METHOD_IS_FOR_VECTOR_FIELDS_ONLY);
         return Divergence<Derived>(derived());
+    }
+    // vector field gradient (i.e., its jacobian matrix field)
+    constexpr Jacobian<Derived> gradient() const {
+        fdapde_static_assert(Derived::Cols == 1, THIS_METHOD_IS_FOR_VECTOR_FIELDS_ONLY);
+        return Jacobian<Derived>(derived());
     }
     // dot product
     template <int RhsStaticInputSize, typename Rhs>

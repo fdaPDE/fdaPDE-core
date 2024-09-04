@@ -22,32 +22,24 @@
 
 namespace fdapde {
 
-template <typename Triangulation_, typename FeType_, int Size_> class FiniteElementSpace {
+template <typename Triangulation_, typename FeType_> class FeSpace {
    public:
     using Triangulation = std::decay_t<Triangulation_>;
     using FeType = std::decay_t<FeType_>;
     static constexpr int local_dim = Triangulation::local_dim;
     static constexpr int embed_dim = Triangulation::embed_dim;
+    static constexpr int n_components  = FeType::n_components;
+    static constexpr bool is_vector_fe = FeType::is_vector_fe;
     using cell_dof_descriptor = FeType::template cell_dof_descriptor<local_dim>;
     using face_dof_descriptor = FeType::template face_dof_descriptor<local_dim>;
     using ReferenceCell = typename cell_dof_descriptor::ReferenceCell;
     using BasisType = typename cell_dof_descriptor::BasisType;
     using ElementType = typename cell_dof_descriptor::ElementType;
-    static constexpr int n_components = Size_;
-    static constexpr bool is_vector_fe = (n_components != 1);
 
-    // scalar element constructor
-    FiniteElementSpace(const Triangulation_& triangulation, FeType_ fe) :
+    FeSpace() = default;
+    FeSpace(const Triangulation_& triangulation, FeType_ fe) :
         triangulation_(&triangulation), dof_handler_(triangulation) {
         dof_handler_.enumerate(fe);
-        cell_basis_ = BasisType(unit_cell_dofs_.dofs_phys_coords());
-        face_basis_ = typename face_dof_descriptor::BasisType(unit_face_dofs_.dofs_phys_coords());
-    }
-    // vector element constructor (see CWG 1591)
-    FiniteElementSpace(const Triangulation_& triangulation, [[maybe_unused]] const FeType_ (&fe)[Size_]) :
-      triangulation_(&triangulation), dof_handler_(triangulation) {
-        fdapde_static_assert(n_components > 0, DEFINITION_OF_EMPTY_FINITE_ELEMENT_SPACE_IS_ILL_FORMED);
-        dof_handler_.enumerate(FeType {});
         cell_basis_ = BasisType(unit_cell_dofs_.dofs_phys_coords());
         face_basis_ = typename face_dof_descriptor::BasisType(unit_face_dofs_.dofs_phys_coords());
     }
@@ -59,23 +51,43 @@ template <typename Triangulation_, typename FeType_, int Size_> class FiniteElem
     constexpr int n_basis_face() const { return n_components * face_basis_.size(); }
     int n_dofs() const { return dof_handler_.n_dofs(); }
     // scalar finite elements API
-    template <typename InputType> constexpr auto eval(int i, const InputType& p) const {
-        fdapde_static_assert(n_components == 1, THIS_METHOD_IS_ONLY_FOR_SCALAR_FINITE_ELEMENTS);
-        return cell_basis_[i](p);
-    }
-    template <typename InputType> constexpr auto eval_grad(int i, const InputType& p) const {
-        fdapde_static_assert(n_components == 1, THIS_METHOD_IS_ONLY_FOR_SCALAR_FINITE_ELEMENTS);
+    template <typename InputType>
+    constexpr auto eval(int i, const InputType& p) const requires(n_components == 1) { return cell_basis_[i](p); }
+    template <typename InputType>
+    constexpr auto eval_grad(int i, const InputType& p) const requires(n_components == 1) {
         return cell_basis_[i].gradient()(p);
     }
-    template <typename InputType> constexpr auto face_eval(int i, const InputType& p) const {
-        fdapde_static_assert(n_components == 1, THIS_METHOD_IS_ONLY_FOR_SCALAR_FINITE_ELEMENTS);
-        return face_basis_[i](p);
-    }
-    template <typename InputType> constexpr auto face_eval_grad(int i, const InputType& p) const {
-        fdapde_static_assert(n_components == 1, THIS_METHOD_IS_ONLY_FOR_SCALAR_FINITE_ELEMENTS);
+    template <typename InputType>
+    constexpr auto face_eval(int i, const InputType& p) const requires(n_components == 1) { return face_basis_[i](p); }
+    template <typename InputType>
+    constexpr auto face_eval_grad(int i, const InputType& p) const requires(n_components == 1) {
         return face_basis_[i].gradient()(p);
     }
-    constexpr const ElementType& basis_function(int i) const { return cell_basis_[i]; }
+    // vector finite elements API (\psi_i = [ \psi_{i, 1}, ..., \psi_{i, j}, ..., \psi_{i, n_components} ])
+    // here we observe that for a vector valued basis system, \psi_i[j] = 0 \iff i != j, and \psi_j[j] = \psi_j, being
+    // \psi_j the j-th scalar basis function defined on the reference cell
+    template <typename InputType>
+    constexpr auto eval(int i, int j, const InputType& p) const requires(n_components > 1) {
+        return (i % n_components == j) ? cell_basis_[j](p) : 0.0;
+    }
+    template <typename InputType>
+    constexpr auto eval_grad(int i, int j, const InputType& p) const
+        requires(n_components > 1) {
+        using OutputType =
+          std::decay_t<decltype(cell_basis_.operator[](std::declval<int>()).operator()(std::declval<InputType>()))>;
+        return (i % n_components == j) ? cell_basis_[i].gradient()(p) : OutputType::Zero();
+    }
+    template <typename InputType>
+    constexpr auto face_eval(int i, int j, const InputType& p) const requires(n_components > 1) {
+        return (i % n_components == j) ? face_basis_[j](p) : 0.0;
+    }
+    template <typename InputType>
+    constexpr auto face_eval_grad(int i, int j, const InputType& p) const
+        requires(n_components > 1) {
+        using OutputType =
+          std::decay_t<decltype(face_basis_.operator[](std::declval<int>()).operator()(std::declval<InputType>()))>;
+        return (i % n_components == j) ? face_basis_[i].gradient()(p) : OutputType::Zero();
+    }
    private:
     const Triangulation* triangulation_;
     DofHandler<local_dim, embed_dim> dof_handler_;
@@ -84,26 +96,6 @@ template <typename Triangulation_, typename FeType_, int Size_> class FiniteElem
     BasisType cell_basis_;
     typename face_dof_descriptor::BasisType face_basis_;
 };
-
-// CTAD for scalar finite elements
-template <typename Triangulation, typename FEType_>
-FiniteElementSpace(const Triangulation&, FEType_) -> FiniteElementSpace<Triangulation, FEType_, 1>;
-
-// double eval_component(int i, int j, const SVector<local_dim>& p) const { return basis_[i].gradient()[j](p); }
-// must provide access to the basis evaluation (also vectorial) on reference cell
-// same also on reference face (what about 1D/1.5D?)
-
-// // vector finite element
-// const PolynomialType& operator()(int i, int j) const requires (n_components > 1) {    // (\psi_i)_j
-//     return (i % n_components == j) ? basis_[j] : zero_;
-// }
-// double eval(int i, int j, const SVector<local_dim>& p) const requires(n_components > 1) {   // (\psi_i)_j(p)
-//     return (i % n_components == j) ? basis_[j](p) : 0;
-// }
-// // \nabla[(\psi_i)_j] (gradient of the j-th component of \psi_i)
-// SVector<local_dim> eval_grad(int i, int j, const SVector<local_dim>& p) const requires(n_components > 1) {
-//     return (i % n_components == j) ? basis_[j].derive()(p) : SVector<local_dim>::Zero();
-// }
   
 }   // namespace fdapde
 

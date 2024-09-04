@@ -18,8 +18,12 @@
 #define __FIELD_META_H__
 
 namespace fdapde {
-namespace meta {
 
+template <int Size, typename Derived> struct ScalarBase;
+template <int Size, typename Derived> struct MatrixBase;
+  
+namespace meta {
+  
 // a set of template metaprogramming routines for manipulating fields expressions
 template <typename T>
 concept is_unary_xpr_op = requires(T t) { typename T::Derived; };

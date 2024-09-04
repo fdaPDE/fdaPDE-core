@@ -18,6 +18,7 @@
 #define __DOT_H__
 
 #include "scalar_field.h"
+#include "meta.h"
 
 namespace fdapde {
 
@@ -27,14 +28,15 @@ template <typename Lhs, typename Rhs> class DotProduct : public ScalarBase<Lhs::
     fdapde_static_assert(
       (Lhs::StaticInputSize == Dynamic || Rhs::StaticInputSize == Dynamic ||
        Lhs::StaticInputSize == Rhs::StaticInputSize) &&
-        ((Lhs::Cols == 1 &&
-          ((Rhs::Cols == 1 && Lhs::Rows == Rhs::Rows) || (Rhs::Rows == 1 && Lhs::Rows == Rhs::Cols))) ||
-        (Lhs::Rows == 1 &&
-          ((Rhs::Rows == 1 && Lhs::Cols == Rhs::Cols) || (Rhs::Cols == 1 && Lhs::Rows == Rhs::Rows)))),
-      INVALID_OPERAND_SIZES_FOR_DOT_PRODUCT);
+        ((meta::is_scalar_field_v<Lhs> && meta::is_scalar_field_v<Rhs>) ||
+         (meta::is_matrix_field_v<Lhs> && meta::is_matrix_field_v<Rhs> &&
+          ((Lhs::Cols == Rhs::Cols &&
+            (Lhs::Rows == Rhs::Rows || (Lhs::Cols == 1 && Rhs::Rows == 1 && Lhs::Rows == Rhs::Cols) ||
+             (Lhs::Rows == 1 && Rhs::Cols == 1 && Lhs::Cols == Rhs::Rows)))))),
+      INVALID_OPERANDS_FOR_DOT_PRODUCT);
     fdapde_static_assert(
       std::is_same_v<typename Lhs::InputType FDAPDE_COMMA typename Rhs::InputType>,
-      YOU_MIXED_MATRIX_FIELDS_WITH_DIFFERENT_INPUT_TYPE);
+      YOU_MIXED_FIELDS_OF_DIFFERENT_INPUT_TYPE);
    public:
     using LhsDerived = Lhs;
     using RhsDerived = Rhs;
@@ -49,20 +51,33 @@ template <typename Lhs, typename Rhs> class DotProduct : public ScalarBase<Lhs::
     constexpr DotProduct(const Lhs& lhs, const Rhs& rhs) : lhs_(lhs), rhs_(rhs) {
         if constexpr (LhsDerived::Cols == Dynamic || RhsDerived::Cols == Dynamic) {
             fdapde_assert(
-              (lhs.cols() == 1 &&
-               ((rhs.cols() == 1 && lhs_.rows() == rhs_.rows()) || (rhs.rows() == 1 && lhs_.rows() == rhs_.cols()))) ||
-              (lhs.rows() == 1 &&
-               ((rhs.rows() == 1 && lhs.cols() == rhs.cols()) || (rhs.cols() == 1 && lhs.cols() == rhs.rows()))));
+              lhs.cols() == rhs.cols() &&
+              (rhs.rows() == rhs.rows() || (lhs.cols() == 1 && rhs.rows() == 1 && lhs.rows() == rhs.cols()) ||
+               (lhs.rows() == 1 && rhs.cols() == 1 && lhs.cols() == rhs.rows())));
         }
         if constexpr (LhsDerived::StaticInputSize == Dynamic || RhsDerived::StaticInputSize == Dynamic) {
-            fdapde_assert(lhs_.input_size() == rhs_.input_size());
+            fdapde_assert(lhs.input_size() == rhs.input_size());
         }
     }
     constexpr Scalar operator()(const InputType& p) const {
-        Scalar dot_ = 0;
-	int n = lhs_.cols() == 1 ? lhs_.rows() : lhs_.cols();
-        for (int i = 0; i < n; ++i) dot_ += lhs_.eval(i, p) * rhs_.eval(i, p);
-        return dot_;
+        if constexpr (meta::is_scalar_field_v<Lhs> && meta::is_scalar_field_v<Rhs>) {
+            // scalar-scalar case, just plain multiplication
+            return lhs_(p) * rhs_(p);
+        } else {
+            if constexpr (Lhs::Cols == Rhs::Cols && Lhs::Rows == Rhs::Rows && Lhs::Cols > 1 && Lhs::Rows > 1) {
+                // matrix-matrix dot product, dot(A, B) = Tr[A * B^\top] = \sum_{i=1}^n (\sum_{j=1}^m (a_{ij} * b_{ji}))
+                Scalar dot_ = 0;
+                for (int i = 0; i < Lhs::Rows; ++i) {
+                    for (int j = 0; j < Lhs::Cols; ++j) { dot_ += lhs_.eval(i, j, p) * rhs_.eval(j, i, p); }
+                }
+                return dot_;
+            } else {   // vector-vector case
+                Scalar dot_ = 0;
+                int n = lhs_.cols() == 1 ? lhs_.rows() : lhs_.cols();
+                for (int i = 0; i < n; ++i) dot_ += lhs_.eval(i, p) * rhs_.eval(i, p);
+                return dot_;
+            }
+        }
     }
     constexpr int input_size() const { return lhs_.input_size(); }
     constexpr const LhsDerived& lhs() const { return lhs_; }
@@ -72,6 +87,16 @@ template <typename Lhs, typename Rhs> class DotProduct : public ScalarBase<Lhs::
     typename internals::ref_select<const RhsDerived>::type rhs_;
 };
 
+template <typename Lhs, typename Rhs>
+constexpr DotProduct<Lhs, Rhs> dot(
+  const fdapde::ScalarBase<Lhs::StaticInputSize, Lhs>& lhs, const fdapde::ScalarBase<Rhs::StaticInputSize, Rhs>& rhs) {
+    return DotProduct<Lhs, Rhs>(lhs.derived(), rhs.derived());
+}
+template <int Size, typename Derived>
+template <typename Rhs>
+constexpr auto ScalarBase<Size, Derived>::dot(const ScalarBase<Size, Rhs>& rhs) const {
+    return DotProduct<Derived, Rhs>(derived(), rhs.derived());
+}
 template <typename Lhs, typename Rhs>
 constexpr DotProduct<Lhs, Rhs> dot(
   const fdapde::MatrixBase<Lhs::StaticInputSize, Lhs>& lhs, const fdapde::MatrixBase<Rhs::StaticInputSize, Rhs>& rhs) {

@@ -26,10 +26,13 @@
 namespace fdapde {
 
 // representation of the finite element space P_h^K = { v \in H^1(D) : v_{e} \in P^K \forall e \in T_h }
-template <int Order> struct FeP {
+  template <int Order, int NComponents> struct FeP {
     static constexpr int order = Order;
     fdapde_static_assert(Order < 4, THIS_CLASS_SUPPORTS_LAGRANGE_ELEMENTS_UP_TO_ORDER_THREE);
-
+    static constexpr int n_components = NComponents;
+    static constexpr bool is_vector_fe = (n_components != 1);
+    fdapde_static_assert(n_components > 0, DEFINITION_OF_FINITE_ELEMENT_WITH_ZERO_OR_LESS_COMPONENTS_IS_ILL_FORMED);
+    
     template <int LocalDim> struct dof_descriptor {
         static constexpr int local_dim = LocalDim;
         using ReferenceCell = Simplex<local_dim, local_dim>;   // reference unit simplex
@@ -141,8 +144,11 @@ template <int Order> struct FeP {
 };
 
 // template specialization for P0 elements
-template <> struct FeP<0> {
+template <int NComponents> struct FeP<0, NComponents> {
     static constexpr int order = 0;
+    static constexpr int n_components = NComponents;
+    static constexpr bool is_vector_fe = (n_components != 1);
+    fdapde_static_assert(n_components > 0, DEFINITION_OF_FINITE_ELEMENT_WITH_ZERO_OR_LESS_COMPONENTS_IS_ILL_FORMED);
 
     template <int LocalDim> struct dof_descriptor {
         static constexpr int local_dim = LocalDim;
@@ -200,10 +206,15 @@ template <> struct FeP<0> {
 };
 
 // lagrange finite element alias
-[[maybe_unused]] static struct P0_ : FeP<0> { } P0;
-[[maybe_unused]] static struct P1_ : FeP<1> { } P1;
-[[maybe_unused]] static struct P2_ : FeP<2> { } P2;
-[[maybe_unused]] static struct P3_ : FeP<3> { } P3;
+template <int NComponents> constexpr FeP<0, NComponents> P0 = FeP<0, NComponents> {};
+template <int NComponents> constexpr FeP<1, NComponents> P1 = FeP<1, NComponents> {};
+template <int NComponents> constexpr FeP<2, NComponents> P2 = FeP<2, NComponents> {};
+template <int NComponents> constexpr FeP<3, NComponents> P3 = FeP<3, NComponents> {};
+
+// static struct P0_ : FeP<0> { } P0;
+// [[maybe_unused]] static struct P1_ : FeP<1> { } P1;
+// [[maybe_unused]] static struct P2_ : FeP<2> { } P2;
+// [[maybe_unused]] static struct P3_ : FeP<3> { } P3;
     
 }   // namespace fdapde
 

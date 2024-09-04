@@ -210,10 +210,10 @@ FDAPDE_DEFINE_SCALAR_COEFF_OP(operator-, std::minus<>     )
 FDAPDE_DEFINE_SCALAR_COEFF_OP(operator*, std::multiplies<>)
 FDAPDE_DEFINE_SCALAR_COEFF_OP(operator/, std::divides<>   )
 
-  template <
-    int Size,   // input space dimension (fdapde::Dynamic accepted)
-    typename FunctorType_ = std::function<double(static_dynamic_vector_selector_t<Size>)>>
-  class ScalarField : public ScalarBase<Size, ScalarField<Size, FunctorType_>> {
+template <
+  int Size,   // input space dimension (fdapde::Dynamic accepted)
+  typename FunctorType_ = std::function<double(static_dynamic_vector_selector_t<Size>)>>
+class ScalarField : public ScalarBase<Size, ScalarField<Size, FunctorType_>> {
     using FunctorType = std::decay_t<FunctorType_>;   // type of wrapped functor
     using traits = fn_ptr_traits<&FunctorType::operator()>;
     fdapde_static_assert(traits::n_args == 1, PROVIDED_FUNCTOR_MUST_ACCEPT_ONLY_ONE_ARGUMENT);
@@ -398,6 +398,11 @@ template <int Size, typename Derived> struct ScalarBase {
     constexpr auto gradient() const { return Gradient<Derived>(derived()); }
     constexpr auto hessian() const { return Hessian<Derived>(derived()); }
     constexpr auto laplacian() const { return Laplacian<Derived>(derived()); }
+    // compatibility with matrix expressions (these are here just to let write code which handles both the scalar and
+    // vector case transparently)
+    static constexpr int Rows = 1;
+    static constexpr int Cols = 1;
+    template <typename Rhs> constexpr auto dot(const ScalarBase<Size, Rhs>& rhs) const;
    protected:
     double step_ = 1e-3;   // step size used in derivative approximation
 };

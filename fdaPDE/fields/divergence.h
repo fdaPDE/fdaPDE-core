@@ -47,8 +47,8 @@ template <typename Derived_> class Divergence : public ScalarBase<Derived_::Stat
     constexpr int input_size() const { return xpr_.input_size(); }
     constexpr const Derived& derived() const { return xpr_; }
    private:
-    using StorageType = typename std::conditional<
-      Derived::StaticInputSize == Dynamic, std::vector<FunctorType>, std::array<FunctorType, StaticInputSize>>::type;
+    using StorageType = typename std::conditional_t<
+      Derived::StaticInputSize == Dynamic, std::vector<FunctorType>, std::array<FunctorType, StaticInputSize>>;
     StorageType data_;
     typename internals::ref_select<Derived>::type xpr_;
 };

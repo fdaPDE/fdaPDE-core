@@ -19,6 +19,7 @@
 
 #include "matrix_field.h"
 #include "scalar_field.h"
+#include "meta.h"
 
 namespace fdapde {
 
@@ -61,7 +62,10 @@ template <typename Derived_> class Gradient : public fdapde::MatrixBase<Derived_
     typename internals::ref_select<Derived>::type xpr_;
 };
 
-template <typename XprType> constexpr Gradient<XprType> grad(const XprType& xpr) { return Gradient<XprType>(xpr); }
+template <typename XprType>
+constexpr Gradient<XprType> grad(const XprType& xpr) requires(meta::is_scalar_field_v<XprType>) {
+    return Gradient<XprType>(xpr);
+}
 
 }   // namespace fdapde
 
