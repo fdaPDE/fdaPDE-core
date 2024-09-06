@@ -329,8 +329,8 @@ class MatrixCoeffWiseOp :
    private:
     // keep this private to avoid to consider ScalarCoeffOp as a unary node
     using Derived = std::conditional_t<is_coeff_lhs, Rhs, Lhs>;
-    const Derived& derived() const { if constexpr(is_coeff_lhs) return rhs_; else return lhs_; }
-    const CoeffType& coeff() const { if constexpr(is_coeff_lhs) return lhs_; else return rhs_; }
+    constexpr const Derived& derived() const { if constexpr(is_coeff_lhs) return rhs_; else return lhs_; }
+    constexpr const CoeffType& coeff() const { if constexpr(is_coeff_lhs) return lhs_; else return rhs_; }
    public:
     static constexpr bool is_coeff_scalar_field = meta::is_scalar_field_v<CoeffType>;
     static constexpr int StaticInputSize = Derived::StaticInputSize;

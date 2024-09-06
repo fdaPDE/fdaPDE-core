@@ -25,14 +25,89 @@
 
 namespace fdapde {
 
+namespace internals {
+
+// implementation of vector lagrange space (FeP with NComponents > 1). basis are ordered so that, if, for instance
+// LocalDim = 2, Order = 1, NComponents = 2, then \psi_0 = [\psi_0, 0], \psi_1 = [\psi_1, 0], \psi_2 = [\psi_2, 0],
+// \psi_3 = [0, \psi_0], ... in accordance to how the dof handler replicates its dofs if dof_multiplicity > 1
+template <int LocalDim, int Order, int NComponents> struct vector_fe_p_basis_type {
+    static constexpr int n_basis = LagrangeBasis<LocalDim, Order>::n_basis * NComponents;
+
+    // implements \boldsymbol{\psi}_i = \psi_{i_ % n_components} \iff i == (i \ n_components), 0 otherwise
+    struct PolynomialType : public fdapde::MatrixBase<LocalDim, PolynomialType> {
+       private:
+        // the i-th component of the basis vector
+        struct Component : public fdapde::ScalarBase<LocalDim, Component> {
+            using Scalar = double;
+            using InputType = cexpr::Vector<Scalar, LocalDim>;
+            static constexpr int StaticInputSize = LocalDim;
+            static constexpr int NestAsRef = 0;
+            static constexpr int XprBits = 0;
+
+            constexpr Component() = default;
+            constexpr Component(const PolynomialType* xpr, int i) : xpr_(xpr), i_(i) { }
+            constexpr Scalar operator()(const InputType& p) const { return xpr_->eval(i_, p); }
+            constexpr int input_size() const { return StaticInputSize; }
+           private:
+            int i_;
+            const PolynomialType* xpr_;
+        };
+       public:
+        using Base = MatrixBase<LocalDim, PolynomialType>;
+        using Scalar = double;
+        using InputType = cexpr::Vector<Scalar, LocalDim>;
+        static constexpr int StaticInputSize = LocalDim;
+        static constexpr int NestAsRef = 1;
+        static constexpr int XprBits = 0;
+        static constexpr int ReadOnly = 1;
+        static constexpr int Rows = NComponents;
+        static constexpr int Cols = 1;
+
+        constexpr PolynomialType() = default;
+        template <int n_nodes>
+        constexpr PolynomialType(const cexpr::Matrix<double, n_nodes, LocalDim>& nodes, int i) :
+            basis_(nodes), i_(i) { }
+        constexpr Component operator[](int i) const { return Component(this, i); }
+        constexpr Scalar eval(int i, [[maybe_unused]] int j, const InputType& p) const {
+            constexpr int n_basis_ = LagrangeBasis<LocalDim, Order>::n_basis;
+            return (i == (i_ / n_basis_)) ? basis_[i_ % n_basis_](p) : Scalar(0);
+        }
+        constexpr Scalar eval(int i, const InputType& p) const { return eval(i, 0, p); }
+        // evaluation at point
+        constexpr auto operator()(const InputType& p) const { return Base::call_(p); }
+        constexpr int rows() const { return Rows; }
+        constexpr int cols() const { return Cols; }
+        constexpr int input_size() const { return StaticInputSize; }
+        constexpr int size() const { return Rows * Cols; }
+       private:
+        int i_;   // the i_-th vector basis function [0, \ldots, \psi_{i_ % n_basis}, \ldots, 0]
+        LagrangeBasis<LocalDim, Order> basis_;
+    };
+    constexpr vector_fe_p_basis_type() = default;
+    template <int n_nodes>
+    constexpr explicit vector_fe_p_basis_type(const cexpr::Matrix<double, n_nodes, LocalDim>& nodes) : basis_() {
+        fdapde_static_assert(
+          n_nodes == LagrangeBasis<LocalDim FDAPDE_COMMA Order>::n_basis,
+          WRONG_NUMBER_OF_NODES_FOR_DEFINITION_OF_LAGRANGE_BASIS);
+        for (int i = 0; i < n_basis; ++i) { basis_[i] = PolynomialType(nodes, i); }
+    }
+    // getters
+    constexpr const PolynomialType& operator[](int i) const { return basis_[i]; }
+    constexpr int size() const { return n_basis; }
+   private:
+    std::array<PolynomialType, n_basis> basis_;
+};
+
+}   // namespace internals
+
 // representation of the finite element space P_h^K = { v \in H^1(D) : v_{e} \in P^K \forall e \in T_h }
-  template <int Order, int NComponents> struct FeP {
+template <int Order, int NComponents> struct FeP {  
     static constexpr int order = Order;
     fdapde_static_assert(Order < 4, THIS_CLASS_SUPPORTS_LAGRANGE_ELEMENTS_UP_TO_ORDER_THREE);
     static constexpr int n_components = NComponents;
     static constexpr bool is_vector_fe = (n_components != 1);
     fdapde_static_assert(n_components > 0, DEFINITION_OF_FINITE_ELEMENT_WITH_ZERO_OR_LESS_COMPONENTS_IS_ILL_FORMED);
-    
+
     template <int LocalDim> struct dof_descriptor {
         static constexpr int local_dim = LocalDim;
         using ReferenceCell = Simplex<local_dim, local_dim>;   // reference unit simplex
@@ -45,8 +120,10 @@ namespace fdapde {
         static constexpr int n_dofs_per_cell = n_dofs_per_node * ReferenceCell::n_nodes +
                                                n_dofs_per_edge * ReferenceCell::n_edges +
                                                n_dofs_per_face * ReferenceCell::n_faces + n_dofs_internal;
-        using BasisType = LagrangeBasis<local_dim, Order>;
-        using ElementType = typename BasisType::PolynomialType;
+        static constexpr int dof_multiplicity = n_components;
+        using BasisType = std::conditional_t<
+          NComponents == 1, LagrangeBasis<LocalDim, Order>,
+          internals::vector_fe_p_basis_type<LocalDim, Order, NComponents>>;
 
         constexpr dof_descriptor() : dofs_phys_coords_(), dofs_bary_coords_() {
             // compute dofs physical coordinates on reference cell
@@ -149,7 +226,7 @@ template <int NComponents> struct FeP<0, NComponents> {
     static constexpr int n_components = NComponents;
     static constexpr bool is_vector_fe = (n_components != 1);
     fdapde_static_assert(n_components > 0, DEFINITION_OF_FINITE_ELEMENT_WITH_ZERO_OR_LESS_COMPONENTS_IS_ILL_FORMED);
-
+  
     template <int LocalDim> struct dof_descriptor {
         static constexpr int local_dim = LocalDim;
         using ReferenceCell = Simplex<local_dim, local_dim>;   // reference unit simplex
@@ -160,8 +237,9 @@ template <int NComponents> struct FeP<0, NComponents> {
         static constexpr int n_dofs_per_face = 0;
         static constexpr int n_dofs_internal = 1;
         static constexpr int n_dofs_per_cell = n_dofs_internal;
-        using BasisType = LagrangeBasis<local_dim, 0>;
-        using ElementType = typename BasisType::PolynomialType;
+        static constexpr int dof_multiplicity = n_components;
+        using BasisType = std::conditional_t<
+          NComponents == 1, LagrangeBasis<LocalDim, 0>, internals::vector_fe_p_basis_type<LocalDim, 0, NComponents>>;
 
         constexpr dof_descriptor() : dofs_phys_coords_(), dofs_bary_coords_() {
             // compute dofs physical coordinates on reference cell
@@ -210,11 +288,6 @@ template <int NComponents> constexpr FeP<0, NComponents> P0 = FeP<0, NComponents
 template <int NComponents> constexpr FeP<1, NComponents> P1 = FeP<1, NComponents> {};
 template <int NComponents> constexpr FeP<2, NComponents> P2 = FeP<2, NComponents> {};
 template <int NComponents> constexpr FeP<3, NComponents> P3 = FeP<3, NComponents> {};
-
-// static struct P0_ : FeP<0> { } P0;
-// [[maybe_unused]] static struct P1_ : FeP<1> { } P1;
-// [[maybe_unused]] static struct P2_ : FeP<2> { } P2;
-// [[maybe_unused]] static struct P3_ : FeP<3> { } P3;
     
 }   // namespace fdapde
 

@@ -361,6 +361,14 @@ class BinMtxBlock : public BinMtxBase<BlockRows, BlockCols, BinMtxBlock<BlockRow
         }
         return *this;
     }
+    XprType& operator=(const BinMtxBlock& rhs) {
+        for (int i = 0; i < rhs.rows(); ++i) {
+            for (int j = 0; j < rhs.cols(); ++j) {
+                if (rhs(i, j)) set(i, j);
+            }
+        }
+        return *this;
+    }
    private:
     // internal data
     typename internals::ref_select<XprTypeNested>::type xpr_;
@@ -580,8 +588,10 @@ template <int Rows, int Cols, typename XprType> class BinMtxBase {
     // other block-type accessors
     BinMtxBlock<Dynamic, Dynamic, XprType> topRows(int n) { return block(0, 0, n, cols()); }
     BinMtxBlock<Dynamic, Dynamic, XprType> bottomRows(int n) { return block(rows() - n, 0, n, cols()); }
+    BinMtxBlock<Dynamic, Dynamic, XprType> middleRows(int n, int m) { return block(n, 0, m, cols()); }
     BinMtxBlock<Dynamic, Dynamic, XprType> leftCols(int n) { return block(0, 0, rows(), n); }
     BinMtxBlock<Dynamic, Dynamic, XprType> rightCols(int n) { return block(0, cols() - n, rows(), n); }
+    BinMtxBlock<Dynamic, Dynamic, XprType> middleCols(int n, int m) { return block(0, n, rows(), m); }
 
     // visitors support
     inline bool all() const { return visit_apply_<all_visitor<XprType>, linear_bitpack_visit>(); }

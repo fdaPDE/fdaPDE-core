@@ -34,7 +34,6 @@ template <typename Triangulation_, typename FeType_> class FeSpace {
     using face_dof_descriptor = FeType::template face_dof_descriptor<local_dim>;
     using ReferenceCell = typename cell_dof_descriptor::ReferenceCell;
     using BasisType = typename cell_dof_descriptor::BasisType;
-    using ElementType = typename cell_dof_descriptor::ElementType;
 
     FeSpace() = default;
     FeSpace(const Triangulation_& triangulation, FeType_ fe) :
@@ -51,42 +50,21 @@ template <typename Triangulation_, typename FeType_> class FeSpace {
     constexpr int n_basis_face() const { return n_components * face_basis_.size(); }
     int n_dofs() const { return dof_handler_.n_dofs(); }
     // scalar finite elements API
-    template <typename InputType>
-    constexpr auto eval(int i, const InputType& p) const requires(n_components == 1) { return cell_basis_[i](p); }
-    template <typename InputType>
-    constexpr auto eval_grad(int i, const InputType& p) const requires(n_components == 1) {
+    template <typename InputType> constexpr auto eval_shape_function(int i, const InputType& p) const {
+        return cell_basis_[i](p);
+    }
+    template <typename InputType> constexpr auto eval_shape_function_grad(int i, const InputType& p) const {
         return cell_basis_[i].gradient()(p);
     }
-    template <typename InputType>
-    constexpr auto face_eval(int i, const InputType& p) const requires(n_components == 1) { return face_basis_[i](p); }
-    template <typename InputType>
-    constexpr auto face_eval_grad(int i, const InputType& p) const requires(n_components == 1) {
+    template <typename InputType> constexpr auto eval_shape_function_div(int i, const InputType& p) const {
+        fdapde_static_assert(n_components > 1, THIS_METHOD_IS_FOR_VECTOR_FINITE_ELEMENT_ONLY);
+        return cell_basis_[i].divergence()(p);
+    }
+    template <typename InputType> constexpr auto eval_face_shape_function(int i, const InputType& p) const {
+        return face_basis_[i](p);
+    }
+    template <typename InputType> constexpr auto eval_face_shape_function_grad(int i, const InputType& p) const {
         return face_basis_[i].gradient()(p);
-    }
-    // vector finite elements API (\psi_i = [ \psi_{i, 1}, ..., \psi_{i, j}, ..., \psi_{i, n_components} ])
-    // here we observe that for a vector valued basis system, \psi_i[j] = 0 \iff i != j, and \psi_j[j] = \psi_j, being
-    // \psi_j the j-th scalar basis function defined on the reference cell
-    template <typename InputType>
-    constexpr auto eval(int i, int j, const InputType& p) const requires(n_components > 1) {
-        return (i % n_components == j) ? cell_basis_[j](p) : 0.0;
-    }
-    template <typename InputType>
-    constexpr auto eval_grad(int i, int j, const InputType& p) const
-        requires(n_components > 1) {
-        using OutputType =
-          std::decay_t<decltype(cell_basis_.operator[](std::declval<int>()).operator()(std::declval<InputType>()))>;
-        return (i % n_components == j) ? cell_basis_[i].gradient()(p) : OutputType::Zero();
-    }
-    template <typename InputType>
-    constexpr auto face_eval(int i, int j, const InputType& p) const requires(n_components > 1) {
-        return (i % n_components == j) ? face_basis_[j](p) : 0.0;
-    }
-    template <typename InputType>
-    constexpr auto face_eval_grad(int i, int j, const InputType& p) const
-        requires(n_components > 1) {
-        using OutputType =
-          std::decay_t<decltype(face_basis_.operator[](std::declval<int>()).operator()(std::declval<InputType>()))>;
-        return (i % n_components == j) ? face_basis_[i].gradient()(p) : OutputType::Zero();
     }
    private:
     const Triangulation* triangulation_;

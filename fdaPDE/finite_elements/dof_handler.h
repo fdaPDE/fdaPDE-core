@@ -168,15 +168,15 @@ template <int LocalDim, int EmbedDim, typename Derived> class DofHandlerBase {
     void enforce_constraints(SpMatrix<double>& A) const { dof_constraints_.enforce_constraints(A); }
     void enforce_constraints(DVector<double>& b)  const { dof_constraints_.enforce_constraints(b); }
     DMatrix<double> dofs_coords() const {   // computes degrees of freedom's physical coordinates
-        // allocate space
+        // allocate space (just for unique dofs, i.e., without considering any dof multiplicity)
         DMatrix<double> coords;
-        coords.resize(n_dofs_, TriangulationType::embed_dim);
+        coords.resize(n_dofs_ / derived().dof_multiplicity(), TriangulationType::embed_dim);
         std::unordered_set<int> visited;
         // cycle over all mesh elements
         for (typename TriangulationType::cell_iterator cell = triangulation_->cells_begin();
              cell != triangulation_->cells_end(); ++cell) {
             int cell_id = cell->id();
-            for (int j = 0; j < static_cast<const Derived&>(*this).n_dofs_per_cell(); ++j) {
+            for (int j = 0; j < derived().n_dofs_per_cell(); ++j) {
                 int dof = dofs_(cell_id, j);
                 if (visited.find(dof) == visited.end()) {
                     // map point from reference to physical element
@@ -240,9 +240,9 @@ template <int LocalDim, int EmbedDim, typename Derived> class DofHandlerBase {
         fdapde_static_assert(
           dof_descriptor::local_dim == TriangulationType::local_dim, YOU_PROVIDED_A_WRONG_FINITE_ELEMENT_DESCRIPTOR);
         fdapde_static_assert(
-          dof_descriptor::n_dofs_per_cell > 0,
+          dof_descriptor::n_dofs_per_cell > 0 && dof_descriptor::dof_multiplicity > 0,
           FINITE_ELEMENT_DESCRIPTION_REQUESTS_THE_INSERTION_OF_AT_LEAST_ONE_DEGREE_OF_FREEDOM_PER_CELL);
-        dofs_.resize(triangulation_->n_cells(), dof_descriptor::n_dofs_per_cell);
+        dofs_.resize(triangulation_->n_cells(), dof_descriptor::n_dofs_per_cell * dof_descriptor::dof_multiplicity);
 	// copy coordinates of dofs defined on reference unit simplex
 	typename FEType::cell_dof_descriptor<TriangulationType::local_dim> fe;
 	reference_dofs_barycentric_coords_.resize(fe.dofs_bary_coords().rows(), fe.dofs_bary_coords().cols());
@@ -252,11 +252,14 @@ template <int LocalDim, int EmbedDim, typename Derived> class DofHandlerBase {
 	const int n_cells = triangulation_->n_cells();
 	n_dofs_ = 0;
         if constexpr (dof_descriptor::dof_sharing) {
-            fdapde_static_assert(
-              dof_descriptor::n_dofs_per_node == 1, DOF_SHARING_REQUIRES_ONE_DEGREES_OF_FREEDOM_PER_MESH_NODE);
-            // for dof_sharing finite elements, use the geometric nodes enumeration as dof enumeration
-            dofs_.leftCols(n_dofs_at_nodes) = triangulation_->cells();
-            n_dofs_ = triangulation_->n_nodes();
+            if constexpr (dof_descriptor::n_dofs_per_node > 0) {
+                fdapde_static_assert(
+                  dof_descriptor::n_dofs_per_node == 1,
+                  DOF_SHARING_ON_CELLS_NODES_REQUIRES_ONE_DEGREES_OF_FREEDOM_PER_NODE);
+                // for dof_sharing finite elements, use the geometric nodes enumeration as dof enumeration
+                dofs_.leftCols(n_dofs_at_nodes) = triangulation_->cells();
+                n_dofs_ = triangulation_->n_nodes();
+            }
         } else {
             for (int i = 0; i < n_cells; ++i) {
                 for (int j = 0; j < n_dofs_at_nodes; ++j) { dofs_(i, j) = n_dofs_++; }
@@ -270,6 +273,7 @@ template <int LocalDim, int EmbedDim, typename Derived> class DofHandlerBase {
         dofs_markers_ = std::vector<int>(n_dofs_, Unmarked);
         return;
     }
+    const Derived& derived() const { return static_cast<const Derived&>(*this); }
 };
   
 template <int EmbedDim> class DofHandler<2, EmbedDim> : public DofHandlerBase<2, EmbedDim, DofHandler<2, EmbedDim>> {
@@ -291,6 +295,7 @@ template <int EmbedDim> class DofHandler<2, EmbedDim> : public DofHandlerBase<2,
         n_dofs_per_edge_ = dof_descriptor::n_dofs_per_edge;
         n_dofs_per_cell_ = n_dofs_per_node_ * TriangulationType::n_nodes_per_cell +
                            n_dofs_per_edge_ * TriangulationType::n_edges_per_cell + n_dofs_internal_per_cell_;
+	dof_multiplicity_ = dof_descriptor::dof_multiplicity;
         // move geometrical markers on boundary edges to dof markers on nodes. high labeled nodes have higher priority
         if constexpr (dof_descriptor::n_dofs_per_node > 0) {
             for (typename TriangulationType::edge_iterator it = triangulation_->boundary_edges_begin();
@@ -364,7 +369,7 @@ template <int EmbedDim> class DofHandler<2, EmbedDim> : public DofHandlerBase<2,
             }
         }
         // update boundary
-        Base::boundary_dofs_.resize(n_dofs_);
+        Base::boundary_dofs_.resize(n_dofs_ * dof_descriptor::dof_multiplicity);
         if constexpr (dof_descriptor::n_dofs_per_node > 0) {   // inherit boundary description from geometry
             Base::boundary_dofs_.topRows(triangulation_->n_nodes()) = triangulation_->boundary_nodes();
         }
@@ -375,6 +380,26 @@ template <int EmbedDim> class DofHandler<2, EmbedDim> : public DofHandlerBase<2,
                 Base::dofs_markers_[it->first] = it->second;
             }
         }
+	// if dof_multiplicity is higher than one, replicate the computed dof numbering adding n_dofs_ to each dof
+        if constexpr (dof_descriptor::dof_multiplicity > 1) {
+            Base::dofs_to_cell_.resize(n_dofs_ * dof_descriptor::dof_multiplicity);
+            Base::dofs_markers_.resize(n_dofs_ * dof_descriptor::dof_multiplicity);
+            for (int i = 1; i < dof_descriptor::dof_multiplicity; ++i) {
+                dofs_.middleCols(i * dof_descriptor::n_dofs_per_cell, dof_descriptor::n_dofs_per_cell) =
+                  dofs_.leftCols(dof_descriptor::n_dofs_per_cell).array() + (i * n_dofs_);
+                Base::boundary_dofs_.middleRows(i * n_dofs_, n_dofs_) = Base::boundary_dofs_.topRows(n_dofs_);
+                for (int j = 0; j < n_dofs_; ++j) {
+                    Base::dofs_to_cell_[j + i * n_dofs_] = Base::dofs_to_cell_[j];
+                    Base::dofs_markers_[j + i * n_dofs_] = Base::dofs_markers_[j];
+                }
+                if constexpr (dof_descriptor::n_dofs_per_edge > 0) {
+                    for (auto& [edge_id, dof_ids] : edge_to_dofs_) {
+                        for (int dof : dof_ids) { dof_ids.push_back(dof + i * n_dofs_); }
+                    }
+                }
+            }
+	    n_dofs_ = n_dofs_ * dof_descriptor::dof_multiplicity;
+        }
         return;
     }
     // getters
@@ -382,6 +407,7 @@ template <int EmbedDim> class DofHandler<2, EmbedDim> : public DofHandlerBase<2,
     int n_dofs_per_edge() const { return n_dofs_per_edge_; }
     int n_dofs_per_node() const { return n_dofs_per_node_; }
     int n_dofs_internal_per_cell() const { return n_dofs_internal_per_cell_; }
+    int dof_multiplicity() const { return dof_multiplicity_; }
     const std::unordered_map<int, std::vector<int>>& edge_to_dofs() const { return edge_to_dofs_; }
 
     // iterator over (dof informed) edges
@@ -432,6 +458,7 @@ template <int EmbedDim> class DofHandler<2, EmbedDim> : public DofHandlerBase<2,
     using boundary_iterator = boundary_edge_iterator;
    private:
     int n_dofs_per_node_ = 0, n_dofs_per_edge_ = 0, n_dofs_per_cell_ = 0, n_dofs_internal_per_cell_ = 0;
+    int dof_multiplicity_ = 0;
     std::unordered_map<int, std::vector<int>> edge_to_dofs_;   // for each edge, the dofs which are not on its nodes
 };
 

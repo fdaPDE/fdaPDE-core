@@ -39,7 +39,7 @@ template <typename Derived_> class Jacobian : public fdapde::MatrixBase<Derived_
     static constexpr int NestAsRef = 0;
     static constexpr int XprBits = Derived::XprBits;
 
-    explicit constexpr Jacobian(const Derived& xpr) : Base(), xpr_(xpr) {
+    explicit constexpr Jacobian(const Derived_& xpr) : Base(), xpr_(xpr) {
         if constexpr (StaticInputSize == Dynamic) data_.resize(xpr_.rows() * xpr_.input_size());
         for (int i = 0; i < xpr_.rows(); ++i) {
             for (int j = 0; j < xpr_.input_size(); ++j) { data_[i * Cols + j] = FunctorType(xpr_[j], i); }
@@ -57,9 +57,9 @@ template <typename Derived_> class Jacobian : public fdapde::MatrixBase<Derived_
     constexpr auto operator()(const InputType& p) const { return Base::call_(p); }
    private:
     using StorageType = typename std::conditional_t<
-      Derived::StaticInputSize == Dynamic, std::vector<FunctorType>, std::array<FunctorType, StaticInputSize>>;
+      Derived::StaticInputSize == Dynamic, std::vector<FunctorType>, std::array<FunctorType, Rows * Cols>>;
     StorageType data_;
-    typename internals::ref_select<Derived>::type xpr_;
+    typename internals::ref_select<const Derived>::type xpr_;
 };
 
 template <typename XprType>

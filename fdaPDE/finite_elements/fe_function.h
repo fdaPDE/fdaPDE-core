@@ -306,16 +306,11 @@ class FeFunction :
         OutputType value;
         if constexpr (FeSpace::n_components == 1) {
             value = 0;
-            for (int i = 0; i < fe_space_->n_basis(); ++i) {
-                value += coeff_[active_dofs[i]] * fe_space_->eval(i, ref_p);
-            }
-        } else {   // vector fe evaluation
+        } else {
             value = OutputType::Zero();
-            for (int i = 0, n = fe_space_->n_basis(); i < n; ++i) {
-                for (int j = 0; j < FeSpace::n_components; ++j) {
-                    value[j] += coeff_[active_dofs[i]] * fe_space_->eval(i, j, ref_p);
-                }
-            }
+        }
+        for (int i = 0, n = fe_space_->n_basis(); i < n; ++i) {
+            value += coeff_[active_dofs[i]] * fe_space_->eval_shape_function(i, ref_p);
         }
         return value;
     }
@@ -329,7 +324,7 @@ class FeFunction :
         DVector<int> active_dofs = cell.dofs();
         Scalar value = 0;
         for (int j = 0, n = fe_space_->n_basis(); j < n; ++j) {
-            value += coeff_[active_dofs[j]] * fe_space_->eval(j, i, ref_p);
+	  value += coeff_[active_dofs[j]] * fe_space_->eval_shape_function(j, ref_p)[i];
         }
         return value;
     }
