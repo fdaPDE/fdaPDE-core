@@ -108,7 +108,20 @@ template <int Idx_, typename... Slicers_> constexpr int smallest_index_in_mdarra
         return static_cast<int>(std::get<0>(slicer));
     }
 }
-  
+
+// checks for the presence of duplicated entries in index pack
+template <typename... IndexType>
+    requires(std::is_convertible_v<IndexType, int> && ...) && (sizeof...(IndexType) > 0)
+constexpr bool no_duplicates_in_pack(IndexType... idxs) {
+    std::array<int, sizeof...(IndexType)> tmp {idxs...};
+    for (int i = 0; i < sizeof...(IndexType) - 1; ++i) {
+        for (int j = i + 1; j < sizeof...(IndexType); ++j) {
+            if (tmp[i] == tmp[j]) return false;
+        }
+    }
+    return true;
+}
+
 }   // namespace internals
 
 template <int... Extents_> class extents {
@@ -303,7 +316,11 @@ template <typename MdArray_, typename BlkExtents_> class MdArrayBlock {
 
     // observers
     constexpr int size() const { return extents_.size(); }
-    constexpr int extent(int r) const { return extents_.extent(r); }
+    constexpr int extent(int r) const {
+        fdapde_constexpr_assert(r < Order);
+        return extents_.extent(r);
+    }
+    constexpr int order() const { return Order; }
     // iterator
     template <typename MdArrayBlock_> struct iterator {
         constexpr iterator() noexcept = default;
@@ -421,22 +438,132 @@ constexpr auto submdarray(MdArray_&& mdarray, Slicers... slicers) {
       &mdarray, full_dynamic_extent_t<Order>(blk_extents), slicers...);
 }
 
-template <typename MdArray_, int... Exts_, typename... Slicers_>
-    requires(sizeof...(Exts_) == std::decay_t<MdArray_>::Order && sizeof...(Exts_) == sizeof...(Slicers_) &&
-             std::is_reference_v<MdArray_>) &&
-            (internals::is_integer_v<Slicers_> && ...)
-constexpr auto submdarray(MdArray_&& mdarray, Slicers_&&... slicers) {
-    using MdArray = std::remove_reference_t<MdArray_>;
-    constexpr int Order = std::decay_t<MdArray>::Order;
-    // check block is within MdArray
-    std::array<int, Order> static_block_extents {Exts_...};
-    internals::for_each_index_and_args<Order>(
-      [&]<int Ns_, typename Slicer__>(Slicer__ s) {
-          fdapde_constexpr_assert(static_block_extents[Ns_] + s < 1 + mdarray.extent(Ns_));
-      },
-      slicers...);
-    return MdArrayBlock<MdArray, extents<Exts_...>>(&mdarray, extents<Exts_...>(), slicers...);
-}
+// a slice is a lower-order view of an MdArray in which one dimension has been fixed
+template <typename MdArray_, int... Slicers_> class MdArraySlice {
+    static_assert(sizeof...(Slicers_) < MdArray_::Order && ((Slicers_ >= 0 && Slicers_ < MdArray_::Order) && ...));
+   public:
+    static constexpr int Order = MdArray_::Order - sizeof...(Slicers_);
+    static constexpr std::array<int, sizeof...(Slicers_)> static_slicers {Slicers_...};
+    fdapde_static_assert(internals::no_duplicates_in_pack(Slicers_...), SLICING_DIRECTIONS_MUST_BE_UNIQUE);
+    // inv_map_ = {0, \ldots, MdArray_::Order - 1} \setminus static_slicers
+    static constexpr std::array<int, Order> free_extents_ {[]() {
+        std::array<int, Order> map {};
+        for (int i = 0, j = 0; i < MdArray_::Order; ++i) {
+            if (std::find(static_slicers.begin(), static_slicers.end(), i) == static_slicers.end()) { map[j++] = i; }
+        }
+        return map;
+    }()};
+    using Scalar = MdArray_::Scalar;
+
+    template <typename... Slicers>
+        requires(sizeof...(Slicers) == sizeof...(Slicers_)) && (internals::is_integer_v<Slicers> && ...)
+    constexpr MdArraySlice(MdArray_* mdarray, Slicers... slicers) noexcept :
+        slicers_({slicers...}), mdarray_(mdarray), offset_(1) {
+        internals::for_each_index_and_args<sizeof...(Slicers)>(
+          [&]<int Ns_, typename Slicer__>(Slicer__ s) {
+              fdapde_constexpr_assert(s < mdarray_->extent(extents_mapping_[Ns_]));
+          },
+          slicers...);
+	// compute offset in linearized memory due to slicing
+        for (int i = 0; i < sizeof...(Slicers); ++i) {
+            offset_ *= slicers_[i] * mdarray_->mapping().stride(static_slicers[i]);
+        }
+    }
+    // observers
+    constexpr int size() const {
+        int size_ = 1;
+        for (int i = 0; i < Order; ++i) { size_ *= mdarray_->extent(static_slicers[i]); }
+        return size_;
+    }
+    constexpr int extent(int r) const {
+        fdapde_constexpr_assert(r < Order);
+        return mdarray_->extent(static_slicers[r]);
+    }
+    // iterator
+    template <typename MdArraySlice_> struct iterator {
+        constexpr iterator() noexcept = default;
+        template <typename... Idxs>
+            requires(std::is_convertible_v<Idxs, int> && ...) && (sizeof...(Idxs) == Order)
+        constexpr iterator(MdArraySlice_* mdarray, Idxs... idxs) noexcept : mdarray_(mdarray), index_({idxs...}) { }
+        constexpr iterator(MdArraySlice_* mdarray, const std::array<int, Order>& index) noexcept :
+            mdarray_(mdarray), index_(index) { }
+
+        constexpr iterator& operator++() noexcept {
+            index_[Order - 1]++;
+            int i = Order - 1;
+            while (i > 0 && index_[i] >= mdarray_->extent(i)) {
+                index_[i] = 0;
+                index_[--i]++;
+            }
+            return *this;
+        }
+        // const access
+        constexpr const Scalar& operator*()  const { return fetch_at_(index_); }
+        constexpr const Scalar* operator->() const { return std::addressof(fetch_at(index_)); }
+        // non-const access
+        constexpr Scalar& operator*()  requires(!std::is_const_v<MdArray_>) { return fetch_at_(index_); }
+        constexpr Scalar* operator->() requires(!std::is_const_v<MdArray_>) { return std::addressof(fetch_at(index_)); }
+        // comparison
+        constexpr friend bool operator==(const iterator& lhs, const iterator& rhs) { return lhs.index_ == rhs.index_; }
+        constexpr friend bool operator!=(const iterator& lhs, const iterator& rhs) { return lhs.index_ != rhs.index_; }
+       private:
+        template <typename IndexType> constexpr decltype(auto) fetch_at_(IndexType&& index) {
+            return internals::apply_index_pack<Order>(
+              [&]<int... Ns_>() -> decltype(auto) { return mdarray_->operator()((Ns_, index[Ns_])...); });
+        }
+        MdArraySlice_* mdarray_;
+        std::array<int, Order> index_;
+    };
+    // const iterators
+    constexpr iterator<const MdArraySlice<MdArray_, Slicers_...>> begin() const noexcept {
+        return internals::apply_index_pack<Order>(
+          [&]<int... Ns_> { return iterator<const MdArraySlice<MdArray_, Slicers_...>> {this, (Ns_, 0)...}; });
+    }
+    constexpr iterator<const MdArraySlice<MdArray_, Slicers_...>> end() const noexcept {
+        return internals::apply_index_pack<Order - 1>([&]<int... Ns_> {
+            return iterator<const MdArraySlice<MdArray_, Slicers_...>> {this, extent(0), (Ns_, 0)...};
+        });
+    }
+    // non-const iterators
+    constexpr iterator<MdArraySlice<MdArray_, Slicers_...>> begin() noexcept {
+        return internals::apply_index_pack<Order>(
+          [&]<int... Ns_> { return iterator<MdArraySlice<MdArray_, Slicers_...>> {this, (Ns_, 0)...}; });
+    }
+    constexpr iterator<MdArraySlice<MdArray_, Slicers_...>> end() noexcept {
+        return internals::apply_index_pack<Order - 1>(
+          [&]<int... Ns_> { return iterator<MdArraySlice<MdArray_, Slicers_...>> {this, extent(0), (Ns_, 0)...}; });
+    }
+    // modifiers
+    constexpr void set_constant(Scalar c) {
+        for (Scalar& value : *this) { value = Scalar(c); }
+    }
+    constexpr void set_zero() { set_constant(Scalar(0)); }
+    constexpr void set_ones() { set_constant(Scalar(1)); }
+    // constant access
+    template <typename... Idxs>
+        requires(std::is_convertible_v<Idxs, int> && ...) && (sizeof...(Idxs) == Order)
+    constexpr Scalar operator()(Idxs... idxs) const {
+        internals::for_each_index_and_args<Order>(
+          [&]<int Ns_, typename Slicer__>(Slicer__ s) { fdapde_constexpr_assert(idxs < extents(Ns_)); }, idxs...);
+        return mdarray_->operator[](internals::apply_index_pack<Order>([&]<int... Ns_>() {
+            return ((static_cast<int>(idxs) * mdarray_->mapping().stride(free_extents_[Ns_])) + ... + offset_);
+        }));
+    }
+    // non-constant access
+    template <typename... Idxs>
+        requires(std::is_convertible_v<Idxs, int> && ...) && (sizeof...(Idxs) == Order && !std::is_const_v<MdArray_>)
+    constexpr Scalar& operator()(Idxs... idxs) {
+        internals::for_each_index_and_args<Order>(
+          [&]<int Ns_, typename Slicer__>(Slicer__ s) { fdapde_constexpr_assert(idxs < extents(Ns_)); }, idxs...);
+        return mdarray_->operator[](internals::apply_index_pack<Order>([&]<int... Ns_>() {
+            return ((static_cast<int>(idxs) * mdarray_->mapping().stride(free_extents_[Ns_])) + ... + offset_);
+        }));
+    }
+   private:
+    int offset_ = 0;
+    std::array<int, sizeof...(Slicers_)> slicers_;
+    MdArray_* mdarray_;
+};
 
 // MdArray: an owning C++20 multidimensional array.
 // If Extents_ is such that Extents_::DynamicOrder == 0, MdArray can be used in a constexpr context.
@@ -626,20 +753,47 @@ template <typename Scalar_, typename Extents_, typename LayoutPolicy_ = internal
     constexpr auto block(Slicers_... slicers) const {
         return fdapde::submdarray(*this, slicers...);
     }
-    template <int... Exts_, typename... Slicers_>   // static-sized
+    template <int... Exts_, typename... Slicers_>   // static-sized (const access)
         requires(sizeof...(Exts_) == Order && sizeof...(Exts_) == sizeof...(Slicers_)) &&
                 (internals::is_integer_v<Slicers_> && ...)
     constexpr MdArrayBlock<const MdArray<Scalar_, Extents_, LayoutPolicy_>, extents<Exts_...>> block(
-      Slicers_&&... slicers) const {
-        return fdapde::submdarray<Exts_...>(*this, slicers...);
+      Slicers_... slicers) const {
+        // check block is within MdArray
+        std::array<int, Order> static_block_extents {Exts_...};
+        internals::for_each_index_and_args<Order>(
+          [&]<int Ns_, typename Slicer__>(Slicer__ s) {
+              fdapde_constexpr_assert(static_block_extents[Ns_] + s < 1 + mdarray.extent(Ns_));
+          },
+          slicers...);
+        return MdArrayBlock<MdArray<Scalar_, Extents_, LayoutPolicy_>, extents<Exts_...>>(
+          this, extents<Exts_...>(), slicers...);
     }
-    template <int... Exts_, typename... Slicers_>   // static-sized
+    template <int... Exts_, typename... Slicers_>   // static-sized (non-const access)
         requires(sizeof...(Exts_) == Order && sizeof...(Exts_) == sizeof...(Slicers_)) &&
                 (internals::is_integer_v<Slicers_> && ...)
-    constexpr MdArrayBlock<MdArray<Scalar_, Extents_, LayoutPolicy_>, extents<Exts_...>> block(Slicers_&&... slicers) {
-        return fdapde::submdarray<Exts_...>(*this, slicers...);
+    constexpr MdArrayBlock<MdArray<Scalar_, Extents_, LayoutPolicy_>, extents<Exts_...>> block(Slicers_... slicers) {
+        // check block is within MdArray
+        std::array<int, Order> static_block_extents {Exts_...};
+        internals::for_each_index_and_args<Order>(
+          [&]<int Ns_, typename Slicer__>(Slicer__ s) {
+              fdapde_constexpr_assert(static_block_extents[Ns_] + s < 1 + mdarray.extent(Ns_));
+          },
+          slicers...);
+        return MdArrayBlock<MdArray<Scalar_, Extents_, LayoutPolicy_>, extents<Exts_...>>(
+          this, extents<Exts_...>(), slicers...);
     }
-   private:  
+
+    template <int... Slicers, typename... Slicers__>
+        requires(std::is_convertible_v<Slicers__, int> && ...)
+    constexpr auto slice(Slicers__... slicers) {
+        return MdArraySlice<MdArray<Scalar_, Extents_, LayoutPolicy_>, Slicers...>(this, slicers...);
+    }
+    template <int... Slicers, typename... Slicers__>
+        requires(std::is_convertible_v<Slicers__, int> && ...)
+    constexpr auto slice(Slicers__... slicers) const {
+        return MdArraySlice<const MdArray<Scalar_, Extents_, LayoutPolicy_>, Slicers...>(this, slicers...);
+    }
+   private:
     Extents extents_ {};
     Mapping mapping_ {};
     Storage data_ {};
