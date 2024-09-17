@@ -296,10 +296,10 @@ class Matrix : public MatrixBase<Rows_, Cols_, Matrix<Scalar_, Rows_, Cols_, Nes
     constexpr Matrix(const MatrixBase<Rows_, Cols_, Derived>& xpr) : data_() {
         fdapde_static_assert(
           std::is_convertible_v<typename Derived::Scalar FDAPDE_COMMA Scalar>,
-          CANNOT_CONVERT_SCALAR_TYPES_IN_CONSTRUCTOR);
+          INVALID_SCALAR_TYPES_CONVERSION_BETWEEN_MATRICES);
         fdapde_static_assert(
           Derived::Rows == Rows && Derived::Cols == Cols,
-          YOU_ARE_TRYING_TO_CONSTRUCT_A_MATRIX_WITH_ANOTHER_OF_DIFFERENT_SIZE);
+          YOU_ARE_TRYING_TO_CONSTRUCT_A_MATRIX_WITH_ANOTHER_MATRIX_OF_DIFFERENT_SIZE);
         for (int i = 0; i < rows(); ++i) {
             for (int j = 0; j < cols(); ++j) { data_[i * Cols + j] = xpr.derived().operator()(i, j); }
         }
@@ -735,22 +735,23 @@ class Map : public MatrixBase<Rows_, Cols_, Map<Scalar_, Rows_, Cols_>> {
     static constexpr int NestAsRef = 1;
 
     constexpr Map() : data_() { }
-    constexpr Map(Scalar_* data) : data_(data) { }
+    constexpr Map(Scalar_* data) : data_(data), offset_(0) { }
+    constexpr Map(Scalar_* data, int offset) : data_(data), offset_(offset) { }
     // const access
     constexpr Scalar operator()(int i, int j) const {
-        return data_[(StorageOrder_ == RowMajor ? (i * Cols + j) : (j * Rows + i))];
+        return data_[offset_ + (StorageOrder_ == RowMajor ? (i * Cols + j) : (j * Rows + i))];
     }
     constexpr Scalar operator[](int i) const {
         fdapde_static_assert(Cols == 1 || Rows == 1, THIS_METHOD_IS_ONLY_FOR_CONSTEXPR_ROW_OR_COLUMN_VECTORS);
-        return data_[i];
+        return data_[offset_ + i];
     }
     // non-const access
     constexpr Scalar& operator()(int i, int j) {
-        return data_[(StorageOrder_ == RowMajor ? (i * Cols + j) : (j * Rows + i))];
+        return data_[offset_ + (StorageOrder_ == RowMajor ? (i * Cols + j) : (j * Rows + i))];
     }
     constexpr Scalar& operator[](int i) {
         fdapde_static_assert(Cols == 1 || Rows == 1, THIS_METHOD_IS_ONLY_FOR_CONSTEXPR_ROW_OR_COLUMN_VECTORS);
-        return data_[i];
+        return data_[offset_ + i];
     }
     constexpr int rows() const { return Rows; }
     constexpr int cols() const { return Cols; }
@@ -768,7 +769,8 @@ class Map : public MatrixBase<Rows_, Cols_, Map<Scalar_, Rows_, Cols_>> {
         return *this;
     }
    private:
-    Scalar_* data_;
+    Scalar_* data_ = nullptr;
+    int offset_ = 0;
 };
 
 }   // namespace cexpr
