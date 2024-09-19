@@ -150,7 +150,7 @@ void FSPAI::selectCandidates(const Eigen::Index& k) {
                 // Add contributions from A(j, *it) and A(*it, j)
                 v += A_.coeff(j, *it) * Lk_[*it];
                 
-                // Include the symmetric element if it is not the same
+                // Include the symmetric element 
                 if (static_cast<std::size_t>(*it) != static_cast<std::size_t>(j) && 
                     sparsityPattern_.count(*it) && 
                     sparsityPattern_.at(*it).count(static_cast<Eigen::Index>(j))) {
@@ -162,6 +162,7 @@ void FSPAI::selectCandidates(const Eigen::Index& k) {
             hatJk_.emplace(j, v);
         }
     }
+    return;
 }
 
 
