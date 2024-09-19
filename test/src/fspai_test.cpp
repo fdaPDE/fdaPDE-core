@@ -25,11 +25,11 @@ TEST(FspaiTestSuite, FspaiTest) {
 
     // Define a sparse matrix for input in the FSPAI algorithm
     SpMatrix<double> E_; 
-    Eigen::loadMarket(E_, "matrix_to_be_inverted.mtx"); // Load the matrix to be inverted from file
+    Eigen::loadMarket(E_, "../matrix_to_be_inverted.mtx"); // Load the matrix to be inverted from file
 
     // Define a sparse matrix for the expected result
     SpMatrix<double> expected_precondE;
-    Eigen::loadMarket(expected_precondE, "expected_inverted_matrix.mtx"); // Load the expected inverted matrix from file
+    Eigen::loadMarket(expected_precondE, "../expected_inverted_matrix.mtx"); // Load the expected inverted matrix from file
 
     // Compute the inverted matrix E using the FSPAI algorithm
     int alpha = 10;    // Number of updates to the sparsity pattern for each column of A (perform alpha steps of approximate inverse update along column k)
