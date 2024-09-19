@@ -21,7 +21,6 @@
 #include "../utils/type_erasure.h"
 
 namespace fdapde {
-namespace core {
 
 // a type-erasure wrapper for an optimization algorithm optimizing F
 template <typename F> struct Optimizer__ {
@@ -37,7 +36,6 @@ template <typename F> struct Optimizer__ {
 };
 template <typename F> using Optimizer = fdapde::erase<fdapde::heap_storage, Optimizer__<F>>;
 
-}   // namespace core
 }   // namespace fdapde
 
 #endif   // __OPTIMIZER_H__

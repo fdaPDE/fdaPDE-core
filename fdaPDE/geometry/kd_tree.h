@@ -25,7 +25,6 @@
 #include "../utils/data_structures/binary_tree.h"
 
 namespace fdapde {
-namespace core {
 
 // KD-tree data structure to solve nearest neighbors search problems (uses a median splitting plane strategy)
 template <int K> class KDTree {
@@ -150,7 +149,6 @@ template <int K> class KDTree {
     }
 };
 
-}   // namespace core
 }   // namespace fdapde
 
 #endif   // __KD_TREE_H__

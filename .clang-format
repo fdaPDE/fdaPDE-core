@@ -188,8 +188,6 @@ SpaceBeforeCpp11BracedList: true
 SpaceBeforeCtorInitializerColon: true
 # insert a space after colon inheritance list
 SpaceBeforeInheritanceColon: true
-# insert a space before every control statment: if, for, while, ...
-SpaceBeforeParens: ControlStatements
 
 # other spacing definition
 SpaceBeforeParens: Custom

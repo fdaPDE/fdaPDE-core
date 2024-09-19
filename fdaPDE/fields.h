@@ -17,15 +17,15 @@
 #ifndef __FDAPDE_FIELDS_MODULE_H__
 #define __FDAPDE_FIELDS_MODULE_H__
 
-#include "fields/differentiable_field.h"
-#include "fields/dot_product.h"
-#include "fields/field_derivatives.h"
-#include "fields/field_ptrs.h"
-#include "fields/matrix_expressions.h"
+#include "fields/divergence.h"
+#include "fields/dot.h"
+#include "fields/gradient.h"
+#include "fields/hessian.h"
+#include "fields/laplacian.h"
 #include "fields/matrix_field.h"
-#include "fields/scalar_expressions.h"
+#include "fields/norm.h"
+#include "fields/polynomial.h"
 #include "fields/scalar_field.h"
-#include "fields/vector_expressions.h"
-#include "fields/vector_field.h"
+#include "fields/space_time_field.h"
 
 #endif   // __FDAPDE_FIELDS_MODULE_H__

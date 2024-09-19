@@ -21,6 +21,7 @@
 #include <Eigen/Sparse>
 #include <memory>
 #include "traits.h"
+#include "assert.h"
 
 // static structures, allocated on stack at compile time.
 template <int N, typename T = double> using SVector = Eigen::Matrix<T, N, 1>;
@@ -44,6 +45,15 @@ constexpr int random_seed = -1;   // signals that a random seed is used somewher
 [[maybe_unused]] static struct tag_exact { } Exact;
 [[maybe_unused]] static struct tag_not_exact { } NotExact;
 
+// matrix related symbols
+[[maybe_unused]] constexpr int Upper = 0;       // lower triangular view of matrix
+[[maybe_unused]] constexpr int Lower = 1;       // upper triangular view of matrix
+[[maybe_unused]] constexpr int UnitUpper = 2;   // lower triangular view of matrix with ones on the diagonal
+[[maybe_unused]] constexpr int UnitLower = 3;   // upper triangular view of matrix with ones on the diagonal
+
+[[maybe_unused]] constexpr int RowMajor = 0;
+[[maybe_unused]] constexpr int ColMajor = 1;
+  
 template <int N, typename T = double> struct static_dynamic_vector_selector {
     using type = typename std::conditional<N == Dynamic, DVector<T>, SVector<N, T>>::type;
 };
@@ -64,16 +74,28 @@ using static_dynamic_matrix_selector_t = typename static_dynamic_matrix_selector
 // this is compatible to Eigen::setFromTriplets() method used for the sparse matrix construction
 template <typename T> class Triplet {
    private:
-    Eigen::Index row_, col_;
+    int row_, col_;
     T value_;
    public:
     Triplet() = default;
-    Triplet(const Eigen::Index& row, const Eigen::Index& col, const T& value) : row_(row), col_(col), value_(value) {};
+    Triplet(int row, int col, const T& value) : row_(row), col_(col), value_(value) { }
 
-    const Eigen::Index& row() const { return row_; }
-    const Eigen::Index& col() const { return col_; }
+    int row() const { return row_; }
+    int col() const { return col_; }
     const T& value() const { return value_; }
     T& value() { return value_; }   // allow for modifications of stored value, this not allowed by Eigen::Triplet
+};
+template <typename T> class Duplet {
+   private:
+    int row_;
+    T value_;
+   public:
+    Duplet() = default;
+    Duplet(int row, const T& value) : row_(row), value_(value) { }
+
+    int row() const { return row_; }
+    const T& value() const { return value_; }
+    T& value() { return value_; }
 };
 
 // hash function for std::pair (allow pairs as key of unordered_map). inspired from boost::hash
@@ -159,6 +181,17 @@ template <typename T> class SparseLU {
     operator bool() const { return computed_; }  
 };
 
+// reverse a std::unordered_map (if the map represents a bijection)
+template <typename V, typename W> std::unordered_map<V, W> reverse(const std::unordered_map<W, V>& in) {
+    std::unordered_map<V, W> out;
+    for (const auto& [key, value] : in) {
+        fdapde_assert(
+          out.find(value) == out.end());   // if this is not passed, in is not a bijection, cannot be inverted
+        out[value] = key;
+    }
+    return out;
+}
+
 // test for floating point equality based on relative error.
 constexpr double DOUBLE_TOLERANCE = 50 * std::numeric_limits<double>::epsilon();   // approx 10^-14
 constexpr double machine_epsilon  = 10 * std::numeric_limits<double>::epsilon();
@@ -185,11 +218,21 @@ constexpr double log1pexp(double x) {
 }
 
 namespace internals {
-// if XprType has its NestAsRef bit set, returns the type XprType&, otherwise return XprType
-template <typename XprType> struct ref_select {
-    using type = typename std::conditional<
-      XprType::NestAsRef == 0, std::remove_reference_t<XprType>, std::add_lvalue_reference_t<XprType>>::type;
+
+template <typename XprType>
+concept has_nest_as_ref_bit = requires(XprType t) { XprType::NestAsRef; };
+
+template <typename XprType, bool v> struct ref_select_impl;
+template <typename XprType> struct ref_select_impl<XprType, true> {
+    using type = std::conditional_t<
+      XprType::NestAsRef == 0, std::remove_reference_t<XprType>, std::add_lvalue_reference_t<XprType>>;
 };
+template <typename XprType> struct ref_select_impl<XprType, false> {
+    using type = XprType;
+};
+// if XprType has its NestAsRef bit set, returns the type XprType&, otherwise return XprType
+template <typename XprType> struct ref_select : ref_select_impl<XprType, has_nest_as_ref_bit<XprType>> { };
+
 }   // namespace internals
 
 }   // namespace fdapde

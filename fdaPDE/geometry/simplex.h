@@ -26,7 +26,6 @@
 #include "utils.h"
 
 namespace fdapde {
-namespace core {
 
 // The convex-hull of EmbedDim_ + 1 points in \mathbb{R}^EmbedDim.
 // A point (Order 0), line (Order 1), triangle (Order 2), tetrahedron (Order 3) embedded in \mathbb{R}^EmbedDim
@@ -100,7 +99,19 @@ template <int Order_, int EmbedDim_> class Simplex {
     }
     // simplex's circumcircle radius
     double circumradius() const { return (circumcenter() - coords_.col(0)).norm(); }
-  
+
+    // simplex's diameter (length of the longest side)
+    double diameter() const {
+        double max_length = -1;
+        for (int i = 0; i < n_nodes - 1; ++i) {
+            SVector<embed_dim> c = coords_.col(i);
+            for (int j = i + 1; j < n_nodes; ++j) {
+                double length = (c - coords_.col(j)).norm();
+                if (length > max_length) max_length = length;
+            }
+        }
+        return max_length;
+    }
     // (hyper)plane passing thorught the simplex
     HyperPlane<local_dim, embed_dim> supporting_plane() const requires(local_dim != embed_dim) {
         if (!plane_.has_value()) { plane_ = HyperPlane<local_dim, embed_dim>(coords_); }
@@ -127,9 +138,9 @@ template <int Order_, int EmbedDim_> class Simplex {
         return ContainsReturnType::INSIDE;
     }
 
-    // iterator over boundary
-    class boundary_iterator : public index_based_iterator<boundary_iterator, BoundaryCellType> {
-        using Base = index_based_iterator<boundary_iterator, BoundaryCellType>;
+    // iterator over boundary faces
+    class boundary_iterator : public internals::index_iterator<boundary_iterator, BoundaryCellType> {
+        using Base = internals::index_iterator<boundary_iterator, BoundaryCellType>;
         using Base::index_;
         friend Base;
         const Simplex* s_;
@@ -182,10 +193,10 @@ template <int Order_, int EmbedDim_> class Simplex {
   
    protected:
     void initialize() {
-      for (int j = 0; j < n_nodes - 1; ++j) { J_.col(j) = coords_.col(j + 1) - coords_.col(0); }
+        for (int j = 0; j < n_nodes - 1; ++j) { J_.col(j) = coords_.col(j + 1) - coords_.col(0); }
         if constexpr (embed_dim == local_dim) {
             invJ_ = J_.inverse();
-            measure_ = std::abs(J_.determinant()) / (ct_factorial(local_dim));
+            measure_ = std::abs(J_.determinant()) / (cexpr::factorial(local_dim));
         } else {   // generalized Penrose inverse for manifolds
             invJ_ = (J_.transpose() * J_).inverse() * J_.transpose();
             if constexpr (local_dim == 2) measure_ = 0.5 * J_.col(0).cross(J_.col(1)).norm();
@@ -202,7 +213,6 @@ template <int Order_, int EmbedDim_> class Simplex {
     SMatrix<local_dim, embed_dim> invJ_;   // J^{-1} (Penrose pseudo-inverse for manifold)
 };
 
-}   // namespace core
 }   // namespace fdapde
 
 #endif   // __SIMPLEX_H__

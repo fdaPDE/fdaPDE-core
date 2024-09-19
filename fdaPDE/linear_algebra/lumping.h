@@ -17,16 +17,12 @@
 #ifndef __LUMPING_H__
 #define __LUMPING_H__
 
-#include <Eigen/Core>
-#include <Eigen/Sparse>
-
 #include "../utils/assert.h"
 #include "../utils/symbols.h"
 
 namespace fdapde {
-namespace core {
 
-// returns the lumped matrix of a sparse expression. Implements a row-sum lumping operator
+// returns the lumped matrix of a sparse expression. row-sum lumping operator
 template <typename ExprType> SpMatrix<typename ExprType::Scalar> lump(const Eigen::SparseMatrixBase<ExprType>& expr) {
     fdapde_assert(expr.rows() == expr.cols());   // stop if not square
     using Scalar_ = typename ExprType::Scalar;
@@ -41,7 +37,7 @@ template <typename ExprType> SpMatrix<typename ExprType::Scalar> lump(const Eige
     return lumped_matrix;
 }
 
-// returns the lumped matrix of a dense expression. Implements a row-sum lumping operator
+// returns the lumped matrix of a dense expression. row-sum lumping operator
 template <typename ExprType> DiagMatrix<typename ExprType::Scalar> lump(const Eigen::MatrixBase<ExprType>& expr) {
     fdapde_assert(expr.rows() == expr.cols());   // stop if not square
     using Scalar_ = typename ExprType::Scalar;
@@ -50,7 +46,6 @@ template <typename ExprType> DiagMatrix<typename ExprType::Scalar> lump(const Ei
     return lumped_matrix.asDiagonal();
 }
 
-}   // namespace core
 }   // namespace fdapde
 
 #endif   // __LUMPING_H__

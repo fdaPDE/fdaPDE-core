@@ -22,7 +22,6 @@
 #include "callbacks/callbacks.h"
 
 namespace fdapde {
-namespace core {
 
 // implementation of the Broyden–Fletcher–Goldfarb–Shanno algorithm for unconstrained nonlinear optimization
 template <int N, typename... Args> class BFGS {
@@ -58,11 +57,10 @@ template <int N, typename... Args> class BFGS {
         callbacks_ = other.callbacks_;
         return *this;
     }
-
     template <typename F> VectorType optimize(F& obj, const VectorType& x0) {
-        static_assert(
-          std::is_same<decltype(std::declval<F>().operator()(VectorType())), double>::value,
-          "F_IS_NOT_A_FUNCTOR_ACCEPTING_A_VECTORTYPE");
+        fdapde_static_assert(
+          std::is_same<decltype(std::declval<F>().operator()(VectorType())) FDAPDE_COMMA double>::value,
+          INVALID_CALL_TO_OPTIMIZE_OBJECTIVE_FUNCTOR_NOT_ACCEPTING_VECTORTYPE);
         bool stop = false;   // asserted true in case of forced stop
         VectorType zero;     // either statically or dynamically allocated depending on N
         double error = 0;
@@ -117,14 +115,12 @@ template <int N, typename... Args> class BFGS {
         value_ = obj(optimum_);
         return optimum_;
     }
-
     // getters
     VectorType optimum() const { return optimum_; }
     double value() const { return value_; }
     int n_iter() const { return n_iter_; }
 };
 
-}   // namespace core
 }   // namespace fdapde
 
 #endif   // __BFGS_H__

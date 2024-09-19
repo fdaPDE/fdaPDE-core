@@ -22,7 +22,6 @@
 #include "../concepts.h"
 
 namespace fdapde {
-namespace core {
   
 template <typename T> class BinaryTree {
    public:
@@ -366,7 +365,6 @@ template <typename T> class BST {
     }
 };
 
-}   // namespace core
 }   // namespace fdapde
 
 #endif   // __BINARY_TREE_H__

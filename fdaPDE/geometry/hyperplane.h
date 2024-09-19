@@ -23,7 +23,6 @@
 #include "../utils/symbols.h"
 
 namespace fdapde {
-namespace core {
 
 // orthogonal projection of vector v over u
 template <int N> constexpr SVector<N> orthogonal_project(const SVector<N>& v, const SVector<N>& u) {
@@ -108,7 +107,6 @@ template <int M, int N> class HyperPlane {
     const SMatrix<N, M>& basis() const { return basis_; }
 };
 
-}   // namespace core
 }   // namespace fdapde
 
 #endif   // __VECTOR_SPACE_H__

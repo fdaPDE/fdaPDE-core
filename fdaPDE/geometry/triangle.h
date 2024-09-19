@@ -19,13 +19,14 @@
 
 #include "../utils/symbols.h"
 #include "simplex.h"
+#include "utils.h"
 
 namespace fdapde {
-namespace core {
 
 // an element is a geometric object bounded to a mesh. It carries both geometrical and connectivity informations
 template <typename Triangulation> class Triangle : public Simplex<Triangulation::local_dim, Triangulation::embed_dim> {
     fdapde_static_assert(Triangulation::local_dim == 2, THIS_CLASS_IS_FOR_TRIANGULAR_MESHES_ONLY);
+    using Base = Simplex<Triangulation::local_dim, Triangulation::embed_dim>;
    public:
     // constructor
     Triangle() = default;
@@ -40,36 +41,42 @@ template <typename Triangulation> class Triangle : public Simplex<Triangulation:
     }
     // a triangulation-aware view of a triangle edge
     class EdgeType : public Simplex<Triangulation::local_dim, Triangulation::embed_dim>::BoundaryCellType {
-    private:
-      int edge_id_;
-      const Triangulation* mesh_;
-    public:
-      using CoordsType = SMatrix<Triangulation::embed_dim, Triangulation::local_dim>;
-      EdgeType() = default;
-      EdgeType(int edge_id, const Triangulation* mesh) : edge_id_(edge_id), mesh_(mesh) {
-	for (int i = 0; i < this->n_nodes; ++i) { this->coords_.col(i) = mesh_->node(mesh_->edges()(edge_id_, i)); }
-	this->initialize();
-      }
-      bool on_boundary() const { return mesh_->is_edge_on_boundary(edge_id_); }
-      DVector<int> node_ids() const { return mesh_->edges().row(edge_id_); }
-      int id() const { return edge_id_; }
-      DVector<int> adjacent_cells() const { return mesh_->edge_to_cells().row(edge_id_); }
+       private:
+        int edge_id_;
+        const Triangulation* mesh_;
+       public:
+        using CoordsType = SMatrix<Triangulation::embed_dim, Triangulation::local_dim>;
+        EdgeType() = default;
+        EdgeType(int edge_id, const Triangulation* mesh) : edge_id_(edge_id), mesh_(mesh) {
+            for (int i = 0; i < this->n_nodes; ++i) { this->coords_.col(i) = mesh_->node(mesh_->edges()(edge_id_, i)); }
+            this->initialize();
+        }
+        bool on_boundary() const { return mesh_->is_edge_on_boundary(edge_id_); }
+        DVector<int> node_ids() const { return mesh_->edges().row(edge_id_); }
+        int id() const { return edge_id_; }
+        DVector<int> adjacent_cells() const { return mesh_->edge_to_cells().row(edge_id_); }
+        int marker() const {   // mesh edge's marker
+            return mesh_->edges_markers().size() > edge_id_ ? mesh_->edges_markers()[edge_id_] : Unmarked;
+        }
     };
-  
+
     // getters
     int id() const { return id_; }
     DVector<int> neighbors() const { return mesh_->neighbors().row(id_); }
     DVector<int> node_ids() const { return mesh_->cells().row(id_); }
+    DVector<int> edge_ids() const { return mesh_->cell_to_edges().row(id_); }
     bool on_boundary() const { return boundary_; }
     operator bool() const { return mesh_ != nullptr; }
     EdgeType edge(int n) const {
         fdapde_assert(n < this->n_edges);
         return EdgeType(mesh_->cell_to_edges()(id_, n), mesh_);
     }
+    // cell marker
+    int marker() const { return mesh_->cells_markers().size() > id_ ? mesh_->cells_markers()[id_] : Unmarked; }
 
     // iterator over triangle edge
-    class edge_iterator : public index_based_iterator<edge_iterator, EdgeType> {
-        using Base = index_based_iterator<edge_iterator, EdgeType>;
+    class edge_iterator : public internals::index_iterator<edge_iterator, EdgeType> {
+        using Base = internals::index_iterator<edge_iterator, EdgeType>;
         using Base::index_;
         friend Base;
         const Triangle* t_;
@@ -79,7 +86,7 @@ template <typename Triangulation> class Triangle : public Simplex<Triangulation:
             return *this;
         }
        public:
-      edge_iterator(int index, const Triangle* t) : Base(index, 0, t_->n_edges), t_(t) {
+        edge_iterator(int index, const Triangle* t) : Base(index, 0, t_->n_edges), t_(t) {
             if (index_ < t_->n_edges) operator()(index_);
         }
     };
@@ -91,7 +98,6 @@ template <typename Triangulation> class Triangle : public Simplex<Triangulation:
     bool boundary_ = false;   // true if the element has at least one vertex on the boundary
 };
 
-}   // namespace core
 }   // namespace fdapde
 
 #endif   // __TRIANGLE_H__

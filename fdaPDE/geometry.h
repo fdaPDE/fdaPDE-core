@@ -27,7 +27,6 @@
 #include "geometry/triangle.h"
 #include "geometry/triangulation.h"
 #include "geometry/utils.h"
-#include "geometry/voronoi.h"
 #include "geometry/walk_search.h"
 
 #endif   // __FDAPDE_GEOMETRY_MODULE_H__

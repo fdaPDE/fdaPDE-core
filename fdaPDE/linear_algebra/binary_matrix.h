@@ -20,10 +20,7 @@
 #include "../utils/assert.h"
 #include "../utils/symbols.h"
 
-#include <bitset>
-
 namespace fdapde {
-namespace core {
 
 // forward declarations
 template <int Rows, int Cols, typename E> class BinMtxBase;
@@ -173,6 +170,13 @@ template <int Rows, int Cols = Rows> class BinaryMatrix : public BinMtxBase<Rows
         fdapde_static_assert(Cols == 1, THIS_METHOD_IS_ONLY_FOR_VECTORS);
         set(i, 0);
     }
+    void set() {   // sets all coeffients in the matrix
+        for (int i = 0; i < n_rows_; ++i) {
+            for (int j = 0; j < n_cols_; ++j) {
+                data_[pack_of(i, j)] |= (BitPackType(1) << ((i * Base::n_cols_ + j) % PackSize));
+            }
+        }
+    }  
     void clear(int i, int j) {   // clear (i,j)-th bit (sets to 0)
         fdapde_assert(i < n_rows_ && j < n_cols_);
         data_[pack_of(i, j)] &= ~(BitPackType(1) << ((i * Base::n_cols_ + j) % PackSize));
@@ -180,6 +184,13 @@ template <int Rows, int Cols = Rows> class BinaryMatrix : public BinMtxBase<Rows
     void clear(int i) {
         fdapde_static_assert(Cols == 1, THIS_METHOD_IS_ONLY_FOR_VECTORS);
         clear(i, 0);
+    }
+    void clear() {   // clears all coeffients in the matrix
+        for (int i = 0; i < n_rows_; ++i) {
+            for (int j = 0; j < n_cols_; ++j) {
+                data_[pack_of(i, j)] &= ~(BitPackType(1) << ((i * Base::n_cols_ + j) % PackSize));
+            }
+        }
     }
     // fast bitwise assignment from binary expression
     template <int Rows_, int Cols_, typename Rhs_> BinaryMatrix& operator=(const BinMtxBase<Rows_, Cols_, Rhs_>& rhs) {
@@ -292,15 +303,14 @@ class BinMtxBlock : public BinMtxBase<BlockRows, BlockCols, BinMtxBlock<BlockRow
     // fixed-sized constructor
     BinMtxBlock(XprTypeNested& xpr, int start_row, int start_col) :
         Base(BlockRows, BlockCols), xpr_(xpr), start_row_(start_row), start_col_(start_col) {
-        fdapde_static_assert(BlockRows != Dynamic && BlockCols != Dynamic, THIS_METHOD_IS_ONLY_FOR_FIXED_SIZE);
+        fdapde_static_assert(
+          BlockRows != Dynamic && BlockCols != Dynamic, THIS_METHOD_IS_ONLY_FOR_STATIC_SIZED_MATRIX_BLOCKS);
         fdapde_assert(
           start_row_ >= 0 && BlockRows >= 0 && start_row_ + BlockRows <= xpr_.rows() && start_col_ >= 0 &&
           BlockCols >= 0 && start_col_ + BlockCols <= xpr_.cols());
     }
     // dynamic-sized constructor
-    BinMtxBlock(
-      XprTypeNested& xpr, int start_row, int start_col, int block_rows,
-      int block_cols) :
+    BinMtxBlock(XprTypeNested& xpr, int start_row, int start_col, int block_rows, int block_cols) :
         Base(block_rows, block_cols), xpr_(xpr), start_row_(start_row), start_col_(start_col) {
         fdapde_assert(BlockRows == Dynamic || BlockCols == Dynamic);
         fdapde_assert(
@@ -344,6 +354,14 @@ class BinMtxBlock : public BinMtxBase<BlockRows, BlockCols, BinMtxBlock<BlockRow
             (BlockCols == 1 && (Rows_ == 1 || Cols_ == 1)),
           INVALID_BLOCK_ASSIGNMENT);
         fdapde_assert(rhs.rows() == n_rows_ && rhs.cols() == n_cols_);
+        for (int i = 0; i < rhs.rows(); ++i) {
+            for (int j = 0; j < rhs.cols(); ++j) {
+                if (rhs(i, j)) set(i, j);
+            }
+        }
+        return *this;
+    }
+    XprType& operator=(const BinMtxBlock& rhs) {
         for (int i = 0; i < rhs.rows(); ++i) {
             for (int j = 0; j < rhs.cols(); ++j) {
                 if (rhs(i, j)) set(i, j);
@@ -570,8 +588,10 @@ template <int Rows, int Cols, typename XprType> class BinMtxBase {
     // other block-type accessors
     BinMtxBlock<Dynamic, Dynamic, XprType> topRows(int n) { return block(0, 0, n, cols()); }
     BinMtxBlock<Dynamic, Dynamic, XprType> bottomRows(int n) { return block(rows() - n, 0, n, cols()); }
+    BinMtxBlock<Dynamic, Dynamic, XprType> middleRows(int n, int m) { return block(n, 0, m, cols()); }
     BinMtxBlock<Dynamic, Dynamic, XprType> leftCols(int n) { return block(0, 0, rows(), n); }
     BinMtxBlock<Dynamic, Dynamic, XprType> rightCols(int n) { return block(0, cols() - n, rows(), n); }
+    BinMtxBlock<Dynamic, Dynamic, XprType> middleCols(int n, int m) { return block(0, n, rows(), m); }
 
     // visitors support
     inline bool all() const { return visit_apply_<all_visitor<XprType>, linear_bitpack_visit>(); }
@@ -661,7 +681,17 @@ template <int Rows, int Cols, typename XprType> std::vector<int> which(const Bin
     return mtx.which(true);
 }
 
-}   // namespace core
+// move the iterator first-last to a binary vector v such that v[i] = true \iff *(first + i) == c
+template <typename Iterator>
+BinaryVector<Dynamic> make_binary_vector(const Iterator& first, const Iterator& last, typename Iterator::value_type c) {
+    int n_rows = std::distance(first, last);
+    BinaryVector<Dynamic> vec(n_rows);
+    for (int i = 0; i < n_rows; ++i) {
+        if (*(first + i) == c) vec.set(i);
+    }
+    return vec;
+}
+
 }   // namespace fdapde
 
 #endif   // __BINARY_MATRIX_H__

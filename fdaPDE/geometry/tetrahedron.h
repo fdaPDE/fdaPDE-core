@@ -17,16 +17,17 @@
 #ifndef __TETRAHEDRON_H__
 #define __TETRAHEDRON_H__
 
+#include <unordered_set>
 #include "../utils/symbols.h"
 #include "simplex.h"
+#include "utils.h"
 
 namespace fdapde {
-namespace core {
 
 template <typename Triangulation>
 class Tetrahedron : public Simplex<Triangulation::local_dim, Triangulation::embed_dim> {
     fdapde_static_assert(
-      Triangulation::local_dim == 3 && Triangulation::embed_dim == 3, THIS_CLASS_IS_ONLY_FOR_TETRAHEDRAL_MESHES_ONLY);
+      Triangulation::local_dim == 3 && Triangulation::embed_dim == 3, THIS_CLASS_IS_FOR_TETRAHEDRAL_MESHES_ONLY);
    public:
     // constructor
     Tetrahedron() = default;
@@ -34,54 +35,57 @@ class Tetrahedron : public Simplex<Triangulation::local_dim, Triangulation::embe
         int b_matches_ = 0;   // element is on boundary if has at least (n_nodes - 1) nodes on boundary
         for (int j = 0; j < this->n_nodes; ++j) {
             this->coords_.col(j) = mesh_->node(mesh_->cells()(id_, j));
-	    if (mesh_->is_node_on_boundary(mesh_->cells()(id_, j))) b_matches_++;
+            if (mesh_->is_node_on_boundary(mesh_->cells()(id_, j))) b_matches_++;
         }
-	if (b_matches_ >= this->n_nodes - 1) boundary_ = true;
-	// compute edges identifiers
-	std::unordered_set<int> edge_ids;
+        if (b_matches_ >= this->n_nodes - 1) boundary_ = true;
+        // compute edges identifiers
+        std::unordered_set<int> edge_ids;
         for (int i = 0; i < this->n_faces; ++i) {
             int face_id = mesh_->cell_to_faces()(id_, i);
             for (int j = 0; j < 3; ++j) { edge_ids.insert(mesh_->face_to_edges()(face_id, j)); }
         }
-	int i = 0;
-	for(const int& id : edge_ids) edge_ids_[i++] = id;
+        int i = 0;
+        for (const int& id : edge_ids) edge_ids_[i++] = id;
         this->initialize();
     }
     // a triangulation-aware view of a tetrahedron edge
     class EdgeType : public Simplex<1, Triangulation::embed_dim> {
-      using Base = Simplex<1, Triangulation::embed_dim>;
-      int edge_id_;
-      const Triangulation* mesh_;
-    public:
-      using CoordsType = SMatrix<Triangulation::embed_dim, 2>;
-      EdgeType() = default;
-      EdgeType(int edge_id, const Triangulation* mesh) : edge_id_(edge_id), mesh_(mesh) {
-        for (int i = 0; i < Base::n_nodes; ++i) { Base::coords_.col(i) = mesh_->node(mesh_->edges()(edge_id_, i)); }
-        this->initialize();
-      }
-      bool on_boundary() const { return mesh_->is_edge_on_boundary(edge_id_); }
-      DVector<int> node_ids() const { return mesh_->edges().row(edge_id_); }
-      int id() const { return edge_id_; }
-      const std::unordered_set<int>& adjacent_cells() const { return mesh_->edge_to_cells().at(edge_id_); }
+        using Base = Simplex<1, Triangulation::embed_dim>;
+        int edge_id_;
+        const Triangulation* mesh_;
+       public:
+        using CoordsType = SMatrix<Triangulation::embed_dim, 2>;
+        EdgeType() = default;
+        EdgeType(int edge_id, const Triangulation* mesh) : edge_id_(edge_id), mesh_(mesh) {
+            for (int i = 0; i < Base::n_nodes; ++i) { Base::coords_.col(i) = mesh_->node(mesh_->edges()(edge_id_, i)); }
+            this->initialize();
+        }
+        bool on_boundary() const { return mesh_->is_edge_on_boundary(edge_id_); }
+        DVector<int> node_ids() const { return mesh_->edges().row(edge_id_); }
+        int id() const { return edge_id_; }
+        const std::unordered_set<int>& adjacent_cells() const { return mesh_->edge_to_cells().at(edge_id_); }
     };
     // a triangulation-aware view of a tetrahedron face
     class FaceType : public Simplex<2, Triangulation::embed_dim> {
-      using Base = Simplex<2, Triangulation::embed_dim>;
-      int face_id_;
-      const Triangulation* mesh_;
-     public:
-      using CoordsType = SMatrix<Triangulation::embed_dim, 3>;
-      FaceType() = default;
-      FaceType(int face_id, const Triangulation* mesh) : face_id_(face_id), mesh_(mesh) {
-        for (int i = 0; i < Base::n_nodes; ++i) { Base::coords_.col(i) = mesh_->node(mesh_->faces()(face_id_, i)); }
-        this->initialize();
-      }
-      bool on_boundary() const { return mesh_->is_face_on_boundary(face_id_); }
-      DVector<int> node_ids() const { return mesh_->faces().row(face_id_); }
-      DVector<int> edge_ids() const { return mesh_->face_to_edges().row(face_id_); }
-      int id() const { return face_id_; }
-      EdgeType edge(int n) const { return EdgeType(mesh_->face_to_edges()(face_id_, n), mesh_); }
-      DVector<int> adjacent_cells() const { return mesh_->face_to_cells().row(face_id_); }
+        using Base = Simplex<2, Triangulation::embed_dim>;
+        int face_id_;
+        const Triangulation* mesh_;
+       public:
+        using CoordsType = SMatrix<Triangulation::embed_dim, 3>;
+        FaceType() = default;
+        FaceType(int face_id, const Triangulation* mesh) : face_id_(face_id), mesh_(mesh) {
+            for (int i = 0; i < Base::n_nodes; ++i) { Base::coords_.col(i) = mesh_->node(mesh_->faces()(face_id_, i)); }
+            this->initialize();
+        }
+        bool on_boundary() const { return mesh_->is_face_on_boundary(face_id_); }
+        DVector<int> node_ids() const { return mesh_->faces().row(face_id_); }
+        DVector<int> edge_ids() const { return mesh_->face_to_edges().row(face_id_); }
+        int id() const { return face_id_; }
+        EdgeType edge(int n) const { return EdgeType(mesh_->face_to_edges()(face_id_, n), mesh_); }
+        DVector<int> adjacent_cells() const { return mesh_->face_to_cells().row(face_id_); }
+        int marker() const {   // mesh face's marker
+            return mesh_->faces_markers().size() > face_id_ ? mesh_->faces_markers()[face_id_] : Unmarked;
+        }
     };
 
     // getters
@@ -92,10 +96,12 @@ class Tetrahedron : public Simplex<Triangulation::local_dim, Triangulation::embe
     operator bool() const { return mesh_ != nullptr; }
     EdgeType edge(int n) const { return EdgeType(edge_ids_[n], mesh_); }
     FaceType face(int n) const { return FaceType(mesh_->cell_to_faces()(id_, n), mesh_); }
+    // cell marker
+    int marker() const { return mesh_->cells_markers().size() > id_ ? mesh_->cells_markers()[id_] : Unmarked; }
 
     // iterator over tetrahedron edges
-    class edge_iterator : public index_based_iterator<edge_iterator, EdgeType> {
-        using Base = index_based_iterator<edge_iterator, EdgeType>;
+    class edge_iterator : public internals::index_iterator<edge_iterator, EdgeType> {
+        using Base = internals::index_iterator<edge_iterator, EdgeType>;
         using Base::index_;
         friend Base;
         const Tetrahedron* t_;
@@ -112,8 +118,8 @@ class Tetrahedron : public Simplex<Triangulation::local_dim, Triangulation::embe
     edge_iterator edges_begin() const { return edge_iterator(0, this); }
     edge_iterator edges_end() const { return edge_iterator(this->n_edges, this); }
     // iterator over tetrahedron faces
-    class face_iterator : public index_based_iterator<face_iterator, FaceType> {
-        using Base = index_based_iterator<face_iterator, FaceType>;
+    class face_iterator : public internals::index_iterator<face_iterator, FaceType> {
+        using Base = internals::index_iterator<face_iterator, FaceType>;
         using Base::index_;
         friend Base;
         const Tetrahedron* t_;
@@ -126,7 +132,7 @@ class Tetrahedron : public Simplex<Triangulation::local_dim, Triangulation::embe
         face_iterator(int index, const Tetrahedron* t) : Base(index, 0, t_->n_faces), t_(t) {
             if (index_ < t_->n_faces) operator()(index_);
         }
-    };  
+    };
     face_iterator faces_begin() const { return face_iterator(0, this); }
     face_iterator faces_end() const { return face_iterator(this->n_faces, this); }
    private:
@@ -136,7 +142,6 @@ class Tetrahedron : public Simplex<Triangulation::local_dim, Triangulation::embe
     bool boundary_ = false;   // true if the element has at least one vertex on the boundary
 };
 
-}   // namespace core
 }   // namespace fdapde
 
 #endif   // __TETRAHEDRON_H__

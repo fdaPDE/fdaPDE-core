@@ -22,7 +22,6 @@
 #include "callbacks/callbacks.h"
 
 namespace fdapde {
-namespace core {
 
 // implementation of the gradient descent method for unconstrained nonlinear optimization
 template <int N, typename... Args> class GradientDescent {
@@ -60,9 +59,9 @@ template <int N, typename... Args> class GradientDescent {
     }
 
     template <typename F> VectorType optimize(F& obj, const VectorType& x0) {
-        static_assert(
-          std::is_same<decltype(std::declval<F>().operator()(VectorType())), double>::value,
-          "F_IS_NOT_A_FUNCTOR_ACCEPTING_A_VECTORTYPE");
+        fdapde_static_assert(
+          std::is_same<decltype(std::declval<F>().operator()(VectorType())) FDAPDE_COMMA double>::value,
+          INVALID_CALL_TO_OPTIMIZE_OBJECTIVE_FUNCTOR_NOT_ACCEPTING_VECTORTYPE);
         bool stop = false;   // asserted true in case of forced stop
         double error = std::numeric_limits<double>::max();
         h = step_;
@@ -94,7 +93,6 @@ template <int N, typename... Args> class GradientDescent {
     int n_iter() const { return n_iter_; }
 };
 
-}   // namespace core
 }   // namespace fdapde
 
 #endif   // __GRADIENT_DESCENT__

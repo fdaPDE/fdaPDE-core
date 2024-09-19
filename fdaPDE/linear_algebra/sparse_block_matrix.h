@@ -23,7 +23,6 @@
 #include "../utils/assert.h"
 
 namespace fdapde {
-namespace core {
 
 // A C++20 Eigen-compatible SparseBlockMatrix implementation (only ColMajor support). Use Eigen naming conventions
 template <typename Scalar_, int Rows_, int Cols_, int Options_ = Eigen::ColMajor, typename StorageIndex_ = int>
@@ -127,14 +126,13 @@ struct SparseBlockMatrix :
     int cols_ = 0, rows_ = 0;                      // matrix dimensions
 };
 
-}   // namespace core
 }   // namespace fdapde
 
 // definition of proper symbols in Eigen::internal namespace
 namespace Eigen {
 namespace internal {
 // import symbols from fdapde namespace
-using fdapde::core::SparseBlockMatrix;
+using fdapde::SparseBlockMatrix;
 
 // trait definition
 template <typename Scalar_, int Rows_, int Cols_, int Options_, typename StorageIndex_>
@@ -144,20 +142,18 @@ struct traits<SparseBlockMatrix<Scalar_, Rows_, Cols_, Options_, StorageIndex_>>
     typedef Sparse StorageKind;   // sparse storage
     typedef MatrixXpr XprKind;    // expression type (matrix expression)
     enum {
-        // we know the number of blocks at compile time, but the number of rows and cols
-        // of the overall matrix is unknown at compile time
-        RowsAtCompileTime     = Dynamic,
-        ColsAtCompileTime     = Dynamic,
-        MaxRowsAtCompileTime  = Dynamic,
-        MaxColsAtCompileTime  = Dynamic,
-        Flags                 = Options_ |   // inherits supplied stoarge mode, defaulted to ColMajor storage
-	                        LvalueBit,   // the expression has a coeffRef() method, i.e. it is writable
+        // we know the number of blocks at compile time, but not the overall number of rows and cols
+        RowsAtCompileTime = Dynamic,
+        ColsAtCompileTime = Dynamic,
+        MaxRowsAtCompileTime = Dynamic,
+        MaxColsAtCompileTime = Dynamic,
+        Flags = Options_ |   // inherits supplied stoarge mode, defaulted to ColMajor storage
+                LvalueBit,   // the expression has a coeffRef() method, i.e. it is writable
         IsVectorAtCompileTime = 0,
-        IsColMajor            = Options_ & Eigen::RowMajorBit ? 0 : 1
+        IsColMajor = Options_ & Eigen::RowMajorBit ? 0 : 1
     };
 };
 
-// evaluator definition
 template <typename Scalar_, int Rows_, int Cols_, int Options_, typename StorageIndex_>
 struct evaluator<SparseBlockMatrix<Scalar_, Rows_, Cols_, Options_, StorageIndex_>> :
     public evaluator_base<SparseBlockMatrix<Scalar_, Rows_, Cols_, Options_, StorageIndex_>> {
@@ -216,7 +212,6 @@ struct evaluator<SparseBlockMatrix<Scalar_, Rows_, Cols_, Options_, StorageIndex
         Index innerBlockIndex, outerBlockIndex;   // indexes of block where iterator is iterating
         Index innerOffset, outerOffset;
     };
-    // constructor
     evaluator(const XprType& xpr) : xpr_(xpr) {};
     inline Index nonZerosEstimate() const { return xpr_.nonZerosEstimate(); }
     // SparseBlockMatrix to evaluate
