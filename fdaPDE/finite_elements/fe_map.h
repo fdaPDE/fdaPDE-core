@@ -35,7 +35,7 @@ struct FeMap :
     static constexpr bool is_scalar = meta::is_scalar_field_v<Derived_>;
     using Derived = std::decay_t<Derived_>;
    public:
-    using InputType = internals::fe_assembler_packet<Derived::StaticInputSize>;
+    using InputType = internals::fe_assembler_packet<Derived::StaticInputSize, Derived::Rows>;
     using Scalar = double;
     static constexpr int StaticInputSize = Derived::StaticInputSize;
     using Base = std::conditional_t<
@@ -89,7 +89,7 @@ struct FeMap<FeFunction<FeSpace>> :
     using Derived = FeFunction<FeSpace>;
    public:
     using Base = ScalarBase<Derived::StaticInputSize, FeMap<Derived>>;
-    using InputType = internals::fe_assembler_packet<Derived::StaticInputSize>;
+    using InputType = internals::fe_assembler_packet<Derived::StaticInputSize, Derived::Rows>;
     using Scalar = double;
     static constexpr int StaticInputSize = Derived::StaticInputSize;
     static constexpr int NestAsRef = 0;

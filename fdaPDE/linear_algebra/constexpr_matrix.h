@@ -724,7 +724,7 @@ template <typename MatrixType> class PartialPivLU {
 
 // maps an existing array of data to a cepxr::Matrix. This can be used also to integrate Eigen with cexpr linear algebra
 template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_ = fdapde::ColMajor>
-class Map : public MatrixBase<Rows_, Cols_, Map<Scalar_, Rows_, Cols_>> {
+class Map : public MatrixBase<Rows_, Cols_, Map<Scalar_, Rows_, Cols_, StorageOrder_>> {
     fdapde_static_assert(Rows_ > 0 && Cols_ > 0, YOU_ARE_MAPPING_DATA_TO_AN_EMPTY_MATRIX);
    public:
     using XprType = Map<Scalar_, Rows_, Cols_, StorageOrder_>;
@@ -735,27 +735,37 @@ class Map : public MatrixBase<Rows_, Cols_, Map<Scalar_, Rows_, Cols_>> {
     static constexpr int NestAsRef = 1;
 
     constexpr Map() : data_() { }
-    constexpr Map(Scalar_* data) : data_(data), offset_(0) { }
-    constexpr Map(Scalar_* data, int offset) : data_(data), offset_(offset) { }
+    constexpr Map(Scalar_* data) : data_(data) { }
+    constexpr Map(Scalar_* data, int outer_stride, int inner_stride) :
+        data_(data), outer_stride_(outer_stride), inner_stride_(inner_stride) { }
     // const access
     constexpr Scalar operator()(int i, int j) const {
-        return data_[offset_ + (StorageOrder_ == RowMajor ? (i * Cols + j) : (j * Rows + i))];
+        fdapde_assert(i < Rows && j < Cols);
+        return data_[i * rowStride() + j * colStride()];
     }
     constexpr Scalar operator[](int i) const {
         fdapde_static_assert(Cols == 1 || Rows == 1, THIS_METHOD_IS_ONLY_FOR_CONSTEXPR_ROW_OR_COLUMN_VECTORS);
-        return data_[offset_ + i];
+        return data_[i * innerStride()];
     }
     // non-const access
     constexpr Scalar& operator()(int i, int j) {
-        return data_[offset_ + (StorageOrder_ == RowMajor ? (i * Cols + j) : (j * Rows + i))];
+        fdapde_assert(i < Rows && j < Cols);
+        return data_[i * rowStride() + j * colStride()];
     }
     constexpr Scalar& operator[](int i) {
         fdapde_static_assert(Cols == 1 || Rows == 1, THIS_METHOD_IS_ONLY_FOR_CONSTEXPR_ROW_OR_COLUMN_VECTORS);
-        return data_[offset_ + i];
+        return data_[i * innerStride()];
     }
     constexpr int rows() const { return Rows; }
     constexpr int cols() const { return Cols; }
+    constexpr int innerStride() const { return inner_stride_; }
+    constexpr int outerStride() const {
+        return outer_stride_ != 1 ? outer_stride_ : (StorageOrder_ == RowMajor ? Cols : Rows);
+    }
+    constexpr int rowStride() const { return StorageOrder_ == RowMajor ? outerStride() : innerStride(); }
+    constexpr int colStride() const { return StorageOrder_ == RowMajor ? innerStride() : outerStride(); }
     constexpr const Scalar_* data() const { return data_; }
+    constexpr Scalar_* data() { return data_; }
     // assignment operator
     template <int RhsRows_, int RhsCols_, typename RhsXprType>
     constexpr XprType& operator=(const MatrixBase<RhsRows_, RhsCols_, RhsXprType>& rhs) {
@@ -770,7 +780,8 @@ class Map : public MatrixBase<Rows_, Cols_, Map<Scalar_, Rows_, Cols_>> {
     }
    private:
     Scalar_* data_ = nullptr;
-    int offset_ = 0;
+    int outer_stride_ = 1;   // increment between two consecutive rows (RowMajor) or columns (ColMajor)
+    int inner_stride_ = 1;   // increment between two consecutive entries within a row (RowMajor) or column (ColMajor)
 };
 
 }   // namespace cexpr

@@ -28,7 +28,7 @@ template <typename Triangulation_, typename FeType_> class FeSpace {
     using FeType = std::decay_t<FeType_>;
     static constexpr int local_dim = Triangulation::local_dim;
     static constexpr int embed_dim = Triangulation::embed_dim;
-    static constexpr int n_components  = FeType::n_components;
+    static constexpr int n_components = FeType::n_components;
     static constexpr bool is_vector_fe = FeType::is_vector_fe;
     using cell_dof_descriptor = FeType::template cell_dof_descriptor<local_dim>;
     using face_dof_descriptor = FeType::template face_dof_descriptor<local_dim>;
@@ -46,25 +46,35 @@ template <typename Triangulation_, typename FeType_> class FeSpace {
     const Triangulation& triangulation() const { return *triangulation_; }
     const DofHandler<local_dim, embed_dim>& dof_handler() const { return dof_handler_; }
     DofHandler<local_dim, embed_dim>& dof_handler() { return dof_handler_; }
-    constexpr int n_basis() const { return n_components * cell_basis_.size(); }
-    constexpr int n_basis_face() const { return n_components * face_basis_.size(); }
+  constexpr int n_basis() const { return n_components * cell_basis_.size(); } // this referes to basis over reference cell
+  constexpr int n_basis_face() const { return n_components * face_basis_.size(); } // over reference cells
+  // we should also return a global number of basis over the whole domain
     int n_dofs() const { return dof_handler_.n_dofs(); }
-    // scalar finite elements API
-    template <typename InputType> constexpr auto eval_shape_function(int i, const InputType& p) const {
+
+  // we might return directly the shape function on reference cell and reference face (no need for all those methods)
+  // on a FeSpace, a basis function is defined over the whole domain
+
+  // need to modify FeFunction
+  
+    template <typename InputType> constexpr auto eval_shape_value(int i, const InputType& p) const {
         return cell_basis_[i](p);
     }
-    template <typename InputType> constexpr auto eval_shape_function_grad(int i, const InputType& p) const {
+    template <typename InputType> constexpr auto eval_shape_grad(int i, const InputType& p) const {
         return cell_basis_[i].gradient()(p);
     }
-    template <typename InputType> constexpr auto eval_shape_function_div(int i, const InputType& p) const {
-        fdapde_static_assert(n_components > 1, THIS_METHOD_IS_FOR_VECTOR_FINITE_ELEMENT_ONLY);
+    template <typename InputType> constexpr auto eval_shape_div(int i, const InputType& p) const {
+        fdapde_static_assert(n_components > 1, THIS_METHOD_IS_FOR_VECTOR_FINITE_ELEMENTS_ONLY);
         return cell_basis_[i].divergence()(p);
     }
-    template <typename InputType> constexpr auto eval_face_shape_function(int i, const InputType& p) const {
+    template <typename InputType> constexpr auto eval_face_shape_value(int i, const InputType& p) const {
         return face_basis_[i](p);
     }
-    template <typename InputType> constexpr auto eval_face_shape_function_grad(int i, const InputType& p) const {
+    template <typename InputType> constexpr auto eval_face_shape_grad(int i, const InputType& p) const {
         return face_basis_[i].gradient()(p);
+    }
+    template <typename InputType> constexpr auto eval_face_shape_div(int i, const InputType& p) const {
+        fdapde_static_assert(n_components > 1, THIS_METHOD_IS_FOR_VECTOR_FINITE_ELEMENTS_ONLY);
+        return face_basis_[i].divergence()(p);
     }
    private:
     const Triangulation* triangulation_;
