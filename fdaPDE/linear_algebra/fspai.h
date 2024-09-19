@@ -14,6 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+
 #ifndef __FSPAI_H__
 #define __FSPAI_H__
 
@@ -25,7 +26,7 @@
 #include <unordered_set>
 #include <vector>
 
-#include "../utils/Symbols.h"
+#include "../utils/symbols.h"
 
 namespace fdapde {
 namespace core {
@@ -130,19 +131,33 @@ void FSPAI::updateApproximateInverse(
 void FSPAI::selectCandidates(const Eigen::Index& k) {
     // computation of candidate rows to enter in the sparsity pattern of column Lk_
     for (auto row = deltaPattern_.begin(); row != deltaPattern_.end(); ++row) {
-        for (auto j = sparsityPattern_.at(*row).begin(); j != sparsityPattern_.at(*row).end(); ++j)
-            if (*j > k) { candidateSet_.insert(*j); }
+        for (auto j = sparsityPattern_.at(*row).begin(); j != sparsityPattern_.at(*row).end(); ++j) {
+            if (*j > k) { candidateSet_.insert(*j); 
+            }
+        }
     }
+
     // clear delta pattern, waiting for a new one...
     deltaPattern_.clear();
     hatJk_.clear();
-
     // for efficiency reasons, compute the value of A(j, Jk)^T * Lk[Jk] here once and store for later use
     for (Eigen::Index j : candidateSet_) {
         if (J_[k].find(j) == J_[k].end()) {
             double v = 0;
-            // compute A(j, jK)*Lk(jK)
-            for (auto it = J_[k].begin(); it != J_[k].end(); ++it) { v += A_.coeff(j, *it) * Lk_[*it]; }
+
+            // Compute A(j, Jk) * Lk(Jk) considering symmetry
+            for (auto it = J_[k].begin(); it != J_[k].end(); ++it) {
+                // Add contributions from A(j, *it) and A(*it, j)
+                v += A_.coeff(j, *it) * Lk_[*it];
+                
+                // Include the symmetric element 
+                if (static_cast<std::size_t>(*it) != static_cast<std::size_t>(j) && 
+                    sparsityPattern_.count(*it) && 
+                    sparsityPattern_.at(*it).count(static_cast<Eigen::Index>(j))) {
+                                    v += A_.coeff(*it, j) * Lk_[*it];
+                                }
+                            }
+
             // index j is a possible candidate for updating the sparsity pattern of the solution along column k.
             hatJk_.emplace(j, v);
         }
@@ -150,11 +165,12 @@ void FSPAI::selectCandidates(const Eigen::Index& k) {
     return;
 }
 
+
 // constructor
 FSPAI::FSPAI(const Eigen::SparseMatrix<double>& A) : A_(A), n_(A.rows()) {
     // initialize the sparsity pattern to the identity matrix
     J_.resize(n_);
-    for (std::size_t i = 0; i < n_; ++i) { J_[i].insert(i); }
+    for (std::size_t i = 0; i < static_cast<std::size_t>(n_); ++i) { J_[i].insert(i); }
 
     // pre-allocate memory
     L_.resize(n_, n_);
@@ -166,6 +182,7 @@ FSPAI::FSPAI(const Eigen::SparseMatrix<double>& A) : A_(A), n_(A.rows()) {
             sparsityPattern_[it.row()].emplace(it.col());
         }
     }
+
 }
 
 // compute the Factorize Sparse Approximate Inverse of A using a K-condition number minimization method
@@ -178,13 +195,14 @@ void FSPAI::compute(unsigned alpha, unsigned beta, double epsilon) {
     std::list<Eigen::Triplet<double>> tripetList;
 
     // cycle over each column of the sparse matrix A_
-    for (std::size_t k = 0; k < n_; ++k) {
+    for (std::size_t k = 0; k < static_cast<std::size_t>(n_); ++k) {
         Lk_.fill(0);               // reset column vector Lk_
         candidateSet_.clear();     // reset candidateSet
         deltaPattern_.insert(k);   // init deltaPattern to allow for sparsity pattern updates
 
         // perform alpha steps of approximate inverse update along column k
         for (std::size_t s = 0; s < alpha; ++s) {
+            
             // if sparsity pattern has reached convergence given the supplied epsilon, the approximate inverse along
             // this column cannot change. As a result the approximate inverse cannot change and any further computation
             // can be skipped.
@@ -228,7 +246,7 @@ void FSPAI::compute(unsigned alpha, unsigned beta, double epsilon) {
 
                 for (auto it = hatJk_.begin(); it != hatJk_.end(); ++it) {
                     // compute tau_jk value
-                    double tau_jk = std::pow(it->second, 2) / A_.coeff(it->first, it->first);
+                    double tau_jk = (it->second)*(it->second) / A_.coeff(it->first, it->first);
                     // can overwrite stored data (not required anymore after computation of tau_jk)
                     hatJk_[it->first] = tau_jk;
 
@@ -241,7 +259,7 @@ void FSPAI::compute(unsigned alpha, unsigned beta, double epsilon) {
                 // if the best improvement is higher than accetable treshold
                 if (max_tau > epsilon) {
                     tau_k /= hatJk_.size();
-
+                   
                     // select most promising first beta entries according to average heuristic
                     for (std::size_t idx = 0; idx < beta && !hatJk_.empty(); ++idx) {
                         // find maximum
@@ -249,11 +267,13 @@ void FSPAI::compute(unsigned alpha, unsigned beta, double epsilon) {
                         for (auto it = hatJk_.begin(); it != hatJk_.end(); ++it) {
                             if (it->second >= max->second) max = it;
                         }
+                        
                         // sparsity pattern update
-                        if (max->second > tau_k) {
+                        if (max->second >= tau_k) {
                             J_[k].insert(max->first);
                             deltaPattern_.insert(max->first);
                         }
+                        
                         // erase current maximum to start a new maximum search until idx == beta
                         hatJk_.erase(max);
                     }
@@ -261,7 +281,7 @@ void FSPAI::compute(unsigned alpha, unsigned beta, double epsilon) {
             }
         }
         // save approximate inverse of column k
-        for (std::size_t i = 0; i < n_; ++i) {
+        for (std::size_t i = 0; i < static_cast<std::size_t>(n_); ++i) {
             if (Lk_[i] != 0) tripetList.push_back(Eigen::Triplet<double>(i, k, Lk_[i]));
         }
     }

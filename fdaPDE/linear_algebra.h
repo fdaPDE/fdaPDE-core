@@ -26,5 +26,6 @@
 #include "linear_algebra/lumping.h"
 #include "linear_algebra/smw.h"
 #include "linear_algebra/sparse_block_matrix.h"
+#include "linear_algebra/fspai.h"
 
 #endif   // __FDAPDE_LINEAR_ALGEBRA_MODULE_H__
