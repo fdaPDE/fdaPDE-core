@@ -19,6 +19,7 @@
 
 #include "../fields/scalar_field.h"
 #include "fe_assembler.h"
+#include "fe_mass_assembler.h"
 
 namespace fdapde {
 
@@ -31,22 +32,22 @@ template <typename FeSpace_>
 struct scalar_test_function_impl : public fdapde::ScalarBase<FeSpace_::local_dim, TestFunction<FeSpace_>> {
     using TestSpace = std::decay_t<FeSpace_>;
     using Base = fdapde::ScalarBase<FeSpace_::local_dim, TestFunction<FeSpace_>>;
-    using InputType = internals::fe_assembler_packet<TestSpace::local_dim, TestSpace::n_components>;
+    using InputType = internals::fe_scalar_assembler_packet<TestSpace::local_dim>;
     using Scalar = double;
     static constexpr int StaticInputSize = TestSpace::local_dim;
     static constexpr int NestAsRef = 0;
-    static constexpr int XprBits = 0 | bilinear_bits::compute_shape_values;
+    static constexpr int XprBits = 0 | fe_assembler_flags::compute_shape_values;
 
     constexpr scalar_test_function_impl() = default;
     constexpr scalar_test_function_impl(FeSpace_& fe_space) : fe_space_(&fe_space) { }
 
     struct FirstPartialDerivative : fdapde::ScalarBase<TestSpace::local_dim, FirstPartialDerivative> {
         using Derived = TestFunction<FeSpace_>;
-        using InputType = internals::fe_assembler_packet<TestSpace::local_dim, TestSpace::n_components>;
+        using InputType = internals::fe_scalar_assembler_packet<TestSpace::local_dim>;
         using Scalar = double;
         static constexpr int StaticInputSize = TestSpace::local_dim;
         static constexpr int NestAsRef = 0;
-        static constexpr int XprBits = 0 | bilinear_bits::compute_shape_grad;
+        static constexpr int XprBits = 0 | fe_assembler_flags::compute_shape_grad;
 
         FirstPartialDerivative() = default;
         FirstPartialDerivative([[maybe_unused]] const Derived& f, int i) : i_(i) { }
@@ -57,7 +58,7 @@ struct scalar_test_function_impl : public fdapde::ScalarBase<FeSpace_::local_dim
         int i_;
     };
     // fe assembly evaluation
-    constexpr Scalar operator()(const InputType& fe_packet) const { return fe_packet.test_value[0]; }
+    constexpr Scalar operator()(const InputType& fe_packet) const { return fe_packet.test_value; }
     constexpr TestSpace& fe_space() { return *fe_space_; }
     constexpr const TestSpace& fe_space() const { return *fe_space_; }
     constexpr int input_size() const { return StaticInputSize; }
@@ -69,11 +70,11 @@ template <typename FeSpace_>
 struct vector_test_function_impl : public fdapde::MatrixBase<FeSpace_::local_dim, TestFunction<FeSpace_>> {
     using TestSpace = std::decay_t<FeSpace_>;
     using Base = fdapde::MatrixBase<FeSpace_::local_dim, TestFunction<FeSpace_>>;
-    using InputType = internals::fe_assembler_packet<TestSpace::local_dim, TestSpace::n_components>;
+    using InputType = internals::fe_vector_assembler_packet<TestSpace::local_dim>;
     using Scalar = double;
     static constexpr int StaticInputSize = TestSpace::local_dim;
     static constexpr int NestAsRef = 0;
-    static constexpr int XprBits = 0 | bilinear_bits::compute_shape_values;
+    static constexpr int XprBits = 0 | fe_assembler_flags::compute_shape_values;
     static constexpr int ReadOnly = 1;
     static constexpr int Rows = FeSpace_::n_components;
     static constexpr int Cols = 1;
@@ -83,13 +84,13 @@ struct vector_test_function_impl : public fdapde::MatrixBase<FeSpace_::local_dim
 
     struct Jacobian : fdapde::MatrixBase<TestSpace::local_dim, Jacobian> {
         using Derived = TestFunction<FeSpace_>;
-        using InputType = internals::fe_assembler_packet<TestSpace::local_dim, TestSpace::n_components>;
+        using InputType = internals::fe_vector_assembler_packet<TestSpace::local_dim>;
         using Scalar = double;
         static constexpr int StaticInputSize = TestSpace::local_dim;
         static constexpr int Rows = TestSpace::local_dim;
         static constexpr int Cols = TestSpace::n_components;
         static constexpr int NestAsRef = 0;
-        static constexpr int XprBits = 0 | bilinear_bits::compute_shape_grad;
+        static constexpr int XprBits = 0 | fe_assembler_flags::compute_shape_grad;
 
         Jacobian() = default;
         // fe assembly evaluation
@@ -114,22 +115,22 @@ template <typename FeSpace_>
 struct scalar_trial_function_impl : public fdapde::ScalarBase<FeSpace_::local_dim, TrialFunction<FeSpace_>> {
     using TrialSpace = std::decay_t<FeSpace_>;
     using Base = fdapde::ScalarBase<FeSpace_::local_dim, TrialFunction<FeSpace_>>;
-    using InputType = internals::fe_assembler_packet<TrialSpace::local_dim, TrialSpace::n_components>;
+    using InputType = internals::fe_scalar_assembler_packet<TrialSpace::local_dim>;
     using Scalar = double;
     static constexpr int StaticInputSize = TrialSpace::local_dim;
     static constexpr int NestAsRef = 0;
-    static constexpr int XprBits = 0 | bilinear_bits::compute_shape_values;
+    static constexpr int XprBits = 0 | fe_assembler_flags::compute_shape_values;
 
     constexpr scalar_trial_function_impl() = default;
     constexpr scalar_trial_function_impl(FeSpace_& fe_space) : fe_space_(&fe_space) { }
 
     struct FirstPartialDerivative : fdapde::ScalarBase<TrialSpace::local_dim, FirstPartialDerivative> {
         using Derived = TrialFunction<FeSpace_>;
-        using InputType = internals::fe_assembler_packet<TrialSpace::local_dim, TrialSpace::n_components>;
+        using InputType = internals::fe_scalar_assembler_packet<TrialSpace::local_dim>;
         using Scalar = double;
         static constexpr int StaticInputSize = TrialSpace::local_dim;
         static constexpr int NestAsRef = 0;
-        static constexpr int XprBits = 0 | bilinear_bits::compute_shape_grad;
+        static constexpr int XprBits = 0 | fe_assembler_flags::compute_shape_grad;
 
         FirstPartialDerivative() = default;
         FirstPartialDerivative([[maybe_unused]] const Derived& f, int i) : i_(i) { }
@@ -140,7 +141,7 @@ struct scalar_trial_function_impl : public fdapde::ScalarBase<FeSpace_::local_di
         int i_;
     };
     // fe assembly evaluation
-    constexpr Scalar operator()(const InputType& fe_packet) const { return fe_packet.trial_value[0]; }
+    constexpr Scalar operator()(const InputType& fe_packet) const { return fe_packet.trial_value; }
     constexpr TrialSpace& fe_space() { return *fe_space_; }
     constexpr const TrialSpace& fe_space() const { return *fe_space_; }
     constexpr int input_size() const { return StaticInputSize; }  
@@ -152,11 +153,11 @@ template <typename FeSpace_>
 struct vector_trial_function_impl : public fdapde::MatrixBase<FeSpace_::local_dim, TrialFunction<FeSpace_>> {
     using TrialSpace = std::decay_t<FeSpace_>;
     using Base = fdapde::MatrixBase<FeSpace_::local_dim, TrialFunction<FeSpace_>>;
-    using InputType = internals::fe_assembler_packet<TrialSpace::local_dim, TrialSpace::n_components>;
+    using InputType = internals::fe_vector_assembler_packet<TrialSpace::local_dim>;
     using Scalar = double;
     static constexpr int StaticInputSize = TrialSpace::local_dim;
     static constexpr int NestAsRef = 0;
-    static constexpr int XprBits = 0 | bilinear_bits::compute_shape_values;
+    static constexpr int XprBits = 0 | fe_assembler_flags::compute_shape_values;
     static constexpr int ReadOnly = 1;
     static constexpr int Rows = FeSpace_::n_components;
     static constexpr int Cols = 1;
@@ -166,13 +167,13 @@ struct vector_trial_function_impl : public fdapde::MatrixBase<FeSpace_::local_di
 
     struct Jacobian : fdapde::MatrixBase<TrialSpace::local_dim, Jacobian> {
         using Derived = TestFunction<FeSpace_>;
-        using InputType = internals::fe_assembler_packet<TrialSpace::local_dim, TrialSpace::n_components>;
+        using InputType = internals::fe_vector_assembler_packet<TrialSpace::local_dim>;
         using Scalar = double;
         static constexpr int StaticInputSize = TrialSpace::local_dim;
         static constexpr int Rows = TrialSpace::local_dim;
         static constexpr int Cols = TrialSpace::n_components;
         static constexpr int NestAsRef = 0;
-        static constexpr int XprBits = 0 | bilinear_bits::compute_shape_grad;
+        static constexpr int XprBits = 0 | fe_assembler_flags::compute_shape_grad;
 
         Jacobian() = default;
         // fe assembly evaluation
@@ -235,14 +236,13 @@ struct TrialFunction : public std::conditional_t<
     constexpr TrialFunction(FeSpace_& fe_space) : Base(fe_space) { }
     // norm evaluation
     double l2_squared_norm() {
-        internals::fe_mass_assembly_loop<DofHandler<local_dim, embed_dim>, typename TrialSpace::FeType> assembler(
-          Base::fe_space_->dof_handler());
+        internals::fe_mass_assembly_loop<typename TrialSpace::FeType> assembler(Base::fe_space_->dof_handler());
         return coeff_.dot(assembler.run() * coeff_);
     }
     double l2_norm() { return std::sqrt(l2_squared_norm()); }
     double h1_squared_norm() const {   // Sobolev H^1 norm of finite element function
         TrialFunction u(*Base::fe_space_);
-        TestFunction v(*Base::fe_space_);
+        TestFunction  v(*Base::fe_space_);
         auto assembler = integrate(*Base::fe_space_->triangulation())(u * v + inner(grad(u), grad(v)));
         return coeff_.dot(assembler.run() * coeff_);
     }
@@ -333,7 +333,7 @@ class FeFunction :
     // i-th component of vector fe_function
     struct VectorFeFunctionComponent : public fdapde::ScalarBase<StaticInputSize, VectorFeFunctionComponent> {
         using Derived = FeFunction<FeSpace_>;
-        using InputType = internals::fe_assembler_packet<FeSpace::local_dim, FeSpace::n_components>;
+        using InputType = internals::fe_vector_assembler_packet<FeSpace::local_dim>;
         using Scalar = double;
         static constexpr int StaticInputSize = FeSpace::local_dim;
         static constexpr int NestAsRef = 0;
@@ -353,8 +353,7 @@ class FeFunction :
     VectorFeFunctionComponent operator()(int i, [[maybe_unused]] int j) const { return operator[](i); }
     // norms of fe functions
     double l2_squared_norm() {
-        internals::fe_mass_assembly_loop<DofHandler<local_dim, embed_dim>, typename FeSpace::FeType> assembler(
-          fe_space_->dof_handler());
+        internals::fe_mass_assembly_loop<typename FeSpace::FeType> assembler(fe_space_->dof_handler());
         return coeff_.dot(assembler.assemble() * coeff_);
     }
     double l2_norm() { return std::sqrt(l2_squared_norm()); }

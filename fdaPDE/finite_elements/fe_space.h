@@ -28,13 +28,15 @@ template <typename Triangulation_, typename FeType_> class FeSpace {
     using FeType = std::decay_t<FeType_>;
     static constexpr int local_dim = Triangulation::local_dim;
     static constexpr int embed_dim = Triangulation::embed_dim;
-    static constexpr int n_components = FeType::n_components;
-    static constexpr bool is_vector_fe = FeType::is_vector_fe;
     using cell_dof_descriptor = FeType::template cell_dof_descriptor<local_dim>;
     using face_dof_descriptor = FeType::template face_dof_descriptor<local_dim>;
     using ReferenceCell = typename cell_dof_descriptor::ReferenceCell;
     using BasisType = typename cell_dof_descriptor::BasisType;
-
+    using DofHandlerType = DofHandler<local_dim, embed_dim>;
+    // vector finite element descriptors
+    static constexpr int n_components  = FeType::n_components;
+    static constexpr bool is_vector_fe = (n_components > 1);
+  
     FeSpace() = default;
     FeSpace(const Triangulation_& triangulation, FeType_ fe) :
         triangulation_(&triangulation), dof_handler_(triangulation) {
@@ -44,10 +46,10 @@ template <typename Triangulation_, typename FeType_> class FeSpace {
     }
     // getters
     const Triangulation& triangulation() const { return *triangulation_; }
-    const DofHandler<local_dim, embed_dim>& dof_handler() const { return dof_handler_; }
-    DofHandler<local_dim, embed_dim>& dof_handler() { return dof_handler_; }
-  constexpr int n_basis() const { return n_components * cell_basis_.size(); } // this referes to basis over reference cell
-  constexpr int n_basis_face() const { return n_components * face_basis_.size(); } // over reference cells
+    const DofHandlerType& dof_handler() const { return dof_handler_; }
+    DofHandlerType& dof_handler() { return dof_handler_; }
+  constexpr int n_basis() const { return n_components * cell_basis_.size(); } // this referes to basis over reference cell, change in n_shape_functions
+  constexpr int n_basis_face() const { return n_components * face_basis_.size(); } // over reference cells, change in n_shape_functions_face
   // we should also return a global number of basis over the whole domain
     int n_dofs() const { return dof_handler_.n_dofs(); }
 
@@ -78,7 +80,7 @@ template <typename Triangulation_, typename FeType_> class FeSpace {
     }
    private:
     const Triangulation* triangulation_;
-    DofHandler<local_dim, embed_dim> dof_handler_;
+    DofHandlerType dof_handler_;
     cell_dof_descriptor unit_cell_dofs_;
     face_dof_descriptor unit_face_dofs_;
     BasisType cell_basis_;

@@ -35,13 +35,13 @@ struct FeMap :
     static constexpr bool is_scalar = meta::is_scalar_field_v<Derived_>;
     using Derived = std::decay_t<Derived_>;
    public:
-    using InputType = internals::fe_assembler_packet<Derived::StaticInputSize, Derived::Rows>;
+    using InputType = internals::fe_scalar_assembler_packet<Derived::StaticInputSize>;
     using Scalar = double;
     static constexpr int StaticInputSize = Derived::StaticInputSize;
     using Base = std::conditional_t<
       is_scalar, ScalarBase<StaticInputSize, FeMap<Derived>>, MatrixBase<StaticInputSize, FeMap<Derived>>>;
     static constexpr int NestAsRef = 0;
-    static constexpr int XprBits = Derived::XprBits | bilinear_bits::compute_physical_quad_nodes;
+    static constexpr int XprBits = Derived::XprBits | fe_assembler_flags::compute_physical_quad_nodes;
     static constexpr int ReadOnly = 1;
     static constexpr int Rows = []() { if constexpr(is_scalar) return 1; else return Derived::Rows; }();
     static constexpr int Cols = []() { if constexpr(is_scalar) return 1; else return Derived::Cols; }();
@@ -89,11 +89,11 @@ struct FeMap<FeFunction<FeSpace>> :
     using Derived = FeFunction<FeSpace>;
    public:
     using Base = ScalarBase<Derived::StaticInputSize, FeMap<Derived>>;
-    using InputType = internals::fe_assembler_packet<Derived::StaticInputSize, Derived::Rows>;
+    using InputType = internals::fe_scalar_assembler_packet<Derived::StaticInputSize>;
     using Scalar = double;
     static constexpr int StaticInputSize = Derived::StaticInputSize;
     static constexpr int NestAsRef = 0;
-    static constexpr int XprBits = Derived::XprBits | bilinear_bits::compute_physical_quad_nodes;
+    static constexpr int XprBits = Derived::XprBits | fe_assembler_flags::compute_physical_quad_nodes;
 
     FeMap() = default;
     FeMap(const Derived& xpr) : xpr_(&xpr) { }

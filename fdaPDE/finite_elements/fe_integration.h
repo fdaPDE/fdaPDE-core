@@ -25,13 +25,27 @@ namespace internals {
 struct fe_quadrature_simplex_base { };
 template <typename T>
 concept is_fe_quadrature_simplex = std::is_base_of_v<fe_quadrature_simplex_base, T>;
-  
+template <typename T> [[maybe_unused]] static constexpr bool is_fe_quadrature_simplex_v = is_fe_quadrature_simplex<T>;
+
+template <typename LhsQuadrature, typename RhsQuadrature>
+    requires(
+      LhsQuadrature::local_dim == RhsQuadrature::local_dim && is_fe_quadrature_simplex_v<LhsQuadrature> &&
+      is_fe_quadrature_simplex_v<RhsQuadrature>)
+struct higher_order_fe_quadrature :
+    std::type_identity<
+      std::conditional_t<(LhsQuadrature::order > RhsQuadrature::order), LhsQuadrature, RhsQuadrature>> { };
+template <typename LhsQuadrature, typename RhsQuadrature>
+using higher_order_fe_quadrature_t = higher_order_fe_quadrature<LhsQuadrature, RhsQuadrature>::type;
+
+// quadrature points and weights reference: https://people.sc.fsu.edu/~jburkardt/datasets/datasets.html
+// by order we mean the highest polynomial degree which is exactly integrated by the formula
 template <int LocalDim, int Size> struct fe_quadrature_simplex;
 
 // 1D 2 point formula
 template <> struct fe_quadrature_simplex<1, 2> : public fe_quadrature_simplex_base {
     static constexpr int local_dim = 1;
     static constexpr int n_nodes = 2;
+    static constexpr int order = 1;
 
     static constexpr cexpr::Vector<double, n_nodes> nodes {
       std::array<double, n_nodes> {0.211324865405187, 0.788675134594812}
@@ -45,6 +59,7 @@ template <> struct fe_quadrature_simplex<1, 2> : public fe_quadrature_simplex_ba
 template <> struct fe_quadrature_simplex<1, 3> : public fe_quadrature_simplex_base {
     static constexpr int local_dim = 1;
     static constexpr int n_nodes = 3;
+    static constexpr int order = 2;
 
     static constexpr cexpr::Vector<double, n_nodes> nodes {
       std::array<double, n_nodes> {0.112701665379258, 0.500000000000000, 0.887298334620741}
@@ -58,6 +73,7 @@ template <> struct fe_quadrature_simplex<1, 3> : public fe_quadrature_simplex_ba
 template <> struct fe_quadrature_simplex<2, 1> : public fe_quadrature_simplex_base {
     static constexpr int local_dim = 2;
     static constexpr int n_nodes = 1;
+    static constexpr int order = 1;
 
     static constexpr cexpr::Matrix<double, n_nodes, local_dim> nodes {
       std::array<double, n_nodes * local_dim> {0.333333333333333, 0.333333333333333}
@@ -71,6 +87,7 @@ template <> struct fe_quadrature_simplex<2, 1> : public fe_quadrature_simplex_ba
 template <> struct fe_quadrature_simplex<2, 3> : public fe_quadrature_simplex_base {
     static constexpr int local_dim = 2;
     static constexpr int n_nodes = 3;
+    static constexpr int order = 2;
 
     static constexpr cexpr::Matrix<double, n_nodes, local_dim> nodes {
       std::array<double, n_nodes * local_dim> {
@@ -87,6 +104,7 @@ template <> struct fe_quadrature_simplex<2, 3> : public fe_quadrature_simplex_ba
 template <> struct fe_quadrature_simplex<2, 6> : public fe_quadrature_simplex_base {
     static constexpr int local_dim = 2;
     static constexpr int n_nodes = 6;
+    static constexpr int order = 4;
 
     static constexpr cexpr::Matrix<double, n_nodes, local_dim> nodes {
       std::array<double, n_nodes * local_dim> {
@@ -105,6 +123,7 @@ template <> struct fe_quadrature_simplex<2, 6> : public fe_quadrature_simplex_ba
 template <> struct fe_quadrature_simplex<2, 7> : public fe_quadrature_simplex_base {
     static constexpr int local_dim = 2;
     static constexpr int n_nodes = 7;
+    static constexpr int order = 5;
 
     static constexpr cexpr::Matrix<double, n_nodes, local_dim> nodes {
       std::array<double, n_nodes * local_dim> {
@@ -123,6 +142,7 @@ template <> struct fe_quadrature_simplex<2, 7> : public fe_quadrature_simplex_ba
 template <> struct fe_quadrature_simplex<2, 12> : public fe_quadrature_simplex_base {
     static constexpr int local_dim = 2;
     static constexpr int n_nodes = 12;
+    static constexpr int order = 6;
 
     static constexpr cexpr::Matrix<double, n_nodes, local_dim> nodes {
       std::array<double, n_nodes * local_dim> {

@@ -17,561 +17,12 @@
 #ifndef __FE_ASSEMBLER_H__
 #define __FE_ASSEMBLER_H__
 
-#include <unordered_map>
-
-#include "../fields/meta.h"
-#include "../linear_algebra/constexpr_matrix.h"
-#include "../linear_algebra/mdarray.h"
-#include "fe_integration.h"
+#include "fe_scalar_assembler.h"
+#include "fe_vector_assembler.h"
 
 namespace fdapde {
 
-template <typename Derived_> struct FeMap;
-  
-enum bilinear_bits {
-    compute_shape_values        = 0x0001,
-    compute_shape_grad          = 0x0002,
-    compute_second_derivatives  = 0x0004,
-    compute_physical_quad_nodes = 0x0010
-};
-
-[[maybe_unused]] static constexpr int CellMajor = 0;
-[[maybe_unused]] static constexpr int FaceMajor = 1;
-  
-namespace internals {
-
-// detect trial space from bilinear form
-template <typename Xpr> constexpr decltype(auto) trial_space(Xpr&& xpr) {
-    constexpr bool found = meta::xpr_find<
-      decltype([]<typename Xpr_>() { return requires { typename Xpr_::TrialSpace; }; }), std::decay_t<Xpr>>();
-    fdapde_static_assert(found, NO_TRIAL_SPACE_FOUND_IN_EXPRESSION);
-    return meta::xpr_query<
-      decltype([]<typename Xpr_>(Xpr_&& xpr) -> auto& { return xpr.fe_space(); }),
-      decltype([]<typename Xpr_>() { return requires { typename Xpr_::TrialSpace; }; })>(std::forward<Xpr>(xpr));
-}
-// detect test space from bilinear form
-template <typename Xpr> constexpr decltype(auto) test_space(Xpr&& xpr) {
-    constexpr bool found = meta::xpr_find<
-      decltype([]<typename Xpr_>() { return requires { typename Xpr_::TestSpace; }; }), std::decay_t<Xpr>>();
-    fdapde_static_assert(found, NO_TEST_SPACE_FOUND_IN_EXPRESSION);
-    return meta::xpr_query<
-      decltype([]<typename Xpr_>(Xpr_&& xpr) -> auto& { return xpr.fe_space(); }),
-      decltype([]<typename Xpr_>() { return requires { typename Xpr_::TestSpace; }; })>(std::forward<Xpr>(xpr));
-}
-
-template <int LocalDim, int NComponents> struct fe_assembler_packet {
-    static constexpr int local_dim = LocalDim;
-    static constexpr int n_components = NComponents;
-    fe_assembler_packet() noexcept = default;
-    fe_assembler_packet(fe_assembler_packet&&) noexcept = default;
-    fe_assembler_packet(const fe_assembler_packet&) noexcept = default;
-  
-    int quad_node_id;       // active physical quadrature node index
-    double cell_measure;    // active cell measure
-    double cell_diameter;   // active cell diameter
-    cexpr::Matrix<double, n_components, 1> trial_value, test_value;
-    cexpr::Matrix<double, n_components, local_dim> trial_grad, test_grad;
-};
-
-// optimized computation of mass matrix [A]_{ij} = \int_D (\psi_i * \psi_j)
-template <typename DofHandler, typename FeType> class fe_mass_assembly_loop {
-    static constexpr int local_dim = DofHandler::local_dim;
-    static constexpr int embed_dim = DofHandler::embed_dim;
-    using Quadrature = typename FeType::template select_cell_quadrature_t<local_dim>;
-    using cell_dof_descriptor = FeType::template cell_dof_descriptor<local_dim>;
-    using BasisType = typename cell_dof_descriptor::BasisType;
-    static constexpr int n_quadrature_nodes = Quadrature::n_nodes;
-    static constexpr int n_basis = BasisType::n_basis;
-    // compile-time evaluation of integral \int_{\hat K} \psi_i \psi_j on reference element \hat K
-    static constexpr cexpr::Matrix<double, n_basis, n_basis> int_table_ {[]() {
-        std::array<double, n_basis * n_basis> int_table_ {};
-        BasisType basis {cell_dof_descriptor().dofs_phys_coords()};
-        for (int i = 0; i < n_basis; ++i) {
-            for (int j = 0; j < n_basis; ++j) {
-                for (int k = 0; k < n_quadrature_nodes; ++k) {
-                    int_table_[i * n_basis + j] +=
-		      // for scalar elements, a.dot(b) casts to a plain scalar multiplication a * b
-                      Quadrature::weights[k] * (basis[i].dot(basis[j]))(Quadrature::nodes.row(k).transpose());
-                }
-            }
-        }
-        return int_table_;
-    }};
-    DofHandler* dof_handler_;
-   public:
-    fe_mass_assembly_loop() = default;
-    fe_mass_assembly_loop(DofHandler& dof_handler) : dof_handler_(&dof_handler) { }
-
-    SpMatrix<double> assemble() {
-        if (!dof_handler_) dof_handler_->enumerate(FeType {});
-        SpMatrix<double> assembled_mat(dof_handler_->n_dofs(), dof_handler_->n_dofs());
-        std::vector<Eigen::Triplet<double>> triplet_list;
-        DVector<int> active_dofs;
-        for (typename DofHandler::cell_iterator it = dof_handler_->cells_begin(); it != dof_handler_->cells_end();
-             ++it) {
-            active_dofs = it->dofs();
-            for (int i = 0; i < BasisType::n_basis; ++i) {
-                for (int j = 0; j < i + 1; ++j) {
-                    std::pair<const int&, const int&> minmax(std::minmax(active_dofs[i], active_dofs[j]));
-                    triplet_list.emplace_back(minmax.first, minmax.second, int_table_(i, j) * it->measure());
-                }
-            }
-        }
-        // linearity of the integral is implicitly used here, as duplicated triplets are summed up (see Eigen docs)
-        assembled_mat.setFromTriplets(triplet_list.begin(), triplet_list.end());
-        assembled_mat.makeCompressed();
-	return assembled_mat.selfadjointView<Eigen::Upper>();
-    }
-    constexpr int n_dofs() const { return dof_handler_->n_dofs(); }
-};
-
-// optimized computation of discretized Laplace [A]_{ij} = \int_D (\grad{\psi_i} * \grad{\psi_j})
-template <typename DofHandler, typename FeType> class fe_grad_grad_assembly_loop {
-    static constexpr int local_dim = DofHandler::local_dim;
-    static constexpr int embed_dim = DofHandler::embed_dim;
-    using Quadrature = typename FeType::template select_cell_quadrature_t<local_dim>;
-    using cell_dof_descriptor = FeType::template cell_dof_descriptor<local_dim>;
-    using BasisType = typename cell_dof_descriptor::BasisType;
-    static constexpr int n_quadrature_nodes = Quadrature::n_nodes;
-    static constexpr int n_basis = BasisType::n_basis;
-    static constexpr int n_components = FeType::n_components;
-    // compile-time evaluation of \nabla{\psi_i}(q_j), i = 1, ..., n_basis, j = 1, ..., n_quadrature_nodes
-    static constexpr MdArray<double, MdExtents<n_basis, n_quadrature_nodes, local_dim, n_components>> shape_grad_ {
-      []() {
-          MdArray<double, MdExtents<n_basis, n_quadrature_nodes, local_dim, n_components>> shape_grad_ {};
-          BasisType basis {cell_dof_descriptor().dofs_phys_coords()};
-          for (int i = 0; i < n_basis; ++i) {
-              // evaluation of \nabla{\psi_i} at q_j, j = 1, ..., n_quadrature_nodes
-              for (int q_j = 0; q_j < n_quadrature_nodes; ++q_j) {
-                  auto grad = basis[i].gradient()(Quadrature::nodes.row(q_j).transpose());
-                  auto slice = shape_grad_.template slice<0, 1>(i, q_j);
-                  for (int k = 0; k < local_dim; ++k) {
-                      for (int h = 0; h < n_components; ++h) { slice(k, h) = grad(k, h); }
-                  }
-              }
-          }
-          return shape_grad_;
-      }()};
-    DofHandler* dof_handler_;
-   public:
-    fe_grad_grad_assembly_loop() = default;
-    fe_grad_grad_assembly_loop(DofHandler& dof_handler) : dof_handler_(&dof_handler) { }
-
-    SpMatrix<double> assemble() {
-        if (!dof_handler_) dof_handler_->enumerate(FeType {});
-        int n_dofs = dof_handler_->n_dofs();
-        SpMatrix<double> assembled_mat(n_dofs, n_dofs);
-        // prepare assembly loop
-        std::vector<Eigen::Triplet<double>> triplet_list;
-        DVector<int> active_dofs;
-        MdArray<double, MdExtents<n_basis, n_quadrature_nodes, local_dim, n_components>> shape_grad;
-        for (typename DofHandler::cell_iterator it = dof_handler_->cells_begin(); it != dof_handler_->cells_end();
-             ++it) {
-            active_dofs = it->dofs();
-            // map reference cell shape functions' gradient on physical cell
-            for (int i = 0; i < n_basis; ++i) {
-                for (int j = 0; j < n_quadrature_nodes; ++j) {
-                    auto phy_grad = shape_grad .template slice<0, 1>(i, j);
-                    auto ref_grad = shape_grad_.template slice<0, 1>(i, j).matrix();
-                    for (int k = 0; k < n_components; ++k) {
-                        cexpr::Vector<const double, local_dim> tmp =
-                          cexpr::Map<const double, local_dim, embed_dim>(it->invJ().data()).transpose() *
-                          ref_grad.col(k);
-                        for (int h = 0; h < local_dim; ++h) { phy_grad(k, h) = tmp[h]; }
-                    }
-                }
-            }
-            for (int i = 0; i < BasisType::n_basis; ++i) {
-                for (int j = 0; j < i + 1; ++j) {
-                    std::pair<const int&, const int&> minmax(std::minmax(active_dofs[i], active_dofs[j]));
-                    double value = 0;
-                    for (int k = 0; k < n_quadrature_nodes; ++k) {
-                        auto psi_i = shape_grad.template slice<0, 1>(i, k).matrix();
-                        auto psi_j = shape_grad.template slice<0, 1>(j, k).matrix();
-                        value += Quadrature::weights[k] * psi_i.dot(psi_j);
-                    }
-                    triplet_list.emplace_back(minmax.first, minmax.second, value * it->measure());
-                }
-            }
-        }
-        // linearity of the integral is implicitly used here, as duplicated triplets are summed up (see Eigen docs)
-        assembled_mat.setFromTriplets(triplet_list.begin(), triplet_list.end());
-        assembled_mat.makeCompressed();
-	return assembled_mat.selfadjointView<Eigen::Upper>();
-    }
-};
-
-template <typename T> constexpr auto scalar_or_kth_component_of(const T& t, int k) {
-    if constexpr (std::is_floating_point_v<T>) {
-        return t;
-    } else {
-        fdapde_constexpr_assert(k < t.size());
-        return t[k];
-    }
-}
-
-// implementation of galerkin assembly loop for the discretization of arbitrarily bilinear forms
-template <typename Derived> struct fe_assembly_xpr_base;
-
-// traits for surface integration \int_{\partial D} (...)
-template <typename FunctionSpace_, typename... Quadrature_> class fe_face_assembler_traits {
-    using FeType = typename FunctionSpace_::FeType;
-    static constexpr int local_dim = FunctionSpace_::local_dim;
-    static constexpr int embed_dim = FunctionSpace_::embed_dim;
-   public:
-    using dof_descriptor = FeType::template face_dof_descriptor<local_dim>;
-    using Quadrature = decltype([]() {
-        if constexpr (sizeof...(Quadrature_) == 0) {
-            return typename FeType::template select_face_quadrature_t<local_dim> {};
-        } else {
-            return std::get<0>(std::tuple<Quadrature_...>());
-        }
-    }());
-    using geo_iterator = typename Triangulation<local_dim, embed_dim>::boundary_iterator;
-    using dof_iterator = typename DofHandler<local_dim, embed_dim>::boundary_iterator;
-};
-
-// traits for integration \int_D (...)
-template <typename FunctionSpace_, typename... Quadrature_> class fe_cell_assembler_traits {
-    using FeType = typename FunctionSpace_::FeType;
-    static constexpr int local_dim = FunctionSpace_::local_dim;
-    static constexpr int embed_dim = FunctionSpace_::embed_dim;
-   public:
-    using dof_descriptor = FeType::template cell_dof_descriptor<local_dim>;
-    using Quadrature = decltype([]() {
-        if constexpr (sizeof...(Quadrature_) == 0) {
-            return typename FeType::template select_cell_quadrature_t<local_dim> {};
-        } else {
-            return std::get<0>(std::tuple<Quadrature_...>());
-        }
-    }());
-    fdapde_static_assert(
-      internals::is_fe_quadrature_simplex<Quadrature>, SUPPLIED_QUADRATURE_FORMULA_IS_NOT_FOR_SIMPLEX_INTEGRATION);
-    using geo_iterator = typename Triangulation<local_dim, embed_dim>::cell_iterator;
-    using dof_iterator = typename DofHandler<local_dim, embed_dim>::cell_iterator;
-};
-
-// base class for finite element assembly loops (of galerkin type, e.g. trial space == test space)
-template <typename Triangulation_, typename Form_, int Options_, typename... Quadrature_>
-struct fe_assembler_base {
-    // detect test space
-    using TestSpace  = std::decay_t<decltype(test_space (std::declval<Form_>()))>;
-    using Form = std::decay_t<decltype(meta::xpr_wrap<FeMap, decltype([]<typename Xpr>() {
-          return !std::is_invocable_v<
-            Xpr, fe_assembler_packet<Xpr::StaticInputSize, TestSpace::n_components>>;
-        })>(std::declval<Form_>()))>;
-    using Triangulation = typename std::decay_t<Triangulation_>;
-    static constexpr int local_dim = Triangulation::local_dim;
-    static constexpr int embed_dim = Triangulation::embed_dim;
-    static constexpr int Options = Options_;
-    using FunctionSpace = TestSpace;
-    using FeType = typename FunctionSpace::FeType;
-    using fe_traits = std::conditional_t<
-      Options == CellMajor, fe_cell_assembler_traits<FunctionSpace, Quadrature_...>,
-      fe_face_assembler_traits<FunctionSpace, Quadrature_...>>;
-    using Quadrature = typename fe_traits::Quadrature;
-    using dof_descriptor = typename fe_traits::dof_descriptor;
-    using BasisType = typename dof_descriptor::BasisType;
-    static constexpr int n_quadrature_nodes = Quadrature::n_nodes;
-    static constexpr int n_basis = BasisType::n_basis;
-    static constexpr int n_components = TestSpace::n_components;
-
-    fe_assembler_base() = default;
-    fe_assembler_base(
-      const Form_& form, typename fe_traits::geo_iterator begin, typename fe_traits::geo_iterator end,
-      const Quadrature_&... quadrature)
-        requires(sizeof...(quadrature) <= 1)
-        :
-        form_(meta::xpr_wrap<FeMap, decltype([]<typename Xpr>() {
-	      return !std::is_invocable_v<Xpr, fe_assembler_packet<Xpr::StaticInputSize, TestSpace::n_components>>;
-	    })>(form)),
-        quadrature_([... quadrature = std::forward<const Quadrature_>(quadrature)]() {
-            if constexpr (sizeof...(quadrature) == 1) {
-                return std::get<0>(std::make_tuple(quadrature...));
-            } else {
-                return Quadrature {};
-            }
-        }()),
-        dof_handler_(&test_space(form_).dof_handler()),
-        begin_(begin),
-        end_(end) {
-        fdapde_assert(dof_handler_->n_dofs() > 0);
-    }
-    constexpr int n_dofs() const { return dof_handler_->n_dofs(); }
-   protected:
-    // compile-time evaluation of \psi_i(q_j), i = 1, ..., n_basis, j = 1, ..., n_quadrature_nodes
-    static constexpr MdArray<double, MdExtents<n_basis, n_quadrature_nodes, n_components>> shape_values_ {[]() {
-        MdArray<double, MdExtents<n_basis, n_quadrature_nodes, n_components>> shape_values_ {};
-        BasisType basis {dof_descriptor().dofs_phys_coords()};
-        for (int i = 0; i < n_basis; ++i) {
-            for (int j = 0; j < n_quadrature_nodes; ++j) {
-                auto basis_eval = basis[i](Quadrature::nodes.row(j).transpose());
-                for (int k = 0; k < n_components; ++k) {
-                    shape_values_(i, j, k) = internals::scalar_or_kth_component_of(basis_eval, k);
-                }
-            }
-        }
-        return shape_values_;
-    }()};
-    // compile-time evaluation of \nabla{\psi_i}(q_j), i = 1, ..., n_basis, j = 1, ..., n_quadrature_nodes
-    static constexpr MdArray<double, MdExtents<n_basis, n_quadrature_nodes, n_components, local_dim>> shape_grad_ {
-      []() {
-          MdArray<double, MdExtents<n_basis, n_quadrature_nodes, n_components, local_dim>> shape_grad_ {};
-          BasisType basis {dof_descriptor().dofs_phys_coords()};
-          for (int i = 0; i < n_basis; ++i) {
-              // evaluation of \nabla{\psi_i} at q_j, j = 1, ..., n_quadrature_nodes
-              for (int j = 0; j < n_quadrature_nodes; ++j) {
-                  auto grad = basis[i].gradient()(Quadrature::nodes.row(j).transpose());
-                  for (int k = 0; k < n_components; ++k) {
-                      for (int h = 0; h < local_dim; ++h) { shape_grad_(i, j, k, h) = grad(h, k); }
-                  }
-              }
-          }
-          return shape_grad_;
-      }()};
-
-    void distribute_quadrature_nodes(
-      std::unordered_map<const void*, DMatrix<double>>& fe_map_buff, typename fe_traits::dof_iterator begin,
-      typename fe_traits::dof_iterator end) const {
-        DMatrix<double> quad_nodes;
-        quad_nodes.resize(n_quadrature_nodes * (end_.index() - begin_.index()), embed_dim);
-        int local_cell_id = 0;
-        for (typename fe_traits::geo_iterator it = begin_; it != end_; ++it) {
-            for (int q_k = 0; q_k < n_quadrature_nodes; ++q_k) {
-                quad_nodes.row(local_cell_id * n_quadrature_nodes + q_k) =
-                  it->J() *
-                    Eigen::Map<const SMatrix<n_quadrature_nodes, Quadrature::local_dim>>(quadrature_.nodes.data())
-                      .row(q_k)
-                      .transpose() +
-                  it->node(0);
-            }
-            local_cell_id++;
-        }
-
-        // evaluate FeMap nodes at quadrature nodes
-        meta::xpr_apply_if<
-          decltype([]<typename Xpr_, typename... Args>(Xpr_& xpr, Args&&... args) {
-              xpr.init(std::forward<Args>(args)...);
-              return;
-          }),
-          decltype([]<typename Xpr_>() {
-              return requires(Xpr_ xpr) { xpr.init(fe_map_buff, quad_nodes, begin, end); };
-          })>(form_, fe_map_buff, quad_nodes, begin, end);
-    }
-    Form form_;
-    Quadrature quadrature_ {};
-    const DofHandler<local_dim, embed_dim>* dof_handler_;
-    typename fe_traits::geo_iterator begin_, end_;
-};
-
-template <typename Triangulation_, typename Form_, int Options_, typename... Quadrature_>
-class fe_matrix_assembly_loop :
-    public fe_assembler_base<Triangulation_, Form_, Options_, Quadrature_...>,
-    public fe_assembly_xpr_base<fe_matrix_assembly_loop<Triangulation_, Form_, Options_, Quadrature_...>> {
-    // detect trial and test spaces from bilinear form
-    using TrialSpace = std::decay_t<decltype(trial_space(std::declval<Form_>()))>;
-    using TestSpace  = std::decay_t<decltype(test_space (std::declval<Form_>()))>;
-    fdapde_static_assert(
-      std::is_same_v<TrialSpace FDAPDE_COMMA TestSpace>,
-      GALERKIN_ASSEMBLY_LOOP_REQUIRES_TRIAL_AND_TEST_SPACES_TO_BE_EQUAL);
-    using Base = fe_assembler_base<Triangulation_, Form_, Options_, Quadrature_...>;
-    using Form = typename Base::Form;
-    static constexpr int local_dim = Base::local_dim;
-    static constexpr int embed_dim = Base::embed_dim;
-    static constexpr int n_basis = Base::n_basis;
-    static constexpr int n_quadrature_nodes = Base::n_quadrature_nodes;
-    static constexpr int n_components = Base::n_components;
-    using Base::dof_handler_;
-    using Base::form_;
-   public:
-    fe_matrix_assembly_loop() = default;
-    fe_matrix_assembly_loop(
-      const Form_& form, typename Base::fe_traits::geo_iterator begin, typename Base::fe_traits::geo_iterator end,
-      const Quadrature_&... quadrature) requires(sizeof...(quadrature) <= 1)
-        : Base(form, begin, end, quadrature...) { }
-
-    SpMatrix<double> assemble() const {
-        SpMatrix<double> assembled_mat(dof_handler_->n_dofs(), dof_handler_->n_dofs());
-        std::vector<Eigen::Triplet<double>> triplet_list;
-	assemble(triplet_list);
-	// linearity of the integral is implicitly used here, as duplicated triplets are summed up (see Eigen docs)
-        assembled_mat.setFromTriplets(triplet_list.begin(), triplet_list.end());
-        assembled_mat.makeCompressed();
-        return assembled_mat;
-    }
-    void assemble(std::vector<Eigen::Triplet<double>>& triplet_list) const {
-        using iterator = typename Base::fe_traits::dof_iterator;
-        iterator begin(Base::begin_.index(), dof_handler_, Base::begin_.marker());
-        iterator end  (Base::end_.index(),   dof_handler_, Base::end_.marker());
-        // prepare assembly loop
-        DVector<int> active_dofs;
-	// shape functions gradient on physical cell
-        MdArray<double, MdExtents<n_basis, n_quadrature_nodes, n_components, local_dim>> shape_grad;
-        std::unordered_map<const void*, DMatrix<double>> fe_map_buff;
-        if constexpr (Form::XprBits & bilinear_bits::compute_physical_quad_nodes) {
-            Base::distribute_quadrature_nodes(
-              fe_map_buff, begin, end);   // distribute quadrature nodes on physical mesh (if required)
-        }
-	
-        // start assembly loop
-        internals::fe_assembler_packet<local_dim, n_components> fe_packet;
-	int local_cell_id = 0;
-        for (iterator it = begin; it != end; ++it) {
-            fe_packet.cell_measure = it->measure();
-            // if constexpr (WeakForm::Flags & UpdateCellDiameter) fe_data.cell_diameter = cell->diameter();
-            if constexpr (Form::XprBits & bilinear_bits::compute_shape_grad) {
-                for (int i = 0; i < n_basis; ++i) {
-                    for (int j = 0; j < n_quadrature_nodes; ++j) {
-                        auto ref_grad = Base::shape_grad_.template slice<0, 1>(i, j).matrix();
-                        for (int k = 0; k < n_components; ++k) {
-                            cexpr::Matrix<double, 1, local_dim> tmp =
-                              ref_grad.row(k) * cexpr::Map<const double, local_dim, embed_dim>(it->invJ().data());
-                            for (int h = 0; h < local_dim; ++h) { shape_grad(i, j, k, h) = tmp[h]; }
-                        }
-                    }
-                }
-            }
-            // perform integration of weak form for (i, j)-th basis pair
-            active_dofs = it->dofs();
-            for (int i = 0; i < n_basis; ++i) {       // trial function loop
-                for (int j = 0; j < n_basis; ++j) {   // test function loop
-                    double value = 0;
-                    for (int q_k = 0; q_k < n_quadrature_nodes; ++q_k) {
-                        // update fe_packet
-                        fe_packet.trial_value = Base::shape_values_.template slice<0, 1>(i, q_k).matrix();
-                        fe_packet.test_value  = Base::shape_values_.template slice<0, 1>(j, q_k).matrix();
-                        if constexpr (Form::XprBits & bilinear_bits::compute_shape_grad) {
-                            fe_packet.trial_grad = shape_grad.template slice<0, 1>(i, q_k).matrix();
-                            fe_packet.test_grad  = shape_grad.template slice<0, 1>(j, q_k).matrix();
-                        }
-                        if constexpr (Form::XprBits & bilinear_bits::compute_physical_quad_nodes) {
-                            fe_packet.quad_node_id = local_cell_id * n_quadrature_nodes + q_k;
-                        }
-                        value += Base::Quadrature::weights[q_k] * form_(fe_packet);
-                    }
-                    triplet_list.emplace_back(active_dofs[i], active_dofs[j], value * fe_packet.cell_measure);
-                }
-            }
-	    local_cell_id++;
-        }
-        return;
-    }
-};
-
-// assembly loop for the discretization of integrals \int_D f * \psi_i, with \psi_i \in test space
-template <typename Triangulation_, typename Form_, int Options_, typename... Quadrature_>
-class fe_vector_assembly_loop :
-    public fe_assembler_base<Triangulation_, Form_, Options_, Quadrature_...>,
-    public fe_assembly_xpr_base<fe_vector_assembly_loop<Triangulation_, Form_, Options_, Quadrature_...>> {
-    static constexpr bool trial_space_found = meta::xpr_find<
-      decltype([]<typename Xpr_>() { return requires { typename Xpr_::TrialSpace; }; }), std::decay_t<Form_>>();
-    fdapde_static_assert(!trial_space_found, IF_YOU_WANT_TO_DISCRETIZE_A_BILINEAR_FORM_USE_THE_GALERKIN_ASSEMBLY_LOOP);
-    using Base = fe_assembler_base<Triangulation_, Form_, Options_, Quadrature_...>;
-    using Form = typename Base::Form;
-    static constexpr int local_dim = Base::local_dim;
-    static constexpr int embed_dim = Base::embed_dim;
-    static constexpr int n_basis = Base::n_basis;
-    static constexpr int n_quadrature_nodes = Base::n_quadrature_nodes;
-    static constexpr int n_components = Base::n_components;
-    using Base::dof_handler_;
-    using Base::form_;
-   public:
-    fe_vector_assembly_loop() = default;
-    fe_vector_assembly_loop(
-      const Form_& form, typename Base::fe_traits::geo_iterator begin, typename Base::fe_traits::geo_iterator end,
-      const Quadrature_&... quadrature) requires(sizeof...(quadrature) <= 1)
-        : Base(form, begin, end, quadrature...) { }
-
-    DVector<double> assemble() const {
-        DVector<double> assembled_vec(dof_handler_->n_dofs());
-        assembled_vec.setZero();
-        assemble(assembled_vec);
-        return assembled_vec;
-    }
-    void assemble(DVector<double>& assembled_vec) const {
-        using iterator = typename Base::fe_traits::dof_iterator;
-        iterator begin(Base::begin_.index(), dof_handler_, Base::begin_.marker());
-        iterator end  (Base::end_.index(),   dof_handler_, Base::end_.marker());
-        // prepare assembly loop
-        DVector<int> active_dofs;
-        std::unordered_map<const void*, DMatrix<double>> fe_map_buff;   // evaluation of FeMap nodes at quadrature nodes
-        if constexpr (Form::XprBits & bilinear_bits::compute_physical_quad_nodes) {
-            Base::distribute_quadrature_nodes(
-              fe_map_buff, begin, end);   // distribute quadrature nodes on physical mesh (if required)
-        }
-	
-        // start assembly loop
-        internals::fe_assembler_packet<local_dim, n_components> fe_packet;
-	int local_cell_id = 0;
-        for (iterator it = begin; it != end; ++it) {
-            fe_packet.cell_measure = it->measure();
-            active_dofs = it->dofs();
-            for (int i = 0; i < n_basis; ++i) {   // test function loop
-                double value = 0;
-                for (int q_k = 0; q_k < n_quadrature_nodes; ++q_k) {
-                    // update fe_packet
-                    fe_packet.test_value = Base::shape_values_.template slice<0, 1>(i, q_k).matrix();
-                    if constexpr (Form::XprBits & bilinear_bits::compute_physical_quad_nodes) {
-                        fe_packet.quad_node_id = local_cell_id * n_quadrature_nodes + q_k;
-                    }
-                    value += Base::Quadrature::weights[q_k] * form_(fe_packet);
-                }		
-                assembled_vec[active_dofs[i]] += value * fe_packet.cell_measure;
-            }
-	    local_cell_id++;
-        }
-        return;
-    }
-};
-
-// arithmetic between matrix assembly loops
-template <typename Derived> struct fe_assembly_xpr_base {
-    constexpr const Derived& derived() const { return static_cast<const Derived&>(*this); }
-};
-
-template <typename Lhs, typename Rhs>
-struct fe_assembly_add_op : public fe_assembly_xpr_base<fe_assembly_add_op<Lhs, Rhs>> {
-    fdapde_static_assert(
-      std::is_same_v<decltype(std::declval<Lhs>().assemble()) FDAPDE_COMMA decltype(std::declval<Rhs>().assemble())>,
-      YOU_ARE_SUMMING_NON_COMPATIBLE_ASSEMBLY_LOOPS);
-    using OutputType = decltype(std::declval<Lhs>().assemble());
-    fe_assembly_add_op(const Lhs& lhs, const Rhs& rhs) : lhs_(lhs), rhs_(rhs) {
-        fdapde_assert(lhs.n_dofs() == rhs.n_dofs());
-    }
-    OutputType assemble() const {
-        if constexpr (std::is_same_v<OutputType, SpMatrix<double>>) {
-            SpMatrix<double> assembled_mat(lhs_.n_dofs(), lhs_.n_dofs());
-            std::vector<Eigen::Triplet<double>> triplet_list;
-            assemble(triplet_list);
-            // linearity of the integral is implicitly used here, as duplicated triplets are summed up (see Eigen docs)
-            assembled_mat.setFromTriplets(triplet_list.begin(), triplet_list.end());
-            assembled_mat.makeCompressed();
-            return assembled_mat;
-        } else {
-            DVector<double> assembled_vec(lhs_.n_dofs());
-            assembled_vec.setZero();
-            assemble(assembled_vec);
-            return assembled_vec;
-        }
-    }
-    template <typename T> void assemble(T& assembly_buff) const {
-        lhs_.assemble(assembly_buff);
-        rhs_.assemble(assembly_buff);
-        return;
-    }
-    constexpr int n_dofs() const { return lhs_.n_dofs(); }
-   private:
-    Lhs lhs_;
-    Rhs rhs_;
-};
-template <typename Lhs, typename Rhs>
-fe_assembly_add_op<Lhs, Rhs> operator+(const fe_assembly_xpr_base<Lhs>& lhs, const fe_assembly_xpr_base<Rhs>& rhs) {
-    return fe_assembly_add_op<Lhs, Rhs>(lhs.derived(), rhs.derived());
-}
-
-}   // namespace internals
-
-template <typename Triangulation, int Options, typename... Quadrature> class FeGalerkinAssembler {
+template <typename Triangulation, int Options, typename... Quadrature> class FeAssembler {
     fdapde_static_assert(
       sizeof...(Quadrature) < 2, YOU_CAN_PROVIDE_AT_MOST_ONE_QUADRATURE_FORMULA_TO_A_FE_CELL_ASSEMBLER);
     std::tuple<Quadrature...> quadrature_;
@@ -579,30 +30,30 @@ template <typename Triangulation, int Options, typename... Quadrature> class FeG
       Options == CellMajor, typename Triangulation::cell_iterator, typename Triangulation::boundary_iterator>
       begin_, end_;
    public:
-    FeGalerkinAssembler() = default;
+    FeAssembler() = default;
     template <typename Iterator>
-    FeGalerkinAssembler(const Iterator& begin, const Iterator& end, const Quadrature&... quadrature) :
+    FeAssembler(const Iterator& begin, const Iterator& end, const Quadrature&... quadrature) :
         begin_(begin), end_(end), quadrature_(std::make_tuple(quadrature...)) { }
 
     template <typename Form> auto operator()(const Form& form) const {
         static constexpr bool has_trial_space = meta::xpr_find<
           decltype([]<typename Xpr_>() { return requires { typename Xpr_::TrialSpace; }; }), std::decay_t<Form>>();
-        static constexpr bool has_test_space  = meta::xpr_find<
-          decltype([]<typename Xpr_>() { return requires { typename Xpr_::TestSpace; };  }), std::decay_t<Form>>();
+        static constexpr bool has_test_space = meta::xpr_find<
+          decltype([]<typename Xpr_>() { return requires { typename Xpr_::TestSpace; }; }), std::decay_t<Form>>();
 
         if constexpr (has_trial_space && has_test_space) {   // bilinear form discretization
             if constexpr (sizeof...(Quadrature) == 0) {
-                return internals::fe_matrix_assembly_loop<Triangulation, Form, Options> {form, begin_, end_};
+                return internals::fe_matrix_scalar_assembly_loop<Triangulation, Form, Options> {form, begin_, end_};
             } else {
-                return internals::fe_matrix_assembly_loop<
+                return internals::fe_matrix_scalar_assembly_loop<
                   Triangulation, Form, Options, std::tuple_element_t<0, std::tuple<Quadrature...>>> {
                   form, begin_, end_, std::get<0>(quadrature_)};
             }
         } else {   // functional (forcing-term like) discretization
             if constexpr (sizeof...(Quadrature) == 0) {
-                return internals::fe_vector_assembly_loop<Triangulation, Form, Options> {form, begin_, end_};
+                return internals::fe_vector_scalar_assembly_loop<Triangulation, Form, Options> {form, begin_, end_};
             } else {
-                return internals::fe_vector_assembly_loop<
+                return internals::fe_vector_scalar_assembly_loop<
                   Triangulation, Form, Options, std::tuple_element_t<0, std::tuple<Quadrature...>>> {
                   form, begin_, end_, std::get<0>(quadrature_)};
             }
@@ -611,32 +62,32 @@ template <typename Triangulation, int Options, typename... Quadrature> class FeG
 };
 
 template <typename Triangulation, typename... Quadrature>
-using FeCellGalerkinAssembler = FeGalerkinAssembler<Triangulation, CellMajor, Quadrature...>;
+using FeCellAssembler = FeAssembler<Triangulation, CellMajor, Quadrature...>;
 template <typename Triangulation, typename... Quadrature>
-using FeFaceGalerkinAssembler = FeGalerkinAssembler<Triangulation, FaceMajor, Quadrature...>;
+using FeFaceAssembler = FeAssembler<Triangulation, FaceMajor, Quadrature...>;
 
 template <typename Triangulation, typename... Quadrature>
 auto integral(const Triangulation& triangulation, Quadrature... quadrature) {
-    return FeCellGalerkinAssembler<Triangulation, Quadrature...>(
+    return FeCellAssembler<Triangulation, Quadrature...>(
       triangulation.cells_begin(), triangulation.cells_end(), quadrature...);
 }
 template <typename Triangulation, typename... Quadrature>
 auto integral(
   const CellIterator<Triangulation>& begin, const CellIterator<Triangulation>& end, Quadrature... quadrature) {
-    return FeCellGalerkinAssembler<Triangulation, Quadrature...>(begin, end, quadrature...);
+    return FeCellAssembler<Triangulation, Quadrature...>(begin, end, quadrature...);
 }
 // boundary integration
 template <typename Triangulation, typename... Quadrature>
 auto integral(
   const BoundaryIterator<Triangulation>& begin, const BoundaryIterator<Triangulation>& end, Quadrature... quadrature) {
-    return FeFaceGalerkinAssembler<Triangulation, Quadrature...>(begin, end, quadrature...);
+    return FeFaceAssembler<Triangulation, Quadrature...>(begin, end, quadrature...);
 }
 template <typename Triangulation, typename... Quadrature>
 auto integral(
   const std::pair<BoundaryIterator<Triangulation>, BoundaryIterator<Triangulation>>& range, Quadrature... quadrature) {
-    return FeFaceGalerkinAssembler<Triangulation, Quadrature...>(range.first, range.second, quadrature...);
+    return FeFaceAssembler<Triangulation, Quadrature...>(range.first, range.second, quadrature...);
 }
-
+  
 }   // namespace fdapde
 
 #endif   // __FE_ASSEMBLER_H__
