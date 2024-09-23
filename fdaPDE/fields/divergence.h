@@ -23,6 +23,9 @@ namespace fdapde {
 
 template <typename Derived_> class Divergence : public ScalarBase<Derived_::StaticInputSize, Divergence<Derived_>> {
     fdapde_static_assert(Derived_::Cols == 1, DIVERGENCE_OPERATOR_IS_FOR_VECTOR_FIELDS_ONLY);
+    fdapde_static_assert(
+      Derived_::StaticInputSize == Dynamic || Derived_::StaticInputSize == Derived_::Rows,
+      DIVERGENCE_OPERATOR_CANNOT_BE_APPLIED_TO_THIS_VECTOR_FIELD);
    public:
     using Derived = Derived_;
     template <typename T> using Meta = Divergence<T>;
@@ -36,7 +39,10 @@ template <typename Derived_> class Divergence : public ScalarBase<Derived_::Stat
     static constexpr int XprBits = FunctorType::XprBits;
 
     explicit constexpr Divergence(const Derived_& xpr) : Base(), data_(), xpr_(xpr) {
-        if constexpr (StaticInputSize == Dynamic) data_.resize(xpr_.rows());
+        if constexpr (StaticInputSize == Dynamic) {
+            fdapde_constexpr_assert(xpr_.input_size() == xpr_.rows());
+            data_.resize(xpr_.rows());
+        }
         for (int i = 0; i < xpr_.rows(); ++i) { data_[i] = FunctorType(xpr_[i], i); }
     }
     constexpr Scalar operator()(const InputType& p) const {

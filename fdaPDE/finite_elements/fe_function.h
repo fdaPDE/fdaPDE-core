@@ -32,7 +32,7 @@ template <typename FeSpace_>
 struct scalar_test_function_impl : public fdapde::ScalarBase<FeSpace_::local_dim, TestFunction<FeSpace_>> {
     using TestSpace = std::decay_t<FeSpace_>;
     using Base = fdapde::ScalarBase<FeSpace_::local_dim, TestFunction<FeSpace_>>;
-    using InputType = internals::fe_scalar_assembler_packet<TestSpace::local_dim>;
+    using InputType = internals::fe_assembler_packet<TestSpace::local_dim>;
     using Scalar = double;
     static constexpr int StaticInputSize = TestSpace::local_dim;
     static constexpr int NestAsRef = 0;
@@ -43,7 +43,7 @@ struct scalar_test_function_impl : public fdapde::ScalarBase<FeSpace_::local_dim
 
     struct FirstPartialDerivative : fdapde::ScalarBase<TestSpace::local_dim, FirstPartialDerivative> {
         using Derived = TestFunction<FeSpace_>;
-        using InputType = internals::fe_scalar_assembler_packet<TestSpace::local_dim>;
+        using InputType = internals::fe_assembler_packet<TestSpace::local_dim>;
         using Scalar = double;
         static constexpr int StaticInputSize = TestSpace::local_dim;
         static constexpr int NestAsRef = 0;
@@ -58,7 +58,7 @@ struct scalar_test_function_impl : public fdapde::ScalarBase<FeSpace_::local_dim
         int i_;
     };
     // fe assembly evaluation
-    constexpr Scalar operator()(const InputType& fe_packet) const { return fe_packet.test_value; }
+    constexpr Scalar operator()(const InputType& fe_packet) const { return fe_packet.test_value(0); }
     constexpr TestSpace& fe_space() { return *fe_space_; }
     constexpr const TestSpace& fe_space() const { return *fe_space_; }
     constexpr int input_size() const { return StaticInputSize; }
@@ -70,7 +70,7 @@ template <typename FeSpace_>
 struct vector_test_function_impl : public fdapde::MatrixBase<FeSpace_::local_dim, TestFunction<FeSpace_>> {
     using TestSpace = std::decay_t<FeSpace_>;
     using Base = fdapde::MatrixBase<FeSpace_::local_dim, TestFunction<FeSpace_>>;
-    using InputType = internals::fe_vector_assembler_packet<TestSpace::local_dim>;
+    using InputType = internals::fe_assembler_packet<TestSpace::local_dim>;
     using Scalar = double;
     static constexpr int StaticInputSize = TestSpace::local_dim;
     static constexpr int NestAsRef = 0;
@@ -84,7 +84,7 @@ struct vector_test_function_impl : public fdapde::MatrixBase<FeSpace_::local_dim
 
     struct Jacobian : fdapde::MatrixBase<TestSpace::local_dim, Jacobian> {
         using Derived = TestFunction<FeSpace_>;
-        using InputType = internals::fe_vector_assembler_packet<TestSpace::local_dim>;
+        using InputType = internals::fe_assembler_packet<TestSpace::local_dim>;
         using Scalar = double;
         static constexpr int StaticInputSize = TestSpace::local_dim;
         static constexpr int Rows = TestSpace::local_dim;
@@ -115,7 +115,7 @@ template <typename FeSpace_>
 struct scalar_trial_function_impl : public fdapde::ScalarBase<FeSpace_::local_dim, TrialFunction<FeSpace_>> {
     using TrialSpace = std::decay_t<FeSpace_>;
     using Base = fdapde::ScalarBase<FeSpace_::local_dim, TrialFunction<FeSpace_>>;
-    using InputType = internals::fe_scalar_assembler_packet<TrialSpace::local_dim>;
+    using InputType = internals::fe_assembler_packet<TrialSpace::local_dim>;
     using Scalar = double;
     static constexpr int StaticInputSize = TrialSpace::local_dim;
     static constexpr int NestAsRef = 0;
@@ -126,7 +126,7 @@ struct scalar_trial_function_impl : public fdapde::ScalarBase<FeSpace_::local_di
 
     struct FirstPartialDerivative : fdapde::ScalarBase<TrialSpace::local_dim, FirstPartialDerivative> {
         using Derived = TrialFunction<FeSpace_>;
-        using InputType = internals::fe_scalar_assembler_packet<TrialSpace::local_dim>;
+        using InputType = internals::fe_assembler_packet<TrialSpace::local_dim>;
         using Scalar = double;
         static constexpr int StaticInputSize = TrialSpace::local_dim;
         static constexpr int NestAsRef = 0;
@@ -141,7 +141,7 @@ struct scalar_trial_function_impl : public fdapde::ScalarBase<FeSpace_::local_di
         int i_;
     };
     // fe assembly evaluation
-    constexpr Scalar operator()(const InputType& fe_packet) const { return fe_packet.trial_value; }
+    constexpr Scalar operator()(const InputType& fe_packet) const { return fe_packet.trial_value(0); }
     constexpr TrialSpace& fe_space() { return *fe_space_; }
     constexpr const TrialSpace& fe_space() const { return *fe_space_; }
     constexpr int input_size() const { return StaticInputSize; }  
@@ -153,7 +153,7 @@ template <typename FeSpace_>
 struct vector_trial_function_impl : public fdapde::MatrixBase<FeSpace_::local_dim, TrialFunction<FeSpace_>> {
     using TrialSpace = std::decay_t<FeSpace_>;
     using Base = fdapde::MatrixBase<FeSpace_::local_dim, TrialFunction<FeSpace_>>;
-    using InputType = internals::fe_vector_assembler_packet<TrialSpace::local_dim>;
+    using InputType = internals::fe_assembler_packet<TrialSpace::local_dim>;
     using Scalar = double;
     static constexpr int StaticInputSize = TrialSpace::local_dim;
     static constexpr int NestAsRef = 0;
@@ -167,7 +167,7 @@ struct vector_trial_function_impl : public fdapde::MatrixBase<FeSpace_::local_di
 
     struct Jacobian : fdapde::MatrixBase<TrialSpace::local_dim, Jacobian> {
         using Derived = TestFunction<FeSpace_>;
-        using InputType = internals::fe_vector_assembler_packet<TrialSpace::local_dim>;
+        using InputType = internals::fe_assembler_packet<TrialSpace::local_dim>;
         using Scalar = double;
         static constexpr int StaticInputSize = TrialSpace::local_dim;
         static constexpr int Rows = TrialSpace::local_dim;
@@ -333,7 +333,7 @@ class FeFunction :
     // i-th component of vector fe_function
     struct VectorFeFunctionComponent : public fdapde::ScalarBase<StaticInputSize, VectorFeFunctionComponent> {
         using Derived = FeFunction<FeSpace_>;
-        using InputType = internals::fe_vector_assembler_packet<FeSpace::local_dim>;
+        using InputType = internals::fe_assembler_packet<FeSpace::local_dim>;
         using Scalar = double;
         static constexpr int StaticInputSize = FeSpace::local_dim;
         static constexpr int NestAsRef = 0;

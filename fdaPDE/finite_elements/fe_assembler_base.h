@@ -32,6 +32,7 @@ enum fe_assembler_flags {
     compute_shape_values        = 0x0001,
     compute_shape_grad          = 0x0002,
     compute_second_derivatives  = 0x0004,
+    compute_shape_div           = 0x0008,
     compute_physical_quad_nodes = 0x0010,
     compute_cell_diameter       = 0x0020
 };
@@ -41,6 +42,28 @@ enum fe_assembler_flags {
   
 namespace internals {
 
+// informations sent from the assembly loop to the integrated forms
+template <int LocalDim> struct fe_assembler_packet {
+    static constexpr int local_dim = LocalDim;
+    fe_assembler_packet(int n_trial_components, int n_test_components) :
+        trial_value(n_trial_components), test_value(n_test_components), trial_grad(n_trial_components),
+        test_grad(n_test_components) { }
+    fe_assembler_packet(int n_components) : fe_assembler_packet(n_components, n_components) { }
+    fe_assembler_packet() : fe_assembler_packet(1, 1) { }
+    fe_assembler_packet(fe_assembler_packet&&) noexcept = default;
+    fe_assembler_packet(const fe_assembler_packet&) noexcept = default;
+
+    // geometric informations
+    int quad_node_id;       // active physical quadrature node index
+    double cell_measure;    // active cell measure
+    double cell_diameter;   // active cell diameter
+
+    // functional informations (Dynamic stands for number of components)
+    MdArray<double, MdExtents<Dynamic>> trial_value, test_value;            // \psi_i(q_k), \psi_j(q_k)
+    MdArray<double, MdExtents<Dynamic, local_dim>> trial_grad, test_grad;   // \nabla{\psi_i}(q_k), \nabla{\psi_j}(q_k)
+    double trial_div = 0, test_div = 0;
+};
+  
 // detect trial space from bilinear form
 template <typename Xpr> constexpr decltype(auto) trial_space(Xpr&& xpr) {
     constexpr bool found = meta::xpr_find<
@@ -50,6 +73,7 @@ template <typename Xpr> constexpr decltype(auto) trial_space(Xpr&& xpr) {
       decltype([]<typename Xpr_>(Xpr_&& xpr) -> auto& { return xpr.fe_space(); }),
       decltype([]<typename Xpr_>() { return requires { typename Xpr_::TrialSpace; }; })>(std::forward<Xpr>(xpr));
 }
+template <typename Xpr> using trial_space_t = std::decay_t<decltype(trial_space(std::declval<Xpr>()))>;
 // detect test space from bilinear form
 template <typename Xpr> constexpr decltype(auto)  test_space(Xpr&& xpr) {
     constexpr bool found = meta::xpr_find<
@@ -59,22 +83,7 @@ template <typename Xpr> constexpr decltype(auto)  test_space(Xpr&& xpr) {
       decltype([]<typename Xpr_>(Xpr_&& xpr) -> auto& { return xpr.fe_space(); }),
       decltype([]<typename Xpr_>() { return requires { typename Xpr_::TestSpace; }; })>(std::forward<Xpr>(xpr));
 }
-
-template <typename T>
-    requires(
-      std::is_floating_point_v<T> ||
-      requires(T t, int k) {
-          { t.size() } -> std::convertible_to<std::size_t>;
-          { t.operator[](k) } -> std::convertible_to<double>;
-      })
-constexpr auto scalar_or_kth_component_of(const T& t, std::size_t k) {
-    if constexpr (std::is_floating_point_v<T>) {
-        return t;
-    } else {
-        fdapde_constexpr_assert(k < t.size());
-        return t[k];
-    }
-}
+template <typename Xpr> using test_space_t = std::decay_t<decltype(test_space(std::declval<Xpr>()))>;
 
 // implementation of galerkin assembly loop for the discretization of arbitrarily bilinear forms
 template <typename Derived> struct fe_assembly_xpr_base;
@@ -120,7 +129,7 @@ template <typename FeSpace_, typename... Quadrature_> struct fe_cell_assembler_t
     using geo_iterator = typename Triangulation<local_dim, embed_dim>::cell_iterator;
     using dof_iterator = typename DofHandler<local_dim, embed_dim>::cell_iterator;
 };
-
+  
 // arithmetic between matrix assembly loops
 template <typename Derived> struct fe_assembly_xpr_base {
     constexpr const Derived& derived() const { return static_cast<const Derived&>(*this); }
