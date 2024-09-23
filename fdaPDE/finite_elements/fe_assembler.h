@@ -17,25 +17,14 @@
 #ifndef __FE_ASSEMBLER_H__
 #define __FE_ASSEMBLER_H__
 
-#include "fe_scalar_assembler.h"
-#include "fe_vector_assembler.h"
+#include "fe_bilinear_form_assembler.h"
+#include "fe_linear_form_assembler.h"
 
 namespace fdapde {
 
 template <typename Triangulation, int Options, typename... Quadrature> class FeAssembler {
     fdapde_static_assert(
       sizeof...(Quadrature) < 2, YOU_CAN_PROVIDE_AT_MOST_ONE_QUADRATURE_FORMULA_TO_A_FE_CELL_ASSEMBLER);
-    template <typename Form_, typename... Quadrature_>
-    using fe_bilinear_form_assembler_t = std::conditional_t<
-      internals::trial_space_t<Form_>::n_components != 1 || internals::test_space_t<Form_>::n_components != 1,
-      internals::vector_fe_bilinear_form_assembly_loop<Triangulation, Form_, Options, Quadrature_...>,
-      internals::scalar_fe_bilinear_form_assembly_loop<Triangulation, Form_, Options, Quadrature_...>>;
-    template <typename Form_, typename... Quadrature_>
-    using fe_linear_form_assembler_t = std::conditional_t<
-      internals::test_space_t<Form_>::n_components != 1,
-      internals::vector_fe_linear_form_assembly_loop<Triangulation, Form_, Options, Quadrature_...>,
-      internals::scalar_fe_linear_form_assembly_loop<Triangulation, Form_, Options, Quadrature_...>>;
-
     std::tuple<Quadrature...> quadrature_;
     std::conditional_t<
       Options == CellMajor, typename Triangulation::cell_iterator, typename Triangulation::boundary_iterator>
@@ -54,17 +43,19 @@ template <typename Triangulation, int Options, typename... Quadrature> class FeA
 
         if constexpr (has_trial_space && has_test_space) {   // bilinear form discretization
             if constexpr (sizeof...(Quadrature) == 0) {
-                return fe_bilinear_form_assembler_t<Form> {form, begin_, end_};
+                return internals::fe_bilinear_form_assembly_loop<Triangulation, Form, Options> {form, begin_, end_};
             } else {
-                return fe_bilinear_form_assembler_t<Form, std::tuple_element_t<0, std::tuple<Quadrature...>>> {
+                return internals::fe_bilinear_form_assembly_loop<
+                  Triangulation, Form, Options, std::tuple_element_t<0, std::tuple<Quadrature...>>> {
                   form, begin_, end_, std::get<0>(quadrature_)};
             }
         } else {   // functional (forcing-term like) discretization
             fdapde_static_assert(has_test_space, NO_TEST_SPACE_DETECTED_IN_LINEAR_FORM);
             if constexpr (sizeof...(Quadrature) == 0) {
-                return fe_linear_form_assembler_t<Form> {form, begin_, end_};
+                return internals::fe_linear_form_assembly_loop<Triangulation, Form, Options> {form, begin_, end_};
             } else {
-                return fe_linear_form_assembler_t<Form, std::tuple_element_t<0, std::tuple<Quadrature...>>> {
+                return internals::fe_linear_form_assembly_loop<
+                  Triangulation, Form, Options, std::tuple_element_t<0, std::tuple<Quadrature...>>> {
                   form, begin_, end_, std::get<0>(quadrature_)};
             }
         }

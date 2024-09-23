@@ -692,7 +692,7 @@ template <typename MdArray, int... Slicers> class MdArraySlice {
           requires(Src src) {
               { src.size() } -> std::convertible_to<size_t>;
           })
-    constexpr MdArraySlice& assign_from(Src&& src) {
+    constexpr MdArraySlice& assign_inplace_from(Src&& src) {
         fdapde_assert(src.size() == size());
         if constexpr (contiguous_access) {
             for (int i = 0; i < src.size(); ++i) { operator[](i) = src[i]; }
@@ -818,7 +818,7 @@ template <typename Scalar_, typename Extents_, typename LayoutPolicy_ = internal
           requires(Src src) {
               { src.size() } -> std::convertible_to<size_t>;
           })
-    constexpr MdArray& assign_from(const Src& other) {
+    constexpr MdArray& assign_inplace_from(const Src& other) {
         for (int i = 0, n = size(); i < n; ++i) { data_[i] = other[i]; }
 	return *this;
     }

@@ -85,6 +85,22 @@ template <typename Xpr> constexpr decltype(auto)  test_space(Xpr&& xpr) {
 }
 template <typename Xpr> using test_space_t = std::decay_t<decltype(test_space(std::declval<Xpr>()))>;
 
+template <typename T>
+    requires(
+      std::is_floating_point_v<T> ||
+      requires(T t, int k) {
+          { t.size() } -> std::convertible_to<std::size_t>;
+          { t.operator[](k) } -> std::convertible_to<double>;
+      })
+constexpr auto scalar_or_kth_component_of(const T& t, std::size_t k) {
+    if constexpr (std::is_floating_point_v<T>) {
+        return t;
+    } else {
+        fdapde_constexpr_assert(k < t.size());
+        return t[k];
+    }
+}
+
 // implementation of galerkin assembly loop for the discretization of arbitrarily bilinear forms
 template <typename Derived> struct fe_assembly_xpr_base;
 
@@ -130,6 +146,176 @@ template <typename FeSpace_, typename... Quadrature_> struct fe_cell_assembler_t
     using dof_iterator = typename DofHandler<local_dim, embed_dim>::cell_iterator;
 };
   
+// base class for vector finite element assembly loops
+template <typename Triangulation_, typename Form_, int Options_, typename... Quadrature_>
+struct fe_assembler_base {
+    // detect test space (since a test function is always present in a weak form)
+    using TestSpace = test_space_t<Form_>;
+    using Form = std::decay_t<decltype(meta::xpr_wrap<FeMap, decltype([]<typename Xpr>() {
+          return !std::is_invocable_v<
+            Xpr, fe_assembler_packet<Xpr::StaticInputSize>>;
+        })>(std::declval<Form_>()))>;
+    using Triangulation = typename std::decay_t<Triangulation_>;
+    static constexpr int local_dim = Triangulation::local_dim;
+    static constexpr int embed_dim = Triangulation::embed_dim;
+    static constexpr int Options = Options_;
+    using FunctionSpace = TestSpace;
+    using FeType = typename FunctionSpace::FeType;
+    using fe_traits = std::conditional_t<
+      Options == CellMajor, fe_cell_assembler_traits<FunctionSpace, Quadrature_...>,
+      fe_face_assembler_traits<FunctionSpace, Quadrature_...>>;
+    using Quadrature = typename fe_traits::Quadrature;
+    using dof_descriptor = typename fe_traits::dof_descriptor;
+    using BasisType = typename dof_descriptor::BasisType;
+    static constexpr int n_quadrature_nodes = Quadrature::n_nodes;
+    static constexpr int n_basis = BasisType::n_basis;
+    static constexpr int n_components = FunctionSpace::n_components;
+  
+    fe_assembler_base() = default;
+    fe_assembler_base(
+      const Form_& form, typename fe_traits::geo_iterator begin, typename fe_traits::geo_iterator end,
+      const Quadrature_&... quadrature)
+        requires(sizeof...(quadrature) <= 1) :
+        form_(meta::xpr_wrap<FeMap, decltype([]<typename Xpr>() {
+	      return !std::is_invocable_v<Xpr, fe_assembler_packet<Xpr::StaticInputSize>>;
+	    })>(form)),
+        quadrature_([... quadrature = std::forward<const Quadrature_>(quadrature)]() {
+            if constexpr (sizeof...(quadrature) == 1) {
+                return std::get<0>(std::make_tuple(quadrature...));
+            } else {
+                return Quadrature {};
+            }
+        }()),
+        dof_handler_(&test_space(form_).dof_handler()),
+        begin_(begin),
+        end_(end) {
+        fdapde_assert(dof_handler_->n_dofs() > 0);
+    }
+   protected:
+    // compile-time evaluation of \psi_i(q_j), i = 1, ..., n_basis, j = 1, ..., n_quadrature_nodes
+    template <typename Quadrature__, typename dof_descriptor__>
+    static consteval MdArray<
+      double, MdExtents<dof_descriptor__::BasisType::n_basis, Quadrature__::n_nodes, n_components>>
+    eval_shape_values() {
+        using BasisType = typename dof_descriptor__::BasisType;
+        constexpr int n_basis = BasisType::n_basis;
+        constexpr int n_quadrature_nodes = Quadrature__::n_nodes;
+        MdArray<double, MdExtents<n_basis, n_quadrature_nodes, n_components>> shape_values_ {};
+        BasisType basis {dof_descriptor__().dofs_phys_coords()};
+        for (int i = 0; i < n_basis; ++i) {
+            // evaluation of \nabla{\psi_i} at q_j, j = 1, ..., n_quadrature_nodes
+            for (int j = 0; j < n_quadrature_nodes; ++j) {
+                auto value = basis[i](Quadrature::nodes.row(j).transpose());
+                for (int k = 0; k < n_components; ++k) {
+                    shape_values_(i, j, k) = scalar_or_kth_component_of(value, k);
+                }
+            }
+        }
+        return shape_values_;
+    }
+    // compile-time evaluation of \nabla{\psi_i}(q_j), i = 1, ..., n_basis, j = 1, ..., n_quadrature_nodes
+    template <typename Quadrature__, typename dof_descriptor__>
+    static consteval MdArray<
+      double, MdExtents<dof_descriptor__::BasisType::n_basis, Quadrature__::n_nodes, n_components, local_dim>>
+    eval_shape_grads() {
+        using BasisType = typename dof_descriptor__::BasisType;
+        constexpr int n_basis = BasisType::n_basis;
+        constexpr int n_quadrature_nodes = Quadrature__::n_nodes;
+        MdArray<double, MdExtents<n_basis, n_quadrature_nodes, n_components, local_dim>> shape_grad_ {};
+        BasisType basis {dof_descriptor__().dofs_phys_coords()};
+        for (int i = 0; i < n_basis; ++i) {
+            // evaluation of \nabla{\psi_i} at q_j, j = 1, ..., n_quadrature_nodes
+            for (int j = 0; j < n_quadrature_nodes; ++j) {
+                auto grad = basis[i].gradient()(Quadrature::nodes.row(j).transpose());
+                for (int k = 0; k < n_components; ++k) {
+                    for (int h = 0; h < local_dim; ++h) { shape_grad_(i, j, k, h) = grad(h, k); }
+                }
+            }
+        }
+        return shape_grad_;
+    }
+
+    // test basis functions evaluations
+    static constexpr MdArray<double, MdExtents<n_basis, n_quadrature_nodes, n_components>> test_shape_values_ =
+      eval_shape_values<Quadrature, dof_descriptor>();
+    static constexpr MdArray<double, MdExtents<n_basis, n_quadrature_nodes, n_components, local_dim>>
+      test_shape_grads_ = eval_shape_grads<Quadrature, dof_descriptor>();
+
+    void distribute_quadrature_nodes(
+      std::unordered_map<const void*, DMatrix<double>>& fe_map_buff, typename fe_traits::dof_iterator begin,
+      typename fe_traits::dof_iterator end) const {
+        DMatrix<double> quad_nodes;
+        quad_nodes.resize(n_quadrature_nodes * (end_.index() - begin_.index()), embed_dim);
+        int local_cell_id = 0;
+        for (typename fe_traits::geo_iterator it = begin_; it != end_; ++it) {
+            for (int q_k = 0; q_k < n_quadrature_nodes; ++q_k) {
+                quad_nodes.row(local_cell_id * n_quadrature_nodes + q_k) =
+                  it->J() *
+                    Eigen::Map<const SMatrix<n_quadrature_nodes, Quadrature::local_dim>>(quadrature_.nodes.data())
+                      .row(q_k)
+                      .transpose() +
+                  it->node(0);
+            }
+            local_cell_id++;
+        }
+        // evaluate FeMap nodes at quadrature nodes
+        meta::xpr_apply_if<
+          decltype([]<typename Xpr_, typename... Args>(Xpr_& xpr, Args&&... args) {
+              xpr.init(std::forward<Args>(args)...);
+              return;
+          }),
+          decltype([]<typename Xpr_>() {
+              return requires(Xpr_ xpr) { xpr.init(fe_map_buff, quad_nodes, begin, end); };
+          })>(form_, fe_map_buff, quad_nodes, begin, end);
+	return;
+    }
+    // moves \nabla{\psi_i}(q_k) from the reference cell to physical cell pointed by it
+    template <typename CellIterator, typename RefGrads, typename Dst>
+    constexpr void eval_shape_grads_on_cell(CellIterator& it, const RefGrads& ref_grads, Dst& dst) const {
+        const int n_basis_ = ref_grads.extent(0);
+        const int n_quadrature_nodes_ = ref_grads.extent(1);
+        const int n_components_ = ref_grads.extent(2);
+
+	for (int i = 0; i < n_basis_; ++i) {
+            for (int j = 0; j < n_quadrature_nodes_; ++j) {
+                // get i-th reference basis gradient evaluted at j-th quadrature node
+                auto ref_grad = ref_grads.template slice<0, 1>(i, j).matrix();
+                for (int k = 0; k < n_components_; ++k) {
+                    dst.template slice<0, 1, 2>(i, j, k).assign_inplace_from(cexpr::Matrix<double, 1, local_dim>(
+                      ref_grad.row(k) * cexpr::Map<const double, local_dim, embed_dim>(it->invJ().data())));
+                }
+            }
+        }
+        return;
+    }
+    // computes div(\psi_i)(q_k) on the physical cell pointer by it
+    template <typename CellIterator, typename RefGrads, typename Dst>
+    constexpr void eval_shape_div_on_cell(CellIterator& it, const RefGrads& ref_grads, Dst& dst) const {
+        const int n_basis_ = ref_grads.extent(0);
+        const int n_quadrature_nodes_ = ref_grads.extent(1);
+        const int n_components_ = ref_grads.extent(2);
+	fdapde_assert(n_components_ == local_dim);
+	
+        for (int i = 0; i < n_basis_; ++i) {
+            for (int j = 0; j < n_quadrature_nodes_; ++j) {
+                double div_ = 0;
+                for (int k = 0; k < n_components_; ++k) {
+                    // get k-th component of i-th reference basis gradient evaluated at j-th quadrature node
+                    auto ref_grad = ref_grads.template slice<0, 1, 2>(i, j, k).matrix();
+                    div_ += cexpr::Map<const double, local_dim, embed_dim>(it->invJ().data()).col(k).dot(ref_grad);
+                }
+                dst(i, j) = div_;
+            }
+        }
+        return;
+    }
+
+    Form form_;
+    Quadrature quadrature_ {};
+    const DofHandler<local_dim, embed_dim>* dof_handler_;
+    typename fe_traits::geo_iterator begin_, end_;
+};
+    
 // arithmetic between matrix assembly loops
 template <typename Derived> struct fe_assembly_xpr_base {
     constexpr const Derived& derived() const { return static_cast<const Derived&>(*this); }
