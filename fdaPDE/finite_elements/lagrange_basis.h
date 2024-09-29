@@ -21,6 +21,8 @@
 #include "../linear_algebra/constexpr_matrix.h"
 #include "../utils/symbols.h"
 
+#include <Eigen/Dense>
+
 namespace fdapde {
 
 // given N+1 nodes n_0, n_1, n_2, ..., n_N, this class represents the set {l_0(x), l_1(x), ..., l_N(x) : l_j(n_i) = 1
@@ -54,8 +56,7 @@ template <int StaticInputSize_, int Order_> class LagrangeBasis {
             for (int i = 0; i < n_basis; ++i) {
                 b[i] = 1;
                 // solve linear system V*a = b
-                cexpr::Vector<double, n_basis> a = invV.solve(b);
-                basis_[i] = Polynomial<StaticInputSize, Order>(a);
+                basis_[i] = Polynomial<StaticInputSize, Order>(invV.solve(b));
                 b[i] = 0;
             }
         } else {

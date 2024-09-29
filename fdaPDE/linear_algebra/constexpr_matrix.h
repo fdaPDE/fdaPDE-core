@@ -353,10 +353,10 @@ class Matrix : public MatrixBase<Rows_, Cols_, Matrix<Scalar_, Rows_, Cols_, Nes
     static constexpr Matrix<Scalar, Rows, Cols> Zero() { return Constant(Scalar(0)); }
     static constexpr Matrix<Scalar, Rows, Cols> Ones() { return Constant(Scalar(1)); }
     // const access
-    constexpr Scalar operator()(int i, int j) const { return data_.at(i * Cols + j); }
+    constexpr Scalar operator()(int i, int j) const { return data_[i * Cols + j]; }
     constexpr Scalar operator[](int i) const {
         fdapde_static_assert(Cols == 1 || Rows == 1, THIS_METHOD_IS_ONLY_FOR_CONSTEXPR_ROW_OR_COLUMN_VECTORS);
-        return data_.at(i);
+        return data_[i];
     }
     // non-const access
     constexpr Scalar& operator()(int i, int j) { return data_[i * Cols + j]; }
@@ -507,12 +507,13 @@ template <int Rows, int Cols, typename Derived> struct MatrixBase {
         return block<Rows, BlockCols>(0, Cols - i - 1);
     }
     // dot product
-    template <int RhsRows, typename RhsDerived>
-    constexpr auto dot(const MatrixBase<RhsRows, 1, RhsDerived>& rhs) const {
+    template <int RhsRows, int RhsCols, typename RhsDerived>
+    constexpr auto dot(const MatrixBase<RhsRows, RhsCols, RhsDerived>& rhs) const {
         fdapde_static_assert(
-          (Rows == 1 && Cols == RhsRows) || (Cols == 1 && Rows == RhsRows),
+          (RhsRows == 1 || RhsCols == 1) && ((Rows == 1 && (Cols == RhsRows || Cols == RhsCols)) ||
+                                             (Cols == 1 && (Rows == RhsRows || Rows == RhsCols))),
           INVALID_OPERANDS_DIMENSIONS_FOR_DOT_PRODUCT);
-        typename Derived::Scalar dot_ = 0;
+        std::decay_t<typename Derived::Scalar> dot_ = 0;
         for (int i = 0; i < Cols; ++i) { dot_ += derived().operator[](i) * rhs.derived().operator[](i); }
         return dot_;
     }

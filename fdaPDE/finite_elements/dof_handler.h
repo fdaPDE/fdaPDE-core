@@ -42,10 +42,12 @@ template <int LocalDim, int EmbedDim, typename Derived> class DofHandlerBase {
     CellType cell(int id) const { return CellType(id, static_cast<const Derived*>(this)); }
     const DMatrix<int, Eigen::RowMajor>& dofs() const { return dofs_; }
     int n_dofs() const { return n_dofs_; }
+    int n_unique_dofs() const { return n_unique_dofs_; }
     bool is_dof_on_boundary(int i) const { return boundary_dofs_[i]; }
     Eigen::Map<const DVector<int>> dofs_markers() const {
         return Eigen::Map<const DVector<int>>(dofs_markers_.data(), n_dofs_, 1);
     }
+    int dof_marker(int dof) const { return dofs_markers_[dof]; }
     const TriangulationType* triangulation() const { return triangulation_; }
     int n_boundary_dofs() const { return boundary_dofs_.count(); }
     int n_boundary_dofs(int marker) const {
@@ -158,11 +160,15 @@ template <int LocalDim, int EmbedDim, typename Derived> class DofHandlerBase {
       return boundary_dofs_iterator(n_dofs_, static_cast<const Derived*>(this), marker);
     }
     // dofs constaints handling
-    template <typename Data> void set_dirichlet_constraint(int on, const Data& g) {
-        dof_constraints_.set_dirichlet_constraint(on, g);
+    template <typename... Data> void set_dirichlet_constraint(int on, Data&&... g) {
+        fdapde_assert(sizeof...(Data) == derived().dof_multiplicity());
+        dof_constraints_.set_dirichlet_constraint(on, g...);
     }
-    template <typename Data> void set_dirichlet_constaint(const Data& g) { set_dirichlet_constraint(BoundaryAll, g); }
-    void enforce_constraints(SpMatrix<double>& A, DVector<double>& b) const {
+    template <typename... Data> void set_dirichlet_constaint(Data&&... g) {
+        set_dirichlet_constraint(BoundaryAll, g...);
+    }
+    template <typename SystemMatrix, typename SystemRhs>
+    void enforce_constraints(SystemMatrix&& A, SystemRhs&& b) const {
         dof_constraints_.enforce_constraints(A, b);
     }
     void enforce_constraints(SpMatrix<double>& A) const { dof_constraints_.enforce_constraints(A); }
@@ -170,7 +176,7 @@ template <int LocalDim, int EmbedDim, typename Derived> class DofHandlerBase {
     DMatrix<double> dofs_coords() const {   // computes degrees of freedom's physical coordinates
         // allocate space (just for unique dofs, i.e., without considering any dof multiplicity)
         DMatrix<double> coords;
-        coords.resize(n_dofs_ / derived().dof_multiplicity(), TriangulationType::embed_dim);
+        coords.resize(n_unique_dofs_, TriangulationType::embed_dim);
         std::unordered_set<int> visited;
         // cycle over all mesh elements
         for (typename TriangulationType::cell_iterator cell = triangulation_->cells_begin();
@@ -196,7 +202,7 @@ template <int LocalDim, int EmbedDim, typename Derived> class DofHandlerBase {
     std::vector<int> dofs_to_cell_;                 // for each dof, the id of (one of) the cell containing it
     DofConstraints<local_dim, embed_dim> dof_constraints_;
     std::vector<int> dofs_markers_;
-    int n_dofs_ = 0;
+    int n_dofs_ = 0, n_unique_dofs_ = 0;
     DMatrix<double> reference_dofs_barycentric_coords_;
 
     // local enumeration of dofs on cell
@@ -398,6 +404,7 @@ template <int EmbedDim> class DofHandler<2, EmbedDim> : public DofHandlerBase<2,
                     }
                 }
             }
+	    Base::n_unique_dofs_ = n_dofs_;
 	    n_dofs_ = n_dofs_ * dof_descriptor::dof_multiplicity;
         }
         return;

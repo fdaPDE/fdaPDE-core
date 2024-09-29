@@ -688,14 +688,15 @@ template <typename MdArray, int... Slicers> class MdArraySlice {
     }
     template <typename Src>
         requires(
-          fdapde::is_subscriptable<Src, int> &&
-          requires(Src src) {
-              { src.size() } -> std::convertible_to<size_t>;
-          })
+          std::is_pointer_v<Src> || (fdapde::is_subscriptable<Src, int> &&
+	  requires(Src src) {
+	    { src.size() } -> std::convertible_to<size_t>;
+	  }))
     constexpr MdArraySlice& assign_inplace_from(Src&& src) {
-        fdapde_assert(src.size() == size());
+        if constexpr (!std::is_pointer_v<Src>) fdapde_assert(src.size() == size());
         if constexpr (contiguous_access) {
-            for (int i = 0; i < src.size(); ++i) { operator[](i) = src[i]; }
+            // for pointer types, this could lead to ub. is caller responsibility to guarantee bounded access
+            for (int i = 0; i < size(); ++i) { operator[](i) = src[i]; }
         } else {
             int i = 0;
             for (auto& v : *this) v = src[i++];

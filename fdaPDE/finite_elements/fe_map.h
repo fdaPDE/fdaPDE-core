@@ -58,7 +58,10 @@ struct FeMap :
             if constexpr (is_scalar) {
                 for (int i = 0, n = nodes.rows(); i < n; ++i) { mapped(i, 0)  = xpr_->operator()(nodes.row(i)); }
             } else {
-                for (int i = 0, n = nodes.rows(); i < n; ++i) { mapped.row(i) = xpr_->operator()(nodes.row(i)); }
+                for (int i = 0, n = nodes.rows(); i < n; ++i) {
+                    auto tmp = xpr_->operator()(nodes.row(i));
+                    for (int j = 0; j < tmp.size(); ++j) { mapped(i, j) = tmp[j]; }
+                }
             }
             buff[ptr] = mapped;
             map_ = &buff[ptr];
@@ -67,6 +70,9 @@ struct FeMap :
         }
     }
     // fe assembler evaluation
+
+  // here we need to better state what is the scalar field interface and what the matrix field one
+  
     constexpr OutputType operator()(const InputType& fe_packet) const {
         if constexpr (is_scalar) {
             return map_->operator()(fe_packet.quad_node_id, 0);
@@ -74,8 +80,11 @@ struct FeMap :
             return map_->row(fe_packet.quad_node_id);
         }
     }
+    constexpr auto eval(int i, const InputType& fe_packet) const { return map_->operator()(fe_packet.quad_node_id, i); }
     constexpr const Derived& derived() const { return xpr_; }
     constexpr int input_size() const { return StaticInputSize; }
+    constexpr int rows() const { return Rows; }
+    constexpr int cols() const { return Cols; }
    private:
     const Derived* xpr_;
     mutable const DMatrix<Scalar>* map_;

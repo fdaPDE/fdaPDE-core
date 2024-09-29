@@ -40,11 +40,16 @@ class DofTriangle : public Triangle<typename DofHandler::TriangulationType> {
         EdgeType(int edge_id, const DofHandler* dof_handler) :
             Base::EdgeType(edge_id, dof_handler->triangulation()), dof_handler_(dof_handler) {
             // if you query a DofTriangle for its edge, most likely you want to access its dofs. compute and cache
-            dofs_ = DVector<int>(TriangulationType::n_nodes_per_edge + dof_handler_->n_dofs_per_edge());
+            dofs_ = DVector<int>(
+              (TriangulationType::n_nodes_per_edge + dof_handler_->n_dofs_per_edge()) *
+              dof_handler_->dof_multiplicity());
             int j = 0;
-            for (int d : this->node_ids()) dofs_[j++] = d;   // at nodes, dof numbering == mesh numbering
-            for (int k = 0; k < dof_handler_->n_dofs_per_edge(); ++k) {
-                dofs_[j++] = dof_handler_->edge_to_dofs().at(this->id())[k];
+	    int n_unique_dofs_ = dof_handler_->n_unique_dofs();
+            for (int n_comp = 0; n_comp < dof_handler_->dof_multiplicity(); ++n_comp) {
+                for (int d : this->node_ids()) dofs_[j++] = d + n_comp * n_unique_dofs_;
+                for (int k = 0; k < dof_handler_->n_dofs_per_edge(); ++k) {
+                    dofs_[j++] = dof_handler_->edge_to_dofs().at(this->id())[k] + n_comp * n_unique_dofs_;
+                }
             }
         }
         const DVector<int>& dofs() const { return dofs_; }

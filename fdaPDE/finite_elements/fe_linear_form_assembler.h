@@ -61,8 +61,7 @@ class fe_linear_form_assembly_loop :
         if constexpr (Form::XprBits & fe_assembler_flags::compute_physical_quad_nodes) {
             Base::distribute_quadrature_nodes(
               fe_map_buff, begin, end);   // distribute quadrature nodes on physical mesh (if required)
-        }
-	
+        }	
         // start assembly loop
         internals::fe_assembler_packet<local_dim> fe_packet(Base::n_components);
 	int local_cell_id = 0;
@@ -86,7 +85,7 @@ class fe_linear_form_assembly_loop :
         return;
     }
     constexpr int n_dofs() const { return dof_handler_->n_dofs(); }
-    constexpr int rows() const { return dof_handler_->n_dofs(); }
+    constexpr int rows() const { return n_dofs(); }
     constexpr int cols() const { return 1; }
 };
   

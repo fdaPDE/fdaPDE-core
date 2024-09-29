@@ -24,29 +24,46 @@
 
 namespace fdapde {
 
-// A C++20 Eigen-compatible SparseBlockMatrix implementation (only ColMajor support). Use Eigen naming conventions
-template <typename Scalar_, int Rows_, int Cols_, int Options_ = Eigen::ColMajor, typename StorageIndex_ = int>
+// A C++20 Eigen-compatible SparseBlockMatrix implementation (only ColMajor support). Uses Eigen naming conventions
+template <typename Scalar_, int Rows_, int Cols_, int Options_ = Eigen::ColMajor, typename StorageIndex_ = Eigen::Index>
 struct SparseBlockMatrix :
     public Eigen::SparseMatrixBase<SparseBlockMatrix<Scalar_, Rows_, Cols_, Options_, StorageIndex_>> {
     static_assert(Rows_ > 1 || Cols_ > 1);
+   private:
+    template <typename T> constexpr bool matrix_blk() {
+        if constexpr (
+          requires(T t) {
+              typename T::Scalar;
+              { t.rows() } -> std::convertible_to<std::size_t>;
+              { t.cols() } -> std::convertible_to<std::size_t>;
+          } && std::convertible_to<typename T::Scalar, Scalar_>) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+   public:
     using Scalar = Scalar_;
     using StorageIndex = StorageIndex_;
     using Nested =
       typename Eigen::internal::ref_selector<SparseBlockMatrix<Scalar_, Rows_, Cols_, Options_, StorageIndex_>>::type;
 
-    // default constructor
-    SparseBlockMatrix() = default;
+    SparseBlockMatrix() noexcept = default;
     // initialize from list of matrices
-    template <typename... E>
-    SparseBlockMatrix(const E&... m) requires(sizeof...(E) > 1 && sizeof...(E) == Rows_ * Cols_) {
-        static_assert((std::is_same<typename E::Scalar, Scalar_>::value && ...), "BLOCKS_WITH_DIFFERENT_SCALAR_TYPES");
+    template <typename... Block>
+    SparseBlockMatrix(Block&&... m) noexcept
+        requires(sizeof...(Block) > 1 && sizeof...(Block) == Rows_ * Cols_)
+    {
+        fdapde_static_assert((matrix_blk<std::decay_t<Block>>() && ...), INVALID_BLOCK_TYPE);
         // unfold parameter pack and extract size of blocks and overall matrix size
-        int i = 0, j = 0, k = 0;
+        outer_offset_[0] = 0;
+        inner_offset_[0] = 0;
+        Eigen::Index i = 0, j = 0, k = 0;
         (
           [&] {
               // row and column block indexes
-              int r_blk = std::floor(i / Cols_);
-              int c_blk = i % Cols_;
+              Eigen::Index r_blk = std::floor(i / Cols_);
+              Eigen::Index c_blk = i % Cols_;
               fdapde_assert(
                 (r_blk == 0 || m.cols() == outer_size_[c_blk]) && (c_blk == 0 || m.rows() == inner_size_[r_blk]));
               if (r_blk == 0) {   // take columns dimension from first row
@@ -66,65 +83,137 @@ struct SparseBlockMatrix :
         blocks_.reserve(Rows_ * Cols_);
         ([&] { blocks_.emplace_back(m); }(), ...);
     }
+    template <typename Extents>
+        requires(fdapde::is_subscriptable<Extents, Eigen::Index> &&
+                 requires(Extents e) {
+                     { e.size() } -> std::convertible_to<std::size_t>;
+                 })
+    SparseBlockMatrix(const Extents& blk_rows, const Extents& blk_cols) : inner_size_(blk_rows), outer_size_(blk_cols) {
+        fdapde_assert(blk_rows.size() == Rows_ && blk_cols.size() == Cols_);
+        outer_offset_[0] = 0;
+        inner_offset_[0] = 0;
+        for (Eigen::Index i = 0; i < Rows_; ++i) {
+            rows_ += blk_rows[i];
+            inner_offset_[i + 1] = blk_rows[i] + inner_offset_[i];
+        }
+        for (Eigen::Index i = 0; i < Cols_; ++i) {
+            cols_ += blk_cols[i];
+            outer_offset_[i + 1] = blk_cols[i] + outer_offset_[i];
+        }
+        // prepare empty sparse matrices
+        for (Eigen::Index i = 0; i < Rows_; ++i) {
+            for (Eigen::Index j = 0; j < Cols_; ++j) { blocks_.emplace_back(inner_size_[i], outer_size_[j]); }
+        }
+    }
+    // prepare sparse block matrix to have all blocks of size blk_rows x blk_cols
+    SparseBlockMatrix(Eigen::Index blk_rows, Eigen::Index blk_cols) {
+        std::fill(inner_size_.begin(), inner_size_.end(), blk_rows);
+        std::fill(outer_size_.begin(), outer_size_.end(), blk_cols);
+        rows_ = blk_rows * Rows_;
+        cols_ = blk_cols * Cols_;
+        outer_offset_[0] = 0;
+        inner_offset_[0] = 0;
+        for (Eigen::Index i = 0; i < Rows_; ++i) { inner_offset_[i + 1] = (i + 1) * blk_rows; }
+        for (Eigen::Index i = 0; i < Cols_; ++i) { outer_offset_[i + 1] = (i + 1) * blk_cols; }
+    }
     // read/write access to individual blocks
-    const SpMatrix<double>& block(int row, int col) const {
+    const SpMatrix<double>& block(Eigen::Index row, Eigen::Index col) const {
         fdapde_assert(row >= 0 && row < Rows_ && col >= 0 && col < Cols_);
         return blocks_[row * Cols_ + col];
     }
-    SpMatrix<double>& block(int row, int col) {
+    SpMatrix<double>& block(Eigen::Index row, Eigen::Index col) {
         fdapde_assert(row >= 0 && row < Rows_ && col >= 0 && col < Cols_);
         return blocks_[row * Cols_ + col];
     }
     // provides an estimate of the nonzero elements of the matrix
-    int nonZerosEstimate() const {
+    Eigen::Index nonZerosEstimate() const {
         if (blocks_.size() == 0) return 0;   // empty matrix
-        int nnz = 0;
+        Eigen::Index nnz = 0;
         for (const auto& b : blocks_) nnz += b.nonZerosEstimate();
         return nnz;
     }
-    // number of rows and columns
-    inline int rows() const { return rows_; }
-    inline int cols() const { return cols_; }
-    // number of blocks by rows and by cols
-    inline int blockRows() const { return Rows_; }
-    inline int blockCols() const { return Cols_; }
-    // non-const access to the (i,j)-th element
-    Scalar& coeffRef(int row, int col) {
-        fdapde_assert(row >= 0 && row < rows_ && col >= 0 && col < cols_);
-        return blocks_[innerBlockIndex(row) * Cols_ + outerBlockIndex(col)].coeffRef(
-          indexToBlockInner(row), indexToBlockOuter(col));
-    }
-    // const access to of the (i,j)-th element
-    Scalar coeff(int row, int col) const {
-        fdapde_assert(row >= 0 && row < rows_ && col >= 0 && col < cols_);
-        return blocks_[innerBlockIndex(row) * Cols_ + outerBlockIndex(col)].coeffRef(
-          indexToBlockInner(row), indexToBlockOuter(col));
+    // observers
+    inline Eigen::Index rows() const { return rows_; }
+    inline Eigen::Index cols() const { return cols_; }
+    inline Eigen::Index blockRows() const { return Rows_; }
+    inline Eigen::Index blockCols() const { return Cols_; }
+    inline Eigen::Index outerSize() const { return std::accumulate(outer_size_.begin(), outer_size_.end(), 0); }
+    inline Eigen::Index innerSize() const { return std::accumulate(inner_size_.begin(), inner_size_.end(), 0); }
+    inline bool isCompressed() const {
+        for (Eigen::Index i = 0; i < Rows_ * Cols_; ++i) {
+            if (!blocks_[i].isCompressed()) return false;
+        }
+        return true;
     }
     // the outer block index where i belongs to
-    inline int outerBlockIndex(int i) const {
-        return std::distance(outer_offset_.begin(), std::upper_bound(outer_offset_.begin(), outer_offset_.end(), i)) - 1;
+    inline Eigen::Index outerBlockIndex(Eigen::Index i) const {
+        return std::distance(outer_offset_.begin(), std::upper_bound(outer_offset_.begin(), outer_offset_.end(), i)) -
+               1;
     }
     // the inner block index where i belongs to
-    inline int innerBlockIndex(int i) const {
-        return std::distance(inner_offset_.begin(), std::upper_bound(inner_offset_.begin(), inner_offset_.end(), i)) - 1;
+    inline Eigen::Index innerBlockIndex(Eigen::Index i) const {
+        return std::distance(inner_offset_.begin(), std::upper_bound(inner_offset_.begin(), inner_offset_.end(), i)) -
+               1;
     }
     // the outer index relative to the block where i belongs to
-    inline int indexToBlockOuter(int i) const {
+    inline Eigen::Index indexToBlockOuter(Eigen::Index i) const {
         return i - *(std::upper_bound(outer_offset_.begin(), outer_offset_.end(), i) - 1);
     }
     // the inner index relative to the block where i belongs to
-    inline int indexToBlockInner(int i) const {
+    inline Eigen::Index indexToBlockInner(Eigen::Index i) const {
         return i - *(std::upper_bound(inner_offset_.begin(), inner_offset_.end(), i) - 1);
     }
-    inline bool isCompressed() const { return true; }   // matrix in compressed format (blocks are in compressed format)
+    // accessors
+    Scalar& coeffRef(Eigen::Index row, Eigen::Index col) {
+        fdapde_assert(row >= 0 && row < rows_ && col >= 0 && col < cols_);
+        return blocks_[innerBlockIndex(row) * Cols_ + outerBlockIndex(col)].coeffRef(
+          indexToBlockInner(row), indexToBlockOuter(col));
+    }
+    Scalar coeff(Eigen::Index row, Eigen::Index col) const {
+        fdapde_assert(row >= 0 && row < rows_ && col >= 0 && col < cols_);
+        return blocks_[innerBlockIndex(row) * Cols_ + outerBlockIndex(col)].coeffRef(
+          indexToBlockInner(row), indexToBlockOuter(col));
+    }
+    // modifiers
+    inline void makeCompressed() const {
+        for (auto& block : blocks_) block.makeCompressed();
+    }
+    template <typename TripletList> inline void setFromTriplets(const TripletList& triplet_list) {
+        // allocate a triplet_list for each block
+        std::vector<std::vector<Eigen::Triplet<Scalar_>>> block_triplet_list;
+        block_triplet_list.resize(blockRows() * blockCols());
+        // dispatch each element in triplet_list to block_triplet_list
+        for (const auto& triplet : triplet_list) {
+            block_triplet_list[innerBlockIndex(triplet.row()) * Cols_ + outerBlockIndex(triplet.col())].push_back(
+              triplet);
+        }
+        // construct each block from triplets
+        for (Eigen::Index i = 0; i < blockRows(); ++i) {
+            for (Eigen::Index j = 0; j < blockCols(); ++j) {
+                setBlockFromTriplets(i, j, block_triplet_list[i * Cols_ + j]);
+            }
+        }
+    }
+    template <Eigen::Index Row, Eigen::Index Col, typename TripletList>
+        requires(Row < Rows_ && Col < Cols_)
+    inline void setBlockFromTriplets(const TripletList& triplet_list) {
+        block(Row, Col).setFromTriplets(triplet_list.begin(), triplet_list.end());
+    }
+    template <typename TripletList>
+    inline void setBlockFromTriplets(Eigen::Index row, Eigen::Index col, const TripletList& triplet_list) {
+        fdapde_assert(row < Rows_ && col < Cols_);
+        block(row, col).setFromTriplets(triplet_list.begin(), triplet_list.end());
+    }
    protected:
     std::vector<Eigen::SparseMatrix<Scalar>> blocks_ {};
-    std::array<int, Cols_ + 1> outer_offset_ {};   // starting outer index of each block
-    std::array<int, Rows_ + 1> inner_offset_ {};   // starting inner index of each block
-    std::array<int, Cols_> outer_size_ {};         // outer size of each block
-    std::array<int, Rows_> inner_size_ {};         // inner size of each block
-    int cols_ = 0, rows_ = 0;                      // matrix dimensions
+    std::array<Eigen::Index, Cols_ + 1> outer_offset_ {};   // starting outer index of each block
+    std::array<Eigen::Index, Rows_ + 1> inner_offset_ {};   // starting inner index of each block
+    std::array<Eigen::Index, Cols_> outer_size_ {};         // outer size of each block
+    std::array<Eigen::Index, Rows_> inner_size_ {};         // inner size of each block
+    Eigen::Index cols_ = 0, rows_ = 0;                      // matrix dimensions
 };
+
+SpMatrix<double> ZeroBlk(int n_rows, int n_cols) { return SpMatrix<double>(n_rows, n_cols); }
 
 }   // namespace fdapde
 

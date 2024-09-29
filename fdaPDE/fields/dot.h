@@ -35,8 +35,8 @@ template <typename Lhs, typename Rhs> class DotProduct : public ScalarBase<Lhs::
              (Lhs::Rows == 1 && Rhs::Cols == 1 && Lhs::Cols == Rhs::Rows)))))),
       INVALID_OPERANDS_FOR_DOT_PRODUCT);
     fdapde_static_assert(
-      std::is_same_v<typename Lhs::InputType FDAPDE_COMMA typename Rhs::InputType>,
-      YOU_MIXED_FIELDS_OF_DIFFERENT_INPUT_TYPE);
+      std::is_convertible_v<typename Lhs::Scalar FDAPDE_COMMA typename Rhs::Scalar>,
+      YOU_MIXED_FIELDS_WITH_NON_CONVERTIBLE_SCALAR_OUTPUT_TYPES);
    public:
     using LhsDerived = Lhs;
     using RhsDerived = Rhs;
@@ -60,6 +60,9 @@ template <typename Lhs, typename Rhs> class DotProduct : public ScalarBase<Lhs::
         }
     }
     constexpr Scalar operator()(const InputType& p) const {
+        fdapde_static_assert(
+          std::is_same_v<typename Lhs::InputType FDAPDE_COMMA typename Rhs::InputType>,
+          YOU_MIXED_FIELDS_WITH_DIFFERENT_INPUT_VECTOR_TYPES);
         if constexpr (meta::is_scalar_field_v<Lhs> && meta::is_scalar_field_v<Rhs>) {
             // scalar-scalar case, just plain multiplication
             return lhs_(p) * rhs_(p);
@@ -68,13 +71,13 @@ template <typename Lhs, typename Rhs> class DotProduct : public ScalarBase<Lhs::
                 // matrix-matrix dot product, dot(A, B) = Tr[A * B^\top] = \sum_{i=1}^n (\sum_{j=1}^m (a_{ij} * b_{ji}))
                 Scalar dot_ = 0;
                 for (int i = 0; i < Lhs::Rows; ++i) {
-                    for (int j = 0; j < Lhs::Cols; ++j) { dot_ += lhs_.eval(i, j, p) * rhs_.eval(j, i, p); }
+                    for (int j = 0; j < Lhs::Cols; ++j) { dot_ += lhs_.eval(i, j, p) * rhs_.eval(i, j, p); }
                 }
                 return dot_;
             } else {   // vector-vector case
                 Scalar dot_ = 0;
                 int n = lhs_.cols() == 1 ? lhs_.rows() : lhs_.cols();
-                for (int i = 0; i < n; ++i) dot_ += lhs_.eval(i, p) * rhs_.eval(i, p);
+                for (int i = 0; i < n; ++i) { dot_ += lhs_.eval(i, p) * rhs_.eval(i, p); }
                 return dot_;
             }
         }

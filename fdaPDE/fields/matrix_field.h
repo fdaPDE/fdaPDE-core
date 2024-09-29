@@ -29,7 +29,12 @@
 #include "norm.h"
 
 namespace fdapde {
-  
+
+#define MATRIX_FIELD_SAME_INPUT_TYPE(Lhs, Rhs)                                                                         \
+    fdapde_static_assert(                                                                                              \
+      std::is_same_v<typename Lhs::InputType FDAPDE_COMMA typename Rhs::InputType>,                                    \
+      YOU_MIXED_MATRIX_FIELDS_WITH_DIFFERENT_INPUT_VECTOR_TYPES);
+
 template <int Size, typename Derived> class MatrixBase;
 
 template <typename Lhs, typename Rhs>
@@ -40,8 +45,8 @@ class MatrixProduct : public fdapde::MatrixBase<Lhs::StaticInputSize, MatrixProd
          Lhs::StaticInputSize == Rhs::StaticInputSize),
       YOU_MIXED_MATRICES_WITH_DIFFERENT_INPUT_SIZES);
     fdapde_static_assert(
-      std::is_same_v<typename Lhs::InputType FDAPDE_COMMA typename Rhs::InputType>,
-      YOU_MIXED_MATRICES_WITH_DIFFERENT_INPUT_TYPES);
+      std::is_convertible_v<typename Lhs::Scalar FDAPDE_COMMA typename Rhs::Scalar>,
+      YOU_MIXED_MATRIX_FIELDS_WITH_NON_CONVERTIBLE_SCALAR_OUTPUT_TYPES);
    public:
     using LhsDerived = Lhs;
     using RhsDerived = Rhs;
@@ -73,6 +78,7 @@ class MatrixProduct : public fdapde::MatrixBase<Lhs::StaticInputSize, MatrixProd
     // for matrix multiplication, it is more convenient to evaluate the two operands at p, and take the product of the
     // evaluations
     template <typename Dest> constexpr void eval_at(const InputType& p, Dest& dest) const {
+        MATRIX_FIELD_SAME_INPUT_TYPE(Lhs, Rhs)
         fdapde_static_assert(
           std::is_invocable_v<Dest FDAPDE_COMMA int FDAPDE_COMMA int> ||
             fdapde::is_subscriptable<Dest FDAPDE_COMMA int>,
@@ -113,12 +119,14 @@ class MatrixProduct : public fdapde::MatrixBase<Lhs::StaticInputSize, MatrixProd
     }  
     constexpr auto operator()(int i, int j) const {
         return [i, j, this](const InputType& p) {
+            MATRIX_FIELD_SAME_INPUT_TYPE(Lhs, Rhs)
             Scalar res = 0;
             for (int k = 0; k < lhs_.cols(); ++k) { res += lhs_.eval(i, k, p) * rhs_.eval(k, j, p); }
             return res;
         };
     }
     constexpr Scalar eval(int i, int j, const InputType& p) const {
+        MATRIX_FIELD_SAME_INPUT_TYPE(Lhs, Rhs)
         Scalar res = 0;
         for (int k = 0; k < lhs_.cols(); ++k) { res += lhs_.eval(i, k, p) * rhs_.eval(k, j, p); }
         return res;
@@ -249,8 +257,8 @@ class MatrixBinOp : public fdapde::MatrixBase<Lhs::StaticInputSize, MatrixBinOp<
         (Lhs::Cols == Dynamic || Rhs::Cols == Dynamic || Lhs::Cols == Rhs::Cols),
       YOU_MIXED_MATRIX_FIELDS_OF_DIFFERENT_SIZES);
     fdapde_static_assert(
-      std::is_same_v<typename Lhs::InputType FDAPDE_COMMA typename Rhs::InputType>,
-      YOU_MIXED_MATRIX_FIELDS_WITH_DIFFERENT_INPUT_TYPE);
+      std::is_convertible_v<typename Lhs::Scalar FDAPDE_COMMA typename Rhs::Scalar>,
+      YOU_MIXED_MATRIX_FIELDS_WITH_NON_CONVERTIBLE_SCALAR_OUTPUT_TYPES);
     typename internals::ref_select<const Lhs>::type lhs_;
     typename internals::ref_select<const Rhs>::type rhs_;
     BinaryOperation op_;
@@ -282,18 +290,26 @@ class MatrixBinOp : public fdapde::MatrixBase<Lhs::StaticInputSize, MatrixBinOp<
     MatrixBinOp(const Lhs& lhs, const Rhs& rhs) : MatrixBinOp(lhs, rhs, BinaryOperation {}) { }
 
     constexpr Scalar eval(int i, int j, const InputType& p) const {
+        MATRIX_FIELD_SAME_INPUT_TYPE(Lhs, Rhs)
         return op_(lhs_.eval(i, j, p), rhs_.eval(i, j, p));
     }
     constexpr Scalar eval(int i, const InputType& p) const {
         fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_ONLY_FOR_ROW_OR_COLUMN_MATRICES);
+        MATRIX_FIELD_SAME_INPUT_TYPE(Lhs, Rhs)
         return op_(lhs_.eval(i, p), rhs_.eval(i, p));
     }
     constexpr auto operator()(int i, int j) const {
-        return [i, j, this](const InputType& p) { return op_(lhs_.eval(i, j, p), rhs_.eval(i, j, p)); };
+        return [i, j, this](const InputType& p) {
+            MATRIX_FIELD_SAME_INPUT_TYPE(Lhs, Rhs)
+            return op_(lhs_.eval(i, j, p), rhs_.eval(i, j, p));
+        };
     }
     constexpr Scalar operator[](int i) const {
         fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_ONLY_FOR_ROW_OR_COLUMN_MATRICES);
-	return [i, this](const InputType& p) { return op_(lhs_.eval(i, p), rhs_.eval(i, p)); };;
+        return [i, this](const InputType& p) {
+            MATRIX_FIELD_SAME_INPUT_TYPE(Lhs, Rhs)
+            return op_(lhs_.eval(i, p), rhs_.eval(i, p));
+        };
     }  
     constexpr int rows() const { return lhs_.rows(); }
     constexpr int cols() const { return lhs_.cols(); }

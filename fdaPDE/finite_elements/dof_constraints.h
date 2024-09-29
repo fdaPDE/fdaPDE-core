@@ -34,42 +34,54 @@ template <int LocalDim, int EmbedDim> class DofConstraints {
     DofConstraints(const DofHandler<local_dim, embed_dim>& dof_handler) : dof_handler_(&dof_handler) { }
 
     // guarantees that the linear system Ax = b is such that all (affine) constraints are respected
-    void enforce_constraints(SpMatrix<double>& A) const {
-	BinaryMatrix<Dynamic> A_mask(A.rows(), A.cols());
-        for (const fdapde::Triplet<double>& triplet : constraint_pattern_) {
-            if (!A_mask(triplet.row(), triplet.col())) {   // guaratees only the first constraint is set
-                A.coeffRef(triplet.row(), triplet.col()) = triplet.value() * eps;
-                A_mask.set(triplet.row(), triplet.col());
+    template <typename T> void enforce_constraints(T&& t) const {
+        if constexpr (fdapde::is_subscriptable<std::decay_t<T>, int>) {   // linear system dense rhs
+            BinaryVector<Dynamic> b_mask(t.rows());
+            for (const fdapde::Duplet<double>& duplet : constraint_values_) {
+                if (!b_mask[duplet.row()]) {
+                    t[duplet.row()] = duplet.value() * eps;
+                    b_mask.set(duplet.row());
+                }
+            }
+        } else {   // linear system sparse matrix
+            BinaryMatrix<Dynamic> A_mask(t.rows(), t.cols());
+            for (const fdapde::Triplet<double>& triplet : constraint_pattern_) {
+                if (!A_mask(triplet.row(), triplet.col())) {   // guaratees only the first constraint is set
+                    t.coeffRef(triplet.row(), triplet.col()) = triplet.value() * eps;
+                    A_mask.set(triplet.row(), triplet.col());
+                }
             }
         }
         return;
     }
-    void enforce_constraints(DVector<double>& b) const {
-	BinaryVector<Dynamic> b_mask(b.rows());
-        for (const fdapde::Duplet<double>& duplet : constraint_values_) {
-            if (!b_mask[duplet.row()]) {
-                b[duplet.row()] = duplet.value() * eps;
-                b_mask.set(duplet.row());
-            }
-        }
-        return;
-    }
-    void enforce_constraints(SpMatrix<double>& A, DVector<double>& b) const {
+    template <typename SystemMatrix, typename SystemRhs>
+    void enforce_constraints(SystemMatrix&& A, SystemRhs&& b) const {
         fdapde_assert(A.rows() == b.rows());
 	enforce_constraints(A);
 	enforce_constraints(b);
         return;
     }
-    // set dirichlet constraint type on boundary nodes marked on (diagonal constraint pattern)
-    template <typename Callable> void set_dirichlet_constraint(int marker, const Callable& g) {
+    // set dirichlet constraint type on boundary nodes with marker_id = marker
+    template <typename... Callable> void set_dirichlet_constraint(int marker, Callable&&... g) {
         int n_boundary_dofs = dof_handler_->n_boundary_dofs(marker);
-        fdapde_assert(marker == BoundaryAll || n_boundary_dofs > 0);
+        fdapde_assert(
+          sizeof...(Callable) == dof_handler_->dof_multiplicity() && (marker == BoundaryAll || n_boundary_dofs > 0));
+	
         for (typename DofHandler<local_dim, embed_dim>::boundary_dofs_iterator it =
                dof_handler_->boundary_dofs_begin(marker);
              it != dof_handler_->boundary_dofs_end(marker); ++it) {
             int dof_id = it->id();
-            constraint_pattern_.emplace_back(dof_id, dof_id, 1.0);
-            constraint_values_.emplace_back(dof_id, g(it->coord()));
+            if (dof_id < dof_handler_->n_unique_dofs()) {
+                int component_id = 0;   // for vector elements, the component to which this dof refers to
+                (
+                  [&]() {
+                      int dof_id_ = dof_id + component_id * dof_handler_->n_unique_dofs();
+                      constraint_pattern_.emplace_back(dof_id_, dof_id_, 1.0);
+                      constraint_values_.emplace_back (dof_id_, g(it->coord()));
+                      component_id++;
+                  }(),
+                  ...);
+            }
         }
         return;
     }

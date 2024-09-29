@@ -22,10 +22,9 @@
 namespace fdapde {
 
 template <typename Derived_> class Divergence : public ScalarBase<Derived_::StaticInputSize, Divergence<Derived_>> {
-    fdapde_static_assert(Derived_::Cols == 1, DIVERGENCE_OPERATOR_IS_FOR_VECTOR_FIELDS_ONLY);
     fdapde_static_assert(
-      Derived_::StaticInputSize == Dynamic || Derived_::StaticInputSize == Derived_::Rows,
-      DIVERGENCE_OPERATOR_CANNOT_BE_APPLIED_TO_THIS_VECTOR_FIELD);
+      Derived_::Cols == 1 && (Derived_::StaticInputSize == Dynamic || Derived_::StaticInputSize == Derived_::Rows),
+      DIVERGENCE_OPERATOR_IS_FOR_VECTOR_FIELDS_ONLY);
    public:
     using Derived = Derived_;
     template <typename T> using Meta = Divergence<T>;

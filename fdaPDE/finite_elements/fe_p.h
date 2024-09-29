@@ -65,6 +65,7 @@ template <int LocalDim, int Order, int NComponents> struct vector_fe_p_basis_typ
 
         constexpr PolynomialType() = default;
         template <int n_nodes>
+            requires(n_nodes == LagrangeBasis<LocalDim, Order>::n_basis)
         constexpr PolynomialType(const cexpr::Matrix<double, n_nodes, LocalDim>& nodes, int i) :
             basis_(nodes), i_(i) { }
         constexpr Component operator[](int i) const { return Component(this, i); }
@@ -85,10 +86,8 @@ template <int LocalDim, int Order, int NComponents> struct vector_fe_p_basis_typ
     };
     constexpr vector_fe_p_basis_type() = default;
     template <int n_nodes>
+        requires(n_nodes == LagrangeBasis<LocalDim FDAPDE_COMMA Order>::n_basis)
     constexpr explicit vector_fe_p_basis_type(const cexpr::Matrix<double, n_nodes, LocalDim>& nodes) : basis_() {
-        fdapde_static_assert(
-          n_nodes == LagrangeBasis<LocalDim FDAPDE_COMMA Order>::n_basis,
-          WRONG_NUMBER_OF_NODES_FOR_DEFINITION_OF_LAGRANGE_BASIS);
         for (int i = 0; i < n_basis; ++i) { basis_[i] = PolynomialType(nodes, i); }
     }
     // getters

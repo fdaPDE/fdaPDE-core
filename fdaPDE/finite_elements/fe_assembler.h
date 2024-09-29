@@ -41,7 +41,7 @@ template <typename Triangulation, int Options, typename... Quadrature> class FeA
         static constexpr bool has_test_space = meta::xpr_find<
           decltype([]<typename Xpr_>() { return requires { typename Xpr_::TestSpace; }; }), std::decay_t<Form>>();
 
-        if constexpr (has_trial_space && has_test_space) {   // bilinear form discretization
+        if constexpr (has_trial_space && has_test_space) {   // discretizing bilinear form
             if constexpr (sizeof...(Quadrature) == 0) {
                 return internals::fe_bilinear_form_assembly_loop<Triangulation, Form, Options> {form, begin_, end_};
             } else {
@@ -49,7 +49,7 @@ template <typename Triangulation, int Options, typename... Quadrature> class FeA
                   Triangulation, Form, Options, std::tuple_element_t<0, std::tuple<Quadrature...>>> {
                   form, begin_, end_, std::get<0>(quadrature_)};
             }
-        } else {   // functional (forcing-term like) discretization
+        } else {   // discretizing linear form
             fdapde_static_assert(has_test_space, NO_TEST_SPACE_DETECTED_IN_LINEAR_FORM);
             if constexpr (sizeof...(Quadrature) == 0) {
                 return internals::fe_linear_form_assembly_loop<Triangulation, Form, Options> {form, begin_, end_};
