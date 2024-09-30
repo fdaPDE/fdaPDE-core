@@ -374,6 +374,7 @@ template <int EmbedDim> class DofHandler<2, EmbedDim> : public DofHandlerBase<2,
                 }
             }
         }
+        Base::n_unique_dofs_ = n_dofs_;
         // update boundary
         Base::boundary_dofs_.resize(n_dofs_ * dof_descriptor::dof_multiplicity);
         if constexpr (dof_descriptor::n_dofs_per_node > 0) {   // inherit boundary description from geometry
@@ -386,7 +387,7 @@ template <int EmbedDim> class DofHandler<2, EmbedDim> : public DofHandlerBase<2,
                 Base::dofs_markers_[it->first] = it->second;
             }
         }
-	// if dof_multiplicity is higher than one, replicate the computed dof numbering adding n_dofs_ to each dof
+        // if dof_multiplicity is higher than one, replicate the computed dof numbering adding n_dofs_ to each dof
         if constexpr (dof_descriptor::dof_multiplicity > 1) {
             Base::dofs_to_cell_.resize(n_dofs_ * dof_descriptor::dof_multiplicity);
             Base::dofs_markers_.resize(n_dofs_ * dof_descriptor::dof_multiplicity);
@@ -404,7 +405,6 @@ template <int EmbedDim> class DofHandler<2, EmbedDim> : public DofHandlerBase<2,
                     }
                 }
             }
-	    Base::n_unique_dofs_ = n_dofs_;
 	    n_dofs_ = n_dofs_ * dof_descriptor::dof_multiplicity;
         }
         return;

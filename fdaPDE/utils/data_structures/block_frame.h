@@ -85,7 +85,7 @@ template <typename... Ts> class BlockFrame {
         fdapde_static_assert(check_presence_of_type<T>::value, TYPE_NOT_IN_BLOCK_FRAME);
 	fdapde_assert(rows_ == 0 || data.rows() == rows_);
         // store data
-        std::get<index_of<T, types_>::index>(data_)[key] = data;
+        std::get<index_of_type<T, types_>::index>(data_)[key] = data;
         // update metadata
         if (!has_block(key)) {
             columns_.push_back(key);
@@ -118,14 +118,14 @@ template <typename... Ts> class BlockFrame {
         fdapde_static_assert(check_presence_of_type<T>::value, TYPE_NOT_IN_BLOCK_FRAME);
         // throw exeption if key not in BlockFrame
         if (!has_block(key)) throw std::runtime_error("block " + key + " not found in data.");
-        return std::get<index_of<T, types_>::index>(data_).at(key);
+        return std::get<index_of_type<T, types_>::index>(data_).at(key);
     }
     // non-const access (potential modifications are not recorded in dirty_bits_)
     template <typename T> DMatrix<T>& get(const std::string& key) {
         fdapde_static_assert(check_presence_of_type<T>::value, TYPE_NOT_IN_BLOCK_FRAME);
         // throw exeption if key not in BlockFrame
         if (!has_block(key)) throw std::runtime_error("block " + key + " not found in data.");
-        return std::get<index_of<T, types_>::index>(data_).at(key);
+        return std::get<index_of_type<T, types_>::index>(data_).at(key);
     }
     // extract all unqique rows from a block
     template <typename T> DMatrix<T> extract_unique(const std::string& key) const {
@@ -134,7 +134,7 @@ template <typename... Ts> class BlockFrame {
         if (!has_block(key)) throw std::runtime_error("block " + key + " not found in data.");
         DMatrix<T> result;
         // get unique values from block with given key
-        const DMatrix<T>& block = std::get<index_of<T, types_>::index>(data_).at(key);
+        const DMatrix<T>& block = std::get<index_of_type<T, types_>::index>(data_).at(key);
         std::unordered_map<DMatrix<T>, int, fdapde::matrix_hash> row_map;   // preserve row ordering
         std::unordered_set<DMatrix<T>, fdapde::matrix_hash> uniques;        // stores unique rows
         int i = 0;                                                          // last inserted row index
@@ -190,7 +190,7 @@ template <typename... Ts> class BlockFrame {
     // remove block
     template <typename T> void remove(const std::string& key) {
         fdapde_static_assert(check_presence_of_type<T>::value, TYPE_NOT_IN_BLOCK_FRAME);
-        std::get<index_of<T, types_>::index>(data_).erase(key);   // remove block
+        std::get<index_of_type<T, types_>::index>(data_).erase(key);   // remove block
         auto key_position = std::find(columns_.begin(), columns_.end(), key);
         columns_.erase(key_position);
         dirty_bits_.erase(dirty_bits_.begin() + std::distance(columns_.begin(), key_position));
@@ -208,7 +208,7 @@ template <ViewType S, typename... Ts> class BlockView {
     // extract all blocks of type T from this view and store it in BlockFrame frame.
     template <typename T> void extract_(BlockFrame<Ts...>& frame) const {
         // cycle on all (key, blocks) pair for this type T
-        for (const auto& v : std::get<index_of<T, types_>::index>(frame_.data())) {
+        for (const auto& v : std::get<index_of_type<T, types_>::index>(frame_.data())) {
             DMatrix<T> block = get<T>(v.first);   // extract block from view
             frame.insert(v.first, block);         // move block to frame with given key
         }
@@ -231,16 +231,16 @@ template <ViewType S, typename... Ts> class BlockView {
         if (!frame_.has_block(key)) throw std::runtime_error("block " + key + " not found in data.");
         if constexpr (S == ViewType::Row)
             // return single row
-            return std::get<index_of<T, types_>::index>(frame_.data()).at(key).row(idx_[0]);
+            return std::get<index_of_type<T, types_>::index>(frame_.data()).at(key).row(idx_[0]);
         if constexpr (S == ViewType::Range)
             // return all rows in between begin and end
-            return std::get<index_of<T, types_>::index>(frame_.data())
+            return std::get<index_of_type<T, types_>::index>(frame_.data())
               .at(key)
               .middleRows(idx_[0], idx_[1] - idx_[0] + 1);
         else {
             // reserve space for result matrix
             DMatrix<T> result;
-            const DMatrix<T>& data = std::get<index_of<T, types_>::index>(frame_.data()).at(key);
+            const DMatrix<T>& data = std::get<index_of_type<T, types_>::index>(frame_.data()).at(key);
             int rows = idx_.size();
             int cols = data.cols();
             result.resize(rows, cols);
@@ -257,7 +257,9 @@ template <ViewType S, typename... Ts> class BlockView {
         // throw exeption if key not in BlockFrame
         if (!frame_.has_block(key)) throw std::runtime_error("block " + key + " not found in data.");
         // return block of this view
-        return std::get<index_of<T, types_>::index>(frame_.data()).at(key).middleRows(idx_[0], idx_[1] - idx_[0] + 1);
+        return std::get<index_of_type<T, types_>::index>(frame_.data())
+          .at(key)
+          .middleRows(idx_[0], idx_[1] - idx_[0] + 1);
     }
 
     // returns a block given by the copy of all blocks identified by "keys"

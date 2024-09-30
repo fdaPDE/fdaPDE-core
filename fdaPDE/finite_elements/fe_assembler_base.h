@@ -292,11 +292,11 @@ struct fe_assembler_base {
 	return;
     }
     // moves \nabla{\psi_i}(q_k) from the reference cell to physical cell pointed by it
-    template <typename CellIterator, typename MdArray>
-    constexpr void eval_shape_grads_on_cell(CellIterator& it, const MdArray& ref_grads, MdArray& dst) const {
-        constexpr int n_basis_ = MdArray::static_extents[0];
-        constexpr int n_quadrature_nodes_ = MdArray::static_extents[1];
-        constexpr int n_components_ = MdArray::static_extents[2];
+    template <typename CellIterator, typename SrcMdArray, typename DstMdArray>
+    constexpr void eval_shape_grads_on_cell(CellIterator& it, const SrcMdArray& ref_grads, DstMdArray& dst) const {
+        constexpr int n_basis_ = SrcMdArray::static_extents[0];
+        constexpr int n_quadrature_nodes_ = SrcMdArray::static_extents[1];
+        constexpr int n_components_ = SrcMdArray::static_extents[2];
 
         for (int i = 0; i < n_basis_; ++i) {
             for (int j = 0; j < n_quadrature_nodes_; ++j) {
