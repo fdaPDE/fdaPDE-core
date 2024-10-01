@@ -21,276 +21,290 @@
 #include <Eigen/Cholesky>
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
-#include <list>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 #include "../utils/symbols.h"
 
 namespace fdapde {
-namespace core {
 
-// *******************pending for eigen-compatible implementation*********************
+template <typename T>
+concept is_eigen_sparse_matrix = std::is_base_of_v<Eigen::SparseMatrixBase<T>, T>;
+  
+namespace internals {
+  
+// a class to represent the sparsity pattern of a matrix
+template <typename Index_, int Options_> struct sparsity_pattern {
+    using Index = Index_;
+    static constexpr int StorageOrder = Options_;   // either RowMajor or ColMajor
 
-// An implementation of the Factorized Sparse Approximate Inverse algorithm with sparsity pattern update.
-// FSPAI assumes that the square, n x n, sparse matrix A of which we want to compute the inverse is SPD, in this sense
-// there exists a lower triangular matrix L_A such that A = L_A.transpose()*L_A. FSPAI finds an approximate inverse for
-// the Cholesky factor L_A of matrix A while keeping L_A sparse (in general indeed the inverse of a sparse matrix is not
-// generally sparse, i.e. it could be dense)
+    class sparsity_line {
+        std::vector<Index> nnzeros_;   // indexes of non-zero entries on this line
+        Index size_ = 0;               // the size of the matrix to which this sparsity_line belongs to
+       public:
+        sparsity_line() noexcept : nnzeros_(), size_(0) { }
+        sparsity_line(const sparsity_line&) noexcept = default;
+        sparsity_line(sparsity_line&&) noexcept = default;
 
-// This FSPAI implementation is based on the minimization of the K-condition number of matrix A. A must be SPD
-class FSPAI {
+        sparsity_line(Index size) : nnzeros_(), size_(size) { }
+        sparsity_line(Index size, const std::vector<Index>& nnzeros) noexcept : nnzeros_(nnzeros), size_(size) { }
+        template <typename Iterator>
+            requires(std::is_convertible_v<typename std::iterator_traits<Iterator>::value_type, Index>)
+        sparsity_line(Index size, Iterator begin, Iterator end) : nnzeros_(begin, end), size_(size) { }
+        template <typename... Args>
+            requires((std::is_convertible_v<Args, Index>) && ...)
+        sparsity_line(Index size, const Args&... args) : nnzeros_(), size_(size) {
+            ([&]() { nnzeros_.push_back(static_cast<Index>(args)); }(), ...);
+        }
+        // accessors
+        Index nnzeros() const { return nnzeros_.size(); }
+        typename std::vector<Index>::const_iterator begin() const { return nnzeros_.begin(); }
+        typename std::vector<Index>::const_iterator end() const { return nnzeros_.end(); }
+        Index operator[](Index i) const {   // access the i-th nonzero of the line
+            fdapde_assert(static_cast<std::size_t>(i) < nnzeros_.size());
+            return nnzeros_[i];
+        }
+        Index size() const { return size_; }
+        bool has_nnzero_at(Index pos) const { return std::find(nnzeros_.begin(), nnzeros_.end(), pos); }
+        bool empty() const { return nnzeros_.size() == 0; }
+        typename std::vector<Index>::const_iterator find(Index pos) const {
+            fdapde_assert(pos < size_);
+            return std::find(nnzeros_.begin(), nnzeros_.end(), pos);
+        }
+        // modifiers
+        void nnzero_insert_unique(Index pos) {   // ammortized O(log(n)) insertion with uniqueness guarantees
+            fdapde_assert(pos < size_);
+            if (std::upper_bound(nnzeros_.begin(), nnzeros_.end(), pos) == nnzeros_.end()) { nnzeros_.push_back(pos); }
+            return;
+        }
+        void nnzero_insert(Index pos) {
+            fdapde_assert(pos < size_);
+            nnzeros_.push_back(pos);
+        }
+        void resize(Index size) { size_ = size; }
+        void erase(Index idx) {
+            auto it = std::find(nnzeros_.begin(), nnzeros_.end(), idx);
+            if (it != nnzeros_.end()) { nnzeros_.erase(it); }
+        }
+    };  
+    using iterator = typename std::vector<sparsity_line>::iterator;
+    using value_type = sparsity_line;
+
+    sparsity_pattern() noexcept : inner_size_(0), outer_size_(0), sparsity_() { }
+    sparsity_pattern(const sparsity_pattern&) noexcept = default;
+    sparsity_pattern(sparsity_pattern&&) noexcept = default;
+
+    sparsity_pattern(int rows, int cols) noexcept :
+        inner_size_(StorageOrder == RowMajor ? cols : rows),
+        outer_size_(StorageOrder == RowMajor ? rows : cols),
+        sparsity_(outer_size_) {
+        for (auto& line : sparsity_) line.resize(inner_size_);
+    }
+    template <typename MatrixType>
+        requires(fdapde::is_eigen_sparse_matrix<MatrixType> &&
+                 requires(MatrixType m) { typename MatrixType::InnerIterator; } &&
+                 ((MatrixType::IsRowMajor == RowMajor && StorageOrder == RowMajor) || StorageOrder == ColMajor))
+    sparsity_pattern(const MatrixType& m) :
+        inner_size_(StorageOrder == RowMajor ? m.cols() : m.rows()),
+        outer_size_(StorageOrder == RowMajor ? m.rows() : m.cols()),
+        sparsity_(outer_size_) {
+        for (auto& line : sparsity_) line.resize(inner_size_);
+        for (int k = 0; k < m.outerSize(); ++k) {
+            for (typename MatrixType::InnerIterator it(m, k); it; ++it) { sparsity_[it.row()].nnzero_insert(it.col()); }
+        }
+    }
+    // accessors
+    const value_type& operator[](Index i) const {
+        fdapde_assert(i < outer_size_);
+        return sparsity_[i];
+    }
+    value_type& operator[](Index i) {
+        fdapde_assert(i < outer_size_);
+        return sparsity_[i];
+    }
+    const value_type& operator()(Index i, Index j) const { return sparsity_[i][j]; }
+    value_type& operator()(Index i, Index j) { return sparsity_[i][j]; }
+    Index rows() const { return StorageOrder == RowMajor ? outer_size_ : inner_size_; }
+    Index cols() const { return StorageOrder == RowMajor ? inner_size_ : outer_size_; }
+    Index inner_size() const { return inner_size_; }
+    Index outer_size() const { return outer_size_; }
+    // modifiers
+    void resize(Index rows, Index cols) {
+        inner_size_ = StorageOrder == RowMajor ? cols : rows;
+        outer_size_ = StorageOrder == RowMajor ? rows : cols;
+        sparsity_.resize(outer_size_);
+        for (auto& line : sparsity_) line.resize(inner_size_);
+        return;
+    }
+    void resize(Index size) { resize(size, size); }
    private:
-    // a sparsity pattern is a set of indexes corresponding to non-zero entries of the matrix
-    typedef std::unordered_map<Eigen::Index, std::unordered_set<Eigen::Index>> sparsity_pattern;
-    typedef std::unordered_set<std::size_t> column_sparsity_pattern;
-    typedef Eigen::LLT<Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic>> SPDsolver;
-
-    const Eigen::SparseMatrix<double>& A_;   // const reference to target matrix
-    Eigen::SparseMatrix<double> L_;          // the sparse approximate inverse of the Cholesky factor of A_
-
-    // internal status data members
-    Eigen::Index n_;                           // dimension of square sparse matrix A_
-    std::vector<column_sparsity_pattern> J_;   // sparsity pattern of approximate inverse
-    Eigen::Matrix<double, Eigen::Dynamic, 1>
-      Lk_;                          // the k-th column of the approximate inverse of the cholesky factor L_
-    SPDsolver choleskySolver_ {};   // solver internally used for the solution of linear system A(tildeJk, tildeJk)*yk =
-                                    // Ak(tildeJk)
-
-    // data structures used for efficiency reasons
-    sparsity_pattern sparsityPattern_ {};   // the sparsity pattern of matrix A_ stored in RowMajor mode
-    std::unordered_set<Eigen::Index>
-      candidateSet_ {};   // set of candidate indexes to enter in the sparsity pattern of column Lk_
-    std::unordered_set<Eigen::Index>
-      deltaPattern_ {};   // set of new indexes entering the sparsity pattern of column Lk_ wrt previous iteration
-    std::unordered_map<Eigen::Index, double>
-      hatJk_ {};   // stores the tau_jk values of indexes eligible to enter the sparsity pattern of column Lk
-
-    Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic>
-      Ak_;   // value of A(tildeJk, tildeJk). Stored here to avoid expensive copies
-    Eigen::Matrix<double, Eigen::Dynamic, 1> bk_;   // value of Ak(tildeJk). Stored here to avoid expensive copies
-
-    // build system matrix A(p1, p2) given sparsity patterns p1 and p2. The result is a |p1| x |p2| dense matrix
-    void extractSystem(const column_sparsity_pattern& p1, const column_sparsity_pattern& p2, const Eigen::Index& k);
-    // update approximate inverse of column k
-    void updateApproximateInverse(
-      const Eigen::Index& k, const DVector<double>& bk, const DVector<double>& yk,
-      const column_sparsity_pattern& tildeJk);
-    // select candidate indexes for sparsity pattern update for column k (this reflects in a modification to the hatJk_
-    // structure)
-    void selectCandidates(const Eigen::Index& k);
-   public:
-    // constructor
-    FSPAI(const Eigen::SparseMatrix<double>& A);
-    // returns the approximate inverse of the Cholesky factor of matrix A_
-    const Eigen::SparseMatrix<double>& getL() const { return L_; }
-    // returns the approximate inverse of A_
-    Eigen::SparseMatrix<double> getInverse() const { return L_ * L_.transpose(); }
-
-    // compute the Factorize Sparse Approximate Inverse of A using a K-condition number minimization method
-    // alpha:   number of sparsity pattern updates to compute for each column k of A_
-    // beta:    number of indexes to augment the sparsity pattern of Lk_ per update step
-    // epsilon: do not consider an entry of A_ as valid if it causes a reduction to its K-condition number lower than
-    // epsilon
-    void compute(unsigned alpha, unsigned beta, double epsilon);
+    Index inner_size_ = 0, outer_size_ = 0;
+    std::vector<sparsity_line> sparsity_;   // guarantees O(1) line access
 };
 
-// build system matrix A(p1, p2) given sparsity patterns p1 and p2. The result is a |p1| x |p2| dense matrix
-void FSPAI::extractSystem(const column_sparsity_pattern& p1, const column_sparsity_pattern& p2, const Eigen::Index& k) {
-    // resize memory buffers
-    Ak_.resize(p1.size(), p2.size());
-    bk_.resize(p2.size(), 1);
+}   // namespace internals
 
-    // (*it1.first, *it2.first) is each time a pair of coordinates in the cross product p1 X p2
-    for (auto it1 = std::make_pair(p1.begin(), 0); it1.first != p1.end(); it1.first++, it1.second++) {
-        for (auto it2 = std::make_pair(p2.begin(), 0); it2.first != p2.end(); it2.first++, it2.second++) {
-            Ak_(it1.second, it2.second) = A_.coeff(*it1.first, *it2.first);
-        }
-        bk_[it1.second] = A_.coeff(*it1.first, k);
-    }
-    return;
-}
+// implementation of the Factorized Sparse Approximate Inverse algorithm with sparsity pattern update, for the sparse
+// SPD square approximation of the inverse of a sparse SPD square matrix
+template <typename MatrixType_>
+    requires(fdapde::is_eigen_sparse_matrix<MatrixType_>)
+struct FSPAI {
+    using MatrixType = MatrixType_;
+    using Index = Eigen::Index;
+    using StorageIndex = typename MatrixType::StorageIndex;
+    using Scalar = typename MatrixType::Scalar;
+    using SparseMatrixType = Eigen::SparseMatrix<Scalar, Eigen::ColMajor, StorageIndex>;
+    using DenseMatrixType  = Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic>;
+    using DenseVectorType  = Eigen::Matrix<Scalar, Eigen::Dynamic, 1>;
+    using CholeskySolver   = Eigen::LLT<DenseMatrixType>;
+    using MatrixL = Eigen::TriangularView<const SparseMatrixType, Eigen::Lower>;
+    using MatrixU = Eigen::TriangularView<const typename SparseMatrixType::ConstTransposeReturnType, Eigen::Upper>;
+   private:
+    SparseMatrixType L_;       // the sparse approximate inverse of the Cholesky factor of A_
 
-// update approximate inverse of column k
-void FSPAI::updateApproximateInverse(
-  const Eigen::Index& k, const DVector<double>& bk, const DVector<double>& yk, const column_sparsity_pattern& tildeJk) {
-    // compute diagonal entry l_kk
-    double l_kk = 1.0 / (std::sqrt(A_.coeff(k, k) - bk.transpose().dot(yk)));
-    Lk_[k] = l_kk;
+    // parameters
+    int alpha_ = 10;           // number of sparsity pattern updates for each column of matrix
+    int beta_ = 10;            // maximum number of inserted indices to the sparsity pattern
+    double epsilon_ = 0.005;   // K-condition number tolerance treshold for sparsity pattern update
 
-    // update other entries according to current sparsity pattern tildeJk
-    for (auto it = std::make_pair(tildeJk.begin(), 0); it.first != tildeJk.end(); ++it.first, ++it.second) {
-        Lk_[*it.first] = -l_kk * yk[it.second];
-    }
-    return;
-}
+    void compute_impl_(const MatrixType& matrix, int alpha, int beta, double epsilon) {
+        std::vector<Eigen::Triplet<double>> tripet_list;
+        int n_cols = matrix.cols();
+        internals::sparsity_pattern<Index, ColMajor> matrix_sparsity_(matrix);   // compute input sparsity pattern
+        L_.resize(n_cols, n_cols);
+        CholeskySolver solver;
+        DenseMatrixType Ak;            // memory buffer for incremental build of matrix A(Jk_, Jk_)
+        DenseVectorType bk;            // memory buffer for incremental build of rhs vector A(Jk_, k)
+        DenseVectorType Lk_(n_cols);   // the k-th column of the approximate inverse of L_
 
-// select candidate indexes for sparsity pattern update for column k (this reflects in a modification to the hatJk_
-// structure)
-void FSPAI::selectCandidates(const Eigen::Index& k) {
-    // computation of candidate rows to enter in the sparsity pattern of column Lk_
-    for (auto row = deltaPattern_.begin(); row != deltaPattern_.end(); ++row) {
-        for (auto j = sparsityPattern_.at(*row).begin(); j != sparsityPattern_.at(*row).end(); ++j) {
-            if (*j > k) { candidateSet_.insert(*j); 
-            }
-        }
-    }
+        // cycle over each column of the sparse matrix A_
+        for (Index k = 0; k < n_cols; ++k) {
+            std::vector<Index> Ck_ {};         // indexes eligible to enter in the sparsity pattern of column k
+            std::vector<Index> Jk_ {};         // sparsity patterns of column k
+            std::vector<Index> delta_Jk_ {};   // indexes added to the sparsity pattern of column k at iteration s - 1
 
-    // clear delta pattern, waiting for a new one...
-    deltaPattern_.clear();
-    hatJk_.clear();
-    // for efficiency reasons, compute the value of A(j, Jk)^T * Lk[Jk] here once and store for later use
-    for (Eigen::Index j : candidateSet_) {
-        if (J_[k].find(j) == J_[k].end()) {
-            double v = 0;
+            Lk_.fill(0);
+            Lk_[k] = 1.0 / (std::sqrt(matrix.coeff(k, k)));
+            Jk_.push_back(k);
+            delta_Jk_.push_back(k);
 
-            // Compute A(j, Jk) * Lk(Jk) considering symmetry
-            for (auto it = J_[k].begin(); it != J_[k].end(); ++it) {
-                // Add contributions from A(j, *it) and A(*it, j)
-                v += A_.coeff(j, *it) * Lk_[*it];
-                
-                // Include the symmetric element 
-                if (static_cast<std::size_t>(*it) != static_cast<std::size_t>(j) && 
-                    sparsityPattern_.count(*it) && 
-                    sparsityPattern_.at(*it).count(static_cast<Eigen::Index>(j))) {
-                                    v += A_.coeff(*it, j) * Lk_[*it];
-                                }
-                            }
-
-            // index j is a possible candidate for updating the sparsity pattern of the solution along column k.
-            hatJk_.emplace(j, v);
-        }
-    }
-    return;
-}
-
-
-// constructor
-FSPAI::FSPAI(const Eigen::SparseMatrix<double>& A) : A_(A), n_(A.rows()) {
-    // initialize the sparsity pattern to the identity matrix
-    J_.resize(n_);
-    for (std::size_t i = 0; i < static_cast<std::size_t>(n_); ++i) { J_[i].insert(i); }
-
-    // pre-allocate memory
-    L_.resize(n_, n_);
-    Lk_.resize(n_, 1);
-
-    // compute sparsity pattern of matrix A once, cache for reuse
-    for (int k = 0; k < A_.outerSize(); ++k) {
-        for (Eigen::SparseMatrix<double>::InnerIterator it(A_, k); it; ++it) {
-            sparsityPattern_[it.row()].emplace(it.col());
-        }
-    }
-
-}
-
-// compute the Factorize Sparse Approximate Inverse of A using a K-condition number minimization method
-// alpha:   number of sparsity pattern updates to compute for each column k of A_
-// beta:    number of indexes to augment the sparsity pattern of Lk_ per update step
-// epsilon: do not consider an entry of A_ as valid if it causes a reduction to its K-condition number lower than
-// epsilon
-void FSPAI::compute(unsigned alpha, unsigned beta, double epsilon) {
-    // eigen requires a list of triplet to construct a sparse matrix in an efficient way
-    std::list<Eigen::Triplet<double>> tripetList;
-
-    // cycle over each column of the sparse matrix A_
-    for (std::size_t k = 0; k < static_cast<std::size_t>(n_); ++k) {
-        Lk_.fill(0);               // reset column vector Lk_
-        candidateSet_.clear();     // reset candidateSet
-        deltaPattern_.insert(k);   // init deltaPattern to allow for sparsity pattern updates
-
-        // perform alpha steps of approximate inverse update along column k
-        for (std::size_t s = 0; s < alpha; ++s) {
-            
-            // if sparsity pattern has reached convergence given the supplied epsilon, the approximate inverse along
-            // this column cannot change. As a result the approximate inverse cannot change and any further computation
-            // can be skipped.
-            if (!deltaPattern_.empty()) {
-                column_sparsity_pattern tildeJk = J_[k];   // extract sparsity pattern
-                tildeJk.erase(k);
-
-                if (tildeJk.empty()) {
-                    // skip computation if tildeJk is empty. No linear system to solve here, just compute the diagonal
-                    // element of the current approximate inverse
-                    double l_kk = 1.0 / (std::sqrt(A_.coeff(k, k)));
-                    Lk_[k] = l_kk;
-                } else {
-                    // we must find the best vector fixed its sparsity pattern minimizing the K-condition number of
-                    // L^T*A*L. It can be proven that this problem is equivalent to the solution of a small dense SPD
-                    // linear system
-                    //         A(tildeJk, tildeJk)*yk = Ak(tildeJk)
-
-                    // define system matrix:        A(tildeJk, tildeJk)
-                    // define rhs of linear system: Ak(tildeJk)
-                    extractSystem(tildeJk, tildeJk, k);
-
-                    // solve linear system A(tildeJk, tildeJk)*yk = Ak(tildeJk) using Cholesky factorization (system is
-                    // SPD)
-                    choleskySolver_.compute(Ak_);
-                    DVector<double> yk =
-                      choleskySolver_.solve(bk_);   // compute yk = A(tildeJk, tildeJk)^{-1}*Ak(tildeJk)
-
+            int Jk_offset = 1;
+            // perform alpha_ steps of approximate inverse update along column k
+            for (Index s = 0; s < alpha && !delta_Jk_.empty(); ++s) {
+                if (s != 0) {
+                    // build SPD linear system A(Jk_, Jk_)*yk = A(Jk_, k), being k fixed. Jk_ is incremental, query the
+                    // input matrix only for those entries which have entered the sparsity pattern at iteration s - 1
+                    Index nnzeros_ = Jk_.size();
+                    Ak.conservativeResize(nnzeros_ - 1, nnzeros_ - 1);
+                    bk.conservativeResize(nnzeros_ - 1);
+                    for (int i = Jk_offset; i < nnzeros_; ++i) {
+                        for (int j = 1; j < i + 1; ++j) {   // build only lower-triangular part, then symmetrize
+                            Ak(i - 1, j - 1) = matrix.coeff(Jk_[i], Jk_[j]);
+                        }
+                        bk[i - 1] = matrix.coeff(Jk_[i], k);
+                    }
+                    Jk_offset = nnzeros_;
+                    solver.compute(Ak.template selfadjointView<Eigen::Lower>());
+                    DenseVectorType yk = solver.solve(bk);
                     // update approximate inverse
-                    updateApproximateInverse(k, bk_, yk, tildeJk);
+                    Scalar l_kk = 1.0 / (std::sqrt(matrix.coeff(k, k) - bk.dot(yk)));
+                    Lk_[k] = l_kk;                                                            // diagonal entry
+                    for (int i = 1; i < nnzeros_; ++i) { Lk_[Jk_[i]] = -l_kk * yk[i - 1]; }   // off-diagonal entries
                 }
 
-                // search for best update of the sparsity pattern
-                // computation of candidate indexes for sparsity pattern update: hatJk_ contains (candidateID j, value
-                // of A(j, Jk)^T * Lk[Jk])
-                selectCandidates(k);
-
-                // use average value heuristic for selection of best candidates
-                double tau_k = 0;     // the average improvement to the K-condition number
-                double max_tau = 0;   // the maximum possible improvement.
-
-                for (auto it = hatJk_.begin(); it != hatJk_.end(); ++it) {
-                    // compute tau_jk value
-                    double tau_jk = (it->second)*(it->second) / A_.coeff(it->first, it->first);
-                    // can overwrite stored data (not required anymore after computation of tau_jk)
-                    hatJk_[it->first] = tau_jk;
-
-                    // update average value
+                // sparsity pattern update (select entry which improves the K condition number better than average)
+                for (auto row = delta_Jk_.begin(); row != delta_Jk_.end(); ++row) {
+                    for (auto j : matrix_sparsity_[*row]) {
+                        // Cholesky factor is upper triangular
+                        if (j > k && std::find(Ck_.begin(), Ck_.end(), j) == Ck_.end()) { Ck_.push_back(j); }
+                    }
+                }
+                delta_Jk_.clear();
+                std::unordered_map<Index, double> hatJk_ {};
+                for (Index j : Ck_) {
+                    if (std::find(Jk_.begin(), Jk_.end(), j) == Jk_.end()) {   // nonzero entry not found at (j, k)
+                        Scalar v = 0;
+                        // Compute A(j, Jk) * Lk(Jk) (considering symmetry)
+                        for (Index l : Jk_) {
+                            v += (k != j) ? 2 * matrix.coeff(j, l) * Lk_[l] : matrix.coeff(j, l) * Lk_[l];
+                        }
+                        hatJk_.emplace(j, v);
+                    }
+                }
+                Scalar tau_k = 0;     // average improvement to the K-condition number
+                Scalar max_tau = 0;   // best improvement to the K-condition number
+                for (auto& [j, v] : hatJk_) {
+                    Scalar tau_jk = v * v / matrix.coeff(j, j);
+                    hatJk_[j] = tau_jk;
+                    // update average and maximum value
                     tau_k += tau_jk;
-                    // update maximum value
                     if (tau_jk > max_tau) max_tau = tau_jk;
                 }
-
-                // if the best improvement is higher than accetable treshold
                 if (max_tau > epsilon) {
                     tau_k /= hatJk_.size();
-                   
-                    // select most promising first beta entries according to average heuristic
-                    for (std::size_t idx = 0; idx < beta && !hatJk_.empty(); ++idx) {
-                        // find maximum
-                        auto max = hatJk_.begin();
-                        for (auto it = hatJk_.begin(); it != hatJk_.end(); ++it) {
-                            if (it->second >= max->second) max = it;
-                        }
-                        
+                    // select most promising first beta_ entries according to average heuristic
+                    for (Index idx = 0; idx < beta && !hatJk_.empty(); ++idx) {
+                        auto it = std::max_element(hatJk_.begin(), hatJk_.end(), [](const auto& p1, const auto& p2) {
+                            return p1.second < p2.second;
+                        });
                         // sparsity pattern update
-                        if (max->second >= tau_k) {
-                            J_[k].insert(max->first);
-                            deltaPattern_.insert(max->first);
+                        if (it->second >= tau_k) {
+                            Jk_.push_back(it->first);
+                            delta_Jk_.push_back(it->first);
+                            hatJk_.erase(it);
+                        } else {   // if optimal element is not best than tau_k, no hope to find a better one
+                            break;
                         }
-                        
-                        // erase current maximum to start a new maximum search until idx == beta
-                        hatJk_.erase(max);
                     }
                 }
             }
+            // store column k-th result
+            for (Index i : Jk_) { tripet_list.emplace_back(i, k, Lk_[i]); }
         }
-        // save approximate inverse of column k
-        for (std::size_t i = 0; i < static_cast<std::size_t>(n_); ++i) {
-            if (Lk_[i] != 0) tripetList.push_back(Eigen::Triplet<double>(i, k, Lk_[i]));
-        }
+        // build final result
+        L_.setFromTriplets(tripet_list.begin(), tripet_list.end());
+        return;
     }
-    // build final result
-    L_.setFromTriplets(tripetList.begin(), tripetList.end());
-    return;
-}
+  
+   public:
+    // constructor
+    FSPAI() noexcept = default;
+    FSPAI(const FSPAI&) noexcept = default;
+    FSPAI(FSPAI&&) noexcept = default;
 
-}   // namespace core
+    FSPAI(const MatrixType& matrix) noexcept : L_() { compute(matrix); }
+    FSPAI(const MatrixType& matrix, int alpha, int beta, double epsilon) noexcept :
+        L_(), alpha_(alpha), beta_(beta), epsilon_(epsilon) {
+        compute(matrix, alpha_, beta_, epsilon_);
+    }
+
+    // computes an approximation of the Cholesky factor of matrix
+    void compute(const MatrixType& matrix) {
+        fdapde_assert(matrix.rows() == matrix.cols() && matrix.rows() > 0 && matrix.cols() > 0);
+        compute_impl_(matrix, alpha_, beta_, epsilon_);   // use defaults      
+    }
+    void compute(const MatrixType& matrix, int alpha, int beta, double epsilon) {
+        fdapde_assert(matrix.rows() == matrix.cols() && matrix.rows() > 0 && matrix.cols() > 0);
+        compute_impl_(matrix, alpha, beta, epsilon);
+    }
+    // accessors
+    Index rows() const { L_.rows(); }
+    Index cols() const { L_.cols(); }
+    MatrixL getL() const { return MatrixL(L_); }   // the Cholesky factor of the approximate inverse of matrix
+    MatrixU getU() const { return MatrixU(L_.transpose()); }
+    SparseMatrixType inverse() const { return getL() * getU(); }   // the factorized sparse approximate inverse
+
+    // linear system solve
+    template <typename Other> void solveInPlace(const Eigen::MatrixBase<Other>& other) const {
+        fdapde_assert(L_.rows() == other.rows());
+        MatrixL(L_).solveInPlace(other);
+    }
+    template <typename Other> DVector<Scalar> solve(const Eigen::MatrixBase<Other>& other) const {
+        fdapde_assert(L_.rows() == other.rows());
+        return MatrixL(L_).solve(other);
+    }
+};
+
 }   // namespace fdapde
 
 #endif   // __FSPAI_H__
