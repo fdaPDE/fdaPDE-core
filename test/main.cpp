@@ -18,6 +18,7 @@
 // include eigen now to avoid possible linking errors
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
+
 /*
 // utils
 #include "src/scalar_field_test.cpp"
@@ -30,11 +31,14 @@
 // #include "src/triangulation_test.cpp"
 #include "src/point_location_test.cpp"
 #include "src/kd_tree_test.cpp"
-// #include "src/voronoi_test.cpp"
+#include "src/voronoi_test.cpp"
 // linear_algebra
 #include "src/kronecker_product_test.cpp"
 #include "src/vector_space_test.cpp"
 #include "src/binary_matrix_test.cpp"
+*/
+#include "src/rand_linear_algebra_test.cpp"
+/*
 // finite_elements
 #include "src/fem_operators_test.cpp"
 #include "src/fem_pde_test.cpp"
@@ -44,9 +48,9 @@
 #include "src/optimization_test.cpp"
 // splines
 #include "src/spline_test.cpp"
-*/
 // fspai
 #include "src/fspai_test.cpp"
+*/
 
 int main(int argc, char** argv) {
     // start testing
