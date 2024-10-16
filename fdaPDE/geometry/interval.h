@@ -60,8 +60,8 @@ template <> class Triangulation<1, 1> {
 	nodes_markers_.set(0);
 	nodes_markers_.set(n_nodes_ - 1);
     };
-    // construct from interval's bounds [a, b] and the number of subintervals n into which split [a, b]
-    Triangulation(double a, double b, int n) : Triangulation(DVector<double>::LinSpaced(n + 1, a, b)) { }
+    // construct from interval's bounds [a, b] and the number of equidistant nodes n used to split [a, b]
+    Triangulation(double a, double b, int n) : Triangulation(DVector<double>::LinSpaced(n, a, b)) { }
 
     // getters
     CellType cell(int id) const { return CellType(id, this); }

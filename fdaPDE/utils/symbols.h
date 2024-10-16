@@ -53,7 +53,7 @@ constexpr int random_seed = -1;   // signals that a random seed is used somewher
 
 [[maybe_unused]] constexpr int RowMajor = 0;
 [[maybe_unused]] constexpr int ColMajor = 1;
-  
+
 template <int N, typename T = double> struct static_dynamic_vector_selector {
     using type = typename std::conditional<N == Dynamic, DVector<T>, SVector<N, T>>::type;
 };

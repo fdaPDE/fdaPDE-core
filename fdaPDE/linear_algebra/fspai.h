@@ -14,15 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-
 #ifndef __FSPAI_H__
 #define __FSPAI_H__
-
-#include <Eigen/Cholesky>
-#include <Eigen/Dense>
-#include <Eigen/Sparse>
-#include <unordered_map>
-#include <vector>
 
 #include "../utils/symbols.h"
 

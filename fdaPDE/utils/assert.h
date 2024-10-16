@@ -29,7 +29,7 @@ void fdapde_assert_failed_(const char* str, const char* file, int line) {
     std::cerr << file << ":" << line << ". Assertion: '" << str << "' failed." << std::endl;
     abort();
 }
-  
+
 }   // namespace internals
 
 #ifdef FDAPDE_NO_DEBUG
