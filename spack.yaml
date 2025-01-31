@@ -1,7 +1,3 @@
-# This is the fdaPDE Spack Environment file.
-#
-# Sets up all necessary dependencies for developing and running fdaPDE 
-# on a system equipped with Spack.
 spack:
   specs:
   # minimal build tools
@@ -9,11 +5,41 @@ spack:
   - eigen@3.4.0
   - cmake
   # (extra) linear algebra libraries
-  - metis
-  - scotch
-  - parmetis
-  - netlib-lapack
   - mumps
+  - blas
+  - metis
+  - mpi
+  - parmetis
+  - scotch
+  - netlib-scalapack
+  - netlib-lapack
   view: true
   concretizer:
-    unify: when_possible
+    unify: true
+  compilers:
+  - compiler:
+      spec: gcc@=8.4.1
+      paths:
+        cc: /usr/bin/gcc
+        cxx: /usr/bin/g++
+        f77: /usr/bin/gfortran
+        fc: /usr/bin/gfortran
+      flags: {}
+      operating_system: centos8
+      target: x86_64
+      modules: []
+      environment: {}
+      extra_rpaths: []
+  - compiler:
+      spec: gcc@=13.2.0
+      paths:
+        cc: /g100/home/userexternal/mcoppell/.spack/environments/fdapde_devel/.spack-env/view/bin/gcc
+        cxx: /g100/home/userexternal/mcoppell/.spack/environments/fdapde_devel/.spack-env/view/bin/g++
+        f77: /g100/home/userexternal/mcoppell/.spack/environments/fdapde_devel/.spack-env/view/bin/gfortran
+        fc: /g100/home/userexternal/mcoppell/.spack/environments/fdapde_devel/.spack-env/view/bin/gfortran
+      flags: {}
+      operating_system: centos8
+      target: x86_64
+      modules: []
+      environment: {}
+      extra_rpaths: []
