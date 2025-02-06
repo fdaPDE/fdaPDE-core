@@ -4,9 +4,9 @@
 
 #include "../../../fdaPDE/fields.h"
 #include "../../../fdaPDE/finite_elements.h"
-#include "../../../fdaPDE/geoframe/csv.h"
+#include "../../../fdaPDE/geoframe.h"
 #include "../../../fdaPDE/geometry.h"
-#include "../../../fdaPDE/linear_algebra/mumps.h"
+#include "../../../fdaPDE/linear_algebra.h"
 #include "utils/mesh_generation.h"
 
 using namespace Eigen;
@@ -14,7 +14,7 @@ using namespace fdapde;
 using namespace fdapde::mumps;
 using namespace std::chrono;
 
-void printSparsityPattern(const SparseMatrix<double>& A, std::string filename);
+void printSparsityPattern(const Eigen::SparseMatrix<double>& A, std::string filename);
 void saveCSV(std::string input_filename, std::string output_filename);
 
 int main() {
@@ -85,10 +85,10 @@ int main() {
     std::vector<std::string> problems_schur = {"mass"};
 
     // data structures
-    std::vector<SparseMatrix<double>> mass_matrices;
-    std::vector<SparseMatrix<double>> laplacian_matrices;
-    std::vector<SparseMatrix<double>> diffusion_transport_matrices;
-    std::vector<VectorXd> forces;
+    std::vector<Eigen::SparseMatrix<double>> mass_matrices;
+    std::vector<Eigen::SparseMatrix<double>> laplacian_matrices;
+    std::vector<Eigen::SparseMatrix<double>> diffusion_transport_matrices;
+    std::vector<Eigen::VectorXd> forces;
 
     // MPI initialization + rank (for output)
     MPI_Init(NULL, NULL);
@@ -117,7 +117,7 @@ int main() {
          * - meshUnitCube(n_nodes)
          */
 
-        // Eigen::VectorXd force(n*n);
+        // Eigen::Eigen::VectorXd force(n*n);
         if (rank == 0) {
             auto mesh = meshUnitSquare(n);
             if (rank == 0) std::cout << "Generated mesh with " << n << " nodes" << std::endl;
@@ -136,9 +136,9 @@ int main() {
             auto a3 = integral(unit_square)(
               dot(grad(u), grad(v)) + dot(b, grad(u)) * v);   // diffusion-transport: non simmetrica
 
-            mass_matrices.push_back(SparseMatrix<double>(a1.assemble()));
-            laplacian_matrices.push_back(SparseMatrix<double>(a2.assemble()));
-            diffusion_transport_matrices.push_back(SparseMatrix<double>(a3.assemble()));
+            mass_matrices.push_back(Eigen::SparseMatrix<double>(a1.assemble()));
+            laplacian_matrices.push_back(Eigen::SparseMatrix<double>(a2.assemble()));
+            diffusion_transport_matrices.push_back(Eigen::SparseMatrix<double>(a3.assemble()));
             if (rank == 0) std::cout << "Generated matrices for " << n << " nodes" << std::endl;
 
             // forcing term
@@ -150,11 +150,11 @@ int main() {
 
             // linear system: R1 * u = f
         } else {
-            mass_matrices.push_back(SparseMatrix<double>());
-            laplacian_matrices.push_back(SparseMatrix<double>());
-            diffusion_transport_matrices.push_back(SparseMatrix<double>());
+            mass_matrices.push_back(Eigen::SparseMatrix<double>());
+            laplacian_matrices.push_back(Eigen::SparseMatrix<double>());
+            diffusion_transport_matrices.push_back(Eigen::SparseMatrix<double>());
 
-            forces.push_back(VectorXd(n * n));
+            forces.push_back(Eigen::VectorXd(n * n));
         }
         // MPI_Bcast(force.data(), n*n, MPI_DOUBLE, 0, MPI_COMM_WORLD);
         // forces.push_back(force);
@@ -207,7 +207,7 @@ int main() {
             file << "N,problem,solver,time\n";
         }
         for (size_t i = 0; i < N.size(); ++i) {
-            SparseMatrix<double> A;
+            Eigen::SparseMatrix<double> A;
             for (const auto& problem : problems) {
                 if (problem == "mass") { A = mass_matrices[i]; }
                 if (problem == "laplacian") { A = laplacian_matrices[i]; }
@@ -217,16 +217,16 @@ int main() {
                     for (int iter = 0; iter < n_iter; ++iter) {
                         auto t1 = high_resolution_clock::now();
                         if (solver == "SparseLU" && rank == 0 && (N[i]<2500 || one_time_flag)) {
-                            Eigen::SparseLU<SparseMatrix<double>> solver(A);
-                            VectorXd x = solver.solve(forces[i]);
+                            Eigen::SparseLU<Eigen::SparseMatrix<double>> solver(A);
+                            Eigen::VectorXd x = solver.solve(forces[i]);
                         }
                         if (solver == "MumpsLU") {
                             MumpsLU solver(A);
-                            VectorXd x = solver.solve(forces[i]);
+                            Eigen::VectorXd x = solver.solve(forces[i]);
                         }
                         if (solver == "MumpsBLR") {
                             MumpsBLR solver(A);
-                            VectorXd x = solver.solve(forces[i]);
+                            Eigen::VectorXd x = solver.solve(forces[i]);
                         }
                         auto t2 = high_resolution_clock::now();
                         duration<double> duration = t2 - t1;
@@ -254,7 +254,7 @@ int main() {
             file << "N,problem,solver,time\n";
         }
         for (size_t i = 0; i < N.size(); ++i) {
-            SparseMatrix<double> A;
+            Eigen::SparseMatrix<double> A;
             for (const auto& problem : problems_spd) {
                 if (problem == "mass") { A = mass_matrices[i]; }
                 if (problem == "laplacian") { A = laplacian_matrices[i]; }
@@ -263,12 +263,12 @@ int main() {
                     for (int iter = 0; iter < n_iter; ++iter) {
                         auto t1 = high_resolution_clock::now();
                         if (solver == "SimplicialLLT" && rank == 0 && (N[i]<2500 || one_time_flag)) {
-                            Eigen::SimplicialLLT<SparseMatrix<double>> solver(A);
-                            VectorXd x = solver.solve(forces[i]);
+                            Eigen::SimplicialLLT<Eigen::SparseMatrix<double>> solver(A);
+                            Eigen::VectorXd x = solver.solve(forces[i]);
                         }
                         if (solver == "MumpsLDLT") {
                             MumpsLDLT solver(A);
-                            VectorXd x = solver.solve(forces[i]);
+                            Eigen::VectorXd x = solver.solve(forces[i]);
                         }
                         auto t2 = high_resolution_clock::now();
                         duration<double> duration = t2 - t1;
@@ -297,7 +297,7 @@ int main() {
         }
 
         for (size_t i = 0; i < N.size(); ++i) {
-            SparseMatrix<double> A;
+            Eigen::SparseMatrix<double> A;
             for (const auto& problem : problems_schur) {
                 if (problem == "mass") { A = mass_matrices[i]; }
                 if (problem == "laplacian") { A = laplacian_matrices[i]; }
@@ -306,7 +306,7 @@ int main() {
                     for (int iter = 0; iter < n_iter; ++iter) {
                         auto t1 = high_resolution_clock::now();
                         MumpsSchur solver(A, schur_size);
-                        VectorXd x = solver.solve(forces[i]);
+                        Eigen::VectorXd x = solver.solve(forces[i]);
                         auto t2 = high_resolution_clock::now();
                         duration<double> duration = t2 - t1;
                         MPI_Allreduce(MPI_IN_PLACE, &duration, 1, MPI_LONG_LONG, MPI_MAX, MPI_COMM_WORLD);
@@ -334,7 +334,7 @@ int main() {
 
         std::vector<std::string> temp_solvers = {"Wrapped", "Non-wrapped"};
         for (size_t i = 0; i < N.size(); ++i) {
-            SparseMatrix<double> A;
+            Eigen::SparseMatrix<double> A;
             for (const auto& problem : problems) {
                 if (problem == "mass") { A = mass_matrices[i]; }
                 if (problem == "laplacian") { A = laplacian_matrices[i]; }
@@ -345,7 +345,7 @@ int main() {
                         if (solver == "Wrapped") {
                             auto t1 = high_resolution_clock::now();
                             MumpsLU solver(A);
-                            VectorXd x = solver.solve(forces[i]);
+                            Eigen::VectorXd x = solver.solve(forces[i]);
                             auto t2 = high_resolution_clock::now();
                             duration = t2 - t1;
                         }
@@ -358,7 +358,7 @@ int main() {
                             values.reserve(A.nonZeros());
                             MatrixXd buff = forces[i];
                             for (int k = 0; k < A.outerSize(); ++k) {
-                                for (SparseMatrix<double>::InnerIterator it(A, k); it; ++it) {
+                                for (Eigen::SparseMatrix<double>::InnerIterator it(A, k); it; ++it) {
                                     row_indices.push_back(it.row() + 1);
                                     col_indices.push_back(it.col() + 1);
                                     values.push_back(it.value());
@@ -418,7 +418,7 @@ int main() {
     return 0;
 }
 
-void printSparsityPattern(const SparseMatrix<double>& A, std::string filename) {
+void printSparsityPattern(const Eigen::SparseMatrix<double>& A, std::string filename) {
     std::ofstream file(filename);
     file << "i,j\n";
     if (!file.is_open()) { throw std::runtime_error("Unable to open file for writing."); }

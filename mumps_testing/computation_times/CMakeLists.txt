@@ -4,7 +4,8 @@ project(MUMPS_TESTING CXX Fortran)
 
 set(CMAKE_CXX_STANDARD 23)
 
-set(CMAKE_CXX_FLAGS "-O -fopenmp -Wno-deprecated-declarations")
+set(CMAKE_CXX_FLAGS "-fopenmp -Wno-deprecated-declarations")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -std=c++20 -g -march=native")
 set(CMAKE_Fortran_FLAGS "-O -fopenmp")
 
 find_package(MPI REQUIRED)
@@ -60,23 +61,56 @@ target_link_libraries(gen_data_rand PRIVATE
     gtest_main
 )
 
-add_executable(gen_data_mesh src/gen_data_mesh.cpp)
-set_target_properties(gen_data_mesh PROPERTIES LINKER_LANGUAGE Fortran)
+# add_executable(gen_data_mesh src/gen_data_mesh.cpp)
+# set_target_properties(gen_data_mesh PROPERTIES LINKER_LANGUAGE Fortran)
 
-target_include_directories(gen_data_mesh PRIVATE
+# target_include_directories(gen_data_mesh PRIVATE
+#     ${IEIGENDIR}
+#     ${IDMUMPSDIR}
+#     ${MPI_INCLUDE_PATH}
+# )
+
+# target_link_directories(gen_data_mesh PRIVATE
+#     ${LSCOTCHDIR}
+#     ${LPORDDIR}
+#     ${LMETISDIR}
+#     ${LDMUMPSDIR}
+# )
+
+# target_link_libraries(gen_data_mesh PRIVATE
+#     ${LIBS_DMUMPS}
+#     ${LIBS_SCOTCH}
+#     ${LIBS_METIS}
+#     ${LIBS_PORD}
+#     ${LIBS_LAPACK}
+#     ${LIBS_SCALAPACK}
+#     ${LIBS_BLAS}
+#     ${LIBS_OTHERS}
+#     MPI::MPI_Fortran
+#     MPI::MPI_CXX
+#     OpenMP::OpenMP_CXX
+#     gtest_main
+# )
+
+add_executable(gen_data_srpde src/gen_data_srpde.cpp)
+set_target_properties(gen_data_srpde PROPERTIES LINKER_LANGUAGE Fortran)
+
+target_include_directories(gen_data_srpde PRIVATE
     ${IEIGENDIR}
     ${IDMUMPSDIR}
     ${MPI_INCLUDE_PATH}
+    "/home/matteo/Desktop/fdaPDE-cpp"
+    "/home/matteo/Desktop/fdaPDE-cpp/fdaPDE/core"
 )
 
-target_link_directories(gen_data_mesh PRIVATE
+target_link_directories(gen_data_srpde PRIVATE
     ${LSCOTCHDIR}
     ${LPORDDIR}
     ${LMETISDIR}
     ${LDMUMPSDIR}
 )
 
-target_link_libraries(gen_data_mesh PRIVATE
+target_link_libraries(gen_data_srpde PRIVATE
     ${LIBS_DMUMPS}
     ${LIBS_SCOTCH}
     ${LIBS_METIS}

@@ -32,7 +32,7 @@
 #include "src/linear_algebra/lumping.h"
 #include "src/linear_algebra/sparse_block_matrix.h"
 #include "src/linear_algebra/woodbury.h"
-#include "src/linear_algebra/mumps.h"
+//#include "src/linear_algebra/mumps.h"
 
 // clang-format on
 

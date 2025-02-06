@@ -3,7 +3,7 @@
 #include <fstream>
 #include <random>
 
-#include "../../../fdaPDE/linear_algebra/mumps.h"
+#include "../../../fdaPDE/linear_algebra.h"
 
 using namespace std::chrono;
 using namespace fdapde::mumps;

@@ -11,7 +11,7 @@ int main() {
     // ------------------------------------ data generation
     int n_obs_per_side = 40;
     int n_obs = n_obs_per_side * n_obs_per_side;
-    Eigen::Matrix<double, Dynamic, Dynamic> coords(n_obs, 2);
+    Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> coords(n_obs, 2);
     for (int i = 0; i < n_obs_per_side; ++i) {
         for (int j = 0; j < n_obs_per_side; ++j) {
             coords(i * n_obs_per_side + j, 0) = (1.0 / n_obs_per_side) * j;
