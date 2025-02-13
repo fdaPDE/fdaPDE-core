@@ -16,8 +16,6 @@ using namespace Eigen;
 
 namespace fdapde {
 
-namespace mumps {
-
 // concepts
 template <typename T>
 concept isEigenSparseMatrix = std::derived_from<T, Eigen::SparseMatrixBase<T>>;
@@ -1026,8 +1024,6 @@ template <isEigenSparseMatrix MatrixType> class MumpsSchur : public MumpsBase<Mu
 
     bool m_schurSizeSet;
 };
-
-}   // namespace mumps
 
 }   // namespace fdapde
 
