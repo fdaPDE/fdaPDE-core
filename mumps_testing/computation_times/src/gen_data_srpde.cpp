@@ -101,7 +101,7 @@ int main() {
                                cos(
                                  2 * pi *
                                  ((0.5 * sin(0.5 * pi * coords(i, 2)) * exp(-1) + 1) * coords(i, 1) * sin(1) -
-                                  (0.5 * sin(5 * pi * coords(i, 1)) * exp(-1) + 1) * y));
+                                  (0.5 * sin(5 * pi * coords(i, 1)) * exp(-1) + 1) * coords(i,2)));
                 }
 
                 // (this is still experimental.......)
