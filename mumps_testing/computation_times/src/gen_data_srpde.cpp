@@ -99,7 +99,7 @@ int main() {
 
                 std::vector<double> noise;
                 noise.resize(n_obs);
-                for (int i = 0; i < n_obs; ++i) { double noise[i] = dist(gen); }
+                for (int i = 0; i < n_obs; ++i) { noise[i] = dist(gen); }
 
                 std::vector<double> y_vec;
                 y_vec.resize(n_obs);
