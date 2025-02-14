@@ -2,17 +2,18 @@
 #include <mpi.h>
 
 #include <chrono>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
-#include <cmath>
 #include <numbers>
+#include <random>
 
 using namespace fdapde;
 using namespace std::chrono;
 
-using std::sin;
 using std::cos;
 using std::exp;
+using std::sin;
 using std::numbers::pi;
 
 void printSparsityPattern(const Eigen::SparseMatrix<double>& A, std::string filename);
@@ -89,6 +90,17 @@ int main() {
                     }
                 }
                 // evaluate spatial field at locations
+
+                double std_dev = 0.1;
+                unsigned int seed = 42;   // Fixed seed for reproducibility
+
+                std::mt19937 gen(seed);   // Mersenne Twister PRNG with fixed seed
+                std::normal_distribution<double> dist(0.0, std_dev);
+
+                std::vector<double> noise;
+                noise.resize(n_obs);
+                for (int i = 0; i < n_obs; ++i) { double noise[i] = dist(gen); }
+
                 std::vector<double> y_vec;
                 y_vec.resize(n_obs);
                 // define your spatial field and evaluate in y_vec...
@@ -98,10 +110,11 @@ int main() {
                                  2 * pi *
                                  ((0.5 * sin(0.5 * pi * coords(i, 2)) * exp(-1) + 1) * coords(i, 1) * cos(1) +
                                   coords(i, 2) * sin(1))) *
-                               cos(
-                                 2 * pi *
-                                 ((0.5 * sin(0.5 * pi * coords(i, 2)) * exp(-1) + 1) * coords(i, 1) * sin(1) -
-                                  (0.5 * sin(5 * pi * coords(i, 1)) * exp(-1) + 1) * coords(i,2)));
+                                 cos(
+                                   2 * pi *
+                                   ((0.5 * sin(0.5 * pi * coords(i, 2)) * exp(-1) + 1) * coords(i, 1) * sin(1) -
+                                    (0.5 * sin(5 * pi * coords(i, 1)) * exp(-1) + 1) * coords(i, 2))) +
+                               noise[i];
                 }
 
                 // (this is still experimental.......)

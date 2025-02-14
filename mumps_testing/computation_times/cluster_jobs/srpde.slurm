@@ -10,7 +10,7 @@
 #SBATCH --mail-type=ALL
 #SBATCH --mem=300GB
 
-WORKING_DIR=/g100/home/userexternal/mcoppell/mumps/fdaPDE-core/mumps_testing/computation_times/build
+WORKING_DIR=/g100/home/userexternal/mcoppell/mumps/fdaPDE-cpp/fdaPDE/core/mumps_testing/computation_times/build
 cd $WORKING_DIR
 
 export LD_LIBRARY_PATH="$(spack location -i mumps)/lib:$(spack location -i openmpi)/lib:$(spack location -i netlib-scalapack)/lib:$(spack location -i netlib-lapack)/lib64:$(spack location -i scotch)/lib:$(spack location -i metis)/lib:$(spack location -i parmetis)/lib"
