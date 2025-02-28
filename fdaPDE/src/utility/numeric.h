@@ -39,6 +39,7 @@ constexpr int binomial_coefficient(const int n, const int m) {
     return factorial(n) / (factorial(m) * factorial(n - m));
 }
 // linearized binomial_coefficient(n, k) x k matrix of combinations of k elements from a set of n
+/*
 constexpr std::vector<int> combinations(int k, int n) {
     std::vector<bool> bitmask(k, 1);
     bitmask.resize(n, 0);
@@ -54,6 +55,29 @@ constexpr std::vector<int> combinations(int k, int n) {
         }
         j++;
     } while (std::prev_permutation(bitmask.begin(), bitmask.end()));
+    return result;
+}
+*/ //std::vector is not constexpr in C++20
+template <int K, int N>
+constexpr std::array<int, K * binomial_coefficient(N, K)> combinations() {
+    constexpr int num_comb = binomial_coefficient(N, K);
+    std::array<int, K * num_comb> result{};
+    std::array<int, K> indices{};
+    for (int i = 0; i < K; ++i)
+        indices[i] = i;
+    int j = 0;
+    while (true) {
+        for (int l = 0; l < K; ++l)
+            result[j * K + l] = indices[l];
+
+        ++j;
+        int i = K - 1;
+        while (i >= 0 && indices[i] == N - K + i) --i;
+        if (i < 0) break;
+        ++indices[i];
+        for (int l = i + 1; l < K; ++l)
+            indices[l] = indices[l - 1] + 1;
+    }
     return result;
 }
 
@@ -82,6 +106,12 @@ constexpr bool less_than(T a, T b, T epsilon) {
     return (b - a) > ((std::fabs(a) < std::fabs(b) ? std::fabs(b) : std::fabs(a)) * epsilon);
 }
 template <typename T> constexpr bool less_than(T a, T b) { return less_than(a, b, double_tolerance); }
+template <typename T>
+    requires(std::is_floating_point_v<T>)
+constexpr bool almost_zero(T a, T epsilon) {
+    return std::fabs(a) < epsilon;
+}
+template <typename T> constexpr bool almost_zero(T a) { return almost_zero(a, machine_epsilon); }
 
 // numerical stable log(1 + exp(x)) computation (see "Machler, M. (2012). Accurately computing log(1-exp(-|a|))")
 template <typename T>

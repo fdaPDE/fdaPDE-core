@@ -21,7 +21,7 @@
 
 // include required modules
 #include "linear_algebra.h"    // pull Eigen first
-#include "utility.h"
+#include "utility.h"  //-->i changed a function in numeric.h in order to compile it correctly
 
 // minimal geometric entites
 #include "src/geometry/utility.h"
@@ -38,10 +38,11 @@
 #include "src/geometry/projection.h"
 // data structures
 #include "src/geometry/triangulation.h"
-#include "src/geometry/interval.h"
+//#include "src/geometry/interval.h"
 #include "src/geometry/linear_network.h"
 #include "src/geometry/dcel.h"
 #include "src/geometry/polygon.h"
+#include "src/geometry/delaunay.h"
 
 // clang-format on
 
