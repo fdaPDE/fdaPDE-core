@@ -40,8 +40,7 @@ int main() {
     /**
      * SET THE PROBLEM SIZE
      */
-    std::vector<int> N = {4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096};
-    std::vector<int> N_obs = {4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096};
+    std::vector<int> N = {8, 16, 32, 64, 128, 256, 512, 1024};
 
     /**
      * SET THE NUMBER OF ITERATIONS
@@ -73,7 +72,8 @@ int main() {
     }
 
     for (auto n_nodes : N) {
-        for (auto n_obs_per_side : N_obs) {
+	auto n_obs_per_side = n_nodes;
+        /*for (auto n_obs_per_side : N_obs) {*/
             for (int i = 0; i < n_iter; i++) {
                 // ------------------------------------ geometry
                 // int n_nodes = 21;
@@ -112,12 +112,12 @@ int main() {
                     for (int i = 0; i < n_obs; i++) {
                         y_vec[i] = sin(
                                      2 * pi *
-                                     ((0.5 * sin(0.5 * pi * coords(i, 2)) * exp(-1) + 1) * coords(i, 1) * cos(1) +
-                                      coords(i, 2) * sin(1))) *
+                                     ((0.5 * sin(0.5 * pi * coords(i, 1)) * exp(-1) + 1) * coords(i, 0) * cos(1) +
+                                      coords(i, 1) * sin(1))) *
                                      cos(
                                        2 * pi *
-                                       ((0.5 * sin(0.5 * pi * coords(i, 2)) * exp(-1) + 1) * coords(i, 1) * sin(1) -
-                                        (0.5 * sin(5 * pi * coords(i, 1)) * exp(-1) + 1) * coords(i, 2))) +
+                                       ((0.5 * sin(0.5 * pi * coords(i, 1)) * exp(-1) + 1) * coords(i, 0) * sin(1) -
+                                        (0.5 * sin(5 * pi * coords(i, 0)) * exp(-1) + 1) * coords(i, 1))) +
                                    noise[i];
                     }
                 }
@@ -158,7 +158,7 @@ int main() {
                     file << n_nodes << "," << n_obs << "," << duration.count() << "\n";
                 }
             }
-        }
+       // }
     }
 
     // print estimated spatial field
