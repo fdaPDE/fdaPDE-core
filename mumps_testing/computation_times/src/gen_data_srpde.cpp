@@ -77,44 +77,49 @@ int main() {
             for (int i = 0; i < n_iter; i++) {
                 // ------------------------------------ geometry
                 // int n_nodes = 21;
-                Triangulation<2, 2> unit_square = Triangulation<2, 2>::UnitSquare(n_nodes, cache_cells);
+                Triangulation<2, 2> unit_square;
+                if (rank == 0) unit_square = Triangulation<2, 2>::UnitSquare(n_nodes, cache_cells);
 
                 // ------------------------------------ data generation
                 // int n_obs_per_side = 40;
                 int n_obs = n_obs_per_side * n_obs_per_side;
                 Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> coords(n_obs, 2);
-                for (int i = 0; i < n_obs_per_side; ++i) {
-                    for (int j = 0; j < n_obs_per_side; ++j) {
-                        coords(i * n_obs_per_side + j, 0) = (1.0 / n_obs_per_side) * j;
-                        coords(i * n_obs_per_side + j, 1) = (1.0 / n_obs_per_side) * i;
+                if (rank == 0) {
+                    for (int i = 0; i < n_obs_per_side; ++i) {
+                        for (int j = 0; j < n_obs_per_side; ++j) {
+                            coords(i * n_obs_per_side + j, 0) = (1.0 / n_obs_per_side) * j;
+                            coords(i * n_obs_per_side + j, 1) = (1.0 / n_obs_per_side) * i;
+                        }
                     }
                 }
                 // evaluate spatial field at locations
-
-                double std_dev = 0.1;
-                unsigned int seed = 42;   // Fixed seed for reproducibility
-
-                std::mt19937 gen(seed);   // Mersenne Twister PRNG with fixed seed
-                std::normal_distribution<double> dist(0.0, std_dev);
-
-                std::vector<double> noise;
-                noise.resize(n_obs);
-                for (int i = 0; i < n_obs; ++i) { noise[i] = dist(gen); }
-
                 std::vector<double> y_vec;
-                y_vec.resize(n_obs);
-                // define your spatial field and evaluate in y_vec...
-                // std::fill(y_vec.begin(), y_vec.end(), 1.0);   // here I just set ones to check it runs
-                for (int i = 0; i < n_obs; i++) {
-                    y_vec[i] = sin(
-                                 2 * pi *
-                                 ((0.5 * sin(0.5 * pi * coords(i, 2)) * exp(-1) + 1) * coords(i, 1) * cos(1) +
-                                  coords(i, 2) * sin(1))) *
-                                 cos(
-                                   2 * pi *
-                                   ((0.5 * sin(0.5 * pi * coords(i, 2)) * exp(-1) + 1) * coords(i, 1) * sin(1) -
-                                    (0.5 * sin(5 * pi * coords(i, 1)) * exp(-1) + 1) * coords(i, 2))) +
-                               noise[i];
+
+                if (rank == 0) {
+                    double std_dev = 0.1;
+                    unsigned int seed = 42;   // Fixed seed for reproducibility
+
+                    std::mt19937 gen(seed);   // Mersenne Twister PRNG with fixed seed
+                    std::normal_distribution<double> dist(0.0, std_dev);
+
+                    std::vector<double> noise;
+                    noise.resize(n_obs);
+                    for (int i = 0; i < n_obs; ++i) { noise[i] = dist(gen); }
+
+                    y_vec.resize(n_obs);
+                    // define your spatial field and evaluate in y_vec...
+                    // std::fill(y_vec.begin(), y_vec.end(), 1.0);   // here I just set ones to check it runs
+                    for (int i = 0; i < n_obs; i++) {
+                        y_vec[i] = sin(
+                                     2 * pi *
+                                     ((0.5 * sin(0.5 * pi * coords(i, 2)) * exp(-1) + 1) * coords(i, 1) * cos(1) +
+                                      coords(i, 2) * sin(1))) *
+                                     cos(
+                                       2 * pi *
+                                       ((0.5 * sin(0.5 * pi * coords(i, 2)) * exp(-1) + 1) * coords(i, 1) * sin(1) -
+                                        (0.5 * sin(5 * pi * coords(i, 1)) * exp(-1) + 1) * coords(i, 2))) +
+                                   noise[i];
+                    }
                 }
 
                 // (this is still experimental.......)
@@ -124,7 +129,8 @@ int main() {
                 geo_layer->push_back(coords);
                 geo_layer->load_vec({"y"}, y_vec);
 
-                std::cout << *geo_layer << std::endl;   // display loaded data
+                if (rank == 0) std::cout << "RANK 0: \n" << *geo_layer << "\n\n" << std::endl;   // display loaded data
+                if (rank == 1) std::cout << "RANK 1: \n" << *geo_layer << "\n\n" << std::endl;   // display loaded data
 
                 // ------------------------------------ physics
                 FeSpace Vh(unit_square, P1<1>);
