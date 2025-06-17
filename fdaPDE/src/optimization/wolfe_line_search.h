@@ -15,8 +15,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_WOLFE_LINE_SEARCH_EXP_H__
-#define __FDAPDE_WOLFE_LINE_SEARCH_EXP_H__
+#ifndef __FDAPDE_WOLFE_LINE_SEARCH_H__
+#define __FDAPDE_WOLFE_LINE_SEARCH_H__
 
 #include "header_check.h"
 
@@ -107,4 +107,4 @@ public:
 
 }   // namespace fdapde
 
-#endif   // __FDAPDE_WOLFE_LINE_SEARCH_EXP_H__
+#endif   // __FDAPDE_WOLFE_LINE_SEARCH_H__
