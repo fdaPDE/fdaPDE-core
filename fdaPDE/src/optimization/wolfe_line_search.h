@@ -24,7 +24,7 @@ namespace fdapde {
 
 // implementation of the Wolfe line search method for step selection
 // check "Jorge Nocedal, Stephen J. Wright (2006), Numerical Optimization"
-class WolfeLineSearchExp {
+class WolfeLineSearch {
 private:
     static constexpr int MAX_ITER = 10;
     double alpha_ = 1.0;
@@ -33,8 +33,8 @@ private:
 
 public:
     // constructors
-    WolfeLineSearchExp() = default;
-    WolfeLineSearchExp(double alpha, double c1, double c2) : alpha_(alpha), c1_(c1), c2_(c2) { }
+    WolfeLineSearch() = default;
+    WolfeLineSearch(double alpha, double c1, double c2) : alpha_(alpha), c1_(c1), c2_(c2) { }
 
     // bisection method for the weak Wolfe conditions
     template <typename Opt, typename Obj> bool pre_update_step(Opt& opt, Obj& obj) {
