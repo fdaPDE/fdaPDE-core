@@ -24,8 +24,7 @@ namespace fdapde {
 // implementation of Broyden–Fletcher–Goldfarb–Shanno algorithm for unconstrained nonlinear optimization
 template <int N, typename... Args> class BFGS {
    private:
-    using vector_t =
-      std::conditional_t<N == Dynamic, Eigen::Matrix<double, Dynamic, 1>, Eigen::Matrix<double, N, 1>>;
+    using vector_t = std::conditional_t<N == Dynamic, Eigen::Matrix<double, Dynamic, 1>, Eigen::Matrix<double, N, 1>>;
     using matrix_t =
       std::conditional_t<N == Dynamic, Eigen::Matrix<double, Dynamic, Dynamic>, Eigen::Matrix<double, N, N>>;
 
@@ -43,8 +42,7 @@ template <int N, typename... Args> class BFGS {
     // constructor
     BFGS() = default;
     BFGS(int max_iter, double tol, double step)
-        requires(sizeof...(Args) != 0)
-        : max_iter_(max_iter), tol_(tol), step_(step) { }
+    requires(sizeof...(Args) != 0) : max_iter_(max_iter), tol_(tol), step_(step) { }
     BFGS(int max_iter, double tol, double step, Args&&... callbacks) :
         callbacks_(std::make_tuple(std::forward<Args>(callbacks)...)), max_iter_(max_iter), tol_(tol), step_(step) { }
     // copy semantic
@@ -66,17 +64,17 @@ template <int N, typename... Args> class BFGS {
         bool stop = false;   // asserted true in case of forced stop
         vector_t zero;
         double error = 0;
-	auto grad = objective.derive();
-	n_iter_ = 0;
+        auto grad = objective.derive();
+        n_iter_ = 0;
         h = step_;
         x_old = x0, x_new = x0;
         if constexpr (N == Dynamic) {   // inv_hessian approximated with identity matrix
             inv_hessian = matrix_t::Identity(x0.rows(), x0.rows());
-	    zero = vector_t::Zero(x0.rows());
+            zero = vector_t::Zero(x0.rows());
         } else {
             inv_hessian = matrix_t::Identity();
-	    zero = vector_t::Zero();
-	}
+            zero = vector_t::Zero();
+        }
         grad_old = grad(x_old);
         if (grad_old.isApprox(zero)) {   // already at stationary point
             optimum_ = x_old;
@@ -96,7 +94,7 @@ template <int N, typename... Args> class BFGS {
             if (grad_new.isApprox(zero)) {   // already at stationary point
                 optimum_ = x_old;
                 value_ = objective(optimum_);
-		if constexpr (sizeof...(Functor) == 1) { (func(value_), ...); }
+                if constexpr (sizeof...(Functor) == 1) { (func(value_), ...); }
                 return optimum_;
             }
             // update inverse hessian approximation
@@ -116,7 +114,7 @@ template <int N, typename... Args> class BFGS {
             x_old = x_new;
             grad_old = grad_new;
             n_iter_++;
-        }	
+        }
         optimum_ = x_old;
         value_ = objective(optimum_);
         if constexpr (sizeof...(Functor) == 1) { (func(value_), ...); }
@@ -124,6 +122,7 @@ template <int N, typename... Args> class BFGS {
     }
     // getters
     vector_t optimum() const { return optimum_; }
+    double step() const { return step_; }
     double value() const { return value_; }
     int n_iter() const { return n_iter_; }
 };

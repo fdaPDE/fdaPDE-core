@@ -67,7 +67,7 @@ template <int N, typename... Args> class GradientDescent {
         h = step_;
         n_iter_ = 0;
         x_old = x0, x_new = x0;
-	auto grad = objective.derive();
+        auto grad = objective.derive();
         grad_old = grad(x_old);
 
         while (n_iter_ < max_iter_ && error > tol_ && !stop) {
@@ -87,11 +87,12 @@ template <int N, typename... Args> class GradientDescent {
         }
         optimum_ = x_old;
         value_ = objective(optimum_);
-	if constexpr (sizeof...(Functor) == 1) { (func(value_), ...); }
+        if constexpr (sizeof...(Functor) == 1) { (func(value_), ...); }
         return optimum_;
     }
     // getters
     vector_t optimum() const { return optimum_; }
+    double step() const { return step_; }
     double value() const { return value_; }
     int n_iter() const { return n_iter_; }
 };

@@ -24,9 +24,9 @@ namespace fdapde {
 // implementation of the backatracking line search method for step selection
 class BacktrackingLineSearch {
    private:
-    double alpha_ = 2.0;
-    double beta_  = 0.5;
-    double gamma_ = 0.5;
+    double alpha_ = 1;      // initial step size
+    double beta_ = 0.5;     // contraction factor: must be between 0 and 1
+    double gamma_ = 1e-4;   // Armijo condition constant
    public:
     // constructors
     BacktrackingLineSearch() = default;
@@ -34,13 +34,10 @@ class BacktrackingLineSearch {
 
     // backtracking based step search
     template <typename Opt, typename Obj> bool pre_update_step(Opt& opt, Obj& obj) {
-        double alpha = alpha_;   // restore to user defined settings
+        double alpha = opt.step();   // restore to user defined settings
         double m = opt.grad_old.dot(opt.update);
-        if (m < 0) {                                                      // descent direction
-            while (obj(opt.x_old) - obj(opt.x_old + alpha * opt.update)   // Armijo–Goldstein condition
-		   + gamma_ * alpha * m < 0) {
-                alpha *= beta_;
-            }
+        if (m < 0) {
+            while (obj(opt.x_old) - obj(opt.x_old + alpha * opt.update) + gamma_ * alpha * m < 0) { alpha *= beta_; }
         }
         opt.h = alpha;
         return false;

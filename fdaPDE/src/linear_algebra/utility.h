@@ -18,10 +18,11 @@
 #define __FDAPDE_LINEAR_ALGEBRA_UTILITY_H__
 
 #include "header_check.h"
+using namespace Eigen::indexing;
 
 namespace fdapde {
 namespace internals {
-    
+
 // builds gaussian matrix
 inline Eigen::Matrix<double, Dynamic, Dynamic>
 gaussian_matrix(std::size_t rows, std::size_t cols, double std = 1.0, int seed = fdapde::random_seed) {
@@ -69,6 +70,67 @@ template <typename Derived> auto powm(const Eigen::MatrixBase<Derived>& m, int i
 }
 template <typename Derived> auto sqrtm(const Eigen::MatrixBase<Derived>& m) { return powm(m, 0.5); }
 
+// view symmetric matrix as vector in scaled upper-triangular format
+inline Eigen::Matrix<double, Dynamic, 1> vector_view(const Eigen::Matrix<double, Dynamic, Dynamic>& S) {
+    // check square matrix
+    int n_dim = S.rows();
+    Eigen::Matrix<double, Dynamic, 1> s(n_dim * (n_dim + 1) / 2);
+    // store diagonal entries
+    for (int i = 0; i < n_dim; ++i) s[i] = S(i, i);
+    // store upper-triangular entries (scaled)
+    // scale off-diagonal by sqrt(2) to preserve Frobenius norm in vector representation
+    int index = 0;
+    for (int i = 0; i < n_dim; ++i) {
+        for (int j = i + 1; j < n_dim; ++j) {
+            s[n_dim + index] = std::sqrt(2.0) * S(i, j);
+            index++;
+        }
+    }
+    return s;
+}
+
+// view vector in scaled upper-triangular format as symmetric matrix
+inline Eigen::Matrix<double, Dynamic, Dynamic> matrix_view(const Eigen::Matrix<double, Dynamic, 1>& s) {
+    // check that vector has valid symmetric matrix length
+    int n_dim = (-1 + std::sqrt(1 + 8 * s.size())) / 2;
+    Eigen::Matrix<double, Dynamic, Dynamic> S(n_dim, n_dim);
+    // fill diagonal entries
+    for (int i = 0; i < n_dim; ++i) S(i, i) = s[i];
+    // fill upper-triangular entries and symmetrize (rescale)
+    int index = 0;
+    for (int i = 0; i < n_dim; ++i) {
+        for (int j = i + 1; j < n_dim; ++j) {
+            S(i, j) = S(j, i) = s[n_dim + index] / std::sqrt(2.0);
+            index++;
+        }
+    }
+    return S;
+}
+
+// extract the k-th component (block of size `size`) from vector V
+Eigen::Matrix<double, Dynamic, 1> get_component(const Eigen::Matrix<double, Dynamic, 1>& V, int k, int size) {
+    Eigen::Matrix<double, Dynamic, 1> v(size);
+    v = V(seqN(k * size, size));
+    return v;
+}
+
+// reshape a vector V into a matrix with `size` rows and inferred number of columns
+Eigen::Matrix<double, Dynamic, Dynamic> to_matrix(const Eigen::Matrix<double, Dynamic, 1>& V, int size) {
+    int n = V.size() / size;
+    Eigen::Matrix<double, Dynamic, Dynamic> M(size, n);
+    for (int k = 0; k < n; ++k) { M.col(k) = get_component(V, k, size); }
+    return M;
+}
+
+// flatten a matrix V (column-wise) into a vector
+Eigen::Matrix<double, Dynamic, 1> to_vector(const Eigen::Matrix<double, Dynamic, Dynamic>& V) {
+    int n = V.cols();
+    int size = V.rows();
+    Eigen::Matrix<double, Dynamic, 1> v(size * n);
+    for (int k = 0; k < n; ++k) { v(seqN(k * size, size)) = V.col(k); }
+    return v;
+}
+
 }   // namespace fdapde
 
-#endif // __FDAPDE_LINEAR_ALGEBRA_UTILITY__
+#endif   // __FDAPDE_LINEAR_ALGEBRA_UTILITY__
