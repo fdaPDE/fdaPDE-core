@@ -32,11 +32,16 @@ public:
         distribution_(0,population_size-1)
     {}
 
+    template <typename Opt> void reset_step(Opt& opt) {
+        assert(opt.population.size() >= 2);
+        distribution_ = std::uniform_int_distribution<int>{0,static_cast<int>(opt.population.size())-1};
+    }
+
     template <typename Opt, typename Obj> bool pre_update_step(Opt& opt, Obj& obj) {
         assert(distribution_.max() == opt.population.size() - 1);
 
         // Perform binary tournament selection
-        for(int i = 0; i < opt.population.size(); i += 2) {
+        for(int i = 0; i < opt.population.size(); i += 1) {
             int id_first = distribution_(opt.rng);
             int id_second = distribution_(opt.rng);
             if(id_first == id_second)

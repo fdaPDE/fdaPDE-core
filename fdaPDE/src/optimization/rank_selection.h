@@ -24,13 +24,33 @@ namespace fdapde {
 
 class RankSelection {
 private:
+    std::vector<int> population_order_;
 
 public:
     // constructors
-    RankSelection() = default;
+    RankSelection(int population_size = 10) {
+        population_order_.reserve(population_size);
+        for(int i = 0; i < population_size; ++i)
+            population_order_.push_back(i);
+    }
+
+    template <typename Opt> void reset_step(Opt& opt) {
+        population_order_.clear();
+        population_order_.reserve(opt.population.size());
+        for(int i = 0; i < opt.population.size(); ++i)
+            population_order_.push_back(i);
+    }
 
     template <typename Opt, typename Obj> bool pre_update_step(Opt& opt, Obj& obj) {
-        
+        std::sort(
+            population_order_.begin(),
+            population_order_.end(),
+            [&](int a, int b) {
+                return opt.population_fitness[a] > opt.population_fitness[b];
+            }
+        );
+
+
         return false;
     }
 };

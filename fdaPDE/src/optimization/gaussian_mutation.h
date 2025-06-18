@@ -24,6 +24,7 @@ namespace fdapde {
 
 class GaussianMutation {
 private:
+    double initial_variance_ = 2.5;
     double variance_ = 2.5;
     double multiplier_ = 0.95;
     std::normal_distribution<double> normal_dist_;
@@ -31,12 +32,17 @@ private:
 public:
     // constructors
     GaussianMutation(double initial_variance, double multiplier):
+        initial_variance_(initial_variance),
         variance_(initial_variance),
         multiplier_(multiplier),
         normal_dist_(0.0, 1.0)
     {}
 
-    template <typename Opt, typename Obj> bool pre_update_step(Opt& opt, Obj& obj) {
+    template <typename Opt> void reset_step(Opt& opt) {
+        variance_ = initial_variance_;
+    }
+
+    template <typename Opt, typename Obj> bool post_update_step(Opt& opt, Obj& obj) {
         // Perform binary tournament selection
         for(auto &vec: opt.population) {
             for(int i = 0; i < vec.rows(); ++i)

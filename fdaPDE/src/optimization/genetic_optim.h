@@ -28,13 +28,13 @@ private:
 
     std::tuple<Args...> callbacks_;
     vector_t optimum_;
-    double value_;                     // objective value at optimum
-    int max_iter_;                     // maximum number of iterations before forced stop
-    int n_iter_ = 0;                   // current iteration number
-    double tol_;                       // tolerance on error before forced stop
-    double variance_;                  // update step
-    int population_size_;              // The size of any given generation
-    unsigned seed_;
+    double value_;        // objective value at optimum
+    int max_iter_;        // maximum number of iterations before forced stop
+    int n_iter_ = 0;      // current iteration number
+    double tol_;          // tolerance on error before forced stop
+    double variance_;     // update step
+    int population_size_; // The size of any given generation
+    unsigned seed_;       // Seed for the RNG
 
 public:
     std::vector<vector_t> population;
@@ -102,6 +102,7 @@ public:
         
         // whether or not the callbacks's stoping criteria are met
         bool stop = false;
+        double fitness_mean = 0.0;
         value_ = std::numeric_limits<double>::max();
         n_iter_ = 0;
 
@@ -110,26 +111,50 @@ public:
             population[i] = x0;
         }
 
+        // Reset the state of all callbacks and sync their state with the 
+        // parameters in GeneticOptim
+        execute_reset_step(*this, callbacks_);
+
         // In the case of this algorithm, post_update... is the mutation process
         // so we apply it before the main loop
         stop |= execute_post_update_step(*this, objective, callbacks_);
         
         while (n_iter_ < max_iter_ && !stop) {
-            // Selection
-            for(int i = 0; i < population_size_; ++i)
+            // Compute the fitness for selection
+            for(int i = 0; i < population_size_; ++i) {
                 population_fitness[i] = objective(population[i]);
+            }
 
+            // pre_update_step should implement a selection algorithm
             stop |= execute_pre_update_step(*this, objective, callbacks_);
+
+            // post_update_step should implement a mutation algorithm
             stop |= execute_post_update_step(*this, objective, callbacks_);
             
-            // Update the current variance
+            // Compute the mean of the population fitness
+            fitness_mean = 0.0;
+            for(int i = 0; i < population_size_; ++i) {
+                fitness_mean += population_fitness[i];
+            }
+            fitness_mean /= static_cast<double>(population_size_);
+
+            // Compute the variance and max of the population fitness
             int current_best = 0;
-            for(int i = 1; i < population_size_; ++i)
-            if(population_fitness[i] < population_fitness[current_best])
-            current_best = i;
-        
+            double variance = 0.0;
+            for(int i = 1; i < population_size_; ++i) {
+                double x = population_fitness[i] - fitness_mean;
+                variance += x*x;
+                if(population_fitness[i] < population_fitness[current_best])
+                    current_best = i;
+            }
+            variance /= static_cast<double>(population_size_-1);
+            // std::cout << "Std dev at " << n_iter_ << " : " << std::sqrt(variance) << std::endl;
+            
+            // Stoping condition
+            stop |= (std::sqrt(variance) <= tol_);
             stop |= execute_stopping_criterion(*this, objective);
             
+            // Update
             ++n_iter_;
             value_ = population_fitness[current_best];
             optimum_ = population[current_best];
