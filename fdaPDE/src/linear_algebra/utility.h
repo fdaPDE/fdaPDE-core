@@ -131,6 +131,46 @@ Eigen::Matrix<double, Dynamic, 1> to_vector(const Eigen::Matrix<double, Dynamic,
     return v;
 }
 
+// compute matrix D where each row is the flattened expm of a symmetric matrix encoded in L
+Eigen::Matrix<double, Dynamic, Dynamic> log_transform(const Eigen::Matrix<double, Dynamic, Dynamic>& D) {
+    int n = D.rows();
+    int p = D.cols();
+    Eigen::Matrix<double, Dynamic, Dynamic> L(n, p);   // each row: vec(expm(M_i)), M_i ∈ Sym_d
+
+    for (int i = 0; i < n; ++i) {
+        // reconstruct symmetric matrix from its vector representation
+        Eigen::Matrix<double, Dynamic, Dynamic> M = matrix_view(D.row(i));
+
+        // compute matrix exponential
+        Eigen::Matrix<double, Dynamic, Dynamic> expM = fdapde::logm(M);
+
+        // flatten row-wise
+        L.row(i) = vector_view(expM);
+    }
+
+    return L;
+}
+
+// compute matrix D where each row is the flattened expm of a symmetric matrix encoded in L
+Eigen::Matrix<double, Dynamic, Dynamic> inv_log_transform(const Eigen::Matrix<double, Dynamic, Dynamic>& L) {
+    int n = L.rows();
+    int p = L.cols();
+    Eigen::Matrix<double, Dynamic, Dynamic> D(n, p);   // each row: vec(expm(M_i)), M_i ∈ Sym_d
+
+    for (int i = 0; i < n; ++i) {
+        // reconstruct symmetric matrix from its vector representation
+        Eigen::Matrix<double, Dynamic, Dynamic> M = matrix_view(L.row(i));
+
+        // compute matrix exponential
+        Eigen::Matrix<double, Dynamic, Dynamic> expM = fdapde::expm(M);
+
+        // flatten row-wise
+        D.row(i) = vector_view(expM);
+    }
+
+    return D;
+}
+
 }   // namespace fdapde
 
 #endif   // __FDAPDE_LINEAR_ALGEBRA_UTILITY__
