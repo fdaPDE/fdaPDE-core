@@ -102,7 +102,7 @@ public:
         delta_grad_memory_(memory_size, vector_t{}),
         delta_x_memory_(memory_size, vector_t{}),
         tol_(tol), step_(step){
-        assert(memory_size_ >= 0);
+        fdapde_assert(memory_size_ >= 0);
     }
 
     /**
@@ -121,7 +121,7 @@ public:
         delta_grad_memory_(memory_size, vector_t{}),
         delta_x_memory_(memory_size, vector_t{}),
         tol_(tol), step_(step){
-        assert(memory_size_ >= 0);
+        fdapde_assert(memory_size_ >= 0);
     }
 
     // copy semantic
