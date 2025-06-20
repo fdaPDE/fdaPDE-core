@@ -28,12 +28,14 @@
 #include "src/optimization/callbacks.h"
 #include "src/optimization/backtracking_line_search.h"
 #include "src/optimization/wolfe_line_search.h"
+
 // algorithms
 #include "src/optimization/grid.h"
 #include "src/optimization/newton.h"
 #include "src/optimization/gradient_descent.h"
 #include "src/optimization/bfgs.h"
 #include "src/optimization/lbfgs.h"
+#include "src/optimization/nelder_mead.h"
 
 // clang-format on
 
