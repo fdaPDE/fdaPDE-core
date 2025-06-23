@@ -265,7 +265,9 @@ template <typename Scalar_, typename DataObj> struct random_access_col_view {
     template <typename... Idxs>
         requires(std::is_convertible_v<Idxs, index_t> && ...) && (sizeof...(Idxs) == Order && !std::is_const_v<DataObj>)
     constexpr reference operator()(Idxs&&... idxs) {
-        return data_->operator()(static_cast<index_t>(idxs_[idxs])...);
+        return internals::apply_index_pack<sizeof...(Idxs)>([&]<int... Ns_>() -> decltype(auto) {
+            return data_((Ns_ == 0 ? static_cast<index_t>(idxs_[idxs]) : idxs)...);
+        });
     }
     template <typename IndexPack>   // access via index-pack object
         requires(internals::is_subscriptable<IndexPack, index_t>)
@@ -275,7 +277,9 @@ template <typename Scalar_, typename DataObj> struct random_access_col_view {
     template <typename... Idxs>
         requires(std::is_convertible_v<Idxs, index_t> && ...) && (sizeof...(Idxs) == Order)
     constexpr const_reference operator()(Idxs&&... idxs) const {
-        return data_->operator()(static_cast<index_t>(idxs_[idxs])...);
+        return internals::apply_index_pack<sizeof...(Idxs)>([&]<int... Ns_>() -> decltype(auto) {
+            return data_((Ns_ == 0 ? static_cast<index_t>(idxs_[idxs]) : idxs)...);
+        });
     }
     template <typename IndexPack>   // access via index-pack object
         requires(internals::is_subscriptable<IndexPack, index_t>)

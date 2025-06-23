@@ -100,6 +100,7 @@ template <int Order, int NComponents> struct FeP {
     static constexpr int n_components = NComponents;
     static constexpr bool is_vector_fe = (n_components != 1);
     fdapde_static_assert(n_components > 0, DEFINITION_OF_FINITE_ELEMENT_WITH_ZERO_OR_LESS_COMPONENTS_IS_ILL_FORMED);
+    static constexpr bool is_hess_zero = Order <= 1;
 
     // dummy template argument enables template specialization of this nested template
     template <int LocalDim, typename dummy = void> struct dof_descriptor {

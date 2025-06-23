@@ -95,8 +95,7 @@ class Polynomial : public ScalarFieldBase<StaticInputSize_, Polynomial<StaticInp
       
         // constructor
         constexpr Derivative() = default;
-        template <typename CoeffVectorType>
-        constexpr Derivative(const CoeffVectorType& coeff_vector, int i) : i_(i) {
+        template <typename CoeffVectorType> constexpr Derivative(const CoeffVectorType& coeff_vector, int i) : i_(i) {
             for (int j = 0; j < n_monomials; ++j) { coeff_vector_[j] = coeff_vector[j]; }
         }
         // evaluate d/dx_i p(x) at point
@@ -182,7 +181,7 @@ class Polynomial : public ScalarFieldBase<StaticInputSize_, Polynomial<StaticInp
         }
     }
     // evaluate polynomial at point
-    template <typename InputType_> constexpr Scalar operator()(const InputType_& p) const {
+    constexpr Scalar operator()(const InputType& p) const {
         Scalar value = coeff_vector_[0];
         if constexpr (Order == 0) return value;
         if constexpr (Order == 1) {   // polynomials of form: c_0 + c_1*x_1 + c_2*x_2 + ... + c_N*x_N

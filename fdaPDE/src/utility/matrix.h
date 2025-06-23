@@ -27,7 +27,32 @@ template <int Rows, int Cols, typename Derived> struct MatrixBase;
 
 [[maybe_unused]] constexpr int RowMajor = 0;
 [[maybe_unused]] constexpr int ColMajor = 1;
-  
+
+namespace internals {
+
+#ifdef __FDAPDE_HAS_EIGEN__
+
+template <typename Derived> struct eigen_xpr_wrap : public Derived {
+    using Derived::Derived;   // inherits Derived constructors
+    eigen_xpr_wrap(const Derived& xpr) : Derived(xpr) { }
+    eigen_xpr_wrap& operator=(const Derived& xpr) {
+        Derived::operator=(xpr);
+        return *this;
+    }
+    eigen_xpr_wrap(Derived&& xpr) : Derived(xpr) { }
+    eigen_xpr_wrap& operator=(Derived&& xpr) {
+        Derived::operator=(xpr);
+        return *this;
+    }
+    // injected additional constants
+    static constexpr int Rows = Derived::RowsAtCompileTime;
+    static constexpr int Cols = Derived::ColsAtCompileTime;
+};
+
+#endif
+
+}   // namespace internals
+
 template <typename Derived>
 struct Transpose : public MatrixBase<Derived::Cols, Derived::Rows, Transpose<Derived>> {
     using Base = MatrixBase<Derived::Cols, Derived::Rows, Transpose<Derived>>;
@@ -39,7 +64,8 @@ struct Transpose : public MatrixBase<Derived::Cols, Derived::Rows, Transpose<Der
 
     constexpr Transpose(const Derived& xpr) : xpr_(xpr) { }
     constexpr Scalar operator()(int i, int j) const { return xpr_(j, i); }
-    constexpr Scalar operator[](int i) const {
+    constexpr Scalar operator[](int i) const
+        requires(Derived::Cols == 1 || Derived::Rows == 1) {
         fdapde_static_assert(
           Derived::Cols == 1 || Derived::Rows == 1, THIS_METHOD_IS_ONLY_FOR_CONSTEXPR_ROW_OR_COLUMN_VECTORS);
         return xpr_[i];
@@ -116,7 +142,8 @@ struct MatrixBinOp : public MatrixBase<Lhs::Rows, Lhs::Cols, MatrixBinOp<Lhs, Rh
 
     constexpr MatrixBinOp(const Lhs& lhs, const Rhs& rhs, BinaryOperation op) : lhs_(lhs), rhs_(rhs), op_(op) { }
     constexpr Scalar operator()(int i, int j) const { return op_(lhs_(i, j), rhs_(i, j)); }
-    constexpr Scalar operator[](int i) const {
+    constexpr Scalar operator[](int i) const
+        requires((Lhs::Cols == 1 && Rhs::Cols == 1) || (Lhs::Rows == 1 && Rhs::Rows == 1)) {
         fdapde_static_assert(
           (Lhs::Cols == 1 && Rhs::Cols == 1) || (Lhs::Rows == 1 && Rhs::Rows == 1),
           THIS_METHOD_IS_ONLY_FOR_CONSTEXPR_ROW_OR_COLUMN_VECTORS);
@@ -139,6 +166,45 @@ constexpr MatrixBinOp<Lhs, Rhs, std::minus<>>
 operator-(const MatrixBase<Lhs::Rows, Lhs::Cols, Lhs>& lhs, const MatrixBase<Rhs::Rows, Rhs::Cols, Rhs>& rhs) {
     return MatrixBinOp<Lhs, Rhs, std::minus<>> {lhs.derived(), rhs.derived(), std::minus<>()};
 }
+
+#ifdef __FDAPDE_HAS_EIGEN__
+
+template <typename Lhs, typename Rhs>
+constexpr MatrixBinOp<Lhs, internals::eigen_xpr_wrap<Rhs>, std::plus<>>
+operator+(const MatrixBase<Lhs::Rows, Lhs::Cols, Lhs>& lhs, const Eigen::MatrixBase<Rhs>& rhs) {
+    fdapde_static_assert(
+      Rhs::RowsAtCompileTime == Lhs::Rows && Rhs::ColsAtCompileTime == Rhs::Cols,
+      INVALID_MATRIX_DIMENSIONS_IN_BINARY_OPERATION);
+    return MatrixBinOp<Lhs, internals::eigen_xpr_wrap<Rhs>, std::plus<>> {lhs.derived(), rhs.derived(), std::plus<>()};
+}
+template <typename Lhs, typename Rhs>
+constexpr MatrixBinOp<internals::eigen_xpr_wrap<Lhs>, Rhs, std::plus<>>
+operator+(const Eigen::MatrixBase<Lhs>& lhs, const MatrixBase<Rhs::Rows, Rhs::Cols, Rhs>& rhs) {
+    fdapde_static_assert(
+      Lhs::RowsAtCompileTime == Rhs::Rows && Lhs::ColsAtCompileTime == Rhs::Cols,
+      INVALID_MATRIX_DIMENSIONS_IN_BINARY_OPERATION);
+    return MatrixBinOp<internals::eigen_xpr_wrap<Lhs>, Rhs, std::plus<>> {lhs.derived(), rhs.derived(), std::plus<>()};
+}
+template <typename Lhs, typename Rhs>
+constexpr MatrixBinOp<Lhs, internals::eigen_xpr_wrap<Rhs>, std::minus<>>
+operator-(const MatrixBase<Lhs::Rows, Lhs::Cols, Lhs>& lhs, const Eigen::MatrixBase<Rhs>& rhs) {
+    fdapde_static_assert(
+      Rhs::RowsAtCompileTime == Lhs::Rows && Rhs::ColsAtCompileTime == Lhs::Cols,
+      INVALID_MATRIX_DIMENSIONS_IN_BINARY_OPERATION);
+    return MatrixBinOp<Lhs, internals::eigen_xpr_wrap<Rhs>, std::minus<>> {
+      lhs.derived(), rhs.derived(), std::minus<>()};
+}
+template <typename Lhs, typename Rhs>
+constexpr MatrixBinOp<internals::eigen_xpr_wrap<Lhs>, Rhs, std::minus<>>
+operator-(const Eigen::MatrixBase<Lhs>& lhs, const MatrixBase<Rhs::Rows, Rhs::Cols, Rhs>& rhs) {
+    fdapde_static_assert(
+      Lhs::RowsAtCompileTime == Rhs::Rows && Lhs::ColsAtCompileTime == Rhs::Cols,
+      INVALID_MATRIX_DIMENSIONS_IN_BINARY_OPERATION);
+    return MatrixBinOp<internals::eigen_xpr_wrap<Lhs>, Rhs, std::minus<>> {
+      lhs.derived(), rhs.derived(), std::minus<>()};
+}
+  
+#endif
 
 template <typename Lhs, typename Rhs, typename BinaryOperation>
 struct MatrixCoeffWiseOp :
@@ -226,7 +292,8 @@ struct MatrixProduct : public MatrixBase<Lhs::Rows, Rhs::Cols, MatrixProduct<Lhs
         for (int k = 0; k < Lhs::Cols; ++k) tmp += lhs_(i, k) * rhs_(k, j);
         return tmp;
     }
-    constexpr Scalar operator[](int i) const {
+    constexpr Scalar operator[](int i) const
+        requires(Lhs::Rows == 1 || Rhs::Cols) {
         fdapde_static_assert(
           (Lhs::Rows == 1 && Lhs::Cols == Rhs::Rows) || (Rhs::Cols == 1 && Lhs::Cols == Rhs::Rows),
           THIS_METHOD_IS_ONLY_FOR_CONSTEXPR_ROW_OR_COLUMN_VECTORS);
@@ -249,6 +316,23 @@ constexpr MatrixProduct<Lhs, Rhs>
 operator*(const MatrixBase<Lhs::Rows, Lhs::Cols, Lhs>& op1, const MatrixBase<Rhs::Rows, Rhs::Cols, Rhs>& op2) {
     return MatrixProduct<Lhs, Rhs> {op1.derived(), op2.derived()};
 }
+
+#ifdef __FDAPDE_HAS_EIGEN__
+  
+template <typename Lhs, typename Rhs>
+constexpr MatrixProduct<Lhs, internals::eigen_xpr_wrap<Rhs>>
+operator*(const MatrixBase<Lhs::Rows, Lhs::Cols, Lhs>& op1, const Eigen::MatrixBase<Rhs>& op2) {
+    fdapde_static_assert(Lhs::Cols == Rhs::RowsAtCompileTime, INVALID_MATRIX_DIMENSIONS_IN_BINARY_OPERATION);
+    return MatrixProduct<Lhs, internals::eigen_xpr_wrap<Rhs>> {op1.derived(), op2.derived()};
+}
+template <typename Lhs, typename Rhs>
+constexpr MatrixProduct<internals::eigen_xpr_wrap<Lhs>, Rhs>
+operator*(const Eigen::MatrixBase<Lhs>& op1, const MatrixBase<Rhs::Rows, Rhs::Cols, Rhs>& op2) {
+    fdapde_static_assert(Lhs::ColsAtCompileTime == Rhs::Rows, INVALID_MATRIX_DIMENSIONS_IN_BINARY_OPERATION);
+    return MatrixProduct<internals::eigen_xpr_wrap<Lhs>, Rhs> {op1.derived(), op2.derived()};
+}
+
+#endif
 
 // kronecker tensor product between matrices
 template <typename Lhs, typename Rhs>
@@ -401,22 +485,7 @@ class Matrix : public MatrixBase<Rows_, Cols_, Matrix<Scalar_, Rows_, Cols_, Nes
     constexpr explicit Matrix(Scalar x, Scalar y, Scalar z) : data_() {   // 3D point constructor
         fdapde_static_assert(Rows * Cols == 3, THIS_METHOD_IS_ONLY_FOR_MATRICES_WITH_THREE_ELEMENTS);
 	data_ = {x, y, z};
-    }
-  
-#ifdef __FDAPDE_HAS_EIGEN__
-    // conversion from Eigen matrix
-    template <typename Scalar__, int Rows__, int Cols__>
-    explicit Matrix(const Eigen::Matrix<Scalar__, Rows__, Cols__>& other) {
-        fdapde_static_assert(
-          Rows__ != Dynamic && Cols__ != Dynamic && Rows__ == Rows && Cols__ == Cols &&
-            std::is_convertible_v<Scalar_ FDAPDE_COMMA Scalar>,
-          INVALID_CONVERSION_FROM_EIGEN_MATRIX_TO_FDAPDE_MATRIX);
-        for (int i = 0; i < Rows; ++i) {
-            for (int j = 0; j < Cols; ++j) { operator()(i, j) = other(i, j); }
-        }
-    }
-#endif
-  
+    }  
     // static constructors
     static constexpr Matrix<Scalar, Rows, Cols> Constant(Scalar c) {
         Matrix<Scalar, Rows, Cols> m;
@@ -427,15 +496,18 @@ class Matrix : public MatrixBase<Rows_, Cols_, Matrix<Scalar_, Rows_, Cols_, Nes
     }
     static constexpr Matrix<Scalar, Rows, Cols> Zero() { return Constant(Scalar(0)); }
     static constexpr Matrix<Scalar, Rows, Cols> Ones() { return Constant(Scalar(1)); }
+    static constexpr Matrix<Scalar, Rows, Cols> NaN() { return Constant(std::numeric_limits<Scalar>::quiet_NaN()); }
     // const access
     constexpr Scalar operator()(int i, int j) const { return data_[i * Cols + j]; }
-    constexpr Scalar operator[](int i) const {
+    constexpr Scalar operator[](int i) const
+        requires(Cols == 1 || Rows == 1) {
         fdapde_static_assert(Cols == 1 || Rows == 1, THIS_METHOD_IS_ONLY_FOR_CONSTEXPR_ROW_OR_COLUMN_VECTORS);
         return data_[i];
     }
     // non-const access
     constexpr Scalar& operator()(int i, int j) { return data_[i * Cols + j]; }
-    constexpr Scalar& operator[](int i) {
+    constexpr Scalar& operator[](int i)
+        requires(Cols == 1 || Rows == 1) {
         fdapde_static_assert(Cols == 1 || Rows == 1, THIS_METHOD_IS_ONLY_FOR_CONSTEXPR_ROW_OR_COLUMN_VECTORS);
         return data_[i];
     }
@@ -465,6 +537,21 @@ class Matrix : public MatrixBase<Rows_, Cols_, Matrix<Scalar_, Rows_, Cols_, Nes
     }
 
 #ifdef __FDAPDE_HAS_EIGEN__
+    // conversion from Eigen matrix
+    template <typename Derived> Matrix(const Eigen::MatrixBase<Derived>& other) {
+        constexpr int Rows__ = Derived::RowsAtCompileTime;
+        constexpr int Cols__ = Derived::ColsAtCompileTime;
+        fdapde_static_assert(
+          Rows__ != Dynamic && Cols__ != Dynamic && Rows__ == Rows && Cols__ == Cols &&
+            std::is_convertible_v<typename Derived::Scalar FDAPDE_COMMA Scalar>,
+          INVALID_CONVERSION_FROM_EIGEN_MATRIX_TO_FDAPDE_MATRIX);
+        for (int i = 0; i < Rows; ++i) {
+            for (int j = 0; j < Cols; ++j) { operator()(i, j) = other(i, j); }
+        }
+    }
+    Eigen::Map<Eigen::Matrix<Scalar_, Rows_, Cols_>> as_eigen_map() {
+        return Eigen::Map<Eigen::Matrix<Scalar_, Rows_, Cols_>>(data_.data());
+    }
     // assignment from Eigen matrix
     template <typename Derived>
     Matrix<Scalar_, Rows_, Cols_, NestAsRefBit_>& operator=(const Eigen::MatrixBase<Derived>& rhs) {
@@ -873,7 +960,8 @@ class Map : public MatrixBase<Rows_, Cols_, Map<Scalar_, Rows_, Cols_, StorageOr
         fdapde_assert(i < Rows && j < Cols);
         return data_[i * rowStride() + j * colStride()];
     }
-    constexpr Scalar operator[](int i) const {
+    constexpr Scalar operator[](int i) const
+        requires(Cols == 1 || Rows == 1) {
         fdapde_static_assert(Cols == 1 || Rows == 1, THIS_METHOD_IS_ONLY_FOR_CONSTEXPR_ROW_OR_COLUMN_VECTORS);
         return data_[i * innerStride()];
     }
@@ -882,7 +970,8 @@ class Map : public MatrixBase<Rows_, Cols_, Map<Scalar_, Rows_, Cols_, StorageOr
         fdapde_assert(i < Rows && j < Cols);
         return data_[i * rowStride() + j * colStride()];
     }
-    constexpr Scalar& operator[](int i) {
+    constexpr Scalar& operator[](int i)
+        requires(Cols == 1 || Rows == 1) {
         fdapde_static_assert(Cols == 1 || Rows == 1, THIS_METHOD_IS_ONLY_FOR_CONSTEXPR_ROW_OR_COLUMN_VECTORS);
         return data_[i * innerStride()];
     }
@@ -913,7 +1002,7 @@ class Map : public MatrixBase<Rows_, Cols_, Map<Scalar_, Rows_, Cols_, StorageOr
     int outer_stride_ = 1;   // increment between two consecutive rows (RowMajor) or columns (ColMajor)
     int inner_stride_ = 1;   // increment between two consecutive entries within a row (RowMajor) or column (ColMajor)
 };
-  
+
 }   // namespace fdapde
 
 #endif   // _FDAPDE_MATRIX_H__

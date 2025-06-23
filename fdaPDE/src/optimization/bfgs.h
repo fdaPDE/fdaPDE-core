@@ -24,8 +24,7 @@ namespace fdapde {
 // implementation of Broyden–Fletcher–Goldfarb–Shanno algorithm for unconstrained nonlinear optimization
 template <int N, typename... Args> class BFGS {
    private:
-    using vector_t =
-      std::conditional_t<N == Dynamic, Eigen::Matrix<double, Dynamic, 1>, Eigen::Matrix<double, N, 1>>;
+    using vector_t = std::conditional_t<N == Dynamic, Eigen::Matrix<double, Dynamic, 1>, Eigen::Matrix<double, N, 1>>;
     using matrix_t =
       std::conditional_t<N == Dynamic, Eigen::Matrix<double, Dynamic, Dynamic>, Eigen::Matrix<double, N, N>>;
 

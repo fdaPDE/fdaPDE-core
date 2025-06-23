@@ -76,7 +76,7 @@ class pow_t {
     int i_ = 0;
    public:
     constexpr explicit pow_t(int i) : i_(i) { }
-    template <typename T> constexpr T operator()(T&& t) const { return std::pow(t, i_); }
+    template <typename Scalar> constexpr Scalar operator()(Scalar&& t) const { return fdapde::pow(t, i_); }
 };
 }   // namespace internals
 
@@ -84,16 +84,16 @@ template <int Size, typename Derived> constexpr auto pow(const ScalarFieldBase<S
     return ScalarFieldUnaryOp<Derived, internals::pow_t>(f.derived(), internals::pow_t(i));
 }
 
-template <typename Lhs_, typename Rhs_, typename BinaryOperation>
-class ScalarFieldBinOp : public ScalarFieldBase<Lhs_::StaticInputSize, ScalarFieldBinOp<Lhs_, Rhs_, BinaryOperation>> {
+template <typename Lhs, typename Rhs, typename BinaryOperation>
+class ScalarFieldBinOp : public ScalarFieldBase<Lhs::StaticInputSize, ScalarFieldBinOp<Lhs, Rhs, BinaryOperation>> {
     fdapde_static_assert(
-      Lhs_::StaticInputSize == Rhs_::StaticInputSize, YOU_MIXED_SCALAR_FUNCTIONS_WITH_DIFFERENT_STATIC_INNER_SIZES);
+      Lhs::StaticInputSize == Rhs::StaticInputSize, YOU_MIXED_SCALAR_FUNCTIONS_WITH_DIFFERENT_STATIC_INNER_SIZES);
     fdapde_static_assert(
-      std::is_convertible_v<typename Lhs_::Scalar FDAPDE_COMMA typename Rhs_::Scalar>,
+      std::is_convertible_v<typename Lhs::Scalar FDAPDE_COMMA typename Rhs::Scalar>,
       YOU_MIXED_SCALAR_FIELDS_WITH_NON_CONVERTIBLE_SCALAR_OUTPUT_TYPES);
    public:
-    using LhsDerived = Lhs_;
-    using RhsDerived = Rhs_;
+    using LhsDerived = Lhs;
+    using RhsDerived = Rhs;
     template <typename T1, typename T2> using Meta = ScalarFieldBinOp<T1, T2, BinaryOperation>;
     using Base =
       ScalarFieldBase<LhsDerived::StaticInputSize, ScalarFieldBinOp<LhsDerived, RhsDerived, BinaryOperation>>;
@@ -105,19 +105,19 @@ class ScalarFieldBinOp : public ScalarFieldBase<Lhs_::StaticInputSize, ScalarFie
     static constexpr int NestAsRef = 0;
     static constexpr int XprBits = LhsDerived::XprBits | RhsDerived::XprBits;
 
-    ScalarFieldBinOp(const Lhs_& lhs, const Rhs_& rhs, BinaryOperation op) requires(StaticInputSize == Dynamic) :
+    ScalarFieldBinOp(const Lhs& lhs, const Rhs& rhs, BinaryOperation op) requires(StaticInputSize == Dynamic) :
         Base(), lhs_(lhs), rhs_(rhs), op_(op) {
         fdapde_assert(lhs.input_size() == rhs.input_size());
     }
-    constexpr ScalarFieldBinOp(const Lhs_& lhs, const Rhs_& rhs, BinaryOperation op)
+    constexpr ScalarFieldBinOp(const Lhs& lhs, const Rhs& rhs, BinaryOperation op)
         requires(StaticInputSize != Dynamic)
         : Base(), lhs_(lhs), rhs_(rhs), op_(op) { }
-    constexpr ScalarFieldBinOp(const Lhs_& lhs, const Rhs_& rhs) : ScalarFieldBinOp(lhs, rhs, BinaryOperation {}) { }
+    constexpr ScalarFieldBinOp(const Lhs& lhs, const Rhs& rhs) : ScalarFieldBinOp(lhs, rhs, BinaryOperation {}) { }
     constexpr Scalar operator()(const InputType& p) const {
         fdapde_static_assert(
           std::is_same_v<LhsInputType FDAPDE_COMMA RhsInputType> ||
             internals::are_related_by_inheritance_v<LhsInputType FDAPDE_COMMA RhsInputType>,
-          YOU_MIXED_SCALAR_FIELDS_WITH_INCOMPATIBLE_INPUT_VECTOR_TYPES);
+          YOU_MIXED_SCALAR_FIELDS_WITH_INCOMPATIBLE_INPUT_TYPES);
         if constexpr (StaticInputSize == Dynamic) { fdapde_assert(p.rows() == Base::input_size()); }
         return op_(lhs_(p), rhs_(p));
     }
@@ -267,7 +267,7 @@ class ScalarField : public ScalarFieldBase<Size, ScalarField<Size, FunctorType_>
           std::is_same_v<FunctorType FDAPDE_COMMA std::function<Scalar(InputType)>> &&
             std::is_convertible_v<
               typename std::invoke_result<LamdaType FDAPDE_COMMA InputType>::type FDAPDE_COMMA Scalar>,
-          INVALID_SCALAR_FUNCTION_ASSIGNMENT);
+          INVALID_LAMBDA_EXPRESSION_ASSIGNMENT);
         f_ = lambda;
         return *this;
     }

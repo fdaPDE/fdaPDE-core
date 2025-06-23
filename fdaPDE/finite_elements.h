@@ -45,6 +45,7 @@ struct finite_element_tag { };
 #include "src/finite_elements/fe_bilinear_form_assembler.h"
 #include "src/finite_elements/fe_linear_form_assembler.h"
 #include "src/finite_elements/fe_mass_assembler.h"
+#include "src/finite_elements/fe_evaluator.h"
 // finite element spaces
 #include "src/finite_elements/lagrange_basis.h"
 #include "src/finite_elements/fe_p.h"

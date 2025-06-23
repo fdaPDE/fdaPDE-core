@@ -46,9 +46,9 @@ template <typename Derived_> class Hessian : public MatrixFieldBase<Derived_::St
     // getters
     constexpr const FunctorType& operator()(int i, int j) { return xpr_(i, j); }
     constexpr Scalar eval(int i, int j, const InputType& p) const { return xpr_.eval(i, j, p); }
-    template <typename InputType, typename Dest> constexpr void eval_at(const InputType& p, Dest& dest) const {
+    template <typename Dest> constexpr void eval_at(const InputType& p, Dest& dest) const {
         xpr_.eval_at(p, dest);
-	return;
+        return;
     }
     constexpr int rows() const { return data_.rows(); }
     constexpr int cols() const { return data_.cols(); }
@@ -66,45 +66,41 @@ template <typename Derived_> class Hessian : public MatrixFieldBase<Derived_::St
 // symbolic function objects
 // 1D spaces
 template <typename XprType> constexpr auto dxx(const XprType& xpr) {
-    fdapde_static_assert(
-      XprType::StaticInputSize >= 1, THIS_FUNCTION_IS_FOR_ONE_DIMENSIONAL_OR_HIGHER_INPUT_SPACES_ONLY);
+    fdapde_static_assert(XprType::StaticInputSize >= 1, THIS_FUNCTION_IS_FOR_ONE_OR_HIGHER_DIMENSIONAL_SPACES_ONLY);
     return Hessian<XprType>(xpr)(0, 0);
 }
 // 2D spaces
 template <typename XprType> constexpr auto dyy(const XprType& xpr) {
-    fdapde_static_assert(
-      XprType::StaticInputSize >= 2, THIS_FUNCTION_IS_FOR_TWO_DIMENSIONAL_OR_HIGHER_INPUT_SPACES_ONLY);
+    fdapde_static_assert(XprType::StaticInputSize >= 2, THIS_FUNCTION_IS_FOR_TWO_OR_HIGHER_DIMENSIONAL_SPACES_ONLY);
     return Hessian<XprType>(xpr)(1, 1);
 }
 template <typename XprType> constexpr auto dxy(const XprType& xpr) {
-    fdapde_static_assert(
-      XprType::StaticInputSize >= 2, THIS_FUNCTION_IS_FOR_TWO_DIMENSIONAL_OR_HIGHER_INPUT_SPACES_ONLY);
+    fdapde_static_assert(XprType::StaticInputSize >= 2, THIS_FUNCTION_IS_FOR_TWO_OR_HIGHER_DIMENSIONAL_SPACES_ONLY);
     return Hessian<XprType>(xpr)(0, 1);
 }
 template <typename XprType> constexpr auto dyx(const XprType& xpr) {
-    fdapde_static_assert(
-      XprType::StaticInputSize >= 2, THIS_FUNCTION_IS_FOR_TWO_DIMENSIONAL_OR_HIGHER_INPUT_SPACES_ONLY);
+    fdapde_static_assert(XprType::StaticInputSize >= 2, THIS_FUNCTION_IS_FOR_TWO_OR_HIGHER_DIMENSIONAL_SPACES_ONLY);
     return Hessian<XprType>(xpr)(1, 0);
 }
 // 3D spaces
 template <typename XprType> constexpr auto dzz(const XprType& xpr) {
-    fdapde_static_assert(XprType::StaticInputSize == 3, THIS_FUNCTION_IS_FOR_THREE_DIMENSIONAL_INPUT_SPACES_ONLY);
+    fdapde_static_assert(XprType::StaticInputSize == 3, THIS_FUNCTION_IS_FOR_THREE_DIMENSIONAL_SPACES_ONLY);
     return Hessian<XprType>(xpr)(2, 2);
 }
 template <typename XprType> constexpr auto dxz(const XprType& xpr) {
-    fdapde_static_assert(XprType::StaticInputSize == 3, THIS_FUNCTION_IS_FOR_THREE_DIMENSIONAL_INPUT_SPACES_ONLY);
+    fdapde_static_assert(XprType::StaticInputSize == 3, THIS_FUNCTION_IS_FOR_THREE_DIMENSIONAL_SPACES_ONLY);
     return Hessian<XprType>(xpr)(0, 2);
 }
 template <typename XprType> constexpr auto dzx(const XprType& xpr) {
-    fdapde_static_assert(XprType::StaticInputSize == 3, THIS_FUNCTION_IS_FOR_THREE_DIMENSIONAL_INPUT_SPACES_ONLY);
+    fdapde_static_assert(XprType::StaticInputSize == 3, THIS_FUNCTION_IS_FOR_THREE_DIMENSIONAL_SPACES_ONLY);
     return Hessian<XprType>(xpr)(2, 0);
 }
 template <typename XprType> constexpr auto dyz(const XprType& xpr) {
-    fdapde_static_assert(XprType::StaticInputSize == 3, THIS_FUNCTION_IS_FOR_THREE_DIMENSIONAL_INPUT_SPACES_ONLY);
+    fdapde_static_assert(XprType::StaticInputSize == 3, THIS_FUNCTION_IS_FOR_THREE_DIMENSIONAL_SPACES_ONLY);
     return Hessian<XprType>(xpr)(1, 2);
 }
 template <typename XprType> constexpr auto dzy(const XprType& xpr) {
-    fdapde_static_assert(XprType::StaticInputSize == 3, THIS_FUNCTION_IS_FOR_THREE_DIMENSIONAL_INPUT_SPACES_ONLY);
+    fdapde_static_assert(XprType::StaticInputSize == 3, THIS_FUNCTION_IS_FOR_THREE_DIMENSIONAL_SPACES_ONLY);
     return Hessian<XprType>(xpr)(2, 1);
 }
 

@@ -63,7 +63,9 @@ template <typename Triangulation_, typename FeType_> class FeSpace {
     template <typename Triangulation__, typename Form__, int Options__, typename... Quadrature__>
     using linear_form_assembly_loop =
       internals::fe_linear_form_assembly_loop  <Triangulation__, Form__, Options__, Quadrature__...>;
-
+    using vector_t = Matrix<double, embed_dim, 1>;
+    using matrix_t = Matrix<double, embed_dim, embed_dim>;
+  
     FeSpace() = default;
     FeSpace(const Triangulation_& triangulation, FeType_ fe) :
         triangulation_(std::addressof(triangulation)), dof_handler_(triangulation) {
@@ -84,51 +86,85 @@ template <typename Triangulation_, typename FeType_> class FeSpace {
     // evaluation
     template <typename InputType>
         requires(std::is_invocable_v<CellShapeFunctionType, InputType>)
-    constexpr auto eval_shape_value(int i, const InputType& p) const {
+    constexpr double eval_shape_value(int i, const InputType& p) const {
         return cell_basis_[i](p);
     }
     template <typename InputType>
         requires(std::is_invocable_v<decltype(std::declval<CellShapeFunctionType>().gradient()), InputType>)
-    constexpr auto eval_shape_grad(int i, const InputType& p) const {
+    constexpr vector_t eval_shape_grad(int i, const InputType& p) const {
         return cell_basis_[i].gradient()(p);
     }
     template <typename InputType>
         requires(std::is_invocable_v<decltype(std::declval<CellShapeFunctionType>().divergence()), InputType>)
-    constexpr auto eval_shape_div(int i, const InputType& p) const {
+    constexpr double eval_shape_div(int i, const InputType& p) const {
         fdapde_static_assert(n_components > 1, THIS_METHOD_IS_FOR_VECTOR_FINITE_ELEMENTS_ONLY);
         return cell_basis_[i].divergence()(p);
     }
     template <typename InputType>
+        requires(std::is_invocable_v<decltype(std::declval<CellShapeFunctionType>().hessian()), InputType>)
+    constexpr matrix_t eval_shape_hess(int i, const InputType& p) const {
+        return cell_basis_[i].hessian()(p);
+    }
+    template <typename InputType>
         requires(std::is_invocable_v<FaceShapeFunctionType, InputType>)
-    constexpr auto eval_face_shape_value(int i, const InputType& p) const {
+    constexpr double eval_face_shape_value(int i, const InputType& p) const {
         return face_basis_[i](p);
     }
     template <typename InputType>
-        requires(std::is_invocable_v<decltype(std::declval<FaceShapeFunctionType>().gradient()), InputType>)    
-    constexpr auto eval_face_shape_grad(int i, const InputType& p) const {
+        requires(std::is_invocable_v<decltype(std::declval<FaceShapeFunctionType>().gradient()), InputType>)
+    constexpr Matrix<double, embed_dim - 1, 1> eval_face_shape_grad(int i, const InputType& p) const {
         return face_basis_[i].gradient()(p);
     }
     template <typename InputType>
         requires(std::is_invocable_v<decltype(std::declval<FaceShapeFunctionType>().divergence()), InputType>)
-    constexpr auto eval_face_shape_div(int i, const InputType& p) const {
+    constexpr double eval_face_shape_div(int i, const InputType& p) const {
         fdapde_static_assert(n_components > 1, THIS_METHOD_IS_FOR_VECTOR_FINITE_ELEMENTS_ONLY);
         return face_basis_[i].divergence()(p);
     }
+    template <typename InputType>
+        requires(std::is_invocable_v<decltype(std::declval<FaceShapeFunctionType>().hessian()), InputType>)
+    constexpr Matrix<double, embed_dim - 1, embed_dim - 1> eval_face_shape_hess(int i, const InputType& p) const {
+        return face_basis_[i].hessian()(p);
+    }
     // evaluation on physical domain
-    // shape function evaluation, skip point location step (cell_id provided as input)
-    template <typename InputType> auto eval_cell_value(int i, int cell_id, const InputType& p) const {
-        // map p to reference cell and evaluate
-        typename DofHandlerType::CellType cell = dof_handler_.cell(cell_id);
-        InputType ref_p = cell.invJ() * (p - cell.node(0));
+    // shape function evaluation, skip point location
+    template <typename InputType>
+    double eval_cell_value(int i, [[maybe_unused]] int cell_id, const InputType& ref_p) const {
         return eval_shape_value(i, ref_p);
     }
-    // evaluate value of the i-th shape function defined on the physical cell containing point p
-    template <typename InputType> auto eval_cell_value(int i, const InputType& p) const {
-        // localize p in physical domain
-        int cell_id = triangulation_->locate(p);
+    // evaluate value of the i-th shape function at physical cell containing point p
+    template <typename InputType> double eval_cell_value(int i, const InputType& p) const {
+        int cell_id = triangulation_->locate(p);   // localize p in physical domain
         if (cell_id == -1) return std::numeric_limits<double>::quiet_NaN();
-	return eval_cell_value(i, cell_id, p);
+        typename DofHandlerType::CellType cell = dof_handler_.cell(cell_id);
+        vector_t ref_p = cell.invJ() * (p - cell.node(0));
+        return eval_shape_value(i, ref_p);
     }
+    // shape function gradient evaluation, skip point location
+    template <typename InputType> vector_t eval_cell_grad(int i, int cell_id, const InputType& ref_p) const {
+        return dof_handler_.cell(cell_id).invJ().transpose() * eval_shape_grad(i, ref_p);
+    }
+    // evaluate value of the i-th shape function gradient at physical cell containing point p
+    template <typename InputType> vector_t eval_cell_grad(int i, const InputType& p) const {
+        int cell_id = triangulation_->locate(p);   // localize p in physical domain
+        if (cell_id == -1) { return vector_t::NaN(); }
+        typename DofHandlerType::CellType cell = dof_handler_.cell(cell_id);
+        vector_t ref_p = cell.invJ() * (p - cell.node(0));
+        return cell.invJ().transpose() * eval_shape_grad(i, ref_p);
+    }
+    // shape function hessian evaluation, skip point location
+    template <typename InputType> matrix_t eval_cell_hess(int i, int cell_id, const InputType& ref_p) const {
+        return dof_handler_.cell(cell_id).invJ().transpose() * eval_shape_hess(i, ref_p);
+    }
+    // evaluate value of the i-th shape function hessian at physical cell containing point p
+    template <typename InputType> matrix_t eval_cell_hess(int i, const InputType& p) const {
+        int cell_id = triangulation_->locate(p);   // localize p in physical domain
+        if (cell_id == -1) { return matrix_t::NaN(); }
+        typename DofHandlerType::CellType cell = dof_handler_.cell(cell_id);
+        vector_t ref_p = cell.invJ() * (p - cell.node(0));
+        return cell.invJ().transpose() * eval_shape_hess(i, ref_p);
+    }
+
     // access i-th basis function on physical domain
     FeFunction<FeSpace<Triangulation_, FeType_>> operator[](int i) {
         fdapde_assert(i < dof_handler_.n_dofs());

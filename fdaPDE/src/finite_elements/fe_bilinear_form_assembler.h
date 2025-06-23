@@ -124,16 +124,15 @@ class fe_bilinear_form_assembly_loop :
         if constexpr (Form::XprBits & int(fe_assembler_flags::compute_physical_quad_nodes)) {
             Base::distribute_quadrature_nodes(begin, end);
         }
-
+        // start assembly loop
+        internals::fe_assembler_packet<embed_dim> fe_packet(n_trial_components, n_test_components);
+	// if hessians are zero, assemble physical hessian once and never update
         constexpr bool test_hess_is_zero = std::all_of(
           test_shape_hess_.data(), test_shape_hess_.data() + test_shape_hess_.size(), [](double x) { return x == 0; });
         constexpr bool trial_hess_is_zero =
           std::all_of(trial_shape_hess_.data(), trial_shape_hess_.data() + trial_shape_hess_.size(), [](double x) {
               return x == 0;
           });
-        // start assembly loop
-        internals::fe_assembler_packet<embed_dim> fe_packet(n_trial_components, n_test_components);
-	// if hessians are zero, assemble physical hessian once and never update
         if constexpr (test_hess_is_zero ) { std::fill_n(fe_packet.test_hess.data(), fe_packet.test_hess.size(), 0.0); }
         if constexpr (trial_hess_is_zero) {
             std::fill_n(fe_packet.trial_hess.data(), fe_packet.trial_hess.size(), 0.0);

@@ -93,7 +93,7 @@ struct random_access_geo_col_view :
     template <typename FieldDescriptor>
     random_access_geo_col_view(
       GeoLayer* geo_data, const std::vector<index_t>& idxs, const FieldDescriptor& desc) noexcept :
-        Base(std::addressof(geo_data->data()), idxs, desc), geo_data_(geo_data) { }
+        Base(geo_data->data(), idxs, desc), geo_data_(geo_data) { }
     // observers
     auto geometry(int i) const { return geo_data_->geometry(this->idxs_[i]); }
     const GeoLayer& geo_data() const { return *geo_data_; }
@@ -291,20 +291,20 @@ struct GeoLayer {
         mem_t geo_data;
         for (int i = 0; i < row_filter.rows(); ++i) {
             auto geometry = row_filter.geometry(i);
-            internals::for_each_index_in_pack<Order>([&]<int Ns>() {
-                if constexpr (is_geo_v<Ns, POINT>) {
-                    for (int i = 0; i < embed_dim[Ns]; ++i) {
-                        std::get<Ns>(geo_data).push_back(std::get<Ns>(geometry)[i]);
+            internals::for_each_index_in_pack<Order>([&]<int Ns_>() {
+                if constexpr (is_geo_v<Ns_, POINT>) {
+                    for (int i = 0; i < embed_dim[Ns_]; ++i) {
+                        std::get<Ns_>(geo_data).push_back(std::get<Ns_>(geometry)[i]);
                     };
                 }
-                if constexpr (is_geo_v<Ns, POLYGON>) { std::get<Ns>(geo_data).push_back(std::get<Ns>(geometry)); }
+                if constexpr (is_geo_v<Ns_, POLYGON>) { std::get<Ns_>(geo_data).push_back(std::get<Ns_>(geometry)); }
             });
         }
 	// initialize geo indexes
-        internals::for_each_index_in_pack<Order>([&, this]<int Ns>() {
-            std::get<Ns>(geo_data_) =
-              std::tuple_element_t<Ns, geo_storage_t>(std::get<Ns>(triangulation_), std::get<Ns>(geo_data));
-        });
+        internals::for_each_index_in_pack<Order>([&, this]<int Ns_>() {
+            std::get<Ns_>(geo_data_) =
+              std::tuple_element_t<Ns_, geo_storage_t>(std::get<Ns_>(triangulation_), std::get<Ns_>(geo_data));
+        });	
     }
     template <typename LayerType>
         requires(LayerType::Order == Order && std::is_same_v<typename LayerType::GeoInfo, GeoInfo>)
@@ -558,7 +558,8 @@ struct GeoLayer {
     // row access
     internals::geo_row_view<This> row(size_t row) { return internals::geo_row_view<This>(this, row); }
     internals::geo_row_view<const This> row(size_t row) const { return internals::geo_row_view<const This>(this, row); }
-    // row filtering operations
+  
+    // row filtering operations (const access)
     template <typename Iterator>
         requires(internals::is_integer_v<typename Iterator::value_type>)
     internals::random_access_geo_row_view<const This> select(Iterator begin, Iterator end) const {
@@ -576,7 +577,25 @@ struct GeoLayer {
     internals::random_access_geo_row_view<const This> select(const LogicalPred& pred) const {
         return internals::random_access_geo_row_view<const This>(this, pred);
     }
-
+    // row filtering operations (non-const access)
+    template <typename Iterator>
+        requires(internals::is_integer_v<typename Iterator::value_type>)
+    internals::random_access_geo_row_view<This> select(Iterator begin, Iterator end) {
+        return internals::random_access_geo_row_view<This>(this, begin, end);
+    }
+    template <typename T>
+        requires(std::is_convertible_v<T, index_t>)
+    internals::random_access_geo_row_view<This> select(const std::initializer_list<T>& idxs) {
+        return internals::random_access_geo_row_view<This>(this, idxs.begin(), idxs.end());
+    }
+    template <typename LogicalPred>
+        requires(
+	  requires(LogicalPred pred, index_t i) { { pred(i) } -> std::convertible_to<bool>; } ||
+          requires(LogicalPred pred, index_t i) { { pred[i] } -> std::convertible_to<bool>; })
+    internals::random_access_geo_row_view<This> select(const LogicalPred& pred) {
+        return internals::random_access_geo_row_view<This>(this, pred);
+    }
+  
     // output stream
     friend std::ostream& operator<<(std::ostream& os, const GeoLayer& data) {
       	int n_rows = std::min(size_t(8), data.rows());

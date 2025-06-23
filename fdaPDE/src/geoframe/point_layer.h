@@ -43,7 +43,7 @@ template <typename Triangulation_> struct point_layer {
         } else {
             fdapde_assert(coords.size() % embed_dim == 0);
             coords_.reserve(coords.size());
-            for (int i = 0, n = coords.size(); i < n; ++i) { coords_[i] = coords[i]; }
+            for (int i = 0, n = coords.size(); i < n; ++i) { coords_.push_back(coords[i]); }
             n_rows_ = coords.size() / embed_dim;
 	}
     }
