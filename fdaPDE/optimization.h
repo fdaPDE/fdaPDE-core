@@ -42,6 +42,7 @@
 #include "src/optimization/bfgs.h"
 #include "src/optimization/lbfgs.h"
 #include "src/optimization/genetic_optim.h"
+#include "src/optimization/nelder_mead.h"
 
 // clang-format on
 

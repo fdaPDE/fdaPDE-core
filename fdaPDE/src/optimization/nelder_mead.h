@@ -51,17 +51,25 @@ private:
 
     void init_simplex_(const vector_t &x0) {
         const int dimension = x0.rows();
+        double infnty_norm = x0.cwiseAbs().maxCoeff();
+        double scale_factor = std::min(std::max(infnty_norm, 1.0), 10.0);
+        double last_coeff = scale_factor * (1.0 - (double)std::sqrt(dimension+1))/(double)(dimension);
 
         // Initialises the vectors with cached values
+        simplex_.clear();
+        vertices_rank_.clear();
+        vertices_values_.clear();
         vertices_rank_.resize(dimension+1, 0);
         vertices_values_.resize(dimension+1, std::numeric_limits<double>::max());
         simplex_.resize(dimension+1, x0);
 
         for(int i = 0; i < dimension; ++i) {
-            double tho = std::abs(simplex_[i+1][i]) < tol_ ? 0.00025: 0.05; 
-            simplex_[i+1][i] += tho;
+            simplex_[i][i] += scale_factor;
             vertices_rank_[i+1] = i+1;
+            simplex_[dimension][i] += last_coeff;
         }
+
+        simplex_[dimension][dimension-1] += last_coeff;
     }
 
 public:
@@ -186,30 +194,20 @@ public:
             for(double val: vertices_values_) {
                 value_mean += val;
             }
-            value_mean /= (double)simplex_.size();
+            value_mean /= (double)vertices_values_.size();
 
-            double variance = 0.0;
+            double std_dev = 0.0;
             for(double val: vertices_values_) {
                 double x = val - value_mean;
-                variance += x*x;
+                std_dev += x*x;
             }
-            variance /= (double)(dimension);
+            std_dev /= (double)(dimension);
+            std_dev = std::sqrt(std_dev);
 
-            if(variance <= tol_) {
+            std::cout << "At i=" << n_iter_ << ", std_dev=" << std_dev << std::endl;
+
+            if(std_dev <= tol_) {
                 done = true;
-            }
-
-            std::cout << "---------- STEP " << n_iter_ << " ----------\n";
-            std::cout << "Variance: " << variance << "\n";
-            for(int i = 0; i < simplex_.size(); ++i) {
-                std::cout << "Simplex " << i << ": ";
-                std::cout << simplex_[i] << "\n\n";
-            }
-
-            for(int i = 0; i < simplex_.size(); ++i) {
-                std::cout << "Rank n " << i << ": ";
-                std::cout << vertices_rank_[i];
-                std::cout << ". With value: " << vertices_values_[vertices_rank_[i]] << "\n\n";
             }
 
             ++n_iter_;

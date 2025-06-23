@@ -45,17 +45,16 @@ public:
     // constructors
     GeneticOptim() = default;
 
-    // GeneticOptim(int max_iter, double tol, double variance, int population_size, unsigned seed = 0)
-    //     requires(sizeof...(Args) != 0):
-    //     seed_(seed),
-    //     max_iter_(max_iter),
-    //     population_size_(population_size),
-    //     population(population_size, vector_t{}),
-    //     population_fitness(population_size, std::numeric_limits<double>::max()),
-    //     tol_(tol), variance_(variance),
-    //     rng(seed) {
-    //     assert(population_size_ >= 0);
-    // }
+    GeneticOptim(int max_iter, double tol, double variance, int population_size, unsigned seed)
+        requires(sizeof...(Args) != 0):
+        max_iter_(max_iter),
+        population_size_(population_size),
+        population(population_size, vector_t{}),
+        population_fitness(population_size, std::numeric_limits<double>::max()),
+        tol_(tol), variance_(variance),
+        rng(seed) {
+        assert(population_size_ >= 0);
+    }
 
     GeneticOptim(int max_iter, double tol, double variance, int population_size, unsigned seed, Args&&... callbacks)
         requires(sizeof...(Args) != 0):
@@ -140,18 +139,18 @@ public:
 
             // Compute the variance and max of the population fitness
             int current_best = 0;
-            double variance = 0.0;
+            double std_dev = 0.0;
             for(int i = 1; i < population_size_; ++i) {
                 double x = population_fitness[i] - fitness_mean;
-                variance += x*x;
+                std_dev += x*x;
                 if(population_fitness[i] < population_fitness[current_best])
                     current_best = i;
             }
-            variance /= static_cast<double>(population_size_-1);
-            // std::cout << "Std dev at " << n_iter_ << " : " << std::sqrt(variance) << std::endl;
+            std_dev /= static_cast<double>(population_size_-1);
+            std_dev = std::sqrt(std_dev);
             
             // Stoping condition
-            stop |= (std::sqrt(variance) <= tol_);
+            stop |= (std_dev <= tol_);
             stop |= execute_stopping_criterion(*this, objective);
             
             // Update

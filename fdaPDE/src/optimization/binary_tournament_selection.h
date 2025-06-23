@@ -28,9 +28,7 @@ private:
 
 public:
     // constructors
-    BinaryTournamentSelection(int population_size = 10):
-        distribution_(0,population_size-1)
-    {}
+    BinaryTournamentSelection() = default;
 
     template <typename Opt> void reset_step(Opt& opt) {
         assert(opt.population.size() >= 2);
