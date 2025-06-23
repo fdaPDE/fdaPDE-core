@@ -29,13 +29,19 @@
 #include "src/optimization/backtracking_line_search.h"
 #include "src/optimization/wolfe_line_search.h"
 
+// Genetic algorithm "plug-ins"
+#include "src/optimization/binary_tournament_selection.h"
+#include "src/optimization/crossover_mutation.h"
+#include "src/optimization/gaussian_mutation.h"
+#include "src/optimization/rank_selection.h"
+
 // algorithms
 #include "src/optimization/grid.h"
 #include "src/optimization/newton.h"
 #include "src/optimization/gradient_descent.h"
 #include "src/optimization/bfgs.h"
 #include "src/optimization/lbfgs.h"
-#include "src/optimization/nelder_mead.h"
+#include "src/optimization/genetic_optim.h"
 
 // clang-format on
 
