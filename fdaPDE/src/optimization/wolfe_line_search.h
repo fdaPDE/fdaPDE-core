@@ -101,6 +101,7 @@ public:
             alpha_curr = std::isinf(alpha_max) ? 2*alpha_curr : (alpha_max + alpha_min)/2;
         }
 	
+        opt.h = alpha_curr;
         return false;
     }
 };
