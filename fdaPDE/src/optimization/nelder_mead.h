@@ -21,11 +21,7 @@
 
 namespace fdapde {
 
-/**
- * @brief Implementation of a perturbed version of the Nelder–Mead algorithm as analysed in [Fajfar, I., Bűrmen, Á. & Puhan, J. The Nelder–Mead simplex algorithm with perturbed centroid for high-dimensional function optimization. Optim Lett 13, 1011–1025 (2019)]
- * 
- * @tparam N dimension of the problem
- */
+// Implementation of Nelder-Mead algorithm for gradient-free unconstrained nonlinear optimization
 template <int N> class NelderMead {
 private:
     using vector_t = std::conditional_t<N == Dynamic, Eigen::Matrix<double, Dynamic, 1>, Eigen::Matrix<double, N, 1>>;
@@ -79,26 +75,11 @@ public:
     // constructors
     NelderMead() = default;
 
-    /**
-     * @brief Construct a new NelderMead instance
-     * 
-     * @param max_iter maximum number of iterations performed
-     * @param memory_size size of the memory used to approximate the inverse hessian matrix in the LBFGH alg.
-     * @param tol tolerance used as the stoping criterion (|\nabla f_k|_2 < tol)
-     */
     NelderMead(int max_iter, double tol):
         max_iter_(max_iter),
         tol_(tol){
     }
 
-    /**
-     * @brief Minimizes a function using the L-BFGS method
-     * 
-     * @tparam ObjectiveT Type of the function to be minimized
-     * @param objective function to be minimized
-     * @param x0 initial point
-     * @param func
-     */
     template <typename ObjectiveT, typename... Functor>
         requires(sizeof...(Functor) < 2) && ((requires(Functor f, double value) { f(value); }) && ...)
     vector_t optimize(ObjectiveT&& objective, const vector_t& x0, Functor&&... func) {
@@ -118,8 +99,8 @@ public:
 	        zero = vector_t::Zero();
         }
 
-        // Implementing the Nelder-Mead simplex algorithm with adaptive parameters
-        // DOI: 10.1007/s10589-010-9329-3
+        // Gao, F., Han, L. Implementing the Nelder-Mead simplex algorithm with adaptive parameters.
+        // Comput Optim Appl 51, 259–277 (2012). https://doi.org/10.1007/s10589-010-9329-3
         alpha_ = 1.0;
         beta_ = 1 + 2.0/(double)dimension;
         gamma_ = 0.75- 2.0/(double)dimension;
@@ -237,25 +218,8 @@ public:
         return optimum_;
     }
     
-    /**
-     * @brief Returns the argmin of the last call to [optimize]
-     * 
-     * @return vector_t 
-     */
     vector_t optimum() const { return optimum_; }
-
-    /**
-     * @brief Returns the minimum of the last call to [optimize]
-     * 
-     * @return double 
-     */
     double value() const { return value_; }
-
-    /**
-     * @brief Returns the number of iterations performed by the method on the last call to [optimize]
-     * 
-     * @return int 
-     */
     int n_iter() const { return n_iter_; }
 };
 

@@ -59,18 +59,6 @@ template <typename Opt, typename Obj> bool execute_stopping_criterion(Opt& optim
     return b;
 }
 
-template <typename Opt, typename... Args>
-void execute_reset_step(Opt& optimizer, std::tuple<Args...>& callbacks) {
-    auto exec_callback = [&](auto&& callback) {
-        if constexpr (requires(std::decay_t<decltype(callback)> c, Opt opt) {
-                          { c.reset_step(opt) } -> std::same_as<void>;
-                      }) {
-            callback.reset_step(optimizer);
-        }
-    };
-    std::apply([&](auto&&... callback) { (exec_callback(callback), ...); }, callbacks);
-}
-
 }   // namespace fdapde
 
 #endif   // __FDAPDE_OPTIMIZATION_CALLBACKS_H__
