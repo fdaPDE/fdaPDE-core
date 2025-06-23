@@ -44,11 +44,13 @@ private:
     std::vector<double> vertices_values_; // Value of each edge
     std::vector<int> vertices_rank_;      // Index into the simplex vector, sorted from best to worst
     
-    double alpha_ = 1.0; // Reflexion coeff
-    double beta_  = 2.0; // Expension coeff
-    double gamma_ = 0.5; // Outer contraction coeff
-    double delta_ = 0.5; // Inner contraction coeff
+    double alpha_ = 0.0; // Reflexion coeff
+    double beta_  = 0.0; // Expension coeff
+    double gamma_ = 0.0; // Outer contraction coeff
+    double delta_ = 0.0; // Inner contraction coeff
 
+    // Wessing, S. Proper initialization is crucial for the Nelder–Mead simplex search.
+    // Optim Lett 13, 847–856 (2019). https://doi.org/10.1007/s11590-018-1284-4
     void init_simplex_(const vector_t &x0) {
         const int dimension = x0.rows();
         double infnty_norm = x0.cwiseAbs().maxCoeff();
@@ -105,17 +107,30 @@ public:
             INVALID_CALL_TO_OPTIMIZE__OBJECTIVE_FUNCTOR_NOT_ACCEPTING_VECTORTYPE);
             
         bool done = false;
+        bool require_shrink = false;
+        n_iter_ = 0;
         vector_t zero;
         const int dimension = x0.rows();
         fdapde_assert(dimension >= 1);
-        if constexpr (N == Dynamic) {   // inv_hessian approximated with identity matrix
+        if constexpr (N == Dynamic) {
 	        zero = vector_t::Zero(x0.rows());
         } else {
 	        zero = vector_t::Zero();
         }
 
+        // Implementing the Nelder-Mead simplex algorithm with adaptive parameters
+        // DOI: 10.1007/s10589-010-9329-3
+        alpha_ = 1.0;
+        beta_ = 1 + 2.0/(double)dimension;
+        gamma_ = 0.75- 2.0/(double)dimension;
+        delta_ = 1.0 - 1.0/(double)dimension;
+
         // Initialise the simplex given x0
         init_simplex_(x0);
+
+        fdapde_assert(vertices_values_.size() == simplex_.size());
+        fdapde_assert(vertices_rank_.size() == simplex_.size());
+        fdapde_assert(x0.rows()+1 == simplex_.size());
 
         // Compute the vertices's values
         for(int i = 0; i < simplex_.size(); ++i)
@@ -128,7 +143,6 @@ public:
             });
 
             // Centroid calculation
-
             vector_t centroid = zero; // centroid of the [dimension] best vertices
             vector_t random_vect = zero;
             for(int i = 0; i < dimension; ++i) {
@@ -144,6 +158,7 @@ public:
             vector_t xr = perturbed_centroid + alpha_*(perturbed_centroid - simplex_[vertices_rank_[dimension]]);
 
             // Cache the values used for the if statements
+            require_shrink = false;
             const double xr_val = objective(xr);
             const double best_val = vertices_values_[vertices_rank_[0]];
             const double worst_val = vertices_values_[vertices_rank_[dimension]];
@@ -172,6 +187,8 @@ public:
                 if (xoc_val <= xr_val) {
                     simplex_[vertices_rank_[dimension]] = xoc;
                     vertices_values_[vertices_rank_[dimension]] = xoc_val;
+                } else {
+                    require_shrink = true;
                 }
             } else {
                 // Inner Contraction
@@ -180,13 +197,17 @@ public:
                 if( xic_val < best_val) {
                     simplex_[vertices_rank_[dimension]] = xic;
                     vertices_values_[vertices_rank_[dimension]] = xic_val;
+                } else {
+                    require_shrink = true;
                 }
             }
 
             // Shrink
-            const vector_t &best_vertex = simplex_[vertices_rank_[0]];
-            for(int i = 1; i < dimension + 1; ++i) {
-                simplex_[vertices_rank_[i]] = best_vertex + delta_ * (simplex_[vertices_rank_[i]] - best_vertex);
+            if(require_shrink) {
+                const vector_t &best_vertex = simplex_[vertices_rank_[0]];
+                for(int i = 1; i < dimension + 1; ++i) {
+                    simplex_[vertices_rank_[i]] = best_vertex + delta_ * (simplex_[vertices_rank_[i]] - best_vertex);
+                }
             }
 
             // Stoping criterion
@@ -203,8 +224,6 @@ public:
             }
             std_dev /= (double)(dimension);
             std_dev = std::sqrt(std_dev);
-
-            std::cout << "At i=" << n_iter_ << ", std_dev=" << std_dev << std::endl;
 
             if(std_dev <= tol_) {
                 done = true;

@@ -34,7 +34,7 @@ private:
 public:
     // constructors
     WolfeLineSearch() = default;
-    WolfeLineSearch(double alpha, double c1, double c2, double c3) : alpha_(alpha), c1_(c1), c2_(c2), c3_(c3) { }
+    WolfeLineSearch(double alpha, double c1, double c2) : alpha_(alpha), c1_(c1), c2_(c2) { }
 
     // bisection method for the weak Wolfe conditions
     template <typename Opt, typename Obj> bool pre_update_step(Opt& opt, Obj& obj) {
