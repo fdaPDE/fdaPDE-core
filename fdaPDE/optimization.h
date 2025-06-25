@@ -33,6 +33,7 @@
 #include "src/optimization/grid.h"
 #include "src/optimization/newton.h"
 #include "src/optimization/gradient_descent.h"
+#include "src/optimization/conjugate_gradient.h"
 #include "src/optimization/bfgs.h"
 #include "src/optimization/lbfgs.h"
 #include "src/optimization/nelder_mead.h"
