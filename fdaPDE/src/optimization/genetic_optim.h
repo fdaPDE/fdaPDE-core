@@ -45,22 +45,23 @@ public:
     // constructors
     GeneticOptim() = default;
 
-    // GeneticOptim(int max_iter, double tol, double variance, int population_size, unsigned seed = 0)
-    //     requires(sizeof...(Args) != 0):
-    //     seed_(seed),
-    //     max_iter_(max_iter),
-    //     population_size_(population_size),
-    //     population(population_size, vector_t{}),
-    //     population_fitness(population_size, std::numeric_limits<double>::max()),
-    //     tol_(tol), variance_(variance),
-    //     rng(seed) {
-    //     assert(population_size_ >= 0);
-    // }
+    GeneticOptim(int max_iter, double tol, double variance, int population_size, unsigned seed = 0)
+        requires(sizeof...(Args) != 0):
+        seed_(seed),
+        max_iter_(max_iter),
+        population_size_(population_size),
+        population(population_size, vector_t{}),
+        population_fitness(population_size, std::numeric_limits<double>::max()),
+        tol_(tol), variance_(variance),
+        rng(seed) {
+        assert(population_size_ >= 0);
+    }
 
     GeneticOptim(int max_iter, double tol, double variance, int population_size, unsigned seed, Args&&... callbacks)
         requires(sizeof...(Args) != 0):
         callbacks_(std::make_tuple(std::forward<Args>(callbacks)...)),
         max_iter_(max_iter),
+        seed_(seed),
         population_size_(population_size),
         population(population_size, vector_t{}),
         population_fitness(population_size, std::numeric_limits<double>::max()),
@@ -148,7 +149,6 @@ public:
                     current_best = i;
             }
             variance /= static_cast<double>(population_size_-1);
-            // std::cout << "Std dev at " << n_iter_ << " : " << std::sqrt(variance) << std::endl;
             
             // Stoping condition
             stop |= (std::sqrt(variance) <= tol_);

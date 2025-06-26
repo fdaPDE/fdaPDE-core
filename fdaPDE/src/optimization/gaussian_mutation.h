@@ -27,15 +27,14 @@ private:
     double initial_variance_ = 2.5;
     double variance_ = 2.5;
     double multiplier_ = 0.95;
-    std::normal_distribution<double> normal_dist_;
+    std::normal_distribution<double> normal_dist_{0.0,1.0};
 
 public:
     // constructors
-    GaussianMutation(double initial_variance, double multiplier):
+    GaussianMutation(double initial_variance = 2.5, double multiplier = 0.95):
         initial_variance_(initial_variance),
         variance_(initial_variance),
-        multiplier_(multiplier),
-        normal_dist_(0.0, 1.0)
+        multiplier_(multiplier)
     {}
 
     template <typename Opt> void reset_step(Opt& opt) {
