@@ -46,7 +46,7 @@ class RSI {
     void compute(const MatrixType& A, int rank) {
         // use as block size the one suggested in "N. Halko, P.G. Martinsson, and J. A. Tropp. (2010) Finding structure
         // with randomness: Probabilistic algorithms for constructing approximate matrix decompositions."
-        compute(A, rank, std::min(2 * static_cast<long int>(rank), std::min(A.rows(), A.cols())));
+        compute(A, rank, fdapde::min(2 * rank, fdapde::min(A.rows(), A.cols())));
     }
     void compute(const MatrixType& A, int rank, int block_sz) {
         rank_ = rank;
@@ -121,9 +121,7 @@ class NysRSI {
         tol_(tol), max_iter_(max_iter), seed_(seed == random_seed ? std::random_device()() : seed) { }
 
     // computes the decomposition
-    void compute(const MatrixType& A, int rank) {
-        compute(A, rank, std::min(2 * static_cast<long int>(rank), A.rows()));
-    }
+    void compute(const MatrixType& A, int rank) { compute(A, rank, fdapde::min(2 * rank, A.rows())); }
     void compute(const MatrixType& A, int rank, int block_sz) {
         rank_ = rank;
         int rows = A.rows();

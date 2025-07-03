@@ -37,7 +37,7 @@ template <typename Triangulation_> struct areal_layer {
                  std::is_convertible_v<subscript_result_of_t<GeoDescriptor, int>, int>)
     areal_layer(Triangulation_* triangulation, const GeoDescriptor& regions) noexcept :
         triangulation_(triangulation), incidence_matrix_(), n_regions_(0) {
-        fdapde_assert(regions.size() == triangulation_->n_cells());
+        fdapde_assert(std::cmp_equal(regions.size() FDAPDE_COMMA triangulation_->n_cells()));
         // count number of regions
         std::unordered_set<int> unique_region_ids;
         for (int i = 0, n = regions.size(); i < n; ++i) {
@@ -68,6 +68,16 @@ template <typename Triangulation_> struct areal_layer {
                 if (regions[i].contains(it->barycenter())) { incidence_matrix_[it->id()] = i; }
             }
 	}
+    }
+    areal_layer(Triangulation_* triangulation, const std::vector<BinaryMatrix<Dynamic, 1>>& regions) noexcept :
+        triangulation_(triangulation), incidence_matrix_(), n_regions_(regions.size()) {
+        incidence_matrix_.resize(n_regions_, triangulation_->n_cells());
+        for (int i = 0; i < n_regions_; ++i) {
+            fdapde_assert(regions[i].rows() == triangulation_->n_cells());
+            for (int j = 0, n = triangulation_->n_cells(); j < n; ++j) {
+                if (regions[i][j]) incidence_matrix_.set(i, j);
+            }
+        }
     }
 
     // observers

@@ -238,8 +238,8 @@ template <typename Scalar_, typename DataObj> struct random_access_col_view {
         idxs_(idxs),
         rows_(idxs.size()),
         blk_sz_(desc.size()),
-        type_id_(desc.type_id()),
-        colname_(desc.colname()) {
+        colname_(desc.colname()),
+        type_id_(desc.type_id()) {
         // set up extents
         if constexpr (Order == 2) { extents_.resize(rows_, blk_sz_); }
         if constexpr (Order == 3) { extents_.resize(rows_, blk_sz_, data_.extent(2)); }
@@ -388,7 +388,9 @@ template <typename DataLayer> struct random_access_row_view {
     random_access_row_view() noexcept = default;
     template <typename Iterator>
     random_access_row_view(DataLayer* data, Iterator begin, Iterator end) : data_(data), idxs_(begin, end) {
-        fdapde_assert(*begin >= 0 && *begin < data->rows() && *(end - 1) >= *begin && *(end - 1) < data->rows());
+        fdapde_assert(
+          *begin >= 0 && std::cmp_less(*begin FDAPDE_COMMA data->rows()) && *(end - 1) >= *begin &&
+          std::cmp_less(*(end - 1) FDAPDE_COMMA data->rows()));
     }
     template <typename Filter>
         requires(requires(Filter f, index_t i) {
@@ -881,7 +883,8 @@ class scalar_data_layer {
                 (sizeof...(Extents_) == Order && is_type_supported_v<Scalar>)
     void resize(Extents_... exts) {
         auto& data = fetch_<Scalar>(data_);
-        if (internals::apply_index_pack<Order>([&]<int... Ns_>() { return ((exts == data.extent(Ns_)) && ...); })) {
+        if (internals::apply_index_pack<Order>(
+              [&]<int... Ns_>() { return ((std::cmp_equal(exts, data.extent(Ns_))) && ...); })) {
             return;   // exts coincide with current size, skip resizing
         }
         data.resize(static_cast<index_t>(exts)...);   // resize storage discarding old values
@@ -963,7 +966,7 @@ class scalar_data_layer {
             }
             if (offset == 0) {
                 resize<SrcType_>(src.size(), 1);
-            } else if (offset == fetch_<SrcType>(data_).extent(1)) {
+            } else if (std::cmp_equal(offset, fetch_<SrcType>(data_).extent(1))) {
                 // double number of columns, guarantees amortized constant time insertion
                 internals::apply_index_pack<Order>([&]<int... Ns_>() {
                     conservative_resize<SrcType_>(
@@ -978,6 +981,7 @@ class scalar_data_layer {
         // copy src into data_
         fetch_<SrcType_>(data_).template slice<1>(offset).assign_inplace_from(src);
         cols_++;
+        if (rows_ == 0) { rows_ = src.size(); }
         return;
     }
     template <typename Src>
@@ -1013,6 +1017,7 @@ class scalar_data_layer {
         // copy src into data_
         fetch_<SrcType_>(data_).block(full_extent, std::pair{offset, offset + src.cols() - 1}).assign_inplace_from(src);
         cols_++;
+        if (rows_ == 0) { rows_ = src.rows(); }
         return;
     }
     // insert src at index position

@@ -21,7 +21,7 @@
 
 namespace fdapde {
 
-// factorial function n!
+// factorial of n
 constexpr int factorial(const int n) {
     fdapde_constexpr_assert(n >= 0);
     int factorial_ = 1;
@@ -33,12 +33,12 @@ constexpr int factorial(const int n) {
     }
     return factorial_;
 }
-// binomial coefficient function n over m
+// binomial coefficient n over m
 constexpr int binomial_coefficient(const int n, const int m) {
     if (m == 0 || n == m) return 1;
     return factorial(n) / (factorial(m) * factorial(n - m));
 }
-// linearized binomial_coefficient(n, k) x k matrix of combinations of k elements from a set of n
+// binomial_coefficient(n, k) x k matrix of combinations of k elements from a set of n
 constexpr std::vector<int> combinations(int k, int n) {
     std::vector<bool> bitmask(k, 1);
     bitmask.resize(n, 0);
@@ -57,8 +57,29 @@ constexpr std::vector<int> combinations(int k, int n) {
     return result;
 }
 
-// unsigned integer division with round up
-constexpr int int_ceil(unsigned int a, unsigned int b) { return a / b + (a % b != 0); }
+// integer division with round up
+template <typename T1, typename T2>
+    requires(internals::is_integer_v<T1> && internals::is_integer_v<T2>)
+constexpr std::common_type_t<T1, T2> int_ceil(T1 a, T2 b) {
+    return ((a ^ b) >= 0) ? a / b + (a % b != 0) : a / b;
+}
+// integer division with round down
+template <typename T1, typename T2>
+    requires(internals::is_integer_v<T1> && internals::is_integer_v<T2>)
+constexpr std::common_type_t<T1, T2> int_floor(T1 a, T2 b) {
+    return ((a ^ b) < 0 && a % b != 0) ? a / b - 1 : a / b;
+}
+
+// min function with common type conversion
+template <typename T1, typename T2> std::common_type_t<T1, T2> min(T1 a, T2 b) {
+    using T = std::common_type_t<T1, T2>;
+    return std::min<T>(static_cast<T>(a), static_cast<T>(b));
+}
+// max function with common type conversion
+template <typename T1, typename T2> std::common_type_t<T1, T2> max(T1 a, T2 b) {
+    using T = std::common_type_t<T1, T2>;
+    return std::max<T>(static_cast<T>(a), static_cast<T>(b));
+}
 
 // test for floating point equality
 [[maybe_unused]] constexpr double double_tolerance = 1e-10;
@@ -99,13 +120,16 @@ constexpr T log1pexp(T x) {
     return x + std::exp(-x);
 }
 
+// constexpr absoulte value
+template <typename T> requires(std::is_signed_v<T>) constexpr T abs(T x) { return x < 0 ? -x : x; }
+
 // constexpr square root
 template <typename T>
     requires(std::is_floating_point_v<T>)
 constexpr T sqrt(T x) {
     auto heron_method = [](T x) {
         T curr = x, prev = 0;
-        while (std::abs(curr - prev) > machine_epsilon) {
+        while (fdapde::abs(curr - prev) > machine_epsilon) {
             prev = curr;
             curr = 0.5 * (curr + x / curr);
         }

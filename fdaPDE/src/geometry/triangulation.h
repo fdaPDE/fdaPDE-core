@@ -396,7 +396,7 @@ template <int N> class Triangulation<2, N> : public TriangulationBase<2, N, Tria
 	   7, 2,  5, 2,  5,  9, 9, 5,  8, 9,  4, 8, 4,  8,  1,  4,  1, 6};
         // normalize to unit sphere
         constexpr double norm = fdapde::sqrt(a * a + b * b);
-        std::for_each(ico_nodes.begin(), ico_nodes.end(), [](double& v) { v /= norm; });
+        std::for_each(ico_nodes.begin(), ico_nodes.end(), [&](double& v) { v /= norm; });
 
 	// refinment
         using edge_t = std::array<int, n_nodes_per_edge>;

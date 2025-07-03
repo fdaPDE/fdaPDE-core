@@ -1345,7 +1345,6 @@ class MdArray : public internals::md_handler_base<MdArray<Scalar_, Extents_, Lay
                   extents_t::static_extents[i] == block_t::static_extents[i]);
             }
         }
-	int i = 0;
         if constexpr (extents_t::DynamicOrder > 0) {
             // to avoid aliasing, first copy data, then update mapping
             if (Base::size() != other.size()) { data_.resize(other.size()); }

@@ -98,7 +98,7 @@ class RBKI {
             m += block_sz;
         }
         // store result
-        rank = std::min(static_cast<int>(svd.singularValues().size()), rank);
+        rank = fdapde::min(svd.singularValues().size(), rank);
         rank_ = rank;
         Sigma_ = svd.singularValues().head(rank);
         U_ = Q.leftCols(m) * svd.matrixU().leftCols(rank);
@@ -207,7 +207,7 @@ class NysRBKI {
             res_err = std::sqrt(2) * E.colwise().template lpNorm<2>().maxCoeff();
         }
 	// store result
-        rank = std::min(svd.singularValues().size(), static_cast<long int>(rank));
+        rank = fdapde::min(svd.singularValues().size(), rank);
         U_ = X.leftCols((i + 1) * block_sz) * svd.matrixU().leftCols(rank);
         Lambda_ = (svd.singularValues().head(rank).array().pow(2) - shift).matrix();
         for (int i = 0; i < Lambda_.rows(); ++i) {   // set to zero possible negative eigenvalues due to epsilon shift

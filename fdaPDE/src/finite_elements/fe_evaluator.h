@@ -70,7 +70,6 @@ template <typename Form_> struct fe_pointwise_evaluator_loop {
 
     void assemble(std::vector<Eigen::Triplet<double>>& triplet_list) const {
         int n_shape_functions = fe_space_->n_shape_functions();
-        int n_dofs = fe_space_->n_dofs();
         int n_locs = locs_.rows();
         triplet_list.reserve(n_locs * n_shape_functions);
         internals::fe_assembler_packet<embed_dim> fe_packet(n_components);

@@ -43,7 +43,7 @@ internals::table_reader<T> read_table(const std::string& filename, bool header =
     if (!std::filesystem::exists(filepath)) { throw std::runtime_error("File " + filename + " not found."); }
 
     // dispatch to table_reader depending on extension
-    std::string ext = filepath.extension();
+    std::string ext = filepath.extension().string();
     if (ext == ".csv") { return read_csv<T>(filename, header, index_col); }
     if (ext == ".txt") { return read_txt<T>(filename, header, index_col); }
     throw std::runtime_error("Unable to parse file " + filename + ": unsupported format.");

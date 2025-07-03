@@ -402,7 +402,7 @@ class dbf_reader {
     }
     template <typename T> std::vector<T> get_as(std::string colname) const {
         fdapde_assert(data_.count(colname) == 1);
-        if constexpr (std::is_same<T, std::string>::value) {
+        if constexpr (std::is_same_v<T, std::string>) {
             std::vector<std::string> values;
             values.reserve(data_.at(colname).size());
             for (const auto& v : data_.at(colname)) {
@@ -418,10 +418,10 @@ class dbf_reader {
         } else {
             std::vector<T> values;
 	    values.reserve(data_.at(colname).size());
-            T val {};
             for (const auto& v : data_.at(colname)) {
-                std::from_chars(v.data(), v.data() + v.size(), val);
-                values.push_back(val);
+                if constexpr (std::is_same_v<T, double>) values.push_back(internals::stod(v));
+                if constexpr (std::is_same_v<T, int   >) values.push_back(internals::stoi(v));
+                if constexpr (std::is_same_v<T, bool  >) values.push_back(internals::stoi(v) == 0 ? true : false);
             }
             return values;
         }
@@ -444,7 +444,7 @@ class SHPFile {
         std::filesystem::path filepath(filename);
         if (!std::filesystem::exists(filepath)) { throw std::runtime_error("File " + filename + " not found."); }
         if (filepath.extension() == ".shp") {
-            filename_ = filepath.parent_path() / filepath.stem();
+            filename_ = (filepath.parent_path() / filepath.stem()).string();
         } else {
             throw std::runtime_error(filename + ": not a valid .shp file.");
         }
@@ -474,6 +474,7 @@ class SHPFile {
     std::vector<std::pair<std::string, char>> field_descriptors() const { return dbf_.field_descriptors(); }
     int shape_type() const { return shp_.shape_type(); }
     int n_records() const { return shp_.n_records(); }
+    const std::string& gcs() const { return gcs_; }
     // geometry
     const auto& point(int index) const { return shp_.point(index); }
     const auto& polyline(int index) const { return shp_.polyline(index); }
@@ -492,6 +493,7 @@ class SHPFile {
         os << "shape_type:        " << shape_type << std::endl;
         os << "file size:         " << sf.shp().header().file_length * 2 << " Bytes" << std::endl;
         os << "number of records: " << sf.shp().n_records() << std::endl;
+        os << "geodesic CRS:      " << sf.gcs_ << std::endl;
         os << "bounding box:      "
            << "(" << sf.shp().bbox()[0] << ", " << sf.shp().bbox()[1] << ", " << sf.shp().bbox()[2] << ", "
            << sf.shp().bbox()[3] << ")" << std::endl;
