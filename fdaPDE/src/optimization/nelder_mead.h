@@ -128,14 +128,21 @@ public:
             vector_t random_vect = zero;
             for(int i = 0; i < dimension; ++i) {
                 centroid += simplex_[vertices_rank_[i]];
-                random_vect[i] = normal_dist_(rng_);
+                if(dimension >= 10) {
+                    random_vect[i] = normal_dist_(rng_);
+                }
             }
             centroid /= (double)(dimension);
-            random_vect /= random_vect.norm();
+            if(dimension >= 10) {
+                random_vect /= random_vect.norm();
+            }
             
             // Perturbation of the centroid to enhance performance for large dimensions
             // Optim Lett 13, 1011–1025 (2019). https://doi.org/10.1007/s11590-018-1306-2
-            vector_t perturbed_centroid = centroid + 0.1 * random_vect * (simplex_[vertices_rank_[0]] - simplex_[vertices_rank_[dimension]]).norm();
+            vector_t perturbed_centroid = centroid;
+            if(dimension >= 10) {
+                perturbed_centroid += 0.1 * random_vect * (simplex_[vertices_rank_[0]] - simplex_[vertices_rank_[dimension]]).norm();
+            }
             vector_t xr = perturbed_centroid + alpha_*(perturbed_centroid - simplex_[vertices_rank_[dimension]]);
 
             // Cache the values used for the if statements
