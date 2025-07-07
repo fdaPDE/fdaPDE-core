@@ -75,9 +75,10 @@ public:
     // constructors
     NelderMead() = default;
 
-    NelderMead(int max_iter, double tol):
+    NelderMead(int max_iter, double tol, unsigned int seed = 0u):
         max_iter_(max_iter),
-        tol_(tol){
+        tol_(tol),
+        rng_(seed){
     }
 
     template <typename ObjectiveT, typename... Functor>
@@ -103,7 +104,7 @@ public:
         // Comput Optim Appl 51, 259–277 (2012). https://doi.org/10.1007/s10589-010-9329-3
         alpha_ = 1.0;
         beta_ = 1 + 2.0/(double)dimension;
-        gamma_ = 0.75- 2.0/(double)dimension;
+        gamma_ = 0.75- 1.0/(double)(2*dimension);
         delta_ = 1.0 - 1.0/(double)dimension;
 
         // Initialise the simplex given x0
