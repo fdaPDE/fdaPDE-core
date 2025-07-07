@@ -32,32 +32,32 @@ private:
     int max_iter_;        // maximum number of iterations before forced stop
     int n_iter_ = 0;      // current iteration number
     double tol_;          // tolerance on error before forced stop
-    double variance_;     // update step
     int population_size_; // The size of any given generation
     unsigned seed_;       // Seed for the RNG
-
+    
 public:
     std::vector<vector_t> population;
     std::vector<double> population_fitness;
     std::mt19937 rng;
+    double initial_variance;     // update step
 
 public:
     // constructors
     GeneticOptim() = default;
 
-    GeneticOptim(int max_iter, double tol, double variance, int population_size, unsigned seed = 0)
+    GeneticOptim(int max_iter, double tol, double initial_variance, int population_size, unsigned seed = 0)
         requires(sizeof...(Args) != 0):
         seed_(seed),
         max_iter_(max_iter),
         population_size_(population_size),
         population(population_size, vector_t{}),
         population_fitness(population_size, std::numeric_limits<double>::max()),
-        tol_(tol), variance_(variance),
+        tol_(tol), initial_variance(initial_variance),
         rng(seed) {
         assert(population_size_ >= 0);
     }
 
-    GeneticOptim(int max_iter, double tol, double variance, int population_size, unsigned seed, Args&&... callbacks)
+    GeneticOptim(int max_iter, double tol, double initial_variance, int population_size, unsigned seed, Args&&... callbacks)
         requires(sizeof...(Args) != 0):
         callbacks_(std::make_tuple(std::forward<Args>(callbacks)...)),
         max_iter_(max_iter),
@@ -65,7 +65,7 @@ public:
         population_size_(population_size),
         population(population_size, vector_t{}),
         population_fitness(population_size, std::numeric_limits<double>::max()),
-        tol_(tol), variance_(variance),
+        tol_(tol), initial_variance(initial_variance),
         rng(seed) {
         assert(population_size_ >= 0);
     }
@@ -79,14 +79,14 @@ public:
         seed_(other.seed_),
         tol_(other.tol_),
         population(other.population),
-        variance_(other.variance_){
+        initial_variance(other.initial_variance){
     }
     
     GeneticOptim& operator=(const GeneticOptim& other) {
         max_iter_ = other.max_iter_;
         tol_ = other.tol_;
         population_fitness = other.population_fitness;
-        variance_ = other.variance_;
+        initial_variance = other.initial_variance;
         population_size_ = other.population_size_;
         callbacks_ = other.callbacks_;
         seed_ = other.seed_;

@@ -38,6 +38,7 @@ public:
     {}
 
     template <typename Opt> void reset_step(Opt& opt) {
+        initial_variance_ = opt.initial_variance;
         variance_ = initial_variance_;
     }
 
