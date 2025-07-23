@@ -141,7 +141,128 @@ constexpr bool point_in_2d_tri(const PointT& a, const PointT& t1, const PointT& 
            (t2[0] - a[0]) * (t3[1] - a[1]) >= (t3[0] - a[0]) * (t2[1] - a[1]);
 }
 
-  // then we can detect if a diagonal is fully contained in a polygon
+
+// checks if point D is inside the circumcircle of the triangle (A, B, C) (Delaunay criterion)
+template <typename PointT>
+    requires(internals::is_subscriptable<PointT, int>)
+constexpr bool in_circle(const PointT& A, const PointT& B, const PointT& C, const PointT& D) {
+    double Ax = A[0] - D[0], Ay = A[1] - D[1];
+    double Bx = B[0] - D[0], By = B[1] - D[1];
+    double Cx = C[0] - D[0], Cy = C[1] - D[1];
+
+    double det = Ax * (By * (Cx * Cx + Cy * Cy) - Cy * (Bx * Bx + By * By)) -
+                 Ay * (Bx * (Cx * Cx + Cy * Cy) - Cx * (Bx * Bx + By * By)) +
+                 (Ax * Ax + Ay * Ay) * (Bx * Cy - By * Cx);
+
+    return det > 0;  // D is inside the circumcircle if determinant is positive
+}
+
+// checks if a point is inside a polygon or not 
+// algorithm of Ray-Casting 
+template <typename Derived, typename PointT>
+constexpr bool point_in_polygon(const Eigen::MatrixBase<Derived>& polygon, const PointT& p) {
+
+    const int n = polygon.rows();
+    bool inside = false;
+    for (int i = 0, j = n - 1; i < n; j = i++) {
+        if (((polygon(i, 1) > p[1]) != (polygon(j, 1) > p[1])) &&
+            (p[0] < (polygon(j, 0) - polygon(i, 0)) * (p[1] - polygon(i, 1)) /
+                      (polygon(j, 1) - polygon(i, 1)) +
+                   polygon(i, 0))) {
+            inside = !inside;
+        }
+    }
+    return inside;
+}
+
+// checks whether a point `p` is inside a polygon `polygon`, also accounting for internal holes
+template <typename Derived, typename PointT>
+constexpr bool is_point_in_polygon(const Eigen::MatrixBase<Derived>& boundary,
+                                       const std::vector<std::vector<Eigen::Matrix<double, Eigen::Dynamic, 2>>>& holes,
+                                       const PointT& p) {
+    if (!point_in_polygon(boundary, p)) return false;
+
+    for(const auto& hole_vector: holes ){
+    for (const auto& hole : hole_vector) {
+        if (point_in_polygon(hole, p)){
+            return false;
+        }
+    }}
+    return true;
+}
+
+// computes circumcenter of triangle given its 2D coordinates
+template <typename PointT>
+requires(internals::is_subscriptable<PointT, int>)
+constexpr PointT circumcenter(const PointT& A, const PointT& B, const PointT& C) {
+    double x1 = A[0], y1 = A[1];
+    double x2 = B[0], y2 = B[1];
+    double x3 = C[0], y3 = C[1];
+
+    double D = 2.0 * (x1*(y2 - y3) + x2*(y3 - y1) + x3*(y1 - y2));
+    
+    double x1sq = x1 * x1 + y1 * y1;
+    double x2sq = x2 * x2 + y2 * y2;
+    double x3sq = x3 * x3 + y3 * y3;
+
+    double Ux = (x1sq*(y2 - y3) + x2sq*(y3 - y1) + x3sq*(y1 - y2)) / D;
+    double Uy = (x1sq*(x3 - x2) + x2sq*(x1 - x3) + x3sq*(x2 - x1)) / D;
+
+    return PointT(Ux, Uy);
+}
+
+// detects if p is inside circle of diameter ab
+template <typename PointT>
+    requires(internals::is_subscriptable<PointT, int>)
+constexpr bool is_encroached(const PointT& p, const PointT& a, const PointT& b) {
+    PointT m = 0.5 * (a + b);  // midpoint
+    double radius_sq = 0.25 * (a - b).squaredNorm();
+    double dist_sq = (p - m).squaredNorm();
+    return dist_sq < radius_sq - machine_epsilon; 
+}
+
+// computes the angle between two segments that share vertex p in 2D (counterclockwise)
+// the angle is in degrees
+template <typename PointT>
+    requires(internals::is_subscriptable<PointT, int>)
+constexpr double angle_between(const PointT& a, const PointT& p, const PointT& b) {
+    PointT v1 = a - p;
+    PointT v2 = b - p;
+    double dot = v1.dot(v2);
+    double norm1 = std::sqrt(v1.squaredNorm());
+    double norm2 = std::sqrt(v2.squaredNorm());
+
+    double cos_theta = dot / (norm1 * norm2);
+    cos_theta = std::fmax(-1.0, std::fmin(1.0, cos_theta));  
+
+    double angle_rad = std::acos(cos_theta);
+    // 2D vector product to dtermine orientation
+    double cross = v1[0] * v2[1] - v1[1] * v2[0];
+    // if cross > 0: angle is clockwise, so we need to subtract from 2 * pi since boundary is counterclockwise oriented
+    if (cross > 0)
+        angle_rad = 2 * M_PI - angle_rad;
+
+    return angle_rad * 180.0 / M_PI;
+}
+
+// checks if the angle between two segments that share vertex p in 2D is acute
+template <typename PointT>
+    requires(internals::is_subscriptable<PointT, int>)
+constexpr bool is_angle_acute(const PointT& a, const PointT& p, const PointT& b) {
+    return angle_between(a, p, b) < 90.0 - machine_epsilon;
+}
+
+// calculates segment ab's length (2D)
+template <typename PointT>
+    requires(internals::is_subscriptable<PointT, int>)
+constexpr double segment_length(const PointT& a, const PointT& b) {
+    const double dx = a[0] - b[0];
+    const double dy = a[1] - b[1];
+    return std::sqrt(dx * dx + dy * dy);
+}
+
+
+// then we can detect if a diagonal is fully contained in a polygon
 
   // 3D geometry
 

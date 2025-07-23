@@ -159,6 +159,7 @@ template <int Order_, int EmbedDim_> class Simplex {
     boundary_iterator boundary_end() const requires(Order_ >= 1) { return boundary_iterator(Order_ + 1, this); }
 
     // finds the best approximation of p in the simplex (q \in simplex : q = \argmin_{t \in simplex}{\norm{t - p}})
+    /*
     Eigen::Matrix<double, embed_dim, 1> nearest(const Eigen::Matrix<double, embed_dim, 1>& p) const {
         Eigen::Matrix<double, local_dim + 1, 1> q = barycentric_coords(p);
 	// check if point inside simplex
@@ -183,7 +184,7 @@ template <int Order_, int EmbedDim_> class Simplex {
             Simplex<Order_ - 1, embed_dim> s(coords_(Eigen::all, std::vector<int>(idx.begin(), idx.end() - 1)));
             return s.nearest(p);
         }
-    }
+    }*/
   
    protected:
     void initialize() {

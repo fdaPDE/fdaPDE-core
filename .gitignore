@@ -24,6 +24,9 @@ experiments/test_RSVD/performances.csv
 #plots
 *.pdf
 *.png
+*.1.node
+*.1.ele
+*.1.poly
 
 #help files
 *.csv
@@ -34,3 +37,4 @@ experiments/test_RSVD/performances.csv
 
 #some test directories
 experiments/
+.qodo

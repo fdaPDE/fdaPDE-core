@@ -39,10 +39,11 @@
 #include "src/geometry/projection.h"
 // data structures
 #include "src/geometry/triangulation.h"
-#include "src/geometry/interval.h"
+//#include "src/geometry/interval.h"
 #include "src/geometry/linear_network.h"
 #include "src/geometry/dcel.h"
 #include "src/geometry/polygon.h"
+#include "src/geometry/delaunay.h"
 
 // clang-format on
 

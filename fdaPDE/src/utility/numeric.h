@@ -38,7 +38,7 @@ constexpr int binomial_coefficient(const int n, const int m) {
     if (m == 0 || n == m) return 1;
     return factorial(n) / (factorial(m) * factorial(n - m));
 }
-// binomial_coefficient(n, k) x k matrix of combinations of k elements from a set of n
+  
 constexpr std::vector<int> combinations(int k, int n) {
     std::vector<bool> bitmask(k, 1);
     bitmask.resize(n, 0);
