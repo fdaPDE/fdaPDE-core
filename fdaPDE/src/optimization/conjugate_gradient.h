@@ -20,103 +20,110 @@
 #include "header_check.h"
 
 namespace fdapde {
+namespace internals {
 
-// implementation of Conjugate Gradient method for unconstrained nonlinear optimization
-template <int N, typename... Args> class ConjugateGradient {
+template <int N, typename DirectionUpdate> class conjugate_gradient_impl {
    private:
-    using vector_t = 
-        std::conditional_t<N == Dynamic, Eigen::Matrix<double, Dynamic, 1>, Eigen::Matrix<double, N, 1>>;
+    using vector_t = std::conditional_t<N == Dynamic, Eigen::Matrix<double, Dynamic, 1>, Eigen::Matrix<double, N, 1>>;
     using matrix_t =
-        std::conditional_t<N == Dynamic, Eigen::Matrix<double, Dynamic, Dynamic>, Eigen::Matrix<double, N, N>>;
+      std::conditional_t<N == Dynamic, Eigen::Matrix<double, Dynamic, Dynamic>, Eigen::Matrix<double, N, N>>;
 
-    std::tuple<Args...> callbacks_ {};
     vector_t optimum_;
-    double value_;     // objective value at optimum
+    double value_;                 // objective value at optimum
+    int n_iter_ = 0;               // current iteration number
+    std::vector<double> values_;   // explored objective values during optimization
+
     int max_iter_;     // maximum number of iterations before forced stop
     double tol_;       // tolerance on error before forced stop
     double step_;      // update step
-    int n_iter_ = 0;   // current iteration number
-    bool use_polak_ribiere_ = true; // If set to false, use Fletcher-Reave, else use Polak-Ribière to calculate beta   
-
    public:
-    vector_t x_old, x_new, update, dir, grad_old, grad_new;
+    static constexpr bool gradient_free = false;
+    static constexpr int static_input_size = N;
+    vector_t x_old, x_new, update, grad_old, grad_new;
     double h;
-
     // constructor
-    ConjugateGradient() = default;
-
-    ConjugateGradient(int max_iter, double tol, double step, bool use_polak_ribiere = true)
-        requires(sizeof...(Args) != 0)
-        : max_iter_(max_iter), tol_(tol), step_(step), use_polak_ribiere_(use_polak_ribiere) { }
-
-    ConjugateGradient(int max_iter, double tol, double step, bool use_polak_ribiere, Args&&... callbacks) :
-        callbacks_(std::make_tuple(std::forward<Args>(callbacks)...)), max_iter_(max_iter), tol_(tol), step_(step), use_polak_ribiere_(use_polak_ribiere) { }
-
-    // copy semantic
-    ConjugateGradient(const ConjugateGradient& other) :
-        callbacks_(other.callbacks_), max_iter_(other.max_iter_), tol_(other.tol_), step_(other.step_), use_polak_ribiere_(other.use_polak_ribiere_) { }
-    
-    ConjugateGradient& operator=(const ConjugateGradient& other) {
+    conjugate_gradient_impl() : max_iter_(500), tol_(1e-5), step_(1e-2) { }
+    conjugate_gradient_impl(int max_iter, double tol, double step) : max_iter_(max_iter), tol_(tol), step_(step) { }
+    conjugate_gradient_impl(const conjugate_gradient_impl& other) :
+        max_iter_(other.max_iter_), tol_(other.tol_), step_(other.step_) { }
+    conjugate_gradient_impl& operator=(const conjugate_gradient_impl& other) {
         max_iter_ = other.max_iter_;
         tol_ = other.tol_;
         step_ = other.step_;
-        callbacks_ = other.callbacks_;
-        use_polak_ribiere_ = other.use_polak_ribiere_;
         return *this;
     }
-
-    template <typename ObjectiveT, typename... Functor>
-        requires(sizeof...(Functor) < 2) && ((requires(Functor f, double value) { f(value); }) && ...)
-    vector_t optimize(ObjectiveT&& objective, const vector_t& x0, Functor&&... func) {
+    template <typename ObjectiveT, typename... Callbacks>
+    vector_t optimize(ObjectiveT&& objective, const vector_t& x0, Callbacks&&... callbacks) {
         fdapde_static_assert(
-            std::is_same<decltype(std::declval<ObjectiveT>().operator()(vector_t())) FDAPDE_COMMA double>::value,
-            INVALID_CALL_TO_OPTIMIZE__OBJECTIVE_FUNCTOR_NOT_ACCEPTING_VECTORTYPE
-        );
-        
+          std::is_same<decltype(std::declval<ObjectiveT>().operator()(vector_t())) FDAPDE_COMMA double>::value,
+          INVALID_CALL_TO_OPTIMIZE__OBJECTIVE_FUNCTOR_NOT_CALLABLE_AT_VECTOR_TYPE);
+        constexpr double NaN = std::numeric_limits<double>::quiet_NaN();
+        std::tuple<Callbacks...> callbacks_ {callbacks...};
         bool stop = false;   // asserted true in case of forced stop
         double error = std::numeric_limits<double>::max();
-        double beta = 0.0;
+        DirectionUpdate beta;
+        int size = N == Dynamic ? x0.rows() : N;
+        auto grad = objective.gradient();
         h = step_;
         n_iter_ = 0;
-        x_old = x0, x_new = x0;
-	    auto grad = objective.gradient();
-        grad_old = grad(x_old);
-        dir = -grad_old;
+        x_old = x0, x_new = vector_t::Constant(size, NaN);
+        grad_old = grad(x_old), grad_new = vector_t::Constant(size, NaN);
+        update = -grad_old;
+        stop |= internals::exec_grad_hooks(*this, objective, callbacks_);
+        error = grad_old.norm();
+        values_.push_back(objective(x_old));
 
         while (n_iter_ < max_iter_ && error > tol_ && !stop) {
-            update = dir;
-            stop |= execute_pre_update_step(*this, objective, callbacks_);
-
+            stop |= internals::exec_adapt_hooks(*this, objective, callbacks_);
             // update along descent direction
             x_new = x_old + h * update;
             grad_new = grad(x_new);
-            if constexpr (sizeof...(Functor) == 1) { (func(objective(x_old)), ...); }
-            if( use_polak_ribiere_ )
-                beta = grad_new.dot(grad_new - grad_old) / grad_old.dot(grad_old); // Polak Ribière
-            else
-                beta = grad_new.dot(grad_new) / grad_old.dot(grad_old); // Fletcher-Reeves
-
-            dir = -grad_new + beta * dir;
-
             // prepare next iteration
-            error = grad_new.norm();
+            update = -grad_new + std::max(0.0, beta(*this)) * update;   // update conjugate direction
             stop |=
-              (execute_post_update_step(*this, objective, callbacks_) || execute_stopping_criterion(*this, objective));
+              (internals::exec_grad_hooks(*this, objective, callbacks_) || internals::exec_stop_if(*this, objective));	    
             x_old = x_new;
             grad_old = grad_new;
-            
+            error = grad_new.norm();
+            values_.push_back(objective(x_old));
             n_iter_++;
         }
         optimum_ = x_old;
-        value_ = objective(optimum_);
-	    if constexpr (sizeof...(Functor) == 1) { (func(value_), ...); }
+        value_ = values_.back();
         return optimum_;
     }
-
-    // getters
-    vector_t optimum() const { return optimum_; }
+    // observers
+    const vector_t& optimum() const { return optimum_; }
     double value() const { return value_; }
     int n_iter() const { return n_iter_; }
+    const std::vector<double>& values() const { return values_; }
+};
+
+struct fletcher_reeves_update {
+    template <typename Opt> double operator()(const Opt& opt) { return opt.grad_new.norm() / opt.grad_old.norm(); }
+};
+struct polak_ribiere_update {
+    template <typename Opt> double operator()(const Opt& opt) {
+        return opt.grad_new.dot(opt.grad_new - opt.grad_old) / opt.grad_old.norm();
+    }
+};
+
+}   // namespace internals
+
+// public CG optimizers
+template <int N>
+class FletcherReevesCG : public internals::conjugate_gradient_impl<N, internals::fletcher_reeves_update> {
+    using Base = internals::conjugate_gradient_impl<N, internals::fletcher_reeves_update>;
+   public:
+    FletcherReevesCG() = default;
+    FletcherReevesCG(int max_iter, double tol, double step) : Base(max_iter, tol, step) { }
+};
+template <int N>
+class PolakRibiereCG : public internals::conjugate_gradient_impl<N, internals::polak_ribiere_update> {
+    using Base = internals::conjugate_gradient_impl<N, internals::polak_ribiere_update>;
+   public:
+    PolakRibiereCG() = default;
+    PolakRibiereCG(int max_iter, double tol, double step) : Base(max_iter, tol, step) { }
 };
 
 }   // namespace fdapde

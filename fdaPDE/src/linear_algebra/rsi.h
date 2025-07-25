@@ -53,7 +53,7 @@ class RSI {
         int rows = A.rows();
         int cols = A.cols();
         // approximate range of A
-        matrix_t Omega = internals::gaussian_matrix(cols, block_sz, seed_);
+        matrix_t Omega = internals::gaussian_matrix(cols, block_sz, 1.0, seed_);
         qr_t qr(A * Omega);
         matrix_t Q = qr.householderQ() * matrix_t::Identity(rows, block_sz);
         matrix_t B = A.transpose() * Q;
@@ -128,8 +128,8 @@ class NysRSI {
         double shift = A.diagonal().sum() * std::numeric_limits<double>::epsilon();   // epsilon_shift
 	
         // subspace iteration loop initialization
-        matrix_t Y = internals::gaussian_matrix(rows, block_sz, seed_);
-	svd_t svd;
+        matrix_t Y = internals::gaussian_matrix(rows, block_sz, 1.0, seed_);
+        svd_t svd;
         int iter = 0;
         double res_err = std::numeric_limits<double>::max();
         for(; res_err > tol_ && iter < max_iter_; ++iter) {

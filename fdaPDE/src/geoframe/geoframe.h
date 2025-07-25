@@ -45,7 +45,8 @@ template <typename... Triangulation_> struct GeoFrame {
         layer_t(const std::string& name, const CategoryType& category, const LayerType& geo_data) :
             geo_data_(std::make_shared<LayerType>(geo_data)),
             data_(std::addressof(reinterpret_cast<LayerType*>(geo_data_.get())->data())),
-            name_(name) {
+            name_(name),
+            n_rows_(geo_data.rows()) {
             geoframe_assert(category.size() == Order, "bad layer construction, no matching order.");
             std::copy(category.begin(), category.end(), category_.begin());
 	    // store pointers to spatial indexes
@@ -62,9 +63,9 @@ template <typename... Triangulation_> struct GeoFrame {
         const void* geo_data() const { return geo_data_.get(); }
         const std::array<ltype, Order>& category() const { return category_; }
         bool contains(const std::string& colname) const { return data_->contains(colname); }
-        int rows() const { return data_->rows(); }
+        int rows() const { return n_rows_; }
         int cols() const { return data_->cols(); }
-        int size() const { return data_->size(); }
+        int size() const { return rows() * cols(); }
         std::vector<std::string> colnames() const { return data_->colnames(); }
         void* geo_index(int n) const { return geo_index_.at(n); }
         // accessors
@@ -75,8 +76,14 @@ template <typename... Triangulation_> struct GeoFrame {
             return data_->template col<T>(colname);
         }
         // modifiers
-        template <typename DataT> void add_column(const std::string& colname, const DataT& data) {
+        template <typename DataT>
+            requires(internals::is_vector_like_v<DataT>)
+        void add_column(const std::string& colname, const DataT& data) {
             data_->append_vec(colname, data);
+        }
+        template <typename T>
+        void add_block(const std::string& colname, const Eigen::Matrix<T, Dynamic, Dynamic>& data) {
+            data_->append_blk(colname, data);
         }
         // output stream
         friend std::ostream& operator<<(std::ostream& os, const layer_t& layer) {
@@ -88,6 +95,7 @@ template <typename... Triangulation_> struct GeoFrame {
         storage_t* data_;
         std::array<ltype, Order> category_;
         std::string name_;
+        int n_rows_;
     };
    private:
     template <typename T> constexpr auto ltype_from_layer_tag() const {

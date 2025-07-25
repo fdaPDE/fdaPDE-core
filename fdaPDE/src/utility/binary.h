@@ -684,6 +684,18 @@ template <int Rows, int Cols, typename XprType> class BinMtxBase {
         return masked_mtx;
     }
 #endif
+
+#ifdef __FDAPDE_HAS_EIGEN__
+    // conversion to Eigen matrix
+    Eigen::Matrix<int, Rows, Cols> as_eigen_matrix() const {
+        Eigen::Matrix<int, Rows, Cols> m;
+        if constexpr (Rows == Dynamic || Cols == Dynamic) { m.resize(n_rows_, n_cols_); }
+        for (int i = 0; i < n_rows_; ++i) {
+            for (int j = 0; j < n_cols_; ++j) { m(i, j) = operator()(i, j) ? 1 : 0; }
+        }
+        return m;
+    }
+#endif
   
     // block-repeat operation
     BinMtxRepeatOp<Dynamic, Dynamic, XprType> repeat(int rep_row, int rep_col) const {

@@ -20,36 +20,58 @@
 #include "header_check.h"
 
 namespace fdapde {
+namespace internals {
 
-template <typename Opt, typename Obj, typename... Args>
-bool execute_pre_update_step(Opt& optimizer, Obj& objective, std::tuple<Args...>& callbacks) {
+template <typename Hook, typename... Args>
+bool opt_hooks_loop(Hook hook, std::tuple<Args...>& callbacks) {
     bool b = false;
-    auto exec_callback = [&](auto&& callback) {
-        if constexpr (requires(std::decay_t<decltype(callback)> c, Opt opt, Obj obj) {
-                          { c.pre_update_step(opt, obj) } -> std::same_as<bool>;
-                      }) {
-            b |= callback.pre_update_step(optimizer, objective);
-        }
-    };
-    std::apply([&](auto&&... callback) { (exec_callback(callback), ...); }, callbacks);
+    std::apply([&](auto&&... callback) { ([&]() { b |= hook(callback); }(), ...); }, callbacks);
     return b;
 }
 
 template <typename Opt, typename Obj, typename... Args>
-bool execute_post_update_step(Opt& optimizer, Obj& objective, std::tuple<Args...>& callbacks) {
-    bool b = false;
-    auto exec_callback = [&](auto&& callback) {
-        if constexpr (requires(std::decay_t<decltype(callback)> c, Opt opt, Obj obj) {
-                          { c.post_update_step(opt, obj) } -> std::same_as<bool>;
-                      }) {
-            b |= callback.post_update_step(optimizer, objective);
-        }
-    };
-    std::apply([&](auto&&... callback) { (exec_callback(callback), ...); }, callbacks);
-    return b;
+bool exec_eval_hooks(Opt& optimizer, Obj& objective, std::tuple<Args...>& callbacks) {
+    return opt_hooks_loop(
+      [&](auto&& callback) {
+          if constexpr (requires(std::decay_t<decltype(callback)> c, Opt opt, Obj obj) {
+                            { c.eval_hook(opt, obj) } -> std::same_as<bool>;
+                        }) {
+              return callback.eval_hook(optimizer, objective);
+          }
+	  return false;
+      },
+      callbacks);
 }
 
-template <typename Opt, typename Obj> bool execute_stopping_criterion(Opt& optimizer, Obj& objective) {
+template <typename Opt, typename Obj, typename... Args>
+bool exec_grad_hooks(Opt& optimizer, Obj& objective, std::tuple<Args...>& callbacks) {
+    return opt_hooks_loop(
+      [&](auto&& callback) {
+          if constexpr (requires(std::decay_t<decltype(callback)> c, Opt opt, Obj obj) {
+                            { c.grad_hook(opt, obj) } -> std::same_as<bool>;
+                        }) {
+              return callback.grad_hook(optimizer, objective);
+          }
+	  return false;
+      },
+      callbacks);
+}
+
+template <typename Opt, typename Obj, typename... Args>
+bool exec_adapt_hooks(Opt& optimizer, Obj& objective, std::tuple<Args...>& callbacks) {
+    return opt_hooks_loop(
+      [&](auto&& callback) {
+          if constexpr (requires(std::decay_t<decltype(callback)> c, Opt opt, Obj obj) {
+                            { c.adapt_hook(opt, obj) } -> std::same_as<bool>;
+                        }) {
+              return callback.adapt_hook(optimizer, objective);
+          }
+	  return false;
+      },
+      callbacks);
+}
+
+template <typename Opt, typename Obj> bool exec_stop_if(Opt& optimizer, Obj& objective) {
     bool b = false;
     if constexpr (requires(Opt opt, Obj obj) {
                       { obj.stop_if(opt) } -> std::same_as<bool>;
@@ -59,6 +81,7 @@ template <typename Opt, typename Obj> bool execute_stopping_criterion(Opt& optim
     return b;
 }
 
+}   // namespace internals
 }   // namespace fdapde
 
 #endif   // __FDAPDE_OPTIMIZATION_CALLBACKS_H__

@@ -830,7 +830,6 @@ template <int StaticInputSize, typename Derived> struct MatrixFieldBase {
         if constexpr (
           Derived::Rows == Dynamic || Derived::Cols == Dynamic || InputType_::RowsAtCompileTime == Dynamic ||
           InputType_::ColsAtCompileTime == Dynamic) {
-            fdapde_assert(p.rows() == derived().rows() && p.cols() == derived().cols());
             out.resize(derived().rows(), derived().cols());
         }
         eval_at(p, out);

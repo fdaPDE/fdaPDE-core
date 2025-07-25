@@ -21,21 +21,22 @@
 
 namespace fdapde {
 namespace internals {
-  
+
 template <typename Form_> struct fe_pointwise_evaluator_loop {
     using FeSpace = test_space_t<Form_>;
     static constexpr int local_dim = FeSpace::local_dim;
     static constexpr int embed_dim = FeSpace::embed_dim;
     static constexpr int n_components = FeSpace::n_components;
-    using Form =
-      std::decay_t<
-	decltype(xpr_wrap<FeMap, decltype([]<typename Xpr>() {
-	      return !(
-		  std::is_invocable_v<Xpr, fe_assembler_packet<embed_dim>> ||
-		  requires(Xpr xpr, int i, int j, fe_assembler_packet<embed_dim> input_type) {
-		      xpr.eval(i, j, input_type);   // vector case
-		  });
-	    })>(std::declval<Form_>()))>;
+   private:
+    using is_not_packet_evaluable = decltype([]<typename Xpr>() {
+        return !(
+          std::is_invocable_v<Xpr, fe_assembler_packet<embed_dim>> ||
+          requires(Xpr xpr, int i, int j, fe_assembler_packet<embed_dim> input_type) {
+              xpr.eval(i, j, input_type);   // vector case
+          });
+    });
+   public:
+    using Form = std::decay_t<decltype(xpr_wrap<FeMap, is_not_packet_evaluable>(std::declval<Form_>()))>;
     using FeType = typename FeSpace::FeType;
     using DofHandlerType = DofHandler<local_dim, embed_dim, finite_element_tag>;
     using discretization_category = typename FeSpace::discretization_category;
@@ -45,24 +46,18 @@ template <typename Form_> struct fe_pointwise_evaluator_loop {
 
     fe_pointwise_evaluator_loop() = default;
     fe_pointwise_evaluator_loop(const Form_& form, const Eigen::Matrix<double, Dynamic, Dynamic>& locs) :
-        form_(xpr_wrap<FeMap, decltype([]<typename Xpr>() {
-	      return !(
-		  std::is_invocable_v<Xpr, fe_assembler_packet<embed_dim>> ||
-		  requires(Xpr xpr, int i, int j, fe_assembler_packet<embed_dim> input_type) {
-		      xpr.eval(i, j, input_type);   // vector case
-		  });
-	    })>(form)),
-	dof_handler_(&internals::test_space(form_).dof_handler()),
-	fe_space_(&internals::test_space(form_)),
-	locs_(locs) {
+        form_(xpr_wrap<FeMap, is_not_packet_evaluable>(form)),
+        dof_handler_(&internals::test_space(form_).dof_handler()),
+        fe_space_(&internals::test_space(form_)),
+        locs_(locs) {
         fdapde_assert(dof_handler_->n_dofs() > 0 && locs.rows() > 0 && locs.cols() == embed_dim);
-	cell_ids_ = fe_space_->triangulation().locate(locs_);
+        cell_ids_ = fe_space_->triangulation().locate(locs_);
     }
 
     Eigen::SparseMatrix<double> assemble() const {
-        Eigen::SparseMatrix<double> evaluation_mat(dof_handler_->n_dofs(), locs_.rows());
+        Eigen::SparseMatrix<double> evaluation_mat(locs_.rows(), dof_handler_->n_dofs());
         std::vector<Eigen::Triplet<double>> triplet_list;
-	assemble(triplet_list);
+        assemble(triplet_list);
         evaluation_mat.setFromTriplets(triplet_list.begin(), triplet_list.end());
         evaluation_mat.makeCompressed();
         return evaluation_mat;
@@ -77,7 +72,7 @@ template <typename Form_> struct fe_pointwise_evaluator_loop {
         for (int i = 0; i < n_locs; ++i) {
             if (cell_ids_[i] != -1) {   // point falls inside domain
                 auto cell = dof_handler_->cell(cell_ids_[i]);
-		// map i-th point to reference element
+                // map i-th point to reference element
                 Matrix<double, embed_dim, 1> ref_p = cell.invJ() * (locs_.row(i).transpose() - cell.node(0));
                 for (int h = 0; h < n_shape_functions; ++h) {
                     if constexpr (Form::XprBits & int(fe_assembler_flags::compute_shape_values)) {
@@ -93,9 +88,9 @@ template <typename Form_> struct fe_pointwise_evaluator_loop {
                               fe_space_->eval_cell_hess(h, cell_ids_[i], ref_p));
                         }
                     }
-		    // evaluate form
+                    // evaluate form
                     double value = form_(fe_packet);
-                    if (value > 1e-14) { triplet_list.emplace_back(cell.dofs()[h], i, value); }
+                    if (std::abs(value) > 1e-14) { triplet_list.emplace_back(i, cell.dofs()[h], value); }
                 }
             }
         }
@@ -111,12 +106,12 @@ template <typename Form_> struct fe_pointwise_evaluator_loop {
 
 template <typename Locations> class evaluator_dispatch {
     Locations locs_;
-  public:
+   public:
     evaluator_dispatch() = default;
-    evaluator_dispatch(const Locations& locs) : locs_(locs) {}
-    
+    evaluator_dispatch(const Locations& locs) : locs_(locs) { }
+
     template <typename Form> auto operator()(const Form& form) const {
-      return fe_pointwise_evaluator_loop<Form>(form, locs_);
+        return fe_pointwise_evaluator_loop<Form>(form, locs_);
     }
 };
 

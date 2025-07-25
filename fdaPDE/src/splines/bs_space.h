@@ -134,7 +134,7 @@ template <typename Triangulation_> class BsSpace {
    private:
     double a_, b_;   // triangulation range
     // linear mapping from p \in [a, b] to \hat p \in [-1, +1]
-    double map_to_reference(double p) const { return (p - (b_ - a_) / 2) * 2 / (b_ + a_); };
+    double map_to_reference(double p) const { return 2 * (p - a_) / (b_ - a_) - 1; }
 
     const Triangulation* triangulation_;
     DofHandlerType dof_handler_;   // dof_handler over physical domain

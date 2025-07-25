@@ -21,7 +21,7 @@
 
 namespace fdapde {
 
-// TODO: visitors, rowwise, colwwise, coeffwise iterators, sum, max, min, ... support Dynamic
+// TODO: visitors, rowwise, colwwise, coeffwise iterators ... support Dynamic
 
 template <int Rows, int Cols, typename Derived> struct MatrixBase;
 
@@ -609,6 +609,25 @@ struct DiagonalBlock : public MatrixBase<Derived::Rows, Derived::Cols, DiagonalB
     internals::ref_select_t<Derived> xpr_;
 };
 
+namespace internals {
+
+// linear reduction loop on matrix expressions
+template <typename XprType, typename Functor> struct linear_matrix_redux_op {
+    using Scalar = typename XprType::Scalar;
+
+    static constexpr Scalar run(const XprType& xpr, Scalar init, Functor f) {
+        fdapde_constexpr_assert(xpr.size() > 0);
+        Scalar res = init;
+        int rows_ = xpr.rows(), cols_ = xpr.cols();
+        for (int i = 0; i < rows_; ++i) {
+            for (int j = 0; j < cols_; ++j) { res = f(res, xpr(i, j)); }
+        }
+        return res;
+    }
+};
+
+}   // namespace internals
+
 template <int Rows, int Cols, typename Derived> struct MatrixBase {
 #ifdef __FDAPDE_HAS_EIGEN__ // compatibility with Eigen types
     static constexpr int RowsAtCompileTime = Rows;
@@ -633,23 +652,52 @@ template <int Rows, int Cols, typename Derived> struct MatrixBase {
     constexpr auto squared_norm() const {
         typename Derived::Scalar norm_ = 0;
         for (int i = 0; i < derived().rows(); ++i) {
-            for (int j = 0; j < derived().cols(); ++j) { norm_ += std::pow(derived().operator()(i, j), 2); }
+            for (int j = 0; j < derived().cols(); ++j) { norm_ += fdapde::pow(derived().operator()(i, j), 2); }
         }
         return norm_;
     }
-    constexpr auto norm() const { return std::sqrt(squared_norm()); }
+    constexpr auto norm() const { return fdapde::sqrt(squared_norm()); }
     // maximum norm (L^\infinity norm)
     constexpr auto inf_norm() const {
         using Scalar = typename Derived::Scalar;
         Scalar norm_ = std::numeric_limits<Scalar>::min();
         for (int i = 0; i < derived().rows(); ++i) {
             for (int j = 0; j < derived().cols(); ++j) {
-                Scalar tmp = std::abs(derived().operator()(i, j));
+                Scalar tmp = fdapde::abs(derived().operator()(i, j));
                 if (tmp > norm_) norm_ = tmp;
             }
         }
         return norm_;
     }
+    // redux operators
+    template <typename Scalar_, typename Functor> constexpr auto redux(Scalar_ init, Functor&& f) const {
+        using Scalar = typename Derived::Scalar;
+        fdapde_constexpr_assert(derived().rows() > 0 && derived().cols() > 0);
+        fdapde_static_assert(
+          std::is_convertible_v<Scalar_ FDAPDE_COMMA Scalar>, INVALID_SCALAR_INIT_TYPE_IN_REDUX_OPERATION);
+        // perform reduction loop
+        return internals::linear_matrix_redux_op<Derived, Functor>::run(derived(), init, f);
+    }
+    constexpr auto sum() const {
+        using Scalar = typename Derived::Scalar;
+        if (Rows == 0 || Cols == 0) return Scalar(0);
+        return redux(Scalar(0), [](Scalar tmp, Scalar x) { return tmp + x; });
+    }
+    constexpr auto prod() const {
+        using Scalar = typename Derived::Scalar;
+        if (Rows == 0 || Cols == 0) return Scalar(1);
+        return redux(Scalar(1), [](Scalar tmp, Scalar x) { return tmp * x; });
+    }
+    constexpr auto mean() const { return derived().sum() / derived().size(); }
+    constexpr auto max() const {
+        using Scalar = typename Derived::Scalar;
+	return redux(std::numeric_limits<Scalar>::min(), [](Scalar tmp, Scalar x) { return tmp > x ? tmp : x; });
+    }
+    constexpr auto min() const {
+        using Scalar = typename Derived::Scalar;
+        return redux(std::numeric_limits<Scalar>::max(), [](Scalar tmp, Scalar x) { return tmp < x ? tmp : x; });
+    }
+  
     // transpose
     constexpr Transpose<Derived> transpose() const { return Transpose<Derived>(derived()); }
     // block operations
@@ -684,7 +732,9 @@ template <int Rows, int Cols, typename Derived> struct MatrixBase {
                                              (Cols == 1 && (Rows == RhsRows || Rows == RhsCols))),
           INVALID_OPERANDS_DIMENSIONS_FOR_DOT_PRODUCT);
         std::decay_t<typename Derived::Scalar> dot_ = 0;
-        for (int i = 0; i < Cols; ++i) { dot_ += derived().operator[](i) * rhs.derived().operator[](i); }
+        for (int i = 0; i < fdapde::max(Rows, Cols); ++i) {
+            dot_ += derived().operator[](i) * rhs.derived().operator[](i);
+        }
         return dot_;
     }
     // trace of matrix
@@ -902,7 +952,7 @@ template <typename MatrixType> class PartialPivLU {
             // find pivotal element
             Scalar pivot = -std::numeric_limits<Scalar>::infinity();
             for (int j = i; j < Size; ++j) {
-                Scalar abs_ = std::abs(m_(P[j], i));
+                Scalar abs_ = fdapde::abs(m_(P[j], i));
                 if (pivot < abs_) {
                     pivot = abs_;
                     pivot_index = j;

@@ -52,6 +52,7 @@ class Spline : public ScalarFieldBase<1, Spline> {
         template <typename InputType_>
             requires(internals::is_subscriptable<InputType_, int> || std::is_floating_point_v<InputType_>)
         constexpr Scalar operator()(const InputType_& p_) const {
+            if (n_ > order_) { return 0.0; }   // derivative order higher than spline order
             double p;
             if constexpr (internals::is_subscriptable<InputType_, int>) {
                 p = p_[0];
@@ -117,7 +118,7 @@ class Spline : public ScalarFieldBase<1, Spline> {
                 })
     Spline(KnotsVectorType&& knots, int i, int order) : i_(i), order_(order) {
         fdapde_assert(
-          i >= 0 && order > 0 && std::cmp_greater_equal(knots.size(), order_ + 1) && std::cmp_less(i_, knots.size()));
+          i >= 0 && order >= 0 && std::cmp_greater_equal(knots.size(), order + 1) && std::cmp_less(i_, knots.size()));
         knots_.reserve(knots.size());
         for (std::size_t i = 0; i < knots.size(); ++i) { knots_.push_back(knots[i]); }
     };

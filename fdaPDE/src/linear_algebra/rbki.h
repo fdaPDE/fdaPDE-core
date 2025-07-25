@@ -67,7 +67,7 @@ class RBKI {
         int max_dim = (max_iter + 1) * block_sz;
 
         // approximate range of A
-        matrix_t Omega = internals::gaussian_matrix(cols, block_sz, seed_);
+        matrix_t Omega = internals::gaussian_matrix(cols, block_sz, 1.0, seed_);
         matrix_t Q(rows, max_dim);
         matrix_t B(cols, max_dim);
         Q.leftCols(block_sz) = A * Omega;
@@ -169,9 +169,9 @@ class NysRBKI {
 
         // Krylov subspace iteration loop initialization
         matrix_t X(rows, max_dim), Y(rows, max_dim);
-	qr_t qr(internals::gaussian_matrix(rows, block_sz, seed_));
-	X.leftCols(block_sz) = qr.householderQ() * matrix_t::Identity(rows, block_sz);
-	Y.leftCols(block_sz) = A * X.leftCols(block_sz);
+        qr_t qr(internals::gaussian_matrix(rows, block_sz, 1.0, seed_));
+        X.leftCols(block_sz) = qr.householderQ() * matrix_t::Identity(rows, block_sz);
+        Y.leftCols(block_sz) = A * X.leftCols(block_sz);
         matrix_t S = matrix_t::Zero(max_dim, max_dim);   // matrix [X_0, ..., X_{i - 1}]^\top * [Y_1, ..., Y_{i}]
         svd_t svd;
         int i = 0;

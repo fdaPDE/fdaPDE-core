@@ -117,14 +117,16 @@ struct fe_assembler_base {
     // detect test space (since a test function is always present in a weak form)
     using TestSpace = test_space_t<Form_>;
     using Triangulation = typename std::decay_t<Triangulation_>;
-    using Form = std::decay_t<
-      decltype(xpr_wrap<FeMap, decltype([]<typename Xpr>() {
-	    return !(
-	        std::is_invocable_v<Xpr, fe_assembler_packet<Triangulation::embed_dim>> ||
-		requires(Xpr xpr, int i, int j, fe_assembler_packet<Triangulation::embed_dim> input_type) {
-		    xpr.eval(i, j, input_type);    // vector case
-		});
-	  })>(std::declval<Form_>()))>;
+   protected:
+    using is_not_packet_evaluable = decltype([]<typename Xpr>() {
+        return !(
+          std::is_invocable_v<Xpr, fe_assembler_packet<Triangulation::embed_dim>> ||
+          requires(Xpr xpr, int i, int j, fe_assembler_packet<Triangulation::embed_dim> input_type) {
+              xpr.eval(i, j, input_type);   // vector case
+          });
+    });
+   public:
+    using Form = std::decay_t<decltype(xpr_wrap<FeMap, is_not_packet_evaluable>(std::declval<Form_>()))>;
     static constexpr int local_dim = Triangulation::local_dim;
     static constexpr int embed_dim = Triangulation::embed_dim;
     static constexpr int Options = Options_;
@@ -149,14 +151,9 @@ struct fe_assembler_base {
     fe_assembler_base(
       const Form_& form, typename fe_traits::geo_iterator begin, typename fe_traits::geo_iterator end,
       const Quadrature_&... quadrature)
-        requires(sizeof...(quadrature) <= 1):
-        form_(xpr_wrap<FeMap, decltype([]<typename Xpr>() {
-	      return !(
-		  std::is_invocable_v<Xpr, fe_assembler_packet<Triangulation::embed_dim>> ||
-		  requires(Xpr xpr, int i, int j, fe_assembler_packet<Triangulation::embed_dim> input_type) {
-		      xpr.eval(i, j, input_type);    // vector case
-		});
-	    })>(form)),
+        requires(sizeof...(quadrature) <= 1)
+        :
+        form_(xpr_wrap<FeMap, is_not_packet_evaluable>(form)),
         quadrature_([... quadrature = std::forward<const Quadrature_>(quadrature)]() {
             if constexpr (sizeof...(quadrature) == 1) {
                 return std::get<0>(std::make_tuple(quadrature...));

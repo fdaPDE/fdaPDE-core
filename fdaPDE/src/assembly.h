@@ -145,13 +145,8 @@ template <typename Triangulation_, typename Xpr_, int Options_, typename... Quad
         static constexpr int order = 0;
     };
     template <typename... Quad_>
-    using maybe_empty_quadrature = decltype([]() {
-        if constexpr (sizeof...(Quadrature_) == 0) {
-            return empty_quadrature<Quadrature_...> {};
-        } else {
-            return std::tuple_element_t<0, std::tuple<Quadrature_...>> {};
-        }
-    }());
+    using maybe_empty_quadrature = std::conditional_t<
+      sizeof...(Quad_) == 0, empty_quadrature<Quad_...>, std::tuple_element_t<0, std::tuple<Quad_...>>>;
     using Quadrature = maybe_empty_quadrature<Quadrature_...>;
   
     Xpr_ xpr_;
