@@ -40,8 +40,8 @@ public:
     static constexpr bool gradient_free = true;
     static constexpr int static_input_size = N;
 
-    std::vector<vector_t> population;
-    std::vector<double> population_fitness;
+    matrix_t population;
+    vector_t population_fitness;
     std::mt19937 rng;
 
    vector_t x_curr;
@@ -62,8 +62,6 @@ public:
         max_iter_(max_iter),
         tol_(tol),
         population_size_(population_size),
-        population(population_size, vector_t{}),
-        population_fitness(population_size, std::numeric_limits<double>::max()),
         rng(seed) {
         fdapde_assert(population_size_ > 0);
     }
@@ -94,22 +92,20 @@ public:
     vector_t optimize(ObjectiveT&& objective, const vector_t& x0, Callbacks&&... callbacks) {
         fdapde_static_assert(
           std::is_same<decltype(std::declval<ObjectiveT>().operator()(vector_t())) FDAPDE_COMMA double>::value,
-          INVALID_CALL_TO_OPTIMIZE__OBJECTIVE_FUNCTOR_NOT_CALLABLE_AT_VECTOR_TYPE);
-        fdapde_assert(population_size_ == population.size());
-        fdapde_assert(population_size_ == population_fitness.size());
-        
+          INVALID_CALL_TO_OPTIMIZE__OBJECTIVE_FUNCTOR_NOT_CALLABLE_AT_VECTOR_TYPE
+        );
+          
         std::tuple<Callbacks...> callbacks_ {callbacks...};
-
+          
         // whether or not the callbacks's stoping criteria are met
         bool stop = false;
         value_ = std::numeric_limits<double>::max();
         n_iter_ = 0;
         static_since_ = 0;
-
-        // Initialize the state
-        for(int i = 0; i < population_size_; ++i) {
-            population[i] = x0;
-        }
+        population = x0.rowwise().replicate(population_size_);
+        population_fitness = vector_t::Zero(population_size_, 1);
+        fdapde_assert(population_size_ == population.cols());
+        fdapde_assert(population_size_ == population_fitness.rows());
 
         // Reset the state of all callbacks and sync their state with the 
         // parameters in GeneticOptim
@@ -122,7 +118,7 @@ public:
         while (n_iter_ < max_iter_ && !stop) {
             // Compute the fitness for selection
             for(int i = 0; i < population_size_; ++i) {
-                population_fitness[i] = objective(population[i]);
+                population_fitness(i) = objective(population.col(i));
             }
 
             stop |= internals::exec_select_hooks(*this, callbacks_);
@@ -131,12 +127,11 @@ public:
             // Compute argmax of the population fitness
             int current_best = 0;
             for(int i = 1; i < population_size_; ++i) {
-                if(population_fitness[i] < population_fitness[current_best])
+                if(population_fitness(i) < population_fitness(current_best))
                     current_best = i;
             }
 
-            // TODO: use tolerance?
-            if( std::abs(value_ - population_fitness[current_best]) < tol_) {
+            if( std::abs(value_ - population_fitness(current_best)) < tol_) {
                 ++static_since_;
             }
             
@@ -146,8 +141,8 @@ public:
             
             // Update
             ++n_iter_;
-            value_ = population_fitness[current_best];
-            optimum_ = population[current_best];
+            value_ = population_fitness(current_best);
+            optimum_ = population.col(current_best);
         }
 
         return optimum_;

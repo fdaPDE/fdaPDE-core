@@ -26,11 +26,12 @@ template <int N>
 class RankSelection {
 private:
     using vector_t = Eigen::Matrix<double, N, 1>;
+    using matrix_t = Eigen::Matrix<double, N, 1>;
 
     std::vector<int> population_order_;
     std::uniform_real_distribution<> distribution_{0.0, 1.0};
     std::vector<double> cdf_;
-    std::vector< vector_t > new_population_;
+    matrix_t new_population_;
 
     /**
      * @brief Given a random number between 0 and 1, returns the index of selected rank with the probability of rank i \pi_i = (amax - (amax-amin)*(i-1)/(m-1))/m
@@ -70,17 +71,21 @@ public:
     template <typename Opt> bool sync_hook(Opt& opt) {
         population_order_.clear();
         cdf_.clear();
-        new_population_.clear();
 
         population_order_.reserve(opt.population.size());
-        new_population_.reserve(opt.population.size());
+        new_population_ = opt.population;
         cdf_.reserve(opt.population.size());
 
         constexpr double amax = 1.2;
         constexpr double amin = 2.0 - amax;
         double probability_sum = 0.0;
-        for(int i = 0; i < opt.population.size(); ++i) {
-            double pi_i = (amax - (double)(amax - amin)*(i-1)/(double)(opt.population.size()-1))/(double)(opt.population.size());
+        for(int i = 0; i < opt.population.cols(); ++i) {
+            double pi_i = (
+                (amax - (double)(amax - amin)*(i-1)
+                /
+                (double)(opt.population.cols()-1))/(double)(opt.population.cols())
+            );
+
             probability_sum += pi_i;
             cdf_.push_back(probability_sum);
             population_order_.push_back(i);
@@ -93,14 +98,13 @@ public:
             population_order_.begin(),
             population_order_.end(),
             [&](int a, int b) {
-                return opt.population_fitness[a] < opt.population_fitness[b];
+                return opt.population_fitness(a) < opt.population_fitness(b);
             }
         );
 
-        new_population_.clear();
-        for(int i = 0; i < opt.population.size(); ++i) {
+        for(int i = 0; i < opt.population.cols(); ++i) {
             int selected = index_of_sample(distribution_(opt.rng));
-            new_population_.push_back(opt.population[population_order_[selected]]);
+            new_population_.col(i) = (opt.population.col(population_order_[selected]));
         }
         opt.population = new_population_;
 
@@ -120,26 +124,27 @@ public:
 
     template <typename Opt> bool sync_hook(Opt& opt) {
         fdapde_assert(opt.population.size() >= 2);
-        distribution_ = std::uniform_int_distribution<int>{0,static_cast<int>(opt.population.size())-1};
+        distribution_ = std::uniform_int_distribution<int>{0,static_cast<int>(opt.population.cols())-1};
         return false;
     }
 
     template <typename Opt> bool select_hook(Opt& opt) {
-        fdapde_assert(distribution_.max() == opt.population.size() - 1);
+        fdapde_assert(distribution_.max() == opt.population.cols() - 1);
+        fdapde_assert(distribution_.min() == 0);
 
         // Perform binary tournament selection
-        for(int i = 0; i < opt.population.size(); i += 1) {
+        for(int i = 0; i < opt.population.cols(); i += 1) {
             int id_first = distribution_(opt.rng);
             int id_second = distribution_(opt.rng);
             if(id_first == id_second)
                 continue;
 
-            double fit_first = opt.population_fitness[id_first];
-            double fit_second = opt.population_fitness[id_second];
+            double fit_first = opt.population_fitness(id_first);
+            double fit_second = opt.population_fitness(id_second);
             if(fit_first <= fit_second) {
-                opt.population[id_second] = opt.population[id_first];
+                opt.population.col(id_second) = opt.population.col(id_first);
             } else {
-                opt.population[id_first] = opt.population[id_second];
+                opt.population.col(id_first) = opt.population.col(id_second);
             }
         }
         return false;

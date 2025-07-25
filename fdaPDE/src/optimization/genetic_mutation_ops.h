@@ -44,9 +44,9 @@ public:
 
     template <typename Opt> bool mutate_hook(Opt& opt) {
         // Perform binary tournament selection
-        for(auto &vec: opt.population) {
-            for(int i = 0; i < vec.rows(); ++i)
-                vec[i] += normal_dist_(opt.rng) * variance_;
+        for(int j = 0; j < opt.population.cols(); ++j) {
+            for(int i = 0; i < opt.population.rows(); ++i)
+                opt.population(i,j) += normal_dist_(opt.rng) * variance_;
         }
 
 
@@ -64,16 +64,16 @@ public:
     CrossoverMutation() = default;
 
     template <typename Opt> bool sync_hook(Opt& opt) {
-        distribution_ = std::uniform_int_distribution<int>(0, static_cast<int>(opt.population[0].rows()));
+        distribution_ = std::uniform_int_distribution<int>(0, static_cast<int>(opt.population.rows()));
         return false;
     }
 
     template <typename Opt> bool mutate_hook(Opt& opt) {
-        for(int i = 0; i < opt.population.size() - 1; i += 2) {
-            auto &parent_1 = opt.population[i];
-            auto &parent_2 = opt.population[i+1];
+        for(int i = 0; i < opt.population.cols() - 1; i += 2) {
+            auto &parent_1 = opt.population.col(i);
+            auto &parent_2 = opt.population.col(i+1);
             int k = distribution_(opt.rng);
-            for(int j = k; j < opt.population[0].rows(); ++j) {
+            for(int j = k; j < opt.population.rows(); ++j) {
                 double coeff = (parent_1[j] + parent_2[j])/2.0;
                 parent_1[j] = coeff;
                 parent_2[j] = coeff;
