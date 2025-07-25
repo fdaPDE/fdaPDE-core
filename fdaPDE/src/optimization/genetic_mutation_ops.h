@@ -57,26 +57,24 @@ public:
 
 class CrossoverMutation {
 private:
-    std::uniform_int_distribution<int> distribution_{0,10};
+    std::uniform_real_distribution<double> distribution_{0.0,1.0};
+    double mutation_probability_ = 0.3;
 
 public:
     // constructors
-    CrossoverMutation() = default;
+    CrossoverMutation(double mutation_probability = 0.3) : mutation_probability_(mutation_probability) {}
 
     template <typename Opt> bool sync_hook(Opt& opt) {
-        distribution_ = std::uniform_int_distribution<int>(0, static_cast<int>(opt.population.rows()));
         return false;
     }
 
     template <typename Opt> bool mutate_hook(Opt& opt) {
-        for(int i = 0; i < opt.population.cols() - 1; i += 2) {
-            auto &parent_1 = opt.population.col(i);
-            auto &parent_2 = opt.population.col(i+1);
-            int k = distribution_(opt.rng);
-            for(int j = k; j < opt.population.rows(); ++j) {
-                double coeff = (parent_1[j] + parent_2[j])/2.0;
-                parent_1[j] = coeff;
-                parent_2[j] = coeff;
+        for(int j = 0; j < opt.population.cols() - 1; j += 2)
+        for(int i = 0; i < opt.population.rows(); ++i) {
+            if( distribution_(opt.rng) < mutation_probability_) {
+                double coeff = (opt.population(i, j) + opt.population(i, j+1))/2.0;
+                opt.population(i, j) = coeff;
+                opt.population(i, j+1) = coeff;
             }
         }
         return false;

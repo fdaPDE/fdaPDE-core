@@ -100,11 +100,11 @@ template <int N, typename DirectionUpdate> class conjugate_gradient_impl {
 };
 
 struct fletcher_reeves_update {
-    template <typename Opt> double operator()(const Opt& opt) { return opt.grad_new.norm() / opt.grad_old.norm(); }
+    template <typename Opt> double operator()(const Opt& opt) { return opt.grad_new.norm() / opt.grad_old.dot(opt.grad_old); }
 };
 struct polak_ribiere_update {
     template <typename Opt> double operator()(const Opt& opt) {
-        return opt.grad_new.dot(opt.grad_new - opt.grad_old) / opt.grad_old.norm();
+        return opt.grad_new.dot(opt.grad_new - opt.grad_old) / opt.grad_old.dot(opt.grad_old);
     }
 };
 
