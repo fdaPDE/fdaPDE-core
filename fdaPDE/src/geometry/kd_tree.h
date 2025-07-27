@@ -68,7 +68,7 @@ template <int K> class KDTree {
             if (point_set.end - (median + 1) > 0) stack.emplace(median + 1, point_set.end, split_dim);
         }
     }
-    // range for over node ids, you can recover the node coordinates by for(auto p : kdtree) { data_.row(p); }
+    // iterators
     iterator begin() { return kdtree_.begin(); }
     iterator end() { return kdtree_.end(); }
 
@@ -115,7 +115,7 @@ template <int K> class KDTree {
     struct RangeType {
         Eigen::Matrix<double, K, 1> ll, ur;   // lower-left and upper-right corner
     };
-    // returns a set of iterators to the nodes contained in the query
+    // returns the set of nodes contained in the query
     std::unordered_set<int> range_search(const RangeType& query) const {
         std::unordered_set<int> result;
         std::stack<iterator> stack;   // auxiliary stack for tree visiting

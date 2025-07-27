@@ -29,31 +29,43 @@ template <int LocalDim, int EmbedDim> class Polygon {
 
     // constructors
     Polygon() noexcept = default;
-    Polygon(const Eigen::Matrix<double, Dynamic, Dynamic>& nodes, const std::vector<Eigen::Matrix<double, Eigen::Dynamic, embed_dim>>& holes) noexcept : triangulation_() {
+  Polygon(const Eigen::Matrix<double, Dynamic, Dynamic>& nodes, const std::vector<Eigen::Matrix<double, Eigen::Dynamic, embed_dim>>& holes) noexcept : triangulation_(), nodes_(nodes) {
         fdapde_assert(nodes.rows() > 0 && nodes.cols() == embed_dim);
         
         // check if nodes are given in counterclockwise order
-        Eigen::Matrix<double, Dynamic, Dynamic> corrected_nodes=nodes;
-        if (!internals::are_2d_counterclockwise_sorted(nodes)) {
-            int n_nodes = nodes.rows();
-            for (int i = 0; i < n_nodes; ++i)
-                corrected_nodes.row(i) = nodes.row(n_nodes - 1 - i);
-        }
-        // check if holes' points are given in clockwise order
-        std::vector<Eigen::Matrix<double, Eigen::Dynamic, embed_dim>> corrected_holes;
-        for (const auto& hole : holes) {
-            if (internals::are_2d_counterclockwise_sorted(hole)) {
-                Eigen::Matrix<double, Dynamic, embed_dim> reversed_hole(hole.rows(), embed_dim);
-                for (int i = 0; i < hole.rows(); ++i)
-                    reversed_hole.row(i) = hole.row(hole.rows() - 1 - i);
-                corrected_holes.push_back(reversed_hole);
-            } else {
-                corrected_holes.push_back(hole);
-            }
-        }
+        // Eigen::Matrix<double, Dynamic, Dynamic> corrected_nodes=nodes;
+        // if (!internals::are_2d_counterclockwise_sorted(nodes)) {
+        //     int n_nodes = nodes.rows();
+        //     for (int i = 0; i < n_nodes; ++i)
+        //         corrected_nodes.row(i) = nodes.row(n_nodes - 1 - i);
+        // }
+        // // check if holes' points are given in clockwise order
+        // std::vector<Eigen::Matrix<double, Eigen::Dynamic, embed_dim>> corrected_holes;
+        // for (const auto& hole : holes) {
+        //     if (internals::are_2d_counterclockwise_sorted(hole)) {
+        //         Eigen::Matrix<double, Dynamic, embed_dim> reversed_hole(hole.rows(), embed_dim);
+        //         for (int i = 0; i < hole.rows(); ++i)
+        //             reversed_hole.row(i) = hole.row(hole.rows() - 1 - i);
+        //         corrected_holes.push_back(reversed_hole);
+        //     } else {
+        //         corrected_holes.push_back(hole);
+        //     }
+        // }
 
-        triangulate_(corrected_nodes, corrected_holes);
+        // triangulate_(corrected_nodes, corrected_holes);
 
+    }
+    Polygon(const Eigen::Matrix<double, Dynamic, Dynamic>& nodes) noexcept : Polygon(nodes, {}) { }
+
+    Eigen::Matrix<double, Dynamic, Dynamic> nodes_;   // -----------------------------------------------------
+
+    std::array<double, 2 * embed_dim> bbox() const {
+        std::array<double, 2 * embed_dim> bbox_;
+        for (int i = 0; i < embed_dim; ++i) {
+            bbox_[i] = nodes_.col(i).minCoeff();
+            bbox_[i + embed_dim] = nodes_.col(i).maxCoeff();
+        }
+        return bbox_;
     }
 
     Polygon(const Polygon&) noexcept = default;
@@ -100,7 +112,7 @@ template <int LocalDim, int EmbedDim> class Polygon {
             row_offset += hole.rows();
         }
         for (const std::vector<int>& poly : poly_partition) {
-            std::vector<int> local_cells = triangulate_monotone_(all_nodes(poly, Eigen::placeholders::all));  
+            std::vector<int> local_cells = triangulate_monotone_(all_nodes(poly, Eigen::all));  
             // move local node numbering to global node numbering
             for (std::size_t i = 0; i < local_cells.size(); ++i) { local_cells[i] = poly[local_cells[i]]; }
             cells.insert(cells.end(), local_cells.begin(), local_cells.end());

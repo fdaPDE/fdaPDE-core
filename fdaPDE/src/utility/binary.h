@@ -178,6 +178,9 @@ template <int Rows, int Cols = Rows> class BinaryMatrix : public BinMtxBase<Rows
         fdapde_static_assert(Cols == 1 || Rows == 1, THIS_METHOD_IS_ONLY_FOR_VECTORS);
         set(i, 0);
     }
+    void set(const std::initializer_list<int>& idxs) {
+        for (auto it = idxs.begin(); it != idxs.end(); ++it) { set(*it); }
+    }
     void set() {   // sets all coeffients in the matrix
         for (int i = 0; i < n_rows_; ++i) {
             for (int j = 0; j < n_cols_; ++j) {
@@ -192,6 +195,9 @@ template <int Rows, int Cols = Rows> class BinaryMatrix : public BinMtxBase<Rows
     void clear(int i) {
         fdapde_static_assert(Cols == 1 || Rows == 1, THIS_METHOD_IS_ONLY_FOR_VECTORS);
         clear(i, 0);
+    }
+    void clear(const std::initializer_list<int>& idxs) {
+        for (auto it = idxs.begin(); it != idxs.end(); ++it) { clear(*it); }
     }
     void clear() {   // clears all coeffients in the matrix
         for (int i = 0; i < n_rows_; ++i) {

@@ -1286,7 +1286,7 @@ template <int N> class Triangulation<2, N> : public TriangulationBase<2, N, Tria
     static constexpr int n_edges_per_cell = 3;
     static constexpr int n_faces_per_edge = 2;
     using EdgeType = typename Base::CellType::EdgeType;
-    using LocationPolicy = TreeSearch<Triangulation<2, N>>;
+    // using LocationPolicy = TreeSearch<Triangulation<2, N>>;
     using Base::cells_;      // N \times 3 matrix of node identifiers for each triangle
     using Base::embed_dim;   // dimensionality of the ambient space
     using Base::local_dim;   // dimensionality of the tangent space
@@ -1294,7 +1294,7 @@ template <int N> class Triangulation<2, N> : public TriangulationBase<2, N, Tria
     using Base::n_nodes_per_cell;
     static constexpr auto edge_pattern =
       Matrix<int, binomial_coefficient(n_nodes_per_cell, n_nodes_per_edge), n_nodes_per_edge>(
-        combinations<n_nodes_per_edge, n_nodes_per_cell>());
+        combinations(n_nodes_per_edge, n_nodes_per_cell));
 
     Triangulation() = default;
     Triangulation(
@@ -1507,24 +1507,24 @@ template <int N> class Triangulation<2, N> : public TriangulationBase<2, N, Tria
         std::for_each(edges_markers_.begin(), edges_markers_.end(), [](int& marker) { marker = Unmarked; });
     }
     // point location
-    template <int Rows, int Cols>
-    std::conditional_t<Rows == Dynamic || Cols == Dynamic, Eigen::Matrix<int, Dynamic, 1>, int>
-    locate(const Eigen::Matrix<double, Rows, Cols>& p) const {
-        fdapde_static_assert(
-          (Cols == 1 && Rows == embed_dim) || (Cols == Dynamic && Rows == Dynamic),
-          YOU_PASSED_A_MATRIX_OF_POINTS_TO_LOCATE_OF_WRONG_DIMENSIONS);
-        if (!location_policy_.has_value()) { location_policy_ = LocationPolicy(this); }
-        return location_policy_->locate(p);
-    }
-    template <typename Derived> Eigen::Matrix<int, Dynamic, 1> locate(const Eigen::Map<Derived>& p) const {
-        if (!location_policy_.has_value()) location_policy_ = LocationPolicy(this);
-        return location_policy_->locate(p);
-    }
-    // the set of cells which have node id as vertex
-    std::vector<int> node_patch(int id) const {
-        if (!location_policy_.has_value()) location_policy_ = LocationPolicy(this);
-        return location_policy_->all_locate(Base::node(id));
-    }
+    // template <int Rows, int Cols>
+    // std::conditional_t<Rows == Dynamic || Cols == Dynamic, Eigen::Matrix<int, Dynamic, 1>, int>
+    // locate(const Eigen::Matrix<double, Rows, Cols>& p) const {
+    //     fdapde_static_assert(
+    //       (Cols == 1 && Rows == embed_dim) || (Cols == Dynamic && Rows == Dynamic),
+    //       YOU_PASSED_A_MATRIX_OF_POINTS_TO_LOCATE_OF_WRONG_DIMENSIONS);
+    //     if (!location_policy_.has_value()) { location_policy_ = LocationPolicy(this); }
+    //     return location_policy_->locate(p);
+    // }
+    // template <typename Derived> Eigen::Matrix<int, Dynamic, 1> locate(const Eigen::Map<Derived>& p) const {
+    //     if (!location_policy_.has_value()) location_policy_ = LocationPolicy(this);
+    //     return location_policy_->locate(p);
+    // }
+    // // the set of cells which have node id as vertex
+    // std::vector<int> node_patch(int id) const {
+    //     if (!location_policy_.has_value()) location_policy_ = LocationPolicy(this);
+    //     return location_policy_->all_locate(Base::node(id));
+    // }
    protected:
     std::vector<int> edges_ {};                        // nodes (as row indexes in nodes_ matrix) composing each edge
     std::vector<int> edge_to_cells_ {};                // for each edge, the ids of adjacent cells
@@ -1532,7 +1532,7 @@ template <int N> class Triangulation<2, N> : public TriangulationBase<2, N, Tria
     BinaryVector<Dynamic> boundary_edges_ {};   // j-th element is 1 \iff edge j is on boundary
     std::vector<int> edges_markers_ {};
     int n_edges_ = 0;
-    mutable std::optional<LocationPolicy> location_policy_ {};
+    // mutable std::optional<LocationPolicy> location_policy_ {};
     // cell caching
     std::vector<typename Base::CellType> cell_cache_;
     mutable typename Base::CellType cell_;   // used in case cell caching is off
@@ -1549,16 +1549,16 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
     static constexpr int n_edges_per_cell = 6;
     using FaceType = typename Base::CellType::FaceType;
     using EdgeType = typename Base::CellType::EdgeType;
-    using LocationPolicy = TreeSearch<Triangulation<3, 3>>;
+    // using LocationPolicy = TreeSearch<Triangulation<3, 3>>;
     using Base::embed_dim;
     using Base::local_dim;
     using Base::n_nodes_per_cell;
     static constexpr auto face_pattern =
       Matrix<int, binomial_coefficient(n_nodes_per_cell, n_nodes_per_face), n_nodes_per_face>(
-        combinations<n_nodes_per_face, n_nodes_per_cell>());
+        combinations(n_nodes_per_edge, n_nodes_per_cell));
     static constexpr auto edge_pattern =
       Matrix<int, binomial_coefficient(n_nodes_per_face, n_nodes_per_edge), n_nodes_per_edge>(
-        combinations<n_nodes_per_edge, n_nodes_per_face>());
+        combinations(n_nodes_per_edge, n_nodes_per_face));
 
     Triangulation() = default;
     Triangulation(
@@ -1901,24 +1901,24 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
     }
 
     // point location
-    template <int Rows, int Cols>
-    std::conditional_t<Rows == Dynamic || Cols == Dynamic, Eigen::Matrix<int, Dynamic, 1>, int>
-    locate(const Eigen::Matrix<double, Rows, Cols>& p) const {
-        fdapde_static_assert(
-          (Cols == 1 && Rows == embed_dim) || (Cols == Dynamic && Rows == Dynamic),
-          YOU_PASSED_A_MATRIX_OF_POINTS_TO_LOCATE_OF_WRONG_DIMENSIONS);
-        if (!location_policy_.has_value()) location_policy_ = LocationPolicy(this);
-        return location_policy_->locate(p);
-    }
-    template <typename Derived> Eigen::Matrix<int, Dynamic, 1> locate(const Eigen::Map<Derived>& p) const {
-        if (!location_policy_.has_value()) location_policy_ = LocationPolicy(this);
-        return location_policy_->locate(p);
-    }
-    // the set of cells which have node id as vertex
-    std::vector<int> node_patch(int id) const {
-        if (!location_policy_.has_value()) location_policy_ = LocationPolicy(this);
-        return location_policy_->all_locate(Base::node(id));
-    }
+    // template <int Rows, int Cols>
+    // std::conditional_t<Rows == Dynamic || Cols == Dynamic, Eigen::Matrix<int, Dynamic, 1>, int>
+    // locate(const Eigen::Matrix<double, Rows, Cols>& p) const {
+    //     fdapde_static_assert(
+    //       (Cols == 1 && Rows == embed_dim) || (Cols == Dynamic && Rows == Dynamic),
+    //       YOU_PASSED_A_MATRIX_OF_POINTS_TO_LOCATE_OF_WRONG_DIMENSIONS);
+    //     if (!location_policy_.has_value()) location_policy_ = LocationPolicy(this);
+    //     return location_policy_->locate(p);
+    // }
+    // template <typename Derived> Eigen::Matrix<int, Dynamic, 1> locate(const Eigen::Map<Derived>& p) const {
+    //     if (!location_policy_.has_value()) location_policy_ = LocationPolicy(this);
+    //     return location_policy_->locate(p);
+    // }
+    // // the set of cells which have node id as vertex
+    // std::vector<int> node_patch(int id) const {
+    //     if (!location_policy_.has_value()) location_policy_ = LocationPolicy(this);
+    //     return location_policy_->all_locate(Base::node(id));
+    // }
    protected:
     std::vector<int> faces_, edges_;   // nodes (as row indexes in nodes_ matrix) composing each face and edge
     std::vector<int> face_to_cells_;   // for each face, the ids of adjacent cells
@@ -1930,7 +1930,7 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
     std::vector<int> faces_markers_;
     std::vector<int> edges_markers_;
     int n_faces_ = 0, n_edges_ = 0;
-    mutable std::optional<LocationPolicy> location_policy_ {};
+    // mutable std::optional<LocationPolicy> location_policy_ {};
     // cell caching
     std::vector<typename Base::CellType> cell_cache_;
     mutable typename Base::CellType cell_;   // used in case cell caching is off
