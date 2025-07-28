@@ -27,49 +27,20 @@ private:
     using vector_t = std::conditional_t<N == Dynamic, Eigen::Matrix<double, Dynamic, 1>, Eigen::Matrix<double, N, 1>>;
     using matrix_t = std::conditional_t<N == Dynamic, Eigen::Matrix<double, Dynamic, Dynamic>, Eigen::Matrix<double, N, N>>;
 
-    vector_t optimum_; // Argmin of the optimum
-    double value_;     // objective value at optimum
-    int max_iter_;     // maximum number of iterations before forced stop
-    int n_iter_ = 0;   // current iteration number
-    double tol_;       // tolerance on error before forced stop
+    vector_t optimum_;   // Argmin of the optimum
+    double value_;       // objective value at optimum
+    int max_iter_ = 500; // maximum number of iterations before forced stop
+    int n_iter_ = 0;     // current iteration number
+    double tol_ = 1e-5;  // tolerance on error before forced stop
 
-    std::normal_distribution<double> normal_dist_ {0.0, 1.0};
-    std::mt19937 rng_;
-
-    std::vector<vector_t> simplex_;       // Edges of the simplex
-    std::vector<double> vertices_values_; // Value of each edge
-    std::vector<int> vertices_rank_;      // Index into the simplex vector, sorted from best to worst
+    matrix_t simplex_;               // Edges of the simplex
+    vector_t vertices_values_;       // Value of each edge
+    std::vector<int> vertices_rank_; // Index into the simplex vector, sorted from best to worst
     
     double alpha_ = 0.0; // Reflexion coeff
     double beta_  = 0.0; // Expension coeff
     double gamma_ = 0.0; // Outer contraction coeff
     double delta_ = 0.0; // Inner contraction coeff
-
-private:
-    // Wessing, S. Proper initialization is crucial for the Nelder–Mead simplex search.
-    // Optim Lett 13, 847–856 (2019). https://doi.org/10.1007/s11590-018-1284-4
-    void init_simplex_(const vector_t &x0) {
-        const int dimension = x0.rows();
-        double infnty_norm = x0.cwiseAbs().maxCoeff();
-        double scale_factor = std::min(std::max(infnty_norm, 1.0), 10.0);
-        double last_coeff = scale_factor * (1.0 - (double)std::sqrt(dimension+1))/(double)(dimension);
-
-        // Initialises the vectors with cached values
-        simplex_.clear();
-        vertices_rank_.clear();
-        vertices_values_.clear();
-        vertices_rank_.resize(dimension+1, 0);
-        vertices_values_.resize(dimension+1, std::numeric_limits<double>::max());
-        simplex_.resize(dimension+1, x0);
-
-        for(int i = 0; i < dimension; ++i) {
-            simplex_[i][i] += scale_factor;
-            vertices_rank_[i+1] = i+1;
-            simplex_[dimension][i] += last_coeff;
-        }
-
-        simplex_[dimension][dimension-1] += last_coeff;
-    }
 
 public:
     static constexpr bool gradient_free = true;
@@ -78,15 +49,11 @@ public:
     double obj_curr;
 
 public:
-
     // constructors
     NelderMead() = default;
 
-    NelderMead(int max_iter, double tol, unsigned int seed = 0u):
-        max_iter_(max_iter),
-        tol_(tol),
-        rng_(seed){
-    }
+    NelderMead(int max_iter, double tol): max_iter_(max_iter), tol_(tol)
+    {}
 
     template <typename ObjectiveT, typename... Callbacks>
     vector_t optimize(ObjectiveT&& objective, const vector_t& x0, Callbacks&&... callbacks) {
@@ -109,52 +76,60 @@ public:
         } else {
 	        zero = vector_t::Zero();
         }
+        vector_t centroid = zero; // centroid
+        vector_t xr = zero;       // initial next guess
+        vector_t tmp = zero;      // temporary vec for inner, outer contractions, etc.
 
         // Gao, F., Han, L. Implementing the Nelder-Mead simplex algorithm with adaptive parameters.
         // Comput Optim Appl 51, 259–277 (2012). https://doi.org/10.1007/s10589-010-9329-3
         alpha_ = 1.0;
-        beta_ = 1 + 2.0/(double)dimension;
-        gamma_ = 0.75- 1.0/(double)(2*dimension);
+        beta_  = 1 + 2.0/(double)dimension;
+        gamma_ = 0.75 - 1.0/(double)(2*dimension);
         delta_ = 1.0 - 1.0/(double)dimension;
 
         // Initialise the simplex given x0
-        init_simplex_(x0);
+        // Wessing, S. Proper initialization is crucial for the Nelder–Mead simplex search.
+        // Optim Lett 13, 847–856 (2019). https://doi.org/10.1007/s11590-018-1284-4
+        {
+            double infnty_norm = x0.cwiseAbs().maxCoeff();
+            double scale_factor = std::min(std::max(infnty_norm, 1.0), 10.0);
+            double last_coeff = scale_factor * (1.0 - (double)std::sqrt(dimension+1))/(double)(dimension);
 
-        fdapde_assert(vertices_values_.size() == simplex_.size());
-        fdapde_assert(vertices_rank_.size() == simplex_.size());
-        fdapde_assert(x0.rows()+1 == simplex_.size());
+            // Initialises the vectors with cached values
+            simplex_ = x0.rowwise().replicate(dimension+1);
+            vertices_values_ = vector_t::Constant(dimension+1, 1, std::numeric_limits<double>::max());
+            vertices_rank_.clear();
+            vertices_rank_.resize(dimension+1, 0);
+
+            for(int i = 0; i < dimension; ++i) {
+                simplex_(i, i) += scale_factor;
+                vertices_rank_[i+1] = i+1;
+                simplex_(i, dimension) += last_coeff;
+            }
+        }
+
+        fdapde_assert(vertices_values_.size() == simplex_.cols());
+        fdapde_assert(vertices_rank_.size() == simplex_.cols());
+        fdapde_assert(x0.rows()+1 == simplex_.cols());
 
         // Compute the vertices's values
-        for(int i = 0; i < simplex_.size(); ++i)
-            vertices_values_[i] = objective(simplex_[i]);
+        for(int i = 0; i < simplex_.cols(); ++i)
+            vertices_values_[i] = objective(simplex_.col(i));
+        
+        // Sort the vertices according to their objective value
+        std::sort(vertices_rank_.begin(), vertices_rank_.end(), [&](int a, int b) {
+            return vertices_values_[a] < vertices_values_[b];
+        });
 
         while(!stop && n_iter_ < max_iter_) {
-            // Sort the vertices according to their objective value
-            std::sort(vertices_rank_.begin(), vertices_rank_.end(), [&](int a, int b) {
-                return vertices_values_[a] < vertices_values_[b];
-            });
-
             // Centroid calculation
-            vector_t centroid = zero; // centroid of the [dimension] best vertices
-            vector_t random_vect = zero;
+            centroid.setZero(); // centroid of the [dimension] best vertices
             for(int i = 0; i < dimension; ++i) {
-                centroid += simplex_[vertices_rank_[i]];
-                if(dimension >= 10) {
-                    random_vect[i] = normal_dist_(rng_);
-                }
+                centroid += simplex_.col(vertices_rank_[i]);
             }
             centroid /= (double)(dimension);
-            if(dimension >= 10) {
-                random_vect /= random_vect.norm();
-            }
             
-            // Perturbation of the centroid to enhance performance for large dimensions
-            // Optim Lett 13, 1011–1025 (2019). https://doi.org/10.1007/s11590-018-1306-2
-            vector_t perturbed_centroid = centroid;
-            if(false) {
-                perturbed_centroid += 0.1 * random_vect * (simplex_[vertices_rank_[0]] - simplex_[vertices_rank_[dimension]]).norm();
-            }
-            vector_t xr = perturbed_centroid + alpha_*(perturbed_centroid - simplex_[vertices_rank_[dimension]]);
+            xr = centroid + alpha_*(centroid - simplex_.col(vertices_rank_[dimension]));
 
             // Cache the values used for the if statements
             require_shrink = false;
@@ -168,38 +143,38 @@ public:
             // Compute the new simplex
             if( best_val <= xr_val && xr_val < second_worst_val ) {
                 // Reflexion
-                simplex_[vertices_rank_[dimension]] = xr;
+                simplex_.col(vertices_rank_[dimension]) = xr;
                 vertices_values_[vertices_rank_[dimension]] = xr_val;
             } else if( xr_val < best_val ) {
                 // Expansion
-                vector_t xe = perturbed_centroid + beta_*(xr - perturbed_centroid);
-                double xe_val = objective(xe);
+                tmp = centroid + beta_*(xr - centroid);
+                double xe_val = objective(tmp);
                 stop |= internals::exec_eval_hooks(*this, objective, callbacks_);
                 if(xe_val < xr_val) {
-                    simplex_[vertices_rank_[dimension]] = xe;
+                    simplex_.col(vertices_rank_[dimension]) = tmp;
                     vertices_values_[vertices_rank_[dimension]] = xe_val;
                 } else {
-                    simplex_[vertices_rank_[dimension]] = xr;
+                    simplex_.col(vertices_rank_[dimension]) = xr;
                     vertices_values_[vertices_rank_[dimension]] = xr_val;
                 }
             } else if( second_worst_val <= xr_val < worst_val ) {
                 // Outer Contraction
-                vector_t xoc = centroid + gamma_ * (xr - centroid);
-                double xoc_val = objective(xoc);
+                tmp = centroid + gamma_ * (xr - centroid);
+                double xoc_val = objective(tmp);
                 stop |= internals::exec_eval_hooks(*this, objective, callbacks_);
                 if (xoc_val <= xr_val) {
-                    simplex_[vertices_rank_[dimension]] = xoc;
+                    simplex_.col(vertices_rank_[dimension]) = tmp;
                     vertices_values_[vertices_rank_[dimension]] = xoc_val;
                 } else {
                     require_shrink = true;
                 }
             } else {
                 // Inner Contraction
-                vector_t xic = centroid - gamma_ * (xr - centroid);
-                double xic_val = objective(xic);
+                tmp = centroid - gamma_ * (xr - centroid);
+                double xic_val = objective(tmp);
                 stop |= internals::exec_eval_hooks(*this, objective, callbacks_);
                 if( xic_val < best_val) {
-                    simplex_[vertices_rank_[dimension]] = xic;
+                    simplex_.col(vertices_rank_[dimension]) = tmp;
                     vertices_values_[vertices_rank_[dimension]] = xic_val;
                 } else {
                     require_shrink = true;
@@ -208,36 +183,36 @@ public:
 
             // Shrink
             if(require_shrink) {
-                const vector_t &best_vertex = simplex_[vertices_rank_[0]];
+                const auto &best_vertex = simplex_.col(vertices_rank_[0]);
                 for(int i = 1; i < dimension + 1; ++i) {
-                    simplex_[vertices_rank_[i]] = best_vertex + delta_ * (simplex_[vertices_rank_[i]] - best_vertex);
+                    simplex_.col(vertices_rank_[i]) = best_vertex + delta_ * (simplex_.col(vertices_rank_[i]) - best_vertex);
+                    vertices_values_[vertices_rank_[i]] = objective(simplex_.col(vertices_rank_[i]));
                 }
             }
 
+            // Sort the vertices according to their objective value
+            std::sort(vertices_rank_.begin(), vertices_rank_.end(), [&](int a, int b) {
+                return vertices_values_[a] < vertices_values_[b];
+            });
+
             // Stoping criterion
 	        stop |= internals::exec_stop_if(*this, objective);
-            double value_mean = 0.0;
+
+            // I did not use std::accumulate because I beleive that it can become
+            // very slow depending on the container & formula
+            const double value_mean = vertices_values_.mean();
+            double value_var = 0.0;
             for(double val: vertices_values_) {
-                value_mean += val;
+                const double x = val - value_mean;
+                value_var += x*x;
             }
-            value_mean /= (double)vertices_values_.size();
+            value_var /= (double)vertices_values_.rows();
 
-            double std_dev = 0.0;
-            for(double val: vertices_values_) {
-                double x = val - value_mean;
-                std_dev += x*x;
-            }
-            std_dev /= (double)(dimension);
-            std_dev = std::sqrt(std_dev);
-
-            if(std_dev <= tol_) {
-                stop = true;
-            }
-
+            stop |= std::sqrt(value_var) <= tol_;
             ++n_iter_;
         }
         
-        optimum_ = simplex_[0];
+        optimum_ = simplex_.col(vertices_rank_[0]);
         value_ = objective(optimum_);
         return optimum_;
     }

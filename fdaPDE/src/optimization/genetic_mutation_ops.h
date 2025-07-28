@@ -38,7 +38,7 @@ public:
     {}
 
     template <typename Opt> bool sync_hook(Opt& opt) {
-        variance_ = initial_variance_;
+        variance_ = initial_variance_ * opt.population.rowwise().norm().mean();
         return false;
     }
 
@@ -48,7 +48,6 @@ public:
             for(int i = 0; i < opt.population.rows(); ++i)
                 opt.population(i,j) += normal_dist_(opt.rng) * variance_;
         }
-
 
         variance_ *= multiplier_;
         return false;

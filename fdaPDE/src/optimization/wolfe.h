@@ -34,14 +34,14 @@ class WolfeLineSearch {
     WolfeLineSearch(double alpha, double c1, double c2) : alpha_(alpha), c1_(c1), c2_(c2) { }
 
     // bisection method for the weak Wolfe conditions. check "Jorge Nocedal, Stephen J. Wright (2006), Numerical
-    // Optimization, pag 58"
+    // Optimization, page 58
     template <typename Opt, typename Obj> bool adapt_hook(Opt& opt, Obj& obj) {
         fdapde_static_assert(is_gradient_based_opt_v<Opt>, THIS_METHOD_IS_FOR_GRADIENT_BASED_OPTIMIZATION_ONLY);
-        double grad_0 = opt.grad_old.dot(opt.update), val_0 = obj(opt.x_old);
+        const double grad_0 = opt.grad_old.dot(opt.update), val_0 = obj(opt.x_old);
         auto grad = obj.gradient();
 
         bool zooming = false;
-        double c1 = c1_, c2 = c2_;
+        const double c1 = c1_, c2 = c2_;
         double alpha_max = alpha_max_, alpha_min = alpha_min_;
         double alpha_prev = 0;
         double alpha_curr = alpha_;

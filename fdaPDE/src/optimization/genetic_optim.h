@@ -114,15 +114,20 @@ public:
         // In the case of this algorithm, post_update... is the mutation process
         // so we apply it before the main loop
         stop |= internals::exec_mutate_hooks(*this, callbacks_);
+
+        // Compute the fitness for selection
+        for(int i = 0; i < population_size_; ++i) {
+            population_fitness(i) = objective(population.col(i));
+        }
         
         while (n_iter_ < max_iter_ && !stop) {
+            stop |= internals::exec_select_hooks(*this, callbacks_);
+            stop |= internals::exec_mutate_hooks(*this, callbacks_);
+
             // Compute the fitness for selection
             for(int i = 0; i < population_size_; ++i) {
                 population_fitness(i) = objective(population.col(i));
             }
-
-            stop |= internals::exec_select_hooks(*this, callbacks_);
-            stop |= internals::exec_mutate_hooks(*this, callbacks_);
             
             // Compute argmax of the population fitness
             int current_best = 0;
@@ -133,6 +138,8 @@ public:
 
             if( std::abs(value_ - population_fitness(current_best)) < tol_) {
                 ++static_since_;
+            } else {
+                static_since_ = 0;
             }
             
             // Stoping condition: haven't changed for a while

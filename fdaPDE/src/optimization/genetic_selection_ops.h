@@ -22,11 +22,10 @@
 
 namespace fdapde {
 
-template <int N>
 class RankSelection {
 private:
-    using vector_t = Eigen::Matrix<double, N, 1>;
-    using matrix_t = Eigen::Matrix<double, N, 1>;
+    using vector_t = Eigen::Matrix<double, Eigen::Dynamic, 1>;
+    using matrix_t = Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic>;
 
     std::vector<int> population_order_;
     std::uniform_real_distribution<> distribution_{0.0, 1.0};
@@ -39,7 +38,7 @@ private:
      * @param sample random uniform sample between 0 and 1
      * @return int the rank associated with the sample
      */
-    int index_of_sample(double sample) {
+    int index_of_sample(double sample) const {
         int upper_bound = cdf_.size() - 1;
         int lower_bound = 0;
 
@@ -72,21 +71,16 @@ public:
         population_order_.clear();
         cdf_.clear();
 
-        population_order_.reserve(opt.population.size());
+        population_order_.reserve(opt.population.cols());
         new_population_ = opt.population;
-        cdf_.reserve(opt.population.size());
+        cdf_.reserve(opt.population.cols());
 
-        constexpr double amax = 1.2;
-        constexpr double amin = 2.0 - amax;
+        const double denom = (opt.population.cols()+1)*(opt.population.cols()) * 0.5; // N(N+1)/2
         double probability_sum = 0.0;
         for(int i = 0; i < opt.population.cols(); ++i) {
-            double pi_i = (
-                (amax - (double)(amax - amin)*(i-1)
-                /
-                (double)(opt.population.cols()-1))/(double)(opt.population.cols())
-            );
-
+            double pi_i = (opt.population.cols() - i) / denom;
             probability_sum += pi_i;
+
             cdf_.push_back(probability_sum);
             population_order_.push_back(i);
         }
