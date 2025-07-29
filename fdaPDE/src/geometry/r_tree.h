@@ -48,25 +48,10 @@ class RTree {
             for (int i = 0; i < 2 * embed_dim; ++i) { bbox_[i] = bbox[i]; }
 	    for (int i = 0; i < embed_dim; ++i) { measure_ *= (bbox_[i + embed_dim] - bbox_[i]); }
         }
-
+        // observers
         double measure() const { return measure_; }
         const std::array<double, 2 * embed_dim>& coords() const { return bbox_; }
-        void expand(const bbox_t& other) {
-            for (int i = 0; i < embed_dim; ++i) {
-                bbox_[i] = std::min(bbox_[i], other.bbox_[i]);
-                bbox_[i + embed_dim] = std::max(bbox_[i + embed_dim], other.bbox_[i + embed_dim]);
-            }
-        }
-        template <typename PointT>
-            requires(internals::is_vector_like_v<PointT>)
-        bool constains(const PointT& p) const {
-            fdapde_assert(p.size() == embed_dim);
-            for (int i = 0; i < embed_dim; ++i) {
-                if (bbox_[i] > p[i] || bbox_[i + embed_dim] < p[i]) return false;
-            }
-            return true;
-        }
-        double enlargment(const bbox_t& other) {
+        double enlargment(const bbox_t& other) const {
             // compute measure of expanded rectangle
             double exp_measure_ = 1;
             for (int i = 0; i < embed_dim; ++i) {
@@ -74,6 +59,42 @@ class RTree {
                   (std::max(bbox_[i + embed_dim], other.bbox_[i + embed_dim]) - std::min(bbox_[i], other.bbox_[i]));
             }
             return exp_measure_ - measure_;
+        }
+        // modifiers
+        void expand(const bbox_t& other) {
+            for (int i = 0; i < embed_dim; ++i) {
+                bbox_[i] = std::min(bbox_[i], other.bbox_[i]);
+                bbox_[i + embed_dim] = std::max(bbox_[i + embed_dim], other.bbox_[i + embed_dim]);
+            }
+        }
+        // queries
+        template <typename PointT>
+            requires(internals::is_vector_like_v<PointT>)
+        bool contains(const PointT& p) const {
+            fdapde_assert(p.size() == embed_dim);
+            for (int i = 0; i < embed_dim; ++i) {
+                if (greater_than(bbox_[i], p[i]) || less_than(bbox_[i + embed_dim], p[i])) return false;
+            }
+            return true;
+        }
+        // true if this bbox_t fully contains the other
+        bool contains(const bbox_t& other) const {
+            for (int i = 0; i < embed_dim; ++i) {
+                if (!(less_than(bbox_[i], other.bbox_[i]) &&
+                      greater_than(bbox_[i + embed_dim], other.bbox_[i + embed_dim]))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        // true if this bbox_t partially overlapls with the other
+        bool intersects(const bbox_t& other) const {
+            for (int i = 0; i < embed_dim; ++i) {
+                if (
+                  greater_than(bbox_[i], other.bbox_[i + embed_dim]) || less_than(bbox_[i + embed_dim], other.bbox_[i]))
+                    return false;
+            }
+            return true;
         }
        private:
         std::array<double, 2 * embed_dim> bbox_;   // (x1_min, x2_min, ..., xn_min, x1_max, ..., xn_max)
@@ -108,11 +129,20 @@ class RTree {
             fdapde_assert(type_ == type_t::DATA);
             return *data_;
         }
+        bool is_data() const { return type_ == type_t::DATA; }
+        bool is_node() const { return type_ == type_t::NODE; }
+        // comparison
+        friend bool operator==(const item_t& lhs, const item_t& rhs) {
+            return lhs.node_ == rhs.node_ || lhs.data_ == rhs.data_;
+        }
+        friend bool operator!=(const item_t& lhs, const item_t& rhs) {
+            return lhs.node_ != rhs.node_ || lhs.data_ != rhs.data_;
+        }
         // shallow destruction (not-owned memory)
         ~item_t() = default;
     };
     struct node_t {
-        node_t(int M, bool is_leaf = true) : is_leaf_(is_leaf), size_(0) {
+        node_t(int M, bool is_leaf = true) : is_leaf_(is_leaf), size_(0), capacity_(M) {
             data_.resize(M + 1);   // allow overflow to use this buffer for in-place split logic
             free_.resize(M + 1, true);
         }
@@ -147,32 +177,66 @@ class RTree {
             free_[mapped_(i)] = true;
             size_--;
         }
+        void erase(const item_t& item) {
+            // search idx of item in node
+            int i = 0;
+            for (; i < size_; ++i) {
+                if (item == data_[mapped_(i)]) { break; }
+            }
+            if (i < size_) { erase(i); }
+        }
         void set_parent(node_t* parent) { parent_ = parent; }
         void clear() {
             std::fill(free_.begin(), free_.end(), true);
 	    size_ = 0;
         }
-
-      const std::vector<bool>& free() const { return free_; }
-      
+        // iterators
+        struct iterator {
+            using value_type = item_t;
+            using pointer = std::add_pointer_t<value_type>;
+            using reference = std::add_lvalue_reference_t<value_type>;
+            using size_type = std::size_t;
+            using difference_type = std::ptrdiff_t;
+            using iterator_category = std::forward_iterator_tag;
+	  
+            iterator() : node_(nullptr), index_(0) { }
+            iterator(node_t* node, int index) : node_(node), index_(index) { }
+            // increment
+            iterator& operator++() {
+                index_++;
+                return *this;
+            }
+            // accessors
+            item_t& operator*() { return node_->item(index_); }
+            const item_t& operator*() const { return node_->item(index_); }
+            item_t* operator->() { return std::addressof(node_->item(index_)); }
+            const iterator* operator->() const { return std::addressof(node_->item(index_)); }
+            // comparison
+            friend bool operator!=(const iterator& lhs, const iterator& rhs) { return lhs.index_ != rhs.index_; }
+           private:
+            node_t* node_;
+            int index_;
+        };
+        iterator begin() { return iterator(this, 0); }
+        iterator end() { return iterator(this, size_); }
        private:
         // maps i to index of i-th non-free element in data_
         int mapped_(int k) const {
-            int i = 0, j = 0, n = free_.size();
-            for (; i < n; ++i) {
+            int i = 0, j = 0;
+            for (; i < capacity_; ++i) {
                 if (!free_[i]) {
                     if (j == k) { return i; }
                     j++;
                 }
             }
-	    return i;
+            return i > capacity_ ? capacity_ : i;
         }
         // tree structure data
         node_t* parent_ = nullptr;
         bool is_leaf_;
         std::vector<item_t> data_;
         std::vector<bool> free_;   // free_[i] == true \iff data_[i] available for writing
-        int size_ = 0;
+        int size_ = 0, capacity_ = 0;
     };
 
     // select a leaf node in which to place a new index entry obj
@@ -195,6 +259,36 @@ class RTree {
         return curr;
     }
 
+    // find the leaf node containing the index entry obj, togheter with its position. returns nullptr if no obj found
+    std::pair<node_t*, int> find_leaf_(const SpatialObject& obj) {
+        bbox_t obj_bbox(obj);
+        node_t* curr;
+	int i = 0;
+        std::stack<node_t*> stack_;
+        stack_.push(root_);
+        while (!stack_.empty()) {
+            curr = stack_.top();
+            stack_.pop();
+            if (!curr->is_leaf()) {
+                if (obj_bbox.contains(curr->bbox())) {
+                    for (const auto& item : *curr) { stack_.push(item.node()); }
+                } else {
+                    for (const auto& item : *curr) {
+                        if (obj_bbox.intersects(item.bbox())) { stack_.push(item.node()); }
+                    }
+                }
+            } else {
+                i = 0;
+                for (const auto& item : *curr) {
+                    if (std::addressof(item.data()) == std::addressof(obj)) { return std::make_pair(curr, i); }
+                }
+                i++;
+            }
+        }
+        return std::make_pair(nullptr, -1);
+    }
+
+    // node splitting with re-balancing
     std::pair<node_t*, node_t*> split_node_(node_t* node) {
         // allocate memory for new node
         node_t* n = new node_t(M_);
@@ -235,10 +329,9 @@ class RTree {
                 done = true;
             }
             if (done) {
-                for (int i : g) {   // move data to node n
-                    n->insert(node->item(i));
-                    node->erase(i);
-                }
+                // move data to node n
+                for (int i : g) { n->insert(node->item(i)); }
+                for (int i : g) { node->erase(i); }
                 return std::make_pair(node, n);
             }
             // pick_next
@@ -279,9 +372,9 @@ class RTree {
         while (!n1->is_root()) {
             node_t* parent = n1->parent();
             // update l's bounding box in parent
-            for (int i = 0, m = parent->size(); i < m; ++i) {
-                if (n1 == parent->item(i).node()) {
-                    parent->item(i).bbox() = n1->bbox();
+            for (auto& item : *parent) {
+                if (n1 == item.node()) {
+                    item.bbox() = n1->bbox();
                     break;
                 }
             }
@@ -309,6 +402,50 @@ class RTree {
         }
         return;
     }
+  
+    // given a leaf node l from whch an entry has been deleted, eliminate it if has too few entries and relocate.
+    // Propagate node elimination upward, adjusting covering rectangles as necessary
+    void condense_tree_(node_t* l) {
+        std::vector<item_t> Q;   // set of eliminated items
+        node_t* n = l;
+        while (!n->is_root()) {
+            node_t* parent = n->parent();
+            if (n->size() < m_) {   // too few entries, eliminate node
+                parent->erase(item_t(n));
+                for (const auto& item : *n) { Q.push_back(item); }
+                delete n;   // free memory
+            } else {
+                int i = 0;
+                for (const item_t& item : *parent) {
+                    if (item.node() == n) { break; }
+		    i++;
+                }
+		parent->item(i).bbox() = n->bbox();
+            }
+            n = parent;
+        }
+	// reinsert eventual eliminated nodes
+        for (const item_t& item : Q) {
+            if (item.is_data()) {
+                insert(item.data());
+            } else {
+                // insert subtree
+                std::stack<node_t*> stack_;
+                stack_.push(item.node());
+                node_t* curr;
+                while (!stack_.empty()) {
+                    curr = stack_.top();
+                    stack_.pop();
+                    if (curr->is_leaf()) {
+                        for (const auto& item : *curr) { insert(item.data()); }
+                    } else {
+                        stack_.push(curr);
+                    }
+                }
+            }
+        }
+        return;
+    }
 
     node_t* root_ = nullptr;
     int M_;   // maximum number of entries per node
@@ -333,9 +470,64 @@ class RTree {
         adjust_tree_(l, ll);
 	return;
     }
+    void erase(const SpatialObject& obj) {
+        // find leaf containing obj
+        const auto& [l, i] = find_leaf_(obj);
+        if (l == nullptr) return;
+        l->erase(i);
+        condense_tree_(l);
+	// if the root node has only one child after the condensation, make the child the new root
+	if(!root_->is_leaf() && root_->size() == 1) {
+	  node_t* new_root = root_->item(0).node();
+	  delete root_;
+	  root_ = new_root;
+	}
+	return;
+    }
     node_t* root() { return root_; }
 
     // geometric queries
+    // find all spatial objects whose bounding box intersects the given query range
+    std::vector<const SpatialObject*> intersect_search(const std::array<double, 2 * embed_dim>& query) const {
+        std::vector<const SpatialObject*> result;
+        bbox_t query_bbox(query);
+        node_t* curr;
+        std::stack<node_t*> stack_;
+        stack_.push(root_);
+        while (!stack_.empty()) {
+            curr = stack_.top();
+            stack_.pop();
+            if (!curr->is_leaf()) {
+                if (query_bbox.contains(curr->bbox())) {
+                    for (const auto& item : *curr) { stack_.push(item.node()); }
+                } else {
+                    for (const auto& item : *curr) {
+                        if (query_bbox.intersects(item.bbox())) { stack_.push(item.node()); }
+                    }
+                }
+            } else {
+                for (const auto& item : *curr) {
+                    if (query_bbox.intersects(item.data().bbox())) { result.push_back(std::addressof(item.data())); }
+                }
+            }
+        }
+        return result;
+    }
+
+    ~RTree() {
+        // dfs visit to deallocate structural nodes
+        std::stack<node_t*> stack_;
+        stack_.push(root_);
+        node_t* curr;
+        while (!stack_.empty()) {
+            curr = stack_.top();
+            stack_.pop();
+            if (!curr->is_leaf()) {
+                for (const auto& item : *curr) { stack_.push(item.node()); }
+            }
+            delete curr;
+        }
+    }
 };
 
 }   // namespace fdapde
