@@ -35,8 +35,11 @@ template <int N, typename... Args> class BFGS {
     int n_iter_ = 0;   // current iteration number
     double tol_;       // tolerance on error before forced stop
     double step_;      // update step
+    double h_min_;
+    double h_max_;
    public:
     vector_t x_old, x_new, update, grad_old, grad_new;
+    double obj_old, obj_new;
     matrix_t inv_hessian;
     double h;
     // constructor
@@ -56,18 +59,17 @@ template <int N, typename... Args> class BFGS {
         return *this;
     }
     template <typename ObjectiveT, typename... Functor>
-        requires(sizeof...(Functor) < 2) && ((requires(Functor f, double value) { f(value); }) && ...)
+    requires(sizeof...(Functor) < 2) && ((requires(Functor f, double opt_old, double opt_new, double h) { f(opt_old, opt_new, h); }) && ...)
     vector_t optimize(ObjectiveT&& objective, const vector_t& x0, Functor&&... func) {
         fdapde_static_assert(
           std::is_same<decltype(std::declval<ObjectiveT>().operator()(vector_t())) FDAPDE_COMMA double>::value,
           INVALID_CALL_TO_OPTIMIZE__OBJECTIVE_FUNCTOR_NOT_ACCEPTING_VECTORTYPE);
         bool stop = false;   // asserted true in case of forced stop
-        vector_t zero;
+        vector_t zero = vector_t::Zero(x0.rows());
         double error = 0;
         auto grad = objective.derive();
         n_iter_ = 0;
         h = step_;
-        x_old = x0, x_new = x0;
         if constexpr (N == Dynamic) {   // inv_hessian approximated with identity matrix
             inv_hessian = matrix_t::Identity(x0.rows(), x0.rows());
             zero = vector_t::Zero(x0.rows());
@@ -75,56 +77,84 @@ template <int N, typename... Args> class BFGS {
             inv_hessian = matrix_t::Identity();
             zero = vector_t::Zero();
         }
-        grad_old = grad(x_old);
+        x_old = x_new = x0;
+        grad_old = grad_new = grad(x_new);
+        obj_old = obj_new = objective(x_new);
+        h_min_ = step_;
+        h_max_ = 0.0;
+
         if (grad_old.isApprox(zero)) {   // already at stationary point
             optimum_ = x_old;
-            value_ = objective(optimum_);
-            if constexpr (sizeof...(Functor) == 1) { (func(value_), ...); }
+            if constexpr (sizeof...(Functor) == 1) { (func(obj_old, obj_new, h), ...); }
             return optimum_;
         }
         error = grad_old.norm();
 
-        while (n_iter_ < max_iter_ && error > tol_ && !stop) {
+        while (n_iter_ < max_iter_ && error > 1e-20 && !stop) {
+
+            // set-up new iteration
+            x_old = x_new;
+            grad_old = grad_new;
+            obj_old = obj_new;
+
             // compute update direction
             update = -inv_hessian * grad_old;
+
+            /// pre-update step
             stop |= execute_pre_update_step(*this, objective, callbacks_);
+
             // update along descent direction
             x_new = x_old + h * update;
             grad_new = grad(x_new);
+            obj_new = objective(x_new);
+
+            // check zero-gradient
             if (grad_new.isApprox(zero)) {   // already at stationary point
-                optimum_ = x_old;
-                value_ = objective(optimum_);
-                if constexpr (sizeof...(Functor) == 1) { (func(value_), ...); }
+                optimum_ = x_new;
+                if constexpr (sizeof...(Functor) == 1) { (func(obj_old, obj_new, h), ...); }
                 return optimum_;
             }
+
             // update inverse hessian approximation
             vector_t delta_x = x_new - x_old;
             vector_t delta_grad = grad_new - grad_old;
             double xg = delta_x.dot(delta_grad);
             vector_t hx = inv_hessian * delta_grad;
-
             matrix_t U = (1 + (delta_grad.dot(hx)) / xg) * ((delta_x * delta_x.transpose()) / xg);
             matrix_t V = ((hx * delta_x.transpose() + delta_x * hx.transpose())) / xg;
             inv_hessian += (U - V);
-            // prepare next iteration
-            if constexpr (sizeof...(Functor) == 1) { (func(objective(x_old)), ...); }
+
+            // inspection print
+            if constexpr (sizeof...(Functor) == 1) { (func(obj_old, obj_new, h), ...); }
             error = grad_new.norm();
-            stop |=
-              (execute_post_update_step(*this, objective, callbacks_) || execute_stopping_criterion(*this, objective));
-            x_old = x_new;
-            grad_old = grad_new;
+            if (error < 1e-20) { std::cout << "error " << std::endl; }
+
+            stop |= (execute_post_update_step(*this, objective, callbacks_) || execute_stopping_criterion(*this, objective));
+            // if (stop) { std::cout << "post_update " << std::endl; }
+
+            // bookkeeping
             n_iter_++;
+            h_min_ = std::min(h_min_, h);
+            h_max_ = std::max(h_max_, h);
         }
-        optimum_ = x_old;
-        value_ = objective(optimum_);
-        if constexpr (sizeof...(Functor) == 1) { (func(value_), ...); }
+        if (n_iter_ == max_iter_) { std::cout << "max_iter " << std::endl; }
+        optimum_ = x_new;
+        value_ = obj_new;
+        // std::cout << "h: " << std::fixed << std::setprecision(10) << step_ << " -> ";
+        if constexpr (sizeof...(Functor) == 1) { (func(obj_old, obj_new, h), ...); }
         return optimum_;
     }
     // getters
     vector_t optimum() const { return optimum_; }
     double step() const { return step_; }
+    double h_min() const { return h_min_; }
+    double h_max() const { return h_max_; }
     double value() const { return value_; }
     int n_iter() const { return n_iter_; }
+    // setter
+    void set_step(double step) { step_ = step; }
+    void set_max_iter(int max_iter) { max_iter_ = max_iter; }
+    void reset_n_iter() { n_iter_ = 0; }
 };
 
 }   // namespace fdapde

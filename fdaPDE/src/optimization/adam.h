@@ -1,85 +1,80 @@
-// This file is part of fdaPDE, a C++ library for physics-informed
-// spatial and functional data analysis.
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
-#ifndef __FDAPDE_GRADIENT_DESCENT__
-#define __FDAPDE_GRADIENT_DESCENT__
+#ifndef __FDAPDE_ADAM_OPTIMIZER__
+#define __FDAPDE_ADAM_OPTIMIZER__
 
 #include "../../../../../test/src/logger.h"
 #include "header_check.h"
+#include <cmath>
 
 namespace fdapde {
 
-// implementation of Gradient Descent algorithm for unconstrained nonlinear optimization
-template <int N, typename... Args> class GradientDescent {
+// implementation of Adam algorithm for unconstrained nonlinear optimization
+template <int N, typename... Args>
+class Adam {
    private:
     using vector_t = std::conditional_t<N == Dynamic, Eigen::Matrix<double, Dynamic, 1>, Eigen::Matrix<double, N, 1>>;
-    using matrix_t =
-      std::conditional_t<N == Dynamic, Eigen::Matrix<double, Dynamic, Dynamic>, Eigen::Matrix<double, N, N>>;
 
     std::tuple<Args...> callbacks_ {};
     vector_t optimum_;
-    double value_;     // objective value at optimum
-    int max_iter_;     // maximum number of iterations before forced stop
-    double tol_;       // tolerance on error before forced stop
-    double step_;      // update step
-    int n_iter_ = 0;   // current iteration number
-    double h_min_;
-    double h_max_;
+    double value_;
+    int max_iter_;
+    double tol_;
+    double step_;
+    int n_iter_ = 0;
+    double h_min_, h_max_;
+
+    // Adam hyperparameters
+    double beta1_ = 0.9;
+    double beta2_ = 0.999;
+    double epsilon_ = 1e-8;
+    vector_t m_, v_;
+
    public:
-    double obj_old, obj_new;
     vector_t x_old, x_new, update, grad_old, grad_new;
-    matrix_t inv_hessian;
+    double obj_old, obj_new;
     double h;
+
     // constructor
-    GradientDescent() = default;
-    GradientDescent(int max_iter, double tol, double step)
+    Adam() = default;
+    Adam(int max_iter, double tol, double step)
         requires(sizeof...(Args) != 0)
         : max_iter_(max_iter), tol_(tol), step_(step) { }
-    GradientDescent(int max_iter, double tol, double step, Args&&... callbacks) :
-        callbacks_(std::make_tuple(std::forward<Args>(callbacks)...)), max_iter_(max_iter), tol_(tol), step_(step) { }
-    // copy semantic
-    GradientDescent(const GradientDescent& other) :
+    Adam(int max_iter, double tol, double step, Args&&... callbacks)
+        : callbacks_(std::make_tuple(std::forward<Args>(callbacks)...)), max_iter_(max_iter), tol_(tol), step_(step) { }
+
+    Adam(const Adam& other) :
         callbacks_(other.callbacks_), max_iter_(other.max_iter_), tol_(other.tol_), step_(other.step_) { }
-    GradientDescent& operator=(const GradientDescent& other) {
+    Adam& operator=(const Adam& other) {
+        callbacks_ = other.callbacks_;
         max_iter_ = other.max_iter_;
         tol_ = other.tol_;
         step_ = other.step_;
-        callbacks_ = other.callbacks_;
         return *this;
     }
+
     template <typename ObjectiveT, typename... Functor>
-        requires(sizeof...(Functor) < 2) && ((requires(Functor f, double opt_old, double opt_new, double h) { f(opt_old, opt_new, h); }) && ...)
-    vector_t optimize(ObjectiveT&& objective, const vector_t& x0, Functor&&... func) {
+    requires(sizeof...(Functor) < 2) && ((requires(Functor f, double opt_old, double opt_new, double h) { f(opt_old, opt_new, h); }) && ...)
+    vector_t optimize(ObjectiveT&& objective, const vector_t& x0, // const vector_t& m0, const vector_t& v0,
+                  Functor&&... func) {
         fdapde_static_assert(
           std::is_same<decltype(std::declval<ObjectiveT>().operator()(vector_t())) FDAPDE_COMMA double>::value,
           INVALID_CALL_TO_OPTIMIZE__OBJECTIVE_FUNCTOR_NOT_ACCEPTING_VECTORTYPE);
-        bool stop = false;   // asserted true in case of forced stop
+
+        bool stop = false;
         double error = std::numeric_limits<double>::max();
         h = step_;
+
         n_iter_ = 0;
         x_old = x0, x_new = x0;
         auto grad = objective.derive();
         grad_old = grad_new = grad(x_new);
         obj_old = obj_new = objective(x_new);
+        error = grad_old.norm();
+
+        m_ = vector_t::Zero(x0.size());
+        v_ = vector_t::Zero(x0.size());
 
         h_min_ = step_;
         h_max_ = 0.0;
-
-        int n_dofs = x_new.size() / 3;
-        // file << x_new[0] << ", " << x_new[n_dofs] << ", " << x_new[2 * n_dofs] << ", " << obj_new << "\n";
 
         while (n_iter_ < max_iter_ && error > 1e-20 && !stop) {
 
@@ -88,8 +83,16 @@ template <int N, typename... Args> class GradientDescent {
             obj_old = obj_new;
             grad_old = grad_new;
 
-            // compute direction
-            update = -grad_old;
+            // first and second moment estimate
+            m_ = beta1_ * m_ + (1 - beta1_) * grad_old;
+            v_ = beta2_ * v_ + (1 - beta2_) * grad_old.array().square().matrix();
+
+            // bias correction
+            vector_t m_hat = m_ / (1 - std::pow(beta1_, n_iter_ + 1));
+            vector_t v_hat = v_ / (1 - std::pow(beta2_, n_iter_ + 1));
+
+            // RMSprop update rule
+            update = - m_hat.array() / (v_hat.array() + epsilon_).sqrt().array();
 
             // pre-update checks
             stop |= execute_pre_update_step(*this, objective, callbacks_);
@@ -106,25 +109,23 @@ template <int N, typename... Args> class GradientDescent {
             // post-update checks
             error = grad_new.norm();
             if (error < 1e-20) { std::cout << "error " << std::endl; }
-
             stop |= (execute_post_update_step(*this, objective, callbacks_) || execute_stopping_criterion(*this, objective));
             // if (stop) { std::cout << "post_update " << std::endl; }
-
-            // std::cout << "(" << x_new[0] << ", " << x_new[n_dofs] << ", " << x_new[2 * n_dofs] << ")";//  << obj_new ;
-            // file << x_new[0] << ", " << x_new[n_dofs] << ", " << x_new[2 * n_dofs] << ", "  << obj_new << "\n";
 
             // bookkeeping
             n_iter_++;
             h_min_ = std::min(h_min_, h);
             h_max_ = std::max(h_max_, h);
         }
-        // if (n_iter_ == max_iter_) { std::cout << "max_iter " << std::endl; }
+
+        if (n_iter_ == max_iter_) { std::cout << "max_iter " << std::endl; }
         optimum_ = x_new;
         value_ = obj_new;
         // std::cout << "h: " << std::fixed << std::setprecision(10) << step_ << " -> ";
         if constexpr (sizeof...(Functor) == 1) { (func(obj_old, obj_new, h), ...); }
         return optimum_;
     }
+
     // getters
     vector_t optimum() const { return optimum_; }
     double step() const { return step_; }
@@ -138,6 +139,6 @@ template <int N, typename... Args> class GradientDescent {
     void reset_n_iter() { n_iter_ = 0; }
 };
 
-}   // namespace fdapde
+} // namespace fdapde
 
-#endif   // __FDAPDE_GRADIENT_DESCENT__
+#endif // __FDAPDE_ADAM_OPTIMIZER__
