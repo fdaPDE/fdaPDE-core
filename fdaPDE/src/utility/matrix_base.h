@@ -29,8 +29,9 @@ template <int Rows, int Cols, typename Derived> struct MatrixBase;
 [[maybe_unused]] constexpr int ColMajor = 1;
 
 enum class matrix_flags {
-    none   = 0x0000,
-    square = 0x0001,
+    none            = 0x0000,
+    square          = 0x0001,
+    symmetric       = 0x0002
 };
 
 namespace internals {
@@ -294,6 +295,8 @@ struct MatrixProduct : public MatrixBase<Lhs::Rows, Rhs::Cols, MatrixProduct<Lhs
     static constexpr int Cols = Rhs::Cols;
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
+    static constexpr int XprBits = (Lhs::Rows == Rhs::Cols) ? int(matrix_flags::square) : int(matrix_flags::none);
+
 
     constexpr MatrixProduct(const Lhs& lhs, const Rhs& rhs) : lhs_(lhs), rhs_(rhs) { }
     constexpr Scalar operator()(int i, int j) const {
@@ -501,7 +504,8 @@ template <int Rows, int Cols, typename Derived> struct MatrixBase {
     // send matrix to out stream (this is not constexpr evaluable)
     friend std::ostream& operator<<(std::ostream& out, const MatrixBase& m) {
         std::cout << "[[ ";
-        if (Derived::XprBits & int(matrix_flags::square)) std::cout << "SquareMatrix ";
+        if constexpr (Derived::XprBits & int(matrix_flags::square)) std::cout << "SquareMatrix ";
+        if constexpr (Derived::XprBits & int(matrix_flags::symmetric)) std::cout << "SymmetricMatrix ";
         std::cout << "]]" << std::endl;
         for (int i = 0; i < m.derived().rows() - 1; ++i) {
             for (int j = 0; j < m.derived().cols(); ++j) { out << m.derived().operator()(i, j) << " "; }

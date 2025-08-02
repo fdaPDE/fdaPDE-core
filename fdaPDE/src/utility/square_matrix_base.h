@@ -34,6 +34,15 @@ struct SquareMatrixBase : public MatrixBase<Size, Size, Derived> {
         return trace_;
     }
 
+    // Identity
+    constexpr static Derived Identity() { // TODO: it would be optimal to return a SPDMatrix
+        Derived I;
+        for (int i = 0; i < Size; ++i)
+            for (int j = i; j < Size; ++j)
+                I(i, j) = (i == j) ? 1 : 0; // TODO: use the Scalar type of the Derived class
+        return I;
+    }
+
     // TODO: Eigenvalue Decomposition
 
 };

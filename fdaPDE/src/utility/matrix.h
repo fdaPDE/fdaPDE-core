@@ -34,6 +34,7 @@ class Matrix : public std::conditional_t<Rows_ == Cols_, SquareMatrixBase<Rows_,
     static constexpr int ReadOnly = 0;
     static constexpr int XprBits = (Rows_ == Cols_) ? int(matrix_flags::square) : int(matrix_flags::none);
 
+    // constructors
     constexpr Matrix() : data_() {};
     constexpr explicit Matrix(const std::array<Scalar, StorageSize>& data) : data_(data) { }
     constexpr explicit Matrix(const std::vector<Scalar>& data) : data_() {
@@ -106,8 +107,7 @@ class Matrix : public std::conditional_t<Rows_ == Cols_, SquareMatrixBase<Rows_,
         fdapde_static_assert(Cols == 1 || Rows == 1, THIS_METHOD_IS_ONLY_FOR_CONSTEXPR_ROW_OR_COLUMN_VECTORS);
         return data_[i];
     }
-    constexpr int rows() const { return Rows; }
-    constexpr int cols() const { return Cols; }
+    // data
     constexpr const Scalar* data() const { return data_.data(); }
     Scalar* data() { return data_.data(); }
     // assignment operator
@@ -127,8 +127,7 @@ class Matrix : public std::conditional_t<Rows_ == Cols_, SquareMatrixBase<Rows_,
     // assignment from std::array
     constexpr Matrix<Scalar, Rows, Cols, NestAsRefBit>& operator=(const std::array<Scalar, StorageSize>& rhs) {
         for (int id = 0; id < StorageSize; ++id) {
-            auto[i, j] = inv_index(id);
-            data_[id] = rhs[index(i, j)];
+            data_[id] = rhs[id];
         }
         return *this;
     }
@@ -170,6 +169,10 @@ class Matrix : public std::conditional_t<Rows_ == Cols_, SquareMatrixBase<Rows_,
     }
     constexpr void setZero() { setConstant(Scalar(0)); }
     constexpr void setOnes() { setConstant(Scalar(1)); }
+    // getters
+    constexpr int rows() const { return Rows; }
+    constexpr int cols() const { return Cols; }
+
    private:
     std::array<Scalar, StorageSize> data_;
 
@@ -179,7 +182,7 @@ class Matrix : public std::conditional_t<Rows_ == Cols_, SquareMatrixBase<Rows_,
     static constexpr std::pair<int, int> inv_index(int id) {
         int i = id / Cols;
         int j = id % Cols;
-        return std::make_pair(i, j);
+        return {i, j};
     }
 };
 

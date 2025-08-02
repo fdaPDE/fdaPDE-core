@@ -112,7 +112,7 @@ template <typename MatrixType> class PartialPivLU {
     PermutationMatrix<Size> P_;
 public:
     constexpr PartialPivLU() : m_(), P_() {};
-    template <typename XprType> constexpr PartialPivLU(const SquareMatrixBase<Size, XprType>& m) : m_() { compute(m); std::cout << MatrixType::XprBits << std::endl; }
+    template <typename XprType> constexpr PartialPivLU(const SquareMatrixBase<Size, XprType>& m) : m_() { compute(m); }
 
     // computes the LU factorization of matrix m with partial (row) pivoting
     template <typename XprType> constexpr void compute(const SquareMatrixBase<Size, XprType>& m) {

@@ -68,6 +68,7 @@ namespace fdapde {
 #include "src/utility/matrix.h"
 #include "src/utility/vector.h"
 #include "src/utility/square_matrix.h"
+#include "src/utility/symmetric_matrix.h"
 #include "src/utility/binary.h"
 #include "src/utility/mdarray.h"
 #include "src/utility/binary_tree.h"

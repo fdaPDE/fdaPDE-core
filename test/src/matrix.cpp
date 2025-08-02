@@ -255,5 +255,190 @@ TEST(matrix_test, MatrixBase) {
     std::cout << "Prod(M) = ";
     std::cout << M.prod() << std::endl;
     std::cout << std::endl;
+}
 
+TEST(matrix_test, IdentityMatrix) {
+    // The identity matrix is only available for square matrices
+    // std::cout << "Identity Matrix" << std::endl;
+    // std::cout << Matrix<double, 3, 4>::Identity() << std::endl;
+    // std::cout << std::endl;
+    std::cout << "Identity Matrix" << std::endl;
+    std::cout << Matrix<double, 3, 3>::Identity() << std::endl;
+    std::cout << std::endl;
+    std::cout << "Identity Matrix" << std::endl;
+    std::cout << SymmetricMatrix<double, 3>::Identity() << std::endl;
+    std::cout << std::endl;
+}
+
+TEST(matrix_test, SymmetricMatrix) {
+
+    using Scalar = double;
+
+    // Default constructor
+    SymmetricMatrix<Scalar, 2> m_default;
+    m_default.setZero();
+    for (int i = 0; i < 2; ++i)
+        for (int j = 0; j < 2; ++j)
+            assert(m_default(i,j) == Scalar(0));
+    std::cout << "setZero" << std::endl;
+    std::cout << m_default << std::endl;
+    std::cout << std::endl;
+
+    // Constant value constructor
+    SymmetricMatrix<Scalar, 2> m_const = Matrix<Scalar, 2, 2>::Constant(Scalar(3));
+    for (int i = 0; i < 2; ++i)
+        for (int j = 0; j < 2; ++j)
+            assert(m_const(i,j) == Scalar(3));
+    std::cout << "Constant(3)" << std::endl;
+    std::cout << m_const << std::endl;
+    std::cout << std::endl;
+
+    // Ones
+    SymmetricMatrix<Scalar, 2> m_ones = Matrix<Scalar, 2, 2>::Ones();
+    for (int i = 0; i < 2; ++i)
+        for (int j = 0; j < 2; ++j)
+            assert(m_ones(i,j) == Scalar(1));
+    std::cout << "Ones" << std::endl;
+    std::cout << m_ones << std::endl;
+    std::cout << std::endl;
+
+    // Zero
+    SymmetricMatrix<Scalar, 2> m_zero = SymmetricMatrix<Scalar, 2>::Zero();
+    for (int i = 0; i < 2; ++i)
+        for (int j = 0; j < 2; ++j)
+            assert(m_zero(i,j) == Scalar(0));
+    std::cout << "Zero" << std::endl;
+    std::cout << m_zero << std::endl;
+    std::cout << std::endl;
+
+    // NaN
+    auto m_nan = SymmetricMatrix<Scalar, 2>::NaN();
+    for (int i = 0; i < 2; ++i)
+        for (int j = 0; j < 2; ++j)
+            assert(std::isnan(m_nan(i,j)));
+    std::cout << "NaN" << std::endl;
+    std::cout << m_nan << std::endl;
+    std::cout << std::endl;
+
+    // Constructor from std::array
+    std::array<Scalar, 6> arr = {1, 2, 3, 4, 5, 6};
+    SymmetricMatrix<Scalar, 3> m_arr(arr);
+    assert(m_arr(0,0) == Scalar(1));
+    assert(m_arr(0,1) == Scalar(2));
+    std::cout << "Constructor from std::array = {1, 2, 3, 4, 5, 6}" << std::endl;
+    std::cout << m_arr << std::endl;
+    std::cout << std::endl;
+
+    // Constructor from std::vector
+    std::vector<Scalar> vec = {1, 2, 3, 4, 5, 6};
+    SymmetricMatrix<Scalar, 3> m_vec(vec);
+    assert(m_vec(0,0) == Scalar(1));
+    assert(m_vec(0,1) == Scalar(2));
+    std::cout << "Constructor from std::vector = {1, 2, 3, 4, 5, 6}" << std::endl;
+    std::cout << m_vec << std::endl;
+    std::cout << std::endl;
+
+    // Callable constructor
+    SymmetricMatrix<Scalar, 3> m_callable([]() {
+        return std::array<Scalar, 6>{6, 5, 4, 3, 2, 1};
+    });
+    assert(m_callable(0,0) == Scalar(6));
+    assert(m_callable(1,1) == Scalar(3));
+    std::cout << "Callable constructor std::array = {6, 5, 4, 3, 2, 1}" << std::endl;
+    std::cout << m_callable << std::endl;
+    std::cout << std::endl;
+
+    // Assignment from std::array -> fails
+    // SymmetricMatrix<Scalar, 3> m_assign = arr;
+    // ssert(m_assign(1,1) == Scalar(4));
+    // std::cout << "Assign from std::array = {1, 2, 3, 4, 5, 6}" << std::endl;
+    // std::cout << m_assign << std::endl;
+    // std::cout << std::endl;
+
+    // Copy and assignment from another SymmetricMatrix
+    SymmetricMatrix<Scalar, 3> m_copy = m_arr;
+    assert(m_arr(0,0) == Scalar(1));
+    assert(m_arr(0,1) == Scalar(2));
+    std::cout << "Copy from another SymmetricMatrix" << std::endl;
+    std::cout << m_copy << std::endl;
+    std::cout << std::endl;
+    SymmetricMatrix<Scalar, 3> m_assign;
+    m_assign = m_vec;
+    assert(m_arr(0,0) == Scalar(1));
+    assert(m_arr(0,1) == Scalar(2));
+    std::cout << "Assign from another SymmetricMatrix" << std::endl;
+    std::cout << m_assign << std::endl;
+    std::cout << std::endl;
+
+    /* -> We have to decide how to deal with the conversion if the matrix is not symmetric
+    // Copy and assignment from a MatrixBase expression
+    Matrix<Scalar, 2, 2> m_copy = m_arr;
+    assert(m_copy(1,0) == Scalar(3));
+    std::cout << "Copy from another MatrixBase expression" << std::endl;
+    std::cout << m_copy << std::endl;
+    std::cout << std::endl;
+    Matrix<Scalar, 2, 2> m_assign;
+    m_assign = m_vec;
+    assert(m_assign(0,1) == Scalar(6));
+    std::cout << "Assign from another MatrixBase expression" << std::endl;
+    std::cout << m_assign << std::endl;
+    std::cout << std::endl;
+    */
+
+    // Test LU factorization with solve for SymmetricMatrix
+    SymmetricMatrix<Scalar, 2> A({1, 2, 2});
+    Vector<Scalar, 2> b(Scalar(5), Scalar(11));
+    PartialPivLU<Matrix<Scalar, 2, 2>> lu(A); // !!!! This must be Matrix<Scalar, 2, 2> OK?!? SymmetricMatrix<Scalar, 2> does not work
+    auto x = lu.solve(b);
+    assert(std::abs(A(0,0)*x[0] + A(0,1)*x[1] - b[0]) < 1e-10);
+    assert(std::abs(A(1,0)*x[0] + A(1,1)*x[1] - b[1]) < 1e-10);
+    std::cout << "LU factorization with solve" << std::endl;
+
+    /* -> We have to decide how to deal with the conversion if the matrix is not symmetric
+    #ifdef __FDAPDE_HAS_EIGEN__
+        // Eigen constructor and assignment
+        Eigen::Matrix<Scalar, 2, 2> emat;
+        emat << 1, 2, 3, 4;
+        Matrix<Scalar, 2, 2> m_eigen(emat);
+        assert(m_eigen(1,0) == Scalar(3));
+        std::cout << "Eigne constructor from emat << 1, 2, 3, 4;" << std::endl;
+        std::cout << m_eigen << std::endl;
+        std::cout << std::endl;
+
+        Matrix<Scalar, 2, 2> m_eigen_assign;
+        m_eigen_assign = emat;
+        assert(m_eigen_assign(0,1) == Scalar(2));
+        std::cout << "Eigne assignement from emat << 1, 2, 3, 4;" << std::endl;
+        std::cout << m_eigen_assign << std::endl;
+        std::cout << std::endl;
+    #endif
+    */
+
+}
+
+TEST(matrix_test, SymmetricMatrix_Traits) {
+    SymmetricMatrix<double, 3> S{{1,2,3,4,5,6}};
+    std::cout << "S" << std::endl;
+    std::cout << S << std::endl;
+    std::cout << std::endl;
+
+    std::cout << "2*S" << std::endl;
+    std::cout << 2*S << std::endl;
+    std::cout << std::endl;
+
+    std::cout << "S + 2*S" << std::endl;
+    std::cout << S + 2*S << std::endl;
+    std::cout << std::endl;
+
+    std::cout << "S + Matrix::Identity()" << std::endl;
+    std::cout << S + Matrix<double, 3, 3>::Identity() << std::endl;
+    std::cout << std::endl;
+
+    std::cout << "S + SymmetricMatrix::Identity()" << std::endl;
+    std::cout << S + SymmetricMatrix<double, 3>::Identity() << std::endl;
+    std::cout << std::endl;
+
+    std::cout << "Full(S)" << std::endl;
+    std::cout << S.full() << std::endl;
+    std::cout << std::endl;
 }
