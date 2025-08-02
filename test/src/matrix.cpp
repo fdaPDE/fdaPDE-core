@@ -19,6 +19,8 @@
 #define __FDAPDE_HAS_EIGEN__
 */
 
+#include <fdaPDE/linear_algebra.h>
+
 #include <gtest/gtest.h>   // testing framework
 #include <fdaPDE/utility.h>
 
@@ -62,7 +64,7 @@ TEST(matrix_test, Matrix) {
         for (int j = 0; j < 2; ++j)
             assert(m_zero(i,j) == Scalar(0));
     std::cout << "Zero" << std::endl;
-    std::cout << m_ones << std::endl;
+    std::cout << m_zero << std::endl;
     std::cout << std::endl;
 
     // NaN
@@ -227,7 +229,7 @@ TEST(matrix_test, MatrixBase) {
     std::cout << std::endl;
 
     std::cout << "2M+N" << std::endl;
-    std::cout << (2*M+2*N)/2 << std::endl;
+    std::cout << 2*M+N << std::endl;
     std::cout << std::endl;
 
     std::cout << "(2M+2N)/2" << std::endl;
