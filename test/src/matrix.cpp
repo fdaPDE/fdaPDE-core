@@ -161,8 +161,8 @@ TEST(matrix_test, Matrix) {
     auto Pv = P * v;
     assert(Pv[0] == Scalar(7) && Pv[1] == Scalar(5));
     std::cout << "Permutation matrix" << std::endl;
-    // std::cout << P << std::endl;
-    // std::cout << "--" << std::endl;
+    std::cout << P << std::endl;
+    std::cout << "--" << std::endl;
     std::cout << v << std::endl;
     std::cout << "--" << std::endl;
     std::cout << Pv << std::endl;
