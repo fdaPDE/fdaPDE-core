@@ -119,7 +119,7 @@ class RTree {
             data_(std::addressof(data)), type_(type_t::DATA), bbox_(data_->bbox()) { }
         explicit item_t(node_t* node) : node_(node), type_(type_t::NODE), bbox_(node_->bbox()) { }
         // observers
-        const bbox_t& bbox() const { return bbox_; }
+        bbox_t bbox() const { return bbox_; }
         bbox_t& bbox() { return bbox_; }
         node_t* node() const {
             fdapde_assert(type_ == type_t::NODE);
@@ -142,7 +142,7 @@ class RTree {
         ~item_t() = default;
     };
     struct node_t {
-        node_t(int M, bool is_leaf = true) : is_leaf_(is_leaf), size_(0), capacity_(M) {
+        node_t(int M, bool is_leaf = true) : is_leaf_(is_leaf), size_(0), capacity_(M + 1) {
             data_.resize(M + 1);   // allow overflow to use this buffer for in-place split logic
             free_.resize(M + 1, true);
         }
@@ -151,8 +151,14 @@ class RTree {
         bool is_leaf() const { return is_leaf_; }
         bool is_root() const { return parent_ == nullptr; }
         std::size_t size() const { return size_; }
-        const item_t& item(int i) const { return data_[mapped_(i)]; }
-        item_t& item(int i) { return data_[mapped_(i)]; }
+        const item_t& item(int i) const {
+            fdapde_assert(i < size_);
+            return data_[mapped_(i)];
+        }
+        item_t& item(int i) {
+            fdapde_assert(i < size_);
+            return data_[mapped_(i)];
+        }
         bbox_t bbox() const {   // minimal bounding box containing all spatial objects rooted at this node
             if (size_ == 0) return bbox_t();
             bbox_t bbox_ = data_[mapped_(0)].bbox();
@@ -163,7 +169,7 @@ class RTree {
         void insert(const item_t& item) {
             // find idx of first free slot in data_
             int j = 0;
-            for (int i = 0, n = free_.size(); i < n; ++i) {
+            for (int i = 0, n = capacity_; i < n; ++i) {
                 if (free_[i]) {
                     j = i;
                     break;
@@ -173,23 +179,16 @@ class RTree {
             free_[j] = false;	    
             size_++;
         }
-        void erase(int i) {
-            free_[mapped_(i)] = true;
+        void erase(const item_t& item) {
+            // search physical index of item
+            int i = 0, k = mapped_(0);
+            for (; i < size_; ++i, k = mapped_(i)) {
+                if (item == data_[k]) break;
+            }
+            free_[k] = true;
             size_--;
         }
-        void erase(const item_t& item) {
-            // search idx of item in node
-            int i = 0;
-            for (; i < size_; ++i) {
-                if (item == data_[mapped_(i)]) { break; }
-            }
-            if (i < size_) { erase(i); }
-        }
         void set_parent(node_t* parent) { parent_ = parent; }
-        void clear() {
-            std::fill(free_.begin(), free_.end(), true);
-	    size_ = 0;
-        }
         // iterators
         struct iterator {
             using value_type = item_t;
@@ -220,7 +219,7 @@ class RTree {
         iterator begin() { return iterator(this, 0); }
         iterator end() { return iterator(this, size_); }
        private:
-        // maps i to index of i-th non-free element in data_
+        // maps logical i to physical index of i-th non-free element in data_
         int mapped_(int k) const {
             int i = 0, j = 0;
             for (; i < capacity_; ++i) {
@@ -229,7 +228,7 @@ class RTree {
                     j++;
                 }
             }
-            return i > capacity_ ? capacity_ : i;
+            return i;
         }
         // tree structure data
         node_t* parent_ = nullptr;
@@ -260,7 +259,7 @@ class RTree {
     }
 
     // find the leaf node containing the index entry obj, togheter with its position. returns nullptr if no obj found
-    std::pair<node_t*, int> find_leaf_(const SpatialObject& obj) {
+    std::pair<node_t*, item_t> find_leaf_(const SpatialObject& obj) {
         bbox_t obj_bbox(obj);
         node_t* curr;
 	int i = 0;
@@ -280,18 +279,18 @@ class RTree {
             } else {
                 i = 0;
                 for (const auto& item : *curr) {
-                    if (std::addressof(item.data()) == std::addressof(obj)) { return std::make_pair(curr, i); }
+                    if (std::addressof(item.data()) == std::addressof(obj)) { return std::make_pair(curr, item); }
                 }
                 i++;
             }
         }
-        return std::make_pair(nullptr, -1);
+        return std::make_pair(nullptr, item_t());
     }
 
     // node splitting with re-balancing
-    std::pair<node_t*, node_t*> split_node_(node_t* node) {
+    std::pair<node_t*, node_t*> split_node_(node_t* node, bool is_leaf) {
         // allocate memory for new node
-        node_t* n = new node_t(M_);
+        node_t* n = new node_t(M_, is_leaf);
         std::vector<int> g;   // ids of items reallocated to n after the split
         BinaryVector<Dynamic> assigned(M_ + 1);
         // pick_seed
@@ -331,7 +330,10 @@ class RTree {
             if (done) {
                 // move data to node n
                 for (int i : g) { n->insert(node->item(i)); }
-                for (int i : g) { node->erase(i); }
+                for (const item_t& item : *n) {
+                    node->erase(item);
+                    if (item.is_node()) { item.node()->set_parent(n); }   // update parent for structural nodes
+		}
                 return std::make_pair(node, n);
             }
             // pick_next
@@ -362,7 +364,10 @@ class RTree {
         }
         // move data from node to n
         for (int i : g) { n->insert(node->item(i)); }
-        for (int i : g) { node->erase(i); }
+        for (const item_t& item : *n) {
+            node->erase(item);
+            if (item.is_node()) { item.node()->set_parent(n); }   // update parent for structural nodes
+        }
         return std::make_pair(node, n);
     }
 
@@ -381,8 +386,8 @@ class RTree {
             if (n2 != nullptr) {   // a split occurred
                 parent->insert(item_t(n2));
 		n2->set_parent(parent);
-                if (parent->size() > M_) {   // split parent
-                    const auto& [e1, e2] = split_node_(parent);
+                if (parent->size() > M_) {   // parent full, perform split
+                    const auto& [e1, e2] = split_node_(parent, false);
                     n1 = e1;
                     n2 = e2;
                     continue;
@@ -393,12 +398,13 @@ class RTree {
         }
         // if root was split, create new root
         if (n2 != nullptr) {
-            node_t* new_root = new node_t(M_, false);	    
+            node_t* new_root = new node_t(M_, false);
             n1->set_parent(new_root);
             n2->set_parent(new_root);
             new_root->insert(item_t(n1));
             new_root->insert(item_t(n2));
             root_ = new_root;
+            depth_++;
         }
         return;
     }
@@ -406,15 +412,34 @@ class RTree {
     // given a leaf node l from whch an entry has been deleted, eliminate it if has too few entries and relocate.
     // Propagate node elimination upward, adjusting covering rectangles as necessary
     void condense_tree_(node_t* l) {
-        std::vector<item_t> Q;   // set of eliminated items
+        std::vector<const SpatialObject*> Q;   // set of eliminated items
+	std::vector<node_t*> killed; 
         node_t* n = l;
         while (!n->is_root()) {
             node_t* parent = n->parent();
             if (n->size() < m_) {   // too few entries, eliminate node
+                if (n->is_leaf()) {
+                    for (const item_t& item : *n) { Q.push_back(std::addressof(item.data())); }
+                    killed.push_back(n);
+                } else {
+                    // if node was not a leaf, eliminate its entire subtree
+                    std::stack<node_t*> stack_;
+                    stack_.push(n);
+                    node_t* curr;
+                    while (!stack_.empty()) {
+                        curr = stack_.top();
+                        stack_.pop();
+                        if (curr->is_leaf()) {
+                            for (const item_t& item : *curr) { Q.push_back(std::addressof(item.data())); }
+                        } else {
+                            for (const item_t& item : *curr) { stack_.push(item.node()); }
+                        }
+                        killed.push_back(curr);
+                    }
+                }
                 parent->erase(item_t(n));
-                for (const auto& item : *n) { Q.push_back(item); }
-                delete n;   // free memory
             } else {
+                // update parent bounding box
                 int i = 0;
                 for (const item_t& item : *parent) {
                     if (item.node() == n) { break; }
@@ -424,35 +449,23 @@ class RTree {
             }
             n = parent;
         }
-	// reinsert eventual eliminated nodes
-        for (const item_t& item : Q) {
-            if (item.is_data()) {
-                insert(item.data());
-            } else {
-                // insert subtree
-                std::stack<node_t*> stack_;
-                stack_.push(item.node());
-                node_t* curr;
-                while (!stack_.empty()) {
-                    curr = stack_.top();
-                    stack_.pop();
-                    if (curr->is_leaf()) {
-                        for (const auto& item : *curr) { insert(item.data()); }
-                    } else {
-                        stack_.push(curr);
-                    }
-                }
-            }
-        }
+	// free memory
+        for (node_t* node : killed) { delete node; }
+        // reinsert eliminated objects
+        for (const SpatialObject* obj : Q) { insert(*obj); }
         return;
     }
 
     node_t* root_ = nullptr;
     int M_;   // maximum number of entries per node
     int m_;   // minimum number of entries per node
+    int depth_;
    public:
-    RTree(int M, int m) : M_(M), m_(m) {
+    RTree(int M, int m) : M_(M), m_(m), depth_(0) {
         fdapde_assert(m_ <= M / 2);
+        root_ = new node_t(M_);
+    }
+    RTree(int M) : M_(M), m_(M / 2), depth_(0) {
         root_ = new node_t(M_);
     }
     RTree() : RTree(10, 5) { }
@@ -463,9 +476,9 @@ class RTree {
         node_t* ll = nullptr;   // not null only in case of split
         l->insert(item_t(obj));
         if (l->size() > M_) {   // restore consistent state (no more than M_ + 1 items per node)
-            const auto& [n, nn] = split_node_(l);
-	    l = n;
-	    ll = nn;
+            const auto& [n, nn] = split_node_(l, true);
+            l = n;
+            ll = nn;
         }
         adjust_tree_(l, ll);
 	return;
@@ -477,15 +490,18 @@ class RTree {
         l->erase(i);
         condense_tree_(l);
 	// if the root node has only one child after the condensation, make the child the new root
-	if(!root_->is_leaf() && root_->size() == 1) {
-	  node_t* new_root = root_->item(0).node();
-	  delete root_;
-	  root_ = new_root;
-	}
-	return;
+        if (!root_->is_leaf() && root_->size() == 1) {
+            node_t* new_root = root_->item(0).node();
+            new_root->set_parent(nullptr);
+            delete root_;
+            root_ = new_root;
+            depth_--;
+        }
+        return;
     }
     node_t* root() { return root_; }
-
+    int depth() const { return depth_; }
+  
     // geometric queries
     // find all spatial objects whose bounding box intersects the given query range
     std::vector<const SpatialObject*> intersect_search(const std::array<double, 2 * embed_dim>& query) const {
