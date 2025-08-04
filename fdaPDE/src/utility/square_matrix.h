@@ -20,56 +20,21 @@
 #include "header_check.h"
 
 namespace fdapde {
-template <int Size_> struct PermutationMatrix : public SquareMatrixBase<Size_, PermutationMatrix<Size_>> {
-    using Base = SquareMatrixBase<Size_, PermutationMatrix<Size_>>;
-    using Scalar = int;
-    using XprType = PermutationMatrix<Size_>;
-    static constexpr int Size = Size_;
-    static constexpr int Rows = Size_;
-    static constexpr int Cols = Size_;
-    static constexpr int NestAsRef = 0;
-    static constexpr int ReadOnly = 1;
-    static constexpr int XprBits = int(matrix_flags::square);
 
-    constexpr PermutationMatrix() = default;
-    constexpr explicit PermutationMatrix(const std::array<int, Size>& permutation) : permutation_(permutation) { }
-    constexpr int rows() const { return Rows; }
-    constexpr int cols() const { return Cols; }
-    // left multiplication by permutation matrix
-    template <int RhsRows, int RhsCols, typename RhsType>
-    constexpr Matrix<typename RhsType::Scalar, Rows, RhsCols>
-    operator*(const MatrixBase<RhsRows, RhsCols, RhsType>& rhs) const {
-        fdapde_static_assert(Cols == RhsRows, INVALID_OPERAND_DIMENSIONS_FOR_MATRIX_MATRIX_PRODUCT);
-        using Scalar = typename RhsType::Scalar;
-        Matrix<Scalar, Rows, RhsCols> permuted;
-        for (int i = 0; i < Rows; ++i) {
-            for (int j = 0; j < RhsCols; ++j) { permuted(i, j) = rhs.derived().operator()(permutation_[i], j); }
-        }
-        return permuted;
-    }
-    // right multiplication by permutation matrix
-    template <int RhsRows, int RhsCols, typename RhsType>
-    constexpr friend Matrix<typename RhsType::Scalar, Rows, RhsCols>
-    operator*(const MatrixBase<RhsRows, RhsCols, RhsType>& lhs, const PermutationMatrix<Size_>& rhs) {
-        fdapde_static_assert(Cols == RhsRows, INVALID_OPERANDS_DIMENSION_FOR_MATRIX_MATRIX_PRODUCT);
-        using Scalar = typename RhsType::Scalar;
-        Matrix<Scalar, Rows, RhsCols> permuted;
-        for (int i = 0; i < Rows; ++i) {
-            for (int j = 0; j < RhsCols; ++j) { permuted(j, i) = lhs.derived().operator()(j, rhs.permutation()[i]); }
-        }
-        return permuted;
-    }
-    constexpr int operator()(int i, int j) const {
-        return permutation_[i] == j ? 1 : 0;
-    }
-    constexpr const std::array<int, Size_>& permutation() const { return permutation_; }
-private:
-    std::array<int, Size> permutation_;
-};
+// has_identity trait
+namespace internals {
+
+// Matrix<Scalar, N, N> => has identity
+template <typename Scalar_, int N_, int NestAsRefBit_>
+struct has_identity<Matrix<Scalar_, N_, N_, NestAsRefBit_>> : std::true_type {};
+
+}
 
 template <typename Matrix, typename Rhs> constexpr auto backward_sub(const Matrix& A, const Rhs& b) {
+
     fdapde_static_assert(Matrix::Rows == Matrix::Cols, BS_IS_ONLY_FOR_SQUARE_INVERTIBLE_MATRICES);
     fdapde_static_assert(std::is_same_v<typename Matrix::Scalar FDAPDE_COMMA typename Rhs::Scalar>, OPERANDS_HAVE_DIFFERENT_SCALAR_TYPES);
+
     // check dimensions
     using Scalar = typename Matrix::Scalar;
     constexpr int rows = Matrix::Rows;
@@ -86,8 +51,10 @@ template <typename Matrix, typename Rhs> constexpr auto backward_sub(const Matri
 }
 
 template <typename Matrix, typename Rhs> constexpr auto forward_sub(const Matrix& A, const Rhs& b) {
+
     fdapde_static_assert(Matrix::Rows == Matrix::Cols, FS_IS_ONLY_FOR_SQUARE_INVERTIBLE_MATRICES);
     fdapde_static_assert(std::is_same_v<typename Matrix::Scalar FDAPDE_COMMA typename Rhs::Scalar>, OPERANDS_HAVE_DIFFERENT_SCALAR_TYPES);
+
     // check dimensions
     using Scalar = typename Matrix::Scalar;
     constexpr int rows = Matrix::Rows;
@@ -103,28 +70,34 @@ template <typename Matrix, typename Rhs> constexpr auto forward_sub(const Matrix
     return res;
 }
 
-// LU factorization of matrix with partial pivoting
+// LU factorization of SquareMatrixBase expressions with partial pivoting
 template <typename MatrixType> class PartialPivLU {
+
     fdapde_static_assert(MatrixType::Rows == MatrixType::Cols, LU_FACTORIZATION_IS_ONLY_FOR_SQUARE_INVERTIBLE_MATRICES);
-    static constexpr int Size = MatrixType::Rows;
+
+    static constexpr int N = MatrixType::Rows;
     using Scalar = typename MatrixType::Scalar;
     MatrixType m_;
-    PermutationMatrix<Size> P_;
+    PermutationMatrix<N> P_;
+
 public:
+
+    // constructors
     constexpr PartialPivLU() : m_(), P_() {};
-    template <typename XprType> constexpr PartialPivLU(const SquareMatrixBase<Size, XprType>& m) : m_() { compute(m); }
+    template <typename XprType>
+    constexpr explicit  PartialPivLU(const SquareMatrixBase<N, XprType>& m) : m_() { compute(m); }
 
     // computes the LU factorization of matrix m with partial (row) pivoting
-    template <typename XprType> constexpr void compute(const SquareMatrixBase<Size, XprType>& m) {
+    template <typename XprType> constexpr void compute(const SquareMatrixBase<N, XprType>& m) {
         m_ = m;
-        std::array<int, Size> P;
-        for (int i = 0; i < Size; ++i) { P[i] = i; }
+        std::array<int, N> P;
+        for (int i = 0; i < N; ++i) { P[i] = i; }
         int pivot_index = 0;
-        int h, k;
-        for (int i = 0; i < Size - 1; ++i) {
+        int hh, kk;
+        for (int i = 0; i < N - 1; ++i) {
             // find pivotal element
             Scalar pivot = -std::numeric_limits<Scalar>::infinity();
-            for (int j = i; j < Size; ++j) {
+            for (int j = i; j < N; ++j) {
                 Scalar abs_ = fdapde::abs(m_(P[j], i));
                 if (pivot < abs_) {
                     pivot = abs_;
@@ -132,28 +105,33 @@ public:
                 }
             }
             // perform gaussian elimination step in place
-            for (int j = i; j < Size; ++j) {
+            for (int j = i; j < N; ++j) {
                 if (P[j] != P[pivot_index]) {   // avoid to subtract row with itself
                     Scalar l = m_(P[j], i) / m_(P[pivot_index], i);
                     m_(P[j], i) = l;
-                    for (int k = i + 1; k < Size; ++k) { m_(P[j], k) = m_(P[j], k) - l * m_(P[pivot_index], k); }
+                    for (int k = i + 1; k < N; ++k) {
+                        m_(P[j], k) = m_(P[j], k) - l * m_(P[pivot_index], k);
+                    }
                 }
             }
             // swap rows
-            h = P[i], k = P[pivot_index];
-            P[pivot_index] = h;
-            P[i] = k;
+            hh = P[i], kk = P[pivot_index];
+            P[pivot_index] = hh;
+            P[i] = kk;
         }
-        P_ = PermutationMatrix<Size>(P);
+        P_ = PermutationMatrix<N>(P);
         m_ = P_ * m_;
     }
-    constexpr PermutationMatrix<Size> P() const { return P_; }
+
+    // permutation matrix
+    constexpr PermutationMatrix<N> P() const { return P_; }
+
     // solve linear system Ax = b using A factorization PA = LU
-    template <typename RhsType> constexpr Vector<Scalar, Size> solve(const RhsType& rhs) {
+    template <typename RhsType> constexpr Vector<Scalar, N> solve(const RhsType& rhs) {
         fdapde_static_assert(
           std::is_same_v<Scalar FDAPDE_COMMA typename RhsType::Scalar>, INVALID_SCALAR_TYPE_FOR_RHS_OPERAND);
-        fdapde_constexpr_assert(rhs.rows() == Size && rhs.cols() == 1);
-        Vector<Scalar, Size> x;
+        fdapde_constexpr_assert(rhs.rows() == N && rhs.cols() == 1);
+        Vector<Scalar, N> x;
         // evaluate U^{-1} * (L^{-1} * (P * rhs))
         x = P_ * rhs;
         x = forward_sub(m_.template triangular_view<UnitLower>(), x);
@@ -164,4 +142,4 @@ public:
 
 }
 
-#endif   // _FDAPDE_SQUARE_MATRIX_H__
+#endif   // __FDAPDE_SQUARE_MATRIX_H__

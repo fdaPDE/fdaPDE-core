@@ -26,7 +26,72 @@
 
 using namespace fdapde;
 
-TEST(matrix_test, Matrix) {
+
+TEST(matrix_test, MatrixBase) {
+
+    Matrix<double, 3, 4> M({1,2,3,4,5,6,7,8,9,10,11,12});
+    std::cout << "M" << std::endl;
+    std::cout << M << std::endl;
+    std::cout << std::endl;
+
+    Matrix<double, 3, 3> MSQ = MatrixBlock<3, 3, Matrix<double, 3, 4>>(M, 0, 0);
+    std::cout << "MatrixBlock" << std::endl;
+    std::cout << MSQ << std::endl;
+    std::cout << std::endl;
+
+    std::cout << "(Lower) Triangular view" << std::endl;
+    std::cout << MSQ.triangular_view<Lower>() << std::endl;
+    std::cout << std::endl;
+    std::cout << "(Upper) Triangular view" << std::endl;
+    std::cout << MSQ.triangular_view<Upper>() << std::endl;
+    std::cout << std::endl;
+    std::cout << "Diagonal view" << std::endl;
+    std::cout << MSQ.diagonal() << std::endl;
+    std::cout << std::endl;
+    std::cout << "Transpose" << std::endl;
+    std::cout << M.transpose() << std::endl;
+    std::cout << std::endl;
+
+    Matrix<double, 3, 3> N({4,3,2,1,0,-1,-2,-3,-4});
+    std::cout << "N" << std::endl;
+    std::cout << N << std::endl;
+    std::cout << std::endl;
+
+    std::cout << "MSQ+N" << std::endl;
+    std::cout << MSQ+N << std::endl;
+    std::cout << std::endl;
+
+    std::cout << "2MSQ+N" << std::endl;
+    std::cout << 2*MSQ+N << std::endl;
+    std::cout << std::endl;
+
+    std::cout << "(2MSQ+2N)/2" << std::endl;
+    std::cout << (2*MSQ+2*N)/2 << std::endl;
+    std::cout << std::endl;
+
+    std::cout << "Trace(N) = ";
+    std::cout << N.trace() << std::endl;
+    std::cout << "Sum(N) = ";
+    std::cout << N.sum() << std::endl;
+    std::cout << "Norm(N) = ";
+    std::cout << N.norm() << std::endl;
+    std::cout << "SqNorm(N) = ";
+    std::cout << N.squared_norm() << std::endl;
+    std::cout << "InfNorm(N) = ";
+    std::cout << N.inf_norm() << std::endl;
+    std::cout << "Min(N) = ";
+    std::cout << N.min() << std::endl;
+    std::cout << "Max(N) = ";
+    std::cout << N.max() << std::endl;
+    std::cout << "Mean(N) = ";
+    std::cout << M.mean() << std::endl;
+    std::cout << "Prod(M) = ";
+    std::cout << M.prod() << std::endl;
+    std::cout << std::endl;
+}
+
+
+TEST(matrix_test, MatrixAndSquareMatrix) {
 
     using Scalar = double;
 
@@ -176,85 +241,39 @@ TEST(matrix_test, Matrix) {
     assert(std::abs(A(0,0)*x[0] + A(0,1)*x[1] - b[0]) < 1e-10);
     assert(std::abs(A(1,0)*x[0] + A(1,1)*x[1] - b[1]) < 1e-10);
     std::cout << "LU factorization with solve" << std::endl;
+    std::cout << A << std::endl;
+    std::cout << "--" << std::endl;
+    std::cout << x << std::endl;
+    std::cout << "--" << std::endl;
+    std::cout << A*x << std::endl;
+    std::cout << "--" << std::endl;
+    std::cout << b << std::endl;
     std::cout << std::endl;
 
 
     #ifdef __FDAPDE_HAS_EIGEN__
-        // Eigen constructor and assignment
+        // Eigen constructor
         Eigen::Matrix<Scalar, 2, 2> emat;
         emat << 1, 2, 3, 4;
         Matrix<Scalar, 2, 2> m_eigen(emat);
         assert(m_eigen(1,0) == Scalar(3));
-        std::cout << "Eigne constructor from emat << 1, 2, 3, 4;" << std::endl;
+        std::cout << "Eigen constructor from emat << 1, 2, 3, 4;" << std::endl;
         std::cout << m_eigen << std::endl;
         std::cout << std::endl;
-
+        // Eigen assignment
         Matrix<Scalar, 2, 2> m_eigen_assign;
         m_eigen_assign = emat;
         assert(m_eigen_assign(0,1) == Scalar(2));
-        std::cout << "Eigne assignement from emat << 1, 2, 3, 4;" << std::endl;
+        std::cout << "Eigen assignement from emat << 1, 2, 3, 4;" << std::endl;
         std::cout << m_eigen_assign << std::endl;
+        std::cout << std::endl;
+        // Conversion to Eigen
+        Eigen::Matrix<Scalar, 2, 2> emat_conv = m_eigen.as_eigen_map();
+        std::cout << "Conversion to Eigen" << std::endl;
+        std::cout << emat_conv << std::endl;
         std::cout << std::endl;
     #endif
 
-}
-
-TEST(matrix_test, MatrixBase) {
-
-    Matrix<double, 3, 3> M({1,2,3,4,5,6,7,8,9});
-    std::cout << "M" << std::endl;
-    std::cout << M << std::endl;
-    std::cout << std::endl;
-
-    std::cout << "(Lower) Triangular view" << std::endl;
-    std::cout << M.triangular_view<Lower>() << std::endl;
-    std::cout << std::endl;
-    std::cout << "(Upper) Triangular view" << std::endl;
-    std::cout << M.triangular_view<Upper>() << std::endl;
-    std::cout << std::endl;
-    std::cout << "Diagonal view" << std::endl;
-    std::cout << M.diagonal() << std::endl;
-    std::cout << std::endl;
-    std::cout << "Transpose" << std::endl;
-    std::cout << M.transpose() << std::endl;
-    std::cout << std::endl;
-
-    Matrix<double, 3, 3> N({4,3,2,1,0,-1,-2,-3,-4});
-    std::cout << "N" << std::endl;
-    std::cout << N << std::endl;
-    std::cout << std::endl;
-
-    std::cout << "M+N" << std::endl;
-    std::cout << M+N << std::endl;
-    std::cout << std::endl;
-
-    std::cout << "2M+N" << std::endl;
-    std::cout << 2*M+N << std::endl;
-    std::cout << std::endl;
-
-    std::cout << "(2M+2N)/2" << std::endl;
-    std::cout << (2*M+2*N)/2 << std::endl;
-    std::cout << std::endl;
-
-    std::cout << "Trace(N) = ";
-    std::cout << N.trace() << std::endl;
-    std::cout << "Sum(N) = ";
-    std::cout << N.sum() << std::endl;
-    std::cout << "Norm(N) = ";
-    std::cout << N.norm() << std::endl;
-    std::cout << "SqNorm(N) = ";
-    std::cout << N.squared_norm() << std::endl;
-    std::cout << "InfNorm(N) = ";
-    std::cout << N.inf_norm() << std::endl;
-    std::cout << "Min(N) = ";
-    std::cout << N.min() << std::endl;
-    std::cout << "Max(N) = ";
-    std::cout << N.max() << std::endl;
-    std::cout << "Mean(N) = ";
-    std::cout << M.mean() << std::endl;
-    std::cout << "Prod(M) = ";
-    std::cout << M.prod() << std::endl;
-    std::cout << std::endl;
 }
 
 TEST(matrix_test, IdentityMatrix) {
@@ -262,12 +281,20 @@ TEST(matrix_test, IdentityMatrix) {
     // std::cout << "Identity Matrix" << std::endl;
     // std::cout << Matrix<double, 3, 4>::Identity() << std::endl;
     // std::cout << std::endl;
-    std::cout << "Identity Matrix" << std::endl;
+    std::cout << "Identity Matrix (Called from Matrix)" << std::endl;
     std::cout << Matrix<double, 3, 3>::Identity() << std::endl;
     std::cout << std::endl;
-    std::cout << "Identity Matrix" << std::endl;
+    std::cout << "Identity Matrix (Called from PermutationMatrix)" << std::endl;
+    std::cout << PermutationMatrix<3>::Identity() << std::endl;
+    std::cout << std::endl;
+    std::cout << "Identity Matrix (Called from SymmetricMatrix)" << std::endl;
     std::cout << SymmetricMatrix<double, 3>::Identity() << std::endl;
     std::cout << std::endl;
+    // But not for the skew-symmetric ones
+    // std::cout << "Identity Matrix (Called from SkewSymmetricMatrix)" << std::endl;
+    // std::cout << SkewSymmetricMatrix<double, 3>::Identity() << std::endl;
+    // std::cout << std::endl;
+
 }
 
 TEST(matrix_test, SymmetricMatrix) {
@@ -348,42 +375,45 @@ TEST(matrix_test, SymmetricMatrix) {
     std::cout << m_callable << std::endl;
     std::cout << std::endl;
 
-    // Assignment from std::array -> fails
-    // SymmetricMatrix<Scalar, 3> m_assign = arr;
-    // ssert(m_assign(1,1) == Scalar(4));
-    // std::cout << "Assign from std::array = {1, 2, 3, 4, 5, 6}" << std::endl;
-    // std::cout << m_assign << std::endl;
-    // std::cout << std::endl;
+    // Assignment from std::array
+    SymmetricMatrix<Scalar, 3> m_assign = arr;
+    assert(m_assign(1,1) == Scalar(4));
+    std::cout << "Assign from std::array = {1, 2, 3, 4, 5, 6}" << std::endl;
+    std::cout << m_assign << std::endl;
+    std::cout << std::endl;
 
     // Copy and assignment from another SymmetricMatrix
-    SymmetricMatrix<Scalar, 3> m_copy = m_arr;
-    assert(m_arr(0,0) == Scalar(1));
-    assert(m_arr(0,1) == Scalar(2));
-    std::cout << "Copy from another SymmetricMatrix" << std::endl;
-    std::cout << m_copy << std::endl;
-    std::cout << std::endl;
-    SymmetricMatrix<Scalar, 3> m_assign;
-    m_assign = m_vec;
-    assert(m_arr(0,0) == Scalar(1));
-    assert(m_arr(0,1) == Scalar(2));
-    std::cout << "Assign from another SymmetricMatrix" << std::endl;
-    std::cout << m_assign << std::endl;
-    std::cout << std::endl;
+    {
+        SymmetricMatrix<Scalar, 3> m_copy = m_arr;
+        assert(m_arr(0,0) == Scalar(1));
+        assert(m_arr(0,1) == Scalar(2));
+        std::cout << "Copy from another SymmetricMatrix" << std::endl;
+        std::cout << m_copy << std::endl;
+        std::cout << std::endl;
+        SymmetricMatrix<Scalar, 3> m_assign;
+        m_assign = m_vec;
+        assert(m_arr(0,0) == Scalar(1));
+        assert(m_arr(0,1) == Scalar(2));
+        std::cout << "Assign from another SymmetricMatrix" << std::endl;
+        std::cout << m_assign << std::endl;
+        std::cout << std::endl;
+    }
 
-    /* -> We have to decide how to deal with the conversion if the matrix is not symmetric
-    // Copy and assignment from a MatrixBase expression
-    Matrix<Scalar, 2, 2> m_copy = m_arr;
-    assert(m_copy(1,0) == Scalar(3));
-    std::cout << "Copy from another MatrixBase expression" << std::endl;
-    std::cout << m_copy << std::endl;
-    std::cout << std::endl;
-    Matrix<Scalar, 2, 2> m_assign;
-    m_assign = m_vec;
-    assert(m_assign(0,1) == Scalar(6));
-    std::cout << "Assign from another MatrixBase expression" << std::endl;
-    std::cout << m_assign << std::endl;
-    std::cout << std::endl;
-    */
+    // Copy and assignment from a MatrixBase expression (it takes the symmetric part)
+    {
+        Matrix<double, 3, 3> M({1, 2, 3, 4, 5, 6, 7, 8, 9});
+        SymmetricMatrix<Scalar, 3> m_copy = M;
+        assert(m_copy(1,0) == Scalar(3));
+        std::cout << "Copy from another MatrixBase expression" << std::endl;
+        std::cout << m_copy << std::endl;
+        std::cout << std::endl;
+        SymmetricMatrix<Scalar, 3> m_assign;
+        m_assign = M;
+        assert(m_assign(1,0) == Scalar(3));
+        std::cout << "Assign from another MatrixBase expression" << std::endl;
+        std::cout << m_assign << std::endl;
+        std::cout << std::endl;
+    }
 
     // Test LU factorization with solve for SymmetricMatrix
     SymmetricMatrix<Scalar, 2> A({1, 2, 2});
@@ -393,30 +423,40 @@ TEST(matrix_test, SymmetricMatrix) {
     assert(std::abs(A(0,0)*x[0] + A(0,1)*x[1] - b[0]) < 1e-10);
     assert(std::abs(A(1,0)*x[0] + A(1,1)*x[1] - b[1]) < 1e-10);
     std::cout << "LU factorization with solve" << std::endl;
+    std::cout << A << std::endl;
+    std::cout << "--" << std::endl;
+    std::cout << x << std::endl;
+    std::cout << "--" << std::endl;
+    std::cout << A*x << std::endl;
+    std::cout << "--" << std::endl;
+    std::cout << b << std::endl;
+    std::cout << std::endl;
 
-    /* -> We have to decide how to deal with the conversion if the matrix is not symmetric
     #ifdef __FDAPDE_HAS_EIGEN__
         // Eigen constructor and assignment
         Eigen::Matrix<Scalar, 2, 2> emat;
         emat << 1, 2, 3, 4;
-        Matrix<Scalar, 2, 2> m_eigen(emat);
-        assert(m_eigen(1,0) == Scalar(3));
-        std::cout << "Eigne constructor from emat << 1, 2, 3, 4;" << std::endl;
+        SymmetricMatrix<Scalar, 2> m_eigen(emat);
+        assert(m_eigen(1,0) == Scalar(2.5));
+        std::cout << "Eigen constructor from emat << 1, 2, 3, 4;" << std::endl;
         std::cout << m_eigen << std::endl;
         std::cout << std::endl;
-
-        Matrix<Scalar, 2, 2> m_eigen_assign;
+        SymmetricMatrix<Scalar, 2> m_eigen_assign;
         m_eigen_assign = emat;
-        assert(m_eigen_assign(0,1) == Scalar(2));
-        std::cout << "Eigne assignement from emat << 1, 2, 3, 4;" << std::endl;
+        assert(m_eigen_assign(0,1) == Scalar(2.5));
+        std::cout << "Eigen assignement from emat << 1, 2, 3, 4;" << std::endl;
         std::cout << m_eigen_assign << std::endl;
         std::cout << std::endl;
+        // Conversion to Eigen
+        Eigen::Matrix<Scalar, 2, 2> emat_conv = m_eigen.as_eigen();
+        assert(emat_conv(0,1) == Scalar(2.5));
+        std::cout << "Conversion to Eigen" << std::endl;
+        std::cout << emat_conv << std::endl;
+        std::cout << std::endl;
     #endif
-    */
-
 }
 
-TEST(matrix_test, SymmetricMatrix_Traits) {
+TEST(matrix_test, SymmetricMatrixAlgebra) {
     SymmetricMatrix<double, 3> S{{1,2,3,4,5,6}};
     std::cout << "S" << std::endl;
     std::cout << S << std::endl;
@@ -440,5 +480,187 @@ TEST(matrix_test, SymmetricMatrix_Traits) {
 
     std::cout << "Full(S)" << std::endl;
     std::cout << S.full() << std::endl;
+    std::cout << std::endl;
+
+}
+
+TEST(matrix_test, SkewSymmetricMatrix) {
+
+    using Scalar = double;
+
+    // Default constructor
+    SkewSymmetricMatrix<Scalar, 3> m_default;
+    m_default.setZero();
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 3; ++j)
+            assert(m_default(i,j) == Scalar(0));
+    std::cout << "setZero" << std::endl;
+    std::cout << m_default << std::endl;
+    std::cout << std::endl;
+
+    // Constant value constructor
+    SkewSymmetricMatrix<Scalar, 3> m_const = SkewSymmetricMatrix<Scalar, 3>::Constant(Scalar(3));
+    for (int i = 0; i < 3; ++i)
+        for (int j = i+1; j < 3; ++j)
+            assert(m_const(i,j) == Scalar(3));
+    std::cout << "Constant(3)" << std::endl;
+    std::cout << m_const << std::endl;
+    std::cout << std::endl;
+
+    // Ones
+    SkewSymmetricMatrix<Scalar, 3> m_ones = SkewSymmetricMatrix<Scalar, 3>::Ones();
+    for (int i = 0; i < 3; ++i)
+        for (int j = i+1; j < 3; ++j)
+            assert(m_ones(i,j) == Scalar(1));
+    std::cout << "Ones" << std::endl;
+    std::cout << m_ones << std::endl;
+    std::cout << std::endl;
+
+    // Zero
+    SkewSymmetricMatrix<Scalar, 3> m_zero = SkewSymmetricMatrix<Scalar, 3>::Zero();
+    for (int i = 0; i < 3; ++i)
+        for (int j = i+1; j < 3; ++j)
+            assert(m_zero(i,j) == Scalar(0));
+    std::cout << "Zero" << std::endl;
+    std::cout << m_zero << std::endl;
+    std::cout << std::endl;
+
+    // NaN
+    auto m_nan = SkewSymmetricMatrix<Scalar, 3>::NaN();
+    for (int i = 0; i < 3; ++i)
+        for (int j = i+1; j < 3; ++j)
+            assert(std::isnan(m_nan(i,j)));
+    std::cout << "NaN" << std::endl;
+    std::cout << m_nan << std::endl;
+    std::cout << std::endl;
+
+    // Constructor from std::array
+    std::array<Scalar, 3> arr = {1, 2, 3};
+    SkewSymmetricMatrix<Scalar, 3> m_arr(arr);
+    assert(m_arr(0,0) == Scalar(0));
+    assert(m_arr(0,1) == Scalar(1));
+    std::cout << "Constructor from std::array = {1, 2, 3}" << std::endl;
+    std::cout << m_arr << std::endl;
+    std::cout << std::endl;
+
+    // Constructor from std::vector
+    std::vector<Scalar> vec = {1, 2, 3};
+    SkewSymmetricMatrix<Scalar, 3> m_vec(vec);
+    assert(m_vec(0,0) == Scalar(0));
+    assert(m_vec(0,1) == Scalar(1));
+    std::cout << "Constructor from std::vector = {1, 2, 3}" << std::endl;
+    std::cout << m_vec << std::endl;
+    std::cout << std::endl;
+
+    // Callable constructor
+    SkewSymmetricMatrix<Scalar, 3> m_callable([]() {
+        return std::array<Scalar, 3>{3, 2, 1};
+    });
+    assert(m_callable(0,0) == Scalar(0));
+    assert(m_callable(0,1) == Scalar(3));
+    std::cout << "Callable constructor std::array = {3, 2, 1}" << std::endl;
+    std::cout << m_callable << std::endl;
+    std::cout << std::endl;
+
+    // Assignment from std::array
+    SkewSymmetricMatrix<Scalar, 3> m_assign = arr;
+    assert(m_assign(0,1) == Scalar(1));
+    std::cout << "Assign from std::array = {1, 2, 3}" << std::endl;
+    std::cout << m_assign << std::endl;
+    std::cout << std::endl;
+
+    // Copy and assignment from a MatrixBase expression (it takes the skew-symmetric part)
+    {
+        Matrix<double, 3, 3> M({1, 2, 3, 4, 5, 6, 7, 8, 9});
+        SkewSymmetricMatrix<Scalar, 3> m_copy = M;
+        assert(m_arr(0,0) == Scalar(0));
+        assert(m_arr(0,1) == Scalar(1));
+        std::cout << "Copy from another SkewSymmetricMatrix" << std::endl;
+        std::cout << m_copy << std::endl;
+        std::cout << std::endl;
+        SkewSymmetricMatrix<Scalar, 3> m_assign;
+        m_assign = M;
+        assert(m_arr(0,0) == Scalar(0));
+        assert(m_arr(0,1) == Scalar(1));
+        std::cout << "Assign from another SkewSymmetricMatrix" << std::endl;
+        std::cout << m_assign << std::endl;
+        std::cout << std::endl;
+    }
+
+    // Copy and assignment from a MatrixBase expression (it takes the skew-symmetric part)
+    {
+        Matrix<double, 3, 3> M({1, 2, 3, 4, 5, 6, 7, 8, 9});
+        SkewSymmetricMatrix<Scalar, 3> m_copy = M;
+        assert(m_copy(0,1) == Scalar(-1));
+        std::cout << "Copy from another MatrixBase expression" << std::endl;
+        std::cout << m_copy << std::endl;
+        std::cout << std::endl;
+        SkewSymmetricMatrix<Scalar, 3> m_assign;
+        m_assign = M;
+        assert(m_copy(0,1) == Scalar(-1));
+        std::cout << "Assign from another MatrixBase expression" << std::endl;
+        std::cout << m_assign << std::endl;
+        std::cout << std::endl;
+    }
+
+    #ifdef __FDAPDE_HAS_EIGEN__
+        // Eigen constructor and assignment
+        Eigen::Matrix<Scalar, 2, 2> emat;
+        emat << 1, 2, 3, 4;
+        SkewSymmetricMatrix<Scalar, 2> m_eigen(emat);
+        assert(m_eigen(0,1) == Scalar(-0.5));
+        std::cout << "Eigen constructor from emat << 1, 2, 3, 4;" << std::endl;
+        std::cout << m_eigen << std::endl;
+        std::cout << std::endl;
+        SkewSymmetricMatrix<Scalar, 2> m_eigen_assign;
+        m_eigen_assign = emat;
+        assert(m_eigen_assign(0,1) == Scalar(-0.5));
+        std::cout << "Eigen assignement from emat << 1, 2, 3, 4;" << std::endl;
+        std::cout << m_eigen_assign << std::endl;
+        std::cout << std::endl;
+        // Conversion to Eigen
+        Eigen::Matrix<Scalar, 2, 2> emat_conv = m_eigen.as_eigen();
+        assert(emat_conv(0,1) == Scalar(-0.5));
+        std::cout << "Conversion to Eigen" << std::endl;
+        std::cout << emat_conv << std::endl;
+        std::cout << std::endl;
+    #endif
+
+}
+
+TEST(matrix_test, SymmetricAndSkewSymmetric) {
+    Matrix<double, 3, 3> M{{1,2,3, 4,5,6, 7,8,9}};
+    std::cout << "M" << std::endl;
+    std::cout << M << std::endl;
+    std::cout << std::endl;
+
+    std::cout << "Sym(M)" << std::endl;
+    auto Sy_M = M.symmetric();
+    std::cout << Sy_M << std::endl;
+    std::cout << std::endl;
+
+    std::cout << "SkewSym(M)" << std::endl;
+    auto Sk_M = M.skew_symmetric();
+    std::cout << Sk_M << std::endl;
+    std::cout << std::endl;
+
+    std::cout << "Sym(M) + SkewSym(M)" << std::endl;
+    std::cout << Sy_M + Sk_M << std::endl;
+    std::cout << std::endl;
+
+    std::cout << "Sym(Sy_M)" << std::endl;
+    std::cout << Sy_M.symmetric() << std::endl;
+    std::cout << std::endl;
+
+    std::cout << "SkewSym(Sk_M)" << std::endl;
+    std::cout << Sk_M.skew_symmetric() << std::endl;
+    std::cout << std::endl;
+
+    std::cout << "Sym(Sk_M)" << std::endl;
+    std::cout << Sk_M.symmetric() << std::endl;
+    std::cout << std::endl;
+
+    std::cout << "SkewSym(Sy_M)" << std::endl;
+    std::cout << Sy_M.skew_symmetric() << std::endl;
     std::cout << std::endl;
 }

@@ -17,21 +17,28 @@
 #ifndef __FDAPDE_MATRIX_BASE_H__
 #define __FDAPDE_MATRIX_BASE_H__
 
+#include <iomanip>
+
 #include "header_check.h"
+// #include "square_matrix_base.h"
 
 namespace fdapde {
 
 // TODO: visitors, rowwise, colwwise, coeffwise iterators ... support Dynamic
 
+// forward declaration
 template <int Rows, int Cols, typename Derived> struct MatrixBase;
+template <typename Derived> struct TransposeView;
 
 [[maybe_unused]] constexpr int RowMajor = 0;
 [[maybe_unused]] constexpr int ColMajor = 1;
 
+// matrix flags enumerator
 enum class matrix_flags {
     none            = 0x0000,
     square          = 0x0001,
-    symmetric       = 0x0002
+    symmetric       = 0x0002,
+    skew_symmetric  = 0x0004
 };
 
 namespace internals {
@@ -57,11 +64,29 @@ template <typename Derived> struct eigen_xpr_wrap : public Derived {
 
 #endif
 
-}   // namespace internals
+} // namespace internals
 
+
+// is_view trait
+namespace internals {
+
+template <typename T>
+struct is_view : std::false_type {};
+
+template <typename T>
+inline constexpr bool is_view_v = is_view<T>::value;
+
+template <typename D>
+struct is_view<TransposeView<D>> : std::true_type {};
+
+// TODO: check if other objects need to be marked as views
+
+} // namespace internals
+
+// transpose view
 template <typename Derived>
-struct Transpose : public MatrixBase<Derived::Cols, Derived::Rows, Transpose<Derived>> {
-    using Base = MatrixBase<Derived::Cols, Derived::Rows, Transpose<Derived>>;
+struct TransposeView : public MatrixBase<Derived::Cols, Derived::Rows, TransposeView<Derived>> {
+    using Base = MatrixBase<Derived::Cols, Derived::Rows, TransposeView<Derived>>;
     using Scalar = typename Derived::Scalar;
     static constexpr int Rows = Derived::Cols;
     static constexpr int Cols = Derived::Rows;
@@ -69,7 +94,7 @@ struct Transpose : public MatrixBase<Derived::Cols, Derived::Rows, Transpose<Der
     static constexpr int ReadOnly = 1;
     static constexpr int XprBits = Derived::XprBits;
 
-    constexpr Transpose(const Derived& xpr) : xpr_(xpr) { }
+    constexpr TransposeView(const Derived& xpr) : xpr_(xpr) { }
     constexpr Scalar operator()(int i, int j) const { return xpr_(j, i); }
     constexpr Scalar operator[](int i) const
         requires(Derived::Cols == 1 || Derived::Rows == 1) {
@@ -83,60 +108,8 @@ struct Transpose : public MatrixBase<Derived::Cols, Derived::Rows, Transpose<Der
     internals::ref_select_t<const Derived> xpr_;
 };
 
-[[maybe_unused]] constexpr int Upper = 0;       // lower triangular view of matrix
-[[maybe_unused]] constexpr int Lower = 1;       // upper triangular view of matrix
-[[maybe_unused]] constexpr int UnitUpper = 2;   // lower triangular view of matrix with ones on the diagonal
-[[maybe_unused]] constexpr int UnitLower = 3;   // upper triangular view of matrix with ones on the diagonal
-  
-template <typename Derived, int ViewMode>
-struct TriangularView : public MatrixBase<Derived::Rows, Derived::Cols, TriangularView<Derived, ViewMode>> {
-    fdapde_static_assert(
-      Derived::Rows != 1 && Derived::Cols != 1 && Derived::Rows == Derived::Cols,
-      TRIANGULAR_VIEW_DEFINED_ONLY_FOR_SQUARED_MATRICES);
-    using Base = MatrixBase<Derived::Rows, Derived::Cols, TriangularView<Derived, ViewMode>>;
-    using Scalar = typename Derived::Scalar;
-    static constexpr int Rows = Derived::Cols;
-    static constexpr int Cols = Derived::Rows;
-    static constexpr int NestAsRef = 0;
-    static constexpr int ReadOnly = Derived::ReadOnly;
-    static constexpr int XprBits = Derived::XprBits;
 
-    constexpr TriangularView() = default;
-    constexpr TriangularView(const Derived& xpr) : xpr_(xpr) { }
-    constexpr int rows() const { return xpr_.rows(); }
-    constexpr int cols() const { return xpr_.cols(); }
-    constexpr Scalar operator()(int i, int j) const {
-        if constexpr (ViewMode == Upper) return i > j ? 0 : xpr_(i, j);
-        if constexpr (ViewMode == Lower) return i < j ? 0 : xpr_(i, j);
-        if constexpr (ViewMode == UnitUpper) return i > j ? 0 : (i == j ? 1 : xpr_(i, j));
-        if constexpr (ViewMode == UnitLower) return i < j ? 0 : (i == j ? 1 : xpr_(i, j));
-    }
-    // block assignment
-    template <int Rows_, int Cols_, typename RhsType>
-    constexpr TriangularView<Derived, ViewMode>& operator=(const MatrixBase<Rows_, Cols_, RhsType>& rhs) {
-        fdapde_static_assert(Derived::ReadOnly == 0, BLOCK_ASSIGNMENT_TO_A_READ_ONLY_EXPRESSION_IS_INVALID);
-        fdapde_static_assert(
-          ViewMode == Upper || ViewMode == Lower, TRIANGULAR_BLOCK_ASSIGNMENT_REQUIRES_EITHER_UPPER_OR_LOWER_VIEW);
-        fdapde_static_assert(
-          Derived::Rows == Rows_ && Derived::Cols_ == Cols &&
-            std::is_convertible_v<typename RhsType::Scalar FDAPDE_COMMA Scalar>,
-          INVALID_RHS_SIZE_OR_YOU_ARE_TRYING_TO_ASSIGN_A_BLOCK_WITH_NON_CONVERTIBLE_SCALAR_TYPE);
-        int row = 0, col = 0;
-        for (int i = 0; i < Rows_; ++i) {
-            for (int j = 0; j < i; ++j) {
-                if constexpr (ViewMode == Lower) { row = i; col = j; }
-                if constexpr (ViewMode == Upper) { row = j; col = i; }
-                xpr_(row, col) = rhs(row, col);
-            }
-        }
-	// assign diagonal
-        for (int i = 0; i < Rows_; ++i) { xpr_(i, i) = rhs(i, i); }
-        return *this;
-    }
-   private:
-    internals::ref_select_t<const Derived> xpr_;
-};
-
+// matrix binary operations
 template <typename Lhs, typename Rhs, typename BinaryOperation>
 struct MatrixBinOp : public MatrixBase<Lhs::Rows, Lhs::Cols, MatrixBinOp<Lhs, Rhs, BinaryOperation>> {
     fdapde_static_assert(Lhs::Rows == Rhs::Rows && Lhs::Cols == Rhs::Cols, YOU_MIXED_MATRICES_OF_DIFFERENT_SIZES);
@@ -215,6 +188,7 @@ operator-(const Eigen::MatrixBase<Lhs>& lhs, const MatrixBase<Rhs::Rows, Rhs::Co
   
 #endif
 
+// matrix coefficients-wise operations
 template <typename Lhs, typename Rhs, typename BinaryOperation>
 struct MatrixCoeffWiseOp :
     public MatrixBase<
@@ -243,13 +217,12 @@ struct MatrixCoeffWiseOp :
     constexpr MatrixCoeffWiseOp(const Lhs& lhs, const Rhs& rhs, BinaryOperation op) :
         lhs_(lhs), rhs_(rhs), op_(op) { }
     constexpr Scalar operator()(int i, int j) const {
-        if constexpr ( is_coeff_lhs) { return op_(lhs_, rhs_(i, j)); }
+        if constexpr (is_coeff_lhs) { return op_(lhs_, rhs_(i, j)); }
         if constexpr (!is_coeff_lhs) { return op_(lhs_(i, j), rhs_); }
     }
     constexpr Scalar operator[](int i) const {
-        fdapde_static_assert(
-          XprType::Rows == 1 || XprType::Cols == 1, THIS_METHOD_IS_ONLY_FOR_ROW_OR_COLUMN_VECTORS);
-	if constexpr ( is_coeff_lhs) { return op_(lhs_, rhs_[i]); }
+        fdapde_static_assert(XprType::Rows == 1 || XprType::Cols == 1, THIS_METHOD_IS_ONLY_FOR_ROW_OR_COLUMN_VECTORS);
+	    if constexpr (is_coeff_lhs) { return op_(lhs_, rhs_[i]); }
         if constexpr (!is_coeff_lhs) { return op_(lhs_[i], rhs_); }
     }
     constexpr int rows() const { return xpr().rows(); }
@@ -259,7 +232,7 @@ struct MatrixCoeffWiseOp :
     constexpr const BinaryOperation_& functor() const { return op_; }
    protected:
     const XprType& xpr() const {
-        if constexpr ( is_coeff_lhs) return rhs_;
+        if constexpr (is_coeff_lhs) return rhs_;
         if constexpr (!is_coeff_lhs) return lhs_;
     }
     internals::ref_select_t<const Lhs> lhs_;
@@ -286,6 +259,7 @@ operator/(const MatrixBase<XprType::Rows, XprType::Cols, XprType>& lhs, Coeff rh
     return MatrixCoeffWiseOp<XprType, Coeff, std::divides<>> {lhs.derived(), rhs, std::divides<>()};
 }
 
+// matrix product
 template <typename Lhs, typename Rhs>
 struct MatrixProduct : public MatrixBase<Lhs::Rows, Rhs::Cols, MatrixProduct<Lhs, Rhs>> {
     fdapde_static_assert(Lhs::Cols == Rhs::Rows, INVALID_OPERAND_DIMENSIONS_FOR_MATRIX_MATRIX_PRODUCT);
@@ -441,37 +415,6 @@ class MatrixBlock : public MatrixBase<BlockRows_, BlockCols_, MatrixBlock<BlockR
     internals::ref_select_t<Derived> xpr_;
 };
 
-template <typename Derived>
-struct DiagonalBlock : public MatrixBase<Derived::Rows, Derived::Cols, DiagonalBlock<Derived>> {
-    fdapde_static_assert(Derived::Rows == Derived::Cols, DIAGONAL_BLOCK_DEFINED_ONLY_FOR_SQUARED_MATRICES);
-    using Base = MatrixBase<Derived::Rows, Derived::Cols, DiagonalBlock<Derived>>;
-    using Scalar = typename Derived::Scalar;
-    static constexpr int Rows = Derived::Rows;
-    static constexpr int Cols = Derived::Cols;
-    static constexpr int NestAsRef = 0;
-    static constexpr int ReadOnly = 1;
-    static constexpr int XprBits = Derived::XprBits;
-
-    constexpr DiagonalBlock() = default;
-    constexpr DiagonalBlock(Derived& xpr) : xpr_(xpr) { }
-    constexpr int rows() const { return xpr_.rows(); }
-    constexpr int cols() const { return xpr_.cols(); }
-    constexpr Scalar operator()(int i, int j) const { return i == j ? xpr_(i, i) : 0; }
-    constexpr const Scalar& operator[](int i) const { return xpr_(i, i); }
-    constexpr Scalar& operator[](int i) { return xpr_(i, i); }
-    // assignment operator
-    template <typename RhsType> constexpr DiagonalBlock<Derived>& operator=(const RhsType& rhs) {
-        fdapde_static_assert(Derived::ReadOnly == 0, BLOCK_ASSIGNMENT_TO_A_READ_ONLY_EXPRESSION_IS_INVALID);
-        fdapde_static_assert(
-          RhsType::Cols == 1 && RhsType::Rows == Rows &&
-            std::is_convertible_v<typename RhsType::Scalar FDAPDE_COMMA Scalar>,
-          VECTOR_REQUIRED_OR_YOU_ARE_TRYING_TO_ASSIGN_A_BLOCK_WITH_NON_CONVERTIBLE_SCALAR_TYPE);
-        for (int i = 0; i < Rows; ++i) { xpr_(i, i) = rhs[i]; }
-        return *this;
-    }
-   private:
-    internals::ref_select_t<Derived> xpr_;
-};
 
 namespace internals {
 
@@ -490,33 +433,61 @@ template <typename XprType, typename Functor> struct linear_matrix_redux_op {
     }
 };
 
-}   // namespace internals
+} // namespace internals
 
+
+// matrix base
 template <int Rows, int Cols, typename Derived> struct MatrixBase {
+    // TODO: this does not work but shouldn't we have a check like this?
+    // fdapde_static_assert(Derived::Cols == Cols && Derived::Rows == Rows, INVALID_DIMENSIONS);
+
     #ifdef __FDAPDE_HAS_EIGEN__ // compatibility with Eigen types
         static constexpr int RowsAtCompileTime = Rows;
         static constexpr int ColsAtCompileTime = Cols;
     #endif
-    constexpr int size() const { return derived().rows() * derived().cols(); }
+
+    // access to derived
     constexpr const Derived& derived() const { return static_cast<const Derived&>(*this); }
     constexpr Derived& derived() { return static_cast<Derived&>(*this); }
+
+    // dimensions
+    [[nodiscard]] constexpr int size() const { return Rows * Cols; }
+    [[nodiscard]] constexpr int rows() const { return Rows; }
+    [[nodiscard]] constexpr int cols() const { return Cols; }
 
     // send matrix to out stream (this is not constexpr evaluable)
     friend std::ostream& operator<<(std::ostream& out, const MatrixBase& m) {
         std::cout << "[[ ";
+        if constexpr (internals::is_view_v<Derived>) std::cout << "(View) ";
         if constexpr (Derived::XprBits & int(matrix_flags::square)) std::cout << "SquareMatrix ";
         if constexpr (Derived::XprBits & int(matrix_flags::symmetric)) std::cout << "SymmetricMatrix ";
+        if constexpr (Derived::XprBits & int(matrix_flags::skew_symmetric)) std::cout << "SkewSymmetricMatrix ";
         std::cout << "]]" << std::endl;
-        for (int i = 0; i < m.derived().rows() - 1; ++i) {
-            for (int j = 0; j < m.derived().cols(); ++j) { out << m.derived().operator()(i, j) << " "; }
-            out << "\n";
+
+        const int rows = m.derived().rows();
+        const int cols = m.derived().cols();
+
+        // compute max width per column
+        size_t width = 0;
+        for (int j = 0; j < cols; ++j) {
+            for (int i = 0; i < rows; ++i) {
+                std::ostringstream ss;
+                ss << m.derived()(i, j);
+                width = std::max(width, ss.str().size());
+            }
         }
-        // print last row without carriage return
-        for (int j = 0; j < m.derived().cols(); ++j) {
-            out << m.derived().operator()(m.derived().rows() - 1, j) << " ";
+
+        // print values with alignment
+        for (int i = 0; i < rows; ++i) {
+            for (int j = 0; j < cols; ++j) {
+                out << std::setw(int(width)) << m.derived()(i, j) << " ";
+            }
+            if (i != rows - 1) out << "\n";
         }
+
         return out;
     }
+
     // frobenius norm (L^2 norm of a matrix)
     constexpr auto squared_norm() const {
         typename Derived::Scalar norm_ = 0;
@@ -526,6 +497,7 @@ template <int Rows, int Cols, typename Derived> struct MatrixBase {
         return norm_;
     }
     constexpr auto norm() const { return fdapde::sqrt(squared_norm()); }
+
     // maximum norm (L^\infinity norm)
     constexpr auto inf_norm() const {
         using Scalar = typename Derived::Scalar;
@@ -569,7 +541,7 @@ template <int Rows, int Cols, typename Derived> struct MatrixBase {
     }
   
     // transpose
-    constexpr Transpose<Derived> transpose() const { return Transpose<Derived>(derived()); }
+    constexpr TransposeView<Derived> transpose() const { return TransposeView<Derived>(derived()); }
 
     // block operations
     constexpr MatrixBlock<Rows, 1, Derived> col(int i) { return block<Rows, 1>(0, i); }
@@ -610,17 +582,7 @@ template <int Rows, int Cols, typename Derived> struct MatrixBase {
         return dot_;
     }
 
-    // diagonal view of matrix expression
-    constexpr DiagonalBlock<const Derived> diagonal() const { return DiagonalBlock<const Derived>(derived()); }
-    constexpr DiagonalBlock<Derived> diagonal() { return DiagonalBlock<Derived>(derived()); }
-
-    // triangular view of matrix expression
-    template <int ViewMode> constexpr TriangularView<const Derived, ViewMode> triangular_view() const {
-        return TriangularView<const Derived, ViewMode>(derived());
-    }
-    template <int ViewMode> constexpr TriangularView<Derived, ViewMode> triangular_view() {
-        return TriangularView<Derived, ViewMode>(derived());
-    }
+    // copy
     template <typename Dest> constexpr void copy_to(Dest& dest) const {
         fdapde_static_assert(
           std::is_invocable_v<Dest FDAPDE_COMMA int FDAPDE_COMMA int> ||
@@ -636,6 +598,8 @@ template <int Rows, int Cols, typename Derived> struct MatrixBase {
             }
         }
     }
+
+    // arithmetic operators
     template <int OtherRows, int OtherCols, typename OtherDerived>
     constexpr Derived& operator+=(const MatrixBase<OtherRows, OtherCols, OtherDerived>& other) {
         fdapde_static_assert(Rows == OtherRows && Cols == OtherCols, YOU_MIXED_MATRICES_OF_DIFFERENT_SIZES);
@@ -652,6 +616,7 @@ template <int Rows, int Cols, typename Derived> struct MatrixBase {
         }
         return derived();
     }
+
     #ifdef __FDAPDE_HAS_EIGEN__
         // conversion to Eigen matrix
         auto as_eigen_matrix() const {
@@ -662,6 +627,7 @@ template <int Rows, int Cols, typename Derived> struct MatrixBase {
             return m;
         }
     #endif
+
    protected:
     // trait to detect if Xpr is a compile-time vector
     template <typename Xpr> struct is_vector {
@@ -714,6 +680,7 @@ constexpr bool almost_equal(
     return true;
 }
 
+
 // maps an existing array of data to a cepxr::Matrix. This can be used also to integrate Eigen with cexpr linear algebra
 template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_ = ColMajor>
 class Map : public MatrixBase<Rows_, Cols_, Map<Scalar_, Rows_, Cols_, StorageOrder_>> {
@@ -750,14 +717,18 @@ class Map : public MatrixBase<Rows_, Cols_, Map<Scalar_, Rows_, Cols_, StorageOr
         fdapde_static_assert(Cols == 1 || Rows == 1, THIS_METHOD_IS_ONLY_FOR_CONSTEXPR_ROW_OR_COLUMN_VECTORS);
         return data_[i * innerStride()];
     }
-    constexpr int rows() const { return Rows; }
-    constexpr int cols() const { return Cols; }
-    constexpr int innerStride() const { return inner_stride_; }
-    constexpr int outerStride() const {
+
+    // dimensions
+    [[nodiscard]] constexpr int rows() const { return Rows; }
+    [[nodiscard]] constexpr int cols() const { return Cols; }
+    [[nodiscard]] constexpr int innerStride() const { return inner_stride_; }
+    [[nodiscard]] constexpr int outerStride() const {
         return outer_stride_ != 1 ? outer_stride_ : (StorageOrder_ == RowMajor ? Cols : Rows);
     }
-    constexpr int rowStride() const { return StorageOrder_ == RowMajor ? outerStride() : innerStride(); }
-    constexpr int colStride() const { return StorageOrder_ == RowMajor ? innerStride() : outerStride(); }
+    [[nodiscard]] constexpr int rowStride() const { return StorageOrder_ == RowMajor ? outerStride() : innerStride(); }
+    [[nodiscard]] constexpr int colStride() const { return StorageOrder_ == RowMajor ? innerStride() : outerStride(); }
+
+    // data
     constexpr const Scalar_* data() const { return data_; }
     constexpr Scalar_* data() { return data_; }
     // assignment operator
