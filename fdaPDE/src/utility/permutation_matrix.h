@@ -41,8 +41,8 @@ template <int N_> struct PermutationMatrix : public SquareMatrixBase<N_, Permuta
     static constexpr int N = N_;
     static constexpr int Rows = N_;
     static constexpr int Cols = N_;
-    static constexpr int NestAsRefBit = 0;
-    static constexpr int ReadOnly = 1;
+    static constexpr bool NestAsRefBit = false;
+    static constexpr bool ReadOnly = true;
     static constexpr int XprBits = int(matrix_flags::square);
 
     // constructors

@@ -1136,12 +1136,12 @@ template <typename Derived> class md_handler_base {
               static_extents[0] != Dynamic && static_extents[1] != Dynamic, THIS_METHOD_IS_FOR_STATIC_EXTENTS_ONLY);
             constexpr int storage_layout =
               std::is_same_v<typename mapping_t::layout_type, internals::layout_right> ? ColMajor : RowMajor;
-            Map<const Scalar, static_extents[0], static_extents[1], storage_layout> map(
+            MatrixView<const Scalar, static_extents[0], static_extents[1], storage_layout> map(
               derived().data(), extent(0), extent(1));
             return map;
         } else {
             fdapde_static_assert(static_extents[0] != Dynamic, THIS_METHOD_IS_FOR_STATIC_EXTENTS_ONLY);
-            Map<const Scalar, static_extents[0], 1, RowMajor> map(derived().data(), extent(0), 1);
+            MatrixView<const Scalar, static_extents[0], 1, RowMajor> map(derived().data(), extent(0), 1);
             return map;
         }
     }

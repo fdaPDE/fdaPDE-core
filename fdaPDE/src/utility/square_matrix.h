@@ -25,118 +25,124 @@ namespace fdapde {
 namespace internals {
 
 // Matrix<Scalar, N, N> => has identity
-template <typename Scalar_, int N_, int NestAsRefBit_>
-struct has_identity<Matrix<Scalar_, N_, N_, NestAsRefBit_>> : std::true_type {};
+template <typename Scalar_, int N_, int StorageOrder_, bool NestAsRefBit_>
+struct has_identity<Matrix<Scalar_, N_, N_, StorageOrder_, NestAsRefBit_>> : std::true_type {};
 
 }
 
-template <typename Matrix, typename Rhs> constexpr auto backward_sub(const Matrix& A, const Rhs& b) {
-
-    fdapde_static_assert(Matrix::Rows == Matrix::Cols, BS_IS_ONLY_FOR_SQUARE_INVERTIBLE_MATRICES);
-    fdapde_static_assert(std::is_same_v<typename Matrix::Scalar FDAPDE_COMMA typename Rhs::Scalar>, OPERANDS_HAVE_DIFFERENT_SCALAR_TYPES);
-
-    // check dimensions
-    using Scalar = typename Matrix::Scalar;
-    constexpr int rows = Matrix::Rows;
-    Vector<Scalar, rows> res;
-    int i = rows - 1;
-    res[i] = b[i] / A(i, i);
-    i--;
-    for (; i >= 0; --i) {
-        Scalar tmp = 0;
-        for (int j = i + 1; j < rows; ++j) tmp += A(i, j) * res[j];
-        res[i] = 1. / A(i, i) * (b[i] - tmp);
-    }
-    return res;
-}
-
-template <typename Matrix, typename Rhs> constexpr auto forward_sub(const Matrix& A, const Rhs& b) {
-
+// forward/backward substitution for unit-triangular L and general U
+template <typename Matrix, typename Rhs>
+constexpr auto forward_sub(const Matrix& A, const Rhs& b) {
     fdapde_static_assert(Matrix::Rows == Matrix::Cols, FS_IS_ONLY_FOR_SQUARE_INVERTIBLE_MATRICES);
     fdapde_static_assert(std::is_same_v<typename Matrix::Scalar FDAPDE_COMMA typename Rhs::Scalar>, OPERANDS_HAVE_DIFFERENT_SCALAR_TYPES);
 
-    // check dimensions
     using Scalar = typename Matrix::Scalar;
-    constexpr int rows = Matrix::Rows;
-    Vector<Scalar, rows> res;
-    int i = 0;
-    res[i] = b[i] / A(i, i);
-    i++;
-    for (; i < rows; ++i) {
-        Scalar tmp = 0;
-        for (int j = 0; j < i; ++j) tmp += A(i, j) * res[j];
-        res[i] = 1. / A(i, i) * (b[i] - tmp);
+    constexpr int N = Matrix::Rows;
+    Vector<Scalar, N> x;
+    x[0] = b[0] / A(0,0);
+    for (int i = 1; i < N; ++i) {
+        Scalar sum = 0;
+        for (int j = 0; j < i; ++j) sum += A(i,j) * x[j];
+        x[i] = (b[i] - sum) / A(i,i);
     }
-    return res;
+    return x;
 }
 
-// LU factorization of SquareMatrixBase expressions with partial pivoting
-template <typename MatrixType> class PartialPivLU {
+template <typename Matrix, typename Rhs>
+constexpr auto backward_sub(const Matrix& A, const Rhs& b) {
+    fdapde_static_assert(Matrix::Rows == Matrix::Cols, BS_IS_ONLY_FOR_SQUARE_INVERTIBLE_MATRICES);
+    fdapde_static_assert(std::is_same_v<typename Matrix::Scalar FDAPDE_COMMA typename Rhs::Scalar>, OPERANDS_HAVE_DIFFERENT_SCALAR_TYPES);
 
+    using Scalar = typename Matrix::Scalar;
+    constexpr int N = Matrix::Rows;
+    Vector<Scalar, N> x;
+    x[N-1] = b[N-1] / A(N-1,N-1);
+    for (int i = N-2; i >= 0; --i) {
+        Scalar sum = 0;
+        for (int j = i+1; j < N; ++j) sum += A(i,j) * x[j];
+        x[i] = (b[i] - sum) / A(i,i);
+    }
+    return x;
+}
+
+// LU with partial (row) pivoting
+template <typename MatrixType>
+class PartialPivLU {
     fdapde_static_assert(MatrixType::Rows == MatrixType::Cols, LU_FACTORIZATION_IS_ONLY_FOR_SQUARE_INVERTIBLE_MATRICES);
 
     static constexpr int N = MatrixType::Rows;
     using Scalar = typename MatrixType::Scalar;
-    MatrixType m_;
-    PermutationMatrix<N> P_;
+
+    MatrixType lu_;  // will hold both L (unit lower) and U (upper)
+    PermutationMatrix<N> P_; // row‐permutation matrix
 
 public:
+    constexpr PartialPivLU() : lu_(), P_() { }
 
-    // constructors
-    constexpr PartialPivLU() : m_(), P_() {};
-    template <typename XprType>
-    constexpr explicit  PartialPivLU(const SquareMatrixBase<N, XprType>& m) : m_() { compute(m); }
-
-    // computes the LU factorization of matrix m with partial (row) pivoting
-    template <typename XprType> constexpr void compute(const SquareMatrixBase<N, XprType>& m) {
-        m_ = m;
-        std::array<int, N> P;
-        for (int i = 0; i < N; ++i) { P[i] = i; }
-        int pivot_index = 0;
-        int hh, kk;
-        for (int i = 0; i < N - 1; ++i) {
-            // find pivotal element
-            Scalar pivot = -std::numeric_limits<Scalar>::infinity();
-            for (int j = i; j < N; ++j) {
-                Scalar abs_ = fdapde::abs(m_(P[j], i));
-                if (pivot < abs_) {
-                    pivot = abs_;
-                    pivot_index = j;
-                }
-            }
-            // perform gaussian elimination step in place
-            for (int j = i; j < N; ++j) {
-                if (P[j] != P[pivot_index]) {   // avoid to subtract row with itself
-                    Scalar l = m_(P[j], i) / m_(P[pivot_index], i);
-                    m_(P[j], i) = l;
-                    for (int k = i + 1; k < N; ++k) {
-                        m_(P[j], k) = m_(P[j], k) - l * m_(P[pivot_index], k);
-                    }
-                }
-            }
-            // swap rows
-            hh = P[i], kk = P[pivot_index];
-            P[pivot_index] = hh;
-            P[i] = kk;
-        }
-        P_ = PermutationMatrix<N>(P);
-        m_ = P_ * m_;
+    template <typename Xpr>
+    constexpr explicit PartialPivLU(const MatrixBase<N, N, Xpr>& m) : lu_(m) { // TODO:: If here we use SquareMatrixBase -> segfault
+        compute(m);
     }
 
-    // permutation matrix
+    // Factorize: overwrite `lu_` in place, build P_
+    template <typename Xpr>
+    constexpr void compute(const MatrixBase<N, N, Xpr>& m) { // TODO:: If here we use SquareMatrixBase -> segfault
+        // copy input
+        lu_ = m;
+
+        // track row swaps in a simple array first
+        std::array<int,N> perm;
+        for (int i = 0; i < N; ++i) perm[i] = i;
+
+        // Doolittle with partial pivoting
+        for (int i = 0; i < N-1; ++i) {
+            // 1) find pivot row among i..N-1
+            int pivot_index = i;
+            Scalar maxval = Scalar(0);
+            for (int r = i; r < N; ++r) {
+                Scalar av = fdapde::abs(lu_(r,i));
+                if (av > maxval) {
+                    maxval = av;
+                    pivot_index = r;
+                }
+            }
+
+            // 2) swap rows i <-> pivot_index if needed
+            if (pivot_index != i) {
+                std::swap(perm[i], perm[pivot_index]);
+                for (int c = 0; c < N; ++c)
+                    std::swap(lu_(i,c), lu_(pivot_index,c));
+            }
+
+            // 3) eliminate below pivot
+            for (int r = i+1; r < N; ++r) {
+                Scalar alpha = lu_(r,i) / lu_(i,i);
+                lu_(r,i) = alpha;  // store L
+                for (int c = i+1; c < N; ++c) {
+                    lu_(r,c) -= alpha * lu_(i,c);
+                }
+            }
+        }
+
+        // build the final PermutationMatrix
+        P_ = PermutationMatrix<N>(perm);
+    }
+
+    // Access the permutation
     constexpr PermutationMatrix<N> P() const { return P_; }
 
-    // solve linear system Ax = b using A factorization PA = LU
-    template <typename RhsType> constexpr Vector<Scalar, N> solve(const RhsType& rhs) {
-        fdapde_static_assert(
-          std::is_same_v<Scalar FDAPDE_COMMA typename RhsType::Scalar>, INVALID_SCALAR_TYPE_FOR_RHS_OPERAND);
-        fdapde_constexpr_assert(rhs.rows() == N && rhs.cols() == 1);
-        Vector<Scalar, N> x;
-        // evaluate U^{-1} * (L^{-1} * (P * rhs))
-        x = P_ * rhs;
-        x = forward_sub(m_.template triangular_view<UnitLower>(), x);
-        x = backward_sub(m_.template triangular_view<Upper>(), x);
-        return x;
+    // Solve Ax = b via PA = LU
+    template <typename Rhs>
+    constexpr Vector<Scalar,N> solve(const Rhs& b) const {
+        fdapde_static_assert(std::is_same_v<Scalar FDAPDE_COMMA typename Rhs::Scalar>,
+                             INVALID_SCALAR_TYPE_FOR_RHS_OPERAND);
+        fdapde_constexpr_assert(b.rows() == N && b.cols() == 1);
+
+        // apply P to RHS, then forward/backward substitute
+        auto y = P_ * b;
+        auto z = forward_sub(lu_.template triangular_view<UnitLower>(), y);
+        return backward_sub(lu_.template triangular_view<Upper>(), z);
+
     }
 };
 

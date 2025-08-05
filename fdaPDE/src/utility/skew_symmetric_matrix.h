@@ -26,12 +26,39 @@ namespace fdapde {
 namespace internals {
 
 // SkewSymmetricMatrix => no identity
-template <typename Scalar_, int N_, int NestAsRefBit_>
+template <typename Scalar_, int N_, bool NestAsRefBit_>
 struct has_identity<SkewSymmetricMatrix<Scalar_, N_, NestAsRefBit_>> : std::false_type {};
 
 }
 
-template <typename Scalar_, int N_, int NestAsRefBit_ = 1>
+// symmetric matrix view
+template <typename Scalar_, int N_, int StorageOrder_>
+struct SkewSymmetricMatrixView : public MatrixView<Scalar_, N_, N_, StorageOrder_> {
+
+    using ViewType = SkewSymmetricMatrixView<Scalar_, N_, StorageOrder_>;
+    using Base = MatrixView<Scalar_, N_, N_, StorageOrder_>;
+    using Scalar = Scalar_;
+    static constexpr int N = N_;
+    static constexpr int Rows = N_;
+    static constexpr int Cols = N_;
+    static constexpr int StorageSize = N_ * N_;
+    static constexpr bool NestAsRefBit = true;
+    static constexpr bool ReadOnly = true;
+    static constexpr int XprBits = int(matrix_flags::square) | int(matrix_flags::symmetric);
+
+    // constructors
+    constexpr SkewSymmetricMatrixView() = default;
+    constexpr explicit SkewSymmetricMatrixView(Scalar_* data) : Base(data) {}
+
+    // const access
+    constexpr Scalar operator()(int i, int j) const {
+        fdapde_assert(i < Rows && j < Cols);
+        return 0.5*(Base::operator()(i, j) + Base::operator()(j, i) ) ;
+    }
+};
+
+// symmetric matrix
+template <typename Scalar_, int N_, bool NestAsRefBit_ = true>
 class SkewSymmetricMatrix : public SquareMatrixBase<N_, SkewSymmetricMatrix<Scalar_, N_, NestAsRefBit_>> {
 public:
     using Base = SquareMatrixBase<N_, SkewSymmetricMatrix<Scalar_, N_, NestAsRefBit_>>;
@@ -40,7 +67,8 @@ public:
     static constexpr int Rows = N_;
     static constexpr int Cols = N_;
     static constexpr int StorageSize = N_ * (N_ - 1) / 2;
-    static constexpr int NestAsRefBit = NestAsRefBit_;
+    static constexpr bool NestAsRefBit = NestAsRefBit_;
+    static constexpr bool ReadOnly = false;
     static constexpr int XprBits = int(matrix_flags::square) | int(matrix_flags::skew_symmetric);
 
     // default constructor
@@ -53,7 +81,7 @@ public:
     constexpr SkewSymmetricMatrix(SkewSymmetricMatrix& other) = default;
 
     // constructor from std::array
-    constexpr SkewSymmetricMatrix(const std::array<Scalar, StorageSize>& data) : data_(data) {}
+    constexpr explicit SkewSymmetricMatrix(const std::array<Scalar, StorageSize>& data) : data_(data) {}
 
     // constructor from C-style array
     constexpr explicit SkewSymmetricMatrix(const Scalar_ (&data)[StorageSize]) : data_() {
@@ -84,7 +112,7 @@ public:
 
     // converting constructor from another Matrix expression
     template <typename Derived>
-    constexpr SkewSymmetricMatrix(const MatrixBase<Rows, Cols, Derived>& xpr) : data_() {
+    constexpr explicit SkewSymmetricMatrix(const MatrixBase<Rows, Cols, Derived>& xpr) : data_() {
         fdapde_static_assert(
           std::is_convertible_v<typename Derived::Scalar FDAPDE_COMMA Scalar>,
           INVALID_SCALAR_TYPES_CONVERSION_BETWEEN_MATRICES);
@@ -138,8 +166,7 @@ public:
 
     // assignment from MatrixBase expression
     template <int RhsRows_, int RhsCols_, typename RhsXprType>
-    constexpr SkewSymmetricMatrix<Scalar, N, NestAsRefBit>&
-    operator=(const MatrixBase<RhsRows_, RhsCols_, RhsXprType>& rhs) {
+    constexpr SkewSymmetricMatrix& operator=(const MatrixBase<RhsRows_, RhsCols_, RhsXprType>& rhs) {
         fdapde_static_assert(
           Rows == RhsRows_ && Cols == RhsCols_ &&
             std::is_convertible_v<typename RhsXprType::Scalar FDAPDE_COMMA Scalar>,
@@ -151,7 +178,7 @@ public:
     #ifdef __FDAPDE_HAS_EIGEN__
         // assignment from Eigen matrix
         template <typename Derived>
-        SkewSymmetricMatrix<Scalar, N, NestAsRefBit>& operator=(const Eigen::MatrixBase<Derived>& rhs) {
+        SkewSymmetricMatrix& operator=(const Eigen::MatrixBase<Derived>& rhs) {
             fdapde_static_assert(
               Derived::RowsAtCompileTime != Dynamic && Derived::ColsAtCompileTime != Dynamic &&
                 std::is_convertible_v<typename Derived::Scalar FDAPDE_COMMA Scalar>,
@@ -194,7 +221,7 @@ public:
     // TODO: differently from Matrix here I can not return a map because the Map saves the pointer to data_.data() but symmetric matrices stores data in a non compatible way
     #ifdef __FDAPDE_HAS_EIGEN__
         Eigen::Matrix<Scalar, Rows, Cols, Eigen::RowMajor> as_eigen() const {
-            Matrix<Scalar, Rows, Cols, NestAsRefBit> M = this->full();
+            Matrix<Scalar, Rows, Cols, RowMajor, NestAsRefBit> M(this->full());
             return Eigen::Matrix<Scalar, Rows, Cols, Eigen::RowMajor>(M.data());
         }
     #endif
@@ -202,6 +229,7 @@ public:
     // data
     constexpr const Scalar* data() const { return data_.data(); }
     Scalar* data() { return data_.data(); }
+    constexpr const std::array<Scalar,StorageSize>& storage() const { return data_; }
 
     // setters
     constexpr void setConstant(Scalar c) {

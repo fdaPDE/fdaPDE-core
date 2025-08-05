@@ -20,195 +20,312 @@
 #include "header_check.h"
 
 namespace fdapde {
+// forward declaration
+template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_> class MatrixView;
+template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_, bool NestAsRefBit_> class Matrix;
 
-template <typename Scalar_, int Rows_, int Cols_, int NestAsRefBit_ = 1>
-class Matrix : public std::conditional_t<Rows_ == Cols_, SquareMatrixBase<Rows_, Matrix<Scalar_, Rows_, Cols_, NestAsRefBit_>>, MatrixBase<Rows_, Cols_, Matrix<Scalar_, Rows_, Cols_, NestAsRefBit_>>> {
-    fdapde_static_assert(Rows_ > 0 && Cols_ > 0, EMPTY_MATRIX_IS_ILL_FORMED);
-   public:
-    using Base = std::conditional_t<Rows_ == Cols_, SquareMatrixBase<Rows_, Matrix<Scalar_, Rows_, Cols_, NestAsRefBit_>>, MatrixBase<Rows_, Cols_, Matrix<Scalar_, Rows_, Cols_, NestAsRefBit_>>>;
+// is_view trait
+namespace internals {
+
+template <typename Scalar, int Rows, int Cols, int StorageOrder>
+struct is_view<MatrixView<Scalar, Rows, Cols, StorageOrder>> : std::true_type {};
+
+}
+
+// maps an existing array of data to a cexpr::Matrix. This can be used also to integrate Eigen with cexpr linear algebra
+template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_ = RowMajor>
+class MatrixView :
+public std::conditional_t<Rows_== Cols_,
+    SquareMatrixBase<Rows_, MatrixView<Scalar_, Rows_, Cols_, StorageOrder_>>,
+    MatrixBase<Rows_, Cols_, MatrixView<Scalar_, Rows_, Cols_, StorageOrder_>>
+> {
+    fdapde_static_assert(Rows_ > 0 && Cols_ > 0, YOU_ARE_MAPPING_DATA_TO_AN_EMPTY_MATRIX);
+
+public:
+    using MatrixViewType = MatrixView<Scalar_, Rows_, Cols_, StorageOrder_>;
+    using Base = std::conditional_t<Rows_==Cols_, SquareMatrixBase<Rows_, MatrixViewType>, MatrixBase<Rows_, Cols_, MatrixViewType>>;
     using Scalar = Scalar_;
     static constexpr int Rows = Rows_;
     static constexpr int Cols = Cols_;
     static constexpr int StorageSize = Rows_ * Cols_;
-    static constexpr int NestAsRefBit = NestAsRefBit_;   // whether to store this node by ref or by copy in an expression
-    static constexpr int ReadOnly = 0;
-    static constexpr int XprBits = (Rows_ == Cols_) ? int(matrix_flags::square) : int(matrix_flags::none);
+    static constexpr int StorageOrder = StorageOrder_;
+    static constexpr int NestAsRefBit = false;
+    static constexpr bool ReadOnly = false;
+    static constexpr int XprBits = (Rows_==Cols_) ? int(matrix_flags::square) : int(matrix_flags::none);
 
-    // default constructor
-    constexpr Matrix() : data_() {};
 
-    // constructor from std::array
-    constexpr explicit Matrix(const std::array<Scalar, StorageSize>& data) : data_(data) { }
+    // default strides for a dense layout
+    static constexpr int DefaultOuterStride = (StorageOrder == RowMajor ? Cols : Rows);
+    static constexpr int DefaultInnerStride = 1;
 
-    // constructor from C-style array
-    constexpr explicit Matrix(const Scalar_ (&data)[StorageSize]) : data_() {
+    // constructors
+    constexpr MatrixView() : ptr_data_() {} // , outer_stride_(DefaultOuterStride) { }
+    constexpr explicit MatrixView(Scalar* data) : ptr_data_(data) {} //, outer_stride_(DefaultOuterStride) { }
+    // constexpr MatrixView(Scalar_* data, const int outer_stride, const int inner_stride) : ptr_data_(data), outer_stride_(outer_stride), inner_stride(inner_stride) { }
+
+    // assignment from std::array
+    constexpr MatrixViewType& operator=(const std::array<Scalar, StorageSize>& rhs) {
         for (int id = 0; id < StorageSize; ++id) {
-            data_[id] = data[id];
+            ptr_data_[id] = rhs[id];
         }
+        return *this;
     }
 
-    // constructor from std::vector
-    constexpr explicit Matrix(const std::vector<Scalar>& data) : data_() {
-        fdapde_constexpr_assert(data.size() == StorageSize);
+    // assignment from std::array
+    constexpr MatrixViewType& operator=(const Scalar_ (&rhs)[StorageSize]) {
         for (int id = 0; id < StorageSize; ++id) {
-            data_[id] = data[id];
+            ptr_data_[id] = rhs[id];
         }
+        return *this;
     }
 
-    // constructor from callable returning array<Scalar, StorageSize>
+    // assignment from C-array
+    constexpr MatrixViewType& operator=(const std::vector<Scalar>& rhs) {
+        fdapde_constexpr_assert(rhs.size() == StorageSize);
+        for (int id = 0; id < StorageSize; ++id) {
+            ptr_data_[id] = rhs[id];
+        }
+        return *this;
+    }
+
+    // assignment from any callable returning std::array<Scalar, StorageSize>
     template <typename Callable>
-    constexpr explicit Matrix(Callable callable)
-        requires(std::is_invocable_v<Callable>)
-        : data_() {
+    constexpr MatrixViewType& operator=(Callable callable)
+    requires(std::is_invocable_v<Callable>) {
         fdapde_static_assert(
           std::is_convertible_v<typename decltype(std::function {
             callable})::result_type FDAPDE_COMMA std::array<Scalar FDAPDE_COMMA StorageSize>>,
           CALLABLE_DOES_NOT_RETURN_SOMETHING_CONVERTIBLE_TO_AN_ARRAY_OF_SCALAR);
-        data_ = callable();
-    }
-
-    // copy constructor from any MatrixBase-derived expression (templated)
-    template <typename Derived>
-    constexpr Matrix(const MatrixBase<Rows, Cols, Derived>& xpr) : data_() { // this must not be explicit
-        fdapde_static_assert(
-          std::is_convertible_v<typename Derived::Scalar FDAPDE_COMMA Scalar>,
-          INVALID_SCALAR_TYPES_CONVERSION_BETWEEN_MATRICES);
-        fdapde_static_assert(
-          Derived::Rows == Rows && Derived::Cols == Cols,
-          YOU_ARE_TRYING_TO_CONSTRUCT_A_MATRIX_WITH_ANOTHER_MATRIX_OF_DIFFERENT_SIZE);
-        for (int id = 0; id < StorageSize; ++id) {
-            auto[i, j] = inv_index(id);
-            data_[id] = xpr.derived().operator()(i, j);
-        }
-    }
-
-    // conversion constructor from Eigen matrix
-    #ifdef __FDAPDE_HAS_EIGEN__
-        template <typename Derived> Matrix(const Eigen::MatrixBase<Derived>& other) {
-            constexpr int Rows__ = Derived::RowsAtCompileTime;
-            constexpr int Cols__ = Derived::ColsAtCompileTime;
-            fdapde_static_assert(
-              Rows__ != Dynamic && Cols__ != Dynamic && Rows__ == Rows && Cols__ == Cols &&
-                std::is_convertible_v<typename Derived::Scalar FDAPDE_COMMA Scalar>,
-              INVALID_CONVERSION_FROM_EIGEN_MATRIX_TO_FDAPDE_MATRIX);
-            for (int id = 0; id < StorageSize; ++id) {
-                auto[i, j] = inv_index(id);
-                data_[id] = other(i, j);
-            }
-        }
-    #endif
-
-    // scalar constructor for 1D vector/matrix (StorageSize == 1)
-    constexpr explicit Matrix(Scalar x) : data_() {   // 1D point constructor
-        fdapde_static_assert(StorageSize == 1, THIS_METHOD_IS_ONLY_FOR_MATRICES_WITH_ONE_ELEMENT);
-        data_[0] = x;
-    }
-
-    // constructor for 2D vector (StorageSize == 2)
-    constexpr explicit Matrix(Scalar x, Scalar y) : data_() {   // 2D point constructor
-        fdapde_static_assert(StorageSize == 2, THIS_METHOD_IS_ONLY_FOR_MATRICES_WITH_TWO_ELEMENTS);
-        data_ = {x, y};
-    }
-
-    // constructor for 3D vector (StorageSize == 3)
-    constexpr explicit Matrix(Scalar x, Scalar y, Scalar z) : data_() {   // 3D point constructor
-        fdapde_static_assert(StorageSize == 3, THIS_METHOD_IS_ONLY_FOR_MATRICES_WITH_THREE_ELEMENTS);
-        data_ = {x, y, z};
-    }
-
-    // assignment from std::array
-    constexpr Matrix<Scalar, Rows, Cols, NestAsRefBit>& operator=(const std::array<Scalar, StorageSize>& rhs) {
-        for (int id = 0; id < StorageSize; ++id) {
-            data_[id] = rhs[id];
-        }
+        *this = callable();
         return *this;
     }
 
     // assignment from MatrixBase expression
     template <int RhsRows_, int RhsCols_, typename RhsXprType>
-    constexpr Matrix<Scalar, Rows, Cols, NestAsRefBit>&
-    operator=(const MatrixBase<RhsRows_, RhsCols_, RhsXprType>& rhs) {
+    constexpr MatrixViewType& operator=(const MatrixBase<RhsRows_, RhsCols_, RhsXprType>& rhs) {
         fdapde_static_assert(
           Rows == RhsRows_ && Cols == RhsCols_ &&
             std::is_convertible_v<typename RhsXprType::Scalar FDAPDE_COMMA Scalar>,
           INVALID_RHS_DIMENSIONS_OR_YOU_ARE_TRYING_TO_ASSIGN_A_RHS_WITH_NON_CONVERTIBLE_SCALAR_TYPE);
         for (int id = 0; id < StorageSize; ++id) {
             auto[i, j] = inv_index(id);
-            data_[id] = rhs.derived()(i, j);
+            ptr_data_[id] = rhs.derived()(i, j);
         }
         return *this;
     }
 
     // assignment from Eigen matrix
     #ifdef __FDAPDE_HAS_EIGEN__
-        template <typename Derived>
-        Matrix<Scalar, Rows, Cols, NestAsRefBit>& operator=(const Eigen::MatrixBase<Derived>& rhs) {
+        template <typename OtherDerived>
+        MatrixViewType& operator=(const Eigen::MatrixBase<OtherDerived>& rhs) {
             fdapde_static_assert(
-              Derived::RowsAtCompileTime != Dynamic && Derived::ColsAtCompileTime != Dynamic &&
-                std::is_convertible_v<typename Derived::Scalar FDAPDE_COMMA Scalar>,
+              OtherDerived::RowsAtCompileTime != Dynamic && OtherDerived::ColsAtCompileTime != Dynamic &&
+                std::is_convertible_v<typename OtherDerived::Scalar FDAPDE_COMMA Scalar>,
               CANNOT_ASSIGN_FROM_EIGEN_HEAP_ALLOCATED_MATRIX_OR_INVALID_SCALAR_TYPE);
             for (int id = 0; id < StorageSize; ++id) {
                 auto[i, j] = inv_index(id);
-                data_[id] = rhs.derived()(i, j);
+                ptr_data_[id] = rhs.derived()(i, j);
             }
             return *this;
         }
     #endif
 
-    // static named constructors
-    static constexpr Matrix<Scalar, Rows, Cols> Constant(Scalar c) {
-        std::array<Scalar, StorageSize> data{};
-        for (auto& val : data) val = c;
-        return Matrix<Scalar, Rows, Cols>(data);
-    }
-    static constexpr Matrix<Scalar, Rows, Cols> Zero() { return Constant(Scalar(0)); }
-    static constexpr Matrix<Scalar, Rows, Cols> Ones() { return Constant(Scalar(1)); }
-    static constexpr Matrix<Scalar, Rows, Cols> NaN() { return Constant(std::numeric_limits<Scalar>::quiet_NaN()); }
-
     // const access
-    constexpr Scalar operator()(int i, int j) const { return data_[index(i, j)]; }
-    constexpr Scalar operator[](int i) const
-        requires(Cols == 1 || Rows == 1) {
-        fdapde_static_assert(Cols == 1 || Rows == 1, THIS_METHOD_IS_ONLY_FOR_CONSTEXPR_ROW_OR_COLUMN_VECTORS);
-        return data_[i];
+    constexpr Scalar operator()(const int i, const int j) const {
+        fdapde_assert(i >= 0 && i < Rows && j >= 0 && j < Cols);
+        return ptr_data_[index(i, j)];
+    }
+    constexpr Scalar operator[](const int i) const
+    requires(Cols == 1 || Rows == 1) {
+        fdapde_assert(i >= 0 && i < StorageSize);
+        return ptr_data_[i];
     }
     // non-const access
-    constexpr Scalar& operator()(int i, int j) { return data_[index(i, j)]; }
-    constexpr Scalar& operator[](int i)
-        requires(Cols == 1 || Rows == 1){
-        fdapde_static_assert(Cols == 1 || Rows == 1, THIS_METHOD_IS_ONLY_FOR_CONSTEXPR_ROW_OR_COLUMN_VECTORS);
-        return data_[i];
+    constexpr Scalar& operator()(const int i, const int j) {
+        fdapde_assert(i >= 0 && i < Rows && j >= 0 && j < Cols);
+        return ptr_data_[index(i, j)];
+    }
+    constexpr Scalar& operator[](const int i)
+    requires(Cols == 1 || Rows == 1) {
+        fdapde_assert(i >= 0 && i < StorageSize);
+        return ptr_data_[i];
     }
 
     // convert to EigenMap
     #ifdef __FDAPDE_HAS_EIGEN__
-        Eigen::Map<Eigen::Matrix<Scalar, Rows, Cols, Eigen::RowMajor>> as_eigen_map() {
-            return Eigen::Map<Eigen::Matrix<Scalar, Rows, Cols, Eigen::RowMajor>>(data_.data());
+        auto as_eigen_map() requires(StorageOrder == ColMajor) {
+            return Eigen::Map<Eigen::Matrix<Scalar, Rows, Cols, Eigen::ColMajor>>(ptr_data_);
+        }
+        auto as_eigen_map() requires(StorageOrder == RowMajor) {
+            return Eigen::Map<Eigen::Matrix<Scalar, Rows, Cols, Eigen::RowMajor>>(ptr_data_);
         }
     #endif
 
-    // data
-    constexpr const Scalar* data() const { return data_.data(); }
-    Scalar* data() { return data_.data(); }
-
     // setters
     constexpr void setConstant(Scalar c) {
-        for (auto& val : data_) val = c;
+        for (int id = 0; id < StorageSize; ++id) ptr_data_[id] = c;
     }
     constexpr void setZero() { setConstant(Scalar(0)); }
     constexpr void setOnes() { setConstant(Scalar(1)); }
 
-   private:
-    std::array<Scalar, StorageSize> data_;
+    // dimensions
+    static constexpr int rows() { return Rows; }
+    static constexpr int cols() { return Cols; }
+    static constexpr int innerStride() { return inner_stride_; }
+    static constexpr int outerStride() { return outer_stride_; }
+    static constexpr int rowStride() { return StorageOrder_ == RowMajor ? outerStride() : innerStride(); }
+    static constexpr int colStride() { return StorageOrder_ == RowMajor ? innerStride() : outerStride(); }
 
-    static constexpr int index(int i, int j) {
-        return i * Cols + j;
+    // data
+    constexpr const Scalar_* data() const { return ptr_data_; }
+    constexpr Scalar_* data() { return ptr_data_; }
+
+protected:
+    Scalar_* ptr_data_ = nullptr;
+    static constexpr int outer_stride_ = DefaultOuterStride;   // increment between two consecutive rows (RowMajor) or columns (ColMajor)
+    static constexpr int inner_stride_ = DefaultInnerStride;   // increment between two consecutive entries within a row (RowMajor) or column (ColMajor)
+
+    // indexes
+    static constexpr int index(const int i, const int j) {
+        return i * rowStride() + j * colStride();
     }
-    static constexpr std::pair<int, int> inv_index(int id) {
-        int i = id / Cols;
-        int j = id % Cols;
+    static constexpr std::pair<int, int> inv_index(const int id) {
+        int i, j;
+        if (StorageOrder == RowMajor) {
+            i = id / Cols;
+            j = id % Cols;
+        } else {
+            i = id % Rows;
+            j = id / Rows;
+        }
         return {i, j};
     }
+};
+
+
+// Matrix = MatrixView + data ownership
+template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_ = RowMajor, bool NestAsRefBit_ = 1>
+class Matrix :
+public std::conditional_t<Rows_ == Cols_,
+    SquareMatrixBase<Rows_, Matrix<Scalar_, Rows_, Cols_, StorageOrder_>>,
+    MatrixBase<Rows_, Cols_, Matrix<Scalar_, Rows_, Cols_, StorageOrder_>>
+> {
+    fdapde_static_assert(Rows_ > 0 && Cols_ > 0, EMPTY_MATRIX_IS_ILL_FORMED);
+
+public:
+    using MatrixViewType = MatrixView<Scalar_, Rows_, Cols_, StorageOrder_>;
+    using MatrixType = Matrix<Scalar_, Rows_, Cols_, StorageOrder_, NestAsRefBit_>;
+    using Base = std::conditional_t<Rows_ == Cols_, SquareMatrixBase<Rows_, MatrixType>, MatrixBase<Rows_, Cols_, MatrixType>>;
+    using Scalar = Scalar_;
+    static constexpr int Rows = Rows_;
+    static constexpr int Cols = Cols_;
+    static constexpr int StorageSize = Rows_ * Cols_;
+    static constexpr int StorageOrder = StorageOrder_;
+    static constexpr bool NestAsRefBit = NestAsRefBit_;
+    static constexpr bool ReadOnly = false;
+    static constexpr int XprBits = (Rows_ == Cols_) ? int(matrix_flags::square) : int(matrix_flags::none);
+
+    // derived
+    constexpr Matrix&derived(){ return static_cast<Matrix&>(*this); }
+    constexpr const Matrix& derived() const { return static_cast<const Matrix&>(*this); }
+
+    // default constructor
+    constexpr Matrix() : data_(), m_(data_.data()) { };
+
+    // constructor from std::array
+    constexpr explicit Matrix(const std::array<Scalar, StorageSize>& arr) : Matrix() { m_ = arr; }
+
+    // constructor from C-style array
+    constexpr explicit Matrix(const Scalar_ (&arr)[StorageSize]) : Matrix() { m_ = arr; }
+
+    // constructor from std::vector
+    constexpr explicit Matrix(const std::vector<Scalar>& vec) : Matrix() { m_ = vec; }
+
+    // constructor from callable returning array<Scalar, StorageSize>
+    template <typename Callable>
+    constexpr explicit Matrix(Callable callable) : Matrix() { m_ = callable; }
+
+    // copy constructor from any MatrixBase-derived expression (templated)
+    template<typename Derived>
+    constexpr explicit Matrix(const MatrixBase<Rows_,Cols_,Derived>& xpr) : Matrix() { m_ = xpr; }
+
+    // conversion constructor from Eigen matrix
+    #ifdef __FDAPDE_HAS_EIGEN__
+        template<typename Derived>
+        explicit Matrix(const Eigen::MatrixBase<Derived>& other) : Matrix() { m_ = other; }
+    #endif
+
+    // scalar constructor for 1D vector/matrix (StorageSize == 1)
+    constexpr explicit Matrix(Scalar x) : Matrix() {
+        fdapde_static_assert(StorageSize == 1, THIS_METHOD_IS_ONLY_FOR_MATRICES_WITH_ONE_ELEMENT);
+        data_[0] = x;
+    }
+
+    // constructor for 2D vector (StorageSize == 2)
+    constexpr explicit Matrix(Scalar x, Scalar y) : Matrix() {
+        fdapde_static_assert(StorageSize == 2, THIS_METHOD_IS_ONLY_FOR_MATRICES_WITH_TWO_ELEMENTS);
+        data_ = {x, y};
+    }
+
+    // constructor for 3D vector (StorageSize == 3)
+    constexpr explicit Matrix(Scalar x, Scalar y, Scalar z) : Matrix() {
+        fdapde_static_assert(StorageSize == 3, THIS_METHOD_IS_ONLY_FOR_MATRICES_WITH_THREE_ELEMENTS);
+        data_ = {x, y, z};
+    }
+
+    // static named constructors
+    static constexpr Matrix Constant(Scalar c) {
+        std::array<Scalar, StorageSize> data{};
+        for (auto& val : data) val = c;
+        return Matrix(data);
+    }
+    static constexpr Matrix Zero() { return Constant(Scalar(0)); }
+    static constexpr Matrix Ones() { return Constant(Scalar(1)); }
+    static constexpr Matrix NaN() { return Constant(std::numeric_limits<Scalar>::quiet_NaN()); }
+
+    // assignment from std::array
+    constexpr Matrix& operator=(const std::array<Scalar, StorageSize>& rhs) { m_ = rhs; return *this; }
+
+    // assignment from MatrixBase expression
+    template <int RhsRows_, int RhsCols_, typename RhsXprType>
+    constexpr Matrix& operator=(const MatrixBase<RhsRows_, RhsCols_, RhsXprType>& rhs) { m_ = rhs; return *this; }
+
+    // assignment from Eigen matrix
+    #ifdef __FDAPDE_HAS_EIGEN__
+        template <typename Derived>
+        Matrix& operator=(const Eigen::MatrixBase<Derived>& rhs) { m_ = rhs; return *this; }
+    #endif
+
+    // const access
+    constexpr Scalar operator()(int i, int j) const { return m_(i, j); }
+    constexpr Scalar operator[](int i) const requires(Rows == 1 || Cols == 1) { return m_[i]; }
+    // non-const access
+    constexpr Scalar& operator()(int i, int j) { return m_(i, j); }
+    constexpr Scalar& operator[](int i) requires(Rows == 1 || Cols == 1)  { return m_[i]; }
+
+    // convert to EigenMap
+    #ifdef __FDAPDE_HAS_EIGEN__
+        auto as_eigen_map() { return m_.as_eigen_map(); }
+    #endif
+
+    // setters
+    constexpr void setConstant(Scalar c) { m_.setConstant(c); }
+    constexpr void setZero() { setConstant(Scalar(0)); }
+    constexpr void setOnes() { setConstant(Scalar(1)); }
+
+    // dimensions
+    static constexpr int rows() { return Rows; }
+    static constexpr int cols() { return Cols; }
+
+    // data
+    constexpr const Scalar* data() const { return m_.data(); }
+    Scalar* data() { return m_.data(); }
+    constexpr const std::array<Scalar,StorageSize>& storage() const { return data_; }
+
+   private:
+    std::array<Scalar, StorageSize> data_;
+    MatrixView<Scalar, Rows, Cols, StorageOrder> m_;
+
 };
 
 

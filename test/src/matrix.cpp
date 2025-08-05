@@ -14,11 +14,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-/*
-#include <Eigen/Eigen>
-#define __FDAPDE_HAS_EIGEN__
-*/
-
 #include <fdaPDE/linear_algebra.h>
 
 #include <gtest/gtest.h>   // testing framework
@@ -26,26 +21,127 @@
 
 using namespace fdapde;
 
+TEST(matrix_test, MatrixView_Basic) {
+    using Scalar = double;
+    constexpr int rows = 2, cols = 3;
 
-TEST(matrix_test, MatrixBase) {
+    // raw data
+    Scalar raw[rows * cols] = {1, 2, 3, 4, 5, 6};
 
-    Matrix<double, 3, 4> M({1,2,3,4,5,6,7,8,9,10,11,12});
+    // ColMajor MatrixView
+    MatrixView<Scalar, rows, cols, ColMajor> map_col(raw);
+    assert(map_col(0, 0) == 1);
+    assert(map_col(1, 0) == 2);
+    assert(map_col(0, 1) == 3);
+    assert(map_col(1, 1) == 4);
+    assert(map_col(0, 2) == 5);
+    assert(map_col(1, 2) == 6);
+    std::cout << "ColMajor MatrixView" << std::endl;
+    std::cout << map_col << std::endl;
+    std::cout << std::endl;
+
+    // RowMajor MatrixView
+    Scalar raw_row_major[rows * cols] = {1, 2, 3, 4, 5, 6};
+    MatrixView<Scalar, rows, cols, RowMajor> map_row(raw_row_major);
+    assert(map_row(0, 0) == 1);
+    assert(map_row(0, 1) == 2);
+    assert(map_row(0, 2) == 3);
+    assert(map_row(1, 0) == 4);
+    assert(map_row(1, 1) == 5);
+    assert(map_row(1, 2) == 6);
+    std::cout << "RowMajor MatrixView" << std::endl;
+    std::cout << map_row << std::endl;
+    std::cout << std::endl;
+
+    // modify values
+    map_col(0, 0) = 42;
+    assert(raw[0] == 42);
+    std::cout << "non-const access operator" << std::endl;
+    std::cout << map_col << std::endl;
+    std::cout << std::endl;
+}
+
+TEST(matrix_test, MatrixView_Assignement) {
+    using Scalar = float;
+    constexpr int rows = 2, cols = 3;
+
+    Scalar raw[rows * cols] = {0};
+
+    Matrix<Scalar, rows, cols> mat_expr(Matrix<Scalar, rows, cols>::Ones());
+    std::cout << "Raw Matrix" << std::endl;
+    std::cout << mat_expr << std::endl;
+    std::cout << std::endl;
+    std::cout << "Raw MatrixView" << std::endl;
+    MatrixView<Scalar, rows, cols> MatrixView(raw);
+    std::cout << MatrixView << std::endl;
+    std::cout << std::endl;
+
+    MatrixView = mat_expr;
+    for (int i = 0; i < rows; ++i)
+        for (int j = 0; j < cols; ++j)
+            assert(MatrixView(i, j) == mat_expr(i, j));
+    std::cout << "Assignment" << std::endl;
+    std::cout << MatrixView << std::endl;
+    std::cout << std::endl;
+}
+
+TEST(matrix_test, MatrixView_VectorAccess) {
+    using Scalar = int;
+    constexpr int len = 4;
+
+    Scalar data[len] = {10, 20, 30, 40};
+
+    MatrixView<Scalar, 1, len> row_vec(data);
+    std::cout << "row-VectorView" << std::endl;
+    std::cout << row_vec << std::endl;
+    std::cout << std::endl;
+    for (int i = 0; i < len; ++i) {
+        assert(row_vec[i] == data[i]);
+        row_vec[i] += 1;
+        assert(row_vec[i] == data[i]);
+    }
+    std::cout << "row-VectorView" << std::endl;
+    std::cout << row_vec << std::endl;
+    std::cout << std::endl;
+
+    VectorView<Scalar, len> col_vec(data);
+    std::cout << "col-VectorView" << std::endl;
+    std::cout << col_vec << std::endl;
+    std::cout << std::endl;
+    for (int i = 0; i < len; ++i) {
+        assert(col_vec[i] == data[i]);
+        col_vec[i] += 1;
+        assert(col_vec[i] == data[i]);
+    }
+    std::cout << "col-VectorView" << std::endl;
+    std::cout << col_vec << std::endl;
+    std::cout << std::endl;
+}
+
+
+TEST(matrix_test, Matrix_Base) {
+
+    Matrix<double, 3, 4> M({1,2,3,4, 5,6,7,8, 9,10,11,12});
     std::cout << "M" << std::endl;
     std::cout << M << std::endl;
     std::cout << std::endl;
 
-    Matrix<double, 3, 3> MSQ = MatrixBlock<3, 3, Matrix<double, 3, 4>>(M, 0, 0);
+    std::cout << "MatrixBlockView" << std::endl;
+    std::cout << MatrixBlockView<3, 3, Matrix<double, 3, 4>>(M, 0, 0) << std::endl;
+    std::cout << std::endl;
+
+    Matrix<double, 3, 3> MSQ(M.block<3, 3>(0, 0));
     std::cout << "MatrixBlock" << std::endl;
     std::cout << MSQ << std::endl;
     std::cout << std::endl;
 
-    std::cout << "(Lower) Triangular view" << std::endl;
+    std::cout << "(Lower) TriangularView" << std::endl;
     std::cout << MSQ.triangular_view<Lower>() << std::endl;
     std::cout << std::endl;
-    std::cout << "(Upper) Triangular view" << std::endl;
+    std::cout << "(Upper) TriangularView" << std::endl;
     std::cout << MSQ.triangular_view<Upper>() << std::endl;
     std::cout << std::endl;
-    std::cout << "Diagonal view" << std::endl;
+    std::cout << "DiagonalView" << std::endl;
     std::cout << MSQ.diagonal() << std::endl;
     std::cout << std::endl;
     std::cout << "Transpose" << std::endl;
@@ -90,7 +186,6 @@ TEST(matrix_test, MatrixBase) {
     std::cout << std::endl;
 }
 
-
 TEST(matrix_test, MatrixAndSquareMatrix) {
 
     using Scalar = double;
@@ -115,7 +210,7 @@ TEST(matrix_test, MatrixAndSquareMatrix) {
     std::cout << std::endl;
 
     // Ones
-    Matrix<Scalar, 2, 2> m_ones = Matrix<Scalar, 2, 2>::Ones();
+    Matrix<Scalar, 2, 2> m_ones(Matrix<Scalar, 2, 2>::Ones());
     for (int i = 0; i < 2; ++i)
         for (int j = 0; j < 2; ++j)
             assert(m_ones(i,j) == Scalar(1));
@@ -124,7 +219,7 @@ TEST(matrix_test, MatrixAndSquareMatrix) {
     std::cout << std::endl;
 
     // Zero
-    Matrix<Scalar, 2, 2> m_zero = Matrix<Scalar, 2, 2>::Zero();
+    Matrix<Scalar, 2, 2> m_zero(Matrix<Scalar, 2, 2>::Zero());
     for (int i = 0; i < 2; ++i)
         for (int j = 0; j < 2; ++j)
             assert(m_zero(i,j) == Scalar(0));
@@ -219,13 +314,13 @@ TEST(matrix_test, MatrixAndSquareMatrix) {
     std::cout << v1 << std::endl;
     std::cout << std::endl;
 
-    // PermutationMatrix
+    // PermutationMatrix (applied to a vector)
     std::array<int, 2> perm = {1, 0};
     PermutationMatrix<2> P(perm);
     auto v =  Vector<Scalar, 2>(Scalar(5), Scalar(7));
     auto Pv = P * v;
     assert(Pv[0] == Scalar(7) && Pv[1] == Scalar(5));
-    std::cout << "Permutation matrix" << std::endl;
+    std::cout << "Permutation matrix (applied to a vector)" << std::endl;
     std::cout << P << std::endl;
     std::cout << "--" << std::endl;
     std::cout << v << std::endl;
@@ -233,23 +328,33 @@ TEST(matrix_test, MatrixAndSquareMatrix) {
     std::cout << Pv << std::endl;
     std::cout << std::endl;
 
+    // PermutationMatrix (applied to a matrix)
+    auto Pm = P * m_arr;
+    assert(Pm(0,0) == Scalar(3) && Pm(1,0) == Scalar(1));
+    std::cout << "Permutation matrix (applied to a matrix)" << std::endl;
+    std::cout << P << std::endl;
+    std::cout << "--" << std::endl;
+    std::cout << m_arr << std::endl;
+    std::cout << "--" << std::endl;
+    std::cout << Pm << std::endl;
+    std::cout << std::endl;
+
     // Test LU factorization with solve
     Matrix<Scalar, 2, 2> A({2, 1, 4, 3});
     Vector<Scalar, 2> b(Scalar(5), Scalar(11));
-    PartialPivLU<Matrix<Scalar, 2, 2>> lu(A);
-    auto x = lu.solve(b);
+    auto lu = PartialPivLU<Matrix<double,2,2>>(A);
+    auto x  = lu.solve(b);
     assert(std::abs(A(0,0)*x[0] + A(0,1)*x[1] - b[0]) < 1e-10);
     assert(std::abs(A(1,0)*x[0] + A(1,1)*x[1] - b[1]) < 1e-10);
     std::cout << "LU factorization with solve" << std::endl;
-    std::cout << A << std::endl;
+    std::cout << "A: " << A << std::endl;
     std::cout << "--" << std::endl;
-    std::cout << x << std::endl;
+    std::cout << "x: " << x << std::endl;
     std::cout << "--" << std::endl;
-    std::cout << A*x << std::endl;
+    std::cout << "Ax: " << A*x << std::endl;
     std::cout << "--" << std::endl;
-    std::cout << b << std::endl;
+    std::cout << "b: " << b << std::endl;
     std::cout << std::endl;
-
 
     #ifdef __FDAPDE_HAS_EIGEN__
         // Eigen constructor
@@ -275,6 +380,7 @@ TEST(matrix_test, MatrixAndSquareMatrix) {
     #endif
 
 }
+
 
 TEST(matrix_test, IdentityMatrix) {
     // The identity matrix is only available for square matrices
@@ -312,7 +418,7 @@ TEST(matrix_test, SymmetricMatrix) {
     std::cout << std::endl;
 
     // Constant value constructor
-    SymmetricMatrix<Scalar, 2> m_const = Matrix<Scalar, 2, 2>::Constant(Scalar(3));
+    SymmetricMatrix<Scalar, 2> m_const(SymmetricMatrix<Scalar, 2>::Constant(Scalar(3)));
     for (int i = 0; i < 2; ++i)
         for (int j = 0; j < 2; ++j)
             assert(m_const(i,j) == Scalar(3));
@@ -321,7 +427,7 @@ TEST(matrix_test, SymmetricMatrix) {
     std::cout << std::endl;
 
     // Ones
-    SymmetricMatrix<Scalar, 2> m_ones = Matrix<Scalar, 2, 2>::Ones();
+    SymmetricMatrix<Scalar, 2> m_ones(Matrix<Scalar, 2, 2>::Ones());
     for (int i = 0; i < 2; ++i)
         for (int j = 0; j < 2; ++j)
             assert(m_ones(i,j) == Scalar(1));
@@ -330,7 +436,7 @@ TEST(matrix_test, SymmetricMatrix) {
     std::cout << std::endl;
 
     // Zero
-    SymmetricMatrix<Scalar, 2> m_zero = SymmetricMatrix<Scalar, 2>::Zero();
+    SymmetricMatrix<Scalar, 2> m_zero(SymmetricMatrix<Scalar, 2>::Zero());
     for (int i = 0; i < 2; ++i)
         for (int j = 0; j < 2; ++j)
             assert(m_zero(i,j) == Scalar(0));
@@ -375,16 +481,9 @@ TEST(matrix_test, SymmetricMatrix) {
     std::cout << m_callable << std::endl;
     std::cout << std::endl;
 
-    // Assignment from std::array
-    SymmetricMatrix<Scalar, 3> m_assign = arr;
-    assert(m_assign(1,1) == Scalar(4));
-    std::cout << "Assign from std::array = {1, 2, 3, 4, 5, 6}" << std::endl;
-    std::cout << m_assign << std::endl;
-    std::cout << std::endl;
-
     // Copy and assignment from another SymmetricMatrix
     {
-        SymmetricMatrix<Scalar, 3> m_copy = m_arr;
+        SymmetricMatrix<Scalar, 3> m_copy(m_arr);
         assert(m_arr(0,0) == Scalar(1));
         assert(m_arr(0,1) == Scalar(2));
         std::cout << "Copy from another SymmetricMatrix" << std::endl;
@@ -402,7 +501,7 @@ TEST(matrix_test, SymmetricMatrix) {
     // Copy and assignment from a MatrixBase expression (it takes the symmetric part)
     {
         Matrix<double, 3, 3> M({1, 2, 3, 4, 5, 6, 7, 8, 9});
-        SymmetricMatrix<Scalar, 3> m_copy = M;
+        SymmetricMatrix<Scalar, 3> m_copy(M);
         assert(m_copy(1,0) == Scalar(3));
         std::cout << "Copy from another MatrixBase expression" << std::endl;
         std::cout << m_copy << std::endl;
@@ -418,18 +517,18 @@ TEST(matrix_test, SymmetricMatrix) {
     // Test LU factorization with solve for SymmetricMatrix
     SymmetricMatrix<Scalar, 2> A({1, 2, 2});
     Vector<Scalar, 2> b(Scalar(5), Scalar(11));
-    PartialPivLU<Matrix<Scalar, 2, 2>> lu(A); // !!!! This must be Matrix<Scalar, 2, 2> OK?!? SymmetricMatrix<Scalar, 2> does not work
+    PartialPivLU<Matrix<Scalar, 2, 2>> lu(A); // This MUST be a Matrix<Scalar, 2, 2>, it can not be SymmetricMatrix<Scalar, 2>
     auto x = lu.solve(b);
     assert(std::abs(A(0,0)*x[0] + A(0,1)*x[1] - b[0]) < 1e-10);
     assert(std::abs(A(1,0)*x[0] + A(1,1)*x[1] - b[1]) < 1e-10);
     std::cout << "LU factorization with solve" << std::endl;
-    std::cout << A << std::endl;
+    std::cout << "A: " << A << std::endl;
     std::cout << "--" << std::endl;
-    std::cout << x << std::endl;
+    std::cout << "x: " << x << std::endl;
     std::cout << "--" << std::endl;
-    std::cout << A*x << std::endl;
+    std::cout << "Ax: " << A*x << std::endl;
     std::cout << "--" << std::endl;
-    std::cout << b << std::endl;
+    std::cout << "b: " << b << std::endl;
     std::cout << std::endl;
 
     #ifdef __FDAPDE_HAS_EIGEN__
@@ -499,7 +598,7 @@ TEST(matrix_test, SkewSymmetricMatrix) {
     std::cout << std::endl;
 
     // Constant value constructor
-    SkewSymmetricMatrix<Scalar, 3> m_const = SkewSymmetricMatrix<Scalar, 3>::Constant(Scalar(3));
+    SkewSymmetricMatrix<Scalar, 3> m_const(SkewSymmetricMatrix<Scalar, 3>::Constant(Scalar(3)));
     for (int i = 0; i < 3; ++i)
         for (int j = i+1; j < 3; ++j)
             assert(m_const(i,j) == Scalar(3));
@@ -508,7 +607,7 @@ TEST(matrix_test, SkewSymmetricMatrix) {
     std::cout << std::endl;
 
     // Ones
-    SkewSymmetricMatrix<Scalar, 3> m_ones = SkewSymmetricMatrix<Scalar, 3>::Ones();
+    SkewSymmetricMatrix<Scalar, 3> m_ones(SkewSymmetricMatrix<Scalar, 3>::Ones());
     for (int i = 0; i < 3; ++i)
         for (int j = i+1; j < 3; ++j)
             assert(m_ones(i,j) == Scalar(1));
@@ -517,7 +616,7 @@ TEST(matrix_test, SkewSymmetricMatrix) {
     std::cout << std::endl;
 
     // Zero
-    SkewSymmetricMatrix<Scalar, 3> m_zero = SkewSymmetricMatrix<Scalar, 3>::Zero();
+    SkewSymmetricMatrix<Scalar, 3> m_zero(SkewSymmetricMatrix<Scalar, 3>::Zero());
     for (int i = 0; i < 3; ++i)
         for (int j = i+1; j < 3; ++j)
             assert(m_zero(i,j) == Scalar(0));
@@ -526,7 +625,7 @@ TEST(matrix_test, SkewSymmetricMatrix) {
     std::cout << std::endl;
 
     // NaN
-    auto m_nan = SkewSymmetricMatrix<Scalar, 3>::NaN();
+    auto m_nan(SkewSymmetricMatrix<Scalar, 3>::NaN());
     for (int i = 0; i < 3; ++i)
         for (int j = i+1; j < 3; ++j)
             assert(std::isnan(m_nan(i,j)));
@@ -563,7 +662,8 @@ TEST(matrix_test, SkewSymmetricMatrix) {
     std::cout << std::endl;
 
     // Assignment from std::array
-    SkewSymmetricMatrix<Scalar, 3> m_assign = arr;
+    SkewSymmetricMatrix<Scalar, 3> m_assign;
+    m_assign = arr;
     assert(m_assign(0,1) == Scalar(1));
     std::cout << "Assign from std::array = {1, 2, 3}" << std::endl;
     std::cout << m_assign << std::endl;
@@ -572,7 +672,7 @@ TEST(matrix_test, SkewSymmetricMatrix) {
     // Copy and assignment from a MatrixBase expression (it takes the skew-symmetric part)
     {
         Matrix<double, 3, 3> M({1, 2, 3, 4, 5, 6, 7, 8, 9});
-        SkewSymmetricMatrix<Scalar, 3> m_copy = M;
+        SkewSymmetricMatrix<Scalar, 3> m_copy(M);
         assert(m_arr(0,0) == Scalar(0));
         assert(m_arr(0,1) == Scalar(1));
         std::cout << "Copy from another SkewSymmetricMatrix" << std::endl;
@@ -590,7 +690,7 @@ TEST(matrix_test, SkewSymmetricMatrix) {
     // Copy and assignment from a MatrixBase expression (it takes the skew-symmetric part)
     {
         Matrix<double, 3, 3> M({1, 2, 3, 4, 5, 6, 7, 8, 9});
-        SkewSymmetricMatrix<Scalar, 3> m_copy = M;
+        SkewSymmetricMatrix<Scalar, 3> m_copy(M);
         assert(m_copy(0,1) == Scalar(-1));
         std::cout << "Copy from another MatrixBase expression" << std::endl;
         std::cout << m_copy << std::endl;

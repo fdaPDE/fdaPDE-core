@@ -23,9 +23,9 @@
 namespace fdapde {
 
 // forward declaration to break circular dependency
-template <typename Scalar_, int Rows_, int Cols_, int NestAsRefBit_> class Matrix;
-template <typename Scalar_, int N_, int NestAsRefBit_> class SymmetricMatrix;
-template <typename Scalar_, int N_, int NestAsRefBit_> class SkewSymmetricMatrix;
+template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_, bool NestAsRefBit_> class Matrix;
+template <typename Scalar_, int N_, bool NestAsRefBit_> class SymmetricMatrix;
+template <typename Scalar_, int N_, bool NestAsRefBit_> class SkewSymmetricMatrix;
 template <typename Derived, int ViewMode> struct TriangularView;
 template <typename Derived> struct DiagonalView;
 template <typename Derived> struct SymmetricView;
@@ -41,21 +41,21 @@ struct has_identity : std::false_type {};
 
 // Helper variable template
 template <typename T>
-inline constexpr bool has_identity_v = has_identity<T>::value;
+static constexpr bool has_identity_v = has_identity<T>::value;
 
 }
 
-// is_view trait specification
+// is_view trait
 namespace internals {
 
-template <typename D, int ViewMode>
-struct is_view<TriangularView<D, ViewMode>> : std::true_type {};
-template <typename D>
-struct is_view<DiagonalView<D>> : std::true_type {};
-template <typename D>
-struct is_view<SkewSymmetricView<D>> : std::true_type {};
-template <typename D>
-struct is_view<SymmetricView<D>> : std::true_type {};
+template <typename Derived, int ViewMode>
+struct is_view<TriangularView<Derived, ViewMode>> : std::true_type {};
+template <typename Derived>
+struct is_view<DiagonalView<Derived>> : std::true_type {};
+template <typename Derived>
+struct is_view<SymmetricView<Derived>> : std::true_type {};
+template <typename Derived>
+struct is_view<SkewSymmetricView<Derived>> : std::true_type {};
 
 }
 
@@ -76,24 +76,22 @@ struct TriangularView : public SquareMatrixBase<Derived::Rows, TriangularView<De
     using Scalar = typename Derived::Scalar;
     static constexpr int Cols = Derived::Rows;
     static constexpr int Rows = Derived::Cols;
-    static constexpr int NestAsRefBit = 0;
-    static constexpr int ReadOnly = Derived::ReadOnly;
+    static constexpr bool NestAsRefBit = false;
+    static constexpr bool ReadOnly = Derived::ReadOnly;
     static constexpr int XprBits = Derived::XprBits;
 
     // constructors
     constexpr TriangularView() = default;
-    constexpr TriangularView(const Derived& xpr) : xpr_(xpr) { }
-
-    // dimensions
-    // [[nodiscard]] constexpr int rows() const { return xpr_.rows(); } // this should not be needed
-    // [[nodiscard]] constexpr int cols() const { return xpr_.cols(); } // this should not be needed
+    constexpr explicit TriangularView(const Derived& xpr) : xpr_(xpr) { }
 
     // const access
     constexpr Scalar operator()(int i, int j) const {
+        fdapde_static_assert(ViewMode >= 0 && ViewMode <=4, VIEW_MODE_IN_UNKNOWN);
         if constexpr (ViewMode == Upper) return i > j ? 0 : xpr_(i, j);
         if constexpr (ViewMode == Lower) return i < j ? 0 : xpr_(i, j);
         if constexpr (ViewMode == UnitUpper) return i > j ? 0 : (i == j ? 1 : xpr_(i, j));
         if constexpr (ViewMode == UnitLower) return i < j ? 0 : (i == j ? 1 : xpr_(i, j));
+        return std::numeric_limits<Scalar>::quiet_NaN();
     }
 
     // block assignment
@@ -133,17 +131,14 @@ struct DiagonalView : public SquareMatrixBase<Derived::Rows, DiagonalView<Derive
     using Scalar = typename Derived::Scalar;
     static constexpr int Rows = Derived::Rows;
     static constexpr int Cols = Derived::Cols;
-    static constexpr int NestAsRefBit = 0;
-    static constexpr int ReadOnly = 1;
+    static constexpr bool NestAsRefBit = false;
+    static constexpr bool ReadOnly = true;
     static constexpr int XprBits = Derived::XprBits;
+
 
     // constructors
     constexpr DiagonalView() = default;
-    constexpr DiagonalView(Derived& xpr) : xpr_(xpr) { }
-
-    // dimensions
-    // [[nodiscard]] constexpr int rows() const { return xpr_.rows(); } // this should not be needed
-    // [[nodiscard]] constexpr int cols() const { return xpr_.cols(); } // this should not be needed
+    constexpr explicit DiagonalView(Derived& xpr) : xpr_(xpr) { }
 
     // const access
     constexpr Scalar operator()(int i, int j) const { return i == j ? xpr_(i, i) : 0; }
@@ -175,13 +170,13 @@ struct SymmetricView : public SquareMatrixBase<Derived::Rows, SymmetricView<Deri
     static constexpr int N = Derived::Rows;
     static constexpr int Rows = Derived::Rows;
     static constexpr int Cols = Derived::Cols;
+    static constexpr bool NestAsRefBit = false;
+    static constexpr bool ReadOnly = true;
     static constexpr int XprBits = int(matrix_flags::square) | int(matrix_flags::symmetric);
-    static constexpr int NestAsRefBit = 0;
-    static constexpr int ReadOnly = 1;
 
     // constructors
     constexpr SymmetricView() = default;
-    constexpr SymmetricView(const Derived& xpr) : xpr_(xpr) {}
+    constexpr explicit SymmetricView(const Derived& xpr) : xpr_(xpr) {}
 
     // element access
     constexpr Scalar operator()(int i, int j) const {
@@ -201,13 +196,13 @@ struct SkewSymmetricView : public SquareMatrixBase<Derived::Rows, SkewSymmetricV
     static constexpr int N = Derived::Rows;
     static constexpr int Rows = Derived::Rows;
     static constexpr int Cols = Derived::Cols;
+    static constexpr bool NestAsRefBit = false;
+    static constexpr bool ReadOnly = true;
     static constexpr int XprBits = int(matrix_flags::square) | int(matrix_flags::skew_symmetric);
-    static constexpr int NestAsRefBit = 0;
-    static constexpr int ReadOnly = 1;
 
     // constructors
     constexpr SkewSymmetricView() = default;
-    constexpr SkewSymmetricView(const Derived& xpr) : xpr_(xpr) {}
+    constexpr explicit SkewSymmetricView(const Derived& xpr) : xpr_(xpr) {}
 
     // element access
     constexpr Scalar operator()(int i, int j) const {
@@ -243,7 +238,6 @@ struct SquareMatrixBase : public MatrixBase<N, N, Derived> {
     }
 
     // symmetric and skew-symmetric
-    // TODO: these should be views
     constexpr auto symmetric() const {
         return SymmetricView<Derived>(this->derived());
     }
@@ -264,11 +258,9 @@ struct SquareMatrixBase : public MatrixBase<N, N, Derived> {
 
     // static named constructor (Identity matrix)
     // TODO: it would be optimal to return a SPDMatrix once they exist
-    template <typename T = Derived,
-              std::enable_if_t<fdapde::internals::has_identity<T>::value, int> = 0>
-    static constexpr auto Identity() {
+    static constexpr auto Identity() requires(internals::has_identity_v<Derived>) {
         using SM = SymmetricMatrix<typename Derived::Scalar, N, Derived::NestAsRefBit>;
-        SM I = SM::Zero();
+        SM I(SM::Zero());
         for (int i = 0; i < N; ++i)
                 I(i, i) = typename Derived::Scalar(1);
         return I;
