@@ -53,7 +53,10 @@
 #include "src/fspai_test.cpp"
 */
 
-#include "src/matrix.cpp"
+#include "src/matrix/matrix.cpp"
+#include "src/matrix/matrix_base.cpp"
+#include "src/matrix/symmetric_matrix.cpp"
+#include "src/matrix/skew_symmetric_matrix.cpp"
 
 int main(int argc, char** argv) {
     // start testing

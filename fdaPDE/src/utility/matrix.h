@@ -32,6 +32,15 @@ struct is_view<MatrixView<Scalar, Rows, Cols, StorageOrder>> : std::true_type {}
 
 }
 
+// has_identity trait
+namespace internals {
+
+// Matrix<Scalar, N, N> => has identity
+template <typename Scalar_, int N_, int StorageOrder_, bool NestAsRefBit_>
+struct has_identity<Matrix<Scalar_, N_, N_, StorageOrder_, NestAsRefBit_>> : std::true_type {};
+
+}
+
 // maps an existing array of data to a cexpr::Matrix. This can be used also to integrate Eigen with cexpr linear algebra
 template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_ = RowMajor>
 class MatrixView :
@@ -59,9 +68,9 @@ public:
     static constexpr int DefaultInnerStride = 1;
 
     // constructors
-    constexpr MatrixView() : ptr_data_() {} // , outer_stride_(DefaultOuterStride) { }
-    constexpr explicit MatrixView(Scalar* data) : ptr_data_(data) {} //, outer_stride_(DefaultOuterStride) { }
-    // constexpr MatrixView(Scalar_* data, const int outer_stride, const int inner_stride) : ptr_data_(data), outer_stride_(outer_stride), inner_stride(inner_stride) { }
+    constexpr MatrixView() = delete;
+    constexpr explicit MatrixView(Scalar* ptr_data) : ptr_data_(ptr_data) {}
+    constexpr explicit MatrixView(std::array<Scalar, StorageSize>& data) : ptr_data_(data.data()) {}
 
     // assignment from std::array
     constexpr MatrixViewType& operator=(const std::array<Scalar, StorageSize>& rhs) {
@@ -72,7 +81,7 @@ public:
     }
 
     // assignment from std::array
-    constexpr MatrixViewType& operator=(const Scalar_ (&rhs)[StorageSize]) {
+    constexpr MatrixViewType& operator=(const Scalar (&rhs)[StorageSize]) {
         for (int id = 0; id < StorageSize; ++id) {
             ptr_data_[id] = rhs[id];
         }
@@ -204,11 +213,11 @@ protected:
 
 
 // Matrix = MatrixView + data ownership
-template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_ = RowMajor, bool NestAsRefBit_ = 1>
+template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_ = RowMajor, bool NestAsRefBit_ = true>
 class Matrix :
 public std::conditional_t<Rows_ == Cols_,
-    SquareMatrixBase<Rows_, Matrix<Scalar_, Rows_, Cols_, StorageOrder_>>,
-    MatrixBase<Rows_, Cols_, Matrix<Scalar_, Rows_, Cols_, StorageOrder_>>
+    SquareMatrixBase<Rows_, Matrix<Scalar_, Rows_, Cols_, StorageOrder_, NestAsRefBit_>>,
+    MatrixBase<Rows_, Cols_, Matrix<Scalar_, Rows_, Cols_, StorageOrder_, NestAsRefBit_>>
 > {
     fdapde_static_assert(Rows_ > 0 && Cols_ > 0, EMPTY_MATRIX_IS_ILL_FORMED);
 
@@ -224,10 +233,6 @@ public:
     static constexpr bool NestAsRefBit = NestAsRefBit_;
     static constexpr bool ReadOnly = false;
     static constexpr int XprBits = (Rows_ == Cols_) ? int(matrix_flags::square) : int(matrix_flags::none);
-
-    // derived
-    constexpr Matrix&derived(){ return static_cast<Matrix&>(*this); }
-    constexpr const Matrix& derived() const { return static_cast<const Matrix&>(*this); }
 
     // default constructor
     constexpr Matrix() : data_(), m_(data_.data()) { };

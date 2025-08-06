@@ -68,7 +68,7 @@ namespace fdapde {
 #include "src/utility/matrix.h"
 #include "src/utility/vector.h"
 #include "src/utility/permutation_matrix.h"
-#include "src/utility/square_matrix.h"
+#include "src/utility/matrix_factorization.h"
 #include "src/utility/symmetric_matrix.h"
 #include "src/utility/skew_symmetric_matrix.h"
 #include "src/utility/binary.h"

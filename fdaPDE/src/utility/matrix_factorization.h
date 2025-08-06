@@ -21,15 +21,6 @@
 
 namespace fdapde {
 
-// has_identity trait
-namespace internals {
-
-// Matrix<Scalar, N, N> => has identity
-template <typename Scalar_, int N_, int StorageOrder_, bool NestAsRefBit_>
-struct has_identity<Matrix<Scalar_, N_, N_, StorageOrder_, NestAsRefBit_>> : std::true_type {};
-
-}
-
 // forward/backward substitution for unit-triangular L and general U
 template <typename Matrix, typename Rhs>
 constexpr auto forward_sub(const Matrix& A, const Rhs& b) {
@@ -73,20 +64,21 @@ class PartialPivLU {
     static constexpr int N = MatrixType::Rows;
     using Scalar = typename MatrixType::Scalar;
 
-    MatrixType lu_;  // will hold both L (unit lower) and U (upper)
+    Matrix<Scalar, N, N> lu_;  // will hold both L (unit lower) and U (upper)
     PermutationMatrix<N> P_; // row‐permutation matrix
 
 public:
     constexpr PartialPivLU() : lu_(), P_() { }
 
     template <typename Xpr>
-    constexpr explicit PartialPivLU(const MatrixBase<N, N, Xpr>& m) : lu_(m) { // TODO:: If here we use SquareMatrixBase -> segfault
+    constexpr explicit PartialPivLU(const SquareMatrixBase<N, Xpr>& m) { // : lu_(m) { // TODO:: with SquareMatrixBase -> segfault
+        lu_ = m;
         compute(m);
     }
 
     // Factorize: overwrite `lu_` in place, build P_
     template <typename Xpr>
-    constexpr void compute(const MatrixBase<N, N, Xpr>& m) { // TODO:: If here we use SquareMatrixBase -> segfault
+    constexpr void compute(const SquareMatrixBase<N, Xpr>& m) {
         // copy input
         lu_ = m;
 
