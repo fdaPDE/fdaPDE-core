@@ -28,8 +28,8 @@ template <typename Scalar_, int N_, bool NestAsRefBit_> class SymmetricMatrix;
 template <typename Scalar_, int N_, bool NestAsRefBit_> class SkewSymmetricMatrix;
 template <typename Derived, int ViewMode> struct TriangularView;
 template <typename Derived> struct DiagonalView;
-template <typename Derived> struct SymmetricView;
-template <typename Derived> struct SkewSymmetricView;
+template <typename Derived> struct SymmetricPartView;
+template <typename Derived> struct SkewSymmetricPartView;
 template <int N, typename Derived> struct SquareMatrixBase;
 
 // has_identity trait
@@ -53,9 +53,9 @@ struct is_view<TriangularView<Derived, ViewMode>> : std::true_type {};
 template <typename Derived>
 struct is_view<DiagonalView<Derived>> : std::true_type {};
 template <typename Derived>
-struct is_view<SymmetricView<Derived>> : std::true_type {};
+struct is_view<SymmetricPartView<Derived>> : std::true_type {};
 template <typename Derived>
-struct is_view<SkewSymmetricView<Derived>> : std::true_type {};
+struct is_view<SkewSymmetricPartView<Derived>> : std::true_type {};
 
 }
 
@@ -163,7 +163,7 @@ private:
 
 // symmetric view
 template <typename Derived>
-struct SymmetricView : public SquareMatrixBase<Derived::Rows, SymmetricView<Derived>> {
+struct SymmetricPartView : public SquareMatrixBase<Derived::Rows, SymmetricPartView<Derived>> {
     fdapde_static_assert(Derived::Rows == Derived::Cols, SYMMETRIC_VIEW_DEFINED_ONLY_FOR_SQUARE_MATRICES);
 
     using Scalar = typename Derived::Scalar;
@@ -175,8 +175,8 @@ struct SymmetricView : public SquareMatrixBase<Derived::Rows, SymmetricView<Deri
     static constexpr int XprBits = int(matrix_flags::square) | int(matrix_flags::symmetric);
 
     // constructors
-    constexpr SymmetricView() = default;
-    constexpr explicit SymmetricView(const Derived& xpr) : xpr_(xpr) {}
+    constexpr SymmetricPartView() = default;
+    constexpr explicit SymmetricPartView(const Derived& xpr) : xpr_(xpr) {}
 
     // element access
     constexpr Scalar operator()(int i, int j) const {
@@ -189,7 +189,7 @@ private:
 
 // skew-symmetric view
 template <typename Derived>
-struct SkewSymmetricView : public SquareMatrixBase<Derived::Rows, SkewSymmetricView<Derived>> {
+struct SkewSymmetricPartView : public SquareMatrixBase<Derived::Rows, SkewSymmetricPartView<Derived>> {
     fdapde_static_assert(Derived::Rows == Derived::Cols, SKEW_SYMMETRIC_VIEW_DEFINED_ONLY_FOR_SQUARE_MATRICES);
 
     using Scalar = typename Derived::Scalar;
@@ -201,8 +201,8 @@ struct SkewSymmetricView : public SquareMatrixBase<Derived::Rows, SkewSymmetricV
     static constexpr int XprBits = int(matrix_flags::square) | int(matrix_flags::skew_symmetric);
 
     // constructors
-    constexpr SkewSymmetricView() = default;
-    constexpr explicit SkewSymmetricView(const Derived& xpr) : xpr_(xpr) {}
+    constexpr SkewSymmetricPartView() = default;
+    constexpr explicit SkewSymmetricPartView(const Derived& xpr) : xpr_(xpr) {}
 
     // element access
     constexpr Scalar operator()(int i, int j) const {
@@ -216,19 +216,39 @@ private:
 template <int N, typename Derived>
 struct SquareMatrixBase : public MatrixBase<N, N, Derived> {
     using Base = MatrixBase<N, N, Derived>;
+
+    // Base methods
     using Base::derived;
 
     // triangular view of matrix expression
-    template <int ViewMode> constexpr TriangularView<const Derived, ViewMode> triangular_view() const {
+    template <int ViewMode>
+    constexpr TriangularView<const Derived, ViewMode> triangular_view() const {
         return TriangularView<const Derived, ViewMode>(derived());
     }
-    template <int ViewMode> constexpr TriangularView<Derived, ViewMode> triangular_view() {
+    template <int ViewMode>
+    constexpr TriangularView<Derived, ViewMode> triangular_view() {
         return TriangularView<Derived, ViewMode>(derived());
     }
 
     // diagonal view of matrix expression
     constexpr DiagonalView<const Derived> diagonal() const { return DiagonalView<const Derived>(derived()); }
     constexpr DiagonalView<Derived> diagonal() { return DiagonalView<Derived>(derived()); }
+
+    // symmetric part view of matrix expression
+    constexpr SymmetricPartView<const Derived> symmetric_part() const {
+        return SymmetricPartView<Derived>(derived());
+    }
+    constexpr SymmetricPartView<Derived> symmetric_part() {
+        return SymmetricPartView<Derived>(derived());
+    }
+
+    // skew-symmetric part view of matrix expression
+    constexpr SkewSymmetricPartView<const Derived> skew_symmetric_part() const {
+        return SkewSymmetricPartView<Derived>(derived());
+    }
+    constexpr SkewSymmetricPartView<Derived> skew_symmetric_part() {
+        return SkewSymmetricPartView<Derived>(derived());
+    }
 
     // trace of matrix
     constexpr auto trace() const {
@@ -237,20 +257,23 @@ struct SquareMatrixBase : public MatrixBase<N, N, Derived> {
         return trace_;
     }
 
-    // symmetric and skew-symmetric
-    constexpr auto symmetric() const {
-        return SymmetricView<Derived>(this->derived());
-    }
-    constexpr auto skew_symmetric() const {
-        return SkewSymmetricView<Derived>(this->derived());
-    }
-
     // is symmetric check
-    [[nodiscard]] constexpr bool isSymmetric(double tol = 1e-12) const {
+    [[nodiscard]] constexpr bool is_symmetric(double tol = 1e-12) const {
         for (int i = 0; i < N; ++i) {
             for (int j = i + 1; j < N; ++j) {
-                if (std::fabs(this->operator()(i, j) - this->operator()(j, i)) > tol)
+                if (std::fabs(derived().operator()(i, j) - derived().operator()(j, i)) > tol)
                     return false;
+            }
+        }
+        return true;
+    }
+
+    // is skew-symmetric check
+    [[nodiscard]] constexpr bool is_skew_symmetric(double tol = 1e-12) const {
+        for (int i = 0; i < N; ++i) {
+            if (std::fabs(derived().operator()(i, i)) > tol) return false;
+            for (int j = i + 1; j < N; ++j) {
+                if (std::fabs(derived().operator()(i, j) + derived().operator()(j, i)) > tol) return false;
             }
         }
         return true;
