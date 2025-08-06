@@ -71,6 +71,7 @@ namespace fdapde {
 #include "src/utility/matrix_factorization.h"
 #include "src/utility/symmetric_matrix.h"
 #include "src/utility/skew_symmetric_matrix.h"
+#include "src/utility/matrix_map.h"
 #include "src/utility/binary.h"
 #include "src/utility/mdarray.h"
 #include "src/utility/binary_tree.h"
