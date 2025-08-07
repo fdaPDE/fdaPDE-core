@@ -60,25 +60,71 @@ struct is_view<SkewSymmetricPartView<Derived>> : std::true_type {};
 }
 
 
-// triangular view
 [[maybe_unused]] constexpr int Upper = 0;       // lower triangular view of matrix
 [[maybe_unused]] constexpr int Lower = 1;       // upper triangular view of matrix
 [[maybe_unused]] constexpr int UnitUpper = 2;   // lower triangular view of matrix with ones on the diagonal
 [[maybe_unused]] constexpr int UnitLower = 3;   // upper triangular view of matrix with ones on the diagonal
+
+// is_triangular and directional‐triangular traits
+namespace internals {
+
+// default: nothing is triangular
+template <typename T>
+struct is_triangular : std::false_type {};
+
+// default: not upper‐triangular
+template <typename T>
+struct is_upper_triangular : std::false_type {};
+
+// default: not lower‐triangular
+template <typename T>
+struct is_lower_triangular : std::false_type {};
+
+// Helper variable templates
+template <typename T>
+static constexpr bool is_triangular_v = is_triangular<T>::value;
+
+template <typename T>
+static constexpr bool is_upper_triangular_v = is_upper_triangular<T>::value;
+
+template <typename T>
+static constexpr bool is_lower_triangular_v = is_lower_triangular<T>::value;
+
+// Specialize for any TriangularView
 template <typename Derived, int ViewMode>
-struct TriangularView : public SquareMatrixBase<Derived::Rows, TriangularView<Derived, ViewMode>> {
+struct is_triangular<TriangularView<Derived, ViewMode>> : std::true_type {};
+
+// Upper‐type views: both strict and unit
+template <typename Derived>
+struct is_upper_triangular<TriangularView<Derived, Upper>>       : std::true_type {};
+template <typename Derived>
+struct is_upper_triangular<TriangularView<Derived, UnitUpper>>   : std::true_type {};
+
+// Lower‐type views: both strict and unit
+template <typename Derived>
+struct is_lower_triangular<TriangularView<Derived, Lower>>       : std::true_type {};
+template <typename Derived>
+struct is_lower_triangular<TriangularView<Derived, UnitLower>>   : std::true_type {};
+
+} // namespace internals
+
+
+// triangular view
+template <typename Derived, int ViewMode_>
+struct TriangularView : public SquareMatrixBase<Derived::Rows, TriangularView<Derived, ViewMode_>> {
 
     fdapde_static_assert(
       Derived::Rows != 1 && Derived::Cols != 1 && Derived::Rows == Derived::Cols,
       TRIANGULAR_VIEW_DEFINED_ONLY_FOR_SQUARED_MATRICES);
 
-    using Base = SquareMatrixBase<Derived::Rows, TriangularView<Derived, ViewMode>>;
+    using Base = SquareMatrixBase<Derived::Rows, TriangularView<Derived, ViewMode_>>;
     using Scalar = typename Derived::Scalar;
     static constexpr int Cols = Derived::Rows;
     static constexpr int Rows = Derived::Cols;
     static constexpr bool NestAsRefBit = false;
     static constexpr bool ReadOnly = Derived::ReadOnly;
     static constexpr int XprBits = Derived::XprBits;
+    static constexpr int ViewMode = ViewMode_;
 
     // constructors
     constexpr TriangularView() = default;

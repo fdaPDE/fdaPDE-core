@@ -216,13 +216,12 @@ TEST(matrix_test, PermutationMatrix) {
 
 TEST(matrix_test, LU) {
 
-    // Test LU factorization with solve
-
     using Scalar = double;
 
-    // Of a MatrixView (direct initialization)
+    // test LU decomposition
+    // of a MatrixView (direct initialization)
     {
-        std::cout << "LU decomposition of a MatrixView (Direct initialization)" << std::endl;
+        std::cout << "LU decomposition of a MatrixView (direct initialization)" << std::endl;
         Scalar data[4] = {2, 1, 4, 3};
         MatrixView<Scalar, 2, 2> A(data);
         Vector<Scalar, 2> b(Scalar(5), Scalar(11));
@@ -240,9 +239,9 @@ TEST(matrix_test, LU) {
         std::cout << std::endl;
     }
 
-    // Of a Matrix (direct initialization)
+    // of a Matrix (direct initialization)
     {
-        std::cout << "LU decomposition of a Matrix (Direct initialization)" << std::endl;
+        std::cout << "LU decomposition of a Matrix (direct initialization)" << std::endl;
         Matrix<Scalar, 2, 2> A({2, 1, 4, 3});
         Vector<Scalar, 2> b(Scalar(5), Scalar(11));
         PartialPivLU<decltype(A)> lu(A);
@@ -259,9 +258,9 @@ TEST(matrix_test, LU) {
         std::cout << std::endl;
     }
 
-    // Of a Matrix (using compute)
+    // of a Matrix (using compute)
     {
-        std::cout << "LU decomposition of a Matrix (Using compute)" << std::endl;
+        std::cout << "LU decomposition of a Matrix (using compute)" << std::endl;
         Matrix<Scalar, 2, 2> A({2, 1, 4, 3});
         Vector<Scalar, 2> b(Scalar(5), Scalar(11));
         PartialPivLU<decltype(A)> lu;
@@ -279,9 +278,9 @@ TEST(matrix_test, LU) {
         std::cout << std::endl;
     }
 
-    // Of a MatrixView (direct initialization)
+    // of a MatrixView (direct initialization)
     {
-        std::cout << "LU decomposition of a SymmetricMatrixView (Using compute)" << std::endl;
+        std::cout << "LU decomposition of a SymmetricMatrixView (using compute)" << std::endl;
         Scalar data[4] = {1, 2, 2};
         SymmetricMatrixView<Scalar, 2> A(data);
         Vector<Scalar, 2> b(Scalar(5), Scalar(11));
@@ -299,9 +298,9 @@ TEST(matrix_test, LU) {
         std::cout << std::endl;
     }
 
-    // Of a SymmetricMatrix
+    // of a SymmetricMatrix
     {
-        std::cout << "LU decomposition of a SymmetricMatrix (Using compute)" << std::endl;
+        std::cout << "LU decomposition of a SymmetricMatrix (using compute)" << std::endl;
         SymmetricMatrix<Scalar, 2> A({1, 2, 2});
         Vector<Scalar, 2> b(Scalar(5), Scalar(11));
         PartialPivLU<decltype(A)> lu;
@@ -317,5 +316,18 @@ TEST(matrix_test, LU) {
         std::cout << "--" << std::endl;
         std::cout << "b: " << b << std::endl;
         std::cout << std::endl;
+    }
+
+    // check info in case of singular matrix
+    {
+        std::cout << "Try LU decomposition of a (singular) Matrix (using compute)" << std::endl;
+        Matrix<Scalar, 2, 2> A({2, 1, 2, 1});
+        PartialPivLU<decltype(A)> lu;
+        lu.compute(A);
+        if (lu.info() == Eigen::Success) {
+            assert(1==0); // the matrix is actually singular
+        } else {
+            std::cout << "LU decomposition failed -> The matrix is singular\n" << std::endl;
+        }
     }
 }
