@@ -22,22 +22,22 @@
 namespace fdapde {
 
 // forward declaration to break circular dependency
-template <int N_> struct PermutationMatrix;
+template <int N_> struct PermutationOp;
 
 // has_identity trait
 namespace internals {
 
 // PermutationMatrix<N> => has identity
 template <int N_>
-struct has_identity<PermutationMatrix<N_>> : std::true_type {};
+struct has_identity<PermutationOp<N_>> : std::true_type {};
 
 }
 
 // permutation matrix
-template <int N_> struct PermutationMatrix : public SquareMatrixBase<N_, PermutationMatrix<N_>> {
-    using Base = SquareMatrixBase<N_, PermutationMatrix<N_>>;
+template <int N_> struct PermutationOp : public SquareMatrixBase<N_, PermutationOp<N_>> {
+    using Base = SquareMatrixBase<N_, PermutationOp<N_>>;
     using Scalar = int;
-    using XprType = PermutationMatrix<N_>;
+    using XprType = PermutationOp<N_>;
     static constexpr int N = N_;
     static constexpr int Rows = N_;
     static constexpr int Cols = N_;
@@ -46,8 +46,8 @@ template <int N_> struct PermutationMatrix : public SquareMatrixBase<N_, Permuta
     static constexpr int XprBits = int(matrix_flags::square) | int(matrix_flags::orthogonal);
 
     // constructors
-    constexpr PermutationMatrix() = default;
-    constexpr explicit PermutationMatrix(const std::array<int, N>& permutation) : permutation_(permutation) { }
+    constexpr PermutationOp() = default;
+    constexpr explicit PermutationOp(const std::array<int, N>& permutation) : permutation_(permutation) { }
 
     // constexpr int rows() const { return Rows; } // This shouldn't be necessary
     // constexpr int cols() const { return Cols; } // This shouldn't be necessary
@@ -68,7 +68,7 @@ template <int N_> struct PermutationMatrix : public SquareMatrixBase<N_, Permuta
     // right multiplication by permutation matrix
     template <int RhsRows, int RhsCols, typename RhsType>
     constexpr friend Matrix<typename RhsType::Scalar, Rows, RhsCols>
-    operator*(const MatrixBase<RhsRows, RhsCols, RhsType>& lhs, const PermutationMatrix<N_>& rhs) {
+    operator*(const MatrixBase<RhsRows, RhsCols, RhsType>& lhs, const PermutationOp<N_>& rhs) {
         fdapde_static_assert(Cols == RhsRows, INVALID_OPERANDS_DIMENSION_FOR_MATRIX_MATRIX_PRODUCT);
         using Scalar = typename RhsType::Scalar;
         Matrix<Scalar, Rows, RhsCols> permuted;
@@ -84,12 +84,12 @@ template <int N_> struct PermutationMatrix : public SquareMatrixBase<N_, Permuta
     }
 
     // convert to full matrix
-    constexpr OrthogonalMatrix<Scalar, N, N> as_matrix() const {
+    constexpr OrthogonalMatrix<Scalar, N> as_matrix() const {
         Matrix<Scalar, N, N> P;
         for (int i = 0; i < N; ++i)
             for (int j = 0; j < N; ++j)
                 P(i, j) = (*this)(i, j);
-        return OrthogonalMatrix<Scalar, N, N>(P);
+        return OrthogonalMatrix<Scalar, N>(P);
     }
 
     // data

@@ -84,11 +84,11 @@ public:
         }
 
         // build the final PermutationMatrix
-        P_ = PermutationMatrix<N>(perm);
+        P_ = PermutationOp<N>(perm);
     }
 
     // access the permutation
-    constexpr PermutationMatrix<N> P() const { return P_; }
+    constexpr PermutationOp<N> P() const { return P_; }
     // access L and U
     constexpr LowerTriangularMatrix<Scalar, N> L() const {
         return LowerTriangularMatrix<Scalar, N>(lu_.template triangular_view<UnitLower>());
@@ -145,7 +145,7 @@ private:
     }
 
     Matrix<Scalar, N, N, RowMajor> lu_;  // will hold both L (unit lower) and U (upper)
-    PermutationMatrix<N> P_; // row‐permutation matrix
+    PermutationOp<N> P_; // row‐permutation matrix
     bool info_ = Success;
 };
 

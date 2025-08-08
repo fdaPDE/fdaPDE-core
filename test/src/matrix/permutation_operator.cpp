@@ -25,7 +25,7 @@ TEST(matrix_test, PermutationMatrix) {
 
     // Identity permutation (0,1,2)
     std::array<int,3> id = {0,1,2};
-    PermutationMatrix<3> P_id(id);
+    PermutationOp<3> P_id(id);
 
     // Basic access
     assert(P_id(0,0) == 1 && P_id(0,1) == 0);
@@ -38,7 +38,7 @@ TEST(matrix_test, PermutationMatrix) {
 
     // Swap rows/cols 0 and 1: permutation = (1,0,2)
     std::array<int,3> swap01 = {1,0,2};
-    PermutationMatrix<3> P_swap(swap01);
+    PermutationOp<3> P_swap(swap01);
 
     // Check structure: ones at (i, permutation[i])
     assert(P_swap(0,1) == 1 && P_swap(0,0) == 0);
@@ -68,7 +68,7 @@ TEST(matrix_test, PermutationMatrixAlgebra) {
     std::cout << std::endl;
 
     // Swap rows/cols 0 and 1
-    PermutationMatrix<3> P({1,0,2});
+    PermutationOp<3> P({1,0,2});
 
     // Left-multiply: permute rows (row i <- old row permutation[i])
     auto PM = P * M;
@@ -89,7 +89,7 @@ TEST(matrix_test, PermutationMatrixAlgebra) {
     std::cout << std::endl;
 
     // Identity permutation leaves M unchanged (both sides)
-    PermutationMatrix<3> P_id({0,1,2});
+    PermutationOp<3> P_id({0,1,2});
     auto PM_id = P_id * M;
     auto MP_id = M * P_id;
     assert(PM_id == M);
@@ -100,14 +100,14 @@ TEST(matrix_test, PermutationMatrixAlgebra) {
 
     // Composition check for left multiplication:
     // P2 * (P1 * M) == P12 * M where P12[i] = P1[P2[i]]
-    PermutationMatrix<3> P1({1,0,2}); // swap 0<->1
-    PermutationMatrix<3> P2({2,1,0}); // reverse 0<->2
+    PermutationOp<3> P1({1,0,2}); // swap 0<->1
+    PermutationOp<3> P2({2,1,0}); // reverse 0<->2
     auto left_seq = P2 * (P1 * M);
 
     std::array<int,3> P12 = { P1.permutation()[ P2.permutation()[0] ],
                               P1.permutation()[ P2.permutation()[1] ],
                               P1.permutation()[ P2.permutation()[2] ] };
-    PermutationMatrix<3> P_comp(P12);
+    PermutationOp<3> P_comp(P12);
     auto left_comp = P_comp * M;
 
 

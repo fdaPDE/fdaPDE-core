@@ -169,7 +169,7 @@ TEST(matrix_test, IdentityMatrix) {
     std::cout << Matrix<double, 3, 3>::Identity() << std::endl;
     std::cout << std::endl;
     std::cout << "Identity Matrix (Called from PermutationMatrix)" << std::endl;
-    std::cout << PermutationMatrix<3>::Identity() << std::endl;
+    std::cout << PermutationOp<3>::Identity() << std::endl;
     std::cout << std::endl;
     std::cout << "Identity Matrix (Called from SymmetricMatrix)" << std::endl;
     std::cout << SymmetricMatrix<double, 3>::Identity() << std::endl;

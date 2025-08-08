@@ -59,11 +59,12 @@
 #include "src/matrix/symmetric_matrix.cpp"
 #include "src/matrix/diagonal_matrix.cpp"
 #include "src/matrix/orthogonal_matrix.cpp"
-#include "src/matrix/permutation_matrix.cpp"
+#include "src/matrix/permutation_operator.cpp"
 #include "src/matrix/upper_triangular_matrix.cpp"
 #include "src/matrix/lower_triangular_matrix.cpp"
 #include "src/matrix/skew_symmetric_matrix.cpp"
 #include "src/matrix/matrix_map.cpp"
+#include "src/matrix/rotation_operator.cpp"
 
 int main(int argc, char** argv) {
     // start testing
