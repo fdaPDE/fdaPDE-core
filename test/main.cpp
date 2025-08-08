@@ -57,6 +57,11 @@
 #include "src/matrix/matrix_base.cpp"
 #include "src/matrix/matrix_decomposition.cpp"
 #include "src/matrix/symmetric_matrix.cpp"
+#include "src/matrix/diagonal_matrix.cpp"
+#include "src/matrix/orthogonal_matrix.cpp"
+#include "src/matrix/permutation_matrix.cpp"
+#include "src/matrix/upper_triangular_matrix.cpp"
+#include "src/matrix/lower_triangular_matrix.cpp"
 #include "src/matrix/skew_symmetric_matrix.cpp"
 #include "src/matrix/matrix_map.cpp"
 

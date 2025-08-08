@@ -19,6 +19,8 @@
 
 #include "header_check.h"
 #include "square_matrix_base.h"
+#include "orthogonal_matrix.h"
+#include "triangular_matrix.h"
 
 namespace fdapde {
 
@@ -87,6 +89,13 @@ public:
 
     // access the permutation
     constexpr PermutationMatrix<N> P() const { return P_; }
+    // access L and U
+    constexpr LowerTriangularMatrix<Scalar, N> L() const {
+        return LowerTriangularMatrix<Scalar, N>(lu_.template triangular_view<UnitLower>());
+    }
+    constexpr UpperTriangularMatrix<Scalar, N> U() const {
+        return UpperTriangularMatrix<Scalar, N>(lu_.template triangular_view<Upper>());
+    }
 
     // solve Ax = b via PA = LU
     template <typename Rhs>
@@ -106,11 +115,11 @@ private:
     // helper: find pivot row with maximum absolute value in column 'col'
     constexpr int find_pivot_row(int col, const std::array<int,N>& /*perm*/) const {
         int pivot = col;
-        Scalar maxval = Scalar(0);
+        Scalar max_val = Scalar(0);
         for (int r = col; r < N; ++r) {
             Scalar av = fdapde::abs(lu_(r, col));
-            if (av > maxval) {
-                maxval = av;
+            if (av > max_val) {
+                max_val = av;
                 pivot = r;
             }
         }
@@ -152,8 +161,10 @@ class EigenDecomposition {
 public:
     static constexpr int N = MatrixType::Rows;
     using Scalar  = typename MatrixType::Scalar;
-    using VectorType = Vector<Scalar, N>;
-    using MatrixN = Matrix<Scalar, N, N>;
+    static constexpr int StorageOrder = MatrixType::StorageOrder;
+    static constexpr int NestAsRefBit = MatrixType::NestAsRefBit;
+    using VectorType = Vector<Scalar, N, NestAsRefBit>;
+    using MatrixN = Matrix<Scalar, N, N, StorageOrder, NestAsRefBit>;
     static constexpr int Solver = Solver_;
 
     constexpr EigenDecomposition() = default;
@@ -171,6 +182,8 @@ public:
         fdapde_static_assert(internals::is_symmetric_v<Xpr>, "EVD compute requires symmetric input expression");
         // 2×2 analytic closed‐form
         if constexpr (N == 2 && Solver == Best) {
+
+            auto eigenvectors = MatrixN::Zero();
 
             const Scalar a = xpr.derived()(0,0), b = xpr.derived()(0,1), c = xpr.derived()(1,1);
             const Scalar tr = a + c;
@@ -191,14 +204,17 @@ public:
                     v[1] = Scalar(0);
                 }
                 Scalar nrm = fdapde::sqrt(v[0]*v[0] + v[1]*v[1]);
-                eigenvectors_(0,k) = v[0] / nrm;
-                eigenvectors_(1,k) = v[1] / nrm;
+                eigenvectors(0,k) = v[0] / nrm;
+                eigenvectors(1,k) = v[1] / nrm;
             }
+            eigenvectors_ = eigenvectors;
             return;
         }
 
         // 3×3 analytic closed‐form (symmetric)
         else if constexpr (N == 3 && Solver == Best) {
+
+            auto eigenvectors = MatrixN::Zero();
 
             // matrix entries
             const Scalar m00 = xpr.derived()(0,0), m01 = xpr.derived()(0,1), m02 = xpr.derived()(0,2);
@@ -224,7 +240,7 @@ public:
                               + B(0,2)*(B(1,0)*B(2,1) - B(1,1)*B(2,0));
             Scalar r = detB / Scalar(2);
             r = r < -Scalar(1) ? -Scalar(1) : (r > Scalar(1) ? Scalar(1) : r);
-            constexpr Scalar pi = Scalar(3.14159265358979323846);
+            constexpr Scalar pi = Scalar(std::numbers::pi);
             const Scalar phi = std::acos(r) / Scalar(3);
             // eigenvalues
             eigenvalues_[0] = trace + Scalar(2)*p * std::cos(phi);
@@ -250,10 +266,11 @@ public:
                 if (n2 < Scalar(1e-12)) { v = cross(row1, row2); n2 = v[0]*v[0] + v[1]*v[1] + v[2]*v[2]; }
                 if (n2 < Scalar(1e-12)) { v[0]=Scalar(1); v[1]=v[2]=Scalar(0); n2 = Scalar(1); }
                 const Scalar n = fdapde::sqrt(n2);
-                eigenvectors_(0,k) = v[0] / n;
-                eigenvectors_(1,k) = v[1] / n;
-                eigenvectors_(2,k) = v[2] / n;
+                eigenvectors(0,k) = v[0] / n;
+                eigenvectors(1,k) = v[1] / n;
+                eigenvectors(2,k) = v[2] / n;
             }
+            eigenvectors_ = eigenvectors;
             return;
         }
 
@@ -261,11 +278,11 @@ public:
         // ....
     }
 
-    constexpr VectorType eigenvalues() const  { return eigenvalues_; }
-    constexpr MatrixN  eigenvectors() const { return eigenvectors_; }
+    constexpr auto eigenvalues() const  { return eigenvalues_; }
+    constexpr auto eigenvectors() const { return eigenvectors_; }
 
 private:
-    MatrixN eigenvectors_{};
+    OrthogonalMatrix<Scalar, N> eigenvectors_{};
     VectorType eigenvalues_{};
 };
 
@@ -284,13 +301,15 @@ public:
     template <typename Xpr>
     constexpr explicit QRDecomposition(const SquareMatrixBase<N, Xpr>& m) {
         static_assert(std::is_same_v<Scalar, typename Xpr::Scalar>, "QR: scalar types must match");
+        std::cout << "ciaone" << std::endl;
         compute(m);
     }
 
     template <typename Xpr>
     constexpr void compute(const SquareMatrixBase<N, Xpr>& xpr) {
         MatrixN A(xpr.derived());
-        Q_.setZero();
+        MatrixN Q;
+        Q.setZero();
         R_.setZero();
 
         // Classical Gram–Schmidt
@@ -305,11 +324,11 @@ public:
             for (int k = 0; k < j; ++k) {
                 Scalar dot = Scalar(0);
                 for (int i = 0; i < N; ++i) {
-                    dot += Q_(i, k) * A(i, j);
+                    dot += Q(i, k) * A(i, j);
                 }
                 R_(k, j) = dot;
                 for (int i = 0; i < N; ++i) {
-                    v[i] -= dot * Q_(i, k);
+                    v[i] -= dot * Q(i, k);
                 }
             }
 
@@ -325,18 +344,19 @@ public:
                 info_ = !Success;
             }
             for (int i = 0; i < N; ++i) {
-                Q_(i, j) = v[i] / norm;
+                Q(i, j) = v[i] / norm;
             }
         }
+        Q_ = Q;
     }
 
-    constexpr MatrixN Q() const { return Q_; }
-    constexpr auto R() const { return R_.template triangular_view<Upper>(); }
+    constexpr auto Q() const { return Q_; }
+    constexpr auto R() const { return R_; }
     [[nodiscard]] bool info() const { return info_; }
 
 private:
-    MatrixN Q_{};
-    MatrixN R_{};
+    OrthogonalMatrix<Scalar, N> Q_;
+    UpperTriangularMatrix<Scalar, N> R_;
     bool info_ = Success;
 };
 

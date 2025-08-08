@@ -26,6 +26,7 @@ namespace fdapde {
 template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_, bool NestAsRefBit_> class Matrix;
 template <typename Scalar_, int N_, bool NestAsRefBit_> class SymmetricMatrix;
 template <typename Scalar_, int N_, bool NestAsRefBit_> class SkewSymmetricMatrix;
+template <typename Scalar_, int N_, bool NestAsRefBit_> class DiagonalMatrix;
 template <typename Derived, int ViewMode> struct TriangularView;
 template <typename Derived> struct DiagonalView;
 template <typename Derived> struct SymmetricPartView;
@@ -67,28 +68,6 @@ struct is_view<SkewSymmetricPartView<Derived>> : std::true_type {};
 
 // is_triangular and directional‐triangular traits
 namespace internals {
-
-// default: nothing is triangular
-template <typename T>
-struct is_triangular : std::false_type {};
-
-// default: not upper‐triangular
-template <typename T>
-struct is_upper_triangular : std::false_type {};
-
-// default: not lower‐triangular
-template <typename T>
-struct is_lower_triangular : std::false_type {};
-
-// helper variable templates
-template <typename T>
-static constexpr bool is_triangular_v = is_triangular<T>::value;
-
-template <typename T>
-static constexpr bool is_upper_triangular_v = is_upper_triangular<T>::value;
-
-template <typename T>
-static constexpr bool is_lower_triangular_v = is_lower_triangular<T>::value;
 
 // Specialize for any TriangularView
 template <typename Derived, int ViewMode>
@@ -339,10 +318,7 @@ struct SquareMatrixBase : public MatrixBase<N, N, Derived> {
     // static named constructor (Identity matrix)
     // TODO: it would be optimal to return a SPDMatrix once they exist
     static constexpr auto Identity() requires(internals::has_identity_v<Derived>) {
-        using SM = SymmetricMatrix<typename Derived::Scalar, N, Derived::NestAsRefBit>;
-        SM I(SM::Zero());
-        for (int i = 0; i < N; ++i)
-                I(i, i) = typename Derived::Scalar(1);
+        auto I = DiagonalMatrix<typename Derived::Scalar, N, Derived::NestAsRefBit>::Ones();
         return I;
     }
 

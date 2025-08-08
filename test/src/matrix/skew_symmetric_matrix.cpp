@@ -99,7 +99,7 @@ TEST(matrix_test, SkewSymmetricMatrixView) {
     // Copy and assignment from a MatrixBase expression (it takes the symmetric part)
     {
         Matrix<double, 3, 3> M({1, 2, 3, 4, 5, 6, 7, 8, 9});
-        SkewSymmetricMatrix<Scalar, 3> M_assign(data);
+        SkewSymmetricMatrixView<Scalar, 3> M_assign(data);
         M_assign = M;
         assert(M_assign(0,0) == Scalar(0));
         assert(M_assign(0,1) == Scalar(-1));
@@ -295,8 +295,8 @@ TEST(matrix_test, SkewSymmetricMatrixAlgebra) {
     std::cout << S + Matrix<double, 3, 3>::Identity() << std::endl;
     std::cout << std::endl;
 
-    std::cout << "Full(S)" << std::endl;
-    std::cout << S.full() << std::endl;
+    std::cout << "as_matrix(S)" << std::endl;
+    std::cout << S.as_matrix() << std::endl;
     std::cout << std::endl;
 
 }

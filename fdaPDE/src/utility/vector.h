@@ -22,8 +22,8 @@
 namespace fdapde {
 
 // alias export for constexpr-enabled vectors
-template <typename Scalar_, int Rows_> using VectorView = MatrixView<Scalar_, Rows_, 1>;
-template <typename Scalar_, int Rows_> using Vector = Matrix<Scalar_, Rows_, 1>;
+template <typename Scalar, int Rows> using VectorView = MatrixView<Scalar, Rows, 1>;
+template <typename Scalar, int Rows, int NestAsRefBit = true> using Vector = Matrix<Scalar, Rows, 1, ColMajor, NestAsRefBit>;
 
 }
 

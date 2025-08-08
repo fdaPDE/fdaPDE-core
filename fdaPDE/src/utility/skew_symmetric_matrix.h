@@ -62,6 +62,16 @@ public:
     constexpr SkewSymmetricMatrixView() = delete;
     constexpr explicit SkewSymmetricMatrixView(Scalar* ptr_data) : ptr_data_(ptr_data) {}
     constexpr explicit SkewSymmetricMatrixView(std::array<Scalar, StorageSize>& data) : ptr_data_(data.data()) {}
+    constexpr SkewSymmetricMatrixView(const MatrixViewType& other) : ptr_data_(other.ptr_data_) { }
+
+    // copy operator
+    constexpr MatrixViewType& operator=(const MatrixViewType& other) {
+        if (this == &other) return *this;
+        for (int id = 0; id < StorageSize; ++id) {
+            ptr_data_[id] = other.data()[id];
+        }
+        return *this;
+    }
 
     // assignment from std::array
     constexpr MatrixViewType& operator=(const std::array<Scalar, StorageSize>& rhs) {
@@ -210,6 +220,12 @@ public:
     // default constructor
     constexpr SkewSymmetricMatrix() : data_(), m_(data_.data()) { };
 
+    // copy constructor
+    constexpr SkewSymmetricMatrix(const MatrixType& other) : data_(), m_(data_.data()) { m_ = other; }
+
+    // copy operator
+    constexpr MatrixType& operator=(const MatrixType& other) { m_ = other; return *this; }
+
     // constructor from std::array
     constexpr explicit SkewSymmetricMatrix(const std::array<Scalar, StorageSize>& arr) : SkewSymmetricMatrix() { m_ = arr; }
 
@@ -267,8 +283,8 @@ public:
     */
 
     // convert to full matrix
-    constexpr Matrix<Scalar_, N, N> full() const {
-        Matrix<Scalar_, N, N> M;
+    constexpr Matrix<Scalar, N, N> as_matrix() const {
+        Matrix<Scalar, N, N> M;
         for (int i = 0; i < N; ++i) {
             M(i, i) = 0;
             for (int j = i + 1; j < N; ++j) {
@@ -283,7 +299,7 @@ public:
     #ifdef __FDAPDE_HAS_EIGEN__
         // TODO: differently from Matrix here I can not return a map because the Map saves the pointer to data_.data() but symmetric matrices stores data in a non compatible way
         auto as_eigen() {
-            Matrix<Scalar, Rows, Cols, RowMajor, NestAsRefBit> M(full());
+            Matrix<Scalar, Rows, Cols, RowMajor, NestAsRefBit> M(as_matrix());
             return Eigen::Matrix<Scalar, Rows, Cols, Eigen::RowMajor>(M.data());
         }
     #endif

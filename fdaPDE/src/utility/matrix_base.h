@@ -40,10 +40,14 @@ template <int BlockRows, int BlockCols, typename Derived> class MatrixBlockView;
 
 // matrix flags enumerator
 enum class matrix_flags {
-    none            = 0x0000,
-    square          = 0x0001,
-    symmetric       = 0x0002,
-    skew_symmetric  = 0x0004
+    none             = 0x0000,
+    square           = 0x0001,
+    symmetric        = 0x0002,
+    skew_symmetric   = 0x0004,
+    diagonal         = 0x0008,
+    upper_triangular = 0x0010,
+    lower_triangular = 0x0020,
+    orthogonal       = 0x0040
 };
 
 namespace internals {
@@ -114,15 +118,74 @@ struct is_xpr_temp<MatrixKroneckerProduct<Lhs, Rhs>> : std::true_type {};
 // is_symmetric trait
 namespace internals {
 
-// default: nothing is triangular
-template <typename T>
+// default: nothing is diagonal
+template <typename T, typename = void>
 struct is_symmetric : std::false_type {};
+
+// if T has T::XprBits, check the diagonal flag
+template <typename T>
+struct is_symmetric<T, std::void_t<decltype(T::XprBits)>>
+    : std::bool_constant<(int(T::XprBits) & int(matrix_flags::symmetric)) != 0> {};
 
 // helper variable templates
 template <typename T>
 static constexpr bool is_symmetric_v = is_symmetric<T>::value;
 
 }
+
+// is_symmetric trait
+namespace internals {
+
+// default: nothing is diagonal
+template <typename T, typename = void>
+struct is_diagonal : std::false_type {};
+
+// if T has T::XprBits, check the diagonal flag
+template <typename T>
+struct is_diagonal<T, std::void_t<decltype(T::XprBits)>>
+    : std::bool_constant<(int(T::XprBits) & int(matrix_flags::diagonal)) != 0> {};
+
+// helper variable templates
+template <typename T>
+static constexpr bool is_diagonal_v = is_diagonal<T>::value;
+
+}
+
+// is_triangular trait
+namespace internals {
+
+// default: nothing is triangular
+template <typename T, typename = void>
+struct is_triangular : std::false_type {};
+
+// default: not upper‐triangular
+template <typename T, typename = void>
+struct is_upper_triangular : std::false_type {};
+
+// default: not lower‐triangular
+template <typename T, typename = void>
+struct is_lower_triangular : std::false_type {};
+
+// helper variable templates
+template <typename T>
+static constexpr bool is_triangular_v = is_triangular<T>::value;
+
+template <typename T>
+static constexpr bool is_upper_triangular_v = is_upper_triangular<T>::value;
+
+template <typename T>
+static constexpr bool is_lower_triangular_v = is_lower_triangular<T>::value;
+
+// if T has T::XprBits, check the flag
+template <typename T>
+struct is_upper_triangular<T, std::void_t<decltype(T::XprBits)>>
+    : std::bool_constant<(int(T::XprBits) & int(matrix_flags::upper_triangular)) != 0> {};
+template <typename T>
+struct is_lower_triangular<T, std::void_t<decltype(T::XprBits)>>
+    : std::bool_constant<(int(T::XprBits) & int(matrix_flags::lower_triangular)) != 0> {};
+
+}
+
 
 // transpose view
 template <typename Derived>
@@ -502,10 +565,13 @@ struct MatrixBase {
         if constexpr (internals::is_view_v<Derived>) std::cout << "(View) ";
         if constexpr (internals::is_xpr_temp_v<Derived>) std::cout << "(Xpr template) ";
         if constexpr (internals::is_vector_like_v<Derived>) std::cout << "VectorLike ";
+        if constexpr (internals::is_upper_triangular_v<Derived>) std::cout << "UpperTriangular ";
+        if constexpr (internals::is_lower_triangular_v<Derived>) std::cout << "LowerTriangular ";
         if constexpr (internals::is_symmetric_v<Derived>) std::cout << "Symmetric ";
-        // if constexpr (Derived::XprBits & int(matrix_flags::symmetric)) std::cout << "Symmetric ";
         if constexpr (Derived::XprBits & int(matrix_flags::skew_symmetric)) std::cout << "SkewSymmetric ";
+        if constexpr (internals::is_diagonal_v<Derived>) std::cout << "Diagonal ";
         if constexpr (Derived::XprBits & int(matrix_flags::square)) std::cout << "Square ";
+        if constexpr (Derived::XprBits & int(matrix_flags::orthogonal)) std::cout << "Orthogonal ";
         std::cout << "Matrix ]]" << std::endl;
 
         const int rows = m.derived().rows();

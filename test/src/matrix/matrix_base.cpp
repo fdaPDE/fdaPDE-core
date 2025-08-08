@@ -174,41 +174,20 @@ TEST(matrix_test, IdentityMatrix) {
     std::cout << "Identity Matrix (Called from SymmetricMatrix)" << std::endl;
     std::cout << SymmetricMatrix<double, 3>::Identity() << std::endl;
     std::cout << std::endl;
+    std::cout << "Identity Matrix (Called from DiagonalMatrix)" << std::endl;
+    std::cout << DiagonalMatrix<double, 3>::Identity() << std::endl;
+    std::cout << std::endl;
+    std::cout << "Identity Matrix (Called from UpperTriangularMatrix)" << std::endl;
+    std::cout << UpperTriangularMatrix<double, 3>::Identity() << std::endl;
+    std::cout << std::endl;
+    std::cout << "Identity Matrix (Called from LowerTriangularMatrix)" << std::endl;
+    std::cout << LowerTriangularMatrix<double, 3>::Identity() << std::endl;
+    std::cout << std::endl;
+    std::cout << "Identity Matrix (Called from OrthogonalMatrix)" << std::endl;
+    std::cout << OrthogonalMatrix<double, 3>::Identity() << std::endl;
+    std::cout << std::endl;
     // But not for the skew-symmetric ones
     // std::cout << "Identity Matrix (Called from SkewSymmetricMatrix)" << std::endl;
     // std::cout << SkewSymmetricMatrix<double, 3>::Identity() << std::endl;
     // std::cout << std::endl;
-}
-
-TEST(matrix_test, PermutationMatrix) {
-
-    using Scalar = double;
-
-    // PermutationMatrix (applied to a vector)
-    std::array<int, 2> perm = {1, 0};
-    PermutationMatrix<2> P(perm);
-    auto v =  Vector<Scalar, 2>(Scalar(5), Scalar(7));
-    auto Pv = P * v;
-    assert(Pv[0] == Scalar(7) && Pv[1] == Scalar(5));
-    std::cout << "Permutation matrix (applied to a vector)" << std::endl;
-    std::cout << "P: " << P << std::endl;
-    std::cout << "--" << std::endl;
-    std::cout << "v: " << v << std::endl;
-    std::cout << "--" << std::endl;
-    std::cout << "P[v]: " << P*v << std::endl;
-    std::cout << std::endl;
-
-    // PermutationMatrix (applied to a matrix)
-    Matrix<Scalar, 2, 2> M({1,2,3,4});
-    auto Pm = P * M;
-    assert(Pm(0,0) == Scalar(3) && Pm(1,0) == Scalar(1));
-    std::cout << "Permutation matrix (applied to a matrix)" << std::endl;
-    std::cout << "P: " <<P << std::endl;
-    std::cout << "--" << std::endl;
-    std::cout << "M: " << M << std::endl;
-    std::cout << "--" << std::endl;
-    std::cout << "P[M]: " << P*M << std::endl;
-    std::cout << std::endl;
-    std::cout << "[M]P: " << M*P << std::endl;
-    std::cout << std::endl;
 }

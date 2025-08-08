@@ -43,7 +43,7 @@ template <int N_> struct PermutationMatrix : public SquareMatrixBase<N_, Permuta
     static constexpr int Cols = N_;
     static constexpr bool NestAsRefBit = false;
     static constexpr bool ReadOnly = true;
-    static constexpr int XprBits = int(matrix_flags::square);
+    static constexpr int XprBits = int(matrix_flags::square) | int(matrix_flags::orthogonal);
 
     // constructors
     constexpr PermutationMatrix() = default;
@@ -81,6 +81,15 @@ template <int N_> struct PermutationMatrix : public SquareMatrixBase<N_, Permuta
     // const access
     constexpr int operator()(int i, int j) const {
         return permutation_[i] == j ? 1 : 0;
+    }
+
+    // convert to full matrix
+    constexpr OrthogonalMatrix<Scalar, N, N> as_matrix() const {
+        Matrix<Scalar, N, N> P;
+        for (int i = 0; i < N; ++i)
+            for (int j = 0; j < N; ++j)
+                P(i, j) = (*this)(i, j);
+        return OrthogonalMatrix<Scalar, N, N>(P);
     }
 
     // data

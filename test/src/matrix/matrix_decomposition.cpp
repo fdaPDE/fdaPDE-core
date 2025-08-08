@@ -25,22 +25,32 @@ using namespace fdapde;
 TEST(MatrixTest, ForwardBackwardSubstitution) {
 
     // Lower-triangular solve Lx=b
-    auto L = Matrix<double,3,3>::Zero();
-    L(0,0)=2; L(1,0)=3; L(1,1)=5; L(2,0)=1; L(2,1)=4; L(2,2)=6;
-    Vector<double,3> b1({4, 21, 38});
-    auto x1 = forward_sub(L.triangular_view<Lower>(), b1);
-    EXPECT_TRUE(almost_equal(x1[0], 2.));
-    EXPECT_TRUE(almost_equal(x1[1], 3.));
-    EXPECT_TRUE(almost_equal(x1[2], 4.));
+    {
+        LowerTriangularMatrix<double, 3> L({2, 3, 5,  1, 4,  6});
+        Vector<double,3> b({4, 21, 38});
+        auto x = forward_sub(L, b);
+        EXPECT_TRUE(almost_equal(x[0], 2.));
+        EXPECT_TRUE(almost_equal(x[1], 3.));
+        EXPECT_TRUE(almost_equal(x[2], 4.));
+        std::cout << "L: " << L << std::endl;
+        std::cout << "b: " << b << std::endl;
+        std::cout << "x: " << x << std::endl;
+        std::cout << std::endl;
+    }
 
     // Upper-triangular solve Ux=b
-    auto U = Matrix<double,3,3>::Zero();
-    U(0,0)=2; U(0,1)=3; U(0,2)=1; U(1,1)=5; U(1,2)=4; U(2,2)=6;
-    Vector<double,3> b2{11, 32, 18};
-    auto x2 = backward_sub(U.triangular_view<Upper>(), b2);
-    EXPECT_TRUE(almost_equal(x2[2], 3.));
-    EXPECT_TRUE(almost_equal(x2[1], 4.));
-    EXPECT_TRUE(almost_equal(x2[0], -2.));
+    {
+        UpperTriangularMatrix<double, 3> U({2,  3, 1,  5, 4, 6});
+        Vector<double,3> b{11, 32, 18};
+        auto x = backward_sub(U.triangular_view<Upper>(), b);
+        EXPECT_TRUE(almost_equal(x[2], 3.));
+        EXPECT_TRUE(almost_equal(x[1], 4.));
+        EXPECT_TRUE(almost_equal(x[0], -2.));
+        std::cout << "U: " << U << std::endl;
+        std::cout << "b: " << b << std::endl;
+        std::cout << "x: " << x << std::endl;
+        std::cout << std::endl;
+    }
 }
 
 TEST(matrix_test, LU) {
@@ -66,6 +76,10 @@ TEST(matrix_test, LU) {
         std::cout << "Ax: " << A*x << std::endl;
         std::cout << "--" << std::endl;
         std::cout << "b: " << b << std::endl;
+        std::cout << std::endl;
+        std::cout << "P: " <<lu.P() << std::endl;
+        std::cout << "U: "<< lu.U() << std::endl;
+        std::cout << "L: "<< lu.L() << std::endl;
         std::cout << std::endl;
     }
 
@@ -218,9 +232,7 @@ TEST(MatrixTest, EigenDecomposition2x2) {
         EXPECT_TRUE(almost_equal(Q.transpose()*Q, I));
 
         // check reconstruction
-        auto D = Matrix<double,2,2>::Zero();
-        D(0,0) = lambdas[0];
-        D(1,1) = lambdas[1];
+        DiagonalMatrix<double, 2> D(lambdas);
         auto A_rec = Q * D * Q.transpose();
         EXPECT_TRUE(almost_equal(A, A_rec));
 
@@ -238,7 +250,6 @@ TEST(MatrixTest, EigenDecomposition2x2) {
         std::cout << A_rec << std::endl;
         std::cout << std::endl;
     }
-
 
 }
 
@@ -262,10 +273,7 @@ TEST(MatrixTest, EigenDecomposition3x3) {
         EXPECT_TRUE(almost_equal(Q.transpose()*Q, I));
 
         // check reconstruction
-        auto D = Matrix<double, 3, 3>::Zero();
-        D(0,0) = lambdas[0];
-        D(1,1) = lambdas[1];
-        D(2,2) = lambdas[2];
+        DiagonalMatrix<double, 3> D(lambdas);
         auto A_rec = Q * D * Q.transpose();
         EXPECT_TRUE(almost_equal(A, A_rec));
 
@@ -283,5 +291,4 @@ TEST(MatrixTest, EigenDecomposition3x3) {
         std::cout << A_rec << std::endl;
         std::cout << std::endl;
     }
-
 }

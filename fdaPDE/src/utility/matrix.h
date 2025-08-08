@@ -71,6 +71,16 @@ public:
     constexpr MatrixView() = delete;
     constexpr explicit MatrixView(Scalar* ptr_data) : ptr_data_(ptr_data) {}
     constexpr explicit MatrixView(std::array<Scalar, StorageSize>& data) : ptr_data_(data.data()) {}
+    constexpr MatrixView(const MatrixViewType& other) : ptr_data_(other.ptr_data_) { }
+
+    // copy operator
+    constexpr MatrixViewType& operator=(const MatrixViewType& other) {
+        if (this == &other) return *this;
+        for (int id = 0; id < StorageSize; ++id) {
+            ptr_data_[id] = other.data()[id];
+        }
+        return *this;
+    }
 
     // assignment from std::array
     constexpr MatrixViewType& operator=(const std::array<Scalar, StorageSize>& rhs) {
@@ -237,6 +247,12 @@ public:
     // default constructor
     constexpr Matrix() : data_(), m_(data_.data()) { };
 
+    // copy constructor
+    constexpr Matrix(const MatrixType& other) : data_(), m_(data_.data()) { m_ = other; }
+
+    // copy operator
+    constexpr MatrixType& operator=(const MatrixType& other) { m_ = other; return *this; }
+
     // constructor from std::array
     constexpr explicit Matrix(const std::array<Scalar, StorageSize>& arr) : Matrix() { m_ = arr; }
 
@@ -252,7 +268,7 @@ public:
 
     // copy constructor from any MatrixBase-derived expression (templated)
     template<typename Derived>
-    constexpr explicit Matrix(const MatrixBase<Rows_,Cols_,Derived>& xpr) : Matrix() { m_ = xpr; }
+    constexpr explicit Matrix(const MatrixBase<Rows,Cols,Derived>& xpr) : Matrix() { m_ = xpr; }
 
     // conversion constructor from Eigen matrix
     #ifdef __FDAPDE_HAS_EIGEN__
