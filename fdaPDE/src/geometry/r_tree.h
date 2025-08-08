@@ -29,9 +29,9 @@ struct rtree_quadratic_split {
 
     template <typename node_t> std::pair<node_t*, node_t*> apply(node_t* node, int level) {
         using bbox_t = typename node_t::bbox_t;
-	using item_t = typename node_t::item_t;
-	constexpr int embed_dim = node_t::embed_dim;
-	
+        using item_t = typename node_t::item_t;
+        constexpr int embed_dim = node_t::embed_dim;
+
         // allocate memory for new node
         node_t* n = new node_t(M_, level);
         std::vector<int> g;   // ids of items reallocated to n after the split
@@ -213,7 +213,7 @@ template <typename SpatialObject, typename SplitStrategy = internals::rtree_star
         SpatialObject::embed_dim;
         { obj.bbox() } -> std::convertible_to<std::array<double, 2 * SpatialObject::embed_dim>>;
     })
-class RTree2 {
+class RTree {
    private:
     static constexpr int embed_dim = SpatialObject::embed_dim;
 
@@ -229,7 +229,7 @@ class RTree2 {
             requires(internals::is_vector_like_v<T>)
         explicit bbox_t(const T& bbox) : bbox_(), measure_(1.0) {
             for (int i = 0; i < 2 * embed_dim; ++i) { bbox_[i] = bbox[i]; }
-	    for (int i = 0; i < embed_dim; ++i) { measure_ *= (bbox_[i + embed_dim] - bbox_[i]); }
+            for (int i = 0; i < embed_dim; ++i) { measure_ *= (bbox_[i + embed_dim] - bbox_[i]); }
         }
         template <typename SpatialObject_>
             requires(requires(SpatialObject_ obj) {
@@ -290,8 +290,8 @@ class RTree2 {
                 bbox_[i] = std::min(bbox_[i], other.bbox_[i]);
                 bbox_[i + embed_dim] = std::max(bbox_[i + embed_dim], other.bbox_[i + embed_dim]);
             }
-	    // update measure
-	    measure_ = 1;
+            // update measure
+            measure_ = 1;
             for (int i = 0; i < embed_dim; ++i) { measure_ *= (bbox_[i + embed_dim] - bbox_[i]); }
         }
         void reset() {
@@ -299,7 +299,7 @@ class RTree2 {
                 bbox_[i] = std::numeric_limits<double>::infinity();
                 bbox_[i + embed_dim] = -std::numeric_limits<double>::infinity();
             }
-	    measure_ = 0;
+            measure_ = 0;
         }
         // queries
         template <typename PointT>
@@ -327,7 +327,7 @@ class RTree2 {
                 if (bbox_[i] > vec[i + embed_dim] || bbox_[i + embed_dim] < vec[i]) return false;
             }
             return true;
-        }      
+        }
         bool intersects(const bbox_t& other) const {
             for (int i = 0; i < embed_dim; ++i) {
                 if (bbox_[i] > other.bbox_[i + embed_dim] || bbox_[i + embed_dim] < other.bbox_[i]) return false;
@@ -340,7 +340,10 @@ class RTree2 {
     };
     // data item stored in node
     struct item_t {
-        enum class type_t { DATA, NODE };
+        enum class type_t {
+            DATA,
+            NODE
+        };
        private:
         union {   // child node or actual data
             node_t* node_;
@@ -379,14 +382,14 @@ class RTree2 {
     };
     // structural tree node
     struct node_t {
-        using bbox_t = typename RTree2<SpatialObject, SplitStrategy>::bbox_t;
-        using item_t = typename RTree2<SpatialObject, SplitStrategy>::item_t;
-        static constexpr int embed_dim = RTree2<SpatialObject, SplitStrategy>::embed_dim;
+        using bbox_t = typename RTree<SpatialObject, SplitStrategy>::bbox_t;
+        using item_t = typename RTree<SpatialObject, SplitStrategy>::item_t;
+        static constexpr int embed_dim = RTree<SpatialObject, SplitStrategy>::embed_dim;
 
         node_t(int M, int level) : size_(0), capacity_(M + 1), level_(level), bbox_() {
             data_.resize(M + 1);   // allow overflow to use this buffer for in-place split logic
             free_.resize(M + 1, true);
-            map_ .resize(M + 1, 0);
+            map_.resize(M + 1, 0);
         }
         // observers
         node_t* parent() const { return parent_; }
@@ -430,7 +433,7 @@ class RTree2 {
             }
             data_[j] = item;
             free_[j] = false;
-	    map_[size_] = j;
+            map_[size_] = j;
             size_++;
             if (update_bbox) bbox_.expand(item.bbox());
         }
@@ -454,7 +457,7 @@ class RTree2 {
             using size_type = std::size_t;
             using difference_type = std::ptrdiff_t;
             using iterator_category = std::forward_iterator_tag;
-	  
+
             iterator() : node_(nullptr), index_(0) { }
             iterator(node_t* node, int index) : node_(node), index_(index) { }
             // increment
@@ -490,7 +493,7 @@ class RTree2 {
     template <typename SpatialObject_> node_t* choose_subtree_(const SpatialObject_& obj, int target_level) {
         bbox_t obj_bbox(obj);
         node_t* curr = root_;
-	
+
         while (curr->level() != target_level) {
             node_t* best = nullptr;
 
@@ -502,7 +505,7 @@ class RTree2 {
                 };
                 std::vector<overlap_t> overlaps(curr->size());
                 double best_enlargement = std::numeric_limits<double>::infinity();
-		
+
                 // compute enlargement of all items
                 for (int i = 0, n = curr->size(); i < n; ++i) {
                     overlaps[i].node = curr->item(i).node();
@@ -517,7 +520,7 @@ class RTree2 {
                         best = curr->item(i).node();
                     }
                 }
-		// near minimum overlap heuristic
+                // near minimum overlap heuristic
                 if (curr->size() > m_overlap_factor_) {
                     // sort objects in increasing order of enlargment
                     std::sort(overlaps.begin(), overlaps.end(), [&](const overlap_t& a, const overlap_t& b) {
@@ -532,7 +535,7 @@ class RTree2 {
                     for (int j = 0, m = curr->size(); j < m; ++j) {
                         if (i != j) {
                             double tmp = overlaps[i].bbox.overlap(curr->item(j).bbox());
-			    // if enlarged bbox doesn't intersect j-th bbox, neither the old one can
+                            // if enlarged bbox doesn't intersect j-th bbox, neither the old one can
                             if (!almost_zero(tmp)) {
                                 overlap += tmp - overlaps[i].node->bbox().overlap(curr->item(j).bbox());
                             }
@@ -603,7 +606,7 @@ class RTree2 {
     // Propagate node elimination upward, adjusting covering rectangles as necessary
     void condense_tree_(node_t* l) {
         std::vector<const SpatialObject*> Q;   // set of eliminated items
-	std::vector<node_t*> killed; 
+        std::vector<node_t*> killed;
         node_t* n = l;
         while (!n->is_root()) {
             node_t* parent = n->parent();
@@ -631,10 +634,10 @@ class RTree2 {
             } else {
                 parent->update_bbox_of(item_t(n));
             }
-	    parent->recompute_bbox();
+            parent->recompute_bbox();
             n = parent;
         }
-	// free memory and insert
+        // free memory and insert
         for (node_t* node : killed) { delete node; }
         for (const SpatialObject* obj : Q) { insert(*obj); }
         return;
@@ -661,12 +664,12 @@ class RTree2 {
         for (int i = 0, m = n->size(); i < m; ++i) {
             const item_t& item = n->item(i);
             double dist = euclidean_distance(p, item.bbox().centroid());
-	    aux.emplace_back(item, dist);
+            aux.emplace_back(item, dist);
         }
         // sort entries in decreasing order of their distance (we want to reinsert more distant nodes)
         std::sort(aux.begin(), aux.end(), [](const auto& a, const auto& b) { return a.distance > b.distance; });
-	
-	// remove first q entries
+
+        // remove first q entries
         int q = static_cast<int>(reinsert_factor_ * M_);
         std::vector<item_t> to_reinsert;
         to_reinsert.reserve(q);
@@ -675,16 +678,16 @@ class RTree2 {
             to_reinsert.push_back(std::move(aux[i].item));
         }
         n->recompute_bbox();   // adjust n's bounding box
-	
+
         // reinsert entries
         for (item_t& it : to_reinsert) {
             node_t* target = nullptr;
             if (n->is_leaf()) {
-	      target = choose_leaf_(it.data());
+                target = choose_leaf_(it.data());
             } else {
-	      target = choose_subtree_(*it.node(), n->level());
+                target = choose_subtree_(*it.node(), n->level());
             }
-	    target->insert(it);
+            target->insert(it);
             adjust_tree_(target, ctx);
         }
         return;
@@ -694,7 +697,7 @@ class RTree2 {
     // necessary
     void adjust_tree_(node_t* n, std::vector<bool>& ctx) {
         node_t *n1 = n, *n2 = nullptr;
-	
+
         while (true) {
             node_t* parent = n1->parent();
             // handle overlfow occurred
@@ -706,7 +709,7 @@ class RTree2 {
                     break;   // reinsertion stop propagation
                 } else {
                     const auto& [e1, e2] = split_.apply(n1, n1->level());
-		    n1 = e1;
+                    n1 = e1;
                     n2 = e2;
                     if (parent) {
                         parent->update_bbox_of(item_t(n1));
@@ -717,7 +720,7 @@ class RTree2 {
                 }
             }
             if (!parent) break;
-	    // bounding box update
+            // bounding box update
             if (parent->size() < M_ + 1) { parent->recompute_bbox(); }
             // go one level up
             n1 = parent;
@@ -732,7 +735,7 @@ class RTree2 {
             new_root->insert(item_t(n2));
             root_ = new_root;
         }
-	return;
+        return;
     }
 
     node_t* root_ = nullptr;
@@ -741,36 +744,36 @@ class RTree2 {
     int depth_;   // current tree depth
 
     SplitStrategy split_ {};
-    int m_overlap_factor_ = 3 / 4 * M_;
-    double reinsert_factor_ = 0.4;
+    int m_overlap_factor_ = 3 / 4 * M_;   // number of items considered in the ovrelap heuristic
+    double reinsert_factor_ = 0.4;        // proportion of reinserted items in case of node overflow
    public:
-    RTree2(int M, int m) : M_(M), m_(m), depth_(0), split_(M, m) {
+    RTree(int M, int m) : M_(M), m_(m), depth_(0), split_(M, m) {
         fdapde_assert(m_ >= 2 && m_ <= M / 2);
         root_ = new node_t(M_, 0);
     }
-    RTree2(int M) : M_(M), m_(M / 2), depth_(0), split_(M, M / 2) { root_ = new node_t(M_, 0); }
-    RTree2() : RTree2(8, 4) { }
+    RTree(int M) : M_(M), m_(M / 2), depth_(0), split_(M, M / 2) { root_ = new node_t(M_, 0); }
+    RTree() : RTree(32, 16) { }
 
-  // ---------------------- implement deep copy, deep assignment, move constructor and move assignment
-  
+    // ---------------------- implement deep copy, deep assignment, move constructor and move assignment
+
     // modifiers
     void insert(const SpatialObject& obj) {
         // select a leaf where insert obj
-        node_t *l = choose_leaf_(obj);
+        node_t* l = choose_leaf_(obj);
         l->insert(item_t(obj));
-	// propagate tree rebalancing up
-	std::vector<bool> ctx(depth_, false);
-	adjust_tree_(l, ctx);
-	return;
+        // propagate tree rebalancing up
+        std::vector<bool> ctx(depth_, false);
+        adjust_tree_(l, ctx);
+        return;
     }
-  
+
     void erase(const SpatialObject& obj) {
         // find leaf containing obj
         const auto& [l, i] = find_leaf_(obj);
         if (!l) return;
         l->erase(*i);
         condense_tree_(l);
-	// if the root node has only one child after the condensation, make the child the new root
+        // if the root node has only one child after the condensation, make the child the new root
         if (!root_->is_leaf() && root_->size() == 1) {
             node_t* new_root = root_->item(0).node();
             new_root->set_parent(nullptr);
@@ -795,14 +798,46 @@ class RTree2 {
         while (!stack_.empty()) {
             curr = stack_.top();
             stack_.pop();
-	    // perform intersection test
-            if (!curr->is_leaf()) {
+            // perform intersection test
+            if (curr->is_leaf()) {
                 for (const auto& item : *curr) {
-                    if (query_bbox.intersects(item.bbox())) { stack_.push(item.node()); }
+                    if (item.bbox().intersects(query_bbox)) { result.push_back(std::addressof(item.data())); }
                 }
             } else {
                 for (const auto& item : *curr) {
-                    if (query_bbox.intersects(item.data().bbox())) { result.push_back(std::addressof(item.data())); }
+                    if (item.bbox().intersects(query_bbox)) { stack_.push(item.node()); }
+                }
+            }
+        }
+        return result;
+    }
+    template <typename PointT>
+        requires(
+          internals::is_vector_like_v<PointT> // &&
+          // requires(SpatialObject obj, PointT p) {
+          //     { obj.contains(p) } -> std::same_as<bool>;
+          // }
+	  )
+    std::vector<const SpatialObject*> point_locate(PointT&& point) const {
+        fdapde_assert(point.size() == embed_dim);
+        std::vector<const SpatialObject*> result;
+        node_t* curr;
+        std::stack<node_t*> stack_;
+        stack_.push(root_);
+
+        while (!stack_.empty()) {
+            curr = stack_.top();
+            stack_.pop();
+            // the bounding box doesn't contains point, skip entire subtree
+            if (!curr->bbox().contains(point)) continue;
+
+            if (curr->is_leaf()) {
+                for (const auto& item : *curr) {
+                    if (item.bbox().contains(point)) { result.push_back(std::addressof(item.data())); }
+                }
+            } else {
+                for (const auto& item : *curr) {
+                    if (item.bbox().contains(point)) { stack_.push(item.node()); }
                 }
             }
         }
@@ -810,7 +845,7 @@ class RTree2 {
     }
 
     // dfs memory deallocation
-    ~RTree2() {
+    ~RTree() {
         std::stack<node_t*> stack_;
         stack_.push(root_);
         node_t* curr;
