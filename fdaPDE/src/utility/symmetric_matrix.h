@@ -25,22 +25,32 @@
 namespace fdapde {
 
 // forward declaration
-template <typename Scalar_, int N_> class SymmetricMatrixView;
+template <typename Scalar_, int N> class SymmetricMatrixView;
 
 // has_identity trait
 namespace internals {
 
 // SymmetricMatrix => has identity
-template <typename Scalar_, int N_, bool NestAsRefBit_>
-struct has_identity<SymmetricMatrix<Scalar_, N_, NestAsRefBit_>> : std::true_type {};
+template <typename Scalar_, int N, bool NestAsRefBit>
+struct has_identity<SymmetricMatrix<Scalar_, N, NestAsRefBit>> : std::true_type {};
 
 }
 
 // is_view trait
 namespace internals {
 
-template <typename Scalar_, int N_>
-struct is_view<SymmetricMatrixView<Scalar_, N_>> : std::true_type {};
+template <typename Scalar, int N>
+struct is_view<SymmetricMatrixView<Scalar, N>> : std::true_type {};
+
+}
+
+// is_symmetric trait
+namespace internals {
+
+template <typename Scalar, int N>
+struct is_symmetric<SymmetricMatrixView<Scalar, N>> : std::true_type {};
+template <typename Scalar, int N, bool NestAsRefBit>
+struct is_symmetric<SymmetricMatrix<Scalar, N, NestAsRefBit>> : std::true_type {};
 
 }
 

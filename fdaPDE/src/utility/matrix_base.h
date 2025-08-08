@@ -111,6 +111,19 @@ struct is_xpr_temp<MatrixKroneckerProduct<Lhs, Rhs>> : std::true_type {};
 
 }
 
+// is_symmetric trait
+namespace internals {
+
+// default: nothing is triangular
+template <typename T>
+struct is_symmetric : std::false_type {};
+
+// helper variable templates
+template <typename T>
+static constexpr bool is_symmetric_v = is_symmetric<T>::value;
+
+}
+
 // transpose view
 template <typename Derived>
 struct TransposeView : public MatrixBase<Derived::Cols, Derived::Rows, TransposeView<Derived>> {
@@ -489,7 +502,8 @@ struct MatrixBase {
         if constexpr (internals::is_view_v<Derived>) std::cout << "(View) ";
         if constexpr (internals::is_xpr_temp_v<Derived>) std::cout << "(Xpr template) ";
         if constexpr (internals::is_vector_like_v<Derived>) std::cout << "VectorLike ";
-        if constexpr (Derived::XprBits & int(matrix_flags::symmetric)) std::cout << "Symmetric ";
+        if constexpr (internals::is_symmetric_v<Derived>) std::cout << "Symmetric ";
+        // if constexpr (Derived::XprBits & int(matrix_flags::symmetric)) std::cout << "Symmetric ";
         if constexpr (Derived::XprBits & int(matrix_flags::skew_symmetric)) std::cout << "SkewSymmetric ";
         if constexpr (Derived::XprBits & int(matrix_flags::square)) std::cout << "Square ";
         std::cout << "Matrix ]]" << std::endl;

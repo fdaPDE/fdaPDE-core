@@ -39,7 +39,7 @@ namespace internals {
 template <typename T>
 struct has_identity : std::false_type {};
 
-// Helper variable template
+// helper variable template
 template <typename T>
 static constexpr bool has_identity_v = has_identity<T>::value;
 
@@ -80,7 +80,7 @@ struct is_upper_triangular : std::false_type {};
 template <typename T>
 struct is_lower_triangular : std::false_type {};
 
-// Helper variable templates
+// helper variable templates
 template <typename T>
 static constexpr bool is_triangular_v = is_triangular<T>::value;
 
@@ -96,15 +96,15 @@ struct is_triangular<TriangularView<Derived, ViewMode>> : std::true_type {};
 
 // Upper‐type views: both strict and unit
 template <typename Derived>
-struct is_upper_triangular<TriangularView<Derived, Upper>>       : std::true_type {};
+struct is_upper_triangular<TriangularView<Derived, Upper>> : std::true_type {};
 template <typename Derived>
-struct is_upper_triangular<TriangularView<Derived, UnitUpper>>   : std::true_type {};
+struct is_upper_triangular<TriangularView<Derived, UnitUpper>> : std::true_type {};
 
 // Lower‐type views: both strict and unit
 template <typename Derived>
-struct is_lower_triangular<TriangularView<Derived, Lower>>       : std::true_type {};
+struct is_lower_triangular<TriangularView<Derived, Lower>> : std::true_type {};
 template <typename Derived>
-struct is_lower_triangular<TriangularView<Derived, UnitLower>>   : std::true_type {};
+struct is_lower_triangular<TriangularView<Derived, UnitLower>> : std::true_type {};
 
 } // namespace internals
 
@@ -207,6 +207,14 @@ private:
     internals::ref_select_t<Derived> xpr_;
 };
 
+// is_symmetric trait
+namespace internals {
+
+template <typename Derived>
+struct is_symmetric<SymmetricPartView<Derived>> : std::true_type {};
+
+}
+
 // symmetric view
 template <typename Derived>
 struct SymmetricPartView : public SquareMatrixBase<Derived::Rows, SymmetricPartView<Derived>> {
@@ -302,6 +310,9 @@ struct SquareMatrixBase : public MatrixBase<N, N, Derived> {
         for (int i = 0; i < N; ++i) trace_ += derived().operator()(i, i);
         return trace_;
     }
+
+    // off diagonal L^2 norm
+    constexpr auto off_diagonal_norm() const { return fdapde::sqrt(Base::squared_norm() - diagonal().squared_norm()); }
 
     // is symmetric check
     [[nodiscard]] constexpr bool is_symmetric(double tol = 1e-12) const {
