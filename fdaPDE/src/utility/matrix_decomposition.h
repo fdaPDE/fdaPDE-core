@@ -275,7 +275,19 @@ public:
         }
 
         // Generic fallback: simple QR iteration
-        // ....
+        MatrixN A(xpr.derived());
+        QRDecomposition<decltype(A)> qr;
+        MatrixN V(MatrixN::Identity());
+        Scalar tol = N * std::numeric_limits<Scalar>::epsilon() * A.norm();
+        int iter = 0;
+        for (; iter < 100; ++iter) {
+            qr.compute(A);
+            A = MatrixN(qr.R() * qr.Q());
+            V =  MatrixN(V * qr.Q());
+            if (A.off_diagonal_norm() < tol) break;
+        }
+        for (int i = 0; i < N; ++i) eigenvalues_[i] = A(i,i);
+        eigenvectors_ = V;
     }
 
     constexpr auto eigenvalues() const  { return eigenvalues_; }
@@ -301,7 +313,6 @@ public:
     template <typename Xpr>
     constexpr explicit QRDecomposition(const SquareMatrixBase<N, Xpr>& m) {
         static_assert(std::is_same_v<Scalar, typename Xpr::Scalar>, "QR: scalar types must match");
-        std::cout << "ciaone" << std::endl;
         compute(m);
     }
 

@@ -251,6 +251,42 @@ TEST(MatrixTest, EigenDecomposition2x2) {
         std::cout << std::endl;
     }
 
+    // EVD (QR solver)
+    {
+        std::cout << "EVD (QR solver)\n" << std::endl;
+        EigenDecomposition<decltype(A), QR> evd(A.symmetric_part());
+        auto lambdas = evd.eigenvalues();
+        auto Q = evd.eigenvectors();
+
+        // check eigenvalues
+        EXPECT_TRUE(almost_equal(lambdas.sum(), A.trace()));
+
+        // check eigenvectors orthonormality
+        auto I = Matrix<double,2,2>::Identity();
+        EXPECT_TRUE(almost_equal(Q.transpose()*Q, I));
+
+        // check reconstruction
+        auto D = Matrix<double,2,2>::Zero();
+        D(0,0) = lambdas[0];
+        D(1,1) = lambdas[1];
+        auto A_rec = Q * D * Q.transpose();
+        EXPECT_TRUE(almost_equal(A, A_rec));
+
+        // print
+        std::cout << "A" << std::endl;
+        std::cout << A << std::endl;
+        std::cout << std::endl;
+        std::cout << "Q" << std::endl;
+        std::cout << Q << std::endl;
+        std::cout << std::endl;
+        std::cout << "D" << std::endl;
+        std::cout << D << std::endl;
+        std::cout << std::endl;
+        std::cout << "A_rec" << std::endl;
+        std::cout << A_rec << std::endl;
+        std::cout << std::endl;
+    }
+
 }
 
 TEST(MatrixTest, EigenDecomposition3x3) {
@@ -291,4 +327,42 @@ TEST(MatrixTest, EigenDecomposition3x3) {
         std::cout << A_rec << std::endl;
         std::cout << std::endl;
     }
+
+    // EVD (QR solver)
+    {
+        std::cout << "EVD (QR solver)\n" << std::endl;
+        EigenDecomposition<decltype(A), QR> evd(A.symmetric_part());
+        auto lambdas = evd.eigenvalues();
+        auto Q = evd.eigenvectors();
+
+        // check eigenvalues
+        EXPECT_TRUE(almost_equal(lambdas.sum(), A.trace()));
+
+        // check eigenvectors orthonormality
+        auto I = Matrix<double, 3, 3>::Identity();
+        EXPECT_TRUE(almost_equal(Q.transpose()*Q, I));
+
+        // check reconstruction
+        auto D = Matrix<double, 3, 3>::Zero();
+        D(0,0) = lambdas[0];
+        D(1,1) = lambdas[1];
+        D(2,2) = lambdas[2];
+        auto A_rec = Q * D * Q.transpose();
+        EXPECT_TRUE(almost_equal(A, A_rec));
+
+        // print
+        std::cout << "A" << std::endl;
+        std::cout << A << std::endl;
+        std::cout << std::endl;
+        std::cout << "Q" << std::endl;
+        std::cout << Q << std::endl;
+        std::cout << std::endl;
+        std::cout << "D" << std::endl;
+        std::cout << D << std::endl;
+        std::cout << std::endl;
+        std::cout << "A_rec" << std::endl;
+        std::cout << A_rec << std::endl;
+        std::cout << std::endl;
+    }
+
 }
