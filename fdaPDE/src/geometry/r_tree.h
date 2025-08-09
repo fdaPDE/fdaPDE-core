@@ -14,8 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_R_TREE_2_H__
-#define __FDAPDE_R_TREE_2_H__
+#ifndef __FDAPDE_R_TREE_H__
+#define __FDAPDE_R_TREE_H__
 
 #include "header_check.h"
 
@@ -237,6 +237,20 @@ class RTree {
             })
         explicit bbox_t(const SpatialObject_& obj) : bbox_t(obj.bbox()) { }
         explicit bbox_t(const node_t& node) : bbox_t(node.bbox().coords()) { }
+        // copy/move semantic
+        bbox_t(const bbox_t& other) : bbox_(other.bbox_), measure_(other.measure_) { }
+        bbox_t(bbox_t&& other) : bbox_(std::move(other.bbox_)), measure_(std::exchange(other.measure_, 0.0)) { }
+        bbox_t& operator=(const bbox_t& other) {
+            bbox_ = other.bbox_;
+            measure_ = other.measure_;
+	    return *this;
+        }
+        bbox_t& operator=(bbox_t&& other) {
+            bbox_ = std::move(other.bbox_);
+            measure_ = std::exchange(other.measure_, 0.0);
+            return *this;
+        }
+      
         // observers
         double measure() const { return measure_; }
         const std::array<double, 2 * embed_dim>& coords() const { return bbox_; }
@@ -340,11 +354,11 @@ class RTree {
     };
     // data item stored in node
     struct item_t {
+       private:
         enum class type_t {
             DATA,
             NODE
         };
-       private:
         union {   // child node or actual data
             node_t* node_;
             const SpatialObject* data_;
@@ -357,6 +371,12 @@ class RTree {
         explicit item_t(const SpatialObject& data) :
             data_(std::addressof(data)), type_(type_t::DATA), bbox_(data_->bbox()) { }
         explicit item_t(node_t* node) : node_(node), type_(type_t::NODE), bbox_(node_->bbox()) { }
+        // copy/move semantic
+        item_t(const item_t& other) = default;
+        item_t(item_t&& other) = default;
+        item_t& operator=(const item_t& other) = default;
+        item_t& operator=(item_t&& other) = default;
+      
         // observers
         const bbox_t& bbox() const { return bbox_; }
         node_t* node() const {
@@ -377,6 +397,10 @@ class RTree {
         friend bool operator!=(const item_t& lhs, const item_t& rhs) { return !(lhs == rhs); }
         // modifiers
         bbox_t& bbox() { return bbox_; }
+        void set_node(node_t* node) {
+            fdapde_assert(type_ == type_t::NODE);
+            node_ = node;
+        }
         // shallow destruction (not-owned memory)
         ~item_t() = default;
     };
@@ -389,7 +413,7 @@ class RTree {
         node_t(int M, int level) : size_(0), capacity_(M + 1), level_(level), bbox_() {
             data_.resize(M + 1);   // allow overflow to use this buffer for in-place split logic
             free_.resize(M + 1, true);
-            map_.resize(M + 1, 0);
+            map_ .resize(M + 1, 0);
         }
         // observers
         node_t* parent() const { return parent_; }
@@ -468,7 +492,7 @@ class RTree {
             // accessors
             const item_t& operator*() const { return node_->item(index_); }
             item_t& operator*() { return node_->item(index_); }
-            const iterator* operator->() const { return std::addressof(node_->item(index_)); }
+            const item_t* operator->() const { return std::addressof(node_->item(index_)); }
             item_t* operator->() { return std::addressof(node_->item(index_)); }
             // comparison
             friend bool operator!=(const iterator& lhs, const iterator& rhs) { return lhs.index_ != rhs.index_; }
@@ -489,7 +513,9 @@ class RTree {
         bbox_t bbox_;   // minimal bounding box enclosing all bounding boxes rooted at this node
     };
 
-    // select a leaf node in which to place a new index entry obj
+    // insert internal utilities
+
+    // select a leaf node in which to place a spatial object obj
     template <typename SpatialObject_> node_t* choose_subtree_(const SpatialObject_& obj, int target_level) {
         bbox_t obj_bbox(obj);
         node_t* curr = root_;
@@ -521,13 +547,13 @@ class RTree {
                     }
                 }
                 // near minimum overlap heuristic
-                if (curr->size() > m_overlap_factor_) {
+                if (curr->size() > overlap_factor_) {
                     // sort objects in increasing order of enlargment
                     std::sort(overlaps.begin(), overlaps.end(), [&](const overlap_t& a, const overlap_t& b) {
                         return a.enlargement < b.enlargement;
                     });
                 }
-                int n = fdapde::min(m_overlap_factor_, curr->size());
+                int n = fdapde::min(overlap_factor_, curr->size());
                 double best_overlap = std::numeric_limits<double>::infinity();
                 // compute overlap of top n entries
                 for (int i = 0; i < n; ++i) {
@@ -576,74 +602,7 @@ class RTree {
         return curr;
     }
     node_t* choose_leaf_(const SpatialObject& obj) { return choose_subtree_(obj, 0); }
-
-    // find the leaf node containing the index entry obj, togheter with its position. returns nullptr if no obj found
-    std::pair<node_t*, const item_t*> find_leaf_(const SpatialObject& obj) {
-        bbox_t obj_bbox(obj);
-        node_t* curr;
-        std::stack<node_t*> stack_;
-        stack_.push(root_);
-        while (!stack_.empty()) {
-            curr = stack_.top();
-            stack_.pop();
-            if (!curr->is_leaf()) {
-                for (const auto& item : *curr) {
-                    if (obj_bbox.intersects(item.bbox())) { stack_.push(item.node()); }
-                }
-            } else {
-                // search for exact match in leaf
-                for (const auto& item : *curr) {
-                    if (std::addressof(item.data()) == std::addressof(obj)) {
-                        return std::make_pair(curr, std::addressof(item));
-                    }
-                }
-            }
-        }
-        return std::make_pair(nullptr, nullptr);
-    }
-
-    // given a leaf node l from whch an entry has been deleted, eliminate it if has too few entries and relocate.
-    // Propagate node elimination upward, adjusting covering rectangles as necessary
-    void condense_tree_(node_t* l) {
-        std::vector<const SpatialObject*> Q;   // set of eliminated items
-        std::vector<node_t*> killed;
-        node_t* n = l;
-        while (!n->is_root()) {
-            node_t* parent = n->parent();
-            if (n->size() < m_) {   // too few entries, eliminate node
-                if (n->is_leaf()) {
-                    for (const item_t& item : *n) { Q.push_back(std::addressof(item.data())); }
-                    killed.push_back(n);
-                } else {
-                    // if node was not a leaf, eliminate its entire subtree
-                    std::stack<node_t*> stack_;
-                    stack_.push(n);
-                    node_t* curr;
-                    while (!stack_.empty()) {
-                        curr = stack_.top();
-                        stack_.pop();
-                        if (curr->is_leaf()) {
-                            for (const item_t& item : *curr) { Q.push_back(std::addressof(item.data())); }
-                        } else {
-                            for (const item_t& item : *curr) { stack_.push(item.node()); }
-                        }
-                        killed.push_back(curr);
-                    }
-                }
-                parent->erase(item_t(n), false);
-            } else {
-                parent->update_bbox_of(item_t(n));
-            }
-            parent->recompute_bbox();
-            n = parent;
-        }
-        // free memory and insert
-        for (node_t* node : killed) { delete node; }
-        for (const SpatialObject* obj : Q) { insert(*obj); }
-        return;
-    }
-
-    // reinsertion logic
+    // selects the most (euclidean) distant reinsert_factor_ * M_ entries from n's centroid, and perform a forced insert
     void reinsert_(node_t* n, std::vector<bool>& ctx) {
         using point_t = std::array<double, embed_dim>;
         struct reinsert_entry {
@@ -692,9 +651,7 @@ class RTree {
         }
         return;
     }
-
-    // ascend from a node n to the root, adjusting covering rectangles and propagating node splits and reinsertion as
-    // necessary
+    // ascend from a node n to the root, adjusting covering rectangles and propagating node splits and reinsertion
     void adjust_tree_(node_t* n, std::vector<bool>& ctx) {
         node_t *n1 = n, *n2 = nullptr;
 
@@ -738,23 +695,177 @@ class RTree {
         return;
     }
 
+    // erase internal utilities
+
+    // find the leaf node containing obj. returns nullptr if no obj is found
+    std::pair<node_t*, const item_t*> find_leaf_(const SpatialObject& obj) {
+        bbox_t obj_bbox(obj);
+        node_t* curr;
+        std::stack<node_t*> stack_;
+        stack_.push(root_);
+        while (!stack_.empty()) {
+            curr = stack_.top();
+            stack_.pop();
+            if (!curr->is_leaf()) {
+                for (const auto& item : *curr) {
+                    if (obj_bbox.intersects(item.bbox())) { stack_.push(item.node()); }
+                }
+            } else {
+                // search for exact match in leaf
+                for (const auto& item : *curr) {
+                    if (std::addressof(item.data()) == std::addressof(obj)) {
+                        return std::make_pair(curr, std::addressof(item));
+                    }
+                }
+            }
+        }
+        return std::make_pair(nullptr, nullptr);
+    }
+    // given a leaf node l from whch an entry has been deleted, eliminate it if has too few entries and relocate.
+    // Propagate node elimination upward, adjusting covering rectangles as necessary
+    void condense_tree_(node_t* l) {
+        std::vector<const SpatialObject*> Q;   // set of eliminated items
+        std::vector<node_t*> killed;
+        node_t* n = l;
+        while (!n->is_root()) {
+            node_t* parent = n->parent();
+            if (n->size() < m_) {   // too few entries, eliminate node
+                if (n->is_leaf()) {
+                    for (const item_t& item : *n) { Q.push_back(std::addressof(item.data())); }
+                    killed.push_back(n);
+                } else {
+                    // if node was not a leaf, eliminate its entire subtree
+                    std::stack<node_t*> stack_;
+                    stack_.push(n);
+                    node_t* curr;
+                    while (!stack_.empty()) {
+                        curr = stack_.top();
+                        stack_.pop();
+                        if (curr->is_leaf()) {
+                            for (const item_t& item : *curr) { Q.push_back(std::addressof(item.data())); }
+                        } else {
+                            for (const item_t& item : *curr) { stack_.push(item.node()); }
+                        }
+                        killed.push_back(curr);
+                    }
+                }
+                parent->erase(item_t(n), false);
+            } else {
+                parent->update_bbox_of(item_t(n));
+            }
+            parent->recompute_bbox();
+            n = parent;
+        }
+        // free memory and insert
+        for (node_t* node : killed) { delete node; }
+        for (const SpatialObject* obj : Q) { insert(*obj); }
+        return;
+    }
+
+    // internals
+
+    // perform a depth-first visit of the tree, executing Functor at each node
+    template <typename Functor>
+        requires(requires(Functor f, node_t* n) {
+            { f(n) } -> std::same_as<void>;
+        })
+    void dfs_visit_(Functor&& f) {
+        node_t* curr;
+        std::stack<node_t*> stack_;
+        stack_.push(root_);
+        while (!stack_.empty()) {
+            curr = stack_.top();
+            stack_.pop();
+            if (!curr->is_leaf()) {
+                for (const auto& item : *curr) { stack_.push(item.node()); }
+            }
+            f(curr);   // functor execution
+        }
+        return;
+    }
+
+    // deep copies other into this
+    void clone_(const RTree& other) {
+        // copy basic data members
+        M_ = other.M_;
+        m_ = other.m_;
+        depth_ = other.depth_;
+        split_ = other.split_;
+        overlap_factor_ = other.overlap_factor_;
+        reinsert_factor_ = other.reinsert_factor_;
+
+        if (!other.root_) {
+            root_ = nullptr;
+            return;
+        }
+        // deep copy tree content (bfs visit)
+        root_ = new node_t(*other.root_);
+        std::queue<std::pair<node_t*, node_t*>> queue_;
+        queue_.push({root_, other.root_});
+        while (!queue_.empty()) {
+            auto [dst, src] = queue_.front();
+            queue_.pop();
+            for (int i = 0, n = src->size(); i < n; ++i) {
+                node_t* src_child = src->item(i).node();
+                node_t* dst_child = new node_t(*src_child);   // child shallow copy
+
+                // update parent-child pointer relationship
+                dst_child->set_parent(dst);
+                dst->item(i).set_node(dst_child);
+                // push child
+                if (!src_child->is_leaf()) { queue_.push({dst_child, src_child}); }
+            }
+        }
+        return;
+    }
+    void move_(RTree&& other) {
+        // copy basic data members
+        M_ = other.M_;
+        m_ = other.m_;
+        depth_ = other.depth_;
+        split_ = other.split_;
+        overlap_factor_ = other.overlap_factor_;
+        reinsert_factor_ = other.reinsert_factor_;
+
+	// move tree resources
+        root_ = std::exchange(other.root_, nullptr);
+	return;
+    }
+
     node_t* root_ = nullptr;
     int M_;       // maximum number of entries per node
     int m_;       // minimum number of entries per node
     int depth_;   // current tree depth
 
     SplitStrategy split_ {};
-    int m_overlap_factor_ = 3 / 4 * M_;   // number of items considered in the ovrelap heuristic
+    int overlap_factor_ = 3 / 4 * M_;     // number of items considered in the ovrelap heuristic
     double reinsert_factor_ = 0.4;        // proportion of reinserted items in case of node overflow
    public:
+    RTree(int M, int m, int overlap_factor, double reinsert_factor) :
+        M_(M), m_(m), depth_(0), split_(M, m), overlap_factor_(overlap_factor), reinsert_factor_(reinsert_factor) {
+        fdapde_assert(m_ >= 2 && m_ <= M / 2);
+        root_ = new node_t(M_, 0);
+    }
     RTree(int M, int m) : M_(M), m_(m), depth_(0), split_(M, m) {
         fdapde_assert(m_ >= 2 && m_ <= M / 2);
         root_ = new node_t(M_, 0);
     }
     RTree(int M) : M_(M), m_(M / 2), depth_(0), split_(M, M / 2) { root_ = new node_t(M_, 0); }
     RTree() : RTree(32, 16) { }
-
-    // ---------------------- implement deep copy, deep assignment, move constructor and move assignment
+    // copy/move semantic
+    RTree(const RTree& other) : root_(nullptr) { clone_(other); }
+    RTree& operator=(const RTree& other) {
+        if (this != std::addressof(other)) {
+            clear();   // free old memory
+            clone_(other);
+        }
+        return *this;
+    }
+    RTree(RTree&& other) { move_(std::forward<RTree&&>(other)); }
+    RTree& operator=(RTree&& other) {
+        if (this != std::addressof(other)) { move_(std::forward<RTree&&>(other)); }
+        return *this;
+    }
 
     // modifiers
     void insert(const SpatialObject& obj) {
@@ -766,7 +877,6 @@ class RTree {
         adjust_tree_(l, ctx);
         return;
     }
-
     void erase(const SpatialObject& obj) {
         // find leaf containing obj
         const auto& [l, i] = find_leaf_(obj);
@@ -788,6 +898,7 @@ class RTree {
     int depth() const { return depth_; }
 
     // geometric queries
+  
     // find all spatial objects whose bounding box intersects the given query range
     std::vector<const SpatialObject*> intersect_search(const std::array<double, 2 * embed_dim>& query) const {
         std::vector<const SpatialObject*> result;
@@ -811,16 +922,16 @@ class RTree {
         }
         return result;
     }
+    // finds all spatial objects containing point
     template <typename PointT>
         requires(
-          internals::is_vector_like_v<PointT> // &&
-          // requires(SpatialObject obj, PointT p) {
-          //     { obj.contains(p) } -> std::same_as<bool>;
-          // }
-	  )
+          internals::is_vector_like_v<PointT> &&
+          requires(SpatialObject obj, PointT p) {
+              { obj.contains(p) } -> std::same_as<bool>;
+          })
     std::vector<const SpatialObject*> point_locate(PointT&& point) const {
         fdapde_assert(point.size() == embed_dim);
-        std::vector<const SpatialObject*> result;
+        std::vector<const SpatialObject*> candidates;
         node_t* curr;
         std::stack<node_t*> stack_;
         stack_.push(root_);
@@ -833,7 +944,7 @@ class RTree {
 
             if (curr->is_leaf()) {
                 for (const auto& item : *curr) {
-                    if (item.bbox().contains(point)) { result.push_back(std::addressof(item.data())); }
+                    if (item.bbox().contains(point)) { candidates.push_back(std::addressof(item.data())); }
                 }
             } else {
                 for (const auto& item : *curr) {
@@ -841,23 +952,20 @@ class RTree {
                 }
             }
         }
+        // final SpatialObject-aware exact containment test on restricted candidate set
+        std::vector<const SpatialObject*> result;
+        for (const SpatialObject* obj : candidates) {
+            if (obj.contains(point)) { result.push_back(obj); }
+        }
         return result;
     }
 
     // dfs memory deallocation
-    ~RTree() {
-        std::stack<node_t*> stack_;
-        stack_.push(root_);
-        node_t* curr;
-        while (!stack_.empty()) {
-            curr = stack_.top();
-            stack_.pop();
-            if (!curr->is_leaf()) {
-                for (const auto& item : *curr) { stack_.push(item.node()); }
-            }
-            delete curr;
-        }
+    void clear() {
+        if (root_) dfs_visit_([](node_t* n) { delete n; });
+        root_ = nullptr;
     }
+    ~RTree() { clear(); }
 };
 
 }   // namespace fdapde
