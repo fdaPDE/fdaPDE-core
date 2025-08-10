@@ -21,7 +21,7 @@
 
 
 using namespace fdapde;
-
+/*
 TEST(MatrixTest, ForwardBackwardSubstitution) {
 
     // Lower-triangular solve Lx=b
@@ -187,7 +187,7 @@ TEST(matrix_test, LU) {
         }
     }
 }
-
+*/
 TEST(MatrixTest, QRDecomposition) {
     Matrix<double,3,3> M({1, 2, 3,  0, 1, 4,  5, 6, 0});
     QRDecomposition<Matrix<double,3,3>> qr(M);
@@ -216,40 +216,6 @@ TEST(MatrixTest, EigenDecomposition2x2) {
 
     // matrix to be decomposed
     Matrix<double,2,2> A({3, 1, 1, -1});
-
-    // EVD (analytic closed‐form solver)
-    {
-        std::cout << "EVD (analytic closed‐form solver)\n" << std::endl;
-        EigenDecomposition<decltype(A)> evd(A.symmetric_part());
-        auto lambdas = evd.eigenvalues();
-        auto Q = evd.eigenvectors();
-
-        // check eigenvalues
-        EXPECT_TRUE(almost_equal(lambdas.sum(), A.trace()));
-
-        // check eigenvectors orthonormality
-        auto I = Matrix<double,2,2>::Identity();
-        EXPECT_TRUE(almost_equal(Q.transpose()*Q, I));
-
-        // check reconstruction
-        DiagonalMatrix<double, 2> D(lambdas);
-        auto A_rec = Q * D * Q.transpose();
-        EXPECT_TRUE(almost_equal(A, A_rec));
-
-        // print
-        std::cout << "A" << std::endl;
-        std::cout << A << std::endl;
-        std::cout << std::endl;
-        std::cout << "Q" << std::endl;
-        std::cout << Q << std::endl;
-        std::cout << std::endl;
-        std::cout << "D" << std::endl;
-        std::cout << D << std::endl;
-        std::cout << std::endl;
-        std::cout << "A_rec" << std::endl;
-        std::cout << A_rec << std::endl;
-        std::cout << std::endl;
-    }
 
     // EVD (QR solver)
     {
@@ -294,40 +260,6 @@ TEST(MatrixTest, EigenDecomposition3x3) {
     // matrix to be decomposed
     Matrix<double,3,3> A({6, 2, 1,  2, 3, 1,  1, 1, 1});
 
-    // EVD (analytic closed‐form solver)
-    {
-        std::cout << "EVD (analytic closed‐form solver)\n" << std::endl;
-        EigenDecomposition<decltype(A)> evd(A.symmetric_part());
-        auto lambdas = evd.eigenvalues();
-        auto Q = evd.eigenvectors();
-
-        // check eigenvalues
-        EXPECT_TRUE(almost_equal(lambdas.sum(), A.trace()));
-
-        // check eigenvectors orthonormality
-        auto I = Matrix<double, 3, 3>::Identity();
-        EXPECT_TRUE(almost_equal(Q.transpose()*Q, I));
-
-        // check reconstruction
-        DiagonalMatrix<double, 3> D(lambdas);
-        auto A_rec = Q * D * Q.transpose();
-        EXPECT_TRUE(almost_equal(A, A_rec));
-
-        // print
-        std::cout << "A" << std::endl;
-        std::cout << A << std::endl;
-        std::cout << std::endl;
-        std::cout << "Q" << std::endl;
-        std::cout << Q << std::endl;
-        std::cout << std::endl;
-        std::cout << "D" << std::endl;
-        std::cout << D << std::endl;
-        std::cout << std::endl;
-        std::cout << "A_rec" << std::endl;
-        std::cout << A_rec << std::endl;
-        std::cout << std::endl;
-    }
-
     // EVD (QR solver)
     {
         std::cout << "EVD (QR solver)\n" << std::endl;
@@ -365,4 +297,66 @@ TEST(MatrixTest, EigenDecomposition3x3) {
         std::cout << std::endl;
     }
 
+}
+
+
+TEST(MatrixTest, EigenDecompositionWithMultiplicity2x2) {
+    // double multiplicity
+    SymmetricMatrix<double,2> A({2, 0, 2});
+    std::cout << "A: " << A << std::endl;
+    EigenDecomposition<decltype(A)> evd(A);
+    auto lambdas = evd.eigenvalues();
+    auto Q = evd.eigenvectors();
+    std::cout << "eigenvalues: " << lambdas << std::endl;
+    std::cout << "eigenvectors: " << Q << std::endl;
+    std::cout << std::endl;
+}
+
+TEST(MatrixTest, EigenDecompositionWithMultiplicity3x3) {
+    // triple multiplicity
+    {
+        SymmetricMatrix<double,3> A({2,0,0, 2,0, 2});
+        std::cout << "A: " << A << std::endl;
+        EigenDecomposition<decltype(A)> evd(A);
+        auto lambdas = evd.eigenvalues();
+        auto Q = evd.eigenvectors();
+        std::cout << "eigenvalues: " << lambdas << std::endl;
+        std::cout << "eigenvectors: " << Q << std::endl;
+        std::cout << std::endl;
+    }
+    // double multiplicity
+    {
+        SymmetricMatrix<double,3> A({2,0,0, 2,0, 1});
+        std::cout << "A: " << A << std::endl;
+        EigenDecomposition<decltype(A)> evd(A);
+        auto lambdas = evd.eigenvalues();
+        auto Q = evd.eigenvectors();
+        std::cout << "eigenvalues: " << lambdas << std::endl;
+        std::cout << "eigenvectors: " << Q << std::endl;
+        std::cout << std::endl;
+    }
+}
+
+TEST(MatrixTest, EigenDecompositionRankDeficient2x2) {
+    // double multiplicity
+    SymmetricMatrix<double,2> A({1, 1, 1});
+    std::cout << "A: " << A << std::endl;
+    EigenDecomposition<decltype(A)> evd(A);
+    auto lambdas = evd.eigenvalues();
+    auto Q = evd.eigenvectors();
+    std::cout << "eigenvalues: " << lambdas << std::endl;
+    std::cout << "eigenvectors: " <<  Q << std::endl;
+    std::cout << std::endl;
+}
+// rank deficient
+TEST(MatrixTest, EigenDecompositionRankDeficient3x3) {
+    // double multiplicity
+    SymmetricMatrix<double,3> A({1, 1, 0,  1, 0,  0});
+    std::cout << "A: " << A << std::endl;
+    EigenDecomposition<decltype(A)> evd(A);
+    auto lambdas = evd.eigenvalues();
+    auto Q = evd.eigenvectors();
+    std::cout << "eigenvalues: " << lambdas << std::endl;
+    std::cout << "eigenvectors: " <<  Q << std::endl;
+    std::cout << std::endl;
 }

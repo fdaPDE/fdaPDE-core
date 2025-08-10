@@ -21,14 +21,14 @@
 
 namespace fdapde {
 // forward declaration
-template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_> class MatrixView;
+template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_, bool ReadOnly_ > class MatrixView;
 template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_, bool NestAsRefBit_> class Matrix;
 
 // is_view trait
 namespace internals {
 
-template <typename Scalar, int Rows, int Cols, int StorageOrder>
-struct is_view<MatrixView<Scalar, Rows, Cols, StorageOrder>> : std::true_type {};
+template <typename Scalar, int Rows, int Cols, int StorageOrder, bool ReadOnly>
+struct is_view<MatrixView<Scalar, Rows, Cols, StorageOrder, ReadOnly>> : std::true_type {};
 
 }
 
@@ -42,16 +42,16 @@ struct has_identity<Matrix<Scalar_, N_, N_, StorageOrder_, NestAsRefBit_>> : std
 }
 
 // maps an existing array of data to a cexpr::Matrix. This can be used also to integrate Eigen with cexpr linear algebra
-template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_ = RowMajor>
+template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_ = RowMajor, bool ReadOnly_ = false>
 class MatrixView :
 public std::conditional_t<Rows_== Cols_,
-    SquareMatrixBase<Rows_, MatrixView<Scalar_, Rows_, Cols_, StorageOrder_>>,
-    MatrixBase<Rows_, Cols_, MatrixView<Scalar_, Rows_, Cols_, StorageOrder_>>
+    SquareMatrixBase<Rows_, MatrixView<Scalar_, Rows_, Cols_, StorageOrder_, ReadOnly_>>,
+    MatrixBase<Rows_, Cols_, MatrixView<Scalar_, Rows_, Cols_, StorageOrder_, ReadOnly_>>
 > {
     fdapde_static_assert(Rows_ > 0 && Cols_ > 0, YOU_ARE_MAPPING_DATA_TO_AN_EMPTY_MATRIX);
 
 public:
-    using MatrixViewType = MatrixView<Scalar_, Rows_, Cols_, StorageOrder_>;
+    using MatrixViewType = MatrixView<Scalar_, Rows_, Cols_, StorageOrder_, ReadOnly_>;
     using Base = std::conditional_t<Rows_==Cols_, SquareMatrixBase<Rows_, MatrixViewType>, MatrixBase<Rows_, Cols_, MatrixViewType>>;
     using Scalar = Scalar_;
     static constexpr int Rows = Rows_;
@@ -59,9 +59,11 @@ public:
     static constexpr int StorageSize = Rows_ * Cols_;
     static constexpr int StorageOrder = StorageOrder_;
     static constexpr int NestAsRefBit = false;
-    static constexpr bool ReadOnly = false;
+    static constexpr bool ReadOnly = ReadOnly_;
     static constexpr int XprBits = (Rows_==Cols_) ? int(matrix_flags::square) : int(matrix_flags::none);
 
+    // ptr type
+    using PtrType = std::conditional_t<ReadOnly, const Scalar*, Scalar*>;
 
     // default strides for a dense layout
     static constexpr int DefaultOuterStride = (StorageOrder == RowMajor ? Cols : Rows);
@@ -72,6 +74,8 @@ public:
     constexpr explicit MatrixView(Scalar* ptr_data) : ptr_data_(ptr_data) {}
     constexpr explicit MatrixView(std::array<Scalar, StorageSize>& data) : ptr_data_(data.data()) {}
     constexpr MatrixView(const MatrixViewType& other) : ptr_data_(other.ptr_data_) { }
+    template <bool NestAsRef>
+    constexpr explicit MatrixView(const Matrix<Scalar, Rows, Cols, StorageOrder, NestAsRef>& other) : ptr_data_(other.data()) { }
 
     // copy operator
     constexpr MatrixViewType& operator=(const MatrixViewType& other) {
@@ -160,12 +164,13 @@ public:
         return ptr_data_[i];
     }
     // non-const access
-    constexpr Scalar& operator()(const int i, const int j) {
+    constexpr Scalar& operator()(const int i, const int j)
+    requires (!ReadOnly) {
         fdapde_assert(i >= 0 && i < Rows && j >= 0 && j < Cols);
         return ptr_data_[index(i, j)];
     }
     constexpr Scalar& operator[](const int i)
-    requires(Cols == 1 || Rows == 1) {
+    requires(!ReadOnly && (Cols == 1 || Rows == 1)) {
         fdapde_assert(i >= 0 && i < StorageSize);
         return ptr_data_[i];
     }
@@ -200,7 +205,7 @@ public:
     constexpr Scalar_* data() { return ptr_data_; }
 
 protected:
-    Scalar_* ptr_data_ = nullptr;
+    PtrType ptr_data_ = nullptr;
     static constexpr int outer_stride_ = DefaultOuterStride;   // increment between two consecutive rows (RowMajor) or columns (ColMajor)
     static constexpr int inner_stride_ = DefaultInnerStride;   // increment between two consecutive entries within a row (RowMajor) or column (ColMajor)
 

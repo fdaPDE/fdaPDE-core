@@ -65,6 +65,7 @@
 #include "src/matrix/skew_symmetric_matrix.cpp"
 #include "src/matrix/matrix_map.cpp"
 #include "src/matrix/rotation_operator.cpp"
+#include "src/matrix/positive_symmetric_matrix.cpp"
 
 int main(int argc, char** argv) {
     // start testing

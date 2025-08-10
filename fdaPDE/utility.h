@@ -81,6 +81,7 @@ namespace fdapde {
 #include "src/utility/mdarray.h"
 #include "src/utility/binary_tree.h"
 #include "src/utility/type_erasure.h"
+#include "src/utility/positive_symmetric_matrix.h"
 
 // clang-format on
 

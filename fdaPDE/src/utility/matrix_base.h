@@ -20,7 +20,6 @@
 #include <iomanip>
 
 #include "header_check.h"
-// #include "square_matrix_base.h"
 
 namespace fdapde {
 
@@ -47,7 +46,9 @@ enum class matrix_flags {
     diagonal         = 0x0008,
     upper_triangular = 0x0010,
     lower_triangular = 0x0020,
-    orthogonal       = 0x0040
+    orthogonal       = 0x0040,
+    spd              = 0x0080,
+    spsd             = 0x0100
 };
 
 namespace internals {
@@ -515,7 +516,7 @@ class MatrixBlockView : public MatrixBase<BlockRows_, BlockCols_, MatrixBlockVie
     }
    protected:
     int start_row_ = 0, start_col_ = 0;
-    internals::ref_select_t<Derived> xpr_;
+    internals::ref_select_t<Derived&> xpr_;
 };
 
 

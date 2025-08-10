@@ -14,52 +14,62 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_SYMMETRIC_MATRIX_H__
-#define __FDAPDE_SYMMETRIC_MATRIX_H__
+#ifndef __FDAPDE_POSITIVE_SYMMETRIC_MATRIX_H__
+#define __FDAPDE_POSITIVE_SYMMETRIC_MATRIX_H__
 
 #include "header_check.h"
 #include "matrix_base.h"
 #include "square_matrix_base.h"
+#include "matrix_decomposition.h"
 
 namespace fdapde {
 
 // forward declaration
-template <typename Scalar, int N> class SymmetricMatrixView;
+template <typename Scalar, int N, bool StrictPD_> class PositiveSymmetricMatrixView;
+template <typename Scalar, int N, bool StrictPD_, bool NestAsRefBit> class PositiveSymmetricMatrix;
+
+// convenient aliases
+template <typename Scalar, int N> using SPDMatrixView  = PositiveSymmetricMatrixView<Scalar, N, true>;
+template <typename Scalar, int N> using SPSDMatrixView = PositiveSymmetricMatrixView<Scalar, N, false>;
+template <typename Scalar, int N, bool NestAsRefBit = true>
+using SPDMatrix  = PositiveSymmetricMatrix<Scalar, N, true,  NestAsRefBit>;
+template <typename Scalar, int N, bool NestAsRefBit = true>
+using SPSDMatrix = PositiveSymmetricMatrix<Scalar, N, false, NestAsRefBit>;
 
 // has_identity trait
 namespace internals {
 
-// SymmetricMatrix => has identity
-template <typename Scalar, int N, bool NestAsRefBit>
-struct has_identity<SymmetricMatrix<Scalar, N, NestAsRefBit>> : std::true_type {};
+// PositiveSymmetricMatrix => has identity
+template <typename Scalar, int N, bool StrictPD, bool NestAsRefBit>
+struct has_identity<PositiveSymmetricMatrix<Scalar, N, StrictPD, NestAsRefBit>> : std::true_type {};
 
 }
 
 // is_view trait
 namespace internals {
 
-template <typename Scalar, int N>
-struct is_view<SymmetricMatrixView<Scalar, N>> : std::true_type {};
+template <typename Scalar, int N, bool StrictPD>
+struct is_view<PositiveSymmetricMatrixView<Scalar, N, StrictPD>> : std::true_type {};
 
 }
 
 // is_symmetric trait
 namespace internals {
 
-template <typename Scalar, int N>
-struct is_symmetric<SymmetricMatrixView<Scalar, N>> : std::true_type {};
-template <typename Scalar, int N, bool NestAsRefBit>
-struct is_symmetric<SymmetricMatrix<Scalar, N, NestAsRefBit>> : std::true_type {};
+template <typename Scalar, int N, bool StrictPD>
+struct is_symmetric<PositiveSymmetricMatrixView<Scalar, N, StrictPD>> : std::true_type {};
+template <typename Scalar, int N, bool StrictPD, bool NestAsRefBit>
+struct is_symmetric<PositiveSymmetricMatrix<Scalar, N, StrictPD, NestAsRefBit>> : std::true_type {};
 
 }
 
-// symmetric matrix view
-template <typename Scalar_, int N_>
-class SymmetricMatrixView : public SquareMatrixBase<N_, SymmetricMatrixView<Scalar_, N_>> {
+// PositiveSymmetricMatrixView (StrictPD=true -> SPD, StrictPD=false -> SPSD)
+template <typename Scalar_, int N_, bool StrictPD_>
+class PositiveSymmetricMatrixView : public SquareMatrixBase<N_, PositiveSymmetricMatrixView<Scalar_, N_, StrictPD_>> {
     fdapde_static_assert(N_ > 0, YOU_ARE_MAPPING_DATA_TO_AN_EMPTY_MATRIX);
 
 public:
-    using MatrixViewType = SymmetricMatrixView<Scalar_, N_>;
+    using MatrixViewType = PositiveSymmetricMatrixView<Scalar_, N_, StrictPD_>;
     using Base = SquareMatrixBase<N_, MatrixViewType>;
     using Scalar = Scalar_;
     static constexpr int N = N_;
@@ -68,14 +78,18 @@ public:
     static constexpr int StorageSize = N_ * (N_ + 1) / 2;
     static constexpr int StorageOrder = RowMajor;
     static constexpr bool NestAsRefBit = true;
-    static constexpr bool ReadOnly = false;
-    static constexpr int XprBits = int(matrix_flags::square) | int(matrix_flags::symmetric);
+    static constexpr bool ReadOnly = true;
+    static constexpr int XprBits =
+        int(matrix_flags::square) |
+        int(matrix_flags::symmetric) |
+        (StrictPD_ ? int(matrix_flags::spd) : int(matrix_flags::spsd));
 
     // constructors
-    constexpr SymmetricMatrixView() = delete;
-    constexpr explicit SymmetricMatrixView(Scalar* ptr_data) : ptr_data_(ptr_data) {}
-    constexpr explicit SymmetricMatrixView(std::array<Scalar, StorageSize>& data) : ptr_data_(data.data()) {}
-    constexpr SymmetricMatrixView(const MatrixViewType& other) : ptr_data_(other.ptr_data_) { }
+    constexpr PositiveSymmetricMatrixView() = delete;
+    constexpr explicit PositiveSymmetricMatrixView(Scalar* ptr_data) : ptr_data_(ptr_data) { } // impossible to have a default initializer here
+    constexpr explicit PositiveSymmetricMatrixView(std::array<Scalar, StorageSize>& data) : ptr_data_(data.data()) { check(); }
+    constexpr PositiveSymmetricMatrixView(const MatrixViewType& other) : ptr_data_(other.ptr_data_) { }
+    // NOTE: as in OrthogonalMatrixView, we avoid calling check() in copy ctor to prevent loops
 
     // copy operator
     constexpr MatrixViewType& operator=(const MatrixViewType& other) {
@@ -83,6 +97,7 @@ public:
         for (int id = 0; id < StorageSize; ++id) {
             ptr_data_[id] = other.data()[id];
         }
+        check();
         return *this;
     }
 
@@ -91,6 +106,7 @@ public:
         for (int id = 0; id < StorageSize; ++id) {
             ptr_data_[id] = rhs[id];
         }
+        check();
         return *this;
     }
 
@@ -99,6 +115,7 @@ public:
         for (int id = 0; id < StorageSize; ++id) {
             ptr_data_[id] = rhs[id];
         }
+        check();
         return *this;
     }
 
@@ -108,6 +125,7 @@ public:
         for (int id = 0; id < StorageSize; ++id) {
             ptr_data_[id] = rhs[id];
         }
+        check();
         return *this;
     }
 
@@ -116,14 +134,14 @@ public:
     constexpr MatrixViewType& operator=(Callable callable)
     requires(std::is_invocable_v<Callable>) {
         fdapde_static_assert(
-          std::is_convertible_v<typename decltype(std::function {
-            callable})::result_type FDAPDE_COMMA std::array<Scalar FDAPDE_COMMA StorageSize>>,
+          std::is_convertible_v<typename decltype(std::function { callable })::result_type FDAPDE_COMMA std::array<Scalar FDAPDE_COMMA StorageSize>>,
           CALLABLE_DOES_NOT_RETURN_SOMETHING_CONVERTIBLE_TO_AN_ARRAY_OF_SCALAR);
         *this = callable();
+        check();
         return *this;
     }
 
-    // assignment from MatrixBase expression
+    // assignment from MatrixBase expression (symmetrized)
     template <int RhsRows_, int RhsCols_, typename RhsXprType>
     constexpr MatrixViewType& operator=(const MatrixBase<RhsRows_, RhsCols_, RhsXprType>& rhs) {
         fdapde_static_assert(
@@ -131,13 +149,14 @@ public:
             std::is_convertible_v<typename RhsXprType::Scalar FDAPDE_COMMA Scalar>,
           INVALID_RHS_DIMENSIONS_OR_YOU_ARE_TRYING_TO_ASSIGN_A_RHS_WITH_NON_CONVERTIBLE_SCALAR_TYPE);
         for (int id = 0; id < StorageSize; ++id) {
-            auto[i, j] = inv_index(id);
+            auto [i, j] = inv_index(id);
             ptr_data_[id] = Scalar(0.5) * (rhs.derived()(i, j) + rhs.derived()(j, i));
         }
+        check();
         return *this;
     }
 
-    // assignment from Eigen matrix
+    // assignment from Eigen matrix (symmetrized)
     #ifdef __FDAPDE_HAS_EIGEN__
         template <typename OtherDerived>
         MatrixViewType& operator=(const Eigen::MatrixBase<OtherDerived>& rhs) {
@@ -146,9 +165,10 @@ public:
                 std::is_convertible_v<typename OtherDerived::Scalar FDAPDE_COMMA Scalar>,
               CANNOT_ASSIGN_FROM_EIGEN_HEAP_ALLOCATED_MATRIX_OR_INVALID_SCALAR_TYPE);
             for (int id = 0; id < StorageSize; ++id) {
-                auto[i, j] = inv_index(id);
+                auto [i, j] = inv_index(id);
                 ptr_data_[id] = Scalar(0.5) * (rhs.derived()(i, j) + rhs.derived()(j, i));
             }
+            check();
             return *this;
         }
     #endif
@@ -158,56 +178,48 @@ public:
         fdapde_assert(i >= 0 && i < Rows && j >= 0 && j < Cols);
         return (j >= i) ? ptr_data_[index(i, j)] : ptr_data_[index(j, i)];
     }
-    constexpr Scalar operator[](const int i) const
-    requires(Cols == 1 || Rows == 1) {
-        fdapde_assert(i >= 0 && i < StorageSize);
-        return ptr_data_[i];
-    }
-    // non-const access
-    constexpr Scalar& operator()(const int i, const int j) {
-        fdapde_assert(i >= 0 && i < Rows && j >= 0 && j < Cols);
-        return (j >= i) ? ptr_data_[index(i, j)] : ptr_data_[index(j, i)];
-    }
-    constexpr Scalar& operator[](const int i)
-    requires(Cols == 1 || Rows == 1) {
-        fdapde_assert(i >= 0 && i < StorageSize);
-        return ptr_data_[i];
-    }
-
-    // setters
-    constexpr void setConstant(Scalar c) {
-        for (int id = 0; id < StorageSize; ++id) ptr_data_[id] = c;
-    }
-    constexpr void setZero() { setConstant(Scalar(0)); }
-    constexpr void setOnes() { setConstant(Scalar(1)); }
-    constexpr void setNaN() { setConstant(std::numeric_limits<Scalar>::quiet_NaN()); }
-
-    // dimensions
-    static constexpr int rows() { return Rows; }
-    static constexpr int cols() { return Cols; }
 
     // data
     constexpr const Scalar_* data() const { return ptr_data_; }
     constexpr Scalar_* data() { return ptr_data_; }
 
+    // eigen-decomposition getters (forward evd_)
+    constexpr const auto& eigenvalues() const { return evd_.eigenvalues(); }
+    constexpr const auto& eigenvectors() const { return evd_.eigenvectors(); }
+
+    // check using eigenvalue decomposition
+    void check() {
+        std::cout << *this << std::endl;
+        evd_.compute(*this);
+        const auto& evals = evd_.eigenvalues();
+        bool ok = true;
+        for (int k = 0; k < N; ++k) {
+            if constexpr (StrictPD_) {
+                ok = ok && (evals[k] > Scalar(0));
+            } else {
+                ok = ok && (evals[k] >= Scalar(0));
+            }
+        }
+        fdapde_constexpr_assert(ok) // The matrix provided is not (semi-)positive definite
+    }
+
 protected:
     Scalar_* ptr_data_ = nullptr;
+    EigenDecomposition<MatrixViewType> evd_;
 
-    // indexes
-    static constexpr int index(int i, int j){
+    // indexes (upper-triangular packed, column-major blocks)
+    static constexpr int index(const int i, const int j){
         assert(j >= i && j < N);
         // assumes j >= i
         return i * (2 * N - i + 1) / 2 + (j - i);
     }
-    static constexpr std::pair<int, int> inv_index(int idx) {
+    static constexpr std::pair<int, int> inv_index(const int idx) {
         assert(idx >= 0 && idx < StorageSize);
         int i = 0;
         int offset = 0;
-        // loop to find the row i such that idx is within its block
         while (i < N) {
             int row_len = N - i;
-            if (idx < offset + row_len)
-                break;
+            if (idx < offset + row_len) break;
             offset += row_len;
             ++i;
         }
@@ -217,14 +229,14 @@ protected:
 };
 
 
-// SymmetricMatrix = SymmetricMatrixView + data ownership
-template <typename Scalar_, int N_, bool NestAsRefBit_ = true>
-class SymmetricMatrix : public SquareMatrixBase<N_, SymmetricMatrix<Scalar_, N_, NestAsRefBit_>> {
+// PositiveSymmetricMatrix = PositiveSymmetricMatrixView + data ownership
+template <typename Scalar_, int N_, bool StrictPD_, bool NestAsRefBit_ = true>
+class PositiveSymmetricMatrix : public SquareMatrixBase<N_, PositiveSymmetricMatrix<Scalar_, N_, StrictPD_, NestAsRefBit_>> {
     fdapde_static_assert(N_ > 0, YOU_ARE_MAPPING_DATA_TO_AN_EMPTY_MATRIX);
 
 public:
-    using MatrixViewType = SymmetricMatrixView<Scalar_, N_>;
-    using MatrixType = SymmetricMatrix<Scalar_, N_, NestAsRefBit_>;
+    using MatrixViewType = PositiveSymmetricMatrixView<Scalar_, N_, StrictPD_>;
+    using MatrixType = PositiveSymmetricMatrix<Scalar_, N_, StrictPD_, NestAsRefBit_>;
     using Base = SquareMatrixBase<N_, MatrixType>;
     using Scalar = Scalar_;
     static constexpr int N = N_;
@@ -233,111 +245,80 @@ public:
     static constexpr int StorageSize = N_ * (N_ + 1) / 2;
     static constexpr int StorageOrder = RowMajor;
     static constexpr bool NestAsRefBit = NestAsRefBit_;
-    static constexpr bool ReadOnly = false;
-    static constexpr int XprBits = int(matrix_flags::square) | int(matrix_flags::symmetric);
+    static constexpr bool ReadOnly = true;
+    static constexpr int XprBits =
+        int(matrix_flags::square) |
+        int(matrix_flags::symmetric) |
+        (StrictPD_ ? int(matrix_flags::spd) : int(matrix_flags::spsd));
 
-    // default constructor
-    constexpr SymmetricMatrix() : data_(), m_(data_.data()) { };
+    // default constructor -> Identity (valid SPD/SPSD)
+    constexpr PositiveSymmetricMatrix() : data_(), m_(data_.data()) {
+        m_ = DiagonalMatrix<Scalar, N>::Identity();
+        m_.check();
+    };
 
     // copy constructor
-    constexpr SymmetricMatrix(const MatrixType& other) : data_(), m_(data_.data()) { m_ = other; }
+    constexpr PositiveSymmetricMatrix(const MatrixType& other) : data_(), m_(data_.data()) {
+        m_ = other;
+        m_.check();
+    }
 
     // copy operator
     constexpr MatrixType& operator=(const MatrixType& other) { m_ = other; return *this; }
 
     // constructor from std::array
-    constexpr explicit SymmetricMatrix(const std::array<Scalar, StorageSize>& arr) : SymmetricMatrix() { m_ = arr; }
+    constexpr explicit PositiveSymmetricMatrix(const std::array<Scalar, StorageSize>& arr) : PositiveSymmetricMatrix() { m_ = arr; }
 
     // constructor from C-style array
-    constexpr explicit SymmetricMatrix(const Scalar_ (&arr)[StorageSize]) : SymmetricMatrix() { m_ = arr; }
+    constexpr explicit PositiveSymmetricMatrix(const Scalar_ (&arr)[StorageSize]) : PositiveSymmetricMatrix() { m_ = arr; }
 
     // constructor from std::vector
-    constexpr explicit SymmetricMatrix(const std::vector<Scalar>& vec) : SymmetricMatrix() { m_ = vec; }
+    constexpr explicit PositiveSymmetricMatrix(const std::vector<Scalar>& vec) : PositiveSymmetricMatrix() { m_ = vec; }
 
     // constructor from callable returning array<Scalar, StorageSize>
     template <typename Callable>
-    constexpr explicit SymmetricMatrix(Callable callable) : SymmetricMatrix() { m_ = callable; }
+    constexpr explicit PositiveSymmetricMatrix(Callable callable) : PositiveSymmetricMatrix() { m_ = callable; }
 
     // copy constructor from any MatrixBase-derived expression (templated)
     template<int OtherRows_, int OtherCols_, typename OtherDerived>
-    constexpr explicit SymmetricMatrix(const MatrixBase<OtherRows_,OtherCols_,OtherDerived>& xpr) : SymmetricMatrix() { m_ = xpr; }
+    constexpr explicit PositiveSymmetricMatrix(const MatrixBase<OtherRows_, OtherCols_, OtherDerived>& xpr) : PositiveSymmetricMatrix() { m_ = xpr; }
 
     // conversion constructor from Eigen matrix
     #ifdef __FDAPDE_HAS_EIGEN__
         template<typename Derived>
-        explicit SymmetricMatrix(const Eigen::MatrixBase<Derived>& other) : SymmetricMatrix() { m_ = other; }
+        explicit PositiveSymmetricMatrix(const Eigen::MatrixBase<Derived>& other) : PositiveSymmetricMatrix() { m_ = other; }
     #endif
 
-
-    // static named constructors
-    static constexpr SymmetricMatrix Constant(Scalar c) {
-        std::array<Scalar, StorageSize> data{};
-        for (auto& val : data) val = c;
-        return SymmetricMatrix(data);
-    }
-    static constexpr SymmetricMatrix Zero() { return Constant(Scalar(0)); }
-    static constexpr SymmetricMatrix Ones() { return Constant(Scalar(1)); }
-    static constexpr SymmetricMatrix NaN() { return Constant(std::numeric_limits<Scalar>::quiet_NaN()); }
-
     // assignment from std::array
-    constexpr SymmetricMatrix& operator=(const std::array<Scalar, StorageSize>& rhs) { m_ = rhs; return *this; }
+    constexpr MatrixType& operator=(const std::array<Scalar, StorageSize>& rhs) { m_ = rhs; return *this; }
 
     // assignment from MatrixBase expression
     template <int RhsRows_, int RhsCols_, typename RhsXprType>
-    constexpr SymmetricMatrix& operator=(const MatrixBase<RhsRows_, RhsCols_, RhsXprType>& rhs) { m_ = rhs; return *this; }
+    constexpr MatrixType& operator=(const MatrixBase<RhsRows_, RhsCols_, RhsXprType>& rhs) { m_ = rhs; return *this; }
 
     // assignment from Eigen matrix
     #ifdef __FDAPDE_HAS_EIGEN__
         template <typename Derived>
-        SymmetricMatrix& operator=(const Eigen::MatrixBase<Derived>& rhs) { m_ = rhs; return *this; }
+        MatrixType& operator=(const Eigen::MatrixBase<Derived>& rhs) { m_ = rhs; return *this; }
     #endif
 
     // const access
     constexpr Scalar operator()(int i, int j) const { return m_(i, j); }
-    constexpr Scalar operator[](int i) const requires(Rows == 1 || Cols == 1) { return m_[i]; }
-    // non-const access
-    constexpr Scalar& operator()(int i, int j) { return m_(i, j); }
-    constexpr Scalar& operator[](int i) requires(Rows == 1 || Cols == 1)  { return m_[i]; }
 
-    // convert to full matrix
-    constexpr Matrix<Scalar, N, N> as_matrix() const {
-        Matrix<Scalar, N, N> M;
-        for (int i = 0; i < N; ++i)
-            for (int j = i; j < N; ++j)
-                M(j, i) = M(i, j) = (*this)(i, j);
-        return M;
-    }
-
-    // convert to EigenMap
-    #ifdef __FDAPDE_HAS_EIGEN__
-        // TODO: differently from Matrix here I can not return a map because the Map saves the pointer to data_.data() but symmetric matrices stores data in a non compatible way
-        auto as_eigen() {
-            Matrix<Scalar, Rows, Cols, RowMajor, NestAsRefBit> M(as_matrix());
-            return Eigen::Matrix<Scalar, Rows, Cols, Eigen::RowMajor>(M.data());
-        }
-    #endif
-
-    // setters
-    constexpr void setConstant(Scalar c) { m_.setConstant(c); }
-    constexpr void setZero() { setConstant(Scalar(0)); }
-    constexpr void setOnes() { setConstant(Scalar(1)); }
-    constexpr void setNaN() { setConstant(std::numeric_limits<Scalar>::quiet_NaN()); }
-
-    // dimensions
-    static constexpr int rows() { return Rows; }
-    static constexpr int cols() { return Cols; }
+    // eigen-decomposition getters (forward evd_)
+    constexpr const auto& eigenvalues() const { return m_.eigenvalues(); }
+    constexpr const auto& eigenvectors() const { return m_.eigenvectors(); }
 
     // data
     constexpr const Scalar* data() const { return m_.data(); }
     Scalar* data() { return m_.data(); }
     constexpr const std::array<Scalar,StorageSize>& storage() const { return data_; }
 
-   private:
+private:
     std::array<Scalar, StorageSize> data_;
-    SymmetricMatrixView<Scalar, N> m_;
-
+    PositiveSymmetricMatrixView<Scalar, N, StrictPD_> m_;
 };
 
 }
 
-#endif // __FDAPDE_SYMMETRIC_MATRIX_H__
+#endif   // __FDAPDE_POSITIVE_SYMMETRIC_MATRIX_H__

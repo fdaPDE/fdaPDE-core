@@ -22,7 +22,7 @@
 
 namespace fdapde {
 
-// forward substitution for lower-triangular matrix (view)
+// forward substitution (FS) for lower-triangular matrix (view)
 template <typename Matrix, typename Rhs>
 constexpr auto forward_sub(const Matrix& L, const Rhs& b)
 requires (internals::is_lower_triangular_v<Matrix>) {
@@ -41,7 +41,7 @@ requires (internals::is_lower_triangular_v<Matrix>) {
     return x;
 }
 
-// backward substitution for upper-triangular matrix (view)
+// backward substitution (BS) for upper-triangular matrix (view)
 template <typename Matrix, typename Rhs>
 constexpr auto backward_sub(const Matrix& U, const Rhs& b)
 requires (internals::is_upper_triangular_v<Matrix>) {
@@ -58,6 +58,58 @@ requires (internals::is_upper_triangular_v<Matrix>) {
         x[i] = (b[i] - sum) / U(i,i);
     }
     return x;
+}
+
+// modified gram–schmidt (MGS) with basis completion
+// TODO: BasisCompletion as template parameter
+// It would be nice to add a template parameter BasisCompletion and return a NxN orthonormal matrix if true and
+// an Nxr matrix (with r number of independent cols in the original matrix, if not)
+template <typename MatrixType>
+constexpr auto modified_gram_schmidt(const MatrixType& A){
+
+    using Scalar = typename MatrixType::Scalar;
+    constexpr int N = MatrixType::Rows;
+    Matrix<Scalar, N, N> Q;
+
+    // set an appropriate tol
+    const double tol_scale = A.norm();
+    const double eps = std::numeric_limits<Scalar>::epsilon();
+
+    // Modified Gram–Schmidt
+    int r = 0; // number of accepted (independent) vectors
+    for (int i = 0; i < N; ++i) {
+        Vector<Scalar, N> v(A.col(i));
+
+        // MGS: subtract using the CURRENT residual
+        for (int j = 0; j < r; ++j) {
+            // Q.col(j) is unit-norm by construction
+            v -= (Q.col(j).dot(v)) * Q.col(j);
+        }
+
+        double nrm = v.norm();
+        const double col_tol = std::sqrt(eps) * std::max({tol_scale, A.col(i).norm(), 1.0});
+        if (nrm <= col_tol) {
+            continue; // dependent: skip (don’t store a zero column in Q)
+        }
+
+        Q.col(r++) = v / nrm; // accept as next orthonormal vector
+    }
+
+    // After the loop above, Q has r orthonormal columns in its first r slots.
+    for (int k = 0; r < N && k < N; ++k) {
+        auto v = Vector<Scalar, N>::Zero();
+        v[k] = 1.0;
+
+        // Orthogonalize against existing Q
+        for (int j = 0; j < r; ++j) v -= (Q.col(j).dot(v)) * Q.col(j);
+
+        double nrm = v.norm();
+        const double tol = std::sqrt(eps) * tol_scale;
+        if (nrm > tol) {
+            Q.col(r++) = v / nrm;
+        }
+    }
+    return OrthogonalMatrix<Scalar, N>(Q);
 }
 
 }

@@ -18,8 +18,9 @@
 #define __FDAPDE_MATRIX_DECOMPOSITION_H__
 
 #include "header_check.h"
-#include "square_matrix_base.h"
+#include "matrix_algorithms.h"
 #include "orthogonal_matrix.h"
+#include "square_matrix_base.h"
 #include "triangular_matrix.h"
 
 namespace fdapde {
@@ -180,99 +181,6 @@ public:
     constexpr void compute(const SquareMatrixBase<N, Xpr>& xpr) {
         static_assert(std::is_same_v<Scalar, typename Xpr::Scalar>, "EVD: scalar types must match");
         fdapde_static_assert(internals::is_symmetric_v<Xpr>, "EVD compute requires symmetric input expression");
-        // 2×2 analytic closed‐form
-        if constexpr (N == 2 && Solver == Best) {
-
-            auto eigenvectors = MatrixN::Zero();
-
-            const Scalar a = xpr.derived()(0,0), b = xpr.derived()(0,1), c = xpr.derived()(1,1);
-            const Scalar tr = a + c;
-            const Scalar det = a*c - b*b;
-            const Scalar disc = fdapde::sqrt(tr*tr/4 - det);
-
-            eigenvalues_[0] = tr/2 + disc;
-            eigenvalues_[1] = tr/2 - disc;
-
-            for (int k = 0; k < 2; ++k) {
-                Scalar lambda = eigenvalues_[k];
-                VectorType v{};
-                if (b != Scalar(0)) {
-                    v[0] = lambda - c;
-                    v[1] = b;
-                } else {
-                    v[0] = Scalar(1);
-                    v[1] = Scalar(0);
-                }
-                Scalar nrm = fdapde::sqrt(v[0]*v[0] + v[1]*v[1]);
-                eigenvectors(0,k) = v[0] / nrm;
-                eigenvectors(1,k) = v[1] / nrm;
-            }
-            eigenvectors_ = eigenvectors;
-            return;
-        }
-
-        // 3×3 analytic closed‐form (symmetric)
-        else if constexpr (N == 3 && Solver == Best) {
-
-            auto eigenvectors = MatrixN::Zero();
-
-            // matrix entries
-            const Scalar m00 = xpr.derived()(0,0), m01 = xpr.derived()(0,1), m02 = xpr.derived()(0,2);
-            const Scalar m11 = xpr.derived()(1,1), m12 = xpr.derived()(1,2), m22 = xpr.derived()(2,2);
-            // compute trace and centered moments
-            const Scalar trace = (m00 + m11 + m22) / Scalar(3);
-            const Scalar a00 = m00 - trace;
-            const Scalar a11 = m11 - trace;
-            const Scalar a22 = m22 - trace;
-            const Scalar p2 = a00*a00 + a11*a11 + a22*a22 + Scalar(2)*(m01*m01 + m02*m02 + m12*m12);
-            const Scalar p = fdapde::sqrt(p2 / Scalar(6));
-            // build normalized matrix B = (A - trace*I)/p
-            MatrixN B;
-            for (int i = 0; i < 3; ++i) {
-                for (int j = 0; j < 3; ++j) {
-                    const Scalar aij = xpr.derived()(i,j) - (i==j ? trace : Scalar(0));
-                    B(i,j) = aij / p;
-                }
-            }
-            // compute det(B)/2
-            const Scalar detB = B(0,0)*(B(1,1)*B(2,2) - B(1,2)*B(2,1))
-                              - B(0,1)*(B(1,0)*B(2,2) - B(1,2)*B(2,0))
-                              + B(0,2)*(B(1,0)*B(2,1) - B(1,1)*B(2,0));
-            Scalar r = detB / Scalar(2);
-            r = r < -Scalar(1) ? -Scalar(1) : (r > Scalar(1) ? Scalar(1) : r);
-            constexpr Scalar pi = Scalar(std::numbers::pi);
-            const Scalar phi = std::acos(r) / Scalar(3);
-            // eigenvalues
-            eigenvalues_[0] = trace + Scalar(2)*p * std::cos(phi);
-            eigenvalues_[2] = trace + Scalar(2)*p * std::cos(phi + Scalar(2)*pi/Scalar(3));
-            eigenvalues_[1] = Scalar(3)*trace - eigenvalues_[0] - eigenvalues_[2];
-            // eigenvectors via cross‐product
-            for (int k = 0; k < 3; ++k) {
-                const Scalar lambda = eigenvalues_[k];
-                VectorType row0, row1, row2;
-                row0[0] = m00 - lambda; row0[1] = m01;          row0[2] = m02;
-                row1[0] = m01;          row1[1] = m11 - lambda; row1[2] = m12;
-                row2[0] = m02;          row2[1] = m12;          row2[2] = m22 - lambda;
-                auto cross = [&](const VectorType& u,const VectorType& v){
-                    VectorType c;
-                    c[0] = u[1]*v[2] - u[2]*v[1];
-                    c[1] = u[2]*v[0] - u[0]*v[2];
-                    c[2] = u[0]*v[1] - u[1]*v[0];
-                    return c;
-                };
-                VectorType v = cross(row0, row1);
-                Scalar n2 = v[0]*v[0] + v[1]*v[1] + v[2]*v[2];
-                if (n2 < Scalar(1e-12)) { v = cross(row0, row2); n2 = v[0]*v[0] + v[1]*v[1] + v[2]*v[2]; }
-                if (n2 < Scalar(1e-12)) { v = cross(row1, row2); n2 = v[0]*v[0] + v[1]*v[1] + v[2]*v[2]; }
-                if (n2 < Scalar(1e-12)) { v[0]=Scalar(1); v[1]=v[2]=Scalar(0); n2 = Scalar(1); }
-                const Scalar n = fdapde::sqrt(n2);
-                eigenvectors(0,k) = v[0] / n;
-                eigenvectors(1,k) = v[1] / n;
-                eigenvectors(2,k) = v[2] / n;
-            }
-            eigenvectors_ = eigenvectors;
-            return;
-        }
 
         // Generic fallback: simple QR iteration
         MatrixN A(xpr.derived());
@@ -290,8 +198,8 @@ public:
         eigenvectors_ = V;
     }
 
-    constexpr auto eigenvalues() const  { return eigenvalues_; }
-    constexpr auto eigenvectors() const { return eigenvectors_; }
+    constexpr auto& eigenvalues() const  { return eigenvalues_; }
+    constexpr auto& eigenvectors() const { return eigenvectors_; }
 
 private:
     OrthogonalMatrix<Scalar, N> eigenvectors_{};
@@ -318,47 +226,19 @@ public:
 
     template <typename Xpr>
     constexpr void compute(const SquareMatrixBase<N, Xpr>& xpr) {
-        MatrixN A(xpr.derived());
-        MatrixN Q;
-        Q.setZero();
+
+        MatrixView<Scalar, N, N, Xpr::StorageOrder, true> A(xpr.derived());
         R_.setZero();
 
-        // Classical Gram–Schmidt
-        for (int j = 0; j < N; ++j) {
-            // v = column j of A
-            Vector<Scalar, N> v{};
-            for (int i = 0; i < N; ++i) {
-                v[i] = A(i, j);
-            }
+        // MGS with basis completion
+        Q_ = modified_gram_schmidt<decltype(A)>(A);
 
-            // Orthogonalization
-            for (int k = 0; k < j; ++k) {
-                Scalar dot = Scalar(0);
-                for (int i = 0; i < N; ++i) {
-                    dot += Q(i, k) * A(i, j);
-                }
-                R_(k, j) = dot;
-                for (int i = 0; i < N; ++i) {
-                    v[i] -= dot * Q(i, k);
-                }
-            }
-
-            // Normalize
-            Scalar norm2 = Scalar(0);
-            for (int i = 0; i < N; ++i) {
-                norm2 += v[i] * v[i];
-            }
-            Scalar norm = fdapde::sqrt(norm2);
-            R_(j, j) = norm;
-            // Avoid divide-by-zero
-            if (norm == Scalar(0)) {
-                info_ = !Success;
-            }
-            for (int i = 0; i < N; ++i) {
-                Q(i, j) = v[i] / norm;
+        // coefficients matrix
+        for (int i = 0; i < N; ++i) {
+            for (int j = i; j < N; ++j) {
+                R_(i,j) = Q_.col(i).dot(A.col(j));
             }
         }
-        Q_ = Q;
     }
 
     constexpr auto Q() const { return Q_; }
