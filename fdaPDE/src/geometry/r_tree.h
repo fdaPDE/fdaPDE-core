@@ -21,6 +21,13 @@
 
 namespace fdapde {
 
+// R* tree
+// Guttman, A. (1984). R-trees: A dynamic index structure for spatial searching. In Proceedings of the 1984 ACM
+// SIGMOD international conference on Management of data (pp. 47-57).
+// Beckmann, N., Kriegel, H. P., Schneider, R., & Seeger, B. (1990). The R*-tree: An efficient and robust access
+// method for points and rectangles. In Proceedings of the 1990 ACM SIGMOD international conference on Management of
+// data (pp. 322-331).
+  
 namespace internals {
 
 struct rtree_quadratic_split {
@@ -202,25 +209,24 @@ struct rtree_star_split {
 
 }   // namespace internals
 
-// R* tree
-// Guttman, A. (1984). R-trees: A dynamic index structure for spatial searching. In Proceedings of the 1984 ACM
-// SIGMOD international conference on Management of data (pp. 47-57).
-// Beckmann, N., Kriegel, H. P., Schneider, R., & Seeger, B. (1990). The R*-tree: An efficient and robust access
-// method for points and rectangles. In Proceedings of the 1990 ACM SIGMOD international conference on Management of
-// data (pp. 322-331).
-template <typename SpatialObject, typename SplitStrategy = internals::rtree_star_split>
-    requires(requires(SpatialObject obj) {
-        SpatialObject::embed_dim;
-        { obj.bbox() } -> std::convertible_to<std::array<double, 2 * SpatialObject::embed_dim>>;
-    })
+template <int EmbedDim, typename SplitStrategy = internals::rtree_star_split>
 class RTree {
    private:
-    static constexpr int embed_dim = SpatialObject::embed_dim;
+    static constexpr int embed_dim = EmbedDim;
 
     // forward decl
     struct node_t;
     struct bbox_t;
     struct item_t;
+
+    template <typename SpatialObject_> struct is_valid_spatial_object {
+        static constexpr bool value = requires(SpatialObject_ obj) {
+            SpatialObject_::embed_dim;
+            { obj.bbox() } -> std::convertible_to<std::array<double, 2 * embed_dim>>;
+        };
+    };
+    template <typename SpatialObject_>
+    static constexpr bool is_valid_spatial_object_v = is_valid_spatial_object<SpatialObject_>::value;
 
     // internal structures
     struct bbox_t {
@@ -243,18 +249,22 @@ class RTree {
         bbox_t& operator=(const bbox_t& other) {
             bbox_ = other.bbox_;
             measure_ = other.measure_;
-	    return *this;
+            return *this;
         }
         bbox_t& operator=(bbox_t&& other) {
             bbox_ = std::move(other.bbox_);
             measure_ = std::exchange(other.measure_, 0.0);
             return *this;
         }
-      
+
         // observers
         double measure() const { return measure_; }
         const std::array<double, 2 * embed_dim>& coords() const { return bbox_; }
         double operator[](int i) {
+            fdapde_assert(i < 2 * embed_dim);
+            return bbox_[i];
+        }
+        double operator[](int i) const {
             fdapde_assert(i < 2 * embed_dim);
             return bbox_[i];
         }
@@ -356,36 +366,37 @@ class RTree {
     struct item_t {
        private:
         enum class type_t {
-            DATA,
-            NODE
+            NODE,
+            DATA
         };
-        union {   // child node or actual data
-            node_t* node_;
-            const SpatialObject* data_;
-        };
-        bbox_t bbox_;   // smallest rectangle that spatially contains object pointed by child
         type_t type_;
+        union {
+            node_t* node_;   // internal nodes: pointer to child
+            int data_;       // leaf nodes: database index at which this spatial object is stored
+        };
+        bbox_t bbox_;   // smallest rectangle that spatially contains this item
        public:
         // constructor
         item_t() = default;
-        explicit item_t(const SpatialObject& data) :
-            data_(std::addressof(data)), type_(type_t::DATA), bbox_(data_->bbox()) { }
+        template <typename BBoxT>
+            requires(std::is_convertible_v<BBoxT, bbox_t>)
+        explicit item_t(int index, const BBoxT& bbox) : data_(index), type_(type_t::DATA), bbox_(bbox) { }
         explicit item_t(node_t* node) : node_(node), type_(type_t::NODE), bbox_(node_->bbox()) { }
         // copy/move semantic
         item_t(const item_t& other) = default;
         item_t(item_t&& other) = default;
         item_t& operator=(const item_t& other) = default;
         item_t& operator=(item_t&& other) = default;
-      
+
         // observers
         const bbox_t& bbox() const { return bbox_; }
         node_t* node() const {
             fdapde_assert(type_ == type_t::NODE);
             return node_;
         }
-        const SpatialObject& data() const {
+        int data() const {
             fdapde_assert(type_ == type_t::DATA);
-            return *data_;
+            return data_;
         }
         bool is_data() const { return type_ == type_t::DATA; }
         bool is_node() const { return type_ == type_t::NODE; }
@@ -406,9 +417,9 @@ class RTree {
     };
     // structural tree node
     struct node_t {
-        using bbox_t = typename RTree<SpatialObject, SplitStrategy>::bbox_t;
-        using item_t = typename RTree<SpatialObject, SplitStrategy>::item_t;
-        static constexpr int embed_dim = RTree<SpatialObject, SplitStrategy>::embed_dim;
+        using bbox_t = typename RTree<EmbedDim, SplitStrategy>::bbox_t;
+        using item_t = typename RTree<EmbedDim, SplitStrategy>::item_t;
+        static constexpr int embed_dim = EmbedDim;
 
         node_t(int M, int level) : size_(0), capacity_(M + 1), level_(level), bbox_() {
             data_.resize(M + 1);   // allow overflow to use this buffer for in-place split logic
@@ -515,9 +526,8 @@ class RTree {
 
     // insert internal utilities
 
-    // select a leaf node in which to place a spatial object obj
-    template <typename SpatialObject_> node_t* choose_subtree_(const SpatialObject_& obj, int target_level) {
-        bbox_t obj_bbox(obj);
+    // select a node at depth target_level in which to place spatial object obj
+    node_t* choose_subtree_(const bbox_t& obj_bbox, int target_level) {
         node_t* curr = root_;
 
         while (curr->level() != target_level) {
@@ -601,7 +611,7 @@ class RTree {
         }
         return curr;
     }
-    node_t* choose_leaf_(const SpatialObject& obj) { return choose_subtree_(obj, 0); }
+    node_t* choose_leaf_(const bbox_t& obj_bbox) { return choose_subtree_(obj_bbox, 0); }
     // selects the most (euclidean) distant reinsert_factor_ * M_ entries from n's centroid, and perform a forced insert
     void reinsert_(node_t* n, std::vector<bool>& ctx) {
         using point_t = std::array<double, embed_dim>;
@@ -642,9 +652,9 @@ class RTree {
         for (item_t& it : to_reinsert) {
             node_t* target = nullptr;
             if (n->is_leaf()) {
-                target = choose_leaf_(it.data());
+                target = choose_subtree_(it.bbox(), n->level());
             } else {
-                target = choose_subtree_(*it.node(), n->level());
+                target = choose_subtree_(it.node()->bbox(), n->level());
             }
             target->insert(it);
             adjust_tree_(target, ctx);
@@ -697,9 +707,8 @@ class RTree {
 
     // erase internal utilities
 
-    // find the leaf node containing obj. returns nullptr if no obj is found
-    std::pair<node_t*, const item_t*> find_leaf_(const SpatialObject& obj) {
-        bbox_t obj_bbox(obj);
+    // find leaf node containing obj. returns nullptr if no obj is found
+    std::pair<node_t*, const item_t*> find_leaf_(const bbox_t& obj_bbox, int index) {
         node_t* curr;
         std::stack<node_t*> stack_;
         stack_.push(root_);
@@ -713,9 +722,7 @@ class RTree {
             } else {
                 // search for exact match in leaf
                 for (const auto& item : *curr) {
-                    if (std::addressof(item.data()) == std::addressof(obj)) {
-                        return std::make_pair(curr, std::addressof(item));
-                    }
+                    if (item.data() == index) { return std::make_pair(curr, std::addressof(item)); }
                 }
             }
         }
@@ -724,14 +731,14 @@ class RTree {
     // given a leaf node l from whch an entry has been deleted, eliminate it if has too few entries and relocate.
     // Propagate node elimination upward, adjusting covering rectangles as necessary
     void condense_tree_(node_t* l) {
-        std::vector<const SpatialObject*> Q;   // set of eliminated items
+        std::vector<std::pair<int, bbox_t>> Q;   // set of eliminated items
         std::vector<node_t*> killed;
         node_t* n = l;
         while (!n->is_root()) {
             node_t* parent = n->parent();
             if (n->size() < m_) {   // too few entries, eliminate node
                 if (n->is_leaf()) {
-                    for (const item_t& item : *n) { Q.push_back(std::addressof(item.data())); }
+                    for (const item_t& item : *n) { Q.emplace_back(item.data(), item.bbox()); }
                     killed.push_back(n);
                 } else {
                     // if node was not a leaf, eliminate its entire subtree
@@ -742,7 +749,7 @@ class RTree {
                         curr = stack_.top();
                         stack_.pop();
                         if (curr->is_leaf()) {
-                            for (const item_t& item : *curr) { Q.push_back(std::addressof(item.data())); }
+                            for (const item_t& item : *curr) { Q.emplace_back(item.data(), item.bbox()); }
                         } else {
                             for (const item_t& item : *curr) { stack_.push(item.node()); }
                         }
@@ -758,7 +765,7 @@ class RTree {
         }
         // free memory and insert
         for (node_t* node : killed) { delete node; }
-        for (const SpatialObject* obj : Q) { insert(*obj); }
+        for (const auto& [obj_data, obj_bbox] : Q) { insert(obj_data, obj_bbox); }
         return;
     }
 
@@ -769,7 +776,7 @@ class RTree {
         requires(requires(Functor f, node_t* n) {
             { f(n) } -> std::same_as<void>;
         })
-    void dfs_visit_(Functor&& f) {
+    void dfs_visit_(Functor&& f) const {
         node_t* curr;
         std::stack<node_t*> stack_;
         stack_.push(root_);
@@ -783,7 +790,6 @@ class RTree {
         }
         return;
     }
-
     // deep copies other into this
     void clone_(const RTree& other) {
         // copy basic data members
@@ -818,6 +824,7 @@ class RTree {
         }
         return;
     }
+    // moves other into this, leavs other in an empty state
     void move_(RTree&& other) {
         // copy basic data members
         M_ = other.M_;
@@ -827,9 +834,134 @@ class RTree {
         overlap_factor_ = other.overlap_factor_;
         reinsert_factor_ = other.reinsert_factor_;
 
-	// move tree resources
+        // move tree resources
         root_ = std::exchange(other.root_, nullptr);
-	return;
+        return;
+    }  
+
+    // bulk loading
+    // Leutenegger, S. T., Lopez, M. A., & Edgington, J. (1997, April). STR: A simple and efficient algorithm for R-tree
+    // packing. In Proceedings 13th international conference on data engineering (pp. 497-506). IEEE
+
+    // pack data in (data.size() + M_ - 1) / M_ leaves
+    std::vector<node_t*> str_make_leaves_(const std::vector<std::pair<int, bbox_t>>& data) {
+        using point_t = std::array<double, embed_dim>;
+        int n = data.size();
+        std::vector<int> idxs(n);
+        std::iota(idxs.begin(), idxs.end(), 0);
+        // pre-compute bounding boxes centroid
+        std::vector<point_t> centroid;
+        centroid.reserve(n);
+        for (int i = 0; i < n; ++i) { centroid.push_back(data[i].second.centroid()); }
+
+        std::vector<node_t*> leaves;
+	leaves.reserve((n + M_ - 1) / M_);
+        // allocate space for leaf, populate it with data in range [begin, end)
+        auto make_leaf_ = [&](int begin, int end) {
+            node_t* leaf = new node_t(M_, 0);
+            for (int i = begin; i < end; ++i) {
+                const auto& [index, bbox] = data[idxs[i]];
+                leaf->insert(item_t(index, bbox), false);
+            }
+	    leaf->recompute_bbox();
+            leaves.push_back(leaf);
+        };
+        struct slice_t {
+            int dim;          // splitting dimension
+            int begin, end;   // start - end index in idxs vec
+        };
+        std::vector<slice_t> stack_;
+
+	// start recursion
+	stack_.push_back({0, 0, n});
+        while (!stack_.empty()) {
+            slice_t slice = stack_.back();
+            stack_.pop_back();
+
+            int count = slice.end - slice.begin;
+            if (count <= M_) {   // less than M_ items in slice, create leaf
+                make_leaf_(slice.begin, slice.end);
+                continue;
+            }
+            if (slice.dim == embed_dim - 1) {
+                // last dimension, chop slice into groups of M_ items and make leaves
+                int curr = slice.begin;
+                while (curr < slice.end) {
+                    int chunk_end = std::min(curr + M_, slice.end);
+                    make_leaf_(curr, chunk_end);
+                    curr = chunk_end;
+                }
+                continue;
+            }
+            // general case
+            int n_slices = std::ceil((double)(count + M_ - 1) / M_);
+            int S = fdapde::max(1, std::ceil(std::pow(n_slices, 1.0 / (embed_dim - slice.dim))));   // axis slice factor
+
+            // sort along current dimension
+            std::sort(idxs.begin() + slice.begin, idxs.begin() + slice.end, [&](int a, int b) {
+                double ca = centroid[a][slice.dim];
+                double cb = centroid[b][slice.dim];
+                if (ca != cb) return ca < cb;
+                const auto& [ia, ba] = data[a];
+                const auto& [ib, bb] = data[b];
+                if (ba[slice.dim] != bb[slice.dim]) return ba[slice.dim] < bb[slice.dim];
+                return a < b;
+            });
+
+            // prepare for next dimension
+            int base = count / S;
+	    int res  = count % S;
+            int i = slice.begin;
+            for (int s = 0; s < S; ++s) {
+                int sz = std::min(base + (s < res ? 1 : 0), slice.end - i);
+                stack_.push_back({slice.dim + 1, i, i + sz});
+                i += sz;
+            }
+        }
+        return leaves;
+    }
+
+    // build the R-Tree structure starting from the zero-level leaves. returns the root
+    node_t* str_make_tree_(const std::vector<node_t*>& leaves) {
+        if (leaves.empty()) return nullptr;
+        if (leaves.size() == 1) {
+            depth_ = 0;
+            return leaves[0];
+        }
+        int dim = 0;
+        std::vector<node_t*> current = leaves;
+        std::vector<node_t*> next;
+        depth_ = 0;
+
+        while (current.size() > 1) {
+            next.clear();
+            next.reserve((current.size() + M_ - 1) / M_);
+            dim = (dim + 1) % embed_dim;   // rotating splitting dimension (STR block sorting logic)
+
+            // sort bounding boxes along current split dimension
+            std::sort(current.begin(), current.end(), [dim](node_t* a, node_t* b) {
+                double ca = 0.5 * (a->bbox()[dim] + a->bbox()[dim + embed_dim]);
+                double cb = 0.5 * (b->bbox()[dim] + b->bbox()[dim + embed_dim]);
+                if (ca != cb) return ca < cb;
+                return a->bbox()[dim] < b->bbox()[dim];
+            });
+
+            // pack groups of up to M_ children into parent nodes
+            for (int i = 0, n = current.size(); i < n; i += M_) {
+                node_t* node = new node_t(M_, depth_ + 1);
+                // push items in node
+                int end = fdapde::min(i + M_, current.size());
+                for (int j = i; j < end; ++j) {
+                    node->insert(item_t(current[j]), false);
+                    current[j]->set_parent(node);
+                }
+                node->recompute_bbox();
+                next.push_back(node);
+            }
+	    current.swap(next);
+	    depth_++;
+        }
+        return current[0];
     }
 
     node_t* root_ = nullptr;
@@ -838,8 +970,8 @@ class RTree {
     int depth_;   // current tree depth
 
     SplitStrategy split_ {};
-    int overlap_factor_ = 3 / 4 * M_;     // number of items considered in the ovrelap heuristic
-    double reinsert_factor_ = 0.4;        // proportion of reinserted items in case of node overflow
+    int overlap_factor_ = 3 / 4 * M_;   // number of items considered in the ovrelap heuristic
+    double reinsert_factor_ = 0.4;      // proportion of reinserted items in case of node overflow
    public:
     RTree(int M, int m, int overlap_factor, double reinsert_factor) :
         M_(M), m_(m), depth_(0), split_(M, m), overlap_factor_(overlap_factor), reinsert_factor_(reinsert_factor) {
@@ -868,21 +1000,27 @@ class RTree {
     }
 
     // modifiers
-    void insert(const SpatialObject& obj) {
+    template <typename SpatialObject_>
+        requires(is_valid_spatial_object_v<SpatialObject_>)
+    void insert(const SpatialObject_& obj, int index) {
+        fdapde_static_assert(SpatialObject_::embed_dim == embed_dim, INCORRECT_SPATIAL_OBJECT_EMBEDDING_DIMENSION);
+        bbox_t obj_bbox(obj);
         // select a leaf where insert obj
-        node_t* l = choose_leaf_(obj);
-        l->insert(item_t(obj));
+        node_t* leaf_node = choose_leaf_(obj_bbox);
+        leaf_node->insert(item_t(index, obj_bbox));
         // propagate tree rebalancing up
         std::vector<bool> ctx(depth_, false);
-        adjust_tree_(l, ctx);
+        adjust_tree_(leaf_node, ctx);
         return;
     }
-    void erase(const SpatialObject& obj) {
+    template <typename SpatialObject_>
+        requires(is_valid_spatial_object_v<SpatialObject_>)
+    void erase(const SpatialObject_& obj, int index) {
         // find leaf containing obj
-        const auto& [l, i] = find_leaf_(obj);
-        if (!l) return;
-        l->erase(*i);
-        condense_tree_(l);
+        const auto& [leaf_node, item] = find_leaf_(obj.bbox(), index);
+        if (!leaf_node) return;
+        leaf_node->erase(*item);
+        condense_tree_(leaf_node);
         // if the root node has only one child after the condensation, make the child the new root
         if (!root_->is_leaf() && root_->size() == 1) {
             node_t* new_root = root_->item(0).node();
@@ -893,15 +1031,45 @@ class RTree {
         }
         return;
     }
+    // STR bulk loading
+    template <typename SpatialIndex>
+        requires(
+          internals::is_vector_like_v<SpatialIndex> &&
+          requires(internals::subscript_result_of_t<SpatialIndex, int> record) {
+              { record.bbox() } -> std::convertible_to<std::array<double, 2 * embed_dim>>;
+          })
+    void bulk_load(const SpatialIndex& data) {
+        fdapde_assert(data.size() > 0);
+        int n = data.size();
+        // compute bounding boxes of data
+        std::vector<std::pair<int, bbox_t>> data_;
+        data_.reserve(n);
+        for (int i = 0; i < n; ++i) { data_.emplace_back(i, data[i].bbox()); }
+        // build leaves via STR tiling
+        std::vector<node_t*> leaves = str_make_leaves_(data_);
+	// build overall tree structure
+        root_ = str_make_tree_(leaves);
+        return;
+    }
+
     // observers
     node_t* root() { return root_; }
     int depth() const { return depth_; }
+    int size() const {
+        int size_ = 0;
+        dfs_visit_([&](node_t* curr) {
+            if (curr->is_leaf()) size_ += curr->size();
+        });
+        return size_;
+    }
 
     // geometric queries
-  
-    // find all spatial objects whose bounding box intersects the given query range
-    std::vector<const SpatialObject*> intersect_search(const std::array<double, 2 * embed_dim>& query) const {
-        std::vector<const SpatialObject*> result;
+
+    // find all candidate spatial objects which may intersect with query
+    template <typename QueryObject>
+        requires(std::is_convertible_v<QueryObject, std::array<double, 2 * embed_dim>>)
+    std::vector<int> intersect_query(const QueryObject& query) const {
+        std::vector<int> candidates;
         bbox_t query_bbox(query);
         node_t* curr;
         std::stack<node_t*> stack_;
@@ -912,7 +1080,7 @@ class RTree {
             // perform intersection test
             if (curr->is_leaf()) {
                 for (const auto& item : *curr) {
-                    if (item.bbox().intersects(query_bbox)) { result.push_back(std::addressof(item.data())); }
+                    if (item.bbox().intersects(query_bbox)) { candidates.push_back(item.data()); }
                 }
             } else {
                 for (const auto& item : *curr) {
@@ -920,18 +1088,14 @@ class RTree {
                 }
             }
         }
-        return result;
+        return candidates;
     }
-    // finds all spatial objects containing point
+    // finds all candidate spatial objects which may contain point
     template <typename PointT>
-        requires(
-          internals::is_vector_like_v<PointT> &&
-          requires(SpatialObject obj, PointT p) {
-              { obj.contains(p) } -> std::same_as<bool>;
-          })
-    std::vector<const SpatialObject*> point_locate(PointT&& point) const {
+        requires(internals::is_vector_like_v<PointT>)
+    std::vector<int> locate_query(PointT&& point) const {
         fdapde_assert(point.size() == embed_dim);
-        std::vector<const SpatialObject*> candidates;
+        std::vector<int> candidates;
         node_t* curr;
         std::stack<node_t*> stack_;
         stack_.push(root_);
@@ -944,7 +1108,7 @@ class RTree {
 
             if (curr->is_leaf()) {
                 for (const auto& item : *curr) {
-                    if (item.bbox().contains(point)) { candidates.push_back(std::addressof(item.data())); }
+                    if (item.bbox().contains(point)) { candidates.push_back(item.data()); }
                 }
             } else {
                 for (const auto& item : *curr) {
@@ -952,12 +1116,7 @@ class RTree {
                 }
             }
         }
-        // final SpatialObject-aware exact containment test on restricted candidate set
-        std::vector<const SpatialObject*> result;
-        for (const SpatialObject* obj : candidates) {
-            if (obj.contains(point)) { result.push_back(obj); }
-        }
-        return result;
+        return candidates;
     }
 
     // dfs memory deallocation
