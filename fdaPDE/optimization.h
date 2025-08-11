@@ -61,6 +61,8 @@ template <typename Opt> static constexpr bool is_gradient_free_opt_v = is_gradie
 #include "src/optimization/callbacks.h"
 #include "src/optimization/backtracking.h"
 #include "src/optimization/wolfe.h"
+#include "src/optimization/genetic_selection_ops.h"
+#include "src/optimization/genetic_mutation_ops.h"
 
 // algorithms
 #include "src/optimization/grid_search.h"
@@ -70,6 +72,7 @@ template <typename Opt> static constexpr bool is_gradient_free_opt_v = is_gradie
 #include "src/optimization/bfgs.h"
 #include "src/optimization/lbfgs.h"
 #include "src/optimization/nelder_mead.h"
+#include "src/optimization/genetic_optim.h"
 
 // clang-format on
 

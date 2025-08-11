@@ -81,6 +81,48 @@ template <typename Opt, typename Obj> bool exec_stop_if(Opt& optimizer, Obj& obj
     return b;
 }
 
+template <typename Opt, typename... Args>
+bool exec_sync_hooks(Opt& optimizer, std::tuple<Args...>& callbacks) {
+    return opt_hooks_loop(
+      [&](auto&& callback) {
+          if constexpr (requires(std::decay_t<decltype(callback)> c, Opt opt) {
+                            { c.sync_hook(opt) } -> std::same_as<bool>;
+                        }) {
+              return callback.sync_hook(optimizer);
+          }
+	  return false;
+      },
+      callbacks);
+}
+
+template <typename Opt, typename... Args>
+bool exec_mutate_hooks(Opt& optimizer, std::tuple<Args...>& callbacks) {
+    return opt_hooks_loop(
+      [&](auto&& callback) {
+          if constexpr (requires(std::decay_t<decltype(callback)> c, Opt opt) {
+                            { c.mutate_hook(opt) } -> std::same_as<bool>;
+                        }) {
+              return callback.mutate_hook(optimizer);
+          }
+	  return false;
+      },
+      callbacks);
+}
+
+template <typename Opt, typename... Args>
+bool exec_select_hooks(Opt& optimizer, std::tuple<Args...>& callbacks) {
+    return opt_hooks_loop(
+      [&](auto&& callback) {
+          if constexpr (requires(std::decay_t<decltype(callback)> c, Opt opt) {
+                            { c.select_hook(opt) } -> std::same_as<bool>;
+                        }) {
+              return callback.select_hook(optimizer);
+          }
+	  return false;
+      },
+      callbacks);
+}
+
 }   // namespace internals
 }   // namespace fdapde
 
