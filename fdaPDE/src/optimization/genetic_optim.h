@@ -32,10 +32,9 @@ private:
     int n_iter_ = 0;            // current iteration number
     double tol_ = 1e-2;         // tolerance
     int population_size_ = 100; // The size of any given generation
-    unsigned seed_ = 0;         // Seed for the RNG
     int static_since_ = 0;      // number of iterations that passed since last optimum value change
     int no_improvement_limit_ = 0;
-
+    
 public:
     static constexpr bool gradient_free = true;
     static constexpr int static_input_size = N;
@@ -44,8 +43,9 @@ public:
     vector_t population_fitness;
     std::mt19937 rng;
 
-   vector_t x_curr;
-   double obj_curr;
+    vector_t x_curr;
+    double obj_curr;
+    unsigned seed_ = 0;
 
 public:
     // constructors
@@ -118,6 +118,7 @@ public:
         // Compute the fitness for selection
         for(int i = 0; i < population_size_; ++i) {
             population_fitness(i) = objective(population.col(i));
+            stop |= internals::exec_eval_hooks(*this, objective, callbacks_);
         }
         
         while (n_iter_ < max_iter_ && !stop) {
@@ -127,6 +128,7 @@ public:
             // Compute the fitness for selection
             for(int i = 0; i < population_size_; ++i) {
                 population_fitness(i) = objective(population.col(i));
+                stop |= internals::exec_eval_hooks(*this, objective, callbacks_);
             }
             
             // Compute argmax of the population fitness

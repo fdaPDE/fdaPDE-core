@@ -43,12 +43,7 @@ public:
     }
 
     template <typename Opt> bool mutate_hook(Opt& opt) {
-        // Perform binary tournament selection
-        for(int j = 0; j < opt.population.cols(); ++j) {
-            for(int i = 0; i < opt.population.rows(); ++i)
-                opt.population(i,j) += normal_dist_(opt.rng) * variance_;
-        }
-
+        opt.population += internals::gaussian_matrix(opt.population.rows(), opt.population.cols(), variance_, opt.seed_);
         variance_ *= multiplier_;
         return false;
     }
@@ -57,6 +52,7 @@ public:
 class CrossoverMutation {
 private:
     std::uniform_real_distribution<double> distribution_{0.0,1.0};
+    std::uniform_int_distribution<int> indices_distribution_ {0,1};
     double mutation_probability_ = 0.3;
 
 public:
@@ -64,16 +60,21 @@ public:
     CrossoverMutation(double mutation_probability = 0.3) : mutation_probability_(mutation_probability) {}
 
     template <typename Opt> bool sync_hook(Opt& opt) {
+        indices_distribution_ = std::uniform_int_distribution<int>(0, opt.population.cols()-1);
         return false;
     }
 
     template <typename Opt> bool mutate_hook(Opt& opt) {
-        for(int j = 0; j < opt.population.cols() - 1; j += 2)
-        for(int i = 0; i < opt.population.rows(); ++i) {
-            if( distribution_(opt.rng) < mutation_probability_) {
-                double coeff = (opt.population(i, j) + opt.population(i, j+1))/2.0;
-                opt.population(i, j) = coeff;
-                opt.population(i, j+1) = coeff;
+        for(int j = 0; j < opt.population.cols() - 1; j += 2) {
+            // Find a random pair of "parents"
+            int partner_idx = indices_distribution_(opt.rng);
+
+            for(int i = 0; i < opt.population.rows(); ++i) {
+                // With a certain probability, swap
+                if( distribution_(opt.rng) < mutation_probability_) {
+                    double coeff = (opt.population(i, j) + opt.population(i, partner_idx))/2.0;
+                    opt.population(i, j) = coeff;
+                }
             }
         }
         return false;

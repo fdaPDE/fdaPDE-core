@@ -113,8 +113,10 @@ public:
         fdapde_assert(x0.rows()+1 == simplex_.cols());
 
         // Compute the vertices's values
-        for(int i = 0; i < simplex_.cols(); ++i)
+        for(int i = 0; i < simplex_.cols(); ++i) {
             vertices_values_[i] = objective(simplex_.col(i));
+            stop |= internals::exec_eval_hooks(*this, objective, callbacks_);
+        }
         
         // Sort the vertices according to their objective value
         std::sort(vertices_rank_.begin(), vertices_rank_.end(), [&](int a, int b) {
@@ -187,6 +189,7 @@ public:
                 for(int i = 1; i < dimension + 1; ++i) {
                     simplex_.col(vertices_rank_[i]) = best_vertex + delta_ * (simplex_.col(vertices_rank_[i]) - best_vertex);
                     vertices_values_[vertices_rank_[i]] = objective(simplex_.col(vertices_rank_[i]));
+                    stop |= internals::exec_eval_hooks(*this, objective, callbacks_);
                 }
             }
 

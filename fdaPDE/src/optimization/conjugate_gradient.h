@@ -36,20 +36,22 @@ template <int N, typename DirectionUpdate> class conjugate_gradient_impl {
     int max_iter_;     // maximum number of iterations before forced stop
     double tol_;       // tolerance on error before forced stop
     double step_;      // update step
+    bool restart_;
    public:
     static constexpr bool gradient_free = false;
     static constexpr int static_input_size = N;
     vector_t x_old, x_new, update, grad_old, grad_new;
     double h;
     // constructor
-    conjugate_gradient_impl() : max_iter_(500), tol_(1e-5), step_(1e-2) { }
-    conjugate_gradient_impl(int max_iter, double tol, double step) : max_iter_(max_iter), tol_(tol), step_(step) { }
+    conjugate_gradient_impl() : max_iter_(500), tol_(1e-5), step_(1e-2), restart_(true) { }
+    conjugate_gradient_impl(int max_iter, double tol, double step, bool restart) : max_iter_(max_iter), tol_(tol), step_(step), restart_(restart) { }
     conjugate_gradient_impl(const conjugate_gradient_impl& other) :
-        max_iter_(other.max_iter_), tol_(other.tol_), step_(other.step_) { }
+        max_iter_(other.max_iter_), tol_(other.tol_), step_(other.step_), restart_(other.restart_) { }
     conjugate_gradient_impl& operator=(const conjugate_gradient_impl& other) {
         max_iter_ = other.max_iter_;
         tol_ = other.tol_;
         step_ = other.step_;
+        restart_ = other.restart_;
         return *this;
     }
     template <typename ObjectiveT, typename... Callbacks>
@@ -66,6 +68,7 @@ template <int N, typename DirectionUpdate> class conjugate_gradient_impl {
         auto grad = objective.gradient();
         h = step_;
         n_iter_ = 0;
+        value_ = std::numeric_limits<double>::max();
         x_old = x0, x_new = vector_t::Constant(size, NaN);
         grad_old = grad(x_old), grad_new = vector_t::Constant(size, NaN);
         update = -grad_old;
@@ -75,21 +78,36 @@ template <int N, typename DirectionUpdate> class conjugate_gradient_impl {
 
         while (n_iter_ < max_iter_ && error > tol_ && !stop) {
             stop |= internals::exec_adapt_hooks(*this, objective, callbacks_);
+
             // update along descent direction
             x_new = x_old + h * update;
             grad_new = grad(x_new);
             // prepare next iteration
-            update = -grad_new + std::max(0.0, beta(*this)) * update;   // update conjugate direction
+            if(restart_ && std::abs(grad_new.dot(grad_old))/ grad_new.dot(grad_new) >= 0.1 ) {
+                update = -grad_new;
+            } else {
+                update = -grad_new + std::max(0.0, beta(*this)) * update;   // update conjugate direction
+            }
+
             stop |=
-              (internals::exec_grad_hooks(*this, objective, callbacks_) || internals::exec_stop_if(*this, objective));	    
+              (internals::exec_grad_hooks(*this, objective, callbacks_) || internals::exec_stop_if(*this, objective));	 
+
             x_old = x_new;
             grad_old = grad_new;
             error = grad_new.norm();
             values_.push_back(objective(x_old));
             n_iter_++;
+
+            if(values_.back() <= value_) {
+                value_ = values_.back();
+                optimum_ = x_old;
+            }
         }
-        optimum_ = x_old;
-        value_ = values_.back();
+
+        if(values_.back() <= value_) {
+            value_ = values_.back();
+            optimum_ = x_old;
+        }
         return optimum_;
     }
     // observers
@@ -102,9 +120,16 @@ template <int N, typename DirectionUpdate> class conjugate_gradient_impl {
 struct fletcher_reeves_update {
     template <typename Opt> double operator()(const Opt& opt) { return opt.grad_new.norm() / opt.grad_old.dot(opt.grad_old); }
 };
+
 struct polak_ribiere_update {
     template <typename Opt> double operator()(const Opt& opt) {
         return opt.grad_new.dot(opt.grad_new - opt.grad_old) / opt.grad_old.dot(opt.grad_old);
+    }
+};
+
+struct polak_ribiere_plus_update {
+    template <typename Opt> double operator()(const Opt& opt) {
+        return std::max(opt.grad_new.dot(opt.grad_new - opt.grad_old) / opt.grad_old.dot(opt.grad_old), 0.0);
     }
 };
 
@@ -116,15 +141,25 @@ class FletcherReevesCG : public internals::conjugate_gradient_impl<N, internals:
     using Base = internals::conjugate_gradient_impl<N, internals::fletcher_reeves_update>;
    public:
     FletcherReevesCG() = default;
-    FletcherReevesCG(int max_iter, double tol, double step) : Base(max_iter, tol, step) { }
+    FletcherReevesCG(int max_iter, double tol, double step, bool restart) : Base(max_iter, tol, step, restart) { }
 };
+
 template <int N>
 class PolakRibiereCG : public internals::conjugate_gradient_impl<N, internals::polak_ribiere_update> {
     using Base = internals::conjugate_gradient_impl<N, internals::polak_ribiere_update>;
    public:
     PolakRibiereCG() = default;
-    PolakRibiereCG(int max_iter, double tol, double step) : Base(max_iter, tol, step) { }
+    PolakRibiereCG(int max_iter, double tol, double step, bool restart) : Base(max_iter, tol, step, restart) { }
 };
+
+template <int N>
+class PolakRibierePlsCG : public internals::conjugate_gradient_impl<N, internals::polak_ribiere_plus_update> {
+    using Base = internals::conjugate_gradient_impl<N, internals::polak_ribiere_plus_update>;
+   public:
+    PolakRibierePlsCG() = default;
+    PolakRibierePlsCG(int max_iter, double tol, double step, bool restart) : Base(max_iter, tol, step, restart) { }
+};
+
 
 }   // namespace fdapde
 

@@ -169,6 +169,7 @@ public:
         }
         double error = 0;
         auto grad = objective.gradient();
+        values_.clear();
         n_iter_ = 0;
         update = zero;
         h = step_;
@@ -198,7 +199,7 @@ public:
             // Stationarity test
             grad_new = grad(x_new);
             if (grad_new.isApprox(zero)) {
-                optimum_ = x_old;
+                optimum_ = x_new;
                 value_ = objective(optimum_);
                 return optimum_;
             }
@@ -217,7 +218,7 @@ public:
             stop |= (internals::exec_grad_hooks(*this, objective, callbacks_) || internals::exec_stop_if(*this, objective));
             
             error = grad_new.norm();
-            values_.push_back(objective(x_old));
+            values_.push_back(objective(x_new));
             x_old = x_new;
             grad_old = grad_new;
             ++n_iter_;

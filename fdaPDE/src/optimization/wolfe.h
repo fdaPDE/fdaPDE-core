@@ -25,14 +25,16 @@ namespace fdapde {
 // wolfe line search method for adaptive step size
 class WolfeLineSearch {
    private:
-    static constexpr int max_iter_ = 10;
+    int max_iter_ = 100;
     double alpha_ = 1.0;
     double alpha_max_ = std::numeric_limits<double>::infinity(), alpha_min_ = 0;
     double c1_ = 1e-4, c2_ = 0.9;
    public:
     WolfeLineSearch() = default;
-    WolfeLineSearch(double alpha, double c1, double c2) : alpha_(alpha), c1_(c1), c2_(c2) { }
-
+    WolfeLineSearch(double alpha, double c1, double c2) : alpha_(alpha), c1_(c1), c2_(c2){ }
+    WolfeLineSearch(double alpha, double c1, double c2, int max_iter) : alpha_(alpha), c1_(c1), c2_(c2), max_iter_(max_iter) { }
+    WolfeLineSearch(int max_iter) : max_iter_(max_iter) { }
+    
     // bisection method for the weak Wolfe conditions. check "Jorge Nocedal, Stephen J. Wright (2006), Numerical
     // Optimization, page 58
     template <typename Opt, typename Obj> bool adapt_hook(Opt& opt, Obj& obj) {

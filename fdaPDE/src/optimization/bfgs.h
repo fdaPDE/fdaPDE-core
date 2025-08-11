@@ -70,9 +70,10 @@ template <int N> class BFGS {
             inv_hessian_ = matrix_t::Identity(size, size);
         } else {
             inv_hessian_ = matrix_t::Identity();
-	}
-	update = -inv_hessian_ * grad_old;
-	stop |= internals::exec_grad_hooks(*this, objective, callbacks_);
+        }
+        values_.clear();
+        update = -inv_hessian_ * grad_old;
+        stop |= internals::exec_grad_hooks(*this, objective, callbacks_);
         error = grad_old.norm();
         values_.push_back(objective(x_old));
 
