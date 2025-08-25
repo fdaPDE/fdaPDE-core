@@ -24,15 +24,6 @@ namespace fdapde {
 // forward declaration to break circular dependency
 template <int N_> struct PermutationOp;
 
-// has_identity trait
-namespace internals {
-
-// PermutationMatrix<N> => has identity
-template <int N_>
-struct has_identity<PermutationOp<N_>> : std::true_type {};
-
-}
-
 // permutation matrix
 template <int N_> struct PermutationOp : public SquareMatrixBase<N_, PermutationOp<N_>> {
     using Base = SquareMatrixBase<N_, PermutationOp<N_>>;

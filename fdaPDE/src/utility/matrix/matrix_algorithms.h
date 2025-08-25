@@ -18,47 +18,8 @@
 #define __FDAPDE_MATRIX_ALGORITHMS_H__
 
 #include "header_check.h"
-#include "square_matrix_base.h"
 
 namespace fdapde {
-
-// forward substitution (FS) for lower-triangular matrix (view)
-template <typename Matrix, typename Rhs>
-constexpr auto forward_sub(const Matrix& L, const Rhs& b)
-requires (internals::is_lower_triangular_v<Matrix>) {
-    fdapde_static_assert(Matrix::Rows == Matrix::Cols, FS_IS_ONLY_FOR_SQUARE_INVERTIBLE_MATRICES);
-    fdapde_static_assert(std::is_same_v<typename Matrix::Scalar FDAPDE_COMMA typename Rhs::Scalar>, OPERANDS_HAVE_DIFFERENT_SCALAR_TYPES);
-
-    using Scalar = typename Matrix::Scalar;
-    constexpr int N = Matrix::Rows;
-    Vector<Scalar, N> x;
-    x[0] = b[0] / L(0,0);
-    for (int i = 1; i < N; ++i) {
-        Scalar sum = 0;
-        for (int j = 0; j < i; ++j) sum += L(i,j) * x[j];
-        x[i] = (b[i] - sum) / L(i,i);
-    }
-    return x;
-}
-
-// backward substitution (BS) for upper-triangular matrix (view)
-template <typename Matrix, typename Rhs>
-constexpr auto backward_sub(const Matrix& U, const Rhs& b)
-requires (internals::is_upper_triangular_v<Matrix>) {
-    fdapde_static_assert(Matrix::Rows == Matrix::Cols, BS_IS_ONLY_FOR_SQUARE_INVERTIBLE_MATRICES);
-    fdapde_static_assert(std::is_same_v<typename Matrix::Scalar FDAPDE_COMMA typename Rhs::Scalar>, OPERANDS_HAVE_DIFFERENT_SCALAR_TYPES);
-
-    using Scalar = typename Matrix::Scalar;
-    constexpr int N = Matrix::Rows;
-    Vector<Scalar, N> x;
-    x[N-1] = b[N-1] / U(N-1,N-1);
-    for (int i = N-2; i >= 0; --i) {
-        Scalar sum = 0;
-        for (int j = i+1; j < N; ++j) sum += U(i,j) * x[j];
-        x[i] = (b[i] - sum) / U(i,i);
-    }
-    return x;
-}
 
 // modified gram–schmidt (MGS) with basis completion
 // TODO: BasisCompletion as template parameter

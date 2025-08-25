@@ -18,41 +18,9 @@
 #define __FDAPDE_SYMMETRIC_MATRIX_H__
 
 #include "header_check.h"
-#include "matrix_base.h"
-#include "square_matrix_base.h"
 
 namespace fdapde {
-
-// forward declaration
-template <typename Scalar, int N> class SymmetricMatrixView;
-
-// has_identity trait
-namespace internals {
-
-// SymmetricMatrix => has identity
-template <typename Scalar, int N, bool NestAsRefBit>
-struct has_identity<SymmetricMatrix<Scalar, N, NestAsRefBit>> : std::true_type {};
-
-}
-
-// is_view trait
-namespace internals {
-
-template <typename Scalar, int N>
-struct is_view<SymmetricMatrixView<Scalar, N>> : std::true_type {};
-
-}
-
-// is_symmetric trait
-namespace internals {
-
-template <typename Scalar, int N>
-struct is_symmetric<SymmetricMatrixView<Scalar, N>> : std::true_type {};
-template <typename Scalar, int N, bool NestAsRefBit>
-struct is_symmetric<SymmetricMatrix<Scalar, N, NestAsRefBit>> : std::true_type {};
-
-}
-
+  
 // symmetric matrix view
 template <typename Scalar_, int N_>
 class SymmetricMatrixView : public SquareMatrixBase<N_, SymmetricMatrixView<Scalar_, N_>> {

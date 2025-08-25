@@ -22,28 +22,6 @@
 
 namespace fdapde {
 
-// forward declaration
-template <typename Scalar_, int N> class OrthogonalMatrixView;
-template <typename Scalar_, int N, bool NestAsRefBit> class OrthogonalMatrix;
-
-// has_identity trait
-namespace internals {
-
-// OrthogonalMatrix => has identity
-template <typename Scalar, int N, bool NestAsRefBit>
-struct has_identity<OrthogonalMatrix<Scalar, N, NestAsRefBit>> : std::true_type {};
-
-}
-
-// is_view trait
-namespace internals {
-
-// OrthogonalMatrix => has identity
-template <typename Scalar, int N>
-struct is_view<OrthogonalMatrixView<Scalar, N>> : std::true_type {};
-
-}
-
 // OrthogonalMatrixView
 template <typename Scalar_, int N_>
 class OrthogonalMatrixView : public SquareMatrixBase<N_, OrthogonalMatrixView<Scalar_, N_>> {
