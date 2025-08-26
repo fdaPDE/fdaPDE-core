@@ -68,7 +68,7 @@ namespace fdapde {
 namespace fdapde {
 
 // forward declaration
-template <int Rows, int Cols, typename XprType> struct MatrixBase;
+template <int Rows, int Cols, typename XprType> struct MatrixExpr;
 
 // storage orders
 [[maybe_unused]] constexpr int RowMajor = 0;
@@ -112,7 +112,6 @@ template <typename XprType> using ref_select_t = typename ref_select<XprType>::t
 }
 
 #include "src/utility/matrix/matrix.h"
-// #include "src/utility/orthogonal_matrix.h"
 // #include "src/utility/permutation_matrix.h"
 // #include "src/utility/rotation_operator.h"
 // #include "src/utility/matrix_algorithms.h"
@@ -121,7 +120,10 @@ template <typename XprType> using ref_select_t = typename ref_select<XprType>::t
 // #include "src/utility/skew_symmetric_matrix.h"
 #include "src/utility/matrix/diagonal.h"
 #include "src/utility/matrix/triangular.h"
-#include "src/utility/matrix/matrix_base.h"
+#include "src/utility/matrix/matrix_expr.h"
+
+// special matrices
+// #include "src/utility/matrix/orthogonal.h"
 
 
 #include "src/utility/binary.h"
