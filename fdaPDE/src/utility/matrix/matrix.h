@@ -26,6 +26,7 @@ template <typename Functor_, int Rows_, int Cols_>
 struct ProceduralMatrix : public MatrixExpr<Rows_, Cols_, ProceduralMatrix<Functor_, Rows_, Cols_>> {
     fdapde_static_assert(
       std::is_invocable_v<Functor_ FDAPDE_COMMA int FDAPDE_COMMA int>, FUNCTOR_NOT_CALLABLE_AT_INDECES_PAIR);
+    using Base = MatrixExpr<Rows_, Cols_, ProceduralMatrix<Functor_, Rows_, Cols_>>;
     using Scalar = typename decltype(std::function {std::declval<Functor_>()})::result_type;
     fdapde_static_assert(std::is_arithmetic_v<Scalar>, INVALID_FUNCTOR_RETURN_TYPE);
     static constexpr int Rows = Rows_;
@@ -45,6 +46,11 @@ struct ProceduralMatrix : public MatrixExpr<Rows_, Cols_, ProceduralMatrix<Funct
     }
     constexpr int rows() const { return rows_; }
     constexpr int cols() const { return cols_; }
+    constexpr void resize(int rows, int cols) {
+        fdapde_static_assert(Rows == Dynamic || Cols == Dynamic, THIS_METHOD_IS_FOR_DYNAMIC_SIZED_MATRICES_ONLY);
+        rows_ = rows;
+        cols_ = cols;
+    }
    private:
     int rows_, cols_;
     Functor_ f_;
@@ -55,6 +61,23 @@ template <int Rows, int Cols> using ZeroMatrix = ProceduralMatrix<decltype([](in
 template <int Rows, int Cols> using OnesMatrix = ProceduralMatrix<decltype([](int i, int j) { return 1; }), Rows, Cols>;
 template <int Rows, int Cols>
 using IdentityMatrix = ProceduralMatrix<decltype([](int i, int j) { return i == j ? 1 : 0; }), Rows, Cols>;
+
+namespace internals {
+
+struct generic_assignment_executor {
+    template <typename DstMatrixType, typename SrcXprType>
+    static constexpr void run(DstMatrixType& dst, const SrcXprType& src) {
+        fdapde_assert(dst.rows() == src.rows() && dst.cols() == src.cols());
+        int rows_ = dst.rows();
+        int cols_ = dst.cols();
+        for (int i = 0; i < rows_; ++i) {
+            for (int j = 0; j < cols_; ++j) { dst(i, j) = src(i, j); }
+        }
+        return;
+    }
+};
+
+}   // namespace internals
 
 template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_, typename MatrixType>
 class MatrixBase : public MatrixExpr<Rows_, Cols_, MatrixType> {
@@ -68,17 +91,7 @@ class MatrixBase : public MatrixExpr<Rows_, Cols_, MatrixType> {
     static constexpr int StorageOrder = StorageOrder_;
     static constexpr int NestAsRef = MatrixType::NestAsRef;
     static constexpr int ReadOnly = std::is_const_v<Scalar_> ? 1 : 0;
-    struct assignment_executor {
-        template <typename SrcXprType> static constexpr void run(MatrixType& dst, const SrcXprType& src) {
-            fdapde_assert(dst.rows() == src.rows() && dst.cols() == src.cols());
-            int rows_ = dst.rows();
-            int cols_ = dst.cols();
-            for (int i = 0; i < rows_; ++i) {
-                for (int j = 0; j < cols_; ++j) { dst(i, j) = src(i, j); }
-            }
-            return;
-        }
-    };
+    using assignment_executor = internals::generic_assignment_executor;
 
     // constructors
     constexpr MatrixBase() :
@@ -182,8 +195,9 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
         }
     }
     template <std::size_t RhsSize> constexpr explicit Matrix(const Scalar (&data)[RhsSize]) : Base() {
-        fdapde_static_assert(Rows_ != Dynamic && Cols_ != Dynamic, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
-        fdapde_static_assert(StorageSize == RhsSize, INVALID_DATA_SIZE);
+        fdapde_static_assert(
+          Rows_ != Dynamic && Cols_ != Dynamic && StorageSize == RhsSize,
+          THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
         for (int i = 0; i < Rows_; ++i) {
             for (int j = 0; j < Cols_; ++j) {
                 Base::operator()(i, j) = data[i * Base::row_stride_ + j * Base::col_stride_];
@@ -257,6 +271,7 @@ class MatrixView :
     using Base = MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, MatrixView<Scalar_, Rows_, Cols_, StorageOrder_>>;
     using Scalar = Scalar_;
     using StorageType = std::add_pointer_t<Scalar>;
+    static constexpr int ReadOnly = std::is_const_v<Scalar_> ? 1 : 0;
     static constexpr int NestAsRef = 0;
 
     // constructors

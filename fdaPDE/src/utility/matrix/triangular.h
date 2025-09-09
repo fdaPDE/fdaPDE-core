@@ -280,7 +280,7 @@ template <typename LhsXprType, typename RhsXprType, int ViewMode>
 constexpr auto operator+(
   const TriangularMatrixExpr<LhsXprType::Rows, LhsXprType::Cols, ViewMode, LhsXprType>& lhs,
   const TriangularMatrixExpr<RhsXprType::Rows, RhsXprType::Cols, ViewMode, RhsXprType>& rhs) {
-    return (lhs.data() + rhs.data()).template as_triangular<ViewMode>();    
+    return (lhs.data() + rhs.data()).template as_triangular<ViewMode>();
 }
 template <typename LhsXprType, typename RhsXprType, int ViewMode>
 constexpr auto operator-(
@@ -428,10 +428,12 @@ struct TriangularMatrix :
         for (int i = 0, n = data_.size(); i < n; ++i) { data_[i] = data[i]; }
     }
     // static named constructors
-    static constexpr TriangularMatrix Ones() { return StorageType::Ones(); }
-    static constexpr TriangularMatrix Ones(int size) { return StorageType::Ones(size); }
-    static constexpr TriangularMatrix Zero() { return StorageType::Zero(); }
-    static constexpr TriangularMatrix Zero(int size) { return StorageType::Zero(size); }
+    static constexpr TriangularMatrix Ones() { return OnesMatrix<Rows, Cols>(); }
+    static constexpr TriangularMatrix Ones(int size) { return OnesMatrix<Rows, Cols>(size, size); }
+    static constexpr TriangularMatrix Zero() { return ZeroMatrix<Rows, Cols>(); }
+    static constexpr TriangularMatrix Zero(int size) { return ZeroMatrix<Rows, Cols>(size, size); }
+    static constexpr TriangularMatrix Identity() { return IdentityMatrix<Rows, Cols>(); }
+    static constexpr TriangularMatrix Identity(int size) { return IdentityMatrix<Rows, Cols>(size, size); }
     // inherit assignment from base
     using Base::operator=;
     // modifiers
@@ -472,22 +474,17 @@ class TriangularMatrixView :
     constexpr TriangularMatrixView(Scalar* data, int size) : Base(size), data_(data) {
 	fdapde_constexpr_assert(size > 0);
     }
-    // inherit assignment from Base
-    using Base::operator=;
     // data pointers
-    constexpr VectorView<const Scalar, Rows_> data() const {
-        return VectorView<const Scalar, Rows_>(data_, Base::size_);
-    }
-    constexpr VectorView<Scalar, Rows_> data() { return VectorView<Scalar, Rows_>(data_, Base::size_); }
+    constexpr const StorageType& data() const { return data_; }
+    constexpr StorageType& data() { return data_; }
    private:
     StorageType data_;
 };
 
 // type aliases
 template <typename Scalar, int Size> using UpperTriangularMatrix = TriangularMatrix<Scalar, Size, Upper>;
-template <typename Scalar, int Size> using LowerTriangularMatrix = TriangularMatrix<Scalar, Size, Lower>;
-  
 template <typename Scalar, int Size> using UpperTriangularMatrixView = TriangularMatrixView<Scalar, Size, Upper>;
+template <typename Scalar, int Size> using LowerTriangularMatrix = TriangularMatrix<Scalar, Size, Lower>;  
 template <typename Scalar, int Size> using LowerTriangularMatrixView = TriangularMatrixView<Scalar, Size, Lower>;
 
 }   // namespace fdapde

@@ -882,15 +882,31 @@ template <int Rows, int Cols, typename XprType> struct MatrixExpr {
     }
 
     // square matrix methods
-
-    constexpr auto symm_part() const { return 0.5 * (derived() + derived().transpose()); }   // symmetric part
-    constexpr auto skew_part() const { return 0.5 * (derived() - derived().transpose()); }   // skew-symmetric part
+    constexpr auto symm_part() const {
+        fdapde_constexpr_assert(
+          Rows == Dynamic || Cols == Dynamic || Rows == Cols, THIS_METHODS_IS_FOR_SQUARE_MATRICES_ONLY);
+        if constexpr (Rows == Dynamic || Cols = Dynamic) fdapde_constexpr_assert(derived().rows() == derived().cols());
+        return 0.5 * (derived() + derived().transpose());   // symmetric part
+    }
+    constexpr auto skew_part() const {
+        fdapde_constexpr_assert(
+          Rows == Dynamic || Cols == Dynamic || Rows == Cols, THIS_METHODS_IS_FOR_SQUARE_MATRICES_ONLY);
+        if constexpr (Rows == Dynamic || Cols = Dynamic) fdapde_constexpr_assert(derived().rows() == derived().cols());
+        return 0.5 * (derived() - derived().transpose());   // skew-symmetric part
+    }
     // triangular block accessors
     template <int BlockMode> constexpr TriangularBlock<const XprType, BlockMode> triangular_block() const {
         return TriangularBlock<const XprType, BlockMode>(derived());
     }
     template <int BlockMode> constexpr TriangularBlock<XprType, BlockMode> triangular_block() {
         return TriangularBlock<XprType, BlockMode>(derived());
+    }
+    // view current expression as an orthogonal matrix expression, if orthogonality invariant is satisfied
+    constexpr auto as_orthogonal() const {
+        IdentityMatrix<Rows, Cols> identity;
+        if constexpr (Rows == Dynamic || Cols == Dynamic) { identity.resize(derived().rows(), derived().cols()); }
+        fdapde_constexpr_assert(almost_equal(derived() * derived().transpose() FDAPDE_COMMA identity));
+        return internals::orthogonal_wrapper<Rows, Cols, const XprType>(derived());
     }
 };
 

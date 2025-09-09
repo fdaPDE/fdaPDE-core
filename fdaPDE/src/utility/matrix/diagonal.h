@@ -248,8 +248,10 @@ constexpr auto operator*(
   const DiagonalMatrixExpr<LhsXprType::Rows, LhsXprType::Cols, LhsXprType>& lhs,
   const DiagonalMatrixExpr<RhsXprType::Rows, RhsXprType::Cols, RhsXprType>& rhs) {
     return MatrixProductOp<
-      LhsXprType, RhsXprType, internals::diagonal_diagonal_product_executor<LhsXprType, RhsXprType>> {
-      lhs.derived(), rhs.derived()};
+             LhsXprType, RhsXprType, internals::diagonal_diagonal_product_executor<LhsXprType, RhsXprType>> {
+      lhs.derived(), rhs.derived()}
+      .diagonal()
+      .as_diagonal();   // close wrt diagonal algebra
 }
 
 // owning storage diagonal matrix
@@ -262,6 +264,7 @@ class DiagonalMatrix : public DiagonalMatrixExpr<Rows_, Rows_, DiagonalMatrix<Sc
     static constexpr int Rows = Rows_;
     static constexpr int Cols = Rows_;
     static constexpr int StorageSize = Rows_ == Dynamic ? Dynamic : Rows_;
+    static constexpr int NestAsRef = 1;
     static constexpr int ReadOnly = std::is_const_v<Scalar_> ? 1 : 0;
 
     constexpr DiagonalMatrix() : Base(), data_() { }
@@ -338,7 +341,7 @@ class DiagonalMatrixView : public DiagonalMatrixExpr<Rows_, Rows_, DiagonalMatri
     using Scalar = Scalar_;
     using StorageType = std::add_pointer_t<Scalar>;
     static constexpr int ReadOnly = std::is_const_v<Scalar_> ? 1 : 0;
-    static constexpr int NestAsRef = 1;
+    static constexpr int NestAsRef = 0;
   
     // constructors
     constexpr DiagonalMatrixView() : Base(), data_(nullptr) { }
