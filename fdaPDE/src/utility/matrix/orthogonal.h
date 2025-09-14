@@ -27,6 +27,8 @@ template <int Rows_, int Cols_, typename XprType_>
 struct OrthogonalMatrixExpr : public MatrixExpr<Rows_, Cols_, XprType_> {
     using Base = MatrixExpr<Rows_, Cols_, XprType_>;
     using Base::derived;
+    static constexpr int Rows = Rows_;
+    static constexpr int Cols = Cols_;
 
     constexpr auto inverse() const { return derived().transpose().as_orthogonal(); }
     template <typename RhsXprType> constexpr auto solve(const RhsXprType& b) const {
@@ -44,7 +46,17 @@ struct OrthogonalMatrixBase : public OrthogonalMatrixExpr<Size_, Size_, Orthogon
     static constexpr int StorageOrder = StorageOrder_;
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = std::is_const_v<Scalar_> ? 1 : 0;
-    using assignment_executor = internals::generic_assignment_executor;
+    struct assignment_executor {
+        template <typename SrcXprType> static constexpr void run(OrthogonalMatrixType_& dst, const SrcXprType& src) {
+            fdapde_assert(dst.rows() == src.rows() && dst.cols() == src.cols());
+            int rows_ = dst.rows();
+            int cols_ = dst.cols();
+            for (int i = 0; i < rows_; ++i) {
+                for (int j = 0; j < cols_; ++j) { dst.data()(i, j) = src(i, j); }
+            }
+            return;
+        }
+    };
   
     OrthogonalMatrixBase() = delete;
     OrthogonalMatrixBase(int size) : size_(Size_ == Dynamic ? size_ : Size_) { }
@@ -164,8 +176,8 @@ struct orthogonal_wrapper : OrthogonalMatrixExpr<Rows_, Cols_, orthogonal_wrappe
         requires(std::is_constructible_v<OrthogonalXprTypeNested, XprType>)
     constexpr orthogonal_wrapper(XprType&& xpr) : Base(), xpr_(std::forward<XprType>(xpr)) { }
     constexpr Scalar operator()(int i, int j) const {
-        fdapde_constexpr_assert(i >= 0 && i < Base::size_ && j >= 0 && j < Base::size_);
-        return i == j ? xpr_[i] : Scalar(0);
+        fdapde_constexpr_assert(i >= 0 && i < xpr_.rows() && j >= 0 && j < xpr_.cols());
+        return xpr_(i, j);
     }
    private:
     OrthogonalXprTypeNested xpr_;
@@ -173,8 +185,6 @@ struct orthogonal_wrapper : OrthogonalMatrixExpr<Rows_, Cols_, orthogonal_wrappe
 
 }   // namespace internals
 
-// ------------------------------------------------------------------ facciamo un unico tipo identità e implementiamo le operazioni usando quel tipo.
-  
 // orthogonal group operation
 template <typename LhsXprType, typename RhsXprType>
 constexpr auto operator*(
@@ -273,48 +283,6 @@ class OrthogonalMatrixView : public OrthogonalMatrixExpr<Rows_, Rows_, Orthogona
 //     }
 //     Scalar alpha_, beta_, gamma_;
 // };
-
-// // orthogonalization of matrix A via modified gram–schmidt (MGS) with orthogonal completion
-// template <int Rows_, int Cols_, typename XprType_>
-// constexpr OrthogonalMatrix<typename XprType_::Scalar, Rows_>
-// orthogonalize(const MatrixExpr<Rows_, Cols_, XprType_>& m) {
-//     fdapde_static_assert(
-//       Rows_ == Dynamic || Cols_ == Dynamic || Rows_ == Cols_, THIS_METHOD_IS_FOR_SQUARE_MATRICES_ONLY);
-//     if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { fdapde_constexpr_assert(m.rows() == m.cols()); }
-
-//     using Scalar = typename XprType_::Scalar;
-//     static constexpr int Size = Rows_;
-//     const double tol = m.norm();
-//     const double eps = fdapde::sqrt(std::numeric_limits<Scalar>::epsilon());
-//     Matrix<Scalar, Size, Size> Q;
-//     int size = m.rows();
-//     if constexpr (Size == Dynamic) { Q.resize(size, size); }
-
-//     int rank = 0;
-//     // Modified Gram–Schmidt on m
-//     for (int i = 0; i < size; ++i) {
-//         Vector<Scalar, Size> v(m.col(i));
-//         for (int j = 0; j < rank; ++j) { v -= (Q.col(j).dot(v)) * Q.col(j); }   // Q.col(j) is unit-norm
-//         double v_norm = v.norm();
-//         if (v_norm <= eps * fdapde::max(tol, fdapde::max(m.col(i).norm(), 1.0))) {
-//             continue;   // dependent column (don’t store a zero column in Q)
-//         }
-//         Q.col(rank++) = v / v_norm;
-//     }
-
-//     // orthogonal completion if m was rank-deficient, guarantees Q \in O(n)
-//     if (rank < size) {   
-//         for (int k = 0; k < size; ++k) {
-//             Vector<Scalar, Size> v = Vector<Scalar, Size>::Zero();
-//             v[k] = 1.0;
-//             // Orthogonalize against existing Q
-//             for (int j = 0; j < rank; ++j) v -= (Q.col(j).dot(v)) * Q.col(j);
-//             double v_norm = v.norm();
-//             if (v_norm > fdapde::max(tol, fdapde::max(m.col(i).norm(), 1.0))) { Q.col(rank++) = v / v_norm; }
-//         }
-//     }
-//     return Q.as_orthogonal();
-// }
 
 }   // namespace fdapde
 

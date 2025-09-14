@@ -17,8 +17,6 @@
 #ifndef __FDAPDE_MATRIX_BASE_H__
 #define __FDAPDE_MATRIX_BASE_H__
 
-#include <iomanip>
-
 #include "../header_check.h"
 
 namespace fdapde {
@@ -314,12 +312,23 @@ template <typename LhsXprType, typename RhsXprType> struct generic_matrix_produc
 
     static constexpr auto run(int i, int j, const LhsXprType& lhs, const RhsXprType& rhs) {
         Scalar prod = 0;
-        const int size = LhsXprTypeClean::Rows == 1 ? lhs.cols() : lhs.rows();
+        const int size = lhs.cols();
         for (int k = 0; k < size; ++k) { prod += lhs(i, k) * rhs(k, j); }
         return prod;
     }
+};  
+
+template <typename LhsXprType, typename RhsXprType> struct outer_product_executor {
+    using LhsXprTypeClean = std::decay_t<LhsXprType>;
+    using RhsXprTypeClean = std::decay_t<RhsXprType>;
+    using Scalar =
+      decltype(std::declval<typename LhsXprTypeClean::Scalar>() * std::declval<typename RhsXprTypeClean::Scalar>());
+    static_assert(LhsXprTypeClean::Cols == 1 && RhsXprTypeClean::Rows == 1);
+
+    static constexpr auto run(int i, int j, const LhsXprType& lhs, const RhsXprType& rhs) { return lhs[i] * rhs[j]; }
 };
 
+  
 }   // namespace internals
 
 template <typename LhsXprType, typename RhsXprType, typename Executor>
@@ -360,12 +369,17 @@ struct MatrixProductOp :
 };
 // generic matrix-matrix product
 template <typename LhsXprType, typename RhsXprType>
-constexpr MatrixProductOp<LhsXprType, RhsXprType, internals::generic_matrix_product_executor<LhsXprType, RhsXprType>>
-operator*(
+constexpr auto operator*(
   const MatrixExpr<LhsXprType::Rows, LhsXprType::Cols, LhsXprType>& lhs,
   const MatrixExpr<RhsXprType::Rows, RhsXprType::Cols, RhsXprType>& rhs) {
-    return MatrixProductOp<LhsXprType, RhsXprType, internals::generic_matrix_product_executor<LhsXprType, RhsXprType>> {
-      lhs.derived(), rhs.derived()};
+    if constexpr (LhsXprType::Cols == 1 && RhsXprType::Rows == 1) {   // outer product v * u^\top
+        return MatrixProductOp<LhsXprType, RhsXprType, internals::outer_product_executor<LhsXprType, RhsXprType>> {
+          lhs.derived(), rhs.derived()};
+    } else {
+        return MatrixProductOp<
+          LhsXprType, RhsXprType, internals::generic_matrix_product_executor<LhsXprType, RhsXprType>> {
+          lhs.derived(), rhs.derived()};
+    }
 }
 
 // kronecker tensor product operation
@@ -456,22 +470,22 @@ class MatrixBlock : public MatrixExpr<BlockRows_, BlockCols_, MatrixBlock<BlockR
         fdapde_static_assert(
           BlockRows_ != Dynamic && BlockCols_ != Dynamic, THIS_METHOD_IS_FOR_STATIC_SIZED_BLOCKS_ONLY);
         fdapde_constexpr_assert(
-          start_row >= 0 && start_row + block_rows_ < xpr_.rows() && start_col >= 0 &&
-          start_col + block_cols_ < xpr.cols());
+          start_row >= 0 && start_row + block_rows_ <= xpr_.rows() && start_col >= 0 &&
+          start_col + block_cols_ <= xpr.cols());
     }
     template <typename XprType_>
         requires(std::is_constructible_v<XprTypeNested, XprType_>)
     constexpr MatrixBlock(XprType_&& xpr, int start_row, int start_col, int block_rows, int block_cols) :
         start_row_(start_row),
         start_col_(start_col),
-        block_rows_(block_rows_),
-        block_cols_(block_cols_),
+        block_rows_(block_rows),
+        block_cols_(block_cols),
         xpr_(std::forward<XprType_>(xpr)) {
         fdapde_static_assert(
           BlockRows_ == Dynamic && BlockCols_ == Dynamic, THIS_METHOD_IS_FOR_DYNAMIC_SIZED_BLOCKS_ONLY);
         fdapde_constexpr_assert(
-          start_row >= 0 && start_row + block_rows_ < xpr_.rows() && start_col >= 0 &&
-          start_col + block_cols_ < xpr.cols());
+          start_row >= 0 && start_row + block_rows_ <= xpr_.rows() && start_col >= 0 &&
+          start_col + block_cols_ <= xpr.cols());
     }
 
     constexpr int rows() const { return Rows != Dynamic ? Rows : block_rows_; }
@@ -769,6 +783,12 @@ template <int Rows, int Cols, typename XprType> struct MatrixExpr {
         return internals::triangular_wrapper < Rows == 1 ? Cols : Rows, Cols == 1 ? Rows : Cols, ViewMode,
                const XprType > (derived());
     }
+    template <int ViewMode> auto as_symmetric() {
+        return internals::symmetric_wrapper<Rows, Cols, ViewMode, XprType>(derived());
+    }
+    template <int ViewMode> auto as_symmetric() const {
+        return internals::symmetric_wrapper<Rows, Cols, ViewMode, const XprType>(derived());
+    }
 
     // block accessors
     // static-sized block
@@ -835,17 +855,31 @@ template <int Rows, int Cols, typename XprType> struct MatrixExpr {
     // arithmetic operators
     template <int OtherRows, int OtherCols, typename OtherXprType>
     constexpr XprType& operator+=(const MatrixExpr<OtherRows, OtherCols, OtherXprType>& other) {
-        fdapde_static_assert(Rows == OtherRows && Cols == OtherCols, YOU_MIXED_MATRICES_OF_DIFFERENT_SIZES);
-        for (int i = 0; i < Rows; ++i) {
-            for (int j = 0; j < Cols; ++j) { derived().operator()(i, j) += other.derived()(i, j); }
+        fdapde_static_assert(
+          (Rows == Dynamic || Rows == OtherRows) && (Cols == Dynamic || Cols == OtherCols),
+          YOU_MIXED_MATRICES_OF_DIFFERENT_SIZES);
+        if constexpr (Rows == Dynamic || Cols == Dynamic) {
+            fdapde_constexpr_assert(derived().rows() == other.rows() && derived().cols() == other.cols());
+        }
+        const int n = derived().rows();
+        const int m = derived().cols();
+        for (int i = 0; i < n; ++i) {
+            for (int j = 0; j < m; ++j) { derived().operator()(i, j) += other.derived()(i, j); }
         }
         return derived();
     }
     template <int OtherRows, int OtherCols, typename OtherXprType>
     constexpr XprType& operator-=(const MatrixExpr<OtherRows, OtherCols, OtherXprType>& other) {
-        fdapde_static_assert(Rows == OtherRows && Cols == OtherCols, YOU_MIXED_MATRICES_OF_DIFFERENT_SIZES);
-        for (int i = 0; i < Rows; ++i) {
-            for (int j = 0; j < Cols; ++j) { derived().operator()(i, j) -= other.derived()(i, j); }
+        fdapde_static_assert(
+          (Rows == Dynamic || Rows == OtherRows) && (Cols == Dynamic || Cols == OtherCols),
+          YOU_MIXED_MATRICES_OF_DIFFERENT_SIZES);
+        if constexpr (Rows == Dynamic || Cols == Dynamic) {
+            fdapde_constexpr_assert(derived().rows() == other.rows() && derived().cols() == other.cols());
+        }
+        const int n = derived().rows();
+        const int m = derived().cols();
+        for (int i = 0; i < n; ++i) {
+            for (int j = 0; j < m; ++j) { derived().operator()(i, j) -= other.derived()(i, j); }
         }
         return derived();
     }
@@ -883,15 +917,15 @@ template <int Rows, int Cols, typename XprType> struct MatrixExpr {
 
     // square matrix methods
     constexpr auto symm_part() const {
-        fdapde_constexpr_assert(
+        fdapde_static_assert(
           Rows == Dynamic || Cols == Dynamic || Rows == Cols, THIS_METHODS_IS_FOR_SQUARE_MATRICES_ONLY);
-        if constexpr (Rows == Dynamic || Cols = Dynamic) fdapde_constexpr_assert(derived().rows() == derived().cols());
+        if constexpr (Rows == Dynamic || Cols == Dynamic) fdapde_constexpr_assert(derived().rows() == derived().cols());
         return 0.5 * (derived() + derived().transpose());   // symmetric part
     }
     constexpr auto skew_part() const {
-        fdapde_constexpr_assert(
+        fdapde_static_assert(
           Rows == Dynamic || Cols == Dynamic || Rows == Cols, THIS_METHODS_IS_FOR_SQUARE_MATRICES_ONLY);
-        if constexpr (Rows == Dynamic || Cols = Dynamic) fdapde_constexpr_assert(derived().rows() == derived().cols());
+        if constexpr (Rows == Dynamic || Cols == Dynamic) fdapde_constexpr_assert(derived().rows() == derived().cols());
         return 0.5 * (derived() - derived().transpose());   // skew-symmetric part
     }
     // triangular block accessors
@@ -903,9 +937,10 @@ template <int Rows, int Cols, typename XprType> struct MatrixExpr {
     }
     // view current expression as an orthogonal matrix expression, if orthogonality invariant is satisfied
     constexpr auto as_orthogonal() const {
-        IdentityMatrix<Rows, Cols> identity;
-        if constexpr (Rows == Dynamic || Cols == Dynamic) { identity.resize(derived().rows(), derived().cols()); }
-        fdapde_constexpr_assert(almost_equal(derived() * derived().transpose() FDAPDE_COMMA identity));
+        IdentityMatrix<Rows, Cols> I;
+	const auto& M = derived();
+        if constexpr (Rows == Dynamic || Cols == Dynamic) { I.resize(M.rows(), M.cols()); }
+        fdapde_constexpr_assert(almost_equal(M * M.transpose() FDAPDE_COMMA I));
         return internals::orthogonal_wrapper<Rows, Cols, const XprType>(derived());
     }
 };
@@ -937,9 +972,6 @@ template <int Rows1, int Cols1, typename XprType1, int Rows2, int Cols2, typenam
 constexpr bool almost_equal(
   const MatrixExpr<Rows1, Cols1, XprType1>& op1, const MatrixExpr<Rows2, Cols2, XprType2>& op2, double epsilon = 1e-7) {
     fdapde_static_assert(Rows1 == Rows2 && Cols1 == Cols2, YOU_MIXED_MATRICES_OF_DIFFERENT_SIZES);
-    fdapde_static_assert(
-      std::is_same_v<typename XprType1::Scalar FDAPDE_COMMA typename XprType2::Scalar>,
-      YOU_MIXED_MATRICES_OF_DIFFERENT_SCALAR_TYPES);
     using Scalar_ = typename XprType1::Scalar;
     for (int i = 0; i < Rows1; ++i) {
         for (int j = 0; j < Cols1; ++j) {

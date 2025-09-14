@@ -34,6 +34,8 @@
 #include <typeindex>
 #include <string>
 #include <numbers>
+#include <sstream>
+#include <iomanip>
 // common STL containers
 #include <array>
 #include <queue>
@@ -113,20 +115,17 @@ template <typename XprType> using ref_select_t = typename ref_select<XprType>::t
 
 #include "src/utility/matrix/matrix.h"
 // #include "src/utility/permutation_matrix.h"
-// #include "src/utility/rotation_operator.h"
-// #include "src/utility/matrix_algorithms.h"
-// #include "src/utility/matrix_decomposition.h"
-// #include "src/utility/symmetric_matrix.h"
-// #include "src/utility/skew_symmetric_matrix.h"
 #include "src/utility/matrix/diagonal.h"
 #include "src/utility/matrix/triangular.h"
 
 // special matrices
 #include "src/utility/matrix/orthogonal.h"
 #include "src/utility/matrix/symmetric.h"
+#include "src/utility/matrix/skew.h"
 
 #include "src/utility/matrix/matrix_expr.h"
 
+#include "src/utility/matrix/evd.h"
 
 #include "src/utility/binary.h"
 #include "src/utility/mdarray.h"
