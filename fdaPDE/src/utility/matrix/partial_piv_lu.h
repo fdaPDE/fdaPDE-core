@@ -1,117 +1,114 @@
+// This file is part of fdaPDE, a C++ library for physics-informed
+// spatial and functional data analysis.
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#ifndef __FDAPDE_PARTIAL_PIV_LU_H__
+#define __FDAPDE_PARTIAL_PIV_LU_H__
+
+#include "header_check.h"
+
+namespace fdapde {
+
 // LU with partial (row) pivoting and threshold check
-template <typename MatrixType>
-class PartialPivLU {
-    fdapde_static_assert(MatrixType::Rows == MatrixType::Cols, LU_DECOMPOSITION_IS_ONLY_FOR_SQUARE_INVERTIBLE_MATRICES);
+template <typename Scalar_, int Size_> class PartialPivLU {
+   public:
+    static constexpr int Size = Size_;
+    using Scalar = Scalar_;
 
-public:
-    static constexpr int N = MatrixType::Rows;
-    using Scalar = typename MatrixType::Scalar;
-    static constexpr Scalar pivot_threshold_ = std::numeric_limits<Scalar>::epsilon();
-
-    constexpr PartialPivLU() : lu_(), P_() { }
-
-    template <typename Xpr>
-    constexpr explicit PartialPivLU(const SquareMatrixBase<N, Xpr>& m) {
+    constexpr PartialPivLU() : lu_(), P_(), info_(0), rank_(0) { }
+    template <int Rows, int Cols, typename XprType>
+    constexpr explicit PartialPivLU(const MatrixExpr<Rows, Cols, XprType>& m) : lu_(), P_(), info_(0), rank_(0) {
         compute(m);
     }
 
     // factorize: overwrite `lu_` in place, build P_
-    template <typename Xpr>
-    constexpr void compute(const SquareMatrixBase<N, Xpr>& m) {
-        // copy input
+    template <int Rows, int Cols, typename XprType> constexpr void compute(const MatrixExpr<Rows, Cols, XprType>& m) {
+        const int n = m.rows();
         lu_ = m;
+        Scalar pivot_threshold = std::numeric_limits<Scalar>::epsilon() * m.inf_norm();
 
-        // track row swaps in a simple array first
-        std::array<int,N> perm;
-        for (int i = 0; i < N; ++i) perm[i] = i;
+        // initialization
+        Vector<int, Size> perm(n);
+        for (int i = 0; i < n; ++i) perm[i] = i;
+        info_ = 0;
+        rank_ = n;
 
-        // Doolittle algorithm with partial pivoting
-        for (int i = 0; i < N-1; ++i) {
-            // 1) find pivot row among i..N-1 (O(N); could be optimized with a blocked or parallel scan for large N)
-            int pivot_index = find_pivot_row(i, perm);
-
-            // 1b) check threshold to detect singular or rank‐deficient matrices
-            Scalar max_val = fdapde::abs(lu_(pivot_index,i));
-            if (max_val < pivot_threshold_) {
-                info_ = !Success;
+        // Doolittle with partial pivoting
+        for (int k = 0; k < n; ++k) {
+            // find pivot row
+            int pivot_index = k;
+            Scalar max_val = Scalar(0);
+            for (int r = k; r < n; ++r) {
+                Scalar av = fdapde::abs(lu_(r, k));
+                if (av > max_val) {
+                    max_val = av;
+                    pivot_index = r;
+                }
+            }
+            // check threshold to detect singular or rank-deficient matrices
+            if (max_val < pivot_threshold) {
+                if (info_ == 0) info_ = k;   // LAPACK convention: first zero pivot index (0-based)
+                rank_ = k;
                 break;
             }
-
-            // 2) swap rows i <-> pivot_index if needed
-            if (pivot_index != i) {
-                swap_rows(i, pivot_index, perm);
+            // row swap
+            if (pivot_index != k) {
+                for (int c = 0; c < m.cols(); ++c) { std::swap(lu_(k, c), lu_(pivot_index, c)); }
+                std::swap(perm[k], perm[pivot_index]);
             }
-
-            // 3) eliminate below pivot
-            eliminate_column(i);
-
-            // check invertibility
-            Scalar diag = fdapde::abs(lu_(i+1,i+1));
-            if (diag < pivot_threshold_ ) info_ = !Success;
+            // eliminate column below pivot
+            for (int r = k + 1; r < n; ++r) {
+                Scalar alpha = lu_(r, k) / lu_(k, k);
+                lu_(r, k) = alpha;   // L entry
+                for (int c = k + 1; c < m.cols(); ++c) { lu_(r, c) -= alpha * lu_(k, c); }
+            }
         }
 
         // build the final PermutationMatrix
-        P_ = PermutationOp<N>(perm);
+        P_ = PermutationMatrix<Size>(perm);
     }
 
-    // access the permutation
-    constexpr PermutationOp<N> P() const { return P_; }
-    // access L and U
-    constexpr LowerTriangularMatrix<Scalar, N> L() const {
-        return LowerTriangularMatrix<Scalar, N>(lu_.template triangular_view<UnitLower>());
-    }
-    constexpr UpperTriangularMatrix<Scalar, N> U() const {
-        return UpperTriangularMatrix<Scalar, N>(lu_.template triangular_view<Upper>());
+    // observers
+    constexpr const PermutationMatrix<Size>& P() const { return P_; }
+    constexpr auto L() const { return lu_.template triangular_view<UnitLower>(); }
+    constexpr auto U() const { return lu_.template triangular_view<Upper>(); }
+    constexpr int info() const { return info_; }   // 0 = success, >0 = first zero pivot
+    constexpr int rank() const { return rank_; }
+    constexpr Scalar determinant() const {
+        Scalar d = 1;
+        for (int i = 0, n = lu_.rows(); i < n; ++i) { d *= lu_(i, i); }
+        return P_.determinant() * d;
     }
 
     // solve Ax = b via PA = LU
-    template <typename Rhs>
-    constexpr Vector<Scalar,N> solve(const Rhs& b) const {
-        fdapde_static_assert(std::is_same_v<Scalar FDAPDE_COMMA typename Rhs::Scalar>, INVALID_SCALAR_TYPE_FOR_RHS_OPERAND);
-        fdapde_constexpr_assert(b.rows() == N && b.cols() == 1);
+    template <typename RhsRows, typename RhsXprType>
+    constexpr Vector<Scalar, RhsRows> solve(const MatrixExpr<RhsRows, 1, RhsXprType>& b) const {
+        fdapde_constexpr_assert(b.rows() == lu_.rows() && b.cols() == 1);
 
-        // apply P to RHS, then forward/backward substitute
-        auto y = P_ * b;
-        auto z = forward_sub(lu_.template triangular_view<UnitLower>(), y);
-        return backward_sub(lu_.template triangular_view<Upper>(), z);
+        Vector<Scalar, RhsRows> y = P_ * b;
+        auto z = L().solve(y);   // forward  substitute
+        auto x = U().solve(z);   // backward substitute
+        return x;
     }
-
-    [[nodiscard]] bool info() const { return info_; }
-
-private:
-    // helper: find pivot row with maximum absolute value in column 'col'
-    constexpr int find_pivot_row(int col, const std::array<int,N>& /*perm*/) const {
-        int pivot = col;
-        Scalar max_val = Scalar(0);
-        for (int r = col; r < N; ++r) {
-            Scalar av = fdapde::abs(lu_(r, col));
-            if (av > max_val) {
-                max_val = av;
-                pivot = r;
-            }
-        }
-        return pivot;
-    }
-
-    // helper: swap two rows in 'lu_' and record in 'perm'
-    constexpr void swap_rows(int i, int j, std::array<int,N>& perm) {
-        std::swap(perm[i], perm[j]);
-        for (int c = 0; c < N; ++c)
-            std::swap(lu_(i, c), lu_(j, c));
-    }
-
-    // helper: eliminate entries below pivot in column 'col'
-    constexpr void eliminate_column(int col) {
-        for (int r = col+1; r < N; ++r) {
-            Scalar alpha = lu_(r, col) / lu_(col, col);
-            lu_(r, col) = alpha;  // store L
-            for (int c = col+1; c < N; ++c) {
-                lu_(r, c) -= alpha * lu_(col, c);
-            }
-        }
-    }
-
-    Matrix<Scalar, N, N, RowMajor> lu_;  // will hold both L (unit lower) and U (upper)
-    PermutationOp<N> P_; // row‐permutation matrix
-    bool info_ = Success;
+   private:
+    Matrix<Scalar, Size, Size, RowMajor> lu_;   // will hold both L (unit lower) and U (upper)
+    PermutationMatrix<Size> P_;
+    int info_;
+    int rank_;
 };
+
+}   // namespace fdapde
+
+#endif   // __FDAPDE_PARTIAL_PIV_LU_H__

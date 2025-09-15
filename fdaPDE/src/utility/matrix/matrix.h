@@ -169,6 +169,10 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
         fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
         data_.resize(size);
     }
+    constexpr Matrix(int size, Scalar v) : Matrix(size) {   // std::vector-like constructor, with value intialization
+        fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
+        for (int i = 0; i < size; ++i) { data_[i] = v; }
+    }
     constexpr Matrix(int rows, int cols) : Base(rows, cols) {
         if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { data_.resize(rows * cols); }
     }
