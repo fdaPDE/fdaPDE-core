@@ -21,7 +21,7 @@
 
 namespace fdapde {
 
-// orthogonal matrix type system (implementation of the general orthogonal group O(n) as Lie-group)
+// orthogonal matrix type system (implementation of the general orthogonal Lie-group O(n))
 
 template <int Rows_, int Cols_, typename XprType_>
 struct OrthogonalMatrixExpr : public MatrixExpr<Rows_, Cols_, XprType_> {
@@ -102,8 +102,6 @@ struct OrthogonalMatrixBase : public OrthogonalMatrixExpr<Size_, Size_, Orthogon
 
     int size_;
 };
-
-  // stiffel set (matrice n x k tale per cui matrice * matrice^\top = I_{k x k})
   
 // A matrix with enforced orthogonality check (i.e., M * M^\top = I)
 template <typename Scalar_, int Size_, int StorageOrder_ = RowMajor>
@@ -190,7 +188,7 @@ template <typename LhsXprType, typename RhsXprType>
 constexpr auto operator*(
   const OrthogonalMatrixExpr<LhsXprType::Rows, LhsXprType::Cols, LhsXprType>& lhs,
   const OrthogonalMatrixExpr<RhsXprType::Rows, RhsXprType::Cols, RhsXprType>& rhs) {
-    return (lhs * rhs).as_orthogonal();
+    return internals::orthogonal_wrapper<LhsXprType::Rows, RhsXprType::Cols, decltype(lhs * rhs)>(lhs * rhs);
 }
 // any other operation doesn't preserve orthogonality. A raw MatrixExpr is returned
 

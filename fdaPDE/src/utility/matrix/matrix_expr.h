@@ -935,14 +935,6 @@ template <int Rows, int Cols, typename XprType> struct MatrixExpr {
     template <int BlockMode> constexpr TriangularBlock<XprType, BlockMode> triangular_block() {
         return TriangularBlock<XprType, BlockMode>(derived());
     }
-    // view current expression as an orthogonal matrix expression, if orthogonality invariant is satisfied
-    constexpr auto as_orthogonal() const {
-        IdentityMatrix<Rows, Cols> I;
-	const auto& M = derived();
-        if constexpr (Rows == Dynamic || Cols == Dynamic) { I.resize(M.rows(), M.cols()); }
-        fdapde_constexpr_assert(almost_equal(M * M.transpose() FDAPDE_COMMA I));
-        return internals::orthogonal_wrapper<Rows, Cols, const XprType>(derived());
-    }
 };
 
 // comparison operators

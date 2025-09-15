@@ -19,16 +19,18 @@
 
 namespace fdapde {
 
-// eigen decomposition
-template <typename MatrixType> class EVD {
-    static constexpr int Size = MatrixType::Rows;
-    using Scalar = typename MatrixType::Scalar;
+// computes the eigen-decomposition of a matrix
+template <typename Scalar_, int Size_> class EVD {
+    static constexpr int Size = Size_;
+    using Scalar = Scalar_;
 
     // tridiagonalize a symmetric matrix via householder reflectors
+    // see "Golub, G. H., & Van Loan, C. F. (2013). Matrix computations. JHU press. Sec.8.3.1"
+    template <typename XprType>
     std::tuple<Matrix<Scalar, Size, Size>, OrthogonalMatrix<Scalar, Size>>
-    householder_tridiagonalize_(const MatrixType& mtx) const {
-        const int n = mtx.rows();
-        Matrix<Scalar, Size, Size> T = mtx;
+    householder_tridiagonalize_(const XprType& m) const {
+        const int n = m.rows();
+        Matrix<Scalar, Size, Size> T = m;
         Matrix<Scalar, Size, Size> Q = Matrix<Scalar, Size, Size>::Identity(n, n);
 
         for (int k = 0; k < n - 2; ++k) {
@@ -62,7 +64,7 @@ template <typename MatrixType> class EVD {
             Vector<Scalar, Dynamic> zQ = Q.block(0, k + 1, n, m) * u;
             Q.block(0, k + 1, n, m) -= zQ * (beta * u.transpose());
         }
-        return std::make_pair(T, Q.as_orthogonal());
+        return std::make_pair(T, internals::orthogonal_wrapper<Size, Size, Matrix<Scalar, Size, Size>>(Q));
     }
 
     int max_iter_ = 30;   // taken from LAPACK, actual number of iteration is scaled by matrix size
@@ -74,6 +76,8 @@ template <typename MatrixType> class EVD {
         compute(m);
     }
 
+    // computes the EVD of a symmetric matrix using the implicit QR-iteration with Wilkinson shift
+    // see "Golub, G. H., & Van Loan, C. F. (2013). Matrix computations. JHU press. Ch.8.3"
     template <int Rows, int Cols, typename XprType>
     constexpr void compute(const SymmetricMatrixExpr<Rows, Cols, XprType>& mtx) {
         fdapde_static_assert(Rows == Cols && Rows == Size, THIS_METHOD_IS_FOR_SQUARE_MATRICES_ONLY);
@@ -174,7 +178,7 @@ template <typename MatrixType> class EVD {
     Matrix<Scalar, Size, Size> eigenvectors_;
     Vector<Scalar, Size> eigenvalues_;
 };
-  
+
 }   // namespace fdapde
 
 #endif   // __FDAPDE_EVD_H__

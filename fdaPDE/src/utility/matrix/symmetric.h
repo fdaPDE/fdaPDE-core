@@ -21,10 +21,20 @@
 
 namespace fdapde {
 
+// forward decl
+template <typename Scalar, int Size> class EVD;
+
 template <int Rows_, int Cols_, typename XprType_>
 struct SymmetricMatrixExpr : public MatrixExpr<Rows_, Cols_, XprType_> {
     using Base = MatrixExpr<Rows_, Cols_, XprType_>;
     using Base::derived;
+
+    // compute EVD of expression
+    auto evd() const {
+        using Scalar = typename XprType_::Scalar;
+        EVD<Scalar, Rows_> evd(derived());
+        return evd;
+    }
 };
 
 namespace internals {
