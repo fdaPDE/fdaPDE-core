@@ -323,21 +323,6 @@ struct fn_ptr_traits_impl<R (T::*)(Args...) const> : public fn_ptr_traits_base<R
 };
 template <auto FnPtr> struct fn_ptr_traits : public fn_ptr_traits_impl<decltype(FnPtr)> { };
 
-// if XprType has its NestAsRef bit set, returns the type XprType&, otherwise return XprType.
-template <typename XprType>
-concept has_nest_as_ref_bit = requires(XprType t) { XprType::NestAsRef; };
-
-template <typename XprType, bool v> struct ref_select_impl;
-template <typename XprType> struct ref_select_impl<XprType, true> {
-    using type = std::conditional_t<
-      XprType::NestAsRef == 0, std::remove_reference_t<XprType>, std::add_lvalue_reference_t<XprType>>;
-};
-template <typename XprType> struct ref_select_impl<XprType, false> {
-    using type = XprType;
-};
-template <typename XprType> struct ref_select : ref_select_impl<XprType, has_nest_as_ref_bit<XprType>> { };
-template <typename XprType> using ref_select_t = ref_select<XprType>::type;
-
 // selects one between arg1 and arg2 based on condition f
 template <typename Arg1, typename Arg2, typename F>
     requires(

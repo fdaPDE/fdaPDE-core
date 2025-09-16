@@ -57,18 +57,85 @@ template <typename XprType> constexpr bool is_eigen_sparse_xpr_v = is_eigen_spar
 
 // include required modules
 #include "utility.h"
-#include "src/linear_algebra/utility.h"
 
-#include "src/linear_algebra/eigen_helper.h"
-#include "src/linear_algebra/fspai.h"
-#include "src/linear_algebra/kronecker.h"
-#include "src/linear_algebra/lumping.h"
-#include "src/linear_algebra/sparse_block_matrix.h"
-#include "src/linear_algebra/woodbury.h"
+
+namespace fdapde {
+
+// forward declaration
+template <int Rows, int Cols, typename XprType> struct MatrixExpr;
+
+// storage orders
+[[maybe_unused]] constexpr int RowMajor = 0;
+[[maybe_unused]] constexpr int ColMajor = 1;
+// triangular views
+[[maybe_unused]] constexpr int Upper = 0;       // lower triangular view of matrix
+[[maybe_unused]] constexpr int Lower = 1;       // upper triangular view of matrix
+[[maybe_unused]] constexpr int UnitUpper = 2;   // lower triangular view of matrix with ones on the diagonal
+[[maybe_unused]] constexpr int UnitLower = 3;   // upper triangular view of matrix with ones on the diagonal
+
+[[maybe_unused]] static constexpr int LhsMode = 0;
+[[maybe_unused]] static constexpr int RhsMode = 1;
+  
+namespace internals {
+
+// detects whether XprType represents a static sized or dynamic sized expression
+template <typename XprType> struct is_dynamic_sized {
+   private:
+    using XprTypeClean = std::decay_t<XprType>;
+   public:
+    static constexpr bool value = XprTypeClean::Rows == Dynamic || XprTypeClean::Cols == Dynamic;
+};
+template <typename XprType> static constexpr bool is_dynamic_sized_v = is_dynamic_sized<XprType>::value;
+
+// if XprType has its NestAsRef bit set, sets type member type to XprType&, otherwise just repeats XprType
+template <typename XprType, bool has_ref_bit> struct ref_select_impl;
+template <typename XprType> struct ref_select_impl<XprType, true> {
+   private:
+    using XprTypeClean = std::decay_t<XprType>;
+   public:
+    using type = std::conditional_t<
+      XprTypeClean::NestAsRef == 0, std::remove_reference_t<XprType>, std::add_lvalue_reference_t<XprType>>;
+};
+template <typename XprType> struct ref_select_impl<XprType, false> : std::type_identity<XprType> { };
+template <typename XprType> struct ref_select {
+    using type = ref_select_impl<XprType, requires(XprType) { XprType::NestAsRef; }>::type;
+};
+template <typename XprType> using ref_select_t = typename ref_select<XprType>::type;
+
+}   // namespace internals
+}
+
+#include "src/linear_algebra/matrix.h"
+#include "src/linear_algebra/diagonal.h"
+#include "src/linear_algebra/triangular.h"
+
+// special matrices
+#include "src/linear_algebra/orthogonal.h"
+#include "src/linear_algebra/symmetric.h"
+#include "src/linear_algebra/skew.h"
+#include "src/linear_algebra/permutation.h"
+#include "src/linear_algebra/spd.h"
+
+#include "src/linear_algebra/matrix_expr.h"
+
+// algorithms
+#include "src/linear_algebra/evd.h"
+#include "src/linear_algebra/partial_piv_lu.h"
+#include "src/linear_algebra/qr.h"
+
+// eigen support
+#include "src/linear_algebra/eigen/utility.h"
+
+#include "src/linear_algebra/eigen/eigen_helper.h"
+#include "src/linear_algebra/eigen/fspai.h"
+#include "src/linear_algebra/eigen/kronecker.h"
+#include "src/linear_algebra/eigen/lumping.h"
+#include "src/linear_algebra/eigen/sparse_block_matrix.h"
+#include "src/linear_algebra/eigen/woodbury.h"
 // randomized linear algebra
-#include "src/linear_algebra/rsi.h"
-#include "src/linear_algebra/rbki.h"
-#include "src/linear_algebra/rp_chol.h"
+#include "src/linear_algebra/eigen/rsi.h"
+#include "src/linear_algebra/eigen/rbki.h"
+#include "src/linear_algebra/eigen/rp_chol.h"
 
 // clang-format on
 

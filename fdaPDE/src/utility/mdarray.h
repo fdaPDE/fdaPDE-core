@@ -1129,22 +1129,22 @@ template <typename Derived> class md_handler_base {
           [&]<int... Ns_> { return slice<Slicers...>(index_pack[Ns_]...); });
     }
 
-    constexpr auto as_matrix() const {
-        fdapde_static_assert(Order == 2 || Order == 1, THIS_METHOD_IS_FOR_MDARRAYS_OF_ORDER_ONE_OR_TWO_ONLY);
-        if constexpr (Order == 2) {
-            fdapde_static_assert(
-              static_extents[0] != Dynamic && static_extents[1] != Dynamic, THIS_METHOD_IS_FOR_STATIC_EXTENTS_ONLY);
-            constexpr int storage_layout =
-              std::is_same_v<typename mapping_t::layout_type, internals::layout_right> ? ColMajor : RowMajor;
-            Map<const Scalar, static_extents[0], static_extents[1], storage_layout> map(
-              derived().data(), extent(0), extent(1));
-            return map;
-        } else {
-            fdapde_static_assert(static_extents[0] != Dynamic, THIS_METHOD_IS_FOR_STATIC_EXTENTS_ONLY);
-            Map<const Scalar, static_extents[0], 1, RowMajor> map(derived().data(), extent(0), 1);
-            return map;
-        }
-    }
+    // constexpr auto as_matrix() const {
+    //     fdapde_static_assert(Order == 2 || Order == 1, THIS_METHOD_IS_FOR_MDARRAYS_OF_ORDER_ONE_OR_TWO_ONLY);
+    //     if constexpr (Order == 2) {
+    //         fdapde_static_assert(
+    //           static_extents[0] != Dynamic && static_extents[1] != Dynamic, THIS_METHOD_IS_FOR_STATIC_EXTENTS_ONLY);
+    //         constexpr int storage_layout =
+    //           std::is_same_v<typename mapping_t::layout_type, internals::layout_right> ? ColMajor : RowMajor;
+    //         MatrixView<const Scalar, static_extents[0], static_extents[1], storage_layout> map(
+    //           derived().data(), extent(0), extent(1));
+    //         return map;
+    //     } else {
+    //         fdapde_static_assert(static_extents[0] != Dynamic, THIS_METHOD_IS_FOR_STATIC_EXTENTS_ONLY);
+    //         MatrixView<const Scalar, static_extents[0], 1, RowMajor> map(derived().data(), extent(0), 1);
+    //         return map;
+    //     }
+    // }
 #ifdef __FDAPDE_HAS_EIGEN__
     constexpr auto as_eigen_map() const {
         fdapde_static_assert(Order == 2 || Order == 1, THIS_METHOD_IS_FOR_MDARRAYS_OF_ORDER_ONE_OR_TWO_ONLY);
