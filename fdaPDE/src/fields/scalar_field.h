@@ -152,17 +152,22 @@ operator/(const ScalarFieldBase<Size, Lhs>& lhs, const ScalarFieldBase<Size, Rhs
 }
 
 namespace internals {
+
 class max_t {
    public:
     constexpr explicit max_t() { }
-    template <typename Scalar> constexpr Scalar operator()(Scalar&& lhs, Scalar&& rhs) const { return fdapde::max(lhs, rhs); }
+    template <typename Scalar> constexpr Scalar operator()(Scalar&& lhs, Scalar&& rhs) const {
+        return fdapde::max(lhs, rhs);
+    }
 };
-
 class min_t {
    public:
     constexpr explicit min_t() { }
-    template <typename Scalar> constexpr Scalar operator()(Scalar&& lhs, Scalar&& rhs) const { return fdapde::min(lhs, rhs); }
+    template <typename Scalar> constexpr Scalar operator()(Scalar&& lhs, Scalar&& rhs) const {
+        return fdapde::min(lhs, rhs);
+    }
 };
+
 }   // namespace internals
 
 template <int Size, typename Lhs, typename Rhs>
