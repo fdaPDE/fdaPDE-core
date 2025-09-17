@@ -24,6 +24,41 @@ namespace fdapde {
 // triangular matrix type system
 template <typename Scalar_, int Rows_, int ViewMode_> struct TriangularMatrix;
 
+namespace internals {
+
+// class wrapping a linear vector to the expression of a triangular matrix. internal usage only
+template <
+  int Rows_, int Cols_, int ViewMode_, typename TriangularXprType,
+  int Size_ = (Rows_ == Dynamic || Cols_ == Dynamic) ? Dynamic : int((fdapde::sqrt(double(1 + 8 * Rows_)) - 1) / 2)>
+struct triangular_wrapper :
+    TriangularMatrixBase<
+      typename TriangularXprType::Scalar, Size_, ViewMode_,
+      triangular_wrapper<Rows_, Cols_, ViewMode_, TriangularXprType, Size_>> {
+    using Base = TriangularMatrixBase<
+      typename TriangularXprType::Scalar, Size_, ViewMode_,
+      triangular_wrapper<Rows_, Cols_, ViewMode_, TriangularXprType, Size_>>;
+    using TriangularXprTypeNested = internals::ref_select_t<const TriangularXprType>;
+
+    template <typename XprType>
+        requires(std::is_constructible_v<TriangularXprTypeNested, XprType>)
+    constexpr triangular_wrapper(XprType&& xpr) :
+        Base((fdapde::sqrt(static_cast<double>(1 + 8 * xpr.rows())) - 1) / 2), xpr_(std::forward<XprType>(xpr)) { }
+    const TriangularXprTypeNested& data() const { return xpr_; }
+   private:
+    TriangularXprTypeNested xpr_;
+};
+
+// helper cast function
+template <int ViewMode, typename XprType> auto triangular_cast(XprType&& xpr) {
+    using XprTypeClean = std::decay_t<XprType>;
+    static constexpr int Rows = XprTypeClean::Rows;
+    static constexpr int Cols = XprTypeClean::Cols;
+    fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
+    return triangular_wrapper<Rows == 1 ? Cols : Rows, Cols == 1 ? Rows : Cols, ViewMode, XprType>(xpr);
+}
+
+}   // namespace internals
+  
 template <int Rows_, int Cols_, int ViewMode_, typename TriangularXprType>
 struct TriangularMatrixExpr : public MatrixExpr<Rows_, Cols_, TriangularXprType> {
     using Base = MatrixExpr<Rows_, Cols_, TriangularXprType>;
@@ -71,7 +106,7 @@ struct TriangularMatrixExpr : public MatrixExpr<Rows_, Cols_, TriangularXprType>
             v[2] = 1. / b;
             if constexpr (ViewMode == Lower || ViewMode == UnitLower) { v[1] = -derived()(1, 0) / (a * b); }
             if constexpr (ViewMode == Upper || ViewMode == UnitUpper) { v[1] = -derived()(0, 1) / (a * b); }
-            inverse_ = v.template as_triangular<ViewMode>();
+            inverse_ = internals::triangular_cast<ViewMode>(v);
         } else if constexpr (Rows == 3) {
             Scalar a = derived()(0, 0);
             Scalar b = derived()(1, 1);
@@ -92,7 +127,7 @@ struct TriangularMatrixExpr : public MatrixExpr<Rows_, Cols_, TriangularXprType>
                 v[3] = 1. / b;
                 v[4] = -derived()(1, 2) / (b * c);
             }
-            inverse_ = v.template as_triangular<ViewMode>();
+            inverse_ = internals::triangular_cast<ViewMode>(v);
         } else {
             // general inversion solves linear system A * X = I
             Matrix<Scalar, Rows, Rows> X;
@@ -219,7 +254,7 @@ class TriangularMatrixBase : public TriangularMatrixExpr<Rows_, Rows_, ViewMode_
 
     constexpr TriangularMatrixBase() : Base(), size_(Rows == Dynamic || Cols == Dynamic ? 0 : Rows) { }
     constexpr TriangularMatrixBase(double size) : Base(), size_(size) {
-        // size can be a floating point value as a result of calling as_triangular() on a vector which cannot map to a
+        // size can be a floating point value as a result of calling triangular_cast() on a vector which cannot map to a
         // triangular matrix. This checks guarantees that "there are enought values" to make a triangular matrix
         fdapde_constexpr_assert(size == fdapde::floor(size));
     }
@@ -249,50 +284,24 @@ class TriangularMatrixBase : public TriangularMatrixExpr<Rows_, Rows_, ViewMode_
     int size_;
 };
 
-namespace internals {
-
-// class wrapping a linear vector to the expression of a triangular matrix. internal usage only
-template <
-  int Rows_, int Cols_, int ViewMode_, typename TriangularXprType,
-  int Size_ = (Rows_ == Dynamic || Cols_ == Dynamic) ? Dynamic : int((fdapde::sqrt(double(1 + 8 * Rows_)) - 1) / 2)>
-struct triangular_wrapper :
-    TriangularMatrixBase<
-      typename TriangularXprType::Scalar, Size_, ViewMode_,
-      triangular_wrapper<Rows_, Cols_, ViewMode_, TriangularXprType, Size_>> {
-    using Base = TriangularMatrixBase<
-      typename TriangularXprType::Scalar, Size_, ViewMode_,
-      triangular_wrapper<Rows_, Cols_, ViewMode_, TriangularXprType, Size_>>;
-    using TriangularXprTypeNested = internals::ref_select_t<const TriangularXprType>;
-
-    template <typename XprType>
-        requires(std::is_constructible_v<TriangularXprTypeNested, XprType>)
-    constexpr triangular_wrapper(XprType&& xpr) :
-        Base((fdapde::sqrt(static_cast<double>(1 + 8 * xpr.rows())) - 1) / 2), xpr_(std::forward<XprType>(xpr)) { }
-    const TriangularXprTypeNested& data() const { return xpr_; }
-   private:
-    TriangularXprTypeNested xpr_;
-};
-
-}   // namespace internals
-
 // triangular matrix subalgebra of the associative algebra of square matrices
 template <typename LhsXprType, typename RhsXprType, int ViewMode>
 constexpr auto operator+(
   const TriangularMatrixExpr<LhsXprType::Rows, LhsXprType::Cols, ViewMode, LhsXprType>& lhs,
   const TriangularMatrixExpr<RhsXprType::Rows, RhsXprType::Cols, ViewMode, RhsXprType>& rhs) {
-    return (lhs.data() + rhs.data()).template as_triangular<ViewMode>();
+    return internals::triangular_cast<ViewMode>(lhs.data() + rhs.data());
 }
 template <typename LhsXprType, typename RhsXprType, int ViewMode>
 constexpr auto operator-(
   const TriangularMatrixExpr<LhsXprType::Rows, LhsXprType::Cols, ViewMode, LhsXprType>& lhs,
   const TriangularMatrixExpr<RhsXprType::Rows, RhsXprType::Cols, ViewMode, RhsXprType>& rhs) {
-    return (lhs.data() - rhs.data()).template as_triangular<ViewMode>();
+    return internals::triangular_cast<ViewMode>(lhs.data() - rhs.data());
 }
 template <typename XprType, typename CoeffType, int ViewMode>
     requires(std::is_arithmetic_v<CoeffType>)
 constexpr auto
 operator*(const TriangularMatrixExpr<XprType::Rows, XprType::Cols, ViewMode, XprType>& lhs, CoeffType rhs) {
-    return (rhs.data() * lhs).template as_triangular<ViewMode>();
+    return internals::triangular_cast<ViewMode>(rhs.data() * lhs);
 }
 template <typename XprType, typename CoeffType, int ViewMode>
     requires(std::is_arithmetic_v<CoeffType>)
@@ -304,9 +313,9 @@ template <typename XprType, typename CoeffType, int ViewMode>
     requires(std::is_arithmetic_v<CoeffType>)
 constexpr auto
 operator/(const TriangularMatrixExpr<XprType::Rows, XprType::Cols, ViewMode, XprType>& lhs, CoeffType rhs) {
-    return (lhs.data() / rhs).template as_triangular<ViewMode>();
+    return internals::triangular_cast<ViewMode>(lhs.data() / rhs);
 }
-  
+
 // specialized products
 namespace internals {
 

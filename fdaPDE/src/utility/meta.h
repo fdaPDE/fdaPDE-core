@@ -20,6 +20,9 @@
 #include "header_check.h"
 
 namespace fdapde {
+
+struct empty_t { };   // empty type, used for storage optimizations
+
 namespace internals {
 
 // apply lambda F_ to each value in index pack {0, ..., N_ - 1}
