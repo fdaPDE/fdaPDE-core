@@ -167,6 +167,15 @@ struct diagonal_wrapper : DiagonalMatrixExpr<Rows_, Cols_, diagonal_wrapper<Rows
     DiagonalXprTypeNested xpr_;
 };
 
+// helper cast function
+template <int Rows, int Cols, typename XprType> auto diagonal_cast(XprType&& xpr) {
+    using XprTypeClean = std::decay_t<XprType>;
+    static constexpr int Rows = XprTypeClean::Rows;
+    static constexpr int Cols = XprTypeClean::Cols;
+    fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
+    return diagonal_wrapper<Rows == 1 ? Cols : Rows, Cols == 1 ? Rows : Cols, XprType>(xpr);
+}
+
 }   // namespace internals
 
 // diagonal matrix arithmetic (O(n) operations on the diagonal coefficients)
@@ -174,18 +183,32 @@ template <typename LhsXprType, typename RhsXprType>
 constexpr auto operator+(
   const DiagonalMatrixExpr<LhsXprType::Rows, LhsXprType::Cols, LhsXprType>& lhs,
   const DiagonalMatrixExpr<RhsXprType::Rows, RhsXprType::Cols, RhsXprType>& rhs) {
-    return (lhs.diagonal() + rhs.diagonal()).as_diagonal();
+    fdapde_static_assert(
+      internals::is_dynamic_sized_v<LhsXprType> || internals::is_dynamic_sized_v<RhsXprType> ||
+        (LhsXprType::Rows == RhsXprType::Rows && LhsXprType::Cols == RhsXprType::Cols),
+      INVALID_OPERAND_DIMENSIONS_IN_BINARY_OPERATION);
+    if constexpr (internals::is_dynamic_sized_v<LhsXprType> || internals::is_dynamic_sized_v<RhsXprType>) {
+        fdapde_constexpr_assert(lhs.rows() == rhs.rows() && lhs.cols() == rhs.cols());
+    }
+    return internals::diagonal_cast(lhs.diagonal() + rhs.diagonal());
 }
 template <typename LhsXprType, typename RhsXprType>
 constexpr auto operator-(
   const DiagonalMatrixExpr<LhsXprType::Rows, LhsXprType::Cols, LhsXprType>& lhs,
   const DiagonalMatrixExpr<RhsXprType::Rows, RhsXprType::Cols, RhsXprType>& rhs) {
-    return (lhs.diagonal() - rhs.diagonal()).as_diagonal();
+    fdapde_static_assert(
+      internals::is_dynamic_sized_v<LhsXprType> || internals::is_dynamic_sized_v<RhsXprType> ||
+        (LhsXprType::Rows == RhsXprType::Rows && LhsXprType::Cols == RhsXprType::Cols),
+      INVALID_OPERAND_DIMENSIONS_IN_BINARY_OPERATION);
+    if constexpr (internals::is_dynamic_sized_v<LhsXprType> || internals::is_dynamic_sized_v<RhsXprType>) {
+        fdapde_constexpr_assert(lhs.rows() == rhs.rows() && lhs.cols() == rhs.cols());
+    }
+    return internals::diagonal_cast(lhs.diagonal() - rhs.diagonal());
 }
 template <typename XprType, typename CoeffType>
     requires(std::is_arithmetic_v<CoeffType>)
 constexpr auto operator*(const DiagonalMatrixExpr<XprType::Rows, XprType::Cols, XprType>& lhs, CoeffType rhs) {
-    return (rhs * lhs.diagonal()).as_diagonal();
+    return internals::diagonal_cast(rhs * lhs.diagonal());
 }
 template <typename XprType, typename CoeffType>
     requires(std::is_arithmetic_v<CoeffType>)
@@ -195,7 +218,7 @@ constexpr auto operator*(CoeffType lhs, const DiagonalMatrixExpr<XprType::Rows, 
 template <typename XprType, typename CoeffType>
     requires(std::is_arithmetic_v<CoeffType>)
 constexpr auto operator/(const DiagonalMatrixExpr<XprType::Rows, XprType::Cols, XprType>& lhs, CoeffType rhs) {
-    return (lhs.diagonal() / rhs).as_diagonal();
+    return internals::diagonal_cast(lhs.diagonal() / rhs);
 }
 
 // specialized products
@@ -247,11 +270,10 @@ template <typename LhsXprType, typename RhsXprType>
 constexpr auto operator*(
   const DiagonalMatrixExpr<LhsXprType::Rows, LhsXprType::Cols, LhsXprType>& lhs,
   const DiagonalMatrixExpr<RhsXprType::Rows, RhsXprType::Cols, RhsXprType>& rhs) {
-    return MatrixProductOp<
-             LhsXprType, RhsXprType, internals::diagonal_diagonal_product_executor<LhsXprType, RhsXprType>> {
-      lhs.derived(), rhs.derived()}
-      .diagonal()
-      .as_diagonal();   // close wrt diagonal algebra
+    return internals::diagonal_cast(
+      MatrixProductOp<LhsXprType, RhsXprType, internals::diagonal_diagonal_product_executor<LhsXprType, RhsXprType>>(
+        lhs.derived(), rhs.derived())
+        .diagonal());
 }
 
 // owning storage diagonal matrix
@@ -308,11 +330,6 @@ class DiagonalMatrix : public DiagonalMatrixExpr<Rows_, Rows_, DiagonalMatrix<Sc
 	data_[2] = z;
     }
     constexpr const StorageType& diagonal() const { return data_; }
-    // static named constructors
-    static constexpr DiagonalMatrix Identity() { return StorageType::Ones().as_diagonal(); }
-    static constexpr DiagonalMatrix Identity(int size) { return StorageType::Ones(size).as_diagonal(); }
-    static constexpr DiagonalMatrix Zero() { return StorageType::Zero().as_diagonal(); }
-    static constexpr DiagonalMatrix Zero(int size) { return StorageType::Zero(size).as_diagonal(); }
     // inherit assignment from Base
     using Base::operator=;
     // modifiers

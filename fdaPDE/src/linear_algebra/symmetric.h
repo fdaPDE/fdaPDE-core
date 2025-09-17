@@ -66,6 +66,14 @@ struct symmetric_wrapper :
     SymmetricXprTypeNested xpr_;
 };
 
+// helper cast function
+template <int ViewMode, typename XprType> auto symmetric_cast(XprType&& xpr) {
+    using XprTypeClean = std::decay_t<XprType>;
+    static constexpr int Rows = XprTypeClean::Rows;
+    static constexpr int Cols = XprTypeClean::Cols;
+    return symmetric_wrapper<Rows, Cols, ViewMode, XprType>(xpr);
+}
+
 }   // namespace internals
 
 template <typename XprType, typename CoeffType> struct MatrixCoeffWiseOp;
@@ -75,20 +83,19 @@ template <typename LhsXprType, typename RhsXprType>
 constexpr auto operator+(
   const SymmetricMatrixExpr<LhsXprType::Rows, LhsXprType::Cols, LhsXprType>& lhs,
   const SymmetricMatrixExpr<RhsXprType::Rows, RhsXprType::Cols, RhsXprType>& rhs) {
-    return (lhs + rhs).template as_symmetric<Lower>();
+    return internals::symmetric_cast<Lower>(lhs + rhs);
 }
 template <typename LhsXprType, typename RhsXprType>
 constexpr auto operator-(
   const SymmetricMatrixExpr<LhsXprType::Rows, LhsXprType::Cols, LhsXprType>& lhs,
   const SymmetricMatrixExpr<RhsXprType::Rows, RhsXprType::Cols, RhsXprType>& rhs) {
-    return (lhs - rhs).template as_symmetric<Lower>();
+    return internals::symmetric_cast<Lower>(lhs - rhs);
 }
 template <typename XprType, typename CoeffType>
     requires(std::is_arithmetic_v<CoeffType>)
 constexpr auto operator*(const SymmetricMatrixExpr<XprType::Rows, XprType::Cols, XprType>& lhs, CoeffType rhs) {
-    using Scalar = typename std::decay_t<XprType>::Scalar;
-    auto op_ = [rhs](const Scalar& x) { return x * rhs; };
-    return MatrixCoeffWiseOp<XprType, decltype(op_)>(lhs.derived(), op_).template as_symmetric<Lower>();
+    return internals::symmetric_cast<Lower>(MatrixCoeffWiseOp<XprType, internals::matrix_coeff_mult_t<CoeffType>>(
+      lhs.derived(), internals::matrix_coeff_mult_t<CoeffType>(rhs)));
 }
 template <typename XprType, typename CoeffType>
     requires(std::is_arithmetic_v<CoeffType>)
@@ -98,7 +105,8 @@ constexpr auto operator*(CoeffType lhs, const SymmetricMatrixExpr<XprType::Rows,
 template <typename XprType, typename CoeffType>
     requires(std::is_arithmetic_v<CoeffType>)
 constexpr auto operator/(const SymmetricMatrixExpr<XprType::Rows, XprType::Cols, XprType>& lhs, CoeffType rhs) {
-    return (lhs * (CoeffType(1) / rhs)).template as_symmetric<Lower>();
+    return internals::symmetric_cast<Lower>(MatrixCoeffWiseOp<XprType, internals::matrix_coeff_mult_t<CoeffType>>(
+      lhs.derived(), internals::matrix_coeff_mult_t<CoeffType>(CoeffType(1) / rhs)));
 }
 // any other operation doesn't preserve symmetry. A raw MatrixExpr is returned
   
