@@ -14,8 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_QR_H__
-#define __FDAPDE_QR_H__
+#ifndef __FDAPDE_LINALG_QR_H__
+#define __FDAPDE_LINALG_QR_H__
 
 #include "header_check.h"
 
@@ -126,4 +126,4 @@ public:
   
 }   // namespace fdapde
 
-#endif   // _FDAPDE_QR_H__
+#endif   // _FDAPDE_LINALG_QR_H__

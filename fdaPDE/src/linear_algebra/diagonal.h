@@ -14,10 +14,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_DIAGONAL_MATRIX_H__
-#define __FDAPDE_DIAGONAL_MATRIX_H__
+#ifndef __FDAPDE_LINALG_DIAGONAL_H__
+#define __FDAPDE_LINALG_DIAGONAL_H__
 
-#include "../header_check.h"
+#include "header_check.h"
 
 namespace fdapde {
 
@@ -86,8 +86,43 @@ struct Diagonal : public MatrixExpr<Rows_, Cols_, Diagonal<Rows_, Cols_, XprType
     XprTypeNested xpr_;
 };
 
-template <typename Scalar, int DiagonalSize> class DiagonalMatrix;
+template <int Rows_, int Cols_, typename XprType> struct DiagonalMatrixExpr;
 
+namespace internals {
+
+// class wrapping an expression of the diagonal coefficients to a square matrix. internal usage only
+template <int Rows_, int Cols_, typename DiagonalXprType>
+struct diagonal_wrapper : DiagonalMatrixExpr<Rows_, Cols_, diagonal_wrapper<Rows_, Cols_, DiagonalXprType>> {
+    using Base = DiagonalMatrixExpr<Rows_, Cols_, diagonal_wrapper<Rows_, Cols_, DiagonalXprType>>;
+    using DiagonalXprTypeNested = internals::ref_select_t<const DiagonalXprType>;
+    using Scalar = typename DiagonalXprType::Scalar;
+    static constexpr int Rows = Rows_;
+    static constexpr int Cols = Cols_;
+    static constexpr int NestAsRef = 0;
+    static constexpr int ReadOnly = 1;
+
+    template <typename XprType>
+        requires(std::is_constructible_v<DiagonalXprTypeNested, XprType>)
+    constexpr diagonal_wrapper(XprType&& xpr) : Base(), xpr_(std::forward<XprType>(xpr)) { }
+    constexpr Scalar operator()(int i, int j) const {
+        fdapde_constexpr_assert(i >= 0 && i < Base::size_ && j >= 0 && j < Base::size_);
+        return i == j ? xpr_[i] : Scalar(0);
+    }
+   private:
+    DiagonalXprTypeNested xpr_;
+};
+
+// helper cast function
+template <typename XprType> auto diagonal_cast(XprType&& xpr) {
+    using XprTypeClean = std::decay_t<XprType>;
+    static constexpr int Rows = XprTypeClean::Rows;
+    static constexpr int Cols = XprTypeClean::Cols;
+    fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
+    return diagonal_wrapper<Rows == 1 ? Cols : Rows, Cols == 1 ? Rows : Cols, XprType>(xpr);
+}
+
+}   // namespace internals
+  
 template <int Rows_, int Cols_, typename XprType>
 struct DiagonalMatrixExpr : public MatrixExpr<Rows_, Cols_, XprType> {
     using Base = MatrixExpr<Rows_, Cols_, XprType>;
@@ -126,7 +161,7 @@ struct DiagonalMatrixExpr : public MatrixExpr<Rows_, Cols_, XprType> {
     // converts the diagonal expression to a full dense matrix
     auto to_matrix() const { return Matrix<typename XprType::Scalar, Rows, Cols>(derived()); }
     // matrix inverse as 1/coeff
-    auto inverse() const { return DiagonalMatrix<typename XprType::Scalar, Rows>(derived().cwise_inv()); }
+    auto inverse() const { return internals::diagonal_cast(derived().diagonal().cwise_inv()); }
     // linear system solver Ax = b
     template <typename RhsXprType> constexpr auto solve(const RhsXprType& b) const {
         using Scalar = typename XprType::Scalar;
@@ -142,41 +177,6 @@ struct DiagonalMatrixExpr : public MatrixExpr<Rows_, Cols_, XprType> {
    protected:
     int size_;
 };
-
-namespace internals {
-
-// class wrapping an expression of the diagonal coefficients to a square matrix. internal usage only
-template <int Rows_, int Cols_, typename DiagonalXprType>
-struct diagonal_wrapper : DiagonalMatrixExpr<Rows_, Cols_, diagonal_wrapper<Rows_, Cols_, DiagonalXprType>> {
-    using Base = DiagonalMatrixExpr<Rows_, Cols_, diagonal_wrapper<Rows_, Cols_, DiagonalXprType>>;
-    using DiagonalXprTypeNested = internals::ref_select_t<const DiagonalXprType>;
-    using Scalar = typename DiagonalXprType::Scalar;
-    static constexpr int Rows = Rows_;
-    static constexpr int Cols = Cols_;
-    static constexpr int NestAsRef = 0;
-    static constexpr int ReadOnly = 1;
-
-    template <typename XprType>
-        requires(std::is_constructible_v<DiagonalXprTypeNested, XprType>)
-    constexpr diagonal_wrapper(XprType&& xpr) : Base(), xpr_(std::forward<XprType>(xpr)) { }
-    constexpr Scalar operator()(int i, int j) const {
-        fdapde_constexpr_assert(i >= 0 && i < Base::size_ && j >= 0 && j < Base::size_);
-        return i == j ? xpr_[i] : Scalar(0);
-    }
-   private:
-    DiagonalXprTypeNested xpr_;
-};
-
-// helper cast function
-template <int Rows, int Cols, typename XprType> auto diagonal_cast(XprType&& xpr) {
-    using XprTypeClean = std::decay_t<XprType>;
-    static constexpr int Rows = XprTypeClean::Rows;
-    static constexpr int Cols = XprTypeClean::Cols;
-    fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
-    return diagonal_wrapper<Rows == 1 ? Cols : Rows, Cols == 1 ? Rows : Cols, XprType>(xpr);
-}
-
-}   // namespace internals
 
 // diagonal matrix arithmetic (O(n) operations on the diagonal coefficients)
 template <typename LhsXprType, typename RhsXprType>
@@ -380,4 +380,4 @@ class DiagonalMatrixView : public DiagonalMatrixExpr<Rows_, Rows_, DiagonalMatri
 
 }   // namespace fdapde
 
-#endif // __FDAPDE_DIAGONAL_MATRIX_H__
+#endif // __FDAPDE_LINALG_DIAGONAL_H__

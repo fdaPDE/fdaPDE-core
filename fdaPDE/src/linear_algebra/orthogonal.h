@@ -14,10 +14,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_ORTHOGONAL_MATRIX_H__
-#define __FDAPDE_ORTHOGONAL_MATRIX_H__
+#ifndef __FDAPDE_LINALG_ORTHOGONAL_H__
+#define __FDAPDE_LINALG_ORTHOGONAL_H__
 
-#include "../header_check.h"
+#include "header_check.h"
 
 namespace fdapde {
 
@@ -284,4 +284,4 @@ class OrthogonalMatrixView : public OrthogonalMatrixExpr<Rows_, Rows_, Orthogona
 
 }   // namespace fdapde
 
-#endif   // _FDAPDE_ORTHOGONAL_MATRIX_H__
+#endif   // _FDAPDE_LINALG_ORTHOGONAL_H__
