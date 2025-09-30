@@ -14,10 +14,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_MATRIX_BLOCK_H__
-#define __FDAPDE_MATRIX_BLOCK_H__
+#ifndef __FDAPDE_LINALG_BLOCK_H__
+#define __FDAPDE_LINALG_BLOCK_H__
 
-#include "../header_check.h"
+#include "header_check.h"
 
 namespace fdapde {
 
@@ -127,10 +127,10 @@ class MatrixBlock : public MatrixExpr<BlockRows_, BlockCols_, MatrixBlock<BlockR
     }
    private:
     int start_row_ = 0, start_col_ = 0;
-    std::conditional_t<Rows == Dynamic, int, empty_t> block_rows_, block_cols_;
+    int block_rows_ = 0, block_cols_ = 0;
     XprTypeNested xpr_;
 };
   
 }   // namespace fdapde
 
-#endif // __FDAPDE_MATRIX_BLOCK_H__
+#endif // __FDAPDE_LINALG_BLOCK_H__

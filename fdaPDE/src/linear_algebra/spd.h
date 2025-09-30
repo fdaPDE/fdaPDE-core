@@ -14,8 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_SPD_H__
-#define __FDAPDE_SPD_H__
+#ifndef __FDAPDE_LINALG_SPD_H__
+#define __FDAPDE_LINALG_SPD_H__
 
 #include "header_check.h"
 
@@ -199,4 +199,4 @@ class SPDMatrixView : public SPDMatrixExpr<Rows_, Rows_, SPDMatrixView<Scalar_, 
 
 }   // namespace fdapde
 
-#endif   // __FDAPDE_SPD_H__
+#endif   // __FDAPDE_LINALG_SPD_H__

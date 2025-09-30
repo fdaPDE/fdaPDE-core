@@ -14,8 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_PARTIAL_PIV_LU_H__
-#define __FDAPDE_PARTIAL_PIV_LU_H__
+#ifndef __FDAPDE_LINALG_PARTIAL_PIV_LU_H__
+#define __FDAPDE_LINALG_PARTIAL_PIV_LU_H__
 
 #include "header_check.h"
 
@@ -111,4 +111,4 @@ template <typename Scalar_, int Size_> class PartialPivLU {
 
 }   // namespace fdapde
 
-#endif   // __FDAPDE_PARTIAL_PIV_LU_H__
+#endif   // __FDAPDE_LINALG_PARTIAL_PIV_LU_H__

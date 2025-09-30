@@ -66,8 +66,8 @@ namespace fdapde {
 
 #include "src/utility/numeric.h"
 
-#include "src/utility/binary.h"
-#include "src/utility/mdarray.h"
+// #include "src/utility/binary.h"
+// #include "src/utility/mdarray.h"
 #include "src/utility/binary_tree.h"
 
 // clang-format on

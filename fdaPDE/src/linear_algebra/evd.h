@@ -14,8 +14,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_EVD_H__
-#define __FDAPDE_EVD_H__
+#ifndef __FDAPDE_LINALG_EVD_H__
+#define __FDAPDE_LINALG_EVD_H__
+
+#include "header_check.h"
 
 namespace fdapde {
 
@@ -181,4 +183,4 @@ template <typename Scalar_, int Size_> class EVD {
 
 }   // namespace fdapde
 
-#endif   // __FDAPDE_EVD_H__
+#endif   // __FDAPDE_LINALG_EVD_H__

@@ -14,8 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_PERMUTATION_MATRIX_H__
-#define __FDAPDE_PERMUTATION_MATRIX_H__
+#ifndef __FDAPDE_LINALG_PERMUTATION_H__
+#define __FDAPDE_LINALG_PERMUTATION_H__
 
 #include "header_check.h"
 
@@ -218,4 +218,4 @@ template <int Size_> struct PermutationMatrix : public PermutationMatrixExpr<Siz
   
 }   // namespace fdapde
 
-#endif   // __FDAPDE_PERMUTATION_MATRIX_H__
+#endif   // __FDAPDE_LINALG_PERMUTATION_H__

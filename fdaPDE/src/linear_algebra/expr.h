@@ -14,10 +14,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_MATRIX_EXPR_H__
-#define __FDAPDE_MATRIX_EXPR_H__
+#ifndef __FDAPDE_LINALG_EXPR_H__
+#define __FDAPDE_LINALG_EXPR_H__
 
-#include "../header_check.h"
+#include "header_check.h"
 
 namespace fdapde {
 
@@ -295,13 +295,17 @@ template <int Rows, int Cols, typename XprType> struct MatrixExpr {
     constexpr auto symm_part() const {
         fdapde_static_assert(
           Rows == Dynamic || Cols == Dynamic || Rows == Cols, THIS_METHODS_IS_FOR_SQUARE_MATRICES_ONLY);
-        if constexpr (Rows == Dynamic || Cols == Dynamic) fdapde_constexpr_assert(derived().rows() == derived().cols());
+        if constexpr (Rows == Dynamic || Cols == Dynamic) {
+            fdapde_constexpr_assert(derived().rows() == derived().cols());
+        }
         return 0.5 * (derived() + derived().transpose());   // symmetric part
     }
     constexpr auto skew_part() const {
         fdapde_static_assert(
           Rows == Dynamic || Cols == Dynamic || Rows == Cols, THIS_METHODS_IS_FOR_SQUARE_MATRICES_ONLY);
-        if constexpr (Rows == Dynamic || Cols == Dynamic) fdapde_constexpr_assert(derived().rows() == derived().cols());
+        if constexpr (Rows == Dynamic || Cols == Dynamic) {
+            fdapde_constexpr_assert(derived().rows() == derived().cols());
+        }
         return 0.5 * (derived() - derived().transpose());   // skew-symmetric part
     }
     // triangular block accessors
@@ -322,7 +326,13 @@ template <int Rows, int Cols, typename XprType> struct MatrixExpr {
 template <int Rows1, int Cols1, typename XprType1, int Rows2, int Cols2, typename XprType2>
 constexpr bool
 operator==(const MatrixExpr<Rows1, Cols1, XprType1>& op1, const MatrixExpr<Rows2, Cols2, XprType2>& op2) {
-    fdapde_static_assert(Rows1 == Rows2 && Cols1 == Cols2, YOU_MIXED_MATRICES_OF_DIFFERENT_SIZES);
+    fdapde_static_assert(
+      (internals::is_dynamic_sized_v<XprType1> || internals::is_dynamic_sized_v<XprType2> ||
+       (Rows1 == Rows2 && Cols1 == Cols2)),
+      INVALID_COMPARISON__OPERANDS_HAVE_DIFFERENT_SIZES);
+    if constexpr (internals::is_dynamic_sized_v<XprType1> || internals::is_dynamic_sized_v<XprType2>) {
+        fdapde_constexpr_assert(op1.rows() == op2.rows() && op1.cols() == op2.cols());
+    }
     const auto& d1 = op1.derived();
     const auto& d2 = op2.derived();
     for (int i = 0; i < Rows1; ++i) {
@@ -335,7 +345,13 @@ operator==(const MatrixExpr<Rows1, Cols1, XprType1>& op1, const MatrixExpr<Rows2
 template <int Rows1, int Cols1, typename XprType1, int Rows2, int Cols2, typename XprType2>
 constexpr bool
 operator!=(const MatrixExpr<Rows1, Cols1, XprType1>& op1, const MatrixExpr<Rows2, Cols2, XprType2>& op2) {
-    fdapde_static_assert(Rows1 == Rows2 && Cols1 == Cols2, YOU_MIXED_MATRICES_OF_DIFFERENT_SIZES);
+    fdapde_static_assert(
+      (internals::is_dynamic_sized_v<XprType1> || internals::is_dynamic_sized_v<XprType2> ||
+       (Rows1 == Rows2 && Cols1 == Cols2)),
+      INVALID_COMPARISON__OPERANDS_HAVE_DIFFERENT_SIZES);
+    if constexpr (internals::is_dynamic_sized_v<XprType1> || internals::is_dynamic_sized_v<XprType2>) {
+        fdapde_constexpr_assert(op1.rows() == op2.rows() && op1.cols() == op2.cols());
+    }
     const auto& d1 = op1.derived();
     const auto& d2 = op2.derived();
     for (int i = 0; i < Rows1; ++i) {
@@ -367,4 +383,4 @@ constexpr bool almost_equal(
 
 }   // namespace fdapde
 
-#endif // __FDAPDE_MATRIX_EXPR_H__
+#endif // __FDAPDE_LINALG_EXPR_H__

@@ -14,10 +14,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_MATRIX_BINARY_OP_H__
-#define __FDAPDE_MATRIX_BINARY_OP_H__
+#ifndef __FDAPDE_LINALG_BINARY_OP_H__
+#define __FDAPDE_LINALG_BINARY_OP_H__
 
-#include "../header_check.h"
+#include "header_check.h"
 
 namespace fdapde {
 
@@ -102,7 +102,7 @@ namespace internals {
 
 template <typename Scalar> struct matrix_coeff_mult_t {
     constexpr explicit matrix_coeff_mult_t(Scalar x) noexcept : x_(x) { }
-    template <typename Scalar_> constexpr auto operator()(const Scalar_& y) { return x_ * y; }
+    template <typename Scalar_> constexpr auto operator()(const Scalar_& y) const { return x_ * y; }
    private:
     Scalar x_;
 };
@@ -278,4 +278,4 @@ constexpr MatrixKroneckerProductOp<LhsXprType, RhsXprType> kron(
 
 }   // namespace fdapde
 
-#endif // __FDAPDE_MATRIX_BINARY_OP_H__
+#endif // __FDAPDE_LINALG_BINARY_OP_H__

@@ -14,16 +14,17 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_TRIANGULAR_MATRIX_H__
-#define __FDAPDE_TRIANGULAR_MATRIX_H__
+#ifndef __FDAPDE_LINALG_TRIANGULAR_H__
+#define __FDAPDE_LINALG_TRIANGULAR_H__
 
-#include "../header_check.h"
+#include "header_check.h"
 
 namespace fdapde {
 
 // triangular matrix type system
 template <typename Scalar_, int Rows_, int ViewMode_> struct TriangularMatrix;
-
+template <typename Scalar_, int Rows_, int ViewMode_, typename TriangularMatrixType> class TriangularMatrixBase;
+  
 namespace internals {
 
 // class wrapping a linear vector to the expression of a triangular matrix. internal usage only
@@ -498,4 +499,4 @@ template <typename Scalar, int Size> using LowerTriangularMatrixView = Triangula
 
 }   // namespace fdapde
 
-#endif // __FDAPDE_TRIANGULAR_MATRIX_H__
+#endif // __FDAPDE_LINALG_TRIANGULAR_H__

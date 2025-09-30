@@ -14,10 +14,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_SKEW_SYMMETRIC_MATRIX_H__
-#define __FDAPDE_SKEW_SYMMETRIC_MATRIX_H__
+#ifndef __FDAPDE_LINALG_SKEW_H__
+#define __FDAPDE_LINALG_SKEW_H__
 
-#include "../header_check.h"
+#include "header_check.h"
 
 namespace fdapde {
 
@@ -222,4 +222,4 @@ class SkewSymmetricMatrixView :
 
 }   // namespace fdapde
 
-#endif // __FDAPDE_SKEW_SYMMETRIC_MATRIX_H__
+#endif // __FDAPDE_LINALG_SKEW_H__

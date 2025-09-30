@@ -14,10 +14,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_MATRIX_VECTORWISE_OP_H__
-#define __FDAPDE_MATRIX_VECTORWISE_OP_H__
+#ifndef __FDAPDE_LINALG_VECTORWISE_OP_H__
+#define __FDAPDE_LINALG_VECTORWISE_OP_H__
 
-#include "../header_check.h"
+#include "header_check.h"
 
 namespace fdapde {
 
@@ -174,4 +174,4 @@ template <typename XprType> struct MatrixColWiseOp : public MatrixVectorWiseOp<X
   
 }   // namespace fdapde
 
-#endif // __FDAPDE_MATRIX_VECTORWISE_OP_H__
+#endif // __FDAPDE_LINALG_VECTORWISE_OP_H__

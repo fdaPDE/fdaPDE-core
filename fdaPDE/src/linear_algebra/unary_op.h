@@ -14,10 +14,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_MATRIX_UNARY_OP_H__
-#define __FDAPDE_MATRIX_UNARY_OP_H__
+#ifndef __FDAPDE_LINALG_UNARY_OP_H__
+#define __FDAPDE_LINALG_UNARY_OP_H__
 
-#include "../header_check.h"
+#include "header_check.h"
 
 namespace fdapde {
 
@@ -139,11 +139,11 @@ template <typename XprType, typename Executor> struct MatrixReduxOp {
         fdapde_static_assert(
           std::is_convertible_v<ExecutorReturnType FDAPDE_COMMA Scalar>, INVALID_EXECUTIR_RETURN_TYPE);
     }
-    constexpr auto run(Scalar init, Functor f) { return Executor::run(xpr_, init, f); }
+    template <typename ReduxOp> constexpr auto run(Scalar init, ReduxOp op) { return Executor::run(xpr_, init, op); }
    private:
     XprTypeNested xpr_;
 };
   
 }
 
-#endif // __FDAPDE_MATRIX_UNARY_OP_H__
+#endif // __FDAPDE_LINALG_UNARY_OP_H__

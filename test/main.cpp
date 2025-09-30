@@ -15,9 +15,6 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <gtest/gtest.h>   // testing framework
-// include eigen now to avoid possible linking errors
-#include <Eigen/Dense>
-#include <Eigen/Sparse>
 
 /*
 // utils
@@ -53,19 +50,21 @@
 #include "src/fspai_test.cpp"
 */
 
-#include "src/matrix/matrix.cpp"
-#include "src/matrix/matrix_base.cpp"
-#include "src/matrix/matrix_decomposition.cpp"
-#include "src/matrix/symmetric_matrix.cpp"
-#include "src/matrix/diagonal_matrix.cpp"
-#include "src/matrix/orthogonal_matrix.cpp"
-#include "src/matrix/permutation_operator.cpp"
-#include "src/matrix/upper_triangular_matrix.cpp"
-#include "src/matrix/lower_triangular_matrix.cpp"
-#include "src/matrix/skew_symmetric_matrix.cpp"
-#include "src/matrix/matrix_map.cpp"
-#include "src/matrix/rotation_operator.cpp"
-#include "src/matrix/positive_symmetric_matrix.cpp"
+// #include "src/matrix/matrix.cpp"
+// #include "src/matrix/matrix_base.cpp"
+// #include "src/matrix/matrix_decomposition.cpp"
+// #include "src/matrix/symmetric_matrix.cpp"
+// #include "src/matrix/diagonal_matrix.cpp"
+// #include "src/matrix/orthogonal_matrix.cpp"
+// #include "src/matrix/permutation_operator.cpp"
+// #include "src/matrix/upper_triangular_matrix.cpp"
+// #include "src/matrix/lower_triangular_matrix.cpp"
+// #include "src/matrix/skew_symmetric_matrix.cpp"
+// #include "src/matrix/matrix_map.cpp"
+// #include "src/matrix/rotation_operator.cpp"
+// #include "src/matrix/positive_symmetric_matrix.cpp"
+
+#include "linear_algebra/matrix.cpp"
 
 int main(int argc, char** argv) {
     // start testing
