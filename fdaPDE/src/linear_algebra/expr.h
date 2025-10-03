@@ -101,12 +101,12 @@ template <int Rows, int Cols, typename XprType> struct MatrixExpr {
     constexpr auto cwise_exp() const {
         using Scalar = typename XprType::Scalar;
         fdapde_static_assert(std::is_floating_point_v<Scalar>, THIS_METHOD_IS_FOR_FLOATING_POINT_MATRICES_ONLY);
-        return cwise([](Scalar x) { return std::exp(x); });
+        return cwise([](Scalar x) { return fdapde::exp(x); });
     }
     constexpr auto cwise_log() const {
         using Scalar = typename XprType::Scalar;
         fdapde_static_assert(std::is_floating_point_v<Scalar>, THIS_METHOD_IS_FOR_FLOATING_POINT_MATRICES_ONLY);
-        return cwise([](Scalar x) { return std::log(x); });
+        return cwise([](Scalar x) { return fdapde::log(x); });
     }
 
     // redux operators

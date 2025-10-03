@@ -15,7 +15,7 @@ jobs:
         submodules: 'recursive'
     - name: run_tests
       run: |
-        cd test/
+        cd tests/
         export Eigen3_DIR=/usr/share/cmake/Modules # reguired to let eigen3 work with CMake in alpine
         chmod +x run_tests.sh
         ./run_tests.sh --compiler gcc

@@ -83,9 +83,13 @@ template <typename XprType> struct is_dynamic_sized {
     static constexpr bool value = std::decay_t<XprType>::Rows == Dynamic || std::decay_t<XprType>::Cols == Dynamic;
 };
 template <typename XprType> static constexpr bool is_dynamic_sized_v = is_dynamic_sized<XprType>::value;
-  
+template <typename XprType> struct is_static_sized {
+    static constexpr bool value = !is_dynamic_sized_v<XprType>;
+};
+template <typename XprType> static constexpr bool is_static_sized_v = is_static_sized<XprType>::value;  
 
-// if XprType has its NestAsRef bit set, sets type member type to XprType&, otherwise just repeats XprType
+// if XprType has either its NestAsRef bit set or is dynamic sized, sets type member type to XprType&,
+// otherwise to XprType
 template <typename XprType, bool has_ref_bit> struct ref_select_impl;
 template <typename XprType> struct ref_select_impl<XprType, true> {
    private:

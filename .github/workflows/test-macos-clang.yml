@@ -16,7 +16,7 @@ jobs:
         brew install eigen
     - name: run_tests
       run: |
-        cd test/
+        cd tests/
         chmod +x run_tests.sh
         ./run_tests.sh --compiler clang
         echo "TEST_RESULT=$(echo $?)" >> $GITHUB_ENV

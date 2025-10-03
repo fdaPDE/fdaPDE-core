@@ -1,0 +1,5 @@
+PROJECT_NAME     = fdapde-core
+OUTPUT_DIRECTORY = build
+INPUT            = ../fdaPDE manual
+RECURSIVE        = YES
+EXTRACT_PRIVATE  = NO

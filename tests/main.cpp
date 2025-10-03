@@ -65,6 +65,7 @@
 // #include "src/matrix/positive_symmetric_matrix.cpp"
 
 #include "linear_algebra/matrix.cpp"
+#include "linear_algebra/expr.cpp"
 
 int main(int argc, char** argv) {
     // start testing

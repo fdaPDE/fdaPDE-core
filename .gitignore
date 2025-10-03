@@ -1,36 +1,142 @@
-*.txt
-*.json
-*.cmake
-*Makefile
-*.Rhistory
-*.tar.gz
-*.RData
-*.o
-*.so
-test/fdapde_test
-test/.cache
-test/build/
-build/
-CMakeFiles/
+# ==========================
+# OS / Editor Trash
+# ==========================
 .DS_Store
+Thumbs.db
+ehthumbs.db
+*.swp
+*.swo
+*~
 .bash_history
+.history
+.cache/
+*.tmp
+*.log
+
+# ==========================
+# IDEs
+# ==========================
+# JetBrains
 .idea/
-cmake-build-debug-docker/
-cmake-build-default/
-cmake-build-debug/
-experiments/test_RSVD/performances.csv
-.vscode
+*.iml
+out/
 
-#plots
-*.pdf
-*.png
+# VSCode
+.vscode/
+*.code-workspace
 
-#help files
-*.csv
+# Eclipse
+.project
+.cproject
+.settings/
 
-#docs files
-*.puml
+# ==========================
+# Build / CMake Crap
+# ==========================
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+*.cmake
+Makefile
+*Makefile
+install_manifest.txt
+
+# Ninja
+.ninja_deps
+.ninja_log
+build.ninja
+rules.ninja
+
+# Autotools
+*.lo
+*.la
+*.lai
+*.in
+
+# General build dirs
+build/
+build-*/
+cmake-build-*/
+test/build/
+test/.cache
+
+# Object / Libs
+*.o
+*.lo
+*.so
+*.so.*
+*.dylib
+*.dll
+*.lib
+*.a
+*.la
+*.exe
+*.out
+*.app
+*.i*     # preprocessed sources
+*.ii
+*.s      # assembler files
+
+# ==========================
+# Test + Coverage Trash
+# ==========================
+test/fdapde_test
+*.gcda
+*.gcno
+*.gcov
+coverage/
+lcov.info
+
+# ==========================
+# Language-Specific Crap
+# ==========================
+# R
+*.Rhistory
+*.RData
 .Rproj.user
 
-#some test directories
-experiments/
+# JSON configs and scratch files
+*.json
+
+# ==========================
+# Docs, Plots, Exports
+# ==========================
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+*.csv
+*.tar.gz
+*.tgz
+*.zip
+*.puml
+*.dot
+
+# ==========================
+# Docker / Env
+# ==========================
+*.env
+.env.*
+.envrc
+docker-compose.override.yml
+
+# ==========================
+# Misc insanity
+# ==========================
+# core dumps
+core
+*.core
+*.stackdump
+
+# profiling
+*.prof
+*.perf
+
+# editor backups
+*.bak
+*.orig
+*.rej

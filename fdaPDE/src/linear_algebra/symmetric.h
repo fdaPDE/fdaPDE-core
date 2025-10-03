@@ -123,7 +123,6 @@ class SymmetricMatrixBase : public SymmetricMatrixExpr<Size_, Size_, SymmetricMa
     struct assignment_executor {
         template <typename SrcXprType> static constexpr void run(SymmetricMatrixType& dst, const SrcXprType& src) {
             fdapde_static_assert(SymmetricMatrixType::ReadOnly == 0, ASSIGNMENT_TO_A_READ_ONLY_EXPRESSION);
-            int row = 0, col = 0;
             for (int i = 0, n = dst.rows(); i < n; ++i) {
                 for (int j = 0; j <= i; ++j) { dst(i, j) = src(i, j); }
             }
