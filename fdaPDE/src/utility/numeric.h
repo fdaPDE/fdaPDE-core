@@ -81,37 +81,38 @@ template <typename T1, typename T2> std::common_type_t<T1, T2> max(T1 a, T2 b) {
     return std::max<T>(static_cast<T>(a), static_cast<T>(b));
 }
 
+// constexpr absoulte value
+template <typename T> requires(std::is_arithmetic_v<T>) constexpr T abs(T x) { return x < 0 ? -x : x; }
+template <typename T> requires(std::is_floating_point_v<T>) constexpr T fabs(T x) { return x < 0 ? -x : x; }
+  
 // test for floating point equality
 [[maybe_unused]] constexpr double double_tolerance = 1e-10;
 [[maybe_unused]] constexpr double machine_epsilon  = 50 * std::numeric_limits<double>::epsilon();   // approx 10^-14
 template <typename T>
     requires(std::is_floating_point_v<T>)
 constexpr bool almost_equal(T a, T b, T epsilon) {
-    return std::fabs(a - b) < epsilon ||
-           std::fabs(a - b) < ((std::fabs(a) < std::fabs(b) ? std::fabs(b) : std::fabs(a)) * epsilon);
+    return fdapde::fabs(a - b) < epsilon ||
+           fdapde::fabs(a - b) < ((fdapde::fabs(a) < fdapde::fabs(b) ? fdapde::fabs(b) : fdapde::fabs(a)) * epsilon);
 }
 template <typename T> constexpr bool almost_equal(T a, T b) { return almost_equal(a, b, double_tolerance); }
 template <typename T>
     requires(std::is_floating_point_v<T>)
-constexpr bool greater_than(T a, T b, T epsilon) {
-    return (a - b) > ((std::fabs(a) < std::fabs(b) ? std::fabs(b) : std::fabs(a)) * epsilon);
+constexpr bool greater_equal(T a, T b, T epsilon) {
+    return (a - b) >= ((fdapde::fabs(a) < fdapde::fabs(b) ? fdapde::fabs(b) : fdapde::fabs(a)) * epsilon);
 }
-template <typename T> constexpr bool greater_than(T a, T b) { return greater_than(a, b, double_tolerance); }
+template <typename T> constexpr bool greater_equal(T a, T b) { return greater_equal(a, b, double_tolerance); }
 template <typename T>
     requires(std::is_floating_point_v<T>)
-constexpr bool less_than(T a, T b, T epsilon) {
-    return (b - a) > ((std::fabs(a) < std::fabs(b) ? std::fabs(b) : std::fabs(a)) * epsilon);
+constexpr bool less_equal(T a, T b, T epsilon) {
+    return (b - a) >= ((fdapde::fabs(a) < fdapde::fabs(b) ? fdapde::fabs(b) : fdapde::fabs(a)) * epsilon);
 }
-template <typename T> constexpr bool less_than(T a, T b) { return less_than(a, b, double_tolerance); }
+template <typename T> constexpr bool less_equal(T a, T b) { return less_equal(a, b, double_tolerance); }
 template <typename T>
     requires(std::is_floating_point_v<T>)
 constexpr bool almost_zero(T a, T epsilon) {
-    return std::fabs(a) < epsilon;
+    return fdapde::fabs(a) < epsilon;
 }
 template <typename T> constexpr bool almost_zero(T a) { return almost_zero(a, machine_epsilon); }
-
-// constexpr absoulte value
-template <typename T> requires(std::is_signed_v<T>) constexpr T abs(T x) { return x < 0 ? -x : x; }
 
 // constexpr square root
 template <typename T>
