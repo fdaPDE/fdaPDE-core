@@ -59,7 +59,7 @@ struct OrthogonalMatrixBase : public OrthogonalMatrixExpr<Size_, Size_, Orthogon
     };
   
     OrthogonalMatrixBase() = delete;
-    OrthogonalMatrixBase(int size) : size_(Size_ == Dynamic ? size_ : Size_) { }
+    OrthogonalMatrixBase(int size) : size_(Size_ == Dynamic ? size : Size_) { }
       // copy assignment
     constexpr OrthogonalMatrixType_& operator=(const OrthogonalMatrixType_& other) {
         fdapde_static_assert(ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_LOCATION);

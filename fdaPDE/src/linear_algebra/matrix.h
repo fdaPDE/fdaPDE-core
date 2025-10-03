@@ -25,7 +25,7 @@ namespace fdapde {
 template <typename Functor_, int Rows_, int Cols_>
 struct ProceduralMatrix : public MatrixExpr<Rows_, Cols_, ProceduralMatrix<Functor_, Rows_, Cols_>> {
     fdapde_static_assert(
-      std::is_invocable_v<Functor_ FDAPDE_COMMA int FDAPDE_COMMA int>, FUNCTOR_NOT_CALLABLE_AT_INDECES_PAIR);
+      std::is_invocable_v<Functor_ FDAPDE_COMMA int FDAPDE_COMMA int>, FUNCTOR_NOT_CALLABLE_AT_INDEXES_PAIR);
     using Base = MatrixExpr<Rows_, Cols_, ProceduralMatrix<Functor_, Rows_, Cols_>>;
     using Scalar = typename decltype(std::function {std::declval<Functor_>()})::result_type;
     fdapde_static_assert(std::is_arithmetic_v<Scalar>, INVALID_FUNCTOR_RETURN_TYPE);
@@ -81,7 +81,8 @@ struct generic_assignment_executor {
 
 template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_, typename MatrixType>
 class MatrixBase : public MatrixExpr<Rows_, Cols_, MatrixType> {
-    fdapde_static_assert((Rows_ == Dynamic || Rows_ > 0) && (Cols_ == Dynamic || Cols_ > 0), INVALID_LINALG_MATRIX_SIZES);
+    fdapde_static_assert(
+      (Rows_ == Dynamic || Rows_ > 0) && (Cols_ == Dynamic || Cols_ > 0), INVALID_LINALG_MATRIX_SIZES);
    public:
     using Base = MatrixExpr<Rows_, Cols_, MatrixType>;
     using Base::derived;
@@ -162,8 +163,9 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
     using Base = MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Scalar_, Rows_, Cols_, StorageOrder_>>;
     using Scalar = Scalar_;
     static constexpr int StorageSize = (Rows_ == Dynamic || Cols_ == Dynamic) ? Dynamic : (Rows_ * Cols_);
-    using StorageType =
-      std::conditional_t<Rows_ == Dynamic || Cols_ == Dynamic, std::vector<Scalar>, std::array<Scalar, StorageSize>>;
+    using StorageType = std::conditional_t<
+      Rows_ == Dynamic || Cols_ == Dynamic, std::vector<Scalar>,
+      std::array<Scalar, (StorageSize < 0) ? 0 : static_cast<std::size_t>(StorageSize)>>;   // avoid clang narrowing
     using iterator = typename StorageType::iterator;
     using const_iterator = typename StorageType::const_iterator;
     static constexpr int NestAsRef = 1;
@@ -267,8 +269,7 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
     }
     template <std::size_t Size> constexpr explicit Matrix(const Scalar (&data)[Size]) : Base() {
         fdapde_static_assert(
-          Rows_ != Dynamic && Cols_ != Dynamic && StorageSize == Size,
-          THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
+          Rows_ != Dynamic && Cols_ != Dynamic && StorageSize == Size, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
         for (int i = 0; i < Rows_; ++i) {
             for (int j = 0; j < Cols_; ++j) {
                 Base::operator()(i, j) = data[i * Base::row_stride_ + j * Base::col_stride_];
@@ -341,17 +342,17 @@ class MatrixView :
     }
     constexpr MatrixView(Scalar* data, int size) : Base(size), data_(data) {
         fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
-	fdapde_constexpr_assert(size > 0);
+        fdapde_constexpr_assert(size > 0);
     }
     constexpr MatrixView(Scalar* data, int rows, int cols) : Base(rows, cols), data_(data) {
-	fdapde_constexpr_assert(rows > 0 && cols > 0);
+        fdapde_constexpr_assert(rows > 0 && cols > 0);
     }
     // inherit assignment from Base
     using Base::operator=;
     // data pointers
     constexpr const StorageType data() const { return data_; }
     constexpr StorageType data() { return data_; }
-  protected:
+   protected:
     StorageType data_;
 };
 
