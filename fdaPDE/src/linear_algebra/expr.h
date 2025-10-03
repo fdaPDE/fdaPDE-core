@@ -372,8 +372,9 @@ constexpr bool almost_equal(
         for (int j = 0; j < Cols1; ++j) {
             Scalar_ a = d1(i, j);
             Scalar_ b = d2(i, j);
-            if (!(std::fabs(a - b) < epsilon ||
-                  std::fabs(a - b) < ((std::fabs(a) < std::fabs(b) ? std::fabs(b) : std::fabs(a)) * epsilon))) {
+            if (!(fdapde::fabs(a - b) < epsilon ||
+                  fdapde::fabs(a - b) <
+                    ((fdapde::fabs(a) < fdapde::fabs(b) ? fdapde::fabs(b) : fdapde::fabs(a)) * epsilon))) {
                 return false;
             }
         }

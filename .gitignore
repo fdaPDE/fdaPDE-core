@@ -1,6 +1,5 @@
-# ==========================
-# OS / Editor Trash
-# ==========================
+#### OS / Editor ####
+
 .DS_Store
 Thumbs.db
 ehthumbs.db
@@ -13,9 +12,9 @@ ehthumbs.db
 *.tmp
 *.log
 
-# ==========================
-# IDEs
-# ==========================
+
+#### IDEs ####
+
 # JetBrains
 .idea/
 *.iml
@@ -30,9 +29,9 @@ out/
 .cproject
 .settings/
 
-# ==========================
-# Build / CMake Crap
-# ==========================
+
+#### Build ####
+
 # CMake
 CMakeFiles/
 CMakeCache.txt
@@ -55,14 +54,18 @@ rules.ninja
 *.lai
 *.in
 
-# General build dirs
+
+#### General build dirs ####
+
 build/
 build-*/
 cmake-build-*/
 test/build/
 test/.cache
 
-# Object / Libs
+
+#### Object / Libs ####
+
 *.o
 *.lo
 *.so
@@ -75,23 +78,25 @@ test/.cache
 *.exe
 *.out
 *.app
-*.i*     # preprocessed sources
+*.i*
 *.ii
-*.s      # assembler files
+*.s
 
-# ==========================
-# Test + Coverage Trash
-# ==========================
-test/fdapde_test
+
+#### Testing ####
+
+tests/fdapde_test
+tests/build_gcc
+tests/build_clang
 *.gcda
 *.gcno
 *.gcov
 coverage/
 lcov.info
 
-# ==========================
-# Language-Specific Crap
-# ==========================
+
+#### Language-Specific ####
+
 # R
 *.Rhistory
 *.RData
@@ -100,9 +105,9 @@ lcov.info
 # JSON configs and scratch files
 *.json
 
-# ==========================
-# Docs, Plots, Exports
-# ==========================
+
+#### Docs, Plots, Exports ####
+
 *.pdf
 *.png
 *.jpg
@@ -116,17 +121,17 @@ lcov.info
 *.puml
 *.dot
 
-# ==========================
-# Docker / Env
-# ==========================
+
+#### Docker / Env ####
+
 *.env
 .env.*
 .envrc
 docker-compose.override.yml
 
-# ==========================
-# Misc insanity
-# ==========================
+
+#### Misc ####
+
 # core dumps
 core
 *.core

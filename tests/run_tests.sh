@@ -1,78 +1,85 @@
 #!/bin/sh
 
-# set defaults
+set -e  # exit on error
+
 SCRIPT_NAME=$(basename "$0")
-BUILD_DIR=build/
+BUILD_DIR="build"
 MEMCHECK=false
 COMPILER="gcc"
 
-help()
-{
-    echo "Usage: .run_tests.sh [options]
+help() {
+    echo "Usage: $SCRIPT_NAME [options]
 
-       -m --memcheck         use valgrind to checks for memory errors
-       -c --compiler         sets compiler (gcc/clang), default gcc
-       -h --help             shows this message"
+Options:
+  -m, --memcheck        Run tests under valgrind
+  -c, --compiler <cc>   Choose compiler: gcc (default) or clang
+  -h, --help            Show this help message"
     exit 2
 }
-clean_build_dir()
-{
-    if [ -d "$BUILD_DIR" ] && [ -f "$BUILD_DIR/CMakeCache.txt" ] && [ -d "$BUILD_DIR/CMakeFiles" ];
-    then
-	rm -r build/CMakeCache.txt build/CMakeFiles/
-    fi
-}
-## parse command line inputs
-SHORT=m,c:,h
-LONG=memcheck,compiler:,help
-OPTS=$(getopt -a --n "$SCRIPT_NAME" --options $SHORT --longoptions $LONG -- "$@") 
+
+# Parse command line inputs
+SHORT="m,c:,h"
+LONG="memcheck,compiler:,help"
+OPTS=$(getopt -a --name "$SCRIPT_NAME" --options $SHORT --longoptions $LONG -- "$@")
 eval set -- "$OPTS"
+
 while :; do
     case "$1" in
-	-m | --memcheck )
-	    MEMCHECK=true
-	    shift 1
-	    ;;
-	-c | --compiler )
-	    COMPILER="$2"
-	    shift 2
-	    ;;
-	-h | --help )
-	    help
-	    ;;
-	--)
-	    shift;
-	    break
-	    ;;
-	*)
-	    echo "Unexpected option: $1"
-	    help
-	    ;;
+        -m|--memcheck)
+            MEMCHECK=true
+            shift
+            ;;
+        -c|--compiler)
+            COMPILER="$2"
+            shift 2
+            ;;
+        -h|--help)
+            help
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *)
+            echo "Unexpected option: $1"
+            help
+            ;;
     esac
 done
-## set CMake compiler
+
+# Set compiler environment
 if [ "$COMPILER" = "gcc" ]; then
-    export CC=$(which gcc)
-    export CXX=$(which g++)
+    export CC=$(command -v gcc)
+    export CXX=$(command -v g++)
+    BUILD_DIR="build_gcc"
 elif [ "$COMPILER" = "clang" ]; then
-    export CC=$(which clang)
-    export CXX=$(which clang++)
-fi
-# cd into build directory
-if [ -d "$BUILD_DIR" ];
-then
-    clean_build_dir
-    cd build/
+    export CC=$(command -v clang)
+    export CXX=$(command -v clang++)
+    BUILD_DIR="build_clang"
 else
-    mkdir build/
-    cd build/
+    echo "Unsupported compiler: $COMPILER"
+    exit 1
 fi
 
-cmake -Wno-dev ../CMakeLists.txt
-make
+echo "==> Using compiler: $COMPILER"
+echo "==> Build directory: $BUILD_DIR"
+
+# Clean and create build dir
+rm -rf "$BUILD_DIR"
+
+# Configure CMake out-of-source
+cmake -S . -B "$BUILD_DIR" \
+      -DCMAKE_C_COMPILER="$CC" \
+      -DCMAKE_CXX_COMPILER="$CXX" \
+      -Wno-dev
+
+# Build
+cmake --build "$BUILD_DIR" --parallel
+
+# Run tests
 if [ "$MEMCHECK" = true ]; then
-    valgrind --leak-check=full --track-origins=yes ./fdapde_test
+    echo "==> Running under valgrind..."
+    valgrind --leak-check=full --track-origins=yes "$BUILD_DIR/fdapde_test"
 else
-    ./fdapde_test
+    "$BUILD_DIR/fdapde_test"
 fi
-rm fdapde_test
