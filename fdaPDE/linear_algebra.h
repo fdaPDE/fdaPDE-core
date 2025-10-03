@@ -58,7 +58,6 @@
 // include required modules
 #include "utility.h"
 
-
 namespace fdapde {
 
 // forward declaration
@@ -145,6 +144,7 @@ template <typename XprType> using ref_select_t = typename ref_select<XprType>::t
 // #include "src/linear_algebra/eigen/rsi.h"
 // #include "src/linear_algebra/eigen/rbki.h"
 // #include "src/linear_algebra/eigen/rp_chol.h"
+// #include "src/linear_algebra/mumps.h"
 
 // clang-format on
 

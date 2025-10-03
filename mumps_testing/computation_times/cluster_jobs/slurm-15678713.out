@@ -1,0 +1,229 @@
+gen_data_srpde: /g100/home/userexternal/mcoppell/.spack/packages/linux-centos8-skylake_avx512/gcc-8.4.1/eigen-3.4.0-jv4sit3oxxas3yndihrauqsjiugspwkd/include/eigen3/Eigen/src/Core/DenseBase.h:261: void Eigen::DenseBase<Derived>::resize(Eigen::Index, Eigen::Index) [with Derived = Eigen::Block<Eigen::Matrix<int, -1, -1, 1>, -1, -1, false>; Eigen::Index = long int]: Assertion `rows == this->rows() && cols == this->cols() && "DenseBase::resize() does not actually allow to resize."' failed.
+gen_data_srpde: /g100/home/userexternal/mcoppell/.spack/packages/linux-centos8-skylake_avx512/gcc-8.4.1/eigen-3.4.0-jv4sit3oxxas3yndihrauqsjiugspwkd/include/eigen3/Eigen/src/Core/DenseBase.h:261: void Eigen::DenseBase<Derived>::resize(Eigen::Index, Eigen::Index) [with Derived = Eigen::Block<Eigen::Matrix<int, -1, -1, 1>, -1, -1, false>; Eigen::Index = long int]: Assertion `rows == this->rows() && cols == this->cols() && "DenseBase::resize() does not actually allow to resize."' failed.
+[r515c01n03:52306] *** Process received signal ***
+gen_data_srpde: /g100/home/userexternal/mcoppell/.spack/packages/linux-centos8-skylake_avx512/gcc-8.4.1/eigen-3.4.0-jv4sit3oxxas3yndihrauqsjiugspwkd/include/eigen3/Eigen/src/Core/DenseBase.h:261: void Eigen::DenseBase<Derived>::resize(Eigen::Index, Eigen::Index) [with Derived = Eigen::Block<Eigen::Matrix<int, -1, -1, 1>, -1, -1, false>; Eigen::Index = long int]: Assertion `rows == this->rows() && cols == this->cols() && "DenseBase::resize() does not actually allow to resize."' failed.
+[r515c01n03:52303] *** Process received signal ***
+[r515c01n03:52303] Signal: Aborted (6)
+[r515c01n03:52303] Signal code:  (-6)
+gen_data_srpde: /g100/home/userexternal/mcoppell/.spack/packages/linux-centos8-skylake_avx512/gcc-8.4.1/eigen-3.4.0-jv4sit3oxxas3yndihrauqsjiugspwkd/include/eigen3/Eigen/src/Core/DenseBase.h:261: void Eigen::DenseBase<Derived>::resize(Eigen::Index, Eigen::Index) [with Derived = Eigen::Block<Eigen::Matrix<int, -1, -1, 1>, -1, -1, false>; Eigen::Index = long int]: Assertion `rows == this->rows() && cols == this->cols() && "DenseBase::resize() does not actually allow to resize."' failed.
+[r515c01n03:52310] *** Process received signal ***
+[r515c01n03:52310] Signal: Aborted (6)
+[r515c01n03:52310] Signal code:  (-6)
+gen_data_srpde: /g100/home/userexternal/mcoppell/.spack/packages/linux-centos8-skylake_avx512/gcc-8.4.1/eigen-3.4.0-jv4sit3oxxas3yndihrauqsjiugspwkd/include/eigen3/Eigen/src/Core/DenseBase.h:261: void Eigen::DenseBase<Derived>::resize(Eigen::Index, Eigen::Index) [with Derived = Eigen::Block<Eigen::Matrix<int, -1, -1, 1>, -1, -1, false>; Eigen::Index = long int]: Assertion `rows == this->rows() && cols == this->cols() && "DenseBase::resize() does not actually allow to resize."' failed.
+[r515c01n03:52300] *** Process received signal ***
+[r515c01n03:52300] Signal: Aborted (6)
+[r515c01n03:52300] Signal code:  (-6)
+gen_data_srpde: /g100/home/userexternal/mcoppell/.spack/packages/linux-centos8-skylake_avx512/gcc-8.4.1/eigen-3.4.0-jv4sit3oxxas3yndihrauqsjiugspwkd/include/eigen3/Eigen/src/Core/DenseBase.h:261: void Eigen::DenseBase<Derived>::resize(Eigen::Index, Eigen::Index) [with Derived = Eigen::Block<Eigen::Matrix<int, -1, -1, 1>, -1, -1, false>; Eigen::Index = long int]: Assertion `rows == this->rows() && cols == this->cols() && "DenseBase::resize() does not actually allow to resize."' failed.
+[r515c01n03:52301] *** Process received signal ***
+[r515c01n03:52301] Signal: Aborted (6)
+[r515c01n03:52301] Signal code:  (-6)
+gen_data_srpde: /g100/home/userexternal/mcoppell/.spack/packages/linux-centos8-skylake_avx512/gcc-8.4.1/eigen-3.4.0-jv4sit3oxxas3yndihrauqsjiugspwkd/include/eigen3/Eigen/src/Core/DenseBase.h:261: void Eigen::DenseBase<Derived>::resize(Eigen::Index, Eigen::Index) [with Derived = Eigen::Block<Eigen::Matrix<int, -1, -1, 1>, -1, -1, false>; Eigen::Index = long int]: Assertion `rows == this->rows() && cols == this->cols() && "DenseBase::resize() does not actually allow to resize."' failed.
+[r515c01n03:52308] *** Process received signal ***
+[r515c01n03:52308] Signal: Aborted (6)
+[r515c01n03:52308] Signal code:  (-6)
+gen_data_srpde: /g100/home/userexternal/mcoppell/.spack/packages/linux-centos8-skylake_avx512/gcc-8.4.1/eigen-3.4.0-jv4sit3oxxas3yndihrauqsjiugspwkd/include/eigen3/Eigen/src/Core/DenseBase.h:261: void Eigen::DenseBase<Derived>::resize(Eigen::Index, Eigen::Index) [with Derived = Eigen::Block<Eigen::Matrix<int, -1, -1, 1>, -1, -1, false>; Eigen::Index = long int]: Assertion `rows == this->rows() && cols == this->cols() && "DenseBase::resize() does not actually allow to resize."' failed.
+[r515c01n03:52304] *** Process received signal ***
+[r515c01n03:52304] Signal: Aborted (6)
+[r515c01n03:52304] Signal code:  (-6)
+gen_data_srpde: /g100/home/userexternal/mcoppell/.spack/packages/linux-centos8-skylake_avx512/gcc-8.4.1/eigen-3.4.0-jv4sit3oxxas3yndihrauqsjiugspwkd/include/eigen3/Eigen/src/Core/DenseBase.h:261: void Eigen::DenseBase<Derived>::resize(Eigen::Index, Eigen::Index) [with Derived = Eigen::Block<Eigen::Matrix<int, -1, -1, 1>, -1, -1, false>; Eigen::Index = long int]: Assertion `rows == this->rows() && cols == this->cols() && "DenseBase::resize() does not actually allow to resize."' failed.
+[r515c01n03:52309] *** Process received signal ***
+[r515c01n03:52309] Signal: Aborted (6)
+[r515c01n03:52309] Signal code:  (-6)
+gen_data_srpde: /g100/home/userexternal/mcoppell/.spack/packages/linux-centos8-skylake_avx512/gcc-8.4.1/eigen-3.4.0-jv4sit3oxxas3yndihrauqsjiugspwkd/include/eigen3/Eigen/src/Core/DenseBase.h:261: void Eigen::DenseBase<Derived>::resize(Eigen::Index, Eigen::Index) [with Derived = Eigen::Block<Eigen::Matrix<int, -1, -1, 1>, -1, -1, false>; Eigen::Index = long int]: Assertion `rows == this->rows() && cols == this->cols() && "DenseBase::resize() does not actually allow to resize."' failed.
+[r515c01n03:52302] *** Process received signal ***
+[r515c01n03:52302] Signal: Aborted (6)
+[r515c01n03:52302] Signal code:  (-6)
+gen_data_srpde: /g100/home/userexternal/mcoppell/.spack/packages/linux-centos8-skylake_avx512/gcc-8.4.1/eigen-3.4.0-jv4sit3oxxas3yndihrauqsjiugspwkd/include/eigen3/Eigen/src/Core/DenseBase.h:261: void Eigen::DenseBase<Derived>::resize(Eigen::Index, Eigen::Index) [with Derived = Eigen::Block<Eigen::Matrix<int, -1, -1, 1>, -1, -1, false>; Eigen::Index = long int]: Assertion `rows == this->rows() && cols == this->cols() && "DenseBase::resize() does not actually allow to resize."' failed.
+[r515c01n03:52307] *** Process received signal ***
+[r515c01n03:52307] Signal: Aborted (6)
+[r515c01n03:52307] Signal code:  (-6)
+[r515c01n03:52313] *** Process received signal ***
+[r515c01n03:52313] Signal: Aborted (6)
+[r515c01n03:52313] Signal code:  (-6)
+gen_data_srpde: /g100/home/userexternal/mcoppell/.spack/packages/linux-centos8-skylake_avx512/gcc-8.4.1/eigen-3.4.0-jv4sit3oxxas3yndihrauqsjiugspwkd/include/eigen3/Eigen/src/Core/DenseBase.h:261: void Eigen::DenseBase<Derived>::resize(Eigen::Index, Eigen::Index) [with Derived = Eigen::Block<Eigen::Matrix<int, -1, -1, 1>, -1, -1, false>; Eigen::Index = long int]: Assertion `rows == this->rows() && cols == this->cols() && "DenseBase::resize() does not actually allow to resize."' failed.
+[r515c01n03:52305] *** Process received signal ***
+[r515c01n03:52305] Signal: Aborted (6)
+[r515c01n03:52305] Signal code:  (-6)
+gen_data_srpde: /g100/home/userexternal/mcoppell/.spack/packages/linux-centos8-skylake_avx512/gcc-8.4.1/eigen-3.4.0-jv4sit3oxxas3yndihrauqsjiugspwkd/include/eigen3/Eigen/src/Core/DenseBase.h:261: void Eigen::DenseBase<Derived>::resize(Eigen::Index, Eigen::Index) [with Derived = Eigen::Block<Eigen::Matrix<int, -1, -1, 1>, -1, -1, false>; Eigen::Index = long int]: Assertion `rows == this->rows() && cols == this->cols() && "DenseBase::resize() does not actually allow to resize."' failed.
+[r515c01n03:52312] *** Process received signal ***
+[r515c01n03:52312] Signal: Aborted (6)
+[r515c01n03:52312] Signal code:  (-6)
+[r515c01n03:52306] Signal: Aborted (6)
+[r515c01n03:52306] Signal code:  (-6)
+gen_data_srpde: /g100/home/userexternal/mcoppell/.spack/packages/linux-centos8-skylake_avx512/gcc-8.4.1/eigen-3.4.0-jv4sit3oxxas3yndihrauqsjiugspwkd/include/eigen3/Eigen/src/Core/DenseBase.h:261: void Eigen::DenseBase<Derived>::resize(Eigen::Index, Eigen::Index) [with Derived = Eigen::Block<Eigen::Matrix<int, -1, -1, 1>, -1, -1, false>; Eigen::Index = long int]: Assertion `rows == this->rows() && cols == this->cols() && "DenseBase::resize() does not actually allow to resize."' failed.
+[r515c01n03:52311] *** Process received signal ***
+[r515c01n03:52311] Signal: Aborted (6)
+[r515c01n03:52311] Signal code:  (-6)
+RANK 1: 
+MPI initialized with 16 processes.
+/g100/home/userexternal/mcoppell/fdaPDE-cpp/fdaPDE/core/fdaPDE/src/utility/mdarray.h:618. Assertion: 's < mdarray_->extent(free_extents_idxs_[Ns_])' failed.
+[r515c01n03:52299] *** Process received signal ***
+[r515c01n03:52299] Signal: Aborted (6)
+[r515c01n03:52299] Signal code:  (-6)
+RANK 0: 
+                     y         
+<POINT>              <flt64>   
+(0.000000, 0.000000) -0.055023 
+(0.125000, 0.000000) 0.376583  
+(0.250000, 0.000000) 0.232329  
+(0.375000, 0.000000) -0.245868 
+(0.500000, 0.000000) -0.963174 
+(0.625000, 0.000000) -0.853160 
+(0.750000, 0.000000) -0.582218 
+(0.875000, 0.000000) -0.063935 
+
+
+[r515c01n03:52306] [ 0] [r515c01n03:52307] [ 0] /lib64/libpthread.so.0(+0x12cf0)[0x1524df590cf0]
+[r515c01n03:52307] [ 1] [r515c01n03:52303] [ 0] /lib64/libpthread.so.0(+0x12cf0)[0x14a9d450acf0]
+[r515c01n03:52303] [ 1] [r515c01n03:52301] [ 0] /lib64/libpthread.so.0(+0x12cf0)[0x14d25f560cf0]
+[r515c01n03:52301] [ 1] [r515c01n03:52312] [ 0] /lib64/libpthread.so.0(+0x12cf0)[0x14e8cac4dcf0]
+[r515c01n03:52312] [ 1] /lib64/libpthread.so.0(+0x12cf0)[0x151691455cf0]
+[r515c01n03:52306] [ 1] [r515c01n03:52302] [ 0] /lib64/libpthread.so.0(+0x12cf0)[0x14d803141cf0]
+[r515c01n03:52302] [ 1] [r515c01n03:52313] [ 0] /lib64/libpthread.so.0(+0x12cf0)[0x148d20fa5cf0]
+[r515c01n03:52313] [ 1] [r515c01n03:52304] [ 0] /lib64/libpthread.so.0(+0x12cf0)[0x150dcbbb4cf0]
+[r515c01n03:52304] [ 1] [r515c01n03:52305] [ 0] /lib64/libpthread.so.0(+0x12cf0)[0x14a7eb755cf0]
+[r515c01n03:52305] [ 1] [r515c01n03:52308] [ 0] /lib64/libpthread.so.0(+0x12cf0)[0x151228d30cf0]
+[r515c01n03:52308] [ 1] [r515c01n03:52300] [ 0] /lib64/libpthread.so.0(+0x12cf0)[0x14a17efb9cf0]
+[r515c01n03:52300] [ 1] [r515c01n03:52311] [ 0] /lib64/libpthread.so.0(+0x12cf0)[0x150f74ae8cf0]
+[r515c01n03:52311] [ 1] [r515c01n03:52310] [ 0] /lib64/libpthread.so.0(+0x12cf0)[0x14c011a65cf0]
+[r515c01n03:52310] [ 1] /lib64/libc.so.6(gsignal+0x10f)[0x14c0109bb54f]
+[r515c01n03:52299] [ 0] /lib64/libpthread.so.0(+0x12cf0)[0x145c5eaa6cf0]
+[r515c01n03:52299] [ 1] /lib64/libc.so.6(gsignal+0x10f)[0x145c5d9fc54f]
+[r515c01n03:52299] [ 2] /lib64/libc.so.6(gsignal+0x10f)[0x14a9d346054f]
+[r515c01n03:52303] [ 2] /lib64/libc.so.6(abort+0x127)[0x14a9d344aea5]
+[r515c01n03:52303] [ 3] /lib64/libc.so.6(gsignal+0x10f)[0x1516903ab54f]
+[r515c01n03:52306] [ 2] /lib64/libc.so.6(abort+0x127)[0x151690395ea5]
+[r515c01n03:52306] [ 3] /lib64/libc.so.6(+0x21d79)[0x151690395d79]
+[r515c01n03:52306] [ 4] /lib64/libc.so.6(gsignal+0x10f)[0x1524de4e654f]
+[r515c01n03:52307] [ 2] /lib64/libc.so.6(abort+0x127)[0x1524de4d0ea5]
+[r515c01n03:52307] [ 3] /lib64/libc.so.6(+0x21d79)[0x1524de4d0d79]
+[r515c01n03:52307] [ 4] /lib64/libc.so.6(gsignal+0x10f)[0x14d25e4b654f]
+[r515c01n03:52301] [ 2] /lib64/libc.so.6(abort+0x127)[0x14d25e4a0ea5]
+[r515c01n03:52301] [ 3] /lib64/libc.so.6(+0x21d79)[0x14d25e4a0d79]
+[r515c01n03:52301] [ 4] /lib64/libc.so.6(gsignal+0x10f)[0x14e8c9ba354f]
+[r515c01n03:52312] [ 2] /lib64/libc.so.6(abort+0x127)[0x14e8c9b8dea5]
+[r515c01n03:52312] [ 3] /lib64/libc.so.6(+0x21d79)[0x14e8c9b8dd79]
+[r515c01n03:52312] [ 4] /lib64/libc.so.6(gsignal+0x10f)[0x14d80209754f]
+[r515c01n03:52302] [ 2] /lib64/libc.so.6(abort+0x127)[0x14d802081ea5]
+[r515c01n03:52302] [ 3] /lib64/libc.so.6(+0x21d79)[0x14d802081d79]
+[r515c01n03:52302] [ 4] /lib64/libc.so.6(gsignal+0x10f)[0x148d1fefb54f]
+[r515c01n03:52313] [ 2] /lib64/libc.so.6(abort+0x127)[0x148d1fee5ea5]
+[r515c01n03:52313] [ 3] /lib64/libc.so.6(+0x21d79)[0x148d1fee5d79]
+[r515c01n03:52313] [ 4] /lib64/libc.so.6(gsignal+0x10f)[0x150dcab0a54f]
+[r515c01n03:52304] [ 2] /lib64/libc.so.6(abort+0x127)[0x150dcaaf4ea5]
+[r515c01n03:52304] [ 3] /lib64/libc.so.6(+0x21d79)[0x150dcaaf4d79]
+[r515c01n03:52304] [ 4] /lib64/libc.so.6(+0x2fc46)[0x150dcab02c46]
+[r515c01n03:52304] [ 5] ./gen_data_srpde[0x41376c]
+[r515c01n03:52304] [ 6] /lib64/libc.so.6(gsignal+0x10f)[0x14a7ea6ab54f]
+[r515c01n03:52305] [ 2] /lib64/libc.so.6(abort+0x127)[0x14a7ea695ea5]
+[r515c01n03:52305] [ 3] /lib64/libc.so.6(+0x21d79)[0x14a7ea695d79]
+[r515c01n03:52305] [ 4] /lib64/libc.so.6(+0x2fc46)[0x14a7ea6a3c46]
+[r515c01n03:52305] [ 5] ./gen_data_srpde[0x41376c]
+[r515c01n03:52305] [ 6] ./gen_data_srpde[0x406e8e]
+[r515c01n03:52305] /lib64/libc.so.6(gsignal+0x10f)[0x151227c8654f]
+[r515c01n03:52308] [ 2] /lib64/libc.so.6(abort+0x127)[0x151227c70ea5]
+[r515c01n03:52308] [ 3] /lib64/libc.so.6(+0x21d79)[0x151227c70d79]
+[r515c01n03:52308] [ 4] /lib64/libc.so.6(+0x2fc46)[0x151227c7ec46]
+[r515c01n03:52308] [ 5] ./gen_data_srpde[0x41376c]
+[r515c01n03:52308] [ 6] ./gen_data_srpde[0x406e8e]
+/lib64/libc.so.6(gsignal+0x10f)[0x14a17df0f54f]
+[r515c01n03:52300] [ 2] /lib64/libc.so.6(abort+0x127)[0x14a17def9ea5]
+[r515c01n03:52300] [ 3] /lib64/libc.so.6(+0x21d79)[0x14a17def9d79]
+[r515c01n03:52300] [ 4] /lib64/libc.so.6(+0x2fc46)[0x14a17df07c46]
+[r515c01n03:52300] [ 5] ./gen_data_srpde[0x41376c]
+[r515c01n03:52300] [ 6] ./gen_data_srpde[0x406e8e]
+[r515c01n03:52300] [ 7] /lib64/libc.so.6(gsignal+0x10f)[0x150f73a3e54f]
+[r515c01n03:52311] [ 2] /lib64/libc.so.6(abort+0x127)[0x150f73a28ea5]
+[r515c01n03:52311] [ 3] /lib64/libc.so.6(+0x21d79)[0x150f73a28d79]
+[r515c01n03:52311] [ 4] /lib64/libc.so.6(+0x2fc46)[0x150f73a36c46]
+[r515c01n03:52311] [ 5] ./gen_data_srpde[0x41376c]
+[r515c01n03:52311] [ 6] ./gen_data_srpde[0x406e8e]
+[r515c01n03:52311] [ 7] [r515c01n03:52310] [ 2] /lib64/libc.so.6(abort+0x127)[0x14c0109a5ea5]
+[r515c01n03:52310] [ 3] /lib64/libc.so.6(+0x21d79)[0x14c0109a5d79]
+[r515c01n03:52310] [ 4] /lib64/libc.so.6(+0x2fc46)[0x14c0109b3c46]
+[r515c01n03:52310] [ 5] ./gen_data_srpde[0x41376c]
+[r515c01n03:52310] [ 6] ./gen_data_srpde[0x406e8e]
+[r515c01n03:52310] [ 7] /lib64/libc.so.6(+0x21d79)[0x14a9d344ad79]
+[r515c01n03:52303] [ 4] /lib64/libc.so.6(+0x2fc46)[0x14a9d3458c46]
+[r515c01n03:52303] [ 5] ./gen_data_srpde[0x41376c]
+[r515c01n03:52303] [ 6] ./gen_data_srpde[0x406e8e]
+[r515c01n03:52303] [ 7] /lib64/libc.so.6(__libc_start_main+0xe5)[0x14a9d344c575]
+[r515c01n03:52303] [ 8] ./gen_data_srpde[0x4095fe]
+[r515c01n03:52303] *** End of error message ***
+/lib64/libc.so.6(abort+0x127)[0x145c5d9e6ea5]
+[r515c01n03:52299] [ 3] ./gen_data_srpde[0x417c7e]
+[r515c01n03:52299] [ 4] ./gen_data_srpde[0x41ff17]
+[r515c01n03:52299] [ 5] ./gen_data_srpde[0x423113]
+[r515c01n03:52299] [ 6] ./gen_data_srpde[0x4083ca]
+[r515c01n03:52299] [ 7] /lib64/libc.so.6(__libc_start_main+0xe5)[0x145c5d9e8575]
+[r515c01n03:52299] [ 8] ./gen_data_srpde[0x4095fe]
+[r515c01n03:52299] *** End of error message ***
+/lib64/libc.so.6(+0x2fc46)[0x1516903a3c46]
+[r515c01n03:52306] [ 5] ./gen_data_srpde[0x41376c]
+[r515c01n03:52306] [ 6] ./gen_data_srpde[0x406e8e]
+[r515c01n03:52306] [ 7] /lib64/libc.so.6(__libc_start_main+0xe5)[0x151690397575]
+[r515c01n03:52306] [ 8] ./gen_data_srpde[0x4095fe]
+[r515c01n03:52306] *** End of error message ***
+/lib64/libc.so.6(+0x2fc46)[0x1524de4dec46]
+[r515c01n03:52307] [ 5] ./gen_data_srpde[0x41376c]
+[r515c01n03:52307] [ 6] ./gen_data_srpde[0x406e8e]
+[r515c01n03:52307] [ 7] /lib64/libc.so.6(__libc_start_main+0xe5)[0x1524de4d2575]
+[r515c01n03:52307] [ 8] ./gen_data_srpde[0x4095fe]
+[r515c01n03:52307] *** End of error message ***
+/lib64/libc.so.6(+0x2fc46)[0x14d25e4aec46]
+[r515c01n03:52301] [ 5] ./gen_data_srpde[0x41376c]
+[r515c01n03:52301] [ 6] ./gen_data_srpde[0x406e8e]
+[r515c01n03:52301] [ 7] /lib64/libc.so.6(__libc_start_main+0xe5)[0x14d25e4a2575]
+[r515c01n03:52301] [ 8] ./gen_data_srpde[0x4095fe]
+[r515c01n03:52301] *** End of error message ***
+/lib64/libc.so.6(+0x2fc46)[0x14e8c9b9bc46]
+[r515c01n03:52312] [ 5] ./gen_data_srpde[0x41376c]
+[r515c01n03:52312] [ 6] ./gen_data_srpde[0x406e8e]
+[r515c01n03:52312] [ 7] /lib64/libc.so.6(__libc_start_main+0xe5)[0x14e8c9b8f575]
+[r515c01n03:52312] [ 8] ./gen_data_srpde[0x4095fe]
+[r515c01n03:52312] *** End of error message ***
+/lib64/libc.so.6(+0x2fc46)[0x14d80208fc46]
+[r515c01n03:52302] [ 5] ./gen_data_srpde[0x41376c]
+[r515c01n03:52302] [ 6] ./gen_data_srpde[0x406e8e]
+[r515c01n03:52302] [ 7] /lib64/libc.so.6(__libc_start_main+0xe5)[0x14d802083575]
+[r515c01n03:52302] [ 8] ./gen_data_srpde[0x4095fe]
+[r515c01n03:52302] *** End of error message ***
+/lib64/libc.so.6(+0x2fc46)[0x148d1fef3c46]
+[r515c01n03:52313] [ 5] ./gen_data_srpde[0x41376c]
+[r515c01n03:52313] [ 6] ./gen_data_srpde[0x406e8e]
+[r515c01n03:52313] [ 7] /lib64/libc.so.6(__libc_start_main+0xe5)[0x148d1fee7575]
+[r515c01n03:52313] [ 8] ./gen_data_srpde[0x4095fe]
+[r515c01n03:52313] *** End of error message ***
+./gen_data_srpde[0x406e8e]
+[r515c01n03:52304] [ 7] /lib64/libc.so.6(__libc_start_main+0xe5)[0x150dcaaf6575]
+[r515c01n03:52304] [ 8] ./gen_data_srpde[0x4095fe]
+[r515c01n03:52304] *** End of error message ***
+[ 7] /lib64/libc.so.6(__libc_start_main+0xe5)[0x14a7ea697575]
+[r515c01n03:52305] [ 8] ./gen_data_srpde[0x4095fe]
+[r515c01n03:52305] *** End of error message ***
+[r515c01n03:52308] [ 7] /lib64/libc.so.6(__libc_start_main+0xe5)[0x151227c72575]
+[r515c01n03:52308] [ 8] ./gen_data_srpde[0x4095fe]
+[r515c01n03:52308] *** End of error message ***
+/lib64/libc.so.6(__libc_start_main+0xe5)[0x14a17defb575]
+[r515c01n03:52300] [ 8] ./gen_data_srpde[0x4095fe]
+[r515c01n03:52300] *** End of error message ***
+/lib64/libc.so.6(__libc_start_main+0xe5)[0x150f73a2a575]
+[r515c01n03:52311] [ 8] ./gen_data_srpde[0x4095fe]
+[r515c01n03:52311] *** End of error message ***
+/lib64/libc.so.6(__libc_start_main+0xe5)[0x14c0109a7575]
+[r515c01n03:52310] [ 8] ./gen_data_srpde[0x4095fe]
+[r515c01n03:52310] *** End of error message ***
+[r515c01n03:52309] [ 0] /lib64/libpthread.so.0(+0x12cf0)[0x14f62e016cf0]
+[r515c01n03:52309] [ 1] /lib64/libc.so.6(gsignal+0x10f)[0x14f62cf6c54f]
+[r515c01n03:52309] [ 2] /lib64/libc.so.6(abort+0x127)[0x14f62cf56ea5]
+[r515c01n03:52309] [ 3] /lib64/libc.so.6(+0x21d79)[0x14f62cf56d79]
+[r515c01n03:52309] [ 4] /lib64/libc.so.6(+0x2fc46)[0x14f62cf64c46]
+[r515c01n03:52309] [ 5] ./gen_data_srpde[0x41376c]
+[r515c01n03:52309] [ 6] ./gen_data_srpde[0x406e8e]
+[r515c01n03:52309] [ 7] /lib64/libc.so.6(__libc_start_main+0xe5)[0x14f62cf58575]
+[r515c01n03:52309] [ 8] ./gen_data_srpde[0x4095fe]
+[r515c01n03:52309] *** End of error message ***
+--------------------------------------------------------------------------
+prterun noticed that process rank 15 with PID 52313 on node r515c01n03 exited on
+signal 6 (Aborted).
+--------------------------------------------------------------------------
