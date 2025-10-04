@@ -40,7 +40,7 @@ struct partial_matrix_redux_op :
 
     template <typename XprType_>
         requires(std::is_constructible_v<XprTypeNested, XprType_>)
-    partial_matrix_redux_op(XprType_&& xpr, Scalar init, ReductionOp op) :
+    constexpr partial_matrix_redux_op(XprType_&& xpr, Scalar init, ReductionOp op) noexcept :
         xpr_(std::forward<XprType_>(xpr)), init_(init), op_(op) { }
 
     constexpr Scalar operator()(int i, int j) const {
@@ -77,7 +77,7 @@ struct MatrixVectorWiseOp :
 
     template <typename XprType_>
         requires(std::is_constructible_v<XprTypeNested, XprType_>)
-    MatrixVectorWiseOp(XprType_&& xpr) : xpr_(std::forward<XprType_>(xpr)) { }
+    constexpr MatrixVectorWiseOp(XprType_&& xpr) noexcept : xpr_(std::forward<XprType_>(xpr)) { }
 
     // generic redux operator
     template <typename XprType_, typename Scalar_, typename ReductionOp>
@@ -87,7 +87,7 @@ struct MatrixVectorWiseOp :
     constexpr auto redux(XprType_&& xpr, Scalar_ init, ReductionOp&& op) const {
         fdapde_static_assert(
           std::is_convertible_v<Scalar_ FDAPDE_COMMA Scalar>, INVALID_SCALAR_INIT_TYPE_IN_REDUX_OPERATION);
-        return internals::partial_matrix_redux_op<XprType_, ReductionOp, ByRow>(xpr, init, op);
+        return internals::partial_matrix_redux_op<XprType, ReductionOp, ByRow>(std::forward<XprType_>(xpr), init, op);
     }
     // standard reductions
     constexpr auto sum() const {
@@ -97,7 +97,7 @@ struct MatrixVectorWiseOp :
         return redux(xpr_, Scalar(1), [](Scalar tmp, Scalar x) { return tmp * x; });
     }
     constexpr auto mean() const {
-        int size_ = ByRow ? xpr_.rows() : xpr_.cols();
+        Scalar size_ = ByRow ? xpr_.rows() : xpr_.cols();
         return sum() / size_;
     }
     constexpr auto max() const {
@@ -113,8 +113,10 @@ struct MatrixVectorWiseOp :
     constexpr auto norm() const { return squared_norm().cwise_sqrt(); }
     // L^\infty norm
     constexpr auto inf_norm() const {
-        return redux(
-          xpr_.cwise_abs(), std::numeric_limits<Scalar>::min(), [](Scalar tmp, Scalar x) { return tmp > x ? tmp : x; });
+        return redux(xpr_, std::numeric_limits<Scalar>::min(), [](Scalar tmp, Scalar x) {
+            Scalar x_abs = fdapde::abs(x);
+            return tmp > x_abs ? tmp : x_abs;
+        });
     }
 
     // vector-wise assignment
@@ -162,13 +164,13 @@ struct MatrixVectorWiseOp :
 // row-wise matrix reduction expression
 template <typename XprType> struct MatrixRowWiseOp : public MatrixVectorWiseOp<XprType, 1> {
     using Base = MatrixVectorWiseOp<XprType, 1>;
-    template <typename XprType_> MatrixRowWiseOp(XprType_&& xpr) : Base(xpr) { }
+    template <typename XprType_> constexpr explicit MatrixRowWiseOp(XprType_&& xpr) noexcept : Base(xpr) { }
     using Base::operator=;
 };
 // col-wise matrix reduction expression
 template <typename XprType> struct MatrixColWiseOp : public MatrixVectorWiseOp<XprType, 0> {
     using Base = MatrixVectorWiseOp<XprType, 0>;
-    template <typename XprType_> MatrixColWiseOp(XprType_&& xpr) : Base(xpr) { }
+    template <typename XprType_> constexpr explicit MatrixColWiseOp(XprType_&& xpr) noexcept : Base(xpr) { }
     using Base::operator=;
 };  
   

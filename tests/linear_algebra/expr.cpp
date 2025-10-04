@@ -81,7 +81,7 @@ TEST(linear_algebra, cwise) {
         constexpr double r4 = 1.38629436111989;	
         constexpr Matrix<double, 2, 2> r({r1, r2, r3, r4});
         return almost_equal(e, r);
-    }());
+    }());      
 }
 
 TEST(linear_algebra, redux) {
@@ -94,4 +94,95 @@ TEST(linear_algebra, redux) {
     static_assert(almost_equal(C.mean(), 4.7 / 4));
     static_assert(C.max() == 2);
     static_assert(C.min() == 0.2);
+}
+
+TEST(linear_algebra, vectorwise) {
+    static constexpr Matrix<double, 4, 3> A = Matrix<double, 4, 3>::Ones();
+    // rowwise
+    constexpr auto r = A.rowwise();
+    static_assert(r.rows() == 1);
+    static_assert(r.cols() == A.cols());
+    static_assert(r.size() == A.cols());
+    // reductions
+    static_assert([r]() {
+        constexpr auto e = r.sum();
+        return e == Matrix<double, 1, 3>({4, 4, 4});
+    }());
+    static_assert([r]() {
+        constexpr auto e = r.prod();
+        return e == Matrix<double, 1, 3>({1, 1, 1});
+    }());    
+    static_assert([r]() {
+        constexpr auto e = r.mean();
+        return e == Matrix<double, 1, 3>({1, 1, 1});
+    }());
+    static_assert([r]() {
+        constexpr auto e = r.squared_norm();
+        return e == Matrix<double, 1, 3>({4, 4, 4});
+    }());
+    static_assert([r]() {
+        constexpr auto e = r.norm();
+        return e == Matrix<double, 1, 3>({2, 2, 2});
+    }());
+    static_assert([r]() {
+        constexpr auto e = r.inf_norm();
+        return e == Matrix<double, 1, 3>({1, 1, 1});
+    }());
+
+    // colwise
+    constexpr auto c = A.colwise();
+    static_assert(c.rows() == A.rows());
+    static_assert(c.cols() == 1);
+    static_assert(c.size() == A.rows());
+    // reductions
+    static_assert([c]() {
+        constexpr auto e = c.sum();
+        return e == Matrix<double, 4, 1>({3, 3, 3, 3});
+    }());
+    static_assert([c]() {
+        constexpr auto e = c.prod();
+        return e == Matrix<double, 4, 1>({1, 1, 1, 1});
+    }());    
+    static_assert([c]() {
+        constexpr auto e = c.mean();
+        return e == Matrix<double, 4, 1>({1, 1, 1, 1});
+    }());
+    static_assert([c]() {
+        constexpr auto e = c.squared_norm();
+        return e == Matrix<double, 4, 1>({3, 3, 3, 3});
+    }());
+    static_assert([c]() {
+        constexpr auto e = c.norm();
+
+	double s = fdapde::sqrt(3.0);
+        return e == Matrix<double, 4, 1>({s, s, s, s});
+    }());
+    static_assert([c]() {
+        constexpr auto e = c.inf_norm();
+        return e == Matrix<double, 4, 1>({1, 1, 1, 1});
+    }());
+}
+
+TEST(linear_algebra, transpose) {
+    // static-sized
+    {
+        static constexpr Matrix<double, 3, 3> A({1, 2, 3, 4, 5, 6, 7, 8, 9});
+        static_assert(A.transpose() == Matrix<double, 3, 3>({1, 4, 7, 2, 5, 8, 3, 6, 9}));
+    }
+
+    // dynamic-sized
+    {
+        Matrix<double, Dynamic, Dynamic> A(10, 8);
+        A(2, 3) = 4;
+        A(7, 7) = 1;
+        A(7, 1) = 3;
+
+        auto At = A.transpose();
+	EXPECT_EQ(At.rows(), A.cols());
+	EXPECT_EQ(At.cols(), A.rows());
+	EXPECT_EQ(At.size(), A.size());
+        EXPECT_EQ(At(3, 2), 4);
+        EXPECT_EQ(At(7, 7), 1);
+        EXPECT_EQ(At(1, 7), 3);
+    }
 }

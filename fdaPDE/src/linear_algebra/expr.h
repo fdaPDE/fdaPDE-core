@@ -192,25 +192,25 @@ template <int Rows, int Cols, typename XprType> struct MatrixExpr {
         return MatrixBlock<1, Cols, const XprType>(derived(), i);
     }
     // other block-type accessors
-    template <int BlockRows> constexpr auto topRows() { return block<BlockRows, Cols>(0, 0); }
-    template <int BlockRows> constexpr auto topRows() const { return block<BlockRows, Cols>(0, 0); }
-    constexpr auto topRows(int rows) { return block(0, 0, rows, derived().cols()); }
-    constexpr auto topRows(int rows) const { return block(0, 0, rows, derived().cols()); }
+    template <int BlockRows> constexpr auto top_rows() { return block<BlockRows, Cols>(0, 0); }
+    template <int BlockRows> constexpr auto top_rows() const { return block<BlockRows, Cols>(0, 0); }
+    constexpr auto top_rows(int rows) { return block(0, 0, rows, derived().cols()); }
+    constexpr auto top_rows(int rows) const { return block(0, 0, rows, derived().cols()); }
 
-    template <int BlockRows> constexpr auto bottomRows() { return block<BlockRows, Cols>(Rows - BlockRows, 0); }
-    template <int BlockRows> constexpr auto bottomRows() const { return block<BlockRows, Cols>(Rows - BlockRows, 0); }
-    constexpr auto bottomRows(int rows) { return block(derived().rows() - rows, 0, rows, derived().cols()); }
-    constexpr auto bottomRows(int rows) const { return block(derived().rows() - rows, 0, rows, derived().cols()); }
+    template <int BlockRows> constexpr auto bottom_rows() { return block<BlockRows, Cols>(Rows - BlockRows, 0); }
+    template <int BlockRows> constexpr auto bottom_rows() const { return block<BlockRows, Cols>(Rows - BlockRows, 0); }
+    constexpr auto bottom_rows(int rows) { return block(derived().rows() - rows, 0, rows, derived().cols()); }
+    constexpr auto bottom_rows(int rows) const { return block(derived().rows() - rows, 0, rows, derived().cols()); }
 
-    template <int BlockCols> constexpr auto leftCols() { return block<Rows, BlockCols>(0, 0); }
-    template <int BlockCols> constexpr auto leftCols() const { return block<Rows, BlockCols>(0, 0); }
-    constexpr auto leftCols(int cols) { return block(0, 0, derived().rows(), cols); }
-    constexpr auto leftCols(int cols) const { return block(0, 0, derived().rows(), cols); }
+    template <int BlockCols> constexpr auto left_cols() { return block<Rows, BlockCols>(0, 0); }
+    template <int BlockCols> constexpr auto left_cols() const { return block<Rows, BlockCols>(0, 0); }
+    constexpr auto left_cols(int cols) { return block(0, 0, derived().rows(), cols); }
+    constexpr auto left_cols(int cols) const { return block(0, 0, derived().rows(), cols); }
 
-    template <int BlockCols> constexpr auto rightCols() { return block<Rows, BlockCols>(0, Cols - BlockCols); }
-    template <int BlockCols> constexpr auto rightCols() const { return block<Rows, BlockCols>(0, Cols - BlockCols); }
-    constexpr auto rightCols(int cols) { return block(0, derived().cols() - cols, derived().rows(), cols); }
-    constexpr auto rightCols(int cols) const { return block(0, derived().cols() - cols, derived().rows(), cols); }
+    template <int BlockCols> constexpr auto right_cols() { return block<Rows, BlockCols>(0, Cols - BlockCols); }
+    template <int BlockCols> constexpr auto right_cols() const { return block<Rows, BlockCols>(0, Cols - BlockCols); }
+    constexpr auto right_cols(int cols) { return block(0, derived().cols() - cols, derived().rows(), cols); }
+    constexpr auto right_cols(int cols) const { return block(0, derived().cols() - cols, derived().rows(), cols); }
 
     // dot product
     template <int RhsRows, int RhsCols, typename RhsXprType>
@@ -226,17 +226,18 @@ template <int Rows, int Cols, typename XprType> struct MatrixExpr {
         return dot_;
     }
 
-    // arithmetic operators
+    // in-place operators
     template <int OtherRows, int OtherCols, typename OtherXprType>
     constexpr XprType& operator+=(const MatrixExpr<OtherRows, OtherCols, OtherXprType>& other) {
         fdapde_static_assert(
-          (Rows == Dynamic || Rows == OtherRows) && (Cols == Dynamic || Cols == OtherCols),
-          YOU_MIXED_MATRICES_OF_DIFFERENT_SIZES);
-        if constexpr (Rows == Dynamic || Cols == Dynamic) {
+          internals::is_dynamic_sized_v<OtherXprType> ||
+            ((Rows == Dynamic || Rows == OtherRows) && (Cols == Dynamic || Cols == OtherCols)),
+          YOU_MIXED_MATRICES_OF_DIFFERENT_STATIC_SIZES);
+        if constexpr (Rows == Dynamic || Cols == Dynamic || internals::is_dynamic_sized_v<OtherXprType>) {
             fdapde_constexpr_assert(derived().rows() == other.rows() && derived().cols() == other.cols());
         }
         const int n = derived().rows(), m = derived().cols();
-        const auto& L = derived();
+        auto& L = derived();
         const auto& R = other.derived();
         for (int i = 0; i < n; ++i) {
             for (int j = 0; j < m; ++j) { L(i, j) += R(i, j); }
@@ -246,13 +247,14 @@ template <int Rows, int Cols, typename XprType> struct MatrixExpr {
     template <int OtherRows, int OtherCols, typename OtherXprType>
     constexpr XprType& operator-=(const MatrixExpr<OtherRows, OtherCols, OtherXprType>& other) {
         fdapde_static_assert(
-          (Rows == Dynamic || Rows == OtherRows) && (Cols == Dynamic || Cols == OtherCols),
-          YOU_MIXED_MATRICES_OF_DIFFERENT_SIZES);
-        if constexpr (Rows == Dynamic || Cols == Dynamic) {
+          internals::is_dynamic_sized_v<OtherXprType> ||
+            ((Rows == Dynamic || Rows == OtherRows) && (Cols == Dynamic || Cols == OtherCols)),
+          YOU_MIXED_MATRICES_OF_DIFFERENT_STATIC_SIZES);
+        if constexpr (Rows == Dynamic || Cols == Dynamic || internals::is_dynamic_sized_v<OtherXprType>) {
             fdapde_constexpr_assert(derived().rows() == other.rows() && derived().cols() == other.cols());
         }
         const int n = derived().rows(), m = derived().cols();
-        const auto& L = derived();
+        auto& L = derived();
         const auto& R = other.derived();
         for (int i = 0; i < n; ++i) {
             for (int j = 0; j < m; ++j) { L(i, j) -= R(i, j); }
@@ -335,8 +337,8 @@ operator==(const MatrixExpr<Rows1, Cols1, XprType1>& op1, const MatrixExpr<Rows2
     }
     const auto& d1 = op1.derived();
     const auto& d2 = op2.derived();
-    for (int i = 0; i < Rows1; ++i) {
-        for (int j = 0; j < Cols1; ++j) {
+    for (int i = 0, n = d1.rows(); i < n; ++i) {
+        for (int j = 0, m = d1.cols(); j < m; ++j) {
             if (d1(i, j) != d2(i, j)) { return false; }
         }
     }
@@ -354,8 +356,8 @@ operator!=(const MatrixExpr<Rows1, Cols1, XprType1>& op1, const MatrixExpr<Rows2
     }
     const auto& d1 = op1.derived();
     const auto& d2 = op2.derived();
-    for (int i = 0; i < Rows1; ++i) {
-        for (int j = 0; j < Cols1; ++j) {
+    for (int i = 0, n = d1.rows(); i < n; ++i) {
+        for (int j = 0, m = d1.cols(); j < m; ++j) {
             if (d1(i, j) == d2(i, j)) { return false; }
         }
     }
