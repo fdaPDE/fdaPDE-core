@@ -27,9 +27,10 @@ namespace fdapde {
 template <int BlockRows_, int BlockCols_, typename XprType>
 class MatrixBlock : public MatrixExpr<BlockRows_, BlockCols_, MatrixBlock<BlockRows_, BlockCols_, XprType>> {
     fdapde_static_assert(
-      (BlockRows_ == Dynamic || (BlockRows_ > 0 && BlockRows_ <= XprType::Rows)) &&
-        (BlockCols_ == Dynamic || (BlockCols_ > 0 && BlockCols_ <= XprType::Cols)),
-      INVALID_STATIC_BLOCK_SIZE);
+      internals::is_dynamic_sized_v<XprType> ||
+        ((BlockRows_ == Dynamic || (BlockRows_ > 0 && BlockRows_ <= XprType::Rows)) &&
+         (BlockCols_ == Dynamic || (BlockCols_ > 0 && BlockCols_ <= XprType::Cols))),
+      INVALID_STATIC_SIZED_BLOCK);
    public:
     using Base = MatrixExpr<BlockRows_, BlockCols_, MatrixBlock<BlockRows_, BlockCols_, XprType>>;
     using XprTypeNested = internals::ref_select_t<XprType>;
@@ -84,8 +85,8 @@ class MatrixBlock : public MatrixExpr<BlockRows_, BlockCols_, MatrixBlock<BlockR
     constexpr int rows() const { return Rows != Dynamic ? Rows : block_rows_; }
     constexpr int cols() const { return Cols != Dynamic ? Cols : block_cols_; }
     constexpr int size() const { return rows() * cols(); }
-    constexpr const Scalar& operator()(int i, int j) const { return xpr_(start_row_ + i, start_col_ + j); }
-    constexpr const Scalar& operator[](int i) const {
+    constexpr Scalar operator()(int i, int j) const { return xpr_(start_row_ + i, start_col_ + j); }
+    constexpr Scalar operator[](int i) const {
         fdapde_static_assert(BlockRows_ == 1 || BlockCols_ == 1, THIS_METHOD_IS_FOR_ROW_AND_COLUMN_BLOCKS_ONLY);
         if constexpr (Rows == 1) return xpr_(start_row_, start_col_ + i);
         if constexpr (Cols == 1) return xpr_(start_row_ + i, start_col_);
@@ -99,14 +100,6 @@ class MatrixBlock : public MatrixExpr<BlockRows_, BlockCols_, MatrixBlock<BlockR
         fdapde_static_assert(XprType::ReadOnly == 0, ASSIGNMENT_TO_A_READ_ONLY_EXPRESSION);
         if constexpr (Rows == 1) return xpr_(start_row_, start_col_ + i);
         if constexpr (Cols == 1) return xpr_(start_row_ + i, start_col_);
-    }
-    // block assignment
-    constexpr MatrixBlock& operator=(const MatrixBlock& other) {
-        fdapde_static_assert(XprType::ReadOnly == 0, ASSIGNMENT_TO_A_READ_ONLY_EXPRESSION);
-        for (int i = 0; i < rows(); ++i) {
-            for (int j = 0; j < cols(); ++j) { xpr_(start_row_ + i, start_col_ + j) = other(i, j); }
-        }
-        return *this;
     }
     template <int RhsRows_, int RhsCols_, typename RhsXprType>
     constexpr MatrixBlock<BlockRows_, BlockCols_, XprType>&
