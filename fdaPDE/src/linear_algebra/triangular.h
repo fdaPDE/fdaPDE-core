@@ -213,14 +213,14 @@ struct TriangularBlock :
           XprType::Rows == Dynamic || XprType::Cols == Dynamic || XprType::Rows == XprType::Cols,
           THIS_EXPRESSION_IS_FOR_SQUARE_MATRICES_ONLY);
         if constexpr (XprType::Rows == Dynamic || XprType::Cols == Dynamic) {
-            fdapde_constexpr_assert(xpr.rows() == xpr.cols());
+            fdapde_assert(xpr.rows() == xpr.cols());
         }
     }
     // inherit assignment from base
     using Base::operator=;
     // access
     constexpr Scalar operator()(int i, int j) const {
-        fdapde_constexpr_assert(i >= 0 && i < xpr_.rows() && j >= 0 && j < xpr_.cols());
+        fdapde_assert(i >= 0 && i < xpr_.rows() && j >= 0 && j < xpr_.cols());
         if constexpr (ViewMode == Upper) return i > j ? 0 : xpr_(i, j);
         if constexpr (ViewMode == Lower) return i < j ? 0 : xpr_(i, j);
         if constexpr (ViewMode == UnitUpper) return i > j ? 0 : (i == j ? Scalar(1) : xpr_(i, j));
@@ -228,7 +228,7 @@ struct TriangularBlock :
     }
     constexpr Scalar& operator()(int i, int j) {
         fdapde_static_assert(ViewMode == Upper || ViewMode == Lower, WRITE_ACCESS_TO_READ_ONLY_EXPRESSION);
-        fdapde_constexpr_assert(i >= 0 && i < xpr_.rows() && j >= 0 && j < xpr_.cols());
+        fdapde_assert(i >= 0 && i < xpr_.rows() && j >= 0 && j < xpr_.cols());
         if constexpr (ViewMode == Upper) return i > j ? 0 : xpr_(i, j);
         if constexpr (ViewMode == Lower) return i < j ? 0 : xpr_(i, j);
     }
@@ -257,19 +257,19 @@ class TriangularMatrixBase : public TriangularMatrixExpr<Rows_, Rows_, ViewMode_
     constexpr TriangularMatrixBase(double size) : Base(), size_(size) {
         // size can be a floating point value as a result of calling triangular_cast() on a vector which cannot map to a
         // triangular matrix. This checks guarantees that "there are enought values" to make a triangular matrix
-        fdapde_constexpr_assert(size == fdapde::floor(size));
+        fdapde_assert(size == fdapde::floor(size));
     }
     // inherit assignment from base
     using Base::operator=;
     // access
     constexpr Scalar operator()(int i, int j) const {
-        fdapde_constexpr_assert(i >= 0 && i < size_ && j >= 0 && j < size_);
+        fdapde_assert(i >= 0 && i < size_ && j >= 0 && j < size_);
         if constexpr (ViewMode == Upper) return i > j ? 0 : derived().data()[index_(i, j)];
         if constexpr (ViewMode == Lower) return i < j ? 0 : derived().data()[index_(i, j)];
     }
     constexpr Scalar& operator()(int i, int j) {
         fdapde_static_assert(ReadOnly == 0, WRITE_ACCESS_TO_READ_ONLY_LOCATION);
-        fdapde_constexpr_assert(
+        fdapde_assert(
           i >= 0 && i < size_ && j >= 0 && j < size_ &&
           ((ViewMode == Upper && i <= j) || (ViewMode == Lower && i >= j)));
         if constexpr (ViewMode == Upper) return derived().data()[index_(i, j)];
@@ -419,7 +419,7 @@ struct TriangularMatrix :
     }
     template <int RhsRows_, int RhsCols_, typename RhsXprType_>
     constexpr TriangularMatrix(const MatrixExpr<RhsRows_, RhsCols_, RhsXprType_>& rhs) : Base(rhs.rows()) {
-        fdapde_constexpr_assert(StorageSize == Dynamic || rhs.rows() == rhs.cols());
+        fdapde_assert(StorageSize == Dynamic || rhs.rows() == rhs.cols());
         if constexpr (Rows == Dynamic || Cols == Dynamic) { resize(rhs.rows()); }
         using assignment = typename Base::assignment_executor;
         assignment::run(*this, rhs.derived());
@@ -428,7 +428,7 @@ struct TriangularMatrix :
         requires(internals::is_vector_like_v<DataT> && !internals::is_matrix_like_v<DataT>)
     constexpr explicit TriangularMatrix(DataT&& data) : Base(size_(data.size())), data_() {
         if constexpr (Rows == Dynamic || Cols == Dynamic) { data_.resize(data.size()); }
-        fdapde_constexpr_assert(data_.size() == data.size());
+        fdapde_assert(data_.size() == data.size());
         for (int i = 0, n = data_.size(); i < n; ++i) { data_[i] = data[i]; }
     }
     template <std::size_t RhsSize>
@@ -482,7 +482,7 @@ class TriangularMatrixView :
         fdapde_static_assert(Rows_ != Dynamic, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
     }
     constexpr TriangularMatrixView(Scalar* data, int size) : Base(size), data_(data) {
-	fdapde_constexpr_assert(size > 0);
+	fdapde_assert(size > 0);
     }
     // data pointers
     constexpr const StorageType& data() const { return data_; }

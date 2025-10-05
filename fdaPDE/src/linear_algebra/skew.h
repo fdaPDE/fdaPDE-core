@@ -50,7 +50,7 @@ struct skew_symmetric_wrapper :
         requires(std::is_constructible_v<SkewSymmetricXprTypeNested, XprType>)
     constexpr skew_symmetric_wrapper(XprType&& xpr) : Base(), xpr_(std::forward<XprType>(xpr)) { }
     constexpr Scalar operator()(int i, int j) const {
-        fdapde_constexpr_assert(i >= 0 && i < xpr_.rows() && j >= 0 && j < xpr_.cols());
+        fdapde_assert(i >= 0 && i < xpr_.rows() && j >= 0 && j < xpr_.cols());
         if (i == j) return Scalar(0);
         if constexpr (ViewMode == Upper) return i > j ? -xpr_(j, i) : xpr_(i, j);
         if constexpr (ViewMode == Lower) return i < j ? xpr_(i, j) : -xpr_(j, i);
@@ -121,7 +121,7 @@ class SkewSymmetricMatrixBase : public SkewSymmetricMatrixExpr<Size_, Size_, Ske
         template <typename Scalar__>
             requires(std::is_convertible_v<Scalar__, Scalar>)
         constexpr skew_symmetric_proxy& operator=(Scalar__ value) {
-            fdapde_constexpr_assert(row_ != col_);   // avoid diagonal assignment to break invariant
+            fdapde_assert(row_ != col_);   // avoid diagonal assignment to break invariant
             m_->operator()(row_, col_) = sign_flip_ ? -value : value;
             return *this;
         }
@@ -140,13 +140,13 @@ class SkewSymmetricMatrixBase : public SkewSymmetricMatrixExpr<Size_, Size_, Ske
     constexpr explicit SkewSymmetricMatrixBase(int size) : Base(), size_(size) { }
     // access
     constexpr auto operator()(int i, int j) const {
-        fdapde_constexpr_assert(i >= 0 && i < size_ && j >= 0 && j < size_);
+        fdapde_assert(i >= 0 && i < size_ && j >= 0 && j < size_);
         return skew_symmetric_proxy<std::add_const_t<typename SkewSymmetricMatrixType::StorageType>>(
           derived().data(), i, j);
     }
     constexpr auto operator()(int i, int j) {
         fdapde_static_assert(ReadOnly == 0, WRITE_ACCESS_TO_READ_ONLY_LOCATION);
-        fdapde_constexpr_assert(i >= 0 && i < size_ && j >= 0 && j < size_);
+        fdapde_assert(i >= 0 && i < size_ && j >= 0 && j < size_);
         return skew_symmetric_proxy<typename SkewSymmetricMatrixType::StorageType>(derived().data(), i, j);
     }
     // observers
@@ -211,7 +211,7 @@ class SkewSymmetricMatrixView :
         fdapde_static_assert(Rows_ != Dynamic, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
     }
     constexpr SkewSymmetricMatrixView(Scalar* data, int size) : Base(size), data_(data) {
-	fdapde_constexpr_assert(size > 0);
+	fdapde_assert(size > 0);
     }
     // data pointers
     constexpr const StorageType& data() const { return data_; }

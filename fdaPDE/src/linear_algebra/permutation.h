@@ -76,7 +76,7 @@ struct PermutationInverseOp :
 
     constexpr Scalar operator()(int i, int j) const { return xpr_.image(j) == i ? 1 : 0; }   // matrix transposition
     constexpr int image(int i) const {   // image(i) returns pi^{-1}(i)
-        fdapde_constexpr_assert(i >= 0 && i < xpr_.rows());
+        fdapde_assert(i >= 0 && i < xpr_.rows());
         for (int j = 0, n = xpr_.rows(); j < n; ++j) {
             if (xpr_.image(j) == i) { return j; }
         }
@@ -151,14 +151,14 @@ struct PermutationCompositionOp :
         constexpr int LhsRows = LhsXprType::Rows, LhsCols = LhsXprType::Cols;
         constexpr int RhsRows = RhsXprType::Rows, RhsCols = RhsXprType::Cols;
         if constexpr (internals::is_dynamic_sized_v<LhsXprType> || internals::is_dynamic_sized_v<RhsXprType>) {
-            fdapde_constexpr_assert(lhs_.rows() == rhs_.rows() && lhs_.cols() == rhs_.cols());
+            fdapde_assert(lhs_.rows() == rhs_.rows() && lhs_.cols() == rhs_.cols());
         }
     }
 
     constexpr Scalar operator()(int i, int j) const { return (image(i) == j) ? Scalar(1) : Scalar(0); }
     // image of i under the permutation
     constexpr int image(int i) const {
-        fdapde_constexpr_assert(i >= 0 && i < lhs_.rows());
+        fdapde_assert(i >= 0 && i < lhs_.rows());
         return lhs_.image(rhs_.image(i));
     }
     constexpr Vector<Scalar, Rows> permutation() const {   // materialize the permutation vector
@@ -196,7 +196,7 @@ template <int Size_> struct PermutationMatrix : public PermutationMatrixExpr<Siz
     template <typename DataT>
         requires(internals::is_vector_like_v<DataT> && !internals::is_matrix_like_v<DataT>)
     constexpr explicit PermutationMatrix(DataT&& permutation) : permutation_(permutation) {
-        if constexpr (Size_ != Dynamic) { fdapde_constexpr_assert(permutation_.size() == Size_); }
+        if constexpr (Size_ != Dynamic) { fdapde_assert(permutation_.size() == Size_); }
     }
     template <std::size_t RhsSize>
     constexpr explicit PermutationMatrix(const Scalar (&permutation)[RhsSize]) : permutation_(permutation) {
@@ -209,7 +209,7 @@ template <int Size_> struct PermutationMatrix : public PermutationMatrixExpr<Siz
     constexpr Scalar operator()(int i, int j) const { return permutation_[i] == j ? 1 : 0; }
     constexpr const StorageType& permutation() const { return permutation_; }
     constexpr int image(int i) const {
-        fdapde_constexpr_assert(i >= 0 && i < rows());
+        fdapde_assert(i >= 0 && i < rows());
         return permutation_[i];
     }
    private:

@@ -95,7 +95,7 @@ template <typename Scalar_, int Size_> class PartialPivLU {
     // solve Ax = b via PA = LU
     template <typename RhsRows, typename RhsXprType>
     constexpr Vector<Scalar, RhsRows> solve(const MatrixExpr<RhsRows, 1, RhsXprType>& b) const {
-        fdapde_constexpr_assert(b.rows() == lu_.rows() && b.cols() == 1);
+        fdapde_assert(b.rows() == lu_.rows() && b.cols() == 1);
 
         Vector<Scalar, RhsRows> y = P_ * b;
         auto z = L().solve(y);   // forward  substitute

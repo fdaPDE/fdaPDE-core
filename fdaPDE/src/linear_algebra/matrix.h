@@ -37,7 +37,7 @@ struct ProceduralMatrix : public MatrixExpr<Rows_, Cols_, ProceduralMatrix<Funct
     constexpr ProceduralMatrix() : rows_(Rows_ == Dynamic ? 0 : Rows), cols_(Cols_ == Dynamic ? 0 : Cols) { }
     constexpr ProceduralMatrix(int rows, int cols) : rows_(rows), cols_(cols) {
         fdapde_static_assert(Rows == Dynamic || Cols == Dynamic, THIS_METHOD_IS_FOR_DYNAMIC_SIZED_MATRICES_ONLY);
-        fdapde_constexpr_assert(rows >= 0 && cols >= 0);
+        fdapde_assert(rows >= 0 && cols >= 0);
     }
     constexpr Scalar operator()(int i, int j) const { return f_(i, j); }
     constexpr Scalar operator[](int i) const {
@@ -65,13 +65,23 @@ using IdentityMatrix = ProceduralMatrix<decltype([](int i, int j) { return i == 
 namespace internals {
 
 struct generic_assignment_executor {
-    template <typename DstMatrixType, typename SrcXprType>
-    static constexpr void run(DstMatrixType& dst, const SrcXprType& src) {
-        fdapde_assert(dst.rows() == src.rows() && dst.cols() == src.cols());
+    template <typename DstMatrixType, typename SrcXprType, typename AssignmentOp>
+        requires(requires(AssignmentOp op, typename DstMatrixType::Scalar& l, const typename SrcXprType::Scalar& r) {
+            { op(l, r) } -> std::same_as<void>;
+        })
+    static constexpr void run(DstMatrixType& dst, const SrcXprType& src, AssignmentOp&& op) {
+        fdapde_static_assert(DstMatrixType::ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_EXPRESSION);
+        fdapde_static_assert(
+          is_dynamic_sized_v<DstMatrixType> || is_dynamic_sized_v<SrcXprType> ||
+            same_static_shape_v<DstMatrixType FDAPDE_COMMA SrcXprType>,
+          INVALID_ASSIGNMENT__LHS_AND_RHS_STATIC_SIZES_DOES_NOT_MATCH);
+        if constexpr (internals::is_dynamic_sized_v<DstMatrixType> || internals::is_dynamic_sized_v<SrcXprType>) {
+            fdapde_assert(dst.rows() == src.rows() && dst.cols() == src.cols());
+        }
         int rows_ = dst.rows();
         int cols_ = dst.cols();
         for (int i = 0; i < rows_; ++i) {
-            for (int j = 0; j < cols_; ++j) { dst(i, j) = src(i, j); }
+            for (int j = 0; j < cols_; ++j) { op(dst(i, j), src(i, j)); }
         }
         return;
     }
@@ -121,19 +131,19 @@ class MatrixBase : public MatrixExpr<Rows_, Cols_, MatrixType> {
         if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) {
             if (rows_ != other.rows() || cols_ != other.cols()) { derived().resize(other.rows(), other.cols()); }
         }
-        assignment_executor::run(*this, other);
+        assignment_executor::run(*this, other, [](Scalar& l, const Scalar& r) { l = r; });
         return derived();
     }
     // inherit assignment from base
     using Base::operator=;
     // access
     constexpr const Scalar& operator()(int i, int j) const {
-        fdapde_constexpr_assert(i >= 0 && i < rows_ && j >= 0 && j < cols_);
+        fdapde_assert(i >= 0 && i < rows_ && j >= 0 && j < cols_);
         return derived().data()[i * row_stride_ + j * col_stride_];
     }
     constexpr const Scalar& operator[](int i) const {
         fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
-        fdapde_constexpr_assert(i >= 0 && i < rows_ * cols_);
+        fdapde_assert(i >= 0 && i < rows_ * cols_);
         return derived().data()[i];
     }
     constexpr Scalar& operator()(int i, int j) {
@@ -174,7 +184,7 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
     constexpr Matrix(const Matrix& other) : Base() {
         if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { resize(other.rows(), other.cols()); }
         using assignment = typename Base::assignment_executor;
-        assignment::run(*this, other);
+        assignment::run(*this, other, [](Scalar& l, const Scalar& r) { l = r; });
     }
     constexpr Matrix& operator=(const Matrix& other) {
         Base::operator=(other);
@@ -184,7 +194,7 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
     constexpr Matrix(const MatrixExpr<RhsRows_, RhsCols_, RhsXprType_>& rhs) : Base() {
         if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { resize(rhs.rows(), rhs.cols()); }
         using assignment = typename Base::assignment_executor;
-        assignment::run(*this, rhs.derived());
+        assignment::run(*this, rhs.derived(), [](Scalar& l, const Scalar& r) { l = r; });
     }
 
     // Matrix API
@@ -260,7 +270,7 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
             (Cols_ == 1 && Rows_ == Dynamic),
           THIS_METHOD_IS_EITHER_FOR_ROW_OR_COLUMN_VECTORS_OR_FOR_STATIC_SIZED_MATRICES);
         if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { data_.resize(data.size()); }
-        fdapde_constexpr_assert(data_.size() == data.size());
+        fdapde_assert(data_.size() == data.size());
         for (int i = 0, n = Base::rows(); i < n; ++i) {
             for (int j = 0, m = Base::cols(); j < m; ++j) {
                 Base::operator()(i, j) = data[i * Base::row_stride_ + j * Base::col_stride_];
@@ -342,10 +352,10 @@ class MatrixView :
     }
     constexpr MatrixView(Scalar* data, int size) : Base(size), data_(data) {
         fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
-        fdapde_constexpr_assert(size > 0);
+        fdapde_assert(size > 0);
     }
     constexpr MatrixView(Scalar* data, int rows, int cols) : Base(rows, cols), data_(data) {
-        fdapde_constexpr_assert(rows > 0 && cols > 0);
+        fdapde_assert(rows > 0 && cols > 0);
     }
     // inherit assignment from Base
     using Base::operator=;

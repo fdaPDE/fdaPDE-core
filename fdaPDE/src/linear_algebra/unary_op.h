@@ -62,13 +62,13 @@ struct ReshapeOp : public MatrixExpr<Rows_, Cols_, ReshapeOp<Rows_, Cols_, Stora
         requires(std::is_constructible_v<XprTypeNested, XprType_>)
     constexpr explicit ReshapeOp(XprType_&& xpr) : rows_(Rows), cols_(Cols), xpr_(std::forward<XprType_>(xpr)) {
         fdapde_static_assert(Rows_ != Dynamic && Cols != Dynamic, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
-        fdapde_constexpr_assert(rows_ * cols_ == xpr.size());
+        fdapde_assert(rows_ * cols_ == xpr.size());
     }
     template <typename XprType_>
         requires(std::is_constructible_v<XprTypeNested, XprType_>)
     constexpr ReshapeOp(XprType_&& xpr, int rows, int cols) :
         rows_(Rows == Dynamic ? rows : Rows), cols_(Cols == Dynamic ? cols : Cols), xpr_(std::forward<XprType_>(xpr)) {
-        fdapde_constexpr_assert(rows_ * cols_ == xpr.size());
+        fdapde_assert(rows_ * cols_ == xpr.size());
     }
     template <typename XprType_>
         requires(std::is_constructible_v<XprTypeNested, XprType_>)
@@ -115,7 +115,7 @@ template <typename XprType, typename Functor> struct matrix_linear_redux_executo
       std::declval<typename XprTypeClean::Scalar>(), std::declval<typename XprTypeClean::Scalar>()));
 
     static constexpr Scalar run(const XprType& xpr, Scalar init, Functor f) {
-        fdapde_constexpr_assert(xpr.size() > 0);
+        fdapde_assert(xpr.size() > 0);
         Scalar res = init;
         const int rows_ = xpr.rows();
 	const int cols_ = xpr.cols();
