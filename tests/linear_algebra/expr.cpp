@@ -49,7 +49,7 @@ TEST(linear_algebra, cwise) {
     }());
     static_assert([]() {
         constexpr auto e = C.cwise_abs().cwise_sqrt();
-	
+
         constexpr double r1 = 1;
         constexpr double r2 = 1.414213562373095;
         constexpr double r3 = 1.732050807568877;
@@ -59,12 +59,12 @@ TEST(linear_algebra, cwise) {
     }());
     static_assert([]() {
         constexpr auto e = C.cwise_inv();
-        constexpr Matrix<double, 2, 2> r({-1, 1./2, 1./3, -1./4});
+        constexpr Matrix<double, 2, 2> r({-1, 1. / 2, 1. / 3, -1. / 4});
         return almost_equal(e, r);
-    }());    
+    }());
     static_assert([]() {
         constexpr auto e = C.cwise_exp();
-	
+
         constexpr double r1 = 0.36787944117144;
         constexpr double r2 = 7.38905609893065;
         constexpr double r3 = 20.0855369231876;
@@ -78,10 +78,10 @@ TEST(linear_algebra, cwise) {
         constexpr double r1 = 0;
         constexpr double r2 = 0.69314718055994;
         constexpr double r3 = 1.09861228866811;
-        constexpr double r4 = 1.38629436111989;	
+        constexpr double r4 = 1.38629436111989;
         constexpr Matrix<double, 2, 2> r({r1, r2, r3, r4});
         return almost_equal(e, r);
-    }());      
+    }());
 }
 
 TEST(linear_algebra, redux) {
@@ -111,7 +111,7 @@ TEST(linear_algebra, vectorwise) {
     static_assert([r]() {
         constexpr auto e = r.prod();
         return e == Matrix<double, 1, 3>({1, 1, 1});
-    }());    
+    }());
     static_assert([r]() {
         constexpr auto e = r.mean();
         return e == Matrix<double, 1, 3>({1, 1, 1});
@@ -142,7 +142,7 @@ TEST(linear_algebra, vectorwise) {
     static_assert([c]() {
         constexpr auto e = c.prod();
         return e == Matrix<double, 4, 1>({1, 1, 1, 1});
-    }());    
+    }());
     static_assert([c]() {
         constexpr auto e = c.mean();
         return e == Matrix<double, 4, 1>({1, 1, 1, 1});
@@ -154,7 +154,7 @@ TEST(linear_algebra, vectorwise) {
     static_assert([c]() {
         constexpr auto e = c.norm();
 
-	double s = fdapde::sqrt(3.0);
+        double s = fdapde::sqrt(3.0);
         return e == Matrix<double, 4, 1>({s, s, s, s});
     }());
     static_assert([c]() {
@@ -178,9 +178,9 @@ TEST(linear_algebra, transpose) {
         A(7, 1) = 3;
 
         auto At = A.transpose();
-	EXPECT_EQ(At.rows(), A.cols());
-	EXPECT_EQ(At.cols(), A.rows());
-	EXPECT_EQ(At.size(), A.size());
+        EXPECT_EQ(At.rows(), A.cols());
+        EXPECT_EQ(At.cols(), A.rows());
+        EXPECT_EQ(At.size(), A.size());
         EXPECT_EQ(At(3, 2), 4);
         EXPECT_EQ(At(7, 7), 1);
         EXPECT_EQ(At(1, 7), 3);

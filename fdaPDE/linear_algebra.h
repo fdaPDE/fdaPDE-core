@@ -58,7 +58,6 @@
 // include required modules
 #include "utility.h"
 
-
 namespace fdapde {
 
 // forward declaration
@@ -75,7 +74,7 @@ template <int Rows, int Cols, typename XprType> struct MatrixExpr;
 
 [[maybe_unused]] static constexpr int LhsMode = 0;
 [[maybe_unused]] static constexpr int RhsMode = 1;
-  
+
 namespace internals {
 
 // detects whether XprType represents a static sized or dynamic sized expression
@@ -86,7 +85,18 @@ template <typename XprType> static constexpr bool is_dynamic_sized_v = is_dynami
 template <typename XprType> struct is_static_sized {
     static constexpr bool value = !is_dynamic_sized_v<XprType>;
 };
-template <typename XprType> static constexpr bool is_static_sized_v = is_static_sized<XprType>::value;  
+template <typename XprType> static constexpr bool is_static_sized_v = is_static_sized<XprType>::value;
+template <typename LhsXprType, typename RhsXprType> struct same_static_shape {
+   private:
+    using LhsXprTypeClean = std::decay_t<LhsXprType>;
+    using RhsXprTypeClean = std::decay_t<RhsXprType>;
+   public:
+    static constexpr bool value =
+      !is_dynamic_sized_v<LhsXprTypeClean> && !is_dynamic_sized_v<RhsXprTypeClean> &&
+      (LhsXprTypeClean::Rows == RhsXprTypeClean::Rows && LhsXprTypeClean::Cols == RhsXprTypeClean::Cols);
+};
+template <typename LhsXprType, typename RhsXprType>
+static constexpr bool same_static_shape_v = same_static_shape<LhsXprType, RhsXprType>::value;
 
 // if XprType has either its NestAsRef bit set or is dynamic sized, sets type member type to XprType&,
 // otherwise to XprType
@@ -105,21 +115,18 @@ template <typename XprType> struct ref_select {
 template <typename XprType> using ref_select_t = typename ref_select<XprType>::type;
 
 }   // namespace internals
-}
-
-// matrix types
-
-#include "src/linear_algebra/unary_op.h"
-#include "src/linear_algebra/binary_op.h"
-#include "src/linear_algebra/vectorwise_op.h"
-#include "src/linear_algebra/block.h"
-
+}   // namespace fdapde
 
 #include "src/linear_algebra/matrix.h"
+#include "src/linear_algebra/binary_op.h"
+#include "src/linear_algebra/block.h"
+#include "src/linear_algebra/unary_op.h"
+#include "src/linear_algebra/vectorwise_op.h"
 #include "src/linear_algebra/diagonal.h"
-#include "src/linear_algebra/triangular.h"
 #include "src/linear_algebra/orthogonal.h"
+#include "src/linear_algebra/triangular.h"
 #include "src/linear_algebra/symmetric.h"
+
 // #include "src/linear_algebra/skew.h"
 // #include "src/linear_algebra/permutation.h"
 // #include "src/linear_algebra/spd.h"

@@ -26,8 +26,10 @@ namespace fdapde {
 namespace internals {
   
 inline void fdapde_assert_failed_(const char* str, const char* file, int line) {
-    std::cerr << file << ":" << line << ". Assertion: '" << str << "' failed." << std::endl;
-    abort();
+    std::string msg_(
+      std::string(file) + ":" + std::to_string(line) + ".\nAssertion: '" + std::string(str) + "' failed.");
+    std::cerr << msg_ << "\n"; 
+    throw std::runtime_error("");
 }
 
 }   // namespace internals
@@ -41,18 +43,6 @@ inline void fdapde_assert_failed_(const char* str, const char* file, int line) {
 #endif   // NDEBUG
 
 #define fdapde_static_assert(condition, message) static_assert(condition, #message)
-
-#ifdef FDAPDE_NO_DEBUG
-#    define fdapde_constexpr_assert(condition) (void)0
-#else
-#    define fdapde_constexpr_assert(condition)                                                                         \
-        if (std::is_constant_evaluated()) {                                                                            \
-            if (!(condition)) { throw std::logic_error(#condition); }                                                  \
-        } else {                                                                                                       \
-            fdapde_assert(condition);                                                                                  \
-        }
-
-#endif   // NDEBUG
 
 }   // namespace fdapde
 

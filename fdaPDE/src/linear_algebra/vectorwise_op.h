@@ -44,7 +44,7 @@ struct partial_matrix_redux_op :
         xpr_(std::forward<XprType_>(xpr)), init_(init), op_(op) { }
 
     constexpr Scalar operator()(int i, int j) const {
-        fdapde_constexpr_assert(i >= 0 && i < rows() && j >= 0 && j < cols());
+        fdapde_assert(i >= 0 && i < rows() && j >= 0 && j < cols());
         Scalar res(init_);
         const int k = ByRow ? j : i;
         for (int h = 0, size_ = ByRow ? xpr_.rows() : xpr_.cols(); h < size_; ++h) {
@@ -146,7 +146,7 @@ struct MatrixVectorWiseOp :
         fdapde_static_assert(
           (Rows == 1 && XprRows_ == 1) || (Cols == 1 & XprCols_ == 1), NO_MATCHING_SIZES_IN_VECTOR_WISE_ASSIGNMENT);
         fdapde_static_assert(XprType::ReadOnly == 0, ASSIGNMENT_TO_A_READ_ONLY_EXPRESSION);
-        fdapde_constexpr_assert(Rows == 1 && xpr_.cols() == rhs.cols() || Cols == 1 && xpr_.rows() == rhs.rows());
+        fdapde_assert(Rows == 1 && xpr_.cols() == rhs.cols() || Cols == 1 && xpr_.rows() == rhs.rows());
 
         int inner_size_ = ByRow ? xpr_.rows() : xpr_.cols();
         int outer_size_ = ByRow ? xpr_.cols() : xpr_.rows();

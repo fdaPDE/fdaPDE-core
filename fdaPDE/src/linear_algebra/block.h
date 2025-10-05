@@ -39,6 +39,7 @@ class MatrixBlock : public MatrixExpr<BlockRows_, BlockCols_, MatrixBlock<BlockR
     static constexpr int Cols = BlockCols_;
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = XprType::ReadOnly;
+    using assignment_executor = internals::generic_assignment_executor;
 
     // row/column constructor
     template <typename XprType_>
@@ -50,7 +51,7 @@ class MatrixBlock : public MatrixExpr<BlockRows_, BlockCols_, MatrixBlock<BlockR
         block_cols_(BlockCols_ == 1 ? 1 : xpr.cols()),
         xpr_(std::forward<XprType_>(xpr)) {
         fdapde_static_assert(BlockRows_ == 1 || BlockCols_ == 1, THIS_METHOD_IS_FOR_ROW_AND_COLUMN_BLOCKS_ONLY);
-        fdapde_constexpr_assert(
+        fdapde_assert(
           i >= 0 && ((BlockRows_ == 1 && i < xpr_.rows()) || (BlockCols_ == 1 && i < xpr_.cols())));
     }
     template <typename XprType_>
@@ -63,7 +64,7 @@ class MatrixBlock : public MatrixExpr<BlockRows_, BlockCols_, MatrixBlock<BlockR
         xpr_(std::forward<XprType_>(xpr)) {
         fdapde_static_assert(
           BlockRows_ != Dynamic && BlockCols_ != Dynamic, THIS_METHOD_IS_FOR_STATIC_SIZED_BLOCKS_ONLY);
-        fdapde_constexpr_assert(
+        fdapde_assert(
           start_row >= 0 && start_row + block_rows_ <= xpr_.rows() && start_col >= 0 &&
           start_col + block_cols_ <= xpr.cols());
     }
@@ -77,7 +78,7 @@ class MatrixBlock : public MatrixExpr<BlockRows_, BlockCols_, MatrixBlock<BlockR
         xpr_(std::forward<XprType_>(xpr)) {
         fdapde_static_assert(
           BlockRows_ == Dynamic && BlockCols_ == Dynamic, THIS_METHOD_IS_FOR_DYNAMIC_SIZED_BLOCKS_ONLY);
-        fdapde_constexpr_assert(
+        fdapde_assert(
           start_row >= 0 && start_row + block_rows_ <= xpr_.rows() && start_col >= 0 &&
           start_col + block_cols_ <= xpr.cols());
     }
@@ -101,23 +102,8 @@ class MatrixBlock : public MatrixExpr<BlockRows_, BlockCols_, MatrixBlock<BlockR
         if constexpr (Rows == 1) return xpr_(start_row_, start_col_ + i);
         if constexpr (Cols == 1) return xpr_(start_row_ + i, start_col_);
     }
-    template <int RhsRows_, int RhsCols_, typename RhsXprType>
-    constexpr MatrixBlock<BlockRows_, BlockCols_, XprType>&
-    operator=(const MatrixExpr<RhsRows_, RhsCols_, RhsXprType>& rhs) {
-        fdapde_static_assert(XprType::ReadOnly == 0, BLOCK_ASSIGNMENT_TO_A_READ_ONLY_EXPRESSION_IS_INVALID);
-        using RhsXprTypeClean = std::decay_t<RhsXprType>;
-        fdapde_static_assert(
-          Cols == Dynamic || Rows == Dynamic || internals::is_dynamic_sized_v<RhsXprTypeClean> ||
-            (RhsRows_ == Rows && RhsCols_ == Cols),
-          INVALID_ASSIGNMENT__LHS_AND_RHS_STATIC_SIZES_DOES_NOT_MATCH);
-        if constexpr (Cols == Dynamic || Rows == Dynamic || internals::is_dynamic_sized_v<RhsXprTypeClean>) {
-            fdapde_constexpr_assert(block_rows_ == rhs.rows() && block_cols_ == rhs.cols());
-        }
-        for (int i = 0; i < rows(); ++i) {
-            for (int j = 0; j < cols(); ++j) { xpr_(start_row_ + i, start_col_ + j) = rhs.derived()(i, j); }
-        }
-        return *this;
-    }
+    // inherit standard assignment operator
+    using Base::operator=;
    private:
     int start_row_ = 0, start_col_ = 0;
     int block_rows_ = 0, block_cols_ = 0;

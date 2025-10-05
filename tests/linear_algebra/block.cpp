@@ -53,21 +53,21 @@ TEST(linear_algebra, block) {
         static_assert(b5.cols() == 3);
         static_assert(b5.size() == 6);
         static_assert(b5 == Matrix<double, 2, 3>({1, 2, 3, 4, 5, 6}));
-	// rowwise block reduction
+        // rowwise block reduction
         static_assert([b5]() {
             constexpr auto e = b5.rowwise().prod();
             return e == Matrix<double, 1, 3>({4, 10, 18});
         }());
-	
+
         constexpr auto b6 = A.top_rows(2);
         static_assert(b6.rows() == 2);
         static_assert(b6.cols() == 3);
         static_assert(b6.size() == 6);
         static_assert(b6 == Matrix<double, 2, 3>({1, 2, 3, 4, 5, 6}));
-	// block redux
-	static_assert(b6.squared_norm() == 91);
-	static_assert(b6.inf_norm() == 6);
-	
+        // block redux
+        static_assert(b6.squared_norm() == 91);
+        static_assert(b6.inf_norm() == 6);
+
         constexpr auto b7 = A.bottom_rows<2>();
         static_assert(b7.rows() == 2);
         static_assert(b7.cols() == 3);
@@ -91,7 +91,7 @@ TEST(linear_algebra, block) {
         static_assert(b8.cols() == 3);
         static_assert(b8.size() == 6);
         static_assert(b8 == Matrix<double, 2, 3>({4, 5, 6, 7, 8, 9}));
-	// block-transpose
+        // block-transpose
         static_assert(b8.transpose() == Matrix<double, 3, 2>({4, 7, 5, 8, 6, 9}));
 
         constexpr auto b9 = A.left_cols<2>();
@@ -99,7 +99,7 @@ TEST(linear_algebra, block) {
         static_assert(b9.cols() == 2);
         static_assert(b9.size() == 6);
         static_assert(b9 == Matrix<double, 3, 2>({1, 2, 4, 5, 7, 8}));
-	// column block of block
+        // column block of block
         static_assert([b9]() {
             constexpr auto e = b9.col(0);
             return e.sum() == 12;
@@ -110,7 +110,7 @@ TEST(linear_algebra, block) {
         static_assert(b10.cols() == 2);
         static_assert(b10.size() == 6);
         static_assert(b10 == Matrix<double, 3, 2>({1, 2, 4, 5, 7, 8}));
-	// block of block-expression
+        // block of block-expression
         static_assert([b1, b10]() {
             constexpr auto e = 2 * b1 + b10.transpose() * b10;
             return e.block<1, 2>(0, 0) == Matrix<double, 1, 2>({68, 82});
@@ -121,20 +121,20 @@ TEST(linear_algebra, block) {
         static_assert(b11.cols() == 2);
         static_assert(b11.size() == 6);
         static_assert(b11 == Matrix<double, 3, 2>({2, 3, 5, 6, 8, 9}));
-	// colwise block redux
+        // colwise block redux
         static_assert([b11]() {
             constexpr auto e = b11.colwise().sum();
             return e == Matrix<double, 3, 1>({5, 11, 17});
         }());
-	// block expression
+        // block expression
         static_assert((2 * b10 + b11) == Matrix<double, 3, 2>({4, 7, 13, 16, 22, 25}));
-	
+
         constexpr auto b12 = A.right_cols(2);
         static_assert(b12.rows() == 3);
         static_assert(b12.cols() == 2);
         static_assert(b12.size() == 6);
         static_assert(b11 == Matrix<double, 3, 2>({2, 3, 5, 6, 8, 9}));
-	// row block of block
+        // row block of block
         static_assert([b12]() {
             constexpr auto e = b12.row(1);
             return almost_equal(e.mean(), 11. / 2);
@@ -145,32 +145,35 @@ TEST(linear_algebra, block) {
     {
         Matrix<double, Dynamic, Dynamic> A(8, 10);
         auto b = A.block<5, 5>(1, 1);
-	EXPECT_EQ(b.rows(), 5);
-	EXPECT_EQ(b.cols(), 5);
-	EXPECT_EQ(b.size(), 25);
-	// assignment
-        b = Matrix<double, 5, 5>::Ones();
+        EXPECT_EQ(b.rows(), 5);
+        EXPECT_EQ(b.cols(), 5);
+        EXPECT_EQ(b.size(), 25);
 
-        for (int i = 0; i < A.rows(); ++i) {
-            for (int j = 0; j < A.cols(); ++j) {
-                if ((i >= 1 && i < 6) && (j >= 1 && j < 6)) {
-                    EXPECT_EQ(A(i, j), 1);
-                } else {
-                    EXPECT_EQ(A(i, j), 0);
+        auto check_block_eq = [](const auto& mtx, auto value) {
+            for (int i = 0; i < mtx.rows(); ++i) {
+                for (int j = 0; j < mtx.cols(); ++j) {
+                    if ((i >= 1 && i < 6) && (j >= 1 && j < 6)) {
+                        EXPECT_EQ(mtx(i, j), value);
+                    } else {
+                        EXPECT_EQ(mtx(i, j), 0);
+                    }
                 }
             }
-        }
-	// increment
-	Matrix<double, Dynamic, Dynamic> B = 4 * Matrix<double, Dynamic, Dynamic>::Ones(5, 5);
-	b += B;
-        for (int i = 0; i < A.rows(); ++i) {
-            for (int j = 0; j < A.cols(); ++j) {
-                if ((i >= 1 && i < 6) && (j >= 1 && j < 6)) {
-                    EXPECT_EQ(A(i, j), 5);
-                } else {
-                    EXPECT_EQ(A(i, j), 0);
-                }
-            }
-        }
+        };
+        // assignment
+        b = Matrix<double, 5, 5>::Ones();
+        check_block_eq(A, 1);
+        // compound block arithmetic
+        Matrix<double, 5, 5> B = 4 * Matrix<double, 5, 5>::Ones();
+        b += B;
+        check_block_eq(A, 5);
+        b *= 5;
+        check_block_eq(A, 25);
+        b /= 5;
+        check_block_eq(A, 5);
+        b -= B;
+        check_block_eq(A, 1);
+        b *= B;
+        check_block_eq(A, 20);
     }
 }

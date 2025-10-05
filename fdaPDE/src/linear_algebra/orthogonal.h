@@ -63,14 +63,14 @@ struct OrthogonalMatrixBase : public OrthogonalMatrixExpr<Size_, Size_, Orthogon
       // copy assignment
     constexpr OrthogonalMatrixType_& operator=(const OrthogonalMatrixType_& other) {
         fdapde_static_assert(ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_LOCATION);
-        if constexpr (Size_ == Dynamic) { fdapde_constexpr_assert(size_ == other.rows() && size_ == other.cols()); }
+        if constexpr (Size_ == Dynamic) { fdapde_assert(size_ == other.rows() && size_ == other.cols()); }
         if (this == std::addressof(other)) { return derived(); }
         assignment_executor::run(*this, other);
         return derived();
     }
     // only read access allowed (write access could break orthogonality invariant)
     constexpr const Scalar& operator()(int i, int j) const {
-        fdapde_constexpr_assert(i >= 0 && i < size_ && j >= 0 && j < size_);
+        fdapde_assert(i >= 0 && i < size_ && j >= 0 && j < size_);
         return derived().data()(i, j);
     }
     // observers
@@ -96,7 +96,7 @@ struct OrthogonalMatrixBase : public OrthogonalMatrixExpr<Size_, Size_, Orthogon
             }
             Q.col(rank++) = v / v_norm;
         }
-        fdapde_constexpr_assert(rank == derived().rows());   // not full rank, unable to orthogonalize to square matrix
+        fdapde_assert(rank == derived().rows());   // not full rank, unable to orthogonalize to square matrix
         m = Q;
     }
 
@@ -135,7 +135,7 @@ struct OrthogonalMatrix :
         if (orthogonalize) {
             Base::orthogonalize_(m_);
         } else {
-            fdapde_constexpr_assert(
+            fdapde_assert(
               almost_equal(m_ * m_.transpose() FDAPDE_COMMA Identity(m_.rows()) FDAPDE_COMMA 1e-14));
         }
     }
@@ -147,7 +147,7 @@ struct OrthogonalMatrix :
         if (orthogonalize) {
             Base::orthogonalize_(m_);
         } else {
-            fdapde_constexpr_assert(
+            fdapde_assert(
               almost_equal(m_ * m_.transpose() FDAPDE_COMMA Identity(m_.rows()) FDAPDE_COMMA 1e-14));
         }
     }
@@ -174,7 +174,7 @@ struct orthogonal_wrapper : OrthogonalMatrixExpr<Rows_, Cols_, orthogonal_wrappe
         requires(std::is_constructible_v<OrthogonalXprTypeNested, XprType>)
     constexpr orthogonal_wrapper(XprType&& xpr) : Base(), xpr_(std::forward<XprType>(xpr)) { }
     constexpr Scalar operator()(int i, int j) const {
-        fdapde_constexpr_assert(i >= 0 && i < xpr_.rows() && j >= 0 && j < xpr_.cols());
+        fdapde_assert(i >= 0 && i < xpr_.rows() && j >= 0 && j < xpr_.cols());
         return xpr_(i, j);
     }
    private:
@@ -206,11 +206,11 @@ class OrthogonalMatrixView : public OrthogonalMatrixExpr<Rows_, Rows_, Orthogona
     constexpr OrthogonalMatrixView() : Base(), m_() { }
     constexpr explicit OrthogonalMatrixView(Scalar* data) : Base(), m_(data) {
         fdapde_static_assert(Rows_ != Dynamic, THIS_METHOD_IS_FOR_STATIC_SIZED_DIAGONAL_VIEWS_ONLY);
-        fdapde_constexpr_assert(almost_equal(m_ * m_.transpose() FDAPDE_COMMA Identity(m_.rows()) FDAPDE_COMMA 1e-14));
+        fdapde_assert(almost_equal(m_ * m_.transpose() FDAPDE_COMMA Identity(m_.rows()) FDAPDE_COMMA 1e-14));
     }
     constexpr OrthogonalMatrixView(Scalar* data, int size) : Base(size), m_(data) {
-        fdapde_constexpr_assert(size > 0);
-        fdapde_constexpr_assert(almost_equal(m_ * m_.transpose() FDAPDE_COMMA Identity(m_.rows()) FDAPDE_COMMA 1e-14));
+        fdapde_assert(size > 0);
+        fdapde_assert(almost_equal(m_ * m_.transpose() FDAPDE_COMMA Identity(m_.rows()) FDAPDE_COMMA 1e-14));
     }
     // data pointers
     constexpr const StorageType& data() const { return m_; }

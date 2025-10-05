@@ -49,7 +49,7 @@ struct MatrixBinOp :
     constexpr MatrixBinOp(LhsXprType_&& lhs, RhsXprType_&& rhs, BinaryOperation op) :
         lhs_(std::forward<LhsXprType_>(lhs)), rhs_(std::forward<RhsXprType_>(rhs)), op_(op) {
         if constexpr (internals::is_dynamic_sized_v<LhsXprType> || internals::is_dynamic_sized_v<RhsXprType>) {
-            fdapde_constexpr_assert(
+            fdapde_assert(
               std::cmp_equal(lhs_.rows() FDAPDE_COMMA rhs_.rows()) &&
               std::cmp_equal(lhs_.cols() FDAPDE_COMMA rhs_.cols()));
         }
@@ -109,7 +109,7 @@ template <typename Scalar> struct matrix_coeff_mult_t {
 
 }   // namespace internals
 
-// matrix addition
+// matrix linear structure
 template <typename LhsXprType, typename RhsXprType>
 constexpr auto operator+(
   const MatrixExpr<LhsXprType::Rows, LhsXprType::Cols, LhsXprType>& lhs,
@@ -163,7 +163,7 @@ struct MatrixProductOp :
     constexpr MatrixProductOp(LhsXprType_&& lhs, RhsXprType_&& rhs) :
         lhs_(std::forward<LhsXprType_>(lhs)), rhs_(std::forward<RhsXprType_>(rhs)) {
         if constexpr (internals::is_dynamic_sized_v<LhsXprType> || internals::is_dynamic_sized_v<RhsXprType>) {
-            fdapde_constexpr_assert(std::cmp_equal(lhs_.cols() FDAPDE_COMMA rhs_.rows()));
+            fdapde_assert(std::cmp_equal(lhs_.cols() FDAPDE_COMMA rhs_.rows()));
         }
     }
     constexpr Scalar operator()(int i, int j) const { return Executor::run(i, j, lhs_, rhs_); }

@@ -23,7 +23,7 @@ namespace fdapde {
 
 // factorial of n
 constexpr int factorial(const int n) {
-    fdapde_constexpr_assert(n >= 0);
+    fdapde_assert(n >= 0);
     int factorial_ = 1;
     if (n == 0) return factorial_;
     int m = n;

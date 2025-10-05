@@ -28,41 +28,24 @@ help() {
     echo "Usage: $SCRIPT_NAME [options]
 
 Options:
-  -m, --memcheck        Run tests under valgrind
-  -c, --compiler <cc>   Choose compiler: gcc (default) or clang
-  -h, --help            Show this help message"
+  -m         Run tests under valgrind
+  -c <cc>    Choose compiler: gcc (default) or clang
+  -h         Show this help message"
     exit 2
 }
 
 # Parse command line inputs
-SHORT="m,c:,h"
-LONG="memcheck,compiler:,help"
-OPTS=$(getopt -a --options $SHORT --longoptions $LONG -- "$@")
-eval set -- "$OPTS"
-
-while :; do
-    case "$1" in
-        -m|--memcheck)
-            MEMCHECK=true
-            shift
-            ;;
-        -c|--compiler)
-            COMPILER="$2"
-            shift 2
-            ;;
-        -h|--help)
-            help
-            ;;
-        --)
-            shift
-            break
-            ;;
-        *)
-            echo "Unexpected option: $1"
-            help
-            ;;
+SHORT="mc:h"
+while getopts $SHORT opt; do
+    case "$opt" in
+        m) MEMCHECK=true ;;
+        c) COMPILER="$OPTARG" ;;
+        h) help ;;
+        *) help ;;
     esac
 done
+
+shift $((OPTIND - 1))
 
 # Set compiler environment
 if [ "$COMPILER" = "gcc" ]; then

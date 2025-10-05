@@ -58,7 +58,7 @@ struct symmetric_wrapper :
         requires(std::is_constructible_v<SymmetricXprTypeNested, XprType>)
     constexpr symmetric_wrapper(XprType&& xpr) : Base(), xpr_(std::forward<XprType>(xpr)) { }
     constexpr Scalar operator()(int i, int j) const {
-        fdapde_constexpr_assert(i >= 0 && i < xpr_.rows() && j >= 0 && j < xpr_.cols());
+        fdapde_assert(i >= 0 && i < xpr_.rows() && j >= 0 && j < xpr_.cols());
         if constexpr (ViewMode == Upper) return i > j ? xpr_(j, i) : xpr_(i, j);
         if constexpr (ViewMode == Lower) return i < j ? xpr_(i, j) : xpr_(j, i);
     }
@@ -153,12 +153,12 @@ class SymmetricMatrixBase : public SymmetricMatrixExpr<Size_, Size_, SymmetricMa
     constexpr explicit SymmetricMatrixBase(int size) : Base(), size_(size) { }
     // access
     constexpr auto operator()(int i, int j) const {
-        fdapde_constexpr_assert(i >= 0 && i < size_ && j >= 0 && j < size_);
+        fdapde_assert(i >= 0 && i < size_ && j >= 0 && j < size_);
         return symmetric_proxy<std::add_const_t<typename SymmetricMatrixType::StorageType>>(derived().data(), i, j);
     }
     constexpr auto operator()(int i, int j) {
         fdapde_static_assert(ReadOnly == 0, WRITE_ACCESS_TO_READ_ONLY_LOCATION);
-        fdapde_constexpr_assert(i >= 0 && i < size_ && j >= 0 && j < size_);
+        fdapde_assert(i >= 0 && i < size_ && j >= 0 && j < size_);
         return symmetric_proxy<typename SymmetricMatrixType::StorageType>(derived().data(), i, j);
     }
     // observers
@@ -230,7 +230,7 @@ class SymmetricMatrixView :
         fdapde_static_assert(Rows_ != Dynamic, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
     }
     constexpr SymmetricMatrixView(Scalar* data, int size) : Base(size), data_(data) {
-	fdapde_constexpr_assert(size > 0);
+	fdapde_assert(size > 0);
     }
     // data pointers
     constexpr const StorageType& data() const { return data_; }

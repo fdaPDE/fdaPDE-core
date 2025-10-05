@@ -238,7 +238,7 @@ template <typename T, typename... Ts> struct index_of<T, std::tuple<Ts...>> {
         int index = tuple_size;
         int i = 0;
         void(((std::is_same_v<T, Ts> ? (index = i, false) : (++i, true)) && ...));
-        fdapde_constexpr_assert(index != tuple_size);   // type not found in tuple
+        fdapde_assert(index != tuple_size);   // type not found in tuple
         return index;
     }
    public:
