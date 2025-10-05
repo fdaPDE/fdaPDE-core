@@ -59,14 +59,14 @@ struct SPDMatrixBase : public SPDMatrixExpr<Size_, Size_, SPDMatrixType_> {
     // copy assignment
     constexpr SPDMatrixType_& operator=(const SPDMatrixType_& other) {
         fdapde_static_assert(ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_LOCATION);
-        if constexpr (Size_ == Dynamic) { fdapde_constexpr_assert(size_ == other.rows() && size_ == other.cols()); }
+        if constexpr (Size_ == Dynamic) { fdapde_assert(size_ == other.rows() && size_ == other.cols()); }
         if (this == std::addressof(other)) { return derived(); }
         assignment_executor::run(*this, other);
         return derived();
     }
     // only read access allowed (write access could break SPD invariant)
     constexpr const Scalar& operator()(int i, int j) const {
-        fdapde_constexpr_assert(i >= 0 && i < size_ && j >= 0 && j < size_);
+        fdapde_assert(i >= 0 && i < size_ && j >= 0 && j < size_);
         return derived().data()(i, j);
     }
     // observers
@@ -83,11 +83,11 @@ struct SPDMatrixBase : public SPDMatrixExpr<Size_, Size_, SPDMatrixType_> {
     // compute EVD and guarantees positive definiteness invariant
     void assert_spd_() {
         // check symmetry
-        fdapde_constexpr_assert(almost_equal(m FDAPDE_COMMA m.transpose() FDAPDE_COMMA 1e-14));
+        fdapde_assert(almost_equal(m FDAPDE_COMMA m.transpose() FDAPDE_COMMA 1e-14));
         // check positive definiteness
         bool is_positive_definite =
           std::all_of(evd().eigenvalues().begin(), evd().eigenvalues().end(), [](double e) { return e > 0; });
-        fdapde_constexpr_assert(is_positive_definite);
+        fdapde_assert(is_positive_definite);
         return;
     }
     mutable std::optional<EVD<Scalar, Size_>> evd_;
@@ -184,7 +184,7 @@ class SPDMatrixView : public SPDMatrixExpr<Rows_, Rows_, SPDMatrixView<Scalar_, 
         Base::assert_spd_();
     }
     constexpr SPDMatrixView(Scalar* data, int size, internals::spd_unchecked_t) : Base(size), m_(data) {
-        fdapde_constexpr_assert(size > 0);
+        fdapde_assert(size > 0);
     }
     constexpr SPDMatrixView(Scalar* data, int size, internals::spd_checked_t) :
         SPDMatrixView(data, size, spd_unchecked) {
