@@ -261,6 +261,8 @@ TEST(linear_algebra, vector) {
         for (int i = 0; i < v5.size(); ++i) { EXPECT_EQ(v5[i], 0); }
         Vector<int, Dynamic> v6 = Vector<int, Dynamic>::Ones(5);
         for (int i = 0; i < v6.size(); ++i) { EXPECT_EQ(v6[i], 1); }
+        Vector<double, Dynamic> v7 = Vector<double, Dynamic>::LinSpaced(10, 0, 1);
+        for (double i = 0; i < v7.size(); ++i) { EXPECT_EQ(v7[i], i * (1./9)); }
 
         // const access
         EXPECT_EQ(v1[0], 0);
