@@ -23,7 +23,6 @@ namespace fdapde {
 
 // MatrixExpr type-system base class
 template <int Rows_, int Cols_, typename XprType_> struct MatrixExpr {
-    // public types
     static constexpr int Rows = Rows_;
     static constexpr int Cols = Cols_;
     using XprType = XprType_;
@@ -354,21 +353,7 @@ operator==(const MatrixExpr<Rows1, Cols1, XprType1>& op1, const MatrixExpr<Rows2
 template <int Rows1, int Cols1, typename XprType1, int Rows2, int Cols2, typename XprType2>
 constexpr bool
 operator!=(const MatrixExpr<Rows1, Cols1, XprType1>& op1, const MatrixExpr<Rows2, Cols2, XprType2>& op2) {
-    fdapde_static_assert(
-      (internals::is_dynamic_sized_v<XprType1> || internals::is_dynamic_sized_v<XprType2> ||
-       (Rows1 == Rows2 && Cols1 == Cols2)),
-      INVALID_COMPARISON__OPERANDS_HAVE_DIFFERENT_SIZES);
-    if constexpr (internals::is_dynamic_sized_v<XprType1> || internals::is_dynamic_sized_v<XprType2>) {
-        fdapde_assert(op1.rows() == op2.rows() && op1.cols() == op2.cols());
-    }
-    const auto& d1 = op1.derived();
-    const auto& d2 = op2.derived();
-    for (int i = 0, n = d1.rows(); i < n; ++i) {
-        for (int j = 0, m = d1.cols(); j < m; ++j) {
-            if (d1(i, j) == d2(i, j)) { return false; }
-        }
-    }
-    return true;
+    return !(op1 == op2);
 }
 template <int Rows1, int Cols1, typename XprType1, int Rows2, int Cols2, typename XprType2>
 constexpr bool almost_equal(

@@ -69,6 +69,45 @@ TEST(linear_algebra, diagonal) {
         EXPECT_EQ(e.inverse(), invM4);
         Vector<double, 3> x1 = e.solve(Vector<double, 3>({2, 2, 2}));
         Vector<double, 3> x2 = Vector<double, 3>({1. / 2, 1. / 4, 1. / 6});
-	EXPECT_EQ(x1, x2);
+        EXPECT_EQ(x1, x2);
+
+        // owning storage diagonal matrix
+        constexpr DiagonalMatrix<double, 4> M5({1, 2, 3, 4});
+        static_assert(M5.rows() == 4);
+        static_assert(M5.cols() == 4);
+        static_assert(M5.size() == 16);
+        static_assert(M5 == Vector<double, 4>({1, 2, 3, 4}).as_diagonal());
+
+        DiagonalMatrix<double, 4> M6 = M5;
+        M6[1] = 10;   // non-const access
+        Vector<double, 4> s1({1, 10, 3, 4});
+        EXPECT_EQ(M6, s1.as_diagonal());
+        EXPECT_EQ(M6.diagonal(), s1);
+
+        // diagonal arithmetic
+        auto M7 = M5 + M6;
+        Vector<double, 4> s2({2, 12, 6, 8});
+        EXPECT_EQ(M7, s2.as_diagonal());
+        auto M8 = 3 * M5 - M6;
+        Vector<double, 4> s3({2, -4, 6, 8});
+        EXPECT_EQ(M8, s3.as_diagonal());
+        auto M9 = M8 / double(2);
+        Vector<double, 4> s4({1, -2, 3, 4});
+        EXPECT_EQ(M9, s4.as_diagonal());
+        auto M10 = M9 * M8;
+        Vector<double, 4> s5({2, 8, 18, 32});
+        EXPECT_EQ(M10, s5.as_diagonal());
+
+	// matrix-diagonal product
+        Matrix<double, 4, 4> M11 = Matrix<double, 4, 4>::Ones();
+	auto M12 = M11 * M7;
+	EXPECT_TRUE(M12.rowwise() == s2.transpose());
+	auto M13 = M7 * M11;
+	EXPECT_TRUE(M13.colwise() == s2);
+    }
+
+    // dynamic sized
+    {
+      
     }
 }

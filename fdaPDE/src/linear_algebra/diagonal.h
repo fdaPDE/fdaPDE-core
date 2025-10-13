@@ -136,10 +136,10 @@ struct diagonal_wrapper : DiagonalMatrixExpr<Rows_, Cols_, diagonal_wrapper<Rows
 };
 
 // helper cast function
-template <typename XprType> auto diagonal_cast(XprType&& xpr) {
+template <typename XprType> constexpr auto diagonal_cast(XprType&& xpr) {
     using XprTypeClean = std::decay_t<XprType>;
-    static constexpr int Rows = XprTypeClean::Rows;
-    static constexpr int Cols = XprTypeClean::Cols;
+    constexpr int Rows = XprTypeClean::Rows;
+    constexpr int Cols = XprTypeClean::Cols;
     fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
     return diagonal_wrapper<Rows == 1 ? Cols : Rows, Cols == 1 ? Rows : Cols, XprType>(xpr);
 }
@@ -157,8 +157,9 @@ struct DiagonalMatrixExpr : public MatrixExpr<Rows_, Cols_, XprType> {
     static constexpr int NestAsRef = 1;
     using assignment_executor = internals::diagonal_assignment_executor;
 
-    DiagonalMatrixExpr() : size_((Rows_ == Dynamic || Cols_ == Dynamic) ? 0 : Rows_) { }
-    DiagonalMatrixExpr(int size) : size_((Rows_ == Dynamic || Cols_ == Dynamic) ? size : Rows_) { }
+    constexpr DiagonalMatrixExpr() noexcept : size_((Rows_ == Dynamic || Cols_ == Dynamic) ? 0 : Rows_) { }
+    constexpr explicit DiagonalMatrixExpr(int size) noexcept :
+        size_((Rows_ == Dynamic || Cols_ == Dynamic) ? size : Rows_) { }
     // inherit assignment from base
     using Base::operator=;
     // const access
@@ -177,7 +178,7 @@ struct DiagonalMatrixExpr : public MatrixExpr<Rows_, Cols_, XprType> {
         return derived().data()[i];
     }
     // converts the diagonal expression to a full dense matrix
-    auto to_matrix() const { return Matrix<typename XprType::Scalar, Rows, Cols>(derived()); }
+    auto as_matrix() const { return Matrix<typename XprType::Scalar, Rows, Cols>(derived()); }
     // matrix inverse as 1/coeff
     auto inverse() const { return internals::diagonal_cast(derived().diagonal().cwise_inv()); }
     // linear system solver Ax = b

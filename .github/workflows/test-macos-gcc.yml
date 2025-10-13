@@ -16,9 +16,14 @@ jobs:
         brew install eigen
     - name: run_tests
       run: |
+        # simlink gcc-15 as gcc
+        mkdir -p "$HOME/bin"
+        ln -s "$(command -v gcc-15)" "$HOME/bin/gcc"
+        ln -s "$(command -v g++-15)" "$HOME/bin/g++"
+        echo "$HOME/bin" >> $GITHUB_PATH
         cd tests/
         chmod +x run_tests.sh
-        ./run_tests.sh -c clang
+        ./run_tests.sh -c gcc
         echo "TEST_RESULT=$(echo $?)" >> $GITHUB_ENV
     - name: check_tests_passed
       run: |

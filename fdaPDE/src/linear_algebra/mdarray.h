@@ -1411,7 +1411,7 @@ template <typename Extents_, typename LayoutPolicy_> struct md_traits<MdArray<bo
             pack_id_ = pack_id;
             bitmask_ = bitpack_t(1) << bit_off;
         }
-        explicit constexpr bit_proxy(BitPackT* data, index_t i) :
+        constexpr bit_proxy(BitPackT* data, index_t i) :
             data_(data), pack_id_(i / PackSize), bitmask_(bitpack_t(1) << i % PackSize) { }
         // modifiers
         constexpr void set()   { data_[pack_id_] |=  bitmask_; }

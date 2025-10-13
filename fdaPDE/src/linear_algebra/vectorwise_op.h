@@ -136,6 +136,37 @@ struct MatrixVectorWiseOp :
         return *this;
     }
 
+    // vectorwise comparison
+    template <int Rows_, int Cols_, typename XprType_>
+    friend constexpr bool operator==(const MatrixVectorWiseOp& op1, const MatrixExpr<Rows_, Cols_, XprType_>& op2) {
+        fdapde_static_assert(
+          (internals::is_dynamic_sized_v<XprType> || internals::is_dynamic_sized_v<XprType_> ||
+           (Rows == Rows_ && Cols == Cols_)),
+          INVALID_VECTORWISE_COMPARISON__OPERANDS_HAVE_DIFFERENT_SIZES);
+        if constexpr (internals::is_dynamic_sized_v<XprType> || internals::is_dynamic_sized_v<XprType_>) {
+            fdapde_assert(op1.rows() == op2.rows() && op1.cols() == op2.cols());
+        }
+        const auto& d2 = op2.derived();
+        for (int i = 0, n = op1.xpr_.rows(); i < n; ++i) {
+            for (int j = 0, m = op1.xpr_.cols(); j < m; ++j) {
+                if (op1.xpr_(i, j) != d2[ByRow ? j : i]) { return false; }
+            }
+        }
+        return true;
+    }
+    template <int Rows_, int Cols_, typename XprType_>
+    friend constexpr bool operator==(const MatrixExpr<Rows_, Cols_, XprType_>& op1, const MatrixVectorWiseOp& op2) {
+        return op2 == op1;
+    }
+    template <int Rows_, int Cols_, typename XprType_>
+    friend constexpr bool operator!=(const MatrixVectorWiseOp& op1, const MatrixExpr<Rows_, Cols_, XprType_>& op2) {
+        return !(op1 == op2);
+    }
+    template <int Rows_, int Cols_, typename XprType_>
+    friend constexpr bool operator!=(const MatrixExpr<Rows_, Cols_, XprType_>& op1, const MatrixVectorWiseOp& op2) {
+        return !(op2 == op1);
+    }
+  
     // observers
     constexpr int rows() const { return ByRow ? Rows : xpr_.rows(); }
     constexpr int cols() const { return ByRow ? xpr_.cols() : Cols; }
@@ -161,6 +192,7 @@ struct MatrixVectorWiseOp :
   
     XprTypeNested xpr_;
 };
+
 // row-wise matrix reduction expression
 template <typename XprType> struct MatrixRowWiseOp : public MatrixVectorWiseOp<XprType, 1> {
     using Base = MatrixVectorWiseOp<XprType, 1>;

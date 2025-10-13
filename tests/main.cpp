@@ -144,6 +144,10 @@ class fdapde_testing_printer : public ::testing::EmptyTestEventListener {
 #include "linear_algebra/expr.cpp"
 #include "linear_algebra/matrix.cpp"
 #include "linear_algebra/diagonal.cpp"
+#include "linear_algebra/triangular.cpp"
+#include "linear_algebra/bool.cpp"
+
+// #include "geometry/triangle.cpp"
 
 int main(int argc, char** argv) {
     // start testing

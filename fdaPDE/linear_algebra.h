@@ -126,6 +126,7 @@ template <typename XprType> using ref_select_t = typename ref_select<XprType>::t
 #include "src/linear_algebra/orthogonal.h"
 #include "src/linear_algebra/triangular.h"
 #include "src/linear_algebra/symmetric.h"
+#include "src/linear_algebra/bool.h"
 
 // #include "src/linear_algebra/skew.h"
 // #include "src/linear_algebra/permutation.h"

@@ -69,13 +69,13 @@ struct MatrixBinOp :
     BinaryOperation op_;
 };
 // expresion representing the coefficient-wise application of a unary operation to a MatrixExpr operand
-template <typename XprType, typename UnaryOperation>
-struct MatrixCoeffWiseOp : public MatrixExpr<XprType::Rows, XprType::Cols, MatrixCoeffWiseOp<XprType, UnaryOperation>> {
+template <typename XprType, typename CoeffOperation>
+struct MatrixCoeffWiseOp : public MatrixExpr<XprType::Rows, XprType::Cols, MatrixCoeffWiseOp<XprType, CoeffOperation>> {
    public:
-    using Base = MatrixExpr<XprType::Rows, XprType::Cols, MatrixCoeffWiseOp<XprType, UnaryOperation>>;
+    using Base = MatrixExpr<XprType::Rows, XprType::Cols, MatrixCoeffWiseOp<XprType, CoeffOperation>>;
     using XprTypeNested = internals::ref_select_t<const XprType>;
     using XprTypeClean = std::decay_t<XprType>;
-    using Scalar = decltype(std::declval<UnaryOperation>().operator()(std::declval<typename XprTypeClean::Scalar>()));
+    using Scalar = decltype(std::declval<CoeffOperation>().operator()(std::declval<typename XprTypeClean::Scalar>()));
     static constexpr int Rows = XprTypeClean::Rows;
     static constexpr int Cols = XprTypeClean::Cols;
     static constexpr int NestAsRef = 0;
@@ -83,7 +83,7 @@ struct MatrixCoeffWiseOp : public MatrixExpr<XprType::Rows, XprType::Cols, Matri
 
     template <typename XprType_>
         requires(std::is_constructible_v<XprTypeNested, XprType_>)
-    constexpr MatrixCoeffWiseOp(XprType_&& xpr, UnaryOperation op) : xpr_(std::forward<XprType_>(xpr)), op_(op) { }
+    constexpr MatrixCoeffWiseOp(XprType_&& xpr, CoeffOperation op) : xpr_(std::forward<XprType_>(xpr)), op_(op) { }
     constexpr Scalar operator()(int i, int j) const { return op_(xpr_(i, j)); }
     constexpr Scalar operator[](int i) const {
         fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
@@ -93,7 +93,7 @@ struct MatrixCoeffWiseOp : public MatrixExpr<XprType::Rows, XprType::Cols, Matri
     constexpr int cols() const { return Cols != Dynamic ? Cols : xpr_.cols(); }
    private:
     XprTypeNested xpr_;
-    UnaryOperation op_;
+    CoeffOperation op_;
 };
 
 // definition of the linear vector-space structure of the set of M x N matrices
