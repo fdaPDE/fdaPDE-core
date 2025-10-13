@@ -47,7 +47,7 @@ template <int N> class NelderMead {
     static constexpr bool gradient_free = true;
     static constexpr int static_input_size = N;
     // constructors
-    NelderMead() = default;
+    NelderMead() : max_iter_(500), tol_(1e-5), seed_(fdapde::random_seed) { }
     NelderMead(int max_iter, double tol, int seed = fdapde::random_seed) :
         max_iter_(max_iter), tol_(tol), seed_(seed) { }
 
