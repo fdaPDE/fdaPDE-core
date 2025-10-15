@@ -22,6 +22,22 @@
 namespace fdapde {
 namespace internals {
 
+// if XprType has either its NestAsRef bit set or is dynamic sized, sets type member type to XprType&,
+// otherwise to XprType
+template <typename XprType, bool has_ref_bit> struct ref_select_impl;
+template <typename XprType> struct ref_select_impl<XprType, true> {
+   private:
+    using XprTypeClean = std::decay_t<XprType>;
+   public:
+    using type = std::conditional_t<
+      XprTypeClean::NestAsRef == 0, std::remove_reference_t<XprType>, std::add_lvalue_reference_t<XprType>>;
+};
+template <typename XprType> struct ref_select_impl<XprType, false> : std::type_identity<XprType> { };
+template <typename XprType> struct ref_select {
+    using type = ref_select_impl<XprType, requires(XprType) { XprType::NestAsRef; }>::type;
+};
+template <typename XprType> using ref_select_t = typename ref_select<XprType>::type;
+  
 // apply lambda F_ to each value in index pack {0, ..., N_ - 1}
 template <int N_, typename F_> constexpr decltype(auto) apply_index_pack(F_&& f) {
     return [&]<int... Ns_>(std::integer_sequence<int, Ns_...>) -> decltype(auto) {
@@ -324,21 +340,6 @@ struct fn_ptr_traits_impl<R (T::*)(Args...) const> : public fn_ptr_traits_base<R
     using MemFnPtrType = R (T::*)(Args...) const;
 };
 template <auto FnPtr> struct fn_ptr_traits : public fn_ptr_traits_impl<decltype(FnPtr)> { };
-
-// if XprType has its NestAsRef bit set, returns the type XprType&, otherwise return XprType.
-template <typename XprType>
-concept has_nest_as_ref_bit = requires(XprType t) { XprType::NestAsRef; };
-
-template <typename XprType, bool v> struct ref_select_impl;
-template <typename XprType> struct ref_select_impl<XprType, true> {
-    using type = std::conditional_t<
-      XprType::NestAsRef == 0, std::remove_reference_t<XprType>, std::add_lvalue_reference_t<XprType>>;
-};
-template <typename XprType> struct ref_select_impl<XprType, false> {
-    using type = XprType;
-};
-template <typename XprType> struct ref_select : ref_select_impl<XprType, has_nest_as_ref_bit<XprType>> { };
-template <typename XprType> using ref_select_t = ref_select<XprType>::type;
 
 // selects one between arg1 and arg2 based on condition f
 template <typename Arg1, typename Arg2, typename F>
