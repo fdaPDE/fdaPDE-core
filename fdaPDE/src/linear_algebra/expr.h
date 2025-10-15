@@ -267,34 +267,23 @@ template <int Rows_, int Cols_, typename XprType_> struct MatrixExpr {
   
     // reshaping
     // static-sized
-    template <int ReshapedRows_, int ReshapedCols_, int StorageOrder_ = RowMajor> constexpr auto reshape() {
-        return ReshapeOp<ReshapedRows_, ReshapedCols_, StorageOrder_, XprType>(derived());
+    template <int ReshapedRows_, int ReshapedCols_> constexpr auto reshape() {
+        return ReshapeOp<ReshapedRows_, ReshapedCols_, XprType>(derived());
     }
-    template <int ReshapedRows_, int ReshapedCols_, int StorageOrder_ = RowMajor> constexpr auto reshape() const {
-        return ReshapeOp<ReshapedRows_, ReshapedCols_, StorageOrder_, const XprType>(derived());
+    template <int ReshapedRows_, int ReshapedCols_> constexpr auto reshape() const {
+        return ReshapeOp<ReshapedRows_, ReshapedCols_, const XprType>(derived());
     }
-    template <int ReshapedRows_, int StorageOrder_ = RowMajor> constexpr auto reshape() {
-        return ReshapeOp<ReshapedRows_, 1, RowMajor, XprType>(derived());
-    }
-    template <int ReshapedRows_, int StorageOrder_ = RowMajor> constexpr auto reshape() const {
-        return ReshapeOp<ReshapedRows_, 1, RowMajor, const XprType>(derived());
+    template <int ReshapedRows_> constexpr auto reshape() { return ReshapeOp<ReshapedRows_, 1, XprType>(derived()); }
+    template <int ReshapedRows_> constexpr auto reshape() const {
+        return ReshapeOp<ReshapedRows_, 1, const XprType>(derived());
     }
     // dynamic-sized
-    constexpr auto reshape(int rows, int cols) {
-        return ReshapeOp<Dynamic, Dynamic, RowMajor, XprType>(derived(), rows, cols);
-    }
+    constexpr auto reshape(int rows, int cols) { return ReshapeOp<Dynamic, Dynamic, XprType>(derived(), rows, cols); }
     constexpr auto reshape(int rows, int cols) const {
-        return ReshapeOp<Dynamic, Dynamic, RowMajor, const XprType>(derived(), rows, cols);
+        return ReshapeOp<Dynamic, Dynamic, const XprType>(derived(), rows, cols);
     }
-    constexpr auto reshape(int rows) { return ReshapeOp<Dynamic, 1, RowMajor, XprType>(derived(), rows); }
-    constexpr auto reshape(int rows) const { return ReshapeOp<Dynamic, 1, RowMajor, const XprType>(derived(), rows); }
-    // dynamic-sized with storage order control
-    template <int StorageOrder_> constexpr auto reshape(int rows, int cols) {
-        return ReshapeOp<Dynamic, Dynamic, StorageOrder_, XprType>(derived(), rows, cols);
-    }
-    template <int StorageOrder_> constexpr auto reshape(int rows, int cols) const {
-        return ReshapeOp<Dynamic, Dynamic, StorageOrder_, const XprType>(derived(), rows, cols);
-    }
+    constexpr auto reshape(int rows) { return ReshapeOp<Dynamic, 1, XprType>(derived(), rows); }
+    constexpr auto reshape(int rows) const { return ReshapeOp<Dynamic, 1, const XprType>(derived(), rows); }
 
     // square matrix methods
     constexpr auto symm_part() const {

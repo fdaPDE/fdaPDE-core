@@ -48,9 +48,9 @@ template <typename XprType> struct TransposeOp : public MatrixExpr<XprType::Cols
 };
 
 // expression of a reshaped MatrixExpr operand. Reshaping modifes the expression dimensions without reallocating memory
-template <int Rows_, int Cols_, int StorageOrder_, typename XprType>
-struct ReshapeOp : public MatrixExpr<Rows_, Cols_, ReshapeOp<Rows_, Cols_, StorageOrder_, XprType>> {
-    using Base = MatrixExpr<Rows_, Cols_, ReshapeOp<Rows_, Cols_, StorageOrder_, XprType>>;
+template <int Rows_, int Cols_, typename XprType>
+struct ReshapeOp : public MatrixExpr<Rows_, Cols_, ReshapeOp<Rows_, Cols_, XprType>> {
+    using Base = MatrixExpr<Rows_, Cols_, ReshapeOp<Rows_, Cols_, XprType>>;
     using XprTypeNested = internals::ref_select_t<XprType>;
     using Scalar = typename XprType::Scalar;
     static constexpr int Rows = Rows_;
@@ -76,30 +76,31 @@ struct ReshapeOp : public MatrixExpr<Rows_, Cols_, ReshapeOp<Rows_, Cols_, Stora
         fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_ONLY_FOR_ROW_OR_COLUMN_VECTORS);
     }
     // access
-    constexpr Scalar operator()(int i, int j) const {
-        const auto& [row, col] = reshaped_(i, j);
+    constexpr decltype(auto) operator()(int i, int j) const {
+        const auto [row, col] = reshaped_(i, j);
         return xpr_(row, col);
     }
-    constexpr Scalar operator[](int i) const {
+    constexpr decltype(auto) operator[](int i) const {
         fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_ONLY_FOR_ROW_OR_COLUMN_VECTORS);
-        return operator()(i, 0);
+        return Rows == 1 ? operator()(i, 0) : operator()(0, i);
     }
-    constexpr Scalar& operator()(int i, int j) {
-        const auto& [row, col] = reshaped_(i, j);
+    constexpr decltype(auto) operator()(int i, int j) {
+        fdapde_static_assert(ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_LOCATION);
+        const auto [row, col] = reshaped_(i, j);
         return xpr_(row, col);
     }
-    constexpr Scalar& operator[](int i) {
+    constexpr decltype(auto) operator[](int i) {
+        fdapde_static_assert(ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_LOCATION);
         fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_ONLY_FOR_ROW_OR_COLUMN_VECTORS);
-        return operator()(i, 0);
+        return Rows == 1 ? operator()(i, 0) : operator()(0, i);
     }
     // observers
     constexpr int rows() const { return rows_; }
     constexpr int cols() const { return cols_; }
    private:
     std::pair<int, int> reshaped_(int i, int j) const {
-        int k = i * cols_ + j * rows_;
-        if constexpr (StorageOrder_ == RowMajor) return std::make_pair(k / xpr_.rows(), k % xpr_.rows());
-        if constexpr (StorageOrder_ == ColMajor) return std::make_pair(k % xpr_.rows(), k / xpr_.rows());
+        const int k = i * cols_ + j;
+        return std::make_pair(k / xpr_.cols(), k % xpr_.cols());
     }
     int rows_, cols_;
     XprTypeNested xpr_;

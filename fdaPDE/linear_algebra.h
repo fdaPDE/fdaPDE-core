@@ -105,6 +105,7 @@ static constexpr bool same_static_shape_v = same_static_shape<LhsXprType, RhsXpr
 #include "src/linear_algebra/binary_op.h"
 #include "src/linear_algebra/block.h"
 #include "src/linear_algebra/unary_op.h"
+#include "src/linear_algebra/ternary_op.h"
 #include "src/linear_algebra/vectorwise_op.h"
 #include "src/linear_algebra/diagonal.h"
 #include "src/linear_algebra/orthogonal.h"

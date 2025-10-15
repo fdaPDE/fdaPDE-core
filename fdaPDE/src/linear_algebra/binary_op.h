@@ -30,7 +30,7 @@ struct MatrixBinOp :
     fdapde_static_assert(
       internals::is_dynamic_sized_v<LhsXprType> || internals::is_dynamic_sized_v<RhsXprType> ||
         (LhsXprType::Rows == RhsXprType::Rows && LhsXprType::Cols == RhsXprType::Cols),
-      YOU_MIXED_MATRICES_OF_DIFFERENT_STATIC_SIZE);
+      INVALID_BINARY_OPERATION__MATRICES_OF_DIFFERENT_STATIC_SIZE);
     using Base = MatrixExpr<LhsXprType::Rows, LhsXprType::Cols, MatrixBinOp<LhsXprType, RhsXprType, BinaryOperation>>;
     using LhsXprTypeNested = internals::ref_select_t<const LhsXprType>;
     using RhsXprTypeNested = internals::ref_select_t<const RhsXprType>;

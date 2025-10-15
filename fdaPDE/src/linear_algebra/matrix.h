@@ -74,18 +74,25 @@ struct generic_assignment_executor {
             { op(l, r) } -> std::same_as<void>;
         })
     static constexpr void run(DstMatrixType& dst, const SrcXprType& src, AssignmentOp&& op) {
-        fdapde_static_assert(DstMatrixType::ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_EXPRESSION);
+        fdapde_static_assert(DstMatrixType::ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_LOCATION);
         fdapde_static_assert(
           is_dynamic_sized_v<DstMatrixType> || is_dynamic_sized_v<SrcXprType> ||
             same_static_shape_v<DstMatrixType FDAPDE_COMMA SrcXprType>,
-          INVALID_ASSIGNMENT__LHS_AND_RHS_STATIC_SIZES_DOES_NOT_MATCH);
+          INVALID_ASSIGNMENT__DIFFERENT_LHS_AND_RHS_STATIC_SIZES);
         if constexpr (internals::is_dynamic_sized_v<DstMatrixType> || internals::is_dynamic_sized_v<SrcXprType>) {
             fdapde_assert(dst.rows() == src.rows() && dst.cols() == src.cols());
         }
         int rows_ = dst.rows();
         int cols_ = dst.cols();
-        for (int i = 0; i < rows_; ++i) {
-            for (int j = 0; j < cols_; ++j) { op(dst(i, j), src(i, j)); }
+        // exploit cache-locality depending on StorageOrder of destination
+        if constexpr (DstMatrixType::StorageOrder == RowMajor) {
+            for (int i = 0; i < rows_; ++i) {
+                for (int j = 0; j < cols_; ++j) { op(dst(i, j), src(i, j)); }
+            }
+        } else {   // ColMajor
+            for (int j = 0; j < cols_; ++j) {
+                for (int i = 0; i < rows_; ++i) { op(dst(i, j), src(i, j)); }
+            }
         }
         return;
     }
@@ -150,12 +157,12 @@ class MatrixBase : public MatrixExpr<Rows_, Cols_, MatrixType> {
         return derived().data()[i];
     }
     constexpr Scalar& operator()(int i, int j) {
-        fdapde_static_assert(ReadOnly == 0, ASSIGNMENT_TO_A_READ_ONLY_LOCATION_IS_INVALID);
+        fdapde_static_assert(ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_LOCATION);
         fdapde_assert(i >= 0 && i < rows_ && j >= 0 && j < cols_);
         return derived().data()[i * row_stride_ + j * col_stride_];
     }
     constexpr Scalar& operator[](const int i) {
-        fdapde_static_assert(ReadOnly == 0, ASSIGNMENT_TO_A_READ_ONLY_LOCATION_IS_INVALID);
+        fdapde_static_assert(ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_LOCATION);
         fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
         fdapde_assert(i >= 0 && i < rows_ * cols_);
         return derived().data()[i];
@@ -266,21 +273,6 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
     }
 
     // constructors taking external data
-    template <typename DataT>
-        requires(internals::is_vector_like_v<DataT>)
-    constexpr explicit Matrix(DataT&& data) {
-        fdapde_static_assert(
-          (Rows_ != Dynamic && Cols_ != Dynamic) || (Rows_ == 1 && Cols_ == Dynamic) ||
-            (Cols_ == 1 && Rows_ == Dynamic),
-          THIS_METHOD_IS_EITHER_FOR_ROW_OR_COLUMN_VECTORS_OR_FOR_STATIC_SIZED_MATRICES);
-        if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { data_.resize(data.size()); }
-        fdapde_assert(data_.size() == data.size());
-        for (int i = 0, n = Base::rows(); i < n; ++i) {
-            for (int j = 0, m = Base::cols(); j < m; ++j) {
-                Base::operator()(i, j) = data[i * Base::row_stride_ + j * Base::col_stride_];
-            }
-        }
-    }
     template <std::size_t Size> constexpr explicit Matrix(const Scalar (&data)[Size]) : Base() {
         fdapde_static_assert(
           Rows_ != Dynamic && Cols_ != Dynamic && StorageSize == Size, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);

@@ -38,6 +38,7 @@ class MatrixBlock : public MatrixExpr<BlockRows_, BlockCols_, MatrixBlock<BlockR
     static constexpr int Rows = BlockRows_;
     static constexpr int Cols = BlockCols_;
     static constexpr int NestAsRef = 0;
+    static constexpr int StorageOrder = XprType::StorageOrder;
     static constexpr int ReadOnly = XprType::ReadOnly;
     using assignment_executor = internals::generic_assignment_executor;
 

@@ -71,14 +71,6 @@ TEST(linear_algebra, matrix) {
             return v;
         }());
 
-        // construct from vector-like container
-        std::vector<double> vec(9);
-        for (int i = 0, n = vec.size(); i < n; ++i) { vec[i] = i; }
-        Matrix<double, 3, 3> M5(vec);
-        for (int i = 0; i < M5.rows(); ++i) {
-            for (int j = 0; j < M5.cols(); ++j) { EXPECT_EQ(M5(i, j), vec[3 * i + j]); }
-        }
-
         // static-construct
         constexpr Matrix<int, 4, 4> M6 = Matrix<int, 4, 4>::Zero();
         static_assert(M6 == Matrix<int, 4, 4>::Zero());
@@ -202,12 +194,6 @@ TEST(linear_algebra, vector) {
         EXPECT_EQ(v3.size(), v2.size());
         EXPECT_EQ(v3, v2);
 
-        // construct from vector-like container
-        std::vector<int> vec(6);
-        for (int i = 0, n = vec.size(); i < n; ++i) { vec[i] = i; }
-        Vector<int, 6> v4(vec);
-        for (int i = 0; i < v4.size(); ++i) { EXPECT_EQ(v4[i], vec[i]); }
-
         // const access
         EXPECT_EQ(v1[0], 1);
         static_assert(v1[0] == 1);
@@ -249,12 +235,6 @@ TEST(linear_algebra, vector) {
         EXPECT_EQ(v3.rows(), 10);
         EXPECT_EQ(v3.size(), 10);
         for (int i = 0; i < v3.size(); ++i) { EXPECT_EQ(v3[i], 5.0); }
-
-        // construct from vector-like container
-        std::vector<double> vec(9);
-        for (int i = 0, n = vec.size(); i < n; ++i) { vec[i] = i; }
-        Vector<double, Dynamic> v4(vec);
-        for (int i = 0; i < v4.size(); ++i) { EXPECT_EQ(v4[i], vec[i]); }
 
         // static-construct
         Vector<int, Dynamic> v5 = Vector<int, Dynamic>::Zero(5);

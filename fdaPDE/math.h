@@ -22,7 +22,7 @@
 // include required modules
 #include "utility.h"
 
-#include "src/math/autodiff.h"
+// #include "src/math/autodiff.h"
 
 #include "src/math/numeric.h"
 #include "src/math/xpr_helper.h"

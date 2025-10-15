@@ -19,9 +19,6 @@
 
 #include "header_check.h"
 
-#include <bitset>
-
-
 namespace fdapde {
 
 // linalg API specialization for the case Scalar = bool. Due to the boolean algebra semantic and the packed
@@ -55,7 +52,7 @@ struct bitpack_assignment_executor {
 };
 
 }   // namespace internals
-
+  
 template <int Rows_, int Cols_, int StorageOrder_, typename BoolMatrixType>
 class MatrixBase<bool, Rows_, Cols_, StorageOrder_, BoolMatrixType> :
     public BoolMatrixExpr<Rows_, Cols_, BoolMatrixType> {
@@ -204,11 +201,11 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
     static constexpr int NestAsRef = 1;
     static constexpr int Rows = Rows_;
     static constexpr int Cols = Cols_;
-    static constexpr std::size_t StorageSize =
-      Rows_ == Dynamic || Cols_ == Dynamic ? Dynamic : 1 + (Rows * Cols) / PackSize;
+    static constexpr int StorageSize =
+      Rows_ == Dynamic || Cols_ == Dynamic ? Dynamic : (static_cast<int>(1 + (Rows * Cols) / PackSize));
     using StorageType = std::conditional_t<
       Rows_ == Dynamic || Cols_ == Dynamic, std::vector<bitpack_t>,
-      std::array<bitpack_t, (StorageSize < 0) ? 0 : static_cast<std::size_t>(StorageSize)>>;   // avoid clang narrowing
+      std::array<bitpack_t, static_cast<std::size_t>(StorageSize)>>;   // avoid clang narrowing
     using iterator = typename StorageType::iterator;
     using const_iterator = typename StorageType::const_iterator;
 
@@ -495,8 +492,9 @@ class BoolMatrixBlock :
     static constexpr int Rows = BlockRows_;
     static constexpr int Cols = BlockCols_;
     static constexpr int NestAsRef = 0;
+    static constexpr int StorageOrder = XprType::StorageOrder;
     static constexpr int ReadOnly = XprType::ReadOnly;
-    using assignment_executor = internals::generic_assignment_executor;   // bit-level assignment loop
+    using assignment_executor = internals::generic_assignment_executor;   // bitwise assignment loop
 
     // row/column constructor
     template <typename XprType_>
@@ -554,20 +552,20 @@ class BoolMatrixBlock :
     constexpr int cols() const noexcept { return BlockCols_ != Dynamic ? BlockCols_ : block_cols_; }
     constexpr int size() const { return rows() * cols(); }
     constexpr int bitpacks() const { return (1 + fdapde::ceil(size() / PackSize)); }
-    constexpr Scalar operator()(int i, int j) const {
+    constexpr decltype(auto) operator()(int i, int j) const {
         fdapde_assert(i >= 0 && i < block_rows_ && j >= 0 && j < block_cols_);
         return xpr_(i + start_row_, j + start_col_);
     }
-    constexpr Scalar operator[](int i) const {
+    constexpr decltype(auto) operator[](int i) const {
         fdapde_static_assert(BlockRows_ == 1 || BlockCols_ == 1, THIS_METHOD_IS_FOR_ROW_AND_COLUMN_BLOCKS_ONLY);
         if constexpr (Rows == 1) return xpr_(start_row_, start_col_ + i);
         if constexpr (Cols == 1) return xpr_(start_row_ + i, start_col_);
     }
-    constexpr auto operator()(int i, int j) {
+    constexpr decltype(auto) operator()(int i, int j) {
         fdapde_static_assert(XprType::ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_LOCATION);
         return xpr_(start_row_ + i, start_col_ + j);
     }
-    constexpr auto operator[](int i) {
+    constexpr decltype(auto) operator[](int i) {
         fdapde_static_assert(BlockRows_ == 1 || BlockCols_ == 1, THIS_METHOD_IS_FOR_ROW_AND_COLUMN_BLOCKS_ONLY);
         fdapde_static_assert(XprType::ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_LOCATION);
         if constexpr (Rows == 1) return xpr_(start_row_, start_col_ + i);
@@ -727,6 +725,96 @@ template <typename XprType> struct cnt_redux_executor {
   
 }   // namespace internals
 
+// reshaping operation with bitpack support. As reshaping doesn't change the physical memory layout, bitpacks are
+// preserved
+template <int Rows_, int Cols_, typename XprType>
+class BoolReshapeOp : public BoolMatrixExpr<Rows_, Cols_, BoolReshapeOp<Rows_, Cols_, XprType>> {
+   public:
+    using Base = BoolMatrixExpr<Rows_, Cols_, BoolReshapeOp<Rows_, Cols_, XprType>>;
+    using bitpack_t = typename Base::bitpack_t;
+    using XprTypeNested = ReshapeOp<Rows_, Cols_, XprType>;   // reuse standard reshaping
+    static constexpr int Rows = Rows_;
+    static constexpr int Cols = Cols_;
+    static constexpr int NestAsRef = 0;
+    static constexpr int ReadOnly = XprType::ReadOnly;
+
+    constexpr BoolReshapeOp() = default;
+    constexpr BoolReshapeOp(const BoolReshapeOp& other) : xpr_(other.xpr_) { }
+    constexpr BoolReshapeOp& operator=(const BoolReshapeOp& other) {
+        xpr_ = other.xpr_;
+        return *this;
+    }
+    template <typename XprType_>
+        requires(std::is_constructible_v<XprTypeNested, XprType_>)
+    constexpr explicit BoolReshapeOp(XprType_&& xpr) noexcept : xpr_(std::forward<XprType_>(xpr)) { }
+    template <typename XprType_>
+        requires(std::is_constructible_v<XprTypeNested, XprType_>)
+    constexpr BoolReshapeOp(XprType_&& xpr, int rows, int cols) noexcept :
+        xpr_(std::forward<XprType_>(xpr), rows, cols) { }
+    template <typename XprType_>
+        requires(std::is_constructible_v<XprTypeNested, XprType_>)
+    constexpr BoolReshapeOp(XprType_&& xpr, int rows) noexcept : xpr_(std::forward<XprType_>(xpr), rows) { }
+
+    constexpr int rows() const { return xpr_.rows(); }
+    constexpr int cols() const { return xpr_.cols(); }
+    constexpr bitpack_t bitpack(int i) const { return xpr_.bitpack(i); }
+    // access
+    constexpr decltype(auto) operator()(int i, int j) const { return xpr_(i, j); }
+    constexpr decltype(auto) operator[](int i) const { return Rows == 1 ? operator()(i, 0) : operator()(0, i); }
+    constexpr decltype(auto) operator()(int i, int j) { return xpr_(i, j); }
+    constexpr decltype(auto) operator[](int i) { return Rows == 1 ? operator()(i, 0) : operator()(0, i); }
+   private:
+    XprTypeNested xpr_;
+};
+
+// repeat operation usefull to generate periodic bit pattern
+template <int Rows_, int Cols_, typename XprType>
+class BoolRepeatOp : public BoolMatrixExpr<Rows_, Cols_, BoolRepeatOp<Rows_, Cols_, XprType>> {
+   public:
+    using Base = BoolMatrixExpr<Rows_, Cols_, BoolRepeatOp<Rows_, Cols_, XprType>>;
+    using bitpack_t = typename Base::bitpack_t;
+    using XprTypeNested = internals::ref_select_t<const XprType>;
+    static constexpr int PackSize = Base::PackSize;
+    static constexpr int NestAsRef = 0;
+    static constexpr int ReadOnly = 1;
+
+    template <typename XprType_>
+        requires(std::is_constructible_v<XprTypeNested, XprType_>)
+    constexpr BoolRepeatOp(XprType_&& xpr, int rep_row, int rep_col) :
+        xpr_(std::forward<XprType_>(xpr)), rep_row_(rep_row), rep_col_(rep_col) {
+        fdapde_assert(rep_row > 0 && rep_col > 0);
+    }
+
+    // access
+    constexpr decltype(auto) operator()(int i, int j) const {
+        fdapde_assert(i >= 0 && i < rows() && j >= 0 && j < cols());
+        return xpr_(i % xpr_.rows(), j % xpr_.cols());
+    }
+    constexpr bitpack_t bitpack(int i) const noexcept {
+        bitpack_t out = bitpack(0);
+        const int start = i * PackSize;
+        const int total = rows() * cols();
+        const int nbits = std::min(PackSize, total - start);
+
+        const int rows_x = xpr_.rows();
+        const int cols_x = xpr_.cols();
+        const int cols_rep = xpr_.cols() * rep_col_;
+
+        for (int b = 0; b < nbits; ++b) {
+            const int k = start + b;
+            const int row = (k / cols_rep) % rows_x;
+            const int col = (k % cols_rep) % cols_x;
+            if (xpr_(row, col)) out |= (bitpack_t(1) << b);
+        }
+        return out;
+    }
+    constexpr int rows() const { return xpr_.rows() * rep_row_; }
+    constexpr int cols() const { return xpr_.cols() * rep_col_; }
+   private:
+    XprTypeNested xpr_;
+    int rep_row_, rep_col_;
+};
+
 // base class for boolean expressions
 template <int Rows_, int Cols_, typename XprType_> struct BoolMatrixExpr {
     using XprType = XprType_;
@@ -768,11 +856,12 @@ template <int Rows_, int Cols_, typename XprType_> struct BoolMatrixExpr {
         return derived();
     }
     // observers
-    constexpr int rows() const { return derived().rows(); }
-    constexpr int cols() const { return derived().cols(); }
     constexpr int size() const {
         return (Rows != Dynamic && Cols != Dynamic) ? Rows * Cols : derived().rows() * derived().cols();
     }
+    constexpr int rows() const { return Rows == Dynamic ? derived().rows() : Rows; }
+    constexpr int cols() const { return Cols == Dynamic ? derived().cols() : Cols; }
+
     constexpr const XprType& derived() const { return static_cast<const XprType&>(*this); }
     constexpr XprType& derived() { return static_cast<XprType&>(*this); }
     // ostream
@@ -870,85 +959,43 @@ template <int Rows_, int Cols_, typename XprType_> struct BoolMatrixExpr {
           derived(), 0, internals::cnt_redux_executor<XprType>());
     }
 
-    // make generic select, not bounded to eigen types (maybe with lazy evaluation)
+    // binary selection
+    template <typename TrueXprType, typename FalseXprType>
+        requires(internals::is_matrix_like_v<TrueXprType> && internals::is_matrix_like_v<FalseXprType>)
+    constexpr auto select(TrueXprType&& true_xpr, FalseXprType&& false_xpr) const {
+        return TernaryOp<XprType, std::decay_t<TrueXprType>, std::decay_t<FalseXprType>>(
+          derived(), std::forward<TrueXprType>(true_xpr), std::forward<FalseXprType>(false_xpr));
+    }
+    // reshaping
+    // static-sized
+    template <int ReshapedRows_, int ReshapedCols_> constexpr auto reshape() {
+        return BoolReshapeOp<ReshapedRows_, ReshapedCols_, XprType>(derived());
+    }
+    template <int ReshapedRows_, int ReshapedCols_> constexpr auto reshape() const {
+        return BoolReshapeOp<ReshapedRows_, ReshapedCols_, const XprType>(derived());
+    }
+    template <int ReshapedRows_> constexpr auto reshape() {
+        return BoolReshapeOp<ReshapedRows_, 1, XprType>(derived());
+    }
+    template <int ReshapedRows_> constexpr auto reshape() const {
+        return BoolReshapeOp<ReshapedRows_, 1, const XprType>(derived());
+    }
+    // dynamic-sized
+    constexpr auto reshape(int rows, int cols) {
+        return BoolReshapeOp<Dynamic, Dynamic, XprType>(derived(), rows, cols);
+    }
+    constexpr auto reshape(int rows, int cols) const {
+        return BoolReshapeOp<Dynamic, Dynamic, const XprType>(derived(), rows, cols);
+    }
+    constexpr auto reshape(int rows) { return BoolReshapeOp<Dynamic, 1, XprType>(derived(), rows); }
+    constexpr auto reshape(int rows) const { return BoolReshapeOp<Dynamic, 1, const XprType>(derived(), rows); }
 
-    //     // block-repeat operation
-    //     BinMtxRepeatOp<Dynamic, Dynamic, XprType> repeat(int rep_row, int rep_col) const {
-    //         return BinMtxRepeatOp<Dynamic, Dynamic, XprType>(get(), rep_row, rep_col);
-    //     }
-    //     // reshape a binary matrix to another matrix of different sizes
-    //     BinMtxReshapeOp<Dynamic, Dynamic, XprType> reshape(int n_row, int n_col) const {
-    //         return BinMtxReshapeOp<Dynamic, Dynamic, XprType>(get(), n_row, n_col);
-    //     }
-    //     BinMtxReshapeOp<Dynamic, Dynamic, XprType> vector_view() const { return reshape(get().size(), 1); }
-    //    private:
-    //     template <typename Visitor, template <typename, typename> typename VisitStrategy> inline auto visit_apply_()
-    //     const {
-    //         Visitor visitor;
-    //         VisitStrategy<XprType, Visitor>::run(get(), visitor);
-    //         return visitor.res;
-    //     }
+    // repeat pattern
+    BoolRepeatOp<Dynamic, Dynamic, XprType> repeat(int rep_row, int rep_col) const {
+        return BoolRepeatOp<Dynamic, Dynamic, XprType>(derived(), rep_row, rep_col);
+    }
 };
-  
-// a non-writable expression of a block-repeat operation
-// template <int Rows, int Cols, typename XprTypeNested>
-// class BinMtxRepeatOp : public BinMtxBase<Rows, Cols, BinMtxRepeatOp<Rows, Cols, XprTypeNested>> {
-//    public:
-//     using XprType = BinMtxRepeatOp<Rows, Cols, XprTypeNested>;
-//     using Base = BinMtxBase<Rows, Cols, XprType>;
-//     using BitPackType = typename Base::BitPackType;
-//     static constexpr int PackSize = Base::PackSize;   // number of bits in a packet
-//     static constexpr int NestAsRef = 0;   // whether to store this node by reference or by copy in an expression
-//     using Base::cols_;
-//     using Base::rows_;
-
-//     BinMtxRepeatOp(const XprTypeNested& xpr, int rep_row, int rep_col) :
-//         Base(xpr.rows() * rep_row, xpr.cols() * rep_col), xpr_(xpr), rep_row_(rep_row), rep_col_(rep_col) {
-//     }
-//     bool operator()(int i, int j) const {
-//         fdapde_assert(i < rows_ && j < cols_);
-//         return xpr_(i % xpr_.rows(), j % xpr_.cols());
-//     }
-//     BitPackType bitpack(int i) const {
-//         BitPackType out = 0x0;
-//         for (int j = 0; j < PackSize && i * PackSize + j < Base::size(); ++j) {
-//             out |=
-//               ((BitPackType)1 & xpr_(((i * PackSize + j) / cols_) % xpr_.rows(), (i * PackSize + j) % xpr_.cols()))
-//               << j;
-//         }
-//         return out;
-//     }
-//    private:
-//     // internal data
-//     typename internals::ref_select<const XprTypeNested>::type xpr_;
-//     int rep_row_, rep_col_;
-// };
-
-// reshape operation
-// template <int Rows, int Cols, typename XprTypeNested>
-// class BinMtxReshapeOp : public BinMtxBase<Rows, Cols, BinMtxReshapeOp<Rows, Cols, XprTypeNested>> {
-// public:
-//     using XprType = BinMtxReshapeOp<Rows, Cols, XprTypeNested>;
-//     using Base = BinMtxBase<Rows, Cols, XprType>;
-//     using BitPackType = typename Base::BitPackType;
-//     static constexpr int PackSize = Base::PackSize;   // number of bits in a packet
-//     static constexpr int NestAsRef = 0;   // whether to store this node by reference or by copy in an expression
-  
-//     BinMtxReshapeOp(const XprTypeNested& xpr, int reshaped_rows, int reshaped_cols) :
-//         Base(reshaped_rows, reshaped_cols), xpr_(xpr), reshaped_rows_(reshaped_rows), reshaped_cols_(reshaped_cols) {
-//         fdapde_assert(reshaped_rows * reshaped_cols == xpr.rows() * xpr.cols());
-//     }
-//     bool operator()(int i, int j) const {
-//         fdapde_assert(i < reshaped_rows_ && j < reshaped_cols_);
-//         return xpr_((i * reshaped_cols_ + j) / xpr_.cols(), (i * reshaped_cols_ + j) % xpr_.cols());
-//     }
-//     BitPackType bitpack(int i) const { return xpr_.bitpack(i); }   // no changes in storage layout
-//    private:
-//     // internal data
-//     typename internals::ref_select<const XprTypeNested>::type xpr_;
-//     int reshaped_rows_, reshaped_cols_;
-// };
-  
+    
 // comparison operator
 template <int Rows1, int Cols1, typename XprType1, int Rows2, int Cols2, typename XprType2>
 constexpr bool
@@ -980,43 +1027,38 @@ operator!=(const BoolMatrixExpr<Rows1, Cols1, XprType1>& op1, const BoolMatrixEx
     return !(op1 == op2);
 }
 
-// // out-of-class which function
-// template <int Rows, int Cols, typename XprType> std::vector<int> which(const BinMtxBase<Rows, Cols, XprType>& mtx) {
-//     return mtx.which(true);
-// }
+// out-of-class which function
+template <int Rows, int Cols, typename XprType> std::vector<int> which(const BoolMatrixExpr<Rows, Cols, XprType>& mtx) {
+    return mtx.which(true);
+}
 
-// // move the iterator first-last to a binary vector v such that v[i] = true \iff *(first + i) == c
-// template <typename Iterator>
-// BinaryVector<Dynamic> make_binary_vector(const Iterator& first, const Iterator& last, typename Iterator::value_type c) {
-//     int n_rows = std::distance(first, last);
-//     BinaryVector<Dynamic> vec(n_rows);
-//     for (int i = 0; i < n_rows; ++i) {
-//         if (*(first + i) == c) vec.set(i);
-//     }
-//     return vec;
-// }
+// move the iterator first-last to a binary vector v such that v[i] = true \iff *(first + i) == c
+template <typename Iterator>
+Vector<bool, Dynamic> value_indicator(const Iterator& first, const Iterator& last, typename Iterator::value_type c) {
+    int n_rows = std::distance(first, last);
+    Vector<bool, Dynamic> vec(n_rows);
+    for (int i = 0; i < n_rows; ++i) {
+        if (*(first + i) == c) vec.set(i);
+    }
+    return vec;
+}
 
-// template <typename Data>
-//     requires(internals::is_vector_like_v<Data> || internals::is_matrix_like_v<Data>)
-// auto na_matrix(const Data& data) {
-//     using storage_t =
-//       std::conditional_t<internals::is_vector_like_v<Data>, BinaryVector<Dynamic>, BinaryMatrix<Dynamic, Dynamic>>;
-//     storage_t na_mask;
-//     if constexpr (internals::is_vector_like_v<Data>) {
-//         na_mask.resize(data.size());
-//         for (int i = 0; i < data.size(); ++i) {
-//             if (std::isnan(internals::vector_like_access(data, i))) { na_mask.set(i); }
-//         }
-//     } else {
-//         na_mask.resize(data.rows(), data.cols());
-//         for (int i = 0; i < data.rows(); ++i) {
-//             for (int j = 0; j < data.cols(); ++j) {
-//                 if (std::isnan(data(i, j))) { na_mask.set(i, j); }
-//             }
-//         }
-//     }
-//     return na_mask;
-// }
+// masks a vector of a matrix in correspondance of nan values
+template <typename Data>
+    requires(internals::is_vector_like_v<Data> || internals::is_matrix_like_v<Data>)
+Matrix<bool, Dynamic, Dynamic> nan_indicator(const Data& data) {
+    const int rows = internals::is_vector_like_v<Data> ? data.size() : data.rows();
+    const int cols = internals::is_vector_like_v<Data> ? 1 : data.cols();
+
+    Matrix<bool, Dynamic, Dynamic> mask(rows, cols);
+    for (int i = 0; i < rows; ++i) {
+        for (int j = 0; j < cols; ++j) {
+            const auto val = internals::is_vector_like_v<Data> ? internals::vector_like_access(data, i) : data(i, j);
+            if (std::isnan(val)) mask.set(i, j);
+        }
+    }
+    return mask;
+}
 
 // // map a memory region to a BinaryMatrix
 // template <int Rows, int Cols, typename XprTypeNested>
