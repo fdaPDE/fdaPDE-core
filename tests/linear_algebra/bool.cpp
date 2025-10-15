@@ -189,5 +189,24 @@ TEST(linear_algebra, boolean) {
         B4(15, 14) = 0;
         EXPECT_FALSE(B4.all());
         EXPECT_EQ(B4.count(), 30 * 30 - 1);
+
     }
+
+    // ternary selection
+    Matrix<double, 3, 3> M1({1, 2, 3, 4, 5, 6, 7, 8, 9});
+    Matrix<double, 3, 3> M2 = 10 * M1;
+    Matrix<bool, 3, 3> B1({1, 1, 1, 0, 1, 0, 1, 1, 1});
+    auto s = B1.select(M1, M2);
+    Matrix<double, 3, 3> M4({1, 2, 3, 40, 5, 60, 7, 8, 9});
+    EXPECT_EQ(s, M4);
+
+    // reshaping
+    Matrix<bool, 4, 4> B5;
+    B5.top_rows(2).set();
+    auto B6 = B5.reshape(2, 8);
+    
+    Matrix<bool, 1, 8> v;
+    v.set();
+    EXPECT_EQ(B6.row(0), v);    
+    
 }
