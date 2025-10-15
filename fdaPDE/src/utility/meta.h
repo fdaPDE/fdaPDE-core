@@ -20,11 +20,24 @@
 #include "header_check.h"
 
 namespace fdapde {
-
-struct empty_t { };   // empty type, used for storage optimizations
-
 namespace internals {
 
+// if XprType has either its NestAsRef bit set or is dynamic sized, sets type member type to XprType&,
+// otherwise to XprType
+template <typename XprType, bool has_ref_bit> struct ref_select_impl;
+template <typename XprType> struct ref_select_impl<XprType, true> {
+   private:
+    using XprTypeClean = std::decay_t<XprType>;
+   public:
+    using type = std::conditional_t<
+      XprTypeClean::NestAsRef == 0, std::remove_reference_t<XprType>, std::add_lvalue_reference_t<XprType>>;
+};
+template <typename XprType> struct ref_select_impl<XprType, false> : std::type_identity<XprType> { };
+template <typename XprType> struct ref_select {
+    using type = ref_select_impl<XprType, requires(XprType) { XprType::NestAsRef; }>::type;
+};
+template <typename XprType> using ref_select_t = typename ref_select<XprType>::type;
+  
 // apply lambda F_ to each value in index pack {0, ..., N_ - 1}
 template <int N_, typename F_> constexpr decltype(auto) apply_index_pack(F_&& f) {
     return [&]<int... Ns_>(std::integer_sequence<int, Ns_...>) -> decltype(auto) {

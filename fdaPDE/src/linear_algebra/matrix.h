@@ -198,6 +198,8 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
         using assignment = typename Base::assignment_executor;
         assignment::run(*this, rhs.derived(), [](Scalar& l, const Scalar& r) { l = r; });
     }
+    // inherit assignment from base
+    using Base::operator=;
 
     // Matrix API
     // value-initialized static-sized matrix, avoid vectors (Vector API only support 1D, 2D, 3D value intialization)

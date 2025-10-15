@@ -56,7 +56,7 @@
 // }   // namespace fdapde
 
 // include required modules
-#include "utility.h"
+#include "math.h"
 
 namespace fdapde {
 
@@ -97,22 +97,6 @@ template <typename LhsXprType, typename RhsXprType> struct same_static_shape {
 };
 template <typename LhsXprType, typename RhsXprType>
 static constexpr bool same_static_shape_v = same_static_shape<LhsXprType, RhsXprType>::value;
-
-// if XprType has either its NestAsRef bit set or is dynamic sized, sets type member type to XprType&,
-// otherwise to XprType
-template <typename XprType, bool has_ref_bit> struct ref_select_impl;
-template <typename XprType> struct ref_select_impl<XprType, true> {
-   private:
-    using XprTypeClean = std::decay_t<XprType>;
-   public:
-    using type = std::conditional_t<
-      XprTypeClean::NestAsRef == 0, std::remove_reference_t<XprType>, std::add_lvalue_reference_t<XprType>>;
-};
-template <typename XprType> struct ref_select_impl<XprType, false> : std::type_identity<XprType> { };
-template <typename XprType> struct ref_select {
-    using type = ref_select_impl<XprType, requires(XprType) { XprType::NestAsRef; }>::type;
-};
-template <typename XprType> using ref_select_t = typename ref_select<XprType>::type;
 
 }   // namespace internals
 }   // namespace fdapde

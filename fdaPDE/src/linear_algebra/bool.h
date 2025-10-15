@@ -19,16 +19,19 @@
 
 #include "header_check.h"
 
+#include <bitset>
+
+
 namespace fdapde {
 
-// linalg API specialization for the case Scalar = double. Due to the boolean algebra semantic and the packed
+// linalg API specialization for the case Scalar = bool. Due to the boolean algebra semantic and the packed
 // storage layout, boolean linalg API is different than that of the rest of the linalg module
 
 template <int Rows_, int Cols_, typename XprType_> struct BoolMatrixExpr;
 
 namespace internals {
 
-struct bool_bitpack_assignment_executor {
+struct bitpack_assignment_executor {
     template <typename DstMatrixType, typename SrcXprType, typename AssignmentOp>
         requires(
           requires(AssignmentOp op, typename DstMatrixType::bitpack_t& l, const typename SrcXprType::bitpack_t& r) {
@@ -60,16 +63,15 @@ class MatrixBase<bool, Rows_, Cols_, StorageOrder_, BoolMatrixType> :
    public:
     using Base = BoolMatrixExpr<Rows_, Cols_, BoolMatrixType>;
     using Base::derived;
-    using Scalar = bool;
+    using Scalar = typename Base::Scalar;
     static constexpr int Rows = Rows_;
     static constexpr int Cols = Cols_;
     static constexpr int StorageOrder = StorageOrder_;
     static constexpr int NestAsRef = BoolMatrixType::NestAsRef;
     static constexpr int ReadOnly = std::is_const_v<Scalar> ? 1 : 0;
-    static constexpr int PackSize = sizeof(std::uintmax_t) * 8;   // number of bits in a packet
-    using assignment_executor = internals::bool_bitpack_assignment_executor;
-  
-    using bitpack_t = std::uintmax_t;
+    static constexpr std::size_t PackSize = Base::PackSize;
+    using assignment_executor = internals::bitpack_assignment_executor;
+    using bitpack_t = typename Base::bitpack_t;
 
     // struct to proxy the behaviour of a reference to a single bit of a bitpack
     template <typename BitPackT>
@@ -78,7 +80,12 @@ class MatrixBase<bool, Rows_, Cols_, StorageOrder_, BoolMatrixType> :
        private:
         constexpr std::pair<int, int> pack_of_(int i, int j, int row_stride, int col_stride) const {
             int map = i * row_stride + j * col_stride;
-            return std::make_pair(map / PackSize, map % PackSize);   // pack id and bit position in bitpack
+            if constexpr ((PackSize & (PackSize - 1)) == 0) {   // avoid integer division if PackSize is a power of 2
+                constexpr int PackShift = std::countr_zero(PackSize);
+                return std::make_pair(map >> PackShift, map & (PackSize - 1));
+            } else {   // generic fallback
+                return std::make_pair(map / PackSize, map % PackSize);
+            }
         }
        public:
         friend bit_proxy<bitpack_t>;
@@ -153,7 +160,9 @@ class MatrixBase<bool, Rows_, Cols_, StorageOrder_, BoolMatrixType> :
         assignment_executor::run(*this, other, [](bitpack_t& l, const bitpack_t& r) { l = r; });
         return derived();
     }
-
+    // inherit assignment from base
+    using Base::operator=;
+  
     // access
     constexpr reference operator()(int i, int j) {
         fdapde_assert(i >= 0 && i < rows_ && j >= 0 && j < cols_);
@@ -189,13 +198,14 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
     public MatrixBase<bool, Rows_, Cols_, StorageOrder_, Matrix<bool, Rows_, Cols_, StorageOrder_>> {
    public:
     using Base = MatrixBase<bool, Rows_, Cols_, StorageOrder_, Matrix<bool, Rows_, Cols_, StorageOrder_>>;
-    using bitpack_t = std::uintmax_t;
-    using Scalar = bool;
-    static constexpr int PackSize = sizeof(bitpack_t) * 8;   // number of bits in a packet
+    using bitpack_t = typename Base::bitpack_t;
+    using Scalar = typename Base::Scalar;
+    static constexpr std::size_t PackSize = Base::PackSize;
     static constexpr int NestAsRef = 1;
     static constexpr int Rows = Rows_;
     static constexpr int Cols = Cols_;
-    static constexpr int StorageSize = Rows_ == Dynamic || Cols_ == Dynamic ? Dynamic : 1 + (Rows * Cols) / PackSize;
+    static constexpr std::size_t StorageSize =
+      Rows_ == Dynamic || Cols_ == Dynamic ? Dynamic : 1 + (Rows * Cols) / PackSize;
     using StorageType = std::conditional_t<
       Rows_ == Dynamic || Cols_ == Dynamic, std::vector<bitpack_t>,
       std::array<bitpack_t, (StorageSize < 0) ? 0 : static_cast<std::size_t>(StorageSize)>>;   // avoid clang narrowing
@@ -222,7 +232,9 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
         using assignment = typename Base::assignment_executor;
         assignment::run(*this, rhs.derived(), [](bitpack_t& l, const bitpack_t& r) { l = r; });
     }
-
+    // inherit assignment from base
+    using Base::operator=;
+  
     // Matrix API
     // value-initialized static-sized matrix
     constexpr explicit Matrix(bool v)
@@ -360,7 +372,7 @@ struct BoolMatrixBitWiseOp :
       BoolMatrixExpr<XprType::Rows, XprType::Cols, BoolMatrixBitWiseOp<XprType, BitWiseOperation, BitPackOperation>>;
     using XprTypeNested = internals::ref_select_t<const XprType>;
     using XprTypeClean = std::decay_t<XprType>;
-    using bitpack_t = typename XprTypeClean::bitpack_t;
+    using bitpack_t = typename Base::bitpack_t;
     static constexpr int Rows = XprTypeClean::Rows;
     static constexpr int Cols = XprTypeClean::Cols;
     static constexpr int NestAsRef = 0;
@@ -401,8 +413,8 @@ struct BoolMatrixBinOp :
       LhsXprType::Rows, LhsXprType::Cols, BoolMatrixBinOp<LhsXprType, RhsXprType, BitWiseOperation, BitPackOperation>>;
     using LhsXprTypeNested = internals::ref_select_t<const LhsXprType>;
     using RhsXprTypeNested = internals::ref_select_t<const RhsXprType>;
-    using Scalar = bool;
-    using bitpack_t = typename LhsXprType::bitpack_t;
+    using Scalar = typename Base::Scalar;
+    using bitpack_t = typename Base::bitpack_t;
     static constexpr int Rows =
       (LhsXprType::Rows == Dynamic || RhsXprType::Rows == Dynamic) ? Dynamic : LhsXprType::Rows;
     static constexpr int Cols =
@@ -466,149 +478,295 @@ constexpr auto operator^(
 }
 
 // dense-block of binary matrix
-// template <int BlockRows_, int BlockCols_, typename XprType>
-// class BoolMatrixBlock :
-//     public BoolMatrixExpr<BlockRows_, BlockCols_, BoolMatrixBlock<BlockRows_, BlockCols_, XprType>> {
-//     fdapde_static_assert(
-//       internals::is_dynamic_sized_v<XprType> ||
-//         ((BlockRows_ == Dynamic || (BlockRows_ > 0 && BlockRows_ <= XprType::Rows)) &&
-//          (BlockCols_ == Dynamic || (BlockCols_ > 0 && BlockCols_ <= XprType::Cols))),
-//       INVALID_STATIC_SIZED_BLOCK);
-//    public:
-//     using Base = BoolMatrixExpr<BlockRows_, BlockCols_, BoolMatrixBlock<BlockRows_, BlockCols_, XprType>>;
-//     using XprTypeNested = internals::ref_select_t<XprType>;
-//     using bitpack_t = typename XprType::bitpack_t;
-//     static constexpr int PackSize = XprType::PackSize;
-//     static constexpr int Rows = BlockRows_;
-//     static constexpr int Cols = BlockCols_;
-//     static constexpr int NestAsRef = 0;
-//     static constexpr int ReadOnly = XprType::ReadOnly;
+template <int BlockRows_, int BlockCols_, typename XprType>
+class BoolMatrixBlock :
+    public BoolMatrixExpr<BlockRows_, BlockCols_, BoolMatrixBlock<BlockRows_, BlockCols_, XprType>> {
+    fdapde_static_assert(
+      internals::is_dynamic_sized_v<XprType> ||
+        ((BlockRows_ == Dynamic || (BlockRows_ > 0 && BlockRows_ <= XprType::Rows)) &&
+         (BlockCols_ == Dynamic || (BlockCols_ > 0 && BlockCols_ <= XprType::Cols))),
+      INVALID_STATIC_SIZED_BLOCK);
+   public:
+    using Base = BoolMatrixExpr<BlockRows_, BlockCols_, BoolMatrixBlock<BlockRows_, BlockCols_, XprType>>;
+    using XprTypeNested = internals::ref_select_t<XprType>;
+    using bitpack_t = typename Base::bitpack_t;
+    using Scalar = typename Base::Scalar;
+    static constexpr int PackSize = Base::PackSize;
+    static constexpr int Rows = BlockRows_;
+    static constexpr int Cols = BlockCols_;
+    static constexpr int NestAsRef = 0;
+    static constexpr int ReadOnly = XprType::ReadOnly;
+    using assignment_executor = internals::generic_assignment_executor;   // bit-level assignment loop
 
-//     // struct assignment_executor {
-//     //     template <typename DstMatrixType, typename SrcXprType, typename AssignmentOp>
-//     //         requires(
-//     //           requires(AssignmentOp op, typename DstMatrixType::bitpack_t& l, const typename SrcXprType::bitpack_t& r) {
-//     //               { op(l, r) } -> std::same_as<void>;
-//     //           })
-//     //     static constexpr void run(DstMatrixType& dst, const SrcXprType& src, AssignmentOp&& op) {
-//     //         fdapde_static_assert(DstMatrixType::ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_EXPRESSION);
-//     //         fdapde_static_assert(
-//     //           is_dynamic_sized_v<DstMatrixType> || is_dynamic_sized_v<SrcXprType> ||
-//     //             same_static_shape_v<DstMatrixType FDAPDE_COMMA SrcXprType>,
-//     //           INVALID_ASSIGNMENT__LHS_AND_RHS_STATIC_SIZES_DOES_NOT_MATCH);
-//     //         if constexpr (internals::is_dynamic_sized_v<DstMatrixType> || internals::is_dynamic_sized_v<SrcXprType>) {
-//     //             fdapde_assert(dst.rows() == src.rows() && dst.cols() == src.cols());
-//     //         }
-//     //         auto& d = dst.derived();
-//     //         const auto& s = src.derived();
-//     //         // fast bitpack assignment
-//     //         for (int i = 0, bitpacks_ = d.bitpacks(); i < bitpacks_; ++i) { op(d.bitpack(i), s.bitpack(i)); }
-//     //         return;
-//     //     }
-//     // };
+    // row/column constructor
+    template <typename XprType_>
+        requires(std::is_constructible_v<XprTypeNested, XprType_>)
+    constexpr BoolMatrixBlock(XprType_&& xpr, int i) :
+        start_row_(BlockRows_ == 1 ? i : 0),
+        start_col_(BlockCols_ == 1 ? i : 0),
+        block_rows_(BlockRows_ == 1 ? 1 : xpr.rows()),
+        block_cols_(BlockCols_ == 1 ? 1 : xpr.cols()),
+        start_bitpack_((start_row_ * xpr.cols() + start_col_) / PackSize),
+        end_bitpack_(1 + ((start_row_ + block_rows_) * xpr.cols() + start_col_ + block_cols_) / PackSize),
+        xpr_(std::forward<XprType_>(xpr)) {
+        fdapde_static_assert(BlockRows_ == 1 || BlockCols_ == 1, THIS_METHOD_IS_FOR_ROW_AND_COLUMN_BLOCKS_ONLY);
+        fdapde_assert(
+          i >= 0 && ((BlockRows_ == 1 && i < xpr_.rows()) || (BlockCols_ == 1 && i < xpr_.cols())));
+    }
+    // static-sized constructor
+    template <typename XprType_>
+        requires(std::is_constructible_v<XprTypeNested, XprType_>)
+    constexpr BoolMatrixBlock(XprType_&& xpr, int start_row, int start_col) :
+        start_row_(start_row),
+        start_col_(start_col),
+        block_rows_(BlockRows_),
+        block_cols_(BlockCols_),
+        start_bitpack_((start_row_ * xpr.cols() + start_col_) / PackSize),
+        end_bitpack_(1 + ((start_row_ + block_rows_) * xpr.cols() + start_col_ + block_cols_) / PackSize),
+        xpr_(std::forward<XprType_>(xpr)) {
+        fdapde_static_assert(
+          BlockRows_ != Dynamic && BlockCols_ != Dynamic, THIS_METHOD_IS_FOR_STATIC_SIZED_BLOCKS_ONLY);
+        fdapde_assert(
+          start_row >= 0 && start_row + block_rows_ <= xpr_.rows() && start_col >= 0 &&
+          start_col + block_cols_ <= xpr.cols());
+    }
+    // dynamic-sized constructor
+    template <typename XprType_>
+        requires(std::is_constructible_v<XprTypeNested, XprType_>)
+    constexpr BoolMatrixBlock(XprType_&& xpr, int start_row, int start_col, int block_rows, int block_cols) :
+        start_row_(start_row),
+        start_col_(start_col),
+        block_rows_(block_rows),
+        block_cols_(block_cols),
+        start_bitpack_((start_row_ * xpr.cols() + start_col_) / PackSize),
+        end_bitpack_(1 + ((start_row_ + block_rows_) * xpr.cols() + start_col_ + block_cols_) / PackSize),
+        xpr_(std::forward<XprType_>(xpr)) {
+        fdapde_static_assert(
+          BlockRows_ == Dynamic && BlockCols_ == Dynamic, THIS_METHOD_IS_FOR_DYNAMIC_SIZED_BLOCKS_ONLY);
+        fdapde_assert(
+          start_row >= 0 && start_row + block_rows_ <= xpr_.rows() && start_col >= 0 &&
+          start_col + block_cols_ <= xpr.cols());
+    }
+    // inherit assignment from base
+    using Base::operator=;
 
-//     // row/column constructor
-//     BoolMatrixBlock(XprTypeNested& xpr, int i) :
-//         Base(BlockRows == 1 ? 1 : xpr.rows(), BlockCols == 1 ? 1 : xpr.cols()),
-//         xpr_(xpr),
-//         start_row_(BlockRows == 1 ? i : 0),
-//         start_col_(BlockCols == 1 ? i : 0) {
-//         fdapde_static_assert(BlockRows == 1 || BlockCols == 1, THIS_METHOD_IS_ONLY_FOR_ROW_AND_COLUMN_BLOCKS);
-//         fdapde_assert(i >= 0 && ((BlockRows == 1 && i < xpr_.rows()) || (BlockCols == 1 && i < xpr_.cols())));
-//     }
-//     // fixed-sized constructor
-//     BinMtxBlock(XprTypeNested& xpr, int start_row, int start_col) :
-//         Base(BlockRows, BlockCols), xpr_(xpr), start_row_(start_row), start_col_(start_col) {
-//         fdapde_static_assert(
-//           BlockRows != Dynamic && BlockCols != Dynamic, THIS_METHOD_IS_ONLY_FOR_STATIC_SIZED_MATRIX_BLOCKS);
-//         fdapde_assert(
-//           start_row_ >= 0 && BlockRows >= 0 && start_row_ + BlockRows <= xpr_.rows() && start_col_ >= 0 &&
-//           BlockCols >= 0 && start_col_ + BlockCols <= xpr_.cols());
-//     }
-//     // dynamic-sized constructor
-//     BinMtxBlock(XprTypeNested& xpr, int start_row, int start_col, int block_rows, int block_cols) :
-//         Base(block_rows, block_cols), xpr_(xpr), start_row_(start_row), start_col_(start_col) {
-//         fdapde_assert(BlockRows == Dynamic || BlockCols == Dynamic);
-//         fdapde_assert(
-//           start_row_ >= 0 && start_row_ + block_rows <= xpr_.rows() && start_col_ >= 0 &&
-//           start_col_ + block_cols <= xpr_.cols());
-//     }
+    constexpr int rows() const noexcept { return BlockRows_ != Dynamic ? BlockRows_ : block_rows_; }
+    constexpr int cols() const noexcept { return BlockCols_ != Dynamic ? BlockCols_ : block_cols_; }
+    constexpr int size() const { return rows() * cols(); }
+    constexpr int bitpacks() const { return (1 + fdapde::ceil(size() / PackSize)); }
+    constexpr Scalar operator()(int i, int j) const {
+        fdapde_assert(i >= 0 && i < block_rows_ && j >= 0 && j < block_cols_);
+        return xpr_(i + start_row_, j + start_col_);
+    }
+    constexpr Scalar operator[](int i) const {
+        fdapde_static_assert(BlockRows_ == 1 || BlockCols_ == 1, THIS_METHOD_IS_FOR_ROW_AND_COLUMN_BLOCKS_ONLY);
+        if constexpr (Rows == 1) return xpr_(start_row_, start_col_ + i);
+        if constexpr (Cols == 1) return xpr_(start_row_ + i, start_col_);
+    }
+    constexpr auto operator()(int i, int j) {
+        fdapde_static_assert(XprType::ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_LOCATION);
+        return xpr_(start_row_ + i, start_col_ + j);
+    }
+    constexpr auto operator[](int i) {
+        fdapde_static_assert(BlockRows_ == 1 || BlockCols_ == 1, THIS_METHOD_IS_FOR_ROW_AND_COLUMN_BLOCKS_ONLY);
+        fdapde_static_assert(XprType::ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_LOCATION);
+        if constexpr (Rows == 1) return xpr_(start_row_, start_col_ + i);
+        if constexpr (Cols == 1) return xpr_(start_row_ + i, start_col_);
+    }
 
-//     bool operator()(int i, int j) const {
-//         fdapde_assert(i < rows_ && j < cols_);
-//         return xpr_(i + start_row_, j + start_col_);
-//     }
-//     void set(int i, int j) { xpr_.set(i + start_row_, j + start_col_); }
-//     void set() {   // sets all coeffients in the block
-//         for (int i = 0; i < rows_; ++i) {
-//             for (int j = 0; j < cols_; ++j) { set(i, j); }
-//         }
-//     }
-//     void clear(int i, int j) { xpr_.clear(i + start_row_, j + start_col_); }
-//     void clear() {   // clears all coeffients in the block
-//         for (int i = 0; i < rows_; ++i) {
-//             for (int j = 0; j < cols_; ++j) { clear(i, j); }
-//         }
-//     }
-//     BitPackType bitpack(int i) const {
-//         BitPackType out = 0x0;
-//         // compute first (row,column) index of the bitpack
-//         int col_offset_ = start_col_ + (i == 0 ? 0 : (cols_ - (cols_ - ((i * PackSize) % cols_))));
-//         int row_offset_ = start_row_ + (std::floor(i * (PackSize / (double)cols_)));
-//         // assembly block bitpack
-//         BitPackType mask = 0x1;
-//         for (int j = 0; j < PackSize && i * PackSize + j < Base::size(); ++j) {
-//             out |= (mask & xpr_(row_offset_ + (j / cols_), col_offset_ + (j % cols_))) << j;
-//         }
-//         return out;
-//     }
-//     // block assignment
-//     template <int Rows_, int Cols_, typename Rhs_> XprType& operator=(const BinMtxBase<Rows_, Cols_, Rhs_>& rhs) {
-//         // !is_dynamic_sized \implies (Rows == Rows_ && Cols == Cols_)
-//         fdapde_static_assert(
-//           (BlockRows == Dynamic || BlockCols == Dynamic) || (BlockRows == Rows_ && BlockCols == Cols_) ||
-//             (BlockCols == 1 && (Rows_ == 1 || Cols_ == 1)),
-//           INVALID_BLOCK_ASSIGNMENT);
-//         fdapde_assert(rhs.rows() == rows_ && rhs.cols() == cols_);
-//         for (int i = 0; i < rhs.rows(); ++i) {
-//             for (int j = 0; j < rhs.cols(); ++j) {
-//                 if (rhs(i, j)) set(i, j);
-//             }
-//         }
-//         return *this;
-//     }
-//     XprType& operator=(const BinMtxBlock& rhs) {
-//         for (int i = 0; i < rhs.rows(); ++i) {
-//             for (int j = 0; j < rhs.cols(); ++j) {
-//                 if (rhs(i, j)) set(i, j);
-//             }
-//         }
-//         return *this;
-//     }
-//    private:
-//     // internal data
-//     typename internals::ref_select<XprTypeNested>::type xpr_;
-//     int start_row_, start_col_;
-// };
+    // modifiers
+    constexpr void set(int i, int j) noexcept {
+        fdapde_assert(i >= 0 && i < block_rows_ && j >= 0 && j < block_cols_);
+        xpr_.set(i + start_row_, j + start_col_);
+    }
+    constexpr void set() noexcept {
+      for (int i = start_bitpack_; i < end_bitpack_; ++i) { xpr_.bitpack(i) |= bitpack_mask_(i); }
+    }
+    constexpr void clear(int i, int j) noexcept {
+        fdapde_assert(i >= 0 && i < block_rows_ && j >= 0 && j < block_cols_);
+        xpr_.clear(i + start_row_, j + start_col_);
+    }
+    constexpr void clear() noexcept {
+        for (int i = start_bitpack_; i < end_bitpack_; ++i) { xpr_.bitpack(i) &= ~bitpack_mask_(i); }
+    }
+    constexpr bitpack_t bitpack(int i) const {
+        fdapde_assert(i >= 0 && i < bitpacks());
+        bitpack_t out = bitpack_t(0);
+        // precompute block bit layout
+        const int base_bit = i * PackSize;
+        const int col_offset = start_col_ + ((base_bit) % cols());
+        const int row_offset = start_row_ + ((base_bit) / cols());
+	const int max_col = start_col_ + block_cols_;
+        // assembly block bitpack
+        constexpr bitpack_t mask = bitpack_t(1);
+        int row = row_offset, col = col_offset;
+        for (int j = 0, size_ = size(); j < PackSize && base_bit + j < size_; ++j) {
+            out |= (mask & xpr_(row, col)) << j;
+            if (++col == max_col) {
+                col = start_col_;
+                row++;
+            }
+        }
+        return out;
+    }
+   private:
+    // generates a mask for active block bits in i-th global bitpack
+    constexpr bitpack_t bitpack_mask_(int i) const {
+        fdapde_assert(i >= 0 && i < xpr_.bitpacks());
+        bitpack_t out = bitpack_t(0);
+        // precompute block bit layout
+        const int max_col = start_col_ + block_cols_;
+	const int max_row = start_row_ + block_rows_;
+        int col = (i * PackSize % xpr_.cols());
+        int row = (i * PackSize / xpr_.cols());
+	// flag as 1 all block bits intersected by this bitpack
+        constexpr bitpack_t mask = bitpack_t(1);
+        for (int j = 0; j < PackSize; ++j) {
+            out |= (mask & (row >= start_row_ && row < max_row && col >= start_col_ && col < max_col)) << j;
+            if (++col == xpr_.cols()) {
+                col = 0;
+                row++;
+            }
+        }
+        return out;
+    }
 
-// forward declarations
+    int start_row_ = 0, start_col_ = 0;
+    int block_rows_ = 0, block_cols_ = 0;
+    int start_bitpack_ = 0, end_bitpack_ = 0;   // index of first and last intersected bitpack
+    XprTypeNested xpr_;
+};
+
+// boolean redux operation
+namespace internals {
+
+// bitpack reduction loop on matrix expressions
+template <typename XprType, typename Functor> struct matrix_bitpack_redux_executor {
+    using XprTypeClean = std::decay_t<XprType>;
+    static constexpr int PackSize = XprTypeClean::PackSize;
+
+    template <typename Scalar> static constexpr Scalar run(const XprType& xpr, Scalar init, Functor visitor) {
+        fdapde_assert(xpr.size() > 0);
+        const int size = xpr.size();
+        Scalar res = init;
+
+        if (size < PackSize) {
+            res = visitor(res, xpr.bitpack(0), size);   // size: number of valid bits in bitpack
+            return res;
+        }
+        int k = 0, i = 0;   // k: current bitpack, i: last bit processed
+        for (; i + PackSize <= size; ++k, i += PackSize) {
+            res = visitor(res, xpr.bitpack(k));
+            if (visitor.early_exit()) { return res; }
+        }
+        // process last, partially filled, bitpack
+        if (i < size) { res = visitor(res, xpr.bitpack(k), size - i); }
+        return res;
+    }
+};
+
+// evaluates true if all the coefficients of XprType are true
+template <typename XprType> struct all_redux_executor {
+    using XprTypeClean = std::decay_t<XprType>;
+    using bitpack_t = typename XprTypeClean::bitpack_t;
+    static constexpr int PackSize = XprTypeClean::PackSize;
+
+    constexpr all_redux_executor() noexcept : all_(true) { }
+
+    constexpr bool operator()([[maybe_unused]] bool b, bitpack_t p) noexcept {
+        all_ &= (p == std::numeric_limits<bitpack_t>::max());
+        return all_;
+    }
+    constexpr bool operator()([[maybe_unused]] bool b, bitpack_t p, int size) noexcept {
+        const bitpack_t mask = (bitpack_t(1) << size) - 1;
+        all_ &= ((p & mask) == mask);
+        return all_;
+    }
+    constexpr bool early_exit() const noexcept { return !all_; }
+   private:
+    bool all_;
+};
+
+// evaluates true if at least one coefficient of XprType is true
+template <typename XprType> struct any_redux_executor {
+    using XprTypeClean = std::decay_t<XprType>;
+    using bitpack_t = typename XprTypeClean::bitpack_t;
+    static constexpr int PackSize = XprTypeClean::PackSize;
+
+    constexpr any_redux_executor() noexcept : any_(false) { }
+
+    constexpr bool operator()([[maybe_unused]] bool b, bitpack_t p) noexcept {
+        any_ |= (p != bitpack_t(0));
+        return any_;
+    }
+    constexpr bool operator()([[maybe_unused]] bool b, bitpack_t p, int size) noexcept {
+        const bitpack_t mask = ((bitpack_t(1) << size) - 1);
+        any_ |= ((p & mask) != bitpack_t(0));
+        return any_;
+    }
+    constexpr bool early_exit() const noexcept { return any_; }
+   private:
+    bool any_;
+};
+ 
+// returns the number of true coefficients in XprType, based on popcnt machine istruction for fast scalar counting
+template <typename XprType> struct cnt_redux_executor {
+    using XprTypeClean = std::decay_t<XprType>;
+    using bitpack_t = typename XprTypeClean::bitpack_t;
+    static constexpr int PackSize = XprTypeClean::PackSize;
+
+    constexpr cnt_redux_executor() noexcept = default;
+
+    constexpr int operator()(int cnt, bitpack_t p) const noexcept { return cnt + std::popcount(p); }
+    constexpr int operator()(int cnt, bitpack_t p, int size) const noexcept {
+        const bitpack_t mask = ((bitpack_t(1) << size) - 1);
+        return cnt + std::popcount(p & mask);
+    }
+    constexpr bool early_exit() const noexcept { return false; }   // never stop
+}; 
+  
+}   // namespace internals
+
+// base class for boolean expressions
 template <int Rows_, int Cols_, typename XprType_> struct BoolMatrixExpr {
+    using XprType = XprType_;
+    using bitpack_t = std::uintmax_t;
+    using Scalar = bool;
     static constexpr int Rows = Rows_;
     static constexpr int Cols = Cols_;
-    using XprType = XprType_;
-  
+    static constexpr std::size_t PackSize = sizeof(bitpack_t) * 8;   // number of bits in a packet
 
-    //     // returns all the indices (in row-major order) having coefficients equal to b
-    //     std::vector<int> which(bool b) const {
-    //         std::vector<int> result;
-    //         for (int i = 0; i < n_rows_; ++i) {
-    //             for (int j = 0; j < n_cols_; ++j) {
-    //                 if (get()(i, j) == b) result.push_back(i * n_cols_ + j);
-    //             }
-    //         }
-    //         return result;
-    //     }
-
+      // assignment
+    template <int RhsRows_, int RhsCols_, typename RhsXprType_>
+    constexpr XprType& operator=(const BoolMatrixExpr<RhsRows_, RhsCols_, RhsXprType_>& rhs) {
+        using executor = typename XprType::assignment_executor;
+        if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) {   // resize to rhs size, if lhs is Dynamic
+            if (derived().rows() != rhs.rows() || derived().cols() != rhs.cols()) {
+                derived().resize(rhs.rows(), rhs.cols());
+            }
+        }
+        executor::run(derived(), rhs.derived(), [](auto&& l, const auto& r) { l = r; });
+        return derived();
+    }
+    // compound boolean algebra
+    template <int RhsXprRows_, int RhsXprCols_, typename RhsXprType_>
+    constexpr XprType& operator&=(const BoolMatrixExpr<RhsXprRows_, RhsXprCols_, RhsXprType_>& other) {
+	using executor = typename XprType::assignment_executor;
+        executor::run(derived(), other.derived(), [](auto&& l, const auto& r) { l &= r; });
+        return derived();
+    }
+    template <int RhsXprRows_, int RhsXprCols_, typename RhsXprType_>
+    constexpr XprType& operator|=(const BoolMatrixExpr<RhsXprRows_, RhsXprCols_, RhsXprType_>& other) {
+	using executor = typename XprType::assignment_executor;
+        executor::run(derived(), other.derived(), [](auto&& l, const auto& r) { l |= r; });
+        return derived();
+    }
+    template <int RhsXprRows_, int RhsXprCols_, typename RhsXprType_>
+    constexpr XprType& operator^=(const BoolMatrixExpr<RhsXprRows_, RhsXprCols_, RhsXprType_>& other) {
+	using executor = typename XprType::assignment_executor;
+        executor::run(derived(), other.derived(), [](auto&& l, const auto& r) { l ^= r; });
+        return derived();
+    }
     // observers
     constexpr int rows() const { return derived().rows(); }
     constexpr int cols() const { return derived().cols(); }
@@ -631,129 +789,88 @@ template <int Rows_, int Cols_, typename XprType_> struct BoolMatrixExpr {
         return out;
     }
 
-  
+    // returns all the indices (in row-major order) having coefficients equal to b
+    std::vector<int> which(bool b) const {
+        std::vector<int> result;
+        const int bitpacks_ = derived().bitpacks();
+        const int size_ = derived().size();
+        int j = 0;
+        for (int i = 0; i < bitpacks_; ++i) {
+            bitpack_t pack = derived().bitpack(i);
+            for (int bit = 0; bit < PackSize && j < size_; ++bit, ++j) {
+                if ((pack & 0x1) == static_cast<bitpack_t>(b)) result.push_back(j);
+                pack >>= 1;
+            }
+        }
+        return result;
+    }
+    // unary bitwise negation
     constexpr BoolMatrixBitWiseOp<XprType, std::logical_not<>, std::bit_not<>> operator~() const {
         return BoolMatrixBitWiseOp<XprType, std::logical_not<>, std::bit_not<>>(
           derived(), std::logical_not<>(), std::bit_not<>());
     }
+    // block accessors
+    // static-sized block
+    template <int BlockRows, int BlockCols>
+    constexpr BoolMatrixBlock<BlockRows, BlockCols, XprType> block(int i, int j) {
+        return BoolMatrixBlock<BlockRows, BlockCols, XprType>(derived(), i, j);
+    }
+    template <int BlockRows, int BlockCols>
+    constexpr BoolMatrixBlock<BlockRows, BlockCols, const XprType> block(int i, int j) const {
+        return BoolMatrixBlock<BlockRows, BlockCols, const XprType>(derived(), i, j);
+    }
+    // dynamic-sized block
+    constexpr BoolMatrixBlock<Dynamic, Dynamic, XprType> block(int i, int j, int rows, int cols) {
+        return BoolMatrixBlock<Dynamic, Dynamic, XprType>(derived(), i, j, rows, cols);
+    }
+    constexpr BoolMatrixBlock<Dynamic, Dynamic, const XprType> block(int i, int j, int rows, int cols) const {
+        return BoolMatrixBlock<Dynamic, Dynamic, const XprType>(derived(), i, j, rows, cols);
+    }
+    // row/col accessors
+    constexpr BoolMatrixBlock<Rows, 1, XprType> col(int i) { return BoolMatrixBlock<Rows, 1, XprType>(derived(), i); }
+    constexpr BoolMatrixBlock<Rows, 1, const XprType> col(int i) const {
+        return BoolMatrixBlock<Rows, 1, const XprType>(derived(), i);
+    }
+    constexpr BoolMatrixBlock<1, Cols, XprType> row(int i) { return BoolMatrixBlock<1, Cols, XprType>(derived(), i); }
+    constexpr BoolMatrixBlock<1, Cols, const XprType> row(int i) const {
+        return BoolMatrixBlock<1, Cols, const XprType>(derived(), i);
+    }
+    // other block-type accessors
+    template <int BlockRows> constexpr auto top_rows() { return block<BlockRows, Cols>(0, 0); }
+    template <int BlockRows> constexpr auto top_rows() const { return block<BlockRows, Cols>(0, 0); }
+    constexpr auto top_rows(int rows) { return block(0, 0, rows, derived().cols()); }
+    constexpr auto top_rows(int rows) const { return block(0, 0, rows, derived().cols()); }
 
-  
-    //     // block-type indexing
-    //     BinMtxBlock<1, Cols, XprType> row(int row) { return BinMtxBlock<1, Cols, XprType>(get(), row); }
-    //     BinMtxBlock<1, Cols, const XprType> row(int row) const {
-    //         return BinMtxBlock<1, Cols, const XprType>(get(), row);
-    //     }
-    //     BinMtxBlock<Rows, 1, XprType> col(int col) { return BinMtxBlock<Rows, 1, XprType>(get(), col); }
-    //     BinMtxBlock<Rows, 1, const XprType> col(int col) const {
-    //         return BinMtxBlock<Rows, 1, const XprType>(get(), col);
-    //     }
-    //     template <int Rows_, int Cols_>   // static sized block
-    //     BinMtxBlock<Rows_, Cols_, XprType> block(int start_row, int start_col) {
-    //         return BinMtxBlock<Rows_, Cols_, XprType>(get(), start_row, start_col);
-    //     }
-    //     BinMtxBlock<Dynamic, Dynamic, XprType>   // dynamic sized block
-    //     block(int start_row, int start_col, int block_rows, int block_cols) {
-    //         return BinMtxBlock<Dynamic, Dynamic, XprType>(get(), start_row, start_col, block_rows, block_cols);
-    //     }
-    //     // other block-type accessors
-    //     BinMtxBlock<Dynamic, Dynamic, XprType> topRows(int n) { return block(0, 0, n, cols()); }
-    //     BinMtxBlock<Dynamic, Dynamic, XprType> bottomRows(int n) { return block(rows() - n, 0, n, cols()); }
-    //     BinMtxBlock<Dynamic, Dynamic, XprType> middleRows(int n, int m) { return block(n, 0, m, cols()); }
-    //     BinMtxBlock<Dynamic, Dynamic, XprType> leftCols(int n) { return block(0, 0, rows(), n); }
-    //     BinMtxBlock<Dynamic, Dynamic, XprType> rightCols(int n) { return block(0, cols() - n, rows(), n); }
-    //     BinMtxBlock<Dynamic, Dynamic, XprType> middleCols(int n, int m) { return block(0, n, rows(), m); }
+    template <int BlockRows> constexpr auto bottom_rows() { return block<BlockRows, Cols>(Rows - BlockRows, 0); }
+    template <int BlockRows> constexpr auto bottom_rows() const { return block<BlockRows, Cols>(Rows - BlockRows, 0); }
+    constexpr auto bottom_rows(int rows) { return block(derived().rows() - rows, 0, rows, derived().cols()); }
+    constexpr auto bottom_rows(int rows) const { return block(derived().rows() - rows, 0, rows, derived().cols()); }
 
-    //     // visitors support
-    //     inline bool all() const { return visit_apply_<all_visitor<XprType>, linear_bitpack_visit>(); }
-    //     inline bool any() const { return visit_apply_<any_visitor<XprType>, linear_bitpack_visit>(); }
-    //     inline int count() const { return visit_apply_<count_visitor<XprType>, linear_bit_visit>(); }
+    template <int BlockCols> constexpr auto left_cols() { return block<Rows, BlockCols>(0, 0); }
+    template <int BlockCols> constexpr auto left_cols() const { return block<Rows, BlockCols>(0, 0); }
+    constexpr auto left_cols(int cols) { return block(0, 0, derived().rows(), cols); }
+    constexpr auto left_cols(int cols) const { return block(0, 0, derived().rows(), cols); }
 
-    // #ifdef __FDAPDE_HAS_EIGEN__
-    //     // selection on eigen expressions
-    //     template <typename ExprType, typename Scalar>
-    //         requires(internals::is_eigen_dense_xpr_v<ExprType> && std::is_convertible_v<Scalar, typename
-    //         ExprType::Scalar>)
-    //     Eigen::Matrix<typename ExprType::Scalar, Dynamic, Dynamic>
-    //     select(const Eigen::MatrixBase<ExprType>& mtx, Scalar false_val = Scalar(0)) const {
-    //         fdapde_assert(n_rows_ == mtx.rows() && n_cols_ == mtx.cols());
-    //         using Scalar_ = typename ExprType::Scalar;
-    //         Eigen::Matrix<Scalar_, Dynamic, Dynamic> masked_mtx = mtx;   // assign to dense storage
-    //         for (int i = 0; i < n_rows_; ++i) {
-    //             for (int j = 0; j < n_cols_; ++j) {
-    //                 if (!get().operator()(i, j)) masked_mtx(i, j) = false_val;
-    //             }
-    //         }
-    //         return masked_mtx;
-    //     }
-    //     // select between true_expr and false_expr based on binary mask
-    //     template <typename TrueExpr, typename FalseExpr>
-    //         requires(
-    //           internals::is_eigen_dense_xpr_v<TrueExpr> && internals::is_eigen_dense_xpr_v<FalseExpr> &&
-    //           std::is_same_v<typename TrueExpr::Scalar, typename FalseExpr::Scalar>)
-    //     Eigen::Matrix<typename TrueExpr::Scalar, Dynamic, Dynamic>
-    //     select(const Eigen::MatrixBase<TrueExpr>& true_expr, const Eigen::MatrixBase<FalseExpr>& false_expr) {
-    //         fdapde_assert(
-    //           n_rows_ == true_expr.rows() && n_cols_ == true_expr.cols() && true_expr.rows() == false_expr.rows() &&
-    //           true_expr.cols() == false_expr.cols());
-    //         using Scalar_ = typename TrueExpr::Scalar;
-    //         Eigen::Matrix<Scalar_, Dynamic, Dynamic> masked_mtx = true_expr;
-    //         Eigen::Matrix<Scalar_, Dynamic, Dynamic> tmp = false_expr;   // evaluate false_expr in temporary
-    //         for (int i = 0; i < n_rows_; ++i) {
-    //             for (int j = 0; j < n_cols_; ++j) {
-    // 	      if (!get().operator()(i, j)) masked_mtx(i, j) = tmp(i, j);
-    //             }
-    //         }
-    //         return masked_mtx;
-    //     }
+    template <int BlockCols> constexpr auto right_cols() { return block<Rows, BlockCols>(0, Cols - BlockCols); }
+    template <int BlockCols> constexpr auto right_cols() const { return block<Rows, BlockCols>(0, Cols - BlockCols); }
+    constexpr auto right_cols(int cols) { return block(0, derived().cols() - cols, derived().rows(), cols); }
+    constexpr auto right_cols(int cols) const { return block(0, derived().cols() - cols, derived().rows(), cols); }
 
-    //     template <typename ExprType, typename Scalar>
-    //         requires(internals::is_eigen_sparse_xpr_v<ExprType> && std::is_convertible_v<Scalar, typename
-    //         ExprType::Scalar>)
-    //     Eigen::SparseMatrix<typename ExprType::Scalar>
-    //     select(const Eigen::SparseMatrixBase<ExprType>& mtx, Scalar false_val = Scalar(0)) const {
-    //         fdapde_assert(n_rows_ == mtx.rows() && n_cols_ == mtx.cols());
-    //         using Scalar_ = typename ExprType::Scalar;
-    // 	Eigen::SparseMatrix<Scalar_> masked_mtx = mtx;   // assign to sparse storage
-    //         for (int k = 0; k < masked_mtx.outerSize(); ++k) {
-    //             for (typename Eigen::SparseMatrix<Scalar_>::InnerIterator it(masked_mtx, k); it; ++it) {
-    //                 if (!get().operator()(it.row(), it.col())) { it.valueRef() = false_val; }
-    //             }
-    // 	}
-    //         return masked_mtx;
-    //     }
-    //     template <typename TrueExpr, typename FalseExpr>
-    //         requires(
-    //           internals::is_eigen_sparse_xpr_v<TrueExpr> && internals::is_eigen_sparse_xpr_v<FalseExpr> &&
-    //           std::is_same_v<typename TrueExpr::Scalar, typename FalseExpr::Scalar>)
-    //     Eigen::SparseMatrix<typename TrueExpr::Scalar>
-    //     select(const Eigen::SparseMatrixBase<TrueExpr>& true_expr, const Eigen::SparseMatrixBase<FalseExpr>&
-    //     false_expr) {
-    //         fdapde_assert(
-    //           n_rows_ == true_expr.rows() && n_cols_ == true_expr.cols() && true_expr.rows() == false_expr.rows() &&
-    //           true_expr.cols() == false_expr.cols());
-    //         using Scalar_ = typename TrueExpr::Scalar;
-    //         Eigen::SparseMatrix<Scalar_> masked_mtx = true_expr;
-    //         Eigen::SparseMatrix<Scalar_> tmp = false_expr;   // evaluate false_expr in temporary
-    //         for (int k = 0; k < masked_mtx.outerSize(); ++k) {
-    //             for (typename Eigen::SparseMatrix<Scalar_>::InnerIterator it(masked_mtx, k); it; ++it) {
-    //                 if (!get().operator()(it.row(), it.col())) { it.valueRef() = tmp.coeffRef(it.row(), it.col()); }
-    //             }
-    // 	}
-    //         return masked_mtx;
-    //     }
-    // #endif
+    // visitors support
+    constexpr bool all() const {
+        return internals::matrix_bitpack_redux_executor<XprType, internals::all_redux_executor<XprType>>().run(
+          derived(), true, internals::all_redux_executor<XprType>());
+    }
+    constexpr bool any() const {
+        return internals::matrix_bitpack_redux_executor<XprType, internals::any_redux_executor<XprType>>().run(
+          derived(), true, internals::any_redux_executor<XprType>());
+    }
+    constexpr int count() const {
+        return internals::matrix_bitpack_redux_executor<XprType, internals::cnt_redux_executor<XprType>>().run(
+          derived(), 0, internals::cnt_redux_executor<XprType>());
+    }
 
-    // #ifdef __FDAPDE_HAS_EIGEN__
-    //     // conversion to Eigen matrix
-    //     Eigen::Matrix<int, Rows, Cols> as_eigen_matrix() const {
-    //         Eigen::Matrix<int, Rows, Cols> m;
-    //         if constexpr (Rows == Dynamic || Cols == Dynamic) { m.resize(n_rows_, n_cols_); }
-    //         for (int i = 0; i < n_rows_; ++i) {
-    //             for (int j = 0; j < n_cols_; ++j) { m(i, j) = operator()(i, j) ? 1 : 0; }
-    //         }
-    //         return m;
-    //     }
-    // #endif
+    // make generic select, not bounded to eigen types (maybe with lazy evaluation)
 
     //     // block-repeat operation
     //     BinMtxRepeatOp<Dynamic, Dynamic, XprType> repeat(int rep_row, int rep_col) const {
@@ -771,88 +888,7 @@ template <int Rows_, int Cols_, typename XprType_> struct BoolMatrixExpr {
     //         VisitStrategy<XprType, Visitor>::run(get(), visitor);
     //         return visitor.res;
     //     }
-};  
-
-// visitors
-// performs a linear bitpack visit of the binary expression
-// template <typename XprType, typename Visitor> struct linear_bitpack_visit {
-//     static constexpr int PackSize = XprType::PackSize;
-//     // apply visitor by cycling over bitpacks
-//     static inline void run(const XprType& xpr, Visitor& visitor) {
-//         int size = xpr.size();
-//         if (size == 0) return;
-//         if (size < PackSize) {
-//             visitor.apply(xpr.bitpack(0), PackSize - size);
-//             return;
-//         }
-//         int k = 0, i = 0;   // k: current bitpack, i: maximum coefficient index processed
-//         for (; i + PackSize - 1 < size; i += PackSize) {
-//             visitor.apply(xpr.bitpack(k));
-//             if (visitor) return;
-//             k++;
-//         }
-//         if (i < size) visitor.apply(xpr.bitpack(k), size - i);
-//         return;
-//     };
-// };
-
-// // performs a linear bit visit of the binary expression
-// template <typename XprType, typename Visitor> struct linear_bit_visit {
-//     using BitPackType = typename XprType::BitPackType;
-//     static constexpr int PackSize = XprType::PackSize;
-//     // apply visitor bit by bit
-//     static inline void run(const XprType& xpr, Visitor& visitor) {
-//         int size = xpr.size();
-//         if (size == 0) return;
-//         for (int k = 0, i = 0; k < xpr.bitpacks(); k++) {
-//             // bitpack evaluation
-//             BitPackType bitpack = xpr.bitpack(k);
-//             if (i + PackSize < size) {   // cycle over entire bitpack
-//                 for (int h = 0; h < PackSize; ++h) {
-//                     visitor.apply((bitpack & 1) == 1);   // provide LSB of bitpack
-//                     bitpack = bitpack >> 1;
-//                 }
-//                 i += PackSize;
-//             } else {   // last bitpack
-//                 for (; i < size; ++i) {
-//                     visitor.apply((bitpack & 1) == 1);
-//                     bitpack = bitpack >> 1;
-//                 }
-//             }
-//         }
-//         return;
-//     };
-// };
-
-// put in internals, as executors
-  
-// evaluates true if all coefficients in the binary expression are true
-// template <typename XprType> struct all_visitor {
-//     using BitPackType = typename XprType::BitPackType;
-//     static constexpr int PackSize = XprType::PackSize;   // number of bits in a packet
-//     bool res = true;
-//     inline void apply(BitPackType b) { res &= (~b == 0); }
-//     inline void apply(BitPackType b, int size) {
-//         res &= ((((BitPackType)1 << (PackSize - size)) - 1) & b) == (((BitPackType)1 << (PackSize - size)) - 1);
-//     }
-//     operator bool() const { return res == false; }   // stop if already false
-// };
-// // evaluates true if at least one coefficient in the binary expression is true
-// template <typename XprType> struct any_visitor {
-//     using BitPackType = typename XprType::BitPackType;
-//     static constexpr int PackSize = XprType::PackSize;   // number of bits in a packet
-//     bool res = false;
-//     inline void apply(BitPackType b) { res |= (b != 0); }
-//     inline void apply(BitPackType b, int size) { res |= (((~(BitPackType)0 >> (PackSize - size)) & b) != 0); }
-//     operator bool() const { return res == true; }   // stop if already true
-// };
-// // counts the number of true coefficients in a binary expression
-// template <typename XprType> struct count_visitor {
-//     int res = 0;
-//     inline void apply(bool b) {
-//         if (b) res++;
-//     }
-// };
+};
   
 // a non-writable expression of a block-repeat operation
 // template <int Rows, int Cols, typename XprTypeNested>
@@ -911,196 +947,6 @@ template <int Rows_, int Cols_, typename XprType_> struct BoolMatrixExpr {
 //     // internal data
 //     typename internals::ref_select<const XprTypeNested>::type xpr_;
 //     int reshaped_rows_, reshaped_cols_;
-// };
-
-// base class of any binary matrix expression
-// template <int Rows, int Cols, typename XprType> class BinMtxBase {
-//    protected:
-//     int rows_ = 0, cols_ = 0;
-//     int n_bitpacks_ = 0;   // number of required bitpacks
-//    public:
-//     using Scalar = bool;
-//     using BitPackType = std::uintmax_t;
-//     static constexpr int PackSize = sizeof(BitPackType) * 8;   // number of bits in a packet
-
-//     BinMtxBase() = default;
-//     BinMtxBase(int n_rows, int n_cols) :
-//         rows_(n_rows), cols_(n_cols), n_bitpacks_(1 + std::ceil((rows_ * cols_) / PackSize)) {};
-//     // getters
-//     inline int rows() const { return rows_; }
-//     inline int cols() const { return cols_; }
-//     inline int bitpacks() const { return n_bitpacks_; }
-//     inline int size() const { return rows_ * cols_; }
-//     XprType& get() { return static_cast<XprType&>(*this); }
-//     const XprType& get() const { return static_cast<const XprType&>(*this); }
-//     // access operator on base type E
-//     bool operator()(int i, int j) const {
-//         fdapde_assert(i < rows_ && j < cols_);
-//         return get().operator()(i, j);
-//     }
-//     bool operator[](int i) const {
-//         fdapde_static_assert(Cols == 1 || Rows == 1, THIS_METHOD_IS_ONLY_FOR_VECTORS);
-//         return get().operator()(i, 0);
-//     }
-//     // returns all the indices (in row-major order) having coefficients equal to b
-//     std::vector<int> which(bool b) const {
-//         std::vector<int> result;
-//         for (int i = 0; i < rows_; ++i) {
-//             for (int j = 0; j < cols_; ++j) {
-//                 if (get()(i, j) == b) result.push_back(i * cols_ + j);
-//             }
-//         }
-//         return result;
-//     }
-//     // access to i-th bitpack of the expression
-//     BitPackType bitpack(int i) const { return get().bitpack(i); }
-//     // send matrix to out stream
-//     friend std::ostream& operator<<(std::ostream& out, const BinMtxBase& m) {
-//         // assign to temporary (triggers fast bitwise evaluation)
-//         BinaryMatrix<Rows, Cols> tmp;
-//         tmp = m;
-//         for (int i = 0; i < tmp.rows() - 1; ++i) {
-//             for (int j = 0; j < tmp.cols(); ++j) { out << tmp(i, j); }
-//             out << "\n";
-//         }
-//         // print last row without carriage return
-//         for (int j = 0; j < tmp.cols(); ++j) { out << tmp(tmp.rows() - 1, j); }
-//         return out;
-//     }
-//     // expression bitwise NOT
-//     BinMtxUnaryOp<Rows, Cols, XprType, std::bit_not<>, std::logical_not<>> operator~() const {
-//         return BinMtxUnaryOp<Rows, Cols, XprType, std::bit_not<>, std::logical_not<>>(
-//           get(), std::bit_not<>(), std::logical_not<>());
-//     }
-//     // block-type indexing
-//     BinMtxBlock<1, Cols, XprType> row(int row) { return BinMtxBlock<1, Cols, XprType>(get(), row); }
-//     BinMtxBlock<1, Cols, const XprType> row(int row) const {
-//         return BinMtxBlock<1, Cols, const XprType>(get(), row);
-//     }
-//     BinMtxBlock<Rows, 1, XprType> col(int col) { return BinMtxBlock<Rows, 1, XprType>(get(), col); }
-//     BinMtxBlock<Rows, 1, const XprType> col(int col) const {
-//         return BinMtxBlock<Rows, 1, const XprType>(get(), col);
-//     }
-//     template <int Rows_, int Cols_>   // static sized block
-//     BinMtxBlock<Rows_, Cols_, XprType> block(int start_row, int start_col) {
-//         return BinMtxBlock<Rows_, Cols_, XprType>(get(), start_row, start_col);
-//     }
-//     BinMtxBlock<Dynamic, Dynamic, XprType>   // dynamic sized block
-//     block(int start_row, int start_col, int block_rows, int block_cols) {
-//         return BinMtxBlock<Dynamic, Dynamic, XprType>(get(), start_row, start_col, block_rows, block_cols);
-//     }
-//     // other block-type accessors
-//     BinMtxBlock<Dynamic, Dynamic, XprType> topRows(int n) { return block(0, 0, n, cols()); }
-//     BinMtxBlock<Dynamic, Dynamic, XprType> bottomRows(int n) { return block(rows() - n, 0, n, cols()); }
-//     BinMtxBlock<Dynamic, Dynamic, XprType> middleRows(int n, int m) { return block(n, 0, m, cols()); }
-//     BinMtxBlock<Dynamic, Dynamic, XprType> leftCols(int n) { return block(0, 0, rows(), n); }
-//     BinMtxBlock<Dynamic, Dynamic, XprType> rightCols(int n) { return block(0, cols() - n, rows(), n); }
-//     BinMtxBlock<Dynamic, Dynamic, XprType> middleCols(int n, int m) { return block(0, n, rows(), m); }
-
-//     // visitors support
-//     inline bool all() const { return visit_apply_<all_visitor<XprType>, linear_bitpack_visit>(); }
-//     inline bool any() const { return visit_apply_<any_visitor<XprType>, linear_bitpack_visit>(); }
-//     inline int count() const { return visit_apply_<count_visitor<XprType>, linear_bit_visit>(); }
-  
-// #ifdef __FDAPDE_HAS_EIGEN__
-//     // selection on eigen expressions
-//     template <typename ExprType, typename Scalar>
-//         requires(internals::is_eigen_dense_xpr_v<ExprType> && std::is_convertible_v<Scalar, typename ExprType::Scalar>)
-//     Eigen::Matrix<typename ExprType::Scalar, Dynamic, Dynamic>
-//     select(const Eigen::MatrixBase<ExprType>& mtx, Scalar false_val = Scalar(0)) const {
-//         fdapde_assert(rows_ == mtx.rows() && cols_ == mtx.cols());
-//         using Scalar_ = typename ExprType::Scalar;
-//         Eigen::Matrix<Scalar_, Dynamic, Dynamic> masked_mtx = mtx;   // assign to dense storage
-//         for (int i = 0; i < rows_; ++i) {
-//             for (int j = 0; j < cols_; ++j) {
-//                 if (!get().operator()(i, j)) masked_mtx(i, j) = false_val;
-//             }
-//         }
-//         return masked_mtx;
-//     }
-//     // select between true_expr and false_expr based on binary mask
-//     template <typename TrueExpr, typename FalseExpr>
-//         requires(
-//           internals::is_eigen_dense_xpr_v<TrueExpr> && internals::is_eigen_dense_xpr_v<FalseExpr> &&
-//           std::is_same_v<typename TrueExpr::Scalar, typename FalseExpr::Scalar>)
-//     Eigen::Matrix<typename TrueExpr::Scalar, Dynamic, Dynamic>
-//     select(const Eigen::MatrixBase<TrueExpr>& true_expr, const Eigen::MatrixBase<FalseExpr>& false_expr) {
-//         fdapde_assert(
-//           rows_ == true_expr.rows() && cols_ == true_expr.cols() && true_expr.rows() == false_expr.rows() &&
-//           true_expr.cols() == false_expr.cols());
-//         using Scalar_ = typename TrueExpr::Scalar;
-//         Eigen::Matrix<Scalar_, Dynamic, Dynamic> masked_mtx = true_expr;
-//         Eigen::Matrix<Scalar_, Dynamic, Dynamic> tmp = false_expr;   // evaluate false_expr in temporary
-//         for (int i = 0; i < rows_; ++i) {
-//             for (int j = 0; j < cols_; ++j) {
-// 	      if (!get().operator()(i, j)) masked_mtx(i, j) = tmp(i, j);
-//             }
-//         }
-//         return masked_mtx;
-//     }
-
-//     template <typename ExprType, typename Scalar>
-//         requires(internals::is_eigen_sparse_xpr_v<ExprType> && std::is_convertible_v<Scalar, typename ExprType::Scalar>)
-//     Eigen::SparseMatrix<typename ExprType::Scalar>
-//     select(const Eigen::SparseMatrixBase<ExprType>& mtx, Scalar false_val = Scalar(0)) const {
-//         fdapde_assert(rows_ == mtx.rows() && cols_ == mtx.cols());
-//         using Scalar_ = typename ExprType::Scalar;
-// 	Eigen::SparseMatrix<Scalar_> masked_mtx = mtx;   // assign to sparse storage
-//         for (int k = 0; k < masked_mtx.outerSize(); ++k) {
-//             for (typename Eigen::SparseMatrix<Scalar_>::InnerIterator it(masked_mtx, k); it; ++it) {
-//                 if (!get().operator()(it.row(), it.col())) { it.valueRef() = false_val; }
-//             }
-// 	}
-//         return masked_mtx;
-//     }
-//     template <typename TrueExpr, typename FalseExpr>
-//         requires(
-//           internals::is_eigen_sparse_xpr_v<TrueExpr> && internals::is_eigen_sparse_xpr_v<FalseExpr> &&
-//           std::is_same_v<typename TrueExpr::Scalar, typename FalseExpr::Scalar>)
-//     Eigen::SparseMatrix<typename TrueExpr::Scalar>
-//     select(const Eigen::SparseMatrixBase<TrueExpr>& true_expr, const Eigen::SparseMatrixBase<FalseExpr>& false_expr) {
-//         fdapde_assert(
-//           rows_ == true_expr.rows() && cols_ == true_expr.cols() && true_expr.rows() == false_expr.rows() &&
-//           true_expr.cols() == false_expr.cols());
-//         using Scalar_ = typename TrueExpr::Scalar;
-//         Eigen::SparseMatrix<Scalar_> masked_mtx = true_expr;
-//         Eigen::SparseMatrix<Scalar_> tmp = false_expr;   // evaluate false_expr in temporary
-//         for (int k = 0; k < masked_mtx.outerSize(); ++k) {
-//             for (typename Eigen::SparseMatrix<Scalar_>::InnerIterator it(masked_mtx, k); it; ++it) {
-//                 if (!get().operator()(it.row(), it.col())) { it.valueRef() = tmp.coeffRef(it.row(), it.col()); }
-//             }
-// 	}
-//         return masked_mtx;
-//     }
-// #endif
-
-// #ifdef __FDAPDE_HAS_EIGEN__
-//     // conversion to Eigen matrix
-//     Eigen::Matrix<int, Rows, Cols> as_eigen_matrix() const {
-//         Eigen::Matrix<int, Rows, Cols> m;
-//         if constexpr (Rows == Dynamic || Cols == Dynamic) { m.resize(rows_, cols_); }
-//         for (int i = 0; i < rows_; ++i) {
-//             for (int j = 0; j < cols_; ++j) { m(i, j) = operator()(i, j) ? 1 : 0; }
-//         }
-//         return m;
-//     }
-// #endif
-  
-//     // block-repeat operation
-//     BinMtxRepeatOp<Dynamic, Dynamic, XprType> repeat(int rep_row, int rep_col) const {
-//         return BinMtxRepeatOp<Dynamic, Dynamic, XprType>(get(), rep_row, rep_col);
-//     }
-//     // reshape a binary matrix to another matrix of different sizes
-//     BinMtxReshapeOp<Dynamic, Dynamic, XprType> reshape(int n_row, int n_col) const {
-//         return BinMtxReshapeOp<Dynamic, Dynamic, XprType>(get(), n_row, n_col);
-//     }
-//     BinMtxReshapeOp<Dynamic, Dynamic, XprType> vector_view() const { return reshape(get().size(), 1); }
-//    private:
-//     template <typename Visitor, template <typename, typename> typename VisitStrategy> inline auto visit_apply_() const {
-//         Visitor visitor;
-//         VisitStrategy<XprType, Visitor>::run(get(), visitor);
-//         return visitor.res;
-//     }
 // };
   
 // comparison operator

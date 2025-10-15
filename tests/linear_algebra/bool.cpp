@@ -18,6 +18,7 @@
 #include <gtest/gtest.h>   // testing framework
 using namespace fdapde;
 
+
 TEST(linear_algebra, boolean) {
     // static sized
     {
@@ -78,8 +79,65 @@ TEST(linear_algebra, boolean) {
         auto B9 = B5 ^ B7;
         EXPECT_EQ(B9, B8);
 	// assign expression to matrix
-	Matrix<bool, 3, 3> B10 = B9;
-	EXPECT_EQ(B10, B9);
+        Matrix<bool, 3, 3> B10 = B9;
+        EXPECT_EQ(B10, B9);
+
+        // block accessors
+        static constexpr Matrix<bool, 3, 3> B11({1, 1, 0, 0, 1, 1, 0, 1, 0});
+        static_assert(B11.block<2, 2>(0, 0) == Matrix<bool, 2, 2>({1, 1, 0, 1}));   // static-sized block
+        static_assert(B11.block(0, 0, 2, 2) == Matrix<bool, 2, 2>({1, 1, 0, 1}));   // dynamic-sized block
+        static_assert(B11.col(0) == Matrix<bool, 3, 1>({1, 0, 0}));
+        static_assert(B11.row(1) == Matrix<bool, 1, 3>({0, 1, 1}));
+        static_assert(B11.top_rows(2) == Matrix<bool, 2, 3>({1, 1, 0, 0, 1, 1}));
+        static_assert(B11.bottom_rows(2) == Matrix<bool, 2, 3>({0, 1, 1, 0, 1, 0}));
+        static_assert(B11.left_cols(2) == Matrix<bool, 3, 2>({1, 1, 0, 1, 0, 1}));
+        static_assert(B11.right_cols(2) == Matrix<bool, 3, 2>({1, 0, 1, 1, 1, 0}));
+
+	// non-const block accessors
+        Matrix<bool, 9, 9> B12;   // this should span more than one bitpack on 64-bit machines
+        B12.block<7, 7>(1, 1).set();
+        for (int i = 0; i < 9; ++i) {
+            for (int j = 0; j < 9; ++j) {
+                if ((i >= 1 && i <= 7) && (j >= 1 && j <= 7)) {
+                    EXPECT_EQ(B12(i, j), 1);
+                } else {
+                    EXPECT_EQ(B12(i, j), 0);
+                }
+            }
+        }
+        B12.block<7, 7>(1, 1).clear();
+        for (int i = 0; i < 9; ++i) {
+            for (int j = 0; j < 9; ++j) { EXPECT_EQ(B12(i, j), 0); }
+        }
+        // block assignment
+        Matrix<bool, 3, 3> B13({1, 0, 0, 0, 1, 0, 0, 0, 1});
+        Matrix<bool, 3, 3> B14({1, 1, 0, 1, 1, 0, 0, 1, 1});
+        auto B15 = B12.block<3, 3>(1, 1);
+        B15 = B13 & B14;
+        EXPECT_EQ(B15, B13);
+        B15 = B13 | B14;
+        EXPECT_EQ(B15, B14);
+        Matrix<bool, 3, 3> B16({0, 1, 0, 1, 0, 0, 0, 1, 0});
+        B15 = B13 ^ B14;
+        EXPECT_EQ(B15, B16);
+
+        // compound algebra
+        Matrix<bool, 3, 3> B17({1, 1, 0, 1, 1, 0, 0, 1, 1});
+        B17 &= B13;
+        EXPECT_EQ(B17, B13);
+        B17 |= B14;
+        EXPECT_EQ(B17, B14);
+        B17 ^= B13;
+        EXPECT_EQ(B17, B16);
+
+        // use blocks in expressions
+        auto B18 = B14.block<2, 2>(0, 0);   // spans a single bitpack
+        Matrix<bool, 2, 2> B19({1, 0, 0, 1});
+        Matrix<bool, 2, 2> B20 = B18 & B19;
+        EXPECT_EQ(B20, B19);
+        auto B21 = B12.block(1, 1, 7, 7);   // spans over multiple bitpacks
+        Matrix<bool, Dynamic, Dynamic> B22 = B21 & B21;
+        EXPECT_EQ(B22, B21);
     }
 
     // dynamic sized
@@ -120,5 +178,16 @@ TEST(linear_algebra, boolean) {
         for (int i = 0; i < B3.rows(); ++i) {
             for (int j = 0; j < B3.cols(); ++j) { EXPECT_EQ(B3(i, j), false); }
         }
+
+        // boolean reductions
+        Matrix<bool, Dynamic, Dynamic> B4(30, 30);
+        EXPECT_FALSE(B4.any());
+        B4(29, 29) = 1;
+        EXPECT_TRUE(B4.any());
+        B4.set();
+        EXPECT_TRUE(B4.all());
+        B4(15, 14) = 0;
+        EXPECT_FALSE(B4.all());
+        EXPECT_EQ(B4.count(), 30 * 30 - 1);
     }
 }

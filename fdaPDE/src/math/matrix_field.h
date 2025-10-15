@@ -497,9 +497,7 @@ operator*(const MatrixFieldBase<Size, Lhs>& lhs, const Rhs& rhs)
     }
 }
 
-template <
-  int StaticInputSize_, int Rows_, int Cols_,
-  typename FunctorType_ = std::function<double(internals::static_dynamic_eigen_vector_selector_t<StaticInputSize_>)>>
+template <int StaticInputSize_, int Rows_, int Cols_, typename FunctorType_>
 class MatrixField :
     public MatrixFieldBase<StaticInputSize_, MatrixField<StaticInputSize_, Rows_, Cols_, FunctorType_>> {
     template <typename T> struct is_dynamic_sized {

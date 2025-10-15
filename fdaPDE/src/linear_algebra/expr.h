@@ -31,10 +31,15 @@ template <int Rows_, int Cols_, typename XprType_> struct MatrixExpr {
     template <int RhsRows_, int RhsCols_, typename RhsXprType_>
     constexpr XprType& operator=(const MatrixExpr<RhsRows_, RhsCols_, RhsXprType_>& rhs) {
         using executor = typename XprType::assignment_executor;
+        if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) {   // resize to rhs size, if lhs is Dynamic
+            if (derived().rows() != rhs.rows() || derived().cols() != rhs.cols()) {
+                derived().resize(rhs.rows(), rhs.cols());
+            }
+        }
         executor::run(derived(), rhs.derived(), [](auto& l, const auto& r) { l = r; });
         return derived();
     }
-    // compound matrix linear structure
+    // compound linear algebra
     template <int RhsXprRows_, int RhsXprCols_, typename RhsXprType_>
     constexpr XprType& operator+=(const MatrixExpr<RhsXprRows_, RhsXprCols_, RhsXprType_>& other) {
 	using executor = typename XprType::assignment_executor;

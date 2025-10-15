@@ -255,9 +255,7 @@ FDAPDE_DEFINE_SCALAR_COEFF_OP(operator-, std::minus<>     )
 FDAPDE_DEFINE_SCALAR_COEFF_OP(operator*, std::multiplies<>)
 FDAPDE_DEFINE_SCALAR_COEFF_OP(operator/, std::divides<>   )
 
-template <
-  int Size,   // input space dimension (Dynamic accepted)
-  typename FunctorType_ = std::function<double(internals::static_dynamic_eigen_vector_selector_t<Size>)>>
+template <int Size, typename FunctorType_>
 class ScalarField : public ScalarFieldBase<Size, ScalarField<Size, FunctorType_>> {
     using FunctorType = std::decay_t<FunctorType_>;   // type of wrapped functor
     using traits = internals::fn_ptr_traits<&FunctorType::operator()>;
@@ -314,16 +312,6 @@ class ScalarField : public ScalarFieldBase<Size, ScalarField<Size, FunctorType_>
     // evaluation at point
     constexpr Scalar operator()(const InputType& x) const { return f_(x); }
     constexpr Scalar operator()(const InputType& x) { return f_(x); }
-    // evaluation at matrix of points
-    Eigen::Matrix<Scalar, Dynamic, 1> eval_at(const Eigen::Matrix<double, Dynamic, Dynamic>& points) const {
-        fdapde_static_assert(
-          std::is_invocable_v<FunctorType FDAPDE_COMMA decltype(points.row(std::declval<int>()))>,
-          INVALID_SCALAR_FIELD_INVOCATION);
-        fdapde_assert(points.rows() > 0 && points.cols() == input_size());
-	Eigen::Matrix<Scalar, Dynamic, 1> evals(points.rows());
-        for (int i = 0; i < points.rows(); ++i) { evals[i] = f_(points.row(i)); }
-        return evals;
-    }
     void resize(int dynamic_input_size) {
         fdapde_static_assert(StaticInputSize == Dynamic, YOU_CALLED_A_DYNAMIC_METHOD_ON_A_STATIC_SIZED_FIELD);
         dynamic_input_size_ = dynamic_input_size;
@@ -454,13 +442,9 @@ template <int Size, typename Derived> struct ScalarFieldBase {
     double step_ = 1e-3;   // step size used in derivative approximation
 };
 
-#ifdef __FDAPDE_HAS_EIGEN__
 // special fields
 template <int StaticInputSize>
-struct ZeroField : public ScalarField<StaticInputSize, decltype([](const Eigen::Matrix<double, StaticInputSize, 1>&) {
-                                          return 0.0;
-                                      })> { };
-#endif
+struct ZeroField : public ScalarField<StaticInputSize, decltype([](const auto&) { return 0.0; })> { };
   
 namespace internals {
 
