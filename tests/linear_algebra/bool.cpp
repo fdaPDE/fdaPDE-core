@@ -208,5 +208,32 @@ TEST(linear_algebra, boolean) {
     Matrix<bool, 1, 8> v;
     v.set();
     EXPECT_EQ(B6.row(0), v);    
-    
+
+    // view
+    int x = 3;
+    MatrixView<bool, 2, 2> view(&x);
+    Matrix<bool, 2, 2> B7({1, 1, 0, 0});
+    EXPECT_EQ(view, B7);
+    view.set();
+    EXPECT_EQ(x, 15); // x = 0b1111
+    Matrix<bool, 2, 2> B8({1, 1, 1, 1});
+    EXPECT_EQ(view, B8);
+    view.clear();
+    Matrix<bool, 2, 2> B9({0, 0, 0, 0});
+    EXPECT_EQ(x, 0);
+    EXPECT_EQ(view, B9);
+
+    std::vector<int> y(6);
+    MatrixView<bool, Dynamic, Dynamic> view2(y.data(), 10, 10);
+    y[0] = 2;
+    y[1] = 2;
+    EXPECT_EQ(view2(0, 1), true);
+    EXPECT_EQ(view2(3, 3), true);
+    view2.set();
+    Matrix<bool, Dynamic, Dynamic> B10(10, 10);
+    B10.set();
+    EXPECT_EQ(view2, B10);
+    auto B11 = view2 ^ view2;
+    B10.clear();
+    EXPECT_EQ(B11, B10);
 }
