@@ -335,7 +335,7 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
         Base::operator[](i).set();
     }
     constexpr void set() {   // sets all coeffients
-        for (int i = 0, n = data_.size(); i < n; ++i) { data_[i] = -1; }
+        for (int i = 0, n = data_.size(); i < n; ++i) { data_[i] = bitpack_t(-1); }
     }
     constexpr void clear(int i, int j) { Base::operator()(i, j).clear(); }
     constexpr void clear(int i) {
@@ -343,7 +343,7 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
         Base::operator[](i).clear();
     }
     constexpr void clear() {   // clears all coeffients
-        for (int i = 0, n = data_.size(); i < n; ++i) { data_[i] = 0; }
+        for (int i = 0, n = data_.size(); i < n; ++i) { data_[i] = bitpack_t(0); }
     }
 
     // data pointers
@@ -828,7 +828,9 @@ template <int Rows_, int Cols_, typename XprType_> struct BoolMatrixExpr {
     template <int RhsRows_, int RhsCols_, typename RhsXprType_>
     constexpr XprType& operator=(const BoolMatrixExpr<RhsRows_, RhsCols_, RhsXprType_>& rhs) {
         using executor = typename XprType::assignment_executor;
-        if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) {   // resize to rhs size, if lhs is Dynamic
+        if constexpr (requires(XprType_ xpr, int i, int j) {
+                          xpr.resize(i, j);
+                      } && (Rows_ == Dynamic || Cols_ == Dynamic)) {
             if (derived().rows() != rhs.rows() || derived().cols() != rhs.cols()) {
                 derived().resize(rhs.rows(), rhs.cols());
             }
@@ -1027,111 +1029,131 @@ operator!=(const BoolMatrixExpr<Rows1, Cols1, XprType1>& op1, const BoolMatrixEx
     return !(op1 == op2);
 }
 
-// out-of-class which function
+// indexes of true elements in the boolean expression
 template <int Rows, int Cols, typename XprType> std::vector<int> which(const BoolMatrixExpr<Rows, Cols, XprType>& mtx) {
     return mtx.which(true);
 }
 
-// move the iterator first-last to a binary vector v such that v[i] = true \iff *(first + i) == c
-template <typename Iterator>
-Vector<bool, Dynamic> value_indicator(const Iterator& first, const Iterator& last, typename Iterator::value_type c) {
+// returns boolean vector v such that v[i] = true \iff i-th element in range [first, last] equals c
+template <typename Iterator, typename Scalar>
+    requires(requires(Iterator first, Iterator last, int i) {
+        { *first } -> std::convertible_to<Scalar>;
+        { first + i } -> std::convertible_to<Iterator>;
+        { first != last } -> std::same_as<bool>;
+	{ ++first } -> std::convertible_to<Iterator>;
+    })
+Vector<bool, Dynamic> value_indicator(const Iterator& first, const Iterator& last, Scalar c) {
     int n_rows = std::distance(first, last);
     Vector<bool, Dynamic> vec(n_rows);
     for (int i = 0; i < n_rows; ++i) {
-        if (*(first + i) == c) vec.set(i);
+        if (*(first + i) == c) { vec.set(i); }
     }
     return vec;
 }
 
-// masks a vector of a matrix in correspondance of nan values
-template <typename Data>
-    requires(internals::is_vector_like_v<Data> || internals::is_matrix_like_v<Data>)
-Matrix<bool, Dynamic, Dynamic> nan_indicator(const Data& data) {
-    const int rows = internals::is_vector_like_v<Data> ? data.size() : data.rows();
-    const int cols = internals::is_vector_like_v<Data> ? 1 : data.cols();
-
+// return boolean matrix m such that m(i, j) = true \iff (i,j)-th element of DataType is nan
+template <typename DataType>
+    requires(internals::is_vector_like_v<DataType> || internals::is_matrix_like_v<DataType>)
+Matrix<bool, Dynamic, Dynamic> nan_indicator(DataType&& data) {
+    const int rows = internals::is_vector_like_v<DataType> ? data.size() : data.rows();
+    const int cols = internals::is_vector_like_v<DataType> ? 1 : data.cols();
     Matrix<bool, Dynamic, Dynamic> mask(rows, cols);
     for (int i = 0; i < rows; ++i) {
         for (int j = 0; j < cols; ++j) {
-            const auto val = internals::is_vector_like_v<Data> ? internals::vector_like_access(data, i) : data(i, j);
+            const auto val = internals::is_vector_like_v<DataType> ? internals::vector_like_access(data, i) : data(i, j);
             if (std::isnan(val)) mask.set(i, j);
         }
     }
     return mask;
 }
 
-// // map a memory region to a BinaryMatrix
-// template <int Rows, int Cols, typename XprTypeNested>
-// class BinaryMap : public BinMtxBase<Rows, Cols, BinaryMap<Rows, Cols, XprTypeNested>> {
-//    public:
-//     using XprType = BinaryMap<Rows, Cols, XprTypeNested>;
-//     using Base = BinMtxBase<Rows, Cols, XprType>;
-//     using BitPackType = std::decay_t<XprTypeNested>;
-//     static constexpr int PackSize = sizeof(XprTypeNested) * 8;   // number of bits in a packet
-//     static constexpr int NestAsRef = 0;   // whether to store this node by reference or by copy in an expression
-//     using Base::cols_;
-//     using Base::rows_;
+// non-owning Matrix view of an existing block of data
+template <int Rows_, int Cols_, int StorageOrder_>
+class MatrixView<bool, Rows_, Cols_, StorageOrder_> :
+    public MatrixBase<bool, Rows_, Cols_, StorageOrder_, MatrixView<bool, Rows_, Cols_, StorageOrder_>> {
+   public:
+    using Base = MatrixBase<bool, Rows_, Cols_, StorageOrder_, MatrixView<bool, Rows_, Cols_, StorageOrder_>>;
+    using Scalar = typename Base::Scalar;
+    using bitpack_t = typename Base::bitpack_t;   // machine largest integer type for bit-packing
+    using StorageType = bitpack_t*;
+    static constexpr int Rows = Rows_;
+    static constexpr int Cols = Cols_;
+    static constexpr int PackSize = sizeof(bitpack_t) * 8;
+    static constexpr int NestAsRef = 0;
 
-//     BinaryMap(XprTypeNested* data)
-//         requires(Rows != Dynamic && Cols != Dynamic)
-//       : Base(), data_(data) {
-//         fdapde_static_assert(std::is_integral_v<XprTypeNested>, ONLY_INTEGRAL_TYPES_CAN_BE_BINARY_MAPPED);
-//     }
-//     BinaryMap(XprTypeNested* data, int row) : Base(row), data_(data) {
-//         fdapde_static_assert(std::is_integral_v<XprTypeNested>, ONLY_INTEGRAL_TYPES_CAN_BE_BINARY_MAPPED);
-//         fdapde_static_assert(Cols == 1 || Rows == 1, THIS_METHOD_IS_ONLY_FOR_VECTORS);
-//     }
-//     BinaryMap(XprTypeNested* data, int row, int col) : Base(row, col), data_(data) {
-//         fdapde_static_assert(std::is_integral_v<XprTypeNested>, ONLY_INTEGRAL_TYPES_CAN_BE_BINARY_MAPPED);
-//     }
-//     // const access
-//     bool operator()(int i, int j) const {
-//         return (data_[pack_of(i, j)] & BitPackType(1) << ((i * cols_ + j) % PackSize)) != 0;
-//     }
-//     bool operator[](int i) const {   // vector-like (subscript) access
-//         fdapde_static_assert(Cols == 1 || Rows == 1, THIS_METHOD_IS_ONLY_FOR_VECTORS);
-//         return operator()(i, 0);
-//     }
-//     BitPackType bitpack(int i) const { return data_[i]; }
-//     BitPackType& bitpack(int i) { return data_[i]; }   // non-const access to i-th bitpack
+    // constructors
+    constexpr MatrixView() : Base(), data_(nullptr), bitpacks_(0), last_bitpack_mask_(0) { }
+    template <typename Scalar_>
+        requires(std::is_convertible_v<Scalar_, bitpack_t>)
+    constexpr explicit MatrixView(Scalar_* data) :
+        Base(), data_(reinterpret_cast<bitpack_t*>(data)), bitpacks_(0), last_bitpack_mask_(0) {
+        fdapde_static_assert(Rows_ != Dynamic && Cols_ != Dynamic, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
+        bitpacks_ = 1 + std::ceil(Rows * Cols / PackSize);
+        // compute last bitpack
+        const int last_used_bits = (Rows * Cols - (bitpacks_ - 1) * PackSize);
+        last_bitpack_mask_ = ((bitpack_t(1) << last_used_bits) - 1);
+    }
+    template <typename Scalar_>
+        requires(std::is_convertible_v<Scalar_, bitpack_t>)
+    constexpr MatrixView(Scalar_* data, int size) :
+        Base(size), data_(reinterpret_cast<bitpack_t*>(data)), bitpacks_(0), last_bitpack_mask_(0) {
+        fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
+        fdapde_assert(size > 0);
+        bitpacks_ = 1 + std::ceil(size / PackSize);
+        // compute last bitpack mask
+        const int last_used_bits = (size - (bitpacks_ - 1) * PackSize);
+        last_bitpack_mask_ = ((bitpack_t(1) << last_used_bits) - 1);
+    }
+    template <typename Scalar_>
+        requires(std::is_convertible_v<Scalar_, bitpack_t>)
+    constexpr MatrixView(Scalar_* data, int rows, int cols) :
+        Base(rows, cols), data_(reinterpret_cast<bitpack_t*>(data)), bitpacks_(0), last_bitpack_mask_(0) {
+        fdapde_assert(rows > 0 && cols > 0);
+        bitpacks_ = 1 + std::ceil(rows * cols / PackSize);
+        // compute last bitpack mask
+        const int last_used_bits = (rows * cols - (bitpacks_ - 1) * PackSize);
+        last_bitpack_mask_ = ((bitpack_t(1) << last_used_bits) - 1);
+    }
+    // inherit assignment from Base
+    using Base::operator=;
+    // observers
+    constexpr int bitpacks() const { return bitpacks_; }
+    bitpack_t bitpack(int i) const {
+        fdapde_assert(i >= 0 && i < bitpacks_);
+        if (i < bitpacks_ - 1) {
+            return data_[i];
+        } else {
+            return data_[i] & last_bitpack_mask_;
+        }
+    }
+    // data pointers
+    constexpr const bitpack_t* data() const { return data_; }
+    constexpr bitpack_t* data() { return data_; }
+    // modifiers
+    constexpr void set(int i, int j) { Base::operator()(i, j).set(); }
+    constexpr void set(int i) {
+        fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
+        Base::operator[](i).set();
+    }
+    constexpr void set() {
+        for (int i = 0; i < bitpacks_ - 1; ++i) { data_[i] = ~bitpack_t(0); }
+        data_[bitpacks_ - 1] |= last_bitpack_mask_;
+    }
+    constexpr void clear(int i, int j) { Base::operator()(i, j).clear(); }
+    constexpr void clear(int i) {
+        fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
+        Base::operator[](i).clear();
+    }
+    constexpr void clear() {
+        for (int i = 0; i < bitpacks_ - 1; ++i) { data_[i] = bitpack_t(0); }
+	data_[bitpacks_ - 1] &= ~last_bitpack_mask_;
+    }
+   private:
+    StorageType data_;
+    int bitpacks_;
+    bitpack_t last_bitpack_mask_;
+};
 
-//     void set(int i, int j) {   // set (i,j)-th bit
-//         fdapde_assert(i < rows_ && j < cols_);
-//         data_[pack_of(i, j)] |= (BitPackType(1) << ((i * cols_ + j) % PackSize));
-//     }
-//     void set(int i) {
-//         fdapde_static_assert(Cols == 1 || Rows == 1, THIS_METHOD_IS_ONLY_FOR_VECTORS);
-//         set(i, 0);
-//     }
-//     void set() {   // sets all coeffients in the matrix
-//         for (int i = 0; i < rows_; ++i) {
-//             for (int j = 0; j < cols_; ++j) {
-//                 data_[pack_of(i, j)] |= (BitPackType(1) << ((i * cols_ + j) % PackSize));
-//             }
-//         }
-//     }  
-//     void clear(int i, int j) {   // clear (i,j)-th bit (sets to 0)
-//         fdapde_assert(i < rows_ && j < cols_);
-//         data_[pack_of(i, j)] &= ~(BitPackType(1) << ((i * cols_ + j) % PackSize));
-//     }
-//     void clear(int i) {
-//         fdapde_static_assert(Cols == 1 || Rows == 1, THIS_METHOD_IS_ONLY_FOR_VECTORS);
-//         clear(i, 0);
-//     }
-//     void clear() {   // clears all coeffients in the matrix
-//         for (int i = 0; i < rows_; ++i) {
-//             for (int j = 0; j < cols_; ++j) {
-//                 data_[pack_of(i, j)] &= ~(BitPackType(1) << ((i * cols_ + j) % PackSize));
-//             }
-//         }
-//     }
-//    private:
-//     XprTypeNested* data_;
-//     // recover the byte-pack for the (i,j)-th element
-//     inline int pack_of(int i, int j) const { return (i * cols_ + j) / PackSize; }
-// };
-
-  
 }   // namespace fdapde
 
 #endif   // __FDAPDE_LINALG_BOOL_H__

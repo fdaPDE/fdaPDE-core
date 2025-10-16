@@ -82,8 +82,8 @@ struct generic_assignment_executor {
         if constexpr (internals::is_dynamic_sized_v<DstMatrixType> || internals::is_dynamic_sized_v<SrcXprType>) {
             fdapde_assert(dst.rows() == src.rows() && dst.cols() == src.cols());
         }
-        int rows_ = dst.rows();
-        int cols_ = dst.cols();
+        const int rows_ = dst.rows();
+        const int cols_ = dst.cols();
         // exploit cache-locality depending on StorageOrder of destination
         if constexpr (DstMatrixType::StorageOrder == RowMajor) {
             for (int i = 0; i < rows_; ++i) {

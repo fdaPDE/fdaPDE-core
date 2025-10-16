@@ -14,8 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_LINALG_EXPR_H__
-#define __FDAPDE_LINALG_EXPR_H__
+#ifndef __FDAPDE_LINALG_XPR_H__
+#define __FDAPDE_LINALG_XPR_H__
 
 #include "header_check.h"
 
@@ -31,7 +31,9 @@ template <int Rows_, int Cols_, typename XprType_> struct MatrixExpr {
     template <int RhsRows_, int RhsCols_, typename RhsXprType_>
     constexpr XprType& operator=(const MatrixExpr<RhsRows_, RhsCols_, RhsXprType_>& rhs) {
         using executor = typename XprType::assignment_executor;
-        if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) {   // resize to rhs size, if lhs is Dynamic
+        if constexpr (requires(XprType_ xpr, int i, int j) {
+                          xpr.resize(i, j);
+                      } && (Rows_ == Dynamic || Cols_ == Dynamic)) {
             if (derived().rows() != rhs.rows() || derived().cols() != rhs.cols()) {
                 derived().resize(rhs.rows(), rhs.cols());
             }
@@ -372,4 +374,4 @@ constexpr bool almost_equal(
 
 }   // namespace fdapde
 
-#endif // __FDAPDE_LINALG_EXPR_H__
+#endif // __FDAPDE_LINALG_XPR_H__
