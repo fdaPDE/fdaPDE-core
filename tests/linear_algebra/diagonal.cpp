@@ -100,10 +100,10 @@ TEST(linear_algebra, diagonal) {
 
 	// matrix-diagonal product
         Matrix<double, 4, 4> M11 = Matrix<double, 4, 4>::Ones();
-	auto M12 = M11 * M7;
-	EXPECT_TRUE(M12.rowwise() == s2.transpose());
-	auto M13 = M7 * M11;
-	EXPECT_TRUE(M13.colwise() == s2);
+        auto M12 = M11 * M7;
+        EXPECT_TRUE(M12.colwise() == s2.transpose());
+        auto M13 = M7 * M11;
+        EXPECT_TRUE(M13.rowwise() == s2);
     }
 
     // dynamic sized

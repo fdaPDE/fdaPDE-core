@@ -42,11 +42,16 @@ struct ProceduralMatrix : public MatrixExpr<Rows_, Cols_, ProceduralMatrix<Funct
         fdapde_assert(rows >= 0 && cols >= 0);
     }
     constexpr ProceduralMatrix(int rows, int cols) : ProceduralMatrix(rows, cols, Functor_()) { }
+    constexpr explicit ProceduralMatrix(int size, Functor_ f) :
+        rows_(Rows_ == 1 ? 1 : size), cols_(Cols_ == 1 ? 1 : size), f_(f) {
+        fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
+    }
+    constexpr explicit ProceduralMatrix(int size) : ProceduralMatrix(size, Functor_()) { }
 
     constexpr Scalar operator()(int i, int j) const { return f_(i, j); }
     constexpr Scalar operator[](int i) const {
         fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
-        return f_(i, 0);
+        return f_(Rows == 1 ? 0 : i, Cols == 1 ? i : 0);
     }
     constexpr int rows() const { return rows_; }
     constexpr int cols() const { return cols_; }
@@ -98,6 +103,31 @@ struct generic_assignment_executor {
     }
 };
 
+struct vector_assignment_executor {
+    template <typename DstMatrixType, typename SrcXprType, typename AssignmentOp>
+        requires(requires(AssignmentOp op, typename DstMatrixType::Scalar& l, const typename SrcXprType::Scalar& r) {
+            { op(l, r) } -> std::same_as<void>;
+        })
+    static constexpr void run(DstMatrixType& dst, const SrcXprType& src, AssignmentOp&& op) {
+        fdapde_static_assert(DstMatrixType::ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_LOCATION);
+        // NB: a row-shaped rhs can be assigned to a col-shaped lhs
+        fdapde_static_assert(
+          is_vector_shaped_v<DstMatrixType> && is_vector_shaped_v<SrcXprType> &&
+            (is_dynamic_sized_v<DstMatrixType> || is_dynamic_sized_v<SrcXprType> ||
+             same_static_size_v<DstMatrixType, SrcXprType>),
+          INVALID_ASSIGNMENT__NOT_VECTOR_SHAPED_OPERANDS);
+        if constexpr (internals::is_dynamic_sized_v<DstMatrixType> || internals::is_dynamic_sized_v<SrcXprType>) {
+            fdapde_assert(
+              ((dst.rows() == 1 && src.rows() == 1) || (dst.cols() == 1 && src.cols() == 1) ||
+               (dst.rows() == 1 && src.cols() == 1) || (dst.cols() == 1 && src.rows() == 1)) &&
+              dst.size() == src.size());
+        }
+        const int size_ = dst.size();
+        for (int i = 0; i < size_; ++i) { op(dst[i], src[i]); }
+        return;
+    }
+};
+
 }   // namespace internals
 
 template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_, typename MatrixType>
@@ -112,7 +142,8 @@ class MatrixBase : public MatrixExpr<Rows_, Cols_, MatrixType> {
     static constexpr int StorageOrder = StorageOrder_;
     static constexpr int NestAsRef = MatrixType::NestAsRef;
     static constexpr int ReadOnly = std::is_const_v<Scalar_> ? 1 : 0;
-    using assignment_executor = internals::generic_assignment_executor;
+    using assignment_executor = std::conditional_t<
+      Rows_ == 1 || Cols_ == 1, internals::vector_assignment_executor, internals::generic_assignment_executor>;
 
     // constructors
     constexpr MatrixBase() :
@@ -147,22 +178,20 @@ class MatrixBase : public MatrixExpr<Rows_, Cols_, MatrixType> {
     // inherit assignment from base
     using Base::operator=;
     // access
-    constexpr const Scalar& operator()(int i, int j) const {
+    constexpr decltype(auto) operator()(int i, int j) const {
         fdapde_assert(i >= 0 && i < rows_ && j >= 0 && j < cols_);
         return derived().data()[i * row_stride_ + j * col_stride_];
     }
-    constexpr const Scalar& operator[](int i) const {
+    constexpr decltype(auto) operator[](int i) const {
         fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
         fdapde_assert(i >= 0 && i < rows_ * cols_);
         return derived().data()[i];
     }
-    constexpr Scalar& operator()(int i, int j) {
-        fdapde_static_assert(ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_LOCATION);
+    constexpr decltype(auto) operator()(int i, int j) {
         fdapde_assert(i >= 0 && i < rows_ && j >= 0 && j < cols_);
         return derived().data()[i * row_stride_ + j * col_stride_];
     }
-    constexpr Scalar& operator[](const int i) {
-        fdapde_static_assert(ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_LOCATION);
+    constexpr decltype(auto) operator[](const int i) {
         fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
         fdapde_assert(i >= 0 && i < rows_ * cols_);
         return derived().data()[i];
@@ -238,7 +267,7 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
     }
     // value-initialized dynamic-sized vector
     constexpr Matrix(int size, Scalar v)
-        requires(Rows_ == Dynamic || Cols_ == Dynamic)
+        requires((Rows_ == Dynamic && Cols_ == 1) || (Rows_ == 1 && Cols_ == Dynamic))
         : Matrix(size) {
         fdapde_static_assert(
           (Rows_ == 1 && Cols_ == Dynamic) || (Cols_ == 1 && Rows_ == Dynamic),
@@ -273,33 +302,55 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
     }
 
     // constructors taking external data
+    constexpr explicit Matrix(const std::vector<Scalar>& data) {
+        fdapde_static_assert(
+          (Rows_ != Dynamic && Cols_ != Dynamic) || (Rows_ == 1 || Cols_ == 1),
+          THIS_METHOD_IS_EITHER_FOR_VECTORS_OR_STATIC_SIZED_MATRICES);
+        if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { data_.resize(data.size()); }
+        fdapde_assert(data_.size() == data.size());
+        const int rows = this->rows();
+        const int cols = this->cols();
+        for (int i = 0, n = rows; i < n; ++i) {
+            for (int j = 0, m = cols; j < m; ++j) {
+                this->operator()(i, j) = data[i * this->row_stride_ + j * this->col_stride_];
+            }
+        }
+    }
     template <std::size_t Size> constexpr explicit Matrix(const Scalar (&data)[Size]) : Base() {
         fdapde_static_assert(
           Rows_ != Dynamic && Cols_ != Dynamic && StorageSize == Size, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
         for (int i = 0; i < Rows_; ++i) {
             for (int j = 0; j < Cols_; ++j) {
-                Base::operator()(i, j) = data[i * Base::row_stride_ + j * Base::col_stride_];
+                this->operator()(i, j) = data[i * this->row_stride_ + j * this->col_stride_];
             }
         }
+    }
+    constexpr Matrix& operator=(const std::initializer_list<Scalar>& data) {
+        fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
+        if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { data_.resize(data.size()); }
+        fdapde_assert(data_.size() == data.size());
+        int i = 0;
+        for (Scalar v : data) { this->operator[](i++) = v; }
+        return *this;
     }
 
     // static named constructors
     static constexpr auto Zero() { return ZeroMatrix<Rows_, Cols_>(); }
-    static constexpr auto Zero(int rows) {
+    static constexpr auto Zero(int size) {
         fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
-        return ZeroMatrix<Dynamic, Dynamic>(rows, 1);
+        return ZeroMatrix< Rows_ == 1 ? Rows_ : Dynamic, Cols_ == 1 ? Cols_ : Dynamic >(size);
     }
     static constexpr auto Zero(int rows, int cols) { return ZeroMatrix<Dynamic, Dynamic>(rows, cols); }
     static constexpr auto Ones() { return OnesMatrix<Rows_, Cols_>(); }
-    static constexpr auto Ones(int rows) {
+    static constexpr auto Ones(int size) {
         fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
-        return OnesMatrix<Dynamic, Dynamic>(rows, 1);
+        return OnesMatrix < Rows_ == 1 ? Rows_ : Dynamic, Cols_ == 1 ? Cols_ : Dynamic > (size);
     }
     static constexpr auto Ones(int rows, int cols) { return OnesMatrix<Dynamic, Dynamic>(rows, cols); }
     static constexpr auto Constant(Scalar value) { return value * Ones(); }
-    static constexpr auto Constant(int rows, Scalar value) {
+    static constexpr auto Constant(int size, Scalar value) {
         fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
-        return value * Ones(rows);
+        return value * Ones(size);
     }
     static constexpr auto Constant(int rows, int cols, Scalar value) { return value * Ones(rows, cols); }
     static constexpr auto LinSpaced(int rows, Scalar a, Scalar b) {

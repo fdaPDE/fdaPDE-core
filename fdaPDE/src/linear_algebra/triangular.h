@@ -150,45 +150,99 @@ struct TriangularMatrixExpr : public MatrixExpr<Rows_, Cols_, TriangularXprType>
     }
     // linear system solver Ax = b
     template <typename RhsXprType> constexpr auto solve(const RhsXprType& b) const {
-        fdapde_static_assert(
-          ViewMode == Lower || ViewMode == Upper, THIS_METHOD_IS_FOR_LOWER_OR_UPPER_TRIANGULAR_MATRICES_ONLY);
         if constexpr (ViewMode == Lower || ViewMode == UnitLower) return forward_sub(b);
-        if constexpr (ViewMode == Upper || ViewMode == UnitLower) return backward_sub(b);
+        if constexpr (ViewMode == Upper || ViewMode == UnitUpper) return backward_sub(b);
     }
     constexpr double determinant() const { return derived().diagonal().prod(); }
 
     constexpr const auto& data() const { return derived().data(); }
     constexpr auto& data() { return derived().data(); }
    private:
-    // forward substitution for lower-triangular matrix
-    template <typename RhsXprType> constexpr auto forward_sub(const RhsXprType& b) const {
-        fdapde_static_assert(ViewMode == Lower, THIS_METHOD_IS_FOR_LOWER_TRIANGULAR_MATRICES_ONLY);
+    // forward substitution for lower-triangular matrix, vector rhs
+    template <int RhsRows, typename RhsXprType>
+    constexpr auto forward_sub(const MatrixExpr<RhsRows, 1, RhsXprType>& b) const {
+        fdapde_static_assert(
+          ViewMode == Lower || ViewMode == UnitLower, THIS_METHOD_IS_FOR_LOWER_TRIANGULAR_MATRICES_ONLY);
+	const RhsXprType& b_ = b.derived();
+        fdapde_assert(b_.rows() == derived().rows() && b_.cols() == 1);
         using Scalar = typename TriangularXprType::Scalar;
         Vector<Scalar, Rows> x;
-        if constexpr (Rows == Dynamic) { x.resize(derived().rows()); }
-        x[0] = b[0] / derived()(0, 0);
-	int rows = derived().rows();
+        if constexpr (RhsRows == Dynamic) { x.resize(b_.rows()); }
+        x[0] = b_[0] / derived()(0, 0);
+	int rows = b_.rows();
         for (int i = 1; i < rows; ++i) {
             Scalar sum = 0;
             for (int j = 0; j < i; ++j) sum += derived()(i, j) * x[j];
-            x[i] = (b[i] - sum) / derived()(i, i);
+            if constexpr (ViewMode != UnitLower) { x[i] = (b_[i] - sum) / derived()(i, i); }
         }
         return x;
     }
-    // backward substitution for upper-triangular matrix
-    template <typename RhsXprType> constexpr auto backward_sub(const RhsXprType& b) const {
-        fdapde_static_assert(ViewMode == Upper, THIS_METHOD_IS_FOR_UPPER_TRIANGULAR_MATRICES_ONLY);
+    // forward substitution for lower-triangular matrix, matrix rhs (cache-friendly approach)
+    template <int RhsRows, int RhsCols, typename RhsXprType>
+        requires(RhsCols > 1 || RhsCols == Dynamic)
+    constexpr auto forward_sub(const MatrixExpr<RhsRows, RhsCols, RhsXprType>& B) const {
+        fdapde_static_assert(
+          ViewMode == Lower || ViewMode == UnitLower, THIS_METHOD_IS_FOR_LOWER_TRIANGULAR_MATRICES_ONLY);
+        const RhsXprType& B_ = B.derived();
+        fdapde_assert(B_.rows() == derived().rows() && B_.cols() > 1);
+        using Scalar = typename TriangularXprType::Scalar;
+        Matrix<Scalar, RhsRows, RhsCols> X;
+        if constexpr (RhsRows == Dynamic || RhsCols == Dynamic) { X.resize(B_.rows(), B_.cols()); }
+        int rows = B_.rows();
+	int cols = B_.cols();
+        for (int i = 0; i < rows; ++i) {
+            for (int j = 0; j < cols; ++j) { X(i, j) = B_(i, j); }
+            for (int k = 0; k < i; ++k) {
+                for (int j = 0; j < cols; ++j) { X(i, j) -= derived()(i, k) * B_(k, j); }
+            }
+            if constexpr (ViewMode != UnitLower) {
+                for (int j = 0; j < cols; ++j) { X(i, j) = X(i, j) / derived()(i, i); }
+            }
+        }
+        return X;
+    }
+    // backward substitution for upper-triangular matrix, vector rhs
+    template <int RhsRows, typename RhsXprType>
+    constexpr auto backward_sub(const MatrixExpr<RhsRows, 1, RhsXprType>& b) const {
+        fdapde_static_assert(
+          ViewMode == Upper || ViewMode == UnitUpper, THIS_METHOD_IS_FOR_UPPER_TRIANGULAR_MATRICES_ONLY);
+        const RhsXprType& b_ = b.derived();
+        fdapde_assert(b_.rows() == derived().rows() && b_.cols() == 1);
         using Scalar = typename TriangularXprType::Scalar;
         Vector<Scalar, Rows> x;
-        if constexpr (Rows == Dynamic) { x.resize(derived().rows()); }
-        int rows = derived().rows();
-        x[rows - 1] = b[rows - 1] / derived()(rows - 1, rows - 1);
+        if constexpr (Rows == Dynamic) { x.resize(b_.rows()); }
+        int rows = b_.rows();
+        x[rows - 1] = b_[rows - 1] / derived()(rows - 1, rows - 1);
         for (int i = rows - 2; i >= 0; --i) {
             Scalar sum = 0;
             for (int j = i + 1; j < rows; ++j) sum += derived()(i, j) * x[j];
-            x[i] = (b[i] - sum) / derived()(i, i);
+            if constexpr (ViewMode != UnitUpper) { x[i] = (b_[i] - sum) / derived()(i, i); }
         }
         return x;
+    }
+    // backward substitution for upper-triangular matrix, matrix rhs (cache-friendly approach)
+    template <int RhsRows, int RhsCols, typename RhsXprType>
+        requires(RhsCols > 1 || RhsCols == Dynamic)
+    constexpr auto backward_sub(const MatrixExpr<RhsRows, RhsCols, RhsXprType>& B) const {
+        fdapde_static_assert(
+          ViewMode == Upper || ViewMode == UnitUpper, THIS_METHOD_IS_FOR_UPPER_TRIANGULAR_MATRICES_ONLY);
+	const RhsXprType& B_ = B.derived();
+        fdapde_assert(B_.rows() == derived().rows() && B_.cols() > 1);
+        using Scalar = typename TriangularXprType::Scalar;
+        Matrix<Scalar, RhsRows, RhsCols> X;
+        if constexpr (RhsRows == Dynamic || RhsCols == Dynamic) { X.resize(B_.rows(), B_.cols()); }
+        int rows = B_.rows();
+	int cols = B_.cols();
+        for (int i = rows - 1; i >= 0; --i) {
+            for (int j = 0; j < cols; ++j) { X(i, j) = B_(i, j); }
+            for (int k = i + 1; k < rows; ++k) {
+                for (int j = 0; j < cols; ++j) { X(i, j) -= derived()(i, k) * X(k, j); }
+            }
+            if constexpr (ViewMode != UnitUpper) {
+                for (int j = 0; j < cols; ++j) { X(i, j) = X(i, j) / derived()(i, i); }
+            }
+        }
+        return X;
     }
 };
 

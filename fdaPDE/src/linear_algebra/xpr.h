@@ -92,7 +92,7 @@ template <int Rows_, int Cols_, typename XprType_> struct MatrixExpr {
     friend std::ostream& operator<<(std::ostream& os, const MatrixExpr& m) {
         const int rows = m.derived().rows();
         const int cols = m.derived().cols();
-	const auto& d = m.derived();
+        const auto& d = m.derived();
         // compute max width per column
         size_t width = 0;
         for (int j = 0; j < cols; ++j) {
@@ -109,47 +109,8 @@ template <int Rows_, int Cols_, typename XprType_> struct MatrixExpr {
         }
         return os;
     }
-
-    // coeffwise operators
-    // general coefficient wise executor
-    template <typename CoeffOp> constexpr auto cwise(CoeffOp&& op) const {
-        using Scalar = typename XprType::Scalar;
-        using CoeffOpReturnType = std::invoke_result_t<CoeffOp, Scalar>;
-        fdapde_static_assert(
-          std::is_convertible_v<CoeffOpReturnType FDAPDE_COMMA Scalar>, INVALID_COEFFWISE_OPERATOR_RETURN_TYPE);
-        fdapde_assert(derived().rows() > 0 && derived().cols() > 0);
-        return MatrixCoeffWiseOp<XprType, CoeffOp>(derived(), op);
-    }
-    constexpr auto cwise_abs() const {
-        using Scalar = typename XprType::Scalar;
-        return cwise([](Scalar x) { return fdapde::abs(x); });
-    }
-    constexpr auto cwise_pow(int i) const {
-        using Scalar = typename XprType::Scalar;
-        return cwise([i](Scalar x) { return fdapde::pow(x, i); });
-    }
-    constexpr auto cwise_pow2() const { return cwise_pow(2); }
-    constexpr auto cwise_sqrt() const {
-        using Scalar = typename XprType::Scalar;
-        fdapde_static_assert(std::is_floating_point_v<Scalar>, THIS_METHOD_IS_FOR_FLOATING_POINT_MATRICES_ONLY);
-        return cwise([](Scalar x) { return fdapde::sqrt(x); });
-    }
-    constexpr auto cwise_inv() const {
-        using Scalar = typename XprType::Scalar;
-        fdapde_static_assert(std::is_floating_point_v<Scalar>, THIS_METHOD_IS_FOR_FLOATING_POINT_MATRICES_ONLY);
-        return cwise([](Scalar x) { return 1.0 / x; });
-    }
-    constexpr auto cwise_exp() const {
-        using Scalar = typename XprType::Scalar;
-        fdapde_static_assert(std::is_floating_point_v<Scalar>, THIS_METHOD_IS_FOR_FLOATING_POINT_MATRICES_ONLY);
-        return cwise([](Scalar x) { return fdapde::exp(x); });
-    }
-    constexpr auto cwise_log() const {
-        using Scalar = typename XprType::Scalar;
-        fdapde_static_assert(std::is_floating_point_v<Scalar>, THIS_METHOD_IS_FOR_FLOATING_POINT_MATRICES_ONLY);
-        return cwise([](Scalar x) { return fdapde::log(x); });
-    }
-
+    // coeffwise access
+    constexpr auto cwise() const { return MatrixCoeffWiseProxy<XprType>(derived()); }
     // redux operators
     // frobenius norm (squared L^2 norm)
     constexpr auto squared_norm() const {
@@ -266,7 +227,12 @@ template <int Rows_, int Cols_, typename XprType_> struct MatrixExpr {
         }
         return dot_;
     }
-  
+    // cross product
+    template <int RhsRows, int RhsCols, typename RhsXprType>
+    constexpr auto cross(const MatrixExpr<RhsRows, RhsCols, RhsXprType>& rhs) const {
+        return MatrixCrossProductOp<XprType, RhsXprType>(derived(), rhs.derived());
+    }
+
     // reshaping
     // static-sized
     template <int ReshapedRows_, int ReshapedCols_> constexpr auto reshape() {
@@ -304,6 +270,79 @@ template <int Rows_, int Cols_, typename XprType_> struct MatrixExpr {
         }
         return 0.5 * (derived() - derived().transpose());   // skew-symmetric part
     }
+    constexpr auto inverse() const {
+        using Scalar = typename XprType::Scalar;
+        Matrix<Scalar, Rows, Cols> inverse_;
+        const XprType& m = derived();
+        const int rows_ = m.rows(), cols_ = m.cols();
+        fdapde_assert(rows_ == cols_);
+        if constexpr (Rows == Dynamic || Cols == Dynamic) { inverse_.resize(rows_, cols_); }
+	// inverse computation
+        if (rows_ == 1) {
+            inverse_(0, 0) = Scalar(1) / m(0, 0);
+            return inverse_;
+        }
+        if (rows_ == 2) {
+            const Scalar a00 = m(0, 0), a01 = m(0, 1), a10 = m(1, 0), a11 = m(1, 1);
+            const Scalar det = a00 * a11 - a01 * a10;
+            const Scalar inv_det = Scalar(1) / det;
+            inverse_(0, 0) =  a11 * inv_det;
+            inverse_(0, 1) = -a01 * inv_det;
+            inverse_(1, 0) = -a10 * inv_det;
+            inverse_(1, 1) =  a00 * inv_det;
+            return inverse_;
+        }
+        if (rows_ == 3) {
+            const Scalar a00 = m(0, 0), a01 = m(0, 1), a02 = m(0, 2);
+            const Scalar a10 = m(1, 0), a11 = m(1, 1), a12 = m(1, 2);
+            const Scalar a20 = m(2, 0), a21 = m(2, 1), a22 = m(2, 2);
+	    // cache shared cofactors
+            const Scalar c00 = a11 * a22 - a12 * a21;
+            const Scalar c10 = a12 * a20 - a10 * a22;
+            const Scalar c20 = a10 * a21 - a11 * a20;
+            // compute determinant and assemble inverse
+            const Scalar det = a00 * c00 + a01 * c10 + a02 * c20;
+            const Scalar inv_det = Scalar(1) / det;
+            inverse_(0, 0) = c00 * inv_det;
+            inverse_(1, 0) = c10 * inv_det;
+            inverse_(2, 0) = c20 * inv_det;
+            inverse_(0, 1) = -(a01 * a22 - a02 * a21) * inv_det;
+            inverse_(1, 1) =  (a00 * a22 - a02 * a20) * inv_det;
+            inverse_(2, 1) = -(a00 * a21 - a01 * a20) * inv_det;
+            inverse_(0, 2) =  (a01 * a12 - a02 * a11) * inv_det;
+            inverse_(1, 2) = -(a00 * a12 - a02 * a10) * inv_det;
+            inverse_(2, 2) =  (a00 * a11 - a01 * a10) * inv_det;
+            return inverse_;
+        }
+        // general fallback (compute M*X = I by LU factorizatoin)
+        PartialPivLU<Scalar, Rows> lu(m);
+        Matrix<Scalar, Rows, Cols> I;
+        if constexpr (Rows == Dynamic || Cols == Dynamic) { I.resize(rows_, cols_); }
+        for (int i = 0; i < rows_; ++i) { I(i, i) = Scalar(1); }
+        return lu.solve(I);
+    }
+    auto determinant() const {
+        using Scalar = typename XprType::Scalar;
+        const XprType& m = derived();
+        const int rows_ = m.rows(), cols_ = m.cols();
+        fdapde_assert(rows_ == cols_);
+	// determinant computation
+        if (rows_ == 1) { return m(0, 0); }
+        if (rows_ == 2) {
+            const Scalar a00 = m(0, 0), a01 = m(0, 1), a10 = m(1, 0), a11 = m(1, 1);
+            return a00 * a11 - a01 * a10;
+        }
+        if (rows_ == 3) {
+            const Scalar a00 = m(0, 0), a01 = m(0, 1), a02 = m(0, 2);
+            const Scalar a10 = m(1, 0), a11 = m(1, 1), a12 = m(1, 2);
+            const Scalar a20 = m(2, 0), a21 = m(2, 1), a22 = m(2, 2);
+            return a00 * (a11 * a22 - a12 * a21) + a01 * (a12 * a20 - a10 * a22) + a02 * (a10 * a21 - a11 * a20);
+        }
+        // general fallback (factorize and extract determinant)
+        PartialPivLU<Scalar, Rows> lu(m);
+        return m.determinant();
+    }
+
     // triangular block accessors
     template <int BlockMode> constexpr TriangularBlock<const XprType, BlockMode> triangular_block() const {
         return TriangularBlock<const XprType, BlockMode>(derived());

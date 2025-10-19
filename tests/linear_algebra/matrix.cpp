@@ -208,7 +208,7 @@ TEST(linear_algebra, vector) {
         for (const auto& value : v3) { EXPECT_EQ(value, 5); }
         static_assert(std::accumulate(v1.begin(), v1.end(), 0) == 21);   // constexpr begin/end
     }
-
+    
     // dynamic-sized
     {
         // construct empty
@@ -243,7 +243,6 @@ TEST(linear_algebra, vector) {
         for (int i = 0; i < v6.size(); ++i) { EXPECT_EQ(v6[i], 1); }
         Vector<double, Dynamic> v7 = Vector<double, Dynamic>::LinSpaced(10, 0, 1);
         for (double i = 0; i < v7.size(); ++i) { EXPECT_EQ(v7[i], i * (1./9)); }
-
         // const access
         EXPECT_EQ(v1[0], 0);
         // non-const access

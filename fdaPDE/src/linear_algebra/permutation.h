@@ -30,11 +30,14 @@ struct PermutationMatrixExpr :
       Rows_ == Dynamic || Cols_ == Dynamic || Rows_ == Cols_, PERMUTATION_TYPE_SYSTEM_IS_FOR_SQUARED_MATRICES_ONLY);
     using Base = OrthogonalMatrixExpr<Rows_, Cols_, PermutationMatrixExpr<Rows_, Cols_, XprType_>>;
     using Base::derived;
-
+    // make derived() point to innermost type
+    constexpr const XprType_& derived() const { return static_cast<const XprType_&>(*this); }
+    constexpr XprType_& derived() { return static_cast<XprType_&>(*this); }
+  
     constexpr auto inverse() const { return PermutationInverseOp<XprType_>(derived()); }
     constexpr auto determinant() const {
         using Scalar = typename XprType_::Scalar;
-        static constexpr int Rows = XprType_::Rows;
+        constexpr int Rows = XprType_::Rows;
 
         Vector<Scalar, Rows> permutation = derived().permutation();
         int n = permutation.size();
@@ -111,18 +114,18 @@ template <typename LhsXprType, typename RhsXprType>
 constexpr auto operator*(
   const PermutationMatrixExpr<LhsXprType::Rows, LhsXprType::Cols, LhsXprType>& lhs,
   const MatrixExpr<RhsXprType::Rows, RhsXprType::Cols, RhsXprType>& rhs) {
-    return MatrixProductOp<
-      LhsXprType, RhsXprType, internals::permutation_product_executor<LhsXprType, RhsXprType>, LhsMode> {
-      lhs.derived(), rhs.derived()};
+    return MatrixMultiplicationOp<
+      LhsXprType, RhsXprType, internals::permutation_product_executor<LhsXprType, RhsXprType, LhsMode>> {
+      lhs.derived().permutation(), rhs.derived()};
 }
 // M * P (ColPermutation)
 template <typename LhsXprType, typename RhsXprType>
 constexpr auto operator*(
   const MatrixExpr<LhsXprType::Rows, LhsXprType::Cols, LhsXprType>& lhs,
   const PermutationMatrixExpr<RhsXprType::Rows, RhsXprType::Cols, RhsXprType>& rhs) {
-    return MatrixProductOp<
-      LhsXprType, RhsXprType, internals::permutation_product_executor<LhsXprType, RhsXprType>, RhsMode> {
-      lhs.derived(), rhs.derived()};
+    return MatrixMultiplicationOp<
+      LhsXprType, RhsXprType, internals::permutation_product_executor<LhsXprType, RhsXprType, RhsMode>> {
+      lhs.derived(), rhs.derived().permutation()};
 }
 
 // symmetric group product closure
@@ -148,8 +151,6 @@ struct PermutationCompositionOp :
                  std::is_constructible_v<RhsXprTypeNested, RhsXprType_>)
     constexpr PermutationCompositionOp(LhsXprType_&& lhs, RhsXprType_&& rhs) :
         lhs_(std::forward<LhsXprType_>(lhs)), rhs_(std::forward<RhsXprType_>(rhs)) {
-        constexpr int LhsRows = LhsXprType::Rows, LhsCols = LhsXprType::Cols;
-        constexpr int RhsRows = RhsXprType::Rows, RhsCols = RhsXprType::Cols;
         if constexpr (internals::is_dynamic_sized_v<LhsXprType> || internals::is_dynamic_sized_v<RhsXprType>) {
             fdapde_assert(lhs_.rows() == rhs_.rows() && lhs_.cols() == rhs_.cols());
         }
@@ -192,10 +193,12 @@ template <int Size_> struct PermutationMatrix : public PermutationMatrixExpr<Siz
     static constexpr int ReadOnly = 1;
 
     // constructors
-    constexpr PermutationMatrix() = delete;   // empty permutations are ill-formed
-    template <typename DataT>
-        requires(internals::is_vector_like_v<DataT> && !internals::is_matrix_like_v<DataT>)
-    constexpr explicit PermutationMatrix(DataT&& permutation) : permutation_(permutation) {
+    constexpr PermutationMatrix() noexcept : permutation_() { }
+    template <int RhsRows_, typename RhsXprType_>
+    constexpr PermutationMatrix(const MatrixExpr<RhsRows_, 1, RhsXprType_>& rhs) : Base(), permutation_(rhs) {
+        if constexpr (Size_ != Dynamic) { fdapde_assert(permutation_.size() == Size_); }
+    }
+    constexpr explicit PermutationMatrix(const std::vector<Scalar>& vec) : permutation_(vec) {
         if constexpr (Size_ != Dynamic) { fdapde_assert(permutation_.size() == Size_); }
     }
     template <std::size_t RhsSize>

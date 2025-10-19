@@ -236,4 +236,9 @@ TEST(linear_algebra, boolean) {
     auto B11 = view2 ^ view2;
     B10.clear();
     EXPECT_EQ(B11, B10);
+
+
+    // static constructors
+    Matrix<bool, Dynamic, Dynamic> B12 = Matrix<bool, Dynamic, Dynamic>::Ones(20, 20);
+    // TODO
 }
