@@ -53,9 +53,9 @@ TEST(linear_algebra, block) {
         static_assert(b5.cols() == 3);
         static_assert(b5.size() == 6);
         static_assert(b5 == Matrix<double, 2, 3>({1, 2, 3, 4, 5, 6}));
-        // rowwise block reduction
+        // colwise block reduction
         static_assert([b5]() {
-            constexpr auto e = b5.rowwise().prod();
+            constexpr auto e = b5.colwise().prod();
             return e == Matrix<double, 1, 3>({4, 10, 18});
         }());
 
@@ -75,7 +75,7 @@ TEST(linear_algebra, block) {
         static_assert(b7 == Matrix<double, 2, 3>({4, 5, 6, 7, 8, 9}));
         // block coeff-wise
         static_assert([b7]() {
-            constexpr auto e = b7.cwise_exp();
+            constexpr auto e = b7.cwise().exp();
 
             constexpr double r1 = 54.598150033144239078;
             constexpr double r2 = 148.41315910257660342;
@@ -121,9 +121,9 @@ TEST(linear_algebra, block) {
         static_assert(b11.cols() == 2);
         static_assert(b11.size() == 6);
         static_assert(b11 == Matrix<double, 3, 2>({2, 3, 5, 6, 8, 9}));
-        // colwise block redux
+        // rowwise block redux
         static_assert([b11]() {
-            constexpr auto e = b11.colwise().sum();
+            constexpr auto e = b11.rowwise().sum();
             return e == Matrix<double, 3, 1>({5, 11, 17});
         }());
         // block expression

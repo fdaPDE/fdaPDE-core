@@ -34,7 +34,7 @@ template <int LocalDim, int EmbedDim> class DCEL {
     // internal data structures
     struct node_t {
        private:
-        using coords_t = Eigen::Matrix<double, embed_dim, 1>;
+        using coords_t = Matrix<double, embed_dim, 1>;
         int id_;                  // global node index
         halfedge_t* halfedge_;    // any edge having this node as its origin
         bool boundary_;           // asserted true if node is on boundary
@@ -65,7 +65,7 @@ template <int LocalDim, int EmbedDim> class DCEL {
         node_t(int id, bool boundary, CoordsType&&... coords) :
             node_t(id, nullptr, boundary, coords...) { }
         // observers
-        const Eigen::Matrix<double, embed_dim, 1>& coords() const { return coords_; }
+        const Matrix<double, embed_dim, 1>& coords() const { return coords_; }
         halfedge_t* halfedge() const { return halfedge_; }
         void set_halfedge(halfedge_t* halfedge) { halfedge_ = halfedge; }
         int id() const { return id_; }
@@ -158,7 +158,7 @@ template <int LocalDim, int EmbedDim> class DCEL {
     // constructors
     DCEL() : nodes_(), halfedges_(), n_nodes_(0), n_halfedges_(0), n_cells_(0) { }
     // constructs a closed loop structure linking nodes one after the other
-    static DCEL<local_dim, embed_dim> make_polygon(const Eigen::Matrix<double, Dynamic, Dynamic>& nodes) {
+    static DCEL<local_dim, embed_dim> make_polygon(const Matrix<double, Dynamic, Dynamic>& nodes) {
         fdapde_assert(nodes.cols() == embed_dim);
         int n_nodes = nodes.rows();
         DCEL<local_dim, embed_dim> dcel;
@@ -239,8 +239,8 @@ template <int LocalDim, int EmbedDim> class DCEL {
     }
 
     // observers
-    Eigen::Matrix<double, Dynamic, Dynamic> nodes() const {   // matrix of nodes coordinates
-        Eigen::Matrix<double, Dynamic, Dynamic> coords(n_nodes_, embed_dim);
+    Matrix<double, Dynamic, Dynamic> nodes() const {   // matrix of nodes coordinates
+        Matrix<double, Dynamic, Dynamic> coords(n_nodes_, embed_dim);
         for (auto it = nodes_.begin(); it != nodes_.end(); ++it) { coords.row(it->id()) = it->coords(); }
         return coords;
     }

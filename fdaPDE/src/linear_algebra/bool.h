@@ -229,6 +229,20 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
         using assignment = typename Base::assignment_executor;
         assignment::run(*this, rhs.derived(), [](bitpack_t& l, const bitpack_t& r) { l = r; });
     }
+    template <int RhsRows_, int RhsCols_, typename RhsXprType_>   // cast MatrixExpr to bool
+    constexpr Matrix(const MatrixExpr<RhsRows_, RhsCols_, RhsXprType_>& rhs) :
+        Base(), bitpacks_(StorageSize == Dynamic ? 0 : 1 + fdapde::ceil((Rows * Cols) / PackSize)) {
+        fdapde_static_assert(
+          Rows == Dynamic || Cols == Dynamic || RhsRows_ == Dynamic || RhsCols_ == Dynamic ||
+            (Rows == RhsRows_ && Cols == RhsCols_),
+          INVALID_ASSIGNMENT__LHS_AND_RHS_STATIC_SIZES_DOES_NOT_MATCH);
+        if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { resize(rhs.rows(), rhs.cols()); }
+	const int rows = rhs.rows();
+	const int cols = rhs.cols();
+        for (int i = 0; i < rows; ++i) {
+            for (int j = 0; j < cols; ++j) { Base::operator()(i, j) = rhs.derived()(i, j); }
+        }
+    }
     // inherit assignment from base
     using Base::operator=;
   
@@ -287,21 +301,38 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
         }
         return;
     }
-    template <typename DataT>
-        requires(internals::is_vector_like_v<DataT>)
-    constexpr explicit Matrix(DataT&& data) : Base(), data_() {
+    template <typename Scalar_>
+        requires(std::is_convertible_v<Scalar_, Scalar>)
+    constexpr explicit Matrix(const std::vector<Scalar_>& data) : Base(), data_() {
         fdapde_static_assert(
           (Rows_ != Dynamic && Cols_ != Dynamic) || (Rows_ == 1 && Cols_ == Dynamic) ||
             (Cols_ == 1 && Rows_ == Dynamic),
           THIS_METHOD_IS_EITHER_FOR_ROW_OR_COLUMN_VECTORS_OR_FOR_STATIC_SIZED_MATRICES);
         if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { resize(data.size()); }
-        fdapde_assert(data_.size() == data.size());
-        for (int i = 0, size = data.size(); i < size; ++i) {
-            if (data[i]) set(i / Base::rows_, i % Base::cols_);
+        fdapde_assert(std::cmp_equal(Base::rows_ * Base::cols_, data.size()));
+        for (int i = 0; i < Rows; ++i) {
+            for (int j = 0; j < Cols; ++j) {
+                Base::operator()(i, j) = data[i * Base::row_stride_ + j * Base::col_stride_];
+            }
         }
         bitpacks_ = 1 + fdapde::ceil(data_.size() / PackSize);
         return;
     }
+
+    // static named constructors
+    static constexpr auto Zero() { return ZeroMatrix<Rows_, Cols_>(); }
+    static constexpr auto Zero(int rows) {
+        fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
+        return ZeroMatrix<Dynamic, Dynamic>(rows, 1);
+    }
+    static constexpr auto Zero(int rows, int cols) { return ZeroMatrix<Dynamic, Dynamic>(rows, cols); }
+    static constexpr auto Ones() { return OnesMatrix<Rows_, Cols_>(); }
+    static constexpr auto Ones(int rows) {
+        fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
+        return OnesMatrix<Dynamic, Dynamic>(rows, 1);
+    }
+    static constexpr auto Ones(int rows, int cols) { return OnesMatrix<Dynamic, Dynamic>(rows, cols); }
+  
     // observers
     constexpr int bitpacks() const { return bitpacks_; }
     constexpr bitpack_t bitpack(int i) const { return data_[i]; }
@@ -1146,7 +1177,7 @@ class MatrixView<bool, Rows_, Cols_, StorageOrder_> :
     }
     constexpr void clear() {
         for (int i = 0; i < bitpacks_ - 1; ++i) { data_[i] = bitpack_t(0); }
-	data_[bitpacks_ - 1] &= ~last_bitpack_mask_;
+        data_[bitpacks_ - 1] &= ~last_bitpack_mask_;
     }
    private:
     StorageType data_;

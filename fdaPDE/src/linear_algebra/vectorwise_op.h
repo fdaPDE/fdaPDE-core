@@ -110,7 +110,7 @@ struct MatrixVectorWiseOp :
     constexpr auto squared_norm() const {
         return redux(xpr_, Scalar(0), [](Scalar tmp, Scalar x) { return tmp + x * x; });
     }
-    constexpr auto norm() const { return squared_norm().cwise_sqrt(); }
+    constexpr auto norm() const { return squared_norm().cwise().sqrt(); }
     // L^\infty norm
     constexpr auto inf_norm() const {
         return redux(xpr_, std::numeric_limits<Scalar>::min(), [](Scalar tmp, Scalar x) {
@@ -194,14 +194,14 @@ struct MatrixVectorWiseOp :
 };
 
 // row-wise matrix reduction expression
-template <typename XprType> struct MatrixRowWiseOp : public MatrixVectorWiseOp<XprType, 1> {
-    using Base = MatrixVectorWiseOp<XprType, 1>;
+template <typename XprType> struct MatrixRowWiseOp : public MatrixVectorWiseOp<XprType, 0> {
+    using Base = MatrixVectorWiseOp<XprType, 0>;
     template <typename XprType_> constexpr explicit MatrixRowWiseOp(XprType_&& xpr) noexcept : Base(xpr) { }
     using Base::operator=;
 };
 // col-wise matrix reduction expression
-template <typename XprType> struct MatrixColWiseOp : public MatrixVectorWiseOp<XprType, 0> {
-    using Base = MatrixVectorWiseOp<XprType, 0>;
+template <typename XprType> struct MatrixColWiseOp : public MatrixVectorWiseOp<XprType, 1> {
+    using Base = MatrixVectorWiseOp<XprType, 1>;
     template <typename XprType_> constexpr explicit MatrixColWiseOp(XprType_&& xpr) noexcept : Base(xpr) { }
     using Base::operator=;
 };  

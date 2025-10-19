@@ -19,6 +19,58 @@
 
 #include "header_check.h"
 
+// include Eigen linear algebra library
+// #include <Eigen/Eigen>
+// #define __FDAPDE_HAS_EIGEN__
+
+// namespace fdapde {
+// namespace internals {
+
+// // define basic eigen traits
+// template <typename XprType> struct is_eigen_dense_xpr {
+//     static constexpr bool value =
+//         std::is_base_of<Eigen::MatrixBase<std::decay_t<XprType>>, std::decay_t<XprType>>::value;
+// };
+// template <typename XprType> constexpr bool is_eigen_dense_xpr_v = is_eigen_dense_xpr<XprType>::value;
+// template <typename XprType> class is_eigen_dense_vec {
+//    private:
+//     using XprType_ = std::decay_t<XprType>;
+//     static constexpr bool check_() {
+//         if constexpr (is_eigen_dense_xpr_v<XprType_>) {
+// 	    return XprType_::IsVectorAtCompileTime;
+//         }
+//         return false;
+//     }
+//    public:
+//     static constexpr bool value = check_();
+// };
+// template <typename XprType> constexpr bool is_eigen_dense_vec_v = is_eigen_dense_vec<XprType>::value;
+
+// template <typename XprType> struct is_eigen_sparse_xpr {
+//     static constexpr bool value =
+//         std::is_base_of_v<Eigen::SparseMatrixBase<std::decay_t<XprType>>, std::decay_t<XprType>>;
+// };
+// template <typename XprType> constexpr bool is_eigen_sparse_xpr_v = is_eigen_sparse_xpr<XprType>::value;
+
+// }   // namespace internals
+// }   // namespace fdapde
+
+// eigen support
+// #include "src/linear_algebra/eigen/utility.h"
+
+// #include "src/linear_algebra/eigen/eigen_helper.h"
+// #include "src/linear_algebra/eigen/fspai.h"
+// #include "src/linear_algebra/eigen/kronecker.h"
+// #include "src/linear_algebra/eigen/lumping.h"
+// #include "src/linear_algebra/eigen/sparse_block_matrix.h"
+// #include "src/linear_algebra/eigen/woodbury.h"
+// // randomized linear algebra
+// #include "src/linear_algebra/eigen/rsi.h"
+// #include "src/linear_algebra/eigen/rbki.h"
+// #include "src/linear_algebra/eigen/rp_chol.h"
+
+
+
 namespace fdapde {
 namespace internals {
   

@@ -91,25 +91,24 @@ constexpr auto operator-(
   const SymmetricMatrixExpr<RhsXprType::Rows, RhsXprType::Cols, RhsXprType>& rhs) {
     return internals::symmetric_cast<Lower>(lhs - rhs);
 }
-template <typename XprType, typename CoeffType>
-    requires(std::is_arithmetic_v<CoeffType>)
-constexpr auto operator*(const SymmetricMatrixExpr<XprType::Rows, XprType::Cols, XprType>& lhs, CoeffType rhs) {
-    return internals::symmetric_cast<Lower>(MatrixCoeffWiseOp<XprType, internals::matrix_coeff_mult_t<CoeffType>>(
-      lhs.derived(), internals::matrix_coeff_mult_t<CoeffType>(rhs)));
+template <typename XprType, typename ScalarType>
+    requires(std::is_arithmetic_v<ScalarType>)
+constexpr auto operator*(const SymmetricMatrixExpr<XprType::Rows, XprType::Cols, XprType>& lhs, ScalarType rhs) {
+    return internals::symmetric_cast<Lower>(MatrixScalarMultiplicationOp<XprType, ScalarType>(lhs.derived(), rhs));
 }
-template <typename XprType, typename CoeffType>
-    requires(std::is_arithmetic_v<CoeffType>)
-constexpr auto operator*(CoeffType lhs, const SymmetricMatrixExpr<XprType::Rows, XprType::Cols, XprType>& rhs) {
+template <typename XprType, typename ScalarType>
+    requires(std::is_arithmetic_v<ScalarType>)
+constexpr auto operator*(ScalarType lhs, const SymmetricMatrixExpr<XprType::Rows, XprType::Cols, XprType>& rhs) {
     return rhs * lhs;
 }
-template <typename XprType, typename CoeffType>
-    requires(std::is_arithmetic_v<CoeffType>)
-constexpr auto operator/(const SymmetricMatrixExpr<XprType::Rows, XprType::Cols, XprType>& lhs, CoeffType rhs) {
-    return internals::symmetric_cast<Lower>(MatrixCoeffWiseOp<XprType, internals::matrix_coeff_mult_t<CoeffType>>(
-      lhs.derived(), internals::matrix_coeff_mult_t<CoeffType>(CoeffType(1) / rhs)));
+template <typename XprType, typename ScalarType>
+    requires(std::is_arithmetic_v<ScalarType>)
+constexpr auto operator/(const SymmetricMatrixExpr<XprType::Rows, XprType::Cols, XprType>& lhs, ScalarType rhs) {
+    return internals::symmetric_cast<Lower>(
+      MatrixScalarMultiplicationOp<XprType, ScalarType>(lhs.derived(), ScalarType(1) / rhs));
 }
 // any other operation doesn't preserve symmetry. A raw MatrixExpr is returned
-  
+
 template <typename Scalar_, int Size_, typename SymmetricMatrixType>
 class SymmetricMatrixBase : public SymmetricMatrixExpr<Size_, Size_, SymmetricMatrixType> {
    public:

@@ -27,7 +27,7 @@ template <int K> class KDTree {
     using Container    = BinaryTree<int>;
     using node_type    = Container::node_type;
     using node_pointer = Container::node_pointer;
-    using data_type = Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic>;
+    using data_type = Matrix<double, Dynamic, Dynamic>;
     Container kdtree_;   // the actual BinaryTree container
     data_type data_;     // set of data indexed by this tree
    public:
@@ -73,7 +73,7 @@ template <int K> class KDTree {
     iterator end() { return kdtree_.end(); }
 
     // returns an iterator to the nearest neighbor of p. Average O(log(n)) complexity (worst case is O(n))
-    iterator nn_search(const Eigen::Matrix<double, Dynamic, 1>& p) const {
+    iterator nn_search(const Matrix<double, Dynamic, 1>& p) const {
         fdapde_assert(p.size() == K);
         if (kdtree_.empty()) return kdtree_.cend();   // nothing to search
         const data_type& data = data_;
@@ -113,7 +113,7 @@ template <int K> class KDTree {
 
     // solves a (rectangular) range query in a K-dimensional euclidean space
     struct RangeType {
-        Eigen::Matrix<double, K, 1> ll, ur;   // lower-left and upper-right corner
+        Matrix<double, K, 1> ll, ur;   // lower-left and upper-right corner
     };
     // returns a set of iterators to the nodes contained in the query
     std::unordered_set<int> range_search(const RangeType& query) const {

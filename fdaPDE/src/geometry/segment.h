@@ -38,8 +38,8 @@ template <typename Triangulation> class Segment : public Simplex<Triangulation::
     }
     // getters
     int id() const { return id_; }
-    Eigen::Matrix<int, Dynamic, 1> neighbors() const { return mesh_->neighbors().row(id_); }
-    Eigen::Matrix<int, Dynamic, 1> node_ids() const { return mesh_->cells().row(id_); }
+    Matrix<int, Dynamic, 1> neighbors() const { return mesh_->neighbors().row(id_); }
+    Matrix<int, Dynamic, 1> node_ids() const { return mesh_->cells().row(id_); }
     bool on_boundary() const { return boundary_; }
     operator bool() const { return mesh_ != nullptr; }
    protected:

@@ -33,22 +33,22 @@ TEST(linear_algebra, arithmetic) {
 TEST(linear_algebra, cwise) {
     static constexpr Matrix<double, 2, 2> C({-1, 2, 3, -4});   // need static address for constexpr expressions
     static_assert([]() {
-        constexpr auto e = C.cwise_abs();
+        constexpr auto e = C.cwise().abs();
         constexpr Matrix<double, 2, 2> r({1, 2, 3, 4});
         return e == r;
     }());
     static_assert([]() {
-        constexpr auto e = C.cwise_pow(3);
+        constexpr auto e = C.cwise().pow(3);
         constexpr Matrix<double, 2, 2> r({-1, 8, 27, -64});
         return e == r;
     }());
     static_assert([]() {
-        constexpr auto e = C.cwise_pow2();
+        constexpr auto e = C.cwise().pow2();
         constexpr Matrix<double, 2, 2> r({1, 4, 9, 16});
         return e == r;
     }());
     static_assert([]() {
-        constexpr auto e = C.cwise_abs().cwise_sqrt();
+        constexpr auto e = C.cwise().abs().sqrt();
 
         constexpr double r1 = 1;
         constexpr double r2 = 1.414213562373095;
@@ -58,12 +58,12 @@ TEST(linear_algebra, cwise) {
         return almost_equal(e, r);
     }());
     static_assert([]() {
-        constexpr auto e = C.cwise_inv();
+        constexpr auto e = C.cwise().inv();
         constexpr Matrix<double, 2, 2> r({-1, 1. / 2, 1. / 3, -1. / 4});
         return almost_equal(e, r);
     }());
     static_assert([]() {
-        constexpr auto e = C.cwise_exp();
+        constexpr auto e = C.cwise().exp();
 
         constexpr double r1 = 0.36787944117144;
         constexpr double r2 = 7.38905609893065;
@@ -73,7 +73,7 @@ TEST(linear_algebra, cwise) {
         return almost_equal(e, r);
     }());
     static_assert([]() {
-        constexpr auto e = C.cwise_abs().cwise_log();
+        constexpr auto e = C.cwise().abs().log();
 
         constexpr double r1 = 0;
         constexpr double r2 = 0.69314718055994;
@@ -82,6 +82,11 @@ TEST(linear_algebra, cwise) {
         constexpr Matrix<double, 2, 2> r({r1, r2, r3, r4});
         return almost_equal(e, r);
     }());
+
+
+    // Matrix<double, 4, 4> AA;
+    // auto ee = AA.cwise() + 5;
+    
 }
 
 TEST(linear_algebra, redux) {
@@ -98,8 +103,8 @@ TEST(linear_algebra, redux) {
 
 TEST(linear_algebra, vectorwise) {
     static constexpr Matrix<double, 4, 3> A = Matrix<double, 4, 3>::Ones();
-    // rowwise
-    constexpr auto r = A.rowwise();
+    // colwise
+    constexpr auto r = A.colwise();
     static_assert(r.rows() == 1);
     static_assert(r.cols() == A.cols());
     static_assert(r.size() == A.cols());
@@ -129,8 +134,8 @@ TEST(linear_algebra, vectorwise) {
         return e == Matrix<double, 1, 3>({1, 1, 1});
     }());
 
-    // colwise
-    constexpr auto c = A.colwise();
+    // rowwise
+    constexpr auto c = A.rowwise();
     static_assert(c.rows() == A.rows());
     static_assert(c.cols() == 1);
     static_assert(c.size() == A.rows());
@@ -153,7 +158,6 @@ TEST(linear_algebra, vectorwise) {
     }());
     static_assert([c]() {
         constexpr auto e = c.norm();
-
         double s = fdapde::sqrt(3.0);
         return e == Matrix<double, 4, 1>({s, s, s, s});
     }());
@@ -185,4 +189,24 @@ TEST(linear_algebra, transpose) {
         EXPECT_EQ(At(7, 7), 1);
         EXPECT_EQ(At(1, 7), 3);
     }
+}
+
+TEST(linear_algebra, inverse) {
+    // static sized
+    {
+        // 1 x 1 inverse
+        constexpr Matrix<double, 1, 1> A1(4.0);
+        constexpr auto invA1 = A1.inverse();
+        static_assert(invA1 == Matrix<double, 1, 1>(1. / 4));
+        // 2 x 2 inverse
+        constexpr Matrix<double, 2, 2> A2({4.0, 7.0, 2.0, 6.0});
+        constexpr auto invA2 = A2.inverse();
+        static_assert(almost_equal(invA2 * A2, Matrix<double, 2, 2>({1, 0, 0, 1})));
+        // 3 x 3 inverse
+        constexpr Matrix<double, 3, 3> A3({1.0, 2.0, 3.0, 0.0, 1.0, 4.0, 5.0, 6.0, 0.0});
+        constexpr auto invA3 = A3.inverse();
+        static_assert(almost_equal(invA3 * A3, Matrix<double, 3, 3>({1, 0, 0, 0, 1, 0, 0, 0, 1})));
+    }
+
+    // TODO: dynamic case and trigger LU factorization
 }

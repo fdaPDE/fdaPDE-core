@@ -33,7 +33,7 @@ template <> class Triangulation<1, 1> : public TriangulationBase<1, 1, Triangula
     using Base::nodes_;       // physical coordinates of nodes
 
     Triangulation() = default;
-    Triangulation(const Eigen::Matrix<double, Dynamic, 1>& nodes, int flags = 0) : Base() {
+    Triangulation(const Matrix<double, Dynamic, 1>& nodes, int flags = 0) : Base() {
         fdapde_assert(nodes.rows() > 1 && nodes.cols() == 1);
 	Base::flags_ = flags;
         nodes_ = nodes;
@@ -49,7 +49,7 @@ template <> class Triangulation<1, 1> : public TriangulationBase<1, 1, Triangula
             cells_(i, 0) = i;
             cells_(i, 1) = i + 1;
         }
-        neighbors_ = Eigen::Matrix<int, Dynamic, Dynamic>::Constant(n_cells_, n_neighbors_per_cell, -1);
+        neighbors_ = Matrix<int, Dynamic, Dynamic>::Constant(n_cells_, n_neighbors_per_cell, -1);
         neighbors_(0, 1) = 1;
         for (int i = 1; i < n_cells_ - 1; ++i) {
             neighbors_(i, 0) = i - 1;
@@ -62,7 +62,7 @@ template <> class Triangulation<1, 1> : public TriangulationBase<1, 1, Triangula
         Base::boundary_markers_.set(n_nodes_ - 1);
     };
     // construct from interval's bounds [a, b] and the number of equidistant nodes n used to split [a, b]
-    Triangulation(double a, double b, int n) : Triangulation(Eigen::Matrix<double, Dynamic, 1>::LinSpaced(n, a, b)) { }
+    Triangulation(double a, double b, int n) : Triangulation(Matrix<double, Dynamic, 1>::LinSpaced(n, a, b)) { }
     Triangulation(const std::string& nodes, bool header, bool index_col, int flags = 0) :
         Triangulation(read_table<double>(nodes, header, index_col).as_matrix(), flags) { }
 
@@ -71,7 +71,7 @@ template <> class Triangulation<1, 1> : public TriangulationBase<1, 1, Triangula
     static Triangulation<1, 1> UnitInterval(int n_nodes) { return Triangulation<1, 1>::Interval(0.0, 1.0, n_nodes); }
 
     // getters
-    const Eigen::Matrix<int, Dynamic, Dynamic, Eigen::RowMajor>& neighbors() const { return neighbors_; }
+    const Matrix<int, Dynamic, Dynamic>& neighbors() const { return neighbors_; }
     const typename Base::CellType& cell(int id) const {
         if (Base::flags_ & cache_cells) {   // cell caching enabled
             return cell_cache_[id];
@@ -97,8 +97,8 @@ template <> class Triangulation<1, 1> : public TriangulationBase<1, 1, Triangula
     }
     // point location
     template <int Rows, int Cols>
-    std::conditional_t<Rows == Dynamic || Cols == Dynamic, Eigen::Matrix<int, Dynamic, 1>, int>
-    locate(const Eigen::Matrix<double, Rows, Cols>& p) const {
+    std::conditional_t<Rows == Dynamic || Cols == Dynamic, Matrix<int, Dynamic, 1>, int>
+    locate(const Matrix<double, Rows, Cols>& p) const {
         fdapde_static_assert(
           (Cols == 1 && Rows == 1) || (Cols == Dynamic && Rows == Dynamic),
           YOU_PASSED_A_MATRIX_OF_POINTS_TO_LOCATE_OF_WRONG_DIMENSIONS);
@@ -106,7 +106,7 @@ template <> class Triangulation<1, 1> : public TriangulationBase<1, 1, Triangula
             return locate_(p[0]);
         } else {
             fdapde_assert(p.rows() > 0 && p.cols() == 1);
-            Eigen::Matrix<int, Dynamic, 1> result;
+            Matrix<int, Dynamic, 1> result;
             result.resize(p.rows());
             // start search
             for (int i = 0; i < p.rows(); ++i) { result[i] = locate_(p(i, 0)); }
@@ -146,7 +146,7 @@ template <> class Triangulation<1, 1> : public TriangulationBase<1, 1, Triangula
         }
         return -1;
     }
-    Eigen::Matrix<int, Dynamic, Dynamic, Eigen::RowMajor> neighbors_ {};   // adjacent cells ids (-1: no adjacent cell)
+    Matrix<int, Dynamic, Dynamic> neighbors_ {};   // adjacent cells ids (-1: no adjacent cell)
     // cell caching
     std::vector<typename Base::CellType> cell_cache_;
     mutable typename Base::CellType cell_;   // used in case cell caching is off

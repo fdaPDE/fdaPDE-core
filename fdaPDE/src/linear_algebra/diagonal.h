@@ -146,17 +146,17 @@ template <typename XprType> constexpr auto diagonal_cast(XprType&& xpr) {
 
 }   // namespace internals
   
-template <int Rows_, int Cols_, typename XprType>
-struct DiagonalMatrixExpr : public MatrixExpr<Rows_, Cols_, XprType> {
-    using Base = MatrixExpr<Rows_, Cols_, XprType>;
+template <int Rows_, int Cols_, typename XprType_>
+struct DiagonalMatrixExpr : public MatrixExpr<Rows_, Cols_, XprType_> {
+    using Base = MatrixExpr<Rows_, Cols_, XprType_>;
     using Base::derived;
     static constexpr int Rows = Rows_;
     static constexpr int Cols = Cols_;
     static constexpr int StorageSize = Rows_ == Dynamic ? Dynamic : Rows_;
-    static constexpr int ReadOnly = std::is_const_v<XprType> ? 1 : 0;
+    static constexpr int ReadOnly = std::is_const_v<XprType_> ? 1 : 0;
     static constexpr int NestAsRef = 1;
     using assignment_executor = internals::diagonal_assignment_executor;
-
+  
     constexpr DiagonalMatrixExpr() noexcept : size_((Rows_ == Dynamic || Cols_ == Dynamic) ? 0 : Rows_) { }
     constexpr explicit DiagonalMatrixExpr(int size) noexcept :
         size_((Rows_ == Dynamic || Cols_ == Dynamic) ? size : Rows_) { }
@@ -165,7 +165,7 @@ struct DiagonalMatrixExpr : public MatrixExpr<Rows_, Cols_, XprType> {
     // const access
     constexpr auto operator()(int i, int j) const {   // only const access allowed for (i, j) accessor
         fdapde_assert(i >= 0 && i < rows() && j >= 0 && j < cols());
-	using Scalar = XprType::Scalar;
+	using Scalar = XprType_::Scalar;
         return i == j ? derived().data()[i] : Scalar(0);
     }
     constexpr auto operator[](int i) const {
@@ -177,19 +177,22 @@ struct DiagonalMatrixExpr : public MatrixExpr<Rows_, Cols_, XprType> {
         fdapde_assert(i >= 0 && i < rows());
         return derived().data()[i];
     }
-    // converts the diagonal expression to a full dense matrix
-    auto as_matrix() const { return Matrix<typename XprType::Scalar, Rows, Cols>(derived()); }
+    // converts to full dense matrix
+    auto as_matrix() const { return Matrix<typename XprType_::Scalar, Rows, Cols>(derived()); }
     // matrix inverse as 1/coeff
-    auto inverse() const { return internals::diagonal_cast(derived().diagonal().cwise_inv()); }
+    auto inverse() const { return internals::diagonal_cast(derived().diagonal().cwise().inv()); }
     // linear system solver Ax = b
     template <typename RhsXprType> constexpr auto solve(const RhsXprType& b) const {
-        using Scalar = typename XprType::Scalar;
+        using Scalar = typename XprType_::Scalar;
         Vector<Scalar, Rows> x;
         if constexpr (Rows == Dynamic) { x.resize(derived().rows()); }
 	for(int i = 0, n = derived().rows(); i < n; ++i) { x[i] = b[i] / derived().data()[i]; }
 	return x;
     }
     double determinant() const { return derived().diagonal().prod(); }
+    // make derived() point to innermost type
+    constexpr const XprType_& derived() const { return static_cast<const XprType_&>(*this); }
+    constexpr XprType_& derived() { return static_cast<XprType_&>(*this); }
     // observers
     constexpr int rows() const { return size_; }
     constexpr int cols() const { return size_; }
@@ -265,13 +268,13 @@ template <typename LhsXprType, typename RhsXprType> struct diagonal_diagonal_pro
 
 }   // namespace internals
   
-template <typename LhsXprType, typename RhsXprType, typename Executor> struct MatrixProductOp;
+template <typename LhsXprType, typename RhsXprType, typename Executor> struct MatrixMultiplicationOp;
 // diag(a_1, ..., a_n) * M
 template <typename LhsXprType, typename RhsXprType>
 constexpr auto operator*(
   const DiagonalMatrixExpr<LhsXprType::Rows, LhsXprType::Cols, LhsXprType>& lhs,
   const MatrixExpr<RhsXprType::Rows, RhsXprType::Cols, RhsXprType>& rhs) {
-    return MatrixProductOp<
+    return MatrixMultiplicationOp<
       LhsXprType, RhsXprType, internals::diagonal_matrix_product_executor<LhsXprType, RhsXprType, LhsMode>> {
       lhs.derived(), rhs.derived()};
 }
@@ -280,7 +283,7 @@ template <typename LhsXprType, typename RhsXprType>
 constexpr auto operator*(
   const MatrixExpr<LhsXprType::Rows, LhsXprType::Cols, LhsXprType>& lhs,
   const DiagonalMatrixExpr<RhsXprType::Rows, RhsXprType::Cols, RhsXprType>& rhs) {
-    return MatrixProductOp<
+    return MatrixMultiplicationOp<
       LhsXprType, RhsXprType, internals::diagonal_matrix_product_executor<LhsXprType, RhsXprType, RhsMode>> {
       lhs.derived(), rhs.derived()};
 }
@@ -290,7 +293,7 @@ constexpr auto operator*(
   const DiagonalMatrixExpr<LhsXprType::Rows, LhsXprType::Cols, LhsXprType>& lhs,
   const DiagonalMatrixExpr<RhsXprType::Rows, RhsXprType::Cols, RhsXprType>& rhs) {
     return internals::diagonal_cast(
-      MatrixProductOp<LhsXprType, RhsXprType, internals::diagonal_diagonal_product_executor<LhsXprType, RhsXprType>>(
+      MatrixMultiplicationOp<LhsXprType, RhsXprType, internals::diagonal_diagonal_product_executor<LhsXprType, RhsXprType>>(
         lhs.derived(), rhs.derived())
         .diagonal());
 }
@@ -320,12 +323,10 @@ class DiagonalMatrix : public DiagonalMatrixExpr<Rows_, Rows_, DiagonalMatrix<Sc
         if constexpr (Rows == Dynamic || Cols == Dynamic) { resize(rhs.rows()); }
         *this = rhs;
     }
-    template <typename DataT>
-        requires(internals::is_vector_like_v<DataT> && !internals::is_matrix_like_v<DataT>)
-    constexpr explicit DiagonalMatrix(DataT&& data) : Base(data.size()), data_() {
-        if constexpr (Rows == Dynamic || Cols == Dynamic) { data_.resize(data.size()); }
-	fdapde_assert(data_.size() == data.size());
-        for (int i = 0, n = data_.size(); i < n; ++i) { data_[i] = data[i]; }
+    constexpr explicit DiagonalMatrix(const std::vector<Scalar>& vec) : Base(vec.size()), data_() {
+        if constexpr (Rows == Dynamic || Cols == Dynamic) { data_.resize(vec.size()); }
+	fdapde_assert(data_.size() == vec.size());
+        for (int i = 0, n = data_.size(); i < n; ++i) { data_[i] = vec[i]; }
     }
     template <std::size_t RhsSize> constexpr explicit DiagonalMatrix(const Scalar (&data)[RhsSize]) : Base() {
         fdapde_static_assert(Rows != Dynamic && Cols != Dynamic, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);

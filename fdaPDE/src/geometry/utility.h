@@ -123,11 +123,11 @@ class filtering_iterator : public index_iterator<IteratorType, ValueType> {
     using Base = index_iterator<IteratorType, ValueType>;
    protected:
     using Base::index_;
-    BinaryVector<Dynamic> filter_;
+    Vector<bool, Dynamic> filter_;
    public:
     filtering_iterator() = default;
     filtering_iterator(int index, int begin, int end) : Base(index, begin, end) { }
-    filtering_iterator(int index, int begin, int end, const BinaryVector<Dynamic>& filter) :
+    filtering_iterator(int index, int begin, int end, const Vector<bool, Dynamic>& filter) :
         Base(index, begin, end), filter_(filter) { /* initialization is responsibility of IteratorType */ }
     IteratorType& operator++() {
         index_++;

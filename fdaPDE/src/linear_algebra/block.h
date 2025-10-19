@@ -87,24 +87,57 @@ class MatrixBlock : public MatrixExpr<BlockRows_, BlockCols_, MatrixBlock<BlockR
     constexpr int rows() const { return Rows != Dynamic ? Rows : block_rows_; }
     constexpr int cols() const { return Cols != Dynamic ? Cols : block_cols_; }
     constexpr int size() const { return rows() * cols(); }
-    constexpr Scalar operator()(int i, int j) const { return xpr_(start_row_ + i, start_col_ + j); }
-    constexpr Scalar operator[](int i) const {
+    constexpr decltype(auto) operator()(int i, int j) const { return xpr_(start_row_ + i, start_col_ + j); }
+    constexpr decltype(auto) operator[](int i) const {
         fdapde_static_assert(BlockRows_ == 1 || BlockCols_ == 1, THIS_METHOD_IS_FOR_ROW_AND_COLUMN_BLOCKS_ONLY);
         if constexpr (Rows == 1) return xpr_(start_row_, start_col_ + i);
         if constexpr (Cols == 1) return xpr_(start_row_ + i, start_col_);
     }
-    constexpr Scalar& operator()(int i, int j) {
-        fdapde_static_assert(XprType::ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_LOCATION);
-        return xpr_(start_row_ + i, start_col_ + j);
-    }
-    constexpr Scalar& operator[](int i) {
+    constexpr decltype(auto) operator()(int i, int j) { return xpr_(start_row_ + i, start_col_ + j); }
+    constexpr decltype(auto) operator[](int i) {
         fdapde_static_assert(BlockRows_ == 1 || BlockCols_ == 1, THIS_METHOD_IS_FOR_ROW_AND_COLUMN_BLOCKS_ONLY);
-        fdapde_static_assert(XprType::ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_LOCATION);
         if constexpr (Rows == 1) return xpr_(start_row_, start_col_ + i);
         if constexpr (Cols == 1) return xpr_(start_row_ + i, start_col_);
     }
     // inherit standard assignment operator
     using Base::operator=;
+    constexpr MatrixBlock& operator=(const std::initializer_list<Scalar>& data) {
+        fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
+        fdapde_assert(std::cmp_equal(this->size() FDAPDE_COMMA data.size()));
+        int i = 0;
+        for (Scalar v : data) { operator[](i++) = v; }
+        return *this;
+    }
+
+    // iterator
+    struct iterator {
+        constexpr iterator() : blk_(nullptr), i_(0), j_(0) { }
+        constexpr iterator(const MatrixBlock* blk) : blk_(blk), i_(0), j_(0) { }
+        constexpr iterator(const MatrixBlock* blk, int i, int j) : blk_(blk), i_(i), j_(j) { }
+
+        decltype(auto) operator*() { return blk_->operator()(i_, j_); }
+        decltype(auto) operator*() const { return blk_->operator()(i_, j_); }
+        iterator& operator++() {
+            i_++;
+            if (i_ == blk_->block_rows_) {
+                i_ = 0;
+                j_++;
+            }
+            return *this;
+        }
+
+        friend constexpr bool operator==(const iterator& lhs, const iterator& rhs) {
+            return lhs.i_ == rhs.i_ && lhs.j_ == rhs.j_;
+        }
+        friend constexpr bool operator!=(const iterator& lhs, const iterator& rhs) {
+            return lhs.i_ != rhs.i_ || lhs.j_ != rhs.j_;
+        }
+       private:
+        const MatrixBlock* blk_;
+        int i_, j_;
+    };
+    iterator begin() const { return iterator(this, 0, 0); }
+    iterator end() const { return iterator(this, block_rows_, block_cols_); }
    private:
     int start_row_ = 0, start_col_ = 0;
     int block_rows_ = 0, block_cols_ = 0;

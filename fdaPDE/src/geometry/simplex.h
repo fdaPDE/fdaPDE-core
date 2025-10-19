@@ -14,8 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_SIMPLEX_H__
-#define __FDAPDE_SIMPLEX_H__
+#ifndef __FDAPDE_GEOMETRY_SIMPLEX_H__
+#define __FDAPDE_GEOMETRY_SIMPLEX_H__
 
 #include "header_check.h"
 
@@ -33,13 +33,13 @@ template <int Order_, int EmbedDim_> class Simplex {
     static constexpr int n_faces = Order_ == 0 ? 0 : Order_ + 1;
     static constexpr int n_nodes_per_face = Order_;
     using BoundaryCellType = std::conditional_t<Order_ == 0, Simplex<0, EmbedDim_>, Simplex<Order_ - 1, EmbedDim_>>;
-    using NodeType = Eigen::Matrix<double, embed_dim, 1>;
+    using NodeType = Matrix<double, embed_dim, 1>;
 
     Simplex() = default;
-    explicit Simplex(const Eigen::Matrix<double, embed_dim, Order_ + 1>& coords) : coords_(coords) { initialize(); }
+    explicit Simplex(const Matrix<double, embed_dim, Order_ + 1>& coords) : coords_(coords) { initialize(); }
     // unit simplex constructor
     static Simplex<Order_, EmbedDim_> Unit() {
-        Eigen::Matrix<double, embed_dim, Order_ + 1> coords;
+        Matrix<double, embed_dim, Order_ + 1> coords;
         coords.setZero();
         for (int i = 0; i < embed_dim; ++i) coords(i, i + 1) = 1;
         return Simplex(coords);
@@ -47,9 +47,9 @@ template <int Order_, int EmbedDim_> class Simplex {
     // getters
     NodeType node(int v) const { return coords_.col(v); }
     NodeType operator[](int v) const { return coords_.col(v); }
-    const Eigen::Matrix<double, embed_dim, n_nodes>& nodes() const { return coords_; }
-    const Eigen::Matrix<double, embed_dim, local_dim>& J() const { return J_; }
-    const Eigen::Matrix<double, local_dim, embed_dim>& invJ() const { return invJ_; }
+    const Matrix<double, embed_dim, n_nodes>& nodes() const { return coords_; }
+    const Matrix<double, embed_dim, local_dim>& J() const { return J_; }
+    const Matrix<double, local_dim, embed_dim>& invJ() const { return invJ_; }
     double measure() const { return measure_; }
     // the smallest rectangle containing the simplex
     std::pair<NodeType, NodeType> bounding_box() const {
@@ -57,11 +57,11 @@ template <int Order_, int EmbedDim_> class Simplex {
     }
     // the barycenter has all its barycentric coordinates equal to 1/(local_dim + 1)
     NodeType barycenter() const {
-        return J_ * Eigen::Matrix<double, local_dim, 1>::Constant(1.0 / (local_dim + 1)) + coords_.col(0);
+        return J_ * Matrix<double, local_dim, 1>::Constant(1.0 / (local_dim + 1)) + coords_.col(0);
     }
     // writes the point p in the barycentric coordinate system of this simplex
-    Eigen::Matrix<double, local_dim + 1, 1> barycentric_coords(const NodeType& p) const {
-        Eigen::Matrix<double, local_dim + 1, 1> z;
+    Matrix<double, local_dim + 1, 1> barycentric_coords(const NodeType& p) const {
+        Matrix<double, local_dim + 1, 1> z;
         z.bottomRows(local_dim) = invJ_ * (p - coords_.col(0));
         z[0] = 1 - z.bottomRows(local_dim).sum();
         return z;
@@ -72,9 +72,9 @@ template <int Order_, int EmbedDim_> class Simplex {
         if constexpr (local_dim == 1) { return (coords_.col(0) + coords_.col(1)) / 2; }
         if constexpr (local_dim == 2 && embed_dim == 3) {
             // circumcenter of 3D triangle, see https://ics.uci.edu/~eppstein/junkyard/circumcenter.html
-            Eigen::Matrix<double, embed_dim, 1> a = coords_.col(1) - coords_.col(0);
-            Eigen::Matrix<double, embed_dim, 1> b = coords_.col(2) - coords_.col(0);
-            Eigen::Matrix<double, embed_dim, 1> aXb = a.cross(b);
+            Matrix<double, embed_dim, 1> a = coords_.col(1) - coords_.col(0);
+            Matrix<double, embed_dim, 1> b = coords_.col(2) - coords_.col(0);
+            Matrix<double, embed_dim, 1> aXb = a.cross(b);
             return coords_.col(0) +
                    (aXb.cross(a) * b.squaredNorm() + b.cross(aXb) * a.squaredNorm()) / (2 * aXb.squaredNorm());
         }
@@ -82,8 +82,8 @@ template <int Order_, int EmbedDim_> class Simplex {
             // circumcenter of d-dimensional simplex
             // see Bruno Lévy, Yang Liu. Lp Centroidal Voronoi Tesselation and its applications. ACM(2010), Appendix B.2
             double a = coords_.col(0).squaredNorm();
-            Eigen::Matrix<double, embed_dim, embed_dim> M;
-            Eigen::Matrix<double, embed_dim, 1> b;
+            Matrix<double, embed_dim, embed_dim> M;
+            Matrix<double, embed_dim, 1> b;
             for (int i = 0; i < n_nodes - 1; ++i) {
                 M.row(i) = coords_.col(i + 1) - coords_.col(0);
                 b[i] = coords_.col(i + 1).squaredNorm() - a;
@@ -98,7 +98,7 @@ template <int Order_, int EmbedDim_> class Simplex {
     double diameter() const {
         double max_length = -1;
         for (int i = 0; i < n_nodes - 1; ++i) {
-            Eigen::Matrix<double, embed_dim, 1> c = coords_.col(i);
+            Matrix<double, embed_dim, 1> c = coords_.col(i);
             for (int j = i + 1; j < n_nodes; ++j) {
                 double length = (c - coords_.col(j)).norm();
                 if (length > max_length) max_length = length;
@@ -112,17 +112,17 @@ template <int Order_, int EmbedDim_> class Simplex {
         return plane_.value();
     }
     // normal direction
-    Eigen::Matrix<double, local_dim + 1, 1> normal() const requires(local_dim != embed_dim) {
+    Matrix<double, local_dim + 1, 1> normal() const requires(local_dim != embed_dim) {
         return supporting_plane().normal();
     }
     // returns true if x belongs to the interior of the simplex
     enum ContainsReturnType { OUTSIDE = 0, INSIDE = 1, ON_FACE = 2, ON_VERTEX = 3 };
-    ContainsReturnType contains(const Eigen::Matrix<double, embed_dim, 1>& x) const requires(Order_ > 0) {
+    ContainsReturnType contains(const Matrix<double, embed_dim, 1>& x) const requires(Order_ > 0) {
         if constexpr (local_dim != embed_dim) {
             if (supporting_plane().distance(x) > machine_epsilon) return ContainsReturnType::OUTSIDE;
         }
         // move x to barycentric coordinates
-        Eigen::Matrix<double, local_dim + 1, 1> z;
+        Matrix<double, local_dim + 1, 1> z;
         z.bottomRows(local_dim) = invJ_ * (x - coords_.col(0));
         z[0] = 1 - z.bottomRows(local_dim).sum();
         if ((z.array() < -machine_epsilon).any()) return ContainsReturnType::OUTSIDE;
@@ -142,7 +142,7 @@ template <int Order_, int EmbedDim_> class Simplex {
         boundary_iterator& operator()(int i) requires(Order_ > 0) {
             std::vector<bool> bitmask(n_nodes, 0);
             std::fill_n(bitmask.begin(), n_nodes_per_face, 1);
-            Eigen::Matrix<double, embed_dim, n_nodes_per_face> coords;
+            Matrix<double, embed_dim, n_nodes_per_face> coords;
             for (int j = 0; j < i; ++j) std::prev_permutation(bitmask.begin(), bitmask.end());
             for (int j = 0, h = 0; j < n_nodes; ++j) {
                 if (bitmask[j]) coords.col(h++) = s_->coords_.col(j);
@@ -159,8 +159,8 @@ template <int Order_, int EmbedDim_> class Simplex {
     boundary_iterator boundary_end() const requires(Order_ >= 1) { return boundary_iterator(Order_ + 1, this); }
 
     // finds the best approximation of p in the simplex (q \in simplex : q = \argmin_{t \in simplex}{\norm{t - p}})
-    Eigen::Matrix<double, embed_dim, 1> nearest(const Eigen::Matrix<double, embed_dim, 1>& p) const {
-        Eigen::Matrix<double, local_dim + 1, 1> q = barycentric_coords(p);
+    Matrix<double, embed_dim, 1> nearest(const Matrix<double, embed_dim, 1>& p) const {
+        Matrix<double, local_dim + 1, 1> q = barycentric_coords(p);
 	// check if point inside simplex
         if constexpr (local_dim != embed_dim) {
             if (
@@ -180,7 +180,9 @@ template <int Order_, int EmbedDim_> class Simplex {
             std::iota(idx.begin(), idx.end(), 0);
             std::sort(idx.begin(), idx.end(), [&](int a, int b) { return dst[a] < dst[b]; });
 	    // recurse on Order_ - 1 subsimplex
-            Simplex<Order_ - 1, embed_dim> s(coords_(Eigen::all, std::vector<int>(idx.begin(), idx.end() - 1)));
+            Matrix<double, embed_dim, Order_> s_coords;
+            for (int i = 0; i < n_nodes - 1; ++i) { s_coords.row(i) = coords_.row(idx[i]); }
+            Simplex<Order_ - 1, embed_dim> s(s_coords);
             return s.nearest(p);
         }
     }
@@ -199,14 +201,14 @@ template <int Order_, int EmbedDim_> class Simplex {
         }
     }
 
-    Eigen::Matrix<double, embed_dim, n_nodes> coords_;
+    Matrix<double, embed_dim, n_nodes> coords_;
     mutable std::optional<HyperPlane<local_dim, embed_dim>> plane_;
     double measure_;
     // affine mappings from physical to reference simplex and viceversa
-    Eigen::Matrix<double, embed_dim, local_dim> J_;      // [J_]_ij = (coords_(j,i) - coords_(0,i))
-    Eigen::Matrix<double, local_dim, embed_dim> invJ_;   // J^{-1} (Penrose pseudo-inverse for manifold)
+    Matrix<double, embed_dim, local_dim> J_;      // [J_]_ij = (coords_(j,i) - coords_(0,i))
+    Matrix<double, local_dim, embed_dim> invJ_;   // J^{-1} (Penrose pseudo-inverse for manifold)
 };
 
 }   // namespace fdapde
 
-#endif   // __FDAPDE_SIMPLEX_H__
+#endif   // __FDAPDE_GEOMETRY_SIMPLEX_H__

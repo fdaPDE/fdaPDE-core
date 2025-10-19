@@ -74,7 +74,6 @@ class fdapde_testing_printer : public ::testing::EmptyTestEventListener {
     }
     void OnTestStart(const ::testing::TestInfo&) override {
         ++current_;
-        test_start = std::chrono::steady_clock::now();
         // draw progress bar
         draw_progress_();
         // redirect cout/cerr, later dump to stdout if program writes something
@@ -82,6 +81,7 @@ class fdapde_testing_printer : public ::testing::EmptyTestEventListener {
         capture_buf_.clear();
         old_cout_ = std::cout.rdbuf(capture_buf_.rdbuf());
         old_cerr_ = std::cerr.rdbuf(capture_buf_.rdbuf());
+        test_start = std::chrono::steady_clock::now();
     }
 
     void OnTestEnd(const ::testing::TestInfo& test_info) override {
@@ -96,7 +96,7 @@ class fdapde_testing_printer : public ::testing::EmptyTestEventListener {
         std::string ts = timestamp_();
         // build test info string
         std::ostringstream row;
-        row << "[" << ts << "] " << std::setw(3) << current_ << "/" << n_tests_ << "   \033[1m"
+        row << "[" << ts << "] " << std::setw(3) << current_ << "/" << n_tests_ << "   \033[1m" << std::left
             << std::setw(suite_width_) << test_info.test_suite_name() << "\033[0m  " << std::left
             << std::setw(test_width_) << test_info.name();
         row << std::string(gap_before_status_, ' ');
@@ -141,13 +141,13 @@ class fdapde_testing_printer : public ::testing::EmptyTestEventListener {
 };
 
 #include "linear_algebra/block.cpp"
-#include "linear_algebra/expr.cpp"
+#include "linear_algebra/xpr.cpp"
 #include "linear_algebra/matrix.cpp"
 #include "linear_algebra/diagonal.cpp"
 #include "linear_algebra/triangular.cpp"
 #include "linear_algebra/bool.cpp"
 
-// #include "geometry/triangle.cpp"
+#include "geometry/triangle.cpp"
 
 int main(int argc, char** argv) {
     // start testing
