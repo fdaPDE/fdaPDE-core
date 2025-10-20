@@ -24,7 +24,7 @@
 namespace fdapde {
 
 // forward declaration
-template <int Rows, int Cols, typename XprType> struct MatrixExpr;
+template <typename XprType> struct MatrixExpr;
 
 // storage orders
 [[maybe_unused]] constexpr int RowMajor = 0;
@@ -76,8 +76,16 @@ template <typename XprType> struct is_vector_shaped {
     using XprTypeClean = std::decay_t<XprType>;
     static constexpr bool value = (XprTypeClean::Rows == 1 || XprTypeClean::Cols == 1);
 };
-template <typename XprType> static constexpr bool is_vector_shaped_v = is_vector_shaped<XprType>::value;  
-  
+template <typename XprType> static constexpr bool is_vector_shaped_v = is_vector_shaped<XprType>::value;
+
+// true if assignment is valid
+template <typename LhsXprType, typename RhsXprType> struct is_static_assignable {
+    static constexpr bool value =
+      is_dynamic_sized_v<LhsXprType> || is_dynamic_sized_v<RhsXprType> || same_static_shape_v<LhsXprType, RhsXprType>;
+};
+template <typename LhsXprType, typename RhsXprType>
+static constexpr bool is_static_assignable_v = is_static_assignable<LhsXprType, RhsXprType>::value;
+
 }   // namespace internals
 }   // namespace fdapde
 
@@ -91,21 +99,21 @@ template <typename XprType> static constexpr bool is_vector_shaped_v = is_vector
 #include "src/linear_algebra/diagonal.h"
 #include "src/linear_algebra/orthogonal.h"
 #include "src/linear_algebra/triangular.h"
-#include "src/linear_algebra/symmetric.h"
+// #include "src/linear_algebra/symmetric.h"
 #include "src/linear_algebra/bool.h"
 
-// #include "src/linear_algebra/skew.h"
+// // #include "src/linear_algebra/skew.h"
 #include "src/linear_algebra/permutation.h"
-// #include "src/linear_algebra/spd.h"
+// // #include "src/linear_algebra/spd.h"
 
 
 #include "src/linear_algebra/partial_piv_lu.h"
 
-// expression template system
+// // expression template system
 #include "src/linear_algebra/xpr.h"
 
-// algorithms
-#include "src/linear_algebra/evd.h"
+// // algorithms
+// #include "src/linear_algebra/evd.h"
 
 // #include "src/linear_algebra/qr.h"
 

@@ -27,14 +27,14 @@ namespace internals {
 
 // Lazy expression representing a row-wise or column-wise reduction with a custom operator
 template <typename XprType, typename ReductionOp, int ByRow>
-struct partial_matrix_redux_op :
-    public MatrixExpr<
-      ByRow ? 1 : XprType::Rows, ByRow ? XprType::Cols : 1, partial_matrix_redux_op<XprType, ReductionOp, ByRow>> {
+struct partial_matrix_redux_op : public MatrixExpr<partial_matrix_redux_op<XprType, ReductionOp, ByRow>> {
+   private:
+    using Base = MatrixExpr<partial_matrix_redux_op<XprType, ReductionOp, ByRow>>;
+    using XprTypeNested = internals::ref_select_t<std::conditional_t<XprType::ReadOnly, const XprType, XprType>>;
+   public:
+    using Scalar = typename XprType::Scalar;
     static constexpr int Rows = ByRow ? 1 : XprType::Rows;
     static constexpr int Cols = ByRow ? XprType::Cols : 1;
-    using Base = MatrixExpr<Rows, Cols, partial_matrix_redux_op<XprType, ReductionOp, ByRow>>;
-    using XprTypeNested = internals::ref_select_t<std::conditional_t<XprType::ReadOnly, const XprType, XprType>>;
-    using Scalar = typename XprType::Scalar;
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = XprType::ReadOnly;
 
@@ -65,13 +65,14 @@ struct partial_matrix_redux_op :
 }   // namespace internals
 
 template <typename XprType, int ByRow>
-struct MatrixVectorWiseOp :
-    public MatrixExpr<ByRow ? 1 : XprType::Rows, ByRow ? XprType::Cols : 1, MatrixVectorWiseOp<XprType, ByRow>> {
+struct MatrixVectorWiseOp : public MatrixExpr<MatrixVectorWiseOp<XprType, ByRow>> {
+   private:
+    using Base = MatrixExpr<MatrixVectorWiseOp<XprType, ByRow>>;
+    using XprTypeNested = internals::ref_select_t<std::conditional_t<XprType::ReadOnly, const XprType, XprType>>;
+   public:
+    using Scalar = typename XprType::Scalar;
     static constexpr int Rows = ByRow ? 1 : XprType::Rows;
     static constexpr int Cols = ByRow ? XprType::Cols : 1;
-    using Base = MatrixExpr<Rows, Cols, MatrixVectorWiseOp<XprType, ByRow>>;
-    using XprTypeNested = internals::ref_select_t<std::conditional_t<XprType::ReadOnly, const XprType, XprType>>;
-    using Scalar = typename XprType::Scalar;
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = XprType::ReadOnly;
 
@@ -120,63 +121,61 @@ struct MatrixVectorWiseOp :
     }
 
     // vector-wise assignment
-    template <int XprRows_, int XprCols_, typename XprType_>
-    constexpr MatrixVectorWiseOp& operator=(const MatrixExpr<XprRows_, XprCols_, XprType_>& rhs) {
+    template <typename XprType_> constexpr MatrixVectorWiseOp& operator=(const MatrixExpr<XprType_>& rhs) {
         partial_redux_inplace_loop_(rhs, [](Scalar& a, Scalar b) { a = b; });
         return *this;
     }
-    template <int XprRows_, int XprCols_, typename XprType_>
-    constexpr MatrixVectorWiseOp& operator+=(const MatrixExpr<XprRows_, XprCols_, XprType_>& rhs) {
+    template <typename XprType_> constexpr MatrixVectorWiseOp& operator+=(const MatrixExpr<XprType_>& rhs) {
         partial_redux_inplace_loop_(rhs, [](Scalar& a, Scalar b) { a += b; });
         return *this;
     }
-    template <int XprRows_, int XprCols_, typename XprType_>
-    constexpr MatrixVectorWiseOp& operator-=(const MatrixExpr<XprRows_, XprCols_, XprType_>& rhs) {
+    template <typename XprType_> constexpr MatrixVectorWiseOp& operator-=(const MatrixExpr<XprType_>& rhs) {
         partial_redux_inplace_loop_(rhs, [](Scalar& a, Scalar b) { a -= b; });
         return *this;
     }
 
     // vectorwise comparison
-    template <int Rows_, int Cols_, typename XprType_>
-    friend constexpr bool operator==(const MatrixVectorWiseOp& op1, const MatrixExpr<Rows_, Cols_, XprType_>& op2) {
+    template <typename XprType_>
+    friend constexpr bool operator==(const MatrixVectorWiseOp& lhs, const MatrixExpr<XprType_>& rhs) {
         fdapde_static_assert(
-          (internals::is_dynamic_sized_v<XprType> || internals::is_dynamic_sized_v<XprType_> ||
-           (Rows == Rows_ && Cols == Cols_)),
+          (internals::is_dynamic_sized_v<MatrixVectorWiseOp> || internals::is_dynamic_sized_v<XprType_> ||
+           internals::same_static_shape_v<MatrixVectorWiseOp FDAPDE_COMMA XprType_>),
           INVALID_VECTORWISE_COMPARISON__OPERANDS_HAVE_DIFFERENT_SIZES);
-        if constexpr (internals::is_dynamic_sized_v<XprType> || internals::is_dynamic_sized_v<XprType_>) {
-            fdapde_assert(op1.rows() == op2.rows() && op1.cols() == op2.cols());
+        if constexpr (internals::is_dynamic_sized_v<MatrixVectorWiseOp> || internals::is_dynamic_sized_v<XprType_>) {
+            fdapde_assert(lhs.rows() == rhs.rows() && lhs.cols() == rhs.cols());
         }
-        const auto& d2 = op2.derived();
-        for (int i = 0, n = op1.xpr_.rows(); i < n; ++i) {
-            for (int j = 0, m = op1.xpr_.cols(); j < m; ++j) {
-                if (op1.xpr_(i, j) != d2[ByRow ? j : i]) { return false; }
+        const auto& d2 = rhs.derived();
+        for (int i = 0, n = lhs.xpr_.rows(); i < n; ++i) {
+            for (int j = 0, m = lhs.xpr_.cols(); j < m; ++j) {
+                if (lhs.xpr_(i, j) != d2[ByRow ? j : i]) { return false; }
             }
         }
         return true;
     }
-    template <int Rows_, int Cols_, typename XprType_>
-    friend constexpr bool operator==(const MatrixExpr<Rows_, Cols_, XprType_>& op1, const MatrixVectorWiseOp& op2) {
-        return op2 == op1;
+    template <typename XprType_>
+    friend constexpr bool operator==(const MatrixExpr<XprType_>& lhs, const MatrixVectorWiseOp& rhs) {
+        return rhs == lhs;
     }
-    template <int Rows_, int Cols_, typename XprType_>
-    friend constexpr bool operator!=(const MatrixVectorWiseOp& op1, const MatrixExpr<Rows_, Cols_, XprType_>& op2) {
-        return !(op1 == op2);
+    template <typename XprType_>
+    friend constexpr bool operator!=(const MatrixVectorWiseOp& lhs, const MatrixExpr<XprType_>& rhs) {
+        return !(lhs == rhs);
     }
-    template <int Rows_, int Cols_, typename XprType_>
-    friend constexpr bool operator!=(const MatrixExpr<Rows_, Cols_, XprType_>& op1, const MatrixVectorWiseOp& op2) {
-        return !(op2 == op1);
+    template <typename XprType_>
+    friend constexpr bool operator!=(const MatrixExpr<XprType_>& lhs, const MatrixVectorWiseOp& rhs) {
+        return !(rhs == lhs);
     }
-  
+
     // observers
     constexpr int rows() const { return ByRow ? Rows : xpr_.rows(); }
     constexpr int cols() const { return ByRow ? xpr_.cols() : Cols; }
    private:
     // internals
-    template <int XprRows_, int XprCols_, typename XprType_, typename Operator_>
-    constexpr void partial_redux_inplace_loop_(const MatrixExpr<XprRows_, XprCols_, XprType_>& rhs, Operator_&& op) {
+    template <typename XprType_, typename Operator_>
+    constexpr void partial_redux_inplace_loop_(const MatrixExpr<XprType_>& rhs, Operator_&& op) {
+        constexpr int XprRows = XprType_::Rows, XprCols = XprType_::Cols;
         fdapde_static_assert(
-          (Rows == 1 && XprRows_ == 1) || (Cols == 1 & XprCols_ == 1), NO_MATCHING_SIZES_IN_VECTOR_WISE_ASSIGNMENT);
-        fdapde_static_assert(XprType::ReadOnly == 0, ASSIGNMENT_TO_A_READ_ONLY_EXPRESSION);
+          (Rows == 1 && XprRows == 1) || (Cols == 1 & XprCols == 1), NO_MATCHING_SIZES_IN_VECTORWISE_ASSIGNMENT);
+        fdapde_static_assert(XprType::ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_LOCATION);
         fdapde_assert(Rows == 1 && xpr_.cols() == rhs.cols() || Cols == 1 && xpr_.rows() == rhs.rows());
 
         int inner_size_ = ByRow ? xpr_.rows() : xpr_.cols();

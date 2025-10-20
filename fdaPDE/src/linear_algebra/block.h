@@ -25,15 +25,16 @@ namespace fdapde {
 // Supports general blocks as well as row/column vector views.
 
 template <int BlockRows_, int BlockCols_, typename XprType>
-class MatrixBlock : public MatrixExpr<BlockRows_, BlockCols_, MatrixBlock<BlockRows_, BlockCols_, XprType>> {
+class MatrixBlock : public MatrixExpr<MatrixBlock<BlockRows_, BlockCols_, XprType>> {
     fdapde_static_assert(
       internals::is_dynamic_sized_v<XprType> ||
         ((BlockRows_ == Dynamic || (BlockRows_ > 0 && BlockRows_ <= XprType::Rows)) &&
          (BlockCols_ == Dynamic || (BlockCols_ > 0 && BlockCols_ <= XprType::Cols))),
-      INVALID_STATIC_SIZED_BLOCK);
-   public:
-    using Base = MatrixExpr<BlockRows_, BlockCols_, MatrixBlock<BlockRows_, BlockCols_, XprType>>;
+      INVALID_BLOCK__STATIC_SIZES_DONT_FIT_WRAPPED_EXPRESSION);
+   private:
+    using Base = MatrixExpr<MatrixBlock<BlockRows_, BlockCols_, XprType>>;
     using XprTypeNested = internals::ref_select_t<XprType>;
+   public:
     using Scalar = typename XprType::Scalar;
     static constexpr int Rows = BlockRows_;
     static constexpr int Cols = BlockCols_;

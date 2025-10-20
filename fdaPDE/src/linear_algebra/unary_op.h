@@ -24,8 +24,8 @@ namespace fdapde {
 // this file contains all the expression nodes involving an operation applied on a single MatrixExpr operand
 
 // expression of the transpose of a MatrixExpr operand
-template <typename XprType> struct TransposeOp : public MatrixExpr<XprType::Cols, XprType::Rows, TransposeOp<XprType>> {
-    using Base = MatrixExpr<XprType::Cols, XprType::Rows, TransposeOp<XprType>>;
+template <typename XprType> struct TransposeOp : public MatrixExpr<TransposeOp<XprType>> {
+    using Base = MatrixExpr<TransposeOp<XprType>>;
     using XprTypeNested = internals::ref_select_t<const XprType>;
     using Scalar = typename XprType::Scalar;
     static constexpr int Rows = XprType::Cols;
@@ -49,8 +49,8 @@ template <typename XprType> struct TransposeOp : public MatrixExpr<XprType::Cols
 
 // expression of a reshaped MatrixExpr operand. Reshaping modifes the expression dimensions without reallocating memory
 template <int Rows_, int Cols_, typename XprType>
-struct ReshapeOp : public MatrixExpr<Rows_, Cols_, ReshapeOp<Rows_, Cols_, XprType>> {
-    using Base = MatrixExpr<Rows_, Cols_, ReshapeOp<Rows_, Cols_, XprType>>;
+struct ReshapeOp : public MatrixExpr<ReshapeOp<Rows_, Cols_, XprType>> {
+    using Base = MatrixExpr<ReshapeOp<Rows_, Cols_, XprType>>;
     using XprTypeNested = internals::ref_select_t<XprType>;
     using Scalar = typename XprType::Scalar;
     static constexpr int Rows = Rows_;
@@ -130,9 +130,11 @@ template <typename XprType, typename Functor> struct matrix_linear_redux_executo
 }   // namespace internals
 
 template <typename XprType, typename Executor> struct MatrixReduxOp {
+   private:
     using ExecutorReturnType = typename Executor::Scalar;
-    using Scalar = typename XprType::Scalar;
     using XprTypeNested = internals::ref_select_t<const XprType>;
+   public:
+    using Scalar = typename XprType::Scalar;
 
     template <typename XprType_>
         requires(std::is_constructible_v<XprTypeNested, XprType_>)

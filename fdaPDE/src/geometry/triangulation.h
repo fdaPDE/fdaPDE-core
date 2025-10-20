@@ -150,7 +150,7 @@ template <int LocalDim, int EmbedDim, typename Derived> class TriangulationBase 
             cells_markers_[it->id()] = lambda(*it) ? marker : Unmarked;
         }
     }
-    template <int Rows, typename XprType> void mark_cells(const BoolMatrixExpr<Rows, 1, XprType>& mask) {
+    template <typename XprType> void mark_cells(const BoolMatrixExpr<XprType>& mask) {
         fdapde_assert(mask.rows() == n_cells_);
         cells_markers_.resize(n_cells_, Unmarked);
         for (cell_iterator it = cells_begin(); it != cells_end(); ++it) {
@@ -551,7 +551,7 @@ template <int N> class Triangulation<2, N> : public TriangulationBase<2, N, Tria
             }
         }
     }
-    template <int Rows, typename XprType> void mark_boundary(const BoolMatrixExpr<Rows, 1, XprType>& mask) {
+    template <typename XprType> void mark_boundary(const BoolMatrixExpr<XprType>& mask) {
         fdapde_assert(mask.rows() == n_edges_);
         edges_markers_.resize(n_edges_, 0);
         for (boundary_edge_iterator it = boundary_edges_begin(); it != boundary_edges_end(); ++it) {
@@ -905,7 +905,7 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
         }
         return;
     }
-    template <int Rows, typename XprType> void mark_boundary(const BoolMatrixExpr<Rows, 1, XprType>& mask) {
+    template <typename XprType> void mark_boundary(const BoolMatrixExpr<XprType>& mask) {
         fdapde_assert(mask.rows() == n_edges_);
         faces_markers_.resize(n_faces_, 0);
 	edges_markers_.resize(n_edges_, 0);

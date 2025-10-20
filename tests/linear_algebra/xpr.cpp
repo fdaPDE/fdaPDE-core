@@ -172,6 +172,8 @@ TEST(linear_algebra, transpose) {
     {
         static constexpr Matrix<double, 3, 3> A({1, 2, 3, 4, 5, 6, 7, 8, 9});
         static_assert(A.transpose() == Matrix<double, 3, 3>({1, 4, 7, 2, 5, 8, 3, 6, 9}));
+
+	// test static sized rows/cols for non square matrices
     }
 
     // dynamic-sized

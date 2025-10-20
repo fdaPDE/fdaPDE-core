@@ -21,15 +21,15 @@
 
 namespace fdapde {
 
-template <int XprRows_, int XprCols_, typename XprType_> struct MatrixCoeffWiseExpr;
+template <typename XprType_> struct MatrixCoeffWiseExpr;
 
 template <typename XprType, typename CoeffOp>
-struct MatrixCoeffWiseOp :
-    public MatrixCoeffWiseExpr<XprType::Rows, XprType::Cols, MatrixCoeffWiseOp<XprType, CoeffOp>> {
-   public:
-    using Base = MatrixCoeffWiseExpr<XprType::Rows, XprType::Cols, MatrixCoeffWiseOp<XprType, CoeffOp>>;
+struct MatrixCoeffWiseOp : public MatrixCoeffWiseExpr<MatrixCoeffWiseOp<XprType, CoeffOp>> {
+   private:
+    using Base = MatrixCoeffWiseExpr<MatrixCoeffWiseOp<XprType, CoeffOp>>;
     using XprTypeNested = internals::ref_select_t<const XprType>;
     using XprTypeClean = std::decay_t<XprType>;
+   public:
     using Scalar = typename XprType::Scalar;
     static constexpr int Rows = XprTypeClean::Rows;
     static constexpr int Cols = XprTypeClean::Cols;
@@ -56,11 +56,11 @@ struct MatrixCoeffWiseOp :
 };
 
 // return type of MatrixExpr::cwise(), represents the entry point for coefficient wise algebra
-template <typename XprType>
-struct MatrixCoeffWiseProxy : public MatrixCoeffWiseExpr<XprType::Rows, XprType::Cols, MatrixCoeffWiseProxy<XprType>> {
-    using Base = MatrixCoeffWiseExpr<XprType::Rows, XprType::Cols, MatrixCoeffWiseProxy<XprType>>;
-    friend Base;
+template <typename XprType> struct MatrixCoeffWiseProxy : public MatrixCoeffWiseExpr<MatrixCoeffWiseProxy<XprType>> {
+   private:
+    using Base = MatrixCoeffWiseExpr<MatrixCoeffWiseProxy<XprType>>;
     using XprTypeNested = internals::ref_select_t<const XprType>;
+   public:
     using Scalar = typename XprType::Scalar;
 
     template <typename XprType_>
@@ -73,16 +73,13 @@ struct MatrixCoeffWiseProxy : public MatrixCoeffWiseExpr<XprType::Rows, XprType:
    private:
     XprTypeNested xpr_;
 };
-  
-template <int XprRows_, int XprCols_, typename XprType_>
-struct MatrixCoeffWiseExpr : public MatrixExpr<XprRows_, XprCols_, XprType_> {
-    static constexpr int Rows = XprRows_;
-    static constexpr int Cols = XprCols_;
+
+template <typename XprType_> struct MatrixCoeffWiseExpr : public MatrixExpr<XprType_> {
     using XprType = XprType_;
 
+    // observers
     constexpr const XprType& derived() const { return static_cast<const XprType&>(*this); }
     constexpr XprType& derived() { return static_cast<XprType&>(*this); }
-  
     // catalogue of coeficient wise operations
     constexpr auto abs() const {
         using Scalar = typename XprType::Scalar;
@@ -116,38 +113,67 @@ struct MatrixCoeffWiseExpr : public MatrixExpr<XprRows_, XprCols_, XprType_> {
 };
 
 // coeffwise arithmetic
-template <int XprRows_, int XprCols_, typename XprType_, typename ScalarType>
+template <typename XprType_, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
-constexpr auto operator+(const MatrixCoeffWiseExpr<XprRows_, XprCols_, XprType_>& lhs, ScalarType rhs) {
+constexpr auto operator+(const MatrixCoeffWiseExpr<XprType_>& lhs, ScalarType rhs) {
     return lhs.derived().apply([rhs](auto x) { return x + rhs; });
 }
-template <int XprRows_, int XprCols_, typename XprType_, typename ScalarType>
-constexpr auto operator+(ScalarType lhs, const MatrixCoeffWiseExpr<XprRows_, XprCols_, XprType_>& rhs) {
+template <typename XprType_, typename ScalarType>
+constexpr auto operator+(ScalarType lhs, const MatrixCoeffWiseExpr<XprType_>& rhs) {
     return rhs + lhs;
 }
-template <int XprRows_, int XprCols_, typename XprType_, typename ScalarType>
+template <typename XprType_, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
-constexpr auto operator-(const MatrixCoeffWiseExpr<XprRows_, XprCols_, XprType_>& lhs, ScalarType rhs) {
+constexpr auto operator-(const MatrixCoeffWiseExpr<XprType_>& lhs, ScalarType rhs) {
     return lhs.derived().apply([rhs](auto x) { return x - rhs; });
 }
-template <int XprRows_, int XprCols_, typename XprType_, typename ScalarType>
-constexpr auto operator-(ScalarType lhs, const MatrixCoeffWiseExpr<XprRows_, XprCols_, XprType_>& rhs) {
+template <typename XprType_, typename ScalarType>
+constexpr auto operator-(ScalarType lhs, const MatrixCoeffWiseExpr<XprType_>& rhs) {
     return rhs - lhs;
 }
-template <int XprRows_, int XprCols_, typename XprType_, typename ScalarType>
+template <typename XprType_, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
-constexpr auto operator*(const MatrixCoeffWiseExpr<XprRows_, XprCols_, XprType_>& lhs, ScalarType rhs) {
+constexpr auto operator*(const MatrixCoeffWiseExpr<XprType_>& lhs, ScalarType rhs) {
     return lhs.derived().apply([rhs](auto x) { return x * rhs; });
 }
-template <int XprRows_, int XprCols_, typename XprType_, typename ScalarType>
-constexpr auto operator*(ScalarType lhs, const MatrixCoeffWiseExpr<XprRows_, XprCols_, XprType_>& rhs) {
+template <typename XprType_, typename ScalarType>
+constexpr auto operator*(ScalarType lhs, const MatrixCoeffWiseExpr<XprType_>& rhs) {
     return rhs * lhs;
 }
-template <int XprRows_, int XprCols_, typename XprType_, typename ScalarType>
+template <typename XprType_, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
-constexpr auto operator/(const MatrixCoeffWiseExpr<XprRows_, XprCols_, XprType_>& lhs, ScalarType rhs) {
+constexpr auto operator/(const MatrixCoeffWiseExpr<XprType_>& lhs, ScalarType rhs) {
     return lhs.derived().apply([rhs](auto x) { return x / rhs; });
 }
+
+// template <typename LhsXprType_, typename RhsXprType_>
+// struct MatrixCwiseComparisonOp :
+//     public BoolMatrixExpr<
+//       (LhsXprType_::Rows == Dynamic || RhsXprType_::Cols == Dynamic) ? Dynamic : LhsXprType_::Rows,
+//       (LhsXprType_::Cols == Dynamic || RhsXprType_::Cols == Dynamic) ? Dynamic : LhsXprType_::Cols,
+//       MatrixCwiseComparisonOp<LhsXprType_, RhsXprType_>> {
+//     fdapde_static_assert(
+//       internals::is_dynamic_sized_v<LhsXprType_> || internals::is_dynamic_sized_v<RhsXprType_> ||
+//         internals::same_static_shape_v<LhsXprType_ FDAPDE_COMMA RhsXprType_>,
+//       INVALID_BINARY_OPERATION__MATRICES_OF_DIFFERENT_STATIC_SIZE);
+//     static constexpr int Rows = 
+//       (LhsXprType_::Rows == Dynamic || RhsXprType_::Cols == Dynamic) ? Dynamic : LhsXprType_::Rows;
+//     static constexpr int Cols =
+//       (LhsXprType_::Cols == Dynamic || RhsXprType_::Cols == Dynamic) ? Dynamic : LhsXprType_::Cols;
+//     using Base = BoolMatrixExpr<Rows_, Cols_, MatrixCwiseComparisonOp<Rows_, Cols_, LhsXprType_>>;
+//     using LhsXprTypeNested = internals::ref_select_t<const LhsXprType_>;
+//     using Scalar = typename Base::Scalar;
+//     static constexpr int NestAsRef = 0;
+//     static constexpr int Rows = Rows_;
+//     static constexpr int Cols = Cols_;
+//     static constexpr int ReadOnly = 1;
+
+//     template <typename LhsXprType>
+//         requires(std::is_constructible_v<LhsXprTypeNested, LhsXprType>)
+//     constexpr MatrixCwiseComparisonOp(LhsXprType&& xpr) : xpr_(std::forward<LhsXprType>(xpr)) { }
+//    private:
+//     LhsXprTypeNested xpr_;
+// };
 
 }   // namespace fdapde
 
