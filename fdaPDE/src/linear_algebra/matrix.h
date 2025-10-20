@@ -23,10 +23,10 @@ namespace fdapde {
 
 // procedural matrices generates matrices whose entries exhibit a fixed pattern, without allocating memory
 template <typename Functor_, int Rows_, int Cols_>
-struct ProceduralMatrix : public MatrixExpr<Rows_, Cols_, ProceduralMatrix<Functor_, Rows_, Cols_>> {
+struct ProceduralMatrix : public MatrixExpr<ProceduralMatrix<Functor_, Rows_, Cols_>> {
     fdapde_static_assert(
       std::is_invocable_v<Functor_ FDAPDE_COMMA int FDAPDE_COMMA int>, FUNCTOR_NOT_CALLABLE_AT_INDEXES_PAIR);
-    using Base = MatrixExpr<Rows_, Cols_, ProceduralMatrix<Functor_, Rows_, Cols_>>;
+    using Base = MatrixExpr<ProceduralMatrix<Functor_, Rows_, Cols_>>;
     using Scalar = typename decltype(std::function {std::declval<Functor_>()})::result_type;
     fdapde_static_assert(std::is_arithmetic_v<Scalar>, INVALID_FUNCTOR_RETURN_TYPE);
     static constexpr int Rows = Rows_;
@@ -81,8 +81,8 @@ struct generic_assignment_executor {
     static constexpr void run(DstMatrixType& dst, const SrcXprType& src, AssignmentOp&& op) {
         fdapde_static_assert(DstMatrixType::ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_LOCATION);
         fdapde_static_assert(
-          is_dynamic_sized_v<DstMatrixType> || is_dynamic_sized_v<SrcXprType> ||
-            same_static_shape_v<DstMatrixType FDAPDE_COMMA SrcXprType>,
+          (internals::is_dynamic_sized_v<DstMatrixType> || internals::is_dynamic_sized_v<SrcXprType> ||
+           internals::same_static_shape_v<DstMatrixType FDAPDE_COMMA SrcXprType>),
           INVALID_ASSIGNMENT__DIFFERENT_LHS_AND_RHS_STATIC_SIZES);
         if constexpr (internals::is_dynamic_sized_v<DstMatrixType> || internals::is_dynamic_sized_v<SrcXprType>) {
             fdapde_assert(dst.rows() == src.rows() && dst.cols() == src.cols());
@@ -112,9 +112,9 @@ struct vector_assignment_executor {
         fdapde_static_assert(DstMatrixType::ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_LOCATION);
         // NB: a row-shaped rhs can be assigned to a col-shaped lhs
         fdapde_static_assert(
-          is_vector_shaped_v<DstMatrixType> && is_vector_shaped_v<SrcXprType> &&
-            (is_dynamic_sized_v<DstMatrixType> || is_dynamic_sized_v<SrcXprType> ||
-             same_static_size_v<DstMatrixType, SrcXprType>),
+          internals::is_vector_shaped_v<DstMatrixType> && internals::is_vector_shaped_v<SrcXprType> &&
+            (internals::is_dynamic_sized_v<DstMatrixType> || internals::is_dynamic_sized_v<SrcXprType> ||
+             internals::same_static_size_v<DstMatrixType, SrcXprType>),
           INVALID_ASSIGNMENT__NOT_VECTOR_SHAPED_OPERANDS);
         if constexpr (internals::is_dynamic_sized_v<DstMatrixType> || internals::is_dynamic_sized_v<SrcXprType>) {
             fdapde_assert(
@@ -131,10 +131,10 @@ struct vector_assignment_executor {
 }   // namespace internals
 
 template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_, typename MatrixType>
-class MatrixBase : public MatrixExpr<Rows_, Cols_, MatrixType> {
+class MatrixBase : public MatrixExpr<MatrixType> {
     fdapde_static_assert((Rows_ == Dynamic || Rows_ > 0) && (Cols_ == Dynamic || Cols_ > 0), INVALID_MATRIX_DIMENSIONS);
    public:
-    using Base = MatrixExpr<Rows_, Cols_, MatrixType>;
+    using Base = MatrixExpr<MatrixType>;
     using Base::derived;
     using Scalar = Scalar_;
     static constexpr int Rows = Rows_;
@@ -228,8 +228,8 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
         Base::operator=(other);
         return *this;
     }
-    template <int RhsRows_, int RhsCols_, typename RhsXprType_>   // construct from plain MatrixExpr
-    constexpr Matrix(const MatrixExpr<RhsRows_, RhsCols_, RhsXprType_>& rhs) : Base(), data_() {
+    template <typename RhsXprType_>   // construct from plain MatrixExpr
+    constexpr Matrix(const MatrixExpr<RhsXprType_>& rhs) : Base(), data_() {
         if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { resize(rhs.rows(), rhs.cols()); }
         using assignment = typename Base::assignment_executor;
         assignment::run(*this, rhs.derived(), [](Scalar& l, const Scalar& r) { l = r; });
@@ -304,10 +304,11 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
     // constructors taking external data
     constexpr explicit Matrix(const std::vector<Scalar>& data) {
         fdapde_static_assert(
-          (Rows_ != Dynamic && Cols_ != Dynamic) || (Rows_ == 1 || Cols_ == 1),
-          THIS_METHOD_IS_EITHER_FOR_VECTORS_OR_STATIC_SIZED_MATRICES);
+          (Rows_ != Dynamic && Cols_ != Dynamic) || (Rows_ == 1 && Cols_ == Dynamic) ||
+            (Cols_ == 1 && Rows_ == Dynamic),
+          THIS_METHOD_IS_NOT_FOR_DYNAMIC_SIZED_MATRICES);
         if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { data_.resize(data.size()); }
-        fdapde_assert(data_.size() == data.size());
+        fdapde_assert(std::cmp_equal(data_.size() FDAPDE_COMMA data.size()));
         const int rows = this->rows();
         const int cols = this->cols();
         for (int i = 0, n = rows; i < n; ++i) {

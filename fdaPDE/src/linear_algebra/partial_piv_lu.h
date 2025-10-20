@@ -22,19 +22,19 @@
 namespace fdapde {
 
 // LU with partial (row) pivoting and threshold check
-template <typename Scalar_, int Size_> class PartialPivLU {
+template <typename XprType_> class PartialPivLU {
    public:
-    static constexpr int Size = Size_;
-    using Scalar = Scalar_;
+    static constexpr int Size = XprType_::Rows;
+    using Scalar = typename XprType_::Scalar;
 
     constexpr PartialPivLU() : lu_(), P_(), info_(0), rank_(0) { }
-    template <int Rows, int Cols, typename XprType>
-    constexpr explicit PartialPivLU(const MatrixExpr<Rows, Cols, XprType>& m) : lu_(), P_(), info_(0), rank_(0) {
+    template <typename XprType>
+    constexpr explicit PartialPivLU(const MatrixExpr<XprType>& m) : lu_(), P_(), info_(0), rank_(0) {
         compute(m);
     }
 
     // build LU factorization of m
-    template <int Rows, int Cols, typename XprType> constexpr void compute(const MatrixExpr<Rows, Cols, XprType>& m) {
+    template <typename XprType> constexpr void compute(const MatrixExpr<XprType>& m) {
         const int n = m.rows();
         lu_ = m;
         Scalar pivot_threshold = std::numeric_limits<Scalar>::epsilon() * m.inf_norm();
@@ -90,10 +90,10 @@ template <typename Scalar_, int Size_> class PartialPivLU {
     }
 
     // solve Ax = b via PA = LU
-    template <int RhsRows, int RhsCols, typename RhsXprType>
-    constexpr Matrix<Scalar, RhsRows, RhsCols> solve(const MatrixExpr<RhsRows, RhsCols, RhsXprType>& b) const {
+    template <typename RhsXprType> constexpr auto solve(const MatrixExpr<RhsXprType>& b) const {
         fdapde_assert(b.rows() == lu_.rows() && b.cols() > 0);
 
+        constexpr int RhsRows = RhsXprType::Rows, RhsCols = RhsXprType::Cols;
         Matrix<Scalar, RhsRows, RhsCols> y = P_ * b;
         auto z = L().solve(y);   // forward  substitute
         auto x = U().solve(z);   // backward substitute

@@ -23,22 +23,19 @@ namespace fdapde {
 
 // orthogonal matrix type system (implementation of the general orthogonal Lie-group O(n))
 
-template <int Rows_, int Cols_, typename XprType_>
-struct OrthogonalMatrixExpr : public MatrixExpr<Rows_, Cols_, XprType_> {
-    using Base = MatrixExpr<Rows_, Cols_, XprType_>;
+template <typename XprType_> struct OrthogonalMatrixExpr : public MatrixExpr<XprType_> {
+    using Base = MatrixExpr<XprType_>;
     using Base::derived;
-    static constexpr int Rows = Rows_;
-    static constexpr int Cols = Cols_;
 
     constexpr auto inverse() const { return derived().transpose().as_orthogonal(); }
     template <typename RhsXprType> constexpr auto solve(const RhsXprType& b) const {
-        return Vector<typename XprType_::Scalar, Rows_>(inverse() * b);
+        return Vector<typename XprType_::Scalar, XprType_::Rows>(inverse() * b);
     }
 };
 
 template <typename Scalar_, int Size_, int StorageOrder_, typename OrthogonalMatrixType_>
-struct OrthogonalMatrixBase : public OrthogonalMatrixExpr<Size_, Size_, OrthogonalMatrixType_> {
-    using Base = OrthogonalMatrixExpr<Size_, Size_, OrthogonalMatrixType_>;
+struct OrthogonalMatrixBase : public OrthogonalMatrixExpr<OrthogonalMatrixType_> {
+    using Base = OrthogonalMatrixExpr<OrthogonalMatrixType_>;
     using Base::derived;
     using Scalar = Scalar_;
     static constexpr int Rows = Size_;
@@ -111,7 +108,10 @@ struct OrthogonalMatrix :
     using Scalar = Scalar_;
     static constexpr int StorageSize = (Size_ == Dynamic) ? Dynamic : (Size_ * Size_);
     using StorageType = Matrix<Scalar, Size_, Size_>;
+    static constexpr int Rows = Size_;
+    static constexpr int Cols = Size_;
     static constexpr int NestAsRef = 1;
+  
 
     // empty orthogonal matrices are ill-formed by definition
     constexpr OrthogonalMatrix() = delete;
@@ -121,15 +121,13 @@ struct OrthogonalMatrix :
         using assignment = typename Base::assignment_executor;
         assignment::run(*this, other);
     }
-    template <int RhsRows_, int RhsCols_, typename RhsXprType_>
-    constexpr OrthogonalMatrix(const OrthogonalMatrixExpr<RhsRows_, RhsCols_, RhsXprType_>& rhs) : Base(RhsRows_) {
+    template <typename RhsXprType_>
+    constexpr OrthogonalMatrix(const OrthogonalMatrixExpr<RhsXprType_>& rhs) : Base(rhs.rows()) {
         if constexpr (Size_ == Dynamic) { m_.resize(rhs.rows(), rhs.cols()); }
         using assignment = typename Base::assignment_executor;
         assignment::run(*this, rhs.derived());
     }
-    template <typename DataT>
-        requires(internals::is_vector_like_v<DataT> && !internals::is_matrix_like_v<DataT>)
-    constexpr explicit OrthogonalMatrix(DataT&& data, bool orthogonalize = false) :
+    constexpr OrthogonalMatrix(const std::vector<Scalar>& data, bool orthogonalize = false) :
         Base(fdapde::sqrt(static_cast<double>(data.size()))) {
         m_ = StorageType(data);
         if (orthogonalize) {
@@ -140,7 +138,7 @@ struct OrthogonalMatrix :
         }
     }
     template <std::size_t RhsSize>
-    constexpr explicit OrthogonalMatrix(const Scalar (&data)[RhsSize], bool orthogonalize = false) :
+    constexpr OrthogonalMatrix(const Scalar (&data)[RhsSize], bool orthogonalize = false) :
         Base(fdapde::sqrt(static_cast<double>(RhsSize))) {
         fdapde_static_assert(Size_ != Dynamic && StorageSize == RhsSize, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
         m_ = StorageType(data);
@@ -152,7 +150,7 @@ struct OrthogonalMatrix :
         }
     }
     // named constructors
-    static constexpr auto Identity() { return IdentityMatrix<Size_, Size_>(); }
+    static constexpr auto Identity() { return IdentityMatrix<Rows, Cols>(); }
     static constexpr auto Identity(int size) { return IdentityMatrix<Dynamic, Dynamic>(size, size); }
     // data pointers
     constexpr const StorageType& data() const { return m_; }
@@ -164,9 +162,9 @@ struct OrthogonalMatrix :
 namespace internals {
 
 // class used by the product operation to achieve closure wrt group operation. internal usage only
-template <int Rows_, int Cols_, typename OrthogonalXprType>
-struct orthogonal_wrapper : OrthogonalMatrixExpr<Rows_, Cols_, orthogonal_wrapper<Rows_, Cols_, OrthogonalXprType>> {
-    using Base = OrthogonalMatrixExpr<Rows_, Cols_, orthogonal_wrapper<Rows_, Cols_, OrthogonalXprType>>;
+template <typename OrthogonalXprType>
+struct orthogonal_wrapper : OrthogonalMatrixExpr<orthogonal_wrapper<OrthogonalXprType>> {
+    using Base = OrthogonalMatrixExpr<orthogonal_wrapper<OrthogonalXprType>>;
     using OrthogonalXprTypeNested = internals::ref_select_t<const OrthogonalXprType>;
     using Scalar = typename OrthogonalXprType::Scalar;
   
@@ -185,18 +183,16 @@ struct orthogonal_wrapper : OrthogonalMatrixExpr<Rows_, Cols_, orthogonal_wrappe
 
 // orthogonal group operation
 template <typename LhsXprType, typename RhsXprType>
-constexpr auto operator*(
-  const OrthogonalMatrixExpr<LhsXprType::Rows, LhsXprType::Cols, LhsXprType>& lhs,
-  const OrthogonalMatrixExpr<RhsXprType::Rows, RhsXprType::Cols, RhsXprType>& rhs) {
-    return internals::orthogonal_wrapper<LhsXprType::Rows, RhsXprType::Cols, decltype(lhs * rhs)>(lhs * rhs);
+constexpr auto operator*(const OrthogonalMatrixExpr<LhsXprType>& lhs, const OrthogonalMatrixExpr<RhsXprType>& rhs) {
+    return internals::orthogonal_wrapper<decltype(lhs * rhs)>(lhs * rhs);
 }
 // any other operation doesn't preserve orthogonality. A raw MatrixExpr is returned
 
 // orthogonal view of an existing block of data
 template <typename Scalar_, int Rows_, int StorageOrder_ = RowMajor>
-class OrthogonalMatrixView : public OrthogonalMatrixExpr<Rows_, Rows_, OrthogonalMatrixView<Scalar_, Rows_>> {
+class OrthogonalMatrixView : public OrthogonalMatrixExpr<OrthogonalMatrixView<Scalar_, Rows_>> {
    public:
-    using Base = OrthogonalMatrixExpr<Rows_, Rows_, OrthogonalMatrixView<Scalar_, Rows_>>;
+    using Base = OrthogonalMatrixExpr<OrthogonalMatrixView<Scalar_, Rows_>>;
     using Scalar = Scalar_;
     using StorageType = MatrixView<Scalar_, Rows_, Rows_, StorageOrder_>;
     static constexpr int ReadOnly = std::is_const_v<Scalar_> ? 1 : 0;
@@ -218,69 +214,6 @@ class OrthogonalMatrixView : public OrthogonalMatrixExpr<Rows_, Rows_, Orthogona
    private:
     StorageType m_;
 };
-
-// implementation of rotation Lie-groups SO(2) and SO(3)
-
-//   template <typename Scalar_, int Size_> struct RotationMatrixBase : public OrthogonalMatrix<Scalar_, Size_> {
-//       constexpr double determinant() const { return 1.0; }
-//   };
-
-// // rotation operator in R^2
-// template <typename Scalar_> struct RotationMatrix<Scalar_, 2> : public OrthogonalMatrix<Scalar_, 2> {
-//     fdapde_static_assert(std::is_floating_point_v<Scalar_>, THIS_CLASS_IS_FOR_FLOATING_POINT_SCALARS_ONLY);
-//     using Scalar = Scalar_;
-//     using Base = OrthogonalMatrix<Scalar, 2>;
-
-//     constexpr RotationMatrix() : Base({1.0, 0.0, 0.0, 1.0}), theta_(Scalar(0)) { }
-//     // counterclockise rotation angle
-//     constexpr RotationMatrix(Scalar theta) :
-//         Base({std::cos(theta), -std::sin(theta), std::sin(theta), std::cos(theta)}), theta_(theta) { }
-
-//     constexpr double determinant() const { return 1.0; }
-//     constexpr RotationMatrix inverse() const { return RotationMatrix(-theta_); }
-//     constexpr Scalar theta() const { return theta_; }
-//    private:
-//     Scalar theta_;
-// };
-// // rotation operator in R^3
-// template <typename Scalar_> struct RotationMatrix<Scalar_, 2> : public OrthogonalMatrix<Scalar_, 2> {
-//     fdapde_static_assert(std::is_floating_point_v<Scalar_>, THIS_CLASS_IS_FOR_FLOATING_POINT_SCALARS_ONLY);
-//     using Scalar = Scalar_;
-//     using Base = OrthogonalMatrix<Scalar, 2>;
-
-//     constexpr RotationMatrix() :
-//         Base({1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0}), alpha_(Scalar(0)), beta_(Scalar(0)), gamma_(Scalar(0)) { }
-//     // euler angles (Z-Y-X convention)
-//     constexpr RotationMatrix(double alpha, double beta, double gamma) :
-//         Base(build_zyx_(alpha, beta, gamma)), alpha_(alpha), beta_(beta), gamma_(gamma) { }
-//     // Named constructors for axis-aligned rotations
-//     static RotationOp Rx(double gamma) { return RotationMatrix(0.0, 0.0, gamma); }
-//     static RotationOp Ry(double beta)  { return RotationMatrix(0.0, beta, 0.0); }
-//     static RotationOp Rz(double alpha) { return RotationMatrix(alpha, 0.0, 0.0); }
-
-//     constexpr double determinant() const { return 1.0; }
-//     constexpr RotationMatrix inverse() const { return RotationMatrix(-theta_); }
-//     constexpr Scalar theta() const { return theta_; }
-//    private:
-//     constexpr std::array<Scalar_, 9> build_zyx_(double alpha, double beta, double gamma) const {
-//         Scalar ca = std::cos(alpha), sa = std::sin(alpha);
-//         Scalar cb = std::cos(beta),  sb = std::sin(beta);
-//         Scalar cg = std::cos(gamma), sg = std::sin(gamma);
-
-//         // R = Rz(alpha) * Ry(beta) * Rx(gamma)
-//         return std::array<Scalar, 9> {
-//           ca * cb,
-//           ca * sb * sg - sa * cg,
-//           ca * sb * cg + sa * sg,
-//           sa * cb,
-//           sa * sb * sg + ca * cg,
-//           sa * sb * cg - ca * sg,
-//           -sb,
-//           cb * sg,
-//           cb * cg};
-//     }
-//     Scalar alpha_, beta_, gamma_;
-// };
 
 }   // namespace fdapde
 

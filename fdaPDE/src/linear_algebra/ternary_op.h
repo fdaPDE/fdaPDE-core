@@ -23,21 +23,19 @@ namespace fdapde {
 
 // expression of a matrix ternary operator, i.e., A(i, j) ? B(i, j) : C(i, j)
 template <typename ConditionXprType, typename LhsXprType, typename RhsXprType>
-class TernaryOp :
-    public MatrixExpr<
-      ConditionXprType::Rows, ConditionXprType::Cols, TernaryOp<ConditionXprType, LhsXprType, RhsXprType>> {
+class TernaryOp : public MatrixExpr<TernaryOp<ConditionXprType, LhsXprType, RhsXprType>> {
     fdapde_static_assert(
-      internals::is_dynamic_sized_v<ConditionXprType> || internals::is_dynamic_sized_v<LhsXprType> ||
-        internals::is_dynamic_sized_v<RhsXprType> ||
-        (internals::same_static_shape_v<ConditionXprType, LhsXprType> &&
-         internals::same_static_shape_v<ConditionXprType, RhsXprType>),
+      (internals::is_dynamic_sized_v<ConditionXprType> || internals::is_dynamic_sized_v<LhsXprType> ||
+       internals::is_dynamic_sized_v<RhsXprType> ||
+       (internals::same_static_shape_v<ConditionXprType, LhsXprType> &&
+        internals::same_static_shape_v<ConditionXprType, RhsXprType>)),
       INVALID_TERNARY_OPERATION__MATRICES_OF_DIFFERENT_STATIC_SIZE);
-   public:
-    using Base =
-      MatrixExpr<ConditionXprType::Rows, ConditionXprType::Cols, TernaryOp<ConditionXprType, LhsXprType, RhsXprType>>;  
+   private:
+    using Base = MatrixExpr<TernaryOp<ConditionXprType, LhsXprType, RhsXprType>>;
     using ConditionXprTypeNested = internals::ref_select_t<const ConditionXprType>;
     using LhsXprTypeNested = internals::ref_select_t<const LhsXprType>;
     using RhsXprTypeNested = internals::ref_select_t<const RhsXprType>;
+   public:
     using Scalar = std::common_type_t<typename LhsXprType::Scalar, typename RhsXprType::Scalar>;
     static constexpr int Rows =
       (LhsXprType::Rows == Dynamic || RhsXprType::Rows == Dynamic) ? Dynamic : LhsXprType::Rows;

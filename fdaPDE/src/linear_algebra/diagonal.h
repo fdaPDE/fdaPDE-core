@@ -22,20 +22,20 @@
 namespace fdapde {
 
 // diagonal matrix type system
-template <int Rows_, int Cols_, typename XprType> struct Diagonal;
+template <typename XprType> struct Diagonal;
 
 namespace internals {
 
 struct diagonal_assignment_executor {
-    template <int DstRows, typename DstXprType, typename SrcXprType, typename AssignmentOp>
+    template <typename DstXprType, typename SrcXprType, typename AssignmentOp>
         requires(requires(AssignmentOp op, typename DstXprType::Scalar& l, const typename SrcXprType::Scalar& r) {
             { op(l, r) } -> std::same_as<void>;
         })
-    static constexpr void run(Diagonal<DstRows, 1, DstXprType>& dst, const SrcXprType& src, AssignmentOp&& op) {
+    static constexpr void run(DstXprType& dst, const SrcXprType& src, AssignmentOp&& op) {
         fdapde_static_assert(DstXprType::ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_LOCATION);
         fdapde_static_assert(
           internals::is_dynamic_sized_v<DstXprType> || internals::is_dynamic_sized_v<SrcXprType> ||
-            DstRows == SrcXprType::Rows,   // diagonal of expression is a vector
+            DstXprType::Rows == SrcXprType::Rows,   // diagonal of expression is a vector
           INVALID_ASSIGNMENT__NOT_MATCHING_LHS_AND_RHS_STATIC_SIZES);
         if constexpr (internals::is_dynamic_sized_v<DstXprType> || internals::is_dynamic_sized_v<SrcXprType>) {
             fdapde_assert(dst.rows() == src.rows() && dst.cols() == src.cols());
@@ -49,13 +49,12 @@ struct diagonal_assignment_executor {
 }   // namespace internals
 
 // expression of the diagonal of a matrix
-template <int Rows_, int Cols_, typename XprType>
-struct Diagonal : public MatrixExpr<Rows_, Cols_, Diagonal<Rows_, Cols_, XprType>> {
-    using Base = MatrixExpr<Rows_, Cols_, Diagonal<Rows_, Cols_, XprType>>;
+template <typename XprType> struct Diagonal : public MatrixExpr<Diagonal<XprType>> {
+    using Base = MatrixExpr<Diagonal<XprType>>;
     using XprTypeNested = internals::ref_select_t<XprType>;
     using Scalar = typename XprType::Scalar;
-    static constexpr int Rows = Rows_;
-    static constexpr int Cols = Cols_;
+    static constexpr int Rows = XprType::Rows;
+    static constexpr int Cols = 1;
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = XprType::ReadOnly || std::is_const_v<XprType>;
     using assignment_executor = internals::diagonal_assignment_executor;
@@ -65,11 +64,9 @@ struct Diagonal : public MatrixExpr<Rows_, Cols_, Diagonal<Rows_, Cols_, XprType
         requires(std::is_constructible_v<XprTypeNested, XprType_>)
     constexpr explicit Diagonal(XprType_&& xpr) : xpr_(std::forward<XprType_>(xpr)) {
         fdapde_static_assert(
-          XprType::Rows == Dynamic || XprType::Cols == Dynamic || XprType::Rows == XprType::Cols,
-          THIS_EXPRESSION_IS_FOR_SQUARE_MATRICES_ONLY);
-        if constexpr (XprType::Rows == Dynamic || XprType::Cols == Dynamic) {
-            fdapde_assert(xpr_.rows() == xpr_.cols());
-        }
+          internals::is_dynamic_sized_v<XprType> || XprType::Rows == XprType::Cols,
+          DIAGONAL_BLOCK_IS_FOR_SQUARE_MATRICES_ONLY);
+        if constexpr (internals::is_dynamic_sized_v<XprType>) { fdapde_assert(xpr_.rows() == xpr_.cols()); }
     }
     // copy-semantic
     constexpr Diagonal(const Diagonal& other) :
@@ -82,20 +79,20 @@ struct Diagonal : public MatrixExpr<Rows_, Cols_, Diagonal<Rows_, Cols_, XprType
     // inherit assignment from base
     using Base::operator=;
     // const access
-    constexpr Scalar operator()(int i, int j) const {
+    constexpr decltype(auto) operator()(int i, int j) const {
         fdapde_assert(i >= 0 && i < rows() && j >= 0 && j < cols());
         return xpr_(i, i);
     }
-    constexpr Scalar operator[](int i) const {
+    constexpr decltype(auto) operator[](int i) const {
         fdapde_assert(i >= 0 && i < rows());
         return xpr_(i, i);
     }
     // non-const access
-    constexpr Scalar& operator()(int i, int j) {
+    constexpr decltype(auto) operator()(int i, int j) {
         fdapde_assert(i >= 0 && i < rows() && j >= 0 && j < cols());
         return xpr_(i, i);
     }
-    constexpr Scalar& operator[](int i) {
+    constexpr decltype(auto) operator[](int i) {
         fdapde_assert(i >= 0 && i < rows());
         return xpr_(i, i);
     }
@@ -107,14 +104,14 @@ struct Diagonal : public MatrixExpr<Rows_, Cols_, Diagonal<Rows_, Cols_, XprType
     XprTypeNested xpr_;
 };
 
-template <int Rows_, int Cols_, typename XprType> struct DiagonalMatrixExpr;
+template <typename XprType> struct DiagonalMatrixExpr;
 
 namespace internals {
 
 // class wrapping an expression of the diagonal coefficients to a square matrix. internal usage only
 template <int Rows_, int Cols_, typename DiagonalXprType>
-struct diagonal_wrapper : DiagonalMatrixExpr<Rows_, Cols_, diagonal_wrapper<Rows_, Cols_, DiagonalXprType>> {
-    using Base = DiagonalMatrixExpr<Rows_, Cols_, diagonal_wrapper<Rows_, Cols_, DiagonalXprType>>;
+struct diagonal_wrapper : DiagonalMatrixExpr<diagonal_wrapper<Rows_, Cols_, DiagonalXprType>> {
+    using Base = DiagonalMatrixExpr<diagonal_wrapper<Rows_, Cols_, DiagonalXprType>>;
     using DiagonalXprTypeClean = std::decay_t<DiagonalXprType>;
     using DiagonalXprTypeNested = internals::ref_select_t<const DiagonalXprTypeClean>;
     using Scalar = typename DiagonalXprTypeClean::Scalar;
@@ -145,45 +142,40 @@ template <typename XprType> constexpr auto diagonal_cast(XprType&& xpr) {
 }
 
 }   // namespace internals
-  
-template <int Rows_, int Cols_, typename XprType_>
-struct DiagonalMatrixExpr : public MatrixExpr<Rows_, Cols_, XprType_> {
-    using Base = MatrixExpr<Rows_, Cols_, XprType_>;
+
+template <typename XprType_> struct DiagonalMatrixExpr : public MatrixExpr<XprType_> {
+    using Base = MatrixExpr<XprType_>;
     using Base::derived;
-    static constexpr int Rows = Rows_;
-    static constexpr int Cols = Cols_;
-    static constexpr int StorageSize = Rows_ == Dynamic ? Dynamic : Rows_;
-    static constexpr int ReadOnly = std::is_const_v<XprType_> ? 1 : 0;
-    static constexpr int NestAsRef = 1;
-    using assignment_executor = internals::diagonal_assignment_executor;
-  
-    constexpr DiagonalMatrixExpr() noexcept : size_((Rows_ == Dynamic || Cols_ == Dynamic) ? 0 : Rows_) { }
+
+    constexpr DiagonalMatrixExpr() noexcept :
+        size_((XprType_::Rows == Dynamic || XprType_::Cols == Dynamic) ? 0 : XprType_::Rows) { }
     constexpr explicit DiagonalMatrixExpr(int size) noexcept :
-        size_((Rows_ == Dynamic || Cols_ == Dynamic) ? size : Rows_) { }
+        size_((XprType_::Rows == Dynamic || XprType_::Cols == Dynamic) ? size : XprType_::Rows) { }
     // inherit assignment from base
     using Base::operator=;
     // const access
-    constexpr auto operator()(int i, int j) const {   // only const access allowed for (i, j) accessor
+    constexpr decltype(auto) operator()(int i, int j) const {   // only const access allowed for (i, j) accessor
+        using Scalar = typename XprType_::Scalar;
         fdapde_assert(i >= 0 && i < rows() && j >= 0 && j < cols());
-	using Scalar = XprType_::Scalar;
         return i == j ? derived().data()[i] : Scalar(0);
     }
-    constexpr auto operator[](int i) const {
+    constexpr decltype(auto) operator[](int i) const {
         fdapde_assert(i >= 0 && i < rows());
         return derived().data()[i];
     }
     // non-const access
-    constexpr auto& operator[](int i) {
+    constexpr decltype(auto) operator[](int i) {
         fdapde_assert(i >= 0 && i < rows());
         return derived().data()[i];
     }
     // converts to full dense matrix
-    auto as_matrix() const { return Matrix<typename XprType_::Scalar, Rows, Cols>(derived()); }
+    auto as_matrix() const { return Matrix<typename XprType_::Scalar, XprType_::Rows, XprType_::Cols>(derived()); }
     // matrix inverse as 1/coeff
     auto inverse() const { return internals::diagonal_cast(derived().diagonal().cwise().inv()); }
     // linear system solver Ax = b
     template <typename RhsXprType> constexpr auto solve(const RhsXprType& b) const {
         using Scalar = typename XprType_::Scalar;
+	constexpr int Rows = XprType_::Rows;
         Vector<Scalar, Rows> x;
         if constexpr (Rows == Dynamic) { x.resize(derived().rows()); }
 	for(int i = 0, n = derived().rows(); i < n; ++i) { x[i] = b[i] / derived().data()[i]; }
@@ -202,12 +194,10 @@ struct DiagonalMatrixExpr : public MatrixExpr<Rows_, Cols_, XprType_> {
 
 // diagonal matrix arithmetic (O(n) operations on the diagonal coefficients)
 template <typename LhsXprType, typename RhsXprType>
-constexpr auto operator+(
-  const DiagonalMatrixExpr<LhsXprType::Rows, LhsXprType::Cols, LhsXprType>& lhs,
-  const DiagonalMatrixExpr<RhsXprType::Rows, RhsXprType::Cols, RhsXprType>& rhs) {
+constexpr auto operator+(const DiagonalMatrixExpr<LhsXprType>& lhs, const DiagonalMatrixExpr<RhsXprType>& rhs) {
     fdapde_static_assert(
-      internals::is_dynamic_sized_v<LhsXprType> || internals::is_dynamic_sized_v<RhsXprType> ||
-        internals::same_static_shape_v<LhsXprType FDAPDE_COMMA RhsXprType>,
+      (internals::is_dynamic_sized_v<LhsXprType> || internals::is_dynamic_sized_v<RhsXprType> ||
+       internals::same_static_shape_v<LhsXprType FDAPDE_COMMA RhsXprType>),
       INVALID_OPERAND_DIMENSIONS_IN_BINARY_OPERATION);
     if constexpr (internals::is_dynamic_sized_v<LhsXprType> || internals::is_dynamic_sized_v<RhsXprType>) {
         fdapde_assert(lhs.rows() == rhs.rows() && lhs.cols() == rhs.cols());
@@ -215,12 +205,10 @@ constexpr auto operator+(
     return internals::diagonal_cast(lhs.diagonal() + rhs.diagonal());
 }
 template <typename LhsXprType, typename RhsXprType>
-constexpr auto operator-(
-  const DiagonalMatrixExpr<LhsXprType::Rows, LhsXprType::Cols, LhsXprType>& lhs,
-  const DiagonalMatrixExpr<RhsXprType::Rows, RhsXprType::Cols, RhsXprType>& rhs) {
+constexpr auto operator-(const DiagonalMatrixExpr<LhsXprType>& lhs, const DiagonalMatrixExpr<RhsXprType>& rhs) {
     fdapde_static_assert(
-      internals::is_dynamic_sized_v<LhsXprType> || internals::is_dynamic_sized_v<RhsXprType> ||
-        internals::same_static_shape_v<LhsXprType FDAPDE_COMMA RhsXprType>,
+      (internals::is_dynamic_sized_v<LhsXprType> || internals::is_dynamic_sized_v<RhsXprType> ||
+       internals::same_static_shape_v<LhsXprType FDAPDE_COMMA RhsXprType>),
       INVALID_OPERAND_DIMENSIONS_IN_BINARY_OPERATION);
     if constexpr (internals::is_dynamic_sized_v<LhsXprType> || internals::is_dynamic_sized_v<RhsXprType>) {
         fdapde_assert(lhs.rows() == rhs.rows() && lhs.cols() == rhs.cols());
@@ -229,17 +217,17 @@ constexpr auto operator-(
 }
 template <typename XprType, typename CoeffType>
     requires(std::is_arithmetic_v<CoeffType>)
-constexpr auto operator*(const DiagonalMatrixExpr<XprType::Rows, XprType::Cols, XprType>& lhs, CoeffType rhs) {
+constexpr auto operator*(const DiagonalMatrixExpr<XprType>& lhs, CoeffType rhs) {
     return internals::diagonal_cast(rhs * lhs.diagonal());
 }
 template <typename XprType, typename CoeffType>
     requires(std::is_arithmetic_v<CoeffType>)
-constexpr auto operator*(CoeffType lhs, const DiagonalMatrixExpr<XprType::Rows, XprType::Cols, XprType>& rhs) {
+constexpr auto operator*(CoeffType lhs, const DiagonalMatrixExpr<XprType>& rhs) {
     return rhs * lhs;
 }
 template <typename XprType, typename CoeffType>
     requires(std::is_arithmetic_v<CoeffType>)
-constexpr auto operator/(const DiagonalMatrixExpr<XprType::Rows, XprType::Cols, XprType>& lhs, CoeffType rhs) {
+constexpr auto operator/(const DiagonalMatrixExpr<XprType>& lhs, CoeffType rhs) {
     return internals::diagonal_cast(lhs.diagonal() / rhs);
 }
 
@@ -271,38 +259,33 @@ template <typename LhsXprType, typename RhsXprType> struct diagonal_diagonal_pro
 template <typename LhsXprType, typename RhsXprType, typename Executor> struct MatrixMultiplicationOp;
 // diag(a_1, ..., a_n) * M
 template <typename LhsXprType, typename RhsXprType>
-constexpr auto operator*(
-  const DiagonalMatrixExpr<LhsXprType::Rows, LhsXprType::Cols, LhsXprType>& lhs,
-  const MatrixExpr<RhsXprType::Rows, RhsXprType::Cols, RhsXprType>& rhs) {
+constexpr auto operator*(const DiagonalMatrixExpr<LhsXprType>& lhs, const MatrixExpr<RhsXprType>& rhs) {
     return MatrixMultiplicationOp<
       LhsXprType, RhsXprType, internals::diagonal_matrix_product_executor<LhsXprType, RhsXprType, LhsMode>> {
       lhs.derived(), rhs.derived()};
 }
 // M * diag(a_1, ..., a_n)
 template <typename LhsXprType, typename RhsXprType>
-constexpr auto operator*(
-  const MatrixExpr<LhsXprType::Rows, LhsXprType::Cols, LhsXprType>& lhs,
-  const DiagonalMatrixExpr<RhsXprType::Rows, RhsXprType::Cols, RhsXprType>& rhs) {
+constexpr auto operator*(const MatrixExpr<LhsXprType>& lhs, const DiagonalMatrixExpr<RhsXprType>& rhs) {
     return MatrixMultiplicationOp<
       LhsXprType, RhsXprType, internals::diagonal_matrix_product_executor<LhsXprType, RhsXprType, RhsMode>> {
       lhs.derived(), rhs.derived()};
 }
 // diag(a_1, ..., a_n) * diag(b_1, ..., b_n)
 template <typename LhsXprType, typename RhsXprType>
-constexpr auto operator*(
-  const DiagonalMatrixExpr<LhsXprType::Rows, LhsXprType::Cols, LhsXprType>& lhs,
-  const DiagonalMatrixExpr<RhsXprType::Rows, RhsXprType::Cols, RhsXprType>& rhs) {
+constexpr auto operator*(const DiagonalMatrixExpr<LhsXprType>& lhs, const DiagonalMatrixExpr<RhsXprType>& rhs) {
     return internals::diagonal_cast(
-      MatrixMultiplicationOp<LhsXprType, RhsXprType, internals::diagonal_diagonal_product_executor<LhsXprType, RhsXprType>>(
+      MatrixMultiplicationOp<
+        LhsXprType, RhsXprType, internals::diagonal_diagonal_product_executor<LhsXprType, RhsXprType>>(
         lhs.derived(), rhs.derived())
         .diagonal());
 }
 
 // owning storage diagonal matrix
 template <typename Scalar_, int Rows_>
-class DiagonalMatrix : public DiagonalMatrixExpr<Rows_, Rows_, DiagonalMatrix<Scalar_, Rows_>> {
+class DiagonalMatrix : public DiagonalMatrixExpr<DiagonalMatrix<Scalar_, Rows_>> {
    public:
-    using Base = DiagonalMatrixExpr<Rows_, Rows_, DiagonalMatrix<Scalar_, Rows_>>;
+    using Base = DiagonalMatrixExpr<DiagonalMatrix<Scalar_, Rows_>>;
     using Scalar = Scalar_;
     using StorageType = Vector<Scalar, Rows_>;
     static constexpr int Rows = Rows_;
@@ -310,6 +293,7 @@ class DiagonalMatrix : public DiagonalMatrixExpr<Rows_, Rows_, DiagonalMatrix<Sc
     static constexpr int StorageSize = Rows_ == Dynamic ? Dynamic : Rows_;
     static constexpr int NestAsRef = 1;
     static constexpr int ReadOnly = std::is_const_v<Scalar_> ? 1 : 0;
+    using assignment_executor = internals::diagonal_assignment_executor;
 
     constexpr DiagonalMatrix() : Base(), data_() { }
     constexpr explicit DiagonalMatrix(int size) : Base(size), data_() {
@@ -317,8 +301,7 @@ class DiagonalMatrix : public DiagonalMatrixExpr<Rows_, Rows_, DiagonalMatrix<Sc
           Rows == Dynamic || Cols == Dynamic, THIS_METHOD_IS_FOR_DYNAMIC_SIZED_DIAGONAL_MATRICES_ONLY);
         data_.resize(size);
     }
-    template <int RhsRows_, int RhsCols_, typename RhsXprType_>
-    constexpr DiagonalMatrix(const MatrixExpr<RhsRows_, RhsCols_, RhsXprType_>& rhs) : Base() {
+    template <typename RhsXprType_> constexpr DiagonalMatrix(const MatrixExpr<RhsXprType_>& rhs) : Base() {
         fdapde_assert(Base::rows() == rhs.rows() && Base::cols() == rhs.cols());
         if constexpr (Rows == Dynamic || Cols == Dynamic) { resize(rhs.rows()); }
         *this = rhs;
@@ -372,14 +355,17 @@ class DiagonalMatrix : public DiagonalMatrixExpr<Rows_, Rows_, DiagonalMatrix<Sc
 
 // diagonal view of an existing block of data
 template <typename Scalar_, int Rows_>
-class DiagonalMatrixView : public DiagonalMatrixExpr<Rows_, Rows_, DiagonalMatrixView<Scalar_, Rows_>> {
+class DiagonalMatrixView : public DiagonalMatrixExpr<DiagonalMatrixView<Scalar_, Rows_>> {
    public:
-    using Base = DiagonalMatrixExpr<Rows_, Rows_, DiagonalMatrixView<Scalar_, Rows_>>;
+    using Base = DiagonalMatrixExpr<DiagonalMatrixView<Scalar_, Rows_>>;
     using Scalar = Scalar_;
     using StorageType = std::add_pointer_t<Scalar>;
-    static constexpr int ReadOnly = std::is_const_v<Scalar_> ? 1 : 0;
+    static constexpr int Rows = Rows_;
+    static constexpr int Cols = Rows_;
+    static constexpr int ReadOnly = std::is_const_v<Scalar_>;
     static constexpr int NestAsRef = 0;
-  
+    using assignment_executor = internals::diagonal_assignment_executor;
+
     // constructors
     constexpr DiagonalMatrixView() : Base(), data_(nullptr) { }
     constexpr explicit DiagonalMatrixView(Scalar* data) : Base(), data_(data) {

@@ -22,23 +22,48 @@
 namespace fdapde {
 
 // triangular matrix type system
+template <typename XprType> struct TriangularMatrixExpr;
 template <typename Scalar_, int Rows_, int ViewMode_> struct TriangularMatrix;
-template <typename Scalar_, int Rows_, int ViewMode_, typename TriangularMatrixType> class TriangularMatrixBase;
   
 namespace internals {
 
+struct triangular_assignment_executor {
+    template <typename DstXprType, typename SrcXprType, typename AssignmentOp>
+        requires(requires(AssignmentOp op, typename DstXprType::Scalar& l, const typename SrcXprType::Scalar& r) {
+            { op(l, r) } -> std::same_as<void>;
+        })
+    static constexpr void run(DstXprType& dst, const SrcXprType& src, AssignmentOp&& op) {
+        fdapde_static_assert(DstXprType::ReadOnly == 0, ASSIGNMENT_TO_A_READ_ONLY_EXPRESSION);
+        constexpr int ViewMode = DstXprType::ViewMode;
+        fdapde_static_assert(
+          ViewMode == Upper || ViewMode == Lower, TRIANGULAR_BLOCK_ASSIGNMENT_REQUIRES_EITHER_UPPER_OR_LOWER_VIEW);
+        int row = 0, col = 0;
+        for (int i = 0, n = dst.rows(); i < n; ++i) {
+            for (int j = 0; j < i; ++j) {
+                row = ViewMode == Lower ? i : j;
+                col = ViewMode == Lower ? j : i;
+                op(dst(row, col), src(row, col));
+            }
+        }
+        // assign diagonal
+        for (int i = 0, n = dst.rows(); i < n; ++i) { dst(i, i) = src(i, i); }
+    }
+};
+
 // class wrapping a linear vector to the expression of a triangular matrix. internal usage only
-template <
-  int Rows_, int Cols_, int ViewMode_, typename TriangularXprType,
-  int Size_ = (Rows_ == Dynamic || Cols_ == Dynamic) ? Dynamic : int((fdapde::sqrt(double(1 + 8 * Rows_)) - 1) / 2)>
-struct triangular_wrapper :
-    TriangularMatrixBase<
-      typename TriangularXprType::Scalar, Size_, ViewMode_,
-      triangular_wrapper<Rows_, Cols_, ViewMode_, TriangularXprType, Size_>> {
-    using Base = TriangularMatrixBase<
-      typename TriangularXprType::Scalar, Size_, ViewMode_,
-      triangular_wrapper<Rows_, Cols_, ViewMode_, TriangularXprType, Size_>>;
+template <int Rows_, int Cols_, int ViewMode_, typename TriangularXprType>
+struct triangular_wrapper : TriangularMatrixExpr<triangular_wrapper<Rows_, Cols_, ViewMode_, TriangularXprType>> {
+    using Base = TriangularMatrixExpr<triangular_wrapper<Rows_, Cols_, ViewMode_, TriangularXprType>>;
+    using TriangularXprTypeClean = std::decay_t<TriangularXprType>;
     using TriangularXprTypeNested = internals::ref_select_t<const TriangularXprType>;
+    using Scalar = typename TriangularXprTypeClean::Scalar;
+    static constexpr int Size =
+      (Rows_ == Dynamic || Cols_ == Dynamic) ? Dynamic : int((fdapde::sqrt(double(1 + 8 * Rows_)) - 1) / 2);
+    static constexpr int Rows = Size;
+    static constexpr int Cols = Size;
+    static constexpr int ViewMode = ViewMode_;
+    static constexpr int NestAsRef = 0;
+    static constexpr int ReadOnly = 1;
 
     template <typename XprType>
         requires(std::is_constructible_v<TriangularXprTypeNested, XprType>)
@@ -52,50 +77,33 @@ struct triangular_wrapper :
 // helper cast function
 template <int ViewMode, typename XprType> auto triangular_cast(XprType&& xpr) {
     using XprTypeClean = std::decay_t<XprType>;
-    static constexpr int Rows = XprTypeClean::Rows;
-    static constexpr int Cols = XprTypeClean::Cols;
+    constexpr int Rows = XprTypeClean::Rows;
+    constexpr int Cols = XprTypeClean::Cols;
     fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
-    return triangular_wrapper<Rows == 1 ? Cols : Rows, Cols == 1 ? Rows : Cols, ViewMode, XprType>(xpr);
+    constexpr int TriangularRows = Rows == 1 ? Cols : Rows;
+    constexpr int TriangularCols = Cols == 1 ? Rows : Cols;
+    return triangular_wrapper<TriangularRows, TriangularCols, ViewMode, XprType>(xpr);
 }
 
 }   // namespace internals
-  
-template <int Rows_, int Cols_, int ViewMode_, typename TriangularXprType>
-struct TriangularMatrixExpr : public MatrixExpr<Rows_, Cols_, TriangularXprType> {
-    using Base = MatrixExpr<Rows_, Cols_, TriangularXprType>;
+
+template <typename TriangularXprType> struct TriangularMatrixExpr : public MatrixExpr<TriangularXprType> {
+    using Base = MatrixExpr<TriangularXprType>;
     using Base::derived;
-    static constexpr int Rows = TriangularXprType::Rows;
-    static constexpr int Cols = TriangularXprType::Cols;
-    static constexpr int NestAsRef = 0;
-    static constexpr int ViewMode = ViewMode_;
-    static constexpr int ReadOnly = TriangularXprType::ReadOnly || (ViewMode == UnitLower || ViewMode == UnitUpper);
-    struct assignment_executor {
-        template <typename SrcXprType> static constexpr void run(TriangularXprType& dst, const SrcXprType& src) {
-            fdapde_static_assert(TriangularXprType::ReadOnly == 0, ASSIGNMENT_TO_A_READ_ONLY_EXPRESSION);
-            fdapde_static_assert(
-              ViewMode == Upper || ViewMode == Lower, TRIANGULAR_BLOCK_ASSIGNMENT_REQUIRES_EITHER_UPPER_OR_LOWER_VIEW);
-            int row = 0, col = 0;
-            for (int i = 0, n = dst.rows(); i < n; ++i) {
-                for (int j = 0; j < i; ++j) {
-                    row = ViewMode == Lower ? i : j;
-                    col = ViewMode == Lower ? j : i;
-                    dst(row, col) = src(row, col);
-                }
-            }
-            // assign diagonal
-            for (int i = 0, n = dst.rows(); i < n; ++i) { dst(i, i) = src(i, i); }
-        }
-    };
-    // inherit assignment from base
-    using Base::operator=;
-    // copy assignment
+    using assignment_executor = internals::triangular_assignment_executor;
+
+    // assignment operator
     constexpr TriangularXprType& operator=(const TriangularXprType& other) {
-        fdapde_static_assert(ReadOnly == 0, ASSIGNMENT_TO_A_READ_ONLY_EXPRESSION);
-	assignment_executor::run(derived(), other);
+        fdapde_static_assert(TriangularXprType::ReadOnly == 0, ASSIGNMENT_TO_A_READ_ONLY_EXPRESSION);
+	using Scalar = typename TriangularXprType::Scalar;
+        assignment_executor::run(derived(), other, [](Scalar& l, const Scalar& r) { l = r; });
         return derived();
     }
     constexpr auto inverse() const {
         using Scalar = typename TriangularXprType::Scalar;
+	constexpr int Rows = TriangularXprType::Rows;
+	constexpr int ViewMode = TriangularXprType::ViewMode;
+	
         TriangularMatrix<Scalar, Rows, ViewMode> inverse_;
         if constexpr (Rows == 1) {
             inverse_(0, 0) = 1. / derived()(0, 0);
@@ -150,6 +158,7 @@ struct TriangularMatrixExpr : public MatrixExpr<Rows_, Cols_, TriangularXprType>
     }
     // linear system solver Ax = b
     template <typename RhsXprType> constexpr auto solve(const RhsXprType& b) const {
+        constexpr int ViewMode = TriangularXprType::ViewMode;
         if constexpr (ViewMode == Lower || ViewMode == UnitLower) return forward_sub(b);
         if constexpr (ViewMode == Upper || ViewMode == UnitUpper) return backward_sub(b);
     }
@@ -159,13 +168,16 @@ struct TriangularMatrixExpr : public MatrixExpr<Rows_, Cols_, TriangularXprType>
     constexpr auto& data() { return derived().data(); }
    private:
     // forward substitution for lower-triangular matrix, vector rhs
-    template <int RhsRows, typename RhsXprType>
-    constexpr auto forward_sub(const MatrixExpr<RhsRows, 1, RhsXprType>& b) const {
+    template <typename RhsXprType>
+        requires(RhsXprType::Cols == 1)
+    constexpr auto forward_sub(const MatrixExpr<RhsXprType>& b) const {
+        constexpr int ViewMode = TriangularXprType::ViewMode;
         fdapde_static_assert(
           ViewMode == Lower || ViewMode == UnitLower, THIS_METHOD_IS_FOR_LOWER_TRIANGULAR_MATRICES_ONLY);
 	const RhsXprType& b_ = b.derived();
         fdapde_assert(b_.rows() == derived().rows() && b_.cols() == 1);
         using Scalar = typename TriangularXprType::Scalar;
+        constexpr int Rows = TriangularXprType::Rows, RhsRows = RhsXprType::Rows;
         Vector<Scalar, Rows> x;
         if constexpr (RhsRows == Dynamic) { x.resize(b_.rows()); }
         x[0] = b_[0] / derived()(0, 0);
@@ -178,14 +190,16 @@ struct TriangularMatrixExpr : public MatrixExpr<Rows_, Cols_, TriangularXprType>
         return x;
     }
     // forward substitution for lower-triangular matrix, matrix rhs (cache-friendly approach)
-    template <int RhsRows, int RhsCols, typename RhsXprType>
-        requires(RhsCols > 1 || RhsCols == Dynamic)
-    constexpr auto forward_sub(const MatrixExpr<RhsRows, RhsCols, RhsXprType>& B) const {
+    template <typename RhsXprType>
+        requires(RhsXprType::Cols > 1 || RhsXprType::Cols == Dynamic)
+    constexpr auto forward_sub(const MatrixExpr<RhsXprType>& B) const {
+        constexpr int ViewMode = TriangularXprType::ViewMode;
         fdapde_static_assert(
           ViewMode == Lower || ViewMode == UnitLower, THIS_METHOD_IS_FOR_LOWER_TRIANGULAR_MATRICES_ONLY);
         const RhsXprType& B_ = B.derived();
         fdapde_assert(B_.rows() == derived().rows() && B_.cols() > 1);
         using Scalar = typename TriangularXprType::Scalar;
+        constexpr int RhsRows = RhsXprType::Rows, RhsCols = RhsXprType::Cols;
         Matrix<Scalar, RhsRows, RhsCols> X;
         if constexpr (RhsRows == Dynamic || RhsCols == Dynamic) { X.resize(B_.rows(), B_.cols()); }
         int rows = B_.rows();
@@ -202,13 +216,16 @@ struct TriangularMatrixExpr : public MatrixExpr<Rows_, Cols_, TriangularXprType>
         return X;
     }
     // backward substitution for upper-triangular matrix, vector rhs
-    template <int RhsRows, typename RhsXprType>
-    constexpr auto backward_sub(const MatrixExpr<RhsRows, 1, RhsXprType>& b) const {
+    template <typename RhsXprType>
+        requires(RhsXprType::Cols == 1)
+    constexpr auto backward_sub(const MatrixExpr<RhsXprType>& b) const {
+        constexpr int ViewMode = TriangularXprType::ViewMode;
         fdapde_static_assert(
           ViewMode == Upper || ViewMode == UnitUpper, THIS_METHOD_IS_FOR_UPPER_TRIANGULAR_MATRICES_ONLY);
         const RhsXprType& b_ = b.derived();
         fdapde_assert(b_.rows() == derived().rows() && b_.cols() == 1);
         using Scalar = typename TriangularXprType::Scalar;
+        constexpr int Rows = TriangularXprType::Rows;
         Vector<Scalar, Rows> x;
         if constexpr (Rows == Dynamic) { x.resize(b_.rows()); }
         int rows = b_.rows();
@@ -221,14 +238,16 @@ struct TriangularMatrixExpr : public MatrixExpr<Rows_, Cols_, TriangularXprType>
         return x;
     }
     // backward substitution for upper-triangular matrix, matrix rhs (cache-friendly approach)
-    template <int RhsRows, int RhsCols, typename RhsXprType>
-        requires(RhsCols > 1 || RhsCols == Dynamic)
-    constexpr auto backward_sub(const MatrixExpr<RhsRows, RhsCols, RhsXprType>& B) const {
+    template <typename RhsXprType>
+        requires(RhsXprType::Cols > 1 || RhsXprType::Cols == Dynamic)
+    constexpr auto backward_sub(const MatrixExpr<RhsXprType>& B) const {
+        constexpr int ViewMode = TriangularXprType::ViewMode;
         fdapde_static_assert(
           ViewMode == Upper || ViewMode == UnitUpper, THIS_METHOD_IS_FOR_UPPER_TRIANGULAR_MATRICES_ONLY);
 	const RhsXprType& B_ = B.derived();
         fdapde_assert(B_.rows() == derived().rows() && B_.cols() > 1);
         using Scalar = typename TriangularXprType::Scalar;
+        constexpr int RhsRows = TriangularXprType::Rows, RhsCols = TriangularXprType::Cols;
         Matrix<Scalar, RhsRows, RhsCols> X;
         if constexpr (RhsRows == Dynamic || RhsCols == Dynamic) { X.resize(B_.rows(), B_.cols()); }
         int rows = B_.rows();
@@ -248,9 +267,8 @@ struct TriangularMatrixExpr : public MatrixExpr<Rows_, Cols_, TriangularXprType>
 
 // expression of the triangular part of a matrix
 template <typename XprType, int ViewMode_>
-struct TriangularBlock :
-    public TriangularMatrixExpr<XprType::Rows, XprType::Cols, ViewMode_, TriangularBlock<XprType, ViewMode_>> {
-    using Base = TriangularMatrixExpr<XprType::Rows, XprType::Cols, ViewMode_, TriangularBlock<XprType, ViewMode_>>;
+struct TriangularBlock : public TriangularMatrixExpr<TriangularBlock<XprType, ViewMode_>> {
+    using Base = TriangularMatrixExpr<TriangularBlock<XprType, ViewMode_>>;
     using XprTypeNested = internals::ref_select_t<XprType>;
     using Scalar = typename XprType::Scalar;
     static constexpr int Rows = XprType::Rows;
@@ -258,17 +276,15 @@ struct TriangularBlock :
     static constexpr int NestAsRef = 0;
     static constexpr int ViewMode = ViewMode_;
     static constexpr int ReadOnly = XprType::ReadOnly || (ViewMode == UnitLower || ViewMode == UnitUpper);
+    using assignment_executor = internals::triangular_assignment_executor;
 
     // constructor
     template <typename XprType_>
         requires(std::is_constructible_v<XprTypeNested, XprType_>)
     constexpr explicit TriangularBlock(XprType_&& xpr) : Base(), xpr_(std::forward<XprType_>(xpr)) {
         fdapde_static_assert(
-          XprType::Rows == Dynamic || XprType::Cols == Dynamic || XprType::Rows == XprType::Cols,
-          THIS_EXPRESSION_IS_FOR_SQUARE_MATRICES_ONLY);
-        if constexpr (XprType::Rows == Dynamic || XprType::Cols == Dynamic) {
-            fdapde_assert(xpr.rows() == xpr.cols());
-        }
+          Rows == Dynamic || Cols == Dynamic || Rows == Cols, THIS_EXPRESSION_IS_FOR_SQUARE_MATRICES_ONLY);
+        if constexpr (Rows == Dynamic || Cols == Dynamic) { fdapde_assert(xpr.rows() == xpr.cols()); }
     }
     // inherit assignment from base
     using Base::operator=;
@@ -296,16 +312,16 @@ struct TriangularBlock :
 
 // base class for triangular matrices
 template <typename Scalar_, int Rows_, int ViewMode_, typename TriangularMatrixType>
-class TriangularMatrixBase : public TriangularMatrixExpr<Rows_, Rows_, ViewMode_, TriangularMatrixType> {
+class TriangularMatrixBase : public TriangularMatrixExpr<TriangularMatrixType> {
    public:
-    using Base = TriangularMatrixExpr<Rows_, Rows_, ViewMode_, TriangularMatrixType>;
+    using Base = TriangularMatrixExpr<TriangularMatrixType>;
     using Base::derived;
     using Scalar = Scalar_;
     static constexpr int Rows = Rows_;
     static constexpr int Cols = Rows_;
     static constexpr int ViewMode = ViewMode_;
     static constexpr int NestAsRef = 0;
-    static constexpr int ReadOnly = std::is_const_v<Scalar_> ? 1 : 0;
+    static constexpr int ReadOnly = std::is_const_v<Scalar_>;
 
     constexpr TriangularMatrixBase() : Base(), size_(Rows == Dynamic || Cols == Dynamic ? 0 : Rows) { }
     constexpr TriangularMatrixBase(double size) : Base(), size_(size) {
@@ -340,35 +356,28 @@ class TriangularMatrixBase : public TriangularMatrixExpr<Rows_, Rows_, ViewMode_
 };
 
 // triangular matrix subalgebra of the associative algebra of square matrices
-template <typename LhsXprType, typename RhsXprType, int ViewMode>
-constexpr auto operator+(
-  const TriangularMatrixExpr<LhsXprType::Rows, LhsXprType::Cols, ViewMode, LhsXprType>& lhs,
-  const TriangularMatrixExpr<RhsXprType::Rows, RhsXprType::Cols, ViewMode, RhsXprType>& rhs) {
-    return internals::triangular_cast<ViewMode>(lhs.data() + rhs.data());
+template <typename LhsXprType, typename RhsXprType>
+constexpr auto operator+(const TriangularMatrixExpr<LhsXprType>& lhs, const TriangularMatrixExpr<RhsXprType>& rhs) {
+    return internals::triangular_cast<LhsXprType::ViewMode>(lhs.data() + rhs.data());   // TODO: probably bugged
 }
-template <typename LhsXprType, typename RhsXprType, int ViewMode>
-constexpr auto operator-(
-  const TriangularMatrixExpr<LhsXprType::Rows, LhsXprType::Cols, ViewMode, LhsXprType>& lhs,
-  const TriangularMatrixExpr<RhsXprType::Rows, RhsXprType::Cols, ViewMode, RhsXprType>& rhs) {
-    return internals::triangular_cast<ViewMode>(lhs.data() - rhs.data());
+template <typename LhsXprType, typename RhsXprType>
+constexpr auto operator-(const TriangularMatrixExpr<LhsXprType>& lhs, const TriangularMatrixExpr<RhsXprType>& rhs) {
+    return internals::triangular_cast<LhsXprType::ViewMode>(lhs.data() - rhs.data());
 }
-template <typename XprType, typename CoeffType, int ViewMode>
+template <typename XprType, typename CoeffType>
     requires(std::is_arithmetic_v<CoeffType>)
-constexpr auto
-operator*(const TriangularMatrixExpr<XprType::Rows, XprType::Cols, ViewMode, XprType>& lhs, CoeffType rhs) {
-    return internals::triangular_cast<ViewMode>(rhs.data() * lhs);
+constexpr auto operator*(const TriangularMatrixExpr<XprType>& lhs, CoeffType rhs) {
+    return internals::triangular_cast<XprType::ViewMode>(rhs.data() * lhs);
 }
-template <typename XprType, typename CoeffType, int ViewMode>
+template <typename XprType, typename CoeffType>
     requires(std::is_arithmetic_v<CoeffType>)
-constexpr auto
-operator*(CoeffType lhs, const TriangularMatrixExpr<XprType::Rows, XprType::Cols, ViewMode, XprType>& rhs) {
+constexpr auto operator*(CoeffType lhs, const TriangularMatrixExpr<XprType>& rhs) {
     return rhs * lhs;
 }
-template <typename XprType, typename CoeffType, int ViewMode>
+template <typename XprType, typename CoeffType>
     requires(std::is_arithmetic_v<CoeffType>)
-constexpr auto
-operator/(const TriangularMatrixExpr<XprType::Rows, XprType::Cols, ViewMode, XprType>& lhs, CoeffType rhs) {
-    return internals::triangular_cast<ViewMode>(lhs.data() / rhs);
+constexpr auto operator/(const TriangularMatrixExpr<XprType>& lhs, CoeffType rhs) {
+    return internals::triangular_cast<XprType::ViewMode>(lhs.data() / rhs);
 }
 
 // specialized products
@@ -422,27 +431,21 @@ template <typename LhsXprType, typename RhsXprType> struct triangular_triangular
 template <typename LhsXprType, typename RhsXprType, typename Executor> struct MatrixProductOp;
 // Triangular * M
 template <typename LhsXprType, typename RhsXprType>
-constexpr auto operator*(
-  const TriangularMatrixExpr<LhsXprType::Rows, LhsXprType::Cols, LhsXprType::ViewMode, LhsXprType>& lhs,
-  const MatrixExpr<RhsXprType::Rows, RhsXprType::Cols, RhsXprType>& rhs) {
+constexpr auto operator*(const TriangularMatrixExpr<LhsXprType>& lhs, const MatrixExpr<RhsXprType>& rhs) {
     return MatrixProductOp<
       LhsXprType, RhsXprType, internals::triangular_matrix_product_executor<LhsXprType, RhsXprType, LhsMode>> {
       lhs.derived(), rhs.derived()};
 }
 // M * Triangular
 template <typename LhsXprType, typename RhsXprType>
-constexpr auto operator*(
-  const MatrixExpr<LhsXprType::Rows, LhsXprType::Cols, LhsXprType>& lhs,
-  const TriangularMatrixExpr<RhsXprType::Rows, RhsXprType::Cols, RhsXprType::ViewMode, RhsXprType>& rhs) {
+constexpr auto operator*(const MatrixExpr<LhsXprType>& lhs, const TriangularMatrixExpr<RhsXprType>& rhs) {
     return MatrixProductOp<
       LhsXprType, RhsXprType, internals::triangular_matrix_product_executor<LhsXprType, RhsXprType, RhsMode>> {
       lhs.derived(), rhs.derived()};
 }
 // Triangular * Triangular
 template <typename LhsXprType, typename RhsXprType, int ViewMode>
-constexpr auto operator*(
-  const TriangularMatrixExpr<LhsXprType::Rows, LhsXprType::Cols, ViewMode, LhsXprType>& lhs,
-  const TriangularMatrixExpr<RhsXprType::Rows, RhsXprType::Cols, ViewMode, RhsXprType>& rhs) {
+constexpr auto operator*(const TriangularMatrixExpr<LhsXprType>& lhs, const TriangularMatrixExpr<RhsXprType>& rhs) {
     return MatrixProductOp<
              LhsXprType, RhsXprType, internals::triangular_triangular_product_executor<LhsXprType, RhsXprType>> {
       lhs.derived(), rhs.derived()}
@@ -471,12 +474,11 @@ struct TriangularMatrix :
           Rows == Dynamic || Cols == Dynamic, THIS_METHOD_IS_FOR_DYNAMIC_SIZED_TRIANGULAR_MATRICES_ONLY);
         data_.resize(size);
     }
-    template <int RhsRows_, int RhsCols_, typename RhsXprType_>
-    constexpr TriangularMatrix(const MatrixExpr<RhsRows_, RhsCols_, RhsXprType_>& rhs) : Base(rhs.rows()) {
+    template <typename RhsXprType_> constexpr TriangularMatrix(const MatrixExpr<RhsXprType_>& rhs) : Base(rhs.rows()) {
         fdapde_assert(StorageSize == Dynamic || rhs.rows() == rhs.cols());
         if constexpr (Rows == Dynamic || Cols == Dynamic) { resize(rhs.rows()); }
         using assignment = typename Base::assignment_executor;
-        assignment::run(*this, rhs.derived());
+        assignment::run(*this, rhs.derived(), [](Scalar& l, const Scalar& r) { l = r; });
     }
     template <typename DataT>
         requires(internals::is_vector_like_v<DataT> && !internals::is_matrix_like_v<DataT>)
@@ -496,8 +498,6 @@ struct TriangularMatrix :
     static constexpr TriangularMatrix Ones(int size) { return OnesMatrix<Rows, Cols>(size, size); }
     static constexpr TriangularMatrix Zero() { return ZeroMatrix<Rows, Cols>(); }
     static constexpr TriangularMatrix Zero(int size) { return ZeroMatrix<Rows, Cols>(size, size); }
-    static constexpr TriangularMatrix Identity() { return IdentityMatrix<Rows, Cols>(); }
-    static constexpr TriangularMatrix Identity(int size) { return IdentityMatrix<Rows, Cols>(size, size); }
     // inherit assignment from base
     using Base::operator=;
     // modifiers
