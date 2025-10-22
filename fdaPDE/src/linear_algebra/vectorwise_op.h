@@ -35,6 +35,7 @@ struct partial_matrix_redux_op : public MatrixExpr<partial_matrix_redux_op<XprTy
     using Scalar = typename XprType::Scalar;
     static constexpr int Rows = ByRow ? 1 : XprType::Rows;
     static constexpr int Cols = ByRow ? XprType::Cols : 1;
+    static constexpr int StorageOrder = XprType::StorageOrder;
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = XprType::ReadOnly;
 
@@ -73,6 +74,7 @@ struct MatrixVectorWiseOp : public MatrixExpr<MatrixVectorWiseOp<XprType, ByRow>
     using Scalar = typename XprType::Scalar;
     static constexpr int Rows = ByRow ? 1 : XprType::Rows;
     static constexpr int Cols = ByRow ? XprType::Cols : 1;
+    static constexpr int StorageOrder = XprType::StorageOrder;
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = XprType::ReadOnly;
 

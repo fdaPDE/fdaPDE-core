@@ -40,6 +40,13 @@
 /* #include "src/math/polynomial.h" */
 /* #include "src/math/spline.h" */
 
+// type promotion rules
+template <typename T1, typename T2>
+struct promote_type {
+    using type = std::common_type_t<T1, T2>;
+};
+template <typename T1, typename T2> using promote_type_t = promote_type<T1, T2>::type;
+
 // clang-format on
 
 #endif   // __FDAPDE_FIELDS_MODULE_H__

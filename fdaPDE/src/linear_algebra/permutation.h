@@ -65,6 +65,7 @@ template <typename XprType> struct PermutationInverseOp : public PermutationMatr
     using Scalar = typename XprType::Scalar;
     static constexpr int Rows = XprType::Rows;
     static constexpr int Cols = XprType::Cols;
+    static constexpr int StorageOrder = XprType::StorageOrder;
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
 
@@ -132,6 +133,8 @@ struct PermutationCompositionOp : public PermutationMatrixExpr<PermutationCompos
     using Scalar = int;
     static constexpr int Rows = LhsXprType::Rows;
     static constexpr int Cols = LhsXprType::Cols;
+    static constexpr int StrageOrder =
+      internals::promote_storage_order_v<LhsXprType::StorageOrder, RhsXprType::StorageOrder>;
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
 
@@ -174,6 +177,7 @@ template <int Size_> struct PermutationMatrix : public PermutationMatrixExpr<Per
     using StorageType = Vector<Scalar, Size_>;
     static constexpr int Rows = Size_;
     static constexpr int Cols = Size_;
+    static constexpr int StorageOrder = StorageType::StorageOrder;
     static constexpr int StorageSize = Size_;
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;

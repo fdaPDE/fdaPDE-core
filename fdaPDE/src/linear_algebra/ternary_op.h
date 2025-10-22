@@ -41,6 +41,9 @@ class TernaryOp : public MatrixExpr<TernaryOp<ConditionXprType, LhsXprType, RhsX
       (LhsXprType::Rows == Dynamic || RhsXprType::Rows == Dynamic) ? Dynamic : LhsXprType::Rows;
     static constexpr int Cols =
       (LhsXprType::Cols == Dynamic || RhsXprType::Cols == Dynamic) ? Dynamic : LhsXprType::Cols;
+    static constexpr int StrageOrder = internals::promote_storage_order_v<
+      ConditionXprType::StorageOrder,
+      internals::promote_storage_order_v<LhsXprType::StorageOrder, RhsXprType::StorageOrder>>;
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
 

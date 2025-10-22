@@ -22,9 +22,13 @@
 namespace fdapde {
 
 // computes the eigen-decomposition of a matrix
-template <typename Scalar_, int Size_> class EVD {
-    static constexpr int Size = Size_;
-    using Scalar = Scalar_;
+template <typename XprType_> class EVD {
+    using XprType = std::decay_t<XprType_>;
+    fdapde_static_assert(
+      XprType::Rows == Dynamic || XprType::Cols == Dynamic || XprType::Rows == XprType::Cols,
+      THIS_CLASS_IS_FOR_SQUARE_MATRICES_ONLY);
+    static constexpr int Size = XprType::Rows;
+    using Scalar = typename XprType::Scalar;
 
     // tridiagonalize a symmetric matrix via householder reflectors
     // see "Golub, G. H., & Van Loan, C. F. (2013). Matrix computations. JHU press. Sec.8.3.1"
@@ -75,6 +79,7 @@ template <typename Scalar_, int Size_> class EVD {
 
     template <int Rows, int Cols, typename XprType>
     constexpr explicit EVD(const SymmetricMatrixExpr<Rows, Cols, XprType>& m) {
+        if constexpr (Rows == Dynamic || Cols == Dynamic) { fdapde_assert(m.rows() == m.cols()); }
         compute(m);
     }
 
