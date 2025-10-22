@@ -23,8 +23,8 @@ namespace fdapde {
 
 // triangular matrix type system
 template <typename XprType> struct TriangularMatrixExpr;
-template <typename Scalar_, int Rows_, int ViewMode_> struct TriangularMatrix;
-  
+template <typename Scalar_, int Rows_, int ViewMode_, int StorageOrder_ = RowMajor> struct TriangularMatrix;
+
 namespace internals {
 
 struct triangular_assignment_executor {
@@ -62,6 +62,7 @@ struct triangular_wrapper : TriangularMatrixExpr<triangular_wrapper<Rows_, Cols_
     static constexpr int Rows = Size;
     static constexpr int Cols = Size;
     static constexpr int ViewMode = ViewMode_;
+    static constexpr int StorageOrder = TriangularXprTypeClean::StorageOrder;
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
 
@@ -273,6 +274,7 @@ struct TriangularBlock : public TriangularMatrixExpr<TriangularBlock<XprType, Vi
     using Scalar = typename XprType::Scalar;
     static constexpr int Rows = XprType::Rows;
     static constexpr int Cols = XprType::Cols;
+    static constexpr int StorageOrder = XprType::StorageOrder;
     static constexpr int NestAsRef = 0;
     static constexpr int ViewMode = ViewMode_;
     static constexpr int ReadOnly = XprType::ReadOnly || (ViewMode == UnitLower || ViewMode == UnitUpper);
@@ -453,17 +455,19 @@ constexpr auto operator*(const TriangularMatrixExpr<LhsXprType>& lhs, const Tria
 }
 
 // owning storage diagonal matrix
-template <typename Scalar_, int Rows_, int ViewMode_>
+template <typename Scalar_, int Rows_, int ViewMode_, int StorageOrder_>
 struct TriangularMatrix :
-    public TriangularMatrixBase<Scalar_, Rows_, ViewMode_, TriangularMatrix<Scalar_, Rows_, ViewMode_>> {
+    public TriangularMatrixBase<Scalar_, Rows_, ViewMode_, TriangularMatrix<Scalar_, Rows_, ViewMode_, StorageOrder_>> {
     fdapde_static_assert(
       ViewMode_ == Lower || ViewMode_ == Upper, TRIANGULAR_MATRICES_CAN_BE_IN_LOWER_OR_UPPER_MODE_ONLY);
-    using Base = TriangularMatrixBase<Scalar_, Rows_, ViewMode_, TriangularMatrix<Scalar_, Rows_, ViewMode_>>;
+    using Base =
+      TriangularMatrixBase<Scalar_, Rows_, ViewMode_, TriangularMatrix<Scalar_, Rows_, ViewMode_, StorageOrder_>>;
     using Scalar = Scalar_;
     static constexpr int StorageSize = Rows_ == Dynamic ? Dynamic : (Rows_ * (Rows_ + 1) / 2);
     using StorageType = Vector<Scalar, StorageSize>;
     static constexpr int Rows = Rows_;
     static constexpr int Cols = Rows_;
+    static constexpr int StorageOrder = StorageOrder_;
     static constexpr int ViewMode = ViewMode_;
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = std::is_const_v<Scalar_> ? 1 : 0;
@@ -520,13 +524,16 @@ struct TriangularMatrix :
 };
 
 // triangular view of an existing block of data
-template <typename Scalar_, int Rows_, int ViewMode_>
+template <typename Scalar_, int Rows_, int ViewMode_, int StorageOrder_>
 class TriangularMatrixView :
-    public TriangularMatrixBase<Scalar_, Rows_, ViewMode_, TriangularMatrixView<Scalar_, Rows_, ViewMode_>> {
+    public TriangularMatrixBase<
+      Scalar_, Rows_, ViewMode_, TriangularMatrixView<Scalar_, Rows_, ViewMode_, StorageOrder_>> {
    public:
-    using Base = TriangularMatrixBase<Scalar_, Rows_, ViewMode_, TriangularMatrixView<Scalar_, Rows_, ViewMode_>>;
+    using Base =
+      TriangularMatrixBase<Scalar_, Rows_, ViewMode_, TriangularMatrixView<Scalar_, Rows_, ViewMode_, StorageOrder_>>;
     using Scalar = Scalar_;
     using StorageType = std::add_pointer_t<Scalar>;
+    static constexpr int StorageOrder = StorageOrder_;
     static constexpr int ReadOnly = std::is_const_v<Scalar_> ? 1 : 0;
     static constexpr int NestAsRef = 1;
   
@@ -546,10 +553,14 @@ class TriangularMatrixView :
 };
 
 // type aliases
-template <typename Scalar, int Size> using UpperTriangularMatrix = TriangularMatrix<Scalar, Size, Upper>;
-template <typename Scalar, int Size> using UpperTriangularMatrixView = TriangularMatrixView<Scalar, Size, Upper>;
-template <typename Scalar, int Size> using LowerTriangularMatrix = TriangularMatrix<Scalar, Size, Lower>;  
-template <typename Scalar, int Size> using LowerTriangularMatrixView = TriangularMatrixView<Scalar, Size, Lower>;
+template <typename Scalar, int Size, int StorageOrder = RowMajor>
+using UpperTriangularMatrix = TriangularMatrix<Scalar, Size, Upper, StorageOrder>;
+template <typename Scalar, int Size, int StorageOrder = RowMajor>
+using UpperTriangularMatrixView = TriangularMatrixView<Scalar, Size, Upper, StorageOrder>;
+template <typename Scalar, int Size, int StorageOrder = RowMajor>
+using LowerTriangularMatrix = TriangularMatrix<Scalar, Size, Lower, StorageOrder>;
+template <typename Scalar, int Size, int StorageOrder = RowMajor>
+using LowerTriangularMatrixView = TriangularMatrixView<Scalar, Size, Lower, StorageOrder>;
 
 }   // namespace fdapde
 

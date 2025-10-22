@@ -138,35 +138,50 @@ template <typename XprType_> struct MatrixExpr {
     // general redux executor
     template <typename Scalar_, typename ReduxOp> constexpr auto redux(Scalar_ init, ReduxOp&& op) const {
         fdapde_assert(derived().rows() > 0 && derived().cols() > 0);
-        return MatrixReduxOp<XprType, internals::matrix_linear_redux_executor<XprType, ReduxOp>>(derived()).run(
-          init, op);
+        return internals::matrix_redux_linear_executor::run(derived(), init, op);
     }
     constexpr auto sum() const {
         using Scalar = typename XprType::Scalar;
         if (derived().size() == 0) return Scalar(0);
-        return redux(Scalar(0), [](Scalar tmp, Scalar x) { return tmp + x; });
+        return redux(Scalar(0), [](const Scalar& tmp, const Scalar& x) { return tmp + x; });
     }
     constexpr auto prod() const {
         using Scalar = typename XprType::Scalar;
         if (derived().size() == 0) return Scalar(1);
-        return redux(Scalar(1), [](Scalar tmp, Scalar x) { return tmp * x; });
+        return redux(Scalar(1), [](const Scalar& tmp, const Scalar& x) { return tmp * x; });
     }
     constexpr auto mean() const { return derived().sum() / derived().size(); }
     constexpr auto max() const {
         using Scalar = typename XprType::Scalar;
-        return redux(std::numeric_limits<Scalar>::min(), [](Scalar tmp, Scalar x) { return tmp > x ? tmp : x; });
+        return redux(
+          std::numeric_limits<Scalar>::min(), [](const Scalar& tmp, const Scalar& x) { return tmp > x ? tmp : x; });
     }
     constexpr auto min() const {
         using Scalar = typename XprType::Scalar;
-        return redux(std::numeric_limits<Scalar>::max(), [](Scalar tmp, Scalar x) { return tmp < x ? tmp : x; });
+        return redux(
+          std::numeric_limits<Scalar>::max(), [](const Scalar& tmp, const Scalar& x) { return tmp < x ? tmp : x; });
     }
-    // // vector-wise redux operators
+    // boolean reductions
+    // true if at least one of the coefficients of the expression evalutes true
+    constexpr bool any() const {
+        return internals::boolean_redux_linear_executor::run(derived(), true, [](const auto& x) { return bool(x); });
+    }
+    // true if none of the coefficients of the expression evaluates false
+    constexpr bool all() const {
+        return internals::boolean_redux_linear_executor::run(derived(), false, [](const auto& x) { return !bool(x); });
+    }
+    // number of coefficients evaluating true in the expression
+    constexpr int count() const {
+        if (derived().size() == 0) return int(0);
+        return redux(int(0), [](int cnt, auto x) { return cnt + (bool(x) ? 1 : 0); });
+    }
+    // vector-wise redux operators
     constexpr MatrixRowWiseOp<XprType> rowwise() { return MatrixRowWiseOp<XprType>(derived()); }
     constexpr MatrixRowWiseOp<const XprType> rowwise() const { return MatrixRowWiseOp<const XprType>(derived()); }
     constexpr MatrixColWiseOp<XprType> colwise() { return MatrixColWiseOp<XprType>(derived()); }
     constexpr MatrixColWiseOp<const XprType> colwise() const { return MatrixColWiseOp<const XprType>(derived()); }
 
-    // // unary operators
+    // unary operators
     constexpr TransposeOp<XprType> transpose() const { return TransposeOp<XprType>(derived()); }
     constexpr auto diagonal() const { return Diagonal<const XprType>(derived()); }
     constexpr auto diagonal() { return Diagonal<XprType>(derived()); }

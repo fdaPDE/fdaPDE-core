@@ -30,6 +30,7 @@ template <typename XprType> struct TransposeOp : public MatrixExpr<TransposeOp<X
     using Scalar = typename XprType::Scalar;
     static constexpr int Rows = XprType::Cols;
     static constexpr int Cols = XprType::Rows;
+    static constexpr int StorageOrder = XprType::StorageOrder;
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = std::is_const_v<std::remove_reference_t<XprType>>;
 
@@ -55,6 +56,7 @@ struct ReshapeOp : public MatrixExpr<ReshapeOp<Rows_, Cols_, XprType>> {
     using Scalar = typename XprType::Scalar;
     static constexpr int Rows = Rows_;
     static constexpr int Cols = Cols_;
+    static constexpr int StorageOrder = XprType::StorageOrder;
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = XprType::ReadOnly;
 
@@ -105,48 +107,61 @@ struct ReshapeOp : public MatrixExpr<ReshapeOp<Rows_, Cols_, XprType>> {
     int rows_, cols_;
     XprTypeNested xpr_;
 };
-
+  
 // redux suppport. Reductions are unary operations which collapse a MatrixExpr operand into a single scalar
 namespace internals {
 
 // linear reduction loop on matrix expressions
-template <typename XprType, typename Functor> struct matrix_linear_redux_executor {
-    using XprTypeClean = std::decay_t<XprType>;
-    using Scalar = decltype(std::declval<Functor>().operator()(
-      std::declval<typename XprTypeClean::Scalar>(), std::declval<typename XprTypeClean::Scalar>()));
-
-    static constexpr Scalar run(const XprType& xpr, Scalar init, Functor f) {
+struct matrix_redux_linear_executor {
+    template <typename XprType_, typename Scalar, typename Functor>
+    static constexpr auto run(XprType_&& xpr, Scalar init, Functor f) {
+        using XprType = std::decay_t<XprType_>;
         fdapde_assert(xpr.size() > 0);
         Scalar res = init;
         const int rows_ = xpr.rows();
-	const int cols_ = xpr.cols();
-        for (int i = 0; i < rows_; ++i) {
-            for (int j = 0; j < cols_; ++j) { res = f(res, xpr(i, j)); }
+        const int cols_ = xpr.cols();
+        // exploit cache-locality depending on storage order of target expression
+        if constexpr (XprType::StorageOrder == RowMajor) {
+            for (int i = 0; i < rows_; ++i) {
+                for (int j = 0; j < cols_; ++j) { res = f(res, xpr(i, j)); }
+            }
+        } else {   // ColMajor
+            for (int j = 0; j < cols_; ++j) {
+                for (int i = 0; i < rows_; ++i) { res = f(res, xpr(i, j)); }
+            }
         }
         return res;
     }
 };
 
-}   // namespace internals
-
-template <typename XprType, typename Executor> struct MatrixReduxOp {
-   private:
-    using ExecutorReturnType = typename Executor::Scalar;
-    using XprTypeNested = internals::ref_select_t<const XprType>;
-   public:
-    using Scalar = typename XprType::Scalar;
-
-    template <typename XprType_>
-        requires(std::is_constructible_v<XprTypeNested, XprType_>)
-    constexpr explicit MatrixReduxOp(XprType_&& xpr) : xpr_(std::forward<XprType_>(xpr)) {
-        fdapde_static_assert(
-          std::is_convertible_v<ExecutorReturnType FDAPDE_COMMA Scalar>, INVALID_EXECUTIR_RETURN_TYPE);
+// boolean linear reduction loop on matrix expression
+struct boolean_redux_linear_executor {
+    // returns b at the first true occurence of f, otherwise returns !b
+    template <typename XprType_, typename Functor>
+    static constexpr auto run(XprType_&& xpr, bool b, Functor f) {
+        using XprType = std::decay_t<XprType_>;
+        fdapde_assert(xpr.size() > 0);
+        const int rows_ = xpr.rows();
+        const int cols_ = xpr.cols();
+        // exploit cache-locality depending on storage order of target expression
+        if constexpr (XprType::StorageOrder == RowMajor) {
+            for (int i = 0; i < rows_; ++i) {
+                for (int j = 0; j < cols_; ++j) {
+                    if (bool(f(xpr(i, j)))) { return b; }
+                }
+            }
+        } else {   // ColMajor
+            for (int j = 0; j < cols_; ++j) {
+                for (int i = 0; i < rows_; ++i) {
+                    if (bool(f(xpr(i, j)))) { return b; }
+                }
+            }
+        }
+        return !b;
     }
-    template <typename ReduxOp> constexpr auto run(Scalar init, ReduxOp op) { return Executor::run(xpr_, init, op); }
-   private:
-    XprTypeNested xpr_;
 };
   
-}
+}   // namespace internals
+}   // namespace fdapde
 
 #endif // __FDAPDE_LINALG_UNARY_OP_H__

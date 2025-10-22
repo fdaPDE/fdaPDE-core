@@ -31,6 +31,7 @@ struct ProceduralMatrix : public MatrixExpr<ProceduralMatrix<Functor_, Rows_, Co
     fdapde_static_assert(std::is_arithmetic_v<Scalar>, INVALID_FUNCTOR_RETURN_TYPE);
     static constexpr int Rows = Rows_;
     static constexpr int Cols = Cols_;
+    static constexpr int StorageOrder = RowMajor;   // here there is no memory, choose the default
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
 
@@ -113,8 +114,7 @@ struct vector_assignment_executor {
         // NB: a row-shaped rhs can be assigned to a col-shaped lhs
         fdapde_static_assert(
           internals::is_vector_shaped_v<DstMatrixType> && internals::is_vector_shaped_v<SrcXprType> &&
-            (internals::is_dynamic_sized_v<DstMatrixType> || internals::is_dynamic_sized_v<SrcXprType> ||
-             internals::same_static_size_v<DstMatrixType, SrcXprType>),
+            internals::same_static_size_weak_v<DstMatrixType FDAPDE_COMMA SrcXprType>,
           INVALID_ASSIGNMENT__NOT_VECTOR_SHAPED_OPERANDS);
         if constexpr (internals::is_dynamic_sized_v<DstMatrixType> || internals::is_dynamic_sized_v<SrcXprType>) {
             fdapde_assert(
@@ -133,15 +133,16 @@ struct vector_assignment_executor {
 template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_, typename MatrixType>
 class MatrixBase : public MatrixExpr<MatrixType> {
     fdapde_static_assert((Rows_ == Dynamic || Rows_ > 0) && (Cols_ == Dynamic || Cols_ > 0), INVALID_MATRIX_DIMENSIONS);
-   public:
+   protected:
     using Base = MatrixExpr<MatrixType>;
     using Base::derived;
+   public:
     using Scalar = Scalar_;
     static constexpr int Rows = Rows_;
     static constexpr int Cols = Cols_;
     static constexpr int StorageOrder = StorageOrder_;
     static constexpr int NestAsRef = MatrixType::NestAsRef;
-    static constexpr int ReadOnly = std::is_const_v<Scalar_> ? 1 : 0;
+    static constexpr int ReadOnly = std::is_const_v<Scalar_>;
     using assignment_executor = std::conditional_t<
       Rows_ == 1 || Cols_ == 1, internals::vector_assignment_executor, internals::generic_assignment_executor>;
 
@@ -155,9 +156,7 @@ class MatrixBase : public MatrixExpr<MatrixType> {
         rows_(Rows == Dynamic ? rows : Rows),
         cols_(Cols == Dynamic ? cols : Cols),
         row_stride_(StorageOrder == RowMajor ? cols_ : 1),
-        col_stride_(StorageOrder == RowMajor ? 1 : rows_) {
-        fdapde_static_assert(Rows_ != 1 && Cols_ != 1, THIS_METHOD_IS_FOR_PROPER_MATRICES);
-    }
+        col_stride_(StorageOrder == RowMajor ? 1 : rows_) { }
     constexpr MatrixBase(int size) :
         rows_(Rows == 1 ? 1 : size),
         cols_(Cols == 1 ? 1 : size),
@@ -207,13 +206,14 @@ class MatrixBase : public MatrixExpr<MatrixType> {
 template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_ = RowMajor>
     requires(std::is_arithmetic_v<Scalar_>)
 class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Scalar_, Rows_, Cols_, StorageOrder_>> {
-   public:
+   private:
     using Base = MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Scalar_, Rows_, Cols_, StorageOrder_>>;
-    using Scalar = Scalar_;
     static constexpr int StorageSize = (Rows_ == Dynamic || Cols_ == Dynamic) ? Dynamic : (Rows_ * Cols_);
     using StorageType = std::conditional_t<
-      Rows_ == Dynamic || Cols_ == Dynamic, std::vector<Scalar>,
-      std::array<Scalar, (StorageSize < 0) ? 0 : static_cast<std::size_t>(StorageSize)>>;   // avoid clang narrowing
+      Rows_ == Dynamic || Cols_ == Dynamic, std::vector<Scalar_>,
+      std::array<Scalar_, (StorageSize < 0) ? 0 : static_cast<std::size_t>(StorageSize)>>;   // avoid clang narrowing
+   public:
+    using Scalar = Scalar_;
     using iterator = typename StorageType::iterator;
     using const_iterator = typename StorageType::const_iterator;
     static constexpr int NestAsRef = 1;
@@ -405,11 +405,11 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
 template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_ = RowMajor>
 class MatrixView :
     public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, MatrixView<Scalar_, Rows_, Cols_, StorageOrder_>> {
-   public:
+   private:
     using Base = MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, MatrixView<Scalar_, Rows_, Cols_, StorageOrder_>>;
+    using StorageType = std::add_pointer_t<Scalar_>;
+   public:
     using Scalar = Scalar_;
-    using StorageType = std::add_pointer_t<Scalar>;
-    static constexpr int ReadOnly = std::is_const_v<Scalar_> ? 1 : 0;
     static constexpr int NestAsRef = 0;
 
     // constructors

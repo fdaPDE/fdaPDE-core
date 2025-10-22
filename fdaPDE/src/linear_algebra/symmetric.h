@@ -24,15 +24,15 @@ namespace fdapde {
 // forward decl
 template <typename Scalar, int Size> class EVD;
 
-template <int Rows_, int Cols_, typename XprType_>
-struct SymmetricMatrixExpr : public MatrixExpr<Rows_, Cols_, XprType_> {
-    using Base = MatrixExpr<Rows_, Cols_, XprType_>;
+template <typename XprType_> struct SymmetricMatrixExpr : public MatrixExpr<XprType_> {
+    using Base = MatrixExpr<XprType_>;
     using Base::derived;
 
     // compute EVD of expression
     auto evd() const {
         using Scalar = typename XprType_::Scalar;
-        EVD<Scalar, Rows_> evd(derived());
+	constexpr int Rows = XprType_::Rows;
+        EVD<Scalar, Rows> evd(derived());
         return evd;
     }
 };
@@ -40,17 +40,18 @@ struct SymmetricMatrixExpr : public MatrixExpr<Rows_, Cols_, XprType_> {
 namespace internals {
 
 // class wrapping a generic expression to the expression of a symmetric matrix. internal usage only
-template <int Rows_, int Cols_, int ViewMode_, typename SymmetricXprType>
-struct symmetric_wrapper :
-    public SymmetricMatrixExpr<Rows_, Cols_, symmetric_wrapper<Rows_, Cols_, ViewMode_, SymmetricXprType>> {
-    fdapde_static_assert(Rows_ == Cols_, THIS_CLASS_IS_FOR_SQUARE_MATRICES_ONLY);
+template <int ViewMode_, typename SymmetricXprType>
+struct symmetric_wrapper : public SymmetricMatrixExpr<symmetric_wrapper<ViewMode_, SymmetricXprType>> {
     fdapde_static_assert(ViewMode_ == Lower || ViewMode_ == Upper, VIEW_MODE_MUST_BE_EITHER_LOWER_OR_UPPER);
-    using Base = SymmetricMatrixExpr<Rows_, Cols_, symmetric_wrapper<Rows_, Cols_, ViewMode_, SymmetricXprType>>;
+    using Base = SymmetricMatrixExpr<symmetric_wrapper<ViewMode_, SymmetricXprType>>;
     using SymmetricXprTypeNested = internals::ref_select_t<const SymmetricXprType>;
+    using SymmetricXprTypeClean = std::decay_t<SymmetricXprType>;
     using Scalar = typename SymmetricXprType::Scalar;
-    static constexpr int Rows = Rows_;
-    static constexpr int Cols = Cols_;
+    static constexpr int Rows = SymmetricXprTypeClean::Rows;
+    static constexpr int Cols = SymmetricXprTypeClean::Cols;
+    fdapde_static_assert(Rows_ == Cols_, THIS_CLASS_IS_FOR_SQUARE_MATRICES_ONLY);
     static constexpr int ViewMode = ViewMode_;
+    static constexpr int StorageOrder = SymmetricXprTypeClean::StorageOrder;
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
 
@@ -59,8 +60,8 @@ struct symmetric_wrapper :
     constexpr symmetric_wrapper(XprType&& xpr) : Base(), xpr_(std::forward<XprType>(xpr)) { }
     constexpr Scalar operator()(int i, int j) const {
         fdapde_assert(i >= 0 && i < xpr_.rows() && j >= 0 && j < xpr_.cols());
-        if constexpr (ViewMode == Upper) return i > j ? xpr_(j, i) : xpr_(i, j);
-        if constexpr (ViewMode == Lower) return i < j ? xpr_(i, j) : xpr_(j, i);
+        if constexpr (ViewMode == Upper) { return i > j ? xpr_(j, i) : xpr_(i, j); }
+        if constexpr (ViewMode == Lower) { return i < j ? xpr_(i, j) : xpr_(j, i); }
     }
    private:
     SymmetricXprTypeNested xpr_;
@@ -68,10 +69,7 @@ struct symmetric_wrapper :
 
 // helper cast function
 template <int ViewMode, typename XprType> auto symmetric_cast(XprType&& xpr) {
-    using XprTypeClean = std::decay_t<XprType>;
-    static constexpr int Rows = XprTypeClean::Rows;
-    static constexpr int Cols = XprTypeClean::Cols;
-    return symmetric_wrapper<Rows, Cols, ViewMode, XprType>(xpr);
+    return symmetric_wrapper<ViewMode, XprType>(xpr);
 }
 
 }   // namespace internals
@@ -80,39 +78,35 @@ template <typename XprType, typename CoeffType> struct MatrixCoeffWiseOp;
 
 // symmetric matrices linear vector-space structure (additive group)
 template <typename LhsXprType, typename RhsXprType>
-constexpr auto operator+(
-  const SymmetricMatrixExpr<LhsXprType::Rows, LhsXprType::Cols, LhsXprType>& lhs,
-  const SymmetricMatrixExpr<RhsXprType::Rows, RhsXprType::Cols, RhsXprType>& rhs) {
+constexpr auto operator+(const SymmetricMatrixExpr<LhsXprType>& lhs, const SymmetricMatrixExpr<RhsXprType>& rhs) {
     return internals::symmetric_cast<Lower>(lhs + rhs);
 }
 template <typename LhsXprType, typename RhsXprType>
-constexpr auto operator-(
-  const SymmetricMatrixExpr<LhsXprType::Rows, LhsXprType::Cols, LhsXprType>& lhs,
-  const SymmetricMatrixExpr<RhsXprType::Rows, RhsXprType::Cols, RhsXprType>& rhs) {
+constexpr auto operator-(const SymmetricMatrixExpr<LhsXprType>& lhs, const SymmetricMatrixExpr<RhsXprType>& rhs) {
     return internals::symmetric_cast<Lower>(lhs - rhs);
 }
 template <typename XprType, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
-constexpr auto operator*(const SymmetricMatrixExpr<XprType::Rows, XprType::Cols, XprType>& lhs, ScalarType rhs) {
+constexpr auto operator*(const SymmetricMatrixExpr<XprType>& lhs, ScalarType rhs) {
     return internals::symmetric_cast<Lower>(MatrixScalarMultiplicationOp<XprType, ScalarType>(lhs.derived(), rhs));
 }
 template <typename XprType, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
-constexpr auto operator*(ScalarType lhs, const SymmetricMatrixExpr<XprType::Rows, XprType::Cols, XprType>& rhs) {
+constexpr auto operator*(ScalarType lhs, const SymmetricMatrixExpr<XprType>& rhs) {
     return rhs * lhs;
 }
 template <typename XprType, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
-constexpr auto operator/(const SymmetricMatrixExpr<XprType::Rows, XprType::Cols, XprType>& lhs, ScalarType rhs) {
+constexpr auto operator/(const SymmetricMatrixExpr<XprType>& lhs, ScalarType rhs) {
     return internals::symmetric_cast<Lower>(
       MatrixScalarMultiplicationOp<XprType, ScalarType>(lhs.derived(), ScalarType(1) / rhs));
 }
 // any other operation doesn't preserve symmetry. A raw MatrixExpr is returned
 
 template <typename Scalar_, int Size_, typename SymmetricMatrixType>
-class SymmetricMatrixBase : public SymmetricMatrixExpr<Size_, Size_, SymmetricMatrixType> {
+class SymmetricMatrixBase : public SymmetricMatrixExpr<SymmetricMatrixType> {
    public:
-    using Base = SymmetricMatrixExpr<Size_, Size_, SymmetricMatrixType>;
+    using Base = SymmetricMatrixExpr<SymmetricMatrixType>;
     using Base::derived;
     using Scalar = Scalar_;
     static constexpr int Rows = Size_;
@@ -175,6 +169,7 @@ struct SymmetricMatrix : public SymmetricMatrixBase<Scalar_, Size_, SymmetricMat
     static constexpr int StorageSize = StorageType::StorageSize;
     static constexpr int Rows = Size_;
     static constexpr int Cols = Size_;
+    static constexpr int StorageOrder = StorageType::StorageOrder;
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = std::is_const_v<Scalar_> ? 1 : 0;
 
@@ -196,8 +191,6 @@ struct SymmetricMatrix : public SymmetricMatrixBase<Scalar_, Size_, SymmetricMat
     static constexpr SymmetricMatrix Ones(int size) { return StorageType::Ones(size); }
     static constexpr SymmetricMatrix Zero() { return StorageType::Zero(); }
     static constexpr SymmetricMatrix Zero(int size) { return StorageType::Zero(size); }
-    static constexpr SymmetricMatrix Identity() { return StorageType::Identity(); }
-    static constexpr SymmetricMatrix Identity(int size) { return StorageType::Identity(size); }
     // modifiers
     void resize(int size) {
         fdapde_static_assert(Rows == Dynamic || Cols == Dynamic, THIS_METHOD_IS_FOR_DYNAMIC_SIZED_MATRICES_ONLY);
@@ -220,7 +213,8 @@ class SymmetricMatrixView :
     using Base = SymmetricMatrixBase<Scalar_, Rows_, SymmetricMatrixView<Scalar_, Rows_>>;
     using Scalar = Scalar_;
     using StorageType = TriangularMatrixView<Scalar_, Rows_, Lower>;
-    static constexpr int ReadOnly = std::is_const_v<Scalar_> ? 1 : 0;
+    static constexpr int StorageOrder = StorageType::StorageOrder;
+    static constexpr int ReadOnly = std::is_const_v<Scalar_>;
     static constexpr int NestAsRef = 1;
   
     // constructors

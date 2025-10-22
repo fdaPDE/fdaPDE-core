@@ -24,38 +24,40 @@ namespace fdapde {
 // this file contains all the expression nodes involving an operation applied on two generic MatrixExpr operands
 
 // expression representing elementwise application of a binary operation to two MatrixExpr operands.
-template <typename LhsXprType, typename RhsXprType, typename BinaryOperation>
-struct MatrixBinOp : public MatrixExpr<MatrixBinOp<LhsXprType, RhsXprType, BinaryOperation>> {
-    fdapde_static_assert(
-      (internals::is_dynamic_sized_v<LhsXprType> || internals::is_dynamic_sized_v<RhsXprType> ||
-       internals::same_static_shape_v<LhsXprType FDAPDE_COMMA RhsXprType>),
-      INVALID_BINARY_OPERATION__MATRICES_OF_DIFFERENT_STATIC_SIZE);
+template <typename LhsXprType_, typename RhsXprType_, typename BinaryOp>
+struct MatrixBinOp : public MatrixExpr<MatrixBinOp<LhsXprType_, RhsXprType_, BinaryOp>> {
    private:
+    using LhsXprType = std::decay_t<LhsXprType_>;
+    using RhsXprType = std::decay_t<RhsXprType_>;
+    fdapde_static_assert(
+      internals::same_static_shape_weak_v<LhsXprType_ FDAPDE_COMMA RhsXprType_>,
+      INVALID_BINARY_OPERATION__MATRICES_OF_DIFFERENT_STATIC_SIZE);
     using LhsXprTypeNested = internals::ref_select_t<const LhsXprType>;
     using RhsXprTypeNested = internals::ref_select_t<const RhsXprType>;
    public:
-    using Scalar = decltype(std::declval<BinaryOperation>().operator()(
-      std::declval<typename LhsXprType::Scalar>(), std::declval<typename RhsXprType::Scalar>()));
+    using Scalar = promote_type_t<typename LhsXprType::Scalar, typename RhsXprType::Scalar>;
     static constexpr int Rows =
       (LhsXprType::Rows == Dynamic || RhsXprType::Rows == Dynamic) ? Dynamic : LhsXprType::Rows;
     static constexpr int Cols =
       (LhsXprType::Cols == Dynamic || RhsXprType::Cols == Dynamic) ? Dynamic : LhsXprType::Cols;
+    static constexpr int StorageOrder =
+      internals::promote_storage_order_v<LhsXprType::StorageOrder, RhsXprType::StorageOrder>;
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
 
-    template <typename LhsXprType_, typename RhsXprType_>
-        requires(std::is_constructible_v<LhsXprTypeNested, LhsXprType_> &&
-                 std::is_constructible_v<RhsXprTypeNested, RhsXprType_>)
-    constexpr MatrixBinOp(LhsXprType_&& lhs, RhsXprType_&& rhs, BinaryOperation op) :
-        lhs_(std::forward<LhsXprType_>(lhs)), rhs_(std::forward<RhsXprType_>(rhs)), op_(op) {
+    template <typename LhsXprType__, typename RhsXprType__>
+        requires(std::is_constructible_v<LhsXprTypeNested, LhsXprType__> &&
+                 std::is_constructible_v<RhsXprTypeNested, RhsXprType__>)
+    constexpr MatrixBinOp(LhsXprType__&& lhs, RhsXprType__&& rhs, BinaryOp op) :
+        lhs_(std::forward<LhsXprType__>(lhs)), rhs_(std::forward<RhsXprType__>(rhs)), op_(op) {
         if constexpr (internals::is_dynamic_sized_v<LhsXprType> || internals::is_dynamic_sized_v<RhsXprType>) {
             fdapde_assert(
               std::cmp_equal(lhs_.rows() FDAPDE_COMMA rhs_.rows()) &&
               std::cmp_equal(lhs_.cols() FDAPDE_COMMA rhs_.cols()));
         }
     }
-    constexpr Scalar operator()(int i, int j) const { return op_(lhs_(i, j), rhs_(i, j)); }
-    constexpr Scalar operator[](int i) const {
+    constexpr decltype(auto) operator()(int i, int j) const { return op_(lhs_(i, j), rhs_(i, j)); }
+    constexpr decltype(auto) operator[](int i) const {
         fdapde_static_assert(
           (LhsXprType::Cols == 1 && RhsXprType::Cols == 1) || (LhsXprType::Rows == 1 && RhsXprType::Rows == 1),
           THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
@@ -66,7 +68,7 @@ struct MatrixBinOp : public MatrixExpr<MatrixBinOp<LhsXprType, RhsXprType, Binar
    private:
     LhsXprTypeNested lhs_;
     RhsXprTypeNested rhs_;
-    BinaryOperation op_;
+    BinaryOp op_;
 };
 
 // definition of the linear vector-space structure of the set of M x N matrices
@@ -82,22 +84,25 @@ constexpr auto operator-(const MatrixExpr<LhsXprType>& lhs, const MatrixExpr<Rhs
 }
 
 // expression of the scalar-matrix multiplication between a scalar and a MatrixExpr
-template <typename XprType, typename ScalarType>
-struct MatrixScalarMultiplicationOp : public MatrixExpr<MatrixScalarMultiplicationOp<XprType, ScalarType>> {
+template <typename XprType_, typename ScalarType>
+struct MatrixScalarMultiplicationOp : public MatrixExpr<MatrixScalarMultiplicationOp<XprType_, ScalarType>> {
    private:
+    using XprType = std::decay_t<XprType_>;
     using XprTypeNested = internals::ref_select_t<const XprType>;
    public:
-    using Scalar = decltype(std::declval<typename XprType::Scalar>() * std::declval<ScalarType>());
+    using Scalar = promote_type_t<typename XprType::Scalar, ScalarType>;
     static constexpr int Rows = XprType::Rows;
     static constexpr int Cols = XprType::Cols;
+    static constexpr int StorageOrder = XprType::StorageOrder;
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
 
-    template <typename XprType_>
-        requires(std::is_constructible_v<XprType, XprType_>)
-    constexpr MatrixScalarMultiplicationOp(XprType_ && xpr, ScalarType s) : xpr_(std::forward<XprType_>(xpr)), s_(s) { }
-    constexpr Scalar operator()(int i, int j) const { return xpr_(i, j) * s_; }
-    constexpr Scalar operator[](int i) const {
+    template <typename XprType__>
+        requires(std::is_constructible_v<XprType, XprType__>)
+    constexpr MatrixScalarMultiplicationOp(XprType__&& xpr, ScalarType s) :
+        xpr_(std::forward<XprType__>(xpr)), s_(s) { }
+    constexpr decltype(auto) operator()(int i, int j) const { return xpr_(i, j) * s_; }
+    constexpr decltype(auto) operator[](int i) const {
         fdapde_static_assert(XprType::Rows == 1 || XprType::Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
         return xpr_[i] * s_;
     }
@@ -126,32 +131,37 @@ constexpr auto operator/(const MatrixExpr<XprType>& lhs, ScalarType rhs) {
 }
 
 // expression of the matrix-product of two MatrixExpr operands
-template <typename LhsXprType, typename RhsXprType, typename Executor>
-struct MatrixMultiplicationOp : public MatrixExpr<MatrixMultiplicationOp<LhsXprType, RhsXprType, Executor>> {
+template <typename LhsXprType_, typename RhsXprType_, typename Executor>
+struct MatrixMultiplicationOp : public MatrixExpr<MatrixMultiplicationOp<LhsXprType_, RhsXprType_, Executor>> {
+   private:
+    using LhsXprType = std::decay_t<LhsXprType_>;
+    using RhsXprType = std::decay_t<RhsXprType_>;
     fdapde_static_assert(
       (internals::is_dynamic_sized_v<LhsXprType> || internals::is_dynamic_sized_v<RhsXprType> ||
        LhsXprType::Cols == RhsXprType::Rows),
       INVALID_PRODUCT__OPERANDS_HAVE_INCOMPATIBLE_STATIC_SIZE);
-   private:
     using LhsXprTypeNested = internals::ref_select_t<const LhsXprType>;
     using RhsXprTypeNested = internals::ref_select_t<const RhsXprType>;
    public:
-    using Scalar = decltype(std::declval<typename LhsXprType::Scalar>() * std::declval<typename RhsXprType::Scalar>());
+    using Scalar = promote_type_t<typename LhsXprType::Scalar, typename RhsXprType::Scalar>;
     static constexpr int Rows = LhsXprType::Rows;
     static constexpr int Cols = RhsXprType::Cols;
+    static constexpr int StrageOrder =
+      internals::promote_storage_order_v<LhsXprType::StorageOrder, RhsXprType::StorageOrder>;
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
 
-    template <typename LhsXprType_, typename RhsXprType_>
-        requires(std::is_constructible_v<LhsXprType, LhsXprType_> && std::is_constructible_v<RhsXprType, RhsXprType_>)
-    constexpr MatrixMultiplicationOp(LhsXprType_&& lhs, RhsXprType_&& rhs) :
-        lhs_(std::forward<LhsXprType_>(lhs)), rhs_(std::forward<RhsXprType_>(rhs)) {
+    template <typename LhsXprType__, typename RhsXprType__>
+        requires(std::is_constructible_v<LhsXprTypeNested, LhsXprType__> &&
+                 std::is_constructible_v<RhsXprTypeNested, RhsXprType__>)
+    constexpr MatrixMultiplicationOp(LhsXprType__&& lhs, RhsXprType__&& rhs) :
+        lhs_(std::forward<LhsXprType__>(lhs)), rhs_(std::forward<RhsXprType__>(rhs)) {
         if constexpr (internals::is_dynamic_sized_v<LhsXprType> || internals::is_dynamic_sized_v<RhsXprType>) {
             fdapde_assert(std::cmp_equal(lhs_.cols() FDAPDE_COMMA rhs_.rows()));
         }
     }
-    constexpr Scalar operator()(int i, int j) const { return Executor::run(i, j, lhs_, rhs_); }
-    constexpr Scalar operator[](int i) const {
+    constexpr decltype(auto) operator()(int i, int j) const { return Executor::run(i, j, lhs_, rhs_); }
+    constexpr decltype(auto) operator[](int i) const {
         fdapde_static_assert(
           LhsXprType::Rows == 1 || RhsXprType::Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
         return Executor::run(LhsXprType::Rows == 1 ? 0 : i, RhsXprType::Cols == 1 ? i : 0, lhs_, rhs_);
@@ -168,47 +178,42 @@ namespace internals {
 
 // general dense matrix-matrix product loop
 // specialization of this template induce matrix-specific product loops
-template <typename LhsXprType, typename RhsXprType> struct generic_matrix_product_executor {
-   private:
-    using LhsXprTypeClean = std::decay_t<LhsXprType>;
-    using RhsXprTypeClean = std::decay_t<RhsXprType>;
-   public:
-    using Scalar =
-      decltype(std::declval<typename LhsXprTypeClean::Scalar>() * std::declval<typename RhsXprTypeClean::Scalar>());
-
-    static constexpr auto run(int i, int j, const LhsXprType& lhs, const RhsXprType& rhs) {
+struct generic_matrix_product_executor {
+    template <typename LhsXprType_, typename RhsXprType_>
+    static constexpr auto run(int i, int j, const LhsXprType_& lhs, const RhsXprType_& rhs) {
+        using LhsXprType = std::decay_t<LhsXprType_>;
+        using RhsXprType = std::decay_t<RhsXprType_>;
+        using Scalar = promote_type_t<typename LhsXprType::Scalar, typename RhsXprType::Scalar>;
         Scalar prod = 0;
-        const int size = lhs.cols();
-        for (int k = 0; k < size; ++k) { prod += lhs(i, k) * rhs(k, j); }
+        for (int k = 0, size = lhs.cols(); k < size; ++k) { prod += lhs(i, k) * rhs(k, j); }
         return prod;
     }
 };
 
 // outer product v * v^\top executor
-template <typename LhsXprType, typename RhsXprType> struct outer_product_executor {
-   private:
-    using LhsXprTypeClean = std::decay_t<LhsXprType>;
-    using RhsXprTypeClean = std::decay_t<RhsXprType>;
-   public:
-    using Scalar =
-      decltype(std::declval<typename LhsXprTypeClean::Scalar>() * std::declval<typename RhsXprTypeClean::Scalar>());
-    static_assert(LhsXprTypeClean::Cols == 1 && RhsXprTypeClean::Rows == 1);
-
-    static constexpr auto run(int i, int j, const LhsXprType& lhs, const RhsXprType& rhs) { return lhs[i] * rhs[j]; }
+struct outer_product_executor {
+    template <typename LhsXprType_, typename RhsXprType_>
+    static constexpr auto run(int i, int j, const LhsXprType_& lhs, const RhsXprType_& rhs) {
+        using LhsXprType = std::decay_t<LhsXprType_>;
+        using RhsXprType = std::decay_t<RhsXprType_>;
+        fdapde_static_assert(
+          LhsXprType::Cols == 1 && RhsXprType::Rows == 1, INVALID_OUTER_PRODUCT__OPERANDS_HAVE_INCOMPATIBLE_SHAPES);
+        return lhs[i] * rhs[j];
+    }
 };
   
 }   // namespace internals
 
 // generic matrix-matrix product
-template <typename LhsXprType, typename RhsXprType>
-constexpr auto operator*(const MatrixExpr<LhsXprType>& lhs, const MatrixExpr<RhsXprType>& rhs) {
+template <typename LhsXprType_, typename RhsXprType_>
+constexpr auto operator*(const MatrixExpr<LhsXprType_>& lhs, const MatrixExpr<RhsXprType_>& rhs) {
+    using LhsXprType = std::decay_t<LhsXprType_>;
+    using RhsXprType = std::decay_t<RhsXprType_>;
     if constexpr (LhsXprType::Cols == 1 && RhsXprType::Rows == 1) {   // outer product v * u^\top
-        return MatrixMultiplicationOp<
-          LhsXprType, RhsXprType, internals::outer_product_executor<LhsXprType, RhsXprType>> {
+        return MatrixMultiplicationOp<LhsXprType, RhsXprType, internals::outer_product_executor> {
           lhs.derived(), rhs.derived()};
     } else {
-        return MatrixMultiplicationOp<
-          LhsXprType, RhsXprType, internals::generic_matrix_product_executor<LhsXprType, RhsXprType>> {
+        return MatrixMultiplicationOp<LhsXprType, RhsXprType, internals::generic_matrix_product_executor> {
           lhs.derived(), rhs.derived()};
     }
 }
@@ -216,25 +221,29 @@ constexpr auto operator*(const MatrixExpr<LhsXprType>& lhs, const MatrixExpr<Rhs
 // specialized binary operations
 
 // expression of the dense kronecker tensor product between two MatrixExpr operands
-template <typename LhsXprType, typename RhsXprType>
-struct MatrixKroneckerProductOp : public MatrixExpr<MatrixKroneckerProductOp<LhsXprType, RhsXprType>> {
+template <typename LhsXprType_, typename RhsXprType_>
+struct MatrixKroneckerProductOp : public MatrixExpr<MatrixKroneckerProductOp<LhsXprType_, RhsXprType_>> {
    private:
+    using LhsXprType = std::decay_t<LhsXprType_>;
+    using RhsXprType = std::decay_t<RhsXprType_>;
     using LhsXprTypeNested = internals::ref_select_t<const LhsXprType>;
     using RhsXprTypeNested = internals::ref_select_t<const RhsXprType>;
    public:
-    using Scalar = decltype(std::declval<typename LhsXprType::Scalar>() * std::declval<typename RhsXprType::Scalar>());
+    using Scalar = promote_type_t<typename LhsXprType::Scalar, typename RhsXprType::Scalar>;
     static constexpr int Rows =
       LhsXprType::Rows == Dynamic || RhsXprType::Rows == Dynamic ? Dynamic : LhsXprType::Rows * RhsXprType::Rows;
     static constexpr int Cols =
       LhsXprType::Cols == Dynamic || RhsXprType::Cols == Dynamic ? Dynamic : LhsXprType::Cols * RhsXprType::Cols;
+    static constexpr int StrageOrder =
+      internals::promote_storage_order_v<LhsXprType::StorageOrder, RhsXprType::StorageOrder>;
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
 
-    template <typename LhsXprType_, typename RhsXprType_>
-        requires(std::is_constructible_v<LhsXprType, LhsXprType_> && std::is_constructible_v<RhsXprType, RhsXprType_>)
-    constexpr MatrixKroneckerProductOp(LhsXprType_&& lhs, RhsXprType_&& rhs) :
-        lhs_(std::forward<LhsXprType_>(lhs)), rhs_(std::forward<RhsXprType_>(rhs)) { }
-    constexpr Scalar operator()(int i, int j) const {
+    template <typename LhsXprType__, typename RhsXprType__>
+        requires(std::is_constructible_v<LhsXprType, LhsXprType__> && std::is_constructible_v<RhsXprType, RhsXprType__>)
+    constexpr MatrixKroneckerProductOp(LhsXprType__&& lhs, RhsXprType__&& rhs) :
+        lhs_(std::forward<LhsXprType__>(lhs)), rhs_(std::forward<RhsXprType__>(rhs)) { }
+    constexpr decltype(auto) operator()(int i, int j) const {
         const int h = RhsXprType::Rows != Dynamic ? RhsXprType::Rows : rhs_.rows();
         const int k = RhsXprType::Cols != Dynamic ? RhsXprType::Cols : rhs_.cols();
         // compute offsets in operand matrices
@@ -261,35 +270,39 @@ kron(const MatrixExpr<LhsXprType>& op1, const MatrixExpr<RhsXprType>& op2) {
 }
 
 // expression of the cross product between two vector expressions
-template <typename LhsXprType, typename RhsXprType>
-struct MatrixCrossProductOp : public MatrixExpr<MatrixCrossProductOp<LhsXprType, RhsXprType>> {
+template <typename LhsXprType_, typename RhsXprType_>
+struct MatrixCrossProductOp : public MatrixExpr<MatrixCrossProductOp<LhsXprType_, RhsXprType_>> {
+   private:
+    using LhsXprType = std::decay_t<LhsXprType_>;
+    using RhsXprType = std::decay_t<RhsXprType_>;
     fdapde_static_assert(
       (internals::is_dynamic_sized_v<LhsXprType> || internals::is_dynamic_sized_v<RhsXprType> ||
        (LhsXprType::Rows == 3 && RhsXprType::Rows == 3 && LhsXprType::Cols == 1 && RhsXprType::Cols == 1)),
       THIS_CLASS_IS_FOR_THREE_DIMENSIONAL_VECTORS_ONLY);
-   private:
     using LhsXprTypeNested = internals::ref_select_t<const LhsXprType>;
     using RhsXprTypeNested = internals::ref_select_t<const RhsXprType>;
    public:
-    using Scalar = decltype(std::declval<typename LhsXprType::Scalar>() * std::declval<typename RhsXprType::Scalar>());
+    using Scalar = promote_type_t<typename LhsXprType::Scalar, typename RhsXprType::Scalar>;
     static constexpr int Rows = 3;
     static constexpr int Cols = 1;
+    static constexpr int StrageOrder =
+      internals::promote_storage_order_v<LhsXprType::StorageOrder, RhsXprType::StorageOrder>;
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
 
-    template <typename LhsXprType_, typename RhsXprType_>
-        requires(std::is_constructible_v<LhsXprType, LhsXprType_> && std::is_constructible_v<RhsXprType, RhsXprType_>)
-    constexpr MatrixCrossProductOp(LhsXprType_&& lhs, RhsXprType_&& rhs) :
-        lhs_(std::forward<LhsXprType_>(lhs)), rhs_(std::forward<RhsXprType_>(rhs)) {
+    template <typename LhsXprType__, typename RhsXprType__>
+        requires(std::is_constructible_v<LhsXprType, LhsXprType__> && std::is_constructible_v<RhsXprType, RhsXprType__>)
+    constexpr MatrixCrossProductOp(LhsXprType__&& lhs, RhsXprType__&& rhs) :
+        lhs_(std::forward<LhsXprType__>(lhs)), rhs_(std::forward<RhsXprType__>(rhs)) {
         if constexpr (internals::is_dynamic_sized_v<LhsXprType> || internals::is_dynamic_sized_v<RhsXprType>) {
             fdapde_assert(lhs_.rows() == 3 && rhs_.rows() == 3 && lhs_.cols() == 1 && rhs_.cols() == 1);
         }
     }
-    constexpr Scalar operator()(int i, [[maybe_unused]] int j) const {
+    constexpr decltype(auto) operator()(int i, [[maybe_unused]] int j) const {
         fdapde_assert(i >= 0 && i < rows() && j >= 0 && j < cols());
         return operator[](i);
     }
-    constexpr Scalar operator[](int i) const {
+    constexpr decltype(auto) operator[](int i) const {
         fdapde_assert(i >= 0 && i < rows());
         if (i == 0) { return lhs_[1] * rhs_[2] - lhs_[2] * rhs_[1]; }
         if (i == 1) { return lhs_[2] * rhs_[0] - lhs_[0] * rhs_[2]; }
