@@ -83,7 +83,7 @@ TEST(linear_algebra, block) {
             constexpr double r4 = 1096.6331584284585992;
             constexpr double r5 = 2980.9579870417282747;
             constexpr double r6 = 8103.0839275753840077;
-            return almost_equal(e, Matrix<double, 2, 3>({r1, r2, r3, r4, r5, r6}));
+            return almost_equal(e.mwise(), Matrix<double, 2, 3>({r1, r2, r3, r4, r5, r6}));
         }());
 
         constexpr auto b8 = A.bottom_rows(2);

@@ -35,17 +35,17 @@ TEST(linear_algebra, cwise) {
     static_assert([]() {
         constexpr auto e = C.cwise().abs();
         constexpr Matrix<double, 2, 2> r({1, 2, 3, 4});
-        return e == r;
+        return e.mwise() == r;
     }());
     static_assert([]() {
         constexpr auto e = C.cwise().pow(3);
         constexpr Matrix<double, 2, 2> r({-1, 8, 27, -64});
-        return e == r;
+        return e.mwise() == r;
     }());
     static_assert([]() {
         constexpr auto e = C.cwise().pow2();
         constexpr Matrix<double, 2, 2> r({1, 4, 9, 16});
-        return e == r;
+        return e.mwise() == r;
     }());
     static_assert([]() {
         constexpr auto e = C.cwise().abs().sqrt();
@@ -55,12 +55,12 @@ TEST(linear_algebra, cwise) {
         constexpr double r3 = 1.732050807568877;
         constexpr double r4 = 2;
         constexpr Matrix<double, 2, 2> r({r1, r2, r3, r4});
-        return almost_equal(e, r);
+        return almost_equal(e.mwise(), r);
     }());
     static_assert([]() {
         constexpr auto e = C.cwise().inv();
         constexpr Matrix<double, 2, 2> r({-1, 1. / 2, 1. / 3, -1. / 4});
-        return almost_equal(e, r);
+        return almost_equal(e.mwise(), r);
     }());
     static_assert([]() {
         constexpr auto e = C.cwise().exp();
@@ -70,7 +70,7 @@ TEST(linear_algebra, cwise) {
         constexpr double r3 = 20.0855369231876;
         constexpr double r4 = 0.01831563888873;
         constexpr Matrix<double, 2, 2> r({r1, r2, r3, r4});
-        return almost_equal(e, r);
+        return almost_equal(e.mwise(), r);
     }());
     static_assert([]() {
         constexpr auto e = C.cwise().abs().log();
@@ -80,13 +80,40 @@ TEST(linear_algebra, cwise) {
         constexpr double r3 = 1.09861228866811;
         constexpr double r4 = 1.38629436111989;
         constexpr Matrix<double, 2, 2> r({r1, r2, r3, r4});
-        return almost_equal(e, r);
+        return almost_equal(e.mwise(), r);
     }());
 
+    Matrix<double, 4, 4> AA;
+    AA(0, 1) = 4;
+    AA(0,2) = 2;
+    AA(1,1) = 4;
+    std::cout << ((2 * AA).cwise() < 4).any() << std::endl;
 
-    // Matrix<double, 4, 4> AA;
-    // auto ee = AA.cwise() + 5;
+    std::cout << (AA.cwise() * AA.cwise()) << std::endl;
+
+    AA.cwise() += 2;
+
+    std::cout << AA << std::endl;
+
+    Matrix<double, 4, 4> BB;
+    BB(0, 1) = AA(0, 1);
+
+    std::cout << "matrix domain equality" << std::endl;
+    std::cout << (AA == BB) << std::endl;
+    std::cout << "coeffwise domain equality" << std::endl;
+    std::cout << (AA.cwise() == BB.cwise()) << std::endl;
+    std::cout << (AA.cwise() >  BB.cwise()) << std::endl;
+
+    Matrix<double, Dynamic, Dynamic> CC = BB.cwise();
+
+    std::cout << CC.squared_norm() << std::endl;
+
+    std::cout << AA << std::endl;
+    std::cout << BB << std::endl;
     
+    AA.cwise() *= BB.cwise();
+
+    std::cout << AA << std::endl;
 }
 
 TEST(linear_algebra, redux) {

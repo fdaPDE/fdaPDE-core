@@ -40,39 +40,43 @@ template <typename XprType_> struct MatrixExpr {
         executor::run(derived(), rhs.derived(), [](auto& l, const auto& r) { l = r; });
         return derived();
     }
+    template <typename RhsXprType_> constexpr XprType& operator=(const MatrixCoeffWiseExpr<RhsXprType_>& rhs) {
+        operator=(rhs.mwise());
+        return derived();
+    }
     // compound linear algebra
-    template <typename RhsXprType_> constexpr XprType& operator+=(const MatrixExpr<RhsXprType_>& other) {
+    template <typename RhsXprType_> constexpr XprType& operator+=(const MatrixExpr<RhsXprType_>& rhs) {
         using executor = typename XprType::assignment_executor;
-        executor::run(derived(), other.derived(), [](auto& l, const auto& r) { l += r; });
+        executor::run(derived(), rhs.derived(), [](auto& l, const auto& r) { l += r; });
         return derived();
     }
-    template <typename RhsXprType_> constexpr XprType& operator-=(const MatrixExpr<RhsXprType_>& other) {
+    template <typename RhsXprType_> constexpr XprType& operator-=(const MatrixExpr<RhsXprType_>& rhs) {
         using executor = typename XprType::assignment_executor;
-        executor::run(derived(), other.derived(), [](auto& l, const auto& r) { l -= r; });
-        return derived();
-    }
-    template <typename Scalar_>
-        requires(std::is_arithmetic_v<Scalar_>)
-    constexpr XprType& operator*=(Scalar_ coeff) {
-        using executor = typename XprType::assignment_executor;
-        executor::run(derived(), derived(), [coeff](auto& l, const auto& r) { l = coeff * r; });
+        executor::run(derived(), rhs.derived(), [](auto& l, const auto& r) { l -= r; });
         return derived();
     }
     template <typename Scalar_>
         requires(std::is_arithmetic_v<Scalar_>)
-    constexpr XprType& operator/=(Scalar_ coeff) {
+    constexpr XprType& operator*=(Scalar_ rhs) {
         using executor = typename XprType::assignment_executor;
-        executor::run(derived(), derived(), [coeff](auto& l, const auto& r) { l = r / coeff; });
+        executor::run(derived(), derived(), [rhs](auto& l, const auto& r) { l = rhs * r; });
+        return derived();
+    }
+    template <typename Scalar_>
+        requires(std::is_arithmetic_v<Scalar_>)
+    constexpr XprType& operator/=(Scalar_ rhs) {
+        using executor = typename XprType::assignment_executor;
+        executor::run(derived(), derived(), [rhs](auto& l, const auto& r) { l = r / rhs; });
         return derived();
     }
     // compound matrix multiplication
-    template <typename RhsXprType_> constexpr XprType& operator*=(const MatrixExpr<RhsXprType_>& other) {
+    template <typename RhsXprType_> constexpr XprType& operator*=(const MatrixExpr<RhsXprType_>& rhs) {
         using executor = typename XprType::assignment_executor;
         // avoid aliasing by evaluating the product in a temporary
         using Scalar = typename XprType::Scalar;
 	constexpr int Rows = XprType::Rows;
 	constexpr int Cols = XprType::Cols;
-        Matrix<Scalar, Rows, Cols> tmp = derived() * other;
+        Matrix<Scalar, Rows, Cols> tmp = derived() * rhs;
         // assign
         executor::run(derived(), tmp, [](auto& l, const auto& r) { l = r; });
         return derived();
@@ -110,13 +114,19 @@ template <typename XprType_> struct MatrixExpr {
         return os;
     }
     // coeffwise access
-    constexpr auto cwise() const { return MatrixCoeffWiseProxy<XprType>(derived()); }
+    constexpr auto cwise() const {
+        return MatrixCoeffWiseOp<const XprType, internals::identity_op>(derived(), internals::identity_op());
+    }
+    constexpr auto cwise() {
+        return MatrixCoeffWiseOp<XprType, internals::identity_op>(derived(), internals::identity_op());
+    }
+
     // redux operators
     // frobenius norm (squared L^2 norm)
     constexpr auto squared_norm() const {
         typename XprType::Scalar norm_ = 0;
         for (int i = 0; i < derived().rows(); ++i) {
-            for (int j = 0; j < derived().cols(); ++j) { norm_ += fdapde::pow(derived().operator()(i, j), 2); }
+            for (int j = 0; j < derived().cols(); ++j) { norm_ += fdapde::pow(derived()(i, j), 2); }
         }
         return norm_;
     }
@@ -129,7 +139,7 @@ template <typename XprType_> struct MatrixExpr {
         const int cols = derived().cols();
         for (int i = 0; i < rows; ++i) {
             for (int j = 0; j < cols; ++j) {
-                Scalar tmp = fdapde::abs(derived().operator()(i, j));
+                Scalar tmp = fdapde::abs(derived()(i, j));
                 if (tmp > norm_) norm_ = tmp;
             }
         }
@@ -164,11 +174,11 @@ template <typename XprType_> struct MatrixExpr {
     // boolean reductions
     // true if at least one of the coefficients of the expression evalutes true
     constexpr bool any() const {
-        return internals::boolean_redux_linear_executor::run(derived(), true, [](const auto& x) { return bool(x); });
+        return internals::boolean_redux_linear_executor::run(derived(), 1, [](const auto& x) { return  bool(x); });
     }
     // true if none of the coefficients of the expression evaluates false
     constexpr bool all() const {
-        return internals::boolean_redux_linear_executor::run(derived(), false, [](const auto& x) { return !bool(x); });
+        return internals::boolean_redux_linear_executor::run(derived(), 0, [](const auto& x) { return !bool(x); });
     }
     // number of coefficients evaluating true in the expression
     constexpr int count() const {
