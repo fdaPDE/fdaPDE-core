@@ -137,8 +137,7 @@ struct matrix_redux_linear_executor {
 // boolean linear reduction loop on matrix expression
 struct boolean_redux_linear_executor {
     // returns b at the first true occurence of f, otherwise returns !b
-    template <typename XprType_, typename Functor>
-    static constexpr auto run(XprType_&& xpr, bool b, Functor f) {
+    template <typename XprType_, typename Functor> static constexpr auto run(XprType_&& xpr, bool b, Functor f) {
         using XprType = std::decay_t<XprType_>;
         fdapde_assert(xpr.size() > 0);
         const int rows_ = xpr.rows();

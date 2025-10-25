@@ -14,8 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_LINALG_VECTORWISE_OP_H__
-#define __FDAPDE_LINALG_VECTORWISE_OP_H__
+#ifndef __FDAPDE_LINALG_VECTORWISE_H__
+#define __FDAPDE_LINALG_VECTORWISE_H__
 
 #include "header_check.h"
 
@@ -44,7 +44,7 @@ struct partial_matrix_redux_op : public MatrixExpr<partial_matrix_redux_op<XprTy
     constexpr partial_matrix_redux_op(XprType_&& xpr, Scalar init, ReductionOp op) noexcept :
         xpr_(std::forward<XprType_>(xpr)), init_(init), op_(op) { }
 
-    constexpr Scalar operator()(int i, int j) const {
+    constexpr decltype(auto) operator()(int i, int j) const {
         fdapde_assert(i >= 0 && i < rows() && j >= 0 && j < cols());
         Scalar res(init_);
         const int k = ByRow ? j : i;
@@ -53,7 +53,7 @@ struct partial_matrix_redux_op : public MatrixExpr<partial_matrix_redux_op<XprTy
         }
         return res;
     }
-    constexpr Scalar operator[](int i) const { return operator()(ByRow ? 0 : i, ByRow ? i : 0); }
+    constexpr decltype(auto) operator[](int i) const { return operator()(ByRow ? 0 : i, ByRow ? i : 0); }
     // observers
     constexpr int rows() const { return ByRow ? Rows : xpr_.rows(); }
     constexpr int cols() const { return ByRow ? xpr_.cols() : Cols; }
@@ -113,7 +113,7 @@ struct MatrixVectorWiseOp : public MatrixExpr<MatrixVectorWiseOp<XprType, ByRow>
     constexpr auto squared_norm() const {
         return redux(xpr_, Scalar(0), [](Scalar tmp, Scalar x) { return tmp + x * x; });
     }
-    constexpr auto norm() const { return squared_norm().cwise().sqrt(); }
+    constexpr auto norm() const { return squared_norm().cwise().sqrt().mwise(); }
     // L^\infty norm
     constexpr auto inf_norm() const {
         return redux(xpr_, std::numeric_limits<Scalar>::min(), [](Scalar tmp, Scalar x) {
@@ -140,8 +140,7 @@ struct MatrixVectorWiseOp : public MatrixExpr<MatrixVectorWiseOp<XprType, ByRow>
     template <typename XprType_>
     friend constexpr bool operator==(const MatrixVectorWiseOp& lhs, const MatrixExpr<XprType_>& rhs) {
         fdapde_static_assert(
-          (internals::is_dynamic_sized_v<MatrixVectorWiseOp> || internals::is_dynamic_sized_v<XprType_> ||
-           internals::same_static_shape_v<MatrixVectorWiseOp FDAPDE_COMMA XprType_>),
+          internals::same_static_shape_weak_v<MatrixVectorWiseOp FDAPDE_COMMA XprType_>,
           INVALID_VECTORWISE_COMPARISON__OPERANDS_HAVE_DIFFERENT_SIZES);
         if constexpr (internals::is_dynamic_sized_v<MatrixVectorWiseOp> || internals::is_dynamic_sized_v<XprType_>) {
             fdapde_assert(lhs.rows() == rhs.rows() && lhs.cols() == rhs.cols());
@@ -209,4 +208,4 @@ template <typename XprType> struct MatrixColWiseOp : public MatrixVectorWiseOp<X
   
 }   // namespace fdapde
 
-#endif // __FDAPDE_LINALG_VECTORWISE_OP_H__
+#endif // __FDAPDE_LINALG_VECTORWISE_H__

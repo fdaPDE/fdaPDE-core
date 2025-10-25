@@ -234,6 +234,8 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
         using assignment = typename Base::assignment_executor;
         assignment::run(*this, rhs.derived(), [](Scalar& l, const Scalar& r) { l = r; });
     }
+    template <typename RhsXprType_>
+    constexpr Matrix(const MatrixCoeffWiseExpr<RhsXprType_>& rhs) : Matrix(rhs.mwise()) { }
     // inherit assignment from base
     using Base::operator=;
 

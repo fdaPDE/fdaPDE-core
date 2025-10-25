@@ -55,6 +55,7 @@
 // define basic symbols
 namespace fdapde {
 
+[[maybe_unused]] constexpr int Adapted     = -2;
 [[maybe_unused]] constexpr int Dynamic     = -1;
 [[maybe_unused]] constexpr int random_seed = -1;
 
