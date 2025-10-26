@@ -34,9 +34,8 @@
 #include "src/geometry/tetrahedron.h"
 // algorithms
 /* #include "src/geometry/kd_tree.h" */
-/* #include "src/geometry/tree_search.h" */
-/* #include "src/geometry/walk_search.h" */
-/* #include "src/geometry/projection.h" */
+#include "src/geometry/r_tree.h"
+/* #include "src/geometry/walk.h" */
 // data structures
 #include "src/geometry/triangulation.h"
 /* #include "src/geometry/interval.h" */

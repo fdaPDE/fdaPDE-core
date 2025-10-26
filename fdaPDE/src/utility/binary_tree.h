@@ -37,7 +37,7 @@ template <typename T> class BinaryTree {
 
     BinaryTree() = default;
     // construct with root set to root_data
-  explicit BinaryTree(const T& root_data) : n_nodes_(1) { root_ = new node_type(root_data, 0); }
+    explicit BinaryTree(const T& root_data) : n_nodes_(1) { root_ = new node_type(root_data, 0); }
     // copy semantic
     BinaryTree(const BinaryTree& other) { clone_(other); }
     BinaryTree<T>& operator=(const BinaryTree& other) {

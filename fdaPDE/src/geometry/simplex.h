@@ -51,9 +51,16 @@ template <int Order_, int EmbedDim_> class Simplex {
     const Matrix<double, embed_dim, local_dim>& J() const { return J_; }
     const Matrix<double, local_dim, embed_dim>& invJ() const { return invJ_; }
     double measure() const { return measure_; }
-    // the smallest rectangle containing the simplex
-    std::pair<NodeType, NodeType> bounding_box() const {
-        return std::make_pair(coords_.rowwise().minCoeff(), coords_.rowwise().maxCoeff());
+    // simplex minimal enclosing rectangle
+    std::array<double, 2 * embed_dim> bbox() const {
+        NodeType ll = coords_.rowwise().minCoeff();
+        NodeType ur = coords_.rowwise().maxCoeff();
+        std::array<double, 2 * embed_dim> bbox_;
+        for (int i = 0; i < embed_dim; ++i) {
+            bbox_[i] = ll[i];
+            bbox_[i + embed_dim] = ur[i];
+        }
+        return bbox_;
     }
     // the barycenter has all its barycentric coordinates equal to 1/(local_dim + 1)
     NodeType barycenter() const {
