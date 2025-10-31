@@ -85,35 +85,35 @@ TEST(linear_algebra, cwise) {
 
     Matrix<double, 4, 4> AA;
     AA(0, 1) = 4;
-    AA(0,2) = 2;
-    AA(1,1) = 4;
-    std::cout << ((2 * AA).cwise() < 4).any() << std::endl;
+    AA(0, 2) = 2;
+    AA(1, 1) = 4;
+    // std::cout << ((2 * AA).cwise() < 4).any() << std::endl;
 
-    std::cout << (AA.cwise() * AA.cwise()) << std::endl;
+    // std::cout << (AA.cwise() * AA.cwise()) << std::endl;
 
     AA.cwise() += 2;
 
-    std::cout << AA << std::endl;
+    // std::cout << AA << std::endl;
 
     Matrix<double, 4, 4> BB;
     BB(0, 1) = AA(0, 1);
 
-    std::cout << "matrix domain equality" << std::endl;
-    std::cout << (AA == BB) << std::endl;
-    std::cout << "coeffwise domain equality" << std::endl;
-    std::cout << (AA.cwise() == BB.cwise()) << std::endl;
-    std::cout << (AA.cwise() >  BB.cwise()) << std::endl;
+    // std::cout << "matrix domain equality" << std::endl;
+    // std::cout << (AA == BB) << std::endl;
+    // std::cout << "coeffwise domain equality" << std::endl;
+    // std::cout << (AA.cwise() == BB.cwise()) << std::endl;
+    // std::cout << (AA.cwise() >  BB.cwise()) << std::endl;
 
     Matrix<double, Dynamic, Dynamic> CC = BB.cwise();
 
-    std::cout << CC.squared_norm() << std::endl;
+    // std::cout << CC.squared_norm() << std::endl;
 
-    std::cout << AA << std::endl;
-    std::cout << BB << std::endl;
+    // std::cout << AA << std::endl;
+    // std::cout << BB << std::endl;
     
     AA.cwise() *= BB.cwise();
 
-    std::cout << AA << std::endl;
+    // std::cout << AA << std::endl;
 }
 
 TEST(linear_algebra, redux) {

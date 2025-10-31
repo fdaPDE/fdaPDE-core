@@ -387,11 +387,11 @@ template <typename XprType_> struct MatrixExpr {
     }
 
     // triangular block accessors
-    template <int BlockMode> constexpr TriangularBlock<const XprType, BlockMode> triangular_block() const {
-        return TriangularBlock<const XprType, BlockMode>(derived());
+    template <int BlockMode> constexpr TriangularBlock<BlockMode, const XprType> triangular_block() const {
+        return TriangularBlock<BlockMode, const XprType>(derived());
     }
-    template <int BlockMode> constexpr TriangularBlock<XprType, BlockMode> triangular_block() {
-        return TriangularBlock<XprType, BlockMode>(derived());
+    template <int BlockMode> constexpr TriangularBlock<BlockMode, XprType> triangular_block() {
+        return TriangularBlock<BlockMode, XprType>(derived());
     }
     // cast
     // template <int ViewMode> constexpr auto as_symmetric() const {

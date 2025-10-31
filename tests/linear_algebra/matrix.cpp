@@ -180,7 +180,7 @@ TEST(linear_algebra, vector) {
         static_assert(p2[0] == 1 && p2[1] == 2);
         constexpr Vector<double, 3> p3(1, 2, 3);
         static_assert(p3[0] == 1 && p3[1] == 2 && p3[2] == 3);
-
+	
         // construct empty and assign
         Vector<double, 6> v2;
         v2 = v1;
@@ -193,6 +193,10 @@ TEST(linear_algebra, vector) {
         EXPECT_EQ(v3.rows(), v2.rows());
         EXPECT_EQ(v3.size(), v2.size());
         EXPECT_EQ(v3, v2);
+
+	// value-initialize
+        Vector<double, 6> v4(2.0);
+        for (int i = 0; i < v4.size(); ++i) { EXPECT_EQ(v4[i], 2.0); }
 
         // const access
         EXPECT_EQ(v1[0], 1);

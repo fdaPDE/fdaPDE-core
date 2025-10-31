@@ -83,20 +83,20 @@ template <typename XprType_> struct Diagonal : public MatrixExpr<Diagonal<XprTyp
     // inherit assignment from base
     using Base::operator=;
     // const access
-    constexpr decltype(auto) operator()(int i, int j) const {
+    constexpr Scalar operator()(int i, int j) const {
         fdapde_assert(i >= 0 && i < rows() && j >= 0 && j < cols());
         return xpr_(i, i);
     }
-    constexpr decltype(auto) operator[](int i) const {
+    constexpr Scalar operator[](int i) const {
         fdapde_assert(i >= 0 && i < rows());
         return xpr_(i, i);
     }
     // non-const access
-    constexpr decltype(auto) operator()(int i, int j) {
+    constexpr Scalar& operator()(int i, int j) {
         fdapde_assert(i >= 0 && i < rows() && j >= 0 && j < cols());
         return xpr_(i, i);
     }
-    constexpr decltype(auto) operator[](int i) {
+    constexpr Scalar& operator[](int i) {
         fdapde_assert(i >= 0 && i < rows());
         return xpr_(i, i);
     }
@@ -130,8 +130,7 @@ struct diagonal_wrapper : DiagonalMatrixExpr<diagonal_wrapper<Rows_, Cols_, Diag
     template <typename XprType__>
         requires(std::is_constructible_v<XprTypeNested, XprType__>)
     constexpr diagonal_wrapper(XprType__&& xpr) : Base(), xpr_(std::forward<XprType__>(xpr)) { }
-    constexpr decltype(auto) operator()(int i, int j) const {
-        using Scalar = typename XprType::Scalar;
+    constexpr Scalar operator()(int i, int j) const {
         fdapde_assert(i >= 0 && i < this->size_ && j >= 0 && j < this->size_);
         return i == j ? xpr_[i] : Scalar(0);
     }
@@ -164,9 +163,8 @@ template <typename XprType_> struct DiagonalMatrixExpr : public MatrixExpr<XprTy
     using MatrixExpr<XprType_>::operator=;
     // const access
     constexpr decltype(auto) operator()(int i, int j) const {   // only const access allowed for (i, j) accessor
-        using Scalar = typename XprType::Scalar;
         fdapde_assert(i >= 0 && i < rows() && j >= 0 && j < cols());
-        return i == j ? derived().data()[i] : Scalar(0);
+        return i == j ? derived().data()[i] : typename XprType::Scalar(0);
     }
     constexpr decltype(auto) operator[](int i) const {
         fdapde_assert(i >= 0 && i < rows());
@@ -183,9 +181,8 @@ template <typename XprType_> struct DiagonalMatrixExpr : public MatrixExpr<XprTy
     auto inverse() const { return internals::diagonal_cast(derived().diagonal().cwise().inv()); }
     // linear system solver Ax = b
     template <typename RhsXprType> constexpr auto solve(const RhsXprType& b) const {
-        using Scalar = typename XprType::Scalar;
 	constexpr int Rows = XprType::Rows;
-        Vector<Scalar, Rows> x;
+        Vector<typename XprType::Scalar, Rows> x;
         if constexpr (Rows == Dynamic) { x.resize(derived().rows()); }
 	for(int i = 0, n = derived().rows(); i < n; ++i) { x[i] = b[i] / derived().data()[i]; }
 	return x;
@@ -246,7 +243,6 @@ template <int ProductMode> struct diagonal_matrix_product_executor {
         if constexpr (ProductMode == RhsMode) return lhs(i, j) * rhs(j, j);
     }
 };
-
 // expressions of the (i,j)-th entry of the product between diagonal expressions
 struct diagonal_diagonal_product_executor {
     template <typename LhsXprType_, typename RhsXprType_>

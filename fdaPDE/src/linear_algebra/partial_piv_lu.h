@@ -23,17 +23,21 @@ namespace fdapde {
 
 // LU with partial (row) pivoting and threshold check
 template <typename XprType_> class PartialPivLU {
+    using XprType = std::decay_t<XprType_>;
+    fdapde_static_assert(
+      XprType::Rows == Dynamic || XprType::Cols == Dynamic || XprType::Rows == XprType::Cols,
+      THIS_CLASS_IS_FOR_SQUARE_MATRICES_ONLY);
+    static constexpr int Size = XprType::Rows;
+    using Scalar = typename XprType::Scalar;
    public:
-    static constexpr int Size = XprType_::Rows;
-    using Scalar = typename XprType_::Scalar;
-
+    // constructors
     constexpr PartialPivLU() : lu_(), P_(), info_(0), rank_(0) { }
     template <typename XprType>
     constexpr explicit PartialPivLU(const MatrixExpr<XprType>& m) : lu_(), P_(), info_(0), rank_(0) {
         compute(m);
     }
 
-    // build LU factorization of m
+    // build LU factorization of m via Doolittle LU with partial pivoting
     template <typename XprType> constexpr void compute(const MatrixExpr<XprType>& m) {
         const int n = m.rows();
         lu_ = m;
@@ -74,9 +78,8 @@ template <typename XprType_> class PartialPivLU {
             }
         }
         P_ = PermutationMatrix<Size>(perm);
-	return;
+        return;
     }
-
     // observers
     constexpr const PermutationMatrix<Size>& P() const { return P_; }
     constexpr auto L() const { return lu_.template triangular_block<UnitLower>(); }
@@ -88,12 +91,13 @@ template <typename XprType_> class PartialPivLU {
         for (int i = 0, n = lu_.rows(); i < n; ++i) { d *= lu_(i, i); }
         return P_.determinant() * d;
     }
-
     // solve Ax = b via PA = LU
     template <typename RhsXprType> constexpr auto solve(const MatrixExpr<RhsXprType>& b) const {
         fdapde_assert(b.rows() == lu_.rows() && b.cols() > 0);
+        fdapde_assert(info_ == 0);
 
-        constexpr int RhsRows = RhsXprType::Rows, RhsCols = RhsXprType::Cols;
+        constexpr int RhsRows = RhsXprType::Rows;
+        constexpr int RhsCols = RhsXprType::Cols;
         Matrix<Scalar, RhsRows, RhsCols> y = P_ * b;
         auto z = L().solve(y);   // forward  substitute
         auto x = U().solve(z);   // backward substitute

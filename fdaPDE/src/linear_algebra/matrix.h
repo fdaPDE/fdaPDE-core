@@ -26,12 +26,11 @@ template <typename Functor_, int Rows_, int Cols_>
 struct ProceduralMatrix : public MatrixExpr<ProceduralMatrix<Functor_, Rows_, Cols_>> {
     fdapde_static_assert(
       std::is_invocable_v<Functor_ FDAPDE_COMMA int FDAPDE_COMMA int>, FUNCTOR_NOT_CALLABLE_AT_INDEXES_PAIR);
-    using Base = MatrixExpr<ProceduralMatrix<Functor_, Rows_, Cols_>>;
     using Scalar = typename decltype(std::function {std::declval<Functor_>()})::result_type;
     fdapde_static_assert(std::is_arithmetic_v<Scalar>, INVALID_FUNCTOR_RETURN_TYPE);
     static constexpr int Rows = Rows_;
     static constexpr int Cols = Cols_;
-    static constexpr int StorageOrder = RowMajor;   // here there is no memory, choose the default
+    static constexpr int StorageOrder = RowMajor;   // memoryless node, choose default
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
 
@@ -65,7 +64,6 @@ struct ProceduralMatrix : public MatrixExpr<ProceduralMatrix<Functor_, Rows_, Co
     int rows_, cols_;
     Functor_ f_;
 };
-
 // definition of procedrual matrices
 template <int Rows, int Cols> using ZeroMatrix = ProceduralMatrix<decltype([](int, int) { return 0; }), Rows, Cols>;
 template <int Rows, int Cols> using OnesMatrix = ProceduralMatrix<decltype([](int, int) { return 1; }), Rows, Cols>;
@@ -103,7 +101,7 @@ struct generic_assignment_executor {
         return;
     }
 };
-
+// assignment executor specialized for vector expressions
 struct vector_assignment_executor {
     template <typename DstMatrixType, typename SrcXprType, typename AssignmentOp>
         requires(requires(AssignmentOp op, typename DstMatrixType::Scalar& l, const typename SrcXprType::Scalar& r) {
@@ -113,8 +111,7 @@ struct vector_assignment_executor {
         fdapde_static_assert(DstMatrixType::ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_LOCATION);
         // NB: a row-shaped rhs can be assigned to a col-shaped lhs
         fdapde_static_assert(
-          internals::is_vector_shaped_v<DstMatrixType> && internals::is_vector_shaped_v<SrcXprType> &&
-            internals::same_static_size_weak_v<DstMatrixType FDAPDE_COMMA SrcXprType>,
+          internals::is_vector_shaped_v<DstMatrixType> && internals::is_vector_shaped_v<SrcXprType>,
           INVALID_ASSIGNMENT__NOT_VECTOR_SHAPED_OPERANDS);
         if constexpr (internals::is_dynamic_sized_v<DstMatrixType> || internals::is_dynamic_sized_v<SrcXprType>) {
             fdapde_assert(
@@ -204,7 +201,7 @@ class MatrixBase : public MatrixExpr<MatrixType> {
 };
 
 template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_ = RowMajor>
-    requires(std::is_arithmetic_v<Scalar_>)
+// requires(std::is_arithmetic_v<Scalar_>)
 class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Scalar_, Rows_, Cols_, StorageOrder_>> {
    private:
     using Base = MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Scalar_, Rows_, Cols_, StorageOrder_>>;
@@ -240,9 +237,9 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
     using Base::operator=;
 
     // Matrix API
-    // value-initialized static-sized matrix, avoid vectors (Vector API only support 1D, 2D, 3D value intialization)
+    // value-initialized static-sized matrix, avoid 1D vectors
     constexpr explicit Matrix(Scalar v)
-        requires(Rows_ > 1 && Cols_ > 1)
+        requires(Rows_ > 1 && Cols_ >= 1)
         : data_() {
         for (int i = 0; i < Rows_ * Cols_; ++i) { data_[i] = v; }
     }
@@ -367,7 +364,7 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
         auto linspace = [a, h = (double)(b - a) / double(Rows_ - 1)](int i, int) { return a + i * h; };
         return ProceduralMatrix<decltype(linspace), Rows_, 1>(linspace);
     }
-
+  
     // modifiers
     void resize(int rows, int cols) {
         fdapde_static_assert(Rows_ == Dynamic || Cols_ == Dynamic, THIS_METHOD_IS_FOR_DYNAMIC_SIZED_MATRICES_ONLY);
@@ -389,11 +386,9 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
         resize(Rows_ == Dynamic ? size : Rows_, Cols_ == Dynamic ? size : Cols_);
         return;
     }
-  
     // data pointers
     constexpr const Scalar* data() const { return data_.data(); }
     constexpr Scalar* data() { return data_.data(); }
-
     // iterators
     constexpr iterator begin() { return data_.begin(); }
     constexpr const_iterator begin() const { return data_.begin(); }
@@ -431,7 +426,7 @@ class MatrixView :
     // data pointers
     constexpr const StorageType data() const { return data_; }
     constexpr StorageType data() { return data_; }
-   protected:
+   private:
     StorageType data_;
 };
 
