@@ -21,10 +21,17 @@ using namespace fdapde;
 TEST(geometry, triangle) {
     Triangulation<2, 2> D = Triangulation<2, 2>::UnitSquare(60, 60);
 
-    std::cout << D.n_nodes() << std::endl;
+    // std::cout << D.n_nodes() << std::endl;
 
     
     EXPECT_DOUBLE_EQ(1.0 / D.n_cells(), D.cell(0).measure());
-  
+
+
+    std::cout << D.cell(2000).barycenter() << std::endl;
+
+    // try point location with r_tree
+    Matrix<double, 1, 2> pts;
+    pts.row(0) = D.cell(2000).barycenter().transpose();
+    std::cout << D.locate(pts)[0] << std::endl;
   
 }

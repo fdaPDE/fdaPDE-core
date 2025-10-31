@@ -43,8 +43,8 @@ struct scalar_wrap {
     static constexpr int ReadOnly = 1;
   
     constexpr explicit scalar_wrap(ScalarType scalar) noexcept : scalar_(scalar) { }
-    constexpr decltype(auto) operator()([[maybe_unused]] int i, [[maybe_unused]] int j) const { return scalar_; }
-    constexpr decltype(auto) operator[]([[maybe_unused]] int i) const { return scalar_; }
+    constexpr Scalar operator()([[maybe_unused]] int i, [[maybe_unused]] int j) const { return scalar_; }
+    constexpr Scalar operator[]([[maybe_unused]] int i) const { return scalar_; }
     constexpr const scalar_wrap& derived() const { return *this; }
    private:
     ScalarType scalar_;
@@ -137,20 +137,20 @@ struct MatrixCoeffWiseOp : public MatrixCoeffWiseExpr<MatrixCoeffWiseOp<XprType_
         requires(std::is_constructible_v<XprTypeNested, XprType__>)
     constexpr MatrixCoeffWiseOp(XprType__&& xpr, CoeffOp op) : xpr_(std::forward<XprType__>(xpr)), op_(op) { }
     // access
-    constexpr decltype(auto) operator()(int i, int j) const {
+    constexpr Scalar operator()(int i, int j) const {
         fdapde_assert(i >= 0 && i < rows() && j >= 0 && j < cols());
         return op_(xpr_(i, j));
     }
-    constexpr decltype(auto) operator()(int i, int j) {   // write-access
+    constexpr Scalar& operator()(int i, int j) {   // write-access
         fdapde_assert(i >= 0 && i < rows() && j >= 0 && j < cols());
         return op_(xpr_(i, j));
     }
-    constexpr decltype(auto) operator[](int i) const {
+    constexpr Scalar operator[](int i) const {
         fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
         fdapde_assert(i >= 0 && i < rows());
         return op_(xpr_[i]);
     }
-    constexpr decltype(auto) operator[](int i) {   // write-access
+    constexpr Scalar& operator[](int i) {   // write-access
         fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
         fdapde_assert(i >= 0 && i < rows());
         return op_(xpr_[i]);
@@ -205,11 +205,11 @@ struct MatrixCoeffWiseBinOp : public MatrixCoeffWiseExpr<MatrixCoeffWiseBinOp<Lh
               std::cmp_equal(lhs_.cols() FDAPDE_COMMA rhs_.cols()));
         }
     }
-    constexpr decltype(auto) operator()(int i, int j) const {
+    constexpr Scalar operator()(int i, int j) const {
         fdapde_assert(i >= 0 && i < rows() && j >= 0 && j < cols());
         return op_(lhs_(i, j), rhs_(i, j));
     }
-    constexpr decltype(auto) operator[](int i) const {
+    constexpr Scalar operator[](int i) const {
         fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
         fdapde_assert(i >= 0 && i < rows());
         return op_(lhs_[i], rhs_[i]);

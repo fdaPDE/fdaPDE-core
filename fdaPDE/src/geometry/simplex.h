@@ -53,8 +53,8 @@ template <int Order_, int EmbedDim_> class Simplex {
     double measure() const { return measure_; }
     // simplex minimal enclosing rectangle
     std::array<double, 2 * embed_dim> bbox() const {
-        NodeType ll = coords_.rowwise().minCoeff();
-        NodeType ur = coords_.rowwise().maxCoeff();
+        NodeType ll = coords_.rowwise().min();
+        NodeType ur = coords_.rowwise().max();
         std::array<double, 2 * embed_dim> bbox_;
         for (int i = 0; i < embed_dim; ++i) {
             bbox_[i] = ll[i];
@@ -69,8 +69,8 @@ template <int Order_, int EmbedDim_> class Simplex {
     // writes the point p in the barycentric coordinate system of this simplex
     Matrix<double, local_dim + 1, 1> barycentric_coords(const NodeType& p) const {
         Matrix<double, local_dim + 1, 1> z;
-        z.bottomRows(local_dim) = invJ_ * (p - coords_.col(0));
-        z[0] = 1 - z.bottomRows(local_dim).sum();
+        z.bottom_rows(local_dim) = invJ_ * (p - coords_.col(0));
+        z[0] = 1 - z.bottom_rows(local_dim).sum();
         return z;
     }
 
@@ -130,10 +130,10 @@ template <int Order_, int EmbedDim_> class Simplex {
         }
         // move x to barycentric coordinates
         Matrix<double, local_dim + 1, 1> z;
-        z.bottomRows(local_dim) = invJ_ * (x - coords_.col(0));
-        z[0] = 1 - z.bottomRows(local_dim).sum();
-        if ((z.array() < -machine_epsilon).any()) return ContainsReturnType::OUTSIDE;
-        int nonzeros = (z.array() > machine_epsilon).count();
+        z.bottom_rows(local_dim) = invJ_ * (x - coords_.col(0));
+        z[0] = 1 - z.bottom_rows(local_dim).sum();
+        if ((z.cwise() < -machine_epsilon).any()) return ContainsReturnType::OUTSIDE;
+        int nonzeros = (z.cwise() > machine_epsilon).count();
         if (nonzeros == 1) return ContainsReturnType::ON_VERTEX;
         if (nonzeros == n_nodes_per_face) return ContainsReturnType::ON_FACE;
         return ContainsReturnType::INSIDE;
@@ -170,11 +170,9 @@ template <int Order_, int EmbedDim_> class Simplex {
         Matrix<double, local_dim + 1, 1> q = barycentric_coords(p);
 	// check if point inside simplex
         if constexpr (local_dim != embed_dim) {
-            if (
-              (q.array() > -machine_epsilon).all() && supporting_plane().distance(p) < machine_epsilon)
-                return p;
+            if ((q.cwise() > -machine_epsilon).all() && supporting_plane().distance(p) < machine_epsilon) return p;
         } else {
-            if ((q.array() > -machine_epsilon).all()) return p;
+            if ((q.cwise() > -machine_epsilon).all()) return p;
         }
         if constexpr (Order_ == 1) {   // end of recursion
             if (q[0] < 0) return coords_.col(1);

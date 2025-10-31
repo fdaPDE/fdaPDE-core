@@ -39,6 +39,17 @@ template <typename XprType> struct MatrixCoeffWiseExpr;
 [[maybe_unused]] static constexpr int LhsMode = 0;
 [[maybe_unused]] static constexpr int RhsMode = 1;
 
+namespace internals {
+
+// tag types to enable/disable costly data integrity checks
+struct checked_t { };
+struct unchecked_t { };
+
+}   // namespace internals
+
+[[maybe_unused]] inline constexpr internals::checked_t   checked   {};
+[[maybe_unused]] inline constexpr internals::unchecked_t unchecked {};
+  
 }   // namespace fdapde
 
 #include "src/linear_algebra/traits.h"

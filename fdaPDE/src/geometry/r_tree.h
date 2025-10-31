@@ -379,8 +379,8 @@ class RTree {
         item_t() = default;
         template <typename BBoxT>
             requires(std::is_convertible_v<BBoxT, bbox_t>)
-        explicit item_t(int index, const BBoxT& bbox) : data_(index), type_(type_t::DATA), bbox_(bbox) { }
-        explicit item_t(node_t* node) : node_(node), type_(type_t::NODE), bbox_(node_->bbox()) { }
+        explicit item_t(int index, const BBoxT& bbox) : type_(type_t::DATA), data_(index), bbox_(bbox) { }
+        explicit item_t(node_t* node) : type_(type_t::NODE), node_(node), bbox_(node_->bbox()) { }
         // copy/move semantic
         item_t(const item_t& other) = default;
         item_t(item_t&& other) = default;

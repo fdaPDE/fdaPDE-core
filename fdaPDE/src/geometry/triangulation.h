@@ -595,7 +595,7 @@ template <int N> class Triangulation<2, N> : public TriangulationBase<2, N, Tria
         for (int i = 0, n = pts.rows(); i < n; ++i) {
             std::vector<int> candidates = spatial_index_->locate_query(pts.row(i));
             for (int j : candidates) {   // perform exact containment test
-                if (cell(j).contains(pts.row(i))) cells[i] = j;
+                if (cell(j).contains(pts.row(i))) { cells[i] = j; }
             }
         }
         return cells;

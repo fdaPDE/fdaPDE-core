@@ -25,8 +25,6 @@ namespace fdapde {
 
 template <typename XprType_>
 struct PermutationMatrixExpr : public OrthogonalMatrixExpr<PermutationMatrixExpr<XprType_>> {
-    using Base = OrthogonalMatrixExpr<PermutationMatrixExpr<XprType_>>;
-    using Base::derived;
     // make derived() point to innermost type
     constexpr const XprType_& derived() const { return static_cast<const XprType_&>(*this); }
     constexpr XprType_& derived() { return static_cast<XprType_&>(*this); }
@@ -37,7 +35,7 @@ struct PermutationMatrixExpr : public OrthogonalMatrixExpr<PermutationMatrixExpr
         constexpr int Rows = XprType_::Rows;
 
         Vector<Scalar, Rows> permutation = derived().permutation();
-        int n = permutation.size();
+        const int n = permutation.size();
         Vector<char, Rows> visited(n, 0);
         int cycles = 0;
         for (int i = 0; i < n; ++i) {
@@ -56,12 +54,27 @@ struct PermutationMatrixExpr : public OrthogonalMatrixExpr<PermutationMatrixExpr
     // reductions
     constexpr auto squared_norm() const { return derived().rows(); }
     constexpr auto norm() const { return sqrt(squared_norm()); }
+    // ostream
+    friend std::ostream& operator<<(std::ostream& out, const PermutationMatrixExpr& m) {
+        const int rows = m.derived().rows();
+        const int cols = m.derived().cols();
+        auto perm = m.derived().permutation();   // evaluate permutation mapping
+        for (int i = 0; i < rows - 1; ++i) {
+            for (int j = 0; j < cols; ++j) { out << (perm[i] == j ? 1 : 0) << " "; }
+            out << "\n";
+        }
+        // print last row without carriage return
+        for (int j = 0; j < cols; ++j) { out << (perm[rows - 1] == j ? 1 : 0) << " "; }
+        return out;
+    }
 };
 
 // expression of the inverse of a permutation
-template <typename XprType> struct PermutationInverseOp : public PermutationMatrixExpr<PermutationInverseOp<XprType>> {
-    using Base = PermutationMatrixExpr<PermutationInverseOp<XprType>>;
-    using XprTypeNested = internals::ref_select_t<XprType>;
+template <typename XprType_> struct PermutationInverseOp : public PermutationMatrixExpr<PermutationInverseOp<XprType_>> {
+   private:
+    using XprType = std::decay_t<XprType_>;
+    using XprTypeNested = internals::ref_select_t<const XprType>;
+   public:
     using Scalar = typename XprType::Scalar;
     static constexpr int Rows = XprType::Rows;
     static constexpr int Cols = XprType::Cols;
@@ -69,10 +82,9 @@ template <typename XprType> struct PermutationInverseOp : public PermutationMatr
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
 
-    template <typename XprType_>
-        requires(std::is_constructible_v<XprTypeNested, XprType_>)
-    constexpr explicit PermutationInverseOp(XprType_&& xpr) : xpr_(std::forward<XprType_>(xpr)) { }
-
+    template <typename XprType__>
+        requires(std::is_constructible_v<XprTypeNested, XprType__>)
+    constexpr explicit PermutationInverseOp(XprType__&& xpr) : xpr_(std::forward<XprType__>(xpr)) { }
     constexpr Scalar operator()(int i, int j) const { return xpr_.image(j) == i ? 1 : 0; }   // matrix transposition
     constexpr int image(int i) const {   // image(i) returns pi^{-1}(i)
         fdapde_assert(i >= 0 && i < xpr_.rows());
@@ -121,16 +133,19 @@ constexpr auto operator*(const MatrixExpr<LhsXprType>& lhs, const PermutationMat
 }
 
 // symmetric group product closure
-template <typename LhsXprType, typename RhsXprType>
-struct PermutationCompositionOp : public PermutationMatrixExpr<PermutationCompositionOp<LhsXprType, RhsXprType>> {
+template <typename LhsXprType_, typename RhsXprType_>
+struct PermutationCompositionOp : public PermutationMatrixExpr<PermutationCompositionOp<LhsXprType_, RhsXprType_>> {
+   private:
+    using LhsXprType = std::decay_t<LhsXprType_>;
+    using RhsXprType = std::decay_t<RhsXprType_>;
     fdapde_static_assert(
       internals::is_dynamic_sized_v<LhsXprType> || internals::is_dynamic_sized_v<RhsXprType> ||
         LhsXprType::Cols == RhsXprType::Rows,
       INVALID_COMPOSITION_OPERATION__NOT_MATCHING_OPERANDS_STATIC_SIZE);
-    using Base = PermutationMatrixExpr<PermutationCompositionOp<LhsXprType, RhsXprType>>;
-    using LhsXprTypeNested = internals::ref_select_t<LhsXprType>;
-    using RhsXprTypeNested = internals::ref_select_t<RhsXprType>;
-    using Scalar = int;
+    using LhsXprTypeNested = internals::ref_select_t<const LhsXprType>;
+    using RhsXprTypeNested = internals::ref_select_t<const RhsXprType>;
+   public:
+    using Scalar = promote_type_t<typename LhsXprType::Scalar, typename RhsXprType::Scalar>;
     static constexpr int Rows = LhsXprType::Rows;
     static constexpr int Cols = LhsXprType::Cols;
     static constexpr int StrageOrder =
@@ -138,18 +153,17 @@ struct PermutationCompositionOp : public PermutationMatrixExpr<PermutationCompos
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
 
-    template <typename LhsXprType_, typename RhsXprType_>
-        requires(std::is_constructible_v<LhsXprTypeNested, LhsXprType_> &&
-                 std::is_constructible_v<RhsXprTypeNested, RhsXprType_>)
-    constexpr PermutationCompositionOp(LhsXprType_&& lhs, RhsXprType_&& rhs) :
-        lhs_(std::forward<LhsXprType_>(lhs)), rhs_(std::forward<RhsXprType_>(rhs)) {
+    template <typename LhsXprType__, typename RhsXprType__>
+        requires(std::is_constructible_v<LhsXprTypeNested, LhsXprType__> &&
+                 std::is_constructible_v<RhsXprTypeNested, RhsXprType__>)
+    constexpr PermutationCompositionOp(LhsXprType__&& lhs, RhsXprType__&& rhs) :
+        lhs_(std::forward<LhsXprType__>(lhs)), rhs_(std::forward<RhsXprType__>(rhs)) {
         if constexpr (internals::is_dynamic_sized_v<LhsXprType> || internals::is_dynamic_sized_v<RhsXprType>) {
             fdapde_assert(lhs_.rows() == rhs_.rows() && lhs_.cols() == rhs_.cols());
         }
     }
     constexpr Scalar operator()(int i, int j) const { return (image(i) == j) ? Scalar(1) : Scalar(0); }
-    // image of i under the permutation
-    constexpr int image(int i) const {
+    constexpr int image(int i) const {   // image of i under the permutation
         fdapde_assert(i >= 0 && i < lhs_.rows());
         return lhs_.image(rhs_.image(i));
     }
@@ -170,32 +184,34 @@ constexpr auto operator*(const PermutationMatrixExpr<LhsXprType>& lhs, const Per
     return PermutationCompositionOp<LhsXprType, RhsXprType>(lhs.derived(), rhs.derived());
 }
 
-// permutation matrix
+// owning permutation matrix type. 
 template <int Size_> struct PermutationMatrix : public PermutationMatrixExpr<PermutationMatrix<Size_>> {
-    using Base = PermutationMatrixExpr<PermutationMatrix<Size_>>;
+   private:
+    using StorageType = Vector<int, Size_>;
+   public:
     using Scalar = int;
-    using StorageType = Vector<Scalar, Size_>;
     static constexpr int Rows = Size_;
     static constexpr int Cols = Size_;
     static constexpr int StorageOrder = StorageType::StorageOrder;
-    static constexpr int StorageSize = Size_;
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
-
     // constructors
     constexpr PermutationMatrix() noexcept : permutation_() { }
     template <typename RhsXprType_>
-    constexpr PermutationMatrix(const MatrixExpr<RhsXprType_>& rhs) : Base(), permutation_(rhs) {
-        if constexpr (Size_ != Dynamic) { fdapde_assert(permutation_.size() == Size_); }
+        requires(std::is_same_v<typename std::decay_t<RhsXprType_>::Scalar, Scalar>)
+    constexpr explicit PermutationMatrix(const MatrixExpr<RhsXprType_>& rhs) : permutation_(rhs) {
+        using RhsXprType = std::decay_t<RhsXprType_>;
+        fdapde_static_assert(
+          RhsXprType::Rows == 1 || RhsXprType::Cols == 1, THIS_METHOD_IS_ONLY_FOR_ROW_OR_COLUMN_VECTORS);
+        if constexpr (Size_ != Dynamic) { fdapde_assert(rhs.size() == Size_); }
     }
     constexpr explicit PermutationMatrix(const std::vector<Scalar>& vec) : permutation_(vec) {
-        if constexpr (Size_ != Dynamic) { fdapde_assert(permutation_.size() == Size_); }
+        if constexpr (Size_ != Dynamic) { fdapde_assert(vec.size() == Size_); }
     }
-    template <std::size_t RhsSize>
-    constexpr explicit PermutationMatrix(const Scalar (&permutation)[RhsSize]) : permutation_(permutation) {
-        fdapde_static_assert(Size_ != Dynamic && StorageSize == RhsSize, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
+    template <std::size_t Size>
+    constexpr explicit PermutationMatrix(const Scalar (&permutation)[Size]) : permutation_(permutation) {
+        fdapde_static_assert(Size_ != Dynamic && Size_ == Size, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
     }
-
     // observers
     constexpr int rows() const { return permutation_.size(); }
     constexpr int cols() const { return permutation_.size(); }

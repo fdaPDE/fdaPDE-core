@@ -386,8 +386,11 @@ struct BoolMatrixBitWiseOp : public BoolMatrixExpr<BoolMatrixBitWiseOp<XprType_,
     using XprType = std::decay_t<XprType_>;
     using XprTypeNested = internals::ref_select_t<const XprType>;
    public:
+    using Scalar = typename XprType::Scalar;
+    using bitpack_t = typename XprType::bitpack_t;
     static constexpr int Rows = XprType::Rows;
     static constexpr int Cols = XprType::Cols;
+    static constexpr int StorageOrder = XprType::StorageOrder;
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
 
@@ -396,12 +399,12 @@ struct BoolMatrixBitWiseOp : public BoolMatrixExpr<BoolMatrixBitWiseOp<XprType_,
     constexpr BoolMatrixBitWiseOp(XprType__&& xpr, BitWiseOperation bitwise_op, BitPackOperation bitpack_op) :
         xpr_(std::forward<XprType__>(xpr)), bitwise_op_(bitwise_op), bitpack_op_(bitpack_op) { }
 
-    constexpr decltype(auto) operator()(int i, int j) const { return bitwise_op_(xpr_(i, j)); }
-    constexpr decltype(auto) operator[](int i) const {
+    constexpr Scalar operator()(int i, int j) const { return bitwise_op_(xpr_(i, j)); }
+    constexpr Scalar operator[](int i) const {
         fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
         return bitwise_op_(xpr_[i]);
     }
-    constexpr decltype(auto) bitpack(int i) const { return bitpack_op_(xpr_.bitpack(i)); }
+    constexpr bitpack_t bitpack(int i) const { return bitpack_op_(xpr_.bitpack(i)); }
     constexpr int rows() const { return Rows != Dynamic ? Rows : xpr_.rows(); }
     constexpr int cols() const { return Cols != Dynamic ? Cols : xpr_.cols(); }
     constexpr int bitpacks() const { return xpr_.bitpacks(); }
@@ -419,14 +422,21 @@ struct BoolMatrixBinOp :
     using RhsXprType = std::decay_t<RhsXprType_>;
     fdapde_static_assert(
       internals::same_static_shape_weak_v<LhsXprType FDAPDE_COMMA RhsXprType>,
-      INVALID_BINARY_OPERATION__MATRICES_OF_DIFFERENT_STATIC_SIZE);
+      INVALID_BINARY_OPERATION__OPERANDS_OF_DIFFERENT_STATIC_SIZE);
+    fdapde_static_assert(
+      std::is_same_v<typename LhsXprType::bitpack_t FDAPDE_COMMA typename RhsXprType::bitpack_t>,
+      INVALID_BINARY_OPERATION__OPERANDS_OF_DIFFERENT_BITPACK_LAYOUT);
     using LhsXprTypeNested = internals::ref_select_t<const LhsXprType>;
     using RhsXprTypeNested = internals::ref_select_t<const RhsXprType>;
    public:
+    using Scalar = promote_type_t<typename LhsXprType::Scalar, typename RhsXprType::Scalar>;
+    using bitpack_t = typename LhsXprType::bitpack_t;
     static constexpr int Rows =
       (LhsXprType::Rows == Dynamic || RhsXprType::Rows == Dynamic) ? Dynamic : LhsXprType::Rows;
     static constexpr int Cols =
       (LhsXprType::Cols == Dynamic || RhsXprType::Cols == Dynamic) ? Dynamic : LhsXprType::Cols;
+    static constexpr int StorageOrder =
+      internals::promote_storage_order_v<LhsXprType::StorageOrder, RhsXprType::StorageOrder>;
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
 
@@ -445,14 +455,14 @@ struct BoolMatrixBinOp :
               std::cmp_equal(lhs_.cols() FDAPDE_COMMA rhs_.cols()));
         }
     }
-    constexpr decltype(auto) operator()(int i, int j) const { return bitwise_op_(lhs_(i, j), rhs_(i, j)); }
-    constexpr decltype(auto) operator[](int i) const {
+    constexpr Scalar operator()(int i, int j) const { return bitwise_op_(lhs_(i, j), rhs_(i, j)); }
+    constexpr Scalar operator[](int i) const {
         fdapde_static_assert(
           (LhsXprType::Cols == 1 && RhsXprType::Cols == 1) || (LhsXprType::Rows == 1 && RhsXprType::Rows == 1),
           THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
         return bitwise_op_(lhs_[i], rhs_[i]);
     }
-    constexpr decltype(auto) bitpack(int i) const { return bitpack_op_(lhs_.bitpack(i), rhs_.bitpack(i)); }
+    constexpr bitpack_t bitpack(int i) const { return bitpack_op_(lhs_.bitpack(i), rhs_.bitpack(i)); }
     constexpr int rows() const { return Rows != Dynamic ? Rows : lhs_.rows(); }
     constexpr int cols() const { return Cols != Dynamic ? Cols : lhs_.cols(); }
     constexpr int bitpacks() const { return lhs_.bitpacks(); }
@@ -491,10 +501,10 @@ class BoolMatrixBlock : public BoolMatrixExpr<BoolMatrixBlock<BlockRows_, BlockC
          (BlockCols_ == Dynamic || (BlockCols_ > 0 && BlockCols_ <= XprType::Cols))),
       INVALID_BLOCK__STATIC_SIZES_DONT_FIT_WRAPPED_EXPRESSION);
     using XprTypeNested = internals::ref_select_t<XprType_>;   // derive constness from wrapped expression
-   public:
-    using bitpack_t = typename Base::bitpack_t;
-    using Scalar = typename Base::Scalar;
     static constexpr int PackSize = Base::PackSize;
+   public:
+    using Scalar = typename XprType::Scalar;
+    using bitpack_t = typename XprType::bitpack_t;
     static constexpr int Rows = BlockRows_;
     static constexpr int Cols = BlockCols_;
     static constexpr int NestAsRef = 0;
@@ -681,7 +691,6 @@ struct all_redux_bitpack_executor {
    private:
     bool all_;
 };
-
 // evaluates true if at least one coefficient of XprType is true
 struct any_redux_bitpack_executor {
     constexpr any_redux_bitpack_executor() noexcept : any_(false) { }
@@ -698,8 +707,7 @@ struct any_redux_bitpack_executor {
    private:
     bool any_;
 };
- 
-// returns the number of true coefficients in XprType, based on popcnt machine istruction for fast scalar counting
+// number of true coefficients in XprType, based on popcnt machine istruction for fast scalar counting
 struct cnt_redux_bitpack_executor {
     constexpr cnt_redux_bitpack_executor() noexcept = default;
     template <typename bitpack_t> constexpr int operator()(int cnt, bitpack_t p) const noexcept {

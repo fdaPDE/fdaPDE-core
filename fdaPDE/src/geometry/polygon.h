@@ -29,13 +29,13 @@ template <int LocalDim, int EmbedDim> class Polygon {
 
     // constructors
     Polygon() noexcept = default;
-    Polygon(const Eigen::Matrix<double, Dynamic, Dynamic>& nodes) noexcept : triangulation_() {
+    Polygon(const Matrix<double, Dynamic, Dynamic>& nodes) noexcept : triangulation_() {
         fdapde_assert(nodes.rows() > 0 && nodes.cols() == embed_dim);
         if (internals::are_2d_counterclockwise_sorted(nodes)) {
             triangulate_(nodes);
         } else {   // nodes are in clocwise order, reverse node ordering
             int n_nodes = nodes.rows();
-            Eigen::Matrix<double, Dynamic, Dynamic> reversed_nodes(n_nodes, embed_dim);
+            Matrix<double, Dynamic, Dynamic> reversed_nodes(n_nodes, embed_dim);
             for (int i = 0; i < n_nodes; ++i) { reversed_nodes.row(i) = nodes.row(n_nodes - 1 - i); }
             triangulate_(reversed_nodes);
         }
@@ -44,11 +44,9 @@ template <int LocalDim, int EmbedDim> class Polygon {
     Polygon(const Polygon&) noexcept = default;
     Polygon(Polygon&&) noexcept = default;  
     // observers
-    const Eigen::Matrix<double, Dynamic, Dynamic>& nodes() const { return triangulation_.nodes(); }
-    const Eigen::Matrix<int, Dynamic, Dynamic, Eigen::RowMajor>& cells() const { return triangulation_.cells(); }
-    Eigen::Map<const Eigen::Matrix<int, Dynamic, Dynamic, Eigen::RowMajor>> edges() const {
-        return triangulation_.edges();
-    }
+    const Matrix<double, Dynamic, Dynamic>& nodes() const { return triangulation_.nodes(); }
+    const Matrix<int, Dynamic, Dynamic>& cells() const { return triangulation_.cells(); }
+    MatrixView<const int, Dynamic, Dynamic> edges() const { return triangulation_.edges(); }
     const Triangulation<local_dim, embed_dim>& triangulation() const { return triangulation_; }
     double measure() const { return triangulation_.measure(); }
     int n_nodes() const { return triangulation_.n_nodes(); }
@@ -57,35 +55,37 @@ template <int LocalDim, int EmbedDim> class Polygon {
     // test whether point p is contained in polygon
     template <int Rows, int Cols>
         requires((Rows == embed_dim && Cols == 1) || (Cols == embed_dim && Rows == 1))
-    bool contains(const Eigen::Matrix<double, Rows, Cols>& p) const {
+    bool contains(const Matrix<double, Rows, Cols>& p) const {
         return triangulation_.locate(p) != -1;
     }
     // random sample points in polygon
-    Eigen::Matrix<double, Dynamic, Dynamic> sample(int n_samples, int seed = random_seed) const {
+    Matrix<double, Dynamic, Dynamic> sample(int n_samples, int seed = random_seed) const {
         return triangulation_.sample(n_samples, seed);
     }
    private:
     // perform polygon triangulation
-    void triangulate_(const Eigen::Matrix<double, Dynamic, Dynamic>& nodes) {
+    void triangulate_(const Matrix<double, Dynamic, Dynamic>& nodes) {
         std::vector<int> cells;
         // perform monotone partitioning
         std::vector<std::vector<int>> poly_partition = monotone_partition_(nodes);
         // triangulate each monotone polygon
         for (const std::vector<int>& poly : poly_partition) {
-            std::vector<int> local_cells = triangulate_monotone_(nodes(poly, Eigen::all));
+            Matrix<double, Dynamic, Dynamic> local_nodes(poly.size(), nodes.cols());
+            for (int i = 0, n = poly.size(); i < n; ++i) { local_nodes.row(i) = nodes.row(poly[i]); } 
+            std::vector<int> local_cells = triangulate_monotone_(local_nodes);
             // move local node numbering to global node numbering
             for (std::size_t i = 0; i < local_cells.size(); ++i) { local_cells[i] = poly[local_cells[i]]; }
             cells.insert(cells.end(), local_cells.begin(), local_cells.end());
         }
         // set-up face-based data structure
         triangulation_ = Triangulation<LocalDim, EmbedDim>(
-          nodes, Eigen::Map<Eigen::Matrix<int, Dynamic, Dynamic, Eigen::RowMajor>>(cells.data(), cells.size() / 3, 3),
-          Eigen::Matrix<int, Dynamic, 1>::Ones(nodes.rows()));
+          nodes, MatrixView<int, Dynamic, Dynamic>(cells.data(), cells.size() / 3, 3),
+          Matrix<int, Dynamic, 1>::Ones(nodes.rows()));
     }
 
     // partition an arbitrary polygon P into a set of monotone polygons (plane sweep approach, section 3.2 of De Berg,
     // M. (2000). Computational geometry: algorithms and applications. Springer Science & Business Media.)
-    std::vector<std::vector<int>> monotone_partition_(const Eigen::Matrix<double, Dynamic, Dynamic>& coords) {      
+    std::vector<std::vector<int>> monotone_partition_(const Matrix<double, Dynamic, Dynamic>& coords) {      
         using poly_t = DCEL<local_dim, embed_dim>;
 	using halfedge_t = typename poly_t::halfedge_t;
 	using halfedge_ptr_t = std::add_pointer_t<halfedge_t>;
@@ -253,7 +253,7 @@ template <int LocalDim, int EmbedDim> class Polygon {
         return monotone_partition;
     }
     // triangulate monotone polygon (returns a RowMajor ordered matrix of cells).
-    std::vector<int> triangulate_monotone_(const Eigen::Matrix<double, Dynamic, Dynamic>& nodes) {
+    std::vector<int> triangulate_monotone_(const Matrix<double, Dynamic, Dynamic>& nodes) {
         // every triangulation of a polygon of n points has n - 2 triangles (lemma 1.2.2 of (1))
         std::vector<int> cells;
 	int n_nodes = nodes.rows();
@@ -361,7 +361,7 @@ template <int LocalDim, int EmbedDim> class MultiPolygon {
 
     MultiPolygon() : n_polygons_(0) { }
     // rings is a vector of matrix of coordinates, where, each inner matrix defines a closed non self-intersecting loop
-    MultiPolygon(const std::vector<Eigen::Matrix<double, Dynamic, Dynamic>>& rings) : n_polygons_(0) {
+    MultiPolygon(const std::vector<Matrix<double, Dynamic, Dynamic>>& rings) : n_polygons_(0) {
         // ESRI shapefile format specification: loops in clockwise order define the outer border of a polygon,
         // loops in counterclockwise order defines a hole inside the last found outer polygonal ring
         int n_rings = rings.size();
@@ -369,7 +369,7 @@ template <int LocalDim, int EmbedDim> class MultiPolygon {
             triangulation_ = Polygon<local_dim, embed_dim>(rings[0]).triangulation();
         } else {
             // detect polygons with holes
-            using iterator = typename std::vector<Eigen::Matrix<double, Dynamic, Dynamic>>::const_iterator;
+            using iterator = typename std::vector<Matrix<double, Dynamic, Dynamic>>::const_iterator;
             constexpr int n_nodes_per_cell = 3;
             std::vector<std::pair<iterator, iterator>> polygons;
             iterator begin = rings.begin();
@@ -385,10 +385,10 @@ template <int LocalDim, int EmbedDim> class MultiPolygon {
                 polygons.emplace_back(begin, end);
                 begin = end;
             }
-            Eigen::Matrix<double, Dynamic, Dynamic> nodes(n_nodes, embed_dim);
+            Matrix<double, Dynamic, Dynamic> nodes(n_nodes, embed_dim);
             std::vector<int> cells;
             int nodes_off_ = 0;
-            for (const Eigen::Matrix<double, Dynamic, Dynamic>& coords : rings) {
+            for (const Matrix<double, Dynamic, Dynamic>& coords : rings) {
                 // triangulate polygon
                 Triangulation<local_dim, embed_dim> poly_tri = Polygon<local_dim, embed_dim>(coords).triangulation();
                 nodes.middleRows(nodes_off_, poly_tri.n_nodes()) = poly_tri.nodes();
@@ -402,22 +402,18 @@ template <int LocalDim, int EmbedDim> class MultiPolygon {
             }
             // set up face-based storage
             triangulation_ = Triangulation<local_dim, embed_dim>(
-              nodes,
-              Eigen::Map<Eigen::Matrix<int, Dynamic, Dynamic, Eigen::RowMajor>>(
-                cells.data(), cells.size() / n_nodes_per_cell, n_nodes_per_cell),
-              Eigen::Matrix<int, Dynamic, 1>::Ones(nodes.rows()));
+              nodes, MatrixView<int, Dynamic, Dynamic>(cells.data(), cells.size() / n_nodes_per_cell, n_nodes_per_cell),
+              Matrix<int, Dynamic, 1>::Ones(nodes.rows()));
         }
     }
     // observers
-    const Eigen::Matrix<double, Dynamic, Dynamic>& nodes() const { return triangulation_.nodes(); }
-    const Eigen::Matrix<int, Dynamic, Dynamic, Eigen::RowMajor>& cells() const { return triangulation_.cells(); }
-    Eigen::Map<const Eigen::Matrix<int, Dynamic, Dynamic, Eigen::RowMajor>> edges() const {
-        return triangulation_.edges();
-    }
+    const Matrix<double, Dynamic, Dynamic>& nodes() const { return triangulation_.nodes(); }
+    const Matrix<int, Dynamic, Dynamic>& cells() const { return triangulation_.cells(); }
+    MatrixView<const int, Dynamic, Dynamic> edges() const { return triangulation_.edges(); }
     // computes only the boundary edges of the multipoligon (discards triangulation's edges)
-    Eigen::Matrix<int, Dynamic, Dynamic, Eigen::RowMajor> boundary_edges() const {
+    Matrix<int, Dynamic, Dynamic> boundary_edges() const {
         int n_edges = triangulation_.n_boundary_edges();
-	Eigen::Matrix<int, Dynamic, Dynamic, Eigen::RowMajor> m(n_edges, 2);
+        Matrix<int, Dynamic, Dynamic> m(n_edges, 2);
         int j = 0;
         for (int i = 0, k = triangulation_.n_edges(); i < k; ++i) {
             if (triangulation_.is_edge_on_boundary(i)) { m.row(j++) = triangulation_.edges().row(i); }
@@ -434,11 +430,11 @@ template <int LocalDim, int EmbedDim> class MultiPolygon {
     // test whether point p is contained in polygon
     template <int Rows, int Cols>
         requires((Rows == embed_dim && Cols == 1) || (Cols == embed_dim && Rows == 1))
-    bool contains(const Eigen::Matrix<double, Rows, Cols>& p) const {
+    bool contains(const Matrix<double, Rows, Cols>& p) const {
         return triangulation_.locate(p) != -1;
     }
     // random sample points in polygon
-    Eigen::Matrix<double, Dynamic, Dynamic> sample(int n_samples, int seed = random_seed) const {
+    Matrix<double, Dynamic, Dynamic> sample(int n_samples, int seed = random_seed) const {
         return triangulation_.sample(n_samples, seed);
     }
    private:

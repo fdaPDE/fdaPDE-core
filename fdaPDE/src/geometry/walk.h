@@ -33,17 +33,17 @@ template <typename MeshType> class WalkSearch {
         static_assert(MeshType::local_dim == MeshType::embed_dim);
     };
     // finds element containing p, returns nullptr if element not found
-    int locate(const Eigen::Matrix<double, embed_dim, 1>& p) const {
+    int locate(const Matrix<double, embed_dim, 1>& p) const {
         // start search from random element
         std::random_device rng {};
         std::uniform_int_distribution<std::size_t> uniform_int(0, mesh_->n_cells() - 1);
-	std::size_t next = uniform_int(rng);
+        std::size_t next = uniform_int(rng);
 
         std::unordered_set<std::size_t> visited_;
         while (!mesh_->cell(next).contains(p) || visited_.find(next) != visited_.end()) {
             visited_.insert(next);
             // compute barycantric coordinates
-            Eigen::Matrix<double, embed_dim + 1, 1> bary_coord = mesh_->cell(next).barycentric_coords(p);
+            Matrix<double, embed_dim + 1, 1> bary_coord = mesh_->cell(next).barycentric_coords(p);
             // find minimum baricentric coordinate and move to element insisting of opposite face
             std::size_t min_bary_coord_index;
             bary_coord.minCoeff(&min_bary_coord_index);
@@ -54,10 +54,10 @@ template <typename MeshType> class WalkSearch {
     }
     template <typename CoordsMatrix>
         requires(internals::is_eigen_dense_xpr_v<CoordsMatrix>)
-    Eigen::Matrix<int, Dynamic, 1> locate(const CoordsMatrix& locs) const {
+    Matrix<int, Dynamic, 1> locate(const CoordsMatrix& locs) const {
         fdapde_assert(locs.cols() == embed_dim);
-        Eigen::Matrix<int, Dynamic, 1> ids(locs.rows());
-        for (int i = 0; i < locs.rows(); ++i) { ids[i] = locate(Eigen::Matrix<double, embed_dim, 1>(locs.row(i))); }
+        Matrix<int, Dynamic, 1> ids(locs.rows());
+        for (int i = 0; i < locs.rows(); ++i) { ids[i] = locate(Matrix<double, embed_dim, 1>(locs.row(i))); }
         return ids;
     }
 };

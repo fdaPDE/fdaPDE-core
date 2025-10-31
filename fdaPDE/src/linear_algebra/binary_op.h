@@ -31,7 +31,7 @@ struct MatrixBinOp : public MatrixExpr<MatrixBinOp<LhsXprType_, RhsXprType_, Bin
     using RhsXprType = std::decay_t<RhsXprType_>;
     fdapde_static_assert(
       internals::same_static_shape_weak_v<LhsXprType_ FDAPDE_COMMA RhsXprType_>,
-      INVALID_BINARY_OPERATION__MATRICES_OF_DIFFERENT_STATIC_SIZE);
+      INVALID_BINARY_OPERATION__OPERANDS_OF_DIFFERENT_STATIC_SIZE);
     using LhsXprTypeNested = internals::ref_select_t<const LhsXprType>;
     using RhsXprTypeNested = internals::ref_select_t<const RhsXprType>;
    public:
@@ -56,8 +56,8 @@ struct MatrixBinOp : public MatrixExpr<MatrixBinOp<LhsXprType_, RhsXprType_, Bin
               std::cmp_equal(lhs_.cols() FDAPDE_COMMA rhs_.cols()));
         }
     }
-    constexpr decltype(auto) operator()(int i, int j) const { return op_(lhs_(i, j), rhs_(i, j)); }
-    constexpr decltype(auto) operator[](int i) const {
+    constexpr Scalar operator()(int i, int j) const { return op_(lhs_(i, j), rhs_(i, j)); }
+    constexpr Scalar operator[](int i) const {
         fdapde_static_assert(
           (LhsXprType::Cols == 1 && RhsXprType::Cols == 1) || (LhsXprType::Rows == 1 && RhsXprType::Rows == 1),
           THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
@@ -101,8 +101,8 @@ struct MatrixScalarMultiplicationOp : public MatrixExpr<MatrixScalarMultiplicati
         requires(std::is_constructible_v<XprType, XprType__>)
     constexpr MatrixScalarMultiplicationOp(XprType__&& xpr, ScalarType s) :
         xpr_(std::forward<XprType__>(xpr)), s_(s) { }
-    constexpr decltype(auto) operator()(int i, int j) const { return xpr_(i, j) * s_; }
-    constexpr decltype(auto) operator[](int i) const {
+    constexpr Scalar operator()(int i, int j) const { return xpr_(i, j) * s_; }
+    constexpr Scalar operator[](int i) const {
         fdapde_static_assert(XprType::Rows == 1 || XprType::Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
         return xpr_[i] * s_;
     }
@@ -160,11 +160,11 @@ struct MatrixMultiplicationOp : public MatrixExpr<MatrixMultiplicationOp<LhsXprT
             fdapde_assert(std::cmp_equal(lhs_.cols() FDAPDE_COMMA rhs_.rows()));
         }
     }
-    constexpr decltype(auto) operator()(int i, int j) const { return Executor::run(i, j, lhs_, rhs_); }
-    constexpr decltype(auto) operator[](int i) const {
+    constexpr Scalar operator()(int i, int j) const { return Executor::run(i, j, lhs_, rhs_); }
+    constexpr Scalar operator[](int i) const {
         fdapde_static_assert(
           LhsXprType::Rows == 1 || RhsXprType::Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
-        return Executor::run(LhsXprType::Rows == 1 ? 0 : i, RhsXprType::Cols == 1 ? i : 0, lhs_, rhs_);
+        return Executor::run(LhsXprType::Rows == 1 ? 0 : i, RhsXprType::Cols == 1 ? 0 : i, lhs_, rhs_);
     }
     constexpr int rows() const { return Rows != Dynamic ? Rows : lhs_.rows(); }
     constexpr int cols() const { return Cols != Dynamic ? Cols : rhs_.cols(); }
@@ -243,7 +243,7 @@ struct MatrixKroneckerProductOp : public MatrixExpr<MatrixKroneckerProductOp<Lhs
         requires(std::is_constructible_v<LhsXprType, LhsXprType__> && std::is_constructible_v<RhsXprType, RhsXprType__>)
     constexpr MatrixKroneckerProductOp(LhsXprType__&& lhs, RhsXprType__&& rhs) :
         lhs_(std::forward<LhsXprType__>(lhs)), rhs_(std::forward<RhsXprType__>(rhs)) { }
-    constexpr decltype(auto) operator()(int i, int j) const {
+    constexpr Scalar operator()(int i, int j) const {
         const int h = RhsXprType::Rows != Dynamic ? RhsXprType::Rows : rhs_.rows();
         const int k = RhsXprType::Cols != Dynamic ? RhsXprType::Cols : rhs_.cols();
         // compute offsets in operand matrices
@@ -298,11 +298,11 @@ struct MatrixCrossProductOp : public MatrixExpr<MatrixCrossProductOp<LhsXprType_
             fdapde_assert(lhs_.rows() == 3 && rhs_.rows() == 3 && lhs_.cols() == 1 && rhs_.cols() == 1);
         }
     }
-    constexpr decltype(auto) operator()(int i, [[maybe_unused]] int j) const {
+    constexpr Scalar operator()(int i, [[maybe_unused]] int j) const {
         fdapde_assert(i >= 0 && i < rows() && j >= 0 && j < cols());
         return operator[](i);
     }
-    constexpr decltype(auto) operator[](int i) const {
+    constexpr Scalar operator[](int i) const {
         fdapde_assert(i >= 0 && i < rows());
         if (i == 0) { return lhs_[1] * rhs_[2] - lhs_[2] * rhs_[1]; }
         if (i == 1) { return lhs_[2] * rhs_[0] - lhs_[0] * rhs_[2]; }

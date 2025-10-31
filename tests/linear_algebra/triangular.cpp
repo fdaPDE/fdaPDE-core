@@ -21,10 +21,61 @@ using namespace fdapde;
 TEST(linear_algebra, triangular) {
     // static-sized
     {
+        Matrix<double, 3, 3> M({1, 2, 3, 4, 5, 6, 7, 8, 9});
+
+        auto tb1 = M.triangular_block<Lower>();
+        Matrix<double, 3, 3> tb1_({1, 0, 0, 4, 5, 0, 7, 8, 9});
+        EXPECT_EQ(tb1, tb1_);
+        auto tb2 = M.triangular_block<Upper>();
+        Matrix<double, 3, 3> tb2_({1, 2, 3, 0, 5, 6, 0, 0, 9});
+        EXPECT_EQ(tb2, tb2_);
+
+        // test storage order
+        LowerTriangularMatrix<double, 3, RowMajor> M1({1, 2, 3, 4, 5, 6});
+        Matrix<double, 3, 3> M1_({1, 0, 0, 2, 3, 0, 4, 5, 6});
+        EXPECT_EQ(M1, M1_);
+        LowerTriangularMatrix<double, 3, ColMajor> M2({1, 2, 3, 4, 5, 6});
+        Matrix<double, 3, 3> M2_({1, 0, 0, 2, 4, 0, 3, 5, 6});
+        EXPECT_EQ(M2, M2_);
+
+        // forward substitution solver
+        Vector<double, 3> ls1 = (tb1 + tb1).solve(Vector<double, 3>({1, 1, 1}));
+        Vector<double, 3> ls1_({0.5, -0.3, -1.2 / 18});
+        EXPECT_TRUE(almost_equal(ls1, ls1_));
+        // backward substitution solver
+        Vector<double, 3> ls2 = (tb2 + tb2).solve(Vector<double, 3>({1, 1, 1}));
+        Vector<double, 3> ls2_({1. / 2 * (1 - 4. / 10 * (1 - 12. / 18) - 6. / 18), 1. / 10 * (1 - 12. / 18), 1. / 18});
+        EXPECT_TRUE(almost_equal(ls2, ls2_));
+
+        // lower-triangular / lower-triangular product (different storage order)
+        auto e1 = M1 * M2;
+        Matrix<double, 3, 3> e1_({1, 0, 0, 8, 12, 0, 32, 50, 36});
+        EXPECT_EQ(e1, e1_);
+        UpperTriangularMatrix<double, 3> M3({1, 2, 3, 4, 5, 6});
+        // lower-triangular / upper-triangular product
+        auto e2 = M1 * M3;
+        Matrix<double, 3, 3> e2_({1, 0, 0, 0, 12, 0, 0, 0, 36});
+        EXPECT_EQ(e2, e2_);
+        // upper-triangular / upper-triangular product
+        UpperTriangularMatrix<double, 3> M4 = M3;
+
+        UpperTriangularMatrix<double, 3> M5;
+        M5 = M3;
     }
 
     // dynamic sized
     {
-      
+        LowerTriangularMatrix<double, Dynamic> M1(5);
+        EXPECT_EQ(M1.rows(), 5);
+        EXPECT_EQ(M1.cols(), 5);
+        EXPECT_EQ(M1.size(), 25);
+
+        // check is zero initialized
+        for (int i = 0; i < M1.rows(); ++i) {
+            for (int j = 0; j < M1.cols(); ++j) {
+                double m1_ = M1(i, j);
+                EXPECT_EQ(m1_, 0);
+            }
+        }
     }
 }
