@@ -22,13 +22,13 @@
 namespace fdapde {
 
 // orthogonal matrix type system (implementation of the general orthogonal Lie-group O(n))
-  
+
 namespace internals {
 
-struct orthogonalize_t { };   // tag used to activate the input orthogonalization
+struct orthogonalize_t { };   // tag used to activate input orthogonalization
 
 }   // namespace internals
-  
+
 [[maybe_unused]] inline constexpr internals::orthogonalize_t orthogonalize {};
 
 template <typename XprType_> struct OrthogonalMatrixExpr : public MatrixExpr<XprType_> {
@@ -42,38 +42,43 @@ template <typename XprType_> struct OrthogonalMatrixExpr : public MatrixExpr<Xpr
     }
 };
 
-template <typename Scalar_, int Size_, int StorageOrder_, typename OrthogonalMatrixType_>
+template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_, typename OrthogonalMatrixType_>
 struct OrthogonalMatrixBase : public OrthogonalMatrixExpr<OrthogonalMatrixType_> {
    private:
     using Base = OrthogonalMatrixExpr<OrthogonalMatrixType_>;
     using Base::derived;
    public:
     using Scalar = Scalar_;
-    static constexpr int Rows = Size_;
-    static constexpr int Cols = Size_;
+    static constexpr int Rows = Rows_;
+    static constexpr int Cols = Cols_;
     static constexpr int StorageOrder = StorageOrder_;
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = std::is_const_v<Scalar_>;
+    using assignment_executor = internals::generic_assignment_executor;
 
     OrthogonalMatrixBase() = delete;
-    OrthogonalMatrixBase(int size) : size_(Size_ == Dynamic ? size : Size_) { }
+    OrthogonalMatrixBase(int rows, int cols) :
+        rows_(Rows_ == Dynamic ? rows : Rows_), cols_(Cols_ == Dynamic ? cols : Cols_) {
+        fdapde_assert(rows > 0 && cols > 0 && rows == cols);
+    }
     // copy assignment
     constexpr OrthogonalMatrixType_& operator=(const OrthogonalMatrixType_& other) {
         fdapde_static_assert(ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_LOCATION);
-        if constexpr (Size_ == Dynamic) { fdapde_assert(size_ == other.rows() && size_ == other.cols()); }
         if (this == std::addressof(other)) { return derived(); }
-        using executor = typename OrthogonalMatrixType_::assignment_executor;
-        executor::run(derived().data(), other);
+        if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) {
+            if (rows_ != other.rows() || cols_ != other.cols()) { derived().resize(other.rows(), other.cols()); }
+        }
+        assignment_executor::run(*this, other, [](auto&& l, const auto& r) { l = r; });
         return derived();
     }
     // only read access allowed (write access could break orthogonality invariant)
     constexpr Scalar operator()(int i, int j) const {
-        fdapde_assert(i >= 0 && i < size_ && j >= 0 && j < size_);
+        fdapde_assert(i >= 0 && i < rows_ && j >= 0 && j < cols_);
         return derived().data()(i, j);
     }
     // observers
-    constexpr int rows() const { return derived().data().rows(); }
-    constexpr int cols() const { return derived().data().cols(); }
+    constexpr int rows() const { return rows_; }
+    constexpr int cols() const { return cols_; }
    protected:
     // orthogonalize (modified gram–schmidt), with normalization
     template <typename MatrixType_> void orthogonalize_(MatrixType_& m) {
@@ -98,16 +103,18 @@ struct OrthogonalMatrixBase : public OrthogonalMatrixExpr<OrthogonalMatrixType_>
         m = Q;
     }
 
-    int size_;
+    int rows_, cols_;
 };
 
 // A matrix with enforced orthogonality check (i.e., M * M^\top = I)
-template <typename Scalar_, int Size_, int StorageOrder_ = RowMajor>
+template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_ = RowMajor>
 struct OrthogonalMatrix :
-    public OrthogonalMatrixBase<Scalar_, Size_, StorageOrder_, OrthogonalMatrix<Scalar_, Size_, StorageOrder_>> {
+    public OrthogonalMatrixBase<
+      Scalar_, Rows_, Cols_, StorageOrder_, OrthogonalMatrix<Scalar_, Rows_, Cols_, StorageOrder_>> {
    private:
-    using Base = OrthogonalMatrixBase<Scalar_, Size_, StorageOrder_, OrthogonalMatrix<Scalar_, Size_, StorageOrder_>>;
-    using StorageType = Matrix<Scalar_, Size_, Size_>;
+    using Base = OrthogonalMatrixBase<
+      Scalar_, Rows_, Cols_, StorageOrder_, OrthogonalMatrix<Scalar_, Rows_, Cols_, StorageOrder_>>;
+    using StorageType = Matrix<Scalar_, Rows_, Cols_>;
    public:
     using Scalar = Scalar_;
     static constexpr int NestAsRef = 1;
@@ -115,56 +122,77 @@ struct OrthogonalMatrix :
 
     // empty orthogonal matrices are ill-formed by definition
     constexpr OrthogonalMatrix() = delete;
-    constexpr OrthogonalMatrix(int rows, int cols) = delete;
-    constexpr OrthogonalMatrix(const OrthogonalMatrix& other) : Base(other.rows()) {
-        if constexpr (Size_ == Dynamic) { m_.resize(other.rows(), other.cols()); }
-        using assignment = typename Base::assignment_executor;
-        assignment::run(*this, other);
+    // copy semantic
+    constexpr OrthogonalMatrix(const OrthogonalMatrix& other) : Base(other.rows(), other.cols()) { clone_(other); }
+    constexpr OrthogonalMatrix& operator=(const OrthogonalMatrix& rhs) {
+        this->rows_ = rhs.rows_;
+        this->cols_ = rhs.cols_;
+        clone_(rhs);
+        return *this;
     }
+    constexpr OrthogonalMatrix(int rows, int cols) = delete;
     template <typename RhsXprType_>
-    constexpr OrthogonalMatrix(const OrthogonalMatrixExpr<RhsXprType_>& rhs) : Base(rhs.rows()) {
-        if constexpr (Size_ == Dynamic) { m_.resize(rhs.rows(), rhs.cols()); }
-        assignment_executor::run(*this, rhs.derived());
+    constexpr OrthogonalMatrix(const OrthogonalMatrixExpr<RhsXprType_>& rhs) : Base(rhs.rows(), rhs.cols()) {
+        if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { m_.resize(rhs.rows(), rhs.cols()); }
+        assignment_executor::run(*this, rhs.derived(), [](auto&& l, const auto& r) { l = r; });
     }
     // constructors taking external data
     // orthogonalize input
-    constexpr OrthogonalMatrix(const std::vector<Scalar>& data, internals::orthogonalize_t) :
-        Base(fdapde::sqrt(static_cast<double>(data.size()))), m_(data) {
+    template <typename Scalar__>
+        requires(std::is_constructible_v<Scalar_, Scalar__>)
+    constexpr OrthogonalMatrix(const std::vector<Scalar__>& data, internals::orthogonalize_t) :
+        Base(fdapde::sqrt(static_cast<double>(data.size())), fdapde::sqrt(static_cast<double>(data.size()))), m_(data) {
         this->orthogonalize_(m_);
     }
-    template <std::size_t Size>
-    constexpr OrthogonalMatrix(const Scalar (&data)[Size], internals::orthogonalize_t) :
-        Base(fdapde::sqrt(static_cast<double>(Size))), m_(data) {
-        fdapde_static_assert(Size_ != Dynamic && Size_ * Size_ == Size, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
+    template <typename Scalar__, std::size_t Size>
+        requires(std::is_constructible_v<Scalar_, Scalar__>)
+    constexpr OrthogonalMatrix(const Scalar__ (&data)[Size], internals::orthogonalize_t) :
+        Base(fdapde::sqrt(static_cast<double>(Size)), fdapde::sqrt(static_cast<double>(data.size()))), m_(data) {
+        fdapde_static_assert(
+          Rows_ != Dynamic && Cols_ != Dynamic && Rows_ * Cols_ == Size, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
         this->orthogonalize_(m_);
     }
     // assume input already orthogonal, abort if assumption failed
-    constexpr OrthogonalMatrix(const std::vector<Scalar>& data, internals::checked_t) :
-        Base(fdapde::sqrt(static_cast<double>(data.size()))), m_(data) {
+    template <typename Scalar__>
+        requires(std::is_constructible_v<Scalar_, Scalar__>)
+    constexpr OrthogonalMatrix(const std::vector<Scalar__>& data, internals::checked_t) :
+        Base(fdapde::sqrt(static_cast<double>(data.size())), fdapde::sqrt(static_cast<double>(data.size()))), m_(data) {
         const int size = m_.rows();
         auto I = IdentityMatrix<Dynamic, Dynamic>(size, size);
         fdapde_assert(almost_equal(m_ * m_.transpose() FDAPDE_COMMA I FDAPDE_COMMA 1e-14));
     }
-    template <std::size_t Size>
-    constexpr OrthogonalMatrix(const Scalar (&data)[Size], internals::checked_t) :
-        Base(fdapde::sqrt(static_cast<double>(Size))), m_(data) {
-        fdapde_static_assert(Size_ != Dynamic && Size_ * Size_ == Size, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
+    template <typename Scalar__, std::size_t Size>
+        requires(std::is_constructible_v<Scalar_, Scalar__>)
+    constexpr OrthogonalMatrix(const Scalar__ (&data)[Size], internals::checked_t) :
+        Base(fdapde::sqrt(static_cast<double>(Size)), fdapde::sqrt(static_cast<double>(Size))), m_(data) {
+        fdapde_static_assert(
+          Rows_ != Dynamic && Cols_ != Dynamic && Rows_ * Cols_ == Size, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
         const int size = m_.rows();
         auto I = IdentityMatrix<Dynamic, Dynamic>(size, size);
         fdapde_assert(almost_equal(m_ * m_.transpose() FDAPDE_COMMA I FDAPDE_COMMA 1e-14));
     }
     // assume input already orthogonal, trusts the caller
-    constexpr OrthogonalMatrix(const std::vector<Scalar>& data, internals::unchecked_t) :
-        Base(fdapde::sqrt(static_cast<double>(data.size()))), m_(data) { }
-    template <std::size_t Size>
-    constexpr OrthogonalMatrix(const Scalar (&data)[Size], internals::unchecked_t) :
-        Base(fdapde::sqrt(static_cast<double>(Size))), m_(data) {
-        fdapde_static_assert(Size_ != Dynamic && Size_ * Size_ == Size, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
+    template <typename Scalar__>
+        requires(std::is_constructible_v<Scalar_, Scalar__>)
+    constexpr OrthogonalMatrix(const std::vector<Scalar__>& data, internals::unchecked_t) :
+        Base(fdapde::sqrt(static_cast<double>(data.size())), fdapde::sqrt(static_cast<double>(data.size()))),
+        m_(data) { }
+    template <typename Scalar__, std::size_t Size>
+        requires(std::is_constructible_v<Scalar_, Scalar__>)
+    constexpr OrthogonalMatrix(const Scalar__ (&data)[Size], internals::unchecked_t) :
+        Base(fdapde::sqrt(static_cast<double>(Size)), fdapde::sqrt(static_cast<double>(data.size()))), m_(data) {
+        fdapde_static_assert(
+          Rows_ != Dynamic && Cols_ != Dynamic && Rows_ * Cols_ == Size, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
     }
     // data pointers
     constexpr const StorageType& data() const { return m_; }
     constexpr StorageType& data() { return m_; }
    private:
+    template <typename RhsXprType> constexpr void clone_(const RhsXprType& rhs) {
+        if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { m_.resize(rhs.rows(), rhs.cols()); }
+        assignment_executor::run(m_, rhs, [](auto&& l, const auto& r) { l = r; });
+        return;
+    }
     StorageType m_;
 };
 
@@ -206,10 +234,10 @@ constexpr auto operator*(const OrthogonalMatrixExpr<LhsXprType>& lhs, const Orth
 // any other operation doesn't preserve orthogonality. A raw MatrixExpr is returned
 
 // orthogonal view of an existing block of data
-template <typename Scalar_, int Rows_, int StorageOrder_ = RowMajor>
-class OrthogonalMatrixView : public OrthogonalMatrixExpr<OrthogonalMatrixView<Scalar_, Rows_>> {
+template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_ = RowMajor>
+class OrthogonalMatrixView : public OrthogonalMatrixExpr<OrthogonalMatrixView<Scalar_, Rows_, Cols_, StorageOrder_>> {
    private:
-    using Base = OrthogonalMatrixExpr<OrthogonalMatrixView<Scalar_, Rows_>>;
+    using Base = OrthogonalMatrixExpr<OrthogonalMatrixView<Scalar_, Rows_, Cols_, StorageOrder_>>;
     using StorageType = MatrixView<Scalar_, Rows_, Rows_, StorageOrder_>;
    public:
     using Scalar = Scalar_;
@@ -218,23 +246,33 @@ class OrthogonalMatrixView : public OrthogonalMatrixExpr<OrthogonalMatrixView<Sc
     // constructors
     constexpr OrthogonalMatrixView() : Base(), m_() { }
     // assume input already orthogonal, abort if assumption failed
-    constexpr OrthogonalMatrixView(Scalar* data, internals::checked_t) : Base(), m_(data) {
-        fdapde_static_assert(Rows_ != Dynamic, THIS_METHOD_IS_FOR_STATIC_SIZED_DIAGONAL_VIEWS_ONLY);
+    template <typename Scalar__>
+        requires(std::is_constructible_v<Scalar_, Scalar__>)
+    constexpr OrthogonalMatrixView(Scalar__* data, internals::checked_t) : Base(), m_(data) {
+        fdapde_static_assert(Rows_ != Dynamic && Cols_ != Dynamic, THIS_METHOD_IS_FOR_STATIC_SIZED_DIAGONAL_VIEWS_ONLY);
         const int size = m_.rows();
         auto I = IdentityMatrix<Dynamic, Dynamic>(size, size);
         fdapde_assert(almost_equal(m_ * m_.transpose() FDAPDE_COMMA I FDAPDE_COMMA 1e-14));
     }
-    constexpr OrthogonalMatrixView(Scalar* data, int size, internals::checked_t) : Base(size), m_(data) {
-        fdapde_assert(size > 0);
-        auto I = IdentityMatrix<Dynamic, Dynamic>(size, size);
+    template <typename Scalar__>
+        requires(std::is_constructible_v<Scalar_, Scalar__>)
+    constexpr OrthogonalMatrixView(Scalar__* data, int rows, int cols, internals::checked_t) :
+        Base(rows, cols), m_(data) {
+        fdapde_assert(rows > 0 && cols > 0 && rows == cols);
+        auto I = IdentityMatrix<Dynamic, Dynamic>(rows, cols);
         fdapde_assert(almost_equal(m_ * m_.transpose() FDAPDE_COMMA I FDAPDE_COMMA 1e-14));
     }
     // assume input already orthogonal, trusts the caller
-    constexpr OrthogonalMatrixView(Scalar* data, internals::unchecked_t) : Base(), m_(data) {
-        fdapde_static_assert(Rows_ != Dynamic, THIS_METHOD_IS_FOR_STATIC_SIZED_DIAGONAL_VIEWS_ONLY);
+    template <typename Scalar__>
+        requires(std::is_constructible_v<Scalar_, Scalar__>)
+    constexpr OrthogonalMatrixView(Scalar__* data, internals::unchecked_t) : Base(), m_(data) {
+        fdapde_static_assert(Rows_ != Dynamic && Cols_ != Dynamic, THIS_METHOD_IS_FOR_STATIC_SIZED_DIAGONAL_VIEWS_ONLY);
     }
-    constexpr OrthogonalMatrixView(Scalar* data, int size, internals::unchecked_t) : Base(size), m_(data) {
-        fdapde_assert(size > 0);
+    template <typename Scalar__>
+        requires(std::is_constructible_v<Scalar_, Scalar__>)
+    constexpr OrthogonalMatrixView(Scalar__* data, int rows, int cols, internals::unchecked_t) :
+        Base(rows, cols), m_(data) {
+        fdapde_assert(rows > 0 && cols > 0 && rows == cols);
     }
     // data pointers
     constexpr const StorageType& data() const { return m_; }
@@ -242,6 +280,12 @@ class OrthogonalMatrixView : public OrthogonalMatrixExpr<OrthogonalMatrixView<Sc
    private:
     StorageType m_;
 };
+
+// detection trait
+template <typename XprType> struct is_orthogonal_matrix {
+    static constexpr bool value = std::is_base_of_v<OrthogonalMatrixExpr<std::decay_t<XprType>>, XprType>;
+};
+template <typename XprType> static constexpr bool is_orthogonal_matrix_v = is_orthogonal_matrix<XprType>::value;
 
 }   // namespace fdapde
 

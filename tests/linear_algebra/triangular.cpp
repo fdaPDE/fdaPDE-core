@@ -31,10 +31,10 @@ TEST(linear_algebra, triangular) {
         EXPECT_EQ(tb2, tb2_);
 
         // test storage order
-        LowerTriangularMatrix<double, 3, RowMajor> M1({1, 2, 3, 4, 5, 6});
+        LowerTriangularMatrix<double, 3, 3, RowMajor> M1({1, 2, 3, 4, 5, 6});
         Matrix<double, 3, 3> M1_({1, 0, 0, 2, 3, 0, 4, 5, 6});
         EXPECT_EQ(M1, M1_);
-        LowerTriangularMatrix<double, 3, ColMajor> M2({1, 2, 3, 4, 5, 6});
+        LowerTriangularMatrix<double, 3, 3, ColMajor> M2({1, 2, 3, 4, 5, 6});
         Matrix<double, 3, 3> M2_({1, 0, 0, 2, 4, 0, 3, 5, 6});
         EXPECT_EQ(M2, M2_);
 
@@ -51,21 +51,26 @@ TEST(linear_algebra, triangular) {
         auto e1 = M1 * M2;
         Matrix<double, 3, 3> e1_({1, 0, 0, 8, 12, 0, 32, 50, 36});
         EXPECT_EQ(e1, e1_);
-        UpperTriangularMatrix<double, 3> M3({1, 2, 3, 4, 5, 6});
+        UpperTriangularMatrix<double, 3, 3> M3({1, 2, 3, 4, 5, 6});
         // lower-triangular / upper-triangular product
         auto e2 = M1 * M3;
         Matrix<double, 3, 3> e2_({1, 0, 0, 0, 12, 0, 0, 0, 36});
         EXPECT_EQ(e2, e2_);
         // upper-triangular / upper-triangular product
-        UpperTriangularMatrix<double, 3> M4 = M3;
+        UpperTriangularMatrix<double, 3, 3> M4 = M3;
+        auto e3 = M3 * M4;
+        Matrix<double, 3, 3> e3_({1, 10, 31, 0, 16, 50, 0, 0, 36});
+        EXPECT_EQ(e3, e3_);
 
-        UpperTriangularMatrix<double, 3> M5;
+	// copy assignment
+        UpperTriangularMatrix<double, 3, 3> M5;
         M5 = M3;
+	EXPECT_EQ(M5, M3);
     }
 
     // dynamic sized
     {
-        LowerTriangularMatrix<double, Dynamic> M1(5);
+        LowerTriangularMatrix<double, Dynamic, Dynamic> M1(5, 5);
         EXPECT_EQ(M1.rows(), 5);
         EXPECT_EQ(M1.cols(), 5);
         EXPECT_EQ(M1.size(), 25);

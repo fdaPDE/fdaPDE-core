@@ -962,6 +962,17 @@ constexpr bool operator!=(const BoolMatrixExpr<LhsXprType>& op1, const BoolMatri
     return !(op1 == op2);
 }
 
+// detection trait
+template <typename XprType> struct is_boolean_matrix {
+    static constexpr bool value = std::is_base_of_v<BoolMatrixExpr<std::decay_t<XprType>>, XprType>;
+};
+template <typename XprType> static constexpr bool is_boolean_matrix_v = is_boolean_matrix<XprType>::value;
+template <typename XprType> struct is_boolean_vector {
+    static constexpr bool value =
+      is_boolean_matrix_v<XprType> && (std::decay_t<XprType>::Cols == 1 || std::decay_t<XprType>::Rows == 1);
+};
+template <typename XprType> static constexpr bool is_boolean_vector_v = is_boolean_vector<XprType>::value;
+  
 // indexes of true elements in the boolean expression
 template <typename XprType> std::vector<int> which(const BoolMatrixExpr<XprType>& mtx) { return mtx.which(true); }
 
@@ -991,7 +1002,8 @@ Matrix<bool, Dynamic, Dynamic> nan_indicator(DataType&& data) {
     Matrix<bool, Dynamic, Dynamic> mask(rows, cols);
     for (int i = 0; i < rows; ++i) {
         for (int j = 0; j < cols; ++j) {
-            const auto val = internals::is_vector_like_v<DataType> ? internals::vector_like_access(data, i) : data(i, j);
+            const auto val =
+              internals::is_vector_like_v<DataType> ? internals::vector_like_access(data, i) : data(i, j);
             if (std::isnan(val)) mask.set(i, j);
         }
     }
@@ -1062,19 +1074,19 @@ class MatrixView<bool, Rows_, Cols_, StorageOrder_> :
     constexpr const bitpack_t* data() const { return data_; }
     constexpr bitpack_t* data() { return data_; }
     // modifiers
-    constexpr void set(int i, int j) { Base::operator()(i, j).set(); }
+    constexpr void set(int i, int j) { this->operator()(i, j).set(); }
     constexpr void set(int i) {
         fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
-        Base::operator[](i).set();
+        this->operator[](i).set();
     }
     constexpr void set() {
         for (int i = 0; i < bitpacks_ - 1; ++i) { data_[i] = ~bitpack_t(0); }
         data_[bitpacks_ - 1] |= last_bitpack_mask_;
     }
-    constexpr void clear(int i, int j) { Base::operator()(i, j).clear(); }
+    constexpr void clear(int i, int j) { this->operator()(i, j).clear(); }
     constexpr void clear(int i) {
         fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
-        Base::operator[](i).clear();
+        this->operator[](i).clear();
     }
     constexpr void clear() {
         for (int i = 0; i < bitpacks_ - 1; ++i) { data_[i] = bitpack_t(0); }

@@ -195,8 +195,15 @@ template <int Size_> struct PermutationMatrix : public PermutationMatrixExpr<Per
     static constexpr int StorageOrder = StorageType::StorageOrder;
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
+    using assignment_executor = typename StorageType::assignment_executor;
     // constructors
     constexpr PermutationMatrix() noexcept : permutation_() { }
+    // copy-semantic
+    constexpr PermutationMatrix(const PermutationMatrix& other) { clone_(other); }
+    constexpr PermutationMatrix& operator=(const PermutationMatrix& rhs) {
+        clone_(rhs);
+        return *this;
+    }
     template <typename RhsXprType_>
         requires(std::is_same_v<typename std::decay_t<RhsXprType_>::Scalar, Scalar>)
     constexpr explicit PermutationMatrix(const MatrixExpr<RhsXprType_>& rhs) : permutation_(rhs) {
@@ -222,8 +229,19 @@ template <int Size_> struct PermutationMatrix : public PermutationMatrixExpr<Per
         return permutation_[i];
     }
    private:
+    template <typename RhsXprType> constexpr void clone_(const RhsXprType& rhs) {
+        if constexpr (Size_ == Dynamic) { permutation_.resize(rhs.rows()); }
+        assignment_executor::run(permutation_, rhs.permutation(), [](auto&& l, const auto& r) { l = r; });
+        return;
+    }
     StorageType permutation_;
 };
+
+// detection trait
+template <typename XprType> struct is_permutation_matrix {
+    static constexpr bool value = std::is_base_of_v<PermutationMatrixExpr<std::decay_t<XprType>>, XprType>;
+};
+template <typename XprType> static constexpr bool is_permutation_matrix_v = is_permutation_matrix<XprType>::value;
   
 }   // namespace fdapde
 
