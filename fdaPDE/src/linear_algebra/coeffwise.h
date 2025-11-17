@@ -21,6 +21,7 @@
 
 namespace fdapde {
 
+// coefficient-wise type system
 template <typename XprType_> struct MatrixCoeffWiseExpr;
 
 namespace internals {

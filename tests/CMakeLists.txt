@@ -10,7 +10,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(WARNING_FLAGS -Wall -Wextra -Wpedantic -Werror)
 
 # Dependencies
-find_package(Eigen3 3.4 REQUIRED NO_MODULE)
+find_package(Eigen3 REQUIRED NO_MODULE)
 
 include(FetchContent)
 FetchContent_Declare(

@@ -216,25 +216,18 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
     static constexpr int NestAsRef = 1;
 
     constexpr Matrix() : data_() { }
-    constexpr Matrix(const Matrix& other) : Base() {
-        if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { resize(other.rows(), other.cols()); }
-        using assignment = typename Base::assignment_executor;
-        assignment::run(*this, other, [](Scalar& l, const Scalar& r) { l = r; });
-    }
+    // copy semantic
+    constexpr Matrix(const Matrix& other) : Base() { clone_(other); }
     constexpr Matrix& operator=(const Matrix& other) {
-        Base::operator=(other);
+        clone_(other);
         return *this;
     }
     template <typename RhsXprType_>   // construct from plain MatrixExpr
     constexpr Matrix(const MatrixExpr<RhsXprType_>& rhs) : Base(), data_() {
-        if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { resize(rhs.rows(), rhs.cols()); }
-        using assignment = typename Base::assignment_executor;
-        assignment::run(*this, rhs.derived(), [](Scalar& l, const Scalar& r) { l = r; });
+        clone_(rhs.derived());
     }
     template <typename RhsXprType_>
     constexpr Matrix(const MatrixCoeffWiseExpr<RhsXprType_>& rhs) : Matrix(rhs.mwise()) { }
-    // inherit assignment from base
-    using Base::operator=;
 
     // Matrix API
     // value-initialized static-sized matrix, avoid 1D vectors
@@ -370,12 +363,12 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
         fdapde_static_assert(Rows_ == Dynamic || Cols_ == Dynamic, THIS_METHOD_IS_FOR_DYNAMIC_SIZED_MATRICES_ONLY);
         const int rows_ = Rows_ == Dynamic ? rows : Rows_;
         const int cols_ = Cols_ == Dynamic ? cols : Cols_;
-        if (rows_ == Base::rows_ && cols_ == Base::cols_) return;   // do not reallocate memory if sizes didn't changed
+        if (rows_ == this->rows_ && cols_ == this->cols_) return;   // do not reallocate memory if sizes didn't changed
         // update and reallocate memory
-        Base::rows_ = rows_;
-        Base::cols_ = cols_;
-        Base::row_stride_ = StorageOrder_ == RowMajor ? cols_ : 1;
-        Base::col_stride_ = StorageOrder_ == RowMajor ? 1 : rows_;
+        this->rows_ = rows_;
+        this->cols_ = cols_;
+        this->row_stride_ = StorageOrder_ == RowMajor ? cols_ : 1;
+        this->col_stride_ = StorageOrder_ == RowMajor ? 1 : rows_;
         data_.resize(rows * cols);
         return;
     }
@@ -395,6 +388,12 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
     constexpr iterator end() { return data_.end(); }
     constexpr const_iterator end() const { return data_.end(); }
    private:
+    template <typename RhsXprType> constexpr void clone_(const RhsXprType& rhs) {
+        if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { resize(rhs.rows(), rhs.cols()); }
+        using assignment_executor = typename Base::assignment_executor;
+        assignment_executor::run(*this, rhs, [](auto&& l, const auto& r) { l = r; });
+        return;
+    }
     StorageType data_;
 };
 

@@ -44,7 +44,7 @@ template <typename XprType_> struct MatrixExpr {
         operator=(rhs.mwise());
         return derived();
     }
-    // compound linear algebra
+    // compound algebra
     template <typename RhsXprType_> constexpr XprType& operator+=(const MatrixExpr<RhsXprType_>& rhs) {
         using executor = typename XprType::assignment_executor;
         executor::run(derived(), rhs.derived(), [](auto& l, const auto& r) { l += r; });
@@ -387,17 +387,17 @@ template <typename XprType_> struct MatrixExpr {
     }
 
     // triangular block accessors
-    template <int BlockMode> constexpr TriangularBlock<BlockMode, const XprType> triangular_block() const {
-        return TriangularBlock<BlockMode, const XprType>(derived());
+    template <int BlockMode> constexpr Triangular<BlockMode, const XprType> triangular_block() const {
+        return Triangular<BlockMode, const XprType>(derived());
     }
-    template <int BlockMode> constexpr TriangularBlock<BlockMode, XprType> triangular_block() {
-        return TriangularBlock<BlockMode, XprType>(derived());
+    template <int BlockMode> constexpr Triangular<BlockMode, XprType> triangular_block() {
+        return Triangular<BlockMode, XprType>(derived());
     }
     // cast
-    // template <int ViewMode> constexpr auto as_symmetric() const {
-    //     return internals::symmetric_cast<ViewMode>(derived());
-    // }
-    // template <int ViewMode> constexpr auto as_symmetric() { return internals::symmetric_cast<ViewMode>(derived()); }
+    template <int ViewMode> constexpr auto as_symmetric() { return internals::symmetric_cast<ViewMode>(derived()); }
+    template <int ViewMode> constexpr auto as_symmetric() const {
+        return internals::symmetric_cast<ViewMode>(derived());
+    }
     constexpr auto as_diagonal() const {
         fdapde_static_assert(XprType::Rows == 1 || XprType::Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
         return internals::diagonal_cast(derived());
@@ -458,6 +458,17 @@ almost_equal(const MatrixExpr<LhsXprType>& lhs, const MatrixExpr<RhsXprType>& rh
     }
     return true;
 }
+
+// detection trait
+template <typename XprType> struct is_matrix {
+    static constexpr bool value = std::is_base_of_v<MatrixExpr<std::decay_t<XprType>>, XprType>;
+};
+template <typename XprType> static constexpr bool is_matrix_v = is_matrix<XprType>::value;
+template <typename XprType> struct is_vector {
+    static constexpr bool value =
+      is_matrix_v<XprType> && (std::decay_t<XprType>::Cols == 1 || std::decay_t<XprType>::Rows == 1);
+};
+template <typename XprType> static constexpr bool is_vector_v = is_vector<XprType>::value;
 
 }   // namespace fdapde
 

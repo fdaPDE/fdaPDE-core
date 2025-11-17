@@ -14,8 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_MDARRAY_H__
-#define __FDAPDE_MDARRAY_H__
+#ifndef __FDAPDE_LINALG_MDARRAY_H__
+#define __FDAPDE_LINALG_MDARRAY_H__
 
 #include "header_check.h"
 
@@ -1296,7 +1296,7 @@ class MdArray : public internals::md_handler_base<MdArray<Scalar_, Extents_, Lay
           YOU_SUPPLIED_A_WRONG_NUMBER_OF_ARGUMENTS_TO_RESIZE__NUMBER_OF_ARGUMENTS_MUST_MATCH_NUMBER_OF_DYNAMIC_EXTENTS);
         extents_.resize(static_cast<index_t>(exts)...);
         mapping_ = mapping_t(extents_);
-        data_.resize(Base::size());   // re-allocate space
+        data_.resize(this->size());   // re-allocate space
     }
     template <typename IndexPack>
         requires(internals::is_subscriptable<IndexPack, index_t>)
@@ -1317,7 +1317,7 @@ class MdArray : public internals::md_handler_base<MdArray<Scalar_, Extents_, Lay
             }
         }
         if constexpr (extents_t::DynamicOrder > 0) {
-            if (Base::size() != other.size()) { data_.resize(other.size()); }
+            if (this->size() != other.size()) { data_.resize(other.size()); }
         }
         // to avoid aliasing, first copy data, then update mapping
         if constexpr (internals::slices_to_contiguous_memory<typename OtherDerived::mapping_t, OtherSlicers...>()) {
@@ -1326,7 +1326,7 @@ class MdArray : public internals::md_handler_base<MdArray<Scalar_, Extents_, Lay
             for (auto it = other.begin(); it != other.end(); ++it) { data_[it.mapped_index()] = *it; }
         }
         if constexpr (extents_t::DynamicOrder > 0) {
-            if (Base::size() != other.size()) {
+            if (this->size() != other.size()) {
                 internals::apply_index_pack<Order>(
                   [&]<int... Ns_> { extents_.resize(static_cast<index_t>(other.extent(Ns_))...); });
             }
@@ -1347,10 +1347,10 @@ class MdArray : public internals::md_handler_base<MdArray<Scalar_, Extents_, Lay
         }
         if constexpr (extents_t::DynamicOrder > 0) {
             // to avoid aliasing, first copy data, then update mapping
-            if (Base::size() != other.size()) { data_.resize(other.size()); }
+            if (this->size() != other.size()) { data_.resize(other.size()); }
             for (auto it = other.begin(); it != other.end(); ++it) { data_[it.mapped_index()] = *it; }
 
-            if (Base::size() != other.size()) {
+            if (this->size() != other.size()) {
                 internals::apply_index_pack<Order>(
                   [&]<int... Ns_> { extents_.resize(static_cast<index_t>(other.extent(Ns_))...); });
             }
@@ -1576,10 +1576,10 @@ class MdArray<bool, Extents_, LayoutPolicy_> :
         fdapde_static_assert(Order == 2 || Order == 1, THIS_METHOD_IS_FOR_MDARRAYS_OF_ORDER_ONE_OR_TWO_ONLY);
         if constexpr (Order == 2) {
             BinaryMap<static_extents[0], static_extents[1], const typename traits::bitpack_t> map(
-              data().data(), Base::extent(0), Base::extent(1));
+              data().data(), this->extent(0), this->extent(1));
             return map;
         } else {
-            BinaryMap<static_extents[0], 1, const typename traits::bitpack_t> map(data().data(), Base::extent(0), 1);
+            BinaryMap<static_extents[0], 1, const typename traits::bitpack_t> map(data().data(), this->extent(0), 1);
             return map;
         }
     }
@@ -1605,7 +1605,7 @@ class MdArray<bool, Extents_, LayoutPolicy_> :
         }
         data_ = tmp;
         if constexpr (extents_t::DynamicOrder > 0) {
-            if (Base::size() != other.size()) {
+            if (this->size() != other.size()) {
                 internals::apply_index_pack<Order>(
                   [&]<int... Ns_> { extents_.resize(static_cast<index_t>(other.extent(Ns_))...); });
             }
@@ -1635,7 +1635,7 @@ class MdArray<bool, Extents_, LayoutPolicy_> :
         }
         data_ = tmp;
         if constexpr (extents_t::DynamicOrder > 0) {
-            if (Base::size() != other.size()) {
+            if (this->size() != other.size()) {
                 internals::apply_index_pack<Order>(
                   [&]<int... Ns_> { extents_.resize(static_cast<index_t>(other.extent(Ns_))...); });
             }
@@ -1686,4 +1686,4 @@ class MdMap : public internals::md_handler_base<MdMap<Scalar_, Extents_, LayoutP
 
 }   // namespace fdapde
 
-#endif   // __FDAPDE_MDARRAY_H__
+#endif   // __FDAPDE_LINALG_MDARRAY_H__

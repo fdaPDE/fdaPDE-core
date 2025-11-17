@@ -64,8 +64,7 @@ struct unchecked_t { };
 #include "src/linear_algebra/triangular.h"
 #include "src/linear_algebra/bool.h"
 #include "src/linear_algebra/coeffwise.h"
-
-// #include "src/linear_algebra/symmetric.h"
+#include "src/linear_algebra/symmetric.h"
 
 // // #include "src/linear_algebra/skew.h"
 #include "src/linear_algebra/permutation.h"
@@ -78,7 +77,7 @@ struct unchecked_t { };
 #include "src/linear_algebra/xpr.h"
 
 // // algorithms
-// #include "src/linear_algebra/evd.h"
+#include "src/linear_algebra/evd.h"
 
 // #include "src/linear_algebra/qr.h"
 

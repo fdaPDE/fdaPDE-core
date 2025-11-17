@@ -27,17 +27,18 @@ template <typename XprType_> class EVD {
     fdapde_static_assert(
       XprType::Rows == Dynamic || XprType::Cols == Dynamic || XprType::Rows == XprType::Cols,
       THIS_CLASS_IS_FOR_SQUARE_MATRICES_ONLY);
-    static constexpr int Size = XprType::Rows;
+    static constexpr int Rows = XprType::Rows;
+    static constexpr int Cols = XprType::Cols;
     using Scalar = typename XprType::Scalar;
 
     // tridiagonalize a symmetric matrix via householder reflectors
     // see "Golub, G. H., & Van Loan, C. F. (2013). Matrix computations. JHU press. Sec.8.3.1"
     template <typename XprType>
-    std::tuple<Matrix<Scalar, Size, Size>, OrthogonalMatrix<Scalar, Size>>
+    std::tuple<Matrix<Scalar, Rows, Cols>, OrthogonalMatrix<Scalar, Rows, Cols>>
     householder_tridiagonalize_(const XprType& m) const {
         const int n = m.rows();
-        Matrix<Scalar, Size, Size> T = m;
-        Matrix<Scalar, Size, Size> Q = Matrix<Scalar, Size, Size>::Identity(n, n);
+        Matrix<Scalar, Rows, Cols> T = m;
+        Matrix<Scalar, Rows, Cols> Q = Matrix<Scalar, Rows, Cols>::Identity(n, n);
 
         for (int k = 0; k < n - 2; ++k) {
             const int m = n - k - 1;
@@ -70,32 +71,29 @@ template <typename XprType_> class EVD {
             Vector<Scalar, Dynamic> zQ = Q.block(0, k + 1, n, m) * u;
             Q.block(0, k + 1, n, m) -= zQ * (beta * u.transpose());
         }
-        return std::make_pair(T, internals::orthogonal_wrapper<Size, Size, Matrix<Scalar, Size, Size>>(Q));
+        return std::make_pair(T, internals::orthogonal_wrapper<Matrix<Scalar, Rows, Cols>>(Q));
     }
 
     int max_iter_ = 30;   // taken from LAPACK, actual number of iteration is scaled by matrix size
    public:
     constexpr EVD() = default;
-
-    template <int Rows, int Cols, typename XprType>
-    constexpr explicit EVD(const SymmetricMatrixExpr<Rows, Cols, XprType>& m) {
+    template <typename XprType__>
+    constexpr explicit EVD(const SymmetricMatrixExpr<XprType__>& m) {
         if constexpr (Rows == Dynamic || Cols == Dynamic) { fdapde_assert(m.rows() == m.cols()); }
         compute(m);
     }
 
     // computes the EVD of a symmetric matrix using the implicit QR-iteration with Wilkinson shift
     // see "Golub, G. H., & Van Loan, C. F. (2013). Matrix computations. JHU press. Ch.8.3"
-    template <int Rows, int Cols, typename XprType>
-    constexpr void compute(const SymmetricMatrixExpr<Rows, Cols, XprType>& mtx) {
-        fdapde_static_assert(Rows == Cols && Rows == Size, THIS_METHOD_IS_FOR_SQUARE_MATRICES_ONLY);
+    template <typename XprType__> constexpr void compute(const SymmetricMatrixExpr<XprType__>& mtx) {
         auto [T, Q_] = householder_tridiagonalize_(mtx.derived());
         const int n = T.rows();
         const int max_iter = max_iter_ * n;
         Matrix<Scalar, Rows, Cols> Q = Matrix<Scalar, Rows, Cols>::Identity(n, n);
         // extract diagonal and subdiagonal
-        Vector<Scalar, Size> dd;
-        Vector<Scalar, Size == Dynamic ? Dynamic : (Size - 1)> sd;
-        if constexpr (Size == Dynamic) {
+        Vector<Scalar, Rows> dd;
+        Vector<Scalar, Rows == Dynamic ? Dynamic : (Rows - 1)> sd;
+        if constexpr (Rows == Dynamic) {
             dd.resize(n);
             sd.resize(n - 1);
         }
@@ -177,13 +175,13 @@ template <typename XprType_> class EVD {
         eigenvalues_ = dd;
     }
     // observers
-    constexpr const Vector<Scalar, Size>& eigenvalues() const { return eigenvalues_; }
+    constexpr const Vector<Scalar, Rows>& eigenvalues() const { return eigenvalues_; }
     constexpr auto eigenvectors() const {
-      return internals::orthogonal_wrapper<Size, Size, Matrix<Scalar, Size, Size>>(eigenvectors_);
+      return internals::orthogonal_wrapper<Matrix<Scalar, Rows, Cols>>(eigenvectors_);
     }
    private:
-    Matrix<Scalar, Size, Size> eigenvectors_;
-    Vector<Scalar, Size> eigenvalues_;
+    Matrix<Scalar, Rows, Cols> eigenvectors_;
+    Vector<Scalar, Rows> eigenvalues_;
 };
 
 }   // namespace fdapde
