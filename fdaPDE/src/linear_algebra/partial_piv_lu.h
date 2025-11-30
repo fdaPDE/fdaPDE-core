@@ -27,7 +27,8 @@ template <typename XprType_> class PartialPivLU {
     fdapde_static_assert(
       XprType::Rows == Dynamic || XprType::Cols == Dynamic || XprType::Rows == XprType::Cols,
       THIS_CLASS_IS_FOR_SQUARE_MATRICES_ONLY);
-    static constexpr int Size = XprType::Rows;
+    static constexpr int Rows = XprType::Rows;
+    static constexpr int Cols = XprType::Cols;
     using Scalar = typename XprType::Scalar;
    public:
     // constructors
@@ -43,8 +44,8 @@ template <typename XprType_> class PartialPivLU {
         lu_ = m;
         Scalar pivot_threshold = std::numeric_limits<Scalar>::epsilon() * m.inf_norm();
         // initialization
-        Vector<int, Size> perm;
-        if constexpr (Size == Dynamic) { perm.resize(n); }
+        Vector<int, Rows> perm;
+        if constexpr (Rows == Dynamic || Cols == Dynamic) { perm.resize(n); }
         for (int i = 0; i < n; ++i) perm[i] = i;
         info_ = 0;
         rank_ = n;
@@ -77,11 +78,11 @@ template <typename XprType_> class PartialPivLU {
                 for (int c = k + 1; c < m.cols(); ++c) { lu_(r, c) -= alpha * lu_(k, c); }
             }
         }
-        P_ = PermutationMatrix<Size>(perm);
+        P_ = PermutationMatrix<Rows, Cols>(perm);
         return;
     }
     // observers
-    constexpr const PermutationMatrix<Size>& P() const { return P_; }
+    constexpr const PermutationMatrix<Rows, Cols>& P() const { return P_; }
     constexpr auto L() const { return lu_.template triangular_block<UnitLower>(); }
     constexpr auto U() const { return lu_.template triangular_block<Upper>(); }
     constexpr int info() const { return info_; }   // 0 = success, >0 = first zero pivot
@@ -104,8 +105,8 @@ template <typename XprType_> class PartialPivLU {
         return x;
     }
    private:
-    Matrix<Scalar, Size, Size, RowMajor> lu_;   // holds both L (unit lower) and U (upper)
-    PermutationMatrix<Size> P_;
+    Matrix<Scalar, Rows, Cols, RowMajor> lu_;   // holds both L (unit lower) and U (upper)
+    PermutationMatrix<Rows, Cols> P_;
     int info_;
     int rank_;
 };

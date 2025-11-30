@@ -23,8 +23,9 @@ namespace fdapde {
 namespace internals {
 
 // sizing traits
-template <typename XprType> struct is_dynamic_sized {
-    static constexpr bool value = std::decay_t<XprType>::Rows == Dynamic || std::decay_t<XprType>::Cols == Dynamic;
+template <typename XprType_> struct is_dynamic_sized {
+    using XprType = std::decay_t<XprType_>;
+    static constexpr bool value = XprType::Rows == Dynamic || XprType::Cols == Dynamic;
 };
 template <typename XprType> static constexpr bool is_dynamic_sized_v = is_dynamic_sized<XprType>::value;
 template <typename XprType> struct is_adapted_sized {

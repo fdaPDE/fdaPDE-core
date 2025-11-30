@@ -38,11 +38,12 @@ template <typename XprType_> class EVD {
     householder_tridiagonalize_(const XprType& m) const {
         const int n = m.rows();
         Matrix<Scalar, Rows, Cols> T = m;
-        Matrix<Scalar, Rows, Cols> Q = Matrix<Scalar, Rows, Cols>::Identity(n, n);
+        Matrix<Scalar, Rows, Cols> Q = IdentityMatrix<Rows, Cols>(n, n);
 
         for (int k = 0; k < n - 2; ++k) {
             const int m = n - k - 1;
-            Vector<Scalar, Dynamic> u = T.block(k + 1, k, m, 1);
+            Vector<Scalar, Dynamic> u(m);
+            for (int i = 0; i < m; ++i) { u[i] = T(k + 1 + i, k); }
             Scalar u_norm = u.norm();
             if (almost_equal(u_norm, 0.0, 1e-14)) continue;   // column is already zero below diagonal
 
@@ -71,14 +72,13 @@ template <typename XprType_> class EVD {
             Vector<Scalar, Dynamic> zQ = Q.block(0, k + 1, n, m) * u;
             Q.block(0, k + 1, n, m) -= zQ * (beta * u.transpose());
         }
-        return std::make_pair(T, internals::orthogonal_wrapper<Matrix<Scalar, Rows, Cols>>(Q));
+        return std::make_pair(T, OrthogonalMatrix<Scalar, Rows, Cols>(Q, unchecked));
     }
 
     int max_iter_ = 30;   // taken from LAPACK, actual number of iteration is scaled by matrix size
    public:
     constexpr EVD() = default;
-    template <typename XprType__>
-    constexpr explicit EVD(const SymmetricMatrixExpr<XprType__>& m) {
+    template <typename XprType__> constexpr explicit EVD(const SymmetricMatrixExpr<XprType__>& m) {
         if constexpr (Rows == Dynamic || Cols == Dynamic) { fdapde_assert(m.rows() == m.cols()); }
         compute(m);
     }
@@ -89,7 +89,7 @@ template <typename XprType_> class EVD {
         auto [T, Q_] = householder_tridiagonalize_(mtx.derived());
         const int n = T.rows();
         const int max_iter = max_iter_ * n;
-        Matrix<Scalar, Rows, Cols> Q = Matrix<Scalar, Rows, Cols>::Identity(n, n);
+        Matrix<Scalar, Rows, Cols> Q = IdentityMatrix<Rows, Cols>(n, n);
         // extract diagonal and subdiagonal
         Vector<Scalar, Rows> dd;
         Vector<Scalar, Rows == Dynamic ? Dynamic : (Rows - 1)> sd;
@@ -183,6 +183,7 @@ template <typename XprType_> class EVD {
     Matrix<Scalar, Rows, Cols> eigenvectors_;
     Vector<Scalar, Rows> eigenvalues_;
 };
+template <typename XprType> EVD(const SymmetricMatrixExpr<XprType>& m) -> EVD<XprType>;
 
 }   // namespace fdapde
 

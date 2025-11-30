@@ -65,21 +65,17 @@ struct unchecked_t { };
 #include "src/linear_algebra/bool.h"
 #include "src/linear_algebra/coeffwise.h"
 #include "src/linear_algebra/symmetric.h"
-
-// // #include "src/linear_algebra/skew.h"
+// #include "src/linear_algebra/skew.h"
 #include "src/linear_algebra/permutation.h"
-// // #include "src/linear_algebra/spd.h"
-
+#include "src/linear_algebra/spd.h"
 
 #include "src/linear_algebra/partial_piv_lu.h"
+#include "src/linear_algebra/evd.h"
+// #include "src/linear_algebra/qr.h"
 
 // expression template system
 #include "src/linear_algebra/xpr.h"
 
-// // algorithms
-#include "src/linear_algebra/evd.h"
-
-// #include "src/linear_algebra/qr.h"
 
 // clang-format on
 

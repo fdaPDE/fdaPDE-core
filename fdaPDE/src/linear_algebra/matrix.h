@@ -37,8 +37,8 @@ struct ProceduralMatrix : public MatrixExpr<ProceduralMatrix<Functor_, Rows_, Co
     constexpr ProceduralMatrix() : rows_(Rows_ == Dynamic ? 0 : Rows), cols_(Cols_ == Dynamic ? 0 : Cols) { }
     constexpr explicit ProceduralMatrix(Functor_ f) :
         rows_(Rows_ == Dynamic ? 0 : Rows), cols_(Cols_ == Dynamic ? 0 : Cols), f_(f) { }
-    constexpr ProceduralMatrix(int rows, int cols, Functor_ f) : rows_(rows), cols_(cols), f_(f) {
-        fdapde_static_assert(Rows == Dynamic || Cols == Dynamic, THIS_METHOD_IS_FOR_DYNAMIC_SIZED_MATRICES_ONLY);
+    constexpr ProceduralMatrix(int rows, int cols, Functor_ f) :
+        rows_(Rows == Dynamic ? rows : Rows), cols_(Cols == Dynamic ? cols : Cols), f_(f) {
         fdapde_assert(rows >= 0 && cols >= 0);
     }
     constexpr ProceduralMatrix(int rows, int cols) : ProceduralMatrix(rows, cols, Functor_()) { }
