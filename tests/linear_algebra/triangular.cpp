@@ -65,7 +65,24 @@ TEST(linear_algebra, triangular) {
 	// copy assignment
         UpperTriangularMatrix<double, 3, 3> M5;
         M5 = M3;
-	EXPECT_EQ(M5, M3);
+        EXPECT_EQ(M5, M3);
+
+        // triangular arithmetic
+        auto e4 = 5 * M1;
+        Matrix<double, 3, 3> e4_({5, 0, 0, 10, 15, 0, 20, 25, 30});
+        EXPECT_EQ(e4, e4_);
+        auto e5 = M1 / 2.0;
+        Matrix<double, 3, 3> e5_({1. / 2, 0, 0, 1, 3. / 2, 0, 2, 5. / 2, 3});
+        EXPECT_EQ(e5, e5_);
+        auto e6 = M1 + M1;
+        Matrix<double, 3, 3> e6_({2, 0, 0, 4, 6, 0, 8, 10, 12});
+        EXPECT_EQ(e6, e6_);
+        auto e7 = M1 + M2;   // different storage order	
+        Matrix<double, 3, 3> e7_({2, 0, 0, 4, 7, 0, 7, 10, 12});
+        EXPECT_EQ(e7, e7_);
+        auto e8 = M1 - M1;
+        Matrix<double, 3, 3> e8_({0, 0, 0, 0, 0, 0, 0, 0, 0});
+        EXPECT_EQ(e8, e8_);
     }
 
     // dynamic sized

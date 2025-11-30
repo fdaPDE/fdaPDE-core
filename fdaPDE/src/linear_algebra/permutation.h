@@ -184,14 +184,16 @@ constexpr auto operator*(const PermutationMatrixExpr<LhsXprType>& lhs, const Per
     return PermutationCompositionOp<LhsXprType, RhsXprType>(lhs.derived(), rhs.derived());
 }
 
-// owning permutation matrix type. 
-template <int Size_> struct PermutationMatrix : public PermutationMatrixExpr<PermutationMatrix<Size_>> {
-   private:
-    using StorageType = Vector<int, Size_>;
+// owning permutation matrix type.
+template <int Rows_, int Cols_>
+class PermutationMatrix : public PermutationMatrixExpr<PermutationMatrix<Rows_, Cols_>> {
+    fdapde_static_assert(
+      Rows_ == Dynamic || Cols_ == Dynamic || Rows_ == Cols_, THIS_CLASS_IS_FOR_SQUARE_MATRICES_ONLY);
+    using StorageType = Vector<int, Rows_>;
    public:
     using Scalar = int;
-    static constexpr int Rows = Size_;
-    static constexpr int Cols = Size_;
+    static constexpr int Rows = Rows_;
+    static constexpr int Cols = Cols_;
     static constexpr int StorageOrder = StorageType::StorageOrder;
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
@@ -210,14 +212,25 @@ template <int Size_> struct PermutationMatrix : public PermutationMatrixExpr<Per
         using RhsXprType = std::decay_t<RhsXprType_>;
         fdapde_static_assert(
           RhsXprType::Rows == 1 || RhsXprType::Cols == 1, THIS_METHOD_IS_ONLY_FOR_ROW_OR_COLUMN_VECTORS);
-        if constexpr (Size_ != Dynamic) { fdapde_assert(rhs.size() == Size_); }
+        if constexpr (Rows_ != Dynamic || Cols_ != Dynamic) {
+            fdapde_assert(
+              std::cmp_equal(rhs.size() FDAPDE_COMMA Rows_) && std::cmp_equal(rhs.size() FDAPDE_COMMA Cols_));
+        }
     }
-    constexpr explicit PermutationMatrix(const std::vector<Scalar>& vec) : permutation_(vec) {
-        if constexpr (Size_ != Dynamic) { fdapde_assert(vec.size() == Size_); }
+    template <typename Scalar__>
+        requires(std::is_constructible_v<Scalar, Scalar__>)
+    constexpr explicit PermutationMatrix(const std::vector<Scalar__>& vec) : permutation_(vec) {
+        if constexpr (Rows_ != Dynamic || Cols_ != Dynamic) {
+            fdapde_assert(
+              std::cmp_equal(vec.size() FDAPDE_COMMA Rows_) && std::cmp_equal(vec.size() FDAPDE_COMMA Cols_));
+        }
     }
-    template <std::size_t Size>
-    constexpr explicit PermutationMatrix(const Scalar (&permutation)[Size]) : permutation_(permutation) {
-        fdapde_static_assert(Size_ != Dynamic && Size_ == Size, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
+    template <typename Scalar__, std::size_t Size>
+        requires(std::is_constructible_v<Scalar, Scalar__>)
+    constexpr explicit PermutationMatrix(const Scalar__ (&permutation)[Size]) : permutation_(permutation) {
+        fdapde_static_assert(
+          Rows_ != Dynamic && Cols_ != Dynamic && Rows_ == Size && Cols_ == Size,
+          THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
     }
     // observers
     constexpr int rows() const { return permutation_.size(); }
@@ -230,7 +243,7 @@ template <int Size_> struct PermutationMatrix : public PermutationMatrixExpr<Per
     }
    private:
     template <typename RhsXprType> constexpr void clone_(const RhsXprType& rhs) {
-        if constexpr (Size_ == Dynamic) { permutation_.resize(rhs.rows()); }
+        if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { permutation_.resize(rhs.rows()); }
         assignment_executor::run(permutation_, rhs.permutation(), [](auto&& l, const auto& r) { l = r; });
         return;
     }

@@ -21,8 +21,11 @@
 
 namespace fdapde {
 
-// symmetric matrix type system
 template <typename XprType> class EVD;
+template <typename Scalar_, int Rows_, int Cols_, typename Metric_, int StorageOrder_ = RowMajor> struct SPDMatrix;
+struct log_euclidean { };
+  
+// symmetric matrix type system
 template <typename XprType> struct SymmetricMatrixExpr;
   
 namespace internals {
@@ -52,6 +55,7 @@ struct symmetric_wrapper : public SymmetricMatrixExpr<symmetric_wrapper<ViewMode
         if constexpr (ViewMode == Upper) { return i > j ? xpr_(j, i) : xpr_(i, j); }
         if constexpr (ViewMode == Lower) { return i < j ? xpr_(j, i) : xpr_(i, j); }
     }
+    constexpr const XprTypeNested& rep() const { return xpr_; }
    private:
     XprTypeNested xpr_;
 };
@@ -72,8 +76,27 @@ template <typename XprType_> struct SymmetricMatrixExpr : public MatrixExpr<XprT
     using MatrixExpr<XprType_>::operator=;
 
     auto evd() const { return EVD<XprType>(derived()); }
-    constexpr const auto& data() const { return derived().data(); }
-    constexpr auto& data() { return derived().data(); }
+    // compute matrix exponential, returns SPD matrix bound to MetricType
+    template <typename MetricType> constexpr auto exp() const {
+        using Scalar = typename XprType::Scalar;
+        constexpr int Rows = XprType::Rows;
+        constexpr int Cols = XprType::Cols;
+        // symmetric matrices are the tangent space to the SPD cone under the log-euclidean metric. avoid to compute a
+        // matrix exp (from symm to spd) followed by a matrix log (from spd back to symm)
+        if constexpr (std::is_same_v<std::decay_t<MetricType>, log_euclidean>) {
+            return SPDMatrix<Scalar, Rows, Cols, log_euclidean>(derived());
+        } else {
+            // generic fallback
+            EVD<XprType> evd_(derived());
+            Vector<Scalar, Rows> exp_eigval = evd_.eigenvalues().cwise().exp();   // extract eigenvalues' exponential
+            return SPDMatrix<double, Rows, Cols, MetricType>(
+              evd_.eigenvectors() * exp_eigval.as_diagonal() * evd_.eigenvectors().transpose(), fdapde::unchecked);
+        }
+    }
+
+    // internal triangular matrix representation
+    constexpr decltype(auto) rep() const { return derived().rep(); }
+    constexpr decltype(auto) rep() { return derived().rep(); }
 };
 
 // base class for symmetric matrices
@@ -105,7 +128,7 @@ class SymmetricMatrixBase : public SymmetricMatrixExpr<SymmetricMatrixType> {
         constexpr operator Scalar() { return data_[index_]; }
         constexpr operator Scalar() const { return data_[index_]; }
        private:
-      constexpr int compute_linear_index_(int i, int j, [[maybe_unused]] int size) const {
+        constexpr int compute_linear_index_(int i, int j, [[maybe_unused]] int size) const {
             if constexpr (StorageOrder == RowMajor) { return i * (i + 1) / 2 + j; }
             if constexpr (StorageOrder == ColMajor) { return j * (2 * size - j + 1) / 2 + (i - j); }
         }
@@ -131,26 +154,26 @@ class SymmetricMatrixBase : public SymmetricMatrixExpr<SymmetricMatrixType> {
 // symmetric matrices vector-space structure (additive group)
 template <typename LhsXprType, typename RhsXprType>
 constexpr auto operator+(const SymmetricMatrixExpr<LhsXprType>& lhs, const SymmetricMatrixExpr<RhsXprType>& rhs) {
-    return internals::symmetric_cast<Lower>(lhs.data() + rhs.data());
+    return internals::symmetric_cast<Lower>(lhs.rep() + rhs.rep());
 }
 template <typename LhsXprType, typename RhsXprType>
 constexpr auto operator-(const SymmetricMatrixExpr<LhsXprType>& lhs, const SymmetricMatrixExpr<RhsXprType>& rhs) {
-    return internals::symmetric_cast<Lower>(lhs.data() - rhs.data());
+    return internals::symmetric_cast<Lower>(lhs.rep() - rhs.rep());
 }
 template <typename XprType, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
 constexpr auto operator*(const SymmetricMatrixExpr<XprType>& lhs, ScalarType rhs) {
-    return internals::symmetric_cast<Lower>(lhs.data() * rhs);
+    return internals::symmetric_cast<Lower>(lhs.rep() * rhs);
 }
 template <typename XprType, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
 constexpr auto operator*(ScalarType lhs, const SymmetricMatrixExpr<XprType>& rhs) {
-    return internals::symmetric_cast<Lower>(lhs * rhs.data());
+    return internals::symmetric_cast<Lower>(lhs * rhs.rep());
 }
 template <typename XprType, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
 constexpr auto operator/(const SymmetricMatrixExpr<XprType>& lhs, ScalarType rhs) {
-    return internals::symmetric_cast<Lower>(lhs.data() / rhs);
+    return internals::symmetric_cast<Lower>(lhs.rep() / rhs);
 }
 // any other operation doesn't preserve symmetry. A raw MatrixExpr is returned
 
@@ -170,26 +193,31 @@ struct SymmetricMatrix :
     static constexpr int Rows = Rows_;
     static constexpr int Cols = Cols_;
     static constexpr int NestAsRef = 0;
+    static constexpr int ViewMode = StorageType::ViewMode;
     static constexpr int StorageOrder = StorageType::StorageOrder;
     static constexpr int ReadOnly = std::is_const_v<Scalar_>;
     using assignment_executor = typename StorageType::assignment_executor;
 
     constexpr SymmetricMatrix() : Base() { }
     // copy semantic
-    constexpr SymmetricMatrix(const SymmetricMatrix& rhs) : Base() { data_ = rhs.data(); }
+    constexpr SymmetricMatrix(const SymmetricMatrix& rhs) : Base() { data_ = rhs.rep(); }
     constexpr SymmetricMatrix& operator=(const SymmetricMatrix& rhs) {
         this->rows_ = rhs.rows();
         this->cols_ = rhs.cols();
-        data_ = rhs.data();
+        data_ = rhs.rep();
         return *this;
     }
 
     constexpr explicit SymmetricMatrix(int rows, int cols) : Base(), data_(rows, cols) {
         fdapde_static_assert(Rows == Dynamic || Cols == Dynamic, THIS_METHOD_IS_FOR_DYNAMIC_SIZED_MATRICES_ONLY);
-        fdapde_assert(rows == cols);
+        fdapde_assert(rows > 0 && cols > 0 && rows == cols);
     }
-    template <typename RhsXprType_>   // ViewMode imposed by triangular expression
-    constexpr SymmetricMatrix(const TriangularMatrixExpr<RhsXprType_>& rhs) : data_(rhs) { }
+    template <typename RhsXprType_>
+    constexpr SymmetricMatrix(const SymmetricMatrixExpr<RhsXprType_>& rhs) : data_(rhs) { }
+    template <typename RhsXprType_> constexpr SymmetricMatrix& operator=(const SymmetricMatrixExpr<RhsXprType_>& rhs) {
+        data_ = rhs;
+        return *this;
+    }
     template <typename Scalar__>
         requires(std::is_constructible_v<Scalar_, Scalar__>)
     constexpr explicit SymmetricMatrix(const std::vector<Scalar__>& data) : data_(data) { }
@@ -208,6 +236,8 @@ struct SymmetricMatrix :
     // observers
     constexpr int rows() const { return data_.rows(); }
     constexpr int cols() const { return data_.cols(); }
+    constexpr const StorageType& rep() const { return data_; }
+    constexpr StorageType& rep() { return data_; }
     // data pointers
     constexpr const Scalar* data() const { return data_.data(); }
     constexpr Scalar* data() { return data_.data(); }
@@ -249,6 +279,8 @@ class SymmetricMatrixView :
     // observers
     constexpr int rows() const { return data_.rows(); }
     constexpr int cols() const { return data_.cols(); }
+    constexpr const StorageType& rep() const { return data_; }
+    constexpr StorageType& rep() { return data_; }
     // data pointers
     constexpr const Scalar* data() const { return data_.data(); }
     constexpr Scalar* data() { return data_.data(); }
@@ -265,3 +297,4 @@ template <typename XprType> static constexpr bool is_symmetric_matrix_v = is_sym
 }   // namespace fdapde
 
 #endif // __FDAPDE_LINALG_SYMMETRIC_H__
+

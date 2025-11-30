@@ -18,6 +18,8 @@
 #include <gtest/gtest.h>   // testing framework
 using namespace fdapde;
 
+#include <Eigen/Dense>
+
 TEST(linear_algebra, symmetric) {
     // static-sized
     {
@@ -37,6 +39,17 @@ TEST(linear_algebra, symmetric) {
         SymmetricMatrix<double, 3, 3, ColMajor> M2({1, 2, 3, 4, 5, 6});
         Matrix<double, 3, 3> M2_({1, 2, 3, 2, 4, 5, 3, 5, 6});
         EXPECT_EQ(M2, M2_);
+
+        // symmetric arithmetic
+        // Matrix<double, 3, 3> e = M1 + M1;
+        // std::cout << e << std::endl;
+
+        // auto A = M1.exp<log_euclidean>();
+
+        // auto e = A + A; // this is made in the log euclidean domain
+
+        // std::cout << A << std::endl;
+	
     }
 
     // dynamic sized

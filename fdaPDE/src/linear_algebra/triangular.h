@@ -27,6 +27,28 @@ template <typename Scalar_, int Rows_, int Cols_, int ViewMode_, int StorageOrde
 
 namespace internals {
 
+// given a linear memory block of size x representing a flattened n x n triangular matrix, computes n, i.e. finds the
+// integer solution n to the quadratic equation x = 0.5 * (n * (n + 1))
+constexpr int compute_triangular_shape(int x) {
+    return (fdapde::sqrt(static_cast<double>(1 + 8 * x)) - 1) / 2;
+}
+
+// if xpr is a vector-expression, rescales the pair (i, j) to perform a triangular-like access on an n x n matrix,
+// otherwise forwards (i, j) to xpr
+template <int ViewMode, int StorageOrder, typename XprType>
+constexpr decltype(auto) triangular_access(XprType&& xpr, int i, int j, [[maybe_unused]] int n) {
+    if constexpr (is_vector_shaped_v<XprType>) {
+        if constexpr (StorageOrder == RowMajor) {
+            return xpr[ViewMode == Upper ? i * (2 * n - i + 1) / 2 + (j - i) : i * (i + 1) / 2 + j];
+        }
+        if constexpr (StorageOrder == ColMajor) {
+            return xpr[ViewMode == Lower ? j * (2 * n - j + 1) / 2 + (i - j) : j * (j + 1) / 2 + i];
+        }
+    } else {
+        return xpr(i, j);
+    }
+}
+
 struct triangular_assignment_executor {
     template <typename DstXprType, typename SrcXprType, typename AssignmentOp>
         requires(requires(AssignmentOp op, typename DstXprType::Scalar& l, const typename SrcXprType::Scalar& r) {
@@ -37,20 +59,29 @@ struct triangular_assignment_executor {
         constexpr int ViewMode = DstXprType::ViewMode;
         fdapde_static_assert(
           ViewMode == Upper || ViewMode == Lower, TRIANGULAR_BLOCK_ASSIGNMENT_REQUIRES_EITHER_UPPER_OR_LOWER_VIEW);
+
+        constexpr int DstStorageOrder = DstXprType::StorageOrder;
+        constexpr int SrcStorageOrder = SrcXprType::StorageOrder;
         int row = 0, col = 0;
         for (int i = 0, n = dst.rows(); i < n; ++i) {
             for (int j = 0; j < i; ++j) {
                 row = ViewMode == Lower ? i : j;
                 col = ViewMode == Lower ? j : i;
-                op(dst(row, col), src(row, col));
+                op(
+                  triangular_access<ViewMode, DstStorageOrder>(dst.rep(), row, col, n),
+                  triangular_access<ViewMode, SrcStorageOrder>(src, row, col, n));
             }
         }
         // assign diagonal
-        for (int i = 0, n = dst.rows(); i < n; ++i) { dst(i, i) = src(i, i); }
+        for (int i = 0, n = dst.rows(); i < n; ++i) {
+            op(
+              triangular_access<ViewMode, DstStorageOrder>(dst.rep(), i, i, n),
+              triangular_access<ViewMode, SrcStorageOrder>(src, i, i, n));
+        }
     }
 };
 
-// class wrapping a linear vector to the expression of a triangular matrix. internal usage only
+// class wrapping a matrix expression to the expression of a triangular matrix. internal usage only
 template <int ViewMode_, typename TriangularXprType_>
 struct triangular_wrapper : TriangularMatrixExpr<triangular_wrapper<ViewMode_, TriangularXprType_>> {
    private:
@@ -59,8 +90,10 @@ struct triangular_wrapper : TriangularMatrixExpr<triangular_wrapper<ViewMode_, T
     using XprTypeNested = internals::ref_select_t<TriangularXprType_>;
    public:
     using Scalar = typename XprType::Scalar;
-    static constexpr int Rows = XprType::Rows == 1 ? XprType::Cols : XprType::Rows;
-    static constexpr int Cols = XprType::Cols == 1 ? XprType::Rows : XprType::Cols;
+    static constexpr int Rows = is_vector_shaped_v<XprType> ?
+                                  compute_triangular_shape(XprType::Rows == 1 ? XprType::Cols : XprType::Rows) :
+                                  XprType::Rows;
+    static constexpr int Cols = Rows;
     static constexpr int ViewMode = ViewMode_;
     static constexpr int StorageOrder = XprType::StorageOrder;
     static constexpr int NestAsRef = 0;
@@ -68,17 +101,37 @@ struct triangular_wrapper : TriangularMatrixExpr<triangular_wrapper<ViewMode_, T
 
     template <typename XprType__>
         requires(std::is_constructible_v<XprTypeNested, XprType__>)
-    constexpr triangular_wrapper(XprType__&& xpr) : xpr_(std::forward<XprType__>(xpr)) { }
-    constexpr Scalar operator()(int i, int j) const {
-        fdapde_assert(i >= 0 && i < xpr_.rows() && j >= 0 && j < xpr_.cols());
-        if constexpr (ViewMode == Upper) { return i > j ? Scalar(0) : xpr_(i, j); }
-        if constexpr (ViewMode == Lower) { return i < j ? Scalar(0) : xpr_(i, j); }
-        if constexpr (ViewMode == UnitUpper) { return i > j ? Scalar(0) : (i == j ? Scalar(1) : xpr_(i, j)); }
-        if constexpr (ViewMode == UnitLower) { return i < j ? Scalar(0) : (i == j ? Scalar(1) : xpr_(i, j)); }
+    constexpr triangular_wrapper(XprType__&& xpr) :
+        xpr_(std::forward<XprType__>(xpr)),
+        rows_(is_vector_shaped_v<XprType> ? compute_triangular_shape(xpr.size()) : xpr.rows()),
+        cols_(is_vector_shaped_v<XprType> ? compute_triangular_shape(xpr.size()) : xpr.cols()) {
+        fdapde_assert(
+          xpr.rows() > 0 && xpr.cols() > 0 && (xpr.rows() == 1 || xpr.cols() == 1 || xpr.rows() == xpr.cols()));
     }
-    const XprTypeNested& data() const { return xpr_; }
+    constexpr Scalar operator()(int i, int j) const {
+        fdapde_assert(i >= 0 && i < rows_ && j >= 0 && j < cols_);
+        if constexpr (ViewMode == Upper) {
+            return i > j ? Scalar(0) : triangular_access<ViewMode, StorageOrder>(xpr_, i, j, xpr_.size());
+        }
+        if constexpr (ViewMode == Lower) {
+            return i < j ? Scalar(0) : triangular_access<ViewMode, StorageOrder>(xpr_, i, j, xpr_.size());
+        }
+        if constexpr (ViewMode == UnitUpper) {
+            return i > j ? Scalar(0) :
+                           (i == j ? Scalar(1) : triangular_access<ViewMode, StorageOrder>(xpr_, i, j, xpr_.size()));
+        }
+        if constexpr (ViewMode == UnitLower) {
+            return i < j ? Scalar(0) :
+                           (i == j ? Scalar(1) : triangular_access<ViewMode, StorageOrder>(xpr_, i, j, xpr_.size()));
+        }
+    }
+    // observers
+    constexpr int rows() const { return rows_; }
+    constexpr int cols() const { return cols_; }
+    constexpr const XprTypeNested& rep() const { return xpr_; }
    private:
     XprTypeNested xpr_;
+    int rows_, cols_;
 };
 
 // helper cast function
@@ -161,8 +214,10 @@ template <typename XprType_> struct TriangularMatrixExpr : public MatrixExpr<Xpr
         if constexpr (ViewMode == Upper || ViewMode == UnitUpper) { return bwd_sub_(b); }
     }
     constexpr double determinant() const { return derived().diagonal().prod(); }
-    constexpr const auto& data() const { return derived().data(); }
-    constexpr auto& data() { return derived().data(); }
+    constexpr decltype(auto) rep() const { return derived().rep(); }
+    constexpr decltype(auto) rep() { return derived().rep(); }
+    constexpr auto data() const { return derived().data(); }
+    constexpr auto data() { return derived().data(); }
    private:
     // forward substitution for lower-triangular matrix, vector rhs
     template <typename RhsXprType>
@@ -304,7 +359,7 @@ struct Triangular : public TriangularMatrixExpr<Triangular<ViewMode_, XprType_>>
     // observers
     constexpr int rows() const { return xpr_.rows(); }
     constexpr int cols() const { return xpr_.cols(); }
-    const XprTypeNested& data() const { return xpr_; }
+    constexpr const XprTypeNested& rep() const { return xpr_; }
    private:
     XprTypeNested xpr_;
 };
@@ -329,7 +384,7 @@ class TriangularMatrixBase : public TriangularMatrixExpr<TriangularMatrixType> {
         using Scalar = Scalar__;
 
         constexpr triangular_proxy(Scalar__* data, int i, int j, int size) :
-            data_(data), index_(compute_linear_index_(i, j, size)), b_(ViewMode__ == Upper ? (i <= j) : (i >= j)) { }
+            data_(data), index_(triangular_access_(i, j, size)), b_(ViewMode__ == Upper ? (i <= j) : (i >= j)) { }
         template <typename T>
             requires(std::is_convertible_v<T, Scalar>)
         constexpr triangular_proxy& operator=(T value) {
@@ -350,13 +405,9 @@ class TriangularMatrixBase : public TriangularMatrixExpr<TriangularMatrixType> {
             if constexpr (ViewMode__ == Upper) { return b_ ? data_[index_] : Scalar(0); }
         }
        private:
-        constexpr int compute_linear_index_(int i, int j, int size) const {
-            if constexpr (StorageOrder == RowMajor) {
-                return ViewMode == Upper ? i * (2 * size - i + 1) / 2 + (j - i) : i * (i + 1) / 2 + j;
-            }
-            if constexpr (StorageOrder == ColMajor) {
-                return ViewMode == Lower ? j * (2 * size - j + 1) / 2 + (i - j) : j * (j + 1) / 2 + i;
-            }
+        // internally, acess is always performed in RowMajor-format
+        constexpr int triangular_access_(int i, int j, int size) const {
+            return ViewMode == Upper ? i * (2 * size - i + 1) / 2 + (j - i) : i * (i + 1) / 2 + j;
         }
         Scalar* data_;
         int index_;
@@ -392,27 +443,27 @@ class TriangularMatrixBase : public TriangularMatrixExpr<TriangularMatrixType> {
 template <typename LhsXprType, typename RhsXprType>
     requires(LhsXprType::ViewMode == RhsXprType::ViewMode)   // if summing different ViewMode, exit from triangular TS
 constexpr auto operator+(const TriangularMatrixExpr<LhsXprType>& lhs, const TriangularMatrixExpr<RhsXprType>& rhs) {
-    return internals::triangular_cast<LhsXprType::ViewMode>(lhs.data() + rhs.data());
+    return internals::triangular_cast<LhsXprType::ViewMode>(lhs.rep() + rhs.rep());
 }
 template <typename LhsXprType, typename RhsXprType>
     requires(LhsXprType::ViewMode == RhsXprType::ViewMode)   // if summing different ViewMode, exit from triangular TS
 constexpr auto operator-(const TriangularMatrixExpr<LhsXprType>& lhs, const TriangularMatrixExpr<RhsXprType>& rhs) {
-    return internals::triangular_cast<LhsXprType::ViewMode>(lhs.data() - rhs.data());
+    return internals::triangular_cast<LhsXprType::ViewMode>(lhs.rep() - rhs.rep());
 }
 template <typename XprType, typename CoeffType>
     requires(std::is_arithmetic_v<CoeffType>)
 constexpr auto operator*(const TriangularMatrixExpr<XprType>& lhs, CoeffType rhs) {
-    return internals::triangular_cast<XprType::ViewMode>(lhs.data() * rhs);
+    return internals::triangular_cast<XprType::ViewMode>(lhs.rep() * rhs);
 }
 template <typename XprType, typename CoeffType>
     requires(std::is_arithmetic_v<CoeffType>)
 constexpr auto operator*(CoeffType lhs, const TriangularMatrixExpr<XprType>& rhs) {
-    return internals::triangular_cast<XprType::ViewMode>(lhs * rhs.data());
+    return internals::triangular_cast<XprType::ViewMode>(lhs * rhs.rep());
 }
 template <typename XprType, typename CoeffType>
     requires(std::is_arithmetic_v<CoeffType>)
 constexpr auto operator/(const TriangularMatrixExpr<XprType>& lhs, CoeffType rhs) {
-    return internals::triangular_cast<XprType::ViewMode>(lhs.data() / rhs);
+    return internals::triangular_cast<XprType::ViewMode>(lhs.rep() / rhs);
 }
 
 // specialized products
@@ -495,6 +546,7 @@ struct TriangularMatrix :
       Scalar_, Rows_, Cols_, ViewMode_, StorageOrder_,
       TriangularMatrix<Scalar_, Rows_, Cols_, ViewMode_, StorageOrder_>>;
     static constexpr int StorageSize = Rows_ == Dynamic ? Dynamic : (Rows_ * (Rows_ + 1) / 2);
+    // a vector with StorageOrder-induced access pattern
     using StorageType = Vector<Scalar_, StorageSize>;
    public:
     static constexpr int Rows = Rows_;
@@ -524,19 +576,21 @@ struct TriangularMatrix :
     template <typename Scalar__>
         requires(std::is_constructible_v<Scalar_, Scalar__>)
     constexpr explicit TriangularMatrix(const std::vector<Scalar__>& data) :
-        Base(compute_shape_(data.size()), compute_shape_(data.size())), data_() {
+        Base(internals::compute_triangular_shape(data.size()), internals::compute_triangular_shape(data.size())),
+        data_() {
         if constexpr (Rows == Dynamic || Cols == Dynamic) { data_.resize(data.size()); }
         fdapde_assert(data_.size() == data.size());
-        for (int i = 0, n = data_.size(); i < n; ++i) { data_[i] = data[i]; }
+        assignment_executor::run(
+          *this, VectorView<const Scalar__, Dynamic>(data.data(), data.size()), [](auto&& l, const auto& r) { l = r; });
     }
     template <typename Scalar__, std::size_t Size>
         requires(std::is_constructible_v<Scalar_, Scalar__>)
     constexpr explicit TriangularMatrix(const Scalar__ (&data)[Size]) :
-        Base(compute_shape_(Size), compute_shape_(Size)), data_() {
+        Base(internals::compute_triangular_shape(Size), internals::compute_triangular_shape(Size)), data_() {
         fdapde_static_assert(
           Rows_ != Dynamic && Cols_ != Dynamic && StorageSize == Size, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
-        for (int i = 0, n = data_.size(); i < n; ++i) { data_[i] = data[i]; }
-    }
+	assignment_executor::run(*this, VectorView<const Scalar__, Size>(data), [](auto&& l, const auto& r) { l = r; });
+    }  
     // modifiers
     void resize(int rows, int cols) {
         fdapde_static_assert(Rows == Dynamic || Cols == Dynamic, THIS_METHOD_IS_FOR_DYNAMIC_SIZED_MATRICES_ONLY);
@@ -547,13 +601,13 @@ struct TriangularMatrix :
         data_.resize(this->rows_ * (this->cols_ + 1) / 2);
         return;
     }
+    // internal vector representation
+    constexpr const StorageType& rep() const { return data_; }
+    constexpr StorageType& rep() { return data_; }
     // data pointers
     constexpr const Scalar_* data() const { return data_.data(); }
     constexpr Scalar_* data() { return data_.data(); }
    private:
-    constexpr int compute_shape_(int i) {   // given x : x = 0.5 * (n * (n + 1)), computes n
-        return (fdapde::sqrt(static_cast<double>(1 + 8 * i)) - 1) / 2;
-    }
     template <typename RhsXprType> constexpr void clone_(const RhsXprType& rhs) {
         if constexpr (Rows == Dynamic || Cols == Dynamic) { resize(rhs.rows(), rhs.cols()); }
         assignment_executor::run(*this, rhs, [](auto&& l, const auto& r) { l = r; });
@@ -595,9 +649,12 @@ class TriangularMatrixView :
     constexpr TriangularMatrixView(Scalar__* data, int rows, int cols) : Base(rows, cols), data_(data) {
         fdapde_assert(rows > 0 && cols > 0 && rows == cols);
     }
+    // internal vector representation
+    constexpr const StorageType& rep() const { return data_; }
+    constexpr StorageType& rep() { return data_; }
     // data pointers
-    constexpr const StorageType& data() const { return data_; }
-    constexpr StorageType& data() { return data_; }
+    constexpr const StorageType* data() const { return data_.data(); }
+    constexpr StorageType* data() { return data_.data(); }
    private:
     StorageType data_;
 };
