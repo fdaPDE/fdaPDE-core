@@ -137,6 +137,13 @@ struct MatrixCoeffWiseOp : public MatrixCoeffWiseExpr<MatrixCoeffWiseOp<XprType_
     template <typename XprType__>
         requires(std::is_constructible_v<XprTypeNested, XprType__>)
     constexpr MatrixCoeffWiseOp(XprType__&& xpr, CoeffOp op) : xpr_(std::forward<XprType__>(xpr)), op_(op) { }
+    // scalar assignment
+    template <typename Scalar_>
+        requires(std::is_convertible_v<Scalar_, Scalar>)
+    constexpr MatrixCoeffWiseOp& operator=(Scalar_ rhs) {
+        internals::scalar_cwise_assignment_executor::run(*this, rhs, [](auto& l, const Scalar_& r) { l = r; });
+        return *this;
+    }
     // access
     constexpr Scalar operator()(int i, int j) const {
         fdapde_assert(i >= 0 && i < rows() && j >= 0 && j < cols());

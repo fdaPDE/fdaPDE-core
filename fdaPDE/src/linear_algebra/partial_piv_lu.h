@@ -32,16 +32,16 @@ template <typename XprType_> class PartialPivLU {
     using Scalar = typename XprType::Scalar;
    public:
     // constructors
-    constexpr PartialPivLU() : lu_(), P_(), info_(0), rank_(0) { }
+    constexpr PartialPivLU() : L_(), U_(), P_(), info_(0), rank_(0) { }
     template <typename XprType>
-    constexpr explicit PartialPivLU(const MatrixExpr<XprType>& m) : lu_(), P_(), info_(0), rank_(0) {
+    constexpr explicit PartialPivLU(const MatrixExpr<XprType>& m) : L_(), U_(), P_(), info_(0), rank_(0) {
         compute(m);
     }
 
     // build LU factorization of m via Doolittle LU with partial pivoting
     template <typename XprType> constexpr void compute(const MatrixExpr<XprType>& m) {
         const int n = m.rows();
-        lu_ = m;
+        Matrix<Scalar, Rows, Cols> lu = m;
         Scalar pivot_threshold = std::numeric_limits<Scalar>::epsilon() * m.inf_norm();
         // initialization
         Vector<int, Rows> perm;
@@ -55,7 +55,7 @@ template <typename XprType_> class PartialPivLU {
             int pivot_index = k;
             Scalar max_val = Scalar(0);
             for (int r = k; r < n; ++r) {
-                Scalar av = fdapde::abs(lu_(r, k));
+                Scalar av = fdapde::abs(lu(r, k));
                 if (av > max_val) {
                     max_val = av;
                     pivot_index = r;
@@ -68,44 +68,48 @@ template <typename XprType_> class PartialPivLU {
                 break;
             }
             if (pivot_index != k) {   // row swap
-                for (int c = 0; c < m.cols(); ++c) { std::swap(lu_(k, c), lu_(pivot_index, c)); }
+                for (int c = 0; c < m.cols(); ++c) { std::swap(lu(k, c), lu(pivot_index, c)); }
                 std::swap(perm[k], perm[pivot_index]);
             }
             // eliminate column below pivot
             for (int r = k + 1; r < n; ++r) {
-                Scalar alpha = lu_(r, k) / lu_(k, k);
-                lu_(r, k) = alpha;
-                for (int c = k + 1; c < m.cols(); ++c) { lu_(r, c) -= alpha * lu_(k, c); }
+                Scalar alpha = lu(r, k) / lu(k, k);
+                lu(r, k) = alpha;
+                for (int c = k + 1; c < m.cols(); ++c) { lu(r, c) -= alpha * lu(k, c); }
             }
         }
+        L_ = lu.template triangular_block<Lower>();
+        L_.diagonal().cwise() = 1;   // L_ is unit-lower
+        U_ = lu.template triangular_block<Upper>();
         P_ = PermutationMatrix<Rows, Cols>(perm);
         return;
     }
     // observers
     constexpr const PermutationMatrix<Rows, Cols>& P() const { return P_; }
-    constexpr auto L() const { return lu_.template triangular_block<UnitLower>(); }
-    constexpr auto U() const { return lu_.template triangular_block<Upper>(); }
+    constexpr auto L() const { return L_; }
+    constexpr auto U() const { return U_; }
     constexpr int info() const { return info_; }   // 0 = success, >0 = first zero pivot
     constexpr int rank() const { return rank_; }
     constexpr Scalar determinant() const {
         Scalar d = 1;
-        for (int i = 0, n = lu_.rows(); i < n; ++i) { d *= lu_(i, i); }
+        for (int i = 0, n = U_.rows(); i < n; ++i) { d *= U_(i, i); }
         return P_.determinant() * d;
     }
     // solve Ax = b via PA = LU
     template <typename RhsXprType> constexpr auto solve(const MatrixExpr<RhsXprType>& b) const {
-        fdapde_assert(b.rows() == lu_.rows() && b.cols() > 0);
+        fdapde_assert(b.rows() == L_.rows() && b.rows() == U_.rows() && b.cols() > 0);
         fdapde_assert(info_ == 0);
 
         constexpr int RhsRows = RhsXprType::Rows;
         constexpr int RhsCols = RhsXprType::Cols;
         Matrix<Scalar, RhsRows, RhsCols> y = P_ * b;
-        auto z = L().solve(y);   // forward  substitute
-        auto x = U().solve(z);   // backward substitute
+        auto z = L_.solve(y);   // forward  substitute
+        auto x = U_.solve(z);   // backward substitute
         return x;
     }
    private:
-    Matrix<Scalar, Rows, Cols, RowMajor> lu_;   // holds both L (unit lower) and U (upper)
+    TriangularMatrix<Scalar, Rows, Cols, Lower> L_;
+    TriangularMatrix<Scalar, Rows, Cols, Upper> U_;
     PermutationMatrix<Rows, Cols> P_;
     int info_;
     int rank_;

@@ -33,8 +33,6 @@ template <typename XprType> struct MatrixCoeffWiseExpr;
 // triangular views
 [[maybe_unused]] constexpr int Upper = 0;       // lower triangular view of matrix
 [[maybe_unused]] constexpr int Lower = 1;       // upper triangular view of matrix
-[[maybe_unused]] constexpr int UnitUpper = 2;   // lower triangular view of matrix with ones on the diagonal
-[[maybe_unused]] constexpr int UnitLower = 3;   // upper triangular view of matrix with ones on the diagonal
 
 [[maybe_unused]] static constexpr int LhsMode = 0;
 [[maybe_unused]] static constexpr int RhsMode = 1;

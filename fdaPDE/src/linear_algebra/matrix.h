@@ -141,7 +141,8 @@ class MatrixBase : public MatrixExpr<MatrixType> {
     static constexpr int NestAsRef = MatrixType::NestAsRef;
     static constexpr int ReadOnly = std::is_const_v<Scalar_>;
     using assignment_executor = std::conditional_t<
-      Rows_ == 1 || Cols_ == 1, internals::vector_assignment_executor, internals::generic_assignment_executor>;
+      (Rows_ == 1 || Cols_ == 1) && !(Rows_ == 1 && Cols_ == 1), internals::vector_assignment_executor,
+      internals::generic_assignment_executor>;
 
     // constructors
     constexpr MatrixBase() :
