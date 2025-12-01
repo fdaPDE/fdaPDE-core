@@ -79,7 +79,8 @@ static constexpr bool same_static_shape_weak_v = same_static_shape_weak<LhsXprTy
 // true if Xpr represents a vector expression
 template <typename XprType_> struct is_vector_shaped {
     using XprType = std::decay_t<XprType_>;
-    static constexpr bool value = (XprType::Rows == 1 || XprType::Cols == 1);
+    static constexpr bool value =
+      (XprType::Rows == 1 || XprType::Cols == 1) && !(XprType::Rows == 1 && XprType::Cols == 1);
 };
 template <typename XprType> static constexpr bool is_vector_shaped_v = is_vector_shaped<XprType>::value;
 

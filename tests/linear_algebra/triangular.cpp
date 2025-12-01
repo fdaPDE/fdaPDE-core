@@ -29,7 +29,12 @@ TEST(linear_algebra, triangular) {
         auto tb2 = M.triangular_block<Upper>();
         Matrix<double, 3, 3> tb2_({1, 2, 3, 0, 5, 6, 0, 0, 9});
         EXPECT_EQ(tb2, tb2_);
-
+	// coeffwise on triangular blocks
+	tb1.cwise() += 1;
+	Matrix<double, 3, 3> tb3_({2, 0, 0, 5, 6, 0, 8, 9, 10});
+        EXPECT_EQ(tb1, tb3_);
+	tb1.cwise() -= 1;
+	
         // test storage order
         LowerTriangularMatrix<double, 3, 3, RowMajor> M1({1, 2, 3, 4, 5, 6});
         Matrix<double, 3, 3> M1_({1, 0, 0, 2, 3, 0, 4, 5, 6});
@@ -83,6 +88,27 @@ TEST(linear_algebra, triangular) {
         auto e8 = M1 - M1;
         Matrix<double, 3, 3> e8_({0, 0, 0, 0, 0, 0, 0, 0, 0});
         EXPECT_EQ(e8, e8_);
+        auto e9 = tb1 + tb1;
+        Matrix<double, 3, 3> e9_ = (M + M).triangular_block<Lower>();
+        EXPECT_EQ(e9, e9_);
+        auto e10 = tb1 * tb1;
+        Matrix<double, 3, 3> e10_({1, 0, 0, 24, 25, 0, 102, 112, 81});
+        EXPECT_EQ(e10, e10_);
+
+	// const access
+        EXPECT_EQ(M1(1, 0), 2);   // Lower - RowMajor
+        EXPECT_EQ(M2(2, 0), 3);   // Lower - ColMajor
+        EXPECT_EQ(M1(0, 2), 0);   // off-triangular returns 0
+        // non-const access
+        M1(1, 0) = 5;
+        EXPECT_EQ(M1(1, 0), 5);
+        M1(0, 2) = 5;   // off-triangular accesses are absorbed
+        EXPECT_EQ(M1(0, 2), 0);
+
+	// coeffwise on owning triangular matrix
+        M1.cwise() = 1;
+        Matrix<double, 3, 3> e11_({1, 0, 0, 1, 1, 0, 1, 1, 1});
+	EXPECT_EQ(M1, e11_);
     }
 
     // dynamic sized

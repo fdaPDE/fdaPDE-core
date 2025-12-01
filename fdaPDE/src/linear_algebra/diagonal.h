@@ -84,7 +84,7 @@ template <typename XprType_> struct Diagonal : public MatrixExpr<Diagonal<XprTyp
     using Base::operator=;
     // const access
     constexpr Scalar operator()(int i, int j) const {
-        fdapde_assert(i >= 0 && i < rows() && j >= 0 && j < 1);
+        fdapde_assert(i >= 0 && i < rows() && j >= 0 && j < cols());
         return xpr_(i, i);
     }
     constexpr Scalar operator[](int i) const {
@@ -92,6 +92,10 @@ template <typename XprType_> struct Diagonal : public MatrixExpr<Diagonal<XprTyp
         return xpr_(i, i);
     }
     // non-const access
+    constexpr Scalar& operator()(int i, int j) {
+        fdapde_assert(i >= 0 && i < rows() && j >= 0 && j < cols());
+        return xpr_(i, i);
+    }
     constexpr Scalar& operator[](int i) {
         fdapde_assert(i >= 0 && i < rows());
         return xpr_(i, i);
