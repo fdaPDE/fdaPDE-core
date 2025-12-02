@@ -60,6 +60,7 @@ struct triangular_assignment_executor {
         constexpr int ViewMode = DstMatrixType::ViewMode;
         fdapde_static_assert(
           ViewMode == Upper || ViewMode == Lower, TRIANGULAR_BLOCK_ASSIGNMENT_REQUIRES_EITHER_UPPER_OR_LOWER_VIEW);
+
         constexpr int DstStorageOrder = DstMatrixType::StorageOrder;
         constexpr int SrcStorageOrder = []() {
             if constexpr (std::is_arithmetic_v<SrcXprType>) {
@@ -128,7 +129,7 @@ struct triangular_wrapper : TriangularMatrixExpr<triangular_wrapper<ViewMode_, T
 
 // helper cast function
 template <int ViewMode_, typename XprType_> auto triangular_cast(XprType_&& xpr) {
-    return triangular_wrapper<ViewMode_, XprType_>(xpr);
+    return triangular_wrapper<ViewMode_, XprType_>(std::forward<XprType_>(xpr));
 }
 
 }   // namespace internals

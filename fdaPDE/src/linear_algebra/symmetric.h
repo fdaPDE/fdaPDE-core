@@ -62,7 +62,7 @@ struct symmetric_wrapper : public SymmetricMatrixExpr<symmetric_wrapper<ViewMode
 
 // helper cast function
 template <int ViewMode_, typename XprType_> auto symmetric_cast(XprType_&& xpr) {
-    return symmetric_wrapper<ViewMode_, XprType_>(xpr);
+    return symmetric_wrapper<ViewMode_, XprType_>(std::forward<XprType_>(xpr));
 }
 
 }   // namespace internals
@@ -81,8 +81,7 @@ template <typename XprType_> struct SymmetricMatrixExpr : public MatrixExpr<XprT
         using Scalar = typename XprType::Scalar;
         constexpr int Rows = XprType::Rows;
         constexpr int Cols = XprType::Cols;
-        // symmetric matrices are the tangent space to the SPD cone under the log-euclidean metric. avoid to compute a
-        // matrix exp (from symm to spd) followed by a matrix log (from spd back to symm)
+        // symmetric matrices are already the tangent space to the SPD cone under the log-euclidean metric
         if constexpr (std::is_same_v<std::decay_t<MetricType>, log_euclidean>) {
             return SPDMatrix<Scalar, Rows, Cols, log_euclidean>(derived());
         } else {
