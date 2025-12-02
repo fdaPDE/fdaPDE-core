@@ -31,46 +31,14 @@ struct identity_op {
     template <typename ValueType> constexpr ValueType operator()(ValueType&& v) const noexcept { return v; }
     template <typename ValueType> constexpr ValueType& operator()(ValueType& v) noexcept { return v; }   // lvalue
 };
-
-// internal utility to wrap a scalar coefficient into an indexable type
-template <typename ScalarType>
-    requires(std::is_arithmetic_v<ScalarType>)
-struct scalar_wrap {
-    using Scalar = ScalarType;
-    static constexpr int Rows = Adapted;   // inferred from context
-    static constexpr int Cols = Adapted;   // inferred from context
-    static constexpr int StorageOrder = RowMajor;
-    static constexpr int NestAsRef = 0;
-    static constexpr int ReadOnly = 1;
-  
-    constexpr explicit scalar_wrap(ScalarType scalar) noexcept : scalar_(scalar) { }
-    constexpr Scalar operator()([[maybe_unused]] int i, [[maybe_unused]] int j) const { return scalar_; }
-    constexpr Scalar operator[]([[maybe_unused]] int i) const { return scalar_; }
-    constexpr const scalar_wrap& derived() const { return *this; }
-   private:
-    ScalarType scalar_;
-};
   
 // assignment executor having one trivial scalar operand
 struct scalar_cwise_assignment_executor {
     template <typename DstMatrixType, typename ScalarType, typename AssignmentOp>
-        requires(requires(AssignmentOp op, typename DstMatrixType::Scalar& l, const ScalarType& r) {
-            { op(l, r) } -> std::same_as<void>;
-        })
     static constexpr void run(DstMatrixType& dst, const ScalarType& src, AssignmentOp&& op) {
         fdapde_static_assert(DstMatrixType::ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_LOCATION);
-        const int rows_ = dst.rows();
-        const int cols_ = dst.cols();
-        // exploit cache-locality depending on StorageOrder of destination
-        if constexpr (DstMatrixType::StorageOrder == RowMajor) {
-            for (int i = 0; i < rows_; ++i) {
-                for (int j = 0; j < cols_; ++j) { op(dst(i, j), src); }
-            }
-        } else {   // ColMajor
-            for (int j = 0; j < cols_; ++j) {
-                for (int i = 0; i < rows_; ++i) { op(dst(i, j), src); }
-            }
-        }
+        using assignment_executor = typename DstMatrixType::assignment_executor;
+        assignment_executor::run(dst.xpr(), src, [op](auto&& l, const auto& r) { op(l, r); });
         return;
     }
 };
@@ -166,6 +134,8 @@ struct MatrixCoeffWiseOp : public MatrixCoeffWiseExpr<MatrixCoeffWiseOp<XprType_
     // observers
     constexpr int rows() const { return Rows != Dynamic ? Rows : xpr_.rows(); }
     constexpr int cols() const { return Cols != Dynamic ? Cols : xpr_.cols(); }
+    constexpr const XprType& xpr() const { return xpr_; }
+    constexpr XprType& xpr() { return xpr_; }  
    private:
     XprTypeNested xpr_;
     CoeffOp op_;
@@ -180,16 +150,13 @@ struct MatrixCoeffWiseBinOp : public MatrixCoeffWiseExpr<MatrixCoeffWiseBinOp<Lh
     fdapde_static_assert(
       internals::same_static_shape_weak_v<LhsXprType_ FDAPDE_COMMA RhsXprType_>,
       INVALID_BINARY_OPERATION__MATRICES_OF_DIFFERENT_STATIC_SIZE);
-    fdapde_static_assert(
-      ((LhsXprType::Rows != Adapted || RhsXprType::Rows != Adapted) &&
-       (LhsXprType::Cols != Adapted || RhsXprType::Cols != Adapted)),
-      INVALID_BINARY_OPERATION__CANNOT_INFER_EXPRESSION_SHAPE_FROM_CONTEXT);
     using LhsXprTypeNested = internals::ref_select_t<LhsXprType_>;
     using RhsXprTypeNested = internals::ref_select_t<RhsXprType_>;
     static constexpr int infer_static_shape_(int lhs_dim, int rhs_dim) {
-        return lhs_dim == Adapted ?
+        return std::is_arithmetic_v<LhsXprType> ?
                  rhs_dim :
-                 (rhs_dim == Adapted ? lhs_dim : ((lhs_dim == Dynamic || rhs_dim == Dynamic) ? Dynamic : lhs_dim));
+                 (std::is_arithmetic_v<RhsXprType> ? lhs_dim :
+                                                     ((lhs_dim == Dynamic || rhs_dim == Dynamic) ? Dynamic : lhs_dim));
     }  
    public:
     using Scalar = promote_type_t<typename LhsXprType::Scalar, typename RhsXprType::Scalar>;
@@ -206,7 +173,7 @@ struct MatrixCoeffWiseBinOp : public MatrixCoeffWiseExpr<MatrixCoeffWiseBinOp<Lh
     constexpr MatrixCoeffWiseBinOp(LhsXprType__&& lhs, RhsXprType__&& rhs, BinaryOp op) :
         lhs_(std::forward<LhsXprType__>(lhs)), rhs_(std::forward<RhsXprType__>(rhs)), op_(op) {
         if constexpr (
-          !internals::is_adapted_sized_v<LhsXprType> && !internals::is_adapted_sized_v<RhsXprType> &&
+          (!std::is_arithmetic_v<LhsXprType> && !std::is_arithmetic_v<RhsXprType>) &&
           (internals::is_dynamic_sized_v<LhsXprType> || internals::is_dynamic_sized_v<RhsXprType>)) {
             fdapde_assert(
               std::cmp_equal(lhs_.rows() FDAPDE_COMMA rhs_.rows()) &&
@@ -245,14 +212,12 @@ constexpr auto make_cwise_op(const MatrixCoeffWiseExpr<LhsXprType_>& lhs, const 
 template <typename BinaryOp, typename Scalar_, typename XprType_>
     requires(std::is_arithmetic_v<Scalar_> && requires(typename XprType_::Scalar x, Scalar_ s) { BinaryOp {}(x, s); })
 constexpr auto make_cwise_op(const MatrixCoeffWiseExpr<XprType_>& lhs, const Scalar_& rhs) {
-    return MatrixCoeffWiseBinOp<XprType_, internals::scalar_wrap<Scalar_>, BinaryOp>(
-      lhs.derived(), internals::scalar_wrap(rhs), BinaryOp());
+    return MatrixCoeffWiseBinOp<XprType_, Scalar_, BinaryOp>(lhs.derived(), rhs, BinaryOp());
 }
 template <typename BinaryOp, typename Scalar_, typename XprType_>
     requires(std::is_arithmetic_v<Scalar_> && requires(typename XprType_::Scalar x, Scalar_ s) { BinaryOp {}(x, s); })
 constexpr auto make_cwise_op(const Scalar_& lhs, const MatrixCoeffWiseExpr<XprType_>& rhs) {
-    return MatrixCoeffWiseBinOp<internals::scalar_wrap<Scalar_>, XprType_, BinaryOp>(
-      internals::scalar_wrap(lhs), rhs.derived(), BinaryOp());
+    return MatrixCoeffWiseBinOp<Scalar_, XprType_, BinaryOp>(lhs, rhs.derived(), BinaryOp());
 }
 
 }   // namespace internals

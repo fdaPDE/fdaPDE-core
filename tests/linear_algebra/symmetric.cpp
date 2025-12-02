@@ -18,8 +18,6 @@
 #include <gtest/gtest.h>   // testing framework
 using namespace fdapde;
 
-#include <Eigen/Dense>
-
 TEST(linear_algebra, symmetric) {
     // static-sized
     {
@@ -41,15 +39,33 @@ TEST(linear_algebra, symmetric) {
         EXPECT_EQ(M2, M2_);
 
         // symmetric arithmetic
-        // Matrix<double, 3, 3> e = M1 + M1;
-        // std::cout << e << std::endl;
+        auto s3 = M1 + M1;
+        Matrix<double, 3, 3> s3_({2, 4, 8, 4, 6, 10, 8, 10, 12});
+        EXPECT_EQ(s3, s3_);
+        auto s4 = 3 * M1;
+        Matrix<double, 3, 3> s4_({3, 6, 12, 6, 9, 15, 12, 15, 18});
+        EXPECT_EQ(s4, s4_);
+	SymmetricMatrix<double, 3, 3> M3 = M1;
+        M3.cwise() += 2;
+        Matrix<double, 3, 3> s5_({3, 4, 6, 4, 5, 7, 6, 7, 8});
+        EXPECT_EQ(M3, s5_);
+	M3.diagonal().cwise() = 5;	
+        Matrix<double, 3, 3> s6_({5, 4, 6, 4, 5, 7, 6, 7, 5});
+        EXPECT_EQ(M3, s6_);
+        auto blk = M2.block<2, 2>(0, 0);
+        Matrix<double, 2, 2> s7_({1, 2, 2, 4});
+        EXPECT_TRUE(blk == s7_);
 
-        // auto A = M1.exp<log_euclidean>();
+	// const-access
+        EXPECT_EQ(M2(1, 0), 2);
+        EXPECT_EQ(M2(0, 1), 2);
+        EXPECT_EQ(M2(2, 2), 6);
 
-        // auto e = A + A; // this is made in the log euclidean domain
-
-        // std::cout << A << std::endl;
-	
+        // non-const access
+        SymmetricMatrix<double, 3, 3> M4 = M2;   // rhs of different StorageOrder
+        M4(2, 0) = 8;
+        EXPECT_EQ(M4(2, 0), 8);
+        EXPECT_EQ(M4(0, 2), 8);   // symmetric invariance preserved
     }
 
     // dynamic sized

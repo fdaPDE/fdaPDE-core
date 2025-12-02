@@ -18,7 +18,6 @@
 #include <gtest/gtest.h>   // testing framework
 using namespace fdapde;
 
-
 TEST(linear_algebra, boolean) {
     // static sized
     {
