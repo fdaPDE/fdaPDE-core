@@ -146,7 +146,7 @@ struct MatrixMultiplicationOp : public MatrixExpr<MatrixMultiplicationOp<LhsXprT
     using Scalar = promote_type_t<typename LhsXprType::Scalar, typename RhsXprType::Scalar>;
     static constexpr int Rows = LhsXprType::Rows;
     static constexpr int Cols = RhsXprType::Cols;
-    static constexpr int StrageOrder =
+    static constexpr int StorageOrder =
       internals::promote_storage_order_v<LhsXprType::StorageOrder, RhsXprType::StorageOrder>;
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
