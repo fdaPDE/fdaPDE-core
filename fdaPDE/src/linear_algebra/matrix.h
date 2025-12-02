@@ -74,28 +74,34 @@ namespace internals {
 
 struct generic_assignment_executor {
     template <typename DstMatrixType, typename SrcXprType, typename AssignmentOp>
-        requires(requires(AssignmentOp op, typename DstMatrixType::Scalar& l, const typename SrcXprType::Scalar& r) {
-            { op(l, r) } -> std::same_as<void>;
-        })
     static constexpr void run(DstMatrixType& dst, const SrcXprType& src, AssignmentOp&& op) {
         fdapde_static_assert(DstMatrixType::ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_LOCATION);
-        fdapde_static_assert(
-          (internals::is_dynamic_sized_v<DstMatrixType> || internals::is_dynamic_sized_v<SrcXprType> ||
-           internals::same_static_shape_v<DstMatrixType FDAPDE_COMMA SrcXprType>),
-          INVALID_ASSIGNMENT__DIFFERENT_LHS_AND_RHS_STATIC_SIZES);
-        if constexpr (internals::is_dynamic_sized_v<DstMatrixType> || internals::is_dynamic_sized_v<SrcXprType>) {
-            fdapde_assert(dst.rows() == src.rows() && dst.cols() == src.cols());
+        if constexpr (!std::is_arithmetic_v<SrcXprType>) {
+            fdapde_static_assert(
+              (internals::is_dynamic_sized_v<DstMatrixType> || internals::is_dynamic_sized_v<SrcXprType> ||
+               internals::same_static_shape_v<DstMatrixType FDAPDE_COMMA SrcXprType>),
+              INVALID_ASSIGNMENT__DIFFERENT_LHS_AND_RHS_STATIC_SIZES);
+            if constexpr (internals::is_dynamic_sized_v<DstMatrixType> || internals::is_dynamic_sized_v<SrcXprType>) {
+                fdapde_assert(dst.rows() == src.rows() && dst.cols() == src.cols());
+            }
         }
         const int rows_ = dst.rows();
         const int cols_ = dst.cols();
+        auto fetch = [](const SrcXprType& src, [[maybe_unused]] int i, [[maybe_unused]] int j) -> decltype(auto) {
+            if constexpr (std::is_arithmetic_v<SrcXprType>) {
+                return src;
+            } else {
+                return src(i, j);
+            }
+        };
         // exploit cache-locality depending on StorageOrder of destination
         if constexpr (DstMatrixType::StorageOrder == RowMajor) {
             for (int i = 0; i < rows_; ++i) {
-                for (int j = 0; j < cols_; ++j) { op(dst(i, j), src(i, j)); }
+                for (int j = 0; j < cols_; ++j) { op(dst(i, j), fetch(src, i, j)); }
             }
         } else {   // ColMajor
             for (int j = 0; j < cols_; ++j) {
-                for (int i = 0; i < rows_; ++i) { op(dst(i, j), src(i, j)); }
+                for (int i = 0; i < rows_; ++i) { op(dst(i, j), fetch(src, i, j)); }
             }
         }
         return;
@@ -104,23 +110,29 @@ struct generic_assignment_executor {
 // assignment executor specialized for vector expressions
 struct vector_assignment_executor {
     template <typename DstMatrixType, typename SrcXprType, typename AssignmentOp>
-        requires(requires(AssignmentOp op, typename DstMatrixType::Scalar& l, const typename SrcXprType::Scalar& r) {
-            { op(l, r) } -> std::same_as<void>;
-        })
     static constexpr void run(DstMatrixType& dst, const SrcXprType& src, AssignmentOp&& op) {
         fdapde_static_assert(DstMatrixType::ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_LOCATION);
-        // NB: a row-shaped rhs can be assigned to a col-shaped lhs
-        fdapde_static_assert(
-          internals::is_vector_shaped_v<DstMatrixType> && internals::is_vector_shaped_v<SrcXprType>,
-          INVALID_ASSIGNMENT__NOT_VECTOR_SHAPED_OPERANDS);
-        if constexpr (internals::is_dynamic_sized_v<DstMatrixType> || internals::is_dynamic_sized_v<SrcXprType>) {
-            fdapde_assert(
-              ((dst.rows() == 1 && src.rows() == 1) || (dst.cols() == 1 && src.cols() == 1) ||
-               (dst.rows() == 1 && src.cols() == 1) || (dst.cols() == 1 && src.rows() == 1)) &&
-              dst.size() == src.size());
+        if constexpr (!std::is_arithmetic_v<SrcXprType>) {
+            // NB: a row-shaped rhs can be assigned to a col-shaped lhs
+            fdapde_static_assert(
+              internals::is_vector_shaped_v<DstMatrixType> && internals::is_vector_shaped_v<SrcXprType>,
+              INVALID_ASSIGNMENT__NOT_VECTOR_SHAPED_OPERANDS);
+            if constexpr (internals::is_dynamic_sized_v<DstMatrixType> || internals::is_dynamic_sized_v<SrcXprType>) {
+                fdapde_assert(
+                  ((dst.rows() == 1 && src.rows() == 1) || (dst.cols() == 1 && src.cols() == 1) ||
+                   (dst.rows() == 1 && src.cols() == 1) || (dst.cols() == 1 && src.rows() == 1)) &&
+                  dst.size() == src.size());
+            }
         }
         const int size_ = dst.size();
-        for (int i = 0; i < size_; ++i) { op(dst[i], src[i]); }
+        auto fetch = [](const SrcXprType& src, [[maybe_unused]] int i) -> decltype(auto)  {
+            if constexpr (std::is_arithmetic_v<SrcXprType>) {
+                return src;
+            } else {
+                return src[i];
+            }
+        };
+        for (int i = 0; i < size_; ++i) { op(dst[i], fetch(src, i)); }
         return;
     }
 };

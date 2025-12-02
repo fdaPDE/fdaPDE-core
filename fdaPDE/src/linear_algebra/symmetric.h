@@ -125,8 +125,8 @@ class SymmetricMatrixBase : public SymmetricMatrixExpr<SymmetricMatrixType> {
             data_[index_] = value;
             return *this;
         }
-        constexpr operator Scalar() { return data_[index_]; }
         constexpr operator Scalar() const { return data_[index_]; }
+        constexpr operator Scalar&() { return data_[index_]; }
        private:
         constexpr int compute_linear_index_(int i, int j, [[maybe_unused]] int size) const {
             if constexpr (StorageOrder == RowMajor) { return i * (i + 1) / 2 + j; }
@@ -192,7 +192,7 @@ struct SymmetricMatrix :
     using Scalar = Scalar_;
     static constexpr int Rows = Rows_;
     static constexpr int Cols = Cols_;
-    static constexpr int NestAsRef = 0;
+    static constexpr int NestAsRef = 1;
     static constexpr int ViewMode = StorageType::ViewMode;
     static constexpr int StorageOrder = StorageType::StorageOrder;
     static constexpr int ReadOnly = std::is_const_v<Scalar_>;

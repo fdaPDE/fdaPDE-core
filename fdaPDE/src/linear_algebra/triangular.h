@@ -36,32 +36,38 @@ constexpr int compute_triangular_shape(int x) {
 // if xpr is a vector-expression, rescales the pair (i, j) to perform a triangular-like access on an n x n matrix,
 // otherwise forwards (i, j) to xpr
 template <int ViewMode, int StorageOrder, typename XprType>
-constexpr decltype(auto) triangular_access(XprType&& xpr, int i, int j, [[maybe_unused]] int n) {
-    if constexpr (is_vector_shaped_v<XprType>) {
-        if constexpr (StorageOrder == RowMajor) {
-            return xpr[ViewMode == Upper ? i * (2 * n - i + 1) / 2 + (j - i) : i * (i + 1) / 2 + j];
-        }
-        if constexpr (StorageOrder == ColMajor) {
-            return xpr[ViewMode == Lower ? j * (2 * n - j + 1) / 2 + (i - j) : j * (j + 1) / 2 + i];
-        }
+constexpr decltype(auto) triangular_access(XprType& xpr, int i, int j, [[maybe_unused]] int n) {
+    if constexpr (std::is_arithmetic_v<XprType>) {
+        return xpr;
     } else {
-        return xpr(i, j);
+        if constexpr (is_vector_shaped_v<XprType>) {
+            if constexpr (StorageOrder == RowMajor) {
+                return xpr[ViewMode == Upper ? i * (2 * n - i + 1) / 2 + (j - i) : i * (i + 1) / 2 + j];
+            }
+            if constexpr (StorageOrder == ColMajor) {
+                return xpr[ViewMode == Lower ? j * (2 * n - j + 1) / 2 + (i - j) : j * (j + 1) / 2 + i];
+            }
+        } else {
+            return xpr(i, j);
+        }
     }
 }
 
 struct triangular_assignment_executor {
-    template <typename DstXprType, typename SrcXprType, typename AssignmentOp>
-        requires(requires(AssignmentOp op, typename DstXprType::Scalar& l, const typename SrcXprType::Scalar& r) {
-            { op(l, r) } -> std::same_as<void>;
-        })
-    static constexpr void run(DstXprType& dst, const SrcXprType& src, AssignmentOp&& op) {
-        fdapde_static_assert(DstXprType::ReadOnly == 0, ASSIGNMENT_TO_A_READ_ONLY_EXPRESSION);
-        constexpr int ViewMode = DstXprType::ViewMode;
+    template <typename DstMatrixType, typename SrcXprType, typename AssignmentOp>
+    static constexpr void run(DstMatrixType& dst, const SrcXprType& src, AssignmentOp&& op) {
+        fdapde_static_assert(DstMatrixType::ReadOnly == 0, ASSIGNMENT_TO_A_READ_ONLY_EXPRESSION);
+        constexpr int ViewMode = DstMatrixType::ViewMode;
         fdapde_static_assert(
           ViewMode == Upper || ViewMode == Lower, TRIANGULAR_BLOCK_ASSIGNMENT_REQUIRES_EITHER_UPPER_OR_LOWER_VIEW);
-
-        constexpr int DstStorageOrder = DstXprType::StorageOrder;
-        constexpr int SrcStorageOrder = SrcXprType::StorageOrder;
+        constexpr int DstStorageOrder = DstMatrixType::StorageOrder;
+        constexpr int SrcStorageOrder = []() {
+            if constexpr (std::is_arithmetic_v<SrcXprType>) {
+                return DstMatrixType::StorageOrder;
+            } else {
+                return SrcXprType::StorageOrder;
+            }
+        }();
         int row = 0, col = 0;
         for (int i = 0, n = dst.rows(); i < n; ++i) {
             for (int j = 0; j <= i; ++j) {
@@ -576,7 +582,7 @@ struct TriangularMatrix :
         if constexpr (Rows == Dynamic || Cols == Dynamic) { data_.resize(data.size()); }
         fdapde_assert(data_.size() == data.size());
         assignment_executor::run(
-          *this, VectorView<const Scalar__, Dynamic>(data.data(), data.size()), [](auto&& l, const auto& r) { l = r; });
+          *this, VectorView<const Scalar__, Dynamic>(data.data(), data.size()), [](auto& l, const auto& r) { l = r; });
     }
     template <typename Scalar__, std::size_t Size>
         requires(std::is_constructible_v<Scalar_, Scalar__>)
@@ -584,7 +590,7 @@ struct TriangularMatrix :
         Base(internals::compute_triangular_shape(Size), internals::compute_triangular_shape(Size)), data_() {
         fdapde_static_assert(
           Rows_ != Dynamic && Cols_ != Dynamic && StorageSize == Size, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
-	assignment_executor::run(*this, VectorView<const Scalar__, Size>(data), [](auto&& l, const auto& r) { l = r; });
+	assignment_executor::run(*this, VectorView<const Scalar__, Size>(data), [](auto& l, const auto& r) { l = r; });
     }  
     // modifiers
     void resize(int rows, int cols) {

@@ -28,20 +28,26 @@ namespace internals {
 
 struct diagonal_assignment_executor {
     template <typename DstXprType, typename SrcXprType, typename AssignmentOp>
-        requires(requires(AssignmentOp op, typename DstXprType::Scalar& l, const typename SrcXprType::Scalar& r) {
-            { op(l, r) } -> std::same_as<void>;
-        })
     static constexpr void run(DstXprType& dst, const SrcXprType& src, AssignmentOp&& op) {
         fdapde_static_assert(DstXprType::ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_LOCATION);
-        fdapde_static_assert(
-          internals::is_dynamic_sized_v<DstXprType> || internals::is_dynamic_sized_v<SrcXprType> ||
-            DstXprType::Rows == SrcXprType::Rows,   // diagonal expressions are vector-shaped
-          INVALID_ASSIGNMENT__NOT_MATCHING_LHS_AND_RHS_STATIC_SIZES);
-        if constexpr (internals::is_dynamic_sized_v<DstXprType> || internals::is_dynamic_sized_v<SrcXprType>) {
-            fdapde_assert(dst.rows() == src.rows() && dst.cols() == src.cols());
+        if constexpr (!std::is_arithmetic_v<SrcXprType>) {
+            fdapde_static_assert(
+              internals::is_dynamic_sized_v<DstXprType> || internals::is_dynamic_sized_v<SrcXprType> ||
+                DstXprType::Rows == SrcXprType::Rows,   // diagonal expressions are vector-shaped
+              INVALID_ASSIGNMENT__NOT_MATCHING_LHS_AND_RHS_STATIC_SIZES);
+            if constexpr (internals::is_dynamic_sized_v<DstXprType> || internals::is_dynamic_sized_v<SrcXprType>) {
+                fdapde_assert(dst.rows() == src.rows() && dst.cols() == src.cols());
+            }
         }
         int size_ = dst.rows();
-        for (int i = 0; i < size_; ++i) { op(dst[i], src[i]); }
+        auto fetch = [](const SrcXprType& src, [[maybe_unused]] int i) -> decltype(auto) {
+            if constexpr (std::is_arithmetic_v<SrcXprType>) {
+                return src;
+            } else {
+                return src[i];
+            }
+        };
+        for (int i = 0; i < size_; ++i) { op(dst[i], fetch(src, i)); }
         return;
     }
 };

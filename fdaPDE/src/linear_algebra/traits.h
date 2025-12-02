@@ -28,12 +28,8 @@ template <typename XprType_> struct is_dynamic_sized {
     static constexpr bool value = XprType::Rows == Dynamic || XprType::Cols == Dynamic;
 };
 template <typename XprType> static constexpr bool is_dynamic_sized_v = is_dynamic_sized<XprType>::value;
-template <typename XprType> struct is_adapted_sized {
-    static constexpr bool value = std::decay_t<XprType>::Rows == Adapted || std::decay_t<XprType>::Cols == Adapted;
-};
-template <typename XprType> static constexpr bool is_adapted_sized_v = is_adapted_sized<XprType>::value;
 template <typename XprType> struct is_static_sized {
-    static constexpr bool value = !is_adapted_sized_v<XprType> && !is_dynamic_sized_v<XprType>;
+    static constexpr bool value = !is_dynamic_sized_v<XprType>;
 };
 template <typename XprType> static constexpr bool is_static_sized_v = is_static_sized<XprType>::value;
 // true if is possible to determine at compile time whether Lhs and Rhs have the same size, regardless of their shape
@@ -63,9 +59,7 @@ template <typename LhsXprType_, typename RhsXprType_> struct same_static_shape {
     using Rhs = std::decay_t<RhsXprType_>;
    public:
     static constexpr bool value =
-      (is_adapted_sized_v<Lhs> || is_adapted_sized_v<Rhs>) ?
-        true :
-        (!is_dynamic_sized_v<Lhs> && !is_dynamic_sized_v<Rhs> && (Lhs::Rows == Rhs::Rows && Lhs::Cols == Rhs::Cols));
+      !is_dynamic_sized_v<Lhs> && !is_dynamic_sized_v<Rhs> && (Lhs::Rows == Rhs::Rows && Lhs::Cols == Rhs::Cols);
 };
 template <typename LhsXprType, typename RhsXprType>
 static constexpr bool same_static_shape_v = same_static_shape<LhsXprType, RhsXprType>::value;
