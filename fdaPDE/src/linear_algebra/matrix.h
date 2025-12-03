@@ -65,10 +65,13 @@ struct ProceduralMatrix : public MatrixExpr<ProceduralMatrix<Functor_, Rows_, Co
     Functor_ f_;
 };
 // definition of procedrual matrices
-template <int Rows, int Cols> using ZeroMatrix = ProceduralMatrix<decltype([](int, int) { return 0; }), Rows, Cols>;
-template <int Rows, int Cols> using OnesMatrix = ProceduralMatrix<decltype([](int, int) { return 1; }), Rows, Cols>;
-template <int Rows, int Cols>
-using IdentityMatrix = ProceduralMatrix<decltype([](int i, int j) { return i == j ? 1 : 0; }), Rows, Cols>;
+template <typename Scalar, int Rows, int Cols>
+using ZeroMatrix = ProceduralMatrix<decltype([](int, int) { return Scalar(0); }), Rows, Cols>;
+template <typename Scalar, int Rows, int Cols>
+using OnesMatrix = ProceduralMatrix<decltype([](int, int) { return Scalar(1); }), Rows, Cols>;
+template <typename Scalar, int Rows, int Cols>
+using IdentityMatrix =
+  ProceduralMatrix<decltype([](int i, int j) { return i == j ? Scalar(1) : Scalar(0); }), Rows, Cols>;
 
 namespace internals {
 
@@ -341,18 +344,18 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
     }
 
     // static named constructors
-    static constexpr auto Zero() { return ZeroMatrix<Rows_, Cols_>(); }
+    static constexpr auto Zero() { return ZeroMatrix<Scalar_, Rows_, Cols_>(); }
     static constexpr auto Zero(int size) {
         fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
-        return ZeroMatrix< Rows_ == 1 ? Rows_ : Dynamic, Cols_ == 1 ? Cols_ : Dynamic >(size);
+        return ZeroMatrix<Scalar_, Rows_ == 1 ? Rows_ : Dynamic, Cols_ == 1 ? Cols_ : Dynamic>(size);
     }
-    static constexpr auto Zero(int rows, int cols) { return ZeroMatrix<Dynamic, Dynamic>(rows, cols); }
-    static constexpr auto Ones() { return OnesMatrix<Rows_, Cols_>(); }
+    static constexpr auto Zero(int rows, int cols) { return ZeroMatrix<Scalar_, Dynamic, Dynamic>(rows, cols); }
+    static constexpr auto Ones() { return OnesMatrix<Scalar_, Rows_, Cols_>(); }
     static constexpr auto Ones(int size) {
         fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
-        return OnesMatrix < Rows_ == 1 ? Rows_ : Dynamic, Cols_ == 1 ? Cols_ : Dynamic > (size);
+        return OnesMatrix<Scalar_, Rows_ == 1 ? Rows_ : Dynamic, Cols_ == 1 ? Cols_ : Dynamic>(size);
     }
-    static constexpr auto Ones(int rows, int cols) { return OnesMatrix<Dynamic, Dynamic>(rows, cols); }
+    static constexpr auto Ones(int rows, int cols) { return OnesMatrix<Scalar_, Dynamic, Dynamic>(rows, cols); }
     static constexpr auto Constant(Scalar value) { return value * Ones(); }
     static constexpr auto Constant(int size, Scalar value) {
         fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
@@ -445,7 +448,7 @@ class MatrixView :
 // vector aliases
 template <typename Scalar, int Rows> using Vector = Matrix<Scalar, Rows, 1>;
 template <typename Scalar, int Rows> using VectorView = MatrixView<Scalar, Rows, 1>;
-
+  
 }   // namespace fdapde
 
 #endif   // _FDAPDE_LINALG_MATRIX_H__

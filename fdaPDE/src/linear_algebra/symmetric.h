@@ -21,12 +21,18 @@
 
 namespace fdapde {
 
-template <typename XprType> class EVD;
-template <typename Scalar_, int Rows_, int Cols_, typename Metric_, int StorageOrder_ = RowMajor> struct SPDMatrix;
-struct log_euclidean { };
-  
 // symmetric matrix type system
 template <typename XprType> struct SymmetricMatrixExpr;
+
+// forward decls
+template <typename XprType> class EVD;
+struct log_euclidean;
+namespace internals {
+
+template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_, typename MetricType_> class spd_matrix_impl;
+template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_, typename MetricType_> class spd_matrix_view_impl;
+
+}   // namespace internals
   
 namespace internals {
 
@@ -83,12 +89,12 @@ template <typename XprType_> struct SymmetricMatrixExpr : public MatrixExpr<XprT
         constexpr int Cols = XprType::Cols;
         // symmetric matrices are already the tangent space to the SPD cone under the log-euclidean metric
         if constexpr (std::is_same_v<std::decay_t<MetricType>, log_euclidean>) {
-            return SPDMatrix<Scalar, Rows, Cols, log_euclidean>(derived());
+            return internals::spd_matrix_impl<Scalar, Rows, Cols, RowMajor, log_euclidean>(derived());
         } else {
             // generic fallback
             EVD<XprType> evd_(derived());
             Vector<Scalar, Rows> exp_eigval = evd_.eigenvalues().cwise().exp();   // extract eigenvalues' exponential
-            return SPDMatrix<double, Rows, Cols, MetricType>(
+            return internals::spd_matrix_impl<double, Rows, Cols, RowMajor, MetricType>(
               evd_.eigenvectors() * exp_eigval.as_diagonal() * evd_.eigenvectors().transpose(), fdapde::unchecked);
         }
     }
@@ -178,7 +184,7 @@ constexpr auto operator/(const SymmetricMatrixExpr<XprType>& lhs, ScalarType rhs
 
 // owning storage symmetric matrix
 template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_ = RowMajor>
-struct SymmetricMatrix :
+class SymmetricMatrix :
     public SymmetricMatrixBase<
       Scalar_, Rows_, Cols_, StorageOrder_, SymmetricMatrix<Scalar_, Rows_, Cols_, StorageOrder_>> {
     fdapde_static_assert(
@@ -245,7 +251,7 @@ struct SymmetricMatrix :
 };
 
 // symmetric view of an existing block of data
-template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_>
+template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_ = RowMajor>
 class SymmetricMatrixView :
     public SymmetricMatrixBase<
       Scalar_, Rows_, Cols_, StorageOrder_, SymmetricMatrixView<Scalar_, Rows_, Cols_, StorageOrder_>> {
