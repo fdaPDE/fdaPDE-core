@@ -312,18 +312,18 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
         return;
     }
     // static named constructors
-    static constexpr auto Zero() { return ZeroMatrix<Rows_, Cols_>(); }
+    static constexpr auto Zero() { return ZeroMatrix<bool, Rows_, Cols_>(); }
     static constexpr auto Zero(int rows) {
         fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
-        return ZeroMatrix<Dynamic, Dynamic>(rows, 1);
+        return ZeroMatrix<bool, Dynamic, Dynamic>(rows, 1);
     }
-    static constexpr auto Zero(int rows, int cols) { return ZeroMatrix<Dynamic, Dynamic>(rows, cols); }
-    static constexpr auto Ones() { return OnesMatrix<Rows_, Cols_>(); }
+    static constexpr auto Zero(int rows, int cols) { return ZeroMatrix<bool, Dynamic, Dynamic>(rows, cols); }
+    static constexpr auto Ones() { return OnesMatrix<bool, Rows_, Cols_>(); }
     static constexpr auto Ones(int rows) {
         fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
-        return OnesMatrix<Dynamic, Dynamic>(rows, 1);
+        return OnesMatrix<bool, Dynamic, Dynamic>(rows, 1);
     }
-    static constexpr auto Ones(int rows, int cols) { return OnesMatrix<Dynamic, Dynamic>(rows, cols); }
+    static constexpr auto Ones(int rows, int cols) { return OnesMatrix<bool, Dynamic, Dynamic>(rows, cols); }
     // observers
     constexpr int bitpacks() const { return bitpacks_; }
     constexpr bitpack_t bitpack(int i) const { return data_[i]; }

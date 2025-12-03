@@ -163,7 +163,7 @@ struct OrthogonalMatrix :
     constexpr OrthogonalMatrix(const std::vector<Scalar__>& data, internals::checked_t) :
         Base(fdapde::sqrt(data.size()), fdapde::sqrt(data.size())), m_(data) {
         const int n = m_.rows();
-        auto I = IdentityMatrix<Dynamic, Dynamic>(n, n);
+        auto I = IdentityMatrix<Scalar_, Dynamic, Dynamic>(n, n);
         fdapde_assert(almost_equal(m_ * m_.transpose() FDAPDE_COMMA I FDAPDE_COMMA 1e-14));
     }
     template <typename Scalar__, std::size_t Size>
@@ -173,7 +173,7 @@ struct OrthogonalMatrix :
         fdapde_static_assert(
           Rows_ != Dynamic && Cols_ != Dynamic && Rows_ * Cols_ == Size, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
         const int n = m_.rows();
-        auto I = IdentityMatrix<Dynamic, Dynamic>(n, n);
+        auto I = IdentityMatrix<Scalar_, Dynamic, Dynamic>(n, n);
         fdapde_assert(almost_equal(m_ * m_.transpose() FDAPDE_COMMA I FDAPDE_COMMA 1e-14));
     }
     // assume input already orthogonal, trusts the caller
@@ -260,7 +260,7 @@ class OrthogonalMatrixView : public OrthogonalMatrixExpr<OrthogonalMatrixView<Sc
     constexpr OrthogonalMatrixView(Scalar__* data, internals::checked_t) : Base(), data_(data) {
         fdapde_static_assert(Rows_ != Dynamic && Cols_ != Dynamic, THIS_METHOD_IS_FOR_STATIC_SIZED_VIEWS_ONLY);
         const int size = data_.rows();
-        auto I = IdentityMatrix<Dynamic, Dynamic>(size, size);
+        auto I = IdentityMatrix<Scalar_, Dynamic, Dynamic>(size, size);
         fdapde_assert(almost_equal(data_ * data_.transpose() FDAPDE_COMMA I FDAPDE_COMMA 1e-14));
     }
     template <typename Scalar__>
@@ -268,7 +268,7 @@ class OrthogonalMatrixView : public OrthogonalMatrixExpr<OrthogonalMatrixView<Sc
     constexpr OrthogonalMatrixView(Scalar__* data, int rows, int cols, internals::checked_t) :
         Base(rows, cols), data_(data) {
         fdapde_assert(rows > 0 && cols > 0 && rows == cols);
-        auto I = IdentityMatrix<Dynamic, Dynamic>(rows, cols);
+        auto I = IdentityMatrix<Scalar_, Dynamic, Dynamic>(rows, cols);
         fdapde_assert(almost_equal(data_ * data_.transpose() FDAPDE_COMMA I FDAPDE_COMMA 1e-14));
     }
     // assume input already orthogonal, trusts the caller

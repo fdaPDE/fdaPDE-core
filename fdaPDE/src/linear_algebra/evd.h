@@ -38,7 +38,7 @@ template <typename XprType_> class EVD {
     householder_tridiagonalize_(const XprType& m) const {
         const int n = m.rows();
         Matrix<Scalar, Rows, Cols> T = m;
-        Matrix<Scalar, Rows, Cols> Q = IdentityMatrix<Rows, Cols>(n, n);
+        Matrix<Scalar, Rows, Cols> Q = IdentityMatrix<Scalar, Rows, Cols>(n, n);
 
         for (int k = 0; k < n - 2; ++k) {
             const int m = n - k - 1;
@@ -89,7 +89,7 @@ template <typename XprType_> class EVD {
         auto [T, Q_] = householder_tridiagonalize_(mtx.derived());
         const int n = T.rows();
         const int max_iter = max_iter_ * n;
-        Matrix<Scalar, Rows, Cols> Q = IdentityMatrix<Rows, Cols>(n, n);
+        Matrix<Scalar, Rows, Cols> Q = IdentityMatrix<Scalar, Rows, Cols>(n, n);
         // extract diagonal and subdiagonal
         Vector<Scalar, Rows> dd;
         Vector<Scalar, Rows == Dynamic ? Dynamic : (Rows - 1)> sd;
