@@ -23,6 +23,40 @@
 #include "linear_algebra.h"    // pull Eigen first
 #include "utility.h"
 #include "fields.h"
+#include "multithreading.h"
+
+namespace fdapde {
+
+template <typename Opt> struct is_gradient_based_opt {
+   private:
+    using Opt_ = std::decay_t<Opt>;
+    static constexpr int N = Opt_::static_input_size;
+    using vector_t = std::conditional_t<N == Dynamic, Eigen::Matrix<double, Dynamic, 1>, Eigen::Matrix<double, N, 1>>;
+   public:
+    static constexpr bool value = !Opt_::gradient_free && requires(Opt_ opt) {
+        { opt.x_old    } -> std::convertible_to<vector_t>;
+        { opt.x_new    } -> std::convertible_to<vector_t>;
+        { opt.update   } -> std::convertible_to<vector_t>;
+        { opt.grad_old } -> std::convertible_to<vector_t>;
+        { opt.grad_new } -> std::convertible_to<vector_t>;
+    };
+};
+template <typename Opt> static constexpr bool is_gradient_based_opt_v = is_gradient_based_opt<Opt>::value;
+
+template <typename Opt> struct is_gradient_free_opt {
+   private:
+    using Opt_ = std::decay_t<Opt>;
+    static constexpr int N = Opt_::static_input_size;
+    using vector_t = std::conditional_t<N == Dynamic, Eigen::Matrix<double, Dynamic, 1>, Eigen::Matrix<double, N, 1>>;
+   public:
+    static constexpr bool value = Opt_::gradient_free && requires(Opt_ opt) {
+        { opt.x_curr   } -> std::convertible_to<vector_t>;
+	{ opt.obj_curr } -> std::convertible_to<double>;
+    };
+};
+template <typename Opt> static constexpr bool is_gradient_free_opt_v = is_gradient_free_opt<Opt>::value;
+  
+}   // namespace fdapde
 
 namespace fdapde {
 

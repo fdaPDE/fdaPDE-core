@@ -13,14 +13,22 @@
 //
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//
+//
 
+<<<<<<<< HEAD:tests/geometry/triangle.cpp
 #include <fdaPDE/geometry.h>
 #include <gtest/gtest.h>   // testing framework
 using namespace fdapde;
+========
+#ifndef __FDAPDE_EXECUTION_TYPE_H__
+#define __FDAPDE_EXECUTION_TYPE_H__
+>>>>>>>> 023997a3 (Implemented multithreading support across FDAPDE):fdaPDE/src/multithreading/execution_type.h
 
 TEST(geometry, triangle) {
     Triangulation<2, 2> D = Triangulation<2, 2>::UnitSquare(60, 60);
 
+<<<<<<<< HEAD:tests/geometry/triangle.cpp
     // std::cout << D.n_nodes() << std::endl;
 
     
@@ -35,3 +43,11 @@ TEST(geometry, triangle) {
     std::cout << D.locate(pts)[0] << std::endl;
   
 }
+========
+namespace execution {
+    struct execution_parallel {}; 
+    inline constexpr execution_parallel par {};
+}
+
+#endif
+>>>>>>>> 023997a3 (Implemented multithreading support across FDAPDE):fdaPDE/src/multithreading/execution_type.h

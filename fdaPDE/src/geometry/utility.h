@@ -62,7 +62,8 @@ template <typename IteratorType, typename ValueType> class index_iterator {
       std::add_lvalue_reference_t<std::decay_t<ValueType>>>;
     using size_type = std::size_t;
     using difference_type = std::ptrdiff_t;
-    using iterator_category = std::bidirectional_iterator_tag;
+    //using iterator_category = std::bidirectional_iterator_tag;
+    using iterator_category = std::random_access_iterator_tag; //in realtà mancano diversi altri operator e quindi non soddisfa ancora: std::random_access_iterator<It>
 
     index_iterator() = default;
     index_iterator(int index, int begin, int end) : index_(index), begin_(begin), end_(end) { }
@@ -102,6 +103,56 @@ template <typename IteratorType, typename ValueType> class index_iterator {
         if (index_ >= begin_) derived().operator()(index_);
         return derived();
     }
+    IteratorType& operator+=(int n) {
+        index_+=n;
+        if (index_ < end_) derived().operator()(index_);
+        return derived();
+    }
+    IteratorType& operator-=(int n) {
+        index_-=n;
+        if (index_ >= begin_) derived().operator()(index_);
+        return derived();
+    }
+
+    /*errore in uso di derived().operator()(index_): ../../../../fdaPDE/src/geometry/utility.h:108:48: error: 'fdapde::internals::fe_dof_handler_base<LocalDim, EmbedDim, Derived>::cell_iterator& fdapde::internals::fe_dof_handler_base<LocalDim, EmbedDim, Derived>::cell_iterator::operator()(int) [with int LocalDim = 2; int EmbedDim = 2; Derived = fdapde::DofHandler<2, 2, fdapde::finite_element_tag>]' is private within this context
+  108 |         if (index_ < end_) derived().operator()(index_);
+  momemntanea amicizia tra index_iterator e cell_iterator in finite_elements/dof_handler.h riga 80
+  */
+    //aggiunti per random access completo (ancora comunque non soddisfa std::random_access<>)
+    friend int 
+    operator-(const index_iterator<IteratorType, ValueType>& lhs, const index_iterator<IteratorType, ValueType>& rhs) {
+        return lhs.index_ - rhs.index_;
+    }
+
+    // it2 = it + n
+    friend //anche se non accede a membri privati, è per non farla membro di classe. 
+    IteratorType operator+(const index_iterator<IteratorType, ValueType>& it, int n) {
+        IteratorType tmp = static_cast<IteratorType&>(it);
+        tmp += n;
+        return tmp;
+    }
+    // it2 = n + it
+    friend
+    IteratorType operator+(int n, const index_iterator<IteratorType, ValueType>& it) {
+        return it + n;
+    }
+    // it2 = it - n
+    friend
+    IteratorType operator-(const index_iterator<IteratorType, ValueType>& it, difference_type n) {
+        IteratorType tmp = static_cast<IteratorType&>(it);
+        tmp -= n;
+        return tmp;
+    }
+    friend bool
+    operator<=(const index_iterator<IteratorType, ValueType>& lhs, const index_iterator<IteratorType, ValueType>& rhs) {
+        return lhs.index_ <= rhs.index_;
+    }
+    // it[n] return *(it+n)
+    reference operator[](int n)const{ 
+        if (index_ < end_){return (derived()+n).operator*();}//(derived().operator+(derived(),n)).operator*()
+        return derived(); //stessa gestione del "controllo limite" in operator++
+    }
+
     friend bool
     operator!=(const index_iterator<IteratorType, ValueType>& lhs, const index_iterator<IteratorType, ValueType>& rhs) {
         return lhs.index_ != rhs.index_;

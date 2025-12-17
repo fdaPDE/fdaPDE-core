@@ -76,6 +76,10 @@ template <int LocalDim, int EmbedDim, typename Derived> class fe_dof_handler_bas
         using Base = internals::filtering_iterator<cell_iterator, CellType>;
         using Base::index_;
         friend Base;
+
+        //add friend per errore vedi geometry/utility.h riga 117
+        friend class internals::index_iterator<cell_iterator, CellType>;
+
         const Derived* dof_handler_;
         int marker_;
         cell_iterator& operator()(int i) {
