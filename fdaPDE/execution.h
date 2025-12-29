@@ -1,0 +1,44 @@
+// This file is part of fdaPDE, a C++ library for physics-informed
+// spatial and functional data analysis.
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#ifndef __FDAPDE_EXECUTION_MODULE_H__
+#define __FDAPDE_EXECUTION_MODULE_H__
+
+// clang-format off
+
+namespace fdapde {
+namespace internals {
+
+struct execution_parallel_t { };
+
+}   // namespace internals
+
+static constexpr internals::execution_parallel_t execution_par;
+
+}   // namespace fdapde
+
+#include "utility.h"
+
+#include <atomic>
+#include <mutex>
+#include <future>
+#include <latch>
+
+#include "src/execution/threadpool.h"
+
+// clang-format on
+
+#endif   // __FDAPDE_EXECUTION_MODULE_H__
