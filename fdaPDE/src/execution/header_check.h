@@ -14,14 +14,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_EXECUTION_TYPE_H__
-#define __FDAPDE_EXECUTION_TYPE_H__
-
-namespace execution {
-
-struct execution_parallel { };
-inline constexpr execution_parallel par {};
-
-}   // namespace execution
-
-#endif // __FDAPDE_EXECUTION_TYPE_H__
+#ifndef __FDAPDE_EXECUTION_MODULE_H__
+#    error "Include fdaPDE/execution.h instead of including internal headers directly."
+#endif

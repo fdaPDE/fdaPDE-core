@@ -14,6 +14,31 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_MULTITHREADING_MODULE_H__
-#    error "Include fdaPDE/multithreading.h instead of including internal headers directly."
-#endif
+#ifndef __FDAPDE_EXECUTION_MODULE_H__
+#define __FDAPDE_EXECUTION_MODULE_H__
+
+// clang-format off
+
+namespace fdapde {
+namespace internals {
+
+struct execution_parallel_t { };
+
+}   // namespace internals
+
+static constexpr internals::execution_parallel_t execution_par;
+
+}   // namespace fdapde
+
+#include "utility.h"
+
+#include <atomic>
+#include <mutex>
+#include <future>
+#include <latch>
+
+#include "src/execution/threadpool.h"
+
+// clang-format on
+
+#endif   // __FDAPDE_EXECUTION_MODULE_H__
