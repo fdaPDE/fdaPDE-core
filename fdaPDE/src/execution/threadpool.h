@@ -135,7 +135,7 @@ namespace internals {
 // * "Le, N. M., Pop, A., Cohen, A., \and Zappa, F. (2013). Correct and efficient work-stealing for weak memory
 //    models. ACM SIGPLAN Notices, 48(8), 69-80."
 template <typename T>
-    requires(std::is_trivially_copyable_v<T> && sizeof(T) <= sizeof(void*) && std::atomic<T>::is_always_lock_free)
+//    requires(std::is_trivially_copyable_v<T> && sizeof(T) <= sizeof(void*) && std::atomic<T>::is_always_lock_free)
 struct chase_lev_queue {
     // any instance of type T must be copy/move-able atomically (a copy/move operation can be performed by the compiler
     // issuing a single mov instruction). observe that pointers fall in this category
@@ -170,8 +170,8 @@ struct chase_lev_queue {
                 }
                 bottom_.store(b + 1, std::memory_order_relaxed);
             }
-	    std::int64_t idx = b & mask_;
-            return buffer_[idx];   // atomic read
+            std::int64_t idx = b & mask_;
+            return std::move(buffer_[idx]);   // atomic read
         } else {
             // empty queue
             bottom_.store(b + 1, std::memory_order_relaxed);
@@ -181,14 +181,16 @@ struct chase_lev_queue {
 
     // appends a copy of value to the end of the container. aborts if container full
     // only owning thread push at buffer's back
-    bool push_front(T value) {
+    template <typename T_>
+        requires(std::is_convertible_v<T_, T>)
+    bool push_front(T_ value) {
         std::int64_t b = bottom_.load(std::memory_order_relaxed);
         std::int64_t t = top_.load(std::memory_order_acquire);
         // abort if queue is full
         if (b >= t + capacity_ - 1) { return false; }
         // write
         std::int64_t idx = b & mask_;
-        buffer_[idx] = value;
+        buffer_[idx] = std::move(value);
         std::atomic_thread_fence(std::memory_order_release);
         bottom_.store(b + 1, std::memory_order_relaxed);   // sync write
         return true;
@@ -206,7 +208,7 @@ struct chase_lev_queue {
         if (b >= t + capacity_ - 1) { return false; }
         // write
         std::int64_t idx = b & mask_;
-        buffer_[idx] = value;
+        buffer_[idx] = std::move(value);
         std::atomic_thread_fence(std::memory_order_release);
         bottom_.store(b + 1, std::memory_order_relaxed);   // sync write
         return true;
@@ -220,13 +222,12 @@ struct chase_lev_queue {
         // abort if queue is empty
         if (t >= b) { return std::nullopt; }
         // atomic read
-	std::int64_t idx = t & mask_;
-	T value = buffer_[idx];
+        std::int64_t idx = t & mask_;
         // try to claim the element by incrementing top
         if (!top_.compare_exchange_strong(t, t + 1, std::memory_order_seq_cst, std::memory_order_relaxed)) {
             return std::nullopt;   // lost race
         }
-        return value;
+        return std::move(buffer_[idx]);   // we move now, after having win the CAS
     }
     // observers
     bool empty() const {
@@ -235,15 +236,17 @@ struct chase_lev_queue {
     }
    private:
     std::vector<T> buffer_;
-    const std::int64_t capacity_;    // maximum buffer size (as power of 2)
-    const int mask_;                 // 0b(capacity_ - 1), allows fast modulo capacity_
+    const std::int64_t capacity_;   // maximum buffer size (as power of 2)
+    const int mask_;                // 0b(capacity_ - 1), allows fast modulo capacity_
 
     alignas(64) std::atomic<std::int64_t> bottom_;   // number of performed pushes
     alignas(64) std::atomic<std::int64_t> top_;      // number of performed pops
 };
 
 // unbounded lock-free MPSC queue
-template <typename T> class mpsc_queue {
+template <typename T>
+    requires(std::is_move_constructible_v<T>)
+class mpsc_queue {
     struct node_t {
         std::atomic<node_t*> next;
         T data;
@@ -253,7 +256,6 @@ template <typename T> class mpsc_queue {
             requires(std::is_constructible_v<T, T_>)
         node_t(T_&& data_) : next(nullptr), data(std::forward<T_>(data_)) { }
     };
-
    public:
     mpsc_queue() : head_(nullptr), tail_(nullptr) {
         node_t* root = new node_t();
@@ -262,21 +264,21 @@ template <typename T> class mpsc_queue {
     }
 
     // multi-producer push
-    void push(T value) {
-        node_t* node = new node_t(value);
+    void push(T&& value) {
+        node_t* node = new node_t(std::move(value));
         node_t* prev = tail_.exchange(node, std::memory_order_acq_rel);
         prev->next.store(node, std::memory_order_release);
-	return;
+        return;
     }
-    // sincgle consumer pop
+    // single consumer pop
     std::optional<T> pop() {
         node_t* next = head_->next.load(std::memory_order_acquire);
         if (next == nullptr) { return std::nullopt; }
 
-	T value = std::move(next->data);
-	delete head_;
-	head_ = next;
-	return value;
+        T value = std::move(next->data);
+        delete head_;
+        head_ = next;
+        return std::move(value);
     }
 
     ~mpsc_queue() {
@@ -340,10 +342,87 @@ class ThreadPool {
         }
     };
 
+    struct task_t {
+        using fn_t = void (*)(void*);
+        static constexpr int buffer_size = 64;
+
+        task_t() noexcept = default;
+        // copy semantic
+        task_t(const task_t&) = delete;
+        task_t& operator=(const task_t&) = delete;
+        // move semantic
+        task_t(task_t&& other) noexcept :
+            fn_(std::exchange(other.fn_, nullptr)),
+            rm_(std::exchange(other.rm_, nullptr)),
+            mv_(std::exchange(other.mv_, nullptr)),
+            sb_(std::exchange(other.sb_, 0)) {
+            if (sb_) {
+                if (mv_) { mv_(storage_.buff_, other.storage_.buff_); }
+            } else {
+                storage_.data_ = std::exchange(other.storage_.data_, nullptr);
+            }
+        }
+        task_t& operator=(task_t&& other) noexcept {
+            if (this == &other) return *this;
+            if (rm_) { rm_(sb_ ? (void*)storage_.buff_ : storage_.data_); }   // clean-up to prevent leaks
+
+            fn_ = std::exchange(other.fn_, nullptr);
+            rm_ = std::exchange(other.rm_, nullptr);
+            mv_ = std::exchange(other.mv_, nullptr);
+            sb_ = std::exchange(other.sb_, 0);
+            if (sb_) {
+                if (mv_) { mv_(storage_.buff_, other.storage_.buff_); }
+            } else {
+                storage_.data_ = std::exchange(other.storage_.data_, nullptr);
+            }
+            return *this;
+        }
+        template <typename F>
+            requires(!std::is_same_v<std::decay_t<F>, task_t> && std::is_invocable_v<F>)
+        explicit task_t(F&& f) {
+            using Fn = std::decay_t<F>;
+            constexpr bool sb = sizeof(F) <= buffer_size && alignof(Fn) <= alignof(union U);
+            sb_ = sb;
+            if constexpr (sb) {
+                // stack allocation for small task object
+                new (storage_.buff_) Fn(std::forward<F>(f));
+            } else {
+                // if task cannot fit in small buffer, resort to heap allocation
+                storage_.data_ = new Fn(std::forward<F>(f));
+            }
+            // type-erased function handlers
+            fn_ = [](void* ptr) { (*reinterpret_cast<Fn*>(ptr))(); };
+            rm_ = [](void* ptr) noexcept {
+                if (ptr == nullptr) { return; }
+                (*reinterpret_cast<Fn*>(ptr)).~Fn();
+                if constexpr (!sb) { delete (reinterpret_cast<Fn*>(ptr)); }   // free resources
+            };
+            mv_ = [](void* dst, void* src) noexcept {
+                new (dst) Fn(std::move(*reinterpret_cast<Fn*>(src)));
+                (*reinterpret_cast<Fn*>(src)).~Fn();
+            };
+        }
+        // invoke
+        void operator()() { fn_(sb_ ? (void*)storage_.buff_ : storage_.data_); }
+        void operator()() const { fn_(sb_ ? (void*)storage_.buff_ : storage_.data_); }
+        ~task_t() {
+            if (rm_) { rm_(sb_ ? (void*)storage_.buff_ : storage_.data_); }
+        }
+       private:
+        fn_t fn_ = nullptr;
+        fn_t rm_ = nullptr;
+        void (*mv_)(void*, void*);
+        union alignas(std::max_align_t) U {
+            void* data_;
+            std::byte buff_[buffer_size];   // small buffer optimization
+        } storage_ {};
+        bool sb_ = false;
+    };
+
     // work executor: a wrapper around a std::thread and a ring_buffer of type-erased jobs
     struct worker_t {
         template <typename WorkerLoopT>
-	  worker_t(int i, int queue_size, WorkerLoopT worker_loop, ThreadPool* tp) :
+        worker_t(int i, int queue_size, WorkerLoopT worker_loop, ThreadPool* tp) :
             i_(i), queue_(queue_size), running_(true), tp_(tp), thread_(worker_loop) { }
 
         // worker coordination
@@ -353,7 +432,8 @@ class ThreadPool {
         void to_idle() {
             std::unique_lock<std::mutex> lock(idle_m_);
             idle_cv_.wait(lock, [&]() {
-	      return tp_->workload_[i_].load(std::memory_order_acquire) > 0 || !running_.load(std::memory_order_acquire);
+                return tp_->workload_[i_].load(std::memory_order_acquire) > 0 ||
+                       !running_.load(std::memory_order_acquire);
             });
         }
         void stop() {
@@ -363,48 +443,55 @@ class ThreadPool {
         // observers
         bool is_running() const { return running_.load(std::memory_order_acquire) == true; }
         // task handling
-        std::optional<std::function<void()>*> try_fetch_task() {
+        std::optional<task_t> try_fetch_task() {
             // check mailbox
-            auto mail = mailbox_.pop();
-            if (mail) { queue_.push_front(mail.value()); }
+            auto&& mail = mailbox_.pop();
+            if (mail) {
+                if (queue_.empty()) {
+                    return mail;   // bypass queue if already empty ------------ batched insertion?
+                } else {
+                    queue_.push_front(std::move(*mail));
+                }
+            }
             return queue_.pop_front();
         }
-        void submit_task(std::function<void()>* task) { return mailbox_.push(task); }
-        std::optional<std::function<void()>*> try_steal() { return queue_.pop_back(); }
+
+        void submit_task(task_t&& task) {
+            // submit task to mailbox, as only this worker can push to queue_'s front (avoid break Chase-Lev invariant)
+            return mailbox_.push(std::move(task));
+        }
+        std::optional<task_t> try_steal() { return queue_.pop_back(); }
        private:
         int i_;
 
-        internals::chase_lev_queue<std::function<void()>*> queue_;
-        internals::mpsc_queue<std::function<void()>*> mailbox_;
+        internals::chase_lev_queue<task_t> queue_;
+        internals::mpsc_queue<task_t> mailbox_;
         std::atomic<bool> running_;
         ThreadPool* tp_;
         std::thread thread_;
 
-      
         // worker coordination
         std::mutex idle_m_;
         std::condition_variable idle_cv_;
     };
 
     // worker loop
-    void execute_task_(std::function<void()>* task, int i) {
-        (*task)();
+    void execute_task_(const task_t& task, int i) {
+        task();
         workload_[i].fetch_sub(1, std::memory_order_release);
-        n_tasks_.fetch_sub(1, std::memory_order_release);
-	delete task;
+        // n_tasks_.fetch_sub(1, std::memory_order_release);  --- removed for performances
         // notify anyone waiting on global join()
-        //std::lock_guard<std::mutex> lock(join_m_);
-        //join_cv_.notify_all();
+        // std::lock_guard<std::mutex> lock(join_m_);
+        // join_cv_.notify_all();
         return;
     }
     void worker_loop_(int i) {
         internals::tls_worker_id = i;   // register worker global id
-	init_latch_.arrive_and_wait();
+        init_latch_.arrive_and_wait();
         // loop logic
         while (workers_[i]->is_running()) {
-	  
             // 1. check worker queue
-	  auto task = workers_[i]->try_fetch_task(); // pop-front
+            auto task = workers_[i]->try_fetch_task();   // pop-front
             if (task) {
                 execute_task_(*task, i);
             } else {
@@ -429,15 +516,14 @@ class ThreadPool {
         // 1. query scheduler to pick worker
         int i = scheduler_.pick(workload_);
         // 2. submit task
-	auto* task_ptr = new std::function<void()>(std::forward<Task>(task));
-        workers_[i]->submit_task(task_ptr);
+        workers_[i]->submit_task(task_t(task));
         workload_[i].fetch_add(1, std::memory_order_release);
-        n_tasks_.fetch_add(1, std::memory_order_release);
+        // n_tasks_.fetch_add(1, std::memory_order_release); --- removed for performances
         // 3. notify worker, if waiting
-	workers_[i]->wake_up();
+        workers_[i]->wake_up();
         return;
     }
-  
+
     std::vector<std::shared_ptr<worker_t>> workers_;
     int n_workers_;
     scheduling_t scheduler_;
@@ -476,7 +562,7 @@ class ThreadPool {
           std::make_shared<std::packaged_task<ret_t()>>([f_ = f, ... args_ = args]() mutable { return f_(args_...); });
         std::function<void()> task = [packaged_task]() { (*packaged_task)(); };
 
-	submit_task_(task);
+        submit_task_(task);
         return packaged_task->get_future();
     };
     // execute f(args...) asynchronously. doesn't wait for any result
@@ -516,29 +602,29 @@ class ThreadPool {
         fdapde_assert(grain_size > 0);
         const int n = end - begin;
         if (n == 0) return;   // nothing to loop
-	
+
         grain_size = (grain_size < n) ? grain_size : n;
-	std::shared_ptr<std::atomic<int>> group_ptr = std::make_shared<std::atomic<int>>(1); // sentinel pattern
+        std::atomic<int> group_ptr {1};
         for (Iterator j = begin; j < end; j += grain_size) {
             Iterator k = ((j + grain_size) < end) ? (j + grain_size) : end;
             // send job for [i, k) blocked range execution
-	    auto loop_body = [=, f_ = f, this]() mutable {
-                for (Iterator it = j; it < k; ++it) { f_(it); }
-                if (group_ptr->fetch_sub(1, std::memory_order_acq_rel) == 1) {
+            auto loop_body = [&, k_ = k, j_ = j, f_ = f]() {
+                for (Iterator it = j_; it < k_; ++it) { f_(it); }
+                if (group_ptr.fetch_sub(1, std::memory_order_acq_rel) == 1) {
                     // last chunk of this parallel_for task group
-		    std::unique_lock<std::mutex> lock(join_m_);
+                    std::unique_lock<std::mutex> lock(join_m_);
                     join_cv_.notify_all();
-		}
+                }
             };
-	    submit_task_(loop_body);
-	    group_ptr->fetch_add(1, std::memory_order_release);
+            submit_task_(loop_body);
+            group_ptr.fetch_add(1, std::memory_order_release);
         }
         // return fast if main thread is already the last
-        if (group_ptr->fetch_sub(1, std::memory_order_acq_rel) == 1) { return; }
+        if (group_ptr.fetch_sub(1, std::memory_order_acq_rel) == 1) { return; }
         // wait for this task group
         std::unique_lock<std::mutex> lock(join_m_);
-        join_cv_.wait(lock, [&] { return group_ptr->load() == 0; });
-	return;
+        join_cv_.wait(lock, [&] { return group_ptr.load(std::memory_order_acquire) == 0; });
+        return;
     }
     // splits container range into contiguous chunks whose size is adaptively chosen. submits one task per chunk
     template <typename Container, typename F> void parallel_for_each(Container&& c, F&& f) {
@@ -561,27 +647,27 @@ class ThreadPool {
 
     // waits until all submitted tasks complete
     void join() {
-//         // work-helping: instead of blocking the caller, temporarily use it as member of the pool
-//         // while (n_tasks_.load(std::memory_order_acquire) > 0) {
-//         //     bool busy = false;
-//         //     for (int i = 0; i < n_workers_; ++i) {
-//         //         auto task = workers_[i]->try_steal();
-//         //         if (task) {
-//         //             execute_task_(task, i);
-//         //             busy = true;
-//         //             break;
-//         //         }
-//         //     }
-//         //     if (!busy && n_tasks_.load(std::memory_order_acquire) > 0) {
-//                 // std::unique_lock<std::mutex> lock(join_m_);
-//                 // join_cv_.wait(lock, [&] { return n_tasks_.load(std::memory_order_acquire) == 0; });
-//         //     }
-//         // }
-// while (n_tasks_.load(std::memory_order_acquire) > 0) {
-//         std::this_thread::yield();
-//     }
-//       // n_tasks_.store(0);
-//         return;
+        //         // work-helping: instead of blocking the caller, temporarily use it as member of the pool
+        //         // while (n_tasks_.load(std::memory_order_acquire) > 0) {
+        //         //     bool busy = false;
+        //         //     for (int i = 0; i < n_workers_; ++i) {
+        //         //         auto task = workers_[i]->try_steal();
+        //         //         if (task) {
+        //         //             execute_task_(task, i);
+        //         //             busy = true;
+        //         //             break;
+        //         //         }
+        //         //     }
+        //         //     if (!busy && n_tasks_.load(std::memory_order_acquire) > 0) {
+        //                 // std::unique_lock<std::mutex> lock(join_m_);
+        //                 // join_cv_.wait(lock, [&] { return n_tasks_.load(std::memory_order_acquire) == 0; });
+        //         //     }
+        //         // }
+        // while (n_tasks_.load(std::memory_order_acquire) > 0) {
+        //         std::this_thread::yield();
+        //     }
+        //       // n_tasks_.store(0);
+        //         return;
     }
     // stops all running threads. not yet completed tasks are losts. explicitly call join() to wait for all sent tasks
     void stop() {
