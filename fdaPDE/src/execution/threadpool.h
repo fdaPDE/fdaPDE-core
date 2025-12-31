@@ -243,10 +243,100 @@ struct chase_lev_queue {
     alignas(64) std::atomic<std::int64_t> top_;      // number of performed pops
 };
 
+// a pool-allocator for objects of type T
+template <typename T> struct pool_allocator {
+    // a single unit of data inside a contiguous memory region
+    struct slot_t {
+        T data;
+        slot_t* next;
+    };
+    // contiguous memory region of slot_t items
+    struct block_t {
+        slot_t* data;
+        block_t* next;
+        explicit block_t(slot_t* data_) noexcept : data(data_), next(nullptr) { }
+    };
+
+    explicit pool_allocator(int block_sz) :
+        block_sz_(block_sz), block_list_(alloc_(block_sz)), free_list_(nullptr), message_list_(nullptr) { }
+    // disable copy semantic
+    pool_allocator(const pool_allocator&) = delete;
+    pool_allocator& operator=(const pool_allocator&) = delete;
+
+    // returns pointer to reserved memory region
+    template <typename... T_> T* alloc(T_&&... t) {
+        // fetch memory from free_list, if available
+        if (free_list_) {
+            slot_t* slot = free_list_;
+            free_list_ = slot->next;
+	    T* ptr = std::addressof(slot->data);
+            new (ptr) T(std::forward<T_>(t)...);
+            return ptr;
+        } else {
+            // reclaim borrowed memory
+            free_list_ = message_list_.exchange(nullptr, std::memory_order_acquire);
+            if (free_list_) {
+                slot_t* slot = free_list_;
+                free_list_ = slot->next;
+                T* ptr = std::addressof(slot->data);
+                new (ptr) T(std::forward<T_>(t)...);
+                return ptr;	      
+	    }
+	}
+        // allocate memory if available space exhausted
+        if (used_slots_ >= block_sz_) {
+            block_t* new_block = alloc_(block_sz_);
+            block_list_->next = new_block;
+            block_list_ = new_block;
+            used_slots_ = 0;
+        }
+        T* ptr = std::addressof(block_list_->data[used_slots_].data);
+        used_slots_++;
+        new (ptr) T(std::forward<T_>(t)...);
+        return ptr;
+    }
+    void dealloc(T* ptr) {
+        // the ptr memory layout is the one of a slot_t, here is safe to reinterpret ptr as a slot_t*
+        slot_t* slot = reinterpret_cast<slot_t*>(ptr);
+        // lock-free retry loop: append this slot to the remote free list
+        slot_t* old = message_list_.load(std::memory_order_acquire);
+        do {
+            slot->next = old;
+        } while (
+          !message_list_.compare_exchange_strong(old, slot, std::memory_order_release, std::memory_order_relaxed));
+        return;
+    }
+
+    ~pool_allocator() {
+        block_t* next = block_list_;
+        while (next != nullptr) { next = dealloc_(next); }
+    }
+   private:
+    // perform dynamic memory allocation for block_sz T objects
+    block_t* alloc_(int block_sz) {
+        slot_t* data = new slot_t[block_sz];
+        return new block_t(data);
+    }
+    // deallocate block returning pointer to next block
+    block_t* dealloc_(block_t* block) {
+        block_t* next = block->next;
+        delete[] block->data;
+        delete block;
+        return next;
+    }
+
+    const std::uint64_t block_sz_;
+    std::uint64_t used_slots_;   // number of used slots in last block
+    block_t* block_list_;
+    slot_t* free_list_;
+    std::atomic<slot_t*> message_list_;
+};
+
 // unbounded lock-free MPSC queue
 template <typename T>
     requires(std::is_move_constructible_v<T>)
 class mpsc_queue {
+   public:
     struct node_t {
         std::atomic<node_t*> next;
         T data;
@@ -256,39 +346,31 @@ class mpsc_queue {
             requires(std::is_constructible_v<T, T_>)
         node_t(T_&& data_) : next(nullptr), data(std::forward<T_>(data_)) { }
     };
-   public:
-    mpsc_queue() : head_(nullptr), tail_(nullptr) {
-        node_t* root = new node_t();
-        head_ = root;
-        tail_.store(root, std::memory_order_relaxed);
+  template <typename allocator_t> mpsc_queue(allocator_t& allocator) : head_(nullptr), tail_(nullptr) {
+      node_t* root = allocator.alloc();
+      head_ = root;
+      tail_.store(root, std::memory_order_relaxed);
     }
 
     // multi-producer push
-    void push(T&& value) {
-        node_t* node = new node_t(std::move(value));
+    template <typename allocator_t> void push(T&& value, allocator_t& allocator) {
+        node_t* node = allocator.alloc(std::move(value));
         node_t* prev = tail_.exchange(node, std::memory_order_acq_rel);
         prev->next.store(node, std::memory_order_release);
         return;
     }
     // single consumer pop
-    std::optional<T> pop() {
+    template <typename allocator_t> std::optional<T> pop(allocator_t& allocator) {
         node_t* next = head_->next.load(std::memory_order_acquire);
         if (next == nullptr) { return std::nullopt; }
 
         T value = std::move(next->data);
-        delete head_;
+        allocator.dealloc(head_);
         head_ = next;
         return std::move(value);
     }
 
-    ~mpsc_queue() {
-        node_t* next = head_;
-        while (head_->next) {
-            next = head_->next;
-            delete (head_);
-        }
-        delete (next);
-    }
+    ~mpsc_queue() = default;
    private:
     node_t* head_;
     std::atomic<node_t*> tail_;
@@ -306,7 +388,7 @@ class ThreadPool {
     template <typename T> struct atomic_array {
        private:
         // a copiable/movable wrapper around a std::atomic<T> object
-        struct atomic_t {
+      struct alignas(64) atomic_t {
             atomic_t() : v_() { }
             atomic_t(const std::atomic<T>& v) : v_(v.load()) { }
             atomic_t(const atomic_t& other) : v_(other.v_.load()) { }
@@ -423,7 +505,13 @@ class ThreadPool {
     struct worker_t {
         template <typename WorkerLoopT>
         worker_t(int i, int queue_size, WorkerLoopT worker_loop, ThreadPool* tp) :
-            i_(i), queue_(queue_size), running_(true), tp_(tp), thread_(worker_loop) { }
+            i_(i),
+            allocator_(256),
+            queue_(queue_size),
+            mailbox_(allocator_),
+            running_(true),
+            tp_(tp),
+            thread_(worker_loop) { }
 
         // worker coordination
         void wake_up() { idle_cv_.notify_one(); }
@@ -445,7 +533,7 @@ class ThreadPool {
         // task handling
         std::optional<task_t> try_fetch_task() {
             // check mailbox
-            auto&& mail = mailbox_.pop();
+            auto&& mail = mailbox_.pop(allocator_);
             if (mail) {
                 if (queue_.empty()) {
                     return mail;   // bypass queue if already empty ------------ batched insertion?
@@ -458,17 +546,19 @@ class ThreadPool {
 
         void submit_task(task_t&& task) {
             // submit task to mailbox, as only this worker can push to queue_'s front (avoid break Chase-Lev invariant)
-            return mailbox_.push(std::move(task));
+            return mailbox_.push(std::move(task), allocator_);
         }
         std::optional<task_t> try_steal() { return queue_.pop_back(); }
        private:
         int i_;
 
+        internals::pool_allocator<typename internals::mpsc_queue<task_t>::node_t> allocator_;
         internals::chase_lev_queue<task_t> queue_;
         internals::mpsc_queue<task_t> mailbox_;
         std::atomic<bool> running_;
         ThreadPool* tp_;
         std::thread thread_;
+
 
         // worker coordination
         std::mutex idle_m_;
