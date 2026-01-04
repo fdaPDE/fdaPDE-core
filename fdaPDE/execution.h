@@ -37,7 +37,8 @@ static constexpr internals::execution_parallel_t execution_par;
 #include <future>
 #include <latch>
 
-#include "src/execution/task.h"
+#include "src/execution/task_handle.h"
+#include "src/execution/task_graph.h"
 #include "src/execution/worker.h"
 #include "src/execution/threadpool.h"
 

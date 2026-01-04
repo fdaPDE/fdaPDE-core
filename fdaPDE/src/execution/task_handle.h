@@ -14,8 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_EXECUTION_TASK_H__
-#define __FDAPDE_EXECUTION_TASK_H__
+#ifndef __FDAPDE_EXECUTION_TASK_HANDLE_H__
+#define __FDAPDE_EXECUTION_TASK_HANDLE_H__
 
 #include "header_check.h"
 
@@ -27,13 +27,25 @@ class task_handle {
    public:
     task_handle() noexcept = default;
     // copy semantic
-    task_handle(const task_handle&) = delete;
-    task_handle& operator=(const task_handle&) = delete;
+    // task_handle(const task_handle&) = delete;
+    // task_handle& operator=(const task_handle&) = delete;
+    task_handle(const task_handle& other) :
+        fn_(other.fn_), rm_(other.rm_), mv_(other.mv_), cp_(other.cp_), sb_(other.sb_) {
+        if (sb_) {
+            if (cp_) { cp_(storage_.buff_, other.storage_.buff_); }
+        } else {
+            storage_.data_ = other.storage_.data_;
+        }
+        required_by_ = other.required_by_;
+        allocation_context_ = other.allocation_context_;
+	ref_count_.store(other.ref_count_, std::memory_order_release);
+    }
     // move semantic
     task_handle(task_handle&& other) noexcept :
         fn_(std::exchange(other.fn_, nullptr)),
         rm_(std::exchange(other.rm_, nullptr)),
         mv_(std::exchange(other.mv_, nullptr)),
+	cp_(std::exchange(other.cp_, nullptr)),
         sb_(std::exchange(other.sb_, 0)) {
         if (sb_) {
             if (mv_) { mv_(storage_.buff_, other.storage_.buff_); }
@@ -41,10 +53,10 @@ class task_handle {
             storage_.data_ = std::exchange(other.storage_.data_, nullptr);
         }
 	// task dependencies
-        parent_    = std::exchange(other.parent_, nullptr);
+        required_by_ = std::move(other.required_by_);
         ref_count_.store(other.ref_count_);
-        other.ref_count_.store(0);
-        allocation_pool_ = other.allocation_pool_;   // copy, as physical memory is not moved
+        other.ref_count_.store(0); 
+        allocation_context_ = other.allocation_context_;   // copy, as physical memory is not moved
     }
     task_handle& operator=(task_handle&& other) noexcept {
         if (this == &other) return *this;
@@ -53,6 +65,7 @@ class task_handle {
         fn_ = std::exchange(other.fn_, nullptr);
         rm_ = std::exchange(other.rm_, nullptr);
         mv_ = std::exchange(other.mv_, nullptr);
+	cp_ = std::exchange(other.cp_, nullptr);
         sb_ = std::exchange(other.sb_, 0);
         if (sb_) {
             if (mv_) { mv_(storage_.buff_, other.storage_.buff_); }
@@ -60,16 +73,16 @@ class task_handle {
             storage_.data_ = std::exchange(other.storage_.data_, nullptr);
         }
         // task dependencies
-        parent_ = std::exchange(other.parent_, nullptr);
+        required_by_ = std::move(other.required_by_);
         ref_count_.store(other.ref_count_);
         other.ref_count_.store(0);
-        allocation_pool_ = other.allocation_pool_;   // copy, as physical memory is not moved
+        allocation_context_ = other.allocation_context_;   // copy, as physical memory is not moved
         return *this;
     }
     template <typename F>
         requires(!std::is_same_v<std::decay_t<F>, task_handle> && std::is_invocable_v<F>)
-    explicit task_handle(F&& f, int allocation_pool) :
-        parent_(nullptr), ref_count_(0), allocation_pool_(allocation_pool) {
+    task_handle(F&& f, int allocation_context) :
+        required_by_(), ref_count_(0), allocation_context_(allocation_context) {
         using Fn = std::decay_t<F>;
         constexpr bool sb = sizeof(F) <= buffer_size && alignof(Fn) <= alignof(union U);
         sb_ = sb;
@@ -91,34 +104,36 @@ class task_handle {
             new (dst) Fn(std::move(*reinterpret_cast<Fn*>(src)));
             (*reinterpret_cast<Fn*>(src)).~Fn();
         };
+        cp_ = [](void* dst, const void* src) noexcept { new (dst) Fn(*reinterpret_cast<const Fn*>(src)); };
     }
+    template <typename F>
+        requires(!std::is_same_v<std::decay_t<F>, task_handle> && std::is_invocable_v<F>)
+    explicit task_handle(F&& f) : task_handle(std::forward<F>(f), -1) { }
+  
     // invoke
-    void run() {
-        fn_(sb_ ? (void*)storage_.buff_ : storage_.data_);
-	// signal task completion, publish writes to successors
-        for (task_handle* succ : successors_) { succ->ref_count_.fetch_sub(1, std::memory_order_release); }
-    }
+    void run() { fn_(sb_ ? (void*)storage_.buff_ : storage_.data_); }
     // a task is runnable if all its dependencies have been completed
     bool runnable() const { return ref_count_.load(std::memory_order_acquire) == 0; }
     int ref_count() const { return ref_count_.load(std::memory_order_acquire); }
-    int allocation_pool() const { return allocation_pool_; }
-
-    // task dependencies
-    template <typename Iterator> void depends_on(Iterator begin, Iterator end) {
-        for (Iterator task = begin; task != end; std::advance(task, 1)) {
-            (*task)->successors_.push_back(this);
-            ref_count_.fetch_add(1, std::memory_order_release);   // number of tasks to wait
-        }
-	return;
+    int ref_count_fetch_sub(int i, std::memory_order order = std::memory_order_release) {
+        return ref_count_.fetch_sub(i, order);
     }
+    int ref_count_fetch_add(int i, std::memory_order order = std::memory_order_release) {
+        return ref_count_.fetch_add(i, order);
+    }
+
+    int allocation_context() const { return allocation_context_; }
+    std::vector<task_handle*>& required_by() { return required_by_; }
+  
     // destructor (task destroyed only after completion)
     ~task_handle() {
         if (rm_) { rm_(sb_ ? (void*)storage_.buff_ : storage_.data_); }
     }
-   private:
+  // private:
     void (*fn_)(void*) = nullptr;
     void (*rm_)(void*) = nullptr;
     void (*mv_)(void*, void*) = nullptr;
+    void (*cp_)(void*, const void*) = nullptr;
     union alignas(std::max_align_t) U {
         void* data_;
         std::byte buff_[buffer_size];   // small buffer optimization
@@ -126,40 +141,12 @@ class task_handle {
     bool sb_ = false;
 
     // task properties
-    std::vector<task_handle*> successors_ {};   // pointer to successors task
-    std::atomic<int> ref_count_ {0};            // number of predecessors tasks not yet completed
-    int allocation_pool_ = 0;                   // memory pool physically holding the task
+    std::vector<task_handle*> required_by_ {};   // stable pointers to tasks which require this task to be completed
+    std::atomic<int> ref_count_ {0};             // number of not yet completed tasks required by this task
+    int allocation_context_ = 0;                 // memory pool identifier, --------------------------------------- make this optional, call stable_address?
 };
 
 }   // namespace internals
-
-// public task API
-class Task {
-    friend internals::task_handle;
-   public:
-    Task() : handle_(nullptr) { }
-    template <typename F>
-        requires(!std::is_same_v<std::decay_t<F>, Task> && std::is_invocable_v<F>)
-    explicit Task(F&& f) : handle_(std::make_shared<internals::task_handle>(f)) { }
-
-    template <typename... Tasks> void depends_on(Tasks&&... tasks) {
-        std::array<internals::task_handle*, sizeof...(tasks)> handles;
-        internals::for_each_index_and_args<sizeof...(tasks)>(
-          [&]<int Ns_, typename Task_>(Task_ t) { handles[Ns_] = t.handle().get(); }, tasks...);
-        handle_->depends_on(handles.begin(), handles.end());
-        return;
-    }
-    template <typename Iterator> void depends_on(Iterator begin, Iterator end) {
-        const int size = std::distance(begin, end);
-        std::vector<internals::task_handle*> handles;
-        for (Iterator it = begin; it != end; std::advance(it, 1)) { handles.push_back(it->handle_.get()); }
-        handle_->depends_on(handles.begin(), handles.end());
-        return;
-    }
-   private:
-    std::shared_ptr<internals::task_handle> handle_;
-};
-
 }   // namespace fdapde
 
-#endif   // __FDAPDE_EXECUTION_TASK_H__
+#endif   // __FDAPDE_EXECUTION_TASK_HANDLE_H__

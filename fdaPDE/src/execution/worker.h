@@ -256,15 +256,15 @@ class mpsc_queue {
     }
 
     // multi-producer push, pushes the element value to the end of the queue
-    void push(value_type&& value) {
-        node_t* node = allocator_.allocate(std::move(value));
+    template <typename T_> void push(T_&& value) {
+        node_t* node = allocator_.allocate(std::forward<T_>(value));
         node_t* prev = tail_.exchange(node, std::memory_order_acq_rel);
         prev->next().store(node, std::memory_order_release);
         return;
     }
     // single consumer pop, removes an element from the front of the queue. returns nullopt if the queue is empty
     std::optional<value_type> pop() {
-      node_t* next = head_->next().load(std::memory_order_acquire);
+        node_t* next = head_->next().load(std::memory_order_acquire);
         if (next == nullptr) { return std::nullopt; }
 
         value_type value = std::move(next->data());
@@ -277,11 +277,13 @@ class mpsc_queue {
     std::atomic<node_t*> tail_;
     allocator_type allocator_;
 };
-
+  
 // logical execution component mapped to a physical execution unit (hardware thread)
 struct worker {
+    static constexpr int task_queue_size = 4096;
+    // constructor
     template <typename ThreadPool_>
-    worker(int worker_id, int task_queue_size, ThreadPool_* tp) :
+    worker(int worker_id, ThreadPool_* tp) :
         worker_id_(worker_id), task_queue_(task_queue_size), mailbox_(), running_(true), thread_([this, tp] {
             run_(tp);
         }) { }
@@ -291,21 +293,28 @@ struct worker {
     void join() { thread_.join(); }
     bool joinable() const { return thread_.joinable(); }
     void stop() {
+        std::lock_guard<std::mutex> lock(idle_m_);
         running_.store(false, std::memory_order_release);
 	idle_cv_.notify_one();
     }
     // observers
     bool is_running() const { return running_.load(std::memory_order_acquire); }
     // pubilc task handling
-    void submit_task(Task&& task) {
-        Task* task_ptr = task_pool_.allocate(std::move(task));
+    void submit_task(task_handle&& task) {
+        task_handle* task_ptr = task_pool_.allocate(std::move(task));
         mailbox_.push(std::move(task_ptr));
     }
-    std::optional<Task*> try_steal() { return task_queue_.pop_back(); }
+
+    template <typename Task> task_handle* allocate_task(Task&& task) {
+        return task_pool_.allocate(std::forward<Task>(task));
+    }
+    void dispatch_handle(task_handle* task) { mailbox_.push(task); }
+
+    std::optional<task_handle*> try_steal() { return task_queue_.pop_back(); }
    private:
     // fetches a task. The task is obtained either from the local task queue or from the inbound mailbox.
     // returns nullopt if no task is available for execution
-    std::optional<Task*> try_fetch_task_() {
+    std::optional<task_handle*> try_fetch_task_() {
         auto&& task = task_queue_.pop_front();
         if (task) { return std::move(task); }
         // check mailbox
@@ -323,9 +332,8 @@ struct worker {
         }
     }
     // for a runnable task, acquires, executes and notifies its completion
-    void try_execute_task_(Task* task) {
+    template <typename ThreadPool_> void try_execute_task_(ThreadPool_* tp, task_handle* task) {
         if (!task->runnable()) return;
-        tp->on_task_acquire (task);
         task->run();
         tp->on_task_complete(task);
 	return;
@@ -337,39 +345,43 @@ struct worker {
         // loop logic
         while (is_running()) {
             // check worker queue
-            std::optional<Task*> task = try_fetch_task_();
+            std::optional<task_handle*> task = try_fetch_task_();
             // if a task is not runnable, it is removed from any working queue but not from its task_pool. the task will
             // be re-enqueued as a result of a notification event (e.g., task ref_count hits 0) and re-executed
             if (task) {
-                try_execute_task_(*task);
+                try_execute_task_(tp, *task);
             } else {
                 // try steal work from busy workers
-                std::optional<Task*> task = tp->try_steal(worker_id_);
+                std::optional<task_handle*> task = tp->try_steal(worker_id_);
                 if (task) {
-                    try_execute_task_(*task);
+                    try_execute_task_(tp, *task);
                 } else {
                     // nothing to do, query the threadpool to establish if we have to move to idle state
                     std::unique_lock<std::mutex> lock(idle_m_);
                     idle_cv_.wait(
-                      lock, [&]() { return tp->can_resume(worker_id_) || !running_.load(std::memory_order_acquire); });
+                      lock, [&]() { return tp->on_worker_idle() || !running_.load(std::memory_order_acquire); });
                 }
             }
         }
         return;
     }
 
-    const int worker_id_;                 // worker identifier
-    pool_allocator<Task> task_pool_;      // memory allocator for task storage
-    chase_lev_queue<Task*> task_queue_;   // tasks pending for execution, amenable to work stealing
-    mpsc_queue<Task*> mailbox_;           // externally submitted tasks
-    std::atomic<bool> running_;           // logical indicating wheter to stop execution
-    std::thread thread_;                  // OS managed thread
+    const int worker_id_;                        // worker identifier
+    pool_allocator<task_handle> task_pool_;      // memory allocator for task storage
+    chase_lev_queue<task_handle*> task_queue_;   // tasks pending for execution, amenable to work stealing
+    mpsc_queue<task_handle*> mailbox_;           // externally submitted tasks
+    std::atomic<bool> running_;                  // logical indicating wheter to stop execution
+    std::thread thread_;                         // OS managed thread
     // idle state
     std::mutex idle_m_;
     std::condition_variable idle_cv_;
 };
 
 }   // namespace internals
+
+// logical identifier of running thread
+inline int this_worker_id() noexcept { return internals::tls_worker_id; }
+  
 }   // namespace fdapde
 
 #endif   // __FDAPDE_EXECUTION_WORKER_H__
