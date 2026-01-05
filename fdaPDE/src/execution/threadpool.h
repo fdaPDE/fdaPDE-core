@@ -27,12 +27,12 @@ namespace internals {
 //    the ACM (JACM), 46(5), 720-748."
 struct random_stealing_policy {
     explicit random_stealing_policy(std::size_t n, int probes = 2) :
-        probes_(probes), dist_(0, n - 1), rng_(std::random_device {}()) { }
+        probes_(probes), dist_(0, static_cast<int>(n - 1)) { }
 
     template <typename TryStealFunctor>
-    std::optional<internals::task_handle*> pick(int self, TryStealFunctor&& try_steal) {
+    std::optional<task_handle*> pick(int self, TryStealFunctor&& try_steal) {
         for (int k = 0; k < probes_; ++k) {
-            int victim = dist_(rng_);
+            int victim = dist_(tls_rng());
             if (victim != self) {
                 if (auto task = try_steal(victim)) return task;
             }
@@ -40,153 +40,177 @@ struct random_stealing_policy {
         return std::nullopt;
     }
    private:
+    static std::mt19937& tls_rng() {   // thread local rng to avoid races
+        thread_local std::mt19937 rng{std::random_device{}()};
+        return rng;
+    }
     int probes_;
     std::uniform_int_distribution<int> dist_;
-    mutable std::mt19937 rng_;   // data-race here
 };
-  
+
+// implementation of the round-robin scheduling algorithm
+struct round_robin_scheduling_policy {
+    explicit round_robin_scheduling_policy(std::size_t n) : size_(n) {}
+
+    int pick() { return curr_.fetch_add(1, std::memory_order_relaxed) % size_; }
+   private:
+    std::atomic<int> curr_ {0};
+    std::size_t size_;
+};
+
 }   // namespace internals
-  
-class ThreadPool {
-    using StealPolicy = internals::random_stealing_policy;
-    using WorkerPool = std::vector<std::unique_ptr<internals::worker>>;
-   public:
+
+struct ThreadPool {
+    using worker_type = internals::worker;
+    using worker_pointer = std::unique_ptr<worker_type>;
+    using task_type = typename worker_type::task_type;
+    using task_pointer = typename worker_type::task_pointer;
+    using size_type = std::size_t;
+    using stealing_policy = internals::random_stealing_policy;
+    using scheduling_policy = internals::round_robin_scheduling_policy;
+
     // constructor
     ThreadPool() : ThreadPool(std::thread::hardware_concurrency()) { }
-    explicit ThreadPool(int size) : n_workers_(size), init_latch_(size + 1), steal_policy_(size) {
+    explicit ThreadPool(size_type size) :
+        n_workers_(size), init_latch_(size + 1), stealing_policy_(size), scheduling_policy_(size) {
         workers_.reserve(n_workers_);
         internals::tls_worker_id = 0;   // set main thread worker id to zero
         // start workers
-        for (int i = 0; i < n_workers_; i++) {
+        for (size_type i = 0; i < n_workers_; i++) {
             workers_.emplace_back(std::make_unique<internals::worker>(1 + i, this));
         }
         // wait workers to be ready, avoids threadpool destruction before worker construction
         init_latch_.arrive_and_wait();
     }
     // observers
-    int n_workers() const { return n_workers_; }
-  
+    size_type size() const { return n_workers_; }
+    bool is_active() const { return active_.load(std::memory_order_acquire); }
+
     // submits f(args...) for asynchronous execution. returns a std::future holding the result
     template <typename F, typename... Args> [[nodiscard]] auto submit(F&& f, Args&&... args) {
         using ret_t = decltype(f(args...));
         auto packaged_task =
           std::make_shared<std::packaged_task<ret_t()>>([f_ = f, ... args_ = args]() { return f_(args_...); });
         // dispatch task for execution
-        dispatch_(std::move([packaged_task]() { (*packaged_task)(); }));
+        dispatch_task_(std::move([packaged_task]() { (*packaged_task)(); }));
         return packaged_task->get_future();
     };
     // execute f(args...) asynchronously. doesn't wait for any result
     template <typename F, typename... Args>
         requires(!std::is_same_v<std::decay_t<F>, TaskGraph>)
     void execute(F&& f, Args&&... args) {
-        dispatch_(std::move([f_ = f, ... args_ = args]() { f_(args_...); }));
+        dispatch_task_(std::move([f_ = f, ... args_ = args]() { f_(args_...); }));
     }
     // execute a TaskGraph object
     void execute(const TaskGraph& tg) {
-        // first load all nodes
-        std::unordered_map<internals::task_handle*, internals::task_handle*> task_ptr_map_;
-        std::vector<internals::task_handle*> ptr_vec_;
-        std::vector<int> worker_id;
-        for (std::size_t i = 0; i < tg.nodes(); ++i) {
-            // we here need an alloc_task which allocates the task but doesn't submit it to the task_queue_
-            internals::task_handle* ptr = tg.adjacency_[i]->task_;
-            worker_id.push_back(select_worker_());
-            internals::task_handle* stable_ptr = workers_[worker_id.back()]->allocate_task(*(tg.adjacency_[i]->task_)); // qui copiamo, per non lasciare il grafo in uno stato indefinito
-            ptr_vec_.push_back(stable_ptr);
-            task_ptr_map_.emplace(ptr, stable_ptr);
-        }
-        // replace internal pointers with stable worker-local pointers
-        for (std::size_t i = 0; i < ptr_vec_.size(); ++i) {
-            for (std::size_t j = 0; j < ptr_vec_[i]->required_by().size(); ++j) {
-                ptr_vec_[i]->required_by()[j] = task_ptr_map_[ptr_vec_[i]->required_by()[j]];
-            }
-        }
+        const size_type num_nodes = tg.nodes();
+        if (num_nodes == 0) return;
 
-	std::vector<bool> runnable(tg.nodes(), false);
-	for(std::size_t i = 0; i < tg.nodes(); ++i) { runnable[i] = ptr_vec_[i]->runnable(); }
-	
-	// increase counter first
-	task_count_.fetch_add((int)ptr_vec_.size(), std::memory_order_acq_rel);
-
-        // send tasks (without allocation)
-        for (std::size_t i = 0; i < ptr_vec_.size(); ++i) {
-	  if (runnable[i]) {
-                workers_[worker_id[i]]->dispatch_handle(ptr_vec_[i]);
-                workers_[worker_id[i]]->wake_up();
-            }
+        std::unordered_map<task_pointer, task_pointer> task_map;
+        std::vector<int> worker_vec(num_nodes);
+        std::vector<task_pointer> ready_tasks;
+	// copy task graph to stable memory
+        for (size_type i = 0; i < num_nodes; ++i) {
+            int w_id = scheduling_policy_.pick();
+            worker_vec[i] = w_id;
+	    task_pointer old_ptr = tg.adjacency_[i]->task_;
+	    task_pointer new_ptr = workers_[w_id]->allocate_task(*old_ptr);
+            task_map[old_ptr] = new_ptr;
         }
-    }
-
-    // woorker coordination utilities
-    void on_task_complete(internals::task_handle* task) {
-        if (task_count_.fetch_sub(1, std::memory_order_release) == 1) {
-            std::lock_guard<std::mutex> lock(join_m_);
-            join_cv_.notify_one();
-        } else {
-            // decrease ref count, dispatch completed successors back for execution
-            for (internals::task_handle* deps : task->required_by()) {
-                if (deps->ref_count_fetch_sub(1, std::memory_order_release) == 1) { dispatch_handle_(deps); }
-            }
+        // replace old dependency pointers with stable worker-local pointers
+        for (const auto& [_, new_ptr] : task_map) {
+            for (auto& old_ptr : new_ptr->required_by()) { old_ptr = task_map[old_ptr]; }
+            if (new_ptr->runnable()) { ready_tasks.push_back(new_ptr); }
         }
-        // dealloca il task
+        // notify workers and start execution
+        std::unique_lock<std::mutex> lock(m_);
+        task_count_ += num_nodes;   // increase task count
+        lock.unlock();
+        for (size_type i = 0; i < ready_tasks.size(); ++i) {
+            workers_[worker_vec[i]]->enqueue_task(ready_tasks[i]);
+        }
+        cv_.notify_all();
         return;
     }
-    void on_worker_ready() { init_latch_.arrive_and_wait(); }
-    bool on_worker_idle () { return task_count_.load(std::memory_order_acquire) != 0; }
-
-    std::optional<internals::task_handle*> try_steal(int thief_id) {
-        return steal_policy_.pick(thief_id, [&](int victim) { return workers_[victim]->try_steal(); });
-    }
-
+    // blocks caller until all tasks queued in the pool have been executed
     void join() {
-        std::unique_lock<std::mutex> lock(join_m_);
-        join_cv_.wait(lock, [&]() { return task_count_.load(std::memory_order_acquire) == 0; });
+        std::unique_lock<std::mutex> lock(m_);
+        cv_.wait(lock, [&]() { return task_count_ == 0; });
     }
-
     // stops all running threads. not yet completed tasks are losts
     void stop() {
-        for (auto& worker : workers_) { worker->stop(); }
+        std::unique_lock<std::mutex> lock(m_);
+        active_.store(false, std::memory_order_release);
+        lock.unlock();
+        cv_.notify_all();
         for (auto& worker : workers_) { worker->join(); }
         return;
     }
     // destructor
     ~ThreadPool() { stop(); }
    private:
-    // dispatches task to worker
-    std::atomic<int> curr_worker_ {0};   // worker to which to dispatch next task
+    // woorker coordination utilities
+    friend worker_type;
+    // invoked by a worker to signal the completion of a task
+    void on_task_complete(task_pointer task) {
+        std::unique_lock<std::mutex> lock(m_);
+        task_count_--;
+        if (task_count_ == 0) {
+            cv_.notify_all();
+            return;
+        }
+        lock.unlock();
+        // decrease ref count, dispatch completed successors back for execution
+        for (task_pointer task_ptr : task->required_by()) {
+            if (task_ptr->ref_count_fetch_sub(1, std::memory_order_release) == 1) { renqueue_task_(task_ptr); }
+        }
+	// deallocate
+        workers_[task->allocation_context().value()]->deallocate_task(task);
+        return;
+    }
+    // invoked by a worker to signal its readyness
+    void on_worker_ready() { init_latch_.arrive_and_wait(); }
+    // invoked by a worker to decide whether to move to an idle state
+    void on_worker_idle() {
+        std::unique_lock<std::mutex> lock(m_);
+        cv_.wait(lock, [&]() { return (task_count_ != 0) || !active_; });
+    }
+    // invoked by a worker to perform a stealing attempt
+    std::optional<task_pointer> try_steal(int thief_id) {
+        return stealing_policy_.pick(thief_id, [&](int victim) { return workers_[victim]->try_steal(); });
+    }
 
-    int select_worker_() { return curr_worker_.fetch_add(1, std::memory_order_release) % n_workers_; }
-
-    template <typename Task_>
-        requires(!std::is_same_v<std::decay_t<Task_>, internals::task_handle>)
-    void dispatch_(Task_&& task) {
-        // round-robin worker selection
-        int worker_id = select_worker_();
-        workers_[worker_id]->submit_task(internals::task_handle(std::move(task), worker_id));
-        task_count_.fetch_add(1, std::memory_order_release);
-        workers_[worker_id]->wake_up();
+    // allocates and submits task to the pool. notifies all workers for execution
+    template <typename Task>
+        requires(!std::is_same_v<std::decay_t<Task>, task_pointer>)
+    void dispatch_task_(Task&& task) {
+        int w_id = scheduling_policy_.pick();
+        workers_[w_id]->submit_task(task_type(std::move(task), w_id));
+        std::unique_lock<std::mutex> lock(m_);
+        task_count_++;
+        lock.unlock();
+        cv_.notify_all();
+        return;
+    }
+    // submits an already allocated task for execution.
+    void renqueue_task_(task_pointer task) {
+        int w_id = scheduling_policy_.pick();
+        workers_[w_id]->enqueue_task(task);
+        cv_.notify_all();
         return;
     }
 
-    void dispatch_handle_(internals::task_handle* handle) {
-        int worker_id = select_worker_();
-        workers_[worker_id]->dispatch_handle(handle);
-        workers_[worker_id]->wake_up();
-        return;
-    }
-
-    WorkerPool workers_;                // worker-pool
-    const int n_workers_;               // number of workers in the pool
-    std::latch init_latch_;             // workers synchronization barrier at startup
-    std::atomic<int> task_count_ {0};   // overall number of active tasks
-    StealPolicy steal_policy_;
-
-    // joining logic
-    std::mutex join_m_;
-    std::condition_variable join_cv_;  
+    std::vector<worker_pointer> workers_;   // worker pool
+    const size_type n_workers_;             // size of the pool
+    std::latch init_latch_;                 // workers synchronization barrier at startup
+    stealing_policy stealing_policy_;       // stealing algorithm
+    scheduling_policy scheduling_policy_;   // scheduling algorithm
+    std::atomic<bool> active_ {true};       // asserted false to indicate pool deactivation
+    size_type task_count_ = 0;              // overall number of active (executed + pending) tasks
+    std::mutex m_;
+    std::condition_variable cv_;
 };
 
-  
 // namespace internals {
 
 // struct threadpool_executor {
