@@ -27,36 +27,39 @@ class task_handle {
    public:
     task_handle() noexcept = default;
     // copy semantic
-    // task_handle(const task_handle&) = delete;
-    // task_handle& operator=(const task_handle&) = delete;
     task_handle(const task_handle& other) :
-        fn_(other.fn_), rm_(other.rm_), mv_(other.mv_), cp_(other.cp_), sb_(other.sb_) {
+        fn_(other.fn_),
+        rm_(other.rm_),
+        mv_(other.mv_),
+        cp_(other.cp_),
+        sb_(other.sb_),
+        required_by_(other.required_by_),
+        allocation_context_(other.allocation_context_) {
         if (sb_) {
             if (cp_) { cp_(storage_.buff_, other.storage_.buff_); }
         } else {
             storage_.data_ = other.storage_.data_;
         }
-        required_by_ = other.required_by_;
-        allocation_context_ = other.allocation_context_;
-	ref_count_.store(other.ref_count_, std::memory_order_release);
+        ref_count_.store(other.ref_count_, std::memory_order_release);
     }
     // move semantic
     task_handle(task_handle&& other) noexcept :
         fn_(std::exchange(other.fn_, nullptr)),
         rm_(std::exchange(other.rm_, nullptr)),
         mv_(std::exchange(other.mv_, nullptr)),
-	cp_(std::exchange(other.cp_, nullptr)),
-        sb_(std::exchange(other.sb_, 0)) {
+        cp_(std::exchange(other.cp_, nullptr)),
+        sb_(std::exchange(other.sb_, 0)),
+        required_by_(std::move(other.required_by_)),
+        allocation_context_(other.allocation_context_)   // copy, as physical memory is not moved
+    {
         if (sb_) {
             if (mv_) { mv_(storage_.buff_, other.storage_.buff_); }
         } else {
             storage_.data_ = std::exchange(other.storage_.data_, nullptr);
         }
-	// task dependencies
-        required_by_ = std::move(other.required_by_);
+        // task dependencies
         ref_count_.store(other.ref_count_);
-        other.ref_count_.store(0); 
-        allocation_context_ = other.allocation_context_;   // copy, as physical memory is not moved
+        other.ref_count_.store(0);
     }
     task_handle& operator=(task_handle&& other) noexcept {
         if (this == &other) return *this;
@@ -74,14 +77,15 @@ class task_handle {
         }
         // task dependencies
         required_by_ = std::move(other.required_by_);
+        allocation_context_ = other.allocation_context_;
         ref_count_.store(other.ref_count_);
         other.ref_count_.store(0);
-        allocation_context_ = other.allocation_context_;   // copy, as physical memory is not moved
         return *this;
     }
-    template <typename F>
-        requires(!std::is_same_v<std::decay_t<F>, task_handle> && std::is_invocable_v<F>)
-    task_handle(F&& f, int allocation_context) :
+    template <typename F, typename AllocationContext>
+        requires(!std::is_same_v<std::decay_t<F>, task_handle> && std::is_invocable_v<F> &&
+                 std::is_constructible_v<std::optional<int>, AllocationContext>)
+    task_handle(F&& f, AllocationContext allocation_context) :
         required_by_(), ref_count_(0), allocation_context_(allocation_context) {
         using Fn = std::decay_t<F>;
         constexpr bool sb = sizeof(F) <= buffer_size && alignof(Fn) <= alignof(union U);
@@ -108,11 +112,11 @@ class task_handle {
     }
     template <typename F>
         requires(!std::is_same_v<std::decay_t<F>, task_handle> && std::is_invocable_v<F>)
-    explicit task_handle(F&& f) : task_handle(std::forward<F>(f), -1) { }
+    explicit task_handle(F&& f) : task_handle(std::forward<F>(f), std::nullopt) { }
   
     // invoke
     void run() { fn_(sb_ ? (void*)storage_.buff_ : storage_.data_); }
-    // a task is runnable if all its dependencies have been completed
+    // a task is runnable if all its dependencies have been completed (ref_count_ == 0)
     bool runnable() const { return ref_count_.load(std::memory_order_acquire) == 0; }
     int ref_count() const { return ref_count_.load(std::memory_order_acquire); }
     int ref_count_fetch_sub(int i, std::memory_order order = std::memory_order_release) {
@@ -121,15 +125,15 @@ class task_handle {
     int ref_count_fetch_add(int i, std::memory_order order = std::memory_order_release) {
         return ref_count_.fetch_add(i, order);
     }
-
-    int allocation_context() const { return allocation_context_; }
     std::vector<task_handle*>& required_by() { return required_by_; }
-  
+    // memory handling
+    const std::optional<int>& allocation_context() const { return allocation_context_; }
+    void set_allocation_context(int allocation_context) { allocation_context_ = allocation_context; }
     // destructor (task destroyed only after completion)
     ~task_handle() {
         if (rm_) { rm_(sb_ ? (void*)storage_.buff_ : storage_.data_); }
     }
-  // private:
+   private:
     void (*fn_)(void*) = nullptr;
     void (*rm_)(void*) = nullptr;
     void (*mv_)(void*, void*) = nullptr;
@@ -143,7 +147,7 @@ class task_handle {
     // task properties
     std::vector<task_handle*> required_by_ {};   // stable pointers to tasks which require this task to be completed
     std::atomic<int> ref_count_ {0};             // number of not yet completed tasks required by this task
-    int allocation_context_ = 0;                 // memory pool identifier, --------------------------------------- make this optional, call stable_address?
+    std::optional<int> allocation_context_;      // memory pool identifier
 };
 
 }   // namespace internals
