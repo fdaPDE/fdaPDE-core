@@ -14,37 +14,41 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_EXECUTION_PARALLEL_FOR_H__
-#define __FDAPDE_EXECUTION_PARALLEL_FOR_H__
+#ifndef __FDAPDE_EXECUTION_PARALLEL_FOR_EACH_H__
+#define __FDAPDE_EXECUTION_PARALLEL_FOR_EACH_H__
 
 #include "header_check.h"
 
 namespace fdapde {
 namespace internals {
 
-// specialized parallelized for loop task
-struct task_parallel_for {
-    task_parallel_for() noexcept : m_(), cv_() { }
+// specialized parallelized for-range loop task
+struct task_parallel_for_each {
+    task_parallel_for_each() noexcept : m_(), cv_() { }
 
-    template <typename LoopBody>
-        requires(std::is_invocable_v<LoopBody, int>)
-    void run(threaded_executor_impl* executor, int begin, int end, int grain_size, LoopBody&& f) {
-        const int n = end - begin;
+    template <typename Container, typename LoopBody>
+        requires(std::is_invocable_v<LoopBody, typename Container::reference>)
+    void run(threaded_executor_impl* executor, const Container& container, LoopBody&& f) {
+        using iterator_type = typename Container::iterator_type;
+        iterator_type begin = container.begin();
+        iterator_type end = container.end();
+        const int n = std::distance(begin, end);
         if (n <= 0) return;   // nothing to loop on
 
-        grain_size = std::max(1, std::min(grain_size, n));
+        int grain_size = std::max(1.0, double(n) / (4 * executor->size()));
         int local_task_count = 0;
-
         {
             // lock while dispatching to ensure tasks don't finish and notify before we even finish the loop.
             std::lock_guard<std::mutex> lock(m_);
 
-            for (int j = begin; j < end; j += grain_size) {
-                int k = ((end - j) < grain_size) ? end : (j + grain_size);
+            iterator_type chunk_begin = begin;
+            while (chunk_begin != end) {
+                iterator_type chunk_end =
+                  std::next(chunk_begin, std::min(grain_size, int(std::distance(chunk_begin, end))));
                 local_task_count++;
 
-                auto loop_body = [this, j, k, &f, &local_task_count]() {
-                    for (int it = j; it < k; ++it) { f(it); }
+                auto loop_body = [this, chunk_begin, chunk_end, &f, &local_task_count]() {
+                    for (iterator_type it = chunk_begin; it != chunk_end; ++it) { f(*it); }
                     {
                         std::lock_guard<std::mutex> lock(this->m_);
                         local_task_count--;
@@ -52,6 +56,8 @@ struct task_parallel_for {
                     }
                 };
                 executor->execute(std::move(loop_body));
+                // advance the loop
+                chunk_begin = chunk_end;
             }
         }
         // wait until all dispatched tasks are complete
@@ -66,20 +72,13 @@ struct task_parallel_for {
 
 }   // namespace internals
 
-// splits [begin, end) into contiguous chunks of size grain_size and submits one task per chunk
-template <typename LoopBody>
-    requires(std::is_invocable_v<LoopBody, int>)
-void parallel_for(int begin, int end, int grain_size, LoopBody&& loop_body) {
-    internals::threaded_executor::instance().execute(internals::task_parallel_for(), begin, end, grain_size, loop_body);
+// executes for(auto& value : container) { loop_body } in parallel
+template <typename Container, typename LoopBody>
+    requires(std::is_invocable_v<LoopBody, typename Container::reference>)
+void parallel_for_each(const Container& container, LoopBody&& loop_body) {
+    internals::threaded_executor::instance().execute(internals::task_parallel_for_each(), container, loop_body);
 }
 
-template <typename LoopBody>
-    requires(std::is_invocable_v<LoopBody, int>)
-void parallel_for(int begin, int end, LoopBody&& loop_body) {
-    int grain_size = std::max(1.0, double(end - begin) / (4 * num_threads()));   // auto-partitioning
-    internals::threaded_executor::instance().execute(internals::task_parallel_for(), begin, end, grain_size, loop_body);
-}
-  
 }   // namespace fdapde
 
-#endif   // __FDAPDE_EXECUTION_PARALLEL_FOR_H__
+#endif   // __FDAPDE_EXECUTION_PARALLEL_FOR_EACH_H__

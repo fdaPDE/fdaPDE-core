@@ -37,7 +37,7 @@ class TaskGraph {
             internals::for_each_index_and_args<sizeof...(tasks)>(
               [&]<int Ns_, typename Task_>(const Task_& t) {
                   succ_.push_back(std::addressof(t));
-		  t.task_->required_by().push_back(task_); // difficile da ragionare, t qui è un nodo!!
+		  t.task_->required_by().push_back(task_); 
                   task_->ref_count_fetch_add(1, std::memory_order_release);
               },
               tasks...);
@@ -73,6 +73,41 @@ class TaskGraph {
     }
     std::vector<node*> adjacency_;
 };
+
+    // execute a TaskGraph object
+    // void execute(const TaskGraph& tg) {
+    //     const size_type num_nodes = tg.nodes();
+    //     if (num_nodes == 0) return;
+
+    //     std::unordered_map<task_pointer, task_pointer> task_map;
+    //     std::vector<int> worker_vec(num_nodes);
+    //     std::vector<task_pointer> ready_tasks;
+    //     // copy task graph to stable memory
+    //     for (size_type i = 0; i < num_nodes; ++i) {
+    //         int w_id = scheduling_policy_.pick();
+    //         worker_vec[i] = w_id;
+    //         task_pointer old_ptr = tg.adjacency_[i]->task_;
+    //         task_pointer new_ptr = workers_[w_id]->allocate_task(*old_ptr);
+    //         task_map[old_ptr] = new_ptr;
+    //     }
+    //     // replace old dependency pointers with stable worker-local pointers
+    //     for (const auto& [_, new_ptr] : task_map) {
+    //         for (auto& old_ptr : new_ptr->required_by()) { old_ptr = task_map[old_ptr]; }
+    //         if (new_ptr->runnable()) { ready_tasks.push_back(new_ptr); }
+    //     }
+    //     // notify workers and start execution
+    //     std::unique_lock<std::mutex> lock(m_);
+    //     task_count_ += num_nodes;   // increase task count
+    //     lock.unlock();
+    //     for (size_type i = 0; i < ready_tasks.size(); ++i) { workers_[worker_vec[i]]->enqueue_task(ready_tasks[i]); }
+    //     cv_.notify_all();
+    //     return;
+    // }
+  
+// void parallel_execute(const TaskGraph& tg) {
+//     internals::threadpool_executor::instance().execute(tg);
+//     internals::threadpool_executor::instance().join();  
+// }
 
 }   // namespace fdapde
 

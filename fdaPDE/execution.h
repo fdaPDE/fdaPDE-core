@@ -37,10 +37,16 @@ static constexpr internals::execution_parallel_t execution_par;
 #include <future>
 #include <latch>
 
+// basic threaded runtime
 #include "src/execution/task_handle.h"
-#include "src/execution/task_graph.h"
 #include "src/execution/worker.h"
-#include "src/execution/threadpool.h"
+#include "src/execution/threaded_executor.h"
+
+// high-level API
+#include "src/execution/parallel_for.h"
+#include "src/execution/parallel_for_each.h"
+#include "src/execution/parallel_reduce.h"
+#include "src/execution/task_graph.h"
 
 // clang-format on
 
