@@ -14,8 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_EXECUTION_THREADPOOL_H__
-#define __FDAPDE_EXECUTION_THREADPOOL_H__
+#ifndef __FDAPDE_EXECUTION_THREADED_EXECUTOR_H__
+#define __FDAPDE_EXECUTION_THREADED_EXECUTOR_H__
 
 #include "header_check.h"
 
@@ -58,9 +58,8 @@ struct round_robin_scheduling_policy {
     std::size_t size_;
 };
 
-}   // namespace internals
-
-struct ThreadPool {
+// multi-threaded runtime system with randomized work-stealing load balancing
+struct threaded_executor_impl {
     using worker_type = internals::worker;
     using worker_pointer = std::unique_ptr<worker_type>;
     using task_type = typename worker_type::task_type;
@@ -70,8 +69,8 @@ struct ThreadPool {
     using scheduling_policy = internals::round_robin_scheduling_policy;
 
     // constructor
-    ThreadPool() : ThreadPool(std::thread::hardware_concurrency()) { }
-    explicit ThreadPool(size_type size) :
+    threaded_executor_impl() : threaded_executor_impl(std::thread::hardware_concurrency()) { }
+    explicit threaded_executor_impl(size_type size) :
         n_workers_(size), init_latch_(size + 1), stealing_policy_(size), scheduling_policy_(size) {
         workers_.reserve(n_workers_);
         internals::tls_worker_id = 0;   // set main thread worker id to zero
@@ -85,9 +84,12 @@ struct ThreadPool {
     // observers
     size_type size() const { return n_workers_; }
     bool is_active() const { return active_.load(std::memory_order_acquire); }
-
+    worker_type& worker(size_type i) {
+        fdapde_assert(i < n_workers_);
+        return *workers_[i];
+    }
     // submits f(args...) for asynchronous execution. returns a std::future holding the result
-    template <typename F, typename... Args> [[nodiscard]] auto submit(F&& f, Args&&... args) {
+    template <typename F, typename... Args> [[nodiscard]] auto async(F&& f, Args&&... args) {
         using ret_t = decltype(f(args...));
         auto packaged_task =
           std::make_shared<std::packaged_task<ret_t()>>([f_ = f, ... args_ = args]() { return f_(args_...); });
@@ -95,42 +97,17 @@ struct ThreadPool {
         dispatch_task_(std::move([packaged_task]() { (*packaged_task)(); }));
         return packaged_task->get_future();
     };
-    // execute f(args...) asynchronously. doesn't wait for any result
+    // executes a callable f(args...) asynchronously. doesn't wait for any result
     template <typename F, typename... Args>
-        requires(!std::is_same_v<std::decay_t<F>, TaskGraph>)
+        requires(std::is_invocable_v<F, Args...>)
     void execute(F&& f, Args&&... args) {
         dispatch_task_(std::move([f_ = f, ... args_ = args]() { f_(args_...); }));
     }
-    // execute a TaskGraph object
-    void execute(const TaskGraph& tg) {
-        const size_type num_nodes = tg.nodes();
-        if (num_nodes == 0) return;
-
-        std::unordered_map<task_pointer, task_pointer> task_map;
-        std::vector<int> worker_vec(num_nodes);
-        std::vector<task_pointer> ready_tasks;
-	// copy task graph to stable memory
-        for (size_type i = 0; i < num_nodes; ++i) {
-            int w_id = scheduling_policy_.pick();
-            worker_vec[i] = w_id;
-	    task_pointer old_ptr = tg.adjacency_[i]->task_;
-	    task_pointer new_ptr = workers_[w_id]->allocate_task(*old_ptr);
-            task_map[old_ptr] = new_ptr;
-        }
-        // replace old dependency pointers with stable worker-local pointers
-        for (const auto& [_, new_ptr] : task_map) {
-            for (auto& old_ptr : new_ptr->required_by()) { old_ptr = task_map[old_ptr]; }
-            if (new_ptr->runnable()) { ready_tasks.push_back(new_ptr); }
-        }
-        // notify workers and start execution
-        std::unique_lock<std::mutex> lock(m_);
-        task_count_ += num_nodes;   // increase task count
-        lock.unlock();
-        for (size_type i = 0; i < ready_tasks.size(); ++i) {
-            workers_[worker_vec[i]]->enqueue_task(ready_tasks[i]);
-        }
-        cv_.notify_all();
-        return;
+    // executes a runnable task object
+    template <typename Task, typename... Args>
+        requires(requires(Task task, threaded_executor_impl* executor, Args... args) { task.run(executor, args...); })
+    auto execute(Task&& task, Args&&... args) {
+        return task.run(this, std::forward<Args>(args)...);
     }
     // blocks caller until all tasks queued in the pool have been executed
     void join() {
@@ -147,7 +124,7 @@ struct ThreadPool {
         return;
     }
     // destructor
-    ~ThreadPool() { stop(); }
+    ~threaded_executor_impl() { stop(); }
    private:
     // woorker coordination utilities
     friend worker_type;
@@ -164,7 +141,7 @@ struct ThreadPool {
         for (task_pointer task_ptr : task->required_by()) {
             if (task_ptr->ref_count_fetch_sub(1, std::memory_order_release) == 1) { renqueue_task_(task_ptr); }
         }
-	// deallocate
+        // deallocate
         workers_[task->allocation_context().value()]->deallocate_task(task);
         return;
     }
@@ -181,9 +158,7 @@ struct ThreadPool {
     }
 
     // allocates and submits task to the pool. notifies all workers for execution
-    template <typename Task>
-        requires(!std::is_same_v<std::decay_t<Task>, task_pointer>)
-    void dispatch_task_(Task&& task) {
+    template <typename Task> void dispatch_task_(Task&& task) {
         int w_id = scheduling_policy_.pick();
         workers_[w_id]->submit_task(task_type(std::move(task), w_id));
         std::unique_lock<std::mutex> lock(m_);
@@ -211,23 +186,41 @@ struct ThreadPool {
     std::condition_variable cv_;
 };
 
-// namespace internals {
+struct threaded_executor {
+    static auto& instance() {
+        // intentionally leaked to guarantee executor teardown at program termination
+        static threaded_executor_impl* exec = new threaded_executor_impl();
+        return *exec;
+    }
+};
 
-// struct threadpool_executor {
-//     static auto& instance() {
-//         // intentionally leaked to guarantee threadpool teardown at program termination
-//         static ThreadPool<>* tp = new ThreadPool<>();
-//         return *tp;
-//     }
-// };
+}   // namespace internals
 
-// }   // namespace internals
+// public API
 
-// // public API
+template <typename Task, typename... Args> struct is_runnable_task {
+    static constexpr bool value = requires(Task task, internals::threaded_executor_impl* executor, Args... args) {
+        { task.run(executor, args...) } -> std::same_as<void>;
+    };
+};
+template <typename Task, typename... Args>
+static constexpr bool is_runnable_task_v = is_runnable_task<Task, Args...>::value;
 
-// number of available threads
-// int num_threads() { return internals::threadpool_executor::instance().n_workers(); }
-
+// number of available worker thread
+int num_threads() { return internals::threaded_executor::instance().size(); }
+// executes a callable object asynchronously
+template <typename F, typename... Args>
+    requires(std::is_invocable_v<F, Args...>)
+void parallel_execute(F&& f, Args&&... args) {
+    internals::threaded_executor::instance().execute(std::forward<F>(f), std::forward<Args>(args)...);
+}
+// executes a callable object asynchronously returning a std::future object for synchronization and result retrieval
+template <typename F, typename... Args>
+    requires(std::is_invocable_v<F, Args...>)
+auto parallel_async(F&& f, Args&&... args) {
+    return internals::threaded_executor::instance().async(std::forward<F>(f), std::forward<Args>(args)...);
+}
+  
 }   // namespace fdapde
 
-#endif   // __FDAPDE_EXECUTION_THREADPOOL_H__
+#endif   // __FDAPDE_EXECUTION_THREADED_EXECUTOR_H__
