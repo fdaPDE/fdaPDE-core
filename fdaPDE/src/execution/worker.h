@@ -22,8 +22,9 @@
 namespace fdapde {
 namespace internals {
 
-inline thread_local int tls_worker_id = -1;   // worker logical index
-  
+static constexpr int main_thread_id = -1;
+inline thread_local int tls_worker_id = main_thread_id;   // worker logical index
+
 // pooled-object (free-list based) allocator supporting concurrent lock-free deallocation
 template <typename T> struct pool_allocator {
     using value_type = T;
@@ -311,9 +312,9 @@ struct worker {
     static constexpr int task_queue_size = 4096;
 
     // constructor
-    template <typename ThreadPool>
-    worker(int worker_id, ThreadPool* tp) :
-        worker_id_(worker_id), task_queue_(task_queue_size), task_buffer_(), thread_([this, tp] { run_(tp); }) { }
+    template <typename Executor>
+    worker(int worker_id, Executor* e) :
+        worker_id_(worker_id), task_queue_(task_queue_size), task_buffer_(), thread_([this, e] { run_(e); }) { }
 
     // thread coordination
     void join() { thread_.join(); }
@@ -337,6 +338,17 @@ struct worker {
     void deallocate_task(task_pointer task) { task_pool_.deallocate(task); }
     // allows an external worker to perform a stealing attempt on this worker task_queue
     std::optional<task_pointer> try_steal() { return task_queue_.pop_back(); }
+    // tries to execute a task, if any. usec in active join loops
+    template <typename Executor> void try_execute_one(Executor* e) {
+        std::optional<task_pointer> task = try_fetch_task_();
+        if (task) {
+            try_execute_task_(e, *task);
+        } else {
+            std::optional<task_pointer> task = e->try_steal(worker_id_);
+            if (task) { try_execute_task_(e, *task); }
+        }
+        return;
+    }
    private:
     // fetches a task. The task is obtained either from the local task queue or from the inbound task_buffer.
     // returns nullopt if no task is available for execution
@@ -358,33 +370,33 @@ struct worker {
         }
     }
     // for a runnable task, acquires, executes and notifies its completion
-    template <typename ThreadPool> void try_execute_task_(ThreadPool* tp, task_pointer task) {
+    template <typename Executor> void try_execute_task_(Executor* e, task_pointer task) {
         if (!task->runnable()) {
             // a non runnable task is removed from any working queue but not from its task_pool. the task will
             // be eventually re-enqueued and executed as a result of a notification event
             return;
         }
         task->run();
-        tp->on_task_complete(task);
+        e->on_task_complete(task);
         return;
     }
     // worker loop
-    template <typename ThreadPool> void run_(ThreadPool* tp) {
-        internals::tls_worker_id = worker_id_;   // register worker global id
-        tp->on_worker_ready();
+    template <typename Executor> void run_(Executor* e) {
+        tls_worker_id = worker_id_;   // register worker global id
+        e->on_worker_ready();
         // loop logic
-        while (tp->is_active()) {
+        while (e->is_active()) {
             // check worker local queue
             std::optional<task_pointer> task = try_fetch_task_();
             if (task) {
-                try_execute_task_(tp, *task);
+                try_execute_task_(e, *task);
             } else {
                 // try steal work from busy workers
-                std::optional<task_pointer> task = tp->try_steal(worker_id_);
+                std::optional<task_pointer> task = e->try_steal(worker_id_);
                 if (task) {
-                    try_execute_task_(tp, *task);
+                    try_execute_task_(e, *task);
                 } else {
-                    tp->on_worker_idle();   // nothing to do, query the threadpool to decide if move to idle
+                    e->on_worker_idle();   // nothing to do, query the threadpool to decide if move to idle
                 }
             }
         }

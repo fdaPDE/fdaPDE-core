@@ -24,7 +24,7 @@ namespace internals {
 
 // specialized parallelized for loop task
 struct task_parallel_for {
-    task_parallel_for() noexcept : m_(), cv_() { }
+    task_parallel_for() = default;
 
     template <typename LoopBody>
         requires(std::is_invocable_v<LoopBody, int>)
@@ -33,35 +33,28 @@ struct task_parallel_for {
         if (n <= 0) return;   // nothing to loop on
 
         grain_size = std::max(1, std::min(grain_size, n));
-        int local_task_count = 0;
+        std::atomic<int> local_task_count {1};
 
-        {
-            // lock while dispatching to ensure tasks don't finish and notify before we even finish the loop.
-            std::lock_guard<std::mutex> lock(m_);
+        for (int j = begin; j < end; j += grain_size) {
+            // register task in the group
+            local_task_count.fetch_add(1, std::memory_order_release);
 
-            for (int j = begin; j < end; j += grain_size) {
-                int k = ((end - j) < grain_size) ? end : (j + grain_size);
-                local_task_count++;
-
-                auto loop_body = [this, j, k, &f, &local_task_count]() {
-                    for (int it = j; it < k; ++it) { f(it); }
-                    {
-                        std::lock_guard<std::mutex> lock(this->m_);
-                        local_task_count--;
-                        if (local_task_count == 0) { this->cv_.notify_all(); }
-                    }
-                };
-                executor->execute(std::move(loop_body));
-            }
+            int k = ((end - j) < grain_size) ? end : (j + grain_size);
+            auto loop_body = [this, j, k, &f, &local_task_count]() {
+                for (int it = j; it < k; ++it) { f(it); }
+                // signal task completion
+                local_task_count.fetch_sub(1, std::memory_order_release);
+            };
+            executor->execute(std::move(loop_body));
         }
-        // wait until all dispatched tasks are complete
-        std::unique_lock<std::mutex> lock(m_);
-        cv_.wait(lock, [&] { return local_task_count == 0; });
+        // task_group collaborative wait
+        local_task_count.fetch_sub(1, std::memory_order_release);
+        executor->active_join(this_worker_id(), [&] {
+            // help the pool while the task group is not fully consumed
+            return local_task_count.load(std::memory_order_acquire) > 0;
+        });
         return;
     }
-   private:
-    std::mutex m_;
-    std::condition_variable cv_;
 };
 
 }   // namespace internals
