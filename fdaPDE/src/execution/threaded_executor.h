@@ -73,10 +73,9 @@ struct threaded_executor_impl {
     explicit threaded_executor_impl(size_type size) :
         n_workers_(size), init_latch_(size + 1), stealing_policy_(size), scheduling_policy_(size) {
         workers_.reserve(n_workers_);
-        internals::tls_worker_id = 0;   // set main thread worker id to zero
         // start workers
         for (size_type i = 0; i < n_workers_; i++) {
-            workers_.emplace_back(std::make_unique<internals::worker>(1 + i, this));
+            workers_.emplace_back(std::make_unique<internals::worker>(i, this));
         }
         // wait workers to be ready, avoids threadpool destruction before worker construction
         init_latch_.arrive_and_wait();
@@ -113,6 +112,22 @@ struct threaded_executor_impl {
     void join() {
         std::unique_lock<std::mutex> lock(m_);
         cv_.wait(lock, [&]() { return task_count_ == 0; });
+    }
+    // sends the calling worker back to its worker loop, until condition is not met. used in collaboartive waits
+    template <typename Condition>
+        requires(requires(Condition cond) {
+            { cond() } -> std::convertible_to<bool>;
+        })
+    void active_join(int worker_id, Condition&& cond) {
+        while (cond()) {
+            if (worker_id != main_thread_id) {
+                workers_[worker_id]->try_execute_one(this);
+            } else {
+                // main thread cannot partecipate in active join, perform a standard join
+                join();
+            }
+        }
+        return;
     }
     // stops all running threads. not yet completed tasks are losts
     void stop() {
@@ -220,6 +235,8 @@ template <typename F, typename... Args>
 auto parallel_async(F&& f, Args&&... args) {
     return internals::threaded_executor::instance().async(std::forward<F>(f), std::forward<Args>(args)...);
 }
+
+  void parallel_join() { internals::threaded_executor::instance().join(); }
   
 }   // namespace fdapde
 

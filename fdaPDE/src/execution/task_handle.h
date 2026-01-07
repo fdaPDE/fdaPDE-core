@@ -22,6 +22,7 @@
 namespace fdapde {
 namespace internals {
 
+// type-erasing task handle with small buffer optimization
 class task_handle {
     static constexpr int buffer_size = 64;
    public:
@@ -113,7 +114,7 @@ class task_handle {
     template <typename F>
         requires(!std::is_same_v<std::decay_t<F>, task_handle> && std::is_invocable_v<F>)
     explicit task_handle(F&& f) : task_handle(std::forward<F>(f), std::nullopt) { }
-  
+
     // invoke
     void run() { fn_(sb_ ? (void*)storage_.buff_ : storage_.data_); }
     // a task is runnable if all its dependencies have been completed (ref_count_ == 0)

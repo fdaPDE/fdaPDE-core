@@ -24,7 +24,7 @@ namespace internals {
 
 // specialized parallelized for-range loop task
 struct task_parallel_for_each {
-    task_parallel_for_each() noexcept : m_(), cv_() { }
+    task_parallel_for_each() = default;
 
     template <typename Container, typename LoopBody>
         requires(std::is_invocable_v<LoopBody, typename Container::reference>)
@@ -36,38 +36,32 @@ struct task_parallel_for_each {
         if (n <= 0) return;   // nothing to loop on
 
         int grain_size = std::max(1.0, double(n) / (4 * executor->size()));
-        int local_task_count = 0;
-        {
-            // lock while dispatching to ensure tasks don't finish and notify before we even finish the loop.
-            std::lock_guard<std::mutex> lock(m_);
+        std::atomic<int> local_task_count {1};
 
-            iterator_type chunk_begin = begin;
-            while (chunk_begin != end) {
-                iterator_type chunk_end =
-                  std::next(chunk_begin, std::min(grain_size, int(std::distance(chunk_begin, end))));
-                local_task_count++;
+        iterator_type chunk_begin = begin;
+        while (chunk_begin != end) {
+            // register task in the group
+            local_task_count.fetch_add(1, std::memory_order_release);
 
-                auto loop_body = [this, chunk_begin, chunk_end, &f, &local_task_count]() {
-                    for (iterator_type it = chunk_begin; it != chunk_end; ++it) { f(*it); }
-                    {
-                        std::lock_guard<std::mutex> lock(this->m_);
-                        local_task_count--;
-                        if (local_task_count == 0) { this->cv_.notify_all(); }
-                    }
-                };
-                executor->execute(std::move(loop_body));
-                // advance the loop
-                chunk_begin = chunk_end;
-            }
+            iterator_type chunk_end =
+              std::next(chunk_begin, std::min(grain_size, int(std::distance(chunk_begin, end))));
+            auto loop_body = [this, chunk_begin, chunk_end, &f, &local_task_count]() {
+                for (iterator_type it = chunk_begin; it != chunk_end; ++it) { f(*it); }
+                // signal task completion
+                local_task_count.fetch_sub(1, std::memory_order_release);
+            };
+            executor->execute(std::move(loop_body));
+            // advance the loop
+            chunk_begin = chunk_end;
         }
-        // wait until all dispatched tasks are complete
-        std::unique_lock<std::mutex> lock(m_);
-        cv_.wait(lock, [&] { return local_task_count == 0; });
+        // task_group collaborative wait
+        local_task_count.fetch_sub(1, std::memory_order_release);
+        executor->active_join(this_worker_id(), [&] {
+            // help the pool while the task group is not fully consumed
+            return local_task_count.load(std::memory_order_acquire) > 0;
+        });
         return;
     }
-   private:
-    std::mutex m_;
-    std::condition_variable cv_;
 };
 
 }   // namespace internals
