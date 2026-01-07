@@ -46,7 +46,7 @@ struct task_parallel_reduce {
                 T local_init {};
                 for (Iterator it = chunk_begin; it != chunk_end; ++it) { local_init = redux(*it, local_init); }
                 partials[this_worker_id()] = redux(local_init, partials[this_worker_id()]);
-		// signal task completion
+                // signal task completion
                 local_task_count.fetch_sub(1, std::memory_order_release);
             };
             executor->execute(std::move(loop_body));
