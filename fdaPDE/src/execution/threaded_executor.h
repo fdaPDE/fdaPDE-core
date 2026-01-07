@@ -202,9 +202,11 @@ struct threaded_executor_impl {
 };
 
 struct threaded_executor {
+    // intentionally leaked to guarantee executor teardown at program termination (avoid crashes due to active threads
+    // accessing the executor after its destruction). To satisfy leak detectors, memory is statically allocated
     static auto& instance() {
-        // intentionally leaked to guarantee executor teardown at program termination
-        static threaded_executor_impl* exec = new threaded_executor_impl();
+        static std::aligned_storage_t<sizeof(threaded_executor_impl), alignof(threaded_executor_impl)> storage;
+        static threaded_executor_impl* exec = new (&storage) threaded_executor_impl();
         return *exec;
     }
 };
@@ -235,8 +237,8 @@ template <typename F, typename... Args>
 auto parallel_async(F&& f, Args&&... args) {
     return internals::threaded_executor::instance().async(std::forward<F>(f), std::forward<Args>(args)...);
 }
-
-  void parallel_join() { internals::threaded_executor::instance().join(); }
+// explicitly joins the executor until all work is completed
+void parallel_join() { internals::threaded_executor::instance().join(); }
   
 }   // namespace fdapde
 
