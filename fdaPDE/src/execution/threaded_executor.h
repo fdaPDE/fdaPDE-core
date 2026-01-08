@@ -77,7 +77,7 @@ struct threaded_executor_impl {
         for (size_type i = 0; i < n_workers_; i++) {
             workers_.emplace_back(std::make_unique<internals::worker>(i, this));
         }
-        // wait workers to be ready, avoids threadpool destruction before worker construction
+        // wait workers to be ready, avoids executor destruction before worker construction
         init_latch_.arrive_and_wait();
     }
     // observers

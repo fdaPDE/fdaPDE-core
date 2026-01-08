@@ -42,6 +42,9 @@ bool exec_eval_hooks(Opt& optimizer, Obj& objective, std::tuple<Args...>& callba
       },
       callbacks);
 }
+template <typename, typename = void> struct has_eval_hook : std::false_type { };
+template <typename Callback>
+struct has_eval_hook<Callback, std::void_t<decltype(&Callback::eval_hook)>> : std::true_type { };
 
 template <typename Opt, typename Obj, typename... Args>
 bool exec_grad_hooks(Opt& optimizer, Obj& objective, std::tuple<Args...>& callbacks) {
@@ -56,21 +59,27 @@ bool exec_grad_hooks(Opt& optimizer, Obj& objective, std::tuple<Args...>& callba
       },
       callbacks);
 }
+template <typename, typename = void> struct has_grad_hook : std::false_type { };
+template <typename Callback>
+struct has_grad_hook<Callback, std::void_t<decltype(&Callback::grad_hook)>> : std::true_type { };
 
 template <typename Opt, typename Obj, typename... Args>
-bool exec_adapt_hooks(Opt& optimizer, Obj& objective, std::tuple<Args...>& callbacks) {
+bool exec_step_hooks(Opt& optimizer, Obj& objective, std::tuple<Args...>& callbacks) {
     return opt_hooks_loop(
       [&](auto&& callback) {
           if constexpr (requires(std::decay_t<decltype(callback)> c, Opt opt, Obj obj) {
-                            { c.adapt_hook(opt, obj) } -> std::same_as<bool>;
+                            { c.step_hook(opt, obj) } -> std::same_as<bool>;
                         }) {
-              return callback.adapt_hook(optimizer, objective);
+              return callback.step_hook(optimizer, objective);
           }
 	  return false;
       },
       callbacks);
 }
-
+template <typename, typename = void> struct has_step_hook : std::false_type { };
+template <typename Callback>
+struct has_step_hook<Callback, std::void_t<decltype(&Callback::step_hook)>> : std::true_type { };
+  
 template <typename Opt, typename Obj> bool exec_stop_if(Opt& optimizer, Obj& objective) {
     bool b = false;
     if constexpr (requires(Opt opt, Obj obj) {
@@ -82,6 +91,17 @@ template <typename Opt, typename Obj> bool exec_stop_if(Opt& optimizer, Obj& obj
 }
 
 }   // namespace internals
+
+// callback detection trait
+template <typename Callback> class is_opt_callback {
+    using Callback_ = std::decay_t<Callback>;
+   public:
+    static constexpr bool value = internals::has_eval_hook<Callback_>::value ||
+                                  internals::has_grad_hook<Callback_>::value ||
+                                  internals::has_step_hook<Callback_>::value;
+};
+template <typename Callback> static constexpr bool is_opt_callback_v = is_opt_callback<Callback>::value;
+
 }   // namespace fdapde
 
 #endif   // __FDAPDE_OPTIMIZATION_CALLBACKS_H__

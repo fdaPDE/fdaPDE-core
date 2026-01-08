@@ -80,8 +80,8 @@ class MatrixBlock : public MatrixExpr<MatrixBlock<BlockRows_, BlockCols_, XprTyp
     template <typename XprType__>
         requires(std::is_constructible_v<XprTypeNested, XprType__>)
     constexpr MatrixBlock(XprType__&& xpr, int i) :
-        start_row_(BlockRows_ == 1 ? i : 0),
-        start_col_(BlockCols_ == 1 ? i : 0),
+        start_row_(BlockRows_ == 1 ? min(i, xpr.rows() - 1) : 0),
+        start_col_(BlockCols_ == 1 ? min(i, xpr.cols() - 1) : 0),
         block_rows_(BlockRows_ == 1 ? 1 : xpr.rows()),
         block_cols_(BlockCols_ == 1 ? 1 : xpr.cols()),
         xpr_(std::forward<XprType__>(xpr)) {
