@@ -20,14 +20,12 @@
 // clang-format off
 
 namespace fdapde {
-namespace internals {
 
-struct execution_parallel_t { };
-
-}   // namespace internals
-
-static constexpr internals::execution_parallel_t execution_par;
-
+struct execution_par_t { };
+struct execution_seq_t { };
+static constexpr execution_par_t execution_par;
+static constexpr execution_seq_t execution_seq;
+  
 }   // namespace fdapde
 
 #include "utility.h"

@@ -396,7 +396,7 @@ struct worker {
                 if (task) {
                     try_execute_task_(e, *task);
                 } else {
-                    e->on_worker_idle();   // nothing to do, query the threadpool to decide if move to idle
+                    e->on_worker_idle();   // nothing to do, query the executor to decide if move to idle
                 }
             }
         }
