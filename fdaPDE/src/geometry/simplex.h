@@ -140,30 +140,30 @@ template <int Order_, int EmbedDim_> class Simplex {
     }
 
     // iterator over boundary faces
-    class boundary_iterator : public internals::index_iterator<boundary_iterator, BoundaryCellType> {
-        using Base = internals::index_iterator<boundary_iterator, BoundaryCellType>;
-        using Base::index_;
-        friend Base;
-        const Simplex* s_;
-        // access to the i-th boundary cell as an Order_ - 1 Simplex
-        boundary_iterator& operator()(int i) requires(Order_ > 0) {
-            std::vector<bool> bitmask(n_nodes, 0);
-            std::fill_n(bitmask.begin(), n_nodes_per_face, 1);
-            Matrix<double, embed_dim, n_nodes_per_face> coords;
-            for (int j = 0; j < i; ++j) std::prev_permutation(bitmask.begin(), bitmask.end());
-            for (int j = 0, h = 0; j < n_nodes; ++j) {
-                if (bitmask[j]) coords.col(h++) = s_->coords_.col(j);
-            }
-            Base::val_ = BoundaryCellType(coords);
-            return *this;
-        }
-       public:
-        boundary_iterator(int index, const Simplex* s) : Base(index, 0, Order_ + 1), s_(s) {
-            if (index_ < Order_ + 1) operator()(index_);
-        }
-    };
-    boundary_iterator boundary_begin() const requires(Order_ >= 1) { return boundary_iterator(0, this); }
-    boundary_iterator boundary_end() const requires(Order_ >= 1) { return boundary_iterator(Order_ + 1, this); }
+    // class boundary_iterator : public internals::index_iterator<boundary_iterator, BoundaryCellType> {
+    //     using Base = internals::index_iterator<boundary_iterator, BoundaryCellType>;
+    //     using Base::index_;
+    //     friend Base;
+    //     const Simplex* s_;
+    //     // access to the i-th boundary cell as an Order_ - 1 Simplex
+    //     boundary_iterator& operator()(int i) requires(Order_ > 0) {
+    //         std::vector<bool> bitmask(n_nodes, 0);
+    //         std::fill_n(bitmask.begin(), n_nodes_per_face, 1);
+    //         Matrix<double, embed_dim, n_nodes_per_face> coords;
+    //         for (int j = 0; j < i; ++j) std::prev_permutation(bitmask.begin(), bitmask.end());
+    //         for (int j = 0, h = 0; j < n_nodes; ++j) {
+    //             if (bitmask[j]) coords.col(h++) = s_->coords_.col(j);
+    //         }
+    //         Base::val_ = BoundaryCellType(coords);
+    //         return *this;
+    //     }
+    //    public:
+    //     boundary_iterator(int index, const Simplex* s) : Base(index, 0, Order_ + 1), s_(s) {
+    //         if (index_ < Order_ + 1) operator()(index_);
+    //     }
+    // };
+    // boundary_iterator boundary_begin() const requires(Order_ >= 1) { return boundary_iterator(0, this); }
+    // boundary_iterator boundary_end() const requires(Order_ >= 1) { return boundary_iterator(Order_ + 1, this); }
 
     // finds the best approximation of p in the simplex (q \in simplex : q = \argmin_{t \in simplex}{\norm{t - p}})
     Matrix<double, embed_dim, 1> nearest(const Matrix<double, embed_dim, 1>& p) const {

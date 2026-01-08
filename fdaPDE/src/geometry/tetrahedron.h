@@ -115,41 +115,41 @@ class Tetrahedron : public Simplex<Triangulation::local_dim, Triangulation::embe
     int local_facet_id(int face_id) const { return local_face_id(face_id); }
 
     // iterator over tetrahedron edges
-    class edge_iterator : public internals::index_iterator<edge_iterator, EdgeType> {
-        using Base = internals::index_iterator<edge_iterator, EdgeType>;
-        using Base::index_;
-        friend Base;
-        const Tetrahedron* t_;
-        // access to i-th edge
-        edge_iterator& operator()(int i) {
-            Base::val_ = t_->edge(i);
-            return *this;
-        }
-       public:
-        edge_iterator(int index, const Tetrahedron* t) : Base(index, 0, t->n_edges), t_(t) {
-            if (index_ < t_->n_edges) operator()(index_);
-        }
-    };
-    edge_iterator edges_begin() const { return edge_iterator(0, this); }
-    edge_iterator edges_end() const { return edge_iterator(this->n_edges, this); }
-    // iterator over tetrahedron faces
-    class face_iterator : public internals::index_iterator<face_iterator, FaceType> {
-        using Base = internals::index_iterator<face_iterator, FaceType>;
-        using Base::index_;
-        friend Base;
-        const Tetrahedron* t_;
-        // access to i-th face
-        face_iterator& operator()(int i) {
-            Base::val_ = t_->face(i);
-            return *this;
-        }
-       public:
-        face_iterator(int index, const Tetrahedron* t) : Base(index, 0, t->n_faces), t_(t) {
-            if (index_ < t_->n_faces) operator()(index_);
-        }
-    };
-    face_iterator faces_begin() const { return face_iterator(0, this); }
-    face_iterator faces_end() const { return face_iterator(this->n_faces, this); }
+    // class edge_iterator : public internals::index_iterator<edge_iterator, EdgeType> {
+    //     using Base = internals::index_iterator<edge_iterator, EdgeType>;
+    //     using Base::index_;
+    //     friend Base;
+    //     const Tetrahedron* t_;
+    //     // access to i-th edge
+    //     edge_iterator& operator()(int i) {
+    //         Base::val_ = t_->edge(i);
+    //         return *this;
+    //     }
+    //    public:
+    //     edge_iterator(int index, const Tetrahedron* t) : Base(index, 0, t->n_edges), t_(t) {
+    //         if (index_ < t_->n_edges) operator()(index_);
+    //     }
+    // };
+    // edge_iterator edges_begin() const { return edge_iterator(0, this); }
+    // edge_iterator edges_end() const { return edge_iterator(this->n_edges, this); }
+    // // iterator over tetrahedron faces
+    // class face_iterator : public internals::index_iterator<face_iterator, FaceType> {
+    //     using Base = internals::index_iterator<face_iterator, FaceType>;
+    //     using Base::index_;
+    //     friend Base;
+    //     const Tetrahedron* t_;
+    //     // access to i-th face
+    //     face_iterator& operator()(int i) {
+    //         Base::val_ = t_->face(i);
+    //         return *this;
+    //     }
+    //    public:
+    //     face_iterator(int index, const Tetrahedron* t) : Base(index, 0, t->n_faces), t_(t) {
+    //         if (index_ < t_->n_faces) operator()(index_);
+    //     }
+    // };
+    // face_iterator faces_begin() const { return face_iterator(0, this); }
+    // face_iterator faces_end() const { return face_iterator(this->n_faces, this); }
    private:
     int id_ = 0;                    // tetrahedron identifier in the physical mesh
     std::array<int, 6> edge_ids_;   // edges identifiers int the physical mesh

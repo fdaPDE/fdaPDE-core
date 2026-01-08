@@ -28,8 +28,7 @@ struct GridSearch {
     static constexpr bool is_gradient_free = true;
     // publicly accessible optimizer state
     VectorType x_curr;
-    double obj_curr;
-  
+    double obj_curr;  
     // constructor
     GridSearch() : x_curr(), obj_curr(), optimum_(), value_(), values_() { }
 
@@ -45,15 +44,15 @@ struct GridSearch {
     optimize(fdapde::execution_seq_t, ObjectiveType&& objective, const GridType& grid, Callbacks&&... callbacks) {
         std::tuple<Callbacks...> callbacks_ {callbacks...};
         bool stop = false;   // asserted true in case of forced stop
-	values_.reserve(grid.rows());
-	
-	x_curr = grid.row(0);
+        values_.reserve(grid.rows());
+
+        x_curr = grid.row(0);
         obj_curr = objective(x_curr);
         stop |= internals::exec_eval_hooks(*this, objective, callbacks_);
         values_.push_back(obj_curr);
-	// initialize optimum
-	value_ = obj_curr;
-	optimum_ = x_curr;
+        // initialize optimum
+        value_ = obj_curr;
+        optimum_ = x_curr;
         // optimize objective over grid
         for (int i = 1; i < grid.rows() && !stop; ++i) {
             x_curr = grid.row(i);

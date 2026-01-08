@@ -52,146 +52,96 @@ template <typename T> struct clockwise_order {
     }
 };
 
-template <typename IteratorType, typename ValueType> class index_iterator {
-   public:
-    using value_type = ValueType;
-    using pointer = std::conditional_t<
-      std::is_pointer_v<ValueType>, std::decay_t<ValueType>, std::add_pointer_t<std::decay_t<ValueType>>>;
-    using reference = std::conditional_t<
-      std::is_pointer_v<ValueType>, std::add_lvalue_reference_t<std::remove_pointer_t<std::decay_t<ValueType>>>,
-      std::add_lvalue_reference_t<std::decay_t<ValueType>>>;
-    using size_type = std::size_t;
-    using difference_type = std::ptrdiff_t;
-    //using iterator_category = std::bidirectional_iterator_tag;
-    using iterator_category = std::random_access_iterator_tag; //in realtà mancano diversi altri operator e quindi non soddisfa ancora: std::random_access_iterator<It>
+// generator view of a mesh
+template <typename GeneratorType>
+    requires(std::is_invocable_v<GeneratorType, std::ptrdiff_t>)
+struct mesh_view : std::ranges::view_base {
+    mesh_view(const GeneratorType& generator, int begin, int end) : generator_(generator), begin_(begin), end_(end) { }
 
-    index_iterator() = default;
-    index_iterator(int index, int begin, int end) : index_(index), begin_(begin), end_(end) { }
-    reference operator*() { if constexpr(std::is_pointer_v<ValueType>) { return *val_; } else { return val_; } }
-    const reference operator*() const {
-        if constexpr (std::is_pointer_v<ValueType>) {
-            return *val_;
-        } else {
-            return val_;
-        }
-    }
-    pointer operator->() { if constexpr(std::is_pointer_v<ValueType>) { return val_; } else { return &val_; } }
-    const pointer operator->() const {
-        if constexpr (std::is_pointer_v<ValueType>) {
-            return val_;
-        } else {
-            return &val_;
-        }
-    }
-    IteratorType operator++(int) {
-        IteratorType tmp(index_, static_cast<IteratorType*>(this));
-        ++(derived());
-        return tmp;
-    }
-    IteratorType operator--(int) {
-        IteratorType tmp(index_, static_cast<IteratorType*>(this));
-        --(derived());
-        return tmp;
-    }
-    IteratorType& operator++() {
-        index_++;
-        if (index_ < end_) derived().operator()(index_);
-        return derived();
-    }
-    IteratorType& operator--() {
-        --index_;
-        if (index_ >= begin_) derived().operator()(index_);
-        return derived();
-    }
-    IteratorType& operator+=(int n) {
-        index_+=n;
-        if (index_ < end_) derived().operator()(index_);
-        return derived();
-    }
-    IteratorType& operator-=(int n) {
-        index_-=n;
-        if (index_ >= begin_) derived().operator()(index_);
-        return derived();
-    }
+    struct iterator {
+        using iterator_category = std::random_access_iterator_tag;
+        using difference_type = std::ptrdiff_t;
+        using value_type = decltype(std::declval<GeneratorType>().operator()(difference_type()));
 
-    /*errore in uso di derived().operator()(index_): ../../../../fdaPDE/src/geometry/utility.h:108:48: error: 'fdapde::internals::fe_dof_handler_base<LocalDim, EmbedDim, Derived>::cell_iterator& fdapde::internals::fe_dof_handler_base<LocalDim, EmbedDim, Derived>::cell_iterator::operator()(int) [with int LocalDim = 2; int EmbedDim = 2; Derived = fdapde::DofHandler<2, 2, fdapde::finite_element_tag>]' is private within this context
-  108 |         if (index_ < end_) derived().operator()(index_);
-  momemntanea amicizia tra index_iterator e cell_iterator in finite_elements/dof_handler.h riga 80
-  */
-    //aggiunti per random access completo (ancora comunque non soddisfa std::random_access<>)
-    friend int 
-    operator-(const index_iterator<IteratorType, ValueType>& lhs, const index_iterator<IteratorType, ValueType>& rhs) {
-        return lhs.index_ - rhs.index_;
-    }
+        iterator(const GeneratorType* generator, int index) : generator_(generator), index_(index) { }
 
-    // it2 = it + n
-    friend //anche se non accede a membri privati, è per non farla membro di classe. 
-    IteratorType operator+(const index_iterator<IteratorType, ValueType>& it, int n) {
-        IteratorType tmp = static_cast<IteratorType&>(it);
-        tmp += n;
-        return tmp;
-    }
-    // it2 = n + it
-    friend
-    IteratorType operator+(int n, const index_iterator<IteratorType, ValueType>& it) {
-        return it + n;
-    }
-    // it2 = it - n
-    friend
-    IteratorType operator-(const index_iterator<IteratorType, ValueType>& it, difference_type n) {
-        IteratorType tmp = static_cast<IteratorType&>(it);
-        tmp -= n;
-        return tmp;
-    }
-    friend bool
-    operator<=(const index_iterator<IteratorType, ValueType>& lhs, const index_iterator<IteratorType, ValueType>& rhs) {
-        return lhs.index_ <= rhs.index_;
-    }
-    // it[n] return *(it+n)
-    reference operator[](int n)const{ 
-        if (index_ < end_){return (derived()+n).operator*();}//(derived().operator+(derived(),n)).operator*()
-        return derived(); //stessa gestione del "controllo limite" in operator++
-    }
+        value_type operator*() { return (*generator_)(index_); }
+        value_type operator[](difference_type n) const { return (*generator_)(index_ + n); }
 
-    friend bool
-    operator!=(const index_iterator<IteratorType, ValueType>& lhs, const index_iterator<IteratorType, ValueType>& rhs) {
-        return lhs.index_ != rhs.index_;
-    }
-    friend bool
-    operator==(const index_iterator<IteratorType, ValueType>& lhs, const index_iterator<IteratorType, ValueType>& rhs) {
-        return lhs.index_ == rhs.index_;
-    }
-    int index() const { return index_; }
-    IteratorType& derived() { return static_cast<IteratorType&>(*this); }
-   protected:
-    int index_;
+        iterator& operator++() { ++index_; return *this; }
+        iterator& operator--() { --index_; return *this; }
+        iterator& operator+=(difference_type n) { index_ += n; return *this; }
+        iterator& operator-=(difference_type n) { index_ -= n; return *this; }
+
+        friend iterator operator+(iterator it, difference_type n) { return it += n; }
+        friend iterator operator-(iterator it, difference_type n) { return it -= n; }
+
+        friend difference_type operator-(iterator lhs, iterator rhs) { return lhs.index_ - rhs.index_; }
+
+        friend bool operator==(iterator lhs, iterator rhs) { return lhs.index_ == rhs.index_; }
+        friend auto operator<=>(iterator lhs, iterator rhs) { return lhs.index_ <=> rhs.index_; }
+       private:
+        const GeneratorType* generator_;
+        int index_;
+    };
+
+    iterator begin() const { return iterator(&generator_, begin_); }
+    iterator end() const { return iterator(&generator_, end_); }
+   private:
+    GeneratorType generator_;
     int begin_, end_;
-    value_type val_;
 };
 
-template <typename IteratorType, typename ValueType>
-class filtering_iterator : public index_iterator<IteratorType, ValueType> {
-    using Base = index_iterator<IteratorType, ValueType>;
-   protected:
-    using Base::index_;
-    Vector<bool, Dynamic> filter_;
-   public:
-    filtering_iterator() = default;
-    filtering_iterator(int index, int begin, int end) : Base(index, begin, end) { }
-    filtering_iterator(int index, int begin, int end, const Vector<bool, Dynamic>& filter) :
-        Base(index, begin, end), filter_(filter) { /* initialization is responsibility of IteratorType */ }
-    IteratorType& operator++() {
-        index_++;
-        for (; index_ < Base::end_ && !filter_[index_]; ++index_);
-        if (index_ == Base::end_) return Base::derived();
-        return Base::derived().operator()(index_);
+// filtered generator view of a mesh
+template <typename GeneratorType>
+    requires(std::is_invocable_v<GeneratorType, std::ptrdiff_t>)
+struct filtered_mesh_view : std::ranges::view_base {
+    filtered_mesh_view(const GeneratorType& generator, int begin, int end, const Vector<bool, Dynamic>& filter) :
+        generator_(generator), begin_(begin), end_(end) {
+        fdapde_assert(filter.size() == (end - begin));
+	// pre-compute indices to allow O(1) random access
+	filter_.reserve(begin - end);
+        for (int i = 0; i < (end - begin); ++i) {
+            if (filter[i]) { filter_.push_back(begin + i); }
+        }
     }
-    IteratorType& operator--() {
-        index_--;
-        for (; index_ >= Base::begin_ && !filter_[index_]; --index_);
-        if (index_ == -1) return Base::derived();
-        return Base::derived().operator()(index_);
-    }
+
+    struct iterator {
+        using iterator_category = std::random_access_iterator_tag;
+        using difference_type = std::ptrdiff_t;
+        using value_type = decltype(std::declval<GeneratorType>().operator()(difference_type()));
+
+        iterator(const GeneratorType* generator, int index, std::vector<int>* filter) :
+            generator_(generator), index_(index), filter_(filter) {
+        }
+
+        value_type operator*() { return (*generator_)((*filter_)[index_]); }
+        value_type operator[](difference_type n) const { return (*generator_)((*filter_)[index_ + n]); }
+
+        iterator& operator++() { ++index_; return *this; }
+        iterator& operator--() { --index_; return *this; }
+        iterator& operator+=(difference_type n) { index_ += n; return *this; }
+        iterator& operator-=(difference_type n) { index_ -= n; return *this; }
+
+        friend iterator operator+(iterator it, difference_type n) { return it += n; }
+        friend iterator operator-(iterator it, difference_type n) { return it -= n; }
+
+        friend difference_type operator-(iterator lhs, iterator rhs) { return lhs.index_ - rhs.index_; }
+
+        friend bool operator==(iterator lhs, iterator rhs) { return lhs.index_ == rhs.index_; }
+        friend auto operator<=>(iterator lhs, iterator rhs) { return lhs.index_ <=> rhs.index_; }
+       private:
+        std::vector<int>* filter_;
+        const GeneratorType* generator_;
+        int index_;
+    };
+
+    iterator begin() const { return iterator(&generator_, 0, &filter_); }
+    iterator end() const { return iterator(&generator_, filter_.size(), &filter_); }
+   private:
+    std::vector<int> filter_;
+    GeneratorType generator_;
+    int begin_, end_;
 };
 
 }   // namespace internals

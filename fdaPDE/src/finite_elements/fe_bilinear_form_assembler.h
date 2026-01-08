@@ -30,7 +30,7 @@ class fe_bilinear_form_assembly_loop :
    public:
     // detect trial and test spaces from bilinear form
     using TrialSpace = trial_space_t<Form_>;
-    using TestSpace  = test_space_t <Form_>;
+    using TestSpace = test_space_t<Form_>;
     static_assert(TrialSpace::local_dim == TestSpace::local_dim && TrialSpace::embed_dim == TestSpace::embed_dim);
     static constexpr bool is_galerkin = std::is_same_v<TrialSpace, TestSpace>;
     static constexpr bool is_petrov_galerkin = !is_galerkin;
@@ -100,19 +100,12 @@ class fe_bilinear_form_assembly_loop :
     Eigen::SparseMatrix<double> assemble() const {
         Eigen::SparseMatrix<double> assembled_mat(test_dof_handler()->n_dofs(), trial_dof_handler()->n_dofs());
         std::vector<Eigen::Triplet<double>> triplet_list;
-
-        // // reserve space to avoid reallocation
-        // int n_cell = this->Base::dof_handler_->triangulation()->n_cells();
-        // int triple_per_cella = n_trial_basis * n_test_basis; //9 qui;
-        // int tot_triple = n_cell * triple_per_cella;
-        // triplet_list.reserve(tot_triple);
-
+        // reserve space to avoid reallocations
+        triplet_list.reserve(this->dof_handler_->n_cells() * (n_trial_basis * n_test_basis));
 	assemble(triplet_list);
-
-	// linearity of the integral is implicitly used here, as duplicated triplets are summed up (see Eigen docs)
+	// linearity of the integral is implicitly used here, as duplicated triplets are summed up
         assembled_mat.setFromTriplets(triplet_list.begin(), triplet_list.end());
         assembled_mat.makeCompressed();
-
         return assembled_mat;
     }
 
@@ -219,167 +212,11 @@ class fe_bilinear_form_assembly_loop :
         }
         return;
     }
-
-// Parallel assembly into a single preallocated shared vector of triples, so that each worker can write concurrently in a thread-safe manner without synchronization
-template<typename Threadpool>// Template to allow receiving a threadpool with any scheduling and stealing policy as a parameter
-Eigen::SparseMatrix<double> assemble(execution::execution_parallel, Threadpool& Tp, int granularity = -1) const {
-        Eigen::SparseMatrix<double> assembled_mat(test_dof_handler()->n_dofs(), trial_dof_handler()->n_dofs());
-        
-        int n_cell = this->Base::dof_handler_->triangulation()->n_cells();
-        int triple_per_cella = n_trial_basis * n_test_basis; 
-        int tot_triple = n_cell * triple_per_cella;
-        std::vector<Eigen::Triplet<double>> triplet_list(tot_triple);
-
-	assemble(triplet_list,Tp,granularity);
-
-	// linearity of the integral is implicitly used here, as duplicated triplets are summed up (see Eigen docs)
-        assembled_mat.setFromTriplets(triplet_list.begin(), triplet_list.end());
-        assembled_mat.makeCompressed();
-
-        return assembled_mat;
-    }
-
-    // Overload that creates a thread pool instead of receiving one as input
-    Eigen::SparseMatrix<double> assemble(execution::execution_parallel,int n_thread = std::thread::hardware_concurrency(),int size_queue = 1024, int granularity = -1) const { //int kk per il momento in input per fare test piu comodamente. OSS: per ora visto che kk=1 fino a kk=10 non c'è differenza. se troppo alto invece peggioramento evidente (es kk=100)
-        fdapde::threadpool Tp(size_queue,n_thread);//default steal and schedule
-        return assemble(execution::par,Tp,granularity);
-    }
-    
-    template<typename Threadpool>
-    void assemble(std::vector<Eigen::Triplet<double>>& triplet_list, Threadpool &Tp, int granularity) const {
-        using iterator = typename Base::fe_traits::dof_iterator;
-        iterator begin(Base::begin_.index(), test_dof_handler(), Base::begin_.marker());
-        iterator end  (Base::end_.index(),   test_dof_handler(), Base::end_.marker()  );
-        // prepare assembly loop
-	Eigen::Matrix<int, Dynamic, 1> test_active_dofs, trial_active_dofs;
-        MdArray<double, MdExtents<n_test_basis,  n_quadrature_nodes, embed_dim, n_test_components >> test_grads;
-        MdArray<double, MdExtents<n_trial_basis, n_quadrature_nodes, embed_dim, n_trial_components>> trial_grads;
-        Matrix<double, n_test_basis , n_quadrature_nodes> test_divs;
-        Matrix<double, n_trial_basis, n_quadrature_nodes> trial_divs;
-        MdArray<double, MdExtents<n_test_basis,  n_quadrature_nodes, n_test_components,  embed_dim, embed_dim>>
-	  test_hess;
-        MdArray<double, MdExtents<n_trial_basis, n_quadrature_nodes, n_trial_components, embed_dim, embed_dim>>
-          trial_hess;
-
-        if constexpr (Form::XprBits & int(fe_assembler_flags::compute_physical_quad_nodes)) {
-            Base::distribute_quadrature_nodes(begin, end);
-        }
-        // start assembly loop
-        internals::fe_assembler_packet<embed_dim> fe_packet(n_trial_components, n_test_components);
-	// if hessians are zero, assemble physical hessian once and never update
-        constexpr bool test_hess_is_zero = std::all_of(
-          test_shape_hess_.data(), test_shape_hess_.data() + test_shape_hess_.size(), [](double x) { return x == 0; });
-        constexpr bool trial_hess_is_zero =
-          std::all_of(trial_shape_hess_.data(), trial_shape_hess_.data() + trial_shape_hess_.size(), [](double x) {
-              return x == 0;
-          });
-        if constexpr (test_hess_is_zero ) { std::fill_n(fe_packet.test_hess.data(), fe_packet.test_hess.size(), 0.0); }
-        if constexpr (trial_hess_is_zero) {
-            std::fill_n(fe_packet.trial_hess.data(), fe_packet.trial_hess.size(), 0.0);
-        }
-
-        // Manual division of the range into jobs and use parallel_for with granularity = 1
-        int num_worker = Tp.n_workers();
-        //number of cells (number of total iterations in for-loop)
-        int count = this->Base::dof_handler_->triangulation()->n_cells();
-        // If input granularity < 0, use the default granularity so that each worker receives approximately one job
-        if(granularity == -1){
-            granularity = (count/num_worker > 0) ? count/num_worker : 1;
-        }
-        int granularity_last_job = count % granularity;
-        int n_job = (granularity_last_job == 0) ? count/granularity : count/granularity +1 ;
-        
-        Tp.parallel_for(0,n_job,[=,this,&Tp,&triplet_list](int ii)mutable{ 
-            int local_cell_id = ii*granularity; //compute id of the first cell in the job
-            iterator it = begin;
-            it += (ii*granularity); // compute iterator of the first cell in the job
-            // The last job may have granularity_last_job iterations instead of granularity iterations 
-            int granularity_job = (granularity_last_job != 0 && ii == n_job-1)? granularity_last_job : granularity; 
-            int triple_per_cella = n_trial_basis * n_test_basis; 
-            
-            for (int l = 0; l<granularity_job; l++) {
-                // update fe_packet content based on form requests
-                fe_packet.measure = it->measure();
-                if constexpr (Form::XprBits & int(geo_assembler_flags::compute_geo_id)) { fe_packet.geo_id = it->id(); }
-                if constexpr (Form::XprBits & int(geo_assembler_flags::compute_face_normal)) {
-                    fdapde_static_assert(Options_ == FaceMajor, BILINEAR_FORM_REQUIRES_A_FACE_MAJOR_ASSEMBLY_LOOP);
-                    fe_packet.normal.assign_inplace_from(it->normal());
-                }
-                if constexpr (Form::XprBits & int(fe_assembler_flags::compute_shape_grad)) {
-                    Base::eval_shape_grads_on_cell(it, test_shape_grads_, test_grads);
-                    if constexpr (is_petrov_galerkin) Base::eval_shape_grads_on_cell(it, trial_shape_grads_, trial_grads);
-                }
-                if constexpr (Form::XprBits & int(fe_assembler_flags::compute_shape_div)) {
-                    fdapde_static_assert(
-                    n_test_components != 1 || n_trial_components != 1,
-                    DIVERGENCE_OPERATOR_IS_DEFINED_ONLY_FOR_VECTOR_ELEMENTS);
-                    if constexpr (n_test_components != 1) Base::eval_shape_div_on_cell(it, test_shape_grads_, test_divs);
-                    if constexpr (is_petrov_galerkin && n_trial_components != 1)
-                        Base::eval_shape_div_on_cell(it, trial_shape_grads_, trial_divs);
-                }
-                if constexpr (Form::XprBits & int(fe_assembler_flags::compute_shape_hess)) {
-                    if constexpr (!test_hess_is_zero) Base::eval_shape_hess_on_cell(it, test_shape_hess_, test_hess);
-                    if constexpr (is_petrov_galerkin && !trial_hess_is_zero)
-                        Base::eval_shape_hess_on_cell(it, trial_shape_hess_, trial_hess);
-                }
-
-                // perform integration of weak form for (i, j)-th basis pair
-                int index_global_triplet_list = local_cell_id*triple_per_cella;
-                test_active_dofs = it->dofs();
-                if constexpr (is_petrov_galerkin) { trial_active_dofs = trial_dof_handler()->active_dofs(it->id()); }
-                for (int i = 0; i < n_trial_basis; ++i) {      // trial function loop
-                    for (int j = 0; j < n_test_basis; ++j) {   // test function loop
-                        double value = 0;
-                        for (int q_k = 0; q_k < n_quadrature_nodes; ++q_k) {
-                            if constexpr (Form::XprBits & int(fe_assembler_flags::compute_shape_values)) {
-                                fe_packet.trial_value.assign_inplace_from(trial_shape_values_.template slice<0, 1>(i, q_k));
-                                fe_packet.test_value .assign_inplace_from(test_shape_values_ .template slice<0, 1>(j, q_k));
-                            }
-                            if constexpr (Form::XprBits & int(fe_assembler_flags::compute_shape_grad)) {
-                                fe_packet.trial_grad.assign_inplace_from(is_galerkin ?
-                                    test_grads.template slice<0, 1>(i, q_k) : trial_grads.template slice<0, 1>(i, q_k));
-                                fe_packet.test_grad .assign_inplace_from(test_grads.template slice<0, 1>(j, q_k));
-                            }
-                            if constexpr (Form::XprBits & int(fe_assembler_flags::compute_shape_div)) {
-                                if constexpr (n_trial_components != 1) {
-                                    fe_packet.trial_div =
-                                    (is_galerkin && n_test_components != 1) ? test_divs(i, q_k) : trial_divs(i, q_k);
-                                }
-                                if constexpr (n_test_components != 1) fe_packet.test_div = test_divs(j, q_k);
-                            }
-                            if constexpr (Form::XprBits & int(fe_assembler_flags::compute_shape_hess)) {
-                                if constexpr (!trial_hess_is_zero)
-                                    fe_packet.trial_hess.assign_inplace_from(is_galerkin ?
-                        test_hess.template slice<0, 1>(i, q_k) : trial_hess.template slice<0, 1>(i, q_k));
-                                if constexpr (!test_hess_is_zero)
-                                    fe_packet.test_hess.assign_inplace_from(test_hess.template slice<0, 1>(j, q_k));
-                            }
-                            if constexpr (Form::XprBits & int(fe_assembler_flags::compute_physical_quad_nodes)) {
-                                fe_packet.quad_node_id = local_cell_id * n_quadrature_nodes + q_k; 
-                            }
-                            value += Quadrature::weights[q_k] * form_(fe_packet);
-                        }
-                        // thread-safe upload of triplet in triplet_list
-                        Eigen::Triplet<double> tripla(test_active_dofs[j], is_galerkin ? test_active_dofs[i] : trial_active_dofs[i],value * fe_packet.measure);
-                        triplet_list[index_global_triplet_list] = std::move(tripla);
-                        index_global_triplet_list ++;
-                    }
-                }
-                local_cell_id ++;
-                ++it;
-            }
-            
-        });
-        
-        return;
-    }
-
     constexpr int n_dofs() const { return trial_dof_handler()->n_dofs(); }
     constexpr int rows() const { return test_dof_handler()->n_dofs(); }
     constexpr int cols() const { return trial_dof_handler()->n_dofs(); }
     constexpr const TrialSpace& trial_space() const { return *trial_space_; }
 };
-
 
 // optimized computation of discretized laplace operator (\int_D (\grad{\psi_i} * \grad{\psi_j})) for scalar elements
 template <typename DofHandler, typename FeType> class scalar_fe_grad_grad_assembly_loop {

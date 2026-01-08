@@ -20,11 +20,11 @@
 // clang-format off
 
 // include required modules
-#include "linear_algebra.h"    // pull Eigen first
 #include "utility.h"
-#include "fields.h"
+#include "execution.h"
+#include "linear_algebra.h"
 #include "geometry.h"
-#include "multithreading.h"
+#include "fields.h"
 
 namespace fdapde{
 

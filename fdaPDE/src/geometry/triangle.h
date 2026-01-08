@@ -86,23 +86,23 @@ template <typename Triangulation> class Triangle : public Simplex<Triangulation:
     int local_facet_id(int edge_id) const { return local_edge_id(edge_id); }
 
     // iterator over triangle edge
-    class edge_iterator : public internals::index_iterator<edge_iterator, EdgeType> {
-        using Base = internals::index_iterator<edge_iterator, EdgeType>;
-        using Base::index_;
-        friend Base;
-        const Triangle* t_;
-        // access to i-th triangle edge
-        edge_iterator& operator()(int i) {
-            Base::val_ = t_->edge(i);
-            return *this;
-        }
-       public:
-        edge_iterator(int index, const Triangle* t) : Base(index, 0, t->n_edges), t_(t) {
-            if (index_ < t_->n_edges) operator()(index_);
-        }
-    };
-    edge_iterator edges_begin() const { return edge_iterator(0, this); }
-    edge_iterator edges_end() const { return edge_iterator(this->n_edges, this); }
+    // class edge_iterator : public internals::index_iterator<edge_iterator, EdgeType> {
+    //     using Base = internals::index_iterator<edge_iterator, EdgeType>;
+    //     using Base::index_;
+    //     friend Base;
+    //     const Triangle* t_;
+    //     // access to i-th triangle edge
+    //     edge_iterator& operator()(int i) {
+    //         Base::val_ = t_->edge(i);
+    //         return *this;
+    //     }
+    //    public:
+    //     edge_iterator(int index, const Triangle* t) : Base(index, 0, t->n_edges), t_(t) {
+    //         if (index_ < t_->n_edges) operator()(index_);
+    //     }
+    // };
+    // edge_iterator edges_begin() const { return edge_iterator(0, this); }
+    // edge_iterator edges_end() const { return edge_iterator(this->n_edges, this); }
    private:
     int id_ = 0;   // triangle ID in the physical mesh
     const Triangulation* mesh_ = nullptr;
