@@ -5,7 +5,7 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[1;34m'
-NC='\033[0m' # No Color
+NC='\033[0m' # no color
 
 section() {
     echo -e "${BLUE}==>${NC} $1"
@@ -34,7 +34,7 @@ Options:
     exit 2
 }
 
-# Parse command line inputs
+# parse command line inputs
 SHORT="mc:h"
 while getopts $SHORT opt; do
     case "$opt" in
@@ -47,7 +47,7 @@ done
 
 shift $((OPTIND - 1))
 
-# Set compiler environment
+# set compiler environment depending on request
 if [ "$COMPILER" = "gcc" ]; then
     export CC=$(command -v gcc)
     export CXX=$(command -v g++)
@@ -61,13 +61,20 @@ else
     exit 1
 fi
 
-# Detect versions
+# detect compiler versions
 COMPILER_VERSION=$("$CC" --version | head -n1)
 CMAKE_VERSION=$(cmake --version | head -n1)
+
+# detect hardware
+CPU_MODEL=$(lscpu | grep -m1 "Model name:" | cut -d: -f2- | sed 's/^ *//')
+NTHREADS=$(nproc)
+THREADS_PER_CORE=$(lscpu | grep -m1 "Thread(s) per core:" | cut -d: -f2 | tr -d ' ')
 
 echo "=============================================="
 echo "   fdaPDE testing framework"
 echo "----------------------------------------------"
+echo "  CPU model     : $CPU_MODEL"
+echo "  Threads       : $NTHREADS (SMT : $THREADS_PER_CORE)"
 echo "  Compiler      : $COMPILER_VERSION"
 echo "  C++ Compiler  : $CXX"
 echo "  CMake version : $CMAKE_VERSION"

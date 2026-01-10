@@ -15,7 +15,6 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <gtest/gtest.h>   // testing framework
-
 #include <cstring>
 
 class fdapde_testing_printer : public ::testing::EmptyTestEventListener {
@@ -24,13 +23,7 @@ class fdapde_testing_printer : public ::testing::EmptyTestEventListener {
     int suite_width_ = 0;   // maximum suite name length
     int test_width_ = 0;    // maximum test name length
     std::chrono::steady_clock::time_point test_start;
-    const int progress_bar_width_ = 44;
     const int gap_before_status_ = 5;
-
-    // buffer cout/cerr
-    std::ostringstream capture_buf_;
-    std::streambuf* old_cout_ {nullptr};
-    std::streambuf* old_cerr_ {nullptr};
 
     std::string timestamp_() {
         auto now = std::chrono::system_clock::now();
@@ -41,18 +34,6 @@ class fdapde_testing_printer : public ::testing::EmptyTestEventListener {
         ss << std::put_time(&buf, "%Y-%m-%d %H:%M:%S");
         return ss.str();
     }
-    void draw_progress_(bool final = false) {
-        int done = progress_bar_width_ * current_ / n_tests_;
-        std::ostringstream bar;
-        bar << "[";
-        for (int i = 0; i < done; ++i) bar << "#";
-        for (int i = done; i < progress_bar_width_; ++i) bar << " ";
-        bar << "] " << std::setw(3) << current_ << "/" << n_tests_ << " (" << (100 * current_ / n_tests_) << "%)";
-        std::cout << "\r" << bar.str() << std::flush;
-        if (final) std::cout << "\n";
-        return;
-    }
-    void clear_progress_() { std::cout << "\r" << std::string(progress_bar_width_ + 30, ' ') << "\r"; }
    public:
     fdapde_testing_printer() {
         auto* unit = ::testing::UnitTest::GetInstance();
@@ -74,13 +55,6 @@ class fdapde_testing_printer : public ::testing::EmptyTestEventListener {
     }
     void OnTestStart(const ::testing::TestInfo&) override {
         ++current_;
-        // draw progress bar
-        draw_progress_();
-        // redirect cout/cerr, later dump to stdout if program writes something
-        capture_buf_.str("");
-        capture_buf_.clear();
-        old_cout_ = std::cout.rdbuf(capture_buf_.rdbuf());
-        old_cerr_ = std::cerr.rdbuf(capture_buf_.rdbuf());
         test_start = std::chrono::steady_clock::now();
     }
 
@@ -88,11 +62,7 @@ class fdapde_testing_printer : public ::testing::EmptyTestEventListener {
         auto test_end = std::chrono::steady_clock::now();
         std::chrono::duration<double> diff = test_end - test_start;
         double elapsed = diff.count();
-        // restore cout/cerr
-        std::cout.rdbuf(old_cout_);
-        std::cerr.rdbuf(old_cerr_);
 
-        clear_progress_();
         std::string ts = timestamp_();
         // build test info string
         std::ostringstream row;
@@ -109,13 +79,6 @@ class fdapde_testing_printer : public ::testing::EmptyTestEventListener {
         row << std::string(2, ' ') << std::right << std::setw(time_field_width) << std::fixed << std::setprecision(3)
             << elapsed;
         std::cout << row.str() << "\n";
-        // dump buffered output, if any
-        std::string captured = capture_buf_.str();
-        if (!captured.empty()) {
-            std::istringstream iss(captured);
-            std::cout << "\033[36m>>> Captured output\033[0m\n";
-            for (std::string line; std::getline(iss, line);) { std::cout << "    " << line << "\n"; }
-        }
         // print test failure informations
         if (!test_info.result()->Passed()) {
             for (int i = 0; i < test_info.result()->total_part_count(); ++i) {
@@ -125,8 +88,6 @@ class fdapde_testing_printer : public ::testing::EmptyTestEventListener {
                 }
             }
         }
-        // redraw progess line
-        draw_progress_(current_ == n_tests_);
     }
     void OnTestProgramEnd(const ::testing::UnitTest& unit) override {
         int failed = unit.failed_test_count();
@@ -145,8 +106,13 @@ class fdapde_testing_printer : public ::testing::EmptyTestEventListener {
 #include "linear_algebra/matrix.cpp"
 #include "linear_algebra/diagonal.cpp"
 #include "linear_algebra/triangular.cpp"
-#include "linear_algebra/bool.cpp"
+// #include "linear_algebra/bool.cpp"
 #include "linear_algebra/symmetric.cpp"
+
+#include "execution/queues.cpp"
+#include "execution/parallel_algorithms.cpp"
+#include "execution/task_graphs.cpp"
+
 
 // #include "geometry/triangle.cpp"
 

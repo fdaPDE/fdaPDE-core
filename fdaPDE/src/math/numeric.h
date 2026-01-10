@@ -71,14 +71,14 @@ constexpr std::common_type_t<T1, T2> int_floor(T1 a, T2 b) {
 }
 
 // min function with common type conversion
-template <typename T1, typename T2> std::common_type_t<T1, T2> min(T1 a, T2 b) {
+template <typename T1, typename T2> constexpr std::common_type_t<T1, T2> min(T1 a, T2 b) {
     using T = std::common_type_t<T1, T2>;
-    return std::min<T>(static_cast<T>(a), static_cast<T>(b));
+    return (static_cast<T>(a) <= static_cast<T>(b)) ? static_cast<T>(a) : static_cast<T>(b);
 }
 // max function with common type conversion
-template <typename T1, typename T2> std::common_type_t<T1, T2> max(T1 a, T2 b) {
+template <typename T1, typename T2> constexpr std::common_type_t<T1, T2> max(T1 a, T2 b) {
     using T = std::common_type_t<T1, T2>;
-    return std::max<T>(static_cast<T>(a), static_cast<T>(b));
+    return (static_cast<T>(a) >= static_cast<T>(b)) ? static_cast<T>(a) : static_cast<T>(b);
 }
 
 // constexpr absoulte value
