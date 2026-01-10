@@ -34,14 +34,14 @@ class task_handle {
         mv_(other.mv_),
         cp_(other.cp_),
         sb_(other.sb_),
-        required_by_(other.required_by_),
+        inverse_deps_(other.inverse_deps_),
         allocation_context_(other.allocation_context_) {
         if (sb_) {
             if (cp_) { cp_(storage_.buff_, other.storage_.buff_); }
         } else {
             storage_.data_ = other.storage_.data_;
         }
-        ref_count_.store(other.ref_count_, std::memory_order_release);
+        ref_count_.store(other.ref_count_.load(std::memory_order_acquire), std::memory_order_release);
     }
     // move semantic
     task_handle(task_handle&& other) noexcept :
@@ -50,7 +50,7 @@ class task_handle {
         mv_(std::exchange(other.mv_, nullptr)),
         cp_(std::exchange(other.cp_, nullptr)),
         sb_(std::exchange(other.sb_, 0)),
-        required_by_(std::move(other.required_by_)),
+        inverse_deps_(std::move(other.inverse_deps_)),
         allocation_context_(other.allocation_context_)   // copy, as physical memory is not moved
     {
         if (sb_) {
@@ -59,7 +59,7 @@ class task_handle {
             storage_.data_ = std::exchange(other.storage_.data_, nullptr);
         }
         // task dependencies
-        ref_count_.store(other.ref_count_);
+        ref_count_.store(other.ref_count_.load(std::memory_order_acquire), std::memory_order_release);
         other.ref_count_.store(0);
     }
     task_handle& operator=(task_handle&& other) noexcept {
@@ -77,9 +77,9 @@ class task_handle {
             storage_.data_ = std::exchange(other.storage_.data_, nullptr);
         }
         // task dependencies
-        required_by_ = std::move(other.required_by_);
+        inverse_deps_ = std::move(other.inverse_deps_);
         allocation_context_ = other.allocation_context_;
-        ref_count_.store(other.ref_count_);
+        ref_count_.store(other.ref_count_.load(std::memory_order_acquire), std::memory_order_release);
         other.ref_count_.store(0);
         return *this;
     }
@@ -87,24 +87,23 @@ class task_handle {
         requires(!std::is_same_v<std::decay_t<F>, task_handle> && std::is_invocable_v<F> &&
                  std::is_constructible_v<std::optional<int>, AllocationContext>)
     task_handle(F&& f, AllocationContext allocation_context) :
-        required_by_(), ref_count_(0), allocation_context_(allocation_context) {
+        inverse_deps_(), ref_count_(0), allocation_context_(allocation_context) {
         using Fn = std::decay_t<F>;
         constexpr bool sb = sizeof(F) <= buffer_size && alignof(Fn) <= alignof(union U);
         sb_ = sb;
-        if constexpr (sb) {
-            // stack allocation for small task object
+        if constexpr (sb) {   // stack allocation for small task object
             new (storage_.buff_) Fn(std::forward<F>(f));
-        } else {
-            // if task cannot fit in small buffer, resort to heap allocation
+            rm_ = [](void* ptr) noexcept {
+                if (ptr) { reinterpret_cast<Fn*>(ptr)->~Fn(); }
+            };
+        } else {   // if task cannot fit in small buffer, resort to heap allocation
             storage_.data_ = new Fn(std::forward<F>(f));
-        }
-        // type-erased function handlers
+            rm_ = [](void* ptr) noexcept {
+                if (ptr) { delete reinterpret_cast<Fn*>(ptr); }
+            };
+        }   // type-erased function handlers
         fn_ = [](void* ptr) { (*reinterpret_cast<Fn*>(ptr))(); };
-        rm_ = [](void* ptr) noexcept {
-            if (ptr == nullptr) { return; }
-            (*reinterpret_cast<Fn*>(ptr)).~Fn();
-            if constexpr (!sb) { delete (reinterpret_cast<Fn*>(ptr)); }   // free resources
-        };
+
         mv_ = [](void* dst, void* src) noexcept {
             new (dst) Fn(std::move(*reinterpret_cast<Fn*>(src)));
             (*reinterpret_cast<Fn*>(src)).~Fn();
@@ -126,7 +125,11 @@ class task_handle {
     int ref_count_fetch_add(int i, std::memory_order order = std::memory_order_release) {
         return ref_count_.fetch_add(i, order);
     }
-    std::vector<task_handle*>& required_by() { return required_by_; }
+    void add_inverse_dep(task_handle* task) {
+        inverse_deps_.push_back(task);
+        task->ref_count_.fetch_add(1, std::memory_order_relaxed);
+    }
+    const std::vector<task_handle*>& inverse_deps() { return inverse_deps_; }
     // memory handling
     const std::optional<int>& allocation_context() const { return allocation_context_; }
     void set_allocation_context(int allocation_context) { allocation_context_ = allocation_context; }
@@ -140,15 +143,15 @@ class task_handle {
     void (*mv_)(void*, void*) = nullptr;
     void (*cp_)(void*, const void*) = nullptr;
     union alignas(std::max_align_t) U {
-        void* data_;
+        void* data_ = nullptr;
         std::byte buff_[buffer_size];   // small buffer optimization
     } storage_ {};
     bool sb_ = false;
 
     // task properties
-    std::vector<task_handle*> required_by_ {};   // stable pointers to tasks which require this task to be completed
-    std::atomic<int> ref_count_ {0};             // number of not yet completed tasks required by this task
-    std::optional<int> allocation_context_;      // memory pool identifier
+    std::vector<task_handle*> inverse_deps_ {};   // stable pointers to tasks which require this task to be completed
+    std::atomic<int> ref_count_ {0};              // number of not yet completed tasks required by this task
+    std::optional<int> allocation_context_;       // memory pool identifier
 };
 
 }   // namespace internals

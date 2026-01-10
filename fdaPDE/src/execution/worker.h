@@ -25,7 +25,7 @@ namespace internals {
 static constexpr int main_thread_id = -1;
 inline thread_local int tls_worker_id = main_thread_id;   // worker logical index
 
-// pooled-object (free-list based) allocator supporting concurrent lock-free deallocation
+// concurrent pooled-object allocator, with fast lock-free deallocatin path.
 template <typename T> struct pool_allocator {
     using value_type = T;
     using pointer = value_type*;
@@ -50,7 +50,7 @@ template <typename T> struct pool_allocator {
         slot_type* data() const { return data_; }
         block_type* next() const { return next_; }
         // accessors
-        const reference operator[](int i) const { return *reinterpret_cast<const_pointer>(data_[i].storage); }
+        const_reference operator[](int i) const { return *reinterpret_cast<const_pointer>(data_[i].storage); }
         reference operator[](int i) { return *reinterpret_cast<pointer>(data_[i].storage); }
         // modifiers
         void set_next(block_type* next) { next_ = next; }
@@ -69,6 +69,7 @@ template <typename T> struct pool_allocator {
 
     // constructs object of type T and returns pointer to its reserved memory region. not thread-safe
     template <typename... Args> pointer allocate(Args&&... args) {
+        std::lock_guard<std::mutex> lock(m_);
         // fetch memory from free_list, if available
         if (free_list_ == nullptr) { free_list_ = shared_free_list_.exchange(nullptr, std::memory_order_acquire); }
         if (free_list_ != nullptr) { return construct_at_free_slot_(std::forward<Args>(args)...); }
@@ -118,6 +119,7 @@ template <typename T> struct pool_allocator {
     slot_type* free_list_;                       // already allocated slots available for writing
     std::atomic<slot_type*> shared_free_list_;   // slots concurrently freed by other threads
     block_type* base_;                           // first block of the pool
+    std::mutex m_;
 };
 
 // implementation of the static-sized Chase-Lev circular buffer queue:
@@ -299,6 +301,9 @@ struct mpsc_queue {
     pointer head_;
     alignas(64) std::atomic<pointer> tail_;
     allocator_type allocator_;
+
+  std::mutex m_;
+  
 };
 
 // logical execution component mapped to a physical execution unit (hardware thread)

@@ -28,8 +28,10 @@ struct task_parallel_for_each {
 
     template <typename Container, typename LoopBody>
         requires(std::is_invocable_v<LoopBody, typename Container::reference>)
-    void run(threaded_executor_impl* executor, const Container& container, LoopBody&& f) {
-        using iterator_type = typename Container::iterator_type;
+    void run(threaded_executor_impl* executor, Container& container, LoopBody&& f) {
+        using iterator_type = std::conditional_t<
+          std::is_const_v<Container>, typename std::decay_t<Container>::const_iterator,
+          typename std::decay_t<Container>::iterator>;
         iterator_type begin = container.begin();
         iterator_type end = container.end();
         const int n = std::distance(begin, end);
@@ -68,8 +70,8 @@ struct task_parallel_for_each {
 
 // executes for(auto& value : container) { loop_body } in parallel
 template <typename Container, typename LoopBody>
-    requires(std::is_invocable_v<LoopBody, typename Container::reference>)
-void parallel_for_each(const Container& container, LoopBody&& loop_body) {
+    requires(std::is_invocable_v<LoopBody, typename std::decay_t<Container>::reference>)
+void parallel_for_each(Container& container, LoopBody&& loop_body) {
     internals::threaded_executor::instance().execute(internals::task_parallel_for_each(), container, loop_body);
 }
 

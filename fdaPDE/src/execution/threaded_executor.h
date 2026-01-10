@@ -83,15 +83,11 @@ struct threaded_executor_impl {
     // observers
     size_type size() const { return n_workers_; }
     bool is_active() const { return active_.load(std::memory_order_acquire); }
-    worker_type& worker(size_type i) {
-        fdapde_assert(i < n_workers_);
-        return *workers_[i];
-    }
     // submits f(args...) for asynchronous execution. returns a std::future holding the result
     template <typename F, typename... Args> [[nodiscard]] auto async(F&& f, Args&&... args) {
         using ret_t = decltype(f(args...));
         auto packaged_task =
-          std::make_shared<std::packaged_task<ret_t()>>([f_ = f, ... args_ = args]() { return f_(args_...); });
+          std::make_shared<std::packaged_task<ret_t()>>([f_ = f, ... args_ = args]() mutable { return f_(args_...); });
         // dispatch task for execution
         dispatch_task_(std::move([packaged_task]() { (*packaged_task)(); }));
         return packaged_task->get_future();
@@ -100,13 +96,26 @@ struct threaded_executor_impl {
     template <typename F, typename... Args>
         requires(std::is_invocable_v<F, Args...>)
     void execute(F&& f, Args&&... args) {
-        dispatch_task_(std::move([f_ = f, ... args_ = args]() { f_(args_...); }));
+        dispatch_task_(std::move([f_ = f, ... args_ = args]() mutable { f_(args_...); }));
     }
     // executes a runnable task object
     template <typename Task, typename... Args>
         requires(requires(Task task, threaded_executor_impl* executor, Args... args) { task.run(executor, args...); })
     auto execute(Task&& task, Args&&... args) {
         return task.run(this, std::forward<Args>(args)...);
+    }
+    // low-level task handling
+    // allocates memory on worker for task
+    template <typename Task> task_pointer allocate_task(int worker, Task&& task) {
+        return workers_[worker]->allocate_task(std::forward<Task>(task));
+    }
+    // sends a previously allocated task to worker for execution. worker is not notified
+    void enqueue_task(int worker, task_pointer task) { workers_[worker]->enqueue_task(task); }
+    void notify_all() { cv_.notify_all(); }
+    // signals the intention to block the pool until task_count tasks have been completed
+    void expect_tasks(int task_count) { 
+        std::lock_guard<std::mutex> lock(m_);
+        task_count_ = task_count;
     }
     // blocks caller until all tasks queued in the pool have been executed
     void join() {
@@ -153,7 +162,7 @@ struct threaded_executor_impl {
         }
         lock.unlock();
         // decrease ref count, dispatch completed successors back for execution
-        for (task_pointer task_ptr : task->required_by()) {
+        for (task_pointer task_ptr : task->inverse_deps()) {
             if (task_ptr->ref_count_fetch_sub(1, std::memory_order_release) == 1) { renqueue_task_(task_ptr); }
         }
         // deallocate

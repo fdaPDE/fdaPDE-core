@@ -20,94 +20,130 @@
 #include "header_check.h"
 
 namespace fdapde {
+namespace internals {
+
+struct task_graph {
+    template <typename TaskGraph> void run(threaded_executor_impl* executor, TaskGraph& graph) {
+        using task_pointer = typename threaded_executor_impl::task_pointer;
+        const int num_nodes = graph.nodes();
+        if (num_nodes == 0) return;
+
+	std::vector<task_pointer> task_table(num_nodes, nullptr);
+	std::vector<int> runnable_indices;
+	runnable_indices.reserve(num_nodes / 2);
+        std::atomic<int> local_task_count {1};
+
+        // load TaskGraph to stable executor memory
+        for (int i = 0; i < num_nodes; ++i) {
+            int w_id = i % num_threads();
+	    const auto& node = graph.node(i);
+	    // wrap user task to enable active join logic
+            auto wrapped_task = [user_task = node.task(), &local_task_count]() mutable {
+                user_task.run();
+                local_task_count.fetch_sub(1, std::memory_order_release);
+            };
+	    task_table[node.id()] = executor->allocate_task(w_id, std::move(wrapped_task));
+            if (node.in_degree() == 0) { runnable_indices.push_back(node.id()); }
+            local_task_count.fetch_add(1, std::memory_order_release);
+        }
+	// connect stable pointers
+        for (int i = 0; i < num_nodes; ++i) {
+            const auto& node = graph.node(i);
+            for (auto successor : node.successors()) {
+                task_table[node.id()]->add_inverse_dep(task_table[successor->id()]);
+            }
+        }
+        local_task_count.fetch_sub(1, std::memory_order_release);
+        // send runnable tasks to execution (dependent tasks will be pulled by the executor autonomously)
+        executor->expect_tasks(num_nodes);
+        for (int i : runnable_indices) {
+            int w_id = i % num_threads();
+            executor->enqueue_task(w_id, task_table[i]);
+        }
+        executor->notify_all();
+        executor->active_join(this_worker_id(), [&] {
+            // help the pool while the task group is not fully consumed
+            return local_task_count.load(std::memory_order_acquire) > 0;
+        });
+        return;
+    }
+};
+
+}   // namespace internals
 
 class TaskGraph {
-    struct node {
+    struct node_type {
+        // constructor
+        node_type() noexcept : task_(nullptr), id_(0), succ_(), pred_() { }
         template <typename Task_>
-        node(Task_&& task, int pos) :
-            task_(new internals::task_handle(std::forward<Task_>(task))), pos_(pos), succ_() { }
-
-        internals::task_handle* task_;
-        int pos_;   // position of this node in adjacency list
-        std::vector<node*> succ_;
-
-        template <typename... Tasks>
-            requires(std::is_same_v<std::decay_t<Tasks>, node> && ...)
-        void after(Tasks&&... tasks) {
-            internals::for_each_index_and_args<sizeof...(tasks)>(
-              [&]<int Ns_, typename Task_>(const Task_& t) {
-                  succ_.push_back(std::addressof(t));
-		  t.task_->required_by().push_back(task_); 
-                  task_->ref_count_fetch_add(1, std::memory_order_release);
+        node_type(Task_&& task, int id) :
+            task_(new internals::task_handle(std::forward<Task_>(task))), id_(id), succ_(), pred_() { }
+        // observers
+        int id() const { return id_; }
+        const internals::task_handle& task() const { return *task_; }
+        int out_degree() const { return succ_.size(); }
+        int in_degree() const { return pred_.size(); }
+        const std::vector<node_type*>& successors() const { return succ_; }
+        const std::vector<node_type*>& predecessors() const { return pred_; }
+        // modifiers
+        internals::task_handle& task() { return *task_; }
+        template <typename... TaskNodes>
+            requires(std::is_same_v<std::decay_t<TaskNodes>, node_type> && ...)
+        void after(TaskNodes&&... nodes) {
+            // wires this node with the supplied dependencies
+            internals::for_each_index_and_args<sizeof...(nodes)>(
+              [&]<int Ns_, typename TaskNode_>(const TaskNode_& node) {
+                  pred_.push_back(&node);
+		  node.succ_.push_back(this);
               },
-              tasks...);
+              nodes...);
         }
-        ~node() = default;
+        ~node_type() = default;
+       private:
+        internals::task_handle* task_;
+        int id_;
+        std::vector<node_type*> succ_, pred_;
     };
-
     // detect cycles
     // topological sort
     // iterators
     // modifiers
-
-  public:
-    TaskGraph() : adjacency_() {}
+   public:
+    TaskGraph() : adjacency_() { }
 
     // observers
     std::size_t nodes() const { return adjacency_.size(); }
     std::size_t edges() const {
         std::size_t edges_ = 0;
-        for (node* ptr : adjacency_) { edges_ += ptr->succ_.size(); }
+        for (node_type* ptr : adjacency_) { edges_ += ptr->out_degree(); }
         return edges_;
     }
 
+  // devono ritornare un node-handle??
+    const node_type& node(std::size_t i) const {
+        fdapde_assert(i < nodes());
+        return *adjacency_[i];
+    }
+    node_type& node(std::size_t i) {
+        fdapde_assert(i < nodes());
+        return *adjacency_[i];
+    }
     // modifiers
-    template <typename Task_> node& task(Task_&& task) {
-        node* ptr = new node(std::forward<Task_>(task), adjacency_.size());
+    template <typename Task_> node_type& task(Task_&& task) {
+        node_type* ptr = new node_type(std::forward<Task_>(task), adjacency_.size());
         adjacency_.push_back(ptr);
-        return *(adjacency_.back());
+        return *ptr;
     }
 
     ~TaskGraph() {
-        for (node* n : adjacency_) { delete n; }
+        for (node_type* n : adjacency_) { delete n; }
     }
-    std::vector<node*> adjacency_;
+    std::vector<node_type*> adjacency_ {};
 };
 
-    // execute a TaskGraph object
-    // void execute(const TaskGraph& tg) {
-    //     const size_type num_nodes = tg.nodes();
-    //     if (num_nodes == 0) return;
-
-    //     std::unordered_map<task_pointer, task_pointer> task_map;
-    //     std::vector<int> worker_vec(num_nodes);
-    //     std::vector<task_pointer> ready_tasks;
-    //     // copy task graph to stable memory
-    //     for (size_type i = 0; i < num_nodes; ++i) {
-    //         int w_id = scheduling_policy_.pick();
-    //         worker_vec[i] = w_id;
-    //         task_pointer old_ptr = tg.adjacency_[i]->task_;
-    //         task_pointer new_ptr = workers_[w_id]->allocate_task(*old_ptr);
-    //         task_map[old_ptr] = new_ptr;
-    //     }
-    //     // replace old dependency pointers with stable worker-local pointers
-    //     for (const auto& [_, new_ptr] : task_map) {
-    //         for (auto& old_ptr : new_ptr->required_by()) { old_ptr = task_map[old_ptr]; }
-    //         if (new_ptr->runnable()) { ready_tasks.push_back(new_ptr); }
-    //     }
-    //     // notify workers and start execution
-    //     std::unique_lock<std::mutex> lock(m_);
-    //     task_count_ += num_nodes;   // increase task count
-    //     lock.unlock();
-    //     for (size_type i = 0; i < ready_tasks.size(); ++i) { workers_[worker_vec[i]]->enqueue_task(ready_tasks[i]); }
-    //     cv_.notify_all();
-    //     return;
-    // }
-  
-// void parallel_execute(const TaskGraph& tg) {
-//     internals::threadpool_executor::instance().execute(tg);
-//     internals::threadpool_executor::instance().join();  
-// }
+void parallel_execute(TaskGraph& tg) {
+    return internals::threaded_executor::instance().execute(internals::task_graph(), tg);
+}
 
 }   // namespace fdapde
 
