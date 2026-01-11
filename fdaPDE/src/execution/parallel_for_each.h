@@ -47,7 +47,7 @@ struct task_parallel_for_each {
 
             iterator_type chunk_end =
               std::next(chunk_begin, std::min(grain_size, int(std::distance(chunk_begin, end))));
-            auto loop_body = [this, chunk_begin, chunk_end, &f, &local_task_count]() {
+            auto loop_body = [chunk_begin, chunk_end, &f, &local_task_count]() {
                 for (iterator_type it = chunk_begin; it != chunk_end; ++it) { f(*it); }
                 // signal task completion
                 local_task_count.fetch_sub(1, std::memory_order_release);

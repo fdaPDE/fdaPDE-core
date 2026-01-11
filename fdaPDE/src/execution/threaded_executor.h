@@ -162,7 +162,7 @@ struct threaded_executor_impl {
         }
         lock.unlock();
         // decrease ref count, dispatch completed successors back for execution
-        for (task_pointer task_ptr : task->inverse_deps()) {
+        for (task_pointer task_ptr : task->inverse_dependencies()) {
             if (task_ptr->ref_count_fetch_sub(1, std::memory_order_release) == 1) { renqueue_task_(task_ptr); }
         }
         // deallocate

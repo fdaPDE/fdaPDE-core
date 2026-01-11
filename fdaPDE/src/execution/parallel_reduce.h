@@ -42,7 +42,7 @@ struct task_parallel_reduce {
             local_task_count.fetch_add(1, std::memory_order_release);
 
             Iterator chunk_end = std::next(chunk_begin, std::min(grain_size, int(std::distance(chunk_begin, end))));
-            auto loop_body = [this, chunk_begin, chunk_end, &redux, &local_task_count, &partials]() {
+            auto loop_body = [chunk_begin, chunk_end, &redux, &local_task_count, &partials]() {
                 T local_init {};
                 for (Iterator it = chunk_begin; it != chunk_end; ++it) { local_init = redux(*it, local_init); }
                 partials[this_worker_id()] = redux(local_init, partials[this_worker_id()]);

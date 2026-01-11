@@ -24,13 +24,13 @@ TEST(execution, task_graphs) {
     int x = 0, y = 0;
     std::vector<int> v1(1000);
     
-    TaskGraph tg;
-    auto& t1 = tg.task([&] { x = 1; });
-    auto& t2 = tg.task([&] { y = 2; });
-    auto& t3 = tg.task([&] { fdapde::parallel_for(0, v1.size(), [&](int i) { v1[i] = x + y; }); });
-    t3.after(t1, t2);
+    TaskGraph g;
+    auto n1 = g.add_node([&] { x = 1; });
+    auto n2 = g.add_node([&] { y = 2; });
+    auto n3 = g.add_node([&] { fdapde::parallel_for(0, v1.size(), [&](int i) { v1[i] = x + y; }); });
+    n3.succeeds(n1, n2);
     
-    fdapde::parallel_execute(tg);
+    fdapde::parallel_execute(g);
     
     for(int x : v1) { EXPECT_EQ(x, 3); }
 }

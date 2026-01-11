@@ -69,7 +69,7 @@ class task_handle {
         fn_ = std::exchange(other.fn_, nullptr);
         rm_ = std::exchange(other.rm_, nullptr);
         mv_ = std::exchange(other.mv_, nullptr);
-	cp_ = std::exchange(other.cp_, nullptr);
+        cp_ = std::exchange(other.cp_, nullptr);
         sb_ = std::exchange(other.sb_, 0);
         if (sb_) {
             if (mv_) { mv_(storage_.buff_, other.storage_.buff_); }
@@ -125,11 +125,12 @@ class task_handle {
     int ref_count_fetch_add(int i, std::memory_order order = std::memory_order_release) {
         return ref_count_.fetch_add(i, order);
     }
-    void add_inverse_dep(task_handle* task) {
+    // dependency handling
+    void inverse_depends_on(task_handle* task) {
         inverse_deps_.push_back(task);
-        task->ref_count_.fetch_add(1, std::memory_order_relaxed);
+        task->ref_count_fetch_add(1, std::memory_order_relaxed);
     }
-    const std::vector<task_handle*>& inverse_deps() { return inverse_deps_; }
+    const std::vector<task_handle*>& inverse_dependencies() { return inverse_deps_; }
     // memory handling
     const std::optional<int>& allocation_context() const { return allocation_context_; }
     void set_allocation_context(int allocation_context) { allocation_context_ = allocation_context; }
