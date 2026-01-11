@@ -29,6 +29,7 @@ struct task_graph {
         using task_pointer = typename threaded_executor_impl::task_pointer;
         const int num_nodes = graph.n_nodes();
         if (num_nodes == 0) return;
+        const int num_threads = executor->size();
 
         std::vector<task_pointer> task_table(num_nodes, nullptr);
         std::vector<int> runnable_indices;
@@ -37,7 +38,7 @@ struct task_graph {
         // load TaskGraph to stable executor memory
         std::atomic<int> local_task_count {1};
         for (const auto& node : graph) {
-            int w_id = node.id() % num_threads();
+            int w_id = node.id() % num_threads;
             // wrap user task to enable active join logic
             auto wrapped_task = [user_task = node.task(), &local_task_count]() mutable {
                 user_task.run();
@@ -56,9 +57,9 @@ struct task_graph {
         local_task_count.fetch_sub(1, std::memory_order_release);
         // send runnable tasks to execution (dependent tasks will be pulled by the executor autonomously)
         executor->expect_tasks(num_nodes);
-        for (int i : runnable_indices) { executor->enqueue_task(i % num_threads(), task_table[i]); }
+        for (int i : runnable_indices) { executor->enqueue_task(i % num_threads, task_table[i]); }
         executor->notify_all();
-        executor->active_join(this_worker_id(), [&] {
+        executor->active_join(this_thread_id(), [&] {
             // help the pool while the task group is not fully consumed
             return local_task_count.load(std::memory_order_acquire) > 0;
         });

@@ -62,19 +62,31 @@ TEST(execution, parallel_for) {
         if (tmp > expected_max) { expected_max = tmp; }
         v5[i] = tmp;
     }
-    std::vector<int> v6(num_threads(), 0);
+    std::vector<int> v6(parallel_get_num_threads(), 0);
     // parallel computation of maximum
     fdapde::parallel_for(0, v5.size() / 100, 100, [&](int i) {
         int partial_max =
           fdapde::parallel_reduce(v5.begin() + (i * 100), v5.begin() + ((i + 1) * 100 - 1), int(0), [](int a, int b) {
               return std::max(a, b);
           });
-        v6[this_worker_id()] = std::max(v6[this_worker_id()], partial_max);
+        v6[this_thread_id()] = std::max(v6[this_thread_id()], partial_max);
     });
 
     int computed_max = 0;
     for(int val : v6) { computed_max = std::max(computed_max, val); }
     EXPECT_EQ(computed_max, expected_max);
+
+    // parallel for with custom stepping logic
+    std::vector<int> v7(10000, 0);
+    fdapde::parallel_for(0, v7.size(), [&](int i) { v7[i] = 1; }, [](int i) { return i + 2; });
+    // only even indices must be 1
+    for (int i = 0, n = v7.size(); i < n; ++i) {
+        if (i % 2 == 0) {
+            EXPECT_EQ(v7[i], 1);
+        } else {
+            EXPECT_EQ(v7[i], 0);
+        }
+    }
 }
 
 TEST(execution, parallel_for_each) {

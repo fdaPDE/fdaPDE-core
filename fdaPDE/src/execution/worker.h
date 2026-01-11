@@ -418,7 +418,7 @@ struct worker {
 }   // namespace internals
 
 // logical identifier of running thread
-inline int this_worker_id() noexcept { return internals::tls_worker_id; }
+inline int this_thread_id() noexcept { return internals::tls_worker_id; }
   
 }   // namespace fdapde
 

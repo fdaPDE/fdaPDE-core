@@ -22,6 +22,9 @@
 namespace fdapde {
 namespace internals {
 
+// number of thread to use. default to maximum number of logical threads on the hosing machine
+inline int parallel_num_threads = std::thread::hardware_concurrency(); 
+
 // implementation of the random stealing algorithm
 // * "Blumofe, R. D., & Leiserson, C. E. (1999). Scheduling multithreaded computations by work stealing. Journal of
 //    the ACM (JACM), 46(5), 720-748."
@@ -215,7 +218,7 @@ struct threaded_executor {
     // accessing the executor after its destruction). To satisfy leak detectors, memory is statically allocated
     static auto& instance() {
         static std::aligned_storage_t<sizeof(threaded_executor_impl), alignof(threaded_executor_impl)> storage;
-        static threaded_executor_impl* exec = new (&storage) threaded_executor_impl();
+        static threaded_executor_impl* exec = new (&storage) threaded_executor_impl(parallel_num_threads);
         return *exec;
     }
 };
@@ -232,8 +235,10 @@ template <typename Task, typename... Args> struct is_runnable_task {
 template <typename Task, typename... Args>
 static constexpr bool is_runnable_task_v = is_runnable_task<Task, Args...>::value;
 
-// number of available worker thread
-int num_threads() { return internals::threaded_executor::instance().size(); }
+// set number of worker threads
+void parallel_set_num_threads(int num_threads) { internals::parallel_num_threads = num_threads; }
+// get number of worker threads
+int  parallel_get_num_threads() { return internals::parallel_num_threads; }
 // executes a callable object asynchronously
 template <typename F, typename... Args>
     requires(std::is_invocable_v<F, Args...>)
