@@ -28,16 +28,34 @@ struct task_parallel_for_each {
 
     template <typename Container, typename LoopBody>
         requires(std::is_invocable_v<LoopBody, typename Container::reference>)
+    void run(threaded_executor_impl* executor, Container& container, int grain_size, LoopBody&& f) {
+        const int n = std::distance(container.begin(), container.end());
+        if (n <= 0) return;   // nothing to loop on
+
+        grain_size = std::max(1, std::min(grain_size, n));
+        dispatch_(executor, container, grain_size, std::forward<LoopBody>(f));
+        return;
+    }
+    template <typename Container, typename LoopBody>
+        requires(std::is_invocable_v<LoopBody, typename Container::reference>)
     void run(threaded_executor_impl* executor, Container& container, LoopBody&& f) {
+        const int n = std::distance(container.begin(), container.end());
+        if (n <= 0) return;   // nothing to loop on
+
+        int grain_size = std::max(1.0, double(n) / (4 * executor->size()));   // auto-partitioning
+        dispatch_(executor, container, grain_size, std::forward<LoopBody>(f));
+        return;
+    }
+   private:
+    template <typename Container, typename LoopBody>
+        requires(std::is_invocable_v<LoopBody, typename Container::reference>)
+    void dispatch_(threaded_executor_impl* executor, Container& container, int grain_size, LoopBody&& f) {
         using iterator_type = std::conditional_t<
           std::is_const_v<Container>, typename std::decay_t<Container>::const_iterator,
           typename std::decay_t<Container>::iterator>;
         iterator_type begin = container.begin();
         iterator_type end = container.end();
-        const int n = std::distance(begin, end);
-        if (n <= 0) return;   // nothing to loop on
 
-        int grain_size = std::max(1.0, double(n) / (4 * executor->size()));
         std::atomic<int> local_task_count {1};
 
         iterator_type chunk_begin = begin;
@@ -58,7 +76,7 @@ struct task_parallel_for_each {
         }
         // task_group collaborative wait
         local_task_count.fetch_sub(1, std::memory_order_release);
-        executor->active_join(this_worker_id(), [&] {
+        executor->active_join(this_thread_id(), [&] {
             // help the pool while the task group is not fully consumed
             return local_task_count.load(std::memory_order_acquire) > 0;
         });
@@ -69,6 +87,12 @@ struct task_parallel_for_each {
 }   // namespace internals
 
 // executes for(auto& value : container) { loop_body } in parallel
+template <typename Container, typename LoopBody>
+    requires(std::is_invocable_v<LoopBody, typename std::decay_t<Container>::reference>)
+void parallel_for_each(Container& container, int grain_size, LoopBody&& loop_body) {
+    internals::threaded_executor::instance().execute(
+      internals::task_parallel_for_each(), container, grain_size, loop_body);
+}
 template <typename Container, typename LoopBody>
     requires(std::is_invocable_v<LoopBody, typename std::decay_t<Container>::reference>)
 void parallel_for_each(Container& container, LoopBody&& loop_body) {
