@@ -40,7 +40,7 @@ struct task_parallel_for {
             local_task_count.fetch_add(1, std::memory_order_release);
 
             int k = ((end - j) < grain_size) ? end : (j + grain_size);
-            auto loop_body = [this, j, k, &f, &local_task_count]() {
+            auto loop_body = [j, k, &f, &local_task_count]() {
                 for (int it = j; it < k; ++it) { f(it); }
                 // signal task completion
                 local_task_count.fetch_sub(1, std::memory_order_release);

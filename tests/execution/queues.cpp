@@ -102,7 +102,6 @@ TEST(execution, mpsc_queue) {
         }
 
         std::atomic<int> global_received_count {0};
-        std::atomic<bool> running {true};
         std::vector<std::thread> workers;
 	std::vector<std::vector<int>> received(num_threads);
 
@@ -113,7 +112,6 @@ TEST(execution, mpsc_queue) {
                 std::uniform_int_distribution<int> dist(0, num_threads - 1);
 
                 int messages_sent = 0;
-                int messages_processed = 0;
 
                 while (messages_sent < messages_per_thread || global_received_count < total_messages) {
                     // producer case: send a message to a random peer's mailbox
@@ -125,7 +123,6 @@ TEST(execution, mpsc_queue) {
                     // consumer case: process messages from local mailbox
                     while (auto msg = mailboxes[thread_id]->pop()) {
                         if (msg) {
-                            messages_processed++;
                             global_received_count.fetch_add(1, std::memory_order_relaxed);
                             received[thread_id].push_back(*msg);
                         }
