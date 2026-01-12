@@ -21,9 +21,9 @@
 
 namespace fdapde {
 namespace internals {
-
+  
 // number of thread to use. default to maximum number of logical threads on the hosing machine
-inline int parallel_num_threads = std::thread::hardware_concurrency(); 
+inline int parallel_num_threads = fdapde::available_concurrency();
 
 // implementation of the random stealing algorithm
 // * "Blumofe, R. D., & Leiserson, C. E. (1999). Scheduling multithreaded computations by work stealing. Journal of

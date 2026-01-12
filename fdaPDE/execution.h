@@ -35,6 +35,8 @@ static constexpr execution_seq_t execution_seq;
 #include <future>
 #include <latch>
 
+#include "src/execution/concurrency.h"
+
 // basic threaded runtime
 #include "src/execution/task_handle.h"
 #include "src/execution/worker.h"

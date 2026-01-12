@@ -19,58 +19,53 @@
 using namespace fdapde;
 
 TEST(execution, chase_lev_queue) {
-    const int num_items = 100000;
-    const int num_stealers = std::thread::hardware_concurrency() - 1;
+    const int num_elements = 100000;
+    const int num_thieves = fdapde::available_concurrency() - 1;
+    
+    internals::chase_lev_queue<int> queue(131072);
 
-    internals::chase_lev_queue<int*> queue(1024);
+    std::atomic<bool> start_signal {false};
+    std::atomic<bool> owner_done   {false};
 
-    std::atomic<int> items_collected {0};
-    std::atomic<bool> owner_done {false};
-    std::vector<int*> results;
-    results.reserve(num_items);
-    std::mutex m;
-
-    std::vector<int> data(num_items);
-    for (int i = 0; i < num_items; ++i) { data[i] = i; }
-
-    // stealer threads
-    std::vector<std::thread> stealers;
-    for (int i = 0; i < num_stealers; ++i) {
-        stealers.emplace_back([&]() {
+    // spawn consumer threads
+    std::vector<std::vector<int>> thief_results(num_thieves);
+    for (auto& v : thief_results) v.reserve(num_elements / num_thieves);
+    std::vector<std::thread> thieves;
+    for (int i = 0; i < num_thieves; ++i) {
+        thieves.emplace_back([&, i]() {
+            // spin until owner starts pushing to maximize immediate contention
+            while (!start_signal.load(std::memory_order_relaxed));
+	    // start stealing
             while (!owner_done.load(std::memory_order_relaxed) || !queue.empty()) {
-                if (auto item = queue.pop_back()) {
-                    {
-                        std::lock_guard<std::mutex> lock(m);
-                        results.push_back(*item);
-                    }
-                    items_collected.fetch_add(1, std::memory_order_relaxed);
-                } else {
-                    std::this_thread::yield();
-                }
+                auto val = queue.pop_back();
+                if (val) { thief_results[i].push_back(*val); }
             }
         });
     }
-
-    // owner pushes items and occasionally pops from the front (LIFO)
-    for (int i = 0; i < num_items; ++i) {
-        queue.push_front(&data[i]);
-        if (i % 3 == 0) {
-            if (auto item = queue.pop_front()) {
-                {
-                    std::lock_guard<std::mutex> lock(m);
-                    results.push_back(*item);
-                }
-                items_collected.fetch_add(1, std::memory_order_relaxed);
-            }
+    // producer thread
+    std::vector<int> owner_results;
+    owner_results.reserve(num_elements);
+    start_signal.store(true);
+    for (int i = 1; i <= num_elements; ++i) {
+        // push
+        while (!queue.push_front(i)) { std::this_thread::yield(); }
+        // simulate real work-stealing patterns: producer occasionally pops their own work
+        if (i % 5 == 0) {
+            auto val = queue.pop_front();
+            if (val) { owner_results.push_back(*val); }
         }
     }
-    owner_done = true;
-    // wait to finish
-    for (auto& t : stealers) t.join();
-    
-    std::set<int*> unique_items(results.begin(), results.end());
-    EXPECT_EQ(items_collected, num_items);
-    EXPECT_EQ(unique_items.size(), num_items);
+    owner_done.store(true);
+    // wait stealers to finish
+    for (auto& t : thieves) { t.join(); }
+
+    // check that every element 1, ..., n  found exactly once
+    std::vector<int> registry(num_elements + 1, 0);
+    for (int val : owner_results) { registry[val]++; }
+    for (const auto& tr : thief_results) {
+        for (int val : tr) { registry[val]++; }
+    }
+    for (int i = 1; i <= num_elements; ++i) { EXPECT_EQ(registry[i], 1); }   // each element found exactly once
 }
 
 TEST(execution, mpsc_queue) {
