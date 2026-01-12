@@ -314,7 +314,7 @@ struct worker {
     using task_const_pointer = typename allocator_type::const_pointer;
     using task_queue_type = chase_lev_queue<task_pointer>;
     using task_buffer_type = mpsc_queue<task_pointer>;
-    static constexpr int task_queue_size = 4096;
+    static constexpr int task_queue_size = 8192;   // 2^13
 
     // constructor
     template <typename Executor>
