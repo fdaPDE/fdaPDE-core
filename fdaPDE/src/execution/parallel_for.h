@@ -26,44 +26,66 @@ namespace internals {
 struct task_parallel_for {
     task_parallel_for() = default;
 
-    template <typename LoopBody, typename NextFunctor>
-        requires(std::is_invocable_v<LoopBody, int> && std::is_invocable_r_v<int, NextFunctor, int>)
-    void run(threaded_executor_impl* executor, int begin, int end, int grain_size, LoopBody&& f, NextFunctor&& next) {
-        int n = 0;
-        for (int i = begin; i < end; i = next(i), n++);
-        if (n <= 0) return;   // nothing to loop on
-
-        grain_size = std::max(1, std::min(grain_size, n));
-        dispatch_(executor, begin, end, grain_size, std::forward<LoopBody>(f), std::forward<NextFunctor>(next));
-        return;
-    }
+    // optimized for loop with standard ++i increment
     template <typename LoopBody>
         requires(std::is_invocable_v<LoopBody, int>)
     void run(threaded_executor_impl* executor, int begin, int end, int grain_size, LoopBody&& f) {
-        const int n = end - begin;
-        if (n <= 0) return;   // nothing to loop on
+        const int size = end - begin;
+        if (size <= 0) return;   // nothing to loop on
 
-        grain_size = std::max(1, std::min(grain_size, n));
-        dispatch_(executor, begin, end, grain_size, std::forward<LoopBody>(f), [](int i) { return ++i; });
-        return;
-    }
-   private:
-    template <typename LoopBody, typename NextFunctor>
-    void
-    dispatch_(threaded_executor_impl* executor, int begin, int end, int grain_size, LoopBody&& f, NextFunctor&& next) {
+        grain_size = std::max(1, std::min(grain_size, size));
         std::atomic<int> local_task_count {1};
 
-        for (int j = begin; j < end; j += grain_size) {
+        for (int local_begin = begin; local_begin < end; local_begin += grain_size) {
             // register task in the group
             local_task_count.fetch_add(1, std::memory_order_release);
 
-            int k = ((end - j) < grain_size) ? end : (j + grain_size);
-            auto loop_body = [j, k, next, &f, &local_task_count]() {
-                for (int it = j; it < k; it = next(it)) { f(it); }
+            int local_end = ((end - local_begin) < grain_size) ? end : (local_begin + grain_size);
+            auto loop_body = [local_begin, local_end, &f, &local_task_count]() {
+                for (int it = local_begin; it < local_end; ++it) { f(it); }
                 // signal task completion
                 local_task_count.fetch_sub(1, std::memory_order_release);
             };
             executor->execute(std::move(loop_body));
+        }
+        // task_group collaborative wait
+        local_task_count.fetch_sub(1, std::memory_order_release);
+        executor->active_join(this_thread_id(), [&] {
+            // help the pool while the task group is not fully consumed
+            return local_task_count.load(std::memory_order_acquire) > 0;
+        });
+        return;
+    }
+    // for loop with custom step logic
+    template <typename LoopBody, typename NextFunctor>
+        requires(std::is_invocable_v<LoopBody, int> && std::is_invocable_r_v<int, NextFunctor, int>)
+    void run(threaded_executor_impl* executor, int begin, int end, int grain_size, LoopBody&& f, NextFunctor&& next) {
+        int size = 0;
+        for (int i = begin; i < end; i = next(i), size++);
+        if (size <= 0) return;   // nothing to loop on
+
+        grain_size = std::max(1, std::min(grain_size, size));
+        std::atomic<int> local_task_count {1};
+        int n_batches = std::ceil(double(size) / grain_size);
+
+        int local_begin = begin;
+        int local_end = local_begin;
+        for (int i = 0; i < grain_size && local_end < end; ++i) { local_end = next(local_end); }
+
+        for (int j = 0; j < n_batches; j++) {
+            // register task in the group
+            local_task_count.fetch_add(1, std::memory_order_release);
+            auto loop_body = [local_begin, local_end, next, &f, &local_task_count]() {
+                for (int it = local_begin; it < local_end; it = next(it)) { f(it); }
+                // signal task completion
+                local_task_count.fetch_sub(1, std::memory_order_release);
+            };
+            executor->execute(std::move(loop_body));
+
+            // update next task range
+            local_begin = local_end;
+            local_end = local_begin;
+            for (int i = 0; i < grain_size && local_end < end; ++i) { local_end = next(local_end); }
         }
         // task_group collaborative wait
         local_task_count.fetch_sub(1, std::memory_order_release);

@@ -51,8 +51,8 @@ inline std::size_t available_concurrency() noexcept {
     // SLURM
     if (auto SLURM_NCPUS = internals::get_env_concurrency_count("SLURM_CPUS_ON_NODE")) { return *SLURM_NCPUS; }
     // check if OpenMP has been configured
-    if (auto OMP_NUM_THREADS = internals::get_env_concurrency_count("OMP_NUM_THREADS")) {
-        if (*OMP_NUM_THREADS > 1) return *OMP_NUM_THREADS;
+    if (auto OMP_NCPUS   = internals::get_env_concurrency_count("OMP_NUM_THREADS")) {
+        if (*OMP_NCPUS > 1) return *OMP_NCPUS;
     }
 
     // second, check OS-specific settings
