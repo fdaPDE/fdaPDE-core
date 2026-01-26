@@ -21,14 +21,32 @@
 
 namespace fdapde {
 
-// space separated table of values of type T
+// parser for space separated table of values of type T
 template <typename T>
 internals::table_reader<T> read_txt(const std::string& filename, bool header = true, bool index_col = true) {
-    internals::table_reader<T> txt(
-      filename.c_str(), header, /* sep = */ ' ', index_col, /* skip_quote = */ true, /* chunksize = */ 1000);
+    internals::table_reader<T> txt(filename.c_str(), header, ' ', index_col, true, 4);
     return txt;
 }
 
+// writes container to txt file
+template <typename T>
+void write_txt(
+  const std::string& filename, const T& data, int rows, const std::vector<std::string>& colnames, bool by_rows = true) {
+    internals::table_writer<T> csv(filename, " ");
+    csv.write(data, rows, colnames, by_rows);
+    return;
+}
+template <typename DataT>
+void write_txt(const std::string& filename, const DataT& data, int rows, int cols, bool by_rows = true) {
+    return write_txt(filename, data, rows, seq("V", cols), by_rows);
+}
+template <typename DataT> void write_txt(const std::string& filename, const DataT& data, const std::string& colname) {
+    return write_txt(filename, data, data.size(), std::vector<std::string> {colname});
+}
+template <typename DataT> void write_txt(const std::string& filename, const DataT& data) {
+    return write_txt(filename, data, "V1");
+}
+  
 }   // namespace fdapde
 
 #endif   // __FDAPDE_TXT_H__

@@ -24,72 +24,27 @@ namespace fdapde {
 // parser for CSV, Comma Separated Values (RFC 4180 compliant)
 template <typename T>
 internals::table_reader<T> read_csv(const std::string& filename, bool header = true, bool index_col = true) {
-    internals::table_reader<T> csv(
-      filename.c_str(), header, /* sep = */ ',', index_col, /* skip_quote = */ true, /* chunksize = */ 100000);
+    internals::table_reader<T> csv(filename.c_str(), header, ',', index_col, true, 4);
     return csv;
 }
 
-#ifdef __FDAPDE_HAS_EIGEN__
-
-template <typename DataT>
-    requires(internals::is_eigen_dense_xpr_v<DataT>)
-void write_csv(const std::string& filename, const DataT& data, const std::vector<std::string>& colnames) {
-    fdapde_assert(data.cols() > 0 && std::cmp_equal(data.cols() FDAPDE_COMMA colnames.size()));
-    const static Eigen::IOFormat CSVFormat(Eigen::FullPrecision, Eigen::DontAlignCols, ", ", "\n");
-    std::ofstream file(filename);
-    for (std::size_t i = 0; i < colnames.size() - 1; ++i) { file << colnames[i] << ", "; }
-    file << colnames.back() << "\n";
-    if (file.is_open()) {
-        file << data.format(CSVFormat);
-        file.close();
-    }
+// writes container to csv file
+template <typename T>
+void write_csv(
+  const std::string& filename, const T& data, int rows, const std::vector<std::string>& colnames, bool by_rows = true) {
+    internals::table_writer<T> csv(filename, ",");
+    csv.write(data, rows, colnames, by_rows);
     return;
 }
-
-template <typename DataT>
-    requires(internals::is_eigen_dense_xpr_v<DataT>)
-void write_csv(const std::string& filename, const DataT& data) {
-    return write_csv(filename, data, seq("V", data.cols()));
+template <typename T>
+void write_csv(const std::string& filename, const T& data, int rows, int cols, bool by_rows = true) {
+    return write_csv(filename, data, rows, seq("V", cols), by_rows);
 }
-
-#endif
-
-template <typename DataT>
-    requires(!internals::is_eigen_dense_xpr_v<DataT> && internals::is_vector_like_v<DataT>)
-void write_csv(
-  const std::string& filename, const DataT& data, int rows, int cols, const std::vector<std::string>& colnames,
-  bool by_rows = true) {
-    fdapde_assert(data.size() % (rows * cols) == 0 && std::cmp_equal(cols FDAPDE_COMMA colnames.size()));
-    std::ofstream file(filename);
-    for (std::size_t i = 0; i < colnames.size() - 1; ++i) { file << colnames[i] << ", "; }
-    file << colnames.back() << "\n";
-
-    int inner = by_rows ? cols : 1;
-    int outer = by_rows ? 1 : cols;
-    if(file.is_open()) {
-        file << std::setprecision(16);
-        for (int i = 0; i < rows; ++i) {
-            for (int j = 0; j < cols - 1; ++j) { file << data[i * inner + j * outer] << ", "; }
-            file << data[by_rows ? ((i + 1) * cols - 1) : (i + (cols - 1) * cols + 1)] << "\n";
-        }
-    }
-    return;
+template <typename T> void write_csv(const std::string& filename, const T& data, const std::string& colname) {
+    return write_csv(filename, data, data.size(), std::vector<std::string> {colname});
 }
-template <typename DataT>
-    requires(!internals::is_eigen_dense_xpr_v<DataT> && internals::is_vector_like_v<DataT>)
-void write_csv(const std::string& filename, const DataT& data, int rows, int cols, bool by_rows = true) {
-    return write_csv(filename, data, rows, cols, seq("V", cols), by_rows);
-}
-template <typename DataT>
-    requires(!internals::is_eigen_dense_xpr_v<DataT> && internals::is_vector_like_v<DataT>)
-void write_csv(
-  const std::string& filename, const DataT& data, const std::vector<std::string>& colnames, bool by_rows = true) {
-    return write_csv(filename, data, data.size(), 1, colnames, by_rows);
-}
-template <typename DataT>
-    requires(!internals::is_eigen_dense_xpr_v<DataT> && internals::is_vector_like_v<DataT>)
-void write_csv(const std::string& filename, const DataT& data, bool by_rows = true) {
-    return write_csv(filename, data, data.size(), 1, seq("V", 1), by_rows);
+template <typename T> void write_csv(const std::string& filename, const T& data) {
+    return write_csv(filename, data, "V1");
 }
 
 }   // namespace fdapde

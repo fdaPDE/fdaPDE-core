@@ -29,10 +29,6 @@
 #include "src/io/csv.h"
 #include "src/io/txt.h"
 
-// geometry dependent parsing
-#include "geometry.h"    // pull geometry module first
-#include "src/io/shp.h"
-
 // clang-format on
 
 namespace fdapde {
