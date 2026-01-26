@@ -65,10 +65,27 @@ fi
 COMPILER_VERSION=$("$CC" --version | head -n1)
 CMAKE_VERSION=$(cmake --version | head -n1)
 
+# detect operating system
+OSTYPE="$(uname)"
+
 # detect hardware
-CPU_MODEL=$(lscpu | grep -m1 "Model name:" | cut -d: -f2- | sed 's/^ *//')
-NTHREADS=$(nproc)
-THREADS_PER_CORE=$(lscpu | grep -m1 "Thread(s) per core:" | cut -d: -f2 | tr -d ' ')
+case "$OSTYPE" in
+    Linux)
+	CPU_MODEL=$(lscpu | awk -F: '/Model name/ {sub(/^[ \t]+/, "", $2); print $2; exit}')
+	NTHREADS=$(nproc)
+	THREADS_PER_CORE=$(lscpu | awk -F: '/Thread\(s\) per core/ {gsub(/ /,"",$2); print $2; exit}')
+	;;
+    Darwin)
+	CPU_MODEL=$(sysctl -n machdep.cpu.brand_string)
+	NTHREADS=$(sysctl -n hw.logicalcpu)
+	THREADS_PER_CORE=$(( $(sysctl -n hw.logicalcpu) / $(sysctl -n hw.physicalcpu) ))
+	;;
+    *)
+	CPU_MODEL="NA"
+	NTHREADS="NA"
+	THREADS_PER_CORE="NA"
+    ;;
+esac
 
 echo "=============================================="
 echo "   fdaPDE testing framework"

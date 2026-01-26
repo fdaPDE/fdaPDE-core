@@ -67,8 +67,8 @@ template <typename CharT> struct token_stream {
         using pointer = std::add_pointer_t<value_t>;
 
         line_iterator() noexcept = default;
-        line_iterator(buff_t buff, size_t buff_sz, size_t begin, size_t end, char sep) :
-            buff_(buff), sep_(sep), token_sz_(0), buff_sz_(buff_sz), begin_(begin), end_(end), pos_(0) {
+        line_iterator(buff_t buff, size_t begin, size_t end, char sep) :
+            buff_(buff), sep_(sep), token_sz_(0), begin_(begin), end_(end), pos_(0) {
             fetch_token_();
         }
         bool has_token() const { return has_token_; }
@@ -105,7 +105,7 @@ template <typename CharT> struct token_stream {
         value_t token_;
         const buff_t buff_ = nullptr;
         char sep_;
-        size_t token_sz_, buff_sz_;
+        size_t token_sz_;
         size_t begin_, end_, pos_;
         mutable bool has_token_ = true;
     };
@@ -114,7 +114,7 @@ template <typename CharT> struct token_stream {
         head_ = tail_;
         tail_ = tail_ + next_char_(buff_, head_, buff_sz_, '\n');
         if (tail_ < buff_sz_) { tail_++; }
-        return line_iterator {buff_, buff_sz_, head_, tail_, sep_};
+        return line_iterator {buff_, head_, tail_, sep_};
     }
     bool has_line() const { return head_ < buff_sz_; }
     operator bool() const { return head_ < buff_sz_; }
