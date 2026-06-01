@@ -85,8 +85,8 @@ template <typename XprType_> class EVD {
 
     // computes the EVD of a symmetric matrix using the implicit QR-iteration with Wilkinson shift
     // see "Golub, G. H., & Van Loan, C. F. (2013). Matrix computations. JHU press. Ch.8.3"
-    template <typename XprType__> constexpr void compute(const SymmetricMatrixExpr<XprType__>& mtx) {
-        auto [T, Q_] = householder_tridiagonalize_(mtx.derived());
+    template <typename XprType__> constexpr void compute(const SymmetricMatrixExpr<XprType__>& m) {
+        auto [T, Q_] = householder_tridiagonalize_(m.derived());
         const int n = T.rows();
         const int max_iter = max_iter_ * n;
         Matrix<Scalar, Rows, Cols> Q = IdentityMatrix<Scalar, Rows, Cols>(n, n);
