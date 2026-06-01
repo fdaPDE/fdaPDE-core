@@ -118,8 +118,11 @@ struct vector_assignment_executor {
         if constexpr (!std::is_arithmetic_v<SrcXprType>) {
             // NB: a row-shaped rhs can be assigned to a col-shaped lhs
             fdapde_static_assert(
-              internals::is_vector_shaped_v<DstMatrixType> && internals::is_vector_shaped_v<SrcXprType>,
-              INVALID_ASSIGNMENT__NOT_VECTOR_SHAPED_OPERANDS);
+              internals::is_vector_shaped_v<DstMatrixType>, INVALID_ASSIGNMENT__NOT_VECTOR_SHAPED_LVALUE);
+            fdapde_static_assert(
+              (internals::is_dynamic_sized_v<DstMatrixType> || internals::is_dynamic_sized_v<SrcXprType> ||
+               internals::same_static_shape_v<DstMatrixType FDAPDE_COMMA SrcXprType>),
+              INVALID_ASSIGNMENT__DIFFERENT_LHS_AND_RHS_STATIC_SIZES);	    
             if constexpr (internals::is_dynamic_sized_v<DstMatrixType> || internals::is_dynamic_sized_v<SrcXprType>) {
                 fdapde_assert(
                   ((dst.rows() == 1 && src.rows() == 1) || (dst.cols() == 1 && src.cols() == 1) ||
@@ -128,11 +131,11 @@ struct vector_assignment_executor {
             }
         }
         const int size_ = dst.size();
-        auto fetch = [](const SrcXprType& src, [[maybe_unused]] int i) -> decltype(auto)  {
+        auto fetch = [](const SrcXprType& src, [[maybe_unused]] int i) -> decltype(auto) {
             if constexpr (std::is_arithmetic_v<SrcXprType>) {
                 return src;
             } else {
-                return src[i];
+                return src(i, 0);
             }
         };
         for (int i = 0; i < size_; ++i) { op(dst[i], fetch(src, i)); }
@@ -394,6 +397,10 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
           THIS_METHOD_IS_FOR_DYNAMIC_SIZED_ROW_OR_COLUMN_VECTORS_ONLY);
         resize(Rows_ == Dynamic ? size : Rows_, Cols_ == Dynamic ? size : Cols_);
         return;
+    }
+    void set_zero() {
+        for (int i = 0, n = data_.size(); i < n; ++i) { data_[i] = Scalar(0); }
+	return;
     }
     // data pointers
     constexpr const Scalar* data() const { return data_.data(); }

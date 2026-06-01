@@ -284,7 +284,7 @@ template <typename XprType_> struct TriangularMatrixExpr : public MatrixExpr<Xpr
         constexpr int ViewMode = XprType::ViewMode;
         fdapde_static_assert(ViewMode == Upper, THIS_METHOD_IS_FOR_UPPER_TRIANGULAR_MATRICES_ONLY);
         const RhsXprType& B_ = B.derived();
-        fdapde_assert(B_.rows() == derived().rows() && B_.cols() > 1);
+        fdapde_assert(B_.rows() == derived().rows() && B_.cols() >= 1);
         using Scalar = typename XprType::Scalar;
         constexpr int RhsRows = XprType::Rows, RhsCols = XprType::Cols;
         Matrix<Scalar, RhsRows, RhsCols> X;
