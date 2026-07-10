@@ -29,13 +29,15 @@ template <typename XprType_> class IdentityPreconditioner {
     static constexpr int Rows = XprType::Rows;
     static constexpr int Cols = XprType::Cols;
     using Scalar = typename XprType::Scalar;
-
+   public:
     IdentityPreconditioner() = default;
     template <typename XprType> explicit IdentityPreconditioner(const MatrixExpr<XprType>& m) {
         fdapde_assert(m.rows() == m.cols());
     }
-    template <typename XprType> constexpr void compute(const MatrixExpr<XprType>& m) { return; }
-    template <typename RhsXprType> constexpr auto solve(const MatrixExpr<RhsXprType>& b) const { return b; }
+    template <typename XprType> constexpr void compute(const MatrixExpr<XprType>&) { return; }
+    template <typename RhsXprType> constexpr decltype(auto) solve(const MatrixExpr<RhsXprType>& b) const {
+        return b.derived();
+    }
 };
 
 template <typename XprType_> class DiagonalPreconditioner {
@@ -46,15 +48,15 @@ template <typename XprType_> class DiagonalPreconditioner {
     static constexpr int Rows = XprType::Rows;
     static constexpr int Cols = XprType::Cols;
     using Scalar = typename XprType::Scalar;
-
-    IdentityPreconditioner() = default;
+   public:
+    DiagonalPreconditioner() = default;
     template <typename XprType> explicit DiagonalPreconditioner(const MatrixExpr<XprType>& m) {
         fdapde_assert(m.rows() == m.cols());
-	compute(m);
+        compute(m);
     }
     template <typename XprType> constexpr void compute(const MatrixExpr<XprType>& m) {
-        if constexpr (Rows == Dynamic || Cols = Dynamic) { inverse_.resize(m.rows()); }
-        for (int i = 0; i < inverse_.size(); ++i) { inverse_[i] = 1.0 / m(i, i); }
+        if constexpr (Rows == Dynamic || Cols == Dynamic) { inverse_.resize(m.rows()); }
+        for (int i = 0; i < inverse_.size(); ++i) { inverse_[i] = 1.0 / m.derived()(i, i); }
         return;
     }
     template <typename RhsXprType> constexpr auto solve(const MatrixExpr<RhsXprType>& b) const {
@@ -65,7 +67,7 @@ template <typename XprType_> class DiagonalPreconditioner {
    private:
     Vector<Scalar, Rows> inverse_;
 };
-  
+
 }   // namespace fdapde
 
 #endif   // __FDAPDE_LINALG_PRECONDITIONERS_H__
