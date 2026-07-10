@@ -104,6 +104,7 @@ class fdapde_testing_printer : public ::testing::EmptyTestEventListener {
 #include "execution/parallel_algorithms.cpp"
 #include "execution/queues.cpp"
 #include "execution/task_graphs.cpp"
+#include "geometry/delaunay.cpp"
 #include "geometry/triangle.cpp"
 #include "linear_algebra/block.cpp"
 #include "linear_algebra/bool_vector.cpp"
