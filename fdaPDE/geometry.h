@@ -40,6 +40,7 @@
 #include "src/geometry/triangulation.h"
 // mesh generation
 #include "src/geometry/delaunay.h"
+#include "src/geometry/mesh_generation.h"
 /* #include "src/geometry/interval.h" */
 /* #include "src/geometry/linear_network.h" */
 /* #include "src/geometry/dcel.h" */
