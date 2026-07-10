@@ -13,41 +13,84 @@
 //
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
-//
-//
 
-<<<<<<<< HEAD:tests/geometry/triangle.cpp
 #include <fdaPDE/geometry.h>
-#include <gtest/gtest.h>   // testing framework
+#include <gtest/gtest.h>
+
 using namespace fdapde;
-========
-#ifndef __FDAPDE_EXECUTION_TYPE_H__
-#define __FDAPDE_EXECUTION_TYPE_H__
->>>>>>>> 023997a3 (Implemented multithreading support across FDAPDE):fdaPDE/src/multithreading/execution_type.h
 
-TEST(geometry, triangle) {
-    Triangulation<2, 2> D = Triangulation<2, 2>::UnitSquare(60, 60);
+TEST(geometry, structured_triangulation_iterators) {
+    auto mesh = Triangulation<2, 2>::UnitSquare(3);
+    static_assert(std::bidirectional_iterator<decltype(mesh.cells_begin())>);
+    static_assert(std::bidirectional_iterator<decltype(mesh.boundary_begin())>);
 
-<<<<<<<< HEAD:tests/geometry/triangle.cpp
-    // std::cout << D.n_nodes() << std::endl;
+    EXPECT_EQ(mesh.n_nodes(), 9);
+    EXPECT_EQ(mesh.n_cells(), 8);
+    EXPECT_EQ(mesh.n_edges(), 16);
+    EXPECT_EQ(mesh.n_boundary_edges(), 8);
+    EXPECT_DOUBLE_EQ(mesh.measure(), 1.0);
 
-    
-    EXPECT_DOUBLE_EQ(1.0 / D.n_cells(), D.cell(0).measure());
+    int cells = 0;
+    for (auto it = mesh.cells_begin(); it != mesh.cells_end(); it++) { ++cells; }
+    EXPECT_EQ(cells, mesh.n_cells());
 
+    auto first_cell = mesh.cells_begin();
+    const auto original_cell = first_cell++;
+    EXPECT_EQ(original_cell->id(), 0);
+    EXPECT_EQ(first_cell->id(), 1);
 
-    std::cout << D.cell(2000).barycenter() << std::endl;
+    auto last_cell = mesh.cells_end();
+    --last_cell;
+    EXPECT_EQ(last_cell->id(), mesh.n_cells() - 1);
 
-    // try point location with r_tree
-    Matrix<double, 1, 2> pts;
-    pts.row(0) = D.cell(2000).barycenter().transpose();
-    std::cout << D.locate(pts)[0] << std::endl;
-  
+    mesh.mark_cells(7, [](const auto& cell) { return cell.id() % 2 == 0; });
+    int marked_cells = 0;
+    for (auto it = mesh.cells_begin(7); it != mesh.cells_end(7); ++it) {
+        EXPECT_EQ(it->id() % 2, 0);
+        ++marked_cells;
+    }
+    EXPECT_EQ(marked_cells, 4);
+
+    int edges = 0;
+    for (auto it = mesh.edges_begin(); it != mesh.edges_end(); ++it) { ++edges; }
+    EXPECT_EQ(edges, mesh.n_edges());
+
+    auto last_edge = mesh.edges_end();
+    --last_edge;
+    EXPECT_EQ(last_edge->id(), mesh.n_edges() - 1);
+
+    int boundary_edges = 0;
+    for (auto it = mesh.boundary_begin(); it != mesh.boundary_end(); ++it) { ++boundary_edges; }
+    EXPECT_EQ(boundary_edges, mesh.n_boundary_edges());
+
+    const int selected_edge = mesh.boundary_begin()->id();
+    mesh.mark_boundary(7, [&](const auto& edge) { return edge.id() == selected_edge; });
+    EXPECT_EQ(std::distance(mesh.boundary_begin(7), mesh.boundary_end(7)), 1);
+    EXPECT_EQ(std::distance(mesh.boundary_begin(0), mesh.boundary_end(0)), 0);
+
+    int boundary_nodes = 0;
+    for (auto it = mesh.boundary_nodes_begin(); it != mesh.boundary_nodes_end(); ++it) { ++boundary_nodes; }
+    EXPECT_EQ(boundary_nodes, 8);
 }
-========
-namespace execution {
-    struct execution_parallel {}; 
-    inline constexpr execution_parallel par {};
-}
 
-#endif
->>>>>>>> 023997a3 (Implemented multithreading support across FDAPDE):fdaPDE/src/multithreading/execution_type.h
+TEST(geometry, volumetric_triangulation_iterators) {
+    auto mesh = Triangulation<3, 3>::UnitCube(4);
+
+    int faces = 0;
+    for (auto it = mesh.faces_begin(); it != mesh.faces_end(); ++it) { ++faces; }
+    EXPECT_EQ(faces, mesh.n_faces());
+
+    auto last_face = mesh.faces_end();
+    --last_face;
+    EXPECT_EQ(last_face->id(), mesh.n_faces() - 1);
+
+    int boundary_faces = 0;
+    for (auto it = mesh.boundary_begin(); it != mesh.boundary_end(); ++it) { ++boundary_faces; }
+    EXPECT_EQ(boundary_faces, mesh.n_boundary_faces());
+
+    Vector<bool, Dynamic> mask(mesh.n_faces());
+    const int selected_face = mesh.boundary_begin()->id();
+    mask[selected_face] = true;
+    mesh.mark_boundary(mask);
+    EXPECT_EQ(std::distance(mesh.boundary_begin(1), mesh.boundary_end(1)), 1);
+}

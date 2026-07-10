@@ -43,7 +43,7 @@ template <typename XprType_, typename Preconditioner_> class GMRES {
         requires(std::is_constructible_v<Preconditioner_, Preconditioner__> &&
                  std::is_same_v<XprType, std::decay_t<XprType__>>)
     constexpr explicit GMRES(
-      const LinearOperatorExpr<XprType__>& m, Preconditioner__&& P, int max_iter, int restart, double tolerance) :
+      const MatrixExpr<XprType__>& m, Preconditioner__&& P, int max_iter, int restart, double tolerance) :
         max_iter_(max_iter), restart_(restart), tolerance_(tolerance), P_(std::forward<Preconditioner__>(P)) {
         if constexpr (Rows == Dynamic || Cols == Dynamic) {
             fdapde_assert(m.rows() == m.cols());
@@ -52,12 +52,12 @@ template <typename XprType_, typename Preconditioner_> class GMRES {
         compute(m);
     }
     template <typename XprType__, typename Preconditioner__>
-    constexpr explicit GMRES(const LinearOperatorExpr<XprType__>& m, Preconditioner__&& P) :
+    constexpr explicit GMRES(const MatrixExpr<XprType__>& m, Preconditioner__&& P) :
         GMRES(m, std::forward<Preconditioner__>(P), 500, 50, 1e-6) { }
 
     template <typename XprType__>
         requires(std::is_same_v<XprType, std::decay_t<XprType__>>)
-    constexpr void compute(const LinearOperatorExpr<XprType__>& m) {
+    constexpr void compute(const MatrixExpr<XprType__>& m) {
         P_.compute(m.derived());
         m_ = std::addressof(m.derived());
         // pre-allocate memory
@@ -79,7 +79,7 @@ template <typename XprType_, typename Preconditioner_> class GMRES {
         while (iter < max_iter_) {
             bool converged = false;
             // compute preconditioned residual r = P^-1 * (b - A * x)
-            r_ = P_.solve(b - m_->apply(x));
+            r_ = P_.solve(b - (*m_) * x);
             double beta = r_.norm();
             double r0_norm = beta;
             // initial guess already good
@@ -93,7 +93,7 @@ template <typename XprType_, typename Preconditioner_> class GMRES {
                 // update Krylov subspace by Arnoldi process
                 // See "Golub, G. H., & Van Loan, C. F. (2013). Matrix computations. JHU press. Alg.10.5.1"
                 V_.col(j) = r_ / beta;
-                r_ = P_.solve(m_->apply(V_.col(j)));
+                r_ = P_.solve((*m_) * V_.col(j));
                 for (int i = 0; i <= j; ++i) {
                     H_(i, j) = V_.col(i).dot(r_);
                     r_ -= H_(i, j) * V_.col(i);

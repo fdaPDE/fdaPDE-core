@@ -303,12 +303,11 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
           THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_OR_VECTORS);
         if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { resize(data.size()); }   // dynamic-sized vector
         fdapde_assert(std::cmp_equal(this->rows_ * this->cols_, data.size()));
-        for (int i = 0; i < Rows; ++i) {
-            for (int j = 0; j < Cols; ++j) {
+        for (int i = 0, rows = this->rows(); i < rows; ++i) {
+            for (int j = 0, cols = this->cols(); j < cols; ++j) {
                 this->operator()(i, j) = data[i * this->row_stride_ + j * this->col_stride_];
             }
         }
-        bitpacks_ = 1 + fdapde::ceil(data_.size() / PackSize);
         return;
     }
     // static named constructors

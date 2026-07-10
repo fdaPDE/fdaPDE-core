@@ -101,20 +101,18 @@ class fdapde_testing_printer : public ::testing::EmptyTestEventListener {
     }
 };
 
-#include "linear_algebra/block.cpp"
-#include "linear_algebra/xpr.cpp"
-#include "linear_algebra/matrix.cpp"
-#include "linear_algebra/diagonal.cpp"
-#include "linear_algebra/triangular.cpp"
-// #include "linear_algebra/bool.cpp"
-#include "linear_algebra/symmetric.cpp"
-
-#include "execution/queues.cpp"
 #include "execution/parallel_algorithms.cpp"
+#include "execution/queues.cpp"
 #include "execution/task_graphs.cpp"
-
-
-// #include "geometry/triangle.cpp"
+#include "geometry/triangle.cpp"
+#include "linear_algebra/block.cpp"
+#include "linear_algebra/bool_vector.cpp"
+#include "linear_algebra/diagonal.cpp"
+#include "linear_algebra/gmres.cpp"
+#include "linear_algebra/matrix.cpp"
+#include "linear_algebra/symmetric.cpp"
+#include "linear_algebra/triangular.cpp"
+#include "linear_algebra/xpr.cpp"
 
 int main(int argc, char** argv) {
     // start testing
