@@ -472,3 +472,92 @@ TEST(mesh_generation, rejects_invalid_hexagonal_input) {
         1.0, fdapde::Vector<double, 2>(0.0, 0.0)),
       std::invalid_argument);
 }
+
+TEST(mesh_generation, resamples_polygon_rings_by_count_and_spacing) {
+    using namespace lattice_testing;
+    const auto square = points({
+      {0, 0},
+      {2, 0},
+      {2, 2},
+      {0, 2}
+    });
+    const auto expected = points({
+      {0, 0},
+      {1, 0},
+      {2, 0},
+      {2, 1},
+      {2, 2},
+      {1, 2},
+      {0, 2},
+      {0, 1}
+    });
+    EXPECT_EQ(fdapde::resample_polygon_ring(square, 8), expected);
+    EXPECT_EQ(fdapde::resample_polygon_ring(square, 1.1), expected);
+    EXPECT_EQ(fdapde::resample_polygon_ring(square, 100.0, 8), expected);
+
+    const auto clockwise = points({
+      {0, 2},
+      {2, 2},
+      {2, 0},
+      {0, 0}
+    });
+    const auto resampled_clockwise = fdapde::resample_polygon_ring(clockwise, 8);
+    EXPECT_EQ(
+      resampled_clockwise, points({
+                             {0, 2},
+                             {1, 2},
+                             {2, 2},
+                             {2, 1},
+                             {2, 0},
+                             {1, 0},
+                             {0, 0},
+                             {0, 1}
+    }));
+}
+
+TEST(mesh_generation, rejects_invalid_polygon_ring_resampling) {
+    using namespace lattice_testing;
+    const auto square = points({
+      {0, 0},
+      {1, 0},
+      {1, 1},
+      {0, 1}
+    });
+    EXPECT_THROW(fdapde::resample_polygon_ring(square, 2), std::invalid_argument);
+    EXPECT_THROW(fdapde::resample_polygon_ring(square, 0.0), std::invalid_argument);
+    EXPECT_THROW(fdapde::resample_polygon_ring(square, std::numeric_limits<double>::infinity()), std::invalid_argument);
+    EXPECT_THROW(fdapde::resample_polygon_ring(square, 1.0, 2), std::invalid_argument);
+
+    Matrix<double, Dynamic, Dynamic> wrong_columns(3, 3);
+    EXPECT_THROW(fdapde::resample_polygon_ring(wrong_columns, 3), std::invalid_argument);
+    EXPECT_THROW(
+      fdapde::resample_polygon_ring(
+        points({
+          {0, 0},
+          {1, 0}
+    }),
+        3),
+      std::invalid_argument);
+    EXPECT_THROW(
+      fdapde::resample_polygon_ring(
+        points({
+          {0, 0},
+          {1, 0},
+          {0, 0}
+    }),
+        3),
+      std::invalid_argument);
+    EXPECT_THROW(
+      fdapde::resample_polygon_ring(
+        points({
+          {0, 0},
+          {1, 0},
+          {1, 0},
+          {0, 1}
+    }),
+        4),
+      std::invalid_argument);
+    auto nonfinite = square;
+    nonfinite(1, 0) = std::numeric_limits<double>::quiet_NaN();
+    EXPECT_THROW(fdapde::resample_polygon_ring(nonfinite, 4), std::invalid_argument);
+}

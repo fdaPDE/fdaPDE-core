@@ -83,6 +83,31 @@ TEST(svg, composes_with_constrained_delaunay_for_lines_and_curves) {
     EXPECT_EQ(curved, fdapde::svg_document_rings(R"svg(<svg><path d="M0 0 C0 1 1 1 1 0 L1 -1 L0 -1 Z"/></svg>)svg", 8));
 }
 
+TEST(svg, parses_compact_repeated_relative_cubics_from_multiple_paths) {
+    const auto rings = fdapde::svg_document_rings(
+      R"svg(<?xml version="1.0"?>
+        <svg viewBox="0 0 8 8">
+          <defs><style>.outline { fill: none; }</style></defs>
+          <path class="outline" d="M1 1c.5 0 1 .5 1 1 0 .5-.5 1-1 1-.5 0-1-.5-1-1 0-.5.5-1 1-1Z"/>
+          <path d="M5,1c.5,0,1,.5,1,1 0,.5-.5,1-1,1-.5,0-1-.5-1-1 0-.5.5-1 1-1z"/>
+          <path d="M1 5c.5 0 1 .5 1 1 0 .5-.5 1-1 1-.5 0-1-.5-1-1 0-.5.5-1 1-1Z"/>
+          <path d="M5 5c.5 0 1 .5 1 1 0 .5-.5 1-1 1-.5 0-1-.5-1-1 0-.5.5-1 1-1Z"/>
+        </svg>)svg",
+      4);
+    ASSERT_EQ(rings.size(), 4);
+    for (const auto& ring : rings) {
+        ASSERT_EQ(ring.rows(), 16);
+        const auto resampled = fdapde::resample_polygon_ring(ring, 0.3, 8);
+        const auto mesh = fdapde::constrained_delaunay(resampled);
+        EXPECT_EQ(mesh.n_boundary_edges(), resampled.rows());
+        EXPECT_GT(mesh.measure(), 0.0);
+    }
+    EXPECT_DOUBLE_EQ(rings[0](0, 0), 1.0);
+    EXPECT_DOUBLE_EQ(rings[1](0, 0), 5.0);
+    EXPECT_DOUBLE_EQ(rings[2](0, 1), -5.0);
+    EXPECT_DOUBLE_EQ(rings[3](0, 1), -5.0);
+}
+
 TEST(svg, rejects_unsupported_or_malformed_documents) {
     const auto rejects = [](std::string_view document) {
         EXPECT_THROW(fdapde::svg_document_rings(document, 2), std::invalid_argument);
@@ -106,6 +131,11 @@ TEST(svg, rejects_unsupported_or_malformed_documents) {
     rejects("<svg><rect x='0' y='0' width='1' height='1'/></svg>");
     rejects("<!DOCTYPE svg><svg><path d='M0 0L1 0L0 1Z'/></svg>");
     rejects("<svg><path d='M0 0L1 0L0 1Z'/");
+    rejects("garbage<svg><path d='M0 0L1 0L0 1Z'/></svg>");
+    rejects("<svg><path d='M0 0L1 0L0 1Z'/></svg>trailing");
+    rejects("<svg><defs><path d='M0 0L1 0L0 1Z'/></wrong></defs></svg>");
+    rejects("<svg><g><path d='M0 0L1 0L0 1Z'/></svg>");
+    rejects("<svg><svg><path d='M0 0L1 0L0 1Z'/></svg></svg>");
     EXPECT_THROW(fdapde::svg_document_rings("<svg><path d='M0 0L1 0L0 1Z'/></svg>", 0), std::invalid_argument);
 
     for (char command : std::string("HhVvQqTtSsAaXx")) {

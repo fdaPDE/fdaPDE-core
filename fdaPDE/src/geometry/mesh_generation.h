@@ -17,7 +17,9 @@
 #ifndef __FDAPDE_GEOMETRY_MESH_GENERATION_H__
 #define __FDAPDE_GEOMETRY_MESH_GENERATION_H__
 
+#include <cmath>
 #include <cstdint>
+#include <limits>
 #include <stdexcept>
 
 #include "header_check.h"
@@ -360,7 +362,106 @@ inline Matrix<double, Dynamic, Dynamic> boundary(
 }
 
 }   // namespace hexagonal_lattice
+
+namespace ring_resampling {
+
+inline long double validated_perimeter(const Matrix<double, Dynamic, Dynamic>& ring) {
+    if (ring.cols() != 2) { throw std::invalid_argument("Polygon ring must have exactly two columns."); }
+    if (ring.rows() < 3) { throw std::invalid_argument("Polygon ring needs at least three vertices."); }
+    if (ring.row(0) == ring.row(ring.rows() - 1)) { throw std::invalid_argument("Polygon ring must be unclosed."); }
+    long double perimeter = 0.0L;
+    for (int i = 0; i < ring.rows(); ++i) {
+        const int j = (i + 1) % ring.rows();
+        const double x = ring(i, 0);
+        const double y = ring(i, 1);
+        const double next_x = ring(j, 0);
+        const double next_y = ring(j, 1);
+        if (!std::isfinite(x) || !std::isfinite(y)) {
+            throw std::invalid_argument("Polygon ring must contain only finite coordinates.");
+        }
+        if (x == next_x && y == next_y) {
+            throw std::invalid_argument("Polygon ring contains adjacent duplicate vertices.");
+        }
+        const long double length =
+          std::hypot(static_cast<long double>(next_x) - x, static_cast<long double>(next_y) - y);
+        if (!std::isfinite(length)) { throw std::invalid_argument("Polygon ring perimeter is not representable."); }
+        perimeter += length;
+    }
+    if (!std::isfinite(perimeter) || perimeter <= 0.0L) {
+        throw std::invalid_argument("Polygon ring perimeter is not representable.");
+    }
+    return perimeter;
+}
+
+}   // namespace ring_resampling
 }   // namespace internals
+
+/**
+ * @brief Sample an unclosed polygonal ring uniformly along its source-polyline arc length.
+ *
+ * The first input vertex is preserved and exactly `vertex_count` unclosed samples are returned in the input
+ * orientation. This operation controls boundary density; it does not validate simplicity or provide an adaptive
+ * curve-approximation error bound.
+ */
+inline Matrix<double, Dynamic, Dynamic>
+resample_polygon_ring(const Matrix<double, Dynamic, Dynamic>& ring, int vertex_count) {
+    using namespace internals::ring_resampling;
+    if (vertex_count < 3) { throw std::invalid_argument("Polygon ring resampling needs at least three vertices."); }
+    const long double perimeter = validated_perimeter(ring);
+    Matrix<double, Dynamic, Dynamic> result(vertex_count, 2);
+    result.row(0) = ring.row(0);
+    int segment = 0;
+    long double segment_begin = 0.0L;
+    long double segment_length =
+      std::hypot(static_cast<long double>(ring(1, 0)) - ring(0, 0), static_cast<long double>(ring(1, 1)) - ring(0, 1));
+    for (int i = 1; i < vertex_count; ++i) {
+        const long double target = perimeter * i / vertex_count;
+        while (target > segment_begin + segment_length) {
+            segment_begin += segment_length;
+            ++segment;
+            const int next = (segment + 1) % ring.rows();
+            segment_length = std::hypot(
+              static_cast<long double>(ring(next, 0)) - ring(segment, 0),
+              static_cast<long double>(ring(next, 1)) - ring(segment, 1));
+        }
+        const int next = (segment + 1) % ring.rows();
+        const long double fraction = (target - segment_begin) / segment_length;
+        for (int coordinate = 0; coordinate < 2; ++coordinate) {
+            result(i, coordinate) = static_cast<double>(
+              ring(segment, coordinate) + fraction * (ring(next, coordinate) - ring(segment, coordinate)));
+        }
+        if (!std::isfinite(result(i, 0)) || !std::isfinite(result(i, 1)) || (result.row(i) == result.row(i - 1))) {
+            throw std::runtime_error("Polygon ring resampling collapsed distinct samples.");
+        }
+    }
+    if (result.row(0) == result.row(vertex_count - 1)) {
+        throw std::runtime_error("Polygon ring resampling collapsed distinct samples.");
+    }
+    return result;
+}
+
+/**
+ * @brief Sample an unclosed polygonal ring at a bounded source-polyline arc-length spacing.
+ *
+ * The returned count is the greater of `minimum_vertices` and the ceiling of perimeter divided by
+ * `maximum_spacing`. Samples are then uniform along source-polyline arc length.
+ */
+inline Matrix<double, Dynamic, Dynamic>
+resample_polygon_ring(const Matrix<double, Dynamic, Dynamic>& ring, double maximum_spacing, int minimum_vertices = 3) {
+    using namespace internals::ring_resampling;
+    if (!std::isfinite(maximum_spacing) || maximum_spacing <= 0.0) {
+        throw std::invalid_argument("Polygon ring resampling spacing must be finite and positive.");
+    }
+    if (minimum_vertices < 3) {
+        throw std::invalid_argument("Polygon ring resampling needs at least three minimum vertices.");
+    }
+    const long double perimeter = validated_perimeter(ring);
+    const long double requested = std::ceil(perimeter / maximum_spacing);
+    if (requested > std::numeric_limits<int>::max()) {
+        throw std::invalid_argument("Polygon ring resampling requests too many vertices.");
+    }
+    return resample_polygon_ring(ring, std::max(minimum_vertices, static_cast<int>(requested)));
+}
 
 /**
  * @brief Build the outer boundary of the largest 4-connected component of occupied square cells.

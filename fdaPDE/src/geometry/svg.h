@@ -239,6 +239,12 @@ class path_parser {
 
 using attribute_t = std::pair<std::string_view, std::string_view>;
 
+struct tag_t {
+    std::string_view name;
+    std::vector<attribute_t> attributes;
+    bool self_closing;
+};
+
 inline bool is_name_start(char value) {
     return (value >= 'A' && value <= 'Z') || (value >= 'a' && value <= 'z') || value == '_' || value == ':';
 }
@@ -260,7 +266,7 @@ inline std::string_view local_name(std::string_view name) {
     return colon == std::string_view::npos ? name : name.substr(colon + 1);
 }
 
-inline std::pair<std::string_view, std::vector<attribute_t>> parse_tag(std::string_view text) {
+inline tag_t parse_tag(std::string_view text) {
     std::size_t position = 0;
     skip_whitespace(text, position);
     if (position == text.size() || !is_name_start(text[position])) {
@@ -270,10 +276,12 @@ inline std::pair<std::string_view, std::vector<attribute_t>> parse_tag(std::stri
     while (position < text.size() && is_name_character(text[position])) ++position;
     const std::string_view name = text.substr(name_begin, position - name_begin);
     std::vector<attribute_t> attributes;
+    bool self_closing = false;
     while (true) {
         skip_whitespace(text, position);
         if (position == text.size()) break;
         if (text[position] == '/') {
+            self_closing = true;
             ++position;
             skip_whitespace(text, position);
             if (position != text.size()) { throw std::invalid_argument("SVG contains a malformed self-closing tag."); }
@@ -307,7 +315,7 @@ inline std::pair<std::string_view, std::vector<attribute_t>> parse_tag(std::stri
         }
         attributes.emplace_back(attribute, value);
     }
-    return {name, attributes};
+    return {name, std::move(attributes), self_closing};
 }
 
 inline std::size_t tag_end(std::string_view document, std::size_t begin) {
@@ -335,6 +343,12 @@ inline std::optional<std::string_view> attribute(const std::vector<attribute_t>&
     return value;
 }
 
+inline bool whitespace_only(std::string_view text) {
+    std::size_t position = 0;
+    skip_whitespace(text, position);
+    return position == text.size();
+}
+
 }   // namespace svg
 }   // namespace internals
 
@@ -360,11 +374,20 @@ svg_document_rings(std::string_view document, int cubic_subdivisions) {
     bool has_svg = false;
     bool closed_svg = false;
     bool inside_svg = false;
+    std::vector<std::string_view> element_stack;
     std::vector<Matrix<double, Dynamic, Dynamic>> result;
     std::size_t position = 0;
     while (true) {
         const std::size_t begin = document.find('<', position);
-        if (begin == std::string_view::npos) break;
+        if (begin == std::string_view::npos) {
+            if (!inside_svg && !whitespace_only(document.substr(position))) {
+                throw std::invalid_argument("SVG document contains text outside its root element.");
+            }
+            break;
+        }
+        if (!inside_svg && !whitespace_only(document.substr(position, begin - position))) {
+            throw std::invalid_argument("SVG document contains text outside its root element.");
+        }
         if (document.substr(begin, 4) == "<!--") {
             const std::size_t end = document.find("-->", begin + 4);
             if (end == std::string_view::npos) { throw std::invalid_argument("SVG contains an unterminated comment."); }
@@ -399,46 +422,60 @@ svg_document_rings(std::string_view document, int cubic_subdivisions) {
             const std::string_view name = local_name(tag.substr(name_begin, tag_position - name_begin));
             skip_whitespace(tag, tag_position);
             if (tag_position != tag.size()) { throw std::invalid_argument("SVG contains a malformed closing tag."); }
+            if (element_stack.empty() || element_stack.back() != name) {
+                throw std::invalid_argument("SVG contains a mismatched closing tag.");
+            }
             if (name == "svg") {
-                if (!inside_svg) { throw std::invalid_argument("SVG contains an unmatched svg closing tag."); }
                 inside_svg = false;
                 closed_svg = true;
             }
+            element_stack.pop_back();
             continue;
         }
 
-        const auto [qualified_name, attributes] = parse_tag(tag);
-        const std::string_view name = local_name(qualified_name);
+        const tag_t parsed = parse_tag(tag);
+        const std::string_view name = local_name(parsed.name);
+        const auto& attributes = parsed.attributes;
         if (attribute(attributes, "transform").has_value()) {
             throw std::invalid_argument("SVG transforms are not supported.");
         }
         if (name == "svg") {
-            if (has_svg) { throw std::invalid_argument("SVG document contains multiple svg root elements."); }
+            if (has_svg || !element_stack.empty()) {
+                throw std::invalid_argument("SVG document contains multiple or nested svg root elements.");
+            }
             has_svg = true;
             inside_svg = true;
+        } else if (!inside_svg) {
+            throw std::invalid_argument("SVG document contains an element outside its svg root.");
         }
         if (
           name == "rect" || name == "circle" || name == "ellipse" || name == "line" || name == "polyline" ||
           name == "polygon" || name == "use") {
             throw std::invalid_argument("SVG contains unsupported non-path geometry.");
         }
-        if (name != "path") continue;
-        if (!inside_svg) { throw std::invalid_argument("SVG path must be inside the svg root element."); }
-
-        const auto data = attribute(attributes, "d");
-        if (!data.has_value() || data->empty()) {
-            throw std::invalid_argument("SVG path requires a nonempty d attribute.");
-        }
-        const auto rings = path_parser(*data, cubic_subdivisions).parse();
-        for (const auto& ring : rings) {
-            Matrix<double, Dynamic, Dynamic> matrix(ring.size(), 2);
-            for (int i = 0; i < int(ring.size()); ++i) {
-                matrix(i, 0) = ring[i].x;
-                matrix(i, 1) = -ring[i].y;
+        if (name == "path") {
+            const auto data = attribute(attributes, "d");
+            if (!data.has_value() || data->empty()) {
+                throw std::invalid_argument("SVG path requires a nonempty d attribute.");
             }
-            result.push_back(std::move(matrix));
+            const auto rings = path_parser(*data, cubic_subdivisions).parse();
+            for (const auto& ring : rings) {
+                Matrix<double, Dynamic, Dynamic> matrix(ring.size(), 2);
+                for (int i = 0; i < int(ring.size()); ++i) {
+                    matrix(i, 0) = ring[i].x;
+                    matrix(i, 1) = -ring[i].y;
+                }
+                result.push_back(std::move(matrix));
+            }
+        }
+        if (!parsed.self_closing) {
+            element_stack.push_back(name);
+        } else if (name == "svg") {
+            inside_svg = false;
+            closed_svg = true;
         }
     }
+    if (!element_stack.empty()) { throw std::invalid_argument("SVG document contains an unclosed element tag."); }
     if (!has_svg || !closed_svg) { throw std::invalid_argument("SVG document requires a closed svg root element."); }
     if (result.empty()) { throw std::invalid_argument("SVG document contains no supported path rings."); }
     return result;
