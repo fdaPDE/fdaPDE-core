@@ -35,81 +35,26 @@ namespace delaunay_2d {
 // algorithmic source: Emilia Farina, Emiliaa02/fdaPDE-core stable@ca8fa3e7c03806fc92048e56f1a1dd2ffd88b927
 // this is an independent rewrite without the fork's DCEL, JSON, random-site, hole, or Voronoi dependencies
 
-struct point_t {
-    double x;
-    double y;
-};
-
-inline int normalization_shift(double max_coordinate) {
-    return max_coordinate == 0.0 ? 0 : -std::ilogb(max_coordinate);
-}
-
-template <typename... Points> inline int normalization_shift(const point_t& first, const Points&... rest) {
-    double max_coordinate = std::max(std::abs(first.x), std::abs(first.y));
-    const auto include = [&](const point_t& point) {
-        max_coordinate = std::max({max_coordinate, std::abs(point.x), std::abs(point.y)});
-    };
-    (include(rest), ...);
-    return normalization_shift(max_coordinate);
-}
-
-inline point_t normalize(const point_t& point, int shift) {
-    return {std::scalbn(point.x, shift), std::scalbn(point.y, shift)};
-}
+using planar::equal;
+using planar::less;
+using planar::locate_in_polygon;
+using planar::normalization_shift;
+using planar::normalize;
+using planar::on_segment;
+using planar::orient2d;
+using planar::point_location;
+using planar::point_t;
+using planar::predicate_sign;
+using planar::read_points;
+using planar::signed_area;
+using planar::validate_boundary;
+using planar::validate_planar_domain;
+using planar::validate_unique;
 
 using cell_t = std::array<int, 3>;
 using edge_t = std::array<int, 2>;
 
-enum class predicate_sign : int {
-    negative = -1,
-    zero = 0,
-    positive = 1
-};
-enum class point_location : int {
-    outside = -1,
-    boundary = 0,
-    inside = 1
-};
-
 inline edge_t edge(int a, int b) { return a < b ? edge_t {a, b} : edge_t {b, a}; }
-
-inline bool less(const point_t& a, const point_t& b) { return a.x < b.x || (a.x == b.x && a.y < b.y); }
-inline bool equal(const point_t& a, const point_t& b) { return a.x == b.x && a.y == b.y; }
-
-// certified fast filter from Jonathan Shewchuk's public-domain robust predicates; power-of-two normalization avoids
-// overflow and underflow across uniformly scaled inputs. Unresolved signs are classified as degenerate.
-inline predicate_sign orient2d(const point_t& a, const point_t& b, const point_t& c) {
-    const int shift = normalization_shift(a, b, c);
-    const point_t normalized_a = normalize(a, shift);
-    const point_t normalized_b = normalize(b, shift);
-    const point_t normalized_c = normalize(c, shift);
-    const double acx = normalized_a.x - normalized_c.x;
-    const double bcx = normalized_b.x - normalized_c.x;
-    const double acy = normalized_a.y - normalized_c.y;
-    const double bcy = normalized_b.y - normalized_c.y;
-    const double det_left = acx * bcy;
-    const double det_right = acy * bcx;
-    const double det = det_left - det_right;
-
-    double det_sum;
-    if (det_left > 0.0) {
-        if (det_right <= 0.0) return predicate_sign::positive;
-        det_sum = det_left + det_right;
-    } else if (det_left < 0.0) {
-        if (det_right >= 0.0) return predicate_sign::negative;
-        det_sum = -det_left - det_right;
-    } else {
-        if (det_right < 0.0) return predicate_sign::positive;
-        if (det_right > 0.0) return predicate_sign::negative;
-        return predicate_sign::zero;
-    }
-
-    constexpr double epsilon = std::numeric_limits<double>::epsilon();
-    const double error_bound = (3.0 + 16.0 * epsilon) * epsilon * det_sum;
-    if (det > error_bound) return predicate_sign::positive;
-    if (det < -error_bound) return predicate_sign::negative;
-    return predicate_sign::zero;
-}
 
 inline predicate_sign incircle(const point_t& a, const point_t& b, const point_t& c, const point_t& d) {
     const predicate_sign orientation = orient2d(a, b, c);
@@ -148,54 +93,6 @@ inline predicate_sign incircle(const point_t& a, const point_t& b, const point_t
     return predicate_sign::zero;
 }
 
-inline bool between(double a, double b, double x) { return x >= std::min(a, b) && x <= std::max(a, b); }
-
-inline bool on_segment(const point_t& a, const point_t& b, const point_t& p) {
-    return orient2d(a, b, p) == predicate_sign::zero && between(a.x, b.x, p.x) && between(a.y, b.y, p.y);
-}
-
-inline bool segments_intersect(const point_t& a, const point_t& b, const point_t& c, const point_t& d) {
-    if (
-      std::max(a.x, b.x) < std::min(c.x, d.x) || std::max(c.x, d.x) < std::min(a.x, b.x) ||
-      std::max(a.y, b.y) < std::min(c.y, d.y) || std::max(c.y, d.y) < std::min(a.y, b.y)) {
-        return false;
-    }
-    const predicate_sign o1 = orient2d(a, b, c);
-    const predicate_sign o2 = orient2d(a, b, d);
-    const predicate_sign o3 = orient2d(c, d, a);
-    const predicate_sign o4 = orient2d(c, d, b);
-    if (o1 == predicate_sign::zero && between(a.x, b.x, c.x) && between(a.y, b.y, c.y)) return true;
-    if (o2 == predicate_sign::zero && between(a.x, b.x, d.x) && between(a.y, b.y, d.y)) return true;
-    if (o3 == predicate_sign::zero && between(c.x, d.x, a.x) && between(c.y, d.y, a.y)) return true;
-    if (o4 == predicate_sign::zero && between(c.x, d.x, b.x) && between(c.y, d.y, b.y)) return true;
-    return o1 != o2 && o3 != o4;
-}
-
-inline double signed_area(const std::vector<point_t>& points, const std::vector<int>& ring) {
-    double max_coordinate = 0.0;
-    for (int id : ring) { max_coordinate = std::max({max_coordinate, std::abs(points[id].x), std::abs(points[id].y)}); }
-    const int shift = normalization_shift(max_coordinate);
-    const point_t origin = normalize(points[ring.front()], shift);
-    double sum = 0.0;
-    double compensation = 0.0;
-    double magnitude = 0.0;
-    for (int i = 0, n = ring.size(); i < n; ++i) {
-        const point_t a = normalize(points[ring[i]], shift);
-        const point_t b = normalize(points[ring[(i + 1) % n]], shift);
-        const double term = (a.x - origin.x) * (b.y - origin.y) - (a.y - origin.y) * (b.x - origin.x);
-        const double corrected = term - compensation;
-        const double updated = sum + corrected;
-        compensation = (updated - sum) - corrected;
-        sum = updated;
-        magnitude += std::abs(term);
-    }
-    const double error_bound = 16.0 * std::numeric_limits<double>::epsilon() * magnitude;
-    if (std::abs(sum) <= error_bound) {
-        throw std::invalid_argument("Delaunay boundary has numerically ambiguous signed area.");
-    }
-    return 0.5 * sum;
-}
-
 inline double cell_area(const std::vector<point_t>& points, const cell_t& cell) {
     const int shift = normalization_shift(points[cell[0]], points[cell[1]], points[cell[2]]);
     const point_t a = normalize(points[cell[0]], shift);
@@ -219,31 +116,6 @@ inline cell_t canonical_cell(cell_t cell) {
     if (min_pos == 1) return {cell[1], cell[2], cell[0]};
     if (min_pos == 2) return {cell[2], cell[0], cell[1]};
     return cell;
-}
-
-inline std::vector<point_t> read_points(const Matrix<double, Dynamic, Dynamic>& matrix, const char* name) {
-    if (matrix.cols() != 2) { throw std::invalid_argument(std::string(name) + " must have exactly two columns."); }
-    std::vector<point_t> points(matrix.rows());
-    for (int i = 0; i < matrix.rows(); ++i) {
-        const double x = matrix(i, 0);
-        const double y = matrix(i, 1);
-        if (!std::isfinite(x) || !std::isfinite(y)) {
-            throw std::invalid_argument(std::string(name) + " must contain only finite coordinates.");
-        }
-        points[i] = {x, y};
-    }
-    return points;
-}
-
-inline void validate_unique(const std::vector<point_t>& points) {
-    std::vector<int> order(points.size());
-    std::iota(order.begin(), order.end(), 0);
-    std::sort(order.begin(), order.end(), [&](int a, int b) { return less(points[a], points[b]); });
-    for (std::size_t i = 1; i < order.size(); ++i) {
-        if (equal(points[order[i - 1]], points[order[i]])) {
-            throw std::invalid_argument("Delaunay input contains duplicate points.");
-        }
-    }
 }
 
 inline std::vector<int> convex_hull(const std::vector<point_t>& points) {
@@ -277,49 +149,11 @@ inline std::vector<int> convex_hull(const std::vector<point_t>& points) {
     return lower;
 }
 
-inline point_location
-locate_in_polygon(const std::vector<point_t>& points, const std::vector<int>& ring, const point_t& p) {
-    int winding = 0;
-    for (int i = 0, n = ring.size(); i < n; ++i) {
-        const point_t& a = points[ring[i]];
-        const point_t& b = points[ring[(i + 1) % n]];
-        const predicate_sign sign = orient2d(a, b, p);
-        if (sign == predicate_sign::zero && between(a.x, b.x, p.x) && between(a.y, b.y, p.y)) {
-            return point_location::boundary;
-        }
-        if (a.y <= p.y && b.y > p.y && sign == predicate_sign::positive) ++winding;
-        if (a.y > p.y && b.y <= p.y && sign == predicate_sign::negative) --winding;
-    }
-    return winding == 0 ? point_location::outside : point_location::inside;
-}
-
 inline bool in_ccw_triangle(const std::vector<point_t>& points, const cell_t& cell, const point_t& p) {
     for (int i = 0; i < 3; ++i) {
         if (orient2d(points[cell[i]], points[cell[(i + 1) % 3]], p) == predicate_sign::negative) return false;
     }
     return true;
-}
-
-inline void validate_boundary(const std::vector<point_t>& points) {
-    if (points.size() < 3) { throw std::invalid_argument("Delaunay boundary needs at least three points."); }
-    validate_unique(points);
-    if (equal(points.front(), points.back())) {
-        throw std::invalid_argument("Delaunay boundary must be an unclosed ring.");
-    }
-    const int n = points.size();
-    for (int i = 0; i < n; ++i) {
-        if (orient2d(points[(i + n - 1) % n], points[i], points[(i + 1) % n]) == predicate_sign::zero) {
-            throw std::invalid_argument("Delaunay boundary contains consecutive collinear points.");
-        }
-    }
-    for (int i = 0; i < n; ++i) {
-        for (int j = i + 1; j < n; ++j) {
-            if (j == i + 1 || (i == 0 && j == n - 1)) continue;
-            if (segments_intersect(points[i], points[(i + 1) % n], points[j], points[(j + 1) % n])) {
-                throw std::invalid_argument("Delaunay boundary must be a simple ring.");
-            }
-        }
-    }
 }
 
 inline std::vector<cell_t> ear_clip(const std::vector<point_t>& points, std::vector<int> ring) {
@@ -719,20 +553,6 @@ inline std::vector<edge_t> ring_edges(const std::vector<int>& ring) {
     return result;
 }
 
-inline bool
-rings_intersect(const std::vector<point_t>& points, const std::vector<int>& first, const std::vector<int>& second) {
-    for (int i = 0; i < int(first.size()); ++i) {
-        for (int j = 0; j < int(second.size()); ++j) {
-            if (segments_intersect(
-                  points[first[i]], points[first[(i + 1) % first.size()]], points[second[j]],
-                  points[second[(j + 1) % second.size()]])) {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
 struct domain_input_t {
     std::vector<point_t> points;
     std::vector<int> outer;
@@ -741,50 +561,12 @@ struct domain_input_t {
     std::vector<edge_t> hole_edges;
 };
 
-inline std::vector<int>
-append_ring(std::vector<point_t>& points, const Matrix<double, Dynamic, Dynamic>& matrix, const char* name) {
-    std::vector<point_t> local = read_points(matrix, name);
-    validate_boundary(local);
-    const int begin = points.size();
-    points.insert(points.end(), local.begin(), local.end());
-    std::vector<int> ring(local.size());
-    std::iota(ring.begin(), ring.end(), begin);
-    return ring;
-}
-
 inline domain_input_t read_domain(const PlanarDomain& domain, const Matrix<double, Dynamic, Dynamic>& interior_matrix) {
+    planar::validated_domain_t validated = validate_planar_domain(domain);
     domain_input_t result;
-    result.outer = append_ring(result.points, domain.outer, "Delaunay outer boundary");
-    result.holes.reserve(domain.holes.size());
-    for (const auto& hole : domain.holes) {
-        result.holes.push_back(append_ring(result.points, hole, "Delaunay hole boundary"));
-    }
-    validate_unique(result.points);
-
-    for (const auto& hole : result.holes) {
-        if (rings_intersect(result.points, result.outer, hole)) {
-            throw std::invalid_argument("Delaunay hole boundary must not touch or intersect the outer boundary.");
-        }
-        for (int node : hole) {
-            if (locate_in_polygon(result.points, result.outer, result.points[node]) != point_location::inside) {
-                throw std::invalid_argument("Delaunay holes must lie strictly inside the outer boundary.");
-            }
-        }
-    }
-    for (int i = 0; i < int(result.holes.size()); ++i) {
-        for (int j = i + 1; j < int(result.holes.size()); ++j) {
-            if (rings_intersect(result.points, result.holes[i], result.holes[j])) {
-                throw std::invalid_argument("Delaunay holes must be mutually disjoint and non-touching.");
-            }
-            if (
-              locate_in_polygon(result.points, result.holes[i], result.points[result.holes[j][0]]) !=
-                point_location::outside ||
-              locate_in_polygon(result.points, result.holes[j], result.points[result.holes[i][0]]) !=
-                point_location::outside) {
-                throw std::invalid_argument("Delaunay holes must not be nested.");
-            }
-        }
-    }
+    result.points = std::move(validated.points);
+    result.outer = std::move(validated.outer);
+    result.holes = std::move(validated.holes);
 
     std::vector<point_t> interior = read_points(interior_matrix, "Delaunay interior points");
     for (const point_t& point : interior) {

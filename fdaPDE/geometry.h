@@ -40,6 +40,7 @@
 // data structures
 #include "src/geometry/triangulation.h"
 // mesh generation
+#include "src/geometry/planar_geometry.h"
 #include "src/geometry/delaunay.h"
 #include "src/geometry/mesh_generation.h"
 #include "src/geometry/svg.h"
