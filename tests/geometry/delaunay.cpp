@@ -295,6 +295,16 @@ TEST(delaunay, enforces_bounded_max_area_refinement) {
     EXPECT_GT(refined.n_nodes(), square.rows());
     EXPECT_NEAR(refined.measure(), 1.0, 1e-14);
 
+    const mesh_t refined_points =
+      fdapde::delaunay(square, fdapde::DelaunayRefinement {.max_area = 0.2, .max_insertions = 20});
+    double point_set_max_area = 0.0;
+    for (auto it = refined_points.cells_begin(); it != refined_points.cells_end(); ++it) {
+        point_set_max_area = std::max(point_set_max_area, it->measure());
+    }
+    EXPECT_LE(point_set_max_area, 0.2);
+    EXPECT_GT(refined_points.n_nodes(), square.rows());
+    EXPECT_NEAR(refined_points.measure(), 1.0, 1e-14);
+
     EXPECT_THROW(
       fdapde::constrained_delaunay(square, fdapde::DelaunayRefinement {.max_area = 0.01, .max_insertions = 1}),
       std::runtime_error);
