@@ -106,6 +106,7 @@ class fdapde_testing_printer : public ::testing::EmptyTestEventListener {
 #include "execution/task_graphs.cpp"
 #include "geometry/delaunay.cpp"
 #include "geometry/mesh_generation.cpp"
+#include "geometry/svg.cpp"
 #include "geometry/triangle.cpp"
 #include "linear_algebra/block.cpp"
 #include "linear_algebra/bool_vector.cpp"
