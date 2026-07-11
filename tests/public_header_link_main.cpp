@@ -15,5 +15,6 @@ int main() {
     point(0, 0) = 0.0;
     point(0, 1) = 0.0;
     const auto boundary = fdapde::hexagonal_lattice_boundary(point, 1.0);
-    return boundary.rows() == 6 && public_header_link_other() > 0 ? 0 : 1;
+    const auto simplified = fdapde::simplify_polygon_domain(fdapde::PlanarDomain {.outer = boundary}, 0.0);
+    return boundary.rows() == 6 && simplified.outer.rows() == 6 && public_header_link_other() > 0 ? 0 : 1;
 }
