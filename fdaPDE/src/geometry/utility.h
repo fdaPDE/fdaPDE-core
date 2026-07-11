@@ -29,7 +29,12 @@ namespace fdapde {
 [[maybe_unused]] static constexpr int TriangulationAll = -2;
 [[maybe_unused]] static constexpr int Unmarked = -3;
 
-/** @brief One simple outer polygonal ring and zero or more disjoint simple hole rings. */
+/**
+ * @brief one unclosed simple outer ring and zero or more unclosed simple hole rings
+ *
+ * Rings are two-column coordinate matrices. Geometry algorithms validate finite unique vertices, simple rings, and
+ * holes that are strictly contained, mutually disjoint, and non-nested; orientation and cyclic start carry no meaning
+ */
 struct PlanarDomain {
     Matrix<double, Dynamic, Dynamic> outer;
     std::vector<Matrix<double, Dynamic, Dynamic>> holes;

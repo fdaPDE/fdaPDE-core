@@ -23,7 +23,12 @@
 
 namespace fdapde {
 
-/** @brief Optional centroid refinement bounded by both cell area and insertion count. */
+/**
+ * @brief deterministic centroid refinement bounded by cell area and insertion count
+ *
+ * `max_area` is the required cell-area ceiling on success; `max_insertions` is a safety cap and exhausting it first
+ * throws. This is size control only and provides no minimum-angle guarantee
+ */
 struct DelaunayRefinement {
     double max_area;
     int max_insertions = 1000;
@@ -46,7 +51,7 @@ using planar::point_location;
 using planar::point_t;
 using planar::predicate_sign;
 using planar::read_points;
-using planar::signed_area;
+using planar::ring_orientation;
 using planar::validate_boundary;
 using planar::validate_planar_domain;
 using planar::validate_unique;
@@ -157,7 +162,7 @@ inline bool in_ccw_triangle(const std::vector<point_t>& points, const cell_t& ce
 }
 
 inline std::vector<cell_t> ear_clip(const std::vector<point_t>& points, std::vector<int> ring) {
-    if (signed_area(points, ring) < 0.0) std::reverse(ring.begin(), ring.end());
+    if (ring_orientation(points, ring) == predicate_sign::negative) std::reverse(ring.begin(), ring.end());
     const auto first =
       std::min_element(ring.begin(), ring.end(), [&](int a, int b) { return less(points[a], points[b]); });
     std::rotate(ring.begin(), first, ring.end());
@@ -284,6 +289,7 @@ inline std::vector<int> trace_cavity_chain(
 inline void recover_constraint(
   const edge_t& constraint, std::vector<cell_t>& cells, const std::vector<point_t>& points,
   const std::set<edge_t>& fixed_constraints) {
+    // trace the crossed triangle strip and retriangulate its two boundary chains around the requested segment
     auto adjacency = edge_adjacency(cells);
     if (adjacency.contains(constraint)) return;
 
@@ -453,6 +459,7 @@ inline void insert_node(
 inline void refine(
   std::vector<point_t>& points, std::vector<cell_t>& cells, const std::optional<DelaunayRefinement>& refinement,
   const std::set<edge_t>& constraints = {}) {
+    // insert the largest cell's centroid deterministically until the area ceiling or safety cap is reached
     if (!refinement.has_value()) return;
     if (!std::isfinite(refinement->max_area) || refinement->max_area <= 0.0) {
         throw std::invalid_argument("Delaunay refinement max_area must be finite and positive.");
@@ -604,11 +611,12 @@ inline domain_input_t read_domain(const PlanarDomain& domain, const Matrix<doubl
 inline void remove_hole_interiors(
   std::vector<cell_t>& cells, const std::vector<point_t>& points, std::vector<std::vector<int>> holes,
   const std::set<edge_t>& constraints) {
+    // flood from each clockwise hole's interior side without crossing recovered ring constraints
     const auto adjacency = edge_adjacency(cells);
     std::queue<int> pending;
     std::vector<bool> excluded(cells.size(), false);
     for (auto& hole : holes) {
-        if (signed_area(points, hole) > 0.0) std::reverse(hole.begin(), hole.end());
+        if (ring_orientation(points, hole) == predicate_sign::positive) std::reverse(hole.begin(), hole.end());
         for (int i = 0; i < int(hole.size()); ++i) {
             const int a = hole[i];
             const int b = hole[(i + 1) % hole.size()];

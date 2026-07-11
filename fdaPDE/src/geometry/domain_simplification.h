@@ -40,13 +40,15 @@ using planar::point_location;
 using planar::point_t;
 using planar::predicate_sign;
 using planar::read_points;
+using planar::ring_orientation;
 using planar::segments_intersect;
-using planar::signed_area;
 using planar::validate_planar_domain;
 
 inline Matrix<double, Dynamic, Dynamic>
 canonical_ring(const std::vector<point_t>& points, std::vector<int> ring, bool counter_clockwise) {
-    if ((signed_area(points, ring) > 0.0) != counter_clockwise) std::reverse(ring.begin(), ring.end());
+    if ((ring_orientation(points, ring) == predicate_sign::positive) != counter_clockwise) {
+        std::reverse(ring.begin(), ring.end());
+    }
     const auto first =
       std::min_element(ring.begin(), ring.end(), [&](int a, int b) { return less(points[a], points[b]); });
     std::rotate(ring.begin(), first, ring.end());
@@ -78,6 +80,7 @@ inline PlanarDomain canonical_domain(const PlanarDomain& domain) {
     return result;
 }
 
+// the linked active ring keeps original indices so every shortcut still owns one contiguous source arc
 struct ring_state_t {
     std::vector<point_t> original;
     std::vector<int> previous;
@@ -146,6 +149,7 @@ inline double point_segment_distance(const point_t& point, const point_t& first,
 }
 
 inline double shortcut_error(const ring_state_t& ring, int vertex) {
+    // measure the one-sided deviation of every eliminated source vertex, not only the current middle vertex
     const int previous = ring.previous[vertex];
     const int next = ring.next[vertex];
     double error = 0.0;
@@ -208,6 +212,7 @@ inline bool shortcut_intersects(
 }
 
 inline bool preserves_topology(const std::vector<ring_state_t>& rings, int ring_id, int vertex) {
+    // retain candidates that would change simplicity, orientation, containment, disjointness, or hole nesting
     const ring_state_t& ring = rings[ring_id];
     const int previous = ring.previous[vertex];
     const int next = ring.next[vertex];
@@ -221,8 +226,8 @@ inline bool preserves_topology(const std::vector<ring_state_t>& rings, int ring_
     if (shortcut_intersects(rings, ring_id, vertex, ring.original[previous], ring.original[next])) return false;
 
     try {
-        const double area = signed_area(ring.original, active_ring(ring, vertex));
-        if ((area > 0.0) != ring.outer) return false;
+        const predicate_sign orientation = ring_orientation(ring.original, active_ring(ring, vertex));
+        if ((orientation == predicate_sign::positive) != ring.outer) return false;
     } catch (const std::invalid_argument&) { return false; }
 
     if (ring.outer) {
@@ -269,6 +274,7 @@ inline PlanarDomain simplify(const PlanarDomain& input, double maximum_deviation
             push_candidate(rings, ring, vertex, maximum_deviation, candidates);
         }
     }
+    // tuple ordering makes the greedy sequence repeatable; generations discard stale neighbor candidates
     while (!candidates.empty()) {
         const candidate_t candidate = candidates.top();
         candidates.pop();

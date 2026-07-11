@@ -32,8 +32,7 @@ struct random_stealing_policy {
     explicit random_stealing_policy(std::size_t n, int probes = 2) :
         probes_(probes), dist_(0, static_cast<int>(n - 1)) { }
 
-    template <typename TryStealFunctor>
-    std::optional<task_handle*> pick(int self, TryStealFunctor&& try_steal) {
+    template <typename TryStealFunctor> std::optional<task_handle*> pick(int self, TryStealFunctor&& try_steal) {
         for (int k = 0; k < probes_; ++k) {
             int victim = dist_(tls_rng());
             if (victim != self) {
@@ -44,7 +43,7 @@ struct random_stealing_policy {
     }
    private:
     static std::mt19937& tls_rng() {   // thread local rng to avoid races
-        thread_local std::mt19937 rng{std::random_device{}()};
+        thread_local std::mt19937 rng {std::random_device {}()};
         return rng;
     }
     int probes_;
@@ -53,7 +52,7 @@ struct random_stealing_policy {
 
 // implementation of the round-robin scheduling algorithm
 struct round_robin_scheduling_policy {
-    explicit round_robin_scheduling_policy(std::size_t n) : size_(n) {}
+    explicit round_robin_scheduling_policy(std::size_t n) : size_(n) { }
 
     int pick() { return curr_.fetch_add(1, std::memory_order_relaxed) % size_; }
    private:
@@ -188,6 +187,7 @@ struct threaded_executor_impl {
     template <typename Task> void dispatch_task_(Task&& task) {
         int w_id = scheduling_policy_.pick();
         task_pointer task_ptr = workers_[w_id]->allocate_task(task_type(std::move(task), w_id));
+        // publish the expected completion before a worker can observe the queued task
         {
             std::lock_guard<std::mutex> lock(m_);
             task_count_++;

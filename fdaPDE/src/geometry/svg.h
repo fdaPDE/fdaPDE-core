@@ -37,15 +37,11 @@ namespace internals {
 namespace svg {
 
 // functional sources: RGCCA stable@4ff7f7b3b4d6b0f1ed984151d79b3f48a9f83299 and
-// fdaPDE-test-bench develop-svg@29aed29d8700d137e5874ea2ada462fff9cc62d1. This is an independent,
-// dependency-free rewrite of the supported path and Cartesian-coordinate behavior.
+// fdaPDE-test-bench develop-svg@29aed29d8700d137e5874ea2ada462fff9cc62d1, independently rewritten for
+// dependency-free path extraction and Cartesian-coordinate conversion
 
-struct point_t {
-    double x;
-    double y;
-};
-
-inline bool equal(const point_t& lhs, const point_t& rhs) { return lhs.x == rhs.x && lhs.y == rhs.y; }
+using planar::equal;
+using planar::point_t;
 
 class path_parser {
    public:
@@ -349,6 +345,16 @@ inline bool whitespace_only(std::string_view text) {
     return position == text.size();
 }
 
+inline bool
+text_is_supported(std::string_view text, bool inside_svg, const std::vector<std::string_view>& element_stack) {
+    if (whitespace_only(text)) return true;
+    return inside_svg && !element_stack.empty() && element_stack.back() == "style";
+}
+
+inline bool element_is_supported(std::string_view name) {
+    return name == "svg" || name == "g" || name == "defs" || name == "style" || name == "path";
+}
+
 }   // namespace svg
 }   // namespace internals
 
@@ -358,7 +364,8 @@ inline bool whitespace_only(std::string_view text) {
  * The supported path commands are `M/m`, `L/l`, `C/c`, and `Z/z`; cubic curves are sampled uniformly at the requested
  * positive number of subdivisions. Multiple path elements and subpaths are returned separately in source order as
  * unclosed rings. SVG y coordinates are negated to produce Cartesian coordinates. Transforms, entities, DOCTYPE,
- * non-path geometry, open subpaths, and malformed or unsupported path data are rejected. `viewBox`, dimensions,
+ * open subpaths, and malformed or unsupported path data are rejected. Only `svg`, `g`, `defs`, `style`, and `path`
+ * elements are accepted; paths inside definitions and non-style text are rejected. `viewBox`, dimensions,
  * presentation attributes, CSS, and fill rules do not alter coordinates. The returned rings are not classified as
  * outer boundaries or holes; each independent simple ring can be passed to `constrained_delaunay`.
  */
@@ -380,13 +387,13 @@ svg_document_rings(std::string_view document, int cubic_subdivisions) {
     while (true) {
         const std::size_t begin = document.find('<', position);
         if (begin == std::string_view::npos) {
-            if (!inside_svg && !whitespace_only(document.substr(position))) {
-                throw std::invalid_argument("SVG document contains text outside its root element.");
+            if (!text_is_supported(document.substr(position), inside_svg, element_stack)) {
+                throw std::invalid_argument("SVG contains unsupported text content.");
             }
             break;
         }
-        if (!inside_svg && !whitespace_only(document.substr(position, begin - position))) {
-            throw std::invalid_argument("SVG document contains text outside its root element.");
+        if (!text_is_supported(document.substr(position, begin - position), inside_svg, element_stack)) {
+            throw std::invalid_argument("SVG contains unsupported text content.");
         }
         if (document.substr(begin, 4) == "<!--") {
             const std::size_t end = document.find("-->", begin + 4);
@@ -436,6 +443,7 @@ svg_document_rings(std::string_view document, int cubic_subdivisions) {
         const tag_t parsed = parse_tag(tag);
         const std::string_view name = local_name(parsed.name);
         const auto& attributes = parsed.attributes;
+        if (!element_is_supported(name)) { throw std::invalid_argument("SVG contains an unsupported element."); }
         if (attribute(attributes, "transform").has_value()) {
             throw std::invalid_argument("SVG transforms are not supported.");
         }
@@ -448,12 +456,12 @@ svg_document_rings(std::string_view document, int cubic_subdivisions) {
         } else if (!inside_svg) {
             throw std::invalid_argument("SVG document contains an element outside its svg root.");
         }
-        if (
-          name == "rect" || name == "circle" || name == "ellipse" || name == "line" || name == "polyline" ||
-          name == "polygon" || name == "use") {
-            throw std::invalid_argument("SVG contains unsupported non-path geometry.");
-        }
         if (name == "path") {
+            if (std::any_of(element_stack.begin(), element_stack.end(), [](std::string_view ancestor) {
+                    return ancestor != "svg" && ancestor != "g";
+                })) {
+                throw std::invalid_argument("SVG paths are supported only under svg or g elements.");
+            }
             const auto data = attribute(attributes, "d");
             if (!data.has_value() || data->empty()) {
                 throw std::invalid_argument("SVG path requires a nonempty d attribute.");
@@ -461,6 +469,7 @@ svg_document_rings(std::string_view document, int cubic_subdivisions) {
             const auto rings = path_parser(*data, cubic_subdivisions).parse();
             for (const auto& ring : rings) {
                 Matrix<double, Dynamic, Dynamic> matrix(ring.size(), 2);
+                // negate only y to preserve source positions in one Cartesian coordinate frame
                 for (int i = 0; i < int(ring.size()); ++i) {
                     matrix(i, 0) = ring[i].x;
                     matrix(i, 1) = -ring[i].y;

@@ -112,6 +112,7 @@ inline long double twice_signed_area(const std::vector<vertex_t>& ring) {
 }
 
 inline std::vector<std::vector<vertex_t>> trace_rings(const std::set<directed_edge_t>& edges) {
+    // rightmost-turn traversal separates rings deterministically even when filled lattice cells meet at one vertex
     std::map<vertex_t, std::set<vertex_t>> outgoing;
     for (const auto& [from, to] : edges) outgoing[from].insert(to);
 
@@ -420,6 +421,7 @@ inline component_t component(
     }
 
     std::vector<cell_t> assignments(points.rows());
+    // each row is classified independently; ordered-set construction keeps topology serial and deterministic
     const auto classify = [&](int i) {
         assignments[i] = nearest_cell(points(i, 0), points(i, 1), anchor_x, anchor_y, spacing);
     };
@@ -484,6 +486,7 @@ inline PlanarDomain domain(
     };
 
     PlanarDomain result {.outer = convert(rings.outer), .holes = {}};
+    // doubled integer coordinates make physical hole area abs(shoelace) * spacing^2 / (8 * sqrt(3))
     const long double scale = static_cast<long double>(spacing) * spacing / (8.0L * sqrt_three);
     for (const auto& hole : rings.holes) {
         const long double area = std::abs(lattice_boundary::twice_signed_area(hole)) * scale;
@@ -659,6 +662,7 @@ inline PlanarDomain square_lattice_domain(
     };
 
     PlanarDomain result {.outer = convert(rings.outer), .holes = {}};
+    // doubled integer coordinates make physical hole area abs(shoelace) * spacing^2 / 8
     const long double scale = static_cast<long double>(spacing) * spacing / 8.0L;
     for (const auto& hole : rings.holes) {
         const long double area = std::abs(internals::lattice_boundary::twice_signed_area(hole)) * scale;

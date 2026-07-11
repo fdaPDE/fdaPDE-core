@@ -129,6 +129,9 @@ TEST(svg, rejects_unsupported_or_malformed_documents) {
     rejects("<svg transform='scale(2)'><path d='M0 0L1 0L0 1Z'/></svg>");
     rejects("<svg><g transform='translate(1 2)'><path d='M0 0L1 0L0 1Z'/></g></svg>");
     rejects("<svg><rect x='0' y='0' width='1' height='1'/></svg>");
+    rejects("<svg><path d='M0 0L1 0L0 1Z'/><image href='fixture.png'/></svg>");
+    rejects("<svg>unsupported text<path d='M0 0L1 0L0 1Z'/></svg>");
+    rejects("<svg><defs><path d='M0 0L1 0L0 1Z'/></defs><path d='M2 0L3 0L2 1Z'/></svg>");
     rejects("<!DOCTYPE svg><svg><path d='M0 0L1 0L0 1Z'/></svg>");
     rejects("<svg><path d='M0 0L1 0L0 1Z'/");
     rejects("garbage<svg><path d='M0 0L1 0L0 1Z'/></svg>");

@@ -62,8 +62,8 @@ inline point_t normalize(const point_t& point, int shift) {
 inline bool less(const point_t& a, const point_t& b) { return a.x < b.x || (a.x == b.x && a.y < b.y); }
 inline bool equal(const point_t& a, const point_t& b) { return a.x == b.x && a.y == b.y; }
 
-// Certified fast filter from Jonathan Shewchuk's public-domain robust predicates. Power-of-two normalization avoids
-// overflow and underflow across uniformly scaled inputs. Unresolved signs are classified as degenerate.
+// certified fast filter from Jonathan Shewchuk's public-domain robust predicates; power-of-two normalization avoids
+// overflow and underflow across uniformly scaled inputs, while unresolved signs are classified as degenerate
 inline predicate_sign orient2d(const point_t& a, const point_t& b, const point_t& c) {
     const int shift = normalization_shift(a, b, c);
     const point_t normalized_a = normalize(a, shift);
@@ -120,7 +120,8 @@ inline bool segments_intersect(const point_t& a, const point_t& b, const point_t
     return o1 != o2 && o3 != o4;
 }
 
-inline double signed_area(const std::vector<point_t>& points, const std::vector<int>& ring) {
+// normalized shoelace accumulation is used only for a reliable orientation sign
+inline predicate_sign ring_orientation(const std::vector<point_t>& points, const std::vector<int>& ring) {
     double max_coordinate = 0.0;
     for (int id : ring) { max_coordinate = std::max({max_coordinate, std::abs(points[id].x), std::abs(points[id].y)}); }
     const int shift = normalization_shift(max_coordinate);
@@ -142,7 +143,7 @@ inline double signed_area(const std::vector<point_t>& points, const std::vector<
     if (std::abs(sum) <= error_bound) {
         throw std::invalid_argument("Polygon ring has numerically ambiguous signed area.");
     }
-    return 0.5 * sum;
+    return sum > 0.0 ? predicate_sign::positive : predicate_sign::negative;
 }
 
 inline std::vector<point_t> read_points(const Matrix<double, Dynamic, Dynamic>& matrix, const char* name) {

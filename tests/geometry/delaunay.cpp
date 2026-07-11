@@ -155,6 +155,10 @@ TEST(delaunay, triangulates_point_sets) {
     EXPECT_EQ(mesh.n_cells(), 5);
     EXPECT_EQ(mesh.n_boundary_edges(), 5);
     EXPECT_NEAR(mesh.measure(), 4.0, 1e-14);
+    for (int i = 0; i < input.rows(); ++i) {
+        EXPECT_DOUBLE_EQ(mesh.nodes()(i, 0), input(i, 0));
+        EXPECT_DOUBLE_EQ(mesh.nodes()(i, 1), input(i, 1));
+    }
     EXPECT_TRUE(has_edge(mesh, 0, 4));
     EXPECT_TRUE(has_edge(mesh, 1, 4));
     EXPECT_TRUE(mesh.is_node_on_boundary(4));
@@ -513,6 +517,11 @@ TEST(delaunay, enforces_bounded_max_area_refinement) {
     EXPECT_LE(max_area, 0.2);
     EXPECT_GT(refined.n_nodes(), square.rows());
     EXPECT_NEAR(refined.measure(), 1.0, 1e-14);
+    const mesh_t repeated =
+      fdapde::constrained_delaunay(square, fdapde::DelaunayRefinement {.max_area = 0.2, .max_insertions = 20});
+    EXPECT_EQ(refined.nodes(), repeated.nodes());
+    EXPECT_EQ(refined.cells(), repeated.cells());
+    EXPECT_EQ(refined.boundary_nodes(), repeated.boundary_nodes());
 
     const mesh_t refined_points =
       fdapde::delaunay(square, fdapde::DelaunayRefinement {.max_area = 0.2, .max_insertions = 20});
