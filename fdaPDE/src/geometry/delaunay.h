@@ -322,16 +322,14 @@ inline void validate_boundary(const std::vector<point_t>& points) {
     }
 }
 
-inline std::vector<cell_t> ear_clip(const std::vector<point_t>& points, int boundary_size) {
-    std::vector<int> ring(boundary_size);
-    std::iota(ring.begin(), ring.end(), 0);
+inline std::vector<cell_t> ear_clip(const std::vector<point_t>& points, std::vector<int> ring) {
     if (signed_area(points, ring) < 0.0) std::reverse(ring.begin(), ring.end());
     const auto first =
       std::min_element(ring.begin(), ring.end(), [&](int a, int b) { return less(points[a], points[b]); });
     std::rotate(ring.begin(), first, ring.end());
 
     std::vector<cell_t> cells;
-    cells.reserve(boundary_size - 2);
+    cells.reserve(ring.size() - 2);
     while (ring.size() > 3) {
         bool found = false;
         for (int i = 0, n = ring.size(); i < n; ++i) {
@@ -357,6 +355,12 @@ inline std::vector<cell_t> ear_clip(const std::vector<point_t>& points, int boun
     }
     cells.push_back(make_cell(ring[0], ring[1], ring[2], points));
     return cells;
+}
+
+inline std::vector<cell_t> ear_clip(const std::vector<point_t>& points, int boundary_size) {
+    std::vector<int> ring(boundary_size);
+    std::iota(ring.begin(), ring.end(), 0);
+    return ear_clip(points, std::move(ring));
 }
 
 struct edge_info {
@@ -388,6 +392,156 @@ inline int opposite(const cell_t& cell, const edge_t& edge_) {
     throw std::runtime_error("Delaunay edge has no opposite cell vertex.");
 }
 
+inline bool contains(const cell_t& cell, int node) { return cell[0] == node || cell[1] == node || cell[2] == node; }
+
+inline bool properly_crosses(const edge_t& first, const edge_t& second, const std::vector<point_t>& points) {
+    if (first[0] == second[0] || first[0] == second[1] || first[1] == second[0] || first[1] == second[1]) {
+        return false;
+    }
+    const point_t& a = points[first[0]];
+    const point_t& b = points[first[1]];
+    const point_t& c = points[second[0]];
+    const point_t& d = points[second[1]];
+    if (
+      std::max(a.x, b.x) < std::min(c.x, d.x) || std::max(c.x, d.x) < std::min(a.x, b.x) ||
+      std::max(a.y, b.y) < std::min(c.y, d.y) || std::max(c.y, d.y) < std::min(a.y, b.y)) {
+        return false;
+    }
+    const predicate_sign side_c = orient2d(a, b, c);
+    const predicate_sign side_d = orient2d(a, b, d);
+    const predicate_sign side_a = orient2d(c, d, a);
+    const predicate_sign side_b = orient2d(c, d, b);
+    if (
+      side_c == predicate_sign::zero || side_d == predicate_sign::zero || side_a == predicate_sign::zero ||
+      side_b == predicate_sign::zero) {
+        if (on_segment(a, b, c) || on_segment(a, b, d) || on_segment(c, d, a) || on_segment(c, d, b)) {
+            throw std::runtime_error("Delaunay constraint recovery encountered a nonendpoint segment touch.");
+        }
+        return false;
+    }
+    return side_c != side_d && side_a != side_b;
+}
+
+inline std::vector<int> trace_cavity_chain(
+  int start, int finish, int first, const std::map<int, std::set<int>>& neighbors, std::size_t edge_count) {
+    std::vector<int> chain {start};
+    int previous = start;
+    int current = first;
+    while (true) {
+        chain.push_back(current);
+        if (current == finish) return chain;
+        const auto found = neighbors.find(current);
+        if (found == neighbors.end() || found->second.size() != 2) {
+            throw std::runtime_error("Delaunay constraint cavity boundary is not a simple ring.");
+        }
+        if (!found->second.contains(previous)) {
+            throw std::runtime_error("Delaunay constraint cavity boundary lost its preceding vertex.");
+        }
+        auto next = found->second.begin();
+        if (*next == previous) ++next;
+        previous = current;
+        current = *next;
+        if (chain.size() > edge_count) {
+            throw std::runtime_error("Delaunay constraint cavity boundary did not reach its endpoint.");
+        }
+    }
+}
+
+inline void recover_constraint(
+  const edge_t& constraint, std::vector<cell_t>& cells, const std::vector<point_t>& points,
+  const std::set<edge_t>& fixed_constraints) {
+    auto adjacency = edge_adjacency(cells);
+    if (adjacency.contains(constraint)) return;
+
+    int current = -1;
+    for (int i = 0; i < int(cells.size()); ++i) {
+        if (!contains(cells[i], constraint[0])) continue;
+        std::array<int, 2> opposite_nodes {};
+        int count = 0;
+        for (int node : cells[i]) {
+            if (node != constraint[0]) opposite_nodes[count++] = node;
+        }
+        const edge_t opposite_edge = edge(opposite_nodes[0], opposite_nodes[1]);
+        if (!properly_crosses(constraint, opposite_edge, points)) continue;
+        if (current != -1) { throw std::runtime_error("Delaunay constraint recovery found multiple starting cells."); }
+        current = i;
+    }
+    if (current == -1) { throw std::runtime_error("Delaunay constraint recovery could not find a starting cell."); }
+
+    std::set<int> strip;
+    edge_t entry {-1, -1};
+    while (true) {
+        if (!strip.insert(current).second) {
+            throw std::runtime_error("Delaunay constraint recovery revisited a triangle.");
+        }
+        if (contains(cells[current], constraint[1])) break;
+        std::optional<edge_t> exit;
+        for (int i = 0; i < 3; ++i) {
+            const edge_t candidate = edge(cells[current][i], cells[current][(i + 1) % 3]);
+            if (candidate == entry || !properly_crosses(constraint, candidate, points)) continue;
+            if (exit.has_value()) {
+                throw std::runtime_error("Delaunay constraint recovery found an ambiguous triangle exit.");
+            }
+            exit = candidate;
+        }
+        if (!exit.has_value()) { throw std::runtime_error("Delaunay constraint recovery found no triangle exit."); }
+        const auto found = adjacency.find(*exit);
+        if (found == adjacency.end() || found->second.second == -1) {
+            throw std::runtime_error("Delaunay constraint recovery left the triangulated domain.");
+        }
+        current = found->second.first == current ? found->second.second : found->second.first;
+        entry = *exit;
+    }
+
+    std::map<edge_t, int> cavity_edge_counts;
+    for (int cell : strip) {
+        for (int i = 0; i < 3; ++i) ++cavity_edge_counts[edge(cells[cell][i], cells[cell][(i + 1) % 3])];
+    }
+    std::map<int, std::set<int>> cavity_neighbors;
+    std::size_t boundary_edges = 0;
+    for (const auto& [edge_, count] : cavity_edge_counts) {
+        if (count != 1) continue;
+        cavity_neighbors[edge_[0]].insert(edge_[1]);
+        cavity_neighbors[edge_[1]].insert(edge_[0]);
+        ++boundary_edges;
+    }
+    const auto start = cavity_neighbors.find(constraint[0]);
+    if (start == cavity_neighbors.end() || start->second.size() != 2) {
+        throw std::runtime_error("Delaunay constraint cavity does not contain its first endpoint.");
+    }
+    const auto first_neighbor = start->second.begin();
+    const std::vector<int> first_chain =
+      trace_cavity_chain(constraint[0], constraint[1], *first_neighbor, cavity_neighbors, boundary_edges);
+    const std::vector<int> second_chain =
+      trace_cavity_chain(constraint[0], constraint[1], *std::next(first_neighbor), cavity_neighbors, boundary_edges);
+    if (
+      first_chain.size() < 3 || second_chain.size() < 3 ||
+      first_chain.size() + second_chain.size() != boundary_edges + 2) {
+        throw std::runtime_error("Delaunay constraint cavity produced invalid boundary chains.");
+    }
+
+    std::vector<cell_t> updated;
+    updated.reserve(cells.size() - strip.size() + boundary_edges - 2);
+    for (int i = 0; i < int(cells.size()); ++i) {
+        if (!strip.contains(i)) updated.push_back(cells[i]);
+    }
+    const auto first_cells = ear_clip(points, first_chain);
+    const auto second_cells = ear_clip(points, second_chain);
+    updated.insert(updated.end(), first_cells.begin(), first_cells.end());
+    updated.insert(updated.end(), second_cells.begin(), second_cells.end());
+    cells = std::move(updated);
+
+    adjacency = edge_adjacency(cells);
+    if (!adjacency.contains(constraint)) {
+        throw std::runtime_error("Delaunay constraint recovery did not produce the requested edge.");
+    }
+    for (const edge_t& fixed : fixed_constraints) {
+        if (!adjacency.contains(fixed)) {
+            throw std::runtime_error("Delaunay constraint recovery removed an earlier constraint.");
+        }
+    }
+}
+
 inline bool should_flip(
   const edge_t& edge_, const edge_info& info, const std::vector<point_t>& points, const std::vector<cell_t>& cells) {
     if (info.second == -1) return false;
@@ -399,7 +553,8 @@ inline bool should_flip(
     return incircle(points[edge_[0]], points[edge_[1]], points[c], points[d]) == predicate_sign::positive;
 }
 
-inline void legalize(std::vector<cell_t>& cells, const std::vector<point_t>& points) {
+inline void
+legalize(std::vector<cell_t>& cells, const std::vector<point_t>& points, const std::set<edge_t>& constraints = {}) {
     // ponytail: rebuild adjacency after a flip; use a local edge queue if profiling shows this dominates
     const std::size_t max_flips = std::max<std::size_t>(128, 32 * cells.size() * cells.size());
     std::size_t flips = 0;
@@ -407,6 +562,7 @@ inline void legalize(std::vector<cell_t>& cells, const std::vector<point_t>& poi
         const auto adjacency = edge_adjacency(cells);
         bool changed = false;
         for (const auto& [edge_, info] : adjacency) {
+            if (constraints.contains(edge_)) continue;
             if (!should_flip(edge_, info, points, cells)) continue;
             const int c = opposite(cells[info.first], edge_);
             const int d = opposite(cells[info.second], edge_);
@@ -420,7 +576,9 @@ inline void legalize(std::vector<cell_t>& cells, const std::vector<point_t>& poi
     }
 }
 
-inline void insert_node(int node, bool allow_boundary_split, std::vector<point_t>& points, std::vector<cell_t>& cells) {
+inline void insert_node(
+  int node, bool allow_boundary_split, std::vector<point_t>& points, std::vector<cell_t>& cells,
+  const std::set<edge_t>& constraints = {}) {
     const point_t& p = points[node];
     const auto adjacency = edge_adjacency(cells);
     for (const auto& [edge_, info] : adjacency) {
@@ -442,7 +600,7 @@ inline void insert_node(int node, bool allow_boundary_split, std::vector<point_t
             updated.push_back(make_cell(node, edge_[0], second_opposite, points));
         }
         cells = std::move(updated);
-        legalize(cells, points);
+        legalize(cells, points, constraints);
         return;
     }
 
@@ -452,14 +610,15 @@ inline void insert_node(int node, bool allow_boundary_split, std::vector<point_t
         cells[i] = make_cell(old[0], old[1], node, points);
         cells.push_back(make_cell(old[1], old[2], node, points));
         cells.push_back(make_cell(old[2], old[0], node, points));
-        legalize(cells, points);
+        legalize(cells, points, constraints);
         return;
     }
     throw std::runtime_error("Delaunay point insertion could not locate its containing cell.");
 }
 
-inline void
-refine(std::vector<point_t>& points, std::vector<cell_t>& cells, const std::optional<DelaunayRefinement>& refinement) {
+inline void refine(
+  std::vector<point_t>& points, std::vector<cell_t>& cells, const std::optional<DelaunayRefinement>& refinement,
+  const std::set<edge_t>& constraints = {}) {
     if (!refinement.has_value()) return;
     if (!std::isfinite(refinement->max_area) || refinement->max_area <= 0.0) {
         throw std::invalid_argument("Delaunay refinement max_area must be finite and positive.");
@@ -501,7 +660,7 @@ refine(std::vector<point_t>& points, std::vector<cell_t>& cells, const std::opti
             throw std::runtime_error("Delaunay refinement cannot represent another distinct finite centroid.");
         }
         points.push_back(centroid);
-        insert_node(points.size() - 1, false, points, cells);
+        insert_node(points.size() - 1, false, points, cells, constraints);
         ++insertions;
     }
 }
@@ -518,6 +677,13 @@ inline Triangulation<2, 2> make_triangulation(
         const auto it = adjacency.find(edge_);
         if (it == adjacency.end() || it->second.second != -1) {
             throw std::runtime_error("Delaunay triangulation did not preserve a constrained boundary edge.");
+        }
+    }
+    if (!required_boundary.empty()) {
+        const std::size_t boundary_edges = std::count_if(
+          adjacency.begin(), adjacency.end(), [](const auto& entry) { return entry.second.second == -1; });
+        if (boundary_edges != required_boundary.size()) {
+            throw std::runtime_error("Delaunay triangulation contains an unexpected boundary edge.");
         }
     }
 
@@ -544,6 +710,170 @@ inline Triangulation<2, 2> make_triangulation(
 inline std::vector<int> sorted_ids(const std::vector<point_t>& points, std::vector<int> ids) {
     std::sort(ids.begin(), ids.end(), [&](int a, int b) { return less(points[a], points[b]); });
     return ids;
+}
+
+inline std::vector<edge_t> ring_edges(const std::vector<int>& ring) {
+    std::vector<edge_t> result;
+    result.reserve(ring.size());
+    for (int i = 0; i < int(ring.size()); ++i) result.push_back(edge(ring[i], ring[(i + 1) % ring.size()]));
+    return result;
+}
+
+inline bool
+rings_intersect(const std::vector<point_t>& points, const std::vector<int>& first, const std::vector<int>& second) {
+    for (int i = 0; i < int(first.size()); ++i) {
+        for (int j = 0; j < int(second.size()); ++j) {
+            if (segments_intersect(
+                  points[first[i]], points[first[(i + 1) % first.size()]], points[second[j]],
+                  points[second[(j + 1) % second.size()]])) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+struct domain_input_t {
+    std::vector<point_t> points;
+    std::vector<int> outer;
+    std::vector<std::vector<int>> holes;
+    std::vector<edge_t> boundary_edges;
+    std::vector<edge_t> hole_edges;
+};
+
+inline std::vector<int>
+append_ring(std::vector<point_t>& points, const Matrix<double, Dynamic, Dynamic>& matrix, const char* name) {
+    std::vector<point_t> local = read_points(matrix, name);
+    validate_boundary(local);
+    const int begin = points.size();
+    points.insert(points.end(), local.begin(), local.end());
+    std::vector<int> ring(local.size());
+    std::iota(ring.begin(), ring.end(), begin);
+    return ring;
+}
+
+inline domain_input_t read_domain(const PlanarDomain& domain, const Matrix<double, Dynamic, Dynamic>& interior_matrix) {
+    domain_input_t result;
+    result.outer = append_ring(result.points, domain.outer, "Delaunay outer boundary");
+    result.holes.reserve(domain.holes.size());
+    for (const auto& hole : domain.holes) {
+        result.holes.push_back(append_ring(result.points, hole, "Delaunay hole boundary"));
+    }
+    validate_unique(result.points);
+
+    for (const auto& hole : result.holes) {
+        if (rings_intersect(result.points, result.outer, hole)) {
+            throw std::invalid_argument("Delaunay hole boundary must not touch or intersect the outer boundary.");
+        }
+        for (int node : hole) {
+            if (locate_in_polygon(result.points, result.outer, result.points[node]) != point_location::inside) {
+                throw std::invalid_argument("Delaunay holes must lie strictly inside the outer boundary.");
+            }
+        }
+    }
+    for (int i = 0; i < int(result.holes.size()); ++i) {
+        for (int j = i + 1; j < int(result.holes.size()); ++j) {
+            if (rings_intersect(result.points, result.holes[i], result.holes[j])) {
+                throw std::invalid_argument("Delaunay holes must be mutually disjoint and non-touching.");
+            }
+            if (
+              locate_in_polygon(result.points, result.holes[i], result.points[result.holes[j][0]]) !=
+                point_location::outside ||
+              locate_in_polygon(result.points, result.holes[j], result.points[result.holes[i][0]]) !=
+                point_location::outside) {
+                throw std::invalid_argument("Delaunay holes must not be nested.");
+            }
+        }
+    }
+
+    std::vector<point_t> interior = read_points(interior_matrix, "Delaunay interior points");
+    for (const point_t& point : interior) {
+        if (locate_in_polygon(result.points, result.outer, point) != point_location::inside) {
+            throw std::invalid_argument("Delaunay interior points must lie strictly inside the outer boundary.");
+        }
+        for (const auto& hole : result.holes) {
+            if (locate_in_polygon(result.points, hole, point) != point_location::outside) {
+                throw std::invalid_argument("Delaunay interior points must lie strictly outside every hole.");
+            }
+        }
+    }
+    result.points.insert(result.points.end(), interior.begin(), interior.end());
+    validate_unique(result.points);
+
+    result.boundary_edges = ring_edges(result.outer);
+    for (const auto& hole : result.holes) {
+        std::vector<edge_t> edges = ring_edges(hole);
+        result.hole_edges.insert(result.hole_edges.end(), edges.begin(), edges.end());
+        result.boundary_edges.insert(result.boundary_edges.end(), edges.begin(), edges.end());
+    }
+    const auto geometrically_less = [&](const edge_t& lhs, const edge_t& rhs) {
+        point_t lhs_first = result.points[lhs[0]];
+        point_t lhs_second = result.points[lhs[1]];
+        point_t rhs_first = result.points[rhs[0]];
+        point_t rhs_second = result.points[rhs[1]];
+        if (less(lhs_second, lhs_first)) std::swap(lhs_first, lhs_second);
+        if (less(rhs_second, rhs_first)) std::swap(rhs_first, rhs_second);
+        return less(lhs_first, rhs_first) || (equal(lhs_first, rhs_first) && less(lhs_second, rhs_second));
+    };
+    std::sort(result.hole_edges.begin(), result.hole_edges.end(), geometrically_less);
+    return result;
+}
+
+inline void remove_hole_interiors(
+  std::vector<cell_t>& cells, const std::vector<point_t>& points, std::vector<std::vector<int>> holes,
+  const std::set<edge_t>& constraints) {
+    const auto adjacency = edge_adjacency(cells);
+    std::queue<int> pending;
+    std::vector<bool> excluded(cells.size(), false);
+    for (auto& hole : holes) {
+        if (signed_area(points, hole) > 0.0) std::reverse(hole.begin(), hole.end());
+        for (int i = 0; i < int(hole.size()); ++i) {
+            const int a = hole[i];
+            const int b = hole[(i + 1) % hole.size()];
+            const auto found = adjacency.find(edge(a, b));
+            if (found == adjacency.end() || found->second.second == -1) {
+                throw std::runtime_error("Delaunay hole boundary is not an internal constrained edge.");
+            }
+            int right = -1;
+            for (const int cell : {found->second.first, found->second.second}) {
+                const int other = opposite(cells[cell], edge(a, b));
+                const predicate_sign side = orient2d(points[a], points[b], points[other]);
+                if (side == predicate_sign::zero) {
+                    throw std::runtime_error("Delaunay hole boundary has ambiguous adjacent geometry.");
+                }
+                if (side == predicate_sign::negative) {
+                    if (right != -1) {
+                        throw std::runtime_error("Delaunay hole boundary has two triangles on its interior side.");
+                    }
+                    right = cell;
+                }
+            }
+            if (right == -1) { throw std::runtime_error("Delaunay hole boundary has no interior-side triangle."); }
+            pending.push(right);
+        }
+    }
+
+    while (!pending.empty()) {
+        const int cell = pending.front();
+        pending.pop();
+        if (excluded[cell]) continue;
+        excluded[cell] = true;
+        for (int i = 0; i < 3; ++i) {
+            const edge_t edge_ = edge(cells[cell][i], cells[cell][(i + 1) % 3]);
+            if (constraints.contains(edge_)) continue;
+            const edge_info& info = adjacency.at(edge_);
+            const int next = info.first == cell ? info.second : info.first;
+            if (next != -1 && !excluded[next]) pending.push(next);
+        }
+    }
+
+    std::vector<cell_t> retained;
+    retained.reserve(cells.size());
+    for (int i = 0; i < int(cells.size()); ++i) {
+        if (!excluded[i]) retained.push_back(cells[i]);
+    }
+    if (retained.empty()) { throw std::runtime_error("Delaunay hole removal discarded the entire domain."); }
+    cells = std::move(retained);
 }
 
 }   // namespace delaunay_2d
@@ -623,6 +953,42 @@ inline Triangulation<2, 2> constrained_delaunay(
 inline Triangulation<2, 2> constrained_delaunay(
   const Matrix<double, Dynamic, Dynamic>& boundary, std::optional<DelaunayRefinement> refinement = std::nullopt) {
     return constrained_delaunay(boundary, Matrix<double, Dynamic, Dynamic>(0, 2), refinement);
+}
+
+/**
+ * @brief Triangulate one simple outer ring with disjoint simple hole rings and optional strictly interior sites.
+ *
+ * Ring orientation and cyclic starting vertices carry no semantics. Every supplied ring edge is preserved as a
+ * topological boundary edge. Node order is the outer ring, each hole in supplied order, the interior sites, and any
+ * refinement nodes. Holes must lie strictly inside the outer ring and must be mutually disjoint and non-nested.
+ */
+inline Triangulation<2, 2> constrained_delaunay(
+  const PlanarDomain& domain, const Matrix<double, Dynamic, Dynamic>& interior_matrix,
+  std::optional<DelaunayRefinement> refinement = std::nullopt) {
+    if (domain.holes.empty()) return constrained_delaunay(domain.outer, interior_matrix, refinement);
+    using namespace internals::delaunay_2d;
+    domain_input_t input = read_domain(domain, interior_matrix);
+
+    std::vector<cell_t> cells = ear_clip(input.points, input.outer);
+    legalize(cells, input.points);
+    std::vector<int> inserted_ids(input.points.size() - input.outer.size());
+    std::iota(inserted_ids.begin(), inserted_ids.end(), input.outer.size());
+    for (int id : sorted_ids(input.points, std::move(inserted_ids))) { insert_node(id, false, input.points, cells); }
+
+    std::set<edge_t> constraints(input.boundary_edges.begin(), input.boundary_edges.begin() + input.outer.size());
+    for (const edge_t& edge_ : input.hole_edges) {
+        recover_constraint(edge_, cells, input.points, constraints);
+        constraints.insert(edge_);
+    }
+    remove_hole_interiors(cells, input.points, input.holes, constraints);
+    legalize(cells, input.points, constraints);
+    refine(input.points, cells, refinement, constraints);
+    return make_triangulation(input.points, std::move(cells), input.boundary_edges);
+}
+
+inline Triangulation<2, 2>
+constrained_delaunay(const PlanarDomain& domain, std::optional<DelaunayRefinement> refinement = std::nullopt) {
+    return constrained_delaunay(domain, Matrix<double, Dynamic, Dynamic>(0, 2), refinement);
 }
 
 }   // namespace fdapde

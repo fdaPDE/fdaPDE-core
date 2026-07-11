@@ -200,6 +200,22 @@ TEST(mesh_generation, fills_holes_and_handles_degree_four_pinches) {
     });
     EXPECT_NEAR(fdapde::constrained_delaunay(filled).measure(), 36.0, 1e-14);
 
+    const auto domain = fdapde::square_lattice_domain(ring_points, 2.0, anchor);
+    EXPECT_EQ(domain.outer, filled);
+    ASSERT_EQ(domain.holes.size(), 1);
+    expect_boundary(
+      domain.holes[0], {
+                         {1, 1},
+                         {1, 3},
+                         {3, 3},
+                         {3, 1}
+    });
+    const auto domain_mesh = fdapde::constrained_delaunay(domain);
+    EXPECT_NEAR(domain_mesh.measure(), 32.0, 1e-14);
+    EXPECT_EQ(domain_mesh.n_boundary_edges(), 8);
+    EXPECT_EQ(fdapde::square_lattice_domain(ring_points, 2.0, anchor, 4.0).holes.size(), 1);
+    EXPECT_TRUE(fdapde::square_lattice_domain(ring_points, 2.0, anchor, std::nextafter(4.0, 5.0)).holes.empty());
+
     const auto pinch = fdapde::square_lattice_boundary(
       points({
         {0, 0 },
@@ -294,6 +310,48 @@ TEST(mesh_generation, is_repeatable_and_translation_equivariant) {
     }
 }
 
+TEST(mesh_generation, preserves_multiple_lattice_holes_deterministically) {
+    using namespace lattice_testing;
+    Matrix<double, Dynamic, Dynamic> observations(13, 2);
+    int row = 0;
+    for (int y = 0; y < 3; ++y) {
+        for (int x = 0; x < 5; ++x) {
+            if ((x == 1 || x == 3) && y == 1) continue;
+            observations(row, 0) = 2 * x;
+            observations(row, 1) = 2 * y;
+            ++row;
+        }
+    }
+    const fdapde::Vector<double, 2> anchor(0, 0);
+    const auto domain = fdapde::square_lattice_domain(observations, 2.0, anchor);
+    ASSERT_EQ(domain.holes.size(), 2);
+    expect_boundary(
+      domain.holes[0], {
+                         {1, 1},
+                         {1, 3},
+                         {3, 3},
+                         {3, 1}
+    });
+    expect_boundary(
+      domain.holes[1], {
+                         {5, 1},
+                         {5, 3},
+                         {7, 3},
+                         {7, 1}
+    });
+    const auto mesh = fdapde::constrained_delaunay(domain);
+    EXPECT_NEAR(mesh.measure(), 52.0, 1e-14);
+    EXPECT_EQ(mesh.n_boundary_edges(), 12);
+
+    Matrix<double, Dynamic, Dynamic> reversed(observations.rows(), 2);
+    for (int i = 0; i < observations.rows(); ++i) {
+        for (int j = 0; j < 2; ++j) reversed(i, j) = observations(observations.rows() - 1 - i, j);
+    }
+    const auto shuffled = fdapde::square_lattice_domain(reversed, 2.0, anchor);
+    EXPECT_EQ(domain.outer, shuffled.outer);
+    EXPECT_EQ(domain.holes, shuffled.holes);
+}
+
 TEST(mesh_generation, rejects_invalid_input) {
     using namespace lattice_testing;
     Matrix<double, Dynamic, Dynamic> empty(0, 2);
@@ -348,6 +406,20 @@ TEST(mesh_generation, rejects_invalid_input) {
     }),
         1.0, fdapde::Vector<double, 2>(1e16, 1e16)),
       std::invalid_argument);
+    EXPECT_THROW(
+      fdapde::square_lattice_domain(
+        points({
+          {0, 0}
+    }),
+        1.0, std::nullopt, -1.0),
+      std::invalid_argument);
+    EXPECT_THROW(
+      fdapde::square_lattice_domain(
+        points({
+          {0, 0}
+    }),
+        1.0, std::nullopt, std::numeric_limits<double>::quiet_NaN()),
+      std::invalid_argument);
 }
 
 TEST(mesh_generation, extracts_hexagonal_boundaries_and_fills_holes) {
@@ -392,6 +464,31 @@ TEST(mesh_generation, extracts_hexagonal_boundaries_and_fills_holes) {
     });
     const auto filled = fdapde::hexagonal_lattice_boundary(ring, 2.0, anchor);
     EXPECT_NEAR(fdapde::constrained_delaunay(filled).measure(), 14.0 * std::sqrt(3.0), 1e-12);
+
+    const auto domain = fdapde::hexagonal_lattice_domain(ring, 2.0, anchor);
+    const auto parallel_domain = fdapde::hexagonal_lattice_domain(fdapde::execution_par, ring, 2.0, anchor);
+    EXPECT_EQ(domain.outer, parallel_domain.outer);
+    EXPECT_EQ(domain.holes, parallel_domain.holes);
+    EXPECT_EQ(domain.outer, filled);
+    ASSERT_EQ(domain.holes.size(), 1);
+    const auto expected_hole = points({
+      {-1.0, -1.0 / std::sqrt(3.0)},
+      {-1.0, 1.0 / std::sqrt(3.0) },
+      {0.0,  2.0 / std::sqrt(3.0) },
+      {1.0,  1.0 / std::sqrt(3.0) },
+      {1.0,  -1.0 / std::sqrt(3.0)},
+      {0.0,  -2.0 / std::sqrt(3.0)}
+    });
+    ASSERT_EQ(domain.holes[0].rows(), expected_hole.rows());
+    for (int i = 0; i < expected_hole.rows(); ++i) {
+        EXPECT_NEAR(domain.holes[0](i, 0), expected_hole(i, 0), 1e-14);
+        EXPECT_NEAR(domain.holes[0](i, 1), expected_hole(i, 1), 1e-14);
+    }
+    const auto domain_mesh = fdapde::constrained_delaunay(domain);
+    EXPECT_NEAR(domain_mesh.measure(), 12.0 * std::sqrt(3.0), 1e-12);
+    EXPECT_EQ(domain_mesh.n_boundary_edges(), domain.outer.rows() + domain.holes[0].rows());
+    EXPECT_EQ(fdapde::hexagonal_lattice_domain(ring, 2.0, anchor, 2.0 * std::sqrt(3.0)).holes.size(), 1);
+    EXPECT_TRUE(fdapde::hexagonal_lattice_domain(ring, 2.0, anchor, 2.0 * std::sqrt(3.0) + 1e-12).holes.empty());
 }
 
 TEST(mesh_generation, selects_hexagonal_components_and_is_parallel_repeatable) {
@@ -470,6 +567,20 @@ TEST(mesh_generation, rejects_invalid_hexagonal_input) {
           {std::numeric_limits<double>::max(), 0.0}
     }),
         1.0, fdapde::Vector<double, 2>(0.0, 0.0)),
+      std::invalid_argument);
+    EXPECT_THROW(
+      fdapde::hexagonal_lattice_domain(
+        points({
+          {0, 0}
+    }),
+        1.0, std::nullopt, -1.0),
+      std::invalid_argument);
+    EXPECT_THROW(
+      fdapde::hexagonal_lattice_domain(
+        points({
+          {0, 0}
+    }),
+        1.0, std::nullopt, std::numeric_limits<double>::infinity()),
       std::invalid_argument);
 }
 

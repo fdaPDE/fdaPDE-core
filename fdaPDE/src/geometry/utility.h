@@ -29,6 +29,12 @@ namespace fdapde {
 [[maybe_unused]] static constexpr int TriangulationAll = -2;
 [[maybe_unused]] static constexpr int Unmarked = -3;
 
+/** @brief One simple outer polygonal ring and zero or more disjoint simple hole rings. */
+struct PlanarDomain {
+    Matrix<double, Dynamic, Dynamic> outer;
+    std::vector<Matrix<double, Dynamic, Dynamic>> holes;
+};
+
 namespace internals {
 
 // sorts a range of points in clockwise order around their geometrical center

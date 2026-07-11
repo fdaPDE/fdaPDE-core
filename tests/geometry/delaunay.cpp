@@ -122,6 +122,21 @@ Matrix<double, Dynamic, Dynamic> deterministic_points(int size) {
     return result;
 }
 
+int missing_hole_edges_before_recovery(
+  const fdapde::PlanarDomain& domain, const Matrix<double, Dynamic, Dynamic>& sites) {
+    using namespace fdapde::internals::delaunay_2d;
+    domain_input_t input = read_domain(domain, sites);
+    std::vector<cell_t> cells = ear_clip(input.points, input.outer);
+    legalize(cells, input.points);
+    std::vector<int> inserted_ids(input.points.size() - input.outer.size());
+    std::iota(inserted_ids.begin(), inserted_ids.end(), input.outer.size());
+    for (int id : sorted_ids(input.points, std::move(inserted_ids))) { insert_node(id, false, input.points, cells); }
+    const auto adjacency = edge_adjacency(cells);
+    return std::count_if(input.hole_edges.begin(), input.hole_edges.end(), [&](const edge_t& edge_) {
+        return !adjacency.contains(edge_);
+    });
+}
+
 }   // namespace delaunay_testing
 
 TEST(delaunay, triangulates_point_sets) {
@@ -257,6 +272,210 @@ TEST(delaunay, accepts_clockwise_boundaries_and_sites_on_interior_edges) {
     EXPECT_NEAR(split_mesh.measure(), 1.0, 1e-14);
     expect_valid_topology(split_mesh);
     expect_locally_delaunay(split_mesh);
+}
+
+TEST(delaunay, triangulates_planar_domains_with_holes) {
+    using namespace delaunay_testing;
+    const fdapde::PlanarDomain annulus {
+      .outer = points({{0, 0}, {4, 0}, {4, 4}, {0, 4}}
+        ), .holes = {points({{1, 1}, {3, 1}, {3, 3}, {1, 3}})}
+    };
+    const mesh_t mesh = fdapde::constrained_delaunay(annulus);
+
+    EXPECT_EQ(mesh.n_nodes(), 8);
+    EXPECT_EQ(mesh.n_cells(), 8);
+    EXPECT_EQ(mesh.n_boundary_edges(), 8);
+    EXPECT_EQ(mesh.n_nodes() - mesh.n_edges() + mesh.n_cells(), 0);
+    EXPECT_NEAR(mesh.measure(), 12.0, 1e-14);
+    for (int i = 0; i < 4; ++i) {
+        EXPECT_TRUE(has_edge(mesh, i, (i + 1) % 4));
+        EXPECT_TRUE(has_edge(mesh, 4 + i, 4 + (i + 1) % 4));
+    }
+    expect_valid_topology(mesh);
+    expect_locally_delaunay(mesh);
+}
+
+TEST(delaunay, triangulates_multiple_and_concave_holes_with_sites) {
+    using namespace delaunay_testing;
+    const fdapde::PlanarDomain two_holes {
+      .outer = points({{0, 0}, {10, 0}, {10, 8}, {0, 8}}
+        ),
+      .holes = {points({{1, 1}, {3, 1}, {3, 3}, {1, 3}}), points({{6, 2}, {9, 2}, {7, 4}})}
+    };
+    const mesh_t multiple = fdapde::constrained_delaunay(two_holes);
+    EXPECT_EQ(multiple.n_nodes(), 11);
+    EXPECT_EQ(multiple.n_cells(), 13);
+    EXPECT_EQ(multiple.n_boundary_edges(), 11);
+    EXPECT_EQ(multiple.n_nodes() - multiple.n_edges() + multiple.n_cells(), -1);
+    EXPECT_NEAR(multiple.measure(), 73.0, 1e-13);
+    expect_valid_topology(multiple);
+    expect_locally_delaunay(multiple);
+
+    const fdapde::PlanarDomain concave_hole {
+      .outer = points({{0, 0}, {10, 0}, {10, 10}, {0, 10}}
+        ),
+      .holes = {points({{2, 2}, {6, 2}, {6, 3}, {3, 3}, {3, 6}, {2, 6}})}
+    };
+    const auto sites = points({
+      {5, 5},
+      {8, 8}
+    });
+    const mesh_t concave = fdapde::constrained_delaunay(concave_hole, sites);
+    EXPECT_EQ(concave.n_nodes(), 12);
+    EXPECT_EQ(concave.n_cells(), 14);
+    EXPECT_EQ(concave.n_boundary_edges(), 10);
+    EXPECT_NEAR(concave.measure(), 93.0, 1e-13);
+    expect_valid_topology(concave);
+    expect_locally_delaunay(concave);
+}
+
+TEST(delaunay, recovers_missing_hole_constraints) {
+    using namespace delaunay_testing;
+    const fdapde::PlanarDomain domain {
+      .outer = points({{0, 0}, {10, 0}, {10, 10}, {0, 10}}
+        ), .holes = {points({{4, 4}, {6, 4}, {5, 6}})}
+    };
+    const auto sites = points({
+      {5, 3.9},
+      {3, 4  }
+    });
+    EXPECT_EQ(missing_hole_edges_before_recovery(domain, sites), 1);
+    const mesh_t mesh = fdapde::constrained_delaunay(domain, sites);
+    EXPECT_TRUE(has_edge(mesh, 4, 5));
+    EXPECT_EQ(mesh.n_nodes(), 9);
+    EXPECT_EQ(mesh.n_cells(), 11);
+    EXPECT_EQ(mesh.n_boundary_edges(), 7);
+    EXPECT_EQ(mesh.n_nodes() - mesh.n_edges() + mesh.n_cells(), 0);
+    EXPECT_NEAR(mesh.measure(), 98.0, 1e-13);
+    expect_valid_topology(mesh);
+    expect_locally_delaunay(mesh);
+}
+
+TEST(delaunay, refines_planar_domains_without_filling_holes) {
+    using namespace delaunay_testing;
+    const fdapde::PlanarDomain annulus {
+      .outer = points({{0, 0}, {4, 0}, {4, 4}, {0, 4}}
+        ), .holes = {points({{1, 1}, {3, 1}, {3, 3}, {1, 3}})}
+    };
+    const mesh_t refined =
+      fdapde::constrained_delaunay(annulus, fdapde::DelaunayRefinement {.max_area = 0.5, .max_insertions = 200});
+    double largest_cell = 0.0;
+    for (auto cell = refined.cells_begin(); cell != refined.cells_end(); ++cell) {
+        largest_cell = std::max(largest_cell, cell->measure());
+    }
+    EXPECT_LE(largest_cell, 0.5);
+    EXPECT_EQ(refined.n_boundary_edges(), 8);
+    EXPECT_EQ(refined.n_nodes() - refined.n_edges() + refined.n_cells(), 0);
+    EXPECT_NEAR(refined.measure(), 12.0, 1e-13);
+    expect_valid_topology(refined);
+    expect_locally_delaunay(refined);
+}
+
+TEST(delaunay, planar_domains_are_repeatable_and_delegate_without_holes) {
+    using namespace delaunay_testing;
+    const auto outer = points({
+      {0, 0},
+      {4, 0},
+      {4, 4},
+      {0, 4}
+    });
+    const fdapde::PlanarDomain annulus {
+      .outer = outer, .holes = {points({{1, 1}, {3, 1}, {3, 3}, {1, 3}})}
+    };
+    const mesh_t first = fdapde::constrained_delaunay(annulus);
+    const mesh_t second = fdapde::constrained_delaunay(annulus);
+    EXPECT_EQ(first.nodes(), second.nodes());
+    EXPECT_EQ(first.cells(), second.cells());
+    EXPECT_EQ(first.boundary_nodes(), second.boundary_nodes());
+
+    const mesh_t direct = fdapde::constrained_delaunay(outer);
+    const mesh_t delegated = fdapde::constrained_delaunay(fdapde::PlanarDomain {.outer = outer, .holes = {}});
+    EXPECT_EQ(direct.nodes(), delegated.nodes());
+    EXPECT_EQ(direct.cells(), delegated.cells());
+    EXPECT_EQ(direct.boundary_nodes(), delegated.boundary_nodes());
+}
+
+TEST(delaunay, planar_domains_accept_orientation_changes_and_uniform_scaling) {
+    using namespace delaunay_testing;
+    for (const double scale : {1e-100, 1.0, 1e100}) {
+        const fdapde::PlanarDomain domain {
+          .outer = points({{0, 4 * scale}, {4 * scale, 4 * scale}, {4 * scale, 0}, {0, 0}}
+            ),
+          .holes = {
+                           points({{3 * scale, 1 * scale}, {1 * scale, 1 * scale}, {1 * scale, 3 * scale}, {3 * scale, 3 * scale}})}
+        };
+        const mesh_t mesh = fdapde::constrained_delaunay(domain);
+        EXPECT_EQ(mesh.n_cells(), 8);
+        EXPECT_EQ(mesh.n_boundary_edges(), 8);
+        EXPECT_NEAR(mesh.measure() / (scale * scale), 12.0, 1e-12);
+        expect_valid_topology(mesh);
+        if (scale == 1.0) expect_locally_delaunay(mesh);
+    }
+}
+
+TEST(delaunay, rejects_invalid_planar_domains) {
+    using namespace delaunay_testing;
+    const auto outer = points({
+      {0,  0 },
+      {10, 0 },
+      {10, 10},
+      {0,  10}
+    });
+    const auto hole = points({
+      {2, 2},
+      {5, 2},
+      {5, 5},
+      {2, 5}
+    });
+    const auto rejects = [&](std::vector<Matrix<double, Dynamic, Dynamic>> holes) {
+        EXPECT_THROW(
+          fdapde::constrained_delaunay(fdapde::PlanarDomain {.outer = outer, .holes = std::move(holes)}),
+          std::invalid_argument);
+    };
+    rejects({
+      points({{11, 1}, {12, 1}, {11, 2}}
+      )
+    });
+    rejects({
+      points({{0, 1}, {2, 1}, {1, 2}}
+      )
+    });
+    rejects({
+      points({{8, 1}, {11, 1}, {8, 3}}
+      )
+    });
+    rejects({
+      hole, points({{4, 4}, {7, 4}, {7, 7}, {4, 7}}
+       )
+    });
+    rejects({
+      hole, points({{3, 3}, {4, 3}, {4, 4}, {3, 4}}
+       )
+    });
+    rejects({
+      points({{2, 2}, {5, 5}, {2, 5}, {5, 2}}
+      )
+    });
+
+    const fdapde::PlanarDomain domain {.outer = outer, .holes = {hole}};
+    EXPECT_THROW(
+      fdapde::constrained_delaunay(
+        domain, points({
+                  {3, 3}
+    })),
+      std::invalid_argument);
+    EXPECT_THROW(
+      fdapde::constrained_delaunay(
+        domain, points({
+                  {2, 3}
+    })),
+      std::invalid_argument);
+    EXPECT_THROW(
+      fdapde::constrained_delaunay(
+        domain, points({
+                  {11, 3}
+    })),
+      std::invalid_argument);
 }
 
 TEST(delaunay, canonicalizes_equivalent_constrained_rings) {

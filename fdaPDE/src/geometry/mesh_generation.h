@@ -176,6 +176,43 @@ inline std::vector<vertex_t> outer_ring(const std::set<directed_edge_t>& edges, 
     return canonical;
 }
 
+struct domain_rings_t {
+    std::vector<vertex_t> outer;
+    std::vector<std::vector<vertex_t>> holes;
+};
+
+inline domain_rings_t domain_rings(const std::set<directed_edge_t>& edges, const char* lattice_name) {
+    domain_rings_t result;
+    for (auto ring : trace_rings(edges)) {
+        const long double area = twice_signed_area(ring);
+        if (area == 0.0L) {
+            throw std::runtime_error(std::string(lattice_name) + " lattice contains a zero-area ring.");
+        }
+        std::rotate(ring.begin(), std::min_element(ring.begin(), ring.end()), ring.end());
+        if (area > 0.0L) {
+            if (!result.outer.empty()) {
+                throw std::runtime_error(std::string(lattice_name) + " lattice component has multiple outer rings.");
+            }
+            result.outer = std::move(ring);
+        } else {
+            result.holes.push_back(std::move(ring));
+        }
+    }
+    if (result.outer.empty()) {
+        throw std::runtime_error(std::string(lattice_name) + " lattice component has no outer ring.");
+    }
+    std::sort(result.holes.begin(), result.holes.end());
+    std::set<vertex_t> vertices(result.outer.begin(), result.outer.end());
+    for (const auto& hole : result.holes) {
+        for (const vertex_t& vertex : hole) {
+            if (!vertices.insert(vertex).second) {
+                throw std::invalid_argument(std::string(lattice_name) + " lattice domain contains touching rings.");
+            }
+        }
+    }
+    return result;
+}
+
 }   // namespace lattice_boundary
 
 namespace square_lattice {
@@ -220,6 +257,51 @@ inline std::set<directed_edge_t> boundary_edges(const std::set<cell_t>& cells) {
         if (!cells.contains(neighbor(cell, -1, 0))) edges.emplace(top_left, bottom_left);
     }
     return edges;
+}
+
+struct component_t {
+    double anchor_x;
+    double anchor_y;
+    std::set<cell_t> cells;
+};
+
+inline component_t
+component(const Matrix<double, Dynamic, Dynamic>& points, double spacing, std::optional<Vector<double, 2>> anchor) {
+    if (points.rows() == 0 || points.cols() != 2) {
+        throw std::invalid_argument("Square lattice points must be a nonempty matrix with two columns.");
+    }
+    if (!std::isfinite(spacing) || spacing <= 0.0) {
+        throw std::invalid_argument("Square lattice spacing must be finite and positive.");
+    }
+
+    double anchor_x;
+    double anchor_y;
+    if (anchor.has_value()) {
+        anchor_x = (*anchor)[0];
+        anchor_y = (*anchor)[1];
+        if (!std::isfinite(anchor_x) || !std::isfinite(anchor_y)) {
+            throw std::invalid_argument("Square lattice anchor must contain finite coordinates.");
+        }
+    } else {
+        anchor_x = points(0, 0);
+        anchor_y = points(0, 1);
+        for (int i = 0; i < points.rows(); ++i) {
+            if (!std::isfinite(points(i, 0)) || !std::isfinite(points(i, 1))) {
+                throw std::invalid_argument("Square lattice points must contain only finite coordinates.");
+            }
+            anchor_x = std::min(anchor_x, points(i, 0));
+            anchor_y = std::max(anchor_y, points(i, 1));
+        }
+    }
+
+    std::set<cell_t> occupied;
+    for (int i = 0; i < points.rows(); ++i) {
+        if (!std::isfinite(points(i, 0)) || !std::isfinite(points(i, 1))) {
+            throw std::invalid_argument("Square lattice points must contain only finite coordinates.");
+        }
+        occupied.insert({cell_index(points(i, 0), anchor_x, spacing), cell_index(points(i, 1), anchor_y, spacing)});
+    }
+    return {anchor_x, anchor_y, largest_component(occupied)};
 }
 
 }   // namespace square_lattice
@@ -298,8 +380,14 @@ inline std::set<directed_edge_t> boundary_edges(const std::set<cell_t>& cells) {
     return edges;
 }
 
+struct component_t {
+    double anchor_x;
+    double anchor_y;
+    std::set<cell_t> cells;
+};
+
 template <typename ExecutionPolicy>
-inline Matrix<double, Dynamic, Dynamic> boundary(
+inline component_t component(
   ExecutionPolicy, const Matrix<double, Dynamic, Dynamic>& points, double spacing,
   std::optional<Vector<double, 2>> anchor) {
     if (points.rows() == 0 || points.cols() != 2) {
@@ -342,14 +430,21 @@ inline Matrix<double, Dynamic, Dynamic> boundary(
     }
 
     const std::set<cell_t> occupied(assignments.begin(), assignments.end());
-    const std::set<cell_t> component = largest_component(occupied);
-    const std::vector<vertex_t> ring = lattice_boundary::outer_ring(boundary_edges(component), "Hexagonal");
+    return {anchor_x, anchor_y, largest_component(occupied)};
+}
+
+template <typename ExecutionPolicy>
+inline Matrix<double, Dynamic, Dynamic> boundary(
+  ExecutionPolicy policy, const Matrix<double, Dynamic, Dynamic>& points, double spacing,
+  std::optional<Vector<double, 2>> anchor) {
+    const component_t selected = component(policy, points, spacing, anchor);
+    const std::vector<vertex_t> ring = lattice_boundary::outer_ring(boundary_edges(selected.cells), "Hexagonal");
     Matrix<double, Dynamic, Dynamic> result(ring.size(), 2);
     std::set<std::array<double, 2>> represented_vertices;
     constexpr long double sqrt_three = 1.73205080756887729352744634150587237L;
     for (int i = 0; i < int(ring.size()); ++i) {
-        result(i, 0) = anchor_x + 0.5L * spacing * ring[i][0];
-        result(i, 1) = anchor_y + 0.5L / sqrt_three * spacing * ring[i][1];
+        result(i, 0) = selected.anchor_x + 0.5L * spacing * ring[i][0];
+        result(i, 1) = selected.anchor_y + 0.5L / sqrt_three * spacing * ring[i][1];
         if (!std::isfinite(result(i, 0)) || !std::isfinite(result(i, 1))) {
             throw std::invalid_argument("Hexagonal lattice boundary exceeds the finite coordinate range.");
         }
@@ -357,6 +452,42 @@ inline Matrix<double, Dynamic, Dynamic> boundary(
             throw std::invalid_argument(
               "Hexagonal lattice spacing is too small to represent distinct boundary vertices at this anchor.");
         }
+    }
+    return result;
+}
+
+template <typename ExecutionPolicy>
+inline PlanarDomain domain(
+  ExecutionPolicy policy, const Matrix<double, Dynamic, Dynamic>& points, double spacing,
+  std::optional<Vector<double, 2>> anchor, double minimum_hole_area) {
+    if (!std::isfinite(minimum_hole_area) || minimum_hole_area < 0.0) {
+        throw std::invalid_argument("Hexagonal lattice minimum hole area must be finite and nonnegative.");
+    }
+    const component_t selected = component(policy, points, spacing, anchor);
+    const auto rings = lattice_boundary::domain_rings(boundary_edges(selected.cells), "Hexagonal");
+    std::set<std::array<double, 2>> represented_vertices;
+    constexpr long double sqrt_three = 1.73205080756887729352744634150587237L;
+    const auto convert = [&](const std::vector<vertex_t>& ring) {
+        Matrix<double, Dynamic, Dynamic> result(ring.size(), 2);
+        for (int i = 0; i < int(ring.size()); ++i) {
+            result(i, 0) = selected.anchor_x + 0.5L * spacing * ring[i][0];
+            result(i, 1) = selected.anchor_y + 0.5L / sqrt_three * spacing * ring[i][1];
+            if (!std::isfinite(result(i, 0)) || !std::isfinite(result(i, 1))) {
+                throw std::invalid_argument("Hexagonal lattice domain exceeds the finite coordinate range.");
+            }
+            if (!represented_vertices.insert({result(i, 0), result(i, 1)}).second) {
+                throw std::invalid_argument(
+                  "Hexagonal lattice spacing is too small to represent distinct domain vertices at this anchor.");
+            }
+        }
+        return result;
+    };
+
+    PlanarDomain result {.outer = convert(rings.outer), .holes = {}};
+    const long double scale = static_cast<long double>(spacing) * spacing / (8.0L * sqrt_three);
+    for (const auto& hole : rings.holes) {
+        const long double area = std::abs(lattice_boundary::twice_signed_area(hole)) * scale;
+        if (area >= minimum_hole_area) result.holes.push_back(convert(hole));
     }
     return result;
 }
@@ -476,49 +607,14 @@ inline Matrix<double, Dynamic, Dynamic> square_lattice_boundary(
   const Matrix<double, Dynamic, Dynamic>& points, double spacing,
   std::optional<Vector<double, 2>> anchor = std::nullopt) {
     using namespace internals::square_lattice;
-    if (points.rows() == 0 || points.cols() != 2) {
-        throw std::invalid_argument("Square lattice points must be a nonempty matrix with two columns.");
-    }
-    if (!std::isfinite(spacing) || spacing <= 0.0) {
-        throw std::invalid_argument("Square lattice spacing must be finite and positive.");
-    }
-
-    double anchor_x;
-    double anchor_y;
-    if (anchor.has_value()) {
-        anchor_x = (*anchor)[0];
-        anchor_y = (*anchor)[1];
-        if (!std::isfinite(anchor_x) || !std::isfinite(anchor_y)) {
-            throw std::invalid_argument("Square lattice anchor must contain finite coordinates.");
-        }
-    } else {
-        anchor_x = points(0, 0);
-        anchor_y = points(0, 1);
-        for (int i = 0; i < points.rows(); ++i) {
-            if (!std::isfinite(points(i, 0)) || !std::isfinite(points(i, 1))) {
-                throw std::invalid_argument("Square lattice points must contain only finite coordinates.");
-            }
-            anchor_x = std::min(anchor_x, points(i, 0));
-            anchor_y = std::max(anchor_y, points(i, 1));
-        }
-    }
-
-    std::set<cell_t> occupied;
-    for (int i = 0; i < points.rows(); ++i) {
-        if (!std::isfinite(points(i, 0)) || !std::isfinite(points(i, 1))) {
-            throw std::invalid_argument("Square lattice points must contain only finite coordinates.");
-        }
-        occupied.insert({cell_index(points(i, 0), anchor_x, spacing), cell_index(points(i, 1), anchor_y, spacing)});
-    }
-
-    const std::set<cell_t> component = largest_component(occupied);
+    const component_t selected = component(points, spacing, anchor);
     const std::vector<vertex_t> canonical =
-      internals::lattice_boundary::outer_ring(boundary_edges(component), "Square");
+      internals::lattice_boundary::outer_ring(boundary_edges(selected.cells), "Square");
     Matrix<double, Dynamic, Dynamic> boundary(canonical.size(), 2);
     std::set<std::array<double, 2>> represented_vertices;
     for (int i = 0; i < int(canonical.size()); ++i) {
-        boundary(i, 0) = anchor_x + 0.5 * spacing * canonical[i][0];
-        boundary(i, 1) = anchor_y + 0.5 * spacing * canonical[i][1];
+        boundary(i, 0) = selected.anchor_x + 0.5 * spacing * canonical[i][0];
+        boundary(i, 1) = selected.anchor_y + 0.5 * spacing * canonical[i][1];
         if (!std::isfinite(boundary(i, 0)) || !std::isfinite(boundary(i, 1))) {
             throw std::invalid_argument("Square lattice boundary exceeds the finite coordinate range.");
         }
@@ -528,6 +624,47 @@ inline Matrix<double, Dynamic, Dynamic> square_lattice_boundary(
         }
     }
     return boundary;
+}
+
+/**
+ * @brief Build the outer and retained hole rings of the largest occupied square-lattice component.
+ *
+ * The outer ring is counter-clockwise, holes are clockwise, and all rings are unclosed and canonical. A hole is
+ * retained when its physical area is at least `minimum_hole_area`; zero retains every hole.
+ */
+inline PlanarDomain square_lattice_domain(
+  const Matrix<double, Dynamic, Dynamic>& points, double spacing,
+  std::optional<Vector<double, 2>> anchor = std::nullopt, double minimum_hole_area = 0.0) {
+    using namespace internals::square_lattice;
+    if (!std::isfinite(minimum_hole_area) || minimum_hole_area < 0.0) {
+        throw std::invalid_argument("Square lattice minimum hole area must be finite and nonnegative.");
+    }
+    const component_t selected = component(points, spacing, anchor);
+    const auto rings = internals::lattice_boundary::domain_rings(boundary_edges(selected.cells), "Square");
+    std::set<std::array<double, 2>> represented_vertices;
+    const auto convert = [&](const std::vector<vertex_t>& ring) {
+        Matrix<double, Dynamic, Dynamic> result(ring.size(), 2);
+        for (int i = 0; i < int(ring.size()); ++i) {
+            result(i, 0) = selected.anchor_x + 0.5 * spacing * ring[i][0];
+            result(i, 1) = selected.anchor_y + 0.5 * spacing * ring[i][1];
+            if (!std::isfinite(result(i, 0)) || !std::isfinite(result(i, 1))) {
+                throw std::invalid_argument("Square lattice domain exceeds the finite coordinate range.");
+            }
+            if (!represented_vertices.insert({result(i, 0), result(i, 1)}).second) {
+                throw std::invalid_argument(
+                  "Square lattice spacing is too small to represent distinct domain vertices at this anchor.");
+            }
+        }
+        return result;
+    };
+
+    PlanarDomain result {.outer = convert(rings.outer), .holes = {}};
+    const long double scale = static_cast<long double>(spacing) * spacing / 8.0L;
+    for (const auto& hole : rings.holes) {
+        const long double area = std::abs(internals::lattice_boundary::twice_signed_area(hole)) * scale;
+        if (area >= minimum_hole_area) result.holes.push_back(convert(hole));
+    }
+    return result;
 }
 
 /**
@@ -556,6 +693,31 @@ inline Matrix<double, Dynamic, Dynamic> hexagonal_lattice_boundary(
   const Matrix<double, Dynamic, Dynamic>& points, double spacing,
   std::optional<Vector<double, 2>> anchor = std::nullopt) {
     return hexagonal_lattice_boundary(execution_seq, points, spacing, anchor);
+}
+
+/**
+ * @brief Build the outer and retained hole rings of the largest occupied pointy-hex component.
+ *
+ * The outer ring is counter-clockwise, holes are clockwise, and all rings are unclosed and canonical. A hole is
+ * retained when its physical area is at least `minimum_hole_area`; zero retains every hole. Classification follows
+ * the supplied execution policy, while topology construction remains serial and deterministic.
+ */
+inline PlanarDomain hexagonal_lattice_domain(
+  execution_seq_t policy, const Matrix<double, Dynamic, Dynamic>& points, double spacing,
+  std::optional<Vector<double, 2>> anchor = std::nullopt, double minimum_hole_area = 0.0) {
+    return internals::hexagonal_lattice::domain(policy, points, spacing, anchor, minimum_hole_area);
+}
+
+inline PlanarDomain hexagonal_lattice_domain(
+  execution_par_t policy, const Matrix<double, Dynamic, Dynamic>& points, double spacing,
+  std::optional<Vector<double, 2>> anchor = std::nullopt, double minimum_hole_area = 0.0) {
+    return internals::hexagonal_lattice::domain(policy, points, spacing, anchor, minimum_hole_area);
+}
+
+inline PlanarDomain hexagonal_lattice_domain(
+  const Matrix<double, Dynamic, Dynamic>& points, double spacing,
+  std::optional<Vector<double, 2>> anchor = std::nullopt, double minimum_hole_area = 0.0) {
+    return hexagonal_lattice_domain(execution_seq, points, spacing, anchor, minimum_hole_area);
 }
 
 }   // namespace fdapde
