@@ -108,3 +108,10 @@ TEST(execution, parallel_reduce) {
     EXPECT_EQ(sum, int(v.size()));
 }
 
+TEST(execution, repeated_tiny_parallel_for_completes) {
+    for (int repetition = 0; repetition < 2000; ++repetition) {
+        std::atomic<int> completed {0};
+        fdapde::parallel_for(0, 1, [&](int) { completed.fetch_add(1, std::memory_order_relaxed); });
+        EXPECT_EQ(completed.load(std::memory_order_relaxed), 1);
+    }
+}

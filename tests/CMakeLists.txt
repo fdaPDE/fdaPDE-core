@@ -11,6 +11,7 @@ set(WARNING_FLAGS -Wall -Wextra -Wpedantic -Werror)
 
 # Dependencies
 find_package(Eigen3 REQUIRED NO_MODULE)
+find_package(Threads REQUIRED)
 
 include(FetchContent)
 FetchContent_Declare(
@@ -36,9 +37,16 @@ target_link_libraries(fdapde_test
     PRIVATE
         Eigen3::Eigen
         gtest_main
+        Threads::Threads
 )
+
+add_executable(fdapde_public_header_link_test public_header_link_main.cpp public_header_link_other.cpp)
+target_compile_options(fdapde_public_header_link_test PRIVATE ${WARNING_FLAGS})
+target_include_directories(fdapde_public_header_link_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../)
+target_link_libraries(fdapde_public_header_link_test PRIVATE Eigen3::Eigen Threads::Threads)
 
 # Testing setup
 enable_testing()
+add_test(NAME fdapde_public_header_link_test COMMAND fdapde_public_header_link_test)
 include(GoogleTest)
 gtest_discover_tests(fdapde_test)

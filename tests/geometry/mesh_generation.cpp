@@ -33,6 +33,17 @@ Matrix<double, Dynamic, Dynamic> points(std::initializer_list<std::array<double,
     return result;
 }
 
+Matrix<double, Dynamic, Dynamic> axial_points(
+  const std::vector<std::array<int, 2>>& cells, double spacing = 2.0,
+  const fdapde::Vector<double, 2>& anchor = fdapde::Vector<double, 2>(0.0, 0.0)) {
+    Matrix<double, Dynamic, Dynamic> result(cells.size(), 2);
+    for (int i = 0; i < int(cells.size()); ++i) {
+        result(i, 0) = anchor[0] + spacing * (cells[i][0] + 0.5 * cells[i][1]);
+        result(i, 1) = anchor[1] + 0.5 * std::sqrt(3.0) * spacing * cells[i][1];
+    }
+    return result;
+}
+
 void expect_boundary(
   const Matrix<double, Dynamic, Dynamic>& actual, std::initializer_list<std::array<double, 2>> expected_coordinates) {
     const auto expected = points(expected_coordinates);
@@ -336,5 +347,128 @@ TEST(mesh_generation, rejects_invalid_input) {
           {1e16, 1e16}
     }),
         1.0, fdapde::Vector<double, 2>(1e16, 1e16)),
+      std::invalid_argument);
+}
+
+TEST(mesh_generation, extracts_hexagonal_boundaries_and_fills_holes) {
+    using namespace lattice_testing;
+    const fdapde::Vector<double, 2> anchor(0.0, 0.0);
+    const auto single = fdapde::hexagonal_lattice_boundary(
+      points({
+        {0.0, 0.0}
+    }),
+      2.0, anchor);
+    const auto expected = points({
+      {-1.0, -1.0 / std::sqrt(3.0)},
+      {0.0,  -2.0 / std::sqrt(3.0)},
+      {1.0,  -1.0 / std::sqrt(3.0)},
+      {1.0,  1.0 / std::sqrt(3.0) },
+      {0.0,  2.0 / std::sqrt(3.0) },
+      {-1.0, 1.0 / std::sqrt(3.0) }
+    });
+    ASSERT_EQ(single.rows(), expected.rows());
+    for (int i = 0; i < single.rows(); ++i) {
+        EXPECT_NEAR(single(i, 0), expected(i, 0), 1e-14);
+        EXPECT_NEAR(single(i, 1), expected(i, 1), 1e-14);
+    }
+
+    const auto adjacent = fdapde::hexagonal_lattice_boundary(
+      axial_points({
+        {0, 0},
+        {1, 0}
+    }),
+      2.0, anchor);
+    const auto adjacent_mesh = fdapde::constrained_delaunay(adjacent);
+    EXPECT_NEAR(adjacent_mesh.measure(), 4.0 * std::sqrt(3.0), 1e-13);
+    EXPECT_EQ(adjacent_mesh.n_boundary_edges(), adjacent.rows());
+
+    const auto ring = axial_points({
+      {1,  0 },
+      {0,  1 },
+      {-1, 1 },
+      {-1, 0 },
+      {0,  -1},
+      {1,  -1}
+    });
+    const auto filled = fdapde::hexagonal_lattice_boundary(ring, 2.0, anchor);
+    EXPECT_NEAR(fdapde::constrained_delaunay(filled).measure(), 14.0 * std::sqrt(3.0), 1e-12);
+}
+
+TEST(mesh_generation, selects_hexagonal_components_and_is_parallel_repeatable) {
+    using namespace lattice_testing;
+    const fdapde::Vector<double, 2> anchor(235.0, -126.0);
+    std::vector<std::array<int, 2>> cells;
+    for (int r = -8; r <= 8; ++r) {
+        for (int q = -10; q <= 12; ++q) {
+            if ((q + 2 * r) % 7 != 0) cells.push_back({q, r});
+        }
+    }
+    cells.push_back({40, 40});
+    cells.push_back({40, 40});
+    const auto observations = axial_points(cells, 6.4, anchor);
+    const auto sequential = fdapde::hexagonal_lattice_boundary(fdapde::execution_seq, observations, 6.4, anchor);
+    for (int repetition = 0; repetition < 20; ++repetition) {
+        EXPECT_EQ(fdapde::hexagonal_lattice_boundary(fdapde::execution_par, observations, 6.4, anchor), sequential);
+    }
+
+    std::reverse(cells.begin(), cells.end());
+    EXPECT_EQ(fdapde::hexagonal_lattice_boundary(axial_points(cells, 6.4, anchor), 6.4, anchor), sequential);
+    const auto mesh = fdapde::constrained_delaunay(sequential);
+    EXPECT_EQ(mesh.n_boundary_edges(), sequential.rows());
+    EXPECT_GT(mesh.measure(), 0.0);
+
+    const auto tie = fdapde::hexagonal_lattice_boundary(
+      axial_points({
+        {0,  0},
+        {10, 0}
+    }),
+      2.0);
+    EXPECT_EQ(
+      tie, fdapde::hexagonal_lattice_boundary(
+             axial_points({
+               {0, 0}
+    }),
+             2.0));
+}
+
+TEST(mesh_generation, rejects_invalid_hexagonal_input) {
+    using namespace lattice_testing;
+    Matrix<double, Dynamic, Dynamic> empty(0, 2);
+    Matrix<double, Dynamic, Dynamic> wrong_columns(1, 3);
+    EXPECT_THROW(fdapde::hexagonal_lattice_boundary(empty, 1.0), std::invalid_argument);
+    EXPECT_THROW(fdapde::hexagonal_lattice_boundary(wrong_columns, 1.0), std::invalid_argument);
+    EXPECT_THROW(
+      fdapde::hexagonal_lattice_boundary(
+        points({
+          {0, 0}
+    }),
+        0.0),
+      std::invalid_argument);
+    EXPECT_THROW(
+      fdapde::hexagonal_lattice_boundary(
+        points({
+          {0, 0}
+    }),
+        std::numeric_limits<double>::infinity()),
+      std::invalid_argument);
+
+    auto nonfinite = points({
+      {0, 0}
+    });
+    nonfinite(0, 0) = std::numeric_limits<double>::quiet_NaN();
+    EXPECT_THROW(fdapde::hexagonal_lattice_boundary(nonfinite, 1.0), std::invalid_argument);
+    EXPECT_THROW(
+      fdapde::hexagonal_lattice_boundary(
+        points({
+          {0, 0}
+    }),
+        1.0, fdapde::Vector<double, 2>(0.0, std::numeric_limits<double>::infinity())),
+      std::invalid_argument);
+    EXPECT_THROW(
+      fdapde::hexagonal_lattice_boundary(
+        points({
+          {std::numeric_limits<double>::max(), 0.0}
+    }),
+        1.0, fdapde::Vector<double, 2>(0.0, 0.0)),
       std::invalid_argument);
 }

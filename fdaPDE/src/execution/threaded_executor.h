@@ -21,7 +21,7 @@
 
 namespace fdapde {
 namespace internals {
-  
+
 // number of thread to use. default to maximum number of logical threads on the hosing machine
 inline int parallel_num_threads = fdapde::available_concurrency();
 
@@ -116,7 +116,7 @@ struct threaded_executor_impl {
     void enqueue_task(int worker, task_pointer task) { workers_[worker]->enqueue_task(task); }
     void notify_all() { cv_.notify_all(); }
     // signals the intention to block the pool until task_count tasks have been completed
-    void expect_tasks(int task_count) { 
+    void expect_tasks(int task_count) {
         std::lock_guard<std::mutex> lock(m_);
         task_count_ = task_count;
     }
@@ -187,10 +187,12 @@ struct threaded_executor_impl {
     // allocates and submits task to the pool. notifies all workers for execution
     template <typename Task> void dispatch_task_(Task&& task) {
         int w_id = scheduling_policy_.pick();
-        workers_[w_id]->submit_task(task_type(std::move(task), w_id));
-        std::unique_lock<std::mutex> lock(m_);
-        task_count_++;
-        lock.unlock();
+        task_pointer task_ptr = workers_[w_id]->allocate_task(task_type(std::move(task), w_id));
+        {
+            std::lock_guard<std::mutex> lock(m_);
+            task_count_++;
+            workers_[w_id]->enqueue_task(task_ptr);
+        }
         cv_.notify_all();
         return;
     }
@@ -236,9 +238,9 @@ template <typename Task, typename... Args>
 static constexpr bool is_runnable_task_v = is_runnable_task<Task, Args...>::value;
 
 // set number of worker threads
-void parallel_set_num_threads(int num_threads) { internals::parallel_num_threads = num_threads; }
+inline void parallel_set_num_threads(int num_threads) { internals::parallel_num_threads = num_threads; }
 // get number of worker threads
-int  parallel_get_num_threads() { return internals::parallel_num_threads; }
+inline int parallel_get_num_threads() { return internals::parallel_num_threads; }
 // executes a callable object asynchronously
 template <typename F, typename... Args>
     requires(std::is_invocable_v<F, Args...>)
@@ -252,8 +254,8 @@ auto parallel_async(F&& f, Args&&... args) {
     return internals::threaded_executor::instance().async(std::forward<F>(f), std::forward<Args>(args)...);
 }
 // explicitly joins the executor until all work is completed
-void parallel_join() { internals::threaded_executor::instance().join(); }
-  
+inline void parallel_join() { internals::threaded_executor::instance().join(); }
+
 }   // namespace fdapde
 
 #endif   // __FDAPDE_EXECUTION_THREADED_EXECUTOR_H__

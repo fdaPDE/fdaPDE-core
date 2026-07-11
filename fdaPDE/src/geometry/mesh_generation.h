@@ -24,7 +24,7 @@
 
 namespace fdapde {
 namespace internals {
-namespace square_lattice {
+namespace lattice_boundary {
 
 // functional source: Pietro Donelli, donellipietro/mesh_generator main@70591db6498cdfa16b5d0afe19542c334dc9b195
 // this implementation replaces the prototype's sp/sf/rmapshaper union with integer cell topology
@@ -33,21 +33,8 @@ using cell_t = std::array<std::int64_t, 2>;
 using vertex_t = std::array<std::int64_t, 2>;
 using directed_edge_t = std::pair<vertex_t, vertex_t>;
 
-inline cell_t neighbor(const cell_t& cell, int dx, int dy) { return {cell[0] + dx, cell[1] + dy}; }
-
-inline std::int64_t cell_index(double coordinate, double origin, double spacing) {
-    const long double normalized = (static_cast<long double>(coordinate) - static_cast<long double>(origin)) / spacing;
-    const long double lower = std::floor(normalized);
-    const long double index = lower + ((normalized - lower) >= 0.5L ? 1.0L : 0.0L);
-    constexpr std::int64_t limit = std::numeric_limits<std::int64_t>::max() / 4;
-    const long double floating_limit = static_cast<long double>(limit);
-    if (!std::isfinite(index) || index < -floating_limit || index > floating_limit) {
-        throw std::invalid_argument("Square lattice coordinate exceeds the supported index range.");
-    }
-    return static_cast<std::int64_t>(index);
-}
-
-inline std::set<cell_t> largest_component(const std::set<cell_t>& occupied) {
+template <typename Neighbors>
+inline std::set<cell_t> largest_component(const std::set<cell_t>& occupied, Neighbors&& neighbors) {
     std::set<cell_t> unvisited = occupied;
     std::set<cell_t> best;
     while (!unvisited.empty()) {
@@ -60,8 +47,7 @@ inline std::set<cell_t> largest_component(const std::set<cell_t>& occupied) {
             const cell_t cell = queue.front();
             queue.pop();
             component.insert(cell);
-            for (const cell_t& next :
-                 {neighbor(cell, -1, 0), neighbor(cell, 0, -1), neighbor(cell, 1, 0), neighbor(cell, 0, 1)}) {
+            for (const cell_t& next : neighbors(cell)) {
                 auto it = unvisited.find(next);
                 if (it != unvisited.end()) {
                     queue.push(next);
@@ -76,23 +62,6 @@ inline std::set<cell_t> largest_component(const std::set<cell_t>& occupied) {
         }
     }
     return best;
-}
-
-inline std::set<directed_edge_t> boundary_edges(const std::set<cell_t>& cells) {
-    std::set<directed_edge_t> edges;
-    for (const cell_t& cell : cells) {
-        const std::int64_t x = 2 * cell[0];
-        const std::int64_t y = 2 * cell[1];
-        const vertex_t bottom_left {x - 1, y - 1};
-        const vertex_t bottom_right {x + 1, y - 1};
-        const vertex_t top_right {x + 1, y + 1};
-        const vertex_t top_left {x - 1, y + 1};
-        if (!cells.contains(neighbor(cell, 0, -1))) edges.emplace(bottom_left, bottom_right);
-        if (!cells.contains(neighbor(cell, 1, 0))) edges.emplace(bottom_right, top_right);
-        if (!cells.contains(neighbor(cell, 0, 1))) edges.emplace(top_right, top_left);
-        if (!cells.contains(neighbor(cell, -1, 0))) edges.emplace(top_left, bottom_left);
-    }
-    return edges;
 }
 
 inline int turn_rank(const vertex_t& previous, const vertex_t& current, const vertex_t& next) {
@@ -149,7 +118,7 @@ inline std::vector<std::vector<vertex_t>> trace_rings(const std::set<directed_ed
     while (remaining > 0) {
         auto start_it =
           std::find_if(outgoing.begin(), outgoing.end(), [](const auto& entry) { return !entry.second.empty(); });
-        if (start_it == outgoing.end()) { throw std::runtime_error("Square lattice boundary has an open ring."); }
+        if (start_it == outgoing.end()) { throw std::runtime_error("Lattice boundary has an open ring."); }
         const vertex_t start = start_it->first;
         vertex_t previous = start;
         vertex_t current = *start_it->second.begin();
@@ -162,7 +131,7 @@ inline std::vector<std::vector<vertex_t>> trace_rings(const std::set<directed_ed
             ring.push_back(current);
             auto next_it = outgoing.find(current);
             if (next_it == outgoing.end() || next_it->second.empty()) {
-                throw std::runtime_error("Square lattice boundary has an open ring.");
+                throw std::runtime_error("Lattice boundary has an open ring.");
             }
             auto selected = next_it->second.begin();
             int selected_rank = turn_rank(previous, current, *selected);
@@ -178,16 +147,219 @@ inline std::vector<std::vector<vertex_t>> trace_rings(const std::set<directed_ed
             --remaining;
             previous = current;
             current = next;
-            if (++steps > edges.size()) { throw std::runtime_error("Square lattice boundary tracing did not close."); }
+            if (++steps > edges.size()) { throw std::runtime_error("Lattice boundary tracing did not close."); }
         }
         ring = compress_ring(std::move(ring));
-        if (ring.size() < 3) { throw std::runtime_error("Square lattice boundary contains a degenerate ring."); }
+        if (ring.size() < 3) { throw std::runtime_error("Lattice boundary contains a degenerate ring."); }
         rings.push_back(std::move(ring));
     }
     return rings;
 }
 
+inline std::vector<vertex_t> outer_ring(const std::set<directed_edge_t>& edges, const char* lattice_name) {
+    const auto rings = trace_rings(edges);
+    const std::vector<vertex_t>* outer = nullptr;
+    for (const auto& ring : rings) {
+        if (twice_signed_area(ring) <= 0.0L) continue;
+        if (outer != nullptr) {
+            throw std::runtime_error(std::string(lattice_name) + " lattice component has multiple outer rings.");
+        }
+        outer = std::addressof(ring);
+    }
+    if (outer == nullptr) {
+        throw std::runtime_error(std::string(lattice_name) + " lattice component has no outer ring.");
+    }
+    std::vector<vertex_t> canonical = *outer;
+    std::rotate(canonical.begin(), std::min_element(canonical.begin(), canonical.end()), canonical.end());
+    return canonical;
+}
+
+}   // namespace lattice_boundary
+
+namespace square_lattice {
+
+using lattice_boundary::cell_t;
+using lattice_boundary::directed_edge_t;
+using lattice_boundary::vertex_t;
+
+inline cell_t neighbor(const cell_t& cell, int dx, int dy) { return {cell[0] + dx, cell[1] + dy}; }
+
+inline std::int64_t cell_index(double coordinate, double origin, double spacing) {
+    const long double normalized = (static_cast<long double>(coordinate) - static_cast<long double>(origin)) / spacing;
+    const long double lower = std::floor(normalized);
+    const long double index = lower + ((normalized - lower) >= 0.5L ? 1.0L : 0.0L);
+    constexpr std::int64_t limit = std::numeric_limits<std::int64_t>::max() / 4;
+    const long double floating_limit = static_cast<long double>(limit);
+    if (!std::isfinite(index) || index < -floating_limit || index > floating_limit) {
+        throw std::invalid_argument("Square lattice coordinate exceeds the supported index range.");
+    }
+    return static_cast<std::int64_t>(index);
+}
+
+inline std::set<cell_t> largest_component(const std::set<cell_t>& occupied) {
+    return lattice_boundary::largest_component(occupied, [](const cell_t& cell) {
+        return std::array<cell_t, 4> {
+          neighbor(cell, -1, 0), neighbor(cell, 0, -1), neighbor(cell, 1, 0), neighbor(cell, 0, 1)};
+    });
+}
+
+inline std::set<directed_edge_t> boundary_edges(const std::set<cell_t>& cells) {
+    std::set<directed_edge_t> edges;
+    for (const cell_t& cell : cells) {
+        const std::int64_t x = 2 * cell[0];
+        const std::int64_t y = 2 * cell[1];
+        const vertex_t bottom_left {x - 1, y - 1};
+        const vertex_t bottom_right {x + 1, y - 1};
+        const vertex_t top_right {x + 1, y + 1};
+        const vertex_t top_left {x - 1, y + 1};
+        if (!cells.contains(neighbor(cell, 0, -1))) edges.emplace(bottom_left, bottom_right);
+        if (!cells.contains(neighbor(cell, 1, 0))) edges.emplace(bottom_right, top_right);
+        if (!cells.contains(neighbor(cell, 0, 1))) edges.emplace(top_right, top_left);
+        if (!cells.contains(neighbor(cell, -1, 0))) edges.emplace(top_left, bottom_left);
+    }
+    return edges;
+}
+
 }   // namespace square_lattice
+
+namespace hexagonal_lattice {
+
+using lattice_boundary::cell_t;
+using lattice_boundary::directed_edge_t;
+using lattice_boundary::vertex_t;
+
+inline cell_t neighbor(const cell_t& cell, int dq, int dr) { return {cell[0] + dq, cell[1] + dr}; }
+
+inline void validate_coordinate(double x, double y, double anchor_x, double anchor_y, double spacing) {
+    constexpr long double sqrt_three = 1.73205080756887729352744634150587237L;
+    constexpr std::int64_t limit = std::numeric_limits<std::int64_t>::max() / 16;
+    constexpr long double floating_limit = static_cast<long double>(limit);
+    const long double dx = (static_cast<long double>(x) - anchor_x) / spacing;
+    const long double dy = (static_cast<long double>(y) - anchor_y) / spacing;
+    const long double q = dx - dy / sqrt_three;
+    const long double r = 2.0L * dy / sqrt_three;
+    if (!std::isfinite(q) || !std::isfinite(r) || std::abs(q) > floating_limit || std::abs(r) > floating_limit) {
+        throw std::invalid_argument("Hexagonal lattice coordinate exceeds the supported index range.");
+    }
+}
+
+inline cell_t nearest_cell(double x, double y, double anchor_x, double anchor_y, double spacing) {
+    constexpr long double sqrt_three = 1.73205080756887729352744634150587237L;
+    const long double dx = (static_cast<long double>(x) - anchor_x) / spacing;
+    const long double dy = (static_cast<long double>(y) - anchor_y) / spacing;
+    const std::int64_t base_r = static_cast<std::int64_t>(std::floor(2.0L * dy / sqrt_three));
+    cell_t best {};
+    long double best_distance = std::numeric_limits<long double>::infinity();
+    for (std::int64_t r = base_r - 1; r <= base_r + 2; ++r) {
+        const long double q_coordinate = dx - 0.5L * r;
+        const std::int64_t base_q = static_cast<std::int64_t>(std::floor(q_coordinate));
+        for (std::int64_t q = base_q; q <= base_q + 1; ++q) {
+            const long double delta_x = dx - (q + 0.5L * r);
+            const long double delta_y = dy - 0.5L * sqrt_three * r;
+            const long double distance = delta_x * delta_x + delta_y * delta_y;
+            const cell_t candidate {q, r};
+            if (distance < best_distance || (distance == best_distance && candidate < best)) {
+                best = candidate;
+                best_distance = distance;
+            }
+        }
+    }
+    return best;
+}
+
+inline std::set<cell_t> largest_component(const std::set<cell_t>& occupied) {
+    return lattice_boundary::largest_component(occupied, [](const cell_t& cell) {
+        return std::array<cell_t, 6> {neighbor(cell, 1, 0),  neighbor(cell, 0, 1),  neighbor(cell, -1, 1),
+                                      neighbor(cell, -1, 0), neighbor(cell, 0, -1), neighbor(cell, 1, -1)};
+    });
+}
+
+inline std::set<directed_edge_t> boundary_edges(const std::set<cell_t>& cells) {
+    std::set<directed_edge_t> edges;
+    for (const cell_t& cell : cells) {
+        const std::int64_t x = 2 * cell[0] + cell[1];
+        const std::int64_t y = 3 * cell[1];
+        const std::array<vertex_t, 6> vertices {
+          vertex_t {x + 1, y + 1},
+           vertex_t {x,     y + 2},
+           vertex_t {x - 1, y + 1},
+          vertex_t {x - 1, y - 1},
+           vertex_t {x,     y - 2},
+           vertex_t {x + 1, y - 1}
+        };
+        const std::array<cell_t, 6> neighbors {neighbor(cell, 0, 1),  neighbor(cell, -1, 1), neighbor(cell, -1, 0),
+                                               neighbor(cell, 0, -1), neighbor(cell, 1, -1), neighbor(cell, 1, 0)};
+        for (int i = 0; i < 6; ++i) {
+            if (!cells.contains(neighbors[i])) edges.emplace(vertices[i], vertices[(i + 1) % 6]);
+        }
+    }
+    return edges;
+}
+
+template <typename ExecutionPolicy>
+inline Matrix<double, Dynamic, Dynamic> boundary(
+  ExecutionPolicy, const Matrix<double, Dynamic, Dynamic>& points, double spacing,
+  std::optional<Vector<double, 2>> anchor) {
+    if (points.rows() == 0 || points.cols() != 2) {
+        throw std::invalid_argument("Hexagonal lattice points must be a nonempty matrix with two columns.");
+    }
+    if (!std::isfinite(spacing) || spacing <= 0.0) {
+        throw std::invalid_argument("Hexagonal lattice spacing must be finite and positive.");
+    }
+
+    double anchor_x = points(0, 0);
+    double anchor_y = points(0, 1);
+    if (anchor.has_value()) {
+        anchor_x = (*anchor)[0];
+        anchor_y = (*anchor)[1];
+        if (!std::isfinite(anchor_x) || !std::isfinite(anchor_y)) {
+            throw std::invalid_argument("Hexagonal lattice anchor must contain finite coordinates.");
+        }
+    }
+    for (int i = 0; i < points.rows(); ++i) {
+        if (!std::isfinite(points(i, 0)) || !std::isfinite(points(i, 1))) {
+            throw std::invalid_argument("Hexagonal lattice points must contain only finite coordinates.");
+        }
+        if (!anchor.has_value()) {
+            anchor_x = std::min(anchor_x, points(i, 0));
+            anchor_y = std::max(anchor_y, points(i, 1));
+        }
+    }
+    for (int i = 0; i < points.rows(); ++i) {
+        validate_coordinate(points(i, 0), points(i, 1), anchor_x, anchor_y, spacing);
+    }
+
+    std::vector<cell_t> assignments(points.rows());
+    const auto classify = [&](int i) {
+        assignments[i] = nearest_cell(points(i, 0), points(i, 1), anchor_x, anchor_y, spacing);
+    };
+    if constexpr (std::is_same_v<ExecutionPolicy, execution_par_t>) {
+        parallel_for(0, points.rows(), classify);
+    } else {
+        for (int i = 0; i < points.rows(); ++i) classify(i);
+    }
+
+    const std::set<cell_t> occupied(assignments.begin(), assignments.end());
+    const std::set<cell_t> component = largest_component(occupied);
+    const std::vector<vertex_t> ring = lattice_boundary::outer_ring(boundary_edges(component), "Hexagonal");
+    Matrix<double, Dynamic, Dynamic> result(ring.size(), 2);
+    std::set<std::array<double, 2>> represented_vertices;
+    constexpr long double sqrt_three = 1.73205080756887729352744634150587237L;
+    for (int i = 0; i < int(ring.size()); ++i) {
+        result(i, 0) = anchor_x + 0.5L * spacing * ring[i][0];
+        result(i, 1) = anchor_y + 0.5L / sqrt_three * spacing * ring[i][1];
+        if (!std::isfinite(result(i, 0)) || !std::isfinite(result(i, 1))) {
+            throw std::invalid_argument("Hexagonal lattice boundary exceeds the finite coordinate range.");
+        }
+        if (!represented_vertices.insert({result(i, 0), result(i, 1)}).second) {
+            throw std::invalid_argument(
+              "Hexagonal lattice spacing is too small to represent distinct boundary vertices at this anchor.");
+        }
+    }
+    return result;
+}
+
+}   // namespace hexagonal_lattice
 }   // namespace internals
 
 /**
@@ -239,20 +411,8 @@ inline Matrix<double, Dynamic, Dynamic> square_lattice_boundary(
     }
 
     const std::set<cell_t> component = largest_component(occupied);
-    const auto rings = trace_rings(boundary_edges(component));
-    const std::vector<vertex_t>* outer = nullptr;
-    for (const auto& ring : rings) {
-        const long double area = twice_signed_area(ring);
-        if (area > 0.0L) {
-            if (outer != nullptr) { throw std::runtime_error("Square lattice component has multiple outer rings."); }
-            outer = std::addressof(ring);
-        }
-    }
-    if (outer == nullptr) { throw std::runtime_error("Square lattice component has no outer ring."); }
-
-    std::vector<vertex_t> canonical = *outer;
-    auto first = std::min_element(canonical.begin(), canonical.end());
-    std::rotate(canonical.begin(), first, canonical.end());
+    const std::vector<vertex_t> canonical =
+      internals::lattice_boundary::outer_ring(boundary_edges(component), "Square");
     Matrix<double, Dynamic, Dynamic> boundary(canonical.size(), 2);
     std::set<std::array<double, 2>> represented_vertices;
     for (int i = 0; i < int(canonical.size()); ++i) {
@@ -267,6 +427,34 @@ inline Matrix<double, Dynamic, Dynamic> square_lattice_boundary(
         }
     }
     return boundary;
+}
+
+/**
+ * @brief Build the outer boundary of the largest 6-connected component of occupied pointy hexagonal cells.
+ *
+ * `spacing` is the horizontal distance between neighboring cell centers. The optional anchor is the center of axial
+ * cell (0, 0); without one, `(min(points.col(0)), max(points.col(1)))` is used. Each point occupies its nearest cell,
+ * with exactly equidistant cells resolved lexicographically. Duplicate points have no effect. Interior holes are
+ * filled, and the result is an unclosed, counter-clockwise ring beginning at its lexicographically smallest vertex.
+ * The default overload executes sequentially; pass `execution_par` to classify points in parallel before the serial,
+ * deterministic topology stage.
+ */
+inline Matrix<double, Dynamic, Dynamic> hexagonal_lattice_boundary(
+  execution_seq_t policy, const Matrix<double, Dynamic, Dynamic>& points, double spacing,
+  std::optional<Vector<double, 2>> anchor = std::nullopt) {
+    return internals::hexagonal_lattice::boundary(policy, points, spacing, anchor);
+}
+
+inline Matrix<double, Dynamic, Dynamic> hexagonal_lattice_boundary(
+  execution_par_t policy, const Matrix<double, Dynamic, Dynamic>& points, double spacing,
+  std::optional<Vector<double, 2>> anchor = std::nullopt) {
+    return internals::hexagonal_lattice::boundary(policy, points, spacing, anchor);
+}
+
+inline Matrix<double, Dynamic, Dynamic> hexagonal_lattice_boundary(
+  const Matrix<double, Dynamic, Dynamic>& points, double spacing,
+  std::optional<Vector<double, 2>> anchor = std::nullopt) {
+    return hexagonal_lattice_boundary(execution_seq, points, spacing, anchor);
 }
 
 }   // namespace fdapde

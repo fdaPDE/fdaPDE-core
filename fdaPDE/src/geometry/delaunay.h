@@ -155,6 +155,11 @@ inline bool on_segment(const point_t& a, const point_t& b, const point_t& p) {
 }
 
 inline bool segments_intersect(const point_t& a, const point_t& b, const point_t& c, const point_t& d) {
+    if (
+      std::max(a.x, b.x) < std::min(c.x, d.x) || std::max(c.x, d.x) < std::min(a.x, b.x) ||
+      std::max(a.y, b.y) < std::min(c.y, d.y) || std::max(c.y, d.y) < std::min(a.y, b.y)) {
+        return false;
+    }
     const predicate_sign o1 = orient2d(a, b, c);
     const predicate_sign o2 = orient2d(a, b, d);
     const predicate_sign o3 = orient2d(c, d, a);

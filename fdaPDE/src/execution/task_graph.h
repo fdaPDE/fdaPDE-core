@@ -227,7 +227,7 @@ class TaskGraph {
     std::vector<node_type> nodes_ {};
 };
 
-void parallel_execute(TaskGraph& tg) {
+inline void parallel_execute(TaskGraph& tg) {
     return internals::threaded_executor::instance().execute(internals::task_graph(), tg);
 }
 
