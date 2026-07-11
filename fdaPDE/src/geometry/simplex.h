@@ -132,8 +132,11 @@ template <int Order_, int EmbedDim_> class Simplex {
         Matrix<double, local_dim + 1, 1> z;
         z.bottom_rows(local_dim) = invJ_ * (x - coords_.col(0));
         z[0] = 1 - z.bottom_rows(local_dim).sum();
-        if ((z.cwise() < -machine_epsilon).any()) return ContainsReturnType::OUTSIDE;
-        int nonzeros = (z.cwise() > machine_epsilon).count();
+        int nonzeros = 0;
+        for (int i = 0; i < z.rows(); ++i) {
+            if (z[i] < -machine_epsilon) return ContainsReturnType::OUTSIDE;
+            if (z[i] > machine_epsilon) ++nonzeros;
+        }
         if (nonzeros == 1) return ContainsReturnType::ON_VERTEX;
         if (nonzeros == n_nodes_per_face) return ContainsReturnType::ON_FACE;
         return ContainsReturnType::INSIDE;

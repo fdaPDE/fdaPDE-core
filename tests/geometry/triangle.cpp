@@ -19,6 +19,29 @@
 
 using namespace fdapde;
 
+TEST(geometry, simplex_contains_and_mesh_locate) {
+    using simplex_t = Simplex<2, 2>;
+    const Matrix<double, 2, 3> coordinates({0.0, 1.0, 0.0, 0.0, 0.0, 1.0});
+    const simplex_t triangle(coordinates);
+    EXPECT_EQ(triangle.contains(Vector<double, 2>(0.0, 0.0)), simplex_t::ON_VERTEX);
+    EXPECT_EQ(triangle.contains(Vector<double, 2>(0.5, 0.0)), simplex_t::ON_FACE);
+    EXPECT_EQ(triangle.contains(Vector<double, 2>(0.2, 0.2)), simplex_t::INSIDE);
+    EXPECT_EQ(triangle.contains(Vector<double, 2>(-2.0 * machine_epsilon, 0.2)), simplex_t::OUTSIDE);
+
+    const auto mesh = Triangulation<2, 2>::UnitSquare(2);
+    Matrix<double, Dynamic, Dynamic> locations(3, 2);
+    locations(0, 0) = 0.0;
+    locations(0, 1) = 0.0;
+    locations(1, 0) = 0.5;
+    locations(1, 1) = 0.5;
+    locations(2, 0) = 2.0;
+    locations(2, 1) = 2.0;
+    const auto cells = mesh.locate(locations);
+    EXPECT_NE(cells[0], -1);
+    EXPECT_NE(cells[1], -1);
+    EXPECT_EQ(cells[2], -1);
+}
+
 TEST(geometry, structured_triangulation_iterators) {
     auto mesh = Triangulation<2, 2>::UnitSquare(3);
     static_assert(std::bidirectional_iterator<decltype(mesh.cells_begin())>);
