@@ -14,23 +14,40 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_CORE_MODULE_H__
-#define __FDAPDE_CORE_MODULE_H__
+#ifndef __FDAPDE_EXECUTION_MODULE_H__
+#define __FDAPDE_EXECUTION_MODULE_H__
 
 // clang-format off
 
-// include modules
-#include "linear_algebra.h"    // pull Eigen first
+namespace fdapde {
+
+struct execution_par_t { };
+struct execution_seq_t { };
+static constexpr execution_par_t execution_par;
+static constexpr execution_seq_t execution_seq;
+
+}   // namespace fdapde
+
 #include "utility.h"
-#include "execution.h"
-#include "fields.h"
-#include "geometry.h"
-#include "io.h"
-#include "finite_elements.h"
-#include "splines.h"
-#include "optimization.h"
-#include "geoframe.h"
+
+#include <atomic>
+#include <mutex>
+#include <future>
+#include <latch>
+
+#include "src/execution/concurrency.h"
+
+// basic threaded runtime
+#include "src/execution/task_handle.h"
+#include "src/execution/worker.h"
+#include "src/execution/threaded_executor.h"
+
+// high-level API
+#include "src/execution/parallel_for.h"
+#include "src/execution/parallel_for_each.h"
+#include "src/execution/parallel_reduce.h"
+#include "src/execution/task_graph.h"
 
 // clang-format on
 
-#endif   // __FDAPDE_CORE_MODULE_H__
+#endif   // __FDAPDE_EXECUTION_MODULE_H__
