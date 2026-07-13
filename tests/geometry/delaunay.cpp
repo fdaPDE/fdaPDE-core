@@ -333,6 +333,43 @@ TEST(delaunay, triangulates_multiple_and_concave_holes_with_sites) {
     expect_locally_delaunay(concave);
 }
 
+TEST(delaunay, triangulates_reference_fork_domains) {
+    using namespace delaunay_testing;
+
+    // domains adapted from francesca1606/Luca-Francesca stable@fbd20e1
+    const auto star = points({
+      {0.0,    100.0 },
+      {-22.45, 30.90 },
+      {-95.11, 30.90 },
+      {-36.33, -11.80},
+      {-58.78, -80.90},
+      {0.0,    -38.20},
+      {58.78,  -80.90},
+      {36.33,  -11.80},
+      {95.11,  30.90 },
+      {22.45,  30.90 }
+    });
+
+    const mesh_t star_mesh = fdapde::constrained_delaunay(star);
+    EXPECT_EQ(star_mesh.n_boundary_edges(), star.rows());
+    EXPECT_NEAR(star_mesh.measure(), 11225.978, 1e-9);
+    expect_valid_topology(star_mesh);
+    expect_locally_delaunay(star_mesh);
+
+    const fdapde::PlanarDomain letter_a {
+      .outer = points(
+        {{0.0, 0.0}, {7.5, 0.0}, {10.0, 10.0}, {20.0, 10.0}, {22.5, 0.0}, {30.0, 0.0}, {22.5, 30.0}, {7.5, 30.0}}
+          ),
+      .holes = {points({{11.5, 16.0}, {18.5, 16.0}, {17.0, 24.0}, {13.0, 24.0}})}
+    };
+
+    const mesh_t letter_a_mesh = fdapde::constrained_delaunay(letter_a);
+    EXPECT_EQ(letter_a_mesh.n_boundary_edges(), 12);
+    EXPECT_NEAR(letter_a_mesh.measure(), 506.0, 1e-12);
+    expect_valid_topology(letter_a_mesh);
+    expect_locally_delaunay(letter_a_mesh);
+}
+
 TEST(delaunay, recovers_missing_hole_constraints) {
     using namespace delaunay_testing;
     const fdapde::PlanarDomain domain {
