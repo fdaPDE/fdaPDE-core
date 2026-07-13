@@ -280,7 +280,7 @@ template <typename T> class table_reader {
     void parse(
       const char* filename, bool header = true, char sep = ',', bool index_col = true, bool skip_quote = true,
       std::size_t chunksize = 4) {
-        std::string filename_ = std::filesystem::current_path().string() + "/" + filename;
+        std::string filename_ = filename;
         if (!std::filesystem::exists(filename_))
             throw std::runtime_error("file " + std::string(filename_) + " not found.");
         auto stream = batched_istream(filename_, chunksize); 
