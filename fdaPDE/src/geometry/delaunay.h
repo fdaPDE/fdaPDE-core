@@ -666,6 +666,293 @@ inline void remove_hole_interiors(
     cells = std::move(retained);
 }
 
+// conflict-graph insertion adapted from francesca1606/Luca-Francesca stable@fbd20e1
+class dcel_inserter {
+    using dcel_t = DCEL<2, 2>;
+   public:
+    static dcel_t build(
+      const std::vector<point_t>& points, const std::vector<cell_t>& seed_cells, const std::set<edge_t>& constraints,
+      std::vector<int> inserted_ids) {
+        Matrix<double, Dynamic, Dynamic> nodes(points.size(), 2);
+        Matrix<int, Dynamic, Dynamic> cells(seed_cells.size(), 3);
+        for (int i = 0; i < int(points.size()); ++i) {
+            nodes(i, 0) = points[i].x;
+            nodes(i, 1) = points[i].y;
+        }
+        for (int i = 0; i < int(seed_cells.size()); ++i) {
+            cells.row(i) = {seed_cells[i][0], seed_cells[i][1], seed_cells[i][2]};
+        }
+
+        dcel_t dcel = dcel_t::from_triangles(nodes, cells, constraints);
+        dcel_inserter inserter(dcel, points);
+        inserter.initialize_conflicts_(inserted_ids);
+        for (int id : inserted_ids) inserter.insert_(id);
+        inserter.compact_();
+        return dcel;
+    }
+   private:
+    dcel_inserter(dcel_t& dcel, const std::vector<point_t>& points) : dcel_(dcel), points_(points) {
+        conflicts_.resize(dcel_.cells_.size());
+        containing_cell_.resize(points_.size(), dcel_t::invalid_id);
+        cavity_marks_.resize(dcel_.cells_.size(), 0);
+        dcel_.halfedges_.reserve(std::max<std::size_t>(dcel_.halfedges_.size(), 8 * points_.size()));
+        dcel_.cells_.reserve(std::max<std::size_t>(dcel_.cells_.size(), 3 * points_.size()));
+    }
+
+    std::array<int, 3> cell_halfedges_(int cell) const {
+        const int first = dcel_.cells_[cell].halfedge_;
+        const int second = dcel_.halfedges_[first].next_;
+        return {first, second, dcel_.halfedges_[second].next_};
+    }
+
+    cell_t cell_nodes_(int cell) const {
+        const auto halfedges = cell_halfedges_(cell);
+        return {
+          dcel_.halfedges_[halfedges[0]].origin_,
+          dcel_.halfedges_[halfedges[1]].origin_,
+          dcel_.halfedges_[halfedges[2]].origin_,
+        };
+    }
+
+    bool cell_contains_(int cell, int point) const {
+        return in_ccw_triangle(points_, cell_nodes_(cell), points_[point]);
+    }
+
+    void initialize_conflicts_(const std::vector<int>& inserted_ids) {
+        for (int point : inserted_ids) {
+            int found = dcel_t::invalid_id;
+            for (int cell = 0; cell < int(dcel_.cells_.size()); ++cell) {
+                if (cell_contains_(cell, point)) {
+                    found = cell;
+                    break;
+                }
+            }
+            if (found == dcel_t::invalid_id) {
+                throw std::runtime_error("Delaunay conflict graph could not locate an interior point.");
+            }
+            containing_cell_[point] = found;
+            conflicts_[found].push_back(point);
+        }
+    }
+
+    void include_cavity_cell_(int cell, std::queue<int>& pending, std::vector<int>& cavity) {
+        if (cell == dcel_t::invalid_id || cavity_marks_[cell] == cavity_generation_ || !dcel_.cells_[cell].active_) {
+            return;
+        }
+        cavity_marks_[cell] = cavity_generation_;
+        pending.push(cell);
+        cavity.push_back(cell);
+    }
+
+    void insert_(int point) {
+        const int containing = containing_cell_[point];
+        if (containing == dcel_t::invalid_id || !dcel_.cells_[containing].active_) {
+            throw std::runtime_error("Delaunay conflict graph contains a stale cell.");
+        }
+
+        ++cavity_generation_;
+        std::vector<int> cavity;
+        std::queue<int> pending;
+        include_cavity_cell_(containing, pending, cavity);
+        for (int halfedge : cell_halfedges_(containing)) {
+            const int first = dcel_.halfedges_[halfedge].origin_;
+            const int second = dcel_.halfedges_[dcel_.halfedges_[halfedge].twin_].origin_;
+            if (!on_segment(points_[first], points_[second], points_[point])) continue;
+            if (dcel_.halfedges_[halfedge].segment_) {
+                throw std::runtime_error("Delaunay interior point lies on a constrained segment.");
+            }
+            include_cavity_cell_(dcel_.halfedges_[dcel_.halfedges_[halfedge].twin_].cell_, pending, cavity);
+        }
+
+        while (!pending.empty()) {
+            const int cell = pending.front();
+            pending.pop();
+            for (int halfedge : cell_halfedges_(cell)) {
+                if (dcel_.halfedges_[halfedge].segment_) continue;
+                const int neighbor = dcel_.halfedges_[dcel_.halfedges_[halfedge].twin_].cell_;
+                if (
+                  neighbor == dcel_t::invalid_id || cavity_marks_[neighbor] == cavity_generation_ ||
+                  !dcel_.cells_[neighbor].active_) {
+                    continue;
+                }
+                const cell_t nodes = cell_nodes_(neighbor);
+                if (
+                  incircle(points_[nodes[0]], points_[nodes[1]], points_[nodes[2]], points_[point]) ==
+                  predicate_sign::positive) {
+                    include_cavity_cell_(neighbor, pending, cavity);
+                }
+            }
+        }
+
+        std::vector<int> boundary;
+        std::vector<int> affected_points;
+        for (int cell : cavity) {
+            affected_points.insert(affected_points.end(), conflicts_[cell].begin(), conflicts_[cell].end());
+            conflicts_[cell].clear();
+            dcel_.cells_[cell].active_ = false;
+            for (int halfedge : cell_halfedges_(cell)) {
+                const int twin = dcel_.halfedges_[halfedge].twin_;
+                const int neighbor = dcel_.halfedges_[twin].cell_;
+                if (neighbor != dcel_t::invalid_id && cavity_marks_[neighbor] == cavity_generation_) {
+                    dcel_.halfedges_[halfedge].active_ = false;
+                    dcel_.halfedges_[twin].active_ = false;
+                } else {
+                    boundary.push_back(halfedge);
+                }
+            }
+        }
+        if (boundary.size() < 3) { throw std::runtime_error("Delaunay insertion produced an invalid cavity."); }
+
+        std::map<edge_t, int> unmatched_spokes;
+        std::vector<int> new_cells;
+        int point_halfedge = dcel_t::invalid_id;
+        new_cells.reserve(boundary.size());
+        for (int boundary_halfedge : boundary) {
+            const int first = dcel_.halfedges_[boundary_halfedge].origin_;
+            const int second = dcel_.halfedges_[dcel_.halfedges_[boundary_halfedge].twin_].origin_;
+            if (orient2d(points_[first], points_[second], points_[point]) != predicate_sign::positive) {
+                throw std::runtime_error("Delaunay cavity boundary has ambiguous orientation.");
+            }
+
+            const int cell = dcel_.cells_.size();
+            dcel_.cells_.push_back(typename dcel_t::cell_t {});
+            dcel_.cells_.back().id_ = cell;
+            dcel_.cells_.back().halfedge_ = boundary_halfedge;
+            conflicts_.emplace_back();
+            cavity_marks_.push_back(0);
+            new_cells.push_back(cell);
+
+            const int second_to_point = dcel_.halfedges_.size();
+            dcel_.halfedges_.push_back(typename dcel_t::halfedge_t {});
+            const int point_to_first = dcel_.halfedges_.size();
+            dcel_.halfedges_.push_back(typename dcel_t::halfedge_t {});
+
+            auto& boundary_edge = dcel_.halfedges_[boundary_halfedge];
+            boundary_edge.cell_ = cell;
+            boundary_edge.previous_ = point_to_first;
+            boundary_edge.next_ = second_to_point;
+
+            auto& outgoing = dcel_.halfedges_[second_to_point];
+            outgoing.id_ = second_to_point;
+            outgoing.origin_ = second;
+            outgoing.previous_ = boundary_halfedge;
+            outgoing.next_ = point_to_first;
+            outgoing.cell_ = cell;
+
+            auto& incoming = dcel_.halfedges_[point_to_first];
+            incoming.id_ = point_to_first;
+            incoming.origin_ = point;
+            incoming.previous_ = second_to_point;
+            incoming.next_ = boundary_halfedge;
+            incoming.cell_ = cell;
+            if (point_halfedge == dcel_t::invalid_id) point_halfedge = point_to_first;
+
+            for (const auto [edge_, halfedge] : {
+                   std::pair {edge(second, point), second_to_point},
+                    std::pair {edge(point,  first), point_to_first }
+            }) {
+                const auto found = unmatched_spokes.find(edge_);
+                if (found == unmatched_spokes.end()) {
+                    unmatched_spokes.emplace(edge_, halfedge);
+                } else {
+                    dcel_.halfedges_[halfedge].twin_ = found->second;
+                    dcel_.halfedges_[found->second].twin_ = halfedge;
+                    unmatched_spokes.erase(found);
+                }
+            }
+        }
+        if (!unmatched_spokes.empty()) { throw std::runtime_error("Delaunay cavity is not a closed polygon."); }
+        dcel_.nodes_[point].halfedge_ = point_halfedge;
+
+        for (int candidate : affected_points) {
+            if (candidate == point) continue;
+            int found = dcel_t::invalid_id;
+            for (int cell : new_cells) {
+                if (cell_contains_(cell, candidate)) {
+                    found = cell;
+                    break;
+                }
+            }
+            if (found == dcel_t::invalid_id) {
+                throw std::runtime_error("Delaunay conflict graph could not update an interior point.");
+            }
+            containing_cell_[candidate] = found;
+            conflicts_[found].push_back(candidate);
+        }
+        containing_cell_[point] = dcel_t::invalid_id;
+    }
+
+    void compact_() {
+        std::vector<int> cell_order;
+        for (const auto& cell : dcel_.cells_) {
+            if (cell.active_) cell_order.push_back(cell.id_);
+        }
+        std::sort(cell_order.begin(), cell_order.end(), [&](int first, int second) {
+            return canonical_cell(cell_nodes_(first)) < canonical_cell(cell_nodes_(second));
+        });
+
+        std::vector<int> cell_map(dcel_.cells_.size(), dcel_t::invalid_id);
+        std::vector<typename dcel_t::cell_t> compact_cells;
+        compact_cells.reserve(cell_order.size());
+        for (int old : cell_order) {
+            cell_map[old] = compact_cells.size();
+            compact_cells.push_back(dcel_.cells_[old]);
+            compact_cells.back().id_ = compact_cells.size() - 1;
+        }
+
+        std::vector<int> halfedge_map(dcel_.halfedges_.size(), dcel_t::invalid_id);
+        std::vector<typename dcel_t::halfedge_t> compact_halfedges;
+        compact_halfedges.reserve(3 * compact_cells.size() + dcel_.nodes_.size());
+        for (const auto& halfedge : dcel_.halfedges_) {
+            if (!halfedge.active_) continue;
+            halfedge_map[halfedge.id_] = compact_halfedges.size();
+            compact_halfedges.push_back(halfedge);
+            compact_halfedges.back().id_ = compact_halfedges.size() - 1;
+        }
+
+        for (auto& halfedge : compact_halfedges) {
+            if (
+              halfedge_map[halfedge.twin_] == dcel_t::invalid_id ||
+              halfedge_map[halfedge.previous_] == dcel_t::invalid_id ||
+              halfedge_map[halfedge.next_] == dcel_t::invalid_id) {
+                throw std::runtime_error("Delaunay compaction found a stale halfedge link.");
+            }
+            halfedge.twin_ = halfedge_map[halfedge.twin_];
+            halfedge.previous_ = halfedge_map[halfedge.previous_];
+            halfedge.next_ = halfedge_map[halfedge.next_];
+            if (halfedge.cell_ != dcel_t::invalid_id) {
+                if (cell_map[halfedge.cell_] == dcel_t::invalid_id) {
+                    throw std::runtime_error("Delaunay compaction found a stale cell link.");
+                }
+                halfedge.cell_ = cell_map[halfedge.cell_];
+            }
+        }
+        for (int i = 0; i < int(cell_order.size()); ++i) {
+            const auto old_halfedges = cell_halfedges_(cell_order[i]);
+            const int old_halfedge =
+              *std::min_element(old_halfedges.begin(), old_halfedges.end(), [&](int first, int second) {
+                  return dcel_.halfedges_[first].origin_ < dcel_.halfedges_[second].origin_;
+              });
+            compact_cells[i].halfedge_ = halfedge_map[old_halfedge];
+        }
+
+        for (auto& node : dcel_.nodes_) node.halfedge_ = dcel_t::invalid_id;
+        for (const auto& halfedge : compact_halfedges) {
+            auto& node = dcel_.nodes_[halfedge.origin_];
+            if (node.halfedge_ == dcel_t::invalid_id) node.halfedge_ = halfedge.id_;
+        }
+        dcel_.halfedges_ = std::move(compact_halfedges);
+        dcel_.cells_ = std::move(compact_cells);
+    }
+
+    dcel_t& dcel_;
+    const std::vector<point_t>& points_;
+    std::vector<std::vector<int>> conflicts_;
+    std::vector<int> containing_cell_;
+    std::vector<int> cavity_marks_;
+    int cavity_generation_ = 0;
+};
+
 }   // namespace delaunay_2d
 }   // namespace internals
 
@@ -703,6 +990,76 @@ inline Triangulation<2, 2> delaunay(
 }
 
 /**
+ * @brief Build a constrained Delaunay DCEL for a simple ring and strictly interior sites.
+ *
+ * The returned DCEL is the topology representation. Call `triangulation()` only when the face-based FEM representation
+ * is needed.
+ */
+inline DCEL<2, 2> constrained_delaunay_dcel(
+  const Matrix<double, Dynamic, Dynamic>& boundary_matrix, const Matrix<double, Dynamic, Dynamic>& interior_matrix) {
+    using namespace internals::delaunay_2d;
+    std::vector<point_t> points = read_points(boundary_matrix, "Delaunay boundary");
+    const int boundary_size = points.size();
+    validate_boundary(points);
+    std::vector<point_t> interior = read_points(interior_matrix, "Delaunay interior points");
+    points.insert(points.end(), interior.begin(), interior.end());
+    validate_unique(points);
+
+    std::vector<int> boundary_ring(boundary_size);
+    std::iota(boundary_ring.begin(), boundary_ring.end(), 0);
+    for (int i = boundary_size; i < int(points.size()); ++i) {
+        if (locate_in_polygon(points, boundary_ring, points[i]) != point_location::inside) {
+            throw std::invalid_argument("Delaunay interior points must lie strictly inside the boundary.");
+        }
+    }
+
+    std::vector<cell_t> cells = ear_clip(points, boundary_size);
+    legalize(cells, points);
+    std::set<edge_t> constraints;
+    for (int i = 0; i < boundary_size; ++i) constraints.insert(edge(i, (i + 1) % boundary_size));
+    std::vector<int> interior_ids(points.size() - boundary_size);
+    std::iota(interior_ids.begin(), interior_ids.end(), boundary_size);
+    return dcel_inserter::build(points, cells, constraints, sorted_ids(points, std::move(interior_ids)));
+}
+
+inline DCEL<2, 2> constrained_delaunay_dcel(const Matrix<double, Dynamic, Dynamic>& boundary) {
+    return constrained_delaunay_dcel(boundary, Matrix<double, Dynamic, Dynamic>(0, 2));
+}
+
+/**
+ * @brief Build a constrained Delaunay DCEL for one outer ring, holes, and strictly interior sites.
+ */
+inline DCEL<2, 2>
+constrained_delaunay_dcel(const PlanarDomain& domain, const Matrix<double, Dynamic, Dynamic>& interior_matrix) {
+    if (domain.holes.empty()) return constrained_delaunay_dcel(domain.outer, interior_matrix);
+    using namespace internals::delaunay_2d;
+    domain_input_t input = read_domain(domain, interior_matrix);
+    const int boundary_nodes = input.boundary_edges.size();
+
+    std::vector<cell_t> cells = ear_clip(input.points, input.outer);
+    legalize(cells, input.points);
+    std::vector<int> hole_ids(boundary_nodes - input.outer.size());
+    std::iota(hole_ids.begin(), hole_ids.end(), input.outer.size());
+    for (int id : sorted_ids(input.points, std::move(hole_ids))) insert_node(id, false, input.points, cells);
+
+    std::set<edge_t> constraints(input.boundary_edges.begin(), input.boundary_edges.begin() + input.outer.size());
+    for (const edge_t& edge_ : input.hole_edges) {
+        recover_constraint(edge_, cells, input.points, constraints);
+        constraints.insert(edge_);
+    }
+    remove_hole_interiors(cells, input.points, input.holes, constraints);
+    legalize(cells, input.points, constraints);
+
+    std::vector<int> interior_ids(input.points.size() - boundary_nodes);
+    std::iota(interior_ids.begin(), interior_ids.end(), boundary_nodes);
+    return dcel_inserter::build(input.points, cells, constraints, sorted_ids(input.points, std::move(interior_ids)));
+}
+
+inline DCEL<2, 2> constrained_delaunay_dcel(const PlanarDomain& domain) {
+    return constrained_delaunay_dcel(domain, Matrix<double, Dynamic, Dynamic>(0, 2));
+}
+
+/**
  * @brief Triangulate a simple polygonal ring with optional strictly interior sites.
  *
  * The boundary is an unclosed clockwise or counter-clockwise ring with no consecutive collinear vertices. Its edges
@@ -711,6 +1068,7 @@ inline Triangulation<2, 2> delaunay(
 inline Triangulation<2, 2> constrained_delaunay(
   const Matrix<double, Dynamic, Dynamic>& boundary_matrix, const Matrix<double, Dynamic, Dynamic>& interior_matrix,
   std::optional<DelaunayRefinement> refinement = std::nullopt) {
+    if (!refinement.has_value()) return constrained_delaunay_dcel(boundary_matrix, interior_matrix).triangulation();
     using namespace internals::delaunay_2d;
     std::vector<point_t> points = read_points(boundary_matrix, "Delaunay boundary");
     const int boundary_size = points.size();
@@ -756,6 +1114,7 @@ inline Triangulation<2, 2> constrained_delaunay(
   const PlanarDomain& domain, const Matrix<double, Dynamic, Dynamic>& interior_matrix,
   std::optional<DelaunayRefinement> refinement = std::nullopt) {
     if (domain.holes.empty()) return constrained_delaunay(domain.outer, interior_matrix, refinement);
+    if (!refinement.has_value()) return constrained_delaunay_dcel(domain, interior_matrix).triangulation();
     using namespace internals::delaunay_2d;
     domain_input_t input = read_domain(domain, interior_matrix);
 

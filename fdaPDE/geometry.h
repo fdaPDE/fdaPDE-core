@@ -39,6 +39,7 @@
 /* #include "src/geometry/walk.h" */
 // data structures
 #include "src/geometry/triangulation.h"
+#include "src/geometry/dcel.h"
 // mesh generation
 #include "src/geometry/planar_geometry.h"
 #include "src/geometry/delaunay.h"
@@ -47,7 +48,6 @@
 #include "src/geometry/svg.h"
 /* #include "src/geometry/interval.h" */
 /* #include "src/geometry/linear_network.h" */
-/* #include "src/geometry/dcel.h" */
 /* #include "src/geometry/polygon.h" */
 
 // clang-format on

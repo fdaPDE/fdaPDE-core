@@ -15,6 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <gtest/gtest.h>   // testing framework
+
 #include <cstring>
 
 class fdapde_testing_printer : public ::testing::EmptyTestEventListener {
@@ -104,6 +105,7 @@ class fdapde_testing_printer : public ::testing::EmptyTestEventListener {
 #include "execution/parallel_algorithms.cpp"
 #include "execution/queues.cpp"
 #include "execution/task_graphs.cpp"
+#include "geometry/dcel.cpp"
 #include "geometry/delaunay.cpp"
 #include "geometry/domain_simplification.cpp"
 #include "geometry/mesh_generation.cpp"
