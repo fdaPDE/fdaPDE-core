@@ -33,7 +33,7 @@ template <int LocalDim, int EmbedDim> class HyperPlane {
         fdapde_static_assert(local_dim == 1, THIS_METHOD_IS_ONLY_FOR_LINES);
 	Eigen::Matrix<double, embed_dim, 1> tmp = x2 - x1;
         basis_.col(0) = tmp.normalized();
-        if constexpr (embed_dim == 2) normal_ << -tmp[0], tmp[1];
+        if constexpr (embed_dim == 2) normal_ << -tmp[1], tmp[0];
         if constexpr (embed_dim == 3) normal_ << -tmp[0], tmp[1], 0;   // one of the (infintely-many) normals to 3D line
         normal_ = normal_.normalized();
         offset_ = -x1.dot(normal_);
