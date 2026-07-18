@@ -49,7 +49,9 @@ struct fe_scalar_test_function_impl :
             fe_space_ = std::addressof(fe_space);
         }
     }
-    constexpr Scalar operator()(const InputType& fe_packet) const { return fe_packet.test_value(0); }
+    constexpr Scalar operator()(const InputType& fe_packet) const {
+        return fe_packet.test_trace_active() ? fe_packet.test_value(0) : Scalar(0);
+    }
 
     // first partial derivative functor
     template <typename Derived_>
@@ -73,7 +75,9 @@ struct fe_scalar_test_function_impl :
         constexpr int input_size() const { return StaticInputSize; }
         constexpr const Derived& derived() const { return xpr_; }
         constexpr const TestSpace& function_space() const { return xpr_.function_space(); }
-        constexpr Scalar operator()(const InputType& fe_packet) const { return fe_packet.test_grad[i_]; }
+        constexpr Scalar operator()(const InputType& fe_packet) const {
+            return fe_packet.test_trace_active() ? fe_packet.test_grad[i_] : Scalar(0);
+        }
        protected:
         Derived xpr_;
         int i_;
@@ -100,7 +104,9 @@ struct fe_scalar_test_function_impl :
         constexpr int input_size() const { return StaticInputSize; }
         constexpr const Derived& derived() const { return xpr_; }
         constexpr const TestSpace& function_space() const { return xpr_.function_space(); }
-        constexpr Scalar operator()(const InputType& fe_packet) const { return fe_packet.test_hess(0, i_, j_); }
+        constexpr Scalar operator()(const InputType& fe_packet) const {
+            return fe_packet.test_trace_active() ? fe_packet.test_hess(0, i_, j_) : Scalar(0);
+        }
        protected:
         Derived xpr_;
         int i_, j_;
@@ -138,7 +144,9 @@ struct fe_scalar_trial_function_impl :
             fe_space_ = std::addressof(fe_space);
         }
     }
-    constexpr Scalar operator()(const InputType& fe_packet) const { return fe_packet.trial_value(0); }
+    constexpr Scalar operator()(const InputType& fe_packet) const {
+        return fe_packet.trial_trace_active() ? fe_packet.trial_value(0) : Scalar(0);
+    }
 
     // first partial derivative functor
     template <typename Derived_>
@@ -162,7 +170,9 @@ struct fe_scalar_trial_function_impl :
         constexpr int input_size() const { return StaticInputSize; }
         constexpr const Derived& derived() const { return xpr_; }
         constexpr const TrialSpace& function_space() const { return xpr_.function_space(); }
-        constexpr Scalar operator()(const InputType& fe_packet) const { return fe_packet.trial_grad[i_]; }
+        constexpr Scalar operator()(const InputType& fe_packet) const {
+            return fe_packet.trial_trace_active() ? fe_packet.trial_grad[i_] : Scalar(0);
+        }
        protected:
         Derived xpr_;
         int i_;
@@ -189,7 +199,9 @@ struct fe_scalar_trial_function_impl :
         constexpr int input_size() const { return StaticInputSize; }
         constexpr const Derived& derived() const { return xpr_; }
         constexpr const TrialSpace& function_space() const { return xpr_.function_space(); }
-        constexpr Scalar operator()(const InputType& fe_packet) const { return fe_packet.trial_hess(0, i_, j_); }
+        constexpr Scalar operator()(const InputType& fe_packet) const {
+            return fe_packet.trial_trace_active() ? fe_packet.trial_hess(0, i_, j_) : Scalar(0);
+        }
        protected:
         Derived xpr_;
         int i_, j_;
@@ -231,9 +243,11 @@ struct fe_vector_test_function_impl :
             fe_space_ = std::addressof(fe_space);
         }
     }
-    constexpr Scalar eval(int i, const InputType& fe_packet) const { return fe_packet.test_value(i); }
+    constexpr Scalar eval(int i, const InputType& fe_packet) const {
+        return fe_packet.test_trace_active() ? fe_packet.test_value(i) : Scalar(0);
+    }
     constexpr Scalar eval(int i, [[maybe_unused]] int j, const InputType& fe_packet) const {
-        return fe_packet.test_value(i);
+        return fe_packet.test_trace_active() ? fe_packet.test_value(i) : Scalar(0);
     }
 
     template <typename Derived__>
@@ -260,7 +274,9 @@ struct fe_vector_test_function_impl :
         constexpr int size() const { return Rows * Cols; }
         constexpr const Derived& derived() const { return xpr_; }
         constexpr const TestSpace& function_space() const { return xpr_.function_space(); }
-        constexpr Scalar eval(int i, int j, const InputType& fe_packet) const { return fe_packet.test_grad(i, j); }
+        constexpr Scalar eval(int i, int j, const InputType& fe_packet) const {
+            return fe_packet.test_trace_active() ? fe_packet.test_grad(i, j) : Scalar(0);
+        }
        protected:
         Derived xpr_;
     };
@@ -282,7 +298,9 @@ struct fe_vector_test_function_impl :
         constexpr int input_size() const { return StaticInputSize; }
         constexpr const Derived& derived() const { return xpr_; }
         constexpr const TestSpace& function_space() const { return xpr_.function_space(); }
-        constexpr Scalar operator()(const InputType& fe_packet) const { return fe_packet.test_div; }
+        constexpr Scalar operator()(const InputType& fe_packet) const {
+            return fe_packet.test_trace_active() ? fe_packet.test_div : Scalar(0);
+        }
        protected:
         Derived xpr_;
     };
@@ -322,9 +340,11 @@ struct fe_vector_trial_function_impl :
             fe_space_ = std::addressof(fe_space);
         }
     }
-    constexpr Scalar eval(int i, const InputType& fe_packet) const { return fe_packet.trial_value(i); }
+    constexpr Scalar eval(int i, const InputType& fe_packet) const {
+        return fe_packet.trial_trace_active() ? fe_packet.trial_value(i) : Scalar(0);
+    }
     constexpr Scalar eval(int i, [[maybe_unused]] int j, const InputType& fe_packet) const {
-        return fe_packet.trial_value(i);
+        return fe_packet.trial_trace_active() ? fe_packet.trial_value(i) : Scalar(0);
     }
 
     template <typename Derived__>
@@ -351,7 +371,9 @@ struct fe_vector_trial_function_impl :
         constexpr int size() const { return Rows * Cols; }
         constexpr const Derived& derived() const { return xpr_; }
         constexpr const TrialSpace& function_space() const { return xpr_.function_space(); }
-        constexpr Scalar eval(int i, int j, const InputType& fe_packet) const { return fe_packet.trial_grad(i, j); }
+        constexpr Scalar eval(int i, int j, const InputType& fe_packet) const {
+            return fe_packet.trial_trace_active() ? fe_packet.trial_grad(i, j) : Scalar(0);
+        }
        protected:
         Derived xpr_;
     };
@@ -373,7 +395,9 @@ struct fe_vector_trial_function_impl :
         constexpr int input_size() const { return StaticInputSize; }
         constexpr const Derived& derived() const { return xpr_; }
         constexpr const TrialSpace& function_space() const { return xpr_.function_space(); }
-        constexpr Scalar operator()(const InputType& fe_packet) const { return fe_packet.trial_div; }
+        constexpr Scalar operator()(const InputType& fe_packet) const {
+            return fe_packet.trial_trace_active() ? fe_packet.trial_div : Scalar(0);
+        }
        protected:
         Derived xpr_;
     };
@@ -384,7 +408,159 @@ struct fe_vector_trial_function_impl :
     pointer_t fe_space_;
 };
 
+enum class fe_facet_op { average, jump };
+
+template <typename Packet, typename Callable>
+constexpr auto eval_facet_trace(const Packet& packet, fe_facet_side side, Callable&& callable) {
+    const fe_facet_side previous_side = packet.trace_side;
+    packet.trace_side = side;
+    auto value = callable();
+    packet.trace_side = previous_side;
+    return value;
+}
+
+template <typename Derived_, fe_facet_op Operation>
+struct fe_scalar_facet_op :
+    ScalarFieldBase<Derived_::StaticInputSize, fe_scalar_facet_op<Derived_, Operation>> {
+    using Derived = Derived_;
+    template <typename T> using Meta = fe_scalar_facet_op<T, Operation>;
+    using Base = ScalarFieldBase<Derived::StaticInputSize, fe_scalar_facet_op<Derived, Operation>>;
+    using InputType = typename Derived::InputType;
+    using Scalar = typename Derived::Scalar;
+    static constexpr int StaticInputSize = Derived::StaticInputSize;
+    static constexpr int NestAsRef = 0;
+    static constexpr int XprBits = Derived::XprBits | int(fe_assembler_flags::interior_facet);
+
+    constexpr explicit fe_scalar_facet_op(const Derived_& xpr) : Base(), xpr_(xpr) { }
+    constexpr Scalar operator()(const InputType& packet) const {
+        const Scalar plus = eval_facet_trace(packet, fe_facet_side::plus, [&]() { return xpr_(packet); });
+        const Scalar minus = eval_facet_trace(packet, fe_facet_side::minus, [&]() { return xpr_(packet); });
+        if constexpr (Operation == fe_facet_op::average) return Scalar(0.5) * (plus + minus);
+        return plus - minus;
+    }
+    constexpr int input_size() const { return xpr_.input_size(); }
+    constexpr const Derived& derived() const { return xpr_; }
+   private:
+    ref_select_t<const Derived> xpr_;
+};
+
+template <typename Derived_, fe_facet_op Operation>
+struct fe_matrix_facet_op :
+    MatrixFieldBase<Derived_::StaticInputSize, fe_matrix_facet_op<Derived_, Operation>> {
+    using Derived = Derived_;
+    template <typename T> using Meta = fe_matrix_facet_op<T, Operation>;
+    using Base = MatrixFieldBase<Derived::StaticInputSize, fe_matrix_facet_op<Derived, Operation>>;
+    using InputType = typename Derived::InputType;
+    using Scalar = typename Derived::Scalar;
+    static constexpr int StaticInputSize = Derived::StaticInputSize;
+    static constexpr int Rows = Derived::Rows;
+    static constexpr int Cols = Derived::Cols;
+    static constexpr int NestAsRef = 0;
+    static constexpr int XprBits = Derived::XprBits | int(fe_assembler_flags::interior_facet);
+    static constexpr int ReadOnly = 1;
+
+    constexpr explicit fe_matrix_facet_op(const Derived_& xpr) : Base(), xpr_(xpr) { }
+    constexpr Scalar eval(int i, int j, const InputType& packet) const {
+        const Scalar plus =
+          eval_facet_trace(packet, fe_facet_side::plus, [&]() { return xpr_.eval(i, j, packet); });
+        const Scalar minus =
+          eval_facet_trace(packet, fe_facet_side::minus, [&]() { return xpr_.eval(i, j, packet); });
+        if constexpr (Operation == fe_facet_op::average) return Scalar(0.5) * (plus + minus);
+        return plus - minus;
+    }
+    constexpr Scalar eval(int i, const InputType& packet) const {
+        const Scalar plus = eval_facet_trace(packet, fe_facet_side::plus, [&]() { return xpr_.eval(i, packet); });
+        const Scalar minus = eval_facet_trace(packet, fe_facet_side::minus, [&]() { return xpr_.eval(i, packet); });
+        if constexpr (Operation == fe_facet_op::average) return Scalar(0.5) * (plus + minus);
+        return plus - minus;
+    }
+    constexpr auto operator()(const InputType& packet) const { return Base::call_(packet); }
+    constexpr int rows() const { return xpr_.rows(); }
+    constexpr int cols() const { return xpr_.cols(); }
+    constexpr int input_size() const { return xpr_.input_size(); }
+    constexpr int size() const { return xpr_.size(); }
+    constexpr const Derived& derived() const { return xpr_; }
+   private:
+    ref_select_t<const Derived> xpr_;
+};
+
+template <typename Triangulation_>
+struct fe_facet_normal : MatrixFieldBase<Triangulation_::embed_dim, fe_facet_normal<Triangulation_>> {
+    using Triangulation = std::decay_t<Triangulation_>;
+    using Base = MatrixFieldBase<Triangulation::embed_dim, fe_facet_normal<Triangulation>>;
+    using InputType = fe_assembler_packet<Triangulation::embed_dim>;
+    using Scalar = double;
+    static constexpr int StaticInputSize = Triangulation::embed_dim;
+    static constexpr int Rows = Triangulation::embed_dim;
+    static constexpr int Cols = 1;
+    static constexpr int NestAsRef = 0;
+    static constexpr int XprBits = int(fe_assembler_flags::interior_facet);
+    static constexpr int ReadOnly = 1;
+
+    constexpr fe_facet_normal() = default;
+    constexpr explicit fe_facet_normal([[maybe_unused]] const Triangulation_& triangulation) { }
+    constexpr Eigen::Matrix<Scalar, Rows, Cols> operator()(const InputType& packet) const {
+        return packet.facet_normal;
+    }
+    constexpr Scalar eval(int i, [[maybe_unused]] int j, const InputType& packet) const {
+        return packet.facet_normal[i];
+    }
+    constexpr Scalar eval(int i, const InputType& packet) const { return packet.facet_normal[i]; }
+    constexpr int rows() const { return Rows; }
+    constexpr int cols() const { return Cols; }
+    constexpr int input_size() const { return StaticInputSize; }
+};
+
+template <typename Triangulation_>
+struct fe_facet_size : ScalarFieldBase<Triangulation_::embed_dim, fe_facet_size<Triangulation_>> {
+    using Triangulation = std::decay_t<Triangulation_>;
+    using Base = ScalarFieldBase<Triangulation::embed_dim, fe_facet_size<Triangulation>>;
+    using InputType = fe_assembler_packet<Triangulation::embed_dim>;
+    using Scalar = double;
+    static constexpr int StaticInputSize = Triangulation::embed_dim;
+    static constexpr int NestAsRef = 0;
+    static constexpr int XprBits = int(fe_assembler_flags::interior_facet);
+
+    constexpr fe_facet_size() = default;
+    constexpr explicit fe_facet_size([[maybe_unused]] const Triangulation_& triangulation) { }
+    constexpr Scalar operator()(const InputType& packet) const { return packet.facet_size; }
+    constexpr int input_size() const { return StaticInputSize; }
+};
+
 }   // namespace internals
+
+template <int Size, typename Derived>
+constexpr auto avg(const ScalarFieldBase<Size, Derived>& xpr) {
+    return internals::fe_scalar_facet_op<Derived, internals::fe_facet_op::average>(xpr.derived());
+}
+template <int Size, typename Derived>
+constexpr auto avg(const MatrixFieldBase<Size, Derived>& xpr) {
+    return internals::fe_matrix_facet_op<Derived, internals::fe_facet_op::average>(xpr.derived());
+}
+template <int Size, typename Derived>
+constexpr auto average(const ScalarFieldBase<Size, Derived>& xpr) {
+    return avg(xpr);
+}
+template <int Size, typename Derived>
+constexpr auto average(const MatrixFieldBase<Size, Derived>& xpr) {
+    return avg(xpr);
+}
+template <int Size, typename Derived>
+constexpr auto jump(const ScalarFieldBase<Size, Derived>& xpr) {
+    return internals::fe_scalar_facet_op<Derived, internals::fe_facet_op::jump>(xpr.derived());
+}
+template <int Size, typename Derived>
+constexpr auto jump(const MatrixFieldBase<Size, Derived>& xpr) {
+    return internals::fe_matrix_facet_op<Derived, internals::fe_facet_op::jump>(xpr.derived());
+}
+template <typename Triangulation>
+constexpr auto facet_normal(const Triangulation& triangulation) {
+    return internals::fe_facet_normal<Triangulation>(triangulation);
+}
+template <typename Triangulation>
+constexpr auto facet_size(const Triangulation& triangulation) {
+    return internals::fe_facet_size<Triangulation>(triangulation);
+}
 
 // public test function type
 template <typename FeSpace_>
