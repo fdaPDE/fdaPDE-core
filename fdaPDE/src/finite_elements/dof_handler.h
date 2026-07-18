@@ -522,6 +522,7 @@ class DofHandler<3, 3, finite_element_tag> :
     using Base::n_dofs_;
     using Base::triangulation_;
     static constexpr auto edge_pattern = TriangulationType::edge_pattern;
+    static constexpr auto face_pattern = TriangulationType::face_pattern;
 
     DofHandler() = default;
     DofHandler(const TriangulationType& triangulation) : Base(triangulation) { }
@@ -529,6 +530,7 @@ class DofHandler<3, 3, finite_element_tag> :
     template <typename FEType> void enumerate(FEType fe) {
         using dof_descriptor = typename FEType::template cell_dof_descriptor<TriangulationType::local_dim>;
         Base::enumerate(fe);   // enumerate dofs at nodes
+        dof_sharing_ = dof_descriptor::dof_sharing;
         n_dofs_internal_per_cell_ = dof_descriptor::n_dofs_internal;
         n_dofs_per_node_ = dof_descriptor::n_dofs_per_node;
         n_dofs_per_edge_ = dof_descriptor::n_dofs_per_edge;
@@ -538,7 +540,7 @@ class DofHandler<3, 3, finite_element_tag> :
                            n_dofs_per_face_ * TriangulationType::n_faces_per_cell + n_dofs_internal_per_cell_;
         dof_multiplicity_ = dof_descriptor::dof_multiplicity;
         // move geometrical markers on boundary faces to dof markers on nodes. high labeled nodes have higher priority
-        if constexpr (dof_descriptor::n_dofs_per_node > 0) {
+        if constexpr (dof_descriptor::dof_sharing && dof_descriptor::n_dofs_per_node > 0) {
             for (typename TriangulationType::face_iterator it = triangulation_->boundary_faces_begin();
                  it != triangulation_->boundary_faces_end(); ++it) {
                 int marker = it->marker();
@@ -585,7 +587,11 @@ class DofHandler<3, 3, finite_element_tag> :
                     }
                 }
                 if constexpr (dof_descriptor::n_dofs_per_face > 0) {
-                    if constexpr (dof_descriptor::n_dofs_per_face > 1) {
+                    if constexpr (!dof_descriptor::dof_sharing) {
+                        Base::template local_enumerate<false>(
+                          it->faces_begin(), it->faces_end(), face_to_dofs_, boundary_dofs, cell_id,
+                          n_dofs_at_nodes + dof_descriptor::n_dofs_per_edge * n_edges_per_cell, n_dofs_per_face_);
+                    } else if constexpr (dof_descriptor::n_dofs_per_face > 1) {
                         // faces are enumerated in pairs (of adjacent faces)
                         int offset = n_dofs_at_nodes + dof_descriptor::n_dofs_per_edge * n_edges_per_cell;
                         auto local_face_id = [this](int face_id, int cell_id) {   // local id of face_id in cell_id
@@ -678,18 +684,43 @@ class DofHandler<3, 3, finite_element_tag> :
                 }
             }
         }
+        // Reconstruct broken boundary traces from each cell's boundary faces. A geometric edge can belong to cells
+        // which do not expose that edge on the domain boundary, so geometric edge flags alone are insufficient.
+        if constexpr (!dof_descriptor::dof_sharing && dof_descriptor::n_dofs_per_node > 0) {
+            boundary_dofs.clear();
+            for (typename TriangulationType::cell_iterator it = triangulation_->cells_begin();
+                 it != triangulation_->cells_end(); ++it) {
+                int local_face = 0;
+                for (auto face = it->faces_begin(); face != it->faces_end(); ++face, ++local_face) {
+                    if (!face->on_boundary()) continue;
+                    int opposite_node = 0;
+                    for (; opposite_node < TriangulationType::n_nodes_per_cell; ++opposite_node) {
+                        int face_node = 0;
+                        while (face_node < TriangulationType::n_nodes_per_face &&
+                               face_pattern(local_face, face_node) != opposite_node) {
+                            ++face_node;
+                        }
+                        if (face_node == TriangulationType::n_nodes_per_face) break;
+                    }
+                    for (int local_dof = 0; local_dof < dof_descriptor::n_dofs_per_cell; ++local_dof) {
+                        if (almost_equal(Base::reference_dofs_barycentric_coords_(local_dof, opposite_node), 0.0)) {
+                            boundary_dofs.insert({dofs_(it->id(), local_dof), face->marker()});
+                        }
+                    }
+                }
+            }
+        }
         Base::n_unique_dofs_ = n_dofs_;
         // update boundary
         Base::boundary_dofs_.resize(n_dofs_ * dof_descriptor::dof_multiplicity);
-        if constexpr (dof_descriptor::n_dofs_per_node > 0) {   // inherit boundary description from geometry
+        if constexpr (dof_descriptor::dof_sharing && dof_descriptor::n_dofs_per_node > 0) {
+            // inherit boundary description from geometry
             Base::boundary_dofs_.topRows(triangulation_->n_nodes()) = triangulation_->boundary_nodes();
         }
-        if constexpr (dof_descriptor::n_dofs_per_edge > 0 || dof_descriptor::n_dofs_internal > 0) {
-            Base::dofs_markers_.resize(n_dofs_, Unmarked);
-            for (auto it = boundary_dofs.begin(); it != boundary_dofs.end(); ++it) {
-                Base::boundary_dofs_.set(it->first);
-                Base::dofs_markers_[it->first] = it->second;
-            }
+        Base::dofs_markers_.resize(n_dofs_, Unmarked);
+        for (const auto& [dof, marker] : boundary_dofs) {
+            Base::boundary_dofs_.set(dof);
+            Base::dofs_markers_[dof] = std::max(Base::dofs_markers_[dof], marker);
         }
         // if dof_multiplicity is higher than one, replicate the computed dof numbering adding n_dofs_ to each dof
         if constexpr (dof_descriptor::dof_multiplicity > 1) {
@@ -725,6 +756,7 @@ class DofHandler<3, 3, finite_element_tag> :
     int n_dofs_per_node() const { return n_dofs_per_node_; }
     int n_dofs_internal_per_cell() const { return n_dofs_internal_per_cell_; }
     int dof_multiplicity() const { return dof_multiplicity_; }
+    bool dof_sharing() const { return dof_sharing_; }
     const std::unordered_map<int, std::vector<int>>& edge_to_dofs() const { return edge_to_dofs_; }
     const std::unordered_map<int, std::vector<int>>& face_to_dofs() const { return face_to_dofs_; }
     std::vector<int> surface_dofs() const {   // extracts all dofs at domain's surface
@@ -813,6 +845,7 @@ class DofHandler<3, 3, finite_element_tag> :
     int n_dofs_per_node_ = 0, n_dofs_per_face_ = 0, n_dofs_per_edge_ = 0, n_dofs_per_cell_ = 0;
     int n_dofs_internal_per_cell_ = 0;
     int dof_multiplicity_ = 0;
+    bool dof_sharing_ = true;
     std::unordered_map<int, std::vector<int>> face_to_dofs_;   // for each face, its internal dofs (not nodes nor edges)
     std::unordered_map<int, std::vector<int>> edge_to_dofs_;   // for each edge, the dofs which are not on its nodes
 };
@@ -834,6 +867,7 @@ class DofHandler<1, EmbedDim, finite_element_tag> :
     template <typename FEType> void enumerate(FEType fe) {
         using dof_descriptor = typename FEType::template cell_dof_descriptor<TriangulationType::local_dim>;
         Base::enumerate(fe);   // enumerate dofs at nodes
+        dof_sharing_ = dof_descriptor::dof_sharing;
         n_dofs_internal_per_cell_ = dof_descriptor::n_dofs_internal;
         n_dofs_per_node_ = dof_descriptor::n_dofs_per_node;
         n_dofs_per_cell_ =
@@ -845,14 +879,39 @@ class DofHandler<1, EmbedDim, finite_element_tag> :
                  it != triangulation_->cells_end(); ++it) {
                 for (int j = 0; j < dof_descriptor::n_dofs_internal; ++j) {
                     dofs_(it->id(), n_dofs_per_node_ * TriangulationType::n_nodes_per_cell + j) = n_dofs_++;
+                    Base::dofs_to_cell_.push_back(it->id());
                 }
             }
         }
 	Base::n_unique_dofs_ = n_dofs_;
         // update boundary
         Base::boundary_dofs_.resize(n_dofs_ * dof_descriptor::dof_multiplicity);
-	if constexpr (dof_descriptor::n_dofs_per_node > 0) {   // inherit boundary description from geometry
+        Base::dofs_markers_.resize(n_dofs_, Unmarked);
+	if constexpr (dof_descriptor::dof_sharing && dof_descriptor::n_dofs_per_node > 0) {
+            // inherit boundary description from geometry
             Base::boundary_dofs_.topRows(triangulation_->n_nodes()) = triangulation_->boundary_nodes();
+            for (int node = 0; node < triangulation_->n_nodes(); ++node) {
+                if (triangulation_->is_node_on_boundary(node) &&
+                    std::cmp_greater(triangulation_->nodes_markers().size(), node)) {
+                    Base::dofs_markers_[node] = triangulation_->nodes_markers()[node];
+                }
+            }
+        } else if constexpr (dof_descriptor::n_dofs_per_node > 0) {
+            // Broken nodal dofs are cell-local, so transfer boundary metadata through the cell numbering.
+            for (typename TriangulationType::cell_iterator it = triangulation_->cells_begin();
+                 it != triangulation_->cells_end(); ++it) {
+                for (int local_node = 0; local_node < TriangulationType::n_nodes_per_cell; ++local_node) {
+                    int node = triangulation_->cells()(it->id(), local_node);
+                    if (!triangulation_->is_node_on_boundary(node)) continue;
+                    for (int j = 0; j < dof_descriptor::n_dofs_per_node; ++j) {
+                        int dof = dofs_(it->id(), local_node * dof_descriptor::n_dofs_per_node + j);
+                        Base::boundary_dofs_.set(dof);
+                        if (std::cmp_greater(triangulation_->nodes_markers().size(), node)) {
+                            Base::dofs_markers_[dof] = triangulation_->nodes_markers()[node];
+                        }
+                    }
+                }
+            }
         } else {
             // no dofs at nodes, an internal dof is on boundary if it is placed on a boundary cell
             for (typename TriangulationType::cell_iterator it = triangulation_->cells_begin();
@@ -883,9 +942,11 @@ class DofHandler<1, EmbedDim, finite_element_tag> :
     int n_dofs_per_cell() const { return n_dofs_per_cell_; }
     int n_dofs_internal_per_cell() const { return n_dofs_internal_per_cell_; }
     int dof_multiplicity() const { return dof_multiplicity_; }
+    bool dof_sharing() const { return dof_sharing_; }
    private:
     int n_dofs_per_node_ = 0, n_dofs_per_cell_ = 0, n_dofs_internal_per_cell_ = 0;
     int dof_multiplicity_ = 0;
+    bool dof_sharing_ = true;
 };
 
 }   // namespace fdapde

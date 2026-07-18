@@ -106,6 +106,40 @@ template <> struct fe_quadrature_simplex<1, 4> : public fe_quadrature_simplex_ba
 	0.173927422568726, 0.326072577431273, 0.326072577431273, 0.173927422568726}
     };
 };
+
+// 1D 5 point formula, degree 9
+template <> struct fe_quadrature_simplex<1, 5> : public fe_quadrature_simplex_base {
+    static constexpr int local_dim = 1;
+    static constexpr int order  = 5;
+    static constexpr int degree = 9;
+
+    static constexpr Vector<double, order> nodes {
+      std::array<double, order> {
+	0.046910077030668, 0.230765344947158, 0.500000000000000, 0.769234655052841, 0.953089922969332}
+    };
+    static constexpr Vector<double, order> weights {
+      std::array<double, order> {
+	0.118463442528095, 0.239314335249683, 0.284444444444444, 0.239314335249683, 0.118463442528095}
+    };
+};
+
+// 1D 6 point formula, degree 11
+template <> struct fe_quadrature_simplex<1, 6> : public fe_quadrature_simplex_base {
+    static constexpr int local_dim = 1;
+    static constexpr int order  = 6;
+    static constexpr int degree = 11;
+
+    static constexpr Vector<double, order> nodes {
+      std::array<double, order> {
+	0.033765242898424, 0.169395306766868, 0.380690406958402, 0.619309593041598, 0.830604693233132,
+	0.966234757101576}
+    };
+    static constexpr Vector<double, order> weights {
+      std::array<double, order> {
+	0.085662246189585, 0.180380786524069, 0.233956967286346, 0.233956967286346, 0.180380786524069,
+	0.085662246189585}
+    };
+};
   
 // https://people.sc.fsu.edu/~jburkardt/datasets/quadrature_rules_tri/quadrature_rules_tri.html
 // 2D 1 point formula, degree 1
@@ -362,6 +396,8 @@ template <> struct fe_quadrature_simplex<3, 24> : public fe_quadrature_simplex_b
 [[maybe_unused]] static struct QS1DP3_ : internals::fe_quadrature_simplex<1, 2>  { } QS1DP3;
 [[maybe_unused]] static struct QS1DP5_ : internals::fe_quadrature_simplex<1, 3>  { } QS1DP5;
 [[maybe_unused]] static struct QS1DP7_ : internals::fe_quadrature_simplex<1, 4>  { } QS1DP7;
+[[maybe_unused]] static struct QS1DP9_ : internals::fe_quadrature_simplex<1, 5>  { } QS1DP9;
+[[maybe_unused]] static struct QS1DP11_ : internals::fe_quadrature_simplex<1, 6> { } QS1DP11;
 // 2D formulas
 [[maybe_unused]] static struct QS2DP1_ : internals::fe_quadrature_simplex<2, 1>  { } QS2DP1;
 [[maybe_unused]] static struct QS2DP2_ : internals::fe_quadrature_simplex<2, 3>  { } QS2DP2;

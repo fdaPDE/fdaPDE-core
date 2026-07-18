@@ -104,9 +104,13 @@ class fe_bilinear_form_assembly_loop :
         constexpr int n_facet_quadrature_nodes = FacetQuadrature::order;
 
         const auto& mesh = Base::test_space().triangulation();
-        fdapde_assert(
-          std::addressof(mesh) == std::addressof(trial_space().triangulation()) && Base::begin_.index() == 0 &&
-          Base::end_.index() == mesh.n_cells());
+        if (std::addressof(mesh) != std::addressof(trial_space().triangulation())) {
+            throw std::invalid_argument("DG test and trial spaces must use the same mesh");
+        }
+        if (Base::begin_.marker() != TriangulationAll || Base::begin_.index() != 0 ||
+            Base::end_.index() != mesh.n_cells()) {
+            throw std::invalid_argument("DG interior-facet assembly currently requires the complete mesh");
+        }
 
         internals::fe_assembler_packet<embed_dim> fe_packet(n_trial_components, n_test_components);
         fe_packet.interior_facet = true;
@@ -146,6 +150,9 @@ class fe_bilinear_form_assembly_loop :
                             for (int q_k = 0; q_k < n_facet_quadrature_nodes; ++q_k) {
                                 Eigen::Matrix<double, embed_dim, 1> point =
                                   edge->node(0) + edge->J().col(0) * FacetQuadrature::nodes[q_k];
+                                if constexpr (Form::XprBits & int(fe_assembler_flags::compute_physical_quad_nodes)) {
+                                    fe_packet.physical_quad_node.assign_inplace_from(point.data());
+                                }
                                 Eigen::Matrix<double, local_dim, 1> trial_ref_point =
                                   cells[trial_side].invJ() * (point - cells[trial_side].node(0));
                                 Eigen::Matrix<double, local_dim, 1> test_ref_point =

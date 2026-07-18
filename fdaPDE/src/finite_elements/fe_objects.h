@@ -433,6 +433,7 @@ struct fe_scalar_facet_op :
 
     constexpr explicit fe_scalar_facet_op(const Derived_& xpr) : Base(), xpr_(xpr) { }
     constexpr Scalar operator()(const InputType& packet) const {
+        if (!packet.interior_facet) return Scalar(0);
         const Scalar plus = eval_facet_trace(packet, fe_facet_side::plus, [&]() { return xpr_(packet); });
         const Scalar minus = eval_facet_trace(packet, fe_facet_side::minus, [&]() { return xpr_(packet); });
         if constexpr (Operation == fe_facet_op::average) return Scalar(0.5) * (plus + minus);
@@ -461,6 +462,7 @@ struct fe_matrix_facet_op :
 
     constexpr explicit fe_matrix_facet_op(const Derived_& xpr) : Base(), xpr_(xpr) { }
     constexpr Scalar eval(int i, int j, const InputType& packet) const {
+        if (!packet.interior_facet) return Scalar(0);
         const Scalar plus =
           eval_facet_trace(packet, fe_facet_side::plus, [&]() { return xpr_.eval(i, j, packet); });
         const Scalar minus =
@@ -469,6 +471,7 @@ struct fe_matrix_facet_op :
         return plus - minus;
     }
     constexpr Scalar eval(int i, const InputType& packet) const {
+        if (!packet.interior_facet) return Scalar(0);
         const Scalar plus = eval_facet_trace(packet, fe_facet_side::plus, [&]() { return xpr_.eval(i, packet); });
         const Scalar minus = eval_facet_trace(packet, fe_facet_side::minus, [&]() { return xpr_.eval(i, packet); });
         if constexpr (Operation == fe_facet_op::average) return Scalar(0.5) * (plus + minus);
@@ -904,22 +907,49 @@ struct FeMap :
     // fe assembler evaluation
     constexpr auto operator()(const InputType& fe_packet) const {
         if constexpr (is_scalar) {
+            if (fe_packet.interior_facet) {
+                Eigen::Map<const Eigen::Matrix<double, StaticInputSize, 1>> point(
+                  fe_packet.physical_quad_node.data());
+                return xpr_(point);
+            }
             return map_(fe_packet.quad_node_id, 0);
         } else {
-            if constexpr (Cols == 1) {
-                return map_.row(fe_packet.quad_node_id);
-            } else {   // reshape the flattened matrix to its correct Rows x Cols format
-                return Eigen::Matrix<double, Rows, Cols, Eigen::RowMajor>(map_.row(fe_packet.quad_node_id));
+            Eigen::Matrix<double, Rows, Cols> value;
+            if (fe_packet.interior_facet) {
+                Eigen::Map<const Eigen::Matrix<double, StaticInputSize, 1>> point(
+                  fe_packet.physical_quad_node.data());
+                for (int i = 0; i < Rows; ++i) {
+                    if constexpr (Cols == 1) {
+                        value(i, 0) = xpr_.eval(i, point);
+                    } else {
+                        for (int j = 0; j < Cols; ++j) { value(i, j) = xpr_.eval(i, j, point); }
+                    }
+                }
+            } else {
+                for (int i = 0; i < Rows; ++i) {
+                    for (int j = 0; j < Cols; ++j) {
+                        value(i, j) = map_(fe_packet.quad_node_id, i * Cols + j);
+                    }
+                }
             }
+            return value;
         }
     }
     constexpr auto eval(int i, const InputType& fe_packet) const {
         fdapde_static_assert(Rows != 1 && Cols == 1, THIS_METHOD_IS_ONLY_FOR_VECTOR_FIELDS);
+        if (fe_packet.interior_facet) {
+            Eigen::Map<const Eigen::Matrix<double, StaticInputSize, 1>> point(fe_packet.physical_quad_node.data());
+            return xpr_.eval(i, point);
+        }
         return map_(fe_packet.quad_node_id, i);
     }
     constexpr auto eval(int i, int j, const InputType& fe_packet) const {
         fdapde_static_assert(Rows != 1 && Cols != 1, THIS_METHOD_IS_ONLY_FOR_MATRIX_FIELDS);
-        return map_(fe_packet.quad_node_id, i * Rows + j);
+        if (fe_packet.interior_facet) {
+            Eigen::Map<const Eigen::Matrix<double, StaticInputSize, 1>> point(fe_packet.physical_quad_node.data());
+            return xpr_.eval(i, j, point);
+        }
+        return map_(fe_packet.quad_node_id, i * Cols + j);
     }
     constexpr const Derived& derived() const { return xpr_; }
     constexpr int input_size() const { return StaticInputSize; }
@@ -965,7 +995,13 @@ class FeMap<FeFunction<FeSpace>> : public ScalarFieldBase<FeSpace::embed_dim, Fe
         }
     }
     // fe assembler evaluation
-    constexpr Scalar operator()(const InputType& fe_packet) const { return map_(fe_packet.quad_node_id, 0); }
+    constexpr Scalar operator()(const InputType& fe_packet) const {
+        if (fe_packet.interior_facet) {
+            Eigen::Map<const Eigen::Matrix<double, StaticInputSize, 1>> point(fe_packet.physical_quad_node.data());
+            return (*xpr_)(point);
+        }
+        return map_(fe_packet.quad_node_id, 0);
+    }
     constexpr const Derived& derived() const { return xpr_; }
     constexpr int input_size() const { return StaticInputSize; }
    private:
@@ -1004,6 +1040,9 @@ class FeCoeff :
     constexpr FeCoeff(const DataT_& data) : data_(data) { }
     // fe assembler evaluation
     constexpr auto operator()(const InputType& fe_packet) const {
+        if (fe_packet.interior_facet) {
+            throw std::logic_error("FeCoeff does not contain interior-facet quadrature samples");
+        }
         if constexpr (is_scalar) {
             return data_[fe_packet.quad_node_id];
         } else {
@@ -1016,9 +1055,15 @@ class FeCoeff :
     }
     constexpr auto eval(int i, const InputType& fe_packet) const {
         fdapde_static_assert(Rows != 1 && Cols == 1, THIS_METHOD_IS_FOR_VECTOR_FIELDS_ONLY);
+        if (fe_packet.interior_facet) {
+            throw std::logic_error("FeCoeff does not contain interior-facet quadrature samples");
+        }
         return data_(fe_packet.quad_node_id, i);
     }
     constexpr auto eval(int i, int j, const InputType& fe_packet) const {
+        if (fe_packet.interior_facet) {
+            throw std::logic_error("FeCoeff does not contain interior-facet quadrature samples");
+        }
         return data_(fe_packet.quad_node_id, i * Cols + j);
     }
     constexpr int input_size() const { return StaticInputSize; }

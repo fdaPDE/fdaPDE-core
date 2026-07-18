@@ -35,22 +35,62 @@ class DofTriangle : public Triangle<typename DofHandler::TriangulationType> {
     class EdgeType : public Base::EdgeType {
         Eigen::Matrix<int, Dynamic, 1> dofs_;
         const DofHandler* dof_handler_;
+
+        void initialize_dofs(int cell_id, int local_edge_id) {
+            const int n_node_dofs =
+              dof_handler_->n_dofs_per_node() * TriangulationType::n_nodes_per_edge;
+            const int n_edge_dofs = dof_handler_->n_dofs_per_edge();
+            const int n_scalar_dofs = n_node_dofs + n_edge_dofs;
+            dofs_.resize(n_scalar_dofs * dof_handler_->dof_multiplicity());
+
+            int out = 0;
+            const int n_unique_dofs = dof_handler_->n_unique_dofs();
+            if (dof_handler_->dof_sharing()) {
+                for (int component = 0; component < dof_handler_->dof_multiplicity(); ++component) {
+                    if (dof_handler_->n_dofs_per_node() > 0) {
+                        for (int node : this->node_ids()) dofs_[out++] = node + component * n_unique_dofs;
+                    }
+                    for (int k = 0; k < n_edge_dofs; ++k) {
+                        dofs_[out++] = dof_handler_->edge_to_dofs().at(this->id())[k] + component * n_unique_dofs;
+                    }
+                }
+                return;
+            }
+
+            const auto cell_dofs = dof_handler_->active_dofs(cell_id);
+            const int n_dofs_per_component = dof_handler_->n_dofs_per_cell();
+            const int edge_offset =
+              dof_handler_->n_dofs_per_node() * TriangulationType::n_nodes_per_cell + local_edge_id * n_edge_dofs;
+            for (int component = 0; component < dof_handler_->dof_multiplicity(); ++component) {
+                const int component_offset = component * n_dofs_per_component;
+                for (int endpoint = 0; endpoint < TriangulationType::n_nodes_per_edge; ++endpoint) {
+                    for (int k = 0; k < dof_handler_->n_dofs_per_node(); ++k) {
+                        const int local_node = TriangulationType::edge_pattern(local_edge_id, endpoint);
+                        dofs_[out++] = cell_dofs[
+                          component_offset + local_node * dof_handler_->n_dofs_per_node() + k];
+                    }
+                }
+                for (int k = 0; k < n_edge_dofs; ++k) {
+                    dofs_[out++] = cell_dofs[component_offset + edge_offset + k];
+                }
+            }
+        }
        public:
         EdgeType() = default;
         EdgeType(int edge_id, const DofHandler* dof_handler) :
             Base::EdgeType(edge_id, dof_handler->triangulation()), dof_handler_(dof_handler) {
-            // if you query a DofTriangle for its edge, most likely you want to access its dofs. compute and cache
-            dofs_ = Eigen::Matrix<int, Dynamic, 1>(
-              (TriangulationType::n_nodes_per_edge + dof_handler_->n_dofs_per_edge()) *
-              dof_handler_->dof_multiplicity());
-            int j = 0;
-	    int n_unique_dofs_ = dof_handler_->n_unique_dofs();
-            for (int n_comp = 0; n_comp < dof_handler_->dof_multiplicity(); ++n_comp) {
-                for (int d : this->node_ids()) dofs_[j++] = d + n_comp * n_unique_dofs_;
-                for (int k = 0; k < dof_handler_->n_dofs_per_edge(); ++k) {
-                    dofs_[j++] = dof_handler_->edge_to_dofs().at(this->id())[k] + n_comp * n_unique_dofs_;
-                }
+            int cell_id = 0;
+            int local_edge_id = 0;
+            if (!dof_handler_->dof_sharing()) {
+                auto adjacent_cells = this->adjacent_cells();
+                cell_id = adjacent_cells[0] >= 0 ? adjacent_cells[0] : adjacent_cells[1];
+                local_edge_id = dof_handler_->triangulation()->cell(cell_id).local_edge_id(edge_id);
             }
+            initialize_dofs(cell_id, local_edge_id);
+        }
+        EdgeType(int edge_id, int cell_id, int local_edge_id, const DofHandler* dof_handler) :
+            Base::EdgeType(edge_id, dof_handler->triangulation()), dof_handler_(dof_handler) {
+            initialize_dofs(cell_id, local_edge_id);
         }
         const Eigen::Matrix<int, Dynamic, 1>& dofs() const { return dofs_; }
         Eigen::Matrix<int, Dynamic, 1> dofs_markers() const { return dof_handler_->dof_markers()(dofs()); }
@@ -83,7 +123,7 @@ class DofTriangle : public Triangle<typename DofHandler::TriangulationType> {
     // overload geometric edge getter to return dof-informed edge structure
     EdgeType edge(int n) const {
         fdapde_assert(n < Base::n_edges);
-        return EdgeType(dof_handler_->triangulation()->cell_to_edges()(Base::id(), n), dof_handler_);
+        return EdgeType(dof_handler_->triangulation()->cell_to_edges()(Base::id(), n), Base::id(), n, dof_handler_);
     }
     class edge_iterator : public internals::index_iterator<edge_iterator, EdgeType> {
         using Base = internals::index_iterator<edge_iterator, EdgeType>;

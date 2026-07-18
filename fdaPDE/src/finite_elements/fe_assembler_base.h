@@ -65,6 +65,7 @@ template <int EmbedDim> struct fe_assembler_packet : geo_assembler_packet<EmbedD
     fe_facet_side test_side = fe_facet_side::none;
     double facet_size = 1;
     MdArray<double, MdExtents<embed_dim, 1>> facet_normal;
+    MdArray<double, MdExtents<embed_dim, 1>> physical_quad_node;
     // functional informations (Dynamic stands for number of components)
     MdArray<double, MdExtents<Dynamic>> trial_value, test_value;            // \psi_i(q_k), \psi_j(q_k)
     MdArray<double, MdExtents<Dynamic, embed_dim>> trial_grad, test_grad;   // \nabla{\psi_i}(q_k), \nabla{\psi_j}(q_k)

@@ -250,10 +250,10 @@ template <int Order, int NComponents, bool ShareDofs = true> struct FeP {
           NComponents == 1, LagrangeBasis<0, Order>, internals::vector_fe_p_basis_type<0, Order, NComponents>>;
     };
   
-    // select quadrature which optimally integrates (Order + 1) polynomials
+    // select default quadrature; 1D rules integrate products of Order-degree basis traces
     template <int LocalDim> class select_cell_quadrature {
         static constexpr int select_quadrature_() {
-            if (LocalDim == 1) return Order == 1 ? 2 : (Order == 2 ? 3  : 4 );
+            if (LocalDim == 1) return Order < 5 ? Order + 1 : 6;
             if (LocalDim == 2) return Order == 1 ? 3 : (Order == 2 ? 6  : 12);
             if (LocalDim == 3) return Order == 1 ? 4 : (Order == 2 ? 11 : 24);
         }
