@@ -56,7 +56,7 @@ template <typename Triangulation_, typename FeType_> class FeSpace {
     static constexpr bool is_vector_fe = (n_components > 1);
     // definition of assembly loops
     using discretization_category = finite_element_tag;
-    constexpr int sobolev_regularity() const { return 1; }
+    constexpr int sobolev_regularity() const { return cell_dof_descriptor::dof_sharing ? 1 : 0; }
     template <typename Triangulation__, typename Form__, int Options__, typename... Quadrature__>
     using bilinear_form_assembly_loop =
       internals::fe_bilinear_form_assembly_loop<Triangulation__, Form__, Options__, Quadrature__...>;

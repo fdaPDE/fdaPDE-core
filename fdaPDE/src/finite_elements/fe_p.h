@@ -94,8 +94,8 @@ template <int LocalDim, int Order, int NComponents> struct vector_fe_p_basis_typ
 
 }   // namespace internals
 
-// representation of the finite element space P_h^K = { v \in H^1(D) : v_{e} \in P^K \forall e \in T_h }
-template <int Order, int NComponents> struct FeP {  
+// Lagrange finite elements. ShareDofs selects a conforming (true) or broken (false) global numbering.
+template <int Order, int NComponents, bool ShareDofs = true> struct FeP {
     static constexpr int order = Order;
     static constexpr int n_components = NComponents;
     static constexpr bool is_vector_fe = (n_components != 1);
@@ -106,7 +106,7 @@ template <int Order, int NComponents> struct FeP {
     template <int LocalDim, typename dummy = void> struct dof_descriptor {
         static constexpr int local_dim = LocalDim;
         using ReferenceCell = Simplex<local_dim, local_dim>;   // reference unit simplex
-        static constexpr bool dof_sharing = true;              // piecewise continuous finite element
+        static constexpr bool dof_sharing = ShareDofs;
         static constexpr int fe_order = Order;
         static constexpr int n_dofs_per_node = 1;
         static constexpr int n_dofs_per_edge = local_dim > 1 ? (Order - 1 < 0 ? 0 : (Order - 1)) : 0;
@@ -267,7 +267,7 @@ template <int Order, int NComponents> struct FeP {
 };
 
 // template specialization for P0 elements
-template <int NComponents> struct FeP<0, NComponents> {
+template <int NComponents, bool ShareDofs> struct FeP<0, NComponents, ShareDofs> {
     static constexpr int order = 0;
     static constexpr int n_components = NComponents;
     static constexpr bool is_vector_fe = (n_components != 1);
@@ -336,6 +336,10 @@ template <int N> constexpr FeP<2, N> P2 = FeP<2, N> {};
 template <int N> constexpr FeP<3, N> P3 = FeP<3, N> {};
 template <int N> constexpr FeP<4, N> P4 = FeP<4, N> {};
 template <int N> constexpr FeP<5, N> P5 = FeP<5, N> {};
+
+// discontinuous Lagrange finite elements
+template <int Order, int NComponents> using FeDG = FeP<Order, NComponents, false>;
+template <int Order, int NComponents> inline constexpr FeDG<Order, NComponents> DG = {};
   
 }   // namespace fdapde
 
