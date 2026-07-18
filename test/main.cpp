@@ -25,6 +25,7 @@
 #include "src/dg_facet_coefficient_test.cpp"
 #include "src/dg_high_order_quadrature_test.cpp"
 #include "src/dg_linear_facet_test.cpp"
+#include "src/dg_poisson_test.cpp"
 
 int main(int argc, char** argv) {
     testing::InitGoogleTest(&argc, argv);
