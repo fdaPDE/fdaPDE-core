@@ -56,8 +56,6 @@ template <int N> class GridSearch {
             }
         }());
         using grid_t = MdMap<const double, MdExtents<Dynamic, Dynamic>, layout_policy>;
-        constexpr double NaN = std::numeric_limits<double>::quiet_NaN();
-	
         std::tuple<Callbacks...> callbacks_ {callbacks...};
         grid_t grid_;
         value_ = std::numeric_limits<double>::max();
