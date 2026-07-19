@@ -82,6 +82,30 @@ double convergence_rate(double coarse_error, double fine_error) {
 
 }   // namespace
 
+TEST(dg_solution, l2_projection_preserves_aligned_unit_jump) {
+    auto mesh = Triangulation<2, 2>::UnitSquare(3);
+    FeSpace space(mesh, DG<1, 1>);
+    TrialFunction u(space);
+    TestFunction v(space);
+    auto step = [](const Eigen::Vector2d& point) { return point[0] < 0.5 ? 0.0 : 1.0; };
+    ScalarField<2, decltype(step)> step_field(step);
+
+    Eigen::SparseMatrix<double> mass = integral(mesh)(u * v).assemble();
+    Eigen::VectorXd rhs = integral(mesh, QS2DP6)(step_field * v).assemble();
+    mass.makeCompressed();
+    Eigen::SparseLU<Eigen::SparseMatrix<double>> solver;
+    solver.compute(mass);
+    ASSERT_EQ(solver.info(), Eigen::Success);
+    Eigen::VectorXd coefficients = solver.solve(rhs);
+    ASSERT_EQ(solver.info(), Eigen::Success);
+
+    // the aligned unit step belongs to DG1, so its L2 projection must retain the interface jump
+    Eigen::SparseMatrix<double> jump_form = integral(mesh)(jump(u) * jump(v)).assemble();
+    const double jump_squared_norm = coefficients.dot(jump_form * coefficients);
+    EXPECT_LT((mass * coefficients - rhs).norm(), 1e-12);
+    EXPECT_NEAR(jump_squared_norm, 1.0, 1e-12);
+}
+
 TEST(dg_poisson, smooth_manufactured_solution_has_expected_p1_rates) {
     constexpr double pi = std::numbers::pi;
     auto exact_solution = [](const Eigen::Matrix<double, 2, 1>& point) {
