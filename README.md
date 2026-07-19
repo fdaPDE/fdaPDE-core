@@ -11,30 +11,6 @@ This repository contains the C++, header-only, core library system for the fdaPD
 ## Documentation
 Documentation can be found on our [documentation site](https://fdapde.github.io/)
 
-## Discontinuous Galerkin
-
-Scalar symmetric interior-penalty forms on planar triangular meshes can be written directly in the finite-element DSL:
-
-```cpp
-auto mesh = Triangulation<2, 2>::UnitSquare(17);
-FeSpace space(mesh, DG<1, 1>);
-TrialFunction u(space);
-TestFunction v(space);
-
-auto n = facet_normal(mesh);
-auto h = facet_size(mesh);
-constexpr double penalty = 10.0;
-
-auto A = integral(mesh)(
-  dot(grad(u), grad(v))
-  - dot(avg(grad(u)), n) * jump(v)
-  - dot(avg(grad(v)), n) * jump(u)
-  + (penalty / h) * jump(u) * jump(v)
-).assemble();
-```
-
-On an interior facet, `avg(q)` is `(q+ + q-) / 2`, `jump(q)` is `q+ - q-`, `n` points from the plus cell to the minus cell, and `h` is the facet length. The current interior-facet assembly path targets scalar forms over a complete two-dimensional triangular mesh. Boundary-facet and filtered-cell DG forms are not yet implemented; the C++ benchmark imposes homogeneous boundary trace degrees of freedom strongly. See the [manufactured Poisson benchmarks](test/benchmarks/README.md) for a discontinuous-source example and a FEniCSx reference.
-
 ## Dependencies
 fdaPDE-core is an header-only library, therefore it does not require any installation. Just make sure to have it in your include path. Neverthless, to compile code including this library you need:
 * A C++20 compliant compiler. Supported versions are:
