@@ -14,49 +14,43 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <gtest/gtest.h>   // testing framework
-// include eigen now to avoid possible linking errors
-#include <Eigen/Dense>
-#include <Eigen/Sparse>
+#include <fdaPDE/linear_algebra.h>
+#include <fdaPDE/optimization.h>
 
-/*
-// utils
-#include "src/scalar_field_test.cpp"
-#include "src/vector_field_test.cpp"
-#include "src/matrix_field_test.cpp"
-#include "src/type_erasure_test.cpp"
-#include "src/binary_tree_test.cpp"
-// geometry
-#include "src/simplex_test.cpp"
-// #include "src/triangulation_test.cpp"
-#include "src/point_location_test.cpp"
-#include "src/kd_tree_test.cpp"
-#include "src/voronoi_test.cpp"
-// linear_algebra
-#include "src/kronecker_product_test.cpp"
-#include "src/vector_space_test.cpp"
-#include "src/binary_matrix_test.cpp"
-*/
+#include <gtest/gtest.h>
 
-// #include "src/rand_linear_algebra_test.cpp"
-/*
-// finite_elements
-#include "src/fem_operators_test.cpp"
-#include "src/fem_pde_test.cpp"
-#include "src/integration_test.cpp"
-#include "src/lagrangian_basis_test.cpp"
-// optimization
-#include "src/optimization_test.cpp"
-// splines
-#include "src/spline_test.cpp"
-// fspai
-#include "src/fspai_test.cpp"
-*/
+#include <array>
 
-int main(/*int argc, char** argv*/) {
-    // // start testing
-    // testing::InitGoogleTest(&argc, argv);
-    // return RUN_ALL_TESTS();
+TEST(PublicApiSmoke, LegacyMatrixArithmetic) {
+    const fdapde::Matrix<double, 2, 2> lhs(std::array<double, 4> {1.0, 2.0, 3.0, 4.0});
+    const fdapde::Matrix<double, 2, 2> rhs(std::array<double, 4> {10.0, 20.0, 30.0, 40.0});
+    const fdapde::Matrix<double, 2, 2> sum = lhs + rhs;
 
-  return 0;
+    EXPECT_DOUBLE_EQ(sum(0, 0), 11.0);
+    EXPECT_DOUBLE_EQ(sum(0, 1), 22.0);
+    EXPECT_DOUBLE_EQ(sum(1, 0), 33.0);
+    EXPECT_DOUBLE_EQ(sum(1, 1), 44.0);
+}
+
+TEST(PublicApiSmoke, GridSearchHonorsEigenStorageOrder) {
+    Eigen::Matrix<double, 4, 2, Eigen::RowMajor> row_major_grid;
+    row_major_grid << -1.0, -1.0,
+                       0.0,  0.0,
+                       1.0,  1.0,
+                       2.0,  2.0;
+
+    const auto objective = [](const Eigen::Vector2d& x) -> double { return x.squaredNorm(); };
+    const auto check_grid = [&objective](const auto& grid) {
+        fdapde::GridSearch<2> optimizer;
+        const auto optimum = optimizer.optimize(objective, grid);
+
+        EXPECT_DOUBLE_EQ(optimum[0], 0.0);
+        EXPECT_DOUBLE_EQ(optimum[1], 0.0);
+        EXPECT_DOUBLE_EQ(optimizer.value(), 0.0);
+        EXPECT_EQ(optimizer.values().size(), 4u);
+    };
+
+    check_grid(row_major_grid);
+    const Eigen::Matrix<double, 4, 2, Eigen::ColMajor> column_major_grid = row_major_grid;
+    check_grid(column_major_grid);
 }
