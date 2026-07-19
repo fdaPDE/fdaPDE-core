@@ -36,7 +36,7 @@ inline void fdapde_assert_failed_(const char* str, const char* file, int line) {
 #    define fdapde_assert(condition) (void)0
 #else
 #    define fdapde_assert(condition)                                                                                   \
-        if (!(condition)) { internals::fdapde_assert_failed_(#condition, __FILE__, __LINE__); }
+        if (!(condition)) { ::fdapde::internals::fdapde_assert_failed_(#condition, __FILE__, __LINE__); }
   
 #endif   // NDEBUG
 

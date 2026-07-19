@@ -14,15 +14,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <fdaPDE/linear_algebra.h>
+#ifndef __FDAPDE_LINALG_NATIVE_HEADER_CHECK_H__
+#define __FDAPDE_LINALG_NATIVE_HEADER_CHECK_H__
 
-#include <type_traits>
+#ifndef __FDAPDE_LINEAR_ALGEBRA_MODULE_H__
+#    error "Include fdaPDE/linear_algebra.h instead of including internal headers directly."
+#endif
 
-using legacy_matrix = fdapde::Matrix<double, 2, 2>;
-using native_matrix = fdapde::linalg::Matrix<double, 2, 2>;
-
-static_assert(!std::is_same_v<legacy_matrix, native_matrix>);
-static_assert(native_matrix::StorageOrder == fdapde::linalg::RowMajor);
-
-[[maybe_unused]] legacy_matrix legacy_header_probe;
-[[maybe_unused]] native_matrix native_header_probe;
+#endif   // __FDAPDE_LINALG_NATIVE_HEADER_CHECK_H__

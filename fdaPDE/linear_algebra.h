@@ -70,6 +70,32 @@ template <typename XprType> constexpr bool is_eigen_sparse_xpr_v = is_eigen_spar
 #include "src/linear_algebra/rbki.h"
 #include "src/linear_algebra/rp_chol.h"
 
+// Native dense linear algebra. The root-level fdapde::Matrix remains the
+// compatibility implementation; all new matrix work lives in fdapde::linalg.
+namespace fdapde::linalg {
+
+template <typename XprType> struct MatrixExpr;
+template <typename XprType> struct MatrixCoeffWiseExpr;
+template <typename Scalar, int Rows, int Cols, int StorageOrder> class Matrix;
+template <typename T1, typename T2> using promote_type_t = std::common_type_t<T1, T2>;
+
+inline constexpr int RowMajor = 0;
+inline constexpr int ColMajor = 1;
+
+}   // namespace fdapde::linalg
+
+#include "src/linear_algebra/native/traits.h"
+#include "src/linear_algebra/native/numeric.h"
+#include "src/linear_algebra/native/matrix.h"
+#include "src/linear_algebra/native/binary_op.h"
+#include "src/linear_algebra/native/block.h"
+#include "src/linear_algebra/native/unary_op.h"
+#include "src/linear_algebra/native/ternary_op.h"
+#include "src/linear_algebra/native/vectorwise.h"
+#include "src/linear_algebra/native/bool.h"
+#include "src/linear_algebra/native/coeffwise.h"
+#include "src/linear_algebra/native/xpr.h"
+
 // clang-format on
 
 #endif   // __FDAPDE_LINEAR_ALGEBRA_MODULE_H__
