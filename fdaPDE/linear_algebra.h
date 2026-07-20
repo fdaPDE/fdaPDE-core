@@ -121,6 +121,7 @@ inline constexpr internals::unchecked_t unchecked {};
 #include "src/linear_algebra/native/qr.h"
 #include "src/linear_algebra/native/gmres.h"
 #include "src/linear_algebra/native/evd.h"
+#include "src/linear_algebra/native/spd.h"
 
 // clang-format on
 
