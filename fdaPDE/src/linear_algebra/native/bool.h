@@ -33,7 +33,7 @@ concept bool_matrix_expression =
   std::derived_from<std::remove_cvref_t<T>, BoolMatrixExpr<std::remove_cvref_t<T>>>;
 
 constexpr int bitpack_count(int size, int pack_size) {
-    return size == 0 ? 0 : (size + pack_size - 1) / pack_size;
+    return size == 0 ? 0 : 1 + (size - 1) / pack_size;
 }
 
 template <typename BitPack> constexpr BitPack low_bits_mask(int used_bits) {

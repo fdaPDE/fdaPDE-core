@@ -116,6 +116,7 @@ static_assert(decltype(std::declval<const lifetime_matrix&>().cwise())::ReadOnly
 static_assert(decltype(std::declval<const lifetime_matrix&>().template reshape<1, 4>())::ReadOnly == 1);
 static_assert(decltype(std::declval<lifetime_matrix&>().transpose())::ReadOnly == 1);
 static_assert(decltype(std::declval<lifetime_matrix&>().rowwise().sum())::ReadOnly == 1);
+static_assert(native::internals::bitpack_count(std::numeric_limits<int>::max(), 64) == 33'554'432);
 static_assert(native::is_matrix_v<lifetime_matrix&>);
 static_assert(native::is_matrix_v<const lifetime_matrix&>);
 static_assert(native::is_vector_v<const native::Matrix<double, 2, 1>&>);
