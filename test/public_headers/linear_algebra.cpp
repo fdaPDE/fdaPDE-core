@@ -17,6 +17,11 @@
 #include <fdaPDE/linear_algebra.h>
 
 #include <type_traits>
+#include <utility>
+
+template <typename T>
+concept rvalue_mdarray_blockable =
+  requires(T value) { std::move(value).block(fdapde::linalg::full_extent, fdapde::linalg::full_extent); };
 
 using legacy_matrix = fdapde::Matrix<double, 2, 2>;
 using legacy_permutation = fdapde::PermutationMatrix<2>;
@@ -33,6 +38,11 @@ using native_qr = fdapde::linalg::HouseholderQR<double, 2, 2>;
 using native_evd = fdapde::linalg::EVD<native_symmetric>;
 using native_preconditioner = fdapde::linalg::IdentityPreconditioner<native_matrix>;
 using native_gmres = fdapde::linalg::GMRES<native_matrix, native_preconditioner>;
+using legacy_mdarray = fdapde::MdArray<int, fdapde::MdExtents<2, 3>>;
+using native_mdarray = fdapde::linalg::MdArray<int, fdapde::linalg::MdExtents<2, 3>>;
+using native_fixed_mdmap = fdapde::linalg::MdMap<int, fdapde::linalg::MdExtents<2, 3>>;
+using native_dynamic_mdmap = fdapde::linalg::MdMap<int, fdapde::linalg::MdExtents<fdapde::Dynamic, 3>>;
+using native_const_mdmap = fdapde::linalg::MdMap<const int, fdapde::linalg::MdExtents<2, 3>>;
 
 static_assert(!std::is_same_v<legacy_matrix, native_matrix>);
 static_assert(!std::is_same_v<legacy_permutation, native_permutation>);
@@ -51,6 +61,16 @@ static_assert(std::is_default_constructible_v<native_qr>);
 static_assert(std::is_default_constructible_v<native_evd>);
 static_assert(std::is_default_constructible_v<native_preconditioner>);
 static_assert(!std::is_default_constructible_v<native_gmres>);
+static_assert(!std::is_same_v<legacy_mdarray, native_mdarray>);
+static_assert(!std::is_default_constructible_v<native_fixed_mdmap>);
+static_assert(std::is_constructible_v<native_fixed_mdmap, int*>);
+static_assert(std::is_default_constructible_v<native_dynamic_mdmap>);
+static_assert(std::is_same_v<decltype(std::declval<native_const_mdmap&>()(0, 0)), const int&>);
+static_assert(!rvalue_mdarray_blockable<native_mdarray>);
+static_assert(fdapde::full_extent == -2);
+static_assert(fdapde::linalg::full_extent == -2);
 
 [[maybe_unused]] legacy_matrix legacy_header_probe;
 [[maybe_unused]] native_matrix native_header_probe;
+[[maybe_unused]] legacy_mdarray legacy_mdarray_header_probe;
+[[maybe_unused]] native_mdarray native_mdarray_header_probe;
