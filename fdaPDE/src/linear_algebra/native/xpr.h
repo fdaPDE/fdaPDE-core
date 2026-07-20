@@ -27,6 +27,7 @@ namespace fdapde::linalg {
 
 template <typename XprType> struct Diagonal;
 template <int ViewMode, typename XprType> struct Triangular;
+template <typename XprType> class PartialPivLU;
 
 namespace internals {
 
@@ -522,6 +523,65 @@ template <typename XprType_> struct MatrixExpr {
     }
     constexpr void symm_part() const && = delete;
     constexpr void skew_part() const && = delete;
+
+    constexpr auto inverse() const {
+        using Scalar = std::remove_cv_t<typename XprType::Scalar>;
+        constexpr int Rows = XprType::Rows;
+        constexpr int Cols = XprType::Cols;
+        fdapde_static_assert(
+          Rows == Dynamic || Cols == Dynamic || Rows == Cols, THIS_METHODS_IS_FOR_SQUARE_MATRICES_ONLY);
+        Matrix<Scalar, Rows, Cols> result;
+        const int rows = derived().rows();
+        const int cols = derived().cols();
+        if constexpr (Rows == Dynamic || Cols == Dynamic) result.resize(rows, cols);
+        result.set_zero();
+        const bool valid = rows > 0 && rows == cols;
+        if (!valid) {
+            fdapde_assert(valid);
+            return result;
+        }
+
+        Matrix<Scalar, Rows, Cols> matrix(derived());
+        PartialPivLU<Matrix<Scalar, Rows, Cols>> factorization(matrix);
+        if (factorization.info() != 0) {
+            fdapde_assert(factorization.info() == 0);
+            return result;
+        }
+        for (int i = 0; i < rows; ++i) result(i, i) = Scalar(1);
+        return factorization.solve(result);
+    }
+
+    constexpr auto determinant() const {
+        using Scalar = std::remove_cv_t<typename XprType::Scalar>;
+        constexpr int Rows = XprType::Rows;
+        constexpr int Cols = XprType::Cols;
+        fdapde_static_assert(
+          Rows == Dynamic || Cols == Dynamic || Rows == Cols, THIS_METHODS_IS_FOR_SQUARE_MATRICES_ONLY);
+        const int rows = derived().rows();
+        const int cols = derived().cols();
+        const bool valid = rows > 0 && rows == cols;
+        if (!valid) {
+            fdapde_assert(valid);
+            return Scalar(0);
+        }
+        if constexpr (std::is_floating_point_v<Scalar>) {
+            PartialPivLU<XprType> factorization(derived());
+            return factorization.determinant();
+        } else {
+            fdapde_static_assert(
+              Rows != Dynamic && Cols != Dynamic && Rows <= 3,
+              DETERMINANTS_REQUIRE_FLOATING_POINT_SCALARS_ABOVE_FIXED_THREE_BY_THREE);
+            if constexpr (Rows == 1) return Scalar(derived()(0, 0));
+            if constexpr (Rows == 2) {
+                return Scalar(derived()(0, 0) * derived()(1, 1) - derived()(0, 1) * derived()(1, 0));
+            }
+            const Scalar a00 = derived()(0, 0), a01 = derived()(0, 1), a02 = derived()(0, 2);
+            const Scalar a10 = derived()(1, 0), a11 = derived()(1, 1), a12 = derived()(1, 2);
+            const Scalar a20 = derived()(2, 0), a21 = derived()(2, 1), a22 = derived()(2, 2);
+            return a00 * (a11 * a22 - a12 * a21) + a01 * (a12 * a20 - a10 * a22) +
+                   a02 * (a10 * a21 - a11 * a20);
+        }
+    }
 };
 
 // comparison operators

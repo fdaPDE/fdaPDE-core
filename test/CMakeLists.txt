@@ -29,6 +29,8 @@ add_executable(
   linear_algebra/native_dense.cpp
   linear_algebra/native_structured.cpp
   linear_algebra/native_skew.cpp
+  linear_algebra/native_decompositions.cpp
+  linear_algebra/native_gmres.cpp
 )
 target_compile_options(fdapde_test PRIVATE ${WARNING_FLAGS})
 target_include_directories(fdapde_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)

@@ -115,6 +115,11 @@ inline constexpr internals::unchecked_t unchecked {};
 #include "src/linear_algebra/native/symmetric.h"
 #include "src/linear_algebra/native/skew.h"
 #include "src/linear_algebra/native/permutation.h"
+#include "src/linear_algebra/native/preconditioners.h"
+#include "src/linear_algebra/native/partial_piv_lu.h"
+#include "src/linear_algebra/native/qr.h"
+#include "src/linear_algebra/native/gmres.h"
+#include "src/linear_algebra/native/evd.h"
 
 // clang-format on
 

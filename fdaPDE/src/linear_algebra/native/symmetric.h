@@ -23,6 +23,7 @@ namespace fdapde::linalg {
 
 // symmetric matrix type system
 template <typename XprType> struct SymmetricMatrixExpr;
+template <typename XprType> class EVD;
 
 namespace internals {
 
@@ -82,6 +83,8 @@ template <typename XprType_> struct SymmetricMatrixExpr : public MatrixExpr<XprT
     using MatrixExpr<XprType_>::derived;
     // inherit assignment from base
     using MatrixExpr<XprType_>::operator=;
+
+    constexpr auto evd() const { return EVD<XprType>(derived()); }
 
     // internal triangular matrix representation
     constexpr decltype(auto) rep() const { return derived().rep(); }
