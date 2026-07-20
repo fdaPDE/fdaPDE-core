@@ -63,6 +63,18 @@ using HeaderPowerGeometry = fdapde::manifold::PowerGeometry<HeaderGeometry>;
 using HeaderContext = fdapde::manifold::EvaluationContext<HeaderTangent, HeaderWorkspace>;
 using HeaderSymmetricTangent = fdapde::linalg::SymmetricMatrix<double, 2, 2>;
 using HeaderSymmetricContext = fdapde::manifold::EvaluationContext<HeaderSymmetricTangent, HeaderWorkspace>;
+using HeaderLogGeometry = fdapde::manifold::LogEuclideanSPDGeometry<double, 3>;
+using HeaderDynamicLogGeometry = fdapde::manifold::LogEuclideanSPDGeometry<double, fdapde::Dynamic>;
+using HeaderLogPoint = fdapde::manifold::point_t<HeaderLogGeometry>;
+using HeaderLogTangent = fdapde::manifold::tangent_t<HeaderLogGeometry>;
+
+struct HeaderLogProblem {
+    using Workspace = HeaderWorkspace;
+    double cost(const HeaderLogPoint&, Workspace&) const { return 0; }
+    HeaderLogTangent gradient(const HeaderLogPoint& point, Workspace&) const {
+        return HeaderLogGeometry {}.zero_tangent(point);
+    }
+};
 
 template <typename Context>
 concept HeaderPermitsRvalueCurrent = requires(Context&& context) { std::move(context).current(); };
@@ -90,11 +102,20 @@ using HeaderSteepestDescentResult =
 
 static_assert(fdapde::manifold::FirstOrderGeometry<HeaderGeometry>);
 static_assert(fdapde::manifold::FirstOrderGeometry<HeaderPowerGeometry>);
+static_assert(fdapde::manifold::VectorTransportGeometry<HeaderLogGeometry>);
+static_assert(fdapde::manifold::VectorTransportGeometry<HeaderDynamicLogGeometry>);
 static_assert(fdapde::manifold::FirstOrderProblem<HeaderProblem, HeaderGeometry>);
 static_assert(!fdapde::manifold::FirstOrderProblem<const HeaderProblem, HeaderGeometry>);
 static_assert(fdapde::manifold::FirstOrderProblem<const HeaderConstProblem, HeaderGeometry>);
 static_assert(std::is_default_constructible_v<HeaderContext>);
 static_assert(std::is_default_constructible_v<HeaderSymmetricContext>);
+static_assert(std::is_default_constructible_v<HeaderLogGeometry>);
+static_assert(!std::is_constructible_v<HeaderLogGeometry, int>);
+static_assert(!std::is_default_constructible_v<HeaderDynamicLogGeometry>);
+static_assert(std::is_constructible_v<HeaderDynamicLogGeometry, int>);
+static_assert(std::is_same_v<HeaderLogPoint, fdapde::linalg::SPDMatrix<double, 3, 3>>);
+static_assert(std::is_same_v<HeaderLogTangent, fdapde::linalg::SymmetricMatrix<double, 3, 3>>);
+static_assert(fdapde::manifold::FirstOrderProblem<const HeaderLogProblem, HeaderLogGeometry>);
 static_assert(!HeaderPermitsRvalueCurrent<HeaderContext>);
 static_assert(!HeaderPermitsRvalueEvaluationAccess<typename HeaderContext::Evaluation>);
 static_assert(!HeaderPermitsRvalueComponentAccess<HeaderPowerGeometry>);
@@ -109,6 +130,17 @@ static_assert(std::is_same_v<HeaderSteepestDescentResult, fdapde::manifold::Stee
     HeaderGeometry geometry;
     const HeaderConstProblem problem;
     const auto result = fdapde::manifold::RiemannianSteepestDescent {}.optimize(problem, geometry, HeaderPoint {});
+    static_cast<void>(result);
+}
+
+[[maybe_unused]] void instantiate_log_geometry_solver() {
+    fdapde::linalg::Matrix<double, 3, 3> identity;
+    identity.set_zero();
+    for (int i = 0; i < 3; ++i) { identity(i, i) = 1; }
+    const HeaderLogPoint point(identity, fdapde::linalg::checked);
+    const HeaderLogGeometry geometry;
+    const HeaderLogProblem problem;
+    const auto result = fdapde::manifold::RiemannianSteepestDescent {}.optimize(problem, geometry, point);
     static_cast<void>(result);
 }
 
