@@ -19,6 +19,7 @@
 
 #include "header_check.h"
 
+#include <cmath>
 #include <iomanip>
 #include <sstream>
 
@@ -249,7 +250,16 @@ template <typename XprType_> struct MatrixExpr {
         }
         return norm_;
     }
-    constexpr auto norm() const { return fdapde::sqrt(squared_norm()); }
+    constexpr auto norm() const {
+        using Scalar = typename XprType::Scalar;
+        Scalar result = Scalar(0);
+        for (int i = 0; i < derived().rows(); ++i) {
+            for (int j = 0; j < derived().cols(); ++j) {
+                result = std::hypot(result, static_cast<Scalar>(derived()(i, j)));
+            }
+        }
+        return result;
+    }
     // maximum norm (L^\infty norm)
     constexpr auto inf_norm() const {
         using Scalar = typename XprType::Scalar;

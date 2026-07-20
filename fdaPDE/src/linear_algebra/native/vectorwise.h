@@ -19,6 +19,8 @@
 
 #include "header_check.h"
 
+#include <cmath>
+
 namespace fdapde::linalg {
 
 // definition of matrix vector-wise operations: row- or column-wise reductions and assignments
@@ -116,7 +118,11 @@ struct MatrixVectorWiseOp : public MatrixExpr<MatrixVectorWiseOp<XprType, ByRow>
     constexpr auto squared_norm() const {
         return redux(xpr_, Scalar(0), [](Scalar tmp, Scalar x) { return tmp + x * x; });
     }
-    constexpr auto norm() const { return squared_norm().cwise().sqrt().mwise(); }
+    constexpr auto norm() const {
+        return redux(xpr_, Scalar(0), [](Scalar accumulated, Scalar value) {
+            return std::hypot(accumulated, value);
+        });
+    }
     // L^\infty norm
     constexpr auto inf_norm() const {
         return redux(xpr_, Scalar(0), [](Scalar tmp, Scalar x) {

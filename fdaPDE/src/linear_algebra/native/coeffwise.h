@@ -19,6 +19,7 @@
 
 #include "header_check.h"
 
+#include <cmath>
 #include <concepts>
 
 namespace fdapde::linalg {
@@ -331,7 +332,7 @@ template <typename XprType_> struct MatrixCoeffWiseExpr {
         return internals::make_cwise_op(derived(), [](const auto& x) { return fdapde::abs(x); });
     }
     constexpr decltype(auto) sqrt() const {
-        return internals::make_cwise_op(derived(), [](const auto& x) { return fdapde::sqrt(x); });
+        return internals::make_cwise_op(derived(), [](const auto& x) { return std::sqrt(x); });
     }
     constexpr auto inv() const {
         return internals::make_cwise_op(derived(), [](const auto& x) { return 1. / x; });

@@ -19,6 +19,8 @@
 
 #include "header_check.h"
 
+#include <cmath>
+
 namespace fdapde::linalg {
 
 // orthogonal matrix type system (implementation of the general orthogonal Lie-group O(n))
@@ -108,7 +110,7 @@ struct OrthogonalMatrixBase : public OrthogonalMatrixExpr<OrthogonalMatrixType_>
         Matrix<Scalar, Rows, Cols> Q;
         if constexpr (Rows == Dynamic || Cols == Dynamic) { Q.resize(m.rows(), m.cols()); }
         const double tol = m.norm();
-        const double eps = fdapde::sqrt(std::numeric_limits<Scalar>::epsilon());
+        const double eps = std::sqrt(std::numeric_limits<Scalar>::epsilon());
 
         // Modified Gram–Schmidt
         int rank = 0;

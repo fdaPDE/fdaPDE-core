@@ -223,6 +223,21 @@ template <int StorageOrder> void check_arithmetic_and_reductions() {
     EXPECT_EQ(matrix.rowwise().sum(), (native::Matrix<double, 2, 1, StorageOrder>({-2.0, 3.0})));
     EXPECT_EQ(matrix.colwise().sum(), (native::Matrix<double, 1, 3, StorageOrder>({-3.0, -3.0, 7.0})));
 
+    const native::Vector<double, 2> tiny_vector({3.0e-8, 4.0e-8});
+    EXPECT_DOUBLE_EQ(tiny_vector.norm(), 5.0e-8);
+    const native::Vector<double, 2> subnormal_square_vector({3.0e-200, 4.0e-200});
+    EXPECT_DOUBLE_EQ(subnormal_square_vector.norm(), 5.0e-200);
+    const native::Vector<double, 2> overflowing_square_vector({3.0e200, 4.0e200});
+    EXPECT_DOUBLE_EQ(overflowing_square_vector.norm(), 5.0e200);
+    const native::Vector<double, 2> tiny_squares({1.0e-16, 4.0e-16});
+    EXPECT_EQ(
+      (native::Vector<double, 2>(tiny_squares.cwise().sqrt())),
+      (native::Vector<double, 2>({1.0e-8, 2.0e-8})));
+    const native::Matrix<double, 2, 2, StorageOrder> tiny_rows({3.0e-8, 4.0e-8, 5.0e-8, 12.0e-8});
+    const native::Vector<double, 2> tiny_row_norms(tiny_rows.rowwise().norm());
+    EXPECT_NEAR(tiny_row_norms[0], 5.0e-8, 1.0e-22);
+    EXPECT_NEAR(tiny_row_norms[1], 13.0e-8, 1.0e-22);
+
     native::Matrix<double, 2, 3, StorageOrder> broadcast;
     broadcast.rowwise() = native::Matrix<double, 2, 1, StorageOrder>({1.0, 2.0});
     EXPECT_EQ(broadcast, (native::Matrix<double, 2, 3, StorageOrder>({1.0, 1.0, 1.0, 2.0, 2.0, 2.0})));

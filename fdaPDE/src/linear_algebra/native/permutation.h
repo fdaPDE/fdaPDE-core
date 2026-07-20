@@ -19,6 +19,8 @@
 
 #include "header_check.h"
 
+#include <cmath>
+
 namespace fdapde::linalg {
 
 // implementation of the symmetric group S_n
@@ -60,7 +62,7 @@ struct PermutationMatrixExpr : public OrthogonalMatrixExpr<XprType_> {
     }
     // reductions
     constexpr auto squared_norm() const { return derived().rows(); }
-    constexpr auto norm() const { return fdapde::sqrt(static_cast<double>(squared_norm())); }
+    constexpr auto norm() const { return std::sqrt(static_cast<double>(squared_norm())); }
     // ostream
     friend std::ostream& operator<<(std::ostream& out, const PermutationMatrixExpr& m) {
         const int rows = m.derived().rows();
