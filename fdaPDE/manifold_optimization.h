@@ -19,6 +19,7 @@
 
 // clang-format off
 
+#include <algorithm>
 #include <cmath>
 #include <concepts>
 #include <cstddef>
@@ -38,6 +39,8 @@
 #include "src/manifold_optimization/power_geometry.h"
 #include "src/manifold_optimization/armijo.h"
 #include "src/manifold_optimization/steepest_descent.h"
+#include "src/manifold_optimization/truncated_conjugate_gradient.h"
+#include "src/manifold_optimization/trust_region.h"
 #include "src/manifold_optimization/log_euclidean_spd.h"
 #include "src/manifold_optimization/affine_invariant_spd.h"
 

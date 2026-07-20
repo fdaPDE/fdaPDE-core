@@ -59,6 +59,10 @@ struct HeaderConstProblem {
     HeaderTangent gradient(const HeaderPoint& point, Workspace&) const { return {point.value}; }
 };
 
+struct HeaderHessianProblem : HeaderProblem {
+    HeaderTangent hessian_vector(const HeaderPoint&, const HeaderTangent& tangent, Workspace&) { return tangent; }
+};
+
 using HeaderPowerGeometry = fdapde::manifold::PowerGeometry<HeaderGeometry>;
 using HeaderContext = fdapde::manifold::EvaluationContext<HeaderTangent, HeaderWorkspace>;
 using HeaderSymmetricTangent = fdapde::linalg::SymmetricMatrix<double, 2, 2>;
@@ -77,6 +81,17 @@ struct HeaderLogProblem {
     double cost(const HeaderLogPoint&, Workspace&) const { return 0; }
     HeaderLogTangent gradient(const HeaderLogPoint& point, Workspace&) const {
         return HeaderLogGeometry {}.zero_tangent(point);
+    }
+};
+
+struct HeaderSPDHessianProblem {
+    using Workspace = HeaderWorkspace;
+    double cost(const HeaderAffinePoint&, Workspace&) const { return 0; }
+    HeaderAffineTangent gradient(const HeaderAffinePoint& point, Workspace&) const {
+        return HeaderAffineGeometry {}.zero_tangent(point);
+    }
+    HeaderAffineTangent hessian_vector(const HeaderAffinePoint&, const HeaderAffineTangent& tangent, Workspace&) const {
+        return tangent;
     }
 };
 
@@ -103,6 +118,13 @@ using HeaderArmijoResult = decltype(std::declval<const fdapde::manifold::ArmijoB
 using HeaderSteepestDescentResult =
   decltype(std::declval<const fdapde::manifold::RiemannianSteepestDescent&>().optimize(
     std::declval<HeaderProblem&>(), std::declval<const HeaderGeometry&>(), std::declval<const HeaderPoint&>()));
+using HeaderTruncatedCGResult = decltype(std::declval<const fdapde::manifold::SteihaugTruncatedCG&>().solve(
+  std::declval<const HeaderSPDHessianProblem&>(), std::declval<const HeaderAffineGeometry&>(),
+  std::declval<const HeaderAffinePoint&>(), std::declval<const HeaderAffineTangent&>(), 1.0,
+  std::declval<HeaderWorkspace&>()));
+using HeaderTrustRegionResult = decltype(std::declval<const fdapde::manifold::RiemannianTrustRegion&>().optimize(
+  std::declval<const HeaderSPDHessianProblem&>(), std::declval<const HeaderAffineGeometry&>(),
+  std::declval<const HeaderAffinePoint&>()));
 
 static_assert(fdapde::manifold::FirstOrderGeometry<HeaderGeometry>);
 static_assert(fdapde::manifold::FirstOrderGeometry<HeaderPowerGeometry>);
@@ -113,6 +135,8 @@ static_assert(fdapde::manifold::VectorTransportGeometry<HeaderDynamicAffineGeome
 static_assert(fdapde::manifold::FirstOrderProblem<HeaderProblem, HeaderGeometry>);
 static_assert(!fdapde::manifold::FirstOrderProblem<const HeaderProblem, HeaderGeometry>);
 static_assert(fdapde::manifold::FirstOrderProblem<const HeaderConstProblem, HeaderGeometry>);
+static_assert(fdapde::manifold::RiemannianHessianProblem<HeaderHessianProblem, HeaderGeometry>);
+static_assert(!fdapde::manifold::RiemannianHessianProblem<const HeaderHessianProblem, HeaderGeometry>);
 static_assert(std::is_default_constructible_v<HeaderContext>);
 static_assert(std::is_default_constructible_v<HeaderSymmetricContext>);
 static_assert(std::is_default_constructible_v<HeaderLogGeometry>);
@@ -129,15 +153,20 @@ static_assert(std::is_constructible_v<HeaderDynamicAffineGeometry, int>);
 static_assert(std::is_same_v<HeaderAffinePoint, fdapde::linalg::SPDMatrix<double, 3, 3>>);
 static_assert(std::is_same_v<HeaderAffineTangent, fdapde::linalg::SymmetricMatrix<double, 3, 3>>);
 static_assert(fdapde::manifold::FirstOrderProblem<const HeaderLogProblem, HeaderAffineGeometry>);
+static_assert(fdapde::manifold::RiemannianHessianProblem<const HeaderSPDHessianProblem, HeaderAffineGeometry>);
 static_assert(!HeaderPermitsRvalueCurrent<HeaderContext>);
 static_assert(!HeaderPermitsRvalueEvaluationAccess<typename HeaderContext::Evaluation>);
 static_assert(!HeaderPermitsRvalueComponentAccess<HeaderPowerGeometry>);
 static_assert(!HeaderPermitsRvalueOptions<fdapde::manifold::ArmijoBacktracking>);
 static_assert(!HeaderPermitsRvalueOptions<fdapde::manifold::RiemannianSteepestDescent>);
+static_assert(!HeaderPermitsRvalueOptions<fdapde::manifold::SteihaugTruncatedCG>);
+static_assert(!HeaderPermitsRvalueOptions<fdapde::manifold::RiemannianTrustRegion>);
 static_assert(std::is_same_v<fdapde::manifold::point_t<HeaderPowerGeometry>, std::vector<HeaderPoint>>);
 static_assert(std::is_same_v<fdapde::manifold::tangent_t<HeaderPowerGeometry>, std::vector<HeaderTangent>>);
 static_assert(std::is_same_v<HeaderArmijoResult, fdapde::manifold::ArmijoResult<HeaderPoint>>);
 static_assert(std::is_same_v<HeaderSteepestDescentResult, fdapde::manifold::SteepestDescentResult<HeaderPoint>>);
+static_assert(std::is_same_v<HeaderTruncatedCGResult, fdapde::manifold::TruncatedCGResult<HeaderAffineTangent>>);
+static_assert(std::is_same_v<HeaderTrustRegionResult, fdapde::manifold::TrustRegionResult<HeaderAffinePoint>>);
 
 [[maybe_unused]] void instantiate_const_problem_solver() {
     HeaderGeometry geometry;
@@ -165,6 +194,22 @@ static_assert(std::is_same_v<HeaderSteepestDescentResult, fdapde::manifold::Stee
     const HeaderAffineGeometry geometry;
     const HeaderLogProblem problem;
     const auto result = fdapde::manifold::RiemannianSteepestDescent {}.optimize(problem, geometry, point);
+    static_cast<void>(result);
+}
+
+[[maybe_unused]] void instantiate_affine_geometry_trust_region_solvers() {
+    fdapde::linalg::Matrix<double, 3, 3> identity;
+    identity.set_zero();
+    for (int i = 0; i < 3; ++i) { identity(i, i) = 1; }
+    const HeaderAffinePoint point(identity, fdapde::linalg::checked);
+    const HeaderAffineGeometry geometry;
+    const HeaderSPDHessianProblem problem;
+    HeaderWorkspace workspace;
+    const HeaderAffineTangent gradient = problem.gradient(point, workspace);
+    const auto subproblem =
+      fdapde::manifold::SteihaugTruncatedCG {}.solve(problem, geometry, point, gradient, 1, workspace);
+    const auto result = fdapde::manifold::RiemannianTrustRegion {}.optimize(problem, geometry, point);
+    static_cast<void>(subproblem);
     static_cast<void>(result);
 }
 
