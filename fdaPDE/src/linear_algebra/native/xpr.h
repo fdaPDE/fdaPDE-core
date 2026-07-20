@@ -31,6 +31,7 @@ namespace internals {
 
 template <typename XprType> constexpr auto diagonal_cast(XprType&& xpr);
 template <int ViewMode, typename XprType> auto symmetric_cast(XprType&& xpr);
+template <int ViewMode, typename XprType> constexpr auto skew_symmetric_cast(XprType&& xpr);
 
 }   // namespace internals
 
@@ -464,6 +465,17 @@ template <typename XprType_> struct MatrixExpr {
         return internals::symmetric_cast<ViewMode>(std::move(derived()));
     }
     template <int ViewMode> constexpr void as_symmetric() && requires(XprType::NestAsRef != 0) = delete;
+
+    template <int ViewMode> constexpr auto as_skew_symmetric() & {
+        return internals::skew_symmetric_cast<ViewMode>(derived());
+    }
+    template <int ViewMode> constexpr auto as_skew_symmetric() const & {
+        return internals::skew_symmetric_cast<ViewMode>(derived());
+    }
+    template <int ViewMode> constexpr auto as_skew_symmetric() && requires(XprType::NestAsRef == 0) {
+        return internals::skew_symmetric_cast<ViewMode>(std::move(derived()));
+    }
+    template <int ViewMode> constexpr void as_skew_symmetric() && requires(XprType::NestAsRef != 0) = delete;
 
     constexpr auto as_diagonal() & {
         fdapde_static_assert(XprType::Rows == 1 || XprType::Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);

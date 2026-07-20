@@ -113,6 +113,7 @@ inline constexpr internals::unchecked_t unchecked {};
 #include "src/linear_algebra/native/orthogonal.h"
 #include "src/linear_algebra/native/triangular.h"
 #include "src/linear_algebra/native/symmetric.h"
+#include "src/linear_algebra/native/skew.h"
 #include "src/linear_algebra/native/permutation.h"
 
 // clang-format on

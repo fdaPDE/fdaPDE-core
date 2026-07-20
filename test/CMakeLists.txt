@@ -23,7 +23,13 @@ if(APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   target_compile_definitions(gtest PRIVATE _Static_assert=static_assert)
 endif()
 
-add_executable(fdapde_test main.cpp linear_algebra/native_dense.cpp linear_algebra/native_structured.cpp)
+add_executable(
+  fdapde_test
+  main.cpp
+  linear_algebra/native_dense.cpp
+  linear_algebra/native_structured.cpp
+  linear_algebra/native_skew.cpp
+)
 target_compile_options(fdapde_test PRIVATE ${WARNING_FLAGS})
 target_include_directories(fdapde_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
 target_link_libraries(fdapde_test PRIVATE Eigen3::Eigen gtest_main)

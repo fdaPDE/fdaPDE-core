@@ -24,6 +24,7 @@ using native_matrix = fdapde::linalg::Matrix<double, 2, 2>;
 using native_diagonal = fdapde::linalg::DiagonalMatrix<double, 2>;
 using native_lower_triangular = fdapde::linalg::LowerTriangularMatrix<double, 2, 2>;
 using native_symmetric = fdapde::linalg::SymmetricMatrix<double, 2, 2>;
+using native_skew_symmetric = fdapde::linalg::SkewSymmetricMatrix<double, 2, 2>;
 using native_orthogonal = fdapde::linalg::OrthogonalMatrix<double, 2, 2>;
 using native_permutation = fdapde::linalg::PermutationMatrix<2, 2>;
 
@@ -35,6 +36,7 @@ static_assert(fdapde::Lower == fdapde::linalg::Lower);
 static_assert(fdapde::linalg::is_diagonal_matrix_v<native_diagonal>);
 static_assert(fdapde::linalg::is_triangular_matrix_v<native_lower_triangular>);
 static_assert(fdapde::linalg::is_symmetric_matrix_v<native_symmetric>);
+static_assert(fdapde::linalg::is_skew_symmetric_matrix_v<native_skew_symmetric>);
 static_assert(fdapde::linalg::is_orthogonal_matrix_v<native_orthogonal>);
 static_assert(fdapde::linalg::is_permutation_matrix_v<native_permutation>);
 
