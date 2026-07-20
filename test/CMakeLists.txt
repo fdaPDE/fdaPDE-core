@@ -39,6 +39,7 @@ add_executable(
   manifold_optimization/power_geometry.cpp
   manifold_optimization/steepest_descent.cpp
   manifold_optimization/log_euclidean_spd.cpp
+  manifold_optimization/affine_invariant_spd.cpp
   manifold_optimization/spd_mean.cpp
 )
 target_compile_options(fdapde_test PRIVATE ${WARNING_FLAGS})

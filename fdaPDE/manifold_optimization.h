@@ -39,6 +39,7 @@
 #include "src/manifold_optimization/armijo.h"
 #include "src/manifold_optimization/steepest_descent.h"
 #include "src/manifold_optimization/log_euclidean_spd.h"
+#include "src/manifold_optimization/affine_invariant_spd.h"
 
 // clang-format on
 

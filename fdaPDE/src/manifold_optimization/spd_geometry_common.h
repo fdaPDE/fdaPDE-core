@@ -95,6 +95,47 @@ template <typename MatrixType_> double frobenius_norm(const MatrixType_& matrix,
     return result;
 }
 
+template <typename Scalar_, int Order_, typename OuterType_, typename MiddleType_>
+fdapde::linalg::SymmetricMatrix<Scalar_, Order_, Order_>
+symmetric_congruence(const OuterType_& outer, const MiddleType_& middle, int order) {
+    fdapde::linalg::Matrix<Scalar_, Order_, Order_> product;
+    if constexpr (Order_ == fdapde::Dynamic) { product.resize(order, order); }
+    for (int i = 0; i < order; ++i) {
+        for (int j = 0; j < order; ++j) {
+            Scalar_ value = 0;
+            for (int k = 0; k < order; ++k) {
+                value += static_cast<Scalar_>(outer(i, k)) * static_cast<Scalar_>(middle(k, j));
+            }
+            product(i, j) = value;
+        }
+    }
+
+    auto result = make_symmetric<Scalar_, Order_>(order);
+    for (int i = 0; i < order; ++i) {
+        for (int j = 0; j <= i; ++j) {
+            Scalar_ value = 0;
+            for (int k = 0; k < order; ++k) { value += product(i, k) * static_cast<Scalar_>(outer(j, k)); }
+            result(i, j) = value;
+        }
+    }
+    return result;
+}
+
+template <typename Scalar_, int Order_, typename MatrixType_>
+fdapde::linalg::SymmetricMatrix<Scalar_, Order_, Order_> symmetric_square(const MatrixType_& matrix, int order) {
+    auto result = make_symmetric<Scalar_, Order_>(order);
+    for (int i = 0; i < order; ++i) {
+        for (int j = 0; j <= i; ++j) {
+            Scalar_ value = 0;
+            for (int k = 0; k < order; ++k) {
+                value += static_cast<Scalar_>(matrix(i, k)) * static_cast<Scalar_>(matrix(k, j));
+            }
+            result(i, j) = value;
+        }
+    }
+    return result;
+}
+
 }   // namespace internals
 }   // namespace manifold
 }   // namespace fdapde

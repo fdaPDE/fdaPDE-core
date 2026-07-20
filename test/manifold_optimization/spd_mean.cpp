@@ -18,6 +18,7 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <cmath>
 #include <utility>
 #include <vector>
 
@@ -42,6 +43,16 @@ template <typename Geometry> typename Geometry::Point identity_point() {
     dense.set_zero();
     for (int i = 0; i < 3; ++i) { dense(i, i) = 1.0; }
     return typename Geometry::Point(dense, native::checked);
+}
+
+template <typename Lhs, typename Rhs> double matrix_difference_norm(const Lhs& lhs, const Rhs& rhs) {
+    double result = 0;
+    for (int i = 0; i < lhs.rows(); ++i) {
+        for (int j = 0; j < lhs.cols(); ++j) {
+            result = std::hypot(result, static_cast<double>(lhs(i, j)) - static_cast<double>(rhs(i, j)));
+        }
+    }
+    return result;
 }
 
 template <typename Geometry> class FrechetMeanProblem {
@@ -120,6 +131,29 @@ template <typename Geometry> void expect_log_mean_matches_closed_form(const Geom
     EXPECT_LT(geometry.distance(result.point, expected), 1.0e-9);
 }
 
+template <typename Geometry> typename Geometry::Point optimize_two_point_affine_mean(const Geometry& geometry) {
+    using Problem = FrechetMeanProblem<Geometry>;
+    const std::vector<typename Geometry::Point> samples {
+      make_point<Geometry>(first_coefficients), make_point<Geometry>(second_coefficients)};
+    Problem problem(geometry, samples);
+    const auto expected = geometry.exponential(samples[0], geometry.logarithm(samples[0], samples[1]), 0.5);
+    const auto initial = identity_point<Geometry>();
+
+    fdapde::manifold::SteepestDescentOptions options;
+    options.max_iterations = 100;
+    options.gradient_tolerance = 1.0e-8;
+    options.line_search.initial_step = 0.5;
+    const fdapde::manifold::RiemannianSteepestDescent optimizer(options);
+    const auto result = optimizer.optimize(problem, geometry, initial);
+
+    EXPECT_TRUE(result.converged());
+    EXPECT_EQ(result.stop_reason, fdapde::manifold::SteepestDescentStopReason::gradient_tolerance);
+    EXPECT_EQ(result.line_search_status, fdapde::manifold::ArmijoStatus::accepted);
+    EXPECT_LT(result.gradient_norm, 1.0e-8);
+    EXPECT_LT(geometry.distance(result.point, expected), 1.0e-7);
+    return result.point;
+}
+
 using FieldComponent = fdapde::manifold::LogEuclideanSPDGeometry<double, 3>;
 using FieldGeometry = fdapde::manifold::PowerGeometry<FieldComponent>;
 
@@ -196,4 +230,13 @@ TEST(LogEuclideanSPDMean, PowerGeometryConvergesComponentwiseToClosedFormMeans) 
     for (std::size_t i = 0; i < geometry.factor_count(); ++i) {
         EXPECT_LT(component.distance(result.point[i], expected[i]), 1.0e-9);
     }
+}
+
+TEST(AffineInvariantSPDMean, FixedAndDynamicThreeByThreeMeansMatchTheGeodesicMidpoint) {
+    const fdapde::manifold::AffineInvariantSPDGeometry<double, 3> fixed_geometry;
+    const fdapde::manifold::AffineInvariantSPDGeometry<double, fdapde::Dynamic> dynamic_geometry(3);
+    const auto fixed_result = optimize_two_point_affine_mean(fixed_geometry);
+    const auto dynamic_result = optimize_two_point_affine_mean(dynamic_geometry);
+
+    EXPECT_LT(matrix_difference_norm(fixed_result, dynamic_result), 1.0e-10);
 }

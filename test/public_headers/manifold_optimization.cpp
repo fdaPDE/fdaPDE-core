@@ -67,6 +67,10 @@ using HeaderLogGeometry = fdapde::manifold::LogEuclideanSPDGeometry<double, 3>;
 using HeaderDynamicLogGeometry = fdapde::manifold::LogEuclideanSPDGeometry<double, fdapde::Dynamic>;
 using HeaderLogPoint = fdapde::manifold::point_t<HeaderLogGeometry>;
 using HeaderLogTangent = fdapde::manifold::tangent_t<HeaderLogGeometry>;
+using HeaderAffineGeometry = fdapde::manifold::AffineInvariantSPDGeometry<double, 3>;
+using HeaderDynamicAffineGeometry = fdapde::manifold::AffineInvariantSPDGeometry<double, fdapde::Dynamic>;
+using HeaderAffinePoint = fdapde::manifold::point_t<HeaderAffineGeometry>;
+using HeaderAffineTangent = fdapde::manifold::tangent_t<HeaderAffineGeometry>;
 
 struct HeaderLogProblem {
     using Workspace = HeaderWorkspace;
@@ -104,6 +108,8 @@ static_assert(fdapde::manifold::FirstOrderGeometry<HeaderGeometry>);
 static_assert(fdapde::manifold::FirstOrderGeometry<HeaderPowerGeometry>);
 static_assert(fdapde::manifold::VectorTransportGeometry<HeaderLogGeometry>);
 static_assert(fdapde::manifold::VectorTransportGeometry<HeaderDynamicLogGeometry>);
+static_assert(fdapde::manifold::VectorTransportGeometry<HeaderAffineGeometry>);
+static_assert(fdapde::manifold::VectorTransportGeometry<HeaderDynamicAffineGeometry>);
 static_assert(fdapde::manifold::FirstOrderProblem<HeaderProblem, HeaderGeometry>);
 static_assert(!fdapde::manifold::FirstOrderProblem<const HeaderProblem, HeaderGeometry>);
 static_assert(fdapde::manifold::FirstOrderProblem<const HeaderConstProblem, HeaderGeometry>);
@@ -116,6 +122,13 @@ static_assert(std::is_constructible_v<HeaderDynamicLogGeometry, int>);
 static_assert(std::is_same_v<HeaderLogPoint, fdapde::linalg::SPDMatrix<double, 3, 3>>);
 static_assert(std::is_same_v<HeaderLogTangent, fdapde::linalg::SymmetricMatrix<double, 3, 3>>);
 static_assert(fdapde::manifold::FirstOrderProblem<const HeaderLogProblem, HeaderLogGeometry>);
+static_assert(std::is_default_constructible_v<HeaderAffineGeometry>);
+static_assert(!std::is_constructible_v<HeaderAffineGeometry, int>);
+static_assert(!std::is_default_constructible_v<HeaderDynamicAffineGeometry>);
+static_assert(std::is_constructible_v<HeaderDynamicAffineGeometry, int>);
+static_assert(std::is_same_v<HeaderAffinePoint, fdapde::linalg::SPDMatrix<double, 3, 3>>);
+static_assert(std::is_same_v<HeaderAffineTangent, fdapde::linalg::SymmetricMatrix<double, 3, 3>>);
+static_assert(fdapde::manifold::FirstOrderProblem<const HeaderLogProblem, HeaderAffineGeometry>);
 static_assert(!HeaderPermitsRvalueCurrent<HeaderContext>);
 static_assert(!HeaderPermitsRvalueEvaluationAccess<typename HeaderContext::Evaluation>);
 static_assert(!HeaderPermitsRvalueComponentAccess<HeaderPowerGeometry>);
@@ -139,6 +152,17 @@ static_assert(std::is_same_v<HeaderSteepestDescentResult, fdapde::manifold::Stee
     for (int i = 0; i < 3; ++i) { identity(i, i) = 1; }
     const HeaderLogPoint point(identity, fdapde::linalg::checked);
     const HeaderLogGeometry geometry;
+    const HeaderLogProblem problem;
+    const auto result = fdapde::manifold::RiemannianSteepestDescent {}.optimize(problem, geometry, point);
+    static_cast<void>(result);
+}
+
+[[maybe_unused]] void instantiate_affine_geometry_solver() {
+    fdapde::linalg::Matrix<double, 3, 3> identity;
+    identity.set_zero();
+    for (int i = 0; i < 3; ++i) { identity(i, i) = 1; }
+    const HeaderAffinePoint point(identity, fdapde::linalg::checked);
+    const HeaderAffineGeometry geometry;
     const HeaderLogProblem problem;
     const auto result = fdapde::manifold::RiemannianSteepestDescent {}.optimize(problem, geometry, point);
     static_cast<void>(result);
