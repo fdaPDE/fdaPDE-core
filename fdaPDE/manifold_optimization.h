@@ -35,6 +35,8 @@
 #include "src/manifold_optimization/evaluation_context.h"
 #include "src/manifold_optimization/problem.h"
 #include "src/manifold_optimization/power_geometry.h"
+#include "src/manifold_optimization/armijo.h"
+#include "src/manifold_optimization/steepest_descent.h"
 
 // clang-format on
 

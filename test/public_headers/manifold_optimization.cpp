@@ -78,6 +78,16 @@ concept HeaderPermitsRvalueEvaluationAccess = requires(Evaluation&& evaluation) 
     std::move(evaluation).workspace();
 };
 
+template <typename Solver>
+concept HeaderPermitsRvalueOptions = requires(Solver&& solver) { std::move(solver).options(); };
+
+using HeaderArmijoResult = decltype(std::declval<const fdapde::manifold::ArmijoBacktracking&>().search(
+  std::declval<HeaderProblem&>(), std::declval<const HeaderGeometry&>(), std::declval<const HeaderPoint&>(),
+  std::declval<const HeaderTangent&>(), 0.0, -1.0, std::declval<HeaderContext&>()));
+using HeaderSteepestDescentResult =
+  decltype(std::declval<const fdapde::manifold::RiemannianSteepestDescent&>().optimize(
+    std::declval<HeaderProblem&>(), std::declval<const HeaderGeometry&>(), std::declval<const HeaderPoint&>()));
+
 static_assert(fdapde::manifold::FirstOrderGeometry<HeaderGeometry>);
 static_assert(fdapde::manifold::FirstOrderGeometry<HeaderPowerGeometry>);
 static_assert(fdapde::manifold::FirstOrderProblem<HeaderProblem, HeaderGeometry>);
@@ -88,7 +98,18 @@ static_assert(std::is_default_constructible_v<HeaderSymmetricContext>);
 static_assert(!HeaderPermitsRvalueCurrent<HeaderContext>);
 static_assert(!HeaderPermitsRvalueEvaluationAccess<typename HeaderContext::Evaluation>);
 static_assert(!HeaderPermitsRvalueComponentAccess<HeaderPowerGeometry>);
+static_assert(!HeaderPermitsRvalueOptions<fdapde::manifold::ArmijoBacktracking>);
+static_assert(!HeaderPermitsRvalueOptions<fdapde::manifold::RiemannianSteepestDescent>);
 static_assert(std::is_same_v<fdapde::manifold::point_t<HeaderPowerGeometry>, std::vector<HeaderPoint>>);
 static_assert(std::is_same_v<fdapde::manifold::tangent_t<HeaderPowerGeometry>, std::vector<HeaderTangent>>);
+static_assert(std::is_same_v<HeaderArmijoResult, fdapde::manifold::ArmijoResult<HeaderPoint>>);
+static_assert(std::is_same_v<HeaderSteepestDescentResult, fdapde::manifold::SteepestDescentResult<HeaderPoint>>);
+
+[[maybe_unused]] void instantiate_const_problem_solver() {
+    HeaderGeometry geometry;
+    const HeaderConstProblem problem;
+    const auto result = fdapde::manifold::RiemannianSteepestDescent {}.optimize(problem, geometry, HeaderPoint {});
+    static_cast<void>(result);
+}
 
 }   // namespace

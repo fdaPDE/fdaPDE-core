@@ -37,6 +37,7 @@ add_executable(
   manifold_optimization/manifold.cpp
   manifold_optimization/problem.cpp
   manifold_optimization/power_geometry.cpp
+  manifold_optimization/steepest_descent.cpp
 )
 target_compile_options(fdapde_test PRIVATE ${WARNING_FLAGS})
 target_include_directories(fdapde_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
