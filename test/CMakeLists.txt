@@ -34,6 +34,9 @@ add_executable(
   linear_algebra/native_mdarray.cpp
   linear_algebra/native_spd.cpp
   linear_algebra/native_matrix_batch.cpp
+  manifold_optimization/manifold.cpp
+  manifold_optimization/problem.cpp
+  manifold_optimization/power_geometry.cpp
 )
 target_compile_options(fdapde_test PRIVATE ${WARNING_FLAGS})
 target_include_directories(fdapde_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
@@ -90,7 +93,7 @@ endif()
 target_include_directories(fdapde_native_matrix_batch_no_debug PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
 target_link_libraries(fdapde_native_matrix_batch_no_debug PRIVATE Eigen3::Eigen)
 
-foreach(module IN ITEMS core linear_algebra optimization)
+foreach(module IN ITEMS core linear_algebra optimization manifold_optimization)
   add_library(fdapde_${module}_header_check OBJECT public_headers/${module}.cpp)
   target_compile_options(fdapde_${module}_header_check PRIVATE ${WARNING_FLAGS})
   target_include_directories(fdapde_${module}_header_check PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
