@@ -81,6 +81,20 @@ template <typename T1, typename T2> using promote_type_t = std::common_type_t<T1
 
 inline constexpr int RowMajor = 0;
 inline constexpr int ColMajor = 1;
+inline constexpr int Upper = 0;
+inline constexpr int Lower = 1;
+inline constexpr int LhsMode = 0;
+inline constexpr int RhsMode = 1;
+
+namespace internals {
+
+struct checked_t { };
+struct unchecked_t { };
+
+}   // namespace internals
+
+inline constexpr internals::checked_t checked {};
+inline constexpr internals::unchecked_t unchecked {};
 
 }   // namespace fdapde::linalg
 
@@ -95,6 +109,11 @@ inline constexpr int ColMajor = 1;
 #include "src/linear_algebra/native/bool.h"
 #include "src/linear_algebra/native/coeffwise.h"
 #include "src/linear_algebra/native/xpr.h"
+#include "src/linear_algebra/native/diagonal.h"
+#include "src/linear_algebra/native/orthogonal.h"
+#include "src/linear_algebra/native/triangular.h"
+#include "src/linear_algebra/native/symmetric.h"
+#include "src/linear_algebra/native/permutation.h"
 
 // clang-format on
 

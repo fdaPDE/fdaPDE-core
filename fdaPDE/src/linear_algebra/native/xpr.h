@@ -24,6 +24,16 @@
 
 namespace fdapde::linalg {
 
+template <typename XprType> struct Diagonal;
+template <int ViewMode, typename XprType> struct Triangular;
+
+namespace internals {
+
+template <typename XprType> constexpr auto diagonal_cast(XprType&& xpr);
+template <int ViewMode, typename XprType> auto symmetric_cast(XprType&& xpr);
+
+}   // namespace internals
+
 // MatrixExpr type-system base class
 template <typename XprType_> struct MatrixExpr {
     using XprType = XprType_;
@@ -309,6 +319,12 @@ template <typename XprType_> struct MatrixExpr {
         return TransposeOp<XprType>(derived());
     }
     constexpr void transpose() const && requires(XprType::NestAsRef != 0) = delete;
+    constexpr Diagonal<XprType> diagonal() & { return Diagonal<XprType>(derived()); }
+    constexpr Diagonal<const XprType> diagonal() const & { return Diagonal<const XprType>(derived()); }
+    constexpr Diagonal<XprType> diagonal() && requires(XprType::NestAsRef == 0) {
+        return Diagonal<XprType>(std::move(derived()));
+    }
+    constexpr void diagonal() && requires(XprType::NestAsRef != 0) = delete;
     // block accessors
     // static-sized block
     template <int BlockRows, int BlockCols>
@@ -424,6 +440,44 @@ template <typename XprType_> struct MatrixExpr {
     template <int ReshapedRows_> constexpr void reshape() const && = delete;
     constexpr void reshape(int, int) const && = delete;
     constexpr void reshape(int) const && = delete;
+
+    // structured views and casts
+    template <int ViewMode> constexpr Triangular<ViewMode, XprType> triangular_block() & {
+        return Triangular<ViewMode, XprType>(derived());
+    }
+    template <int ViewMode> constexpr Triangular<ViewMode, const XprType> triangular_block() const & {
+        return Triangular<ViewMode, const XprType>(derived());
+    }
+    template <int ViewMode>
+    constexpr Triangular<ViewMode, XprType> triangular_block() && requires(XprType::NestAsRef == 0) {
+        return Triangular<ViewMode, XprType>(std::move(derived()));
+    }
+    template <int ViewMode> constexpr void triangular_block() && requires(XprType::NestAsRef != 0) = delete;
+
+    template <int ViewMode> constexpr auto as_symmetric() & {
+        return internals::symmetric_cast<ViewMode>(derived());
+    }
+    template <int ViewMode> constexpr auto as_symmetric() const & {
+        return internals::symmetric_cast<ViewMode>(derived());
+    }
+    template <int ViewMode> constexpr auto as_symmetric() && requires(XprType::NestAsRef == 0) {
+        return internals::symmetric_cast<ViewMode>(std::move(derived()));
+    }
+    template <int ViewMode> constexpr void as_symmetric() && requires(XprType::NestAsRef != 0) = delete;
+
+    constexpr auto as_diagonal() & {
+        fdapde_static_assert(XprType::Rows == 1 || XprType::Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
+        return internals::diagonal_cast(derived());
+    }
+    constexpr auto as_diagonal() const & {
+        fdapde_static_assert(XprType::Rows == 1 || XprType::Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
+        return internals::diagonal_cast(derived());
+    }
+    constexpr auto as_diagonal() && requires(XprType::NestAsRef == 0) {
+        fdapde_static_assert(XprType::Rows == 1 || XprType::Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
+        return internals::diagonal_cast(std::move(derived()));
+    }
+    constexpr void as_diagonal() && requires(XprType::NestAsRef != 0) = delete;
 
     // square matrix methods
     constexpr auto symm_part() const & {
