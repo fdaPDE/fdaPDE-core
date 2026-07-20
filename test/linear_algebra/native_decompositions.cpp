@@ -311,4 +311,10 @@ TEST(NativeEVD, PreservesScaleAndHandlesZero) {
     expect_matrix_near(native::Matrix<double, 3, 3>(decomposition.eigenvectors()), identity);
 }
 
+TEST(NativeEVD, RejectsOversizeDenseWorkspaceBeforeAllocation) {
+    const native::IdentityMatrix<double, fdapde::Dynamic, fdapde::Dynamic> too_large(46341, 46341);
+    const auto symmetric = too_large.template as_symmetric<native::Lower>();
+    EXPECT_THROW(static_cast<void>(symmetric.evd()), std::length_error);
+}
+
 }   // namespace

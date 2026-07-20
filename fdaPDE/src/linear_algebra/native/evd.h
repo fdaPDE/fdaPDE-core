@@ -19,6 +19,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <stdexcept>
 #include <type_traits>
@@ -32,6 +33,10 @@ template <typename XprType_> class EVD {
     fdapde_static_assert(
       XprType::Rows == Dynamic || XprType::Cols == Dynamic || XprType::Rows == XprType::Cols,
       THIS_CLASS_IS_FOR_SQUARE_MATRICES_ONLY);
+    fdapde_static_assert(
+      XprType::Rows == Dynamic || XprType::Cols == Dynamic ||
+        std::int64_t(XprType::Rows) * std::int64_t(XprType::Cols) <= std::numeric_limits<int>::max(),
+      EVD_DENSE_WORKSPACE_SIZE_EXCEEDS_SUPPORTED_RANGE);
    public:
     using Scalar = std::remove_cv_t<typename XprType::Scalar>;
     static constexpr int Rows = XprType::Rows;
@@ -58,6 +63,10 @@ template <typename XprType_> class EVD {
             fdapde_assert(shape_valid);
             computed_ = false;
             return;
+        }
+        const std::int64_t dense_dimension = n;
+        if (dense_dimension * dense_dimension > std::numeric_limits<int>::max()) {
+            throw std::length_error("EVD: dense workspace size exceeds supported range");
         }
 
         Matrix<Scalar, Rows, Cols> diagonalized(matrix);
