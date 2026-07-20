@@ -101,6 +101,7 @@ inline constexpr internals::unchecked_t unchecked {};
 #include "src/linear_algebra/native/traits.h"
 #include "src/linear_algebra/native/numeric.h"
 #include "src/linear_algebra/native/matrix.h"
+#include "src/linear_algebra/native/matrix_batch.h"
 #include "src/linear_algebra/native/binary_op.h"
 #include "src/linear_algebra/native/block.h"
 #include "src/linear_algebra/native/unary_op.h"

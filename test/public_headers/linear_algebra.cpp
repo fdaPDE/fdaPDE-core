@@ -16,6 +16,7 @@
 
 #include <fdaPDE/linear_algebra.h>
 
+#include <span>
 #include <type_traits>
 #include <utility>
 
@@ -37,6 +38,8 @@ using native_lu = fdapde::linalg::PartialPivLU<native_matrix>;
 using native_qr = fdapde::linalg::HouseholderQR<double, 2, 2>;
 using native_evd = fdapde::linalg::EVD<native_symmetric>;
 using native_spd = fdapde::linalg::SPDMatrix<double, 2, 2>;
+using native_matrix_batch = fdapde::linalg::MatrixBatchView<double, 2, 2>;
+using native_const_matrix_batch = fdapde::linalg::MatrixBatchView<const double, 2, 2>;
 using native_preconditioner = fdapde::linalg::IdentityPreconditioner<native_matrix>;
 using native_gmres = fdapde::linalg::GMRES<native_matrix, native_preconditioner>;
 using legacy_mdarray = fdapde::MdArray<int, fdapde::MdExtents<2, 3>>;
@@ -65,6 +68,16 @@ static_assert(fdapde::linalg::is_symmetric_matrix_v<native_spd>);
 static_assert(!std::is_default_constructible_v<native_spd>);
 static_assert(std::is_constructible_v<native_spd, const native_matrix&, decltype(fdapde::linalg::checked)>);
 static_assert(std::is_same_v<decltype(std::declval<const native_spd&>().data()), const double*>);
+static_assert(std::is_constructible_v<native_matrix_batch, std::span<double>>);
+static_assert(!std::is_constructible_v<native_matrix_batch, std::span<const double>>);
+static_assert(std::is_constructible_v<native_const_matrix_batch, std::span<const double>>);
+static_assert(std::is_same_v<
+              decltype(std::declval<native_matrix_batch&>()[0]),
+              fdapde::linalg::MatrixView<double, 2, 2, fdapde::linalg::RowMajor>>);
+static_assert(std::is_same_v<
+              decltype(std::declval<const native_matrix_batch&>()[0]),
+              fdapde::linalg::MatrixView<const double, 2, 2, fdapde::linalg::RowMajor>>);
+static_assert(!std::is_reference_v<decltype(std::declval<native_matrix_batch&>()[0])>);
 static_assert(std::is_default_constructible_v<native_preconditioner>);
 static_assert(!std::is_default_constructible_v<native_gmres>);
 static_assert(!std::is_same_v<legacy_mdarray, native_mdarray>);

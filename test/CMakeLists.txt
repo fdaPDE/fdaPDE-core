@@ -33,6 +33,7 @@ add_executable(
   linear_algebra/native_gmres.cpp
   linear_algebra/native_mdarray.cpp
   linear_algebra/native_spd.cpp
+  linear_algebra/native_matrix_batch.cpp
 )
 target_compile_options(fdapde_test PRIVATE ${WARNING_FLAGS})
 target_include_directories(fdapde_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
@@ -72,6 +73,23 @@ endif()
 target_include_directories(fdapde_native_spd_no_debug PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
 target_link_libraries(fdapde_native_spd_no_debug PRIVATE Eigen3::Eigen)
 
+add_executable(fdapde_native_matrix_batch_no_debug linear_algebra/native_matrix_batch_no_debug.cpp)
+target_compile_definitions(fdapde_native_matrix_batch_no_debug PRIVATE FDAPDE_NO_DEBUG)
+target_compile_options(fdapde_native_matrix_batch_no_debug PRIVATE ${WARNING_FLAGS})
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  target_compile_options(
+    fdapde_native_matrix_batch_no_debug
+    PRIVATE -Wno-error=unused-parameter -Wno-error=unused-local-typedef
+  )
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  target_compile_options(
+    fdapde_native_matrix_batch_no_debug
+    PRIVATE -Wno-error=unused-parameter -Wno-error=unused-local-typedefs
+  )
+endif()
+target_include_directories(fdapde_native_matrix_batch_no_debug PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
+target_link_libraries(fdapde_native_matrix_batch_no_debug PRIVATE Eigen3::Eigen)
+
 foreach(module IN ITEMS core linear_algebra optimization)
   add_library(fdapde_${module}_header_check OBJECT public_headers/${module}.cpp)
   target_compile_options(fdapde_${module}_header_check PRIVATE ${WARNING_FLAGS})
@@ -84,3 +102,4 @@ include(GoogleTest)
 gtest_discover_tests(fdapde_test)
 add_test(NAME NativeMdArray.NoDebugContracts COMMAND fdapde_native_mdarray_no_debug)
 add_test(NAME NativeSPD.NoDebugContracts COMMAND fdapde_native_spd_no_debug)
+add_test(NAME NativeMatrixBatchView.NoDebugContracts COMMAND fdapde_native_matrix_batch_no_debug)
