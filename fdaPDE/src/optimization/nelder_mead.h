@@ -47,7 +47,7 @@ template <int N> class NelderMead {
     static constexpr bool gradient_free = true;
     static constexpr int static_input_size = N;
     // constructors
-    NelderMead() = default;
+    NelderMead() : NelderMead(500, 1e-5) { }
     NelderMead(int max_iter, double tol, int seed = fdapde::random_seed) :
         max_iter_(max_iter), tol_(tol), seed_(seed) { }
 
@@ -62,6 +62,8 @@ template <int N> class NelderMead {
         bool stop = false;
         bool shrink = false;
         n_iter_ = 0;
+        vertices_values_.clear();
+        vertices_rank_.clear();
 	vector_t centroid;
 	// adaptive parameters initialization
         // Gao, F., Han, L. Implementing the Nelder-Mead simplex algorithm with adaptive parameters. Comput Optim Appl

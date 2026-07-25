@@ -54,3 +54,45 @@ TEST(PublicApiSmoke, GridSearchHonorsEigenStorageOrder) {
     const Eigen::Matrix<double, 4, 2, Eigen::ColMajor> column_major_grid = row_major_grid;
     check_grid(column_major_grid);
 }
+
+TEST(PublicApiSmoke, NelderMeadDefaultsMatchTheDocumentedConfiguration) {
+    const auto objective = [](const Eigen::Vector2d& x) -> double {
+        return (x - Eigen::Vector2d(1.0, -2.0)).squaredNorm();
+    };
+    const Eigen::Vector2d x0(4.0, 3.0);
+
+    fdapde::NelderMead<2> default_optimizer;
+    fdapde::NelderMead<2> configured_optimizer(500, 1e-5, fdapde::random_seed);
+    const Eigen::Vector2d default_optimum = default_optimizer.optimize(objective, x0);
+    const Eigen::Vector2d configured_optimum = configured_optimizer.optimize(objective, x0);
+
+    EXPECT_TRUE(default_optimum.isApprox(configured_optimum, 1e-12));
+    EXPECT_DOUBLE_EQ(default_optimizer.value(), configured_optimizer.value());
+    EXPECT_EQ(default_optimizer.n_iter(), configured_optimizer.n_iter());
+
+    fdapde::NelderMead<2> iteration_limited_optimizer;
+    const auto unbounded_objective = [](const Eigen::Vector2d& x) -> double { return x[0]; };
+    iteration_limited_optimizer.optimize(unbounded_objective, Eigen::Vector2d::Zero());
+    EXPECT_EQ(iteration_limited_optimizer.n_iter(), 500);
+}
+
+TEST(PublicApiSmoke, NelderMeadCanBeReused) {
+    const auto objective = [](const Eigen::Vector2d& x) -> double {
+        return (x - Eigen::Vector2d(-1.0, 2.0)).squaredNorm();
+    };
+    const Eigen::Vector2d x0(3.0, -4.0);
+
+    fdapde::NelderMead<2> reused_optimizer(200, 1e-8, 7);
+    const Eigen::Vector2d first_optimum = reused_optimizer.optimize(objective, x0);
+    const int first_iterations = reused_optimizer.n_iter();
+    const Eigen::Vector2d second_optimum = reused_optimizer.optimize(objective, x0);
+
+    fdapde::NelderMead<2> fresh_optimizer(200, 1e-8, 7);
+    const Eigen::Vector2d fresh_optimum = fresh_optimizer.optimize(objective, x0);
+
+    EXPECT_TRUE(first_optimum.isApprox(fresh_optimum, 1e-12));
+    EXPECT_TRUE(second_optimum.isApprox(fresh_optimum, 1e-12));
+    EXPECT_EQ(first_iterations, fresh_optimizer.n_iter());
+    EXPECT_EQ(reused_optimizer.n_iter(), fresh_optimizer.n_iter());
+    EXPECT_DOUBLE_EQ(reused_optimizer.value(), fresh_optimizer.value());
+}
