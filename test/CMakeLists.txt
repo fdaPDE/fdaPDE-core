@@ -98,16 +98,49 @@ endif()
 target_include_directories(fdapde_native_matrix_batch_no_debug PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
 target_link_libraries(fdapde_native_matrix_batch_no_debug PRIVATE Eigen3::Eigen)
 
-foreach(module IN ITEMS core linear_algebra optimization manifold_optimization)
+add_executable(
+  fdapde_execution_test
+  execution/parallel_algorithms.cpp
+  execution/runtime.cpp
+  execution/task_graph.cpp
+)
+target_compile_options(fdapde_execution_test PRIVATE ${WARNING_FLAGS})
+target_include_directories(fdapde_execution_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
+target_link_libraries(fdapde_execution_test PRIVATE Eigen3::Eigen gtest_main)
+
+add_executable(fdapde_execution_configuration_test execution/configuration.cpp)
+target_compile_options(fdapde_execution_configuration_test PRIVATE ${WARNING_FLAGS})
+target_include_directories(fdapde_execution_configuration_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
+target_link_libraries(fdapde_execution_configuration_test PRIVATE Eigen3::Eigen gtest_main)
+
+add_executable(fdapde_execution_queue_capacity_test execution/queue_capacity.cpp)
+target_compile_options(fdapde_execution_queue_capacity_test PRIVATE ${WARNING_FLAGS})
+target_include_directories(fdapde_execution_queue_capacity_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
+target_link_libraries(fdapde_execution_queue_capacity_test PRIVATE Eigen3::Eigen gtest_main)
+
+foreach(module IN ITEMS core linear_algebra optimization manifold_optimization execution)
   add_library(fdapde_${module}_header_check OBJECT public_headers/${module}.cpp)
   target_compile_options(fdapde_${module}_header_check PRIVATE ${WARNING_FLAGS})
   target_include_directories(fdapde_${module}_header_check PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
   target_link_libraries(fdapde_${module}_header_check PRIVATE Eigen3::Eigen)
 endforeach()
 
+add_library(
+  fdapde_execution_header_composition_check
+  OBJECT
+  public_headers/execution_then_linear_algebra.cpp
+  public_headers/linear_algebra_then_execution.cpp
+)
+target_compile_options(fdapde_execution_header_composition_check PRIVATE ${WARNING_FLAGS})
+target_include_directories(fdapde_execution_header_composition_check PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
+target_link_libraries(fdapde_execution_header_composition_check PRIVATE Eigen3::Eigen)
+
 enable_testing()
 include(GoogleTest)
 gtest_discover_tests(fdapde_test)
+gtest_discover_tests(fdapde_execution_test)
+gtest_discover_tests(fdapde_execution_configuration_test)
+gtest_discover_tests(fdapde_execution_queue_capacity_test PROPERTIES TIMEOUT 30)
 add_test(NAME NativeMdArray.NoDebugContracts COMMAND fdapde_native_mdarray_no_debug)
 add_test(NAME NativeSPD.NoDebugContracts COMMAND fdapde_native_spd_no_debug)
 add_test(NAME NativeMatrixBatchView.NoDebugContracts COMMAND fdapde_native_matrix_batch_no_debug)
