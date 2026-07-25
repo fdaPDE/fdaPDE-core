@@ -468,8 +468,7 @@ template <int N> class Triangulation<2, N> : public TriangulationBase<2, N, Tria
         if (Base::flags_ & cache_cells) {   // cell caching enabled
             return cell_cache_[id];
         } else {
-            cell_ = typename Base::CellType(id, this);
-            return cell_;
+            return cell_.emplace(id, this);
         }
     }
     bool is_edge_on_boundary(int id) const { return boundary_edges_[id]; }
@@ -611,7 +610,7 @@ template <int N> class Triangulation<2, N> : public TriangulationBase<2, N, Tria
     mutable std::optional<LocationPolicy> location_policy_ {};
     // cell caching
     std::vector<typename Base::CellType> cell_cache_;
-    mutable typename Base::CellType cell_;   // used in case cell caching is off
+    mutable std::optional<typename Base::CellType> cell_;   // used in case cell caching is off
 };
 
 // face-based storage
@@ -790,8 +789,7 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
         if (Base::flags_ & cache_cells) {   // cell caching enabled
             return cell_cache_[id];
         } else {
-            cell_ = typename Base::CellType(id, this);
-            return cell_;
+            return cell_.emplace(id, this);
         }
     }
     bool is_face_on_boundary(int id) const { return boundary_faces_[id]; }
@@ -1023,7 +1021,7 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
     mutable std::optional<LocationPolicy> location_policy_ {};
     // cell caching
     std::vector<typename Base::CellType> cell_cache_;
-    mutable typename Base::CellType cell_;   // used in case cell caching is off
+    mutable std::optional<typename Base::CellType> cell_;   // used in case cell caching is off
 };
 
 }   // namespace fdapde

@@ -42,6 +42,13 @@ add_executable(
   manifold_optimization/log_euclidean_spd.cpp
   manifold_optimization/affine_invariant_spd.cpp
   manifold_optimization/spd_mean.cpp
+  src/dg_dof_test.cpp
+  src/dg_expression_test.cpp
+  src/dg_facet_coefficient_test.cpp
+  src/dg_facet_test.cpp
+  src/dg_high_order_quadrature_test.cpp
+  src/dg_linear_facet_test.cpp
+  src/dg_poisson_test.cpp
 )
 target_compile_options(fdapde_test PRIVATE ${WARNING_FLAGS})
 target_include_directories(fdapde_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)

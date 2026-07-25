@@ -28,8 +28,11 @@ enum class fe_assembler_flags {
     compute_shape_grad          = 0x0002,
     compute_shape_hess          = 0x0004,
     compute_shape_div           = 0x0008,
-    compute_physical_quad_nodes = 0x0010
+    compute_physical_quad_nodes = 0x0010,
+    interior_facet              = 0x0020
 };
+
+enum class fe_facet_side { none, plus, minus };
 
 namespace internals {
 
@@ -48,7 +51,21 @@ template <int EmbedDim> struct fe_assembler_packet : geo_assembler_packet<EmbedD
     fe_assembler_packet(fe_assembler_packet&&) noexcept = default;
     fe_assembler_packet(const fe_assembler_packet&) noexcept = default;
 
+    constexpr bool test_trace_active() const {
+        return !interior_facet || (trace_side != fe_facet_side::none && trace_side == test_side);
+    }
+    constexpr bool trial_trace_active() const {
+        return !interior_facet || (trace_side != fe_facet_side::none && trace_side == trial_side);
+    }
+
     int quad_node_id;
+    bool interior_facet = false;
+    mutable fe_facet_side trace_side = fe_facet_side::none;
+    fe_facet_side trial_side = fe_facet_side::none;
+    fe_facet_side test_side = fe_facet_side::none;
+    double facet_size = 1;
+    MdArray<double, MdExtents<embed_dim, 1>> facet_normal;
+    MdArray<double, MdExtents<embed_dim, 1>> physical_quad_node;
     // functional informations (Dynamic stands for number of components)
     MdArray<double, MdExtents<Dynamic>> trial_value, test_value;            // \psi_i(q_k), \psi_j(q_k)
     MdArray<double, MdExtents<Dynamic, embed_dim>> trial_grad, test_grad;   // \nabla{\psi_i}(q_k), \nabla{\psi_j}(q_k)
