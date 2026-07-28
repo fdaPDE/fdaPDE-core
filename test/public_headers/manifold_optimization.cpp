@@ -140,6 +140,13 @@ concept HeaderAffineDifferentialActions = requires(
     {
         geometry.half_squared_distance_hessian_vector(from, to, tangent)
     } -> std::same_as<fdapde::manifold::tangent_t<Geometry>>;
+    {
+        geometry.half_squared_distance_hessian_covariant_jvp(from, to, tangent, tangent, tangent)
+    } -> std::same_as<fdapde::manifold::tangent_t<Geometry>>;
+    {
+        geometry.half_squared_distance_hessian_covariant_vjp(from, to, tangent, tangent)
+    } -> std::same_as<
+      std::pair<fdapde::manifold::tangent_t<Geometry>, fdapde::manifold::tangent_t<Geometry>>>;
 };
 
 using HeaderArmijoResult = decltype(std::declval<const fdapde::manifold::ArmijoBacktracking&>().search(

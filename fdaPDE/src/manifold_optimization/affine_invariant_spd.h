@@ -184,6 +184,81 @@ template <typename Scalar_, int Order_> class AffineInvariantSPDGeometry {
           internals::symmetric_congruence<Scalar, Order_>(frame.from_sqrt, chart_result, order_));
     }
 
+    // Covariant derivative of half_squared_distance_hessian_vector along
+    // simultaneous base/target variation. The action direction is continued
+    // parallelly along the base variation.
+    Tangent half_squared_distance_hessian_covariant_jvp(
+      const Point& base, const Point& target, const Tangent& base_direction, const Tangent& target_direction,
+      const Tangent& action_direction) const {
+        check_tangent_(base_direction);
+        check_tangent_(target_direction);
+        check_tangent_(action_direction);
+        const auto frame = relative_frame_(base, target);
+        const auto whitened_base_direction =
+          internals::symmetric_congruence<Scalar, Order_>(frame.from_inverse_sqrt, base_direction, order_);
+        const auto whitened_action_direction =
+          internals::symmetric_congruence<Scalar, Order_>(frame.from_inverse_sqrt, action_direction, order_);
+
+        // For the unscaled relative point R = c S, its whitened variation
+        // divided by c is E/c - Jordan(X, S). Expressing the formula with this
+        // scaled variation cancels both powers of c in D2 log(c S).
+        const Scalar inverse_sqrt_scale = Scalar(1) / std::sqrt(frame.relative_scale);
+        const auto scaled_inverse_sqrt = internals::combine_symmetric<Scalar, Order_>(
+          frame.from_inverse_sqrt, inverse_sqrt_scale, frame.from_inverse_sqrt, Scalar(0), order_);
+        const auto scaled_target_direction =
+          internals::symmetric_congruence<Scalar, Order_>(scaled_inverse_sqrt, target_direction, order_);
+        const auto base_relative_change = jordan_product_(whitened_base_direction, frame.scaled_relative);
+        const auto relative_direction = internals::combine_symmetric<Scalar, Order_>(
+          scaled_target_direction, Scalar(1), base_relative_change, Scalar(-1), order_);
+
+        const auto log_action = logarithm_frechet_(frame.scaled_relative, whitened_action_direction);
+        const auto log_second = fdapde::linalg::matrix_log_second_frechet(
+          frame.scaled_relative, relative_direction, whitened_action_direction);
+        const auto chart_result = internals::combine_symmetric<Scalar, Order_>(
+          jordan_product_(relative_direction, log_action), Scalar(1),
+          jordan_product_(frame.scaled_relative, log_second), Scalar(1), order_);
+        return checked_tangent_result_(
+          internals::symmetric_congruence<Scalar, Order_>(frame.from_sqrt, chart_result, order_));
+    }
+
+    // Metric adjoint of the simultaneous base/target variation in
+    // half_squared_distance_hessian_covariant_jvp, for a fixed parallel
+    // action direction. The pair contains base and target metric-dual tangents.
+    std::pair<Tangent, Tangent> half_squared_distance_hessian_covariant_vjp(
+      const Point& base, const Point& target, const Tangent& action_direction,
+      const Tangent& output_metric_dual) const {
+        check_tangent_(action_direction);
+        check_tangent_(output_metric_dual);
+        const auto frame = relative_frame_(base, target);
+        const auto whitened_action =
+          internals::symmetric_congruence<Scalar, Order_>(frame.from_inverse_sqrt, action_direction, order_);
+        const auto whitened_output =
+          internals::symmetric_congruence<Scalar, Order_>(frame.from_inverse_sqrt, output_metric_dual, order_);
+        const auto log_action = logarithm_frechet_(frame.scaled_relative, whitened_action);
+        const auto relative_output = jordan_product_(frame.scaled_relative, whitened_output);
+        const auto log_second = fdapde::linalg::matrix_log_second_frechet(
+          frame.scaled_relative, relative_output, whitened_action);
+        const auto variation_dual = internals::combine_symmetric<Scalar, Order_>(
+          jordan_product_(whitened_output, log_action), Scalar(1), log_second, Scalar(1), order_);
+
+        auto base_chart_dual = jordan_product_(frame.scaled_relative, variation_dual);
+        for (int i = 0; i < order_; ++i) {
+            for (int j = 0; j <= i; ++j) { base_chart_dual(i, j) = -base_chart_dual(i, j); }
+        }
+        Tangent base_dual = checked_tangent_result_(
+          internals::symmetric_congruence<Scalar, Order_>(frame.from_sqrt, base_chart_dual, order_));
+
+        const auto target_chart_dual =
+          internals::symmetric_congruence<Scalar, Order_>(frame.scaled_relative, variation_dual, order_);
+        const Scalar sqrt_scale = std::sqrt(frame.relative_scale);
+        const auto scaled_from_sqrt =
+          internals::combine_symmetric<Scalar, Order_>(
+            frame.from_sqrt, sqrt_scale, frame.from_sqrt, Scalar(0), order_);
+        Tangent target_dual = checked_tangent_result_(
+          internals::symmetric_congruence<Scalar, Order_>(scaled_from_sqrt, target_chart_dual, order_));
+        return {std::move(base_dual), std::move(target_dual)};
+    }
+
     double distance(const Point& from, const Point& to) const {
         check_point_(from);
         check_point_(to);

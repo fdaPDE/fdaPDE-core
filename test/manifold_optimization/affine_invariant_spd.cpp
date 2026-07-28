@@ -246,6 +246,11 @@ TEST(AffineInvariantSPDGeometry, DifferentialActionsMatchScalarAndDiagonalClosed
         EXPECT_NEAR(geometry.logarithm_target_vjp(from, to, from_dual)(0, 0), 9.0 * -0.7 / 4.0, 1.0e-14);
         EXPECT_NEAR(
           geometry.half_squared_distance_hessian_vector(from, to, base_direction)(0, 0), base_direction(0, 0), 1.0e-14);
+        EXPECT_NEAR(
+          geometry
+            .half_squared_distance_hessian_covariant_jvp(
+              from, to, base_direction, to_direction, from_dual)(0, 0),
+          0.0, 1.0e-14);
     }
 
     const FixedGeometry geometry;
@@ -267,6 +272,14 @@ TEST(AffineInvariantSPDGeometry, DifferentialActionsMatchScalarAndDiagonalClosed
     expect_matrix_relative_near(geometry.logarithm_target_vjp(identity, target, from_dual), expected_vjp, 2.0e-13);
     expect_matrix_relative_near(
       geometry.half_squared_distance_hessian_vector(identity, target, base_direction), expected_hessian, 2.0e-13);
+
+    const auto diagonal_base_direction = make_tangent<FixedGeometry>({0.15, 0, -0.2, 0, 0, 0.35});
+    const auto diagonal_target_direction = make_tangent<FixedGeometry>({-0.1, 0, 0.2, 0, 0, 0.45});
+    const auto diagonal_action_direction = make_tangent<FixedGeometry>({0.3, 0, 0.4, 0, 0, -0.15});
+    expect_matrix_near(
+      geometry.half_squared_distance_hessian_covariant_jvp(
+        identity, target, diagonal_base_direction, diagonal_target_direction, diagonal_action_direction),
+      geometry.zero_tangent(identity), 2.0e-13);
 }
 
 TEST(AffineInvariantSPDGeometry, DifferentialActionsHaveTheExactMetricStructure) {
@@ -276,6 +289,7 @@ TEST(AffineInvariantSPDGeometry, DifferentialActionsHaveTheExactMetricStructure)
     const auto u = make_tangent<FixedGeometry>({0.3, -0.2, 0.4, 0.1, 0.25, -0.15});
     const auto v = make_tangent<FixedGeometry>({-0.1, 0.35, 0.2, -0.25, 0.05, 0.45});
     const auto z = make_tangent<FixedGeometry>({0.15, 0.4, -0.2, -0.3, 0.1, 0.35});
+    const auto w = make_tangent<FixedGeometry>({-0.25, 0.1, 0.3, 0.2, -0.15, 0.05});
 
     const auto jvp = geometry.logarithm_target_jvp(point, target, v);
     const auto vjp = geometry.logarithm_target_vjp(point, target, z);
@@ -292,11 +306,74 @@ TEST(AffineInvariantSPDGeometry, DifferentialActionsHaveTheExactMetricStructure)
       2.0e-10 * std::max({1.0, std::abs(self_adjoint_lhs), std::abs(self_adjoint_rhs)}));
     EXPECT_GE(geometry.inner_product(point, u, hessian_u), geometry.inner_product(point, u, u) * (1.0 - 2.0e-10));
 
+    const auto covariant_jvp =
+      geometry.half_squared_distance_hessian_covariant_jvp(point, target, u, v, z);
+    const auto covariant_vjp =
+      geometry.half_squared_distance_hessian_covariant_vjp(point, target, z, w);
+    const double covariant_lhs = geometry.inner_product(point, covariant_jvp, w);
+    const double covariant_rhs =
+      geometry.inner_product(point, u, covariant_vjp.first) +
+      geometry.inner_product(target, v, covariant_vjp.second);
+    EXPECT_NEAR(
+      covariant_lhs, covariant_rhs,
+      3.0e-10 * std::max({1.0, std::abs(covariant_lhs), std::abs(covariant_rhs)}));
+
     const auto exponent = geometry.logarithm(point, target);
     expect_matrix_relative_near(
       geometry.logarithm_target_jvp(point, target, fixed_base_exp_jvp<FixedGeometry>(point, exponent, z)), z, 2.0e-9);
     expect_matrix_relative_near(
       fixed_base_exp_jvp<FixedGeometry>(point, exponent, geometry.logarithm_target_jvp(point, target, v)), v, 2.0e-9);
+}
+
+TEST(AffineInvariantSPDGeometry, HessianCovariantJvpVanishesAtSelfTarget) {
+    const FixedGeometry geometry;
+    const auto point = make_point<FixedGeometry>(point_x_coefficients);
+    const auto base_direction = make_tangent<FixedGeometry>({0.3, -0.2, 0.4, 0.1, 0.25, -0.15});
+    const auto target_direction = make_tangent<FixedGeometry>({-0.1, 0.35, 0.2, -0.25, 0.05, 0.45});
+    const auto action_direction = make_tangent<FixedGeometry>({0.15, 0.4, -0.2, -0.3, 0.1, 0.35});
+
+    expect_matrix_near(
+      geometry.half_squared_distance_hessian_covariant_jvp(
+        point, point, base_direction, target_direction, action_direction),
+      geometry.zero_tangent(point), 2.0e-12);
+    const auto pullback =
+      geometry.half_squared_distance_hessian_covariant_vjp(point, point, action_direction, target_direction);
+    expect_matrix_near(pullback.first, geometry.zero_tangent(point), 2.0e-12);
+    expect_matrix_near(pullback.second, geometry.zero_tangent(point), 2.0e-12);
+}
+
+TEST(AffineInvariantSPDGeometry, HessianCovariantJvpIsLinearInVariationAndAction) {
+    const FixedGeometry geometry;
+    const auto point = make_point<FixedGeometry>(point_x_coefficients);
+    const auto target = make_point<FixedGeometry>(point_y_coefficients);
+    const auto first_base = make_tangent<FixedGeometry>({0.3, -0.2, 0.4, 0.1, 0.25, -0.15});
+    const auto second_base = make_tangent<FixedGeometry>({-0.1, 0.35, 0.2, -0.25, 0.05, 0.45});
+    const auto first_target = make_tangent<FixedGeometry>({0.15, 0.4, -0.2, -0.3, 0.1, 0.35});
+    const auto second_target = make_tangent<FixedGeometry>({-0.25, 0.1, 0.3, 0.2, -0.15, 0.05});
+    const auto first_action = make_tangent<FixedGeometry>({0.2, -0.1, 0.35, -0.25, 0.15, 0.4});
+    const auto second_action = make_tangent<FixedGeometry>({-0.3, 0.25, 0.1, 0.2, -0.05, 0.15});
+    constexpr double alpha = 0.35;
+    constexpr double beta = -0.6;
+
+    const auto first_variation = geometry.half_squared_distance_hessian_covariant_jvp(
+      point, target, first_base, first_target, first_action);
+    const auto second_variation = geometry.half_squared_distance_hessian_covariant_jvp(
+      point, target, second_base, second_target, first_action);
+    const auto combined_variation = geometry.half_squared_distance_hessian_covariant_jvp(
+      point, target, geometry.linear_combination(point, alpha, first_base, beta, second_base),
+      geometry.linear_combination(target, alpha, first_target, beta, second_target), first_action);
+    expect_matrix_relative_near(
+      combined_variation,
+      geometry.linear_combination(point, alpha, first_variation, beta, second_variation), 2.0e-11);
+
+    const auto second_action_result = geometry.half_squared_distance_hessian_covariant_jvp(
+      point, target, first_base, first_target, second_action);
+    const auto combined_action = geometry.half_squared_distance_hessian_covariant_jvp(
+      point, target, first_base, first_target,
+      geometry.linear_combination(point, alpha, first_action, beta, second_action));
+    expect_matrix_relative_near(
+      combined_action,
+      geometry.linear_combination(point, alpha, first_variation, beta, second_action_result), 2.0e-11);
 }
 
 TEST(AffineInvariantSPDGeometry, DifferentialActionsMatchCenteredGeometricDifferences) {
@@ -342,6 +419,39 @@ TEST(AffineInvariantSPDGeometry, DifferentialActionsMatchCenteredGeometricDiffer
     EXPECT_LT(best_hessian_error, 2.0e-8);
 }
 
+TEST(AffineInvariantSPDGeometry, HessianCovariantJvpMatchesCenteredTransportedDifferences) {
+    const FixedGeometry geometry;
+    const auto point = make_point<FixedGeometry>(point_x_coefficients);
+    const auto target = make_point<FixedGeometry>(point_y_coefficients);
+    const auto base_direction = make_tangent<FixedGeometry>({0.03, -0.02, 0.04, 0.01, 0.025, -0.015});
+    const auto target_direction = make_tangent<FixedGeometry>({-0.01, 0.035, 0.02, -0.025, 0.005, 0.045});
+    const auto action_direction = make_tangent<FixedGeometry>({0.02, -0.015, 0.03, -0.01, 0.025, 0.035});
+    const auto exact = geometry.half_squared_distance_hessian_covariant_jvp(
+      point, target, base_direction, target_direction, action_direction);
+
+    double best_error = std::numeric_limits<double>::infinity();
+    for (const double step : {1.0e-3, 3.0e-4, 1.0e-4}) {
+        const auto point_plus = geometry.exponential(point, base_direction, step);
+        const auto point_minus = geometry.exponential(point, base_direction, -step);
+        const auto target_plus = geometry.exponential(target, target_direction, step);
+        const auto target_minus = geometry.exponential(target, target_direction, -step);
+        const auto action_plus = geometry.transport(point, point_plus, action_direction);
+        const auto action_minus = geometry.transport(point, point_minus, action_direction);
+        const auto hessian_plus =
+          geometry.half_squared_distance_hessian_vector(point_plus, target_plus, action_plus);
+        const auto hessian_minus =
+          geometry.half_squared_distance_hessian_vector(point_minus, target_minus, action_minus);
+        const auto transported_plus = geometry.transport(point_plus, point, hessian_plus);
+        const auto transported_minus = geometry.transport(point_minus, point, hessian_minus);
+        const auto difference = geometry.linear_combination(
+          point, 0.5 / step, transported_plus, -0.5 / step, transported_minus);
+        const double error = matrix_difference_norm(difference, exact) / (1.0 + matrix_norm(exact));
+        EXPECT_LT(error, 2.0e-6);
+        best_error = std::min(best_error, error);
+    }
+    EXPECT_LT(best_error, 2.0e-8);
+}
+
 TEST(AffineInvariantSPDGeometry, PolynomialRetractionIsSecondOrderAndScaleSafe) {
     const FixedGeometry geometry;
     const auto point = make_point<FixedGeometry>(point_x_coefficients);
@@ -372,11 +482,13 @@ TEST(AffineInvariantSPDGeometry, IsInvariantAndEquivariantUnderGeneralCongruence
     const auto target = make_point<FixedGeometry>(point_y_coefficients);
     const auto u = make_tangent<FixedGeometry>({0.3, -0.2, 0.4, 0.1, 0.25, -0.15});
     const auto v = make_tangent<FixedGeometry>({-0.1, 0.35, 0.2, -0.25, 0.05, 0.45});
+    const auto z = make_tangent<FixedGeometry>({0.15, 0.4, -0.2, -0.3, 0.1, 0.35});
     const native::Matrix<double, 3, 3> basis({1.2, -0.2, 0.1, 0.3, 0.9, -0.15, -0.1, 0.25, 1.1});
     const FixedGeometry::Point transformed_point(congruence(basis, point), native::checked);
     const FixedGeometry::Point transformed_target(congruence(basis, target), native::checked);
     const auto transformed_u = congruence(basis, u);
     const auto transformed_v = congruence(basis, v);
+    const auto transformed_z = congruence(basis, z);
 
     const double original_inner = geometry.inner_product(point, u, v);
     EXPECT_LT(
@@ -404,6 +516,17 @@ TEST(AffineInvariantSPDGeometry, IsInvariantAndEquivariantUnderGeneralCongruence
     expect_matrix_relative_near(
       geometry.half_squared_distance_hessian_vector(transformed_point, transformed_target, transformed_u),
       congruence(basis, geometry.half_squared_distance_hessian_vector(point, target, u)), 2.0e-9);
+    expect_matrix_relative_near(
+      geometry.half_squared_distance_hessian_covariant_jvp(
+        transformed_point, transformed_target, transformed_u, transformed_v, transformed_z),
+      congruence(
+        basis, geometry.half_squared_distance_hessian_covariant_jvp(point, target, u, v, z)),
+      3.0e-9);
+    const auto pullback = geometry.half_squared_distance_hessian_covariant_vjp(point, target, z, u);
+    const auto transformed_pullback = geometry.half_squared_distance_hessian_covariant_vjp(
+      transformed_point, transformed_target, transformed_z, transformed_u);
+    expect_matrix_relative_near(transformed_pullback.first, congruence(basis, pullback.first), 3.0e-9);
+    expect_matrix_relative_near(transformed_pullback.second, congruence(basis, pullback.second), 3.0e-9);
 }
 
 TEST(AffineInvariantSPDGeometry, FixedAndDynamicThreeByThreeOperationsAgree) {
@@ -456,6 +579,18 @@ TEST(AffineInvariantSPDGeometry, FixedAndDynamicThreeByThreeOperationsAgree) {
     expect_matrix_near(
       dynamic_geometry.half_squared_distance_hessian_vector(dynamic_point, dynamic_target, dynamic_u),
       fixed_geometry.half_squared_distance_hessian_vector(fixed_point, fixed_target, fixed_u), 1.0e-11);
+    expect_matrix_near(
+      dynamic_geometry.half_squared_distance_hessian_covariant_jvp(
+        dynamic_point, dynamic_target, dynamic_u, dynamic_v, dynamic_u),
+      fixed_geometry.half_squared_distance_hessian_covariant_jvp(
+        fixed_point, fixed_target, fixed_u, fixed_v, fixed_u),
+      2.0e-11);
+    const auto dynamic_pullback = dynamic_geometry.half_squared_distance_hessian_covariant_vjp(
+      dynamic_point, dynamic_target, dynamic_u, dynamic_v);
+    const auto fixed_pullback = fixed_geometry.half_squared_distance_hessian_covariant_vjp(
+      fixed_point, fixed_target, fixed_u, fixed_v);
+    expect_matrix_near(dynamic_pullback.first, fixed_pullback.first, 2.0e-11);
+    expect_matrix_near(dynamic_pullback.second, fixed_pullback.second, 2.0e-11);
 }
 
 TEST(AffineInvariantSPDGeometry, DifferentialActionsHandleRepeatedCloseAndScaledSpectra) {
@@ -532,6 +667,47 @@ TEST(AffineInvariantSPDGeometry, DifferentialActionsHandleRepeatedCloseAndScaled
     }
     expect_matrix_relative_near(
       geometry.logarithm_target_vjp(cross_scale_point, unit_target, small_base_dual), finite_target_direction, 2.0e-12);
+
+    const auto scale_oracle_target = make_diagonal_point<FixedGeometry>(2, 3, 4);
+    const auto scale_base_direction = make_tangent<FixedGeometry>({0.3, -0.2, 0.4, 0.1, 0.25, -0.15});
+    const auto scale_target_direction = make_tangent<FixedGeometry>({-0.1, 0.35, 0.2, -0.25, 0.05, 0.45});
+    const auto scale_action = make_tangent<FixedGeometry>({0.15, 0.4, -0.2, -0.3, 0.1, 0.35});
+    const auto scale_output = make_tangent<FixedGeometry>({-0.25, 0.1, 0.3, 0.2, -0.15, 0.05});
+    const auto oracle_covariant_jvp = geometry.half_squared_distance_hessian_covariant_jvp(
+      identity, scale_oracle_target, scale_base_direction, scale_target_direction, scale_action);
+    const auto oracle_covariant_vjp = geometry.half_squared_distance_hessian_covariant_vjp(
+      identity, scale_oracle_target, scale_action, scale_output);
+    for (const auto [base_scale, target_scale] :
+         {std::pair {1.0e-150, 1.0e150}, std::pair {1.0e150, 1.0e-150}}) {
+        const auto scaled_base = make_diagonal_point<FixedGeometry>(base_scale);
+        const auto scaled_target =
+          make_diagonal_point<FixedGeometry>(2 * target_scale, 3 * target_scale, 4 * target_scale);
+        const auto scaled_base_direction = geometry.linear_combination(
+          scaled_base, base_scale, scale_base_direction, 0, scale_base_direction);
+        const auto scaled_target_direction = geometry.linear_combination(
+          scaled_target, target_scale, scale_target_direction, 0, scale_target_direction);
+        const auto scaled_action =
+          geometry.linear_combination(scaled_base, base_scale, scale_action, 0, scale_action);
+        const auto scaled_output =
+          geometry.linear_combination(scaled_base, base_scale, scale_output, 0, scale_output);
+        const auto scaled_covariant_jvp = geometry.half_squared_distance_hessian_covariant_jvp(
+          scaled_base, scaled_target, scaled_base_direction, scaled_target_direction, scaled_action);
+        expect_matrix_relative_near(
+          geometry.linear_combination(
+            scaled_base, 1.0 / base_scale, scaled_covariant_jvp, 0, scaled_covariant_jvp),
+          oracle_covariant_jvp, 3.0e-9);
+
+        const auto scaled_covariant_vjp = geometry.half_squared_distance_hessian_covariant_vjp(
+          scaled_base, scaled_target, scaled_action, scaled_output);
+        expect_matrix_relative_near(
+          geometry.linear_combination(
+            scaled_base, 1.0 / base_scale, scaled_covariant_vjp.first, 0, scaled_covariant_vjp.first),
+          oracle_covariant_vjp.first, 3.0e-9);
+        expect_matrix_relative_near(
+          geometry.linear_combination(
+            scaled_target, 1.0 / target_scale, scaled_covariant_vjp.second, 0, scaled_covariant_vjp.second),
+          oracle_covariant_vjp.second, 3.0e-9);
+    }
 }
 
 TEST(AffineInvariantSPDGeometry, DifferentialActionsSupportFixedAndDynamicFloat) {
@@ -556,6 +732,15 @@ TEST(AffineInvariantSPDGeometry, DifferentialActionsSupportFixedAndDynamicFloat)
     EXPECT_NEAR(
       scalar_geometry.half_squared_distance_hessian_vector(scalar_from, scalar_to, scalar_direction)(0, 0), 1.8f,
       2.0e-6f);
+    EXPECT_NEAR(
+      scalar_geometry
+        .half_squared_distance_hessian_covariant_jvp(
+          scalar_from, scalar_to, scalar_direction, scalar_direction, scalar_direction)(0, 0),
+      0.0f, 2.0e-6f);
+    const auto scalar_pullback = scalar_geometry.half_squared_distance_hessian_covariant_vjp(
+      scalar_from, scalar_to, scalar_direction, scalar_direction);
+    EXPECT_NEAR(scalar_pullback.first(0, 0), 0.0f, 2.0e-6f);
+    EXPECT_NEAR(scalar_pullback.second(0, 0), 0.0f, 2.0e-6f);
 
     const FixedFloatGeometry fixed_geometry;
     const DynamicFloatGeometry dynamic_geometry(3);
@@ -575,6 +760,18 @@ TEST(AffineInvariantSPDGeometry, DifferentialActionsSupportFixedAndDynamicFloat)
     expect_matrix_relative_near(
       dynamic_geometry.half_squared_distance_hessian_vector(dynamic_point, dynamic_target, dynamic_u),
       fixed_geometry.half_squared_distance_hessian_vector(fixed_point, fixed_target, fixed_u), 2.0e-5);
+    expect_matrix_relative_near(
+      dynamic_geometry.half_squared_distance_hessian_covariant_jvp(
+        dynamic_point, dynamic_target, dynamic_u, dynamic_u, dynamic_u),
+      fixed_geometry.half_squared_distance_hessian_covariant_jvp(
+        fixed_point, fixed_target, fixed_u, fixed_u, fixed_u),
+      3.0e-5);
+    const auto dynamic_pullback = dynamic_geometry.half_squared_distance_hessian_covariant_vjp(
+      dynamic_point, dynamic_target, dynamic_u, dynamic_u);
+    const auto fixed_pullback = fixed_geometry.half_squared_distance_hessian_covariant_vjp(
+      fixed_point, fixed_target, fixed_u, fixed_u);
+    expect_matrix_relative_near(dynamic_pullback.first, fixed_pullback.first, 3.0e-5);
+    expect_matrix_relative_near(dynamic_pullback.second, fixed_pullback.second, 3.0e-5);
 }
 
 TEST(AffineInvariantSPDGeometry, RejectsUnsupportedOrdersAndMismatchedShapes) {
@@ -607,12 +804,55 @@ TEST(AffineInvariantSPDGeometry, RejectsUnsupportedOrdersAndMismatchedShapes) {
     EXPECT_THROW(
       geometry.half_squared_distance_hessian_vector(wrong_point, point, geometry.zero_tangent(point)),
       std::invalid_argument);
+    const auto zero = geometry.zero_tangent(point);
+    EXPECT_THROW(
+      geometry.half_squared_distance_hessian_covariant_jvp(wrong_point, point, zero, zero, zero),
+      std::invalid_argument);
+    EXPECT_THROW(
+      geometry.half_squared_distance_hessian_covariant_jvp(point, wrong_point, zero, zero, zero),
+      std::invalid_argument);
+    EXPECT_THROW(
+      geometry.half_squared_distance_hessian_covariant_jvp(point, point, wrong_tangent, zero, zero),
+      std::invalid_argument);
+    EXPECT_THROW(
+      geometry.half_squared_distance_hessian_covariant_jvp(point, point, zero, wrong_tangent, zero),
+      std::invalid_argument);
+    EXPECT_THROW(
+      geometry.half_squared_distance_hessian_covariant_jvp(point, point, zero, zero, wrong_tangent),
+      std::invalid_argument);
+    EXPECT_THROW(
+      geometry.half_squared_distance_hessian_covariant_vjp(wrong_point, point, zero, zero),
+      std::invalid_argument);
+    EXPECT_THROW(
+      geometry.half_squared_distance_hessian_covariant_vjp(point, wrong_point, zero, zero),
+      std::invalid_argument);
+    EXPECT_THROW(
+      geometry.half_squared_distance_hessian_covariant_vjp(point, point, wrong_tangent, zero),
+      std::invalid_argument);
+    EXPECT_THROW(
+      geometry.half_squared_distance_hessian_covariant_vjp(point, point, zero, wrong_tangent),
+      std::invalid_argument);
 
     auto nonfinite = geometry.zero_tangent(point);
     nonfinite(0, 0) = std::numeric_limits<double>::infinity();
     EXPECT_THROW(geometry.logarithm_target_jvp(point, point, nonfinite), std::invalid_argument);
     EXPECT_THROW(geometry.logarithm_target_vjp(point, point, nonfinite), std::invalid_argument);
     EXPECT_THROW(geometry.half_squared_distance_hessian_vector(point, point, nonfinite), std::invalid_argument);
+    EXPECT_THROW(
+      geometry.half_squared_distance_hessian_covariant_jvp(point, point, nonfinite, zero, zero),
+      std::invalid_argument);
+    EXPECT_THROW(
+      geometry.half_squared_distance_hessian_covariant_jvp(point, point, zero, nonfinite, zero),
+      std::invalid_argument);
+    EXPECT_THROW(
+      geometry.half_squared_distance_hessian_covariant_jvp(point, point, zero, zero, nonfinite),
+      std::invalid_argument);
+    EXPECT_THROW(
+      geometry.half_squared_distance_hessian_covariant_vjp(point, point, nonfinite, zero),
+      std::invalid_argument);
+    EXPECT_THROW(
+      geometry.half_squared_distance_hessian_covariant_vjp(point, point, zero, nonfinite),
+      std::invalid_argument);
 
     native::Matrix<double, 3, 3> indefinite_dense;
     indefinite_dense.set_zero();
@@ -622,6 +862,14 @@ TEST(AffineInvariantSPDGeometry, RejectsUnsupportedOrdersAndMismatchedShapes) {
     const DynamicGeometry::Point unchecked_indefinite(indefinite_dense, native::unchecked);
     EXPECT_THROW(
       geometry.logarithm_target_jvp(point, unchecked_indefinite, geometry.zero_tangent(point)), std::domain_error);
+    EXPECT_THROW(
+      geometry.half_squared_distance_hessian_covariant_jvp(
+        point, unchecked_indefinite, zero, zero, zero),
+      std::domain_error);
+    EXPECT_THROW(
+      geometry.half_squared_distance_hessian_covariant_vjp(
+        point, unchecked_indefinite, zero, zero),
+      std::domain_error);
 
     native::Matrix<double, 3, 3> nonfinite_point_dense;
     nonfinite_point_dense.set_zero();
@@ -631,6 +879,14 @@ TEST(AffineInvariantSPDGeometry, RejectsUnsupportedOrdersAndMismatchedShapes) {
     const DynamicGeometry::Point unchecked_nonfinite(nonfinite_point_dense, native::unchecked);
     EXPECT_THROW(
       geometry.logarithm_target_jvp(point, unchecked_nonfinite, geometry.zero_tangent(point)), std::invalid_argument);
+    EXPECT_THROW(
+      geometry.half_squared_distance_hessian_covariant_jvp(
+        point, unchecked_nonfinite, zero, zero, zero),
+      std::invalid_argument);
+    EXPECT_THROW(
+      geometry.half_squared_distance_hessian_covariant_vjp(
+        point, unchecked_nonfinite, zero, zero),
+      std::invalid_argument);
 
     native::Matrix<double, 3, 3> below_threshold_dense;
     below_threshold_dense.set_zero();
