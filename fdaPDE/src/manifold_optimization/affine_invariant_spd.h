@@ -171,6 +171,35 @@ template <typename Scalar_, int Order_> class AffineInvariantSPDGeometry {
     int order_ = Order_ == fdapde::Dynamic ? 0 : Order_;
 };
 
+template <typename Scalar_, int Order_>
+WeightedKarcherMeanResult<typename AffineInvariantSPDGeometry<Scalar_, Order_>::Point> weighted_karcher_mean(
+  const AffineInvariantSPDGeometry<Scalar_, Order_>& geometry,
+  std::span<const typename AffineInvariantSPDGeometry<Scalar_, Order_>::Point> samples, std::span<const double> weights,
+  const typename AffineInvariantSPDGeometry<Scalar_, Order_>::Point& initial,
+  const WeightedKarcherMeanOptions& options = {}) {
+    using Geometry = AffineInvariantSPDGeometry<Scalar_, Order_>;
+    auto result = weighted_karcher_mean<Geometry>(geometry, samples, weights, initial, options);
+    result.uniqueness = BarycenterUniqueness::globally_unique;
+    return result;
+}
+
+template <typename Scalar_, int Order_>
+WeightedKarcherMeanResult<typename AffineInvariantSPDGeometry<Scalar_, Order_>::Point> weighted_karcher_mean(
+  const AffineInvariantSPDGeometry<Scalar_, Order_>& geometry,
+  std::span<const typename AffineInvariantSPDGeometry<Scalar_, Order_>::Point> samples, std::span<const double> weights,
+  const WeightedKarcherMeanOptions& options = {}) {
+    auto log_geometry = [&]() {
+        if constexpr (Order_ == fdapde::Dynamic) {
+            return LogEuclideanSPDGeometry<Scalar_, Order_>(geometry.order());
+        } else {
+            return LogEuclideanSPDGeometry<Scalar_, Order_>();
+        }
+    }();
+    // use the exact log-Euclidean mean formula as a deterministic, sample-symmetric positive-definite initializer
+    const auto initial = weighted_karcher_mean(log_geometry, samples, weights);
+    return weighted_karcher_mean(geometry, samples, weights, initial.point, options);
+}
+
 }   // namespace manifold
 }   // namespace fdapde
 

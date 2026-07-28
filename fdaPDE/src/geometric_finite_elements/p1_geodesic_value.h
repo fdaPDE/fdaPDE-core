@@ -128,6 +128,17 @@ P1ValueResult<typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_>::Point
     return internals::p1_value_result(manifold::weighted_karcher_mean(geometry, nodal_values, barycentric_weights));
 }
 
+template <typename Scalar_, int Order_>
+P1ValueResult<typename manifold::AffineInvariantSPDGeometry<Scalar_, Order_>::Point> p1_geodesic_value(
+  const manifold::AffineInvariantSPDGeometry<Scalar_, Order_>& geometry,
+  std::span<const typename manifold::AffineInvariantSPDGeometry<Scalar_, Order_>::Point> nodal_values,
+  std::span<const double> barycentric_weights, const manifold::WeightedKarcherMeanOptions& options = {}) {
+    const auto vertex_index = internals::validate_p1_data(nodal_values.size(), barycentric_weights);
+    if (vertex_index) return internals::p1_vertex_result(geometry, nodal_values, *vertex_index);
+    return internals::p1_value_result(
+      manifold::weighted_karcher_mean(geometry, nodal_values, barycentric_weights, options));
+}
+
 }   // namespace gfe
 }   // namespace fdapde
 

@@ -48,8 +48,11 @@ struct HeaderGeometry {
 using HeaderLogGeometry = fdapde::manifold::LogEuclideanSPDGeometry<double, 3>;
 using HeaderDynamicLogGeometry = fdapde::manifold::LogEuclideanSPDGeometry<double, fdapde::Dynamic>;
 using HeaderAffineGeometry = fdapde::manifold::AffineInvariantSPDGeometry<double, 3>;
+using HeaderDynamicAffineGeometry = fdapde::manifold::AffineInvariantSPDGeometry<double, fdapde::Dynamic>;
 using HeaderLogPoint = fdapde::manifold::point_t<HeaderLogGeometry>;
 using HeaderDynamicLogPoint = fdapde::manifold::point_t<HeaderDynamicLogGeometry>;
+using HeaderAffinePoint = fdapde::manifold::point_t<HeaderAffineGeometry>;
+using HeaderDynamicAffinePoint = fdapde::manifold::point_t<HeaderDynamicAffineGeometry>;
 
 template <typename Geometry>
 concept HeaderPermitsP1WithoutInitial = requires(
@@ -63,6 +66,13 @@ concept HeaderPermitsP1WithInitial = requires(
     fdapde::gfe::p1_geodesic_value(geometry, nodal_values, weights, initial);
 };
 
+template <typename Geometry>
+concept HeaderPermitsP1WithOptions = requires(
+  const Geometry& geometry, std::span<const fdapde::manifold::point_t<Geometry>> nodal_values,
+  std::span<const double> weights, const fdapde::manifold::WeightedKarcherMeanOptions& options) {
+    fdapde::gfe::p1_geodesic_value(geometry, nodal_values, weights, options);
+};
+
 using HeaderGenericResult = decltype(fdapde::gfe::p1_geodesic_value(
   std::declval<const HeaderGeometry&>(), std::declval<std::span<const double>>(),
   std::declval<std::span<const double>>(), 0.0));
@@ -72,18 +82,33 @@ using HeaderLogResult = decltype(fdapde::gfe::p1_geodesic_value(
 using HeaderDynamicLogResult = decltype(fdapde::gfe::p1_geodesic_value(
   std::declval<const HeaderDynamicLogGeometry&>(), std::declval<std::span<const HeaderDynamicLogPoint>>(),
   std::declval<std::span<const double>>()));
+using HeaderAffineResult = decltype(fdapde::gfe::p1_geodesic_value(
+  std::declval<const HeaderAffineGeometry&>(), std::declval<std::span<const HeaderAffinePoint>>(),
+  std::declval<std::span<const double>>()));
+using HeaderDynamicAffineResult = decltype(fdapde::gfe::p1_geodesic_value(
+  std::declval<const HeaderDynamicAffineGeometry&>(), std::declval<std::span<const HeaderDynamicAffinePoint>>(),
+  std::declval<std::span<const double>>()));
 
 static_assert(std::is_same_v<HeaderGenericResult, fdapde::gfe::P1ValueResult<double>>);
 static_assert(std::is_same_v<HeaderLogResult, fdapde::gfe::P1ValueResult<HeaderLogPoint>>);
 static_assert(std::is_same_v<HeaderDynamicLogResult, fdapde::gfe::P1ValueResult<HeaderDynamicLogPoint>>);
+static_assert(std::is_same_v<HeaderAffineResult, fdapde::gfe::P1ValueResult<HeaderAffinePoint>>);
+static_assert(std::is_same_v<HeaderDynamicAffineResult, fdapde::gfe::P1ValueResult<HeaderDynamicAffinePoint>>);
 static_assert(!HeaderPermitsP1WithoutInitial<HeaderGeometry>);
 static_assert(HeaderPermitsP1WithoutInitial<HeaderLogGeometry>);
 static_assert(HeaderPermitsP1WithoutInitial<HeaderDynamicLogGeometry>);
-static_assert(!HeaderPermitsP1WithoutInitial<HeaderAffineGeometry>);
+static_assert(HeaderPermitsP1WithoutInitial<HeaderAffineGeometry>);
+static_assert(HeaderPermitsP1WithoutInitial<HeaderDynamicAffineGeometry>);
 static_assert(HeaderPermitsP1WithInitial<HeaderGeometry>);
 static_assert(!HeaderPermitsP1WithInitial<HeaderLogGeometry>);
 static_assert(!HeaderPermitsP1WithInitial<HeaderDynamicLogGeometry>);
 static_assert(HeaderPermitsP1WithInitial<HeaderAffineGeometry>);
+static_assert(HeaderPermitsP1WithInitial<HeaderDynamicAffineGeometry>);
+static_assert(!HeaderPermitsP1WithOptions<HeaderGeometry>);
+static_assert(!HeaderPermitsP1WithOptions<HeaderLogGeometry>);
+static_assert(!HeaderPermitsP1WithOptions<HeaderDynamicLogGeometry>);
+static_assert(HeaderPermitsP1WithOptions<HeaderAffineGeometry>);
+static_assert(HeaderPermitsP1WithOptions<HeaderDynamicAffineGeometry>);
 
 [[maybe_unused]] void instantiate_generic_p1_value() {
     const HeaderGeometry geometry;
@@ -116,6 +141,42 @@ static_assert(HeaderPermitsP1WithInitial<HeaderAffineGeometry>);
       dynamic_geometry, std::span<const HeaderDynamicLogPoint>(dynamic_values), std::span<const double>(weights));
     static_cast<void>(fixed_result);
     static_cast<void>(dynamic_result);
+}
+
+[[maybe_unused]] void instantiate_affine_invariant_p1_values() {
+    fdapde::linalg::Matrix<double, 3, 3> identity;
+    identity.set_zero();
+    for (int i = 0; i < 3; ++i) { identity(i, i) = 1; }
+    const std::array<double, 1> weights {{1}};
+    const fdapde::manifold::WeightedKarcherMeanOptions options;
+
+    const HeaderAffineGeometry fixed_geometry;
+    const std::array<HeaderAffinePoint, 1> fixed_values {{HeaderAffinePoint(identity, fdapde::linalg::checked)}};
+    const auto fixed_default = fdapde::gfe::p1_geodesic_value(
+      fixed_geometry, std::span<const HeaderAffinePoint>(fixed_values), std::span<const double>(weights));
+    const auto fixed_options = fdapde::gfe::p1_geodesic_value(
+      fixed_geometry, std::span<const HeaderAffinePoint>(fixed_values), std::span<const double>(weights), options);
+    const auto fixed_initial = fdapde::gfe::p1_geodesic_value(
+      fixed_geometry, std::span<const HeaderAffinePoint>(fixed_values), std::span<const double>(weights),
+      fixed_values[0], options);
+
+    const HeaderDynamicAffineGeometry dynamic_geometry(3);
+    const std::array<HeaderDynamicAffinePoint, 1> dynamic_values {
+      {HeaderDynamicAffinePoint(identity, fdapde::linalg::checked)}};
+    const auto dynamic_default = fdapde::gfe::p1_geodesic_value(
+      dynamic_geometry, std::span<const HeaderDynamicAffinePoint>(dynamic_values), std::span<const double>(weights));
+    const auto dynamic_options = fdapde::gfe::p1_geodesic_value(
+      dynamic_geometry, std::span<const HeaderDynamicAffinePoint>(dynamic_values), std::span<const double>(weights),
+      options);
+    const auto dynamic_initial = fdapde::gfe::p1_geodesic_value(
+      dynamic_geometry, std::span<const HeaderDynamicAffinePoint>(dynamic_values), std::span<const double>(weights),
+      dynamic_values[0], options);
+    static_cast<void>(fixed_default);
+    static_cast<void>(fixed_options);
+    static_cast<void>(fixed_initial);
+    static_cast<void>(dynamic_default);
+    static_cast<void>(dynamic_options);
+    static_cast<void>(dynamic_initial);
 }
 
 }   // namespace

@@ -83,6 +83,7 @@ using HeaderAffineGeometry = fdapde::manifold::AffineInvariantSPDGeometry<double
 using HeaderDynamicAffineGeometry = fdapde::manifold::AffineInvariantSPDGeometry<double, fdapde::Dynamic>;
 using HeaderAffinePoint = fdapde::manifold::point_t<HeaderAffineGeometry>;
 using HeaderAffineTangent = fdapde::manifold::tangent_t<HeaderAffineGeometry>;
+using HeaderDynamicAffinePoint = fdapde::manifold::point_t<HeaderDynamicAffineGeometry>;
 
 struct HeaderLogProblem {
     using Workspace = HeaderWorkspace;
@@ -147,6 +148,26 @@ using HeaderExactLogMeanResult = decltype(fdapde::manifold::weighted_karcher_mea
 using HeaderExactDynamicLogMeanResult = decltype(fdapde::manifold::weighted_karcher_mean(
   std::declval<const HeaderDynamicLogGeometry&>(), std::declval<std::span<const HeaderDynamicLogPoint>>(),
   std::declval<std::span<const double>>()));
+using HeaderAffineMeanResult = decltype(fdapde::manifold::weighted_karcher_mean(
+  std::declval<const HeaderAffineGeometry&>(), std::declval<std::span<const HeaderAffinePoint>>(),
+  std::declval<std::span<const double>>()));
+using HeaderDynamicAffineMeanResult = decltype(fdapde::manifold::weighted_karcher_mean(
+  std::declval<const HeaderDynamicAffineGeometry&>(), std::declval<std::span<const HeaderDynamicAffinePoint>>(),
+  std::declval<std::span<const double>>()));
+using HeaderAffineOptionsMeanResult = decltype(fdapde::manifold::weighted_karcher_mean(
+  std::declval<const HeaderAffineGeometry&>(), std::declval<std::span<const HeaderAffinePoint>>(),
+  std::declval<std::span<const double>>(), std::declval<const fdapde::manifold::WeightedKarcherMeanOptions&>()));
+using HeaderDynamicAffineOptionsMeanResult = decltype(fdapde::manifold::weighted_karcher_mean(
+  std::declval<const HeaderDynamicAffineGeometry&>(), std::declval<std::span<const HeaderDynamicAffinePoint>>(),
+  std::declval<std::span<const double>>(), std::declval<const fdapde::manifold::WeightedKarcherMeanOptions&>()));
+using HeaderAffineInitialMeanResult = decltype(fdapde::manifold::weighted_karcher_mean(
+  std::declval<const HeaderAffineGeometry&>(), std::declval<std::span<const HeaderAffinePoint>>(),
+  std::declval<std::span<const double>>(), std::declval<const HeaderAffinePoint&>(),
+  std::declval<const fdapde::manifold::WeightedKarcherMeanOptions&>()));
+using HeaderDynamicAffineInitialMeanResult = decltype(fdapde::manifold::weighted_karcher_mean(
+  std::declval<const HeaderDynamicAffineGeometry&>(), std::declval<std::span<const HeaderDynamicAffinePoint>>(),
+  std::declval<std::span<const double>>(), std::declval<const HeaderDynamicAffinePoint&>(),
+  std::declval<const fdapde::manifold::WeightedKarcherMeanOptions&>()));
 
 static_assert(fdapde::manifold::FirstOrderGeometry<HeaderGeometry>);
 static_assert(fdapde::manifold::GeodesicGeometry<HeaderGeometry>);
@@ -198,10 +219,24 @@ static_assert(std::is_same_v<HeaderMeanResult, fdapde::manifold::WeightedKarcher
 static_assert(std::is_same_v<HeaderExactLogMeanResult, fdapde::manifold::WeightedKarcherMeanResult<HeaderLogPoint>>);
 static_assert(
   std::is_same_v<HeaderExactDynamicLogMeanResult, fdapde::manifold::WeightedKarcherMeanResult<HeaderDynamicLogPoint>>);
+static_assert(std::is_same_v<HeaderAffineMeanResult, fdapde::manifold::WeightedKarcherMeanResult<HeaderAffinePoint>>);
+static_assert(
+  std::is_same_v<HeaderDynamicAffineMeanResult, fdapde::manifold::WeightedKarcherMeanResult<HeaderDynamicAffinePoint>>);
+static_assert(
+  std::is_same_v<HeaderAffineOptionsMeanResult, fdapde::manifold::WeightedKarcherMeanResult<HeaderAffinePoint>>);
+static_assert(
+  std::is_same_v<HeaderAffineInitialMeanResult, fdapde::manifold::WeightedKarcherMeanResult<HeaderAffinePoint>>);
+static_assert(
+  std::is_same_v<
+    HeaderDynamicAffineOptionsMeanResult, fdapde::manifold::WeightedKarcherMeanResult<HeaderDynamicAffinePoint>>);
+static_assert(
+  std::is_same_v<
+    HeaderDynamicAffineInitialMeanResult, fdapde::manifold::WeightedKarcherMeanResult<HeaderDynamicAffinePoint>>);
 static_assert(!HeaderPermitsMeanWithoutInitial<HeaderGeometry>);
 static_assert(HeaderPermitsMeanWithoutInitial<HeaderLogGeometry>);
 static_assert(HeaderPermitsMeanWithoutInitial<HeaderDynamicLogGeometry>);
-static_assert(!HeaderPermitsMeanWithoutInitial<HeaderAffineGeometry>);
+static_assert(HeaderPermitsMeanWithoutInitial<HeaderAffineGeometry>);
+static_assert(HeaderPermitsMeanWithoutInitial<HeaderDynamicAffineGeometry>);
 
 [[maybe_unused]] void instantiate_const_problem_solver() {
     HeaderGeometry geometry;
@@ -279,6 +314,42 @@ static_assert(!HeaderPermitsMeanWithoutInitial<HeaderAffineGeometry>);
       dynamic_geometry, std::span<const HeaderDynamicLogPoint>(dynamic_samples), std::span<const double>(weights));
     static_cast<void>(fixed_result);
     static_cast<void>(dynamic_result);
+}
+
+[[maybe_unused]] void instantiate_affine_invariant_weighted_means() {
+    fdapde::linalg::Matrix<double, 3, 3> identity;
+    identity.set_zero();
+    for (int i = 0; i < 3; ++i) { identity(i, i) = 1; }
+    const std::array<double, 1> weights {{1}};
+    const fdapde::manifold::WeightedKarcherMeanOptions options;
+
+    const HeaderAffineGeometry fixed_geometry;
+    const std::array<HeaderAffinePoint, 1> fixed_samples {{HeaderAffinePoint(identity, fdapde::linalg::checked)}};
+    const auto fixed_default = fdapde::manifold::weighted_karcher_mean(
+      fixed_geometry, std::span<const HeaderAffinePoint>(fixed_samples), std::span<const double>(weights));
+    const auto fixed_options = fdapde::manifold::weighted_karcher_mean(
+      fixed_geometry, std::span<const HeaderAffinePoint>(fixed_samples), std::span<const double>(weights), options);
+    const auto fixed_initial = fdapde::manifold::weighted_karcher_mean(
+      fixed_geometry, std::span<const HeaderAffinePoint>(fixed_samples), std::span<const double>(weights),
+      fixed_samples[0], options);
+
+    const HeaderDynamicAffineGeometry dynamic_geometry(3);
+    const std::array<HeaderDynamicAffinePoint, 1> dynamic_samples {
+      {HeaderDynamicAffinePoint(identity, fdapde::linalg::checked)}};
+    const auto dynamic_default = fdapde::manifold::weighted_karcher_mean(
+      dynamic_geometry, std::span<const HeaderDynamicAffinePoint>(dynamic_samples), std::span<const double>(weights));
+    const auto dynamic_options = fdapde::manifold::weighted_karcher_mean(
+      dynamic_geometry, std::span<const HeaderDynamicAffinePoint>(dynamic_samples), std::span<const double>(weights),
+      options);
+    const auto dynamic_initial = fdapde::manifold::weighted_karcher_mean(
+      dynamic_geometry, std::span<const HeaderDynamicAffinePoint>(dynamic_samples), std::span<const double>(weights),
+      dynamic_samples[0], options);
+    static_cast<void>(fixed_default);
+    static_cast<void>(fixed_options);
+    static_cast<void>(fixed_initial);
+    static_cast<void>(dynamic_default);
+    static_cast<void>(dynamic_options);
+    static_cast<void>(dynamic_initial);
 }
 
 }   // namespace

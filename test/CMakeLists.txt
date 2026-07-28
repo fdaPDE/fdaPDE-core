@@ -69,6 +69,7 @@ add_executable(
   manifold_optimization/affine_invariant_spd.cpp
   manifold_optimization/spd_mean.cpp
   geometric_finite_elements/p1_value.cpp
+  geometric_finite_elements/affine_invariant_p1_value.cpp
   src/dg_dof_test.cpp
   src/dg_expression_test.cpp
   src/dg_facet_coefficient_test.cpp
