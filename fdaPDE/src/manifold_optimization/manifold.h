@@ -45,6 +45,17 @@ concept FirstOrderGeometry =
       { geometry.retract(point, u, alpha) } -> std::same_as<point_t<Geometry>>;
   };
 
+// logarithm(from, to) must equal the negative from-gradient of one half the squared distance
+template <typename Geometry>
+concept GeodesicGeometry =
+  FirstOrderGeometry<Geometry> && requires(
+                                    const std::remove_cvref_t<Geometry>& geometry, const point_t<Geometry>& from,
+                                    const point_t<Geometry>& to, const tangent_t<Geometry>& tangent, double step) {
+      { geometry.exponential(from, tangent, step) } -> std::same_as<point_t<Geometry>>;
+      { geometry.logarithm(from, to) } -> std::same_as<tangent_t<Geometry>>;
+      { geometry.distance(from, to) } -> std::convertible_to<double>;
+  };
+
 template <typename Geometry>
 concept VectorTransportGeometry =
   FirstOrderGeometry<Geometry> && requires(

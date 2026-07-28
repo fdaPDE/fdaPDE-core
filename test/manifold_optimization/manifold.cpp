@@ -47,6 +47,14 @@ struct TransportedToyEuclideanGeometry : ToyEuclideanGeometry {
     Tangent transport(const Point&, const Point&, const Tangent& u) const { return u; }
 };
 
+struct ToyGeodesicGeometry : ToyEuclideanGeometry {
+    Point exponential(const Point& point, const Tangent& tangent, double step) const {
+        return {point.value + step * tangent.value};
+    }
+    Tangent logarithm(const Point& from, const Point& to) const { return {to.value - from.value}; }
+    double distance(const Point& from, const Point& to) const { return std::abs(to.value - from.value); }
+};
+
 struct SignedDimensionGeometry : ToyEuclideanGeometry {
     int dimension() const { return 1; }
 };
@@ -69,6 +77,8 @@ struct MissingRetractionGeometry {
 };
 
 static_assert(fdapde::manifold::FirstOrderGeometry<ToyEuclideanGeometry>);
+static_assert(!fdapde::manifold::GeodesicGeometry<ToyEuclideanGeometry>);
+static_assert(fdapde::manifold::GeodesicGeometry<ToyGeodesicGeometry>);
 static_assert(!fdapde::manifold::VectorTransportGeometry<ToyEuclideanGeometry>);
 static_assert(fdapde::manifold::VectorTransportGeometry<TransportedToyEuclideanGeometry>);
 static_assert(!fdapde::manifold::FirstOrderGeometry<SignedDimensionGeometry>);

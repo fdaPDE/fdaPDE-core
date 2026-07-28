@@ -16,6 +16,8 @@
 
 #include <fdaPDE/manifold_optimization.h>
 
+#include <array>
+#include <span>
 #include <type_traits>
 #include <utility>
 
@@ -34,7 +36,7 @@ struct HeaderGeometry {
 
     std::size_t dimension() const { return 1; }
     double inner_product(const Point&, const Tangent& u, const Tangent& v) const { return u.value * v.value; }
-    double norm(const Point&, const Tangent& tangent) const { return tangent.value; }
+    double norm(const Point&, const Tangent& tangent) const { return std::abs(tangent.value); }
     Tangent project(const Point&, const Tangent& tangent) const { return tangent; }
     Tangent zero_tangent(const Point&) const { return {}; }
     Tangent linear_combination(const Point&, double alpha, const Tangent& u, double beta, const Tangent& v) const {
@@ -43,6 +45,11 @@ struct HeaderGeometry {
     Point retract(const Point& point, const Tangent& tangent, double step) const {
         return {point.value + step * tangent.value};
     }
+    Point exponential(const Point& point, const Tangent& tangent, double step) const {
+        return {point.value + step * tangent.value};
+    }
+    Tangent logarithm(const Point& from, const Point& to) const { return {to.value - from.value}; }
+    double distance(const Point& from, const Point& to) const { return std::abs(to.value - from.value); }
 };
 
 struct HeaderWorkspace { };
@@ -112,6 +119,11 @@ concept HeaderPermitsRvalueEvaluationAccess = requires(Evaluation&& evaluation) 
 template <typename Solver>
 concept HeaderPermitsRvalueOptions = requires(Solver&& solver) { std::move(solver).options(); };
 
+template <typename Geometry>
+concept HeaderPermitsMeanWithoutInitial = requires(
+  const Geometry& geometry, std::span<const fdapde::manifold::point_t<Geometry>> samples,
+  std::span<const double> weights) { fdapde::manifold::weighted_karcher_mean(geometry, samples, weights); };
+
 using HeaderArmijoResult = decltype(std::declval<const fdapde::manifold::ArmijoBacktracking&>().search(
   std::declval<HeaderProblem&>(), std::declval<const HeaderGeometry&>(), std::declval<const HeaderPoint&>(),
   std::declval<const HeaderTangent&>(), 0.0, -1.0, std::declval<HeaderContext&>()));
@@ -125,13 +137,21 @@ using HeaderTruncatedCGResult = decltype(std::declval<const fdapde::manifold::St
 using HeaderTrustRegionResult = decltype(std::declval<const fdapde::manifold::RiemannianTrustRegion&>().optimize(
   std::declval<const HeaderSPDHessianProblem&>(), std::declval<const HeaderAffineGeometry&>(),
   std::declval<const HeaderAffinePoint&>()));
+using HeaderMeanResult = decltype(fdapde::manifold::weighted_karcher_mean(
+  std::declval<const HeaderGeometry&>(), std::declval<std::span<const HeaderPoint>>(),
+  std::declval<std::span<const double>>(), std::declval<const HeaderPoint&>()));
 
 static_assert(fdapde::manifold::FirstOrderGeometry<HeaderGeometry>);
+static_assert(fdapde::manifold::GeodesicGeometry<HeaderGeometry>);
 static_assert(fdapde::manifold::FirstOrderGeometry<HeaderPowerGeometry>);
 static_assert(fdapde::manifold::VectorTransportGeometry<HeaderLogGeometry>);
+static_assert(fdapde::manifold::GeodesicGeometry<HeaderLogGeometry>);
 static_assert(fdapde::manifold::VectorTransportGeometry<HeaderDynamicLogGeometry>);
+static_assert(fdapde::manifold::GeodesicGeometry<HeaderDynamicLogGeometry>);
 static_assert(fdapde::manifold::VectorTransportGeometry<HeaderAffineGeometry>);
+static_assert(fdapde::manifold::GeodesicGeometry<HeaderAffineGeometry>);
 static_assert(fdapde::manifold::VectorTransportGeometry<HeaderDynamicAffineGeometry>);
+static_assert(fdapde::manifold::GeodesicGeometry<HeaderDynamicAffineGeometry>);
 static_assert(fdapde::manifold::FirstOrderProblem<HeaderProblem, HeaderGeometry>);
 static_assert(!fdapde::manifold::FirstOrderProblem<const HeaderProblem, HeaderGeometry>);
 static_assert(fdapde::manifold::FirstOrderProblem<const HeaderConstProblem, HeaderGeometry>);
@@ -167,6 +187,8 @@ static_assert(std::is_same_v<HeaderArmijoResult, fdapde::manifold::ArmijoResult<
 static_assert(std::is_same_v<HeaderSteepestDescentResult, fdapde::manifold::SteepestDescentResult<HeaderPoint>>);
 static_assert(std::is_same_v<HeaderTruncatedCGResult, fdapde::manifold::TruncatedCGResult<HeaderAffineTangent>>);
 static_assert(std::is_same_v<HeaderTrustRegionResult, fdapde::manifold::TrustRegionResult<HeaderAffinePoint>>);
+static_assert(std::is_same_v<HeaderMeanResult, fdapde::manifold::WeightedKarcherMeanResult<HeaderPoint>>);
+static_assert(!HeaderPermitsMeanWithoutInitial<HeaderGeometry>);
 
 [[maybe_unused]] void instantiate_const_problem_solver() {
     HeaderGeometry geometry;
@@ -210,6 +232,19 @@ static_assert(std::is_same_v<HeaderTrustRegionResult, fdapde::manifold::TrustReg
       fdapde::manifold::SteihaugTruncatedCG {}.solve(problem, geometry, point, gradient, 1, workspace);
     const auto result = fdapde::manifold::RiemannianTrustRegion {}.optimize(problem, geometry, point);
     static_cast<void>(subproblem);
+    static_cast<void>(result);
+}
+
+[[maybe_unused]] void instantiate_weighted_karcher_mean() {
+    const HeaderGeometry geometry;
+    const std::array<HeaderPoint, 2> samples {
+      {{0}, {2}}
+    };
+    const std::array<double, 2> weights {
+      {1, 1}
+    };
+    const auto result = fdapde::manifold::weighted_karcher_mean(
+      geometry, std::span<const HeaderPoint>(samples), std::span<const double>(weights), HeaderPoint {});
     static_cast<void>(result);
 }
 
