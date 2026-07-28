@@ -92,6 +92,7 @@ add_executable(
   manifold_optimization/power_geometry.cpp
   manifold_optimization/steepest_descent.cpp
   manifold_optimization/trust_region.cpp
+  manifold_optimization/positive_definite_conjugate_gradient.cpp
   manifold_optimization/weighted_karcher_mean.cpp
   manifold_optimization/log_euclidean_spd.cpp
   manifold_optimization/affine_invariant_spd.cpp
