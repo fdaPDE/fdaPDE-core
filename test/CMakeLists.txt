@@ -130,6 +130,7 @@ add_executable(
   geometric_finite_elements/affine_invariant_p1_linearization.cpp
   geometric_finite_elements/log_euclidean_p1_linearization.cpp
   geometric_finite_elements/p1_fem_adapter.cpp
+  geometric_finite_elements/p1_objective_contributions.cpp
   src/dg_dof_test.cpp
   src/dg_expression_test.cpp
   src/dg_facet_coefficient_test.cpp

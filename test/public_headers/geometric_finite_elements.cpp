@@ -129,6 +129,21 @@ concept HeaderAffineP1LinearizationActions = requires(
     } -> std::same_as<fdapde::gfe::P1MixedDerivativeResult<std::vector<Tangent>>>;
 };
 
+template <typename Geometry>
+concept HeaderP1ObjectiveContributions = requires(
+  const Geometry& geometry, std::span<const fdapde::manifold::point_t<Geometry>> nodal_values,
+  std::span<const double> weights, const fdapde::manifold::tangent_t<Geometry>& observation,
+  const HeaderP1FEMCellQuadrature& packet) {
+    {
+        fdapde::gfe::p1_frobenius_data_site_contribution(geometry, nodal_values, weights, observation)
+    } -> std::same_as<
+      fdapde::gfe::P1ObjectiveContributionResult<fdapde::manifold::tangent_t<Geometry>>>;
+    {
+        fdapde::gfe::p1_dirichlet_cell_contribution(geometry, nodal_values, packet)
+    } -> std::same_as<
+      fdapde::gfe::P1ObjectiveContributionResult<fdapde::manifold::tangent_t<Geometry>>>;
+};
+
 using HeaderGenericResult = decltype(fdapde::gfe::p1_geodesic_value(
   std::declval<const HeaderGeometry&>(), std::declval<std::span<const double>>(),
   std::declval<std::span<const double>>(), 0.0));
@@ -206,6 +221,19 @@ static_assert(HeaderP1LinearizationActions<HeaderLogLinearization, HeaderLogTang
 static_assert(HeaderP1LinearizationActions<HeaderDynamicLogLinearization, HeaderDynamicLogTangent>);
 static_assert(HeaderAffineP1LinearizationActions<HeaderAffineLinearization, HeaderAffineTangent>);
 static_assert(HeaderAffineP1LinearizationActions<HeaderDynamicAffineLinearization, HeaderDynamicAffineTangent>);
+static_assert(HeaderP1ObjectiveContributions<HeaderLogGeometry>);
+static_assert(HeaderP1ObjectiveContributions<HeaderDynamicLogGeometry>);
+static_assert(HeaderP1ObjectiveContributions<HeaderAffineGeometry>);
+static_assert(HeaderP1ObjectiveContributions<HeaderDynamicAffineGeometry>);
+static_assert(std::is_same_v<
+              decltype(std::declval<fdapde::gfe::P1ObjectiveContributionResult<HeaderLogTangent>>().value),
+              double>);
+static_assert(std::is_same_v<
+              decltype(std::declval<fdapde::gfe::P1ObjectiveContributionResult<HeaderLogTangent>>().nodal_gradient),
+              std::vector<HeaderLogTangent>>);
+static_assert(std::is_same_v<
+              decltype(std::declval<fdapde::gfe::P1ObjectiveContributionResult<HeaderLogTangent>>().first_failure),
+              std::optional<fdapde::gfe::P1ObjectiveFailure>>);
 static_assert(
   std::is_same_v<
     decltype(HeaderP1FEMCellQuadrature::dofs), std::array<std::size_t, HeaderP1FEMCellQuadrature::node_count>>);
@@ -368,6 +396,39 @@ static_assert(std::is_same_v<
     static_cast<void>(dynamic_nodal_vjp);
     static_cast<void>(dynamic_mixed_jvp);
     static_cast<void>(dynamic_mixed_vjp);
+}
+
+[[maybe_unused]] void instantiate_p1_objective_contributions() {
+    fdapde::linalg::Matrix<double, 3, 3> identity;
+    identity.set_zero();
+    for (int i = 0; i < 3; ++i) { identity(i, i) = 1; }
+    const std::array<double, 2> weights {{0.5, 0.5}};
+    const fdapde::gfe::P1FEMCellQuadrature<1, 1, 1> packet {
+      {0, 1}, {{{-1, 1}}}, {{{0.5, 0.5}}}, {1}};
+
+    const HeaderLogGeometry log_geometry;
+    const std::array<HeaderLogPoint, 2> log_nodes {
+      {HeaderLogPoint(identity, fdapde::linalg::checked), HeaderLogPoint(identity, fdapde::linalg::checked)}};
+    const auto log_observation = log_geometry.zero_tangent(log_nodes[0]);
+    const auto log_data = fdapde::gfe::p1_frobenius_data_site_contribution(
+      log_geometry, std::span<const HeaderLogPoint>(log_nodes), std::span<const double>(weights),
+      log_observation);
+    const auto log_dirichlet = fdapde::gfe::p1_dirichlet_cell_contribution(
+      log_geometry, std::span<const HeaderLogPoint>(log_nodes), packet);
+
+    const HeaderAffineGeometry affine_geometry;
+    const std::array<HeaderAffinePoint, 2> affine_nodes {
+      {HeaderAffinePoint(identity, fdapde::linalg::checked), HeaderAffinePoint(identity, fdapde::linalg::checked)}};
+    const auto affine_observation = affine_geometry.zero_tangent(affine_nodes[0]);
+    const auto affine_data = fdapde::gfe::p1_frobenius_data_site_contribution(
+      affine_geometry, std::span<const HeaderAffinePoint>(affine_nodes), std::span<const double>(weights),
+      affine_observation);
+    const auto affine_dirichlet = fdapde::gfe::p1_dirichlet_cell_contribution(
+      affine_geometry, std::span<const HeaderAffinePoint>(affine_nodes), packet);
+    static_cast<void>(log_data);
+    static_cast<void>(log_dirichlet);
+    static_cast<void>(affine_data);
+    static_cast<void>(affine_dirichlet);
 }
 
 }   // namespace

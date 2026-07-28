@@ -19,13 +19,22 @@
 
 // clang-format off
 
+#include <algorithm>
 #include <array>
+#include <cmath>
+#include <cstddef>
+#include <limits>
+#include <optional>
+#include <span>
+#include <stdexcept>
+#include <vector>
 
 #include "manifold_optimization.h"
 
 #include "src/geometric_finite_elements/p1_fem_cell_quadrature.h"
 #include "src/geometric_finite_elements/p1_geodesic_value.h"
 #include "src/geometric_finite_elements/p1_geodesic_linearization.h"
+#include "src/geometric_finite_elements/p1_objective_contributions.h"
 
 // clang-format on
 
