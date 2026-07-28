@@ -59,6 +59,7 @@ using HeaderLogTangent = fdapde::manifold::tangent_t<HeaderLogGeometry>;
 using HeaderDynamicLogTangent = fdapde::manifold::tangent_t<HeaderDynamicLogGeometry>;
 using HeaderAffineTangent = fdapde::manifold::tangent_t<HeaderAffineGeometry>;
 using HeaderDynamicAffineTangent = fdapde::manifold::tangent_t<HeaderDynamicAffineGeometry>;
+using HeaderP1FEMCellQuadrature = fdapde::gfe::P1FEMCellQuadrature<2, 3, 4>;
 
 template <typename Geometry>
 concept HeaderPermitsP1WithoutInitial = requires(
@@ -205,6 +206,20 @@ static_assert(HeaderP1LinearizationActions<HeaderLogLinearization, HeaderLogTang
 static_assert(HeaderP1LinearizationActions<HeaderDynamicLogLinearization, HeaderDynamicLogTangent>);
 static_assert(HeaderAffineP1LinearizationActions<HeaderAffineLinearization, HeaderAffineTangent>);
 static_assert(HeaderAffineP1LinearizationActions<HeaderDynamicAffineLinearization, HeaderDynamicAffineTangent>);
+static_assert(
+  std::is_same_v<
+    decltype(HeaderP1FEMCellQuadrature::dofs), std::array<std::size_t, HeaderP1FEMCellQuadrature::node_count>>);
+static_assert(
+  std::is_same_v<
+    decltype(HeaderP1FEMCellQuadrature::physical_weight_gradients),
+    std::array<std::array<double, HeaderP1FEMCellQuadrature::node_count>, HeaderP1FEMCellQuadrature::embed_dim>>);
+static_assert(
+  std::is_same_v<
+    decltype(HeaderP1FEMCellQuadrature::barycentric_weights),
+    std::array<std::array<double, HeaderP1FEMCellQuadrature::node_count>, HeaderP1FEMCellQuadrature::quadrature_size>>);
+static_assert(std::is_same_v<
+              decltype(HeaderP1FEMCellQuadrature::integration_weights),
+              std::array<double, HeaderP1FEMCellQuadrature::quadrature_size>>);
 
 [[maybe_unused]] void instantiate_generic_p1_value() {
     const HeaderGeometry geometry;

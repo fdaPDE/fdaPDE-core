@@ -14,19 +14,23 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_GEOMETRIC_FINITE_ELEMENTS_MODULE_H__
-#define __FDAPDE_GEOMETRIC_FINITE_ELEMENTS_MODULE_H__
+#ifndef __FDAPDE_GEOMETRIC_FINITE_ELEMENTS_FEM_MODULE_H__
+#define __FDAPDE_GEOMETRIC_FINITE_ELEMENTS_FEM_MODULE_H__
 
 // clang-format off
 
+#include <algorithm>
 #include <array>
+#include <cmath>
+#include <cstddef>
+#include <stdexcept>
+#include <vector>
 
-#include "manifold_optimization.h"
+#include "geometric_finite_elements.h"
+#include "finite_elements.h"
 
-#include "src/geometric_finite_elements/p1_fem_cell_quadrature.h"
-#include "src/geometric_finite_elements/p1_geodesic_value.h"
-#include "src/geometric_finite_elements/p1_geodesic_linearization.h"
+#include "src/geometric_finite_elements/p1_fem_adapter.h"
 
 // clang-format on
 
-#endif   // __FDAPDE_GEOMETRIC_FINITE_ELEMENTS_MODULE_H__
+#endif   // __FDAPDE_GEOMETRIC_FINITE_ELEMENTS_FEM_MODULE_H__

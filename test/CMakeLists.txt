@@ -64,6 +64,34 @@ if(FDAPDE_GFE_LINEARIZATION_INTERNAL_INCLUDE_ERROR EQUAL -1)
   )
 endif()
 
+try_compile(
+  FDAPDE_GFE_FEM_INTERNAL_INCLUDE_COMPILES
+  ${CMAKE_CURRENT_BINARY_DIR}/geometric_finite_elements_fem_internal_include
+  SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/public_headers/geometric_finite_elements_fem_internal_include.cpp
+  CMAKE_FLAGS
+    -DCMAKE_CXX_STANDARD=20
+    -DCMAKE_CXX_STANDARD_REQUIRED=ON
+    -DCMAKE_CXX_EXTENSIONS=OFF
+  COMPILE_DEFINITIONS -I${CMAKE_CURRENT_SOURCE_DIR}/..
+  LINK_LIBRARIES Eigen3::Eigen
+  OUTPUT_VARIABLE FDAPDE_GFE_FEM_INTERNAL_INCLUDE_OUTPUT
+)
+if(FDAPDE_GFE_FEM_INTERNAL_INCLUDE_COMPILES)
+  message(FATAL_ERROR "The internal GFE FEM adapter compiled without its public bridge header.")
+endif()
+string(
+  FIND
+  "${FDAPDE_GFE_FEM_INTERNAL_INCLUDE_OUTPUT}"
+  "Include fdaPDE/geometric_finite_elements_fem.h instead of including this adapter directly."
+  FDAPDE_GFE_FEM_INTERNAL_INCLUDE_ERROR
+)
+if(FDAPDE_GFE_FEM_INTERNAL_INCLUDE_ERROR EQUAL -1)
+  message(
+    FATAL_ERROR
+      "The internal GFE FEM adapter failed for an unexpected reason:\n${FDAPDE_GFE_FEM_INTERNAL_INCLUDE_OUTPUT}"
+  )
+endif()
+
 include(FetchContent)
 FetchContent_Declare(
   googletest
@@ -101,6 +129,7 @@ add_executable(
   geometric_finite_elements/affine_invariant_p1_value.cpp
   geometric_finite_elements/affine_invariant_p1_linearization.cpp
   geometric_finite_elements/log_euclidean_p1_linearization.cpp
+  geometric_finite_elements/p1_fem_adapter.cpp
   src/dg_dof_test.cpp
   src/dg_expression_test.cpp
   src/dg_facet_coefficient_test.cpp
@@ -204,7 +233,17 @@ target_compile_options(fdapde_execution_queue_capacity_test PRIVATE ${WARNING_FL
 target_include_directories(fdapde_execution_queue_capacity_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
 target_link_libraries(fdapde_execution_queue_capacity_test PRIVATE Eigen3::Eigen gtest_main)
 
-foreach(module IN ITEMS core linear_algebra optimization manifold_optimization geometric_finite_elements execution)
+foreach(
+  module
+  IN ITEMS
+    core
+    linear_algebra
+    optimization
+    manifold_optimization
+    geometric_finite_elements
+    geometric_finite_elements_fem
+    execution
+)
   add_library(fdapde_${module}_header_check OBJECT public_headers/${module}.cpp)
   target_compile_options(fdapde_${module}_header_check PRIVATE ${WARNING_FLAGS})
   target_include_directories(fdapde_${module}_header_check PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
