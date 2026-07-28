@@ -120,6 +120,12 @@ concept HeaderAffineP1LinearizationActions = requires(
     {
         linearization.nodal_vjp(output_direction)
     } -> std::same_as<fdapde::gfe::P1DerivativeResult<std::vector<Tangent>>>;
+    {
+        linearization.covariant_mixed_nodal_jvp(weight_direction, nodal_directions)
+    } -> std::same_as<fdapde::gfe::P1MixedDerivativeResult<Tangent>>;
+    {
+        linearization.covariant_mixed_nodal_vjp(weight_direction, output_direction)
+    } -> std::same_as<fdapde::gfe::P1MixedDerivativeResult<std::vector<Tangent>>>;
 };
 
 using HeaderGenericResult = decltype(fdapde::gfe::p1_geodesic_value(
@@ -298,6 +304,10 @@ static_assert(HeaderAffineP1LinearizationActions<HeaderDynamicAffineLinearizatio
     const auto fixed_nodal_jvp =
       fixed_initial_linearization.nodal_jvp(std::span<const HeaderAffineTangent>(fixed_directions));
     const auto fixed_nodal_vjp = fixed_initial_linearization.nodal_vjp(fixed_directions[0]);
+    const auto fixed_mixed_jvp = fixed_initial_linearization.covariant_mixed_nodal_jvp(
+      std::span<const double>(weight_direction), std::span<const HeaderAffineTangent>(fixed_directions));
+    const auto fixed_mixed_vjp = fixed_initial_linearization.covariant_mixed_nodal_vjp(
+      std::span<const double>(weight_direction), fixed_directions[0]);
 
     const HeaderDynamicAffineGeometry dynamic_geometry(3);
     const std::array<HeaderDynamicAffinePoint, 1> dynamic_values {
@@ -321,6 +331,10 @@ static_assert(HeaderAffineP1LinearizationActions<HeaderDynamicAffineLinearizatio
     const auto dynamic_nodal_jvp =
       dynamic_initial_linearization.nodal_jvp(std::span<const HeaderDynamicAffineTangent>(dynamic_directions));
     const auto dynamic_nodal_vjp = dynamic_initial_linearization.nodal_vjp(dynamic_directions[0]);
+    const auto dynamic_mixed_jvp = dynamic_initial_linearization.covariant_mixed_nodal_jvp(
+      std::span<const double>(weight_direction), std::span<const HeaderDynamicAffineTangent>(dynamic_directions));
+    const auto dynamic_mixed_vjp = dynamic_initial_linearization.covariant_mixed_nodal_vjp(
+      std::span<const double>(weight_direction), dynamic_directions[0]);
     static_cast<void>(fixed_default);
     static_cast<void>(fixed_options);
     static_cast<void>(fixed_initial);
@@ -328,6 +342,8 @@ static_assert(HeaderAffineP1LinearizationActions<HeaderDynamicAffineLinearizatio
     static_cast<void>(fixed_weight_jvp);
     static_cast<void>(fixed_nodal_jvp);
     static_cast<void>(fixed_nodal_vjp);
+    static_cast<void>(fixed_mixed_jvp);
+    static_cast<void>(fixed_mixed_vjp);
     static_cast<void>(dynamic_default);
     static_cast<void>(dynamic_options);
     static_cast<void>(dynamic_initial);
@@ -335,6 +351,8 @@ static_assert(HeaderAffineP1LinearizationActions<HeaderDynamicAffineLinearizatio
     static_cast<void>(dynamic_weight_jvp);
     static_cast<void>(dynamic_nodal_jvp);
     static_cast<void>(dynamic_nodal_vjp);
+    static_cast<void>(dynamic_mixed_jvp);
+    static_cast<void>(dynamic_mixed_vjp);
 }
 
 }   // namespace

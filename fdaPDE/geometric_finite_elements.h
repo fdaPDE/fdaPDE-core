@@ -19,6 +19,8 @@
 
 // clang-format off
 
+#include <array>
+
 #include "manifold_optimization.h"
 
 #include "src/geometric_finite_elements/p1_geodesic_value.h"

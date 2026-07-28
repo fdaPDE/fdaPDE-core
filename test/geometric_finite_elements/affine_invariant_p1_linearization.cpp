@@ -179,6 +179,33 @@ typename Geometry::Tangent nodal_right_hand_side(
 }
 
 template <typename Geometry>
+typename Geometry::Tangent mixed_right_hand_side(
+  const Geometry& geometry, const typename Geometry::Point& mean, std::span<const typename Geometry::Point> nodes,
+  std::span<const double> represented_weights, std::span<const double> weight_direction,
+  std::span<const typename Geometry::Tangent> nodal_directions, const typename Geometry::Tangent& weight_action,
+  const typename Geometry::Tangent& nodal_action) {
+    const double total = compensated_sum(represented_weights);
+    const double direction_total = compensated_sum(weight_direction);
+    auto result = geometry.zero_tangent(mean);
+    for (std::size_t i = 0; i < nodes.size(); ++i) {
+        const double alpha = represented_weights[i] / total;
+        const double gamma = (weight_direction[i] - direction_total * represented_weights[i] / total) / total;
+        if (gamma != 0) {
+            const auto target_action = geometry.logarithm_target_jvp(mean, nodes[i], nodal_directions[i]);
+            const auto base_action =
+              geometry.half_squared_distance_hessian_vector(mean, nodes[i], nodal_action);
+            const auto component = geometry.linear_combination(mean, 1, target_action, -1, base_action);
+            result = geometry.linear_combination(mean, 1, result, gamma, component);
+        }
+        if (alpha == 0) continue;
+        const auto covariant_action = geometry.half_squared_distance_hessian_covariant_jvp(
+          mean, nodes[i], nodal_action, nodal_directions[i], weight_action);
+        result = geometry.linear_combination(mean, 1, result, -alpha, covariant_action);
+    }
+    return result;
+}
+
+template <typename Geometry>
 typename Geometry::Tangent
 congruence_direction(const native::Matrix<double, 3, 3>& generator, const typename Geometry::Point& point) {
     auto result = make_tangent<Geometry>({0, 0, 0, 0, 0, 0});
@@ -268,19 +295,20 @@ template <typename AffineGeometry, typename LogGeometry> void check_commuting_lo
     const LogGeometry log_geometry = make_geometry<LogGeometry>();
     const std::vector<typename AffineGeometry::Point> affine_nodes {
       make_diagonal_point<AffineGeometry>(1.5, 3, 6), make_diagonal_point<AffineGeometry>(4, 2, 1.25),
-      make_diagonal_point<AffineGeometry>(2.25, 5, 3.5)};
+      make_diagonal_point<AffineGeometry>(2.25, 5, 3.5), make_diagonal_point<AffineGeometry>(3, 3, 3)};
     const std::vector<typename LogGeometry::Point> log_nodes {
       make_diagonal_point<LogGeometry>(1.5, 3, 6), make_diagonal_point<LogGeometry>(4, 2, 1.25),
-      make_diagonal_point<LogGeometry>(2.25, 5, 3.5)};
-    const std::vector<double> weights {0.2, 0.3, 0.5};
-    const std::vector<double> weight_direction {0.15, -0.25, 0.1};
+      make_diagonal_point<LogGeometry>(2.25, 5, 3.5), make_diagonal_point<LogGeometry>(3, 3, 3)};
+    const std::vector<double> weights {0.1, 0, 0.3, 0.6};
+    const std::vector<double> weight_direction {0.2, 0.1, -0.15, -0.15};
     const std::vector<typename AffineGeometry::Tangent> affine_directions {
       make_tangent<AffineGeometry>({0.3, 0, -0.2, 0, 0, 0.4}),
       make_tangent<AffineGeometry>({-0.1, 0, 0.35, 0, 0, -0.25}),
-      make_tangent<AffineGeometry>({0.2, 0, 0.1, 0, 0, 0.3})};
+      make_tangent<AffineGeometry>({0.2, 0, 0.1, 0, 0, 0.3}),
+      make_tangent<AffineGeometry>({0.1, 0, 0.3, 0, 0, -0.3})};
     const std::vector<typename LogGeometry::Tangent> log_directions {
       make_tangent<LogGeometry>({0.3, 0, -0.2, 0, 0, 0.4}), make_tangent<LogGeometry>({-0.1, 0, 0.35, 0, 0, -0.25}),
-      make_tangent<LogGeometry>({0.2, 0, 0.1, 0, 0, 0.3})};
+      make_tangent<LogGeometry>({0.2, 0, 0.1, 0, 0, 0.3}), make_tangent<LogGeometry>({0.1, 0, 0.3, 0, 0, -0.3})};
     const auto affine_output = make_tangent<AffineGeometry>({0.4, 0, -0.15, 0, 0, 0.25});
     const auto log_output = make_tangent<LogGeometry>({0.4, 0, -0.15, 0, 0, 0.25});
 
@@ -290,23 +318,37 @@ template <typename AffineGeometry, typename LogGeometry> void check_commuting_lo
     const auto logarithmic = fdapde::gfe::p1_geodesic_linearization(
       log_geometry, std::span<const typename LogGeometry::Point>(log_nodes), std::span<const double>(weights));
     ASSERT_TRUE(affine.result().converged());
+    EXPECT_NE(compensated_sum(affine.result().normalized_weights), 1.0);
     EXPECT_LT(affine_geometry.distance(affine.result().value, logarithmic.result().value), 1.0e-9);
 
     const auto affine_weight = affine.weight_jvp(weight_direction);
     const auto affine_nodal = affine.nodal_jvp(affine_directions);
     const auto affine_pullback = affine.nodal_vjp(affine_output);
+    const auto affine_mixed = affine.covariant_mixed_nodal_jvp(weight_direction, affine_directions);
+    const auto affine_mixed_pullback = affine.covariant_mixed_nodal_vjp(weight_direction, affine_output);
     ASSERT_TRUE(affine_weight.converged());
     ASSERT_TRUE(affine_nodal.converged());
     ASSERT_TRUE(affine_pullback.converged());
+    ASSERT_TRUE(affine_mixed.converged());
+    ASSERT_TRUE(affine_mixed_pullback.converged());
     expect_tangent_near(
       affine_geometry, affine.result().value, affine_weight.derivative, logarithmic.weight_jvp(weight_direction),
       2.0e-9);
     expect_tangent_near(
       affine_geometry, affine.result().value, affine_nodal.derivative, logarithmic.nodal_jvp(log_directions), 2.0e-9);
     const auto logarithmic_pullback = logarithmic.nodal_vjp(log_output);
+    expect_tangent_near(
+      affine_geometry, affine.result().value, affine_mixed.derivative,
+      logarithmic.covariant_mixed_nodal_jvp(weight_direction, log_directions), 3.0e-9);
+    const auto logarithmic_mixed_pullback =
+      logarithmic.covariant_mixed_nodal_vjp(weight_direction, log_output);
+    EXPECT_GT(affine_geometry.norm(affine_nodes[1], affine_mixed_pullback.derivative[1]), 1.0e-8);
     for (std::size_t i = 0; i < affine_nodes.size(); ++i) {
         expect_tangent_near(
           affine_geometry, affine_nodes[i], affine_pullback.derivative[i], logarithmic_pullback[i], 2.0e-9);
+        expect_tangent_near(
+          affine_geometry, affine_nodes[i], affine_mixed_pullback.derivative[i],
+          logarithmic_mixed_pullback[i], 3.0e-9);
     }
 }
 
@@ -373,9 +415,25 @@ TEST(AffineInvariantP1Linearization, SatisfiesTheImplicitEquationsAndMetricAdjoi
     const auto weight_action = linearization.weight_jvp(weight_direction);
     const auto nodal_action = linearization.nodal_jvp(directions);
     const auto pullback = linearization.nodal_vjp(output);
+    const auto mixed_action = linearization.covariant_mixed_nodal_jvp(weight_direction, directions);
+    const auto mixed_pullback = linearization.covariant_mixed_nodal_vjp(weight_direction, output);
     ASSERT_TRUE(weight_action.converged());
     ASSERT_TRUE(nodal_action.converged());
     ASSERT_TRUE(pullback.converged());
+    ASSERT_TRUE(mixed_action.converged());
+    ASSERT_TRUE(mixed_pullback.converged());
+    EXPECT_EQ(mixed_action.solve_statuses[0].stop_reason, weight_action.stop_reason);
+    EXPECT_EQ(mixed_action.solve_statuses[0].iterations, weight_action.iterations);
+    EXPECT_DOUBLE_EQ(mixed_action.solve_statuses[0].residual_norm, weight_action.residual_norm);
+    EXPECT_EQ(mixed_action.solve_statuses[1].stop_reason, nodal_action.stop_reason);
+    EXPECT_EQ(mixed_action.solve_statuses[1].iterations, nodal_action.iterations);
+    EXPECT_DOUBLE_EQ(mixed_action.solve_statuses[1].residual_norm, nodal_action.residual_norm);
+    EXPECT_EQ(mixed_pullback.solve_statuses[0].stop_reason, weight_action.stop_reason);
+    EXPECT_EQ(mixed_pullback.solve_statuses[0].iterations, weight_action.iterations);
+    EXPECT_DOUBLE_EQ(mixed_pullback.solve_statuses[0].residual_norm, weight_action.residual_norm);
+    EXPECT_EQ(mixed_pullback.solve_statuses[1].stop_reason, pullback.stop_reason);
+    EXPECT_EQ(mixed_pullback.solve_statuses[1].iterations, pullback.iterations);
+    EXPECT_DOUBLE_EQ(mixed_pullback.solve_statuses[1].residual_norm, pullback.residual_norm);
 
     const auto expected_weight_rhs = weight_right_hand_side(
       geometry, mean, std::span<const FixedGeometry::Point>(nodes), represented_weights, weight_direction);
@@ -386,16 +444,27 @@ TEST(AffineInvariantP1Linearization, SatisfiesTheImplicitEquationsAndMetricAdjoi
       geometry, mean, std::span<const FixedGeometry::Point>(nodes), effective_weights, weight_action.derivative);
     const auto applied_nodal = hessian_action(
       geometry, mean, std::span<const FixedGeometry::Point>(nodes), effective_weights, nodal_action.derivative);
+    const auto expected_mixed_rhs = mixed_right_hand_side(
+      geometry, mean, std::span<const FixedGeometry::Point>(nodes), represented_weights, weight_direction,
+      std::span<const FixedGeometry::Tangent>(directions), weight_action.derivative, nodal_action.derivative);
+    const auto applied_mixed = hessian_action(
+      geometry, mean, std::span<const FixedGeometry::Point>(nodes), effective_weights, mixed_action.derivative);
     const auto weight_residual = geometry.linear_combination(mean, 1, expected_weight_rhs, -1, applied_weight);
     const auto nodal_residual = geometry.linear_combination(mean, 1, expected_nodal_rhs, -1, applied_nodal);
+    const auto mixed_residual = geometry.linear_combination(mean, 1, expected_mixed_rhs, -1, applied_mixed);
     const double weight_residual_norm = geometry.norm(mean, weight_residual);
     const double nodal_residual_norm = geometry.norm(mean, nodal_residual);
+    const double mixed_residual_norm = geometry.norm(mean, mixed_residual);
     EXPECT_LE(weight_residual_norm, 5.0e-9 * (1 + geometry.norm(mean, expected_weight_rhs)));
     EXPECT_LE(nodal_residual_norm, 5.0e-9 * (1 + geometry.norm(mean, expected_nodal_rhs)));
+    EXPECT_LE(mixed_residual_norm, 5.0e-9 * (1 + geometry.norm(mean, expected_mixed_rhs)));
     EXPECT_NEAR(
       weight_action.residual_norm, weight_residual_norm, 5.0e-11 * (1 + geometry.norm(mean, expected_weight_rhs)));
     EXPECT_NEAR(
       nodal_action.residual_norm, nodal_residual_norm, 5.0e-11 * (1 + geometry.norm(mean, expected_nodal_rhs)));
+    EXPECT_NEAR(
+      mixed_action.solve_statuses[2].residual_norm, mixed_residual_norm,
+      5.0e-11 * (1 + geometry.norm(mean, expected_mixed_rhs)));
 
     const double lhs = geometry.inner_product(mean, nodal_action.derivative, output);
     double rhs = 0;
@@ -403,6 +472,14 @@ TEST(AffineInvariantP1Linearization, SatisfiesTheImplicitEquationsAndMetricAdjoi
         rhs += geometry.inner_product(nodes[i], directions[i], pullback.derivative[i]);
     }
     EXPECT_NEAR(lhs, rhs, 2.0e-8 * std::max({1.0, std::abs(lhs), std::abs(rhs)}));
+
+    const double mixed_lhs = geometry.inner_product(mean, mixed_action.derivative, output);
+    double mixed_rhs = 0;
+    for (std::size_t i = 0; i < nodes.size(); ++i) {
+        mixed_rhs += geometry.inner_product(nodes[i], directions[i], mixed_pullback.derivative[i]);
+    }
+    EXPECT_NEAR(
+      mixed_lhs, mixed_rhs, 4.0e-8 * std::max({1.0, std::abs(mixed_lhs), std::abs(mixed_rhs)}));
 }
 
 TEST(AffineInvariantP1Linearization, MatchesCenteredGeometricFiniteDifferences) {
@@ -422,9 +499,11 @@ TEST(AffineInvariantP1Linearization, MatchesCenteredGeometricFiniteDifferences) 
     const auto weight_action = linearization.weight_jvp(weight_direction);
     const auto nodal_action = linearization.nodal_jvp(directions);
     const auto pullback = linearization.nodal_vjp(output);
+    const auto mixed_action = linearization.covariant_mixed_nodal_jvp(weight_direction, directions);
     ASSERT_TRUE(weight_action.converged());
     ASSERT_TRUE(nodal_action.converged());
     ASSERT_TRUE(pullback.converged());
+    ASSERT_TRUE(mixed_action.converged());
 
     double pullback_contraction = 0;
     for (std::size_t i = 0; i < nodes.size(); ++i) {
@@ -434,6 +513,7 @@ TEST(AffineInvariantP1Linearization, MatchesCenteredGeometricFiniteDifferences) 
     double best_weight_error = std::numeric_limits<double>::infinity();
     double best_nodal_error = std::numeric_limits<double>::infinity();
     double best_pullback_error = std::numeric_limits<double>::infinity();
+    double best_mixed_error = std::numeric_limits<double>::infinity();
     for (const double step : {3.0e-3, 1.0e-3, 3.0e-4}) {
         std::vector<double> plus_weights(weights);
         std::vector<double> minus_weights(weights);
@@ -471,6 +551,29 @@ TEST(AffineInvariantP1Linearization, MatchesCenteredGeometricFiniteDifferences) 
         ASSERT_TRUE(minus_nodal.converged())
           << static_cast<int>(minus_nodal.stop_reason) << " stationarity=" << minus_nodal.stationarity_norm;
 
+        const auto plus_nodal_linearization = fdapde::gfe::p1_geodesic_linearization(
+          geometry, std::span<const FixedGeometry::Point>(plus_nodes), std::span<const double>(weights),
+          plus_nodal.value, options);
+        const auto minus_nodal_linearization = fdapde::gfe::p1_geodesic_linearization(
+          geometry, std::span<const FixedGeometry::Point>(minus_nodes), std::span<const double>(weights),
+          minus_nodal.value, options);
+        ASSERT_TRUE(plus_nodal_linearization.result().converged());
+        ASSERT_TRUE(minus_nodal_linearization.result().converged());
+        const auto plus_weight_action = plus_nodal_linearization.weight_jvp(weight_direction);
+        const auto minus_weight_action = minus_nodal_linearization.weight_jvp(weight_direction);
+        ASSERT_TRUE(plus_weight_action.converged());
+        ASSERT_TRUE(minus_weight_action.converged());
+        const auto plus_weight_transport = geometry.transport(
+          plus_nodal_linearization.result().value, mean, plus_weight_action.derivative);
+        const auto minus_weight_transport = geometry.transport(
+          minus_nodal_linearization.result().value, mean, minus_weight_action.derivative);
+        const auto mixed_difference = geometry.linear_combination(
+          mean, 0.5 / step, plus_weight_transport, -0.5 / step, minus_weight_transport);
+        const double mixed_error =
+          relative_tangent_error(geometry, mean, mixed_difference, mixed_action.derivative);
+        EXPECT_LT(mixed_error, 3.0e-4);
+        best_mixed_error = std::min(best_mixed_error, mixed_error);
+
         const auto weight_plus_log = geometry.logarithm(mean, plus_weight.value);
         const auto weight_minus_log = geometry.logarithm(mean, minus_weight.value);
         const auto nodal_plus_log = geometry.logarithm(mean, plus_nodal.value);
@@ -497,6 +600,7 @@ TEST(AffineInvariantP1Linearization, MatchesCenteredGeometricFiniteDifferences) 
     EXPECT_LT(best_weight_error, 5.0e-6);
     EXPECT_LT(best_nodal_error, 5.0e-6);
     EXPECT_LT(best_pullback_error, 1.0e-5);
+    EXPECT_LT(best_mixed_error, 2.0e-5);
 }
 
 TEST(AffineInvariantP1Linearization, IsDeterministicPermutationCovariantAndOwnsDynamicSnapshots) {
@@ -527,6 +631,39 @@ TEST(AffineInvariantP1Linearization, IsDeterministicPermutationCovariantAndOwnsD
     EXPECT_EQ(first_nodal.iterations, second_nodal.iterations);
     EXPECT_DOUBLE_EQ(first_nodal.residual_norm, second_nodal.residual_norm);
     expect_same_coefficients(first_nodal.derivative, second_nodal.derivative);
+    const auto first_mixed = fixed.covariant_mixed_nodal_jvp(weight_direction, fixed_directions);
+    const auto second_mixed = fixed.covariant_mixed_nodal_jvp(weight_direction, fixed_directions);
+    const auto first_mixed_pullback = fixed.covariant_mixed_nodal_vjp(weight_direction, fixed_output);
+    const auto second_mixed_pullback = fixed.covariant_mixed_nodal_vjp(weight_direction, fixed_output);
+    ASSERT_TRUE(first_mixed.converged());
+    ASSERT_TRUE(second_mixed.converged());
+    ASSERT_TRUE(first_mixed_pullback.converged());
+    ASSERT_TRUE(second_mixed_pullback.converged());
+    expect_same_coefficients(first_mixed.derivative, second_mixed.derivative);
+    for (std::size_t solve_index = 0; solve_index < first_mixed.solve_statuses.size(); ++solve_index) {
+        EXPECT_EQ(
+          first_mixed.solve_statuses[solve_index].stop_reason,
+          second_mixed.solve_statuses[solve_index].stop_reason);
+        EXPECT_EQ(
+          first_mixed.solve_statuses[solve_index].iterations,
+          second_mixed.solve_statuses[solve_index].iterations);
+        EXPECT_DOUBLE_EQ(
+          first_mixed.solve_statuses[solve_index].residual_norm,
+          second_mixed.solve_statuses[solve_index].residual_norm);
+        EXPECT_EQ(
+          first_mixed_pullback.solve_statuses[solve_index].stop_reason,
+          second_mixed_pullback.solve_statuses[solve_index].stop_reason);
+        EXPECT_EQ(
+          first_mixed_pullback.solve_statuses[solve_index].iterations,
+          second_mixed_pullback.solve_statuses[solve_index].iterations);
+        EXPECT_DOUBLE_EQ(
+          first_mixed_pullback.solve_statuses[solve_index].residual_norm,
+          second_mixed_pullback.solve_statuses[solve_index].residual_norm);
+    }
+    for (std::size_t node_index = 0; node_index < first_mixed_pullback.derivative.size(); ++node_index) {
+        expect_same_coefficients(
+          first_mixed_pullback.derivative[node_index], second_mixed_pullback.derivative[node_index]);
+    }
 
     const auto dynamic = owning_dynamic_linearization();
     ASSERT_TRUE(dynamic.result().converged());
@@ -535,9 +672,13 @@ TEST(AffineInvariantP1Linearization, IsDeterministicPermutationCovariantAndOwnsD
     const auto dynamic_weight = dynamic.weight_jvp(weight_direction);
     const auto dynamic_nodal = dynamic.nodal_jvp(dynamic_directions);
     const auto dynamic_pullback = dynamic.nodal_vjp(dynamic_output);
+    const auto dynamic_mixed = dynamic.covariant_mixed_nodal_jvp(weight_direction, dynamic_directions);
+    const auto dynamic_mixed_pullback = dynamic.covariant_mixed_nodal_vjp(weight_direction, dynamic_output);
     ASSERT_TRUE(dynamic_weight.converged());
     ASSERT_TRUE(dynamic_nodal.converged());
     ASSERT_TRUE(dynamic_pullback.converged());
+    ASSERT_TRUE(dynamic_mixed.converged());
+    ASSERT_TRUE(dynamic_mixed_pullback.converged());
     expect_tangent_near(
       fixed_geometry, fixed.result().value, dynamic_weight.derivative, first_weight.derivative, 2.0e-8);
     expect_tangent_near(fixed_geometry, fixed.result().value, dynamic_nodal.derivative, first_nodal.derivative, 2.0e-8);
@@ -546,7 +687,12 @@ TEST(AffineInvariantP1Linearization, IsDeterministicPermutationCovariantAndOwnsD
     for (std::size_t i = 0; i < fixed_nodes.size(); ++i) {
         expect_tangent_near(
           fixed_geometry, fixed_nodes[i], dynamic_pullback.derivative[i], fixed_pullback.derivative[i], 2.0e-8);
+        expect_tangent_near(
+          fixed_geometry, fixed_nodes[i], dynamic_mixed_pullback.derivative[i],
+          first_mixed_pullback.derivative[i], 5.0e-8);
     }
+    expect_tangent_near(
+      fixed_geometry, fixed.result().value, dynamic_mixed.derivative, first_mixed.derivative, 5.0e-8);
 
     constexpr std::array<std::size_t, 3> permutation {2, 0, 1};
     std::vector<FixedGeometry::Point> permuted_nodes;
@@ -566,18 +712,29 @@ TEST(AffineInvariantP1Linearization, IsDeterministicPermutationCovariantAndOwnsD
     EXPECT_LT(fixed_geometry.distance(fixed.result().value, permuted.result().value), 1.0e-7);
     const auto permuted_weight = permuted.weight_jvp(permuted_weight_direction);
     const auto permuted_nodal = permuted.nodal_jvp(permuted_directions);
+    const auto permuted_mixed =
+      permuted.covariant_mixed_nodal_jvp(permuted_weight_direction, permuted_directions);
     ASSERT_TRUE(permuted_weight.converged());
     ASSERT_TRUE(permuted_nodal.converged());
+    ASSERT_TRUE(permuted_mixed.converged());
     expect_tangent_near(
       fixed_geometry, fixed.result().value, permuted_weight.derivative, first_weight.derivative, 5.0e-7);
     expect_tangent_near(
       fixed_geometry, fixed.result().value, permuted_nodal.derivative, first_nodal.derivative, 5.0e-7);
+    expect_tangent_near(
+      fixed_geometry, fixed.result().value, permuted_mixed.derivative, first_mixed.derivative, 1.0e-6);
     const auto permuted_pullback = permuted.nodal_vjp(fixed_output);
+    const auto permuted_mixed_pullback =
+      permuted.covariant_mixed_nodal_vjp(permuted_weight_direction, fixed_output);
     ASSERT_TRUE(permuted_pullback.converged());
+    ASSERT_TRUE(permuted_mixed_pullback.converged());
     for (std::size_t i = 0; i < permutation.size(); ++i) {
         expect_tangent_near(
           fixed_geometry, permuted_nodes[i], permuted_pullback.derivative[i], fixed_pullback.derivative[permutation[i]],
           5.0e-7);
+        expect_tangent_near(
+          fixed_geometry, permuted_nodes[i], permuted_mixed_pullback.derivative[i],
+          first_mixed_pullback.derivative[permutation[i]], 1.0e-6);
     }
 }
 
@@ -596,6 +753,8 @@ TEST(AffineInvariantP1Linearization, SurfacesFailuresAndRejectsInvalidDirections
       geometry, std::span<const FixedGeometry::Point>(nodes), std::span<const double>(weights), failed_mean_options);
     EXPECT_FALSE(failed_mean.result().converged());
     EXPECT_THROW(failed_mean.weight_jvp(weight_direction), std::logic_error);
+    EXPECT_THROW(failed_mean.covariant_mixed_nodal_jvp(weight_direction, directions), std::logic_error);
+    EXPECT_THROW(failed_mean.covariant_mixed_nodal_vjp(weight_direction, directions[0]), std::logic_error);
 
     auto one_step_options = accurate_options();
     one_step_options.linear_solve.max_iterations = 1;
@@ -607,6 +766,34 @@ TEST(AffineInvariantP1Linearization, SurfacesFailuresAndRejectsInvalidDirections
     EXPECT_EQ(one_step_action.stop_reason, manifold::PositiveDefiniteCGStopReason::max_iterations);
     EXPECT_EQ(one_step_action.iterations, 1);
     EXPECT_GT(one_step_action.residual_norm, 0);
+    const auto one_step_weight = one_step.weight_jvp(weight_direction);
+    const auto one_step_output = one_step.nodal_vjp(directions[0]);
+    const auto one_step_mixed = one_step.covariant_mixed_nodal_jvp(weight_direction, directions);
+    const auto one_step_mixed_pullback = one_step.covariant_mixed_nodal_vjp(weight_direction, directions[0]);
+    EXPECT_FALSE(one_step_mixed.converged());
+    EXPECT_FALSE(one_step_mixed_pullback.converged());
+    EXPECT_EQ(one_step_mixed.solve_statuses[0].stop_reason, one_step_weight.stop_reason);
+    EXPECT_EQ(one_step_mixed.solve_statuses[0].iterations, one_step_weight.iterations);
+    EXPECT_DOUBLE_EQ(one_step_mixed.solve_statuses[0].residual_norm, one_step_weight.residual_norm);
+    EXPECT_EQ(one_step_mixed.solve_statuses[1].stop_reason, one_step_action.stop_reason);
+    EXPECT_EQ(one_step_mixed.solve_statuses[1].iterations, one_step_action.iterations);
+    EXPECT_DOUBLE_EQ(one_step_mixed.solve_statuses[1].residual_norm, one_step_action.residual_norm);
+    EXPECT_EQ(one_step_mixed_pullback.solve_statuses[0].stop_reason, one_step_weight.stop_reason);
+    EXPECT_EQ(one_step_mixed_pullback.solve_statuses[0].iterations, one_step_weight.iterations);
+    EXPECT_DOUBLE_EQ(one_step_mixed_pullback.solve_statuses[0].residual_norm, one_step_weight.residual_norm);
+    EXPECT_EQ(one_step_mixed_pullback.solve_statuses[1].stop_reason, one_step_output.stop_reason);
+    EXPECT_EQ(one_step_mixed_pullback.solve_statuses[1].iterations, one_step_output.iterations);
+    EXPECT_DOUBLE_EQ(one_step_mixed_pullback.solve_statuses[1].residual_norm, one_step_output.residual_norm);
+    for (const auto& status : one_step_mixed.solve_statuses) {
+        EXPECT_EQ(status.stop_reason, manifold::PositiveDefiniteCGStopReason::max_iterations);
+        EXPECT_EQ(status.iterations, 1);
+        EXPECT_GT(status.residual_norm, 0);
+    }
+    for (const auto& status : one_step_mixed_pullback.solve_statuses) {
+        EXPECT_EQ(status.stop_reason, manifold::PositiveDefiniteCGStopReason::max_iterations);
+        EXPECT_EQ(status.iterations, 1);
+        EXPECT_GT(status.residual_norm, 0);
+    }
 
     const auto linearization = fdapde::gfe::p1_geodesic_linearization(
       geometry, std::span<const FixedGeometry::Point>(nodes), std::span<const double>(weights), accurate_options());
@@ -616,15 +803,33 @@ TEST(AffineInvariantP1Linearization, SurfacesFailuresAndRejectsInvalidDirections
     EXPECT_THROW(linearization.weight_jvp(too_few_weights), std::invalid_argument);
     EXPECT_THROW(linearization.weight_jvp(nonzero_sum), std::invalid_argument);
     EXPECT_THROW(linearization.weight_jvp(nonfinite_weight), std::invalid_argument);
+    EXPECT_THROW(
+      linearization.covariant_mixed_nodal_jvp(too_few_weights, directions), std::invalid_argument);
+    EXPECT_THROW(
+      linearization.covariant_mixed_nodal_jvp(nonzero_sum, directions), std::invalid_argument);
+    EXPECT_THROW(
+      linearization.covariant_mixed_nodal_jvp(nonfinite_weight, directions), std::invalid_argument);
+    EXPECT_THROW(
+      linearization.covariant_mixed_nodal_vjp(too_few_weights, directions[0]), std::invalid_argument);
+    EXPECT_THROW(
+      linearization.covariant_mixed_nodal_vjp(nonzero_sum, directions[0]), std::invalid_argument);
+    EXPECT_THROW(
+      linearization.covariant_mixed_nodal_vjp(nonfinite_weight, directions[0]), std::invalid_argument);
 
     std::vector<FixedGeometry::Tangent> too_few_directions(directions.begin(), directions.begin() + 2);
     auto nonfinite_directions = directions;
     nonfinite_directions[0](0, 0) = std::numeric_limits<double>::infinity();
     EXPECT_THROW(linearization.nodal_jvp(too_few_directions), std::invalid_argument);
     EXPECT_THROW(linearization.nodal_jvp(nonfinite_directions), std::invalid_argument);
+    EXPECT_THROW(
+      linearization.covariant_mixed_nodal_jvp(weight_direction, too_few_directions), std::invalid_argument);
+    EXPECT_THROW(
+      linearization.covariant_mixed_nodal_jvp(weight_direction, nonfinite_directions), std::invalid_argument);
     auto nonfinite_output = directions[0];
     nonfinite_output(1, 0) = std::numeric_limits<double>::quiet_NaN();
     EXPECT_THROW(linearization.nodal_vjp(nonfinite_output), std::invalid_argument);
+    EXPECT_THROW(
+      linearization.covariant_mixed_nodal_vjp(weight_direction, nonfinite_output), std::invalid_argument);
 
     native::Matrix<double, 3, 3> indefinite;
     indefinite.set_zero();
@@ -655,6 +860,31 @@ TEST(AffineInvariantP1Linearization, SurfacesFailuresAndRejectsInvalidDirections
     const auto inactive_pullback = inactive.nodal_vjp(directions[0]);
     ASSERT_TRUE(inactive_pullback.converged());
     expect_tangent_near(geometry, nodes[2], inactive_pullback.derivative[2], geometry.zero_tangent(nodes[2]), 0);
+    const std::vector<double> inactive_weight_direction {0.1, -0.1, 0};
+    const auto inactive_mixed =
+      inactive.covariant_mixed_nodal_jvp(inactive_weight_direction, inactive_directions);
+    const auto inactive_mixed_pullback =
+      inactive.covariant_mixed_nodal_vjp(inactive_weight_direction, directions[0]);
+    ASSERT_TRUE(inactive_mixed.converged());
+    ASSERT_TRUE(inactive_mixed_pullback.converged());
+    expect_tangent_near(
+      geometry, nodes[2], inactive_mixed_pullback.derivative[2], geometry.zero_tangent(nodes[2]), 0);
+
+    const std::vector<double> activating_weight_direction {0.1, -0.2, 0.1};
+    EXPECT_THROW(
+      inactive.covariant_mixed_nodal_jvp(activating_weight_direction, inactive_directions),
+      std::invalid_argument);
+    auto activated_directions = directions;
+    activated_directions[0] = geometry.zero_tangent(nodes[0]);
+    activated_directions[1] = geometry.zero_tangent(nodes[1]);
+    const auto activated_mixed =
+      inactive.covariant_mixed_nodal_jvp(activating_weight_direction, activated_directions);
+    const auto activated_mixed_pullback =
+      inactive.covariant_mixed_nodal_vjp(activating_weight_direction, directions[0]);
+    ASSERT_TRUE(activated_mixed.converged());
+    ASSERT_TRUE(activated_mixed_pullback.converged());
+    EXPECT_GT(geometry.norm(inactive.result().value, activated_mixed.derivative), 1.0e-8);
+    EXPECT_GT(geometry.norm(nodes[2], activated_mixed_pullback.derivative[2]), 1.0e-8);
 
     const DynamicGeometry dynamic_geometry(3);
     const auto dynamic_nodes = noncommuting_nodes<DynamicGeometry>();
@@ -667,6 +897,10 @@ TEST(AffineInvariantP1Linearization, SurfacesFailuresAndRejectsInvalidDirections
     wrong_shape_directions[0](1, 0) = 0;
     wrong_shape_directions[0](1, 1) = 1;
     EXPECT_THROW(dynamic.nodal_jvp(wrong_shape_directions), std::invalid_argument);
+    EXPECT_THROW(
+      dynamic.covariant_mixed_nodal_jvp(weight_direction, wrong_shape_directions), std::invalid_argument);
+    EXPECT_THROW(
+      dynamic.covariant_mixed_nodal_vjp(weight_direction, wrong_shape_directions[0]), std::invalid_argument);
 
     auto invalid_options = accurate_options();
     invalid_options.linear_solve.max_iterations = 0;

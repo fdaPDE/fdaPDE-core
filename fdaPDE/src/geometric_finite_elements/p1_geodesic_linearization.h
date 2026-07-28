@@ -40,6 +40,29 @@ template <typename Derivative> struct P1DerivativeResult {
     bool converged() const { return stop_reason == manifold::PositiveDefiniteCGStopReason::residual_tolerance; }
 };
 
+struct P1LinearSolveStatus {
+    double residual_norm = std::numeric_limits<double>::quiet_NaN();
+    std::size_t iterations = 0;
+    manifold::PositiveDefiniteCGStopReason stop_reason = manifold::PositiveDefiniteCGStopReason::max_iterations;
+
+    bool converged() const { return stop_reason == manifold::PositiveDefiniteCGStopReason::residual_tolerance; }
+};
+
+template <typename Derivative> struct P1MixedDerivativeResult {
+    // The derivative candidate is assembled from the three last solver
+    // iterates and is certified only when converged() is true. Each method
+    // documents the dependency order represented by solve_statuses.
+    Derivative derivative;
+    std::array<P1LinearSolveStatus, 3> solve_statuses;
+
+    bool converged() const {
+        for (const P1LinearSolveStatus& status : solve_statuses) {
+            if (!status.converged()) return false;
+        }
+        return true;
+    }
+};
+
 // Builds an owning derivative snapshot and validates all nodal geometry
 // points, including zero-weight nodes. The value-only evaluator retains its
 // support-skipping behavior. Derivative actions require a converged result.
@@ -409,17 +432,7 @@ class P1GeodesicLinearization<manifold::AffineInvariantSPDGeometry<Scalar_, Orde
     P1DerivativeResult<Tangent> weight_jvp(std::span<const double> direction) const {
         require_ready_();
         validate_weight_direction_(direction);
-
-        Tangent right_hand_side = geometry_.zero_tangent(result_.value);
-        for (std::size_t node_index = 0; node_index < nodes_.size(); ++node_index) {
-            const double coefficient = direction[node_index];
-            if (coefficient == 0) continue;
-            const Tangent centered_log =
-              geometry_.linear_combination(result_.value, 1, node_logs_[node_index], -1, *mean_residual_);
-            right_hand_side = geometry_.linear_combination(
-              result_.value, 1, right_hand_side, coefficient / normalized_total_, centered_log);
-        }
-        return solve_(right_hand_side);
+        return solve_(weight_right_hand_side_(direction));
     }
 
     // Directions at nodes with zero effective weight are not inspected,
@@ -472,6 +485,122 @@ class P1GeodesicLinearization<manifold::AffineInvariantSPDGeometry<Scalar_, Orde
               geometry_.linear_combination(nodes_[node_index], weight, node_dual, 0, pullback[node_index]);
         }
         return {std::move(pullback), solve.residual_norm, solve.iterations, solve.stop_reason};
+    }
+
+    // Covariant nodal derivative of the spatial/weight JVP. The three
+    // solve statuses are ordered as the weight, nodal, and mixed solves.
+    P1MixedDerivativeResult<Tangent> covariant_mixed_nodal_jvp(
+      std::span<const double> weight_direction, std::span<const Tangent> nodal_directions) const {
+        require_ready_();
+        validate_weight_direction_(weight_direction);
+        if (nodal_directions.size() != nodes_.size()) {
+            throw std::invalid_argument("P1 geodesic nodal-direction and nodal-value counts must match");
+        }
+
+        const double direction_total = compensated_weight_total_(weight_direction);
+        Tangent weight_right_hand_side = weight_right_hand_side_(weight_direction);
+        Tangent nodal_right_hand_side = geometry_.zero_tangent(result_.value);
+        std::vector<Tangent> target_actions(nodes_.size(), geometry_.zero_tangent(result_.value));
+        for (std::size_t node_index = 0; node_index < nodes_.size(); ++node_index) {
+            const double alpha = effective_weights_[node_index];
+            const double gamma = mixed_weight_coefficient_(weight_direction[node_index], direction_total, node_index);
+            if (alpha == 0 && gamma == 0) continue;
+
+            require_finite_tangent_(
+              nodes_[node_index], nodal_directions[node_index], "P1 geodesic nodal directions must be finite");
+            target_actions[node_index] =
+              geometry_.logarithm_target_jvp(result_.value, nodes_[node_index], nodal_directions[node_index]);
+            if (alpha != 0) {
+                nodal_right_hand_side = geometry_.linear_combination(
+                  result_.value, 1, nodal_right_hand_side, alpha, target_actions[node_index]);
+            }
+        }
+
+        auto weight_solve = solve_tangent_(weight_right_hand_side);
+        auto nodal_solve = solve_tangent_(nodal_right_hand_side);
+        Tangent mixed_right_hand_side = geometry_.zero_tangent(result_.value);
+        for (std::size_t node_index = 0; node_index < nodes_.size(); ++node_index) {
+            const double alpha = effective_weights_[node_index];
+            const double gamma = mixed_weight_coefficient_(weight_direction[node_index], direction_total, node_index);
+            if (gamma != 0) {
+                const Tangent hessian_action = geometry_.half_squared_distance_hessian_vector(
+                  result_.value, nodes_[node_index], nodal_solve.solution);
+                const Tangent component = geometry_.linear_combination(
+                  result_.value, 1, target_actions[node_index], -1, hessian_action);
+                mixed_right_hand_side = geometry_.linear_combination(
+                  result_.value, 1, mixed_right_hand_side, gamma, component);
+            }
+            if (alpha == 0) continue;
+
+            const Tangent mixed_action = geometry_.half_squared_distance_hessian_covariant_jvp(
+              result_.value, nodes_[node_index], nodal_solve.solution, nodal_directions[node_index],
+              weight_solve.solution);
+            mixed_right_hand_side =
+              geometry_.linear_combination(result_.value, 1, mixed_right_hand_side, -alpha, mixed_action);
+        }
+        auto mixed_solve = solve_tangent_(mixed_right_hand_side);
+        return {
+          std::move(mixed_solve.solution),
+          {solve_status_(weight_solve), solve_status_(nodal_solve), solve_status_(mixed_solve)}};
+    }
+
+    // Riemannian adjoint, in the nodal variable, of
+    // covariant_mixed_nodal_jvp for a fixed weight direction. The three
+    // solve statuses are ordered as the weight, output, and pullback solves.
+    P1MixedDerivativeResult<std::vector<Tangent>>
+    covariant_mixed_nodal_vjp(std::span<const double> weight_direction, const Tangent& value_gradient) const {
+        require_ready_();
+        validate_weight_direction_(weight_direction);
+        require_finite_tangent_(result_.value, value_gradient, "P1 geodesic value gradients must be finite");
+
+        const double direction_total = compensated_weight_total_(weight_direction);
+        auto weight_solve = solve_tangent_(weight_right_hand_side_(weight_direction));
+        auto output_solve = solve_tangent_(value_gradient);
+        Tangent pullback_right_hand_side = geometry_.zero_tangent(result_.value);
+        std::vector<std::optional<Tangent>> mixed_target_duals(nodes_.size());
+        for (std::size_t node_index = 0; node_index < nodes_.size(); ++node_index) {
+            const double alpha = effective_weights_[node_index];
+            const double gamma = mixed_weight_coefficient_(weight_direction[node_index], direction_total, node_index);
+            if (gamma != 0) {
+                const Tangent hessian_action = geometry_.half_squared_distance_hessian_vector(
+                  result_.value, nodes_[node_index], output_solve.solution);
+                pullback_right_hand_side = geometry_.linear_combination(
+                  result_.value, 1, pullback_right_hand_side, -gamma, hessian_action);
+            }
+            if (alpha == 0) continue;
+
+            auto mixed_duals = geometry_.half_squared_distance_hessian_covariant_vjp(
+              result_.value, nodes_[node_index], weight_solve.solution, output_solve.solution);
+            pullback_right_hand_side = geometry_.linear_combination(
+              result_.value, 1, pullback_right_hand_side, -alpha, mixed_duals.first);
+            mixed_target_duals[node_index].emplace(std::move(mixed_duals.second));
+        }
+        auto pullback_solve = solve_tangent_(pullback_right_hand_side);
+
+        std::vector<Tangent> pullback;
+        pullback.reserve(nodes_.size());
+        for (const Point& node : nodes_) { pullback.push_back(geometry_.zero_tangent(node)); }
+        for (std::size_t node_index = 0; node_index < nodes_.size(); ++node_index) {
+            const double alpha = effective_weights_[node_index];
+            const double gamma = mixed_weight_coefficient_(weight_direction[node_index], direction_total, node_index);
+            if (gamma != 0) {
+                const Tangent direct =
+                  geometry_.logarithm_target_vjp(result_.value, nodes_[node_index], output_solve.solution);
+                pullback[node_index] =
+                  geometry_.linear_combination(nodes_[node_index], 1, pullback[node_index], gamma, direct);
+            }
+            if (alpha == 0) continue;
+
+            pullback[node_index] = geometry_.linear_combination(
+              nodes_[node_index], 1, pullback[node_index], -alpha, *mixed_target_duals[node_index]);
+            const Tangent indirect =
+              geometry_.logarithm_target_vjp(result_.value, nodes_[node_index], pullback_solve.solution);
+            pullback[node_index] =
+              geometry_.linear_combination(nodes_[node_index], 1, pullback[node_index], alpha, indirect);
+        }
+        return {
+          std::move(pullback),
+          {solve_status_(weight_solve), solve_status_(output_solve), solve_status_(pullback_solve)}};
     }
    private:
     P1GeodesicLinearization(
@@ -554,6 +683,23 @@ class P1GeodesicLinearization<manifold::AffineInvariantSPDGeometry<Scalar_, Orde
         return {std::move(solve.solution), solve.residual_norm, solve.iterations, solve.stop_reason};
     }
 
+    Tangent weight_right_hand_side_(std::span<const double> direction) const {
+        Tangent right_hand_side = geometry_.zero_tangent(result_.value);
+        for (std::size_t node_index = 0; node_index < nodes_.size(); ++node_index) {
+            const double coefficient = direction[node_index];
+            if (coefficient == 0) continue;
+            const Tangent centered_log =
+              geometry_.linear_combination(result_.value, 1, node_logs_[node_index], -1, *mean_residual_);
+            right_hand_side = geometry_.linear_combination(
+              result_.value, 1, right_hand_side, coefficient / normalized_total_, centered_log);
+        }
+        return right_hand_side;
+    }
+
+    static P1LinearSolveStatus solve_status_(const manifold::PositiveDefiniteCGResult<Tangent>& solve) {
+        return {solve.residual_norm, solve.iterations, solve.stop_reason};
+    }
+
     static double compensated_weight_total_(std::span<const double> weights) {
         double total = 0;
         double correction = 0;
@@ -565,6 +711,14 @@ class P1GeodesicLinearization<manifold::AffineInvariantSPDGeometry<Scalar_, Orde
             total = next;
         }
         return total;
+    }
+
+    double mixed_weight_coefficient_(
+      double weight_direction, double direction_total, std::size_t node_index) const {
+        return (
+                 weight_direction -
+                 direction_total * result_.normalized_weights[node_index] / normalized_total_) /
+               normalized_total_;
     }
 
     void validate_weight_direction_(std::span<const double> direction) const {
