@@ -14,16 +14,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_GEOMETRIC_FINITE_ELEMENTS_MODULE_H__
-#define __FDAPDE_GEOMETRIC_FINITE_ELEMENTS_MODULE_H__
+// This source is expected not to compile: internal GFE headers require the public module header.
 
-// clang-format off
+#include <fdaPDE/manifold_optimization.h>
+#include <fdaPDE/src/geometric_finite_elements/p1_geodesic_linearization.h>
 
-#include "manifold_optimization.h"
-
-#include "src/geometric_finite_elements/p1_geodesic_value.h"
-#include "src/geometric_finite_elements/p1_geodesic_linearization.h"
-
-// clang-format on
-
-#endif   // __FDAPDE_GEOMETRIC_FINITE_ELEMENTS_MODULE_H__
+int main() { }

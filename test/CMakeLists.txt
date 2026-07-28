@@ -36,6 +36,34 @@ if(FDAPDE_GFE_INTERNAL_INCLUDE_ERROR EQUAL -1)
   message(FATAL_ERROR "The internal GFE header failed for an unexpected reason:\n${FDAPDE_GFE_INTERNAL_INCLUDE_OUTPUT}")
 endif()
 
+try_compile(
+  FDAPDE_GFE_LINEARIZATION_INTERNAL_INCLUDE_COMPILES
+  ${CMAKE_CURRENT_BINARY_DIR}/geometric_finite_elements_linearization_internal_include
+  SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/public_headers/geometric_finite_elements_linearization_internal_include.cpp
+  CMAKE_FLAGS
+    -DCMAKE_CXX_STANDARD=20
+    -DCMAKE_CXX_STANDARD_REQUIRED=ON
+    -DCMAKE_CXX_EXTENSIONS=OFF
+  COMPILE_DEFINITIONS -I${CMAKE_CURRENT_SOURCE_DIR}/..
+  LINK_LIBRARIES Eigen3::Eigen
+  OUTPUT_VARIABLE FDAPDE_GFE_LINEARIZATION_INTERNAL_INCLUDE_OUTPUT
+)
+if(FDAPDE_GFE_LINEARIZATION_INTERNAL_INCLUDE_COMPILES)
+  message(FATAL_ERROR "The internal GFE linearization header compiled without the public module header.")
+endif()
+string(
+  FIND
+  "${FDAPDE_GFE_LINEARIZATION_INTERNAL_INCLUDE_OUTPUT}"
+  "Include fdaPDE/geometric_finite_elements.h instead of including internal headers directly."
+  FDAPDE_GFE_LINEARIZATION_INTERNAL_INCLUDE_ERROR
+)
+if(FDAPDE_GFE_LINEARIZATION_INTERNAL_INCLUDE_ERROR EQUAL -1)
+  message(
+    FATAL_ERROR
+      "The internal GFE linearization header failed for an unexpected reason:\n${FDAPDE_GFE_LINEARIZATION_INTERNAL_INCLUDE_OUTPUT}"
+  )
+endif()
+
 include(FetchContent)
 FetchContent_Declare(
   googletest
@@ -70,6 +98,7 @@ add_executable(
   manifold_optimization/spd_mean.cpp
   geometric_finite_elements/p1_value.cpp
   geometric_finite_elements/affine_invariant_p1_value.cpp
+  geometric_finite_elements/log_euclidean_p1_linearization.cpp
   src/dg_dof_test.cpp
   src/dg_expression_test.cpp
   src/dg_facet_coefficient_test.cpp
