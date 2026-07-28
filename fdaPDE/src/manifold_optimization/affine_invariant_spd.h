@@ -135,6 +135,55 @@ template <typename Scalar_, int Order_> class AffineInvariantSPDGeometry {
         return internals::symmetric_congruence<Scalar, Order_>(from_sqrt, fdapde::linalg::matrix_log(relative), order_);
     }
 
+    // Exact target differential of Log_from(to).
+    // With R = c S, L_log(c S, V) = L_log(S, V) / c. The JVP absorbs
+    // 1/c into its whitening congruence, the metric VJP absorbs c into
+    // its unwhitening congruence, and c cancels from the Hessian action.
+    Tangent logarithm_target_jvp(const Point& from, const Point& to, const Tangent& to_direction) const {
+        check_tangent_(to_direction);
+        const auto frame = relative_frame_(from, to);
+        const Scalar inverse_sqrt_scale = Scalar(1) / std::sqrt(frame.relative_scale);
+        const auto scaled_inverse_sqrt = internals::combine_symmetric<Scalar, Order_>(
+          frame.from_inverse_sqrt, inverse_sqrt_scale, frame.from_inverse_sqrt, Scalar(0), order_);
+        const auto scaled_direction =
+          internals::symmetric_congruence<Scalar, Order_>(scaled_inverse_sqrt, to_direction, order_);
+        const auto chart_direction = fdapde::linalg::matrix_log_frechet(frame.scaled_relative, scaled_direction);
+        return checked_tangent_result_(
+          internals::symmetric_congruence<Scalar, Order_>(frame.from_sqrt, chart_direction, order_));
+    }
+
+    // AIRM-metric adjoint of logarithm_target_jvp. The argument and result
+    // are metric-dual tangent representations at from and to, respectively.
+    Tangent logarithm_target_vjp(const Point& from, const Point& to, const Tangent& from_metric_dual) const {
+        check_tangent_(from_metric_dual);
+        const auto frame = relative_frame_(from, to);
+        const auto whitened_dual =
+          internals::symmetric_congruence<Scalar, Order_>(frame.from_inverse_sqrt, from_metric_dual, order_);
+        const auto chart_dual = fdapde::linalg::matrix_log_frechet(frame.scaled_relative, whitened_dual);
+        const auto relative_dual =
+          internals::symmetric_congruence<Scalar, Order_>(frame.scaled_relative, chart_dual, order_);
+        const Scalar sqrt_scale = std::sqrt(frame.relative_scale);
+        const auto scaled_from_sqrt =
+          internals::combine_symmetric<Scalar, Order_>(frame.from_sqrt, sqrt_scale, frame.from_sqrt, Scalar(0), order_);
+        return checked_tangent_result_(
+          internals::symmetric_congruence<Scalar, Order_>(scaled_from_sqrt, relative_dual, order_));
+    }
+
+    // Covariant Hessian action at base of one half the squared distance to
+    // target. This is the negative covariant base differential of Log_base(target).
+    Tangent
+    half_squared_distance_hessian_vector(const Point& base, const Point& target, const Tangent& base_direction) const {
+        check_tangent_(base_direction);
+        const auto frame = relative_frame_(base, target);
+        const auto whitened_direction =
+          internals::symmetric_congruence<Scalar, Order_>(frame.from_inverse_sqrt, base_direction, order_);
+        const auto log_direction = fdapde::linalg::matrix_log_frechet(frame.scaled_relative, whitened_direction);
+        // Jordan_S and L_log(S, .) commute because they share S's spectral basis.
+        const auto chart_result = jordan_product_(frame.scaled_relative, log_direction);
+        return checked_tangent_result_(
+          internals::symmetric_congruence<Scalar, Order_>(frame.from_sqrt, chart_result, order_));
+    }
+
     double distance(const Point& from, const Point& to) const {
         check_point_(from);
         check_point_(to);
@@ -165,6 +214,76 @@ template <typename Scalar_, int Order_> class AffineInvariantSPDGeometry {
         return internals::symmetric_congruence<Scalar, Order_>(point, euclidean_gradient, order_);
     }
    private:
+    struct RelativeFrame {
+        Point from_sqrt;
+        Point from_inverse_sqrt;
+        Point scaled_relative;
+        Scalar relative_scale;
+    };
+
+    RelativeFrame relative_frame_(const Point& from, const Point& to) const {
+        check_point_(from);
+        check_point_(to);
+        for (int i = 0; i < order_; ++i) {
+            for (int j = 0; j <= i; ++j) {
+                if (!std::isfinite(static_cast<Scalar>(to(i, j)))) {
+                    throw std::invalid_argument("Affine-invariant SPD differential point coefficients must be finite");
+                }
+            }
+        }
+        auto from_sqrt = fdapde::linalg::matrix_sqrt(from);
+        auto from_inverse_sqrt = fdapde::linalg::matrix_inverse_sqrt(from);
+        const auto relative = internals::symmetric_congruence<Scalar, Order_>(from_inverse_sqrt, to, order_);
+
+        Scalar scale = 0;
+        for (int i = 0; i < order_; ++i) {
+            for (int j = 0; j <= i; ++j) {
+                const Scalar coefficient = static_cast<Scalar>(relative(i, j));
+                if (!std::isfinite(coefficient)) {
+                    throw std::domain_error("Affine-invariant SPD differential produced a nonfinite relative point");
+                }
+                scale = std::max(scale, std::abs(coefficient));
+            }
+        }
+        if (!(scale > Scalar(0)) || !std::isfinite(scale)) {
+            throw std::domain_error("Affine-invariant SPD differential has an invalid relative scale");
+        }
+
+        auto scaled_relative = internals::make_symmetric<Scalar, Order_>(order_);
+        for (int i = 0; i < order_; ++i) {
+            for (int j = 0; j <= i; ++j) { scaled_relative(i, j) = static_cast<Scalar>(relative(i, j)) / scale; }
+        }
+        return {
+          std::move(from_sqrt), std::move(from_inverse_sqrt), Point(scaled_relative, fdapde::linalg::checked), scale};
+    }
+
+    template <typename LhsType_, typename RhsType_>
+    Tangent jordan_product_(const LhsType_& lhs, const RhsType_& rhs) const {
+        auto result = internals::make_symmetric<Scalar, Order_>(order_);
+        for (int i = 0; i < order_; ++i) {
+            for (int j = 0; j <= i; ++j) {
+                Scalar value = 0;
+                for (int k = 0; k < order_; ++k) {
+                    value += Scalar(0.5) * (static_cast<Scalar>(lhs(i, k)) * static_cast<Scalar>(rhs(k, j)) +
+                                            static_cast<Scalar>(rhs(i, k)) * static_cast<Scalar>(lhs(k, j)));
+                }
+                result(i, j) = value;
+            }
+        }
+        return result;
+    }
+
+    Tangent checked_tangent_result_(Tangent result) const {
+        for (int i = 0; i < order_; ++i) {
+            for (int j = 0; j <= i; ++j) {
+                if (!std::isfinite(static_cast<Scalar>(result(i, j)))) {
+                    throw std::domain_error("Affine-invariant SPD differential produced a nonfinite tangent");
+                }
+            }
+        }
+        return result;
+    }
+
     void check_point_(const Point& point) const { internals::check_spd_geometry_shape(point, order_); }
     void check_tangent_(const Tangent& tangent) const { internals::check_spd_geometry_shape(tangent, order_); }
 

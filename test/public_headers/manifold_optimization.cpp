@@ -126,6 +126,17 @@ concept HeaderPermitsMeanWithoutInitial = requires(
   const Geometry& geometry, std::span<const fdapde::manifold::point_t<Geometry>> samples,
   std::span<const double> weights) { fdapde::manifold::weighted_karcher_mean(geometry, samples, weights); };
 
+template <typename Geometry>
+concept HeaderAffineDifferentialActions = requires(
+  const Geometry& geometry, const fdapde::manifold::point_t<Geometry>& from,
+  const fdapde::manifold::point_t<Geometry>& to, const fdapde::manifold::tangent_t<Geometry>& tangent) {
+    { geometry.logarithm_target_jvp(from, to, tangent) } -> std::same_as<fdapde::manifold::tangent_t<Geometry>>;
+    { geometry.logarithm_target_vjp(from, to, tangent) } -> std::same_as<fdapde::manifold::tangent_t<Geometry>>;
+    {
+        geometry.half_squared_distance_hessian_vector(from, to, tangent)
+    } -> std::same_as<fdapde::manifold::tangent_t<Geometry>>;
+};
+
 using HeaderArmijoResult = decltype(std::declval<const fdapde::manifold::ArmijoBacktracking&>().search(
   std::declval<HeaderProblem&>(), std::declval<const HeaderGeometry&>(), std::declval<const HeaderPoint&>(),
   std::declval<const HeaderTangent&>(), 0.0, -1.0, std::declval<HeaderContext&>()));
@@ -180,6 +191,8 @@ static_assert(fdapde::manifold::VectorTransportGeometry<HeaderAffineGeometry>);
 static_assert(fdapde::manifold::GeodesicGeometry<HeaderAffineGeometry>);
 static_assert(fdapde::manifold::VectorTransportGeometry<HeaderDynamicAffineGeometry>);
 static_assert(fdapde::manifold::GeodesicGeometry<HeaderDynamicAffineGeometry>);
+static_assert(HeaderAffineDifferentialActions<HeaderAffineGeometry>);
+static_assert(HeaderAffineDifferentialActions<HeaderDynamicAffineGeometry>);
 static_assert(fdapde::manifold::FirstOrderProblem<HeaderProblem, HeaderGeometry>);
 static_assert(!fdapde::manifold::FirstOrderProblem<const HeaderProblem, HeaderGeometry>);
 static_assert(fdapde::manifold::FirstOrderProblem<const HeaderConstProblem, HeaderGeometry>);

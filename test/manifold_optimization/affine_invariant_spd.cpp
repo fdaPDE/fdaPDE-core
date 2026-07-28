@@ -17,6 +17,7 @@
 #include <fdaPDE/manifold_optimization.h>
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <limits>
@@ -53,6 +54,15 @@ template <typename Geometry> typename Geometry::Point make_diagonal_point(double
     native::Matrix<double, 3, 3> dense;
     dense.set_zero();
     for (int i = 0; i < 3; ++i) { dense(i, i) = diagonal; }
+    return typename Geometry::Point(dense, native::checked);
+}
+
+template <typename Geometry> typename Geometry::Point make_diagonal_point(double first, double second, double third) {
+    native::Matrix<double, 3, 3> dense;
+    dense.set_zero();
+    dense(0, 0) = first;
+    dense(1, 1) = second;
+    dense(2, 2) = third;
     return typename Geometry::Point(dense, native::checked);
 }
 
@@ -109,8 +119,8 @@ void expect_matrix_relative_near(const Lhs& lhs, const Rhs& rhs, double toleranc
     EXPECT_LT(matrix_difference_norm(lhs, rhs), tolerance * (1.0 + matrix_norm(rhs)));
 }
 
-template <typename Middle>
-native::SymmetricMatrix<double, 3, 3> congruence(const native::Matrix<double, 3, 3>& outer, const Middle& middle) {
+template <typename Outer, typename Middle>
+native::SymmetricMatrix<double, 3, 3> congruence(const Outer& outer, const Middle& middle) {
     native::SymmetricMatrix<double, 3, 3> result;
     for (int i = 0; i < 3; ++i) {
         for (int j = 0; j <= i; ++j) {
@@ -125,6 +135,42 @@ native::SymmetricMatrix<double, 3, 3> congruence(const native::Matrix<double, 3,
         }
     }
     return result;
+}
+
+double log_divided_difference(double x, double y) {
+    if (x == y) return 1.0 / x;
+    const double delta = x - y;
+    if (std::abs(delta) <= 0.5 * std::min(x, y)) {
+        return 0.5 * (std::log1p(delta / y) / delta + std::log1p(-delta / x) / -delta);
+    }
+    return (std::log(x) - std::log(y)) / delta;
+}
+
+template <typename Geometry>
+typename Geometry::Tangent diagonal_coefficient_action(
+  const typename Geometry::Tangent& direction, const std::array<double, 3>& eigenvalues, const auto& coefficient) {
+    auto result = make_tangent<Geometry>({0, 0, 0, 0, 0, 0});
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j <= i; ++j) {
+            result(i, j) =
+              coefficient(eigenvalues[static_cast<std::size_t>(i)], eigenvalues[static_cast<std::size_t>(j)]) *
+              static_cast<double>(direction(i, j));
+        }
+    }
+    return result;
+}
+
+template <typename Geometry>
+typename Geometry::Tangent fixed_base_exp_jvp(
+  const typename Geometry::Point& base, const typename Geometry::Tangent& exponent,
+  const typename Geometry::Tangent& direction) {
+    const auto base_sqrt = native::matrix_sqrt(base);
+    const auto base_inverse_sqrt = native::matrix_inverse_sqrt(base);
+    const auto chart_exponent = congruence(base_inverse_sqrt, exponent);
+    native::SymmetricMatrix<double, fdapde::Dynamic, fdapde::Dynamic> chart_direction(3, 3);
+    chart_direction = congruence(base_inverse_sqrt, direction);
+    return
+      typename Geometry::Tangent(congruence(base_sqrt, native::matrix_exp_frechet(chart_exponent, chart_direction)));
 }
 
 }   // namespace
@@ -177,6 +223,123 @@ TEST(AffineInvariantSPDGeometry, ExpLogDistanceAndTransportAreConsistent) {
     EXPECT_NEAR(
       geometry.inner_product(point, u, v), geometry.inner_product(next, transported_u, transported_v), 5.0e-10);
     expect_matrix_relative_near(geometry.transport(next, point, transported_u), u, 1.0e-10);
+}
+
+TEST(AffineInvariantSPDGeometry, DifferentialActionsMatchScalarAndDiagonalClosedForms) {
+    {
+        using ScalarGeometry = fdapde::manifold::AffineInvariantSPDGeometry<double, 1>;
+        const ScalarGeometry geometry;
+        native::Matrix<double, 1, 1> from_dense;
+        native::Matrix<double, 1, 1> to_dense;
+        from_dense(0, 0) = 4;
+        to_dense(0, 0) = 9;
+        const ScalarGeometry::Point from(from_dense, native::checked);
+        const ScalarGeometry::Point to(to_dense, native::checked);
+        ScalarGeometry::Tangent to_direction;
+        ScalarGeometry::Tangent from_dual;
+        ScalarGeometry::Tangent base_direction;
+        to_direction(0, 0) = 1.8;
+        from_dual(0, 0) = -0.7;
+        base_direction(0, 0) = 0.4;
+
+        EXPECT_NEAR(geometry.logarithm_target_jvp(from, to, to_direction)(0, 0), 4.0 * 1.8 / 9.0, 1.0e-14);
+        EXPECT_NEAR(geometry.logarithm_target_vjp(from, to, from_dual)(0, 0), 9.0 * -0.7 / 4.0, 1.0e-14);
+        EXPECT_NEAR(
+          geometry.half_squared_distance_hessian_vector(from, to, base_direction)(0, 0), base_direction(0, 0), 1.0e-14);
+    }
+
+    const FixedGeometry geometry;
+    const auto identity = make_diagonal_point<FixedGeometry>(1);
+    constexpr std::array<double, 3> eigenvalues {1.2, 2.3, 4.7};
+    const auto target = make_diagonal_point<FixedGeometry>(eigenvalues[0], eigenvalues[1], eigenvalues[2]);
+    const auto to_direction = make_tangent<FixedGeometry>({0.3, -0.2, 0.4, 0.1, 0.25, -0.15});
+    const auto from_dual = make_tangent<FixedGeometry>({-0.1, 0.35, 0.2, -0.25, 0.05, 0.45});
+    const auto base_direction = make_tangent<FixedGeometry>({0.15, 0.4, -0.2, -0.3, 0.1, 0.35});
+
+    const auto expected_jvp = diagonal_coefficient_action<FixedGeometry>(
+      to_direction, eigenvalues, [](double x, double y) { return log_divided_difference(x, y); });
+    const auto expected_vjp = diagonal_coefficient_action<FixedGeometry>(
+      from_dual, eigenvalues, [](double x, double y) { return x * y * log_divided_difference(x, y); });
+    const auto expected_hessian = diagonal_coefficient_action<FixedGeometry>(
+      base_direction, eigenvalues, [](double x, double y) { return 0.5 * (x + y) * log_divided_difference(x, y); });
+
+    expect_matrix_relative_near(geometry.logarithm_target_jvp(identity, target, to_direction), expected_jvp, 2.0e-13);
+    expect_matrix_relative_near(geometry.logarithm_target_vjp(identity, target, from_dual), expected_vjp, 2.0e-13);
+    expect_matrix_relative_near(
+      geometry.half_squared_distance_hessian_vector(identity, target, base_direction), expected_hessian, 2.0e-13);
+}
+
+TEST(AffineInvariantSPDGeometry, DifferentialActionsHaveTheExactMetricStructure) {
+    const FixedGeometry geometry;
+    const auto point = make_point<FixedGeometry>(point_x_coefficients);
+    const auto target = make_point<FixedGeometry>(point_y_coefficients);
+    const auto u = make_tangent<FixedGeometry>({0.3, -0.2, 0.4, 0.1, 0.25, -0.15});
+    const auto v = make_tangent<FixedGeometry>({-0.1, 0.35, 0.2, -0.25, 0.05, 0.45});
+    const auto z = make_tangent<FixedGeometry>({0.15, 0.4, -0.2, -0.3, 0.1, 0.35});
+
+    const auto jvp = geometry.logarithm_target_jvp(point, target, v);
+    const auto vjp = geometry.logarithm_target_vjp(point, target, z);
+    const double lhs = geometry.inner_product(point, jvp, z);
+    const double rhs = geometry.inner_product(target, v, vjp);
+    EXPECT_NEAR(lhs, rhs, 2.0e-10 * std::max({1.0, std::abs(lhs), std::abs(rhs)}));
+
+    const auto hessian_u = geometry.half_squared_distance_hessian_vector(point, target, u);
+    const auto hessian_z = geometry.half_squared_distance_hessian_vector(point, target, z);
+    const double self_adjoint_lhs = geometry.inner_product(point, u, hessian_z);
+    const double self_adjoint_rhs = geometry.inner_product(point, hessian_u, z);
+    EXPECT_NEAR(
+      self_adjoint_lhs, self_adjoint_rhs,
+      2.0e-10 * std::max({1.0, std::abs(self_adjoint_lhs), std::abs(self_adjoint_rhs)}));
+    EXPECT_GE(geometry.inner_product(point, u, hessian_u), geometry.inner_product(point, u, u) * (1.0 - 2.0e-10));
+
+    const auto exponent = geometry.logarithm(point, target);
+    expect_matrix_relative_near(
+      geometry.logarithm_target_jvp(point, target, fixed_base_exp_jvp<FixedGeometry>(point, exponent, z)), z, 2.0e-9);
+    expect_matrix_relative_near(
+      fixed_base_exp_jvp<FixedGeometry>(point, exponent, geometry.logarithm_target_jvp(point, target, v)), v, 2.0e-9);
+}
+
+TEST(AffineInvariantSPDGeometry, DifferentialActionsMatchCenteredGeometricDifferences) {
+    const FixedGeometry geometry;
+    const auto point = make_point<FixedGeometry>(point_x_coefficients);
+    const auto target = make_point<FixedGeometry>(point_y_coefficients);
+    const auto base_direction = make_tangent<FixedGeometry>({0.03, -0.02, 0.04, 0.01, 0.025, -0.015});
+    const auto target_direction = make_tangent<FixedGeometry>({-0.01, 0.035, 0.02, -0.025, 0.005, 0.045});
+    const auto exact_target_jvp = geometry.logarithm_target_jvp(point, target, target_direction);
+    const auto exact_hessian = geometry.half_squared_distance_hessian_vector(point, target, base_direction);
+
+    double best_target_error = std::numeric_limits<double>::infinity();
+    double best_hessian_error = std::numeric_limits<double>::infinity();
+    for (const double step : {1.0e-3, 3.0e-4, 1.0e-4}) {
+        const auto target_plus = geometry.exponential(target, target_direction, step);
+        const auto target_minus = geometry.exponential(target, target_direction, -step);
+        const auto target_difference = geometry.linear_combination(
+          point, 0.5 / step, geometry.logarithm(point, target_plus), -0.5 / step,
+          geometry.logarithm(point, target_minus));
+        const double target_error =
+          matrix_difference_norm(target_difference, exact_target_jvp) / (1.0 + matrix_norm(exact_target_jvp));
+        EXPECT_LT(target_error, 2.0e-5);
+        best_target_error = std::min(best_target_error, target_error);
+
+        const auto point_plus = geometry.exponential(point, base_direction, step);
+        const auto point_minus = geometry.exponential(point, base_direction, -step);
+        const auto zero_plus = geometry.zero_tangent(point_plus);
+        const auto zero_minus = geometry.zero_tangent(point_minus);
+        const auto gradient_plus =
+          geometry.linear_combination(point_plus, -1, geometry.logarithm(point_plus, target), 0, zero_plus);
+        const auto gradient_minus =
+          geometry.linear_combination(point_minus, -1, geometry.logarithm(point_minus, target), 0, zero_minus);
+        const auto transported_plus = geometry.transport(point_plus, point, gradient_plus);
+        const auto transported_minus = geometry.transport(point_minus, point, gradient_minus);
+        const auto hessian_difference =
+          geometry.linear_combination(point, 0.5 / step, transported_plus, -0.5 / step, transported_minus);
+        const double hessian_error =
+          matrix_difference_norm(hessian_difference, exact_hessian) / (1.0 + matrix_norm(exact_hessian));
+        EXPECT_LT(hessian_error, 2.0e-5);
+        best_hessian_error = std::min(best_hessian_error, hessian_error);
+    }
+    EXPECT_LT(best_target_error, 2.0e-8);
+    EXPECT_LT(best_hessian_error, 2.0e-8);
 }
 
 TEST(AffineInvariantSPDGeometry, PolynomialRetractionIsSecondOrderAndScaleSafe) {
@@ -232,6 +395,15 @@ TEST(AffineInvariantSPDGeometry, IsInvariantAndEquivariantUnderGeneralCongruence
     expect_matrix_relative_near(
       geometry.transport(transformed_point, transformed_target, transformed_u),
       congruence(basis, geometry.transport(point, target, u)), 1.0e-9);
+    expect_matrix_relative_near(
+      geometry.logarithm_target_jvp(transformed_point, transformed_target, transformed_v),
+      congruence(basis, geometry.logarithm_target_jvp(point, target, v)), 2.0e-9);
+    expect_matrix_relative_near(
+      geometry.logarithm_target_vjp(transformed_point, transformed_target, transformed_u),
+      congruence(basis, geometry.logarithm_target_vjp(point, target, u)), 2.0e-9);
+    expect_matrix_relative_near(
+      geometry.half_squared_distance_hessian_vector(transformed_point, transformed_target, transformed_u),
+      congruence(basis, geometry.half_squared_distance_hessian_vector(point, target, u)), 2.0e-9);
 }
 
 TEST(AffineInvariantSPDGeometry, FixedAndDynamicThreeByThreeOperationsAgree) {
@@ -275,6 +447,134 @@ TEST(AffineInvariantSPDGeometry, FixedAndDynamicThreeByThreeOperationsAgree) {
     expect_matrix_near(
       dynamic_geometry.euclidean_to_riemannian_gradient(dynamic_point, dynamic_v),
       fixed_geometry.euclidean_to_riemannian_gradient(fixed_point, fixed_v), 1.0e-12);
+    expect_matrix_near(
+      dynamic_geometry.logarithm_target_jvp(dynamic_point, dynamic_target, dynamic_v),
+      fixed_geometry.logarithm_target_jvp(fixed_point, fixed_target, fixed_v), 1.0e-11);
+    expect_matrix_near(
+      dynamic_geometry.logarithm_target_vjp(dynamic_point, dynamic_target, dynamic_u),
+      fixed_geometry.logarithm_target_vjp(fixed_point, fixed_target, fixed_u), 1.0e-11);
+    expect_matrix_near(
+      dynamic_geometry.half_squared_distance_hessian_vector(dynamic_point, dynamic_target, dynamic_u),
+      fixed_geometry.half_squared_distance_hessian_vector(fixed_point, fixed_target, fixed_u), 1.0e-11);
+}
+
+TEST(AffineInvariantSPDGeometry, DifferentialActionsHandleRepeatedCloseAndScaledSpectra) {
+    const FixedGeometry geometry;
+    const auto point = make_point<FixedGeometry>(point_x_coefficients);
+    const auto target =
+      geometry.exponential(point, geometry.linear_combination(point, std::log(2.5), point.rep(), 0, point.rep()));
+    const auto u = make_tangent<FixedGeometry>({0.3, -0.2, 0.4, 0.1, 0.25, -0.15});
+    const auto z = make_tangent<FixedGeometry>({-0.1, 0.35, 0.2, -0.25, 0.05, 0.45});
+    expect_matrix_relative_near(
+      geometry.logarithm_target_jvp(point, target, u), geometry.linear_combination(point, 1.0 / 2.5, u, 0, u), 2.0e-10);
+    expect_matrix_relative_near(
+      geometry.logarithm_target_vjp(point, target, z), geometry.linear_combination(target, 2.5, z, 0, z), 2.0e-10);
+    expect_matrix_relative_near(geometry.half_squared_distance_hessian_vector(point, target, u), u, 2.0e-10);
+
+    const auto identity = make_diagonal_point<FixedGeometry>(1);
+    constexpr double gap = 1.0e-12;
+    constexpr std::array<double, 3> close_eigenvalues {2, 2 + gap, 5};
+    const auto close_target =
+      make_diagonal_point<FixedGeometry>(close_eigenvalues[0], close_eigenvalues[1], close_eigenvalues[2]);
+    const auto off_diagonal = make_tangent<FixedGeometry>({0, 1, 0, 0, 0, 0});
+    const double close_log_difference = std::log1p(gap / 2.0) / gap;
+    EXPECT_NEAR(
+      geometry.logarithm_target_jvp(identity, close_target, off_diagonal)(1, 0), close_log_difference, 2.0e-12);
+    EXPECT_NEAR(
+      geometry.logarithm_target_vjp(identity, close_target, off_diagonal)(1, 0),
+      2.0 * (2.0 + gap) * close_log_difference, 2.0e-11);
+    EXPECT_NEAR(
+      geometry.half_squared_distance_hessian_vector(identity, close_target, off_diagonal)(1, 0),
+      0.5 * (4.0 + gap) * close_log_difference, 2.0e-12);
+
+    constexpr std::array<double, 3> conditioned_eigenvalues {1, 1.0e-6, 1.0e-12};
+    const auto conditioned_target = make_diagonal_point<FixedGeometry>(
+      conditioned_eigenvalues[0], conditioned_eigenvalues[1], conditioned_eigenvalues[2]);
+    const auto expected_conditioned_jvp = diagonal_coefficient_action<FixedGeometry>(
+      u, conditioned_eigenvalues, [](double x, double y) { return log_divided_difference(x, y); });
+    const auto expected_conditioned_vjp = diagonal_coefficient_action<FixedGeometry>(
+      z, conditioned_eigenvalues, [](double x, double y) { return x * y * log_divided_difference(x, y); });
+    expect_matrix_relative_near(
+      geometry.logarithm_target_jvp(identity, conditioned_target, u), expected_conditioned_jvp, 2.0e-9);
+    expect_matrix_relative_near(
+      geometry.logarithm_target_vjp(identity, conditioned_target, z), expected_conditioned_vjp, 2.0e-9);
+    const auto small_axis_dual = make_tangent<FixedGeometry>({0, 0, 0, 0, 0, 1.0e12});
+    EXPECT_NEAR(geometry.logarithm_target_vjp(identity, conditioned_target, small_axis_dual)(2, 2), 1.0, 2.0e-9);
+    const auto conditioned_hessian = geometry.half_squared_distance_hessian_vector(identity, conditioned_target, u);
+    EXPECT_TRUE(std::isfinite(matrix_norm(conditioned_hessian)));
+    EXPECT_GE(
+      geometry.inner_product(identity, u, conditioned_hessian),
+      geometry.inner_product(identity, u, u) * (1.0 - 2.0e-10));
+
+    for (const double scale : {1.0e150, 1.0e-150}) {
+        const auto scaled_point = make_diagonal_point<FixedGeometry>(scale);
+        const auto scaled_target = make_diagonal_point<FixedGeometry>(2 * scale);
+        const auto scaled_direction =
+          make_tangent<FixedGeometry>({scale, 0.2 * scale, scale, -0.1 * scale, 0.3 * scale, scale});
+        expect_matrix_relative_near(
+          geometry.logarithm_target_jvp(scaled_point, scaled_target, scaled_direction),
+          geometry.linear_combination(scaled_point, 0.5, scaled_direction, 0, scaled_direction), 2.0e-12);
+        expect_matrix_relative_near(
+          geometry.logarithm_target_vjp(scaled_point, scaled_target, scaled_direction),
+          geometry.linear_combination(scaled_target, 2, scaled_direction, 0, scaled_direction), 2.0e-12);
+        expect_matrix_relative_near(
+          geometry.half_squared_distance_hessian_vector(scaled_point, scaled_target, scaled_direction),
+          scaled_direction, 2.0e-12);
+    }
+
+    const auto cross_scale_point = make_diagonal_point<FixedGeometry>(1.0e-307);
+    const auto unit_target = make_diagonal_point<FixedGeometry>(1);
+    const auto finite_target_direction = make_tangent<FixedGeometry>({20, 0, 20, 0, 0, 20});
+    const auto small_base_dual = make_tangent<FixedGeometry>({2.0e-306, 0, 2.0e-306, 0, 0, 2.0e-306});
+    const auto cross_scale_jvp = geometry.logarithm_target_jvp(cross_scale_point, unit_target, finite_target_direction);
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j <= i; ++j) { EXPECT_NEAR(cross_scale_jvp(i, j) / 2.0e-306, i == j ? 1.0 : 0.0, 2.0e-12); }
+    }
+    expect_matrix_relative_near(
+      geometry.logarithm_target_vjp(cross_scale_point, unit_target, small_base_dual), finite_target_direction, 2.0e-12);
+}
+
+TEST(AffineInvariantSPDGeometry, DifferentialActionsSupportFixedAndDynamicFloat) {
+    using ScalarFloatGeometry = fdapde::manifold::AffineInvariantSPDGeometry<float, 1>;
+    using FixedFloatGeometry = fdapde::manifold::AffineInvariantSPDGeometry<float, 3>;
+    using DynamicFloatGeometry = fdapde::manifold::AffineInvariantSPDGeometry<float, fdapde::Dynamic>;
+    const ScalarFloatGeometry scalar_geometry;
+    native::Matrix<float, 1, 1> scalar_from_dense;
+    native::Matrix<float, 1, 1> scalar_to_dense;
+    scalar_from_dense(0, 0) = 4;
+    scalar_to_dense(0, 0) = 9;
+    const ScalarFloatGeometry::Point scalar_from(scalar_from_dense, native::checked);
+    const ScalarFloatGeometry::Point scalar_to(scalar_to_dense, native::checked);
+    ScalarFloatGeometry::Tangent scalar_direction;
+    scalar_direction(0, 0) = 1.8f;
+    EXPECT_NEAR(
+      scalar_geometry.logarithm_target_jvp(scalar_from, scalar_to, scalar_direction)(0, 0), 4.0f * 1.8f / 9.0f,
+      2.0e-6f);
+    EXPECT_NEAR(
+      scalar_geometry.logarithm_target_vjp(scalar_from, scalar_to, scalar_direction)(0, 0), 9.0f * 1.8f / 4.0f,
+      2.0e-6f);
+    EXPECT_NEAR(
+      scalar_geometry.half_squared_distance_hessian_vector(scalar_from, scalar_to, scalar_direction)(0, 0), 1.8f,
+      2.0e-6f);
+
+    const FixedFloatGeometry fixed_geometry;
+    const DynamicFloatGeometry dynamic_geometry(3);
+    const auto fixed_point = make_point<FixedFloatGeometry>(point_x_coefficients);
+    const auto fixed_target = make_point<FixedFloatGeometry>(point_y_coefficients);
+    const auto fixed_u = make_tangent<FixedFloatGeometry>({0.3, -0.2, 0.4, 0.1, 0.25, -0.15});
+    const auto dynamic_point = make_point<DynamicFloatGeometry>(point_x_coefficients);
+    const auto dynamic_target = make_point<DynamicFloatGeometry>(point_y_coefficients);
+    const auto dynamic_u = make_tangent<DynamicFloatGeometry>({0.3, -0.2, 0.4, 0.1, 0.25, -0.15});
+
+    expect_matrix_relative_near(
+      dynamic_geometry.logarithm_target_jvp(dynamic_point, dynamic_target, dynamic_u),
+      fixed_geometry.logarithm_target_jvp(fixed_point, fixed_target, fixed_u), 2.0e-5);
+    expect_matrix_relative_near(
+      dynamic_geometry.logarithm_target_vjp(dynamic_point, dynamic_target, dynamic_u),
+      fixed_geometry.logarithm_target_vjp(fixed_point, fixed_target, fixed_u), 2.0e-5);
+    expect_matrix_relative_near(
+      dynamic_geometry.half_squared_distance_hessian_vector(dynamic_point, dynamic_target, dynamic_u),
+      fixed_geometry.half_squared_distance_hessian_vector(fixed_point, fixed_target, fixed_u), 2.0e-5);
 }
 
 TEST(AffineInvariantSPDGeometry, RejectsUnsupportedOrdersAndMismatchedShapes) {
@@ -301,6 +601,45 @@ TEST(AffineInvariantSPDGeometry, RejectsUnsupportedOrdersAndMismatchedShapes) {
     EXPECT_THROW(geometry.distance(point, wrong_point), std::invalid_argument);
     EXPECT_THROW(geometry.norm(point, wrong_tangent), std::invalid_argument);
     EXPECT_THROW(geometry.project(point, wrong_tangent), std::invalid_argument);
+    EXPECT_THROW(geometry.logarithm_target_jvp(point, point, wrong_tangent), std::invalid_argument);
+    EXPECT_THROW(
+      geometry.logarithm_target_vjp(point, wrong_point, geometry.zero_tangent(point)), std::invalid_argument);
+    EXPECT_THROW(
+      geometry.half_squared_distance_hessian_vector(wrong_point, point, geometry.zero_tangent(point)),
+      std::invalid_argument);
+
+    auto nonfinite = geometry.zero_tangent(point);
+    nonfinite(0, 0) = std::numeric_limits<double>::infinity();
+    EXPECT_THROW(geometry.logarithm_target_jvp(point, point, nonfinite), std::invalid_argument);
+    EXPECT_THROW(geometry.logarithm_target_vjp(point, point, nonfinite), std::invalid_argument);
+    EXPECT_THROW(geometry.half_squared_distance_hessian_vector(point, point, nonfinite), std::invalid_argument);
+
+    native::Matrix<double, 3, 3> indefinite_dense;
+    indefinite_dense.set_zero();
+    indefinite_dense(0, 0) = 1;
+    indefinite_dense(1, 1) = 1;
+    indefinite_dense(2, 2) = -1;
+    const DynamicGeometry::Point unchecked_indefinite(indefinite_dense, native::unchecked);
+    EXPECT_THROW(
+      geometry.logarithm_target_jvp(point, unchecked_indefinite, geometry.zero_tangent(point)), std::domain_error);
+
+    native::Matrix<double, 3, 3> nonfinite_point_dense;
+    nonfinite_point_dense.set_zero();
+    nonfinite_point_dense(0, 0) = 1;
+    nonfinite_point_dense(1, 1) = 1;
+    nonfinite_point_dense(2, 2) = std::numeric_limits<double>::infinity();
+    const DynamicGeometry::Point unchecked_nonfinite(nonfinite_point_dense, native::unchecked);
+    EXPECT_THROW(
+      geometry.logarithm_target_jvp(point, unchecked_nonfinite, geometry.zero_tangent(point)), std::invalid_argument);
+
+    native::Matrix<double, 3, 3> below_threshold_dense;
+    below_threshold_dense.set_zero();
+    below_threshold_dense(0, 0) = 1;
+    below_threshold_dense(1, 1) = 1;
+    below_threshold_dense(2, 2) = 1.0e-16;
+    const DynamicGeometry::Point unchecked_below_threshold(below_threshold_dense, native::unchecked);
+    EXPECT_THROW(
+      geometry.logarithm_target_jvp(point, unchecked_below_threshold, geometry.zero_tangent(point)), std::domain_error);
 }
 
 TEST(AffineInvariantSPDGeometry, NormAndDistanceRemainRepresentableAcrossScales) {
