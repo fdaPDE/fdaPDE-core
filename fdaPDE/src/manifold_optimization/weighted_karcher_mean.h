@@ -32,7 +32,8 @@ enum class BarycenterStopReason {
     max_iterations,
     line_search_failed,
     non_finite_cost,
-    non_finite_gradient
+    non_finite_gradient,
+    closed_form
 };
 
 struct WeightedKarcherMeanOptions {
@@ -52,7 +53,10 @@ template <typename Point> struct WeightedKarcherMeanResult {
     BarycenterUniqueness uniqueness = BarycenterUniqueness::not_certified;
     ArmijoStatus line_search_status = ArmijoStatus::not_run;
 
-    bool converged() const { return stop_reason == BarycenterStopReason::stationarity_tolerance; }
+    bool converged() const {
+        return stop_reason == BarycenterStopReason::closed_form ||
+               stop_reason == BarycenterStopReason::stationarity_tolerance;
+    }
 };
 
 namespace internals {

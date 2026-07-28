@@ -78,6 +78,7 @@ using HeaderLogGeometry = fdapde::manifold::LogEuclideanSPDGeometry<double, 3>;
 using HeaderDynamicLogGeometry = fdapde::manifold::LogEuclideanSPDGeometry<double, fdapde::Dynamic>;
 using HeaderLogPoint = fdapde::manifold::point_t<HeaderLogGeometry>;
 using HeaderLogTangent = fdapde::manifold::tangent_t<HeaderLogGeometry>;
+using HeaderDynamicLogPoint = fdapde::manifold::point_t<HeaderDynamicLogGeometry>;
 using HeaderAffineGeometry = fdapde::manifold::AffineInvariantSPDGeometry<double, 3>;
 using HeaderDynamicAffineGeometry = fdapde::manifold::AffineInvariantSPDGeometry<double, fdapde::Dynamic>;
 using HeaderAffinePoint = fdapde::manifold::point_t<HeaderAffineGeometry>;
@@ -140,6 +141,12 @@ using HeaderTrustRegionResult = decltype(std::declval<const fdapde::manifold::Ri
 using HeaderMeanResult = decltype(fdapde::manifold::weighted_karcher_mean(
   std::declval<const HeaderGeometry&>(), std::declval<std::span<const HeaderPoint>>(),
   std::declval<std::span<const double>>(), std::declval<const HeaderPoint&>()));
+using HeaderExactLogMeanResult = decltype(fdapde::manifold::weighted_karcher_mean(
+  std::declval<const HeaderLogGeometry&>(), std::declval<std::span<const HeaderLogPoint>>(),
+  std::declval<std::span<const double>>()));
+using HeaderExactDynamicLogMeanResult = decltype(fdapde::manifold::weighted_karcher_mean(
+  std::declval<const HeaderDynamicLogGeometry&>(), std::declval<std::span<const HeaderDynamicLogPoint>>(),
+  std::declval<std::span<const double>>()));
 
 static_assert(fdapde::manifold::FirstOrderGeometry<HeaderGeometry>);
 static_assert(fdapde::manifold::GeodesicGeometry<HeaderGeometry>);
@@ -188,7 +195,13 @@ static_assert(std::is_same_v<HeaderSteepestDescentResult, fdapde::manifold::Stee
 static_assert(std::is_same_v<HeaderTruncatedCGResult, fdapde::manifold::TruncatedCGResult<HeaderAffineTangent>>);
 static_assert(std::is_same_v<HeaderTrustRegionResult, fdapde::manifold::TrustRegionResult<HeaderAffinePoint>>);
 static_assert(std::is_same_v<HeaderMeanResult, fdapde::manifold::WeightedKarcherMeanResult<HeaderPoint>>);
+static_assert(std::is_same_v<HeaderExactLogMeanResult, fdapde::manifold::WeightedKarcherMeanResult<HeaderLogPoint>>);
+static_assert(
+  std::is_same_v<HeaderExactDynamicLogMeanResult, fdapde::manifold::WeightedKarcherMeanResult<HeaderDynamicLogPoint>>);
 static_assert(!HeaderPermitsMeanWithoutInitial<HeaderGeometry>);
+static_assert(HeaderPermitsMeanWithoutInitial<HeaderLogGeometry>);
+static_assert(HeaderPermitsMeanWithoutInitial<HeaderDynamicLogGeometry>);
+static_assert(!HeaderPermitsMeanWithoutInitial<HeaderAffineGeometry>);
 
 [[maybe_unused]] void instantiate_const_problem_solver() {
     HeaderGeometry geometry;
@@ -246,6 +259,26 @@ static_assert(!HeaderPermitsMeanWithoutInitial<HeaderGeometry>);
     const auto result = fdapde::manifold::weighted_karcher_mean(
       geometry, std::span<const HeaderPoint>(samples), std::span<const double>(weights), HeaderPoint {});
     static_cast<void>(result);
+}
+
+[[maybe_unused]] void instantiate_exact_log_euclidean_weighted_mean() {
+    fdapde::linalg::Matrix<double, 3, 3> identity;
+    identity.set_zero();
+    for (int i = 0; i < 3; ++i) { identity(i, i) = 1; }
+    const std::array<double, 1> weights {{1}};
+
+    const HeaderLogGeometry fixed_geometry;
+    const std::array<HeaderLogPoint, 1> fixed_samples {{HeaderLogPoint(identity, fdapde::linalg::checked)}};
+    const auto fixed_result = fdapde::manifold::weighted_karcher_mean(
+      fixed_geometry, std::span<const HeaderLogPoint>(fixed_samples), std::span<const double>(weights));
+
+    const HeaderDynamicLogGeometry dynamic_geometry(3);
+    const std::array<HeaderDynamicLogPoint, 1> dynamic_samples {
+      {HeaderDynamicLogPoint(identity, fdapde::linalg::checked)}};
+    const auto dynamic_result = fdapde::manifold::weighted_karcher_mean(
+      dynamic_geometry, std::span<const HeaderDynamicLogPoint>(dynamic_samples), std::span<const double>(weights));
+    static_cast<void>(fixed_result);
+    static_cast<void>(dynamic_result);
 }
 
 }   // namespace
