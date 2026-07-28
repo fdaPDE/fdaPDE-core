@@ -26,7 +26,6 @@ enum class P1ObjectiveStage {
     mean,
     data_pullback,
     dirichlet_spatial,
-    dirichlet_mixed_weight,
     dirichlet_mixed_output,
     dirichlet_mixed_pullback
 };
@@ -225,8 +224,10 @@ P1ObjectiveContributionResult<typename Geometry::Tangent> p1_dirichlet_cell_cont
                 }
                 site_value = std::fma(0.5, squared_norm, site_value);
                 auto pullback = linearization.covariant_mixed_nodal_vjp(direction, spatial.derivative);
+                // Status zero repeats the same deterministic weight solve
+                // certified above, so an unexpected failure is still spatial.
                 constexpr std::array<P1ObjectiveStage, 3> stages {
-                  P1ObjectiveStage::dirichlet_mixed_weight, P1ObjectiveStage::dirichlet_mixed_output,
+                  P1ObjectiveStage::dirichlet_spatial, P1ObjectiveStage::dirichlet_mixed_output,
                   P1ObjectiveStage::dirichlet_mixed_pullback};
                 for (std::size_t solve = 0; solve < stages.size(); ++solve) {
                     if (!pullback.solve_statuses[solve].converged()) {

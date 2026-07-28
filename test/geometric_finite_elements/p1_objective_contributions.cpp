@@ -414,6 +414,34 @@ TEST(P1ObjectiveContributions, AffineInvariantCellGradientMatchesNoncommutingDir
     EXPECT_LT(best_error, 8.0e-5);
 }
 
+TEST(P1ObjectiveContributions, AffineInvariantCellAddsDistinctQuadratureSites) {
+    const FixedAffineGeometry geometry;
+    const auto nodes = noncommuting_nodes<FixedAffineGeometry>();
+    const auto packet = surface_packet();
+    const gfe::P1FEMCellQuadrature<2, 3, 1> first_site {
+      packet.dofs, packet.physical_weight_gradients, {packet.barycentric_weights[0]}, {packet.integration_weights[0]}};
+    const gfe::P1FEMCellQuadrature<2, 3, 1> second_site {
+      packet.dofs, packet.physical_weight_gradients, {packet.barycentric_weights[1]}, {packet.integration_weights[1]}};
+    const auto options = accurate_options();
+
+    const auto combined = gfe::p1_dirichlet_cell_contribution(
+      geometry, std::span<const FixedAffineGeometry::Point>(nodes), packet, options);
+    const auto first = gfe::p1_dirichlet_cell_contribution(
+      geometry, std::span<const FixedAffineGeometry::Point>(nodes), first_site, options);
+    const auto second = gfe::p1_dirichlet_cell_contribution(
+      geometry, std::span<const FixedAffineGeometry::Point>(nodes), second_site, options);
+
+    ASSERT_TRUE(combined.converged());
+    ASSERT_TRUE(first.converged());
+    ASSERT_TRUE(second.converged());
+    EXPECT_NEAR(combined.value, first.value + second.value, 2.0e-11);
+    for (std::size_t i = 0; i < packet.node_count; ++i) {
+        const auto expected =
+          geometry.linear_combination(nodes[packet.dofs[i]], 1, first.nodal_gradient[i], 1, second.nodal_gradient[i]);
+        expect_tangent_near(geometry, nodes[packet.dofs[i]], combined.nodal_gradient[i], expected, 2.0e-9);
+    }
+}
+
 TEST(P1ObjectiveContributions, CellContributionIsZeroForConstantsAndSkipsZeroIntegrationWeight) {
     const FixedLogGeometry geometry;
     const auto point = make_point<FixedLogGeometry>(first_coefficients);
@@ -493,6 +521,61 @@ TEST(P1ObjectiveContributions, SurfacesMeanAndLinearSolveFailuresWithExactStages
     ASSERT_TRUE(failed_cell.first_failure->linear_solve);
     EXPECT_EQ(
       failed_cell.first_failure->linear_solve->stop_reason, manifold::PositiveDefiniteCGStopReason::max_iterations);
+
+    const std::vector<FixedAffineGeometry::Point> output_failure_nodes {
+      make_point<FixedAffineGeometry>(
+        {17.29369105853235, -11.279241214637453, 14.15119085390722, -11.279241214637453, 13.869919184613842,
+         -10.423505118310949, 14.15119085390722, -10.423505118310949, 12.332076577047282}),
+      make_point<FixedAffineGeometry>(
+        {2.3644907022762132, 0.37909466829330529, -2.466383271434029, 0.37909466829330529, 0.69435847633266057,
+         -1.073357518295009, -2.466383271434029, -1.073357518295009, 12.507283396256916}),
+      make_point<FixedAffineGeometry>(
+        {45.618104891269468, -22.280426607696452, 9.4095809318279784, -22.280426607696452, 30.798588207824604,
+         -22.455715089726482, 9.4095809318279784, -22.455715089726482, 18.443715397237781})};
+    const gfe::P1FEMCellQuadrature<2, 2, 1> output_failure_packet {
+      {0, 1, 2},
+      {{{-0.52074646130759505, 0.7292561480910178, -0.20850968678342274}, {0, 0, 0}}},
+      {{{0.20331863902493943, 0.41438791435279893, 0.38229344662226172}}},
+      {1}
+    };
+    auto failed_output_options = accurate_options();
+    failed_output_options.mean.solver.max_iterations = 1200;
+    failed_output_options.mean.solver.gradient_tolerance = 1.0e-9;
+    failed_output_options.linear_solve.max_iterations = 4;
+    failed_output_options.linear_solve.residual_tolerance = 3.4815807768983915e-5;
+    const auto failed_output = gfe::p1_dirichlet_cell_contribution(
+      geometry, std::span<const FixedAffineGeometry::Point>(output_failure_nodes), output_failure_packet,
+      failed_output_options);
+    ASSERT_FALSE(failed_output.converged());
+    ASSERT_TRUE(failed_output.first_failure);
+    EXPECT_EQ(failed_output.first_failure->stage, gfe::P1ObjectiveStage::dirichlet_mixed_output);
+    EXPECT_EQ(failed_output.first_failure->site, 0);
+    ASSERT_TRUE(failed_output.first_failure->axis);
+    EXPECT_EQ(*failed_output.first_failure->axis, 0);
+    ASSERT_TRUE(failed_output.first_failure->linear_solve);
+    EXPECT_EQ(
+      failed_output.first_failure->linear_solve->stop_reason, manifold::PositiveDefiniteCGStopReason::max_iterations);
+
+    const gfe::P1FEMCellQuadrature<2, 3, 1> pullback_packet {
+      {0, 1, 2},
+      {{{-0.5, 0.5, 0}, {0, 0, 0}, {0, 0, 0}}},
+      {{{0.25, 0.5, 0.25}}},
+      {1}
+    };
+    auto failed_pullback_options = accurate_options();
+    failed_pullback_options.linear_solve.max_iterations = 3;
+    failed_pullback_options.linear_solve.residual_tolerance = 1.0e-6;
+    const auto failed_pullback = gfe::p1_dirichlet_cell_contribution(
+      geometry, std::span<const FixedAffineGeometry::Point>(nodes), pullback_packet, failed_pullback_options);
+    ASSERT_FALSE(failed_pullback.converged());
+    ASSERT_TRUE(failed_pullback.first_failure);
+    EXPECT_EQ(failed_pullback.first_failure->stage, gfe::P1ObjectiveStage::dirichlet_mixed_pullback);
+    EXPECT_EQ(failed_pullback.first_failure->site, 0);
+    ASSERT_TRUE(failed_pullback.first_failure->axis);
+    EXPECT_EQ(*failed_pullback.first_failure->axis, 0);
+    ASSERT_TRUE(failed_pullback.first_failure->linear_solve);
+    EXPECT_EQ(
+      failed_pullback.first_failure->linear_solve->stop_reason, manifold::PositiveDefiniteCGStopReason::max_iterations);
 }
 
 TEST(P1ObjectiveContributions, RejectsMalformedPacketsAndDynamicShapes) {
