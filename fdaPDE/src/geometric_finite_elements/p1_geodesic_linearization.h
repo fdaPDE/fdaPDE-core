@@ -24,14 +24,44 @@ namespace gfe {
 
 template <typename Geometry> class P1GeodesicLinearization;
 
-// Builds an owning derivative snapshot and validates every nodal geometry
-// point, including zero-weight nodes. The value-only evaluator retains its
+struct P1GeodesicLinearizationOptions {
+    manifold::WeightedKarcherMeanOptions mean;
+    manifold::PositiveDefiniteCGOptions linear_solve;
+};
+
+template <typename Derivative> struct P1DerivativeResult {
+    // The differential candidate. On iterative paths it is derived from the
+    // last linear-solve iterate and is certified only when converged() is true.
+    Derivative derivative;
+    double residual_norm = std::numeric_limits<double>::quiet_NaN();
+    std::size_t iterations = 0;
+    manifold::PositiveDefiniteCGStopReason stop_reason = manifold::PositiveDefiniteCGStopReason::max_iterations;
+
+    bool converged() const { return stop_reason == manifold::PositiveDefiniteCGStopReason::residual_tolerance; }
+};
+
+// Builds an owning derivative snapshot and validates all nodal geometry
+// points, including zero-weight nodes. The value-only evaluator retains its
 // support-skipping behavior. Derivative actions require a converged result.
 template <typename Scalar_, int Order_>
 P1GeodesicLinearization<manifold::LogEuclideanSPDGeometry<Scalar_, Order_>> p1_geodesic_linearization(
   const manifold::LogEuclideanSPDGeometry<Scalar_, Order_>& geometry,
   std::span<const typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_>::Point> nodal_values,
   std::span<const double> barycentric_weights);
+
+template <typename Scalar_, int Order_>
+P1GeodesicLinearization<manifold::AffineInvariantSPDGeometry<Scalar_, Order_>> p1_geodesic_linearization(
+  const manifold::AffineInvariantSPDGeometry<Scalar_, Order_>& geometry,
+  std::span<const typename manifold::AffineInvariantSPDGeometry<Scalar_, Order_>::Point> nodal_values,
+  std::span<const double> barycentric_weights, const P1GeodesicLinearizationOptions& options = {});
+
+template <typename Scalar_, int Order_>
+P1GeodesicLinearization<manifold::AffineInvariantSPDGeometry<Scalar_, Order_>> p1_geodesic_linearization(
+  const manifold::AffineInvariantSPDGeometry<Scalar_, Order_>& geometry,
+  std::span<const typename manifold::AffineInvariantSPDGeometry<Scalar_, Order_>::Point> nodal_values,
+  std::span<const double> barycentric_weights,
+  const typename manifold::AffineInvariantSPDGeometry<Scalar_, Order_>::Point& initial,
+  const P1GeodesicLinearizationOptions& options = {});
 
 template <typename Scalar_, int Order_>
 class P1GeodesicLinearization<manifold::LogEuclideanSPDGeometry<Scalar_, Order_>> {
@@ -139,9 +169,6 @@ class P1GeodesicLinearization<manifold::LogEuclideanSPDGeometry<Scalar_, Order_>
         nodes_(nodal_values.begin(), nodal_values.end()),
         result_(p1_geodesic_value(geometry_, std::span<const Point>(nodes_), barycentric_weights)),
         node_logs_(nodes_.size()) {
-        if (!result_.converged()) return;
-
-        normalized_total_ = compensated_weight_total_(result_.normalized_weights);
         std::size_t positive_count = 0;
         for (std::size_t node_index = 0; node_index < nodes_.size(); ++node_index) {
             check_node_shape_(nodes_[node_index]);
@@ -152,7 +179,9 @@ class P1GeodesicLinearization<manifold::LogEuclideanSPDGeometry<Scalar_, Order_>
             }
         }
         if (positive_count != 1) vertex_index_.reset();
+        if (!result_.converged()) return;
 
+        normalized_total_ = compensated_weight_total_(result_.normalized_weights);
         auto mean_chart = make_accumulation_tangent_();
         auto correction = make_accumulation_tangent_();
         for (std::size_t node_index = 0; node_index < nodes_.size(); ++node_index) {
@@ -296,6 +325,261 @@ P1GeodesicLinearization<manifold::LogEuclideanSPDGeometry<Scalar_, Order_>> p1_g
   std::span<const double> barycentric_weights) {
     return P1GeodesicLinearization<manifold::LogEuclideanSPDGeometry<Scalar_, Order_>>(
       geometry, nodal_values, barycentric_weights);
+}
+
+template <typename Scalar_, int Order_>
+class P1GeodesicLinearization<manifold::AffineInvariantSPDGeometry<Scalar_, Order_>> {
+   public:
+    using Geometry = manifold::AffineInvariantSPDGeometry<Scalar_, Order_>;
+    using Point = typename Geometry::Point;
+    using Tangent = typename Geometry::Tangent;
+
+    const P1ValueResult<Point>& result() const& noexcept { return result_; }
+    const P1ValueResult<Point>& result() const&& = delete;
+
+    // The direction is based at result().normalized_weights. It must be
+    // finite and sum to zero; it is never projected or renormalized.
+    P1DerivativeResult<Tangent> weight_jvp(std::span<const double> direction) const {
+        require_ready_();
+        validate_weight_direction_(direction);
+
+        Tangent right_hand_side = geometry_.zero_tangent(result_.value);
+        for (std::size_t node_index = 0; node_index < nodes_.size(); ++node_index) {
+            const double coefficient = direction[node_index];
+            if (coefficient == 0) continue;
+            const Tangent centered_log =
+              geometry_.linear_combination(result_.value, 1, node_logs_[node_index], -1, *mean_residual_);
+            right_hand_side = geometry_.linear_combination(
+              result_.value, 1, right_hand_side, coefficient / normalized_total_, centered_log);
+        }
+        return solve_(right_hand_side);
+    }
+
+    // Directions at nodes with zero effective weight are not inspected,
+    // because their contribution is identically zero.
+    P1DerivativeResult<Tangent> nodal_jvp(std::span<const Tangent> directions) const {
+        require_ready_();
+        if (directions.size() != nodes_.size()) {
+            throw std::invalid_argument("P1 geodesic nodal-direction and nodal-value counts must match");
+        }
+        if (vertex_index_) {
+            require_finite_tangent_(
+              nodes_[*vertex_index_], directions[*vertex_index_], "P1 geodesic nodal directions must be finite");
+            return {directions[*vertex_index_], 0, 0, manifold::PositiveDefiniteCGStopReason::residual_tolerance};
+        }
+
+        Tangent right_hand_side = geometry_.zero_tangent(result_.value);
+        for (std::size_t node_index = 0; node_index < nodes_.size(); ++node_index) {
+            const double weight = effective_weights_[node_index];
+            if (weight == 0) continue;
+            require_finite_tangent_(
+              nodes_[node_index], directions[node_index], "P1 geodesic nodal directions must be finite");
+            const Tangent target_action =
+              geometry_.logarithm_target_jvp(result_.value, nodes_[node_index], directions[node_index]);
+            right_hand_side = geometry_.linear_combination(result_.value, 1, right_hand_side, weight, target_action);
+        }
+        return solve_(right_hand_side);
+    }
+
+    // This is the Riemannian adjoint of nodal_jvp. The argument and
+    // returned covectors are represented by AIRM metric-dual tangent vectors,
+    // not by ambient Frobenius gradients.
+    P1DerivativeResult<std::vector<Tangent>> nodal_vjp(const Tangent& value_gradient) const {
+        require_ready_();
+        require_finite_tangent_(result_.value, value_gradient, "P1 geodesic value gradients must be finite");
+
+        std::vector<Tangent> pullback;
+        pullback.reserve(nodes_.size());
+        for (const Point& node : nodes_) { pullback.push_back(geometry_.zero_tangent(node)); }
+        if (vertex_index_) {
+            pullback[*vertex_index_] = value_gradient;
+            return {std::move(pullback), 0, 0, manifold::PositiveDefiniteCGStopReason::residual_tolerance};
+        }
+
+        const auto solve = solve_tangent_(value_gradient);
+        for (std::size_t node_index = 0; node_index < nodes_.size(); ++node_index) {
+            const double weight = effective_weights_[node_index];
+            if (weight == 0) continue;
+            const Tangent node_dual = geometry_.logarithm_target_vjp(result_.value, nodes_[node_index], solve.solution);
+            pullback[node_index] =
+              geometry_.linear_combination(nodes_[node_index], weight, node_dual, 0, pullback[node_index]);
+        }
+        return {std::move(pullback), solve.residual_norm, solve.iterations, solve.stop_reason};
+    }
+   private:
+    P1GeodesicLinearization(
+      const Geometry& geometry, std::span<const Point> nodal_values, std::span<const double> barycentric_weights,
+      const P1GeodesicLinearizationOptions& options) :
+        geometry_(geometry),
+        nodes_(nodal_values.begin(), nodal_values.end()),
+        linear_solver_(options.linear_solve),
+        result_(p1_geodesic_value(geometry_, std::span<const Point>(nodes_), barycentric_weights, options.mean)) {
+        initialize_();
+    }
+
+    P1GeodesicLinearization(
+      const Geometry& geometry, std::span<const Point> nodal_values, std::span<const double> barycentric_weights,
+      const Point& initial, const P1GeodesicLinearizationOptions& options) :
+        geometry_(geometry),
+        nodes_(nodal_values.begin(), nodal_values.end()),
+        linear_solver_(options.linear_solve),
+        result_(
+          p1_geodesic_value(geometry_, std::span<const Point>(nodes_), barycentric_weights, initial, options.mean)) {
+        initialize_();
+    }
+
+    void initialize_() {
+        for (const Point& node : nodes_) {
+            const double self_distance = geometry_.distance(node, node);
+            if (!std::isfinite(self_distance)) {
+                throw std::invalid_argument("P1 geodesic nodal values must have finite geometry");
+            }
+        }
+        if (!result_.converged()) return;
+
+        normalized_total_ = compensated_weight_total_(result_.normalized_weights);
+        effective_weights_.reserve(result_.normalized_weights.size());
+        std::size_t positive_count = 0;
+        for (const double weight : result_.normalized_weights) {
+            effective_weights_.push_back(weight / normalized_total_);
+            if (weight > 0) {
+                ++positive_count;
+                vertex_index_ = effective_weights_.size() - 1;
+            }
+        }
+        if (positive_count != 1) vertex_index_.reset();
+
+        node_logs_.reserve(nodes_.size());
+        for (const Point& node : nodes_) {
+            node_logs_.push_back(geometry_.logarithm(result_.value, node));
+            require_finite_tangent_(result_.value, node_logs_.back(), "P1 geodesic nodal logarithms must be finite");
+        }
+
+        mean_residual_.emplace(geometry_.zero_tangent(result_.value));
+        for (std::size_t node_index = 0; node_index < nodes_.size(); ++node_index) {
+            const double weight = effective_weights_[node_index];
+            if (weight == 0) continue;
+            *mean_residual_ =
+              geometry_.linear_combination(result_.value, 1, *mean_residual_, weight, node_logs_[node_index]);
+        }
+        ready_ = true;
+    }
+
+    Tangent hessian_action_(const Tangent& direction) const {
+        Tangent result = geometry_.zero_tangent(result_.value);
+        for (std::size_t node_index = 0; node_index < nodes_.size(); ++node_index) {
+            const double weight = effective_weights_[node_index];
+            if (weight == 0) continue;
+            const Tangent component =
+              geometry_.half_squared_distance_hessian_vector(result_.value, nodes_[node_index], direction);
+            result = geometry_.linear_combination(result_.value, 1, result, weight, component);
+        }
+        return result;
+    }
+
+    manifold::PositiveDefiniteCGResult<Tangent> solve_tangent_(const Tangent& right_hand_side) const {
+        auto hessian = [this](const Tangent& direction) { return hessian_action_(direction); };
+        return linear_solver_.solve(hessian, geometry_, result_.value, right_hand_side);
+    }
+
+    P1DerivativeResult<Tangent> solve_(const Tangent& right_hand_side) const {
+        auto solve = solve_tangent_(right_hand_side);
+        return {std::move(solve.solution), solve.residual_norm, solve.iterations, solve.stop_reason};
+    }
+
+    static double compensated_weight_total_(std::span<const double> weights) {
+        double total = 0;
+        double correction = 0;
+        for (const double weight : weights) {
+            if (weight == 0) continue;
+            const double corrected = weight - correction;
+            const double next = total + corrected;
+            correction = (next - total) - corrected;
+            total = next;
+        }
+        return total;
+    }
+
+    void validate_weight_direction_(std::span<const double> direction) const {
+        if (direction.size() != nodes_.size()) {
+            throw std::invalid_argument("P1 geodesic weight-direction and nodal-value counts must match");
+        }
+
+        long double sum = 0;
+        long double correction = 0;
+        long double absolute_sum = 0;
+        for (const double coefficient : direction) {
+            if (!std::isfinite(coefficient)) {
+                throw std::invalid_argument("P1 geodesic weight directions must be finite");
+            }
+            const long double value = static_cast<long double>(coefficient);
+            const long double corrected = value - correction;
+            const long double next = sum + corrected;
+            correction = (next - sum) - corrected;
+            sum = next;
+            absolute_sum += std::abs(value);
+        }
+        const long double tolerance =
+          static_cast<long double>(p1_weight_sum_tolerance(direction.size())) * std::max(1.0L, absolute_sum);
+        if (std::abs(sum) > tolerance) {
+            throw std::invalid_argument("P1 geodesic weight directions must sum to zero");
+        }
+    }
+
+    void require_finite_tangent_(const Point& point, const Tangent& tangent, const char* description) const {
+        if (!std::isfinite(geometry_.norm(point, tangent))) { throw std::invalid_argument(description); }
+    }
+
+    void require_ready_() const {
+        if (!ready_) { throw std::logic_error("P1 geodesic derivatives require a converged value"); }
+    }
+
+    template <typename OtherScalar_, int OtherOrder_>
+    friend P1GeodesicLinearization<manifold::AffineInvariantSPDGeometry<OtherScalar_, OtherOrder_>>
+    p1_geodesic_linearization(
+      const manifold::AffineInvariantSPDGeometry<OtherScalar_, OtherOrder_>& geometry,
+      std::span<const typename manifold::AffineInvariantSPDGeometry<OtherScalar_, OtherOrder_>::Point> nodal_values,
+      std::span<const double> barycentric_weights, const P1GeodesicLinearizationOptions& options);
+
+    template <typename OtherScalar_, int OtherOrder_>
+    friend P1GeodesicLinearization<manifold::AffineInvariantSPDGeometry<OtherScalar_, OtherOrder_>>
+    p1_geodesic_linearization(
+      const manifold::AffineInvariantSPDGeometry<OtherScalar_, OtherOrder_>& geometry,
+      std::span<const typename manifold::AffineInvariantSPDGeometry<OtherScalar_, OtherOrder_>::Point> nodal_values,
+      std::span<const double> barycentric_weights,
+      const typename manifold::AffineInvariantSPDGeometry<OtherScalar_, OtherOrder_>::Point& initial,
+      const P1GeodesicLinearizationOptions& options);
+
+    Geometry geometry_;
+    std::vector<Point> nodes_;
+    manifold::PositiveDefiniteConjugateGradient linear_solver_;
+    P1ValueResult<Point> result_;
+    std::vector<double> effective_weights_;
+    std::vector<Tangent> node_logs_;
+    double normalized_total_ = 0;
+    std::optional<Tangent> mean_residual_;
+    std::optional<std::size_t> vertex_index_;
+    bool ready_ = false;
+};
+
+template <typename Scalar_, int Order_>
+P1GeodesicLinearization<manifold::AffineInvariantSPDGeometry<Scalar_, Order_>> p1_geodesic_linearization(
+  const manifold::AffineInvariantSPDGeometry<Scalar_, Order_>& geometry,
+  std::span<const typename manifold::AffineInvariantSPDGeometry<Scalar_, Order_>::Point> nodal_values,
+  std::span<const double> barycentric_weights, const P1GeodesicLinearizationOptions& options) {
+    return P1GeodesicLinearization<manifold::AffineInvariantSPDGeometry<Scalar_, Order_>>(
+      geometry, nodal_values, barycentric_weights, options);
+}
+
+template <typename Scalar_, int Order_>
+P1GeodesicLinearization<manifold::AffineInvariantSPDGeometry<Scalar_, Order_>> p1_geodesic_linearization(
+  const manifold::AffineInvariantSPDGeometry<Scalar_, Order_>& geometry,
+  std::span<const typename manifold::AffineInvariantSPDGeometry<Scalar_, Order_>::Point> nodal_values,
+  std::span<const double> barycentric_weights,
+  const typename manifold::AffineInvariantSPDGeometry<Scalar_, Order_>::Point& initial,
+  const P1GeodesicLinearizationOptions& options) {
+    return P1GeodesicLinearization<manifold::AffineInvariantSPDGeometry<Scalar_, Order_>>(
+      geometry, nodal_values, barycentric_weights, initial, options);
 }
 
 }   // namespace gfe

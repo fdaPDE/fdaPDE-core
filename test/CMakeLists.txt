@@ -99,6 +99,7 @@ add_executable(
   manifold_optimization/spd_mean.cpp
   geometric_finite_elements/p1_value.cpp
   geometric_finite_elements/affine_invariant_p1_value.cpp
+  geometric_finite_elements/affine_invariant_p1_linearization.cpp
   geometric_finite_elements/log_euclidean_p1_linearization.cpp
   src/dg_dof_test.cpp
   src/dg_expression_test.cpp

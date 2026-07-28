@@ -57,6 +57,8 @@ using HeaderAffinePoint = fdapde::manifold::point_t<HeaderAffineGeometry>;
 using HeaderDynamicAffinePoint = fdapde::manifold::point_t<HeaderDynamicAffineGeometry>;
 using HeaderLogTangent = fdapde::manifold::tangent_t<HeaderLogGeometry>;
 using HeaderDynamicLogTangent = fdapde::manifold::tangent_t<HeaderDynamicLogGeometry>;
+using HeaderAffineTangent = fdapde::manifold::tangent_t<HeaderAffineGeometry>;
+using HeaderDynamicAffineTangent = fdapde::manifold::tangent_t<HeaderDynamicAffineGeometry>;
 
 template <typename Geometry>
 concept HeaderPermitsP1WithoutInitial = requires(
@@ -82,6 +84,14 @@ concept HeaderPermitsP1Linearization = requires(
   const Geometry& geometry, std::span<const fdapde::manifold::point_t<Geometry>> nodal_values,
   std::span<const double> weights) { fdapde::gfe::p1_geodesic_linearization(geometry, nodal_values, weights); };
 
+template <typename Geometry>
+concept HeaderPermitsP1LinearizationWithInitial = requires(
+  const Geometry& geometry, std::span<const fdapde::manifold::point_t<Geometry>> nodal_values,
+  std::span<const double> weights, const fdapde::manifold::point_t<Geometry>& initial,
+  const fdapde::gfe::P1GeodesicLinearizationOptions& options) {
+    fdapde::gfe::p1_geodesic_linearization(geometry, nodal_values, weights, initial, options);
+};
+
 template <typename Linearization>
 concept HeaderPermitsRvalueLinearizationResult =
   requires(Linearization&& linearization) { std::move(linearization).result(); };
@@ -93,6 +103,17 @@ concept HeaderP1LinearizationActions = requires(
     { linearization.weight_jvp(weight_direction) } -> std::same_as<Tangent>;
     { linearization.nodal_jvp(nodal_directions) } -> std::same_as<Tangent>;
     { linearization.nodal_vjp(output_direction) } -> std::same_as<std::vector<Tangent>>;
+};
+
+template <typename Linearization, typename Tangent>
+concept HeaderAffineP1LinearizationActions = requires(
+  const Linearization& linearization, std::span<const double> weight_direction,
+  std::span<const Tangent> nodal_directions, const Tangent& output_direction) {
+    { linearization.weight_jvp(weight_direction) } -> std::same_as<fdapde::gfe::P1DerivativeResult<Tangent>>;
+    { linearization.nodal_jvp(nodal_directions) } -> std::same_as<fdapde::gfe::P1DerivativeResult<Tangent>>;
+    {
+        linearization.nodal_vjp(output_direction)
+    } -> std::same_as<fdapde::gfe::P1DerivativeResult<std::vector<Tangent>>>;
 };
 
 using HeaderGenericResult = decltype(fdapde::gfe::p1_geodesic_value(
@@ -115,6 +136,12 @@ using HeaderLogLinearization = decltype(fdapde::gfe::p1_geodesic_linearization(
   std::declval<std::span<const double>>()));
 using HeaderDynamicLogLinearization = decltype(fdapde::gfe::p1_geodesic_linearization(
   std::declval<const HeaderDynamicLogGeometry&>(), std::declval<std::span<const HeaderDynamicLogPoint>>(),
+  std::declval<std::span<const double>>()));
+using HeaderAffineLinearization = decltype(fdapde::gfe::p1_geodesic_linearization(
+  std::declval<const HeaderAffineGeometry&>(), std::declval<std::span<const HeaderAffinePoint>>(),
+  std::declval<std::span<const double>>()));
+using HeaderDynamicAffineLinearization = decltype(fdapde::gfe::p1_geodesic_linearization(
+  std::declval<const HeaderDynamicAffineGeometry&>(), std::declval<std::span<const HeaderDynamicAffinePoint>>(),
   std::declval<std::span<const double>>()));
 
 static_assert(std::is_same_v<HeaderGenericResult, fdapde::gfe::P1ValueResult<double>>);
@@ -140,18 +167,32 @@ static_assert(HeaderPermitsP1WithOptions<HeaderDynamicAffineGeometry>);
 static_assert(!HeaderPermitsP1Linearization<HeaderGeometry>);
 static_assert(HeaderPermitsP1Linearization<HeaderLogGeometry>);
 static_assert(HeaderPermitsP1Linearization<HeaderDynamicLogGeometry>);
-static_assert(!HeaderPermitsP1Linearization<HeaderAffineGeometry>);
-static_assert(!HeaderPermitsP1Linearization<HeaderDynamicAffineGeometry>);
+static_assert(HeaderPermitsP1Linearization<HeaderAffineGeometry>);
+static_assert(HeaderPermitsP1Linearization<HeaderDynamicAffineGeometry>);
+static_assert(HeaderPermitsP1LinearizationWithInitial<HeaderAffineGeometry>);
+static_assert(HeaderPermitsP1LinearizationWithInitial<HeaderDynamicAffineGeometry>);
 static_assert(std::is_same_v<HeaderLogLinearization, fdapde::gfe::P1GeodesicLinearization<HeaderLogGeometry>>);
 static_assert(
   std::is_same_v<HeaderDynamicLogLinearization, fdapde::gfe::P1GeodesicLinearization<HeaderDynamicLogGeometry>>);
+static_assert(std::is_same_v<HeaderAffineLinearization, fdapde::gfe::P1GeodesicLinearization<HeaderAffineGeometry>>);
+static_assert(
+  std::is_same_v<HeaderDynamicAffineLinearization, fdapde::gfe::P1GeodesicLinearization<HeaderDynamicAffineGeometry>>);
 static_assert(std::is_same_v<decltype(std::declval<const HeaderLogLinearization&>().result()), const HeaderLogResult&>);
 static_assert(std::is_same_v<
               decltype(std::declval<const HeaderDynamicLogLinearization&>().result()), const HeaderDynamicLogResult&>);
+static_assert(
+  std::is_same_v<decltype(std::declval<const HeaderAffineLinearization&>().result()), const HeaderAffineResult&>);
+static_assert(
+  std::is_same_v<
+    decltype(std::declval<const HeaderDynamicAffineLinearization&>().result()), const HeaderDynamicAffineResult&>);
 static_assert(!HeaderPermitsRvalueLinearizationResult<HeaderLogLinearization>);
 static_assert(!HeaderPermitsRvalueLinearizationResult<HeaderDynamicLogLinearization>);
+static_assert(!HeaderPermitsRvalueLinearizationResult<HeaderAffineLinearization>);
+static_assert(!HeaderPermitsRvalueLinearizationResult<HeaderDynamicAffineLinearization>);
 static_assert(HeaderP1LinearizationActions<HeaderLogLinearization, HeaderLogTangent>);
 static_assert(HeaderP1LinearizationActions<HeaderDynamicLogLinearization, HeaderDynamicLogTangent>);
+static_assert(HeaderAffineP1LinearizationActions<HeaderAffineLinearization, HeaderAffineTangent>);
+static_assert(HeaderAffineP1LinearizationActions<HeaderDynamicAffineLinearization, HeaderDynamicAffineTangent>);
 
 [[maybe_unused]] void instantiate_generic_p1_value() {
     const HeaderGeometry geometry;
@@ -216,6 +257,8 @@ static_assert(HeaderP1LinearizationActions<HeaderDynamicLogLinearization, Header
     for (int i = 0; i < 3; ++i) { identity(i, i) = 1; }
     const std::array<double, 1> weights {{1}};
     const fdapde::manifold::WeightedKarcherMeanOptions options;
+    const fdapde::gfe::P1GeodesicLinearizationOptions linearization_options;
+    const std::array<double, 1> weight_direction {{0}};
 
     const HeaderAffineGeometry fixed_geometry;
     const std::array<HeaderAffinePoint, 1> fixed_values {{HeaderAffinePoint(identity, fdapde::linalg::checked)}};
@@ -226,6 +269,16 @@ static_assert(HeaderP1LinearizationActions<HeaderDynamicLogLinearization, Header
     const auto fixed_initial = fdapde::gfe::p1_geodesic_value(
       fixed_geometry, std::span<const HeaderAffinePoint>(fixed_values), std::span<const double>(weights),
       fixed_values[0], options);
+    const auto fixed_linearization = fdapde::gfe::p1_geodesic_linearization(
+      fixed_geometry, std::span<const HeaderAffinePoint>(fixed_values), std::span<const double>(weights));
+    const auto fixed_initial_linearization = fdapde::gfe::p1_geodesic_linearization(
+      fixed_geometry, std::span<const HeaderAffinePoint>(fixed_values), std::span<const double>(weights),
+      fixed_values[0], linearization_options);
+    const std::array<HeaderAffineTangent, 1> fixed_directions {{fixed_geometry.zero_tangent(fixed_values[0])}};
+    const auto fixed_weight_jvp = fixed_linearization.weight_jvp(std::span<const double>(weight_direction));
+    const auto fixed_nodal_jvp =
+      fixed_initial_linearization.nodal_jvp(std::span<const HeaderAffineTangent>(fixed_directions));
+    const auto fixed_nodal_vjp = fixed_initial_linearization.nodal_vjp(fixed_directions[0]);
 
     const HeaderDynamicAffineGeometry dynamic_geometry(3);
     const std::array<HeaderDynamicAffinePoint, 1> dynamic_values {
@@ -238,12 +291,31 @@ static_assert(HeaderP1LinearizationActions<HeaderDynamicLogLinearization, Header
     const auto dynamic_initial = fdapde::gfe::p1_geodesic_value(
       dynamic_geometry, std::span<const HeaderDynamicAffinePoint>(dynamic_values), std::span<const double>(weights),
       dynamic_values[0], options);
+    const auto dynamic_linearization = fdapde::gfe::p1_geodesic_linearization(
+      dynamic_geometry, std::span<const HeaderDynamicAffinePoint>(dynamic_values), std::span<const double>(weights));
+    const auto dynamic_initial_linearization = fdapde::gfe::p1_geodesic_linearization(
+      dynamic_geometry, std::span<const HeaderDynamicAffinePoint>(dynamic_values), std::span<const double>(weights),
+      dynamic_values[0], linearization_options);
+    const std::array<HeaderDynamicAffineTangent, 1> dynamic_directions {
+      {dynamic_geometry.zero_tangent(dynamic_values[0])}};
+    const auto dynamic_weight_jvp = dynamic_linearization.weight_jvp(std::span<const double>(weight_direction));
+    const auto dynamic_nodal_jvp =
+      dynamic_initial_linearization.nodal_jvp(std::span<const HeaderDynamicAffineTangent>(dynamic_directions));
+    const auto dynamic_nodal_vjp = dynamic_initial_linearization.nodal_vjp(dynamic_directions[0]);
     static_cast<void>(fixed_default);
     static_cast<void>(fixed_options);
     static_cast<void>(fixed_initial);
+    static_cast<void>(fixed_linearization.result());
+    static_cast<void>(fixed_weight_jvp);
+    static_cast<void>(fixed_nodal_jvp);
+    static_cast<void>(fixed_nodal_vjp);
     static_cast<void>(dynamic_default);
     static_cast<void>(dynamic_options);
     static_cast<void>(dynamic_initial);
+    static_cast<void>(dynamic_linearization.result());
+    static_cast<void>(dynamic_weight_jvp);
+    static_cast<void>(dynamic_nodal_jvp);
+    static_cast<void>(dynamic_nodal_vjp);
 }
 
 }   // namespace
