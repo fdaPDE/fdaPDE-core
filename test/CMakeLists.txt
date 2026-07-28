@@ -11,6 +11,31 @@ set(WARNING_FLAGS -Wall -Wextra -Wpedantic -Werror)
 
 find_package(Eigen3 3.4 REQUIRED NO_MODULE)
 
+try_compile(
+  FDAPDE_GFE_INTERNAL_INCLUDE_COMPILES
+  ${CMAKE_CURRENT_BINARY_DIR}/geometric_finite_elements_internal_include
+  SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/public_headers/geometric_finite_elements_internal_include.cpp
+  CMAKE_FLAGS
+    -DCMAKE_CXX_STANDARD=20
+    -DCMAKE_CXX_STANDARD_REQUIRED=ON
+    -DCMAKE_CXX_EXTENSIONS=OFF
+  COMPILE_DEFINITIONS -I${CMAKE_CURRENT_SOURCE_DIR}/..
+  LINK_LIBRARIES Eigen3::Eigen
+  OUTPUT_VARIABLE FDAPDE_GFE_INTERNAL_INCLUDE_OUTPUT
+)
+if(FDAPDE_GFE_INTERNAL_INCLUDE_COMPILES)
+  message(FATAL_ERROR "The internal GFE header compiled without the public module header.")
+endif()
+string(
+  FIND
+  "${FDAPDE_GFE_INTERNAL_INCLUDE_OUTPUT}"
+  "Include fdaPDE/geometric_finite_elements.h instead of including internal headers directly."
+  FDAPDE_GFE_INTERNAL_INCLUDE_ERROR
+)
+if(FDAPDE_GFE_INTERNAL_INCLUDE_ERROR EQUAL -1)
+  message(FATAL_ERROR "The internal GFE header failed for an unexpected reason:\n${FDAPDE_GFE_INTERNAL_INCLUDE_OUTPUT}")
+endif()
+
 include(FetchContent)
 FetchContent_Declare(
   googletest
@@ -43,6 +68,7 @@ add_executable(
   manifold_optimization/log_euclidean_spd.cpp
   manifold_optimization/affine_invariant_spd.cpp
   manifold_optimization/spd_mean.cpp
+  geometric_finite_elements/p1_value.cpp
   src/dg_dof_test.cpp
   src/dg_expression_test.cpp
   src/dg_facet_coefficient_test.cpp
@@ -107,6 +133,26 @@ target_include_directories(fdapde_native_matrix_batch_no_debug PRIVATE ${CMAKE_C
 target_link_libraries(fdapde_native_matrix_batch_no_debug PRIVATE Eigen3::Eigen)
 
 add_executable(
+  fdapde_geometric_finite_elements_no_debug
+  geometric_finite_elements/p1_value_no_debug.cpp
+)
+target_compile_definitions(fdapde_geometric_finite_elements_no_debug PRIVATE FDAPDE_NO_DEBUG)
+target_compile_options(fdapde_geometric_finite_elements_no_debug PRIVATE ${WARNING_FLAGS})
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  target_compile_options(
+    fdapde_geometric_finite_elements_no_debug
+    PRIVATE -Wno-error=unused-parameter -Wno-error=unused-local-typedef
+  )
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  target_compile_options(
+    fdapde_geometric_finite_elements_no_debug
+    PRIVATE -Wno-error=unused-parameter -Wno-error=unused-local-typedefs
+  )
+endif()
+target_include_directories(fdapde_geometric_finite_elements_no_debug PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
+target_link_libraries(fdapde_geometric_finite_elements_no_debug PRIVATE Eigen3::Eigen)
+
+add_executable(
   fdapde_execution_test
   execution/parallel_algorithms.cpp
   execution/runtime.cpp
@@ -126,7 +172,7 @@ target_compile_options(fdapde_execution_queue_capacity_test PRIVATE ${WARNING_FL
 target_include_directories(fdapde_execution_queue_capacity_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
 target_link_libraries(fdapde_execution_queue_capacity_test PRIVATE Eigen3::Eigen gtest_main)
 
-foreach(module IN ITEMS core linear_algebra optimization manifold_optimization execution)
+foreach(module IN ITEMS core linear_algebra optimization manifold_optimization geometric_finite_elements execution)
   add_library(fdapde_${module}_header_check OBJECT public_headers/${module}.cpp)
   target_compile_options(fdapde_${module}_header_check PRIVATE ${WARNING_FLAGS})
   target_include_directories(fdapde_${module}_header_check PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
@@ -143,6 +189,19 @@ target_compile_options(fdapde_execution_header_composition_check PRIVATE ${WARNI
 target_include_directories(fdapde_execution_header_composition_check PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
 target_link_libraries(fdapde_execution_header_composition_check PRIVATE Eigen3::Eigen)
 
+add_library(
+  fdapde_geometric_finite_elements_header_composition_check
+  OBJECT
+  public_headers/geometric_finite_elements_then_manifold_optimization.cpp
+  public_headers/manifold_optimization_then_geometric_finite_elements.cpp
+)
+target_compile_options(fdapde_geometric_finite_elements_header_composition_check PRIVATE ${WARNING_FLAGS})
+target_include_directories(
+  fdapde_geometric_finite_elements_header_composition_check
+  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..
+)
+target_link_libraries(fdapde_geometric_finite_elements_header_composition_check PRIVATE Eigen3::Eigen)
+
 enable_testing()
 include(GoogleTest)
 gtest_discover_tests(fdapde_test)
@@ -152,3 +211,7 @@ gtest_discover_tests(fdapde_execution_queue_capacity_test PROPERTIES TIMEOUT 30)
 add_test(NAME NativeMdArray.NoDebugContracts COMMAND fdapde_native_mdarray_no_debug)
 add_test(NAME NativeSPD.NoDebugContracts COMMAND fdapde_native_spd_no_debug)
 add_test(NAME NativeMatrixBatchView.NoDebugContracts COMMAND fdapde_native_matrix_batch_no_debug)
+add_test(
+  NAME GeometricFiniteElements.NoDebugContracts
+  COMMAND fdapde_geometric_finite_elements_no_debug
+)
