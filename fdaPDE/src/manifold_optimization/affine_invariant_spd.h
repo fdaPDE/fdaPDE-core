@@ -147,7 +147,7 @@ template <typename Scalar_, int Order_> class AffineInvariantSPDGeometry {
           frame.from_inverse_sqrt, inverse_sqrt_scale, frame.from_inverse_sqrt, Scalar(0), order_);
         const auto scaled_direction =
           internals::symmetric_congruence<Scalar, Order_>(scaled_inverse_sqrt, to_direction, order_);
-        const auto chart_direction = fdapde::linalg::matrix_log_frechet(frame.scaled_relative, scaled_direction);
+        const auto chart_direction = logarithm_frechet_(frame.scaled_relative, scaled_direction);
         return checked_tangent_result_(
           internals::symmetric_congruence<Scalar, Order_>(frame.from_sqrt, chart_direction, order_));
     }
@@ -159,7 +159,7 @@ template <typename Scalar_, int Order_> class AffineInvariantSPDGeometry {
         const auto frame = relative_frame_(from, to);
         const auto whitened_dual =
           internals::symmetric_congruence<Scalar, Order_>(frame.from_inverse_sqrt, from_metric_dual, order_);
-        const auto chart_dual = fdapde::linalg::matrix_log_frechet(frame.scaled_relative, whitened_dual);
+        const auto chart_dual = logarithm_frechet_(frame.scaled_relative, whitened_dual);
         const auto relative_dual =
           internals::symmetric_congruence<Scalar, Order_>(frame.scaled_relative, chart_dual, order_);
         const Scalar sqrt_scale = std::sqrt(frame.relative_scale);
@@ -177,7 +177,7 @@ template <typename Scalar_, int Order_> class AffineInvariantSPDGeometry {
         const auto frame = relative_frame_(base, target);
         const auto whitened_direction =
           internals::symmetric_congruence<Scalar, Order_>(frame.from_inverse_sqrt, base_direction, order_);
-        const auto log_direction = fdapde::linalg::matrix_log_frechet(frame.scaled_relative, whitened_direction);
+        const auto log_direction = logarithm_frechet_(frame.scaled_relative, whitened_direction);
         // Jordan_S and L_log(S, .) commute because they share S's spectral basis.
         const auto chart_result = jordan_product_(frame.scaled_relative, log_direction);
         return checked_tangent_result_(
@@ -255,6 +255,18 @@ template <typename Scalar_, int Order_> class AffineInvariantSPDGeometry {
         }
         return {
           std::move(from_sqrt), std::move(from_inverse_sqrt), Point(scaled_relative, fdapde::linalg::checked), scale};
+    }
+
+    Tangent logarithm_frechet_(const Point& point, const Tangent& direction) const {
+        if constexpr (Order_ == fdapde::Dynamic) {
+            return fdapde::linalg::matrix_log_frechet(point, direction);
+        } else {
+            // A dynamic read operand avoids a false GCC bounds diagnostic when
+            // the packed fixed-size proxy is inlined into the spectral loop.
+            fdapde::linalg::SymmetricMatrix<Scalar, fdapde::Dynamic, fdapde::Dynamic> dynamic_direction(order_, order_);
+            dynamic_direction = direction;
+            return fdapde::linalg::matrix_log_frechet(point, dynamic_direction);
+        }
     }
 
     template <typename LhsType_, typename RhsType_>
