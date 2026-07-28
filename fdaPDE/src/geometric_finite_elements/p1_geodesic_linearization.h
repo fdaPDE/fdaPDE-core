@@ -159,6 +159,64 @@ class P1GeodesicLinearization<manifold::LogEuclideanSPDGeometry<Scalar_, Order_>
         }
         return result;
     }
+
+    // Covariant nodal derivative of the spatial/weight JVP. The weight
+    // direction is based at result().normalized_weights, must be finite and
+    // sum to zero, and follows the same represented normalized-total
+    // convention as weight_jvp.
+    Tangent covariant_mixed_nodal_jvp(
+      std::span<const double> weight_direction, std::span<const Tangent> nodal_directions) const {
+        require_ready_();
+        validate_weight_direction_(weight_direction);
+        if (nodal_directions.size() != nodes_.size()) {
+            throw std::invalid_argument("P1 geodesic nodal-direction and nodal-value counts must match");
+        }
+
+        const AccumulationScalar direction_total =
+          static_cast<AccumulationScalar>(compensated_weight_total_(weight_direction));
+        auto chart_direction = make_accumulation_tangent_();
+        auto correction = make_accumulation_tangent_();
+        bool has_nonzero_coefficient = false;
+        for (std::size_t node_index = 0; node_index < nodes_.size(); ++node_index) {
+            const AccumulationScalar coefficient =
+              mixed_nodal_coefficient_(weight_direction[node_index], direction_total, node_index);
+            if (coefficient == 0) continue;
+            has_nonzero_coefficient = true;
+
+            const auto node_direction =
+              fdapde::linalg::matrix_log_frechet(nodes_[node_index], nodal_directions[node_index]);
+            for (int i = 0; i < geometry_.order(); ++i) {
+                for (int j = 0; j <= i; ++j) {
+                    const AccumulationScalar contribution =
+                      coefficient * static_cast<AccumulationScalar>(node_direction(i, j));
+                    compensated_add_(chart_direction, correction, i, j, contribution);
+                }
+            }
+        }
+        if (!has_nonzero_coefficient) return make_zero_tangent_();
+        return Tangent(fdapde::linalg::matrix_exp_frechet(*mean_chart_, to_tangent_(chart_direction)));
+    }
+
+    // Riemannian adjoint, in the nodal variable, of
+    // covariant_mixed_nodal_jvp for a fixed weight direction. The argument
+    // and returned covectors are log-Euclidean metric-dual tangents.
+    std::vector<Tangent>
+    covariant_mixed_nodal_vjp(std::span<const double> weight_direction, const Tangent& value_gradient) const {
+        require_ready_();
+        validate_weight_direction_(weight_direction);
+        const Tangent value_chart_gradient(fdapde::linalg::matrix_log_frechet(result_.value, value_gradient));
+        std::vector<Tangent> result(nodes_.size(), make_zero_tangent_());
+        const AccumulationScalar direction_total =
+          static_cast<AccumulationScalar>(compensated_weight_total_(weight_direction));
+        for (std::size_t node_index = 0; node_index < nodes_.size(); ++node_index) {
+            const AccumulationScalar coefficient =
+              mixed_nodal_coefficient_(weight_direction[node_index], direction_total, node_index);
+            if (coefficient == 0) continue;
+            const Tangent scaled = scaled_tangent_(value_chart_gradient, coefficient);
+            result[node_index] = Tangent(fdapde::linalg::matrix_exp_frechet(*node_logs_[node_index], scaled));
+        }
+        return result;
+    }
    private:
     using AccumulationScalar = std::common_type_t<Scalar_, double>;
     using AccumulationTangent = fdapde::linalg::SymmetricMatrix<AccumulationScalar, Order_, Order_>;
@@ -263,6 +321,15 @@ class P1GeodesicLinearization<manifold::LogEuclideanSPDGeometry<Scalar_, Order_>
             }
         }
         return result;
+    }
+
+    AccumulationScalar mixed_nodal_coefficient_(
+      double weight_direction, AccumulationScalar direction_total, std::size_t node_index) const {
+        const AccumulationScalar total = static_cast<AccumulationScalar>(normalized_total_);
+        return (
+                 static_cast<AccumulationScalar>(weight_direction) -
+                 direction_total * static_cast<AccumulationScalar>(result_.normalized_weights[node_index]) / total) /
+               total;
     }
 
     void check_node_shape_(const Point& node) const {

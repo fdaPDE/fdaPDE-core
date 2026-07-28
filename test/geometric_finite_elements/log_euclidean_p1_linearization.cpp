@@ -201,6 +201,23 @@ typename Geometry::Tangent expected_nodal_chart(
 }
 
 template <typename Geometry>
+typename Geometry::Tangent expected_covariant_mixed_chart(
+  std::span<const typename Geometry::Point> nodes, std::span<const double> canonical_weights,
+  std::span<const double> weight_direction, std::span<const typename Geometry::Tangent> nodal_directions) {
+    const double total = compensated_sum(canonical_weights);
+    const double direction_total = compensated_sum(weight_direction);
+    std::vector<typename Geometry::Tangent> chart_directions;
+    std::vector<double> coefficients;
+    chart_directions.reserve(nodes.size());
+    coefficients.reserve(nodes.size());
+    for (std::size_t i = 0; i < nodes.size(); ++i) {
+        chart_directions.emplace_back(native::matrix_log_frechet(nodes[i], nodal_directions[i]));
+        coefficients.push_back((weight_direction[i] - direction_total * canonical_weights[i] / total) / total);
+    }
+    return weighted_sum<Geometry>(chart_directions, coefficients);
+}
+
+template <typename Geometry>
 typename Geometry::Point
 perturb_point(const typename Geometry::Point& point, const typename Geometry::Tangent& direction, double step) {
     native::Matrix<double, 3, 3> dense;
@@ -390,10 +407,18 @@ TEST(LogEuclideanP1Linearization, FixedAndDynamicOwningSnapshotsAgree) {
     expect_matrix_near(dynamic.result().value, fixed.result().value, 5.0e-10);
     expect_matrix_near(dynamic.weight_jvp(weight_direction), fixed.weight_jvp(weight_direction), 5.0e-10);
     expect_matrix_near(dynamic.nodal_jvp(dynamic_directions), fixed.nodal_jvp(fixed_directions), 5.0e-10);
+    expect_matrix_near(
+      dynamic.covariant_mixed_nodal_jvp(weight_direction, dynamic_directions),
+      fixed.covariant_mixed_nodal_jvp(weight_direction, fixed_directions), 5.0e-10);
     const auto dynamic_pullback = dynamic.nodal_vjp(dynamic_output);
     const auto fixed_pullback = fixed.nodal_vjp(fixed_output);
     for (std::size_t i = 0; i < fixed_pullback.size(); ++i) {
         expect_matrix_near(dynamic_pullback[i], fixed_pullback[i], 5.0e-10);
+    }
+    const auto dynamic_mixed_pullback = dynamic.covariant_mixed_nodal_vjp(weight_direction, dynamic_output);
+    const auto fixed_mixed_pullback = fixed.covariant_mixed_nodal_vjp(weight_direction, fixed_output);
+    for (std::size_t i = 0; i < fixed_mixed_pullback.size(); ++i) {
+        expect_matrix_near(dynamic_mixed_pullback[i], fixed_mixed_pullback[i], 5.0e-10);
     }
 }
 
@@ -445,10 +470,20 @@ TEST(LogEuclideanP1Linearization, SupportsFixedAndDynamicFloatSnapshots) {
     expect_matrix_near(fixed.result().value, dynamic.result().value, 2.0e-5);
     expect_matrix_near(fixed.weight_jvp(weight_direction), dynamic.weight_jvp(weight_direction), 2.0e-5);
     expect_matrix_near(fixed.nodal_jvp(fixed_directions), dynamic.nodal_jvp(dynamic_directions), 2.0e-5);
+    expect_matrix_near(
+      fixed.covariant_mixed_nodal_jvp(weight_direction, fixed_directions),
+      dynamic.covariant_mixed_nodal_jvp(weight_direction, dynamic_directions), 2.0e-5);
     const auto fixed_pullback = fixed.nodal_vjp(fixed_directions[0]);
     const auto dynamic_pullback = dynamic.nodal_vjp(dynamic_directions[0]);
     for (std::size_t i = 0; i < fixed_pullback.size(); ++i) {
         expect_matrix_near(fixed_pullback[i], dynamic_pullback[i], 2.0e-5);
+    }
+    const auto fixed_mixed_pullback =
+      fixed.covariant_mixed_nodal_vjp(weight_direction, fixed_directions[0]);
+    const auto dynamic_mixed_pullback =
+      dynamic.covariant_mixed_nodal_vjp(weight_direction, dynamic_directions[0]);
+    for (std::size_t i = 0; i < fixed_mixed_pullback.size(); ++i) {
+        expect_matrix_near(fixed_mixed_pullback[i], dynamic_mixed_pullback[i], 2.0e-5);
     }
 }
 
@@ -597,4 +632,175 @@ TEST(LogEuclideanP1Linearization, ValidatesEveryNodeWhileNodalActionsSkipZeroWei
     EXPECT_NO_THROW(static_cast<void>(linearization.weight_jvp(inactive_direction)));
     const std::vector<double> activating_direction {0.1, -0.2, 0.1};
     EXPECT_NO_THROW(static_cast<void>(linearization.weight_jvp(activating_direction)));
+}
+
+TEST(LogEuclideanP1Linearization, CovariantMixedActionsMatchTheExactChartFormulaAndMetricAdjoint) {
+    const FixedGeometry geometry;
+    const auto nodes = noncommuting_nodes<FixedGeometry>();
+    const std::vector<double> weights {0.25, 0.5, 0.25};
+    const std::vector<double> weight_direction {0.125, -0.375, 0.25};
+    const auto nodal_directions = first_directions<FixedGeometry>();
+    const auto output_gradient = make_tangent<FixedGeometry>({0.4, -0.15, 0.3, 0.2, -0.35, 0.1});
+    const auto linearization = fdapde::gfe::p1_geodesic_linearization(
+      geometry, std::span<const FixedGeometry::Point>(nodes), std::span<const double>(weights));
+
+    const auto mixed =
+      linearization.covariant_mixed_nodal_jvp(weight_direction, nodal_directions);
+    const auto expected = expected_covariant_mixed_chart<FixedGeometry>(
+      nodes, linearization.result().normalized_weights, weight_direction, nodal_directions);
+    expect_matrix_near(native::matrix_log_frechet(linearization.result().value, mixed), expected, 2.0e-9);
+    expect_matrix_near(
+      linearization.covariant_mixed_nodal_jvp(weight_direction, nodal_directions), mixed, 0);
+
+    const auto pullback = linearization.covariant_mixed_nodal_vjp(weight_direction, output_gradient);
+    const double lhs = geometry.inner_product(linearization.result().value, mixed, output_gradient);
+    double rhs = 0;
+    for (std::size_t i = 0; i < nodes.size(); ++i) {
+        rhs += geometry.inner_product(nodes[i], nodal_directions[i], pullback[i]);
+    }
+    EXPECT_NEAR(lhs, rhs, 2.0e-9 * std::max({1.0, std::abs(lhs), std::abs(rhs)}));
+
+    constexpr std::array<std::size_t, 3> permutation {2, 0, 1};
+    std::vector<FixedGeometry::Point> permuted_nodes;
+    std::vector<FixedGeometry::Tangent> permuted_directions;
+    std::vector<double> permuted_weights;
+    std::vector<double> permuted_weight_direction;
+    for (const std::size_t index : permutation) {
+        permuted_nodes.push_back(nodes[index]);
+        permuted_directions.push_back(nodal_directions[index]);
+        permuted_weights.push_back(weights[index]);
+        permuted_weight_direction.push_back(weight_direction[index]);
+    }
+    const auto permuted = fdapde::gfe::p1_geodesic_linearization(
+      geometry, std::span<const FixedGeometry::Point>(permuted_nodes), std::span<const double>(permuted_weights));
+    expect_matrix_near(
+      permuted.covariant_mixed_nodal_jvp(permuted_weight_direction, permuted_directions), mixed, 5.0e-10);
+    const auto permuted_pullback =
+      permuted.covariant_mixed_nodal_vjp(permuted_weight_direction, output_gradient);
+    for (std::size_t i = 0; i < permutation.size(); ++i) {
+        expect_matrix_near(permuted_pullback[i], pullback[permutation[i]], 5.0e-10);
+    }
+}
+
+TEST(LogEuclideanP1Linearization, CovariantMixedActionsUseTheRepresentedTotalAndActivateZeroWeightNodes) {
+    const FixedGeometry fixed_geometry;
+    auto fixed_nodes = noncommuting_nodes<FixedGeometry>();
+    fixed_nodes.push_back(make_diagonal_point<FixedGeometry>(3, 3, 3));
+    const std::vector<double> weights {0.1, 0, 0.3, 0.6};
+    const std::vector<double> weight_direction {0.2, 0.1, -0.15, -0.15};
+    auto fixed_directions = first_directions<FixedGeometry>();
+    fixed_directions.push_back(make_tangent<FixedGeometry>({0.1, -0.2, 0.3, -0.1, 0.2, -0.3}));
+    const auto fixed = fdapde::gfe::p1_geodesic_linearization(
+      fixed_geometry, std::span<const FixedGeometry::Point>(fixed_nodes), std::span<const double>(weights));
+
+    EXPECT_NE(compensated_sum(fixed.result().normalized_weights), 1.0);
+    const auto fixed_mixed = fixed.covariant_mixed_nodal_jvp(weight_direction, fixed_directions);
+    const auto expected = expected_covariant_mixed_chart<FixedGeometry>(
+      fixed_nodes, fixed.result().normalized_weights, weight_direction, fixed_directions);
+    expect_matrix_near(native::matrix_log_frechet(fixed.result().value, fixed_mixed), expected, 2.0e-9);
+    const auto fixed_pullback = fixed.covariant_mixed_nodal_vjp(weight_direction, fixed_directions[0]);
+    EXPECT_GT(matrix_norm(fixed_pullback[1]), 1.0e-8);
+
+    auto nonfinite_at_zero_weight = fixed_directions;
+    nonfinite_at_zero_weight[1](0, 0) = std::numeric_limits<double>::quiet_NaN();
+    EXPECT_THROW(
+      fixed.covariant_mixed_nodal_jvp(weight_direction, nonfinite_at_zero_weight), std::invalid_argument);
+    const std::vector<double> inactive_zero_weight {0.2, 0, -0.1, -0.1};
+    EXPECT_NO_THROW(
+      static_cast<void>(fixed.covariant_mixed_nodal_jvp(inactive_zero_weight, nonfinite_at_zero_weight)));
+    const auto inactive_pullback =
+      fixed.covariant_mixed_nodal_vjp(inactive_zero_weight, fixed_directions[0]);
+    expect_matrix_near(inactive_pullback[1], zero_tangent<FixedGeometry>(), 0);
+
+    const DynamicGeometry dynamic_geometry(3);
+    auto dynamic_nodes = noncommuting_nodes<DynamicGeometry>();
+    dynamic_nodes.push_back(make_diagonal_point<DynamicGeometry>(3, 3, 3));
+    auto dynamic_directions = first_directions<DynamicGeometry>();
+    dynamic_directions.push_back(make_tangent<DynamicGeometry>({0.1, -0.2, 0.3, -0.1, 0.2, -0.3}));
+    const auto dynamic = fdapde::gfe::p1_geodesic_linearization(
+      dynamic_geometry, std::span<const DynamicGeometry::Point>(dynamic_nodes), std::span<const double>(weights));
+    expect_matrix_near(
+      dynamic.covariant_mixed_nodal_jvp(weight_direction, dynamic_directions), fixed_mixed, 5.0e-10);
+    const auto dynamic_pullback =
+      dynamic.covariant_mixed_nodal_vjp(weight_direction, dynamic_directions[0]);
+    for (std::size_t i = 0; i < fixed_pullback.size(); ++i) {
+        expect_matrix_near(dynamic_pullback[i], fixed_pullback[i], 5.0e-10);
+    }
+}
+
+TEST(LogEuclideanP1Linearization, CovariantMixedActionMatchesParallelTransportFiniteDifferencesAndValidatesInput) {
+    const FixedGeometry geometry;
+    const auto nodes = noncommuting_nodes<FixedGeometry>();
+    const std::vector<double> weights {0.25, 0.5, 0.25};
+    const std::vector<double> weight_direction {0.125, -0.375, 0.25};
+    const auto nodal_directions = first_directions<FixedGeometry>();
+    const auto linearization = fdapde::gfe::p1_geodesic_linearization(
+      geometry, std::span<const FixedGeometry::Point>(nodes), std::span<const double>(weights));
+    const auto exact = linearization.covariant_mixed_nodal_jvp(weight_direction, nodal_directions);
+
+    double best_nodal_then_weight_error = std::numeric_limits<double>::infinity();
+    double best_weight_then_nodal_error = std::numeric_limits<double>::infinity();
+    for (const double step : {1.0e-3, 3.0e-4, 1.0e-4}) {
+        std::vector<FixedGeometry::Point> plus_nodes;
+        std::vector<FixedGeometry::Point> minus_nodes;
+        std::vector<double> plus_weights(weights);
+        std::vector<double> minus_weights(weights);
+        for (std::size_t i = 0; i < nodes.size(); ++i) {
+            plus_nodes.push_back(geometry.exponential(nodes[i], nodal_directions[i], step));
+            minus_nodes.push_back(geometry.exponential(nodes[i], nodal_directions[i], -step));
+            plus_weights[i] += step * weight_direction[i];
+            minus_weights[i] -= step * weight_direction[i];
+        }
+        const auto plus_nodes_linearization = fdapde::gfe::p1_geodesic_linearization(
+          geometry, std::span<const FixedGeometry::Point>(plus_nodes), std::span<const double>(weights));
+        const auto minus_nodes_linearization = fdapde::gfe::p1_geodesic_linearization(
+          geometry, std::span<const FixedGeometry::Point>(minus_nodes), std::span<const double>(weights));
+        const auto plus_nodes_transport = geometry.transport(
+          plus_nodes_linearization.result().value, linearization.result().value,
+          plus_nodes_linearization.weight_jvp(weight_direction));
+        const auto minus_nodes_transport = geometry.transport(
+          minus_nodes_linearization.result().value, linearization.result().value,
+          minus_nodes_linearization.weight_jvp(weight_direction));
+        const auto nodal_then_weight = combine_tangents<FixedGeometry>(
+          0.5 / step, plus_nodes_transport, -0.5 / step, minus_nodes_transport);
+
+        const auto plus_weights_linearization = fdapde::gfe::p1_geodesic_linearization(
+          geometry, std::span<const FixedGeometry::Point>(nodes), std::span<const double>(plus_weights));
+        const auto minus_weights_linearization = fdapde::gfe::p1_geodesic_linearization(
+          geometry, std::span<const FixedGeometry::Point>(nodes), std::span<const double>(minus_weights));
+        const auto plus_weights_transport = geometry.transport(
+          plus_weights_linearization.result().value, linearization.result().value,
+          plus_weights_linearization.nodal_jvp(nodal_directions));
+        const auto minus_weights_transport = geometry.transport(
+          minus_weights_linearization.result().value, linearization.result().value,
+          minus_weights_linearization.nodal_jvp(nodal_directions));
+        const auto weight_then_nodal = combine_tangents<FixedGeometry>(
+          0.5 / step, plus_weights_transport, -0.5 / step, minus_weights_transport);
+
+        const double nodal_then_weight_error = relative_matrix_error(nodal_then_weight, exact);
+        const double weight_then_nodal_error = relative_matrix_error(weight_then_nodal, exact);
+        EXPECT_LT(nodal_then_weight_error, 2.0e-5);
+        EXPECT_LT(weight_then_nodal_error, 2.0e-5);
+        best_nodal_then_weight_error = std::min(best_nodal_then_weight_error, nodal_then_weight_error);
+        best_weight_then_nodal_error = std::min(best_weight_then_nodal_error, weight_then_nodal_error);
+    }
+    EXPECT_LT(best_nodal_then_weight_error, 5.0e-7);
+    EXPECT_LT(best_weight_then_nodal_error, 5.0e-7);
+
+    const std::vector<double> too_few_weights {0, 0};
+    const std::vector<double> nonzero_sum {0.2, -0.1, 0};
+    const std::vector<double> nonfinite_weight {std::numeric_limits<double>::quiet_NaN(), 0, 0};
+    std::vector<FixedGeometry::Tangent> too_few_nodal(nodal_directions.begin(), nodal_directions.begin() + 2);
+    EXPECT_THROW(
+      linearization.covariant_mixed_nodal_jvp(too_few_weights, nodal_directions), std::invalid_argument);
+    EXPECT_THROW(
+      linearization.covariant_mixed_nodal_jvp(nonzero_sum, nodal_directions), std::invalid_argument);
+    EXPECT_THROW(
+      linearization.covariant_mixed_nodal_jvp(nonfinite_weight, nodal_directions), std::invalid_argument);
+    EXPECT_THROW(
+      linearization.covariant_mixed_nodal_jvp(weight_direction, too_few_nodal), std::invalid_argument);
+    auto nonfinite_output = nodal_directions[0];
+    nonfinite_output(1, 0) = std::numeric_limits<double>::quiet_NaN();
+    EXPECT_THROW(
+      linearization.covariant_mixed_nodal_vjp(weight_direction, nonfinite_output), std::invalid_argument);
 }
