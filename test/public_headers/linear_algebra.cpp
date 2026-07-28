@@ -68,6 +68,11 @@ static_assert(fdapde::linalg::is_symmetric_matrix_v<native_spd>);
 static_assert(!std::is_default_constructible_v<native_spd>);
 static_assert(std::is_constructible_v<native_spd, const native_matrix&, decltype(fdapde::linalg::checked)>);
 static_assert(std::is_same_v<decltype(std::declval<const native_spd&>().data()), const double*>);
+static_assert(std::is_same_v<
+              decltype(fdapde::linalg::matrix_log_second_frechet(
+                std::declval<const native_spd&>(), std::declval<const native_symmetric&>(),
+                std::declval<const native_symmetric&>())),
+              native_symmetric>);
 static_assert(std::is_constructible_v<native_matrix_batch, std::span<double>>);
 static_assert(!std::is_constructible_v<native_matrix_batch, std::span<const double>>);
 static_assert(std::is_constructible_v<native_const_matrix_batch, std::span<const double>>);

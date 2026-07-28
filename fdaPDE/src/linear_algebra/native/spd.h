@@ -18,6 +18,7 @@
 #define __FDAPDE_LINALG_NATIVE_SPD_H__
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -230,6 +231,51 @@ template <typename Scalar_> Scalar_ log_divided_difference(Scalar_ x, Scalar_ y)
     return (std::log(x) - std::log(y)) / delta;
 }
 
+template <typename Scalar_> Scalar_ log_second_divided_difference(Scalar_ x, Scalar_ y, Scalar_ z) {
+    std::array<Scalar_, 3> values {x, y, z};
+    std::sort(values.begin(), values.end());
+    x = values[0];
+    y = values[1];
+    z = values[2];
+
+    if (z - x <= Scalar_(0.5) * x) {
+        // For log(1 + t), the second divided difference is the
+        // complete-homogeneous series -1/2 + h1/3 - h2/4 + ... .
+        // Centering the interval keeps every relative node within 0.2.
+        const Scalar_ center = x + Scalar_(0.5) * (z - x);
+        const Scalar_ a = (x - center) / center;
+        const Scalar_ b = (y - center) / center;
+        const Scalar_ c = (z - center) / center;
+        const Scalar_ e1 = a + b + c;
+        const Scalar_ e2 = a * b + a * c + b * c;
+        const Scalar_ e3 = a * b * c;
+        Scalar_ h_minus_two = Scalar_(0);
+        Scalar_ h_minus_one = Scalar_(0);
+        Scalar_ h = Scalar_(1);
+        Scalar_ sum = Scalar_(-0.5);
+        for (int order = 1; order < 64; ++order) {
+            const Scalar_ next = e1 * h - e2 * h_minus_one + e3 * h_minus_two;
+            sum += (order % 2 == 0 ? Scalar_(-1) : Scalar_(1)) * next / Scalar_(order + 2);
+            h_minus_two = h_minus_one;
+            h_minus_one = h;
+            h = next;
+        }
+        return sum / center / center;
+    }
+
+    if (x == y) {
+        const Scalar_ delta = z - x;
+        const Scalar_ ratio = delta / x;
+        return (std::log1p(ratio) - ratio) / (delta * delta);
+    }
+    if (y == z) {
+        const Scalar_ delta = x - z;
+        const Scalar_ ratio = delta / z;
+        return (std::log1p(ratio) - ratio) / (delta * delta);
+    }
+    return (log_divided_difference(x, y) - log_divided_difference(y, z)) / (x - z);
+}
+
 template <typename Scalar_> Scalar_ exp_divided_difference(Scalar_ x, Scalar_ y) {
     if (x == y) return std::exp(x);
     if (x > y) return std::exp(x) * (-std::expm1(y - x)) / (x - y);
@@ -292,6 +338,107 @@ auto frechet_symmetric(
             for (int k = 0; k < dimension; ++k) { value += q_coefficients(i, k) * eigenvectors(j, k); }
             if (!std::isfinite(value)) {
                 throw std::domain_error("SPD spectral operation: nonfinite Frechet derivative");
+            }
+            result(i, j) = value;
+        }
+    }
+    return result;
+}
+
+template <typename XprType_, typename FirstDirectionXprType_, typename SecondDirectionXprType_>
+auto log_second_frechet_symmetric(
+  const EVD<XprType_>& evd, int dimension, const FirstDirectionXprType_& first_direction,
+  const SecondDirectionXprType_& second_direction) {
+    using XprType = std::decay_t<XprType_>;
+    using Scalar = std::remove_cv_t<typename XprType::Scalar>;
+    constexpr int Rows = XprType::Rows;
+    constexpr int Cols = XprType::Cols;
+    if (
+      first_direction.rows() != dimension || first_direction.cols() != dimension ||
+      second_direction.rows() != dimension || second_direction.cols() != dimension) {
+        throw std::invalid_argument("SPD spectral operation: incompatible direction dimensions");
+    }
+    validate_finite_symmetric(first_direction);
+    validate_finite_symmetric(second_direction);
+
+    Matrix<Scalar, Rows, Cols> first_hq;
+    Matrix<Scalar, Rows, Cols> second_hq;
+    Matrix<Scalar, Rows, Cols> first_coefficients;
+    Matrix<Scalar, Rows, Cols> second_coefficients;
+    Matrix<Scalar, Rows, Cols> coefficients;
+    Matrix<Scalar, Rows, Cols> q_coefficients;
+    if constexpr (Rows == Dynamic) {
+        first_hq.resize(dimension, dimension);
+        second_hq.resize(dimension, dimension);
+        first_coefficients.resize(dimension, dimension);
+        second_coefficients.resize(dimension, dimension);
+        coefficients.resize(dimension, dimension);
+        q_coefficients.resize(dimension, dimension);
+    }
+
+    // Scaling the spectrum and both directions together leaves D2 log
+    // unchanged and prevents overflow/underflow in the spectral products.
+    Scalar scale = evd.eigenvalues()[0];
+    for (int i = 1; i < dimension; ++i) scale = std::max(scale, static_cast<Scalar>(evd.eigenvalues()[i]));
+    const auto eigenvectors = evd.eigenvectors();
+    for (int i = 0; i < dimension; ++i) {
+        for (int j = 0; j < dimension; ++j) {
+            Scalar first_value = Scalar(0);
+            Scalar second_value = Scalar(0);
+            for (int k = 0; k < dimension; ++k) {
+                first_value += (static_cast<Scalar>(first_direction(i, k)) / scale) * eigenvectors(k, j);
+                second_value += (static_cast<Scalar>(second_direction(i, k)) / scale) * eigenvectors(k, j);
+            }
+            if (!std::isfinite(first_value) || !std::isfinite(second_value)) {
+                throw std::domain_error("SPD spectral operation: nonfinite second Frechet derivative");
+            }
+            first_hq(i, j) = first_value;
+            second_hq(i, j) = second_value;
+        }
+    }
+    for (int i = 0; i < dimension; ++i) {
+        for (int j = 0; j < dimension; ++j) {
+            Scalar first_value = Scalar(0);
+            Scalar second_value = Scalar(0);
+            for (int k = 0; k < dimension; ++k) {
+                first_value += eigenvectors(k, i) * first_hq(k, j);
+                second_value += eigenvectors(k, i) * second_hq(k, j);
+            }
+            first_coefficients(i, j) = first_value;
+            second_coefficients(i, j) = second_value;
+        }
+    }
+    for (int i = 0; i < dimension; ++i) {
+        for (int j = 0; j < dimension; ++j) {
+            Scalar value = Scalar(0);
+            for (int k = 0; k < dimension; ++k) {
+                const Scalar divided_difference = log_second_divided_difference(
+                  evd.eigenvalues()[i] / scale, evd.eigenvalues()[k] / scale, evd.eigenvalues()[j] / scale);
+                value += divided_difference * (first_coefficients(i, k) * second_coefficients(k, j) +
+                                               second_coefficients(i, k) * first_coefficients(k, j));
+            }
+            if (!std::isfinite(value)) {
+                throw std::domain_error("SPD spectral operation: nonfinite second Frechet derivative");
+            }
+            coefficients(i, j) = value;
+        }
+    }
+    for (int i = 0; i < dimension; ++i) {
+        for (int j = 0; j < dimension; ++j) {
+            Scalar value = Scalar(0);
+            for (int k = 0; k < dimension; ++k) { value += eigenvectors(i, k) * coefficients(k, j); }
+            q_coefficients(i, j) = value;
+        }
+    }
+
+    SymmetricMatrix<Scalar, Rows, Cols> result;
+    if constexpr (Rows == Dynamic) { result.resize(dimension, dimension); }
+    for (int i = 0; i < dimension; ++i) {
+        for (int j = 0; j <= i; ++j) {
+            Scalar value = Scalar(0);
+            for (int k = 0; k < dimension; ++k) { value += q_coefficients(i, k) * eigenvectors(j, k); }
+            if (!std::isfinite(value)) {
+                throw std::domain_error("SPD spectral operation: nonfinite second Frechet derivative");
             }
             result(i, j) = value;
         }
@@ -365,6 +512,19 @@ auto matrix_log_frechet(
     internals::validate_positive_spectrum(evd.eigenvalues(), value.rows());
     return internals::frechet_symmetric(
       evd, value.rows(), direction.derived(), [](auto x, auto y) { return internals::log_divided_difference(x, y); });
+}
+
+template <typename XprType_, typename FirstDirectionXprType_, typename SecondDirectionXprType_>
+auto matrix_log_second_frechet(
+  const SPDMatrixExpr<XprType_>& matrix, const SymmetricMatrixExpr<FirstDirectionXprType_>& first_direction,
+  const SymmetricMatrixExpr<SecondDirectionXprType_>& second_direction) {
+    const XprType_& value = matrix.derived();
+    internals::validate_finite_symmetric(value);
+    const EVD<XprType_> evd(value);
+    internals::require_computed(evd);
+    internals::validate_positive_spectrum(evd.eigenvalues(), value.rows());
+    return internals::log_second_frechet_symmetric(
+      evd, value.rows(), first_direction.derived(), second_direction.derived());
 }
 
 template <typename XprType_, typename DirectionXprType_>

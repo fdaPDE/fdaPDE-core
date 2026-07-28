@@ -83,6 +83,17 @@ fixed_symmetric reference_direction() {
     return direction;
 }
 
+fixed_symmetric reference_second_direction() {
+    fixed_symmetric direction;
+    direction(0, 0) = -0.75;
+    direction(1, 0) = 0.5;
+    direction(1, 1) = 0.25;
+    direction(2, 0) = -0.375;
+    direction(2, 1) = 0.125;
+    direction(2, 2) = 1.0;
+    return direction;
+}
+
 template <typename Symmetric> void set_symmetric_zero(Symmetric& matrix) {
     for (int i = 0; i < matrix.rows(); ++i) {
         for (int j = 0; j <= i; ++j) matrix(i, j) = 0.0;
@@ -304,6 +315,105 @@ TEST(NativeSPD, FrechetDifferentialsAreInverseAndMatchFiniteDifferences) {
     EXPECT_LT(relative_error(native::matrix_log_frechet(point, direction), finite_difference), 5.0e-8);
 }
 
+TEST(NativeSPD, LogSecondFrechetIsSymmetricAndBilinearInItsDirections) {
+    const fixed_spd point(reference_spd(), native::checked);
+    const fixed_symmetric first = reference_direction();
+    const fixed_symmetric second = reference_second_direction();
+    const fixed_symmetric third(first - 0.25 * second);
+
+    const fixed_symmetric first_second(native::matrix_log_second_frechet(point, first, second));
+    const fixed_symmetric second_first(native::matrix_log_second_frechet(point, second, first));
+    EXPECT_LT(relative_error(first_second, second_first), 1.0e-12);
+
+    const fixed_symmetric linear_first(native::matrix_log_second_frechet(point, first + 0.375 * third, second));
+    const fixed_symmetric third_second(native::matrix_log_second_frechet(point, third, second));
+    const fixed_symmetric expected_first(first_second + third_second * 0.375);
+    EXPECT_LT(relative_error(linear_first, expected_first), 2.0e-12);
+
+    const fixed_symmetric linear_second(native::matrix_log_second_frechet(point, first, second - 0.625 * third));
+    const fixed_symmetric first_third(native::matrix_log_second_frechet(point, first, third));
+    const fixed_symmetric expected_second(first_second - first_third * 0.625);
+    EXPECT_LT(relative_error(linear_second, expected_second), 2.0e-12);
+}
+
+TEST(NativeSPD, LogSecondFrechetHandlesScalarRepeatedAndCloseSpectra) {
+    const fixed_symmetric first = reference_direction();
+    const fixed_symmetric second = reference_second_direction();
+    fixed_matrix two_identity;
+    two_identity.set_zero();
+    for (int i = 0; i < 3; ++i) two_identity(i, i) = 2.0;
+    const fixed_spd scalar_point(two_identity, native::checked);
+    const fixed_matrix first_dense(first);
+    const fixed_matrix second_dense(second);
+    const fixed_matrix anticommutator(first_dense * second_dense + second_dense * first_dense);
+    const fixed_matrix scalar_expected_dense(anticommutator * -0.125);
+    const fixed_symmetric scalar_expected(scalar_expected_dense.template as_symmetric<native::Lower>());
+    EXPECT_LT(relative_error(native::matrix_log_second_frechet(scalar_point, first, second), scalar_expected), 2.0e-12);
+
+    fixed_matrix repeated;
+    repeated.set_zero();
+    repeated(0, 0) = 2.0;
+    repeated(1, 1) = 2.0;
+    repeated(2, 2) = 5.0;
+    fixed_symmetric first_chain;
+    fixed_symmetric second_chain;
+    set_symmetric_zero(first_chain);
+    set_symmetric_zero(second_chain);
+    first_chain(1, 0) = 1.0;
+    second_chain(2, 1) = 1.0;
+    const auto repeated_result =
+      native::matrix_log_second_frechet(fixed_spd(repeated, native::checked), first_chain, second_chain);
+    EXPECT_NEAR(repeated_result(2, 0), (std::log(2.5) - 1.5) / 9.0, 2.0e-14);
+
+    constexpr double gap = 1.0e-12;
+    fixed_matrix close;
+    close.set_zero();
+    close(0, 0) = 2.0;
+    close(1, 1) = 2.0 + gap;
+    close(2, 2) = 2.0 + 2.0 * gap;
+    const auto close_result = native::matrix_log_second_frechet(fixed_spd(close, native::checked), first, second);
+    EXPECT_LT(relative_error(close_result, scalar_expected), 3.0e-12);
+}
+
+TEST(NativeSPD, LogSecondFrechetRespectsScaleAndSupportsDynamicStorage) {
+    const fixed_spd point(reference_spd(), native::checked);
+    const fixed_symmetric first = reference_direction();
+    const fixed_symmetric second = reference_second_direction();
+    const fixed_symmetric expected(native::matrix_log_second_frechet(point, first, second));
+    for (const double scale : {1.0e-150, 1.0e150}) {
+        const fixed_spd scaled_point(reference_spd(scale), native::checked);
+        const fixed_symmetric scaled_first(scale * first);
+        const fixed_symmetric scaled_second(scale * second);
+        EXPECT_LT(
+          relative_error(native::matrix_log_second_frechet(scaled_point, scaled_first, scaled_second), expected),
+          2.0e-10);
+    }
+
+    const dynamic_spd dynamic_point(dynamic_matrix(reference_spd()), native::checked);
+    dynamic_symmetric dynamic_first(3, 3);
+    dynamic_symmetric dynamic_second(3, 3);
+    dynamic_first = first;
+    dynamic_second = second;
+    const dynamic_symmetric dynamic_result(
+      native::matrix_log_second_frechet(dynamic_point, dynamic_first, dynamic_second));
+    static_assert(std::is_same_v<decltype(dynamic_result), const dynamic_symmetric>);
+    EXPECT_LT(relative_error(dynamic_result, expected), 2.0e-12);
+}
+
+TEST(NativeSPD, LogSecondFrechetMatchesTheFiniteDifferenceOfTheFirstFrechetDerivative) {
+    const fixed_matrix dense = reference_spd();
+    const fixed_spd point(dense, native::checked);
+    const fixed_symmetric first = reference_direction();
+    const fixed_symmetric second = reference_second_direction();
+    constexpr double step = 2.0e-5;
+    const fixed_spd plus(dense + step * second, native::checked);
+    const fixed_spd minus(dense - step * second, native::checked);
+    const fixed_symmetric plus_derivative(native::matrix_log_frechet(plus, first));
+    const fixed_symmetric minus_derivative(native::matrix_log_frechet(minus, first));
+    const fixed_symmetric finite_difference((plus_derivative - minus_derivative) / (2.0 * step));
+    EXPECT_LT(relative_error(native::matrix_log_second_frechet(point, first, second), finite_difference), 2.0e-9);
+}
+
 TEST(NativeSPD, ConstSymmetricViewsProduceOwningNonconstResults) {
     const double packed_log_two[] = {std::log(2.0), 0.0, std::log(2.0), 0.0, 0.0, std::log(2.0)};
     const native::SymmetricMatrixView<const double, 3, 3> logarithm(packed_log_two);
@@ -344,10 +454,16 @@ TEST(NativeSPD, SpectralOperationsRejectInvalidNumericsAndDirections) {
     native::SymmetricMatrix<double, fdapde::Dynamic, fdapde::Dynamic> wrong_direction(2, 2);
     set_symmetric_zero(wrong_direction);
     EXPECT_THROW(native::matrix_log_frechet(point, wrong_direction), std::invalid_argument);
+    EXPECT_THROW(
+      native::matrix_log_second_frechet(point, wrong_direction, reference_direction()), std::invalid_argument);
+    EXPECT_THROW(
+      native::matrix_log_second_frechet(point, reference_direction(), wrong_direction), std::invalid_argument);
 
     fixed_symmetric nonfinite_direction = reference_direction();
     nonfinite_direction(2, 1) = std::numeric_limits<double>::infinity();
     EXPECT_THROW(native::matrix_exp_frechet(native::matrix_log(point), nonfinite_direction), std::invalid_argument);
+    EXPECT_THROW(
+      native::matrix_log_second_frechet(point, nonfinite_direction, reference_direction()), std::invalid_argument);
 }
 
 TEST(NativeSPD, SpectralOperationsOwnResultsFromSafeTemporaries) {
