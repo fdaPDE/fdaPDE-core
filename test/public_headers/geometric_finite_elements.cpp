@@ -253,6 +253,9 @@ static_assert(HeaderP1ObjectiveContributions<HeaderDynamicAffineGeometry>);
 static_assert(HeaderP1DiscreteTension<HeaderLogGeometry2>);
 static_assert(HeaderP1DiscreteTension<HeaderLogGeometry>);
 static_assert(HeaderP1DiscreteTension<HeaderDynamicLogGeometry>);
+static_assert(HeaderP1DiscreteTension<HeaderAffineGeometry2>);
+static_assert(HeaderP1DiscreteTension<HeaderAffineGeometry>);
+static_assert(HeaderP1DiscreteTension<HeaderDynamicAffineGeometry>);
 static_assert(std::is_same_v<decltype(std::declval<fdapde::gfe::P1ObjectiveValueResult>().value), double>);
 static_assert(std::is_same_v<
               decltype(std::declval<fdapde::gfe::P1ObjectiveValueResult>().first_failure),
@@ -480,7 +483,7 @@ static_assert(std::is_same_v<
     static_cast<void>(affine_dirichlet);
 }
 
-template <typename Geometry> void instantiate_p1_log_discrete_tension_for(const Geometry& geometry) {
+template <typename Geometry> void instantiate_p1_discrete_tension_for(const Geometry& geometry) {
     using Point = fdapde::manifold::point_t<Geometry>;
     fdapde::linalg::Matrix<typename Geometry::Scalar, Point::Rows, Point::Cols> identity;
     if constexpr (Point::Rows == fdapde::Dynamic) { identity.resize(geometry.order(), geometry.order()); }
@@ -497,10 +500,13 @@ template <typename Geometry> void instantiate_p1_log_discrete_tension_for(const 
     static_cast<void>(contribution);
 }
 
-[[maybe_unused]] void instantiate_p1_log_discrete_tension() {
-    instantiate_p1_log_discrete_tension_for(HeaderLogGeometry2 {});
-    instantiate_p1_log_discrete_tension_for(HeaderLogGeometry {});
-    instantiate_p1_log_discrete_tension_for(HeaderDynamicLogGeometry(2));
+[[maybe_unused]] void instantiate_p1_discrete_tension() {
+    instantiate_p1_discrete_tension_for(HeaderLogGeometry2 {});
+    instantiate_p1_discrete_tension_for(HeaderLogGeometry {});
+    instantiate_p1_discrete_tension_for(HeaderDynamicLogGeometry(2));
+    instantiate_p1_discrete_tension_for(HeaderAffineGeometry2 {});
+    instantiate_p1_discrete_tension_for(HeaderAffineGeometry {});
+    instantiate_p1_discrete_tension_for(HeaderDynamicAffineGeometry(2));
 }
 
 }   // namespace

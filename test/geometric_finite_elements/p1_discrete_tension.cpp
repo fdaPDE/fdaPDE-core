@@ -25,6 +25,7 @@
 #include <limits>
 #include <span>
 #include <stdexcept>
+#include <type_traits>
 #include <vector>
 
 namespace {
@@ -36,6 +37,9 @@ namespace native = fdapde::linalg;
 using FixedLogGeometry2 = manifold::LogEuclideanSPDGeometry<double, 2>;
 using FixedLogGeometry3 = manifold::LogEuclideanSPDGeometry<double, 3>;
 using DynamicLogGeometry = manifold::LogEuclideanSPDGeometry<double, fdapde::Dynamic>;
+using FixedAffineGeometry2 = manifold::AffineInvariantSPDGeometry<double, 2>;
+using FixedAffineGeometry3 = manifold::AffineInvariantSPDGeometry<double, 3>;
+using DynamicAffineGeometry = manifold::AffineInvariantSPDGeometry<double, fdapde::Dynamic>;
 
 template <typename Geometry> Geometry make_geometry(int order) {
     if constexpr (Geometry::Point::Rows == fdapde::Dynamic) {
@@ -199,22 +203,13 @@ template <typename Geometry> void expect_independent_chart_oracle(int order) {
     }
 }
 
-}   // namespace
-
-TEST(P1DiscreteTension, LogEuclideanMatchesIndependentChartOracleForFixedAndDynamicSPD2AndSPD3) {
-    expect_independent_chart_oracle<FixedLogGeometry2>(2);
-    expect_independent_chart_oracle<DynamicLogGeometry>(2);
-    expect_independent_chart_oracle<FixedLogGeometry3>(3);
-    expect_independent_chart_oracle<DynamicLogGeometry>(3);
-}
-
-TEST(P1DiscreteTension, LogEuclideanGradientMatchesCenteredGeodesicDirectionalDifferences) {
-    const FixedLogGeometry3 geometry;
+template <typename Geometry> void expect_gradient_directional_difference(int order, double tolerance) {
+    const Geometry geometry = make_geometry<Geometry>(order);
     const auto nodes = noncommuting_nodes(geometry);
     const auto directions = nodal_directions(geometry);
     const auto stencil = three_node_stencil();
     const auto result =
-      gfe::p1_discrete_tension_contribution(geometry, std::span<const FixedLogGeometry3::Point>(nodes), stencil);
+      gfe::p1_discrete_tension_contribution(geometry, std::span<const typename Geometry::Point>(nodes), stencil);
     ASSERT_TRUE(result.converged());
     ASSERT_GT(result.value, 0);
 
@@ -225,21 +220,164 @@ TEST(P1DiscreteTension, LogEuclideanGradientMatchesCenteredGeodesicDirectionalDi
     double best_error = std::numeric_limits<double>::infinity();
     for (const double step : {1.0e-4, 3.0e-5, 1.0e-5}) {
         const auto plus = perturb_nodes(
-          geometry, std::span<const FixedLogGeometry3::Point>(nodes),
-          std::span<const FixedLogGeometry3::Tangent>(directions), step);
+          geometry, std::span<const typename Geometry::Point>(nodes),
+          std::span<const typename Geometry::Tangent>(directions), step);
         const auto minus = perturb_nodes(
-          geometry, std::span<const FixedLogGeometry3::Point>(nodes),
-          std::span<const FixedLogGeometry3::Tangent>(directions), -step);
+          geometry, std::span<const typename Geometry::Point>(nodes),
+          std::span<const typename Geometry::Tangent>(directions), -step);
         const double plus_value =
-          gfe::p1_discrete_tension_value(geometry, std::span<const FixedLogGeometry3::Point>(plus), stencil).value;
+          gfe::p1_discrete_tension_value(geometry, std::span<const typename Geometry::Point>(plus), stencil).value;
         const double minus_value =
-          gfe::p1_discrete_tension_value(geometry, std::span<const FixedLogGeometry3::Point>(minus), stencil).value;
+          gfe::p1_discrete_tension_value(geometry, std::span<const typename Geometry::Point>(minus), stencil).value;
         const double finite_difference = (plus_value - minus_value) / (2 * step);
         const double error =
           std::abs(finite_difference - exact) / std::max({1.0, std::abs(finite_difference), std::abs(exact)});
         best_error = std::min(best_error, error);
     }
-    EXPECT_LT(best_error, 2.0e-7);
+    EXPECT_LT(best_error, tolerance);
+}
+
+template <typename Geometry> void expect_affine_two_node_oracle(int order) {
+    const Geometry geometry = make_geometry<Geometry>(order);
+    const auto candidates = noncommuting_nodes(geometry);
+    const std::vector<typename Geometry::Point> nodes {candidates[0], candidates[1]};
+    constexpr double stiffness = -1.2;
+    const gfe::P1LumpedLaplacianStencil stencil {
+      {0.7, 1.4},
+      {{0, 1, stiffness}}
+    };
+    const auto value =
+      gfe::p1_discrete_tension_value(geometry, std::span<const typename Geometry::Point>(nodes), stencil);
+    const auto result =
+      gfe::p1_discrete_tension_contribution(geometry, std::span<const typename Geometry::Point>(nodes), stencil);
+    const double coefficient = stiffness * stiffness * (1 / stencil.lumped_masses[0] + 1 / stencil.lumped_masses[1]);
+    const double distance = geometry.distance(nodes[0], nodes[1]);
+    const auto expected_first = geometry.linear_combination(
+      nodes[0], -coefficient, geometry.logarithm(nodes[0], nodes[1]), 0, geometry.zero_tangent(nodes[0]));
+    const auto expected_second = geometry.linear_combination(
+      nodes[1], -coefficient, geometry.logarithm(nodes[1], nodes[0]), 0, geometry.zero_tangent(nodes[1]));
+
+    ASSERT_TRUE(value.converged());
+    ASSERT_TRUE(result.converged());
+    EXPECT_NEAR(value.value, 0.5 * coefficient * distance * distance, 5.0e-11);
+    EXPECT_DOUBLE_EQ(result.value, value.value);
+    ASSERT_EQ(result.nodal_gradient.size(), nodes.size());
+    expect_tangent_near(geometry, nodes[0], result.nodal_gradient[0], expected_first, 4.0e-10);
+    expect_tangent_near(geometry, nodes[1], result.nodal_gradient[1], expected_second, 4.0e-10);
+}
+
+template <typename Geometry>
+void expect_scaled_two_node_oracle(double stiffness, double first_mass, double second_mass, double tolerance) {
+    const Geometry geometry = make_geometry<Geometry>(2);
+    const std::vector<typename Geometry::Point> nodes {
+      make_point(geometry, {1, 0, 0, 1}), make_point(geometry, {std::exp(1.0), 0, 0, 1})};
+    const gfe::P1LumpedLaplacianStencil stencil {
+      {first_mass, second_mass},
+      {{0, 1, stiffness}}
+    };
+    const auto result =
+      gfe::p1_discrete_tension_contribution(geometry, std::span<const typename Geometry::Point>(nodes), stencil);
+    auto scaled_square = [stiffness](double mass) {
+        const double quotient = stiffness / mass;
+        return std::isfinite(quotient) ? quotient * stiffness : stiffness * stiffness / mass;
+    };
+    const double coefficient = scaled_square(first_mass) + scaled_square(second_mass);
+    const double distance = geometry.distance(nodes[0], nodes[1]);
+    const double expected_value = 0.5 * coefficient * distance * distance;
+    const auto expected_first = geometry.linear_combination(
+      nodes[0], -coefficient, geometry.logarithm(nodes[0], nodes[1]), 0, geometry.zero_tangent(nodes[0]));
+    const auto expected_second = geometry.linear_combination(
+      nodes[1], -coefficient, geometry.logarithm(nodes[1], nodes[0]), 0, geometry.zero_tangent(nodes[1]));
+
+    ASSERT_TRUE(result.converged());
+    ASSERT_TRUE(std::isfinite(result.value));
+    EXPECT_NEAR(result.value, expected_value, tolerance * expected_value);
+    expect_tangent_near(geometry, nodes[0], result.nodal_gradient[0], expected_first, tolerance);
+    expect_tangent_near(geometry, nodes[1], result.nodal_gradient[1], expected_second, tolerance);
+}
+
+template <typename LogGeometry, typename AffineGeometry> void expect_commuting_geometries_agree(int order) {
+    static_assert(std::is_same_v<typename LogGeometry::Point, typename AffineGeometry::Point>);
+    const LogGeometry log_geometry = make_geometry<LogGeometry>(order);
+    const AffineGeometry affine_geometry = make_geometry<AffineGeometry>(order);
+    std::vector<typename LogGeometry::Point> nodes;
+    if (order == 2) {
+        nodes = {
+          make_point(log_geometry, {2.0, 0, 0, 4.0}), make_point(log_geometry, {3.0, 0, 0, 1.5}),
+          make_point(log_geometry, {1.2, 0, 0, 2.6})};
+    } else {
+        nodes = {
+          make_point(log_geometry, {2.0, 0, 0, 0, 4.0, 0, 0, 0, 1.5}),
+          make_point(log_geometry, {3.0, 0, 0, 0, 1.5, 0, 0, 0, 2.2}),
+          make_point(log_geometry, {1.2, 0, 0, 0, 2.6, 0, 0, 0, 4.1})};
+    }
+    const auto stencil = three_node_stencil();
+    const auto log_result =
+      gfe::p1_discrete_tension_contribution(log_geometry, std::span<const typename LogGeometry::Point>(nodes), stencil);
+    const auto affine_result = gfe::p1_discrete_tension_contribution(
+      affine_geometry, std::span<const typename AffineGeometry::Point>(nodes), stencil);
+
+    ASSERT_TRUE(log_result.converged());
+    ASSERT_TRUE(affine_result.converged());
+    EXPECT_NEAR(log_result.value, affine_result.value, 2.0e-11 * std::max(1.0, log_result.value));
+    for (std::size_t node = 0; node < nodes.size(); ++node) {
+        expect_tangent_near(
+          log_geometry, nodes[node], affine_result.nodal_gradient[node], log_result.nodal_gradient[node], 3.0e-10);
+    }
+}
+
+template <typename Outer, typename Middle>
+native::SymmetricMatrix<double, 3, 3> congruence3(const Outer& outer, const Middle& middle) {
+    native::SymmetricMatrix<double, 3, 3> result;
+    for (int row = 0; row < 3; ++row) {
+        for (int col = 0; col <= row; ++col) {
+            double value = 0;
+            for (int first = 0; first < 3; ++first) {
+                for (int second = 0; second < 3; ++second) {
+                    value += static_cast<double>(outer(row, first)) * static_cast<double>(middle(first, second)) *
+                             static_cast<double>(outer(col, second));
+                }
+            }
+            result(row, col) = value;
+        }
+    }
+    return result;
+}
+
+template <typename Geometry> void expect_relabeling_covariance(const Geometry& geometry) {
+    const auto nodes = noncommuting_nodes(geometry);
+    const auto result = gfe::p1_discrete_tension_contribution(
+      geometry, std::span<const typename Geometry::Point>(nodes), three_node_stencil());
+    const std::vector<typename Geometry::Point> permuted_nodes {nodes[2], nodes[0], nodes[1]};
+    const gfe::P1LumpedLaplacianStencil permuted_stencil {
+      {0.9,          0.7,          1.4         },
+      {{0, 1, 0.35}, {0, 2, -0.8}, {1, 2, -1.2}}
+    };
+    const auto permuted = gfe::p1_discrete_tension_contribution(
+      geometry, std::span<const typename Geometry::Point>(permuted_nodes), permuted_stencil);
+
+    ASSERT_TRUE(result.converged());
+    ASSERT_TRUE(permuted.converged());
+    EXPECT_NEAR(result.value, permuted.value, 3.0e-12 * std::max(1.0, result.value));
+    constexpr std::array<std::size_t, 3> old_for_new {2, 0, 1};
+    for (std::size_t node = 0; node < old_for_new.size(); ++node) {
+        expect_tangent_near(
+          geometry, permuted_nodes[node], permuted.nodal_gradient[node], result.nodal_gradient[old_for_new[node]],
+          4.0e-10);
+    }
+}
+
+}   // namespace
+
+TEST(P1DiscreteTension, LogEuclideanMatchesIndependentChartOracleForFixedAndDynamicSPD2AndSPD3) {
+    expect_independent_chart_oracle<FixedLogGeometry2>(2);
+    expect_independent_chart_oracle<DynamicLogGeometry>(2);
+    expect_independent_chart_oracle<FixedLogGeometry3>(3);
+    expect_independent_chart_oracle<DynamicLogGeometry>(3);
+}
+
+TEST(P1DiscreteTension, LogEuclideanGradientMatchesCenteredGeodesicDirectionalDifferences) {
+    expect_gradient_directional_difference<FixedLogGeometry3>(3, 2.0e-7);
 }
 
 TEST(P1DiscreteTension, LogEuclideanHasTheConstantFieldNullspace) {
@@ -258,57 +396,75 @@ TEST(P1DiscreteTension, LogEuclideanHasTheConstantFieldNullspace) {
 }
 
 TEST(P1DiscreteTension, LogEuclideanRemainsFiniteForSmallStiffnessAndMassScales) {
-    const FixedLogGeometry2 geometry;
-    const std::vector<FixedLogGeometry2::Point> nodes {
-      make_point(geometry, {1, 0, 0, 1}), make_point(geometry, {std::exp(1.0), 0, 0, 1})};
-    const double stiffness = 1.0e-160;
-    const gfe::P1LumpedLaplacianStencil stencil {
-      {1.0e-310, 1},
-      {{0, 1, stiffness}}
-    };
-    const auto result =
-      gfe::p1_discrete_tension_contribution(geometry, std::span<const FixedLogGeometry2::Point>(nodes), stencil);
-
-    const double coefficient =
-      (stiffness / stencil.lumped_masses[0]) * stiffness + (stiffness / stencil.lumped_masses[1]) * stiffness;
-    const double expected_value =
-      0.5 * coefficient * geometry.distance(nodes[0], nodes[1]) * geometry.distance(nodes[0], nodes[1]);
-    ASSERT_TRUE(result.converged());
-    ASSERT_TRUE(std::isfinite(result.value));
-    EXPECT_NEAR(result.value, expected_value, 2.0e-13 * expected_value);
-    const auto expected_first = geometry.linear_combination(
-      nodes[0], -coefficient, geometry.logarithm(nodes[0], nodes[1]), 0, geometry.zero_tangent(nodes[0]));
-    const auto expected_second = geometry.linear_combination(
-      nodes[1], -coefficient, geometry.logarithm(nodes[1], nodes[0]), 0, geometry.zero_tangent(nodes[1]));
-    expect_tangent_near(geometry, nodes[0], result.nodal_gradient[0], expected_first, 3.0e-13);
-    expect_tangent_near(geometry, nodes[1], result.nodal_gradient[1], expected_second, 3.0e-13);
+    expect_scaled_two_node_oracle<FixedLogGeometry2>(1.0e-160, 1.0e-310, 1, 3.0e-13);
 }
 
 TEST(P1DiscreteTension, LogEuclideanAvoidsOverflowingInverseMassIntermediates) {
-    const FixedLogGeometry2 geometry;
-    const std::vector<FixedLogGeometry2::Point> nodes {
-      make_point(geometry, {1, 0, 0, 1}), make_point(geometry, {std::exp(1.0), 0, 0, 1})};
-    const double stiffness = 0.05;
-    const gfe::P1LumpedLaplacianStencil stencil {
-      {1.0e-310, 1.0e-310},
-      {{0, 1, stiffness}}
-    };
-    const auto result =
-      gfe::p1_discrete_tension_contribution(geometry, std::span<const FixedLogGeometry2::Point>(nodes), stencil);
+    expect_scaled_two_node_oracle<FixedLogGeometry2>(0.05, 1.0e-310, 1.0e-310, 3.0e-15);
+}
 
-    const double coefficient =
-      stiffness * stiffness / stencil.lumped_masses[0] + stiffness * stiffness / stencil.lumped_masses[1];
-    const double expected_value =
-      0.5 * coefficient * geometry.distance(nodes[0], nodes[1]) * geometry.distance(nodes[0], nodes[1]);
+TEST(P1DiscreteTension, AffineInvariantMatchesExactTwoNodeOracleForFixedAndDynamicSPD2AndSPD3) {
+    expect_affine_two_node_oracle<FixedAffineGeometry2>(2);
+    expect_affine_two_node_oracle<DynamicAffineGeometry>(2);
+    expect_affine_two_node_oracle<FixedAffineGeometry3>(3);
+    expect_affine_two_node_oracle<DynamicAffineGeometry>(3);
+}
+
+TEST(P1DiscreteTension, AffineInvariantGradientMatchesCenteredNoncommutingDirectionalDifferences) {
+    expect_gradient_directional_difference<DynamicAffineGeometry>(2, 2.0e-7);
+    expect_gradient_directional_difference<FixedAffineGeometry3>(3, 2.0e-7);
+}
+
+TEST(P1DiscreteTension, AffineInvariantMatchesLogEuclideanForCommutingFields) {
+    expect_commuting_geometries_agree<FixedLogGeometry2, FixedAffineGeometry2>(2);
+    expect_commuting_geometries_agree<DynamicLogGeometry, DynamicAffineGeometry>(3);
+}
+
+TEST(P1DiscreteTension, AffineInvariantIsInvariantAndGradientEquivariantUnderGeneralCongruence) {
+    const FixedAffineGeometry3 geometry;
+    const auto nodes = noncommuting_nodes(geometry);
+    const auto result = gfe::p1_discrete_tension_contribution(
+      geometry, std::span<const FixedAffineGeometry3::Point>(nodes), three_node_stencil());
+    const native::Matrix<double, 3, 3> basis({1.2, -0.2, 0.1, 0.3, 0.9, -0.15, -0.1, 0.25, 1.1});
+    std::vector<FixedAffineGeometry3::Point> transformed_nodes;
+    transformed_nodes.reserve(nodes.size());
+    for (const auto& node : nodes) { transformed_nodes.emplace_back(congruence3(basis, node), native::checked); }
+    const auto transformed = gfe::p1_discrete_tension_contribution(
+      geometry, std::span<const FixedAffineGeometry3::Point>(transformed_nodes), three_node_stencil());
+
     ASSERT_TRUE(result.converged());
-    ASSERT_TRUE(std::isfinite(result.value));
-    EXPECT_NEAR(result.value, expected_value, 3.0e-15 * expected_value);
-    const auto expected_first = geometry.linear_combination(
-      nodes[0], -coefficient, geometry.logarithm(nodes[0], nodes[1]), 0, geometry.zero_tangent(nodes[0]));
-    const auto expected_second = geometry.linear_combination(
-      nodes[1], -coefficient, geometry.logarithm(nodes[1], nodes[0]), 0, geometry.zero_tangent(nodes[1]));
-    expect_tangent_near(geometry, nodes[0], result.nodal_gradient[0], expected_first, 3.0e-15);
-    expect_tangent_near(geometry, nodes[1], result.nodal_gradient[1], expected_second, 3.0e-15);
+    ASSERT_TRUE(transformed.converged());
+    EXPECT_NEAR(result.value, transformed.value, 3.0e-9 * std::max(1.0, result.value));
+    for (std::size_t node = 0; node < nodes.size(); ++node) {
+        expect_tangent_near(
+          geometry, transformed_nodes[node], transformed.nodal_gradient[node],
+          congruence3(basis, result.nodal_gradient[node]), 8.0e-9);
+    }
+}
+
+TEST(P1DiscreteTension, IsCovariantUnderGlobalNodeRelabeling) {
+    expect_relabeling_covariance(FixedLogGeometry3 {});
+    expect_relabeling_covariance(FixedAffineGeometry3 {});
+}
+
+TEST(P1DiscreteTension, AffineInvariantHasTheConstantFieldNullspace) {
+    const DynamicAffineGeometry geometry(2);
+    const auto point = make_point(geometry, {4.0, 0.6, 0.6, 2.5});
+    const std::vector<DynamicAffineGeometry::Point> nodes {point, point, point};
+    const auto result = gfe::p1_discrete_tension_contribution(
+      geometry, std::span<const DynamicAffineGeometry::Point>(nodes), three_node_stencil());
+
+    ASSERT_TRUE(result.converged());
+    EXPECT_LT(result.value, 1.0e-26);
+    ASSERT_EQ(result.nodal_gradient.size(), nodes.size());
+    for (std::size_t node = 0; node < nodes.size(); ++node) {
+        EXPECT_LT(geometry.norm(nodes[node], result.nodal_gradient[node]), 2.0e-14);
+    }
+}
+
+TEST(P1DiscreteTension, AffineInvariantKeepsFiniteRepresentableTwoNodeScaleLimits) {
+    expect_scaled_two_node_oracle<FixedAffineGeometry2>(1.0e-160, 1.0e-310, 1, 2.0e-11);
+    expect_scaled_two_node_oracle<FixedAffineGeometry2>(0.05, 1.0e-310, 1.0e-310, 2.0e-11);
 }
 
 TEST(P1DiscreteTension, LogEuclideanRejectsMalformedStencilsAndDynamicShapes) {

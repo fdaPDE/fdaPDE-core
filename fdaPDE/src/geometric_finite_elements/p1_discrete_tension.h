@@ -37,6 +37,21 @@ inline double p1_discrete_tension_multiply_divide(double first, double second, d
 }
 
 template <typename Geometry>
+typename Geometry::Tangent p1_discrete_tension_scale_divide(
+  const Geometry& geometry, const typename Geometry::Point& point, double multiplier,
+  const typename Geometry::Tangent& tangent, double denominator, const char* message) {
+    typename Geometry::Tangent result = geometry.zero_tangent(point);
+    for (int row = 0; row < geometry.order(); ++row) {
+        for (int col = 0; col <= row; ++col) {
+            result(row, col) = static_cast<typename Geometry::Scalar>(
+              p1_discrete_tension_multiply_divide(multiplier, static_cast<double>(tangent(row, col)), denominator));
+        }
+    }
+    p1_objective_require_finite_shape<std::domain_error>(result, geometry.order(), message);
+    return result;
+}
+
+template <typename Geometry>
 void p1_discrete_tension_validate(
   const Geometry& geometry, std::span<const typename Geometry::Point> nodal_values,
   const P1LumpedLaplacianStencil& stencil) {
@@ -127,6 +142,68 @@ p1_log_euclidean_discrete_tension_impl(
     return result;
 }
 
+template <bool WithGradient, typename Scalar, int Order>
+P1ObjectiveResult<WithGradient, typename manifold::AffineInvariantSPDGeometry<Scalar, Order>::Tangent>
+p1_affine_invariant_discrete_tension_impl(
+  const manifold::AffineInvariantSPDGeometry<Scalar, Order>& geometry,
+  std::span<const typename manifold::AffineInvariantSPDGeometry<Scalar, Order>::Point> nodal_values,
+  const P1LumpedLaplacianStencil& stencil) {
+    using Geometry = manifold::AffineInvariantSPDGeometry<Scalar, Order>;
+    using Tangent = typename Geometry::Tangent;
+    p1_discrete_tension_validate(geometry, nodal_values, stencil);
+
+    // r_i = sum_{j != i} K_ij Log_{P_i}(P_j).
+    std::vector<Tangent> residuals = p1_objective_zero_gradient(geometry, nodal_values);
+    for (const auto& edge : stencil.edges) {
+        const Tangent first_logarithm = geometry.logarithm(nodal_values[edge.first], nodal_values[edge.second]);
+        const Tangent second_logarithm = geometry.logarithm(nodal_values[edge.second], nodal_values[edge.first]);
+        residuals[edge.first] = geometry.linear_combination(
+          nodal_values[edge.first], 1, residuals[edge.first], edge.stiffness, first_logarithm);
+        residuals[edge.second] = geometry.linear_combination(
+          nodal_values[edge.second], 1, residuals[edge.second], edge.stiffness, second_logarithm);
+    }
+
+    P1ObjectiveResult<WithGradient, Tangent> result;
+    for (std::size_t node = 0; node < nodal_values.size(); ++node) {
+        p1_objective_require_finite_shape<std::domain_error>(
+          residuals[node], geometry.order(), "P1 affine-invariant discrete tension residual is nonfinite");
+        const double scaled_norm =
+          geometry.norm(nodal_values[node], residuals[node]) / std::sqrt(stencil.lumped_masses[node]);
+        result.value = std::fma(0.5 * scaled_norm, scaled_norm, result.value);
+        if (!std::isfinite(result.value)) {
+            throw std::domain_error("P1 affine-invariant discrete tension value is nonfinite");
+        }
+    }
+    if constexpr (WithGradient) {
+        result.nodal_gradient = p1_objective_zero_gradient(geometry, nodal_values);
+        auto accumulate_directed = [&](std::size_t base, std::size_t target, double stiffness) {
+            const Tangent base_action =
+              geometry.half_squared_distance_hessian_vector(nodal_values[base], nodal_values[target], residuals[base]);
+            const Tangent target_action =
+              geometry.logarithm_target_vjp(nodal_values[base], nodal_values[target], residuals[base]);
+            const Tangent scaled_base = p1_discrete_tension_scale_divide(
+              geometry, nodal_values[base], stiffness, base_action, stencil.lumped_masses[base],
+              "P1 affine-invariant inverse-mass base gradient is nonfinite");
+            const Tangent scaled_target = p1_discrete_tension_scale_divide(
+              geometry, nodal_values[target], stiffness, target_action, stencil.lumped_masses[base],
+              "P1 affine-invariant inverse-mass target gradient is nonfinite");
+            result.nodal_gradient[base] =
+              geometry.linear_combination(nodal_values[base], 1, result.nodal_gradient[base], -1, scaled_base);
+            result.nodal_gradient[target] =
+              geometry.linear_combination(nodal_values[target], 1, result.nodal_gradient[target], 1, scaled_target);
+        };
+        for (const auto& edge : stencil.edges) {
+            accumulate_directed(edge.first, edge.second, edge.stiffness);
+            accumulate_directed(edge.second, edge.first, edge.stiffness);
+        }
+        for (const Tangent& gradient : result.nodal_gradient) {
+            p1_objective_require_finite_shape<std::domain_error>(
+              gradient, geometry.order(), "P1 affine-invariant discrete tension gradient is nonfinite");
+        }
+    }
+    return result;
+}
+
 }   // namespace internals
 
 template <typename Scalar, int Order>
@@ -145,6 +222,24 @@ p1_discrete_tension_contribution(
   std::span<const typename manifold::LogEuclideanSPDGeometry<Scalar, Order>::Point> nodal_values,
   const P1LumpedLaplacianStencil& stencil) {
     return internals::p1_log_euclidean_discrete_tension_impl<true>(geometry, nodal_values, stencil);
+}
+
+template <typename Scalar, int Order>
+P1ObjectiveValueResult p1_discrete_tension_value(
+  const manifold::AffineInvariantSPDGeometry<Scalar, Order>& geometry,
+  std::span<const typename manifold::AffineInvariantSPDGeometry<Scalar, Order>::Point> nodal_values,
+  const P1LumpedLaplacianStencil& stencil) {
+    return internals::p1_affine_invariant_discrete_tension_impl<false>(geometry, nodal_values, stencil);
+}
+
+// The returned gradient is global: entry i is based at nodal_values[i].
+template <typename Scalar, int Order>
+P1ObjectiveContributionResult<typename manifold::AffineInvariantSPDGeometry<Scalar, Order>::Tangent>
+p1_discrete_tension_contribution(
+  const manifold::AffineInvariantSPDGeometry<Scalar, Order>& geometry,
+  std::span<const typename manifold::AffineInvariantSPDGeometry<Scalar, Order>::Point> nodal_values,
+  const P1LumpedLaplacianStencil& stencil) {
+    return internals::p1_affine_invariant_discrete_tension_impl<true>(geometry, nodal_values, stencil);
 }
 
 }   // namespace gfe
