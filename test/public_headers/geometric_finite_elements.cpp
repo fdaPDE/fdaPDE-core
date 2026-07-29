@@ -155,6 +155,18 @@ concept HeaderP1ObjectiveContributions = requires(
 };
 
 template <typename Geometry>
+concept HeaderP1LogCoordinateData = requires(
+  const Geometry& geometry, std::span<const fdapde::manifold::point_t<Geometry>> nodal_values,
+  std::span<const double> weights, const fdapde::manifold::tangent_t<Geometry>& observation_log) {
+    {
+        fdapde::gfe::p1_log_coordinate_data_site_value(geometry, nodal_values, weights, observation_log)
+    } -> std::same_as<fdapde::gfe::P1ObjectiveValueResult>;
+    {
+        fdapde::gfe::p1_log_coordinate_data_site_contribution(geometry, nodal_values, weights, observation_log)
+    } -> std::same_as<fdapde::gfe::P1ObjectiveContributionResult<fdapde::manifold::tangent_t<Geometry>>>;
+};
+
+template <typename Geometry>
 concept HeaderP1DiscreteTension = requires(
   const Geometry& geometry, std::span<const fdapde::manifold::point_t<Geometry>> nodal_values,
   const fdapde::gfe::P1LumpedLaplacianStencil& stencil) {
@@ -250,6 +262,12 @@ static_assert(HeaderP1ObjectiveContributions<HeaderDynamicLogGeometry>);
 static_assert(HeaderP1ObjectiveContributions<HeaderAffineGeometry2>);
 static_assert(HeaderP1ObjectiveContributions<HeaderAffineGeometry>);
 static_assert(HeaderP1ObjectiveContributions<HeaderDynamicAffineGeometry>);
+static_assert(HeaderP1LogCoordinateData<HeaderLogGeometry2>);
+static_assert(HeaderP1LogCoordinateData<HeaderLogGeometry>);
+static_assert(HeaderP1LogCoordinateData<HeaderDynamicLogGeometry>);
+static_assert(!HeaderP1LogCoordinateData<HeaderAffineGeometry2>);
+static_assert(!HeaderP1LogCoordinateData<HeaderAffineGeometry>);
+static_assert(!HeaderP1LogCoordinateData<HeaderDynamicAffineGeometry>);
 static_assert(HeaderP1DiscreteTension<HeaderLogGeometry2>);
 static_assert(HeaderP1DiscreteTension<HeaderLogGeometry>);
 static_assert(HeaderP1DiscreteTension<HeaderDynamicLogGeometry>);
@@ -449,6 +467,10 @@ static_assert(std::is_same_v<
     const std::array<HeaderLogPoint, 2> log_nodes {
       {HeaderLogPoint(identity, fdapde::linalg::checked), HeaderLogPoint(identity, fdapde::linalg::checked)}};
     const auto log_observation = log_geometry.zero_tangent(log_nodes[0]);
+    const auto log_coordinate_value = fdapde::gfe::p1_log_coordinate_data_site_value(
+      log_geometry, std::span<const HeaderLogPoint>(log_nodes), std::span<const double>(weights), log_observation);
+    const auto log_coordinate = fdapde::gfe::p1_log_coordinate_data_site_contribution(
+      log_geometry, std::span<const HeaderLogPoint>(log_nodes), std::span<const double>(weights), log_observation);
     const auto log_data_value = fdapde::gfe::p1_frobenius_data_site_value(
       log_geometry, std::span<const HeaderLogPoint>(log_nodes), std::span<const double>(weights), log_observation);
     const auto log_data = fdapde::gfe::p1_frobenius_data_site_contribution(
@@ -475,6 +497,8 @@ static_assert(std::is_same_v<
       affine_geometry, std::span<const HeaderAffinePoint>(affine_nodes), packet);
     static_cast<void>(log_data_value);
     static_cast<void>(log_data);
+    static_cast<void>(log_coordinate_value);
+    static_cast<void>(log_coordinate);
     static_cast<void>(log_dirichlet_value);
     static_cast<void>(log_dirichlet);
     static_cast<void>(affine_data_value);

@@ -169,6 +169,53 @@ P1ObjectiveContributionResult<typename Geometry::Tangent> p1_frobenius_data_site
     return result;
 }
 
+template <typename Geometry, typename ValueResult>
+P1ObjectiveValueResult p1_log_coordinate_data_site_value_impl(
+  const Geometry& geometry, const ValueResult& value_result, const typename Geometry::Tangent& observation_log) {
+    using Tangent = typename Geometry::Tangent;
+    p1_objective_require_finite_shape(
+      observation_log, geometry.order(),
+      "P1 log-coordinate observation has incompatible dimensions or nonfinite coefficients");
+
+    P1ObjectiveValueResult result;
+    if (!value_result.converged()) {
+        result.first_failure = p1_objective_mean_failure(0, value_result);
+        return result;
+    }
+
+    const Tangent value_log(fdapde::linalg::matrix_log(value_result.value));
+    const Tangent residual(value_log - observation_log);
+    const double residual_norm = static_cast<double>(residual.norm());
+    result.value = 0.5 * residual_norm * residual_norm;
+    if (!std::isfinite(result.value)) { throw std::domain_error("P1 log-coordinate data contribution is nonfinite"); }
+    return result;
+}
+
+template <typename Geometry, typename Linearization>
+P1ObjectiveContributionResult<typename Geometry::Tangent> p1_log_coordinate_data_site_contribution_impl(
+  const Geometry& geometry, std::span<const typename Geometry::Point> nodes, Linearization linearization,
+  const typename Geometry::Tangent& observation_log) {
+    using Tangent = typename Geometry::Tangent;
+    const auto& value_result = linearization.result();
+    const auto value = p1_log_coordinate_data_site_value_impl(geometry, value_result, observation_log);
+
+    P1ObjectiveContributionResult<Tangent> result;
+    result.value = value.value;
+    result.first_failure = value.first_failure;
+    result.nodal_gradient = p1_objective_zero_gradient(geometry, nodes);
+    if (!result.converged()) return result;
+
+    const Tangent value_log(fdapde::linalg::matrix_log(value_result.value));
+    const Tangent residual(value_log - observation_log);
+    const Tangent value_gradient(fdapde::linalg::matrix_exp_frechet(value_log, residual));
+    result.nodal_gradient = linearization.nodal_vjp(value_gradient);
+    for (const Tangent& gradient : result.nodal_gradient) {
+        p1_objective_require_finite_shape<std::domain_error>(
+          gradient, geometry.order(), "P1 log-coordinate nodal gradient is nonfinite");
+    }
+    return result;
+}
+
 template <bool WithGradient, typename Tangent>
 using P1ObjectiveResult =
   std::conditional_t<WithGradient, P1ObjectiveContributionResult<Tangent>, P1ObjectiveValueResult>;
@@ -292,6 +339,32 @@ P1ObjectiveResult<WithGradient, typename Geometry::Tangent> p1_dirichlet_cell_ob
 }
 
 }   // namespace internals
+
+// The observation is log(D), not D. Computing and validating it once belongs
+// to the data-ingest boundary.
+template <typename Scalar_, int Order_>
+P1ObjectiveValueResult p1_log_coordinate_data_site_value(
+  const manifold::LogEuclideanSPDGeometry<Scalar_, Order_>& geometry,
+  std::span<const typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_>::Point> nodal_values,
+  std::span<const double> barycentric_weights,
+  const typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_>::Tangent& observation_log) {
+    const auto value_result = p1_geodesic_value(geometry, nodal_values, barycentric_weights);
+    return internals::p1_log_coordinate_data_site_value_impl(geometry, value_result, observation_log);
+}
+
+// The returned metric gradients follow nodal_values order. Observation
+// weighting and global scattering belong to the caller.
+template <typename Scalar_, int Order_>
+P1ObjectiveContributionResult<typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_>::Tangent>
+p1_log_coordinate_data_site_contribution(
+  const manifold::LogEuclideanSPDGeometry<Scalar_, Order_>& geometry,
+  std::span<const typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_>::Point> nodal_values,
+  std::span<const double> barycentric_weights,
+  const typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_>::Tangent& observation_log) {
+    auto linearization = p1_geodesic_linearization(geometry, nodal_values, barycentric_weights);
+    return internals::p1_log_coordinate_data_site_contribution_impl(
+      geometry, nodal_values, std::move(linearization), observation_log);
+}
 
 template <typename Scalar_, int Order_>
 P1ObjectiveValueResult p1_frobenius_data_site_value(

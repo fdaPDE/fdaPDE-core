@@ -177,6 +177,106 @@ std::vector<typename Geometry::Point> perturb_nodes(
     return result;
 }
 
+template <typename Geometry>
+void expect_log_coordinate_data_oracle(
+  const Geometry& geometry, const std::vector<typename Geometry::Point>& nodes,
+  const typename Geometry::Tangent& observation_log, double tolerance) {
+    using Tangent = typename Geometry::Tangent;
+    const std::vector<double> weights {0.2, 0.5, 0.3};
+    const auto value = gfe::p1_log_coordinate_data_site_value(
+      geometry, std::span<const typename Geometry::Point>(nodes), std::span<const double>(weights), observation_log);
+    const auto contribution = gfe::p1_log_coordinate_data_site_contribution(
+      geometry, std::span<const typename Geometry::Point>(nodes), std::span<const double>(weights), observation_log);
+    ASSERT_TRUE(value.converged());
+    ASSERT_TRUE(contribution.converged());
+    ASSERT_EQ(contribution.nodal_gradient.size(), nodes.size());
+    EXPECT_NEAR(value.value, contribution.value, tolerance);
+
+    std::vector<Tangent> logs;
+    logs.reserve(nodes.size());
+    Tangent mean_log = geometry.zero_tangent(nodes[0]);
+    for (std::size_t i = 0; i < nodes.size(); ++i) {
+        logs.emplace_back(native::matrix_log(nodes[i]));
+        mean_log = geometry.linear_combination(nodes[0], 1, mean_log, weights[i], logs.back());
+    }
+    const Tangent residual = geometry.linear_combination(nodes[0], 1, mean_log, -1, observation_log);
+    EXPECT_NEAR(contribution.value, 0.5 * frobenius_inner(residual, residual), tolerance);
+    for (std::size_t i = 0; i < nodes.size(); ++i) {
+        const Tangent chart_gradient = geometry.linear_combination(nodes[i], 0, residual, weights[i], residual);
+        const Tangent expected(native::matrix_exp_frechet(logs[i], chart_gradient));
+        expect_tangent_near(geometry, nodes[i], contribution.nodal_gradient[i], expected, 10 * tolerance);
+    }
+
+    constexpr std::array<std::size_t, 3> permutation {2, 0, 1};
+    std::vector<typename Geometry::Point> permuted_nodes;
+    std::vector<double> permuted_weights;
+    permuted_nodes.reserve(nodes.size());
+    permuted_weights.reserve(weights.size());
+    for (const std::size_t index : permutation) {
+        permuted_nodes.push_back(nodes[index]);
+        permuted_weights.push_back(weights[index]);
+    }
+    const auto permuted = gfe::p1_log_coordinate_data_site_contribution(
+      geometry, std::span<const typename Geometry::Point>(permuted_nodes), std::span<const double>(permuted_weights),
+      observation_log);
+    ASSERT_TRUE(permuted.converged());
+    EXPECT_NEAR(permuted.value, contribution.value, tolerance);
+    for (std::size_t i = 0; i < nodes.size(); ++i) {
+        expect_tangent_near(
+          geometry, permuted_nodes[i], permuted.nodal_gradient[i], contribution.nodal_gradient[permutation[i]],
+          10 * tolerance);
+    }
+
+    const std::vector<double> vertex_weights {0, 1, 0};
+    const Tangent vertex_log(native::matrix_log(nodes[1]));
+    const auto vertex = gfe::p1_log_coordinate_data_site_contribution(
+      geometry, std::span<const typename Geometry::Point>(nodes), std::span<const double>(vertex_weights), vertex_log);
+    ASSERT_TRUE(vertex.converged());
+    EXPECT_NEAR(vertex.value, 0, tolerance);
+    for (std::size_t i = 0; i < nodes.size(); ++i) {
+        EXPECT_NEAR(geometry.norm(nodes[i], vertex.nodal_gradient[i]), 0, 10 * tolerance);
+    }
+}
+
+template <typename Geometry>
+void expect_log_coordinate_directional_derivative(
+  const Geometry& geometry, const std::vector<typename Geometry::Point>& nodes,
+  const std::vector<typename Geometry::Tangent>& directions, const typename Geometry::Tangent& observation_log,
+  double tolerance) {
+    const std::vector<double> weights {0.2, 0.5, 0.3};
+    const auto contribution = gfe::p1_log_coordinate_data_site_contribution(
+      geometry, std::span<const typename Geometry::Point>(nodes), std::span<const double>(weights), observation_log);
+    ASSERT_TRUE(contribution.converged());
+
+    double exact = 0;
+    for (std::size_t i = 0; i < nodes.size(); ++i) {
+        exact += geometry.inner_product(nodes[i], contribution.nodal_gradient[i], directions[i]);
+    }
+
+    double best_error = std::numeric_limits<double>::infinity();
+    for (const double step : {1.0e-3, 3.0e-4, 1.0e-4}) {
+        const auto plus_nodes = perturb_nodes(
+          geometry, std::span<const typename Geometry::Point>(nodes),
+          std::span<const typename Geometry::Tangent>(directions), step);
+        const auto minus_nodes = perturb_nodes(
+          geometry, std::span<const typename Geometry::Point>(nodes),
+          std::span<const typename Geometry::Tangent>(directions), -step);
+        const auto plus = gfe::p1_log_coordinate_data_site_value(
+          geometry, std::span<const typename Geometry::Point>(plus_nodes), std::span<const double>(weights),
+          observation_log);
+        const auto minus = gfe::p1_log_coordinate_data_site_value(
+          geometry, std::span<const typename Geometry::Point>(minus_nodes), std::span<const double>(weights),
+          observation_log);
+        ASSERT_TRUE(plus.converged());
+        ASSERT_TRUE(minus.converged());
+        const double finite_difference = (plus.value - minus.value) / (2 * step);
+        const double error =
+          std::abs(finite_difference - exact) / std::max({1.0, std::abs(finite_difference), std::abs(exact)});
+        best_error = std::min(best_error, error);
+    }
+    EXPECT_LT(best_error, tolerance);
+}
+
 template <typename Geometry> void expect_affine_identity_objectives() {
     const Geometry geometry = make_geometry<Geometry>();
     const auto point = make_diagonal_point<Geometry>(1, 1, 1);
@@ -318,6 +418,42 @@ TEST(P1ObjectiveContributions, ValueOnlyObjectivesSupportFixedAndDynamicSPD2) {
     expect_fixed_dynamic_gradients(fixed_log.dirichlet_gradient, dynamic_log.dirichlet_gradient, 2.0e-10);
     expect_fixed_dynamic_gradients(fixed_affine.data_gradient, dynamic_affine.data_gradient, 2.0e-8);
     expect_fixed_dynamic_gradients(fixed_affine.dirichlet_gradient, dynamic_affine.dirichlet_gradient, 2.0e-8);
+}
+
+TEST(P1ObjectiveContributions, LogCoordinateDataMatchesSvecOracleForFixedAndDynamicSPD2AndSPD3) {
+    const FixedLogGeometry2 fixed_geometry2;
+    const DynamicLogGeometry dynamic_geometry2(2);
+    const FixedLogGeometry fixed_geometry3;
+    const DynamicLogGeometry dynamic_geometry3(3);
+
+    expect_log_coordinate_data_oracle(
+      fixed_geometry2, noncommuting_spd2_nodes<FixedLogGeometry2>(),
+      make_spd2_tangent<FixedLogGeometry2>({0.2, -0.15, 0.5}), 3.0e-11);
+    expect_log_coordinate_data_oracle(
+      dynamic_geometry2, noncommuting_spd2_nodes<DynamicLogGeometry>(),
+      make_spd2_tangent<DynamicLogGeometry>({0.2, -0.15, 0.5}), 3.0e-11);
+    expect_log_coordinate_data_oracle(
+      fixed_geometry3, noncommuting_nodes<FixedLogGeometry>(),
+      make_tangent<FixedLogGeometry>({0.4, -0.2, 0.1, 0.15, -0.05, 0.35}), 5.0e-11);
+    expect_log_coordinate_data_oracle(
+      dynamic_geometry3, noncommuting_nodes<DynamicLogGeometry>(),
+      make_tangent<DynamicLogGeometry>({0.4, -0.2, 0.1, 0.15, -0.05, 0.35}), 5.0e-11);
+}
+
+TEST(P1ObjectiveContributions, LogCoordinateDataGradientMatchesDirectionalDifferences) {
+    const FixedLogGeometry geometry3;
+    const auto nodes3 = noncommuting_nodes<FixedLogGeometry>();
+    const auto directions3 = nodal_directions<FixedLogGeometry>();
+    expect_log_coordinate_directional_derivative(
+      geometry3, nodes3, directions3, make_tangent<FixedLogGeometry>({0.4, -0.2, 0.1, 0.15, -0.05, 0.35}), 2.0e-9);
+
+    const DynamicLogGeometry geometry2(2);
+    const auto nodes2 = noncommuting_spd2_nodes<DynamicLogGeometry>();
+    const std::vector<DynamicLogGeometry::Tangent> directions2 {
+      make_spd2_tangent<DynamicLogGeometry>({0.3, -0.2, 0.4}), make_spd2_tangent<DynamicLogGeometry>({-0.1, 0.35, 0.2}),
+      make_spd2_tangent<DynamicLogGeometry>({0.2, 0.1, -0.3})};
+    expect_log_coordinate_directional_derivative(
+      geometry2, nodes2, directions2, make_spd2_tangent<DynamicLogGeometry>({0.2, -0.15, 0.5}), 2.0e-9);
 }
 
 TEST(P1ObjectiveContributions, LogEuclideanDataSiteMatchesTheAnalyticDiagonalOracle) {
@@ -850,5 +986,23 @@ TEST(P1ObjectiveContributions, RejectsMalformedPacketsAndDynamicShapes) {
       gfe::p1_frobenius_data_site_value(
         dynamic_geometry, std::span<const DynamicLogGeometry::Point>(valid_dynamic_nodes),
         std::span<const double>(weights), wrong_observation),
+      std::invalid_argument);
+    EXPECT_THROW(
+      gfe::p1_log_coordinate_data_site_contribution(
+        dynamic_geometry, std::span<const DynamicLogGeometry::Point>(valid_dynamic_nodes),
+        std::span<const double>(weights), wrong_observation),
+      std::invalid_argument);
+    EXPECT_THROW(
+      gfe::p1_log_coordinate_data_site_value(
+        dynamic_geometry, std::span<const DynamicLogGeometry::Point>(valid_dynamic_nodes),
+        std::span<const double>(weights), wrong_observation),
+      std::invalid_argument);
+
+    auto nonfinite_observation = make_tangent<DynamicLogGeometry>({0.2, -0.1, 0.3, 0.1, 0.05, 0.4});
+    nonfinite_observation(2, 1) = std::numeric_limits<double>::infinity();
+    EXPECT_THROW(
+      gfe::p1_log_coordinate_data_site_contribution(
+        dynamic_geometry, std::span<const DynamicLogGeometry::Point>(valid_dynamic_nodes),
+        std::span<const double>(weights), nonfinite_observation),
       std::invalid_argument);
 }
