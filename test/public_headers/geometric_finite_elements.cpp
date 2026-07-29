@@ -146,6 +146,13 @@ concept HeaderP1ObjectiveContributions = requires(
     } -> std::same_as<
       fdapde::gfe::P1ObjectiveContributionResult<fdapde::manifold::tangent_t<Geometry>>>;
     {
+        fdapde::gfe::p1_ambient_frobenius_data_site_value(geometry, nodal_values, weights, observation)
+    } -> std::same_as<fdapde::gfe::P1ObjectiveValueResult>;
+    {
+        fdapde::gfe::p1_ambient_frobenius_data_site_contribution(geometry, nodal_values, weights, observation)
+    } -> std::same_as<
+      fdapde::gfe::P1ObjectiveContributionResult<fdapde::manifold::tangent_t<Geometry>>>;
+    {
         fdapde::gfe::p1_dirichlet_cell_value(geometry, nodal_values, packet)
     } -> std::same_as<fdapde::gfe::P1ObjectiveValueResult>;
     {
@@ -476,6 +483,10 @@ static_assert(std::is_same_v<
     const auto log_data = fdapde::gfe::p1_frobenius_data_site_contribution(
       log_geometry, std::span<const HeaderLogPoint>(log_nodes), std::span<const double>(weights),
       log_observation);
+    const auto log_ambient_value = fdapde::gfe::p1_ambient_frobenius_data_site_value(
+      log_geometry, std::span<const HeaderLogPoint>(log_nodes), std::span<const double>(weights), log_observation);
+    const auto log_ambient = fdapde::gfe::p1_ambient_frobenius_data_site_contribution(
+      log_geometry, std::span<const HeaderLogPoint>(log_nodes), std::span<const double>(weights), log_observation);
     const auto log_dirichlet_value =
       fdapde::gfe::p1_dirichlet_cell_value(log_geometry, std::span<const HeaderLogPoint>(log_nodes), packet);
     const auto log_dirichlet =
@@ -491,6 +502,12 @@ static_assert(std::is_same_v<
     const auto affine_data = fdapde::gfe::p1_frobenius_data_site_contribution(
       affine_geometry, std::span<const HeaderAffinePoint>(affine_nodes), std::span<const double>(weights),
       affine_observation);
+    const auto affine_ambient_value = fdapde::gfe::p1_ambient_frobenius_data_site_value(
+      affine_geometry, std::span<const HeaderAffinePoint>(affine_nodes), std::span<const double>(weights),
+      affine_observation);
+    const auto affine_ambient = fdapde::gfe::p1_ambient_frobenius_data_site_contribution(
+      affine_geometry, std::span<const HeaderAffinePoint>(affine_nodes), std::span<const double>(weights),
+      affine_observation);
     const auto affine_dirichlet_value =
       fdapde::gfe::p1_dirichlet_cell_value(affine_geometry, std::span<const HeaderAffinePoint>(affine_nodes), packet);
     const auto affine_dirichlet = fdapde::gfe::p1_dirichlet_cell_contribution(
@@ -499,10 +516,14 @@ static_assert(std::is_same_v<
     static_cast<void>(log_data);
     static_cast<void>(log_coordinate_value);
     static_cast<void>(log_coordinate);
+    static_cast<void>(log_ambient_value);
+    static_cast<void>(log_ambient);
     static_cast<void>(log_dirichlet_value);
     static_cast<void>(log_dirichlet);
     static_cast<void>(affine_data_value);
     static_cast<void>(affine_data);
+    static_cast<void>(affine_ambient_value);
+    static_cast<void>(affine_ambient);
     static_cast<void>(affine_dirichlet_value);
     static_cast<void>(affine_dirichlet);
 }

@@ -220,6 +220,81 @@ template <bool WithGradient, typename Tangent>
 using P1ObjectiveResult =
   std::conditional_t<WithGradient, P1ObjectiveContributionResult<Tangent>, P1ObjectiveValueResult>;
 
+template <bool WithGradient, typename Geometry>
+P1ObjectiveResult<WithGradient, typename Geometry::Tangent> p1_ambient_frobenius_data_site_impl(
+  const Geometry& geometry, std::span<const typename Geometry::Point> nodes, std::span<const double> weights,
+  const typename Geometry::Tangent& observation) {
+    using Tangent = typename Geometry::Tangent;
+    validate_p1_data(nodes.size(), weights);
+    p1_objective_require_finite_shape(
+      observation, geometry.order(),
+      "P1 ambient Frobenius observation has incompatible dimensions or nonfinite coefficients");
+    for (const auto& node : nodes) {
+        p1_objective_require_finite_shape(
+          node, geometry.order(), "P1 ambient Frobenius node has incompatible dimensions or nonfinite coefficients");
+    }
+
+    long double weight_total = 0;
+    long double weight_correction = 0;
+    for (const double weight : weights) {
+        const long double corrected = static_cast<long double>(weight) - weight_correction;
+        const long double next = weight_total + corrected;
+        weight_correction = (next - weight_total) - corrected;
+        weight_total = next;
+    }
+
+    Tangent interpolated = geometry.zero_tangent(nodes.front());
+    for (int row = 0; row < geometry.order(); ++row) {
+        for (int col = 0; col <= row; ++col) {
+            long double sum = 0;
+            long double correction = 0;
+            for (std::size_t node = 0; node < nodes.size(); ++node) {
+                const long double contribution =
+                  static_cast<long double>(weights[node]) * static_cast<long double>(nodes[node](row, col));
+                const long double corrected = contribution - correction;
+                const long double next = sum + corrected;
+                correction = (next - sum) - corrected;
+                sum = next;
+            }
+            interpolated(row, col) = static_cast<typename Geometry::Scalar>(sum / weight_total);
+        }
+    }
+    p1_objective_require_finite_shape<std::domain_error>(
+      interpolated, geometry.order(), "P1 ambient Frobenius interpolation is nonfinite");
+
+    const Tangent residual(interpolated - observation);
+    const double residual_norm = static_cast<double>(residual.norm());
+    P1ObjectiveResult<WithGradient, Tangent> result;
+    result.value = 0.5 * residual_norm * residual_norm;
+    if (!std::isfinite(result.value)) {
+        throw std::domain_error("P1 ambient Frobenius data contribution is nonfinite");
+    }
+
+    if constexpr (WithGradient) {
+        result.nodal_gradient.reserve(nodes.size());
+        for (std::size_t node = 0; node < nodes.size(); ++node) {
+            if (weights[node] == 0) {
+                result.nodal_gradient.push_back(geometry.zero_tangent(nodes[node]));
+                continue;
+            }
+            Tangent ambient_gradient = geometry.zero_tangent(nodes[node]);
+            const long double coefficient = static_cast<long double>(weights[node]) / weight_total;
+            for (int row = 0; row < geometry.order(); ++row) {
+                for (int col = 0; col <= row; ++col) {
+                    ambient_gradient(row, col) = static_cast<typename Geometry::Scalar>(
+                      coefficient * static_cast<long double>(residual(row, col)));
+                }
+            }
+            p1_objective_require_finite_shape<std::domain_error>(
+              ambient_gradient, geometry.order(), "P1 ambient Frobenius Euclidean gradient is nonfinite");
+            result.nodal_gradient.push_back(geometry.euclidean_to_riemannian_gradient(nodes[node], ambient_gradient));
+            p1_objective_require_finite_shape<std::domain_error>(
+              result.nodal_gradient.back(), geometry.order(), "P1 ambient Frobenius metric gradient is nonfinite");
+        }
+    }
+    return result;
+}
+
 template <
   bool WithGradient, typename Geometry, std::size_t LocalDim, std::size_t EmbedDim, std::size_t QuadratureSize,
   typename Builder>
@@ -364,6 +439,50 @@ p1_log_coordinate_data_site_contribution(
     auto linearization = p1_geodesic_linearization(geometry, nodal_values, barycentric_weights);
     return internals::p1_log_coordinate_data_site_contribution_impl(
       geometry, nodal_values, std::move(linearization), observation_log);
+}
+
+template <typename Scalar_, int Order_>
+P1ObjectiveValueResult p1_ambient_frobenius_data_site_value(
+  const manifold::LogEuclideanSPDGeometry<Scalar_, Order_>& geometry,
+  std::span<const typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_>::Point> nodal_values,
+  std::span<const double> barycentric_weights,
+  const typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_>::Tangent& observation) {
+    return internals::p1_ambient_frobenius_data_site_impl<false>(
+      geometry, nodal_values, barycentric_weights, observation);
+}
+
+template <typename Scalar_, int Order_>
+P1ObjectiveValueResult p1_ambient_frobenius_data_site_value(
+  const manifold::AffineInvariantSPDGeometry<Scalar_, Order_>& geometry,
+  std::span<const typename manifold::AffineInvariantSPDGeometry<Scalar_, Order_>::Point> nodal_values,
+  std::span<const double> barycentric_weights,
+  const typename manifold::AffineInvariantSPDGeometry<Scalar_, Order_>::Tangent& observation) {
+    return internals::p1_ambient_frobenius_data_site_impl<false>(
+      geometry, nodal_values, barycentric_weights, observation);
+}
+
+// The returned metric gradients follow nodal_values order. This objective
+// uses ordinary ambient P1 interpolation, not a Karcher mean.
+template <typename Scalar_, int Order_>
+P1ObjectiveContributionResult<typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_>::Tangent>
+p1_ambient_frobenius_data_site_contribution(
+  const manifold::LogEuclideanSPDGeometry<Scalar_, Order_>& geometry,
+  std::span<const typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_>::Point> nodal_values,
+  std::span<const double> barycentric_weights,
+  const typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_>::Tangent& observation) {
+    return internals::p1_ambient_frobenius_data_site_impl<true>(
+      geometry, nodal_values, barycentric_weights, observation);
+}
+
+template <typename Scalar_, int Order_>
+P1ObjectiveContributionResult<typename manifold::AffineInvariantSPDGeometry<Scalar_, Order_>::Tangent>
+p1_ambient_frobenius_data_site_contribution(
+  const manifold::AffineInvariantSPDGeometry<Scalar_, Order_>& geometry,
+  std::span<const typename manifold::AffineInvariantSPDGeometry<Scalar_, Order_>::Point> nodal_values,
+  std::span<const double> barycentric_weights,
+  const typename manifold::AffineInvariantSPDGeometry<Scalar_, Order_>::Tangent& observation) {
+    return internals::p1_ambient_frobenius_data_site_impl<true>(
+      geometry, nodal_values, barycentric_weights, observation);
 }
 
 template <typename Scalar_, int Order_>
