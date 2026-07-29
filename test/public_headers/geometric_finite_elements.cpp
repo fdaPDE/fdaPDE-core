@@ -186,6 +186,19 @@ concept HeaderP1DiscreteTension = requires(
       fdapde::gfe::P1ObjectiveContributionResult<fdapde::manifold::tangent_t<Geometry>>>;
 };
 
+template <typename Geometry>
+concept HeaderP1SquaredDistanceEdgeDirichlet = requires(
+  const Geometry& geometry, std::span<const fdapde::manifold::point_t<Geometry>> nodal_values,
+  const fdapde::gfe::P1LumpedLaplacianStencil& stencil) {
+    {
+        fdapde::gfe::p1_squared_distance_edge_dirichlet_value(geometry, nodal_values, stencil)
+    } -> std::same_as<fdapde::gfe::P1ObjectiveValueResult>;
+    {
+        fdapde::gfe::p1_squared_distance_edge_dirichlet_contribution(geometry, nodal_values, stencil)
+    } -> std::same_as<
+      fdapde::gfe::P1ObjectiveContributionResult<fdapde::manifold::tangent_t<Geometry>>>;
+};
+
 using HeaderGenericResult = decltype(fdapde::gfe::p1_geodesic_value(
   std::declval<const HeaderGeometry&>(), std::declval<std::span<const double>>(),
   std::declval<std::span<const double>>(), 0.0));
@@ -281,6 +294,12 @@ static_assert(HeaderP1DiscreteTension<HeaderDynamicLogGeometry>);
 static_assert(HeaderP1DiscreteTension<HeaderAffineGeometry2>);
 static_assert(HeaderP1DiscreteTension<HeaderAffineGeometry>);
 static_assert(HeaderP1DiscreteTension<HeaderDynamicAffineGeometry>);
+static_assert(HeaderP1SquaredDistanceEdgeDirichlet<HeaderLogGeometry2>);
+static_assert(HeaderP1SquaredDistanceEdgeDirichlet<HeaderLogGeometry>);
+static_assert(HeaderP1SquaredDistanceEdgeDirichlet<HeaderDynamicLogGeometry>);
+static_assert(HeaderP1SquaredDistanceEdgeDirichlet<HeaderAffineGeometry2>);
+static_assert(HeaderP1SquaredDistanceEdgeDirichlet<HeaderAffineGeometry>);
+static_assert(HeaderP1SquaredDistanceEdgeDirichlet<HeaderDynamicAffineGeometry>);
 static_assert(std::is_same_v<decltype(std::declval<fdapde::gfe::P1ObjectiveValueResult>().value), double>);
 static_assert(std::is_same_v<
               decltype(std::declval<fdapde::gfe::P1ObjectiveValueResult>().first_failure),
@@ -541,8 +560,14 @@ template <typename Geometry> void instantiate_p1_discrete_tension_for(const Geom
       geometry, std::span<const Point>(nodes), stencil);
     const auto contribution = fdapde::gfe::p1_discrete_tension_contribution(
       geometry, std::span<const Point>(nodes), stencil);
+    const auto edge_value = fdapde::gfe::p1_squared_distance_edge_dirichlet_value(
+      geometry, std::span<const Point>(nodes), stencil);
+    const auto edge_contribution = fdapde::gfe::p1_squared_distance_edge_dirichlet_contribution(
+      geometry, std::span<const Point>(nodes), stencil);
     static_cast<void>(value);
     static_cast<void>(contribution);
+    static_cast<void>(edge_value);
+    static_cast<void>(edge_contribution);
 }
 
 [[maybe_unused]] void instantiate_p1_discrete_tension() {

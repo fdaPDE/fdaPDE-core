@@ -36,6 +36,7 @@
 #include "src/geometric_finite_elements/p1_lumped_laplacian_stencil.h"
 #include "src/geometric_finite_elements/p1_geodesic_linearization.h"
 #include "src/geometric_finite_elements/p1_objective_contributions.h"
+#include "src/geometric_finite_elements/p1_squared_distance_edge_dirichlet.h"
 #include "src/geometric_finite_elements/p1_discrete_tension.h"
 
 // clang-format on
