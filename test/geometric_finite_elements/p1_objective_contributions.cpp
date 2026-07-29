@@ -31,9 +31,11 @@ namespace manifold = fdapde::manifold;
 namespace native = fdapde::linalg;
 
 using FixedLogGeometry = manifold::LogEuclideanSPDGeometry<double, 3>;
+using FixedLogGeometry2 = manifold::LogEuclideanSPDGeometry<double, 2>;
 using DynamicLogGeometry = manifold::LogEuclideanSPDGeometry<double, fdapde::Dynamic>;
 using FixedFloatLogGeometry = manifold::LogEuclideanSPDGeometry<float, 3>;
 using FixedAffineGeometry = manifold::AffineInvariantSPDGeometry<double, 3>;
+using FixedAffineGeometry2 = manifold::AffineInvariantSPDGeometry<double, 2>;
 using DynamicAffineGeometry = manifold::AffineInvariantSPDGeometry<double, fdapde::Dynamic>;
 using FixedFloatAffineGeometry = manifold::AffineInvariantSPDGeometry<float, 3>;
 
@@ -78,6 +80,26 @@ template <typename Geometry> typename Geometry::Tangent make_tangent(const std::
     return tangent;
 }
 
+template <typename Geometry> typename Geometry::Point make_spd2_point(const std::array<double, 4>& coefficients) {
+    native::Matrix<typename Geometry::Scalar, 2, 2> dense;
+    for (int i = 0; i < 2; ++i) {
+        for (int j = 0; j < 2; ++j) {
+            dense(i, j) = static_cast<typename Geometry::Scalar>(coefficients[static_cast<std::size_t>(2 * i + j)]);
+        }
+    }
+    return typename Geometry::Point(dense, native::checked);
+}
+
+template <typename Geometry> typename Geometry::Tangent make_spd2_tangent(const std::array<double, 3>& coefficients) {
+    typename Geometry::Tangent tangent;
+    if constexpr (Geometry::Tangent::Rows == fdapde::Dynamic) { tangent.resize(2, 2); }
+    std::size_t index = 0;
+    for (int i = 0; i < 2; ++i) {
+        for (int j = 0; j <= i; ++j) { tangent(i, j) = static_cast<typename Geometry::Scalar>(coefficients[index++]); }
+    }
+    return tangent;
+}
+
 template <typename Geometry> std::vector<typename Geometry::Point> noncommuting_nodes() {
     return {
       make_point<Geometry>(first_coefficients), make_point<Geometry>(second_coefficients),
@@ -89,6 +111,12 @@ template <typename Geometry> std::vector<typename Geometry::Tangent> nodal_direc
       make_tangent<Geometry>({0.3, -0.2, 0.4, 0.1, 0.25, -0.15}),
       make_tangent<Geometry>({-0.1, 0.35, 0.2, -0.25, 0.05, 0.45}),
       make_tangent<Geometry>({0.2, 0.1, -0.3, 0.4, -0.15, 0.25})};
+}
+
+template <typename Geometry> std::vector<typename Geometry::Point> noncommuting_spd2_nodes() {
+    return {
+      make_spd2_point<Geometry>({4.0, 0.6, 0.6, 2.5}), make_spd2_point<Geometry>({1.8, -0.25, -0.25, 3.3}),
+      make_spd2_point<Geometry>({2.6, 0.35, 0.35, 1.4})};
 }
 
 gfe::P1GeodesicLinearizationOptions accurate_options() {
@@ -158,20 +186,139 @@ template <typename Geometry> void expect_affine_identity_objectives() {
     const auto data = gfe::p1_frobenius_data_site_contribution(
       geometry, std::span<const typename Geometry::Point>(nodes), std::span<const double>(weights), observation,
       accurate_options());
+    const auto data_value = gfe::p1_frobenius_data_site_value(
+      geometry, std::span<const typename Geometry::Point>(nodes), std::span<const double>(weights), observation,
+      accurate_options().mean);
     const auto dirichlet = gfe::p1_dirichlet_cell_contribution(
+      geometry, std::span<const typename Geometry::Point>(nodes), surface_packet(), accurate_options());
+    const auto dirichlet_value = gfe::p1_dirichlet_cell_value(
       geometry, std::span<const typename Geometry::Point>(nodes), surface_packet(), accurate_options());
 
     ASSERT_TRUE(data.converged());
+    ASSERT_TRUE(data_value.converged());
     ASSERT_TRUE(dirichlet.converged());
+    ASSERT_TRUE(dirichlet_value.converged());
     EXPECT_DOUBLE_EQ(data.value, 0);
+    EXPECT_DOUBLE_EQ(data_value.value, data.value);
     EXPECT_DOUBLE_EQ(dirichlet.value, 0);
+    EXPECT_DOUBLE_EQ(dirichlet_value.value, dirichlet.value);
     for (std::size_t i = 0; i < nodes.size(); ++i) {
         EXPECT_DOUBLE_EQ(geometry.norm(nodes[i], data.nodal_gradient[i]), 0);
         EXPECT_DOUBLE_EQ(geometry.norm(nodes[i], dirichlet.nodal_gradient[i]), 0);
     }
 }
 
+template <typename Geometry> struct SPD2ObjectiveSnapshot {
+    std::array<double, 2> values;
+    std::vector<typename Geometry::Tangent> data_gradient;
+    std::vector<typename Geometry::Tangent> dirichlet_gradient;
+};
+
+template <typename Geometry>
+SPD2ObjectiveSnapshot<Geometry> expect_log_euclidean_spd2_objectives(const Geometry& geometry) {
+    const auto nodes = noncommuting_spd2_nodes<Geometry>();
+    const std::vector<double> weights {0.25, 0.5, 0.25};
+    const auto observation = make_spd2_tangent<Geometry>({2.3, -0.1, 1.9});
+    const auto packet = planar_packet<Geometry>();
+
+    const auto data_value = gfe::p1_frobenius_data_site_value(
+      geometry, std::span<const typename Geometry::Point>(nodes), std::span<const double>(weights), observation);
+    const auto data = gfe::p1_frobenius_data_site_contribution(
+      geometry, std::span<const typename Geometry::Point>(nodes), std::span<const double>(weights), observation);
+    const auto dirichlet_value =
+      gfe::p1_dirichlet_cell_value(geometry, std::span<const typename Geometry::Point>(nodes), packet);
+    const auto dirichlet =
+      gfe::p1_dirichlet_cell_contribution(geometry, std::span<const typename Geometry::Point>(nodes), packet);
+
+    EXPECT_TRUE(data_value.converged());
+    EXPECT_TRUE(data.converged());
+    EXPECT_TRUE(dirichlet_value.converged());
+    EXPECT_TRUE(dirichlet.converged());
+    EXPECT_NEAR(data_value.value, data.value, 2.0e-12);
+    EXPECT_NEAR(dirichlet_value.value, dirichlet.value, 2.0e-12);
+    EXPECT_EQ(data.nodal_gradient.size(), nodes.size());
+    EXPECT_EQ(dirichlet.nodal_gradient.size(), packet.node_count);
+    return {
+      {data_value.value, dirichlet_value.value},
+      data.nodal_gradient, dirichlet.nodal_gradient
+    };
+}
+
+template <typename Geometry>
+SPD2ObjectiveSnapshot<Geometry> expect_affine_invariant_spd2_objectives(const Geometry& geometry) {
+    const auto nodes = noncommuting_spd2_nodes<Geometry>();
+    const std::vector<double> weights {0.25, 0.5, 0.25};
+    const auto observation = make_spd2_tangent<Geometry>({2.3, -0.1, 1.9});
+    const auto packet = planar_packet<Geometry>();
+    const auto options = accurate_options();
+
+    const auto data_value = gfe::p1_frobenius_data_site_value(
+      geometry, std::span<const typename Geometry::Point>(nodes), std::span<const double>(weights), observation,
+      options.mean);
+    const auto data = gfe::p1_frobenius_data_site_contribution(
+      geometry, std::span<const typename Geometry::Point>(nodes), std::span<const double>(weights), observation,
+      options);
+    const auto dirichlet_value =
+      gfe::p1_dirichlet_cell_value(geometry, std::span<const typename Geometry::Point>(nodes), packet, options);
+    const auto dirichlet =
+      gfe::p1_dirichlet_cell_contribution(geometry, std::span<const typename Geometry::Point>(nodes), packet, options);
+
+    EXPECT_TRUE(data_value.converged());
+    EXPECT_TRUE(data.converged());
+    EXPECT_TRUE(dirichlet_value.converged());
+    EXPECT_TRUE(dirichlet.converged());
+    EXPECT_NEAR(data_value.value, data.value, 2.0e-10);
+    EXPECT_NEAR(dirichlet_value.value, dirichlet.value, 2.0e-10);
+    EXPECT_EQ(data.nodal_gradient.size(), nodes.size());
+    EXPECT_EQ(dirichlet.nodal_gradient.size(), packet.node_count);
+    return {
+      {data_value.value, dirichlet_value.value},
+      data.nodal_gradient, dirichlet.nodal_gradient
+    };
+}
+
 }   // namespace
+
+TEST(P1ObjectiveContributions, ValueOnlyObjectivesSupportFixedAndDynamicSPD2) {
+    const FixedLogGeometry2 fixed_log_geometry;
+    const DynamicLogGeometry dynamic_log_geometry(2);
+    const FixedAffineGeometry2 fixed_affine_geometry;
+    const DynamicAffineGeometry dynamic_affine_geometry(2);
+
+    EXPECT_EQ(fixed_log_geometry.order(), 2);
+    EXPECT_EQ(dynamic_log_geometry.order(), 2);
+    EXPECT_EQ(fixed_affine_geometry.order(), 2);
+    EXPECT_EQ(dynamic_affine_geometry.order(), 2);
+    EXPECT_EQ(fixed_log_geometry.dimension(), 3);
+    EXPECT_EQ(dynamic_log_geometry.dimension(), 3);
+    EXPECT_EQ(fixed_affine_geometry.dimension(), 3);
+    EXPECT_EQ(dynamic_affine_geometry.dimension(), 3);
+
+    const auto fixed_log = expect_log_euclidean_spd2_objectives(fixed_log_geometry);
+    const auto dynamic_log = expect_log_euclidean_spd2_objectives(dynamic_log_geometry);
+    const auto fixed_affine = expect_affine_invariant_spd2_objectives(fixed_affine_geometry);
+    const auto dynamic_affine = expect_affine_invariant_spd2_objectives(dynamic_affine_geometry);
+
+    EXPECT_NEAR(dynamic_log.values[0], fixed_log.values[0], 2.0e-11);
+    EXPECT_NEAR(dynamic_log.values[1], fixed_log.values[1], 2.0e-11);
+    EXPECT_NEAR(dynamic_affine.values[0], fixed_affine.values[0], 2.0e-9);
+    EXPECT_NEAR(dynamic_affine.values[1], fixed_affine.values[1], 2.0e-9);
+
+    auto expect_fixed_dynamic_gradients = [](const auto& fixed, const auto& dynamic, double tolerance) {
+        ASSERT_EQ(dynamic.size(), fixed.size());
+        for (std::size_t node = 0; node < fixed.size(); ++node) {
+            for (int row = 0; row < 2; ++row) {
+                for (int col = 0; col <= row; ++col) {
+                    EXPECT_NEAR(dynamic[node](row, col), fixed[node](row, col), tolerance);
+                }
+            }
+        }
+    };
+    expect_fixed_dynamic_gradients(fixed_log.data_gradient, dynamic_log.data_gradient, 2.0e-10);
+    expect_fixed_dynamic_gradients(fixed_log.dirichlet_gradient, dynamic_log.dirichlet_gradient, 2.0e-10);
+    expect_fixed_dynamic_gradients(fixed_affine.data_gradient, dynamic_affine.data_gradient, 2.0e-8);
+    expect_fixed_dynamic_gradients(fixed_affine.dirichlet_gradient, dynamic_affine.dirichlet_gradient, 2.0e-8);
+}
 
 TEST(P1ObjectiveContributions, LogEuclideanDataSiteMatchesTheAnalyticDiagonalOracle) {
     const FixedLogGeometry geometry;
@@ -182,9 +329,13 @@ TEST(P1ObjectiveContributions, LogEuclideanDataSiteMatchesTheAnalyticDiagonalOra
 
     const auto result = gfe::p1_frobenius_data_site_contribution(
       geometry, std::span<const FixedLogGeometry::Point>(nodes), std::span<const double>(weights), observation);
+    const auto value = gfe::p1_frobenius_data_site_value(
+      geometry, std::span<const FixedLogGeometry::Point>(nodes), std::span<const double>(weights), observation);
     ASSERT_TRUE(result.converged());
+    ASSERT_TRUE(value.converged());
     ASSERT_EQ(result.nodal_gradient.size(), nodes.size());
     EXPECT_FALSE(result.first_failure);
+    EXPECT_DOUBLE_EQ(value.value, result.value);
 
     const std::array<double, 3> first {2, 3, 4};
     const std::array<double, 3> second {5, 1.5, 2.5};
@@ -298,9 +449,13 @@ TEST(P1ObjectiveContributions, LogEuclideanCellMatchesTheExactChartOracleAndPerm
     const auto packet = surface_packet();
     const auto result =
       gfe::p1_dirichlet_cell_contribution(geometry, std::span<const FixedLogGeometry::Point>(global_nodes), packet);
+    const auto value =
+      gfe::p1_dirichlet_cell_value(geometry, std::span<const FixedLogGeometry::Point>(global_nodes), packet);
     ASSERT_TRUE(result.converged());
+    ASSERT_TRUE(value.converged());
     ASSERT_EQ(result.nodal_gradient.size(), packet.node_count);
     EXPECT_GT(result.value, 0);
+    EXPECT_DOUBLE_EQ(value.value, result.value);
 
     std::array<FixedLogGeometry::Tangent, 3> logs;
     for (std::size_t i = 0; i < packet.node_count; ++i) { logs[i] = native::matrix_log(global_nodes[packet.dofs[i]]); }
@@ -366,9 +521,13 @@ TEST(P1ObjectiveContributions, AffineInvariantCommutingCellMatchesTheLogEuclidea
       gfe::p1_dirichlet_cell_contribution(log_geometry, std::span<const FixedLogGeometry::Point>(log_nodes), packet);
     const auto affine = gfe::p1_dirichlet_cell_contribution(
       affine_geometry, std::span<const FixedAffineGeometry::Point>(affine_nodes), packet, accurate_options());
+    const auto affine_value = gfe::p1_dirichlet_cell_value(
+      affine_geometry, std::span<const FixedAffineGeometry::Point>(affine_nodes), packet, accurate_options());
     ASSERT_TRUE(logarithmic.converged());
     ASSERT_TRUE(affine.converged());
+    ASSERT_TRUE(affine_value.converged());
     EXPECT_NEAR(affine.value, logarithmic.value, 3.0e-9);
+    EXPECT_DOUBLE_EQ(affine_value.value, affine.value);
     for (std::size_t i = 0; i < packet.node_count; ++i) {
         expect_tangent_near(
           affine_geometry, affine_nodes[packet.dofs[i]], affine.nodal_gradient[i], logarithmic.nodal_gradient[i],
@@ -487,14 +646,41 @@ TEST(P1ObjectiveContributions, SurfacesMeanAndLinearSolveFailuresWithExactStages
     const auto failed_mean = gfe::p1_frobenius_data_site_contribution(
       geometry, std::span<const FixedAffineGeometry::Point>(nodes), std::span<const double>(weights), observation,
       failed_mean_options);
+    const auto failed_mean_value = gfe::p1_frobenius_data_site_value(
+      geometry, std::span<const FixedAffineGeometry::Point>(nodes), std::span<const double>(weights), observation,
+      failed_mean_options.mean);
     ASSERT_FALSE(failed_mean.converged());
+    ASSERT_FALSE(failed_mean_value.converged());
     ASSERT_TRUE(failed_mean.first_failure);
+    ASSERT_TRUE(failed_mean_value.first_failure);
     EXPECT_EQ(failed_mean.first_failure->stage, gfe::P1ObjectiveStage::mean);
+    EXPECT_EQ(failed_mean_value.first_failure->stage, failed_mean.first_failure->stage);
     EXPECT_EQ(failed_mean.first_failure->site, 0);
+    EXPECT_EQ(failed_mean_value.first_failure->site, failed_mean.first_failure->site);
     EXPECT_FALSE(failed_mean.first_failure->axis);
+    EXPECT_FALSE(failed_mean_value.first_failure->axis);
     ASSERT_TRUE(failed_mean.first_failure->barycenter_stop_reason);
+    ASSERT_TRUE(failed_mean_value.first_failure->barycenter_stop_reason);
     EXPECT_EQ(*failed_mean.first_failure->barycenter_stop_reason, manifold::BarycenterStopReason::line_search_failed);
+    EXPECT_EQ(
+      *failed_mean_value.first_failure->barycenter_stop_reason, *failed_mean.first_failure->barycenter_stop_reason);
     EXPECT_TRUE(std::isfinite(failed_mean.first_failure->stationarity_norm));
+    EXPECT_DOUBLE_EQ(failed_mean_value.first_failure->stationarity_norm, failed_mean.first_failure->stationarity_norm);
+
+    auto delayed_mean_packet = surface_packet();
+    delayed_mean_packet.integration_weights = {0, 1};
+    delayed_mean_packet.barycentric_weights[1] = {0.25, 0.5, 0.25};
+    const auto failed_cell_mean_value = gfe::p1_dirichlet_cell_value(
+      geometry, std::span<const FixedAffineGeometry::Point>(nodes), delayed_mean_packet, failed_mean_options);
+    ASSERT_FALSE(failed_cell_mean_value.converged());
+    ASSERT_TRUE(failed_cell_mean_value.first_failure);
+    EXPECT_EQ(failed_cell_mean_value.first_failure->stage, gfe::P1ObjectiveStage::mean);
+    EXPECT_EQ(failed_cell_mean_value.first_failure->site, 1);
+    EXPECT_FALSE(failed_cell_mean_value.first_failure->axis);
+    ASSERT_TRUE(failed_cell_mean_value.first_failure->barycenter_stop_reason);
+    EXPECT_EQ(
+      *failed_cell_mean_value.first_failure->barycenter_stop_reason,
+      manifold::BarycenterStopReason::line_search_failed);
 
     auto failed_solve_options = accurate_options();
     failed_solve_options.linear_solve.max_iterations = 1;
@@ -502,9 +688,14 @@ TEST(P1ObjectiveContributions, SurfacesMeanAndLinearSolveFailuresWithExactStages
     const auto failed_data = gfe::p1_frobenius_data_site_contribution(
       geometry, std::span<const FixedAffineGeometry::Point>(nodes), std::span<const double>(weights), observation,
       failed_solve_options);
+    const auto data_value = gfe::p1_frobenius_data_site_value(
+      geometry, std::span<const FixedAffineGeometry::Point>(nodes), std::span<const double>(weights), observation,
+      failed_solve_options.mean);
     ASSERT_FALSE(failed_data.converged());
+    ASSERT_TRUE(data_value.converged());
     ASSERT_TRUE(failed_data.first_failure);
     EXPECT_EQ(failed_data.first_failure->stage, gfe::P1ObjectiveStage::data_pullback);
+    EXPECT_DOUBLE_EQ(data_value.value, failed_data.value);
     ASSERT_TRUE(failed_data.first_failure->linear_solve);
     EXPECT_EQ(
       failed_data.first_failure->linear_solve->stop_reason, manifold::PositiveDefiniteCGStopReason::max_iterations);
@@ -512,15 +703,26 @@ TEST(P1ObjectiveContributions, SurfacesMeanAndLinearSolveFailuresWithExactStages
     const auto packet = surface_packet();
     const auto failed_cell = gfe::p1_dirichlet_cell_contribution(
       geometry, std::span<const FixedAffineGeometry::Point>(nodes), packet, failed_solve_options);
+    const auto failed_cell_value = gfe::p1_dirichlet_cell_value(
+      geometry, std::span<const FixedAffineGeometry::Point>(nodes), packet, failed_solve_options);
     ASSERT_FALSE(failed_cell.converged());
+    ASSERT_FALSE(failed_cell_value.converged());
     ASSERT_TRUE(failed_cell.first_failure);
+    ASSERT_TRUE(failed_cell_value.first_failure);
     EXPECT_EQ(failed_cell.first_failure->stage, gfe::P1ObjectiveStage::dirichlet_spatial);
+    EXPECT_EQ(failed_cell_value.first_failure->stage, failed_cell.first_failure->stage);
     EXPECT_EQ(failed_cell.first_failure->site, 0);
+    EXPECT_EQ(failed_cell_value.first_failure->site, failed_cell.first_failure->site);
     ASSERT_TRUE(failed_cell.first_failure->axis);
+    ASSERT_TRUE(failed_cell_value.first_failure->axis);
     EXPECT_EQ(*failed_cell.first_failure->axis, 0);
+    EXPECT_EQ(*failed_cell_value.first_failure->axis, *failed_cell.first_failure->axis);
     ASSERT_TRUE(failed_cell.first_failure->linear_solve);
+    ASSERT_TRUE(failed_cell_value.first_failure->linear_solve);
     EXPECT_EQ(
       failed_cell.first_failure->linear_solve->stop_reason, manifold::PositiveDefiniteCGStopReason::max_iterations);
+    EXPECT_EQ(
+      failed_cell_value.first_failure->linear_solve->stop_reason, failed_cell.first_failure->linear_solve->stop_reason);
 
     const std::vector<FixedAffineGeometry::Point> output_failure_nodes {
       make_point<FixedAffineGeometry>(
@@ -546,7 +748,12 @@ TEST(P1ObjectiveContributions, SurfacesMeanAndLinearSolveFailuresWithExactStages
     const auto failed_output = gfe::p1_dirichlet_cell_contribution(
       geometry, std::span<const FixedAffineGeometry::Point>(output_failure_nodes), output_failure_packet,
       failed_output_options);
+    const auto output_value = gfe::p1_dirichlet_cell_value(
+      geometry, std::span<const FixedAffineGeometry::Point>(output_failure_nodes), output_failure_packet,
+      failed_output_options);
     ASSERT_FALSE(failed_output.converged());
+    ASSERT_TRUE(output_value.converged());
+    EXPECT_GT(output_value.value, 0);
     ASSERT_TRUE(failed_output.first_failure);
     EXPECT_EQ(failed_output.first_failure->stage, gfe::P1ObjectiveStage::dirichlet_mixed_output);
     EXPECT_EQ(failed_output.first_failure->site, 0);
@@ -567,7 +774,11 @@ TEST(P1ObjectiveContributions, SurfacesMeanAndLinearSolveFailuresWithExactStages
     failed_pullback_options.linear_solve.residual_tolerance = 1.0e-6;
     const auto failed_pullback = gfe::p1_dirichlet_cell_contribution(
       geometry, std::span<const FixedAffineGeometry::Point>(nodes), pullback_packet, failed_pullback_options);
+    const auto pullback_value = gfe::p1_dirichlet_cell_value(
+      geometry, std::span<const FixedAffineGeometry::Point>(nodes), pullback_packet, failed_pullback_options);
     ASSERT_FALSE(failed_pullback.converged());
+    ASSERT_TRUE(pullback_value.converged());
+    EXPECT_GT(pullback_value.value, 0);
     ASSERT_TRUE(failed_pullback.first_failure);
     EXPECT_EQ(failed_pullback.first_failure->stage, gfe::P1ObjectiveStage::dirichlet_mixed_pullback);
     EXPECT_EQ(failed_pullback.first_failure->site, 0);
@@ -586,6 +797,9 @@ TEST(P1ObjectiveContributions, RejectsMalformedPacketsAndDynamicShapes) {
     packet.dofs[0] = nodes.size();
     EXPECT_THROW(
       gfe::p1_dirichlet_cell_contribution(geometry, std::span<const FixedLogGeometry::Point>(nodes), packet),
+      std::out_of_range);
+    EXPECT_THROW(
+      gfe::p1_dirichlet_cell_value(geometry, std::span<const FixedLogGeometry::Point>(nodes), packet),
       std::out_of_range);
     packet = planar_packet<FixedLogGeometry>();
     packet.integration_weights[0] = std::numeric_limits<double>::quiet_NaN();
@@ -629,6 +843,11 @@ TEST(P1ObjectiveContributions, RejectsMalformedPacketsAndDynamicShapes) {
     const auto valid_dynamic_nodes = noncommuting_nodes<DynamicLogGeometry>();
     EXPECT_THROW(
       gfe::p1_frobenius_data_site_contribution(
+        dynamic_geometry, std::span<const DynamicLogGeometry::Point>(valid_dynamic_nodes),
+        std::span<const double>(weights), wrong_observation),
+      std::invalid_argument);
+    EXPECT_THROW(
+      gfe::p1_frobenius_data_site_value(
         dynamic_geometry, std::span<const DynamicLogGeometry::Point>(valid_dynamic_nodes),
         std::span<const double>(weights), wrong_observation),
       std::invalid_argument);

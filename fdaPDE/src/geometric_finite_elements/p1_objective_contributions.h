@@ -39,6 +39,15 @@ struct P1ObjectiveFailure {
     std::optional<P1LinearSolveStatus> linear_solve;
 };
 
+struct P1ObjectiveValueResult {
+    // On failure this is only the last available local candidate and must
+    // not be consumed by an optimizer.
+    double value = 0;
+    std::optional<P1ObjectiveFailure> first_failure;
+
+    bool converged() const noexcept { return !first_failure.has_value(); }
+};
+
 template <typename Tangent> struct P1ObjectiveContributionResult {
     // On failure these are only the last available local candidates and
     // must not be consumed by an optimizer.
@@ -102,17 +111,14 @@ p1_objective_zero_gradient(const Geometry& geometry, std::span<const typename Ge
     return result;
 }
 
-template <typename Geometry, typename Linearization>
-P1ObjectiveContributionResult<typename Geometry::Tangent> p1_frobenius_data_site_contribution_impl(
-  const Geometry& geometry, std::span<const typename Geometry::Point> nodes, Linearization linearization,
-  const typename Geometry::Tangent& observation) {
+template <typename Geometry, typename ValueResult>
+P1ObjectiveValueResult p1_frobenius_data_site_value_impl(
+  const Geometry& geometry, const ValueResult& value_result, const typename Geometry::Tangent& observation) {
     using Tangent = typename Geometry::Tangent;
-    const auto& value_result = linearization.result();
     p1_objective_require_finite_shape(
       observation, geometry.order(), "P1 Frobenius observation has incompatible dimensions or nonfinite coefficients");
 
-    P1ObjectiveContributionResult<Tangent> result;
-    result.nodal_gradient = p1_objective_zero_gradient(geometry, nodes);
+    P1ObjectiveValueResult result;
     if (!value_result.converged()) {
         result.first_failure = p1_objective_mean_failure(0, value_result);
         return result;
@@ -122,7 +128,24 @@ P1ObjectiveContributionResult<typename Geometry::Tangent> p1_frobenius_data_site
     const double ambient_norm = static_cast<double>(ambient_gradient.norm());
     result.value = 0.5 * ambient_norm * ambient_norm;
     if (!std::isfinite(result.value)) { throw std::domain_error("P1 Frobenius data contribution is nonfinite"); }
+    return result;
+}
 
+template <typename Geometry, typename Linearization>
+P1ObjectiveContributionResult<typename Geometry::Tangent> p1_frobenius_data_site_contribution_impl(
+  const Geometry& geometry, std::span<const typename Geometry::Point> nodes, Linearization linearization,
+  const typename Geometry::Tangent& observation) {
+    using Tangent = typename Geometry::Tangent;
+    const auto& value_result = linearization.result();
+    const auto value = p1_frobenius_data_site_value_impl(geometry, value_result, observation);
+
+    P1ObjectiveContributionResult<Tangent> result;
+    result.value = value.value;
+    result.first_failure = value.first_failure;
+    result.nodal_gradient = p1_objective_zero_gradient(geometry, nodes);
+    if (!result.converged()) return result;
+
+    const Tangent ambient_gradient(value_result.value - observation);
     const Tangent value_gradient = geometry.euclidean_to_riemannian_gradient(value_result.value, ambient_gradient);
     p1_objective_require_finite_shape<std::domain_error>(
       value_gradient, geometry.order(), "P1 Frobenius metric gradient is nonfinite");
@@ -146,8 +169,14 @@ P1ObjectiveContributionResult<typename Geometry::Tangent> p1_frobenius_data_site
     return result;
 }
 
-template <typename Geometry, std::size_t LocalDim, std::size_t EmbedDim, std::size_t QuadratureSize, typename Builder>
-P1ObjectiveContributionResult<typename Geometry::Tangent> p1_dirichlet_cell_contribution_impl(
+template <bool WithGradient, typename Tangent>
+using P1ObjectiveResult =
+  std::conditional_t<WithGradient, P1ObjectiveContributionResult<Tangent>, P1ObjectiveValueResult>;
+
+template <
+  bool WithGradient, typename Geometry, std::size_t LocalDim, std::size_t EmbedDim, std::size_t QuadratureSize,
+  typename Builder>
+P1ObjectiveResult<WithGradient, typename Geometry::Tangent> p1_dirichlet_cell_objective_impl(
   const Geometry& geometry, std::span<const typename Geometry::Point> nodal_values,
   const P1FEMCellQuadrature<LocalDim, EmbedDim, QuadratureSize>& packet, Builder&& build_linearization) {
     using Point = typename Geometry::Point;
@@ -179,8 +208,8 @@ P1ObjectiveContributionResult<typename Geometry::Tangent> p1_dirichlet_cell_cont
         }
     }
 
-    P1ObjectiveContributionResult<Tangent> result;
-    result.nodal_gradient = p1_objective_zero_gradient(geometry, nodes);
+    P1ObjectiveResult<WithGradient, Tangent> result;
+    if constexpr (WithGradient) { result.nodal_gradient = p1_objective_zero_gradient(geometry, nodes); }
     for (std::size_t site = 0; site < packet.quadrature_size; ++site) {
         const double integration_weight = packet.integration_weights[site];
         if (integration_weight == 0) continue;
@@ -193,7 +222,8 @@ P1ObjectiveContributionResult<typename Geometry::Tangent> p1_dirichlet_cell_cont
         }
 
         double site_value = 0;
-        auto site_gradient = p1_objective_zero_gradient(geometry, nodes);
+        std::vector<Tangent> site_gradient;
+        if constexpr (WithGradient) { site_gradient = p1_objective_zero_gradient(geometry, nodes); }
         for (std::size_t axis = 0; axis < packet.embed_dim; ++axis) {
             const std::span<const double> direction(packet.physical_weight_gradients[axis]);
             if constexpr (is_log_euclidean_spd_geometry<Geometry>) {
@@ -203,10 +233,12 @@ P1ObjectiveContributionResult<typename Geometry::Tangent> p1_dirichlet_cell_cont
                     throw std::domain_error("P1 Dirichlet spatial energy is invalid");
                 }
                 site_value = std::fma(0.5, squared_norm, site_value);
-                auto pullback = linearization.covariant_mixed_nodal_vjp(direction, spatial);
-                for (std::size_t node = 0; node < packet.node_count; ++node) {
-                    site_gradient[node] =
-                      geometry.linear_combination(nodes[node], 1, site_gradient[node], 1, pullback[node]);
+                if constexpr (WithGradient) {
+                    auto pullback = linearization.covariant_mixed_nodal_vjp(direction, spatial);
+                    for (std::size_t node = 0; node < packet.node_count; ++node) {
+                        site_gradient[node] =
+                          geometry.linear_combination(nodes[node], 1, site_gradient[node], 1, pullback[node]);
+                    }
                 }
             } else {
                 auto spatial = linearization.weight_jvp(direction);
@@ -223,39 +255,64 @@ P1ObjectiveContributionResult<typename Geometry::Tangent> p1_dirichlet_cell_cont
                     throw std::domain_error("P1 Dirichlet spatial energy is invalid");
                 }
                 site_value = std::fma(0.5, squared_norm, site_value);
-                auto pullback = linearization.covariant_mixed_nodal_vjp(direction, spatial.derivative);
-                // Status zero repeats the same deterministic weight solve
-                // certified above, so an unexpected failure is still spatial.
-                constexpr std::array<P1ObjectiveStage, 3> stages {
-                  P1ObjectiveStage::dirichlet_spatial, P1ObjectiveStage::dirichlet_mixed_output,
-                  P1ObjectiveStage::dirichlet_mixed_pullback};
-                for (std::size_t solve = 0; solve < stages.size(); ++solve) {
-                    if (!pullback.solve_statuses[solve].converged()) {
-                        result.first_failure =
-                          p1_objective_solve_failure(stages[solve], site, axis, pullback.solve_statuses[solve]);
-                        return result;
+                if constexpr (WithGradient) {
+                    auto pullback = linearization.covariant_mixed_nodal_vjp(direction, spatial.derivative);
+                    // Status zero repeats the same deterministic weight solve
+                    // certified above, so an unexpected failure is still spatial.
+                    constexpr std::array<P1ObjectiveStage, 3> stages {
+                      P1ObjectiveStage::dirichlet_spatial, P1ObjectiveStage::dirichlet_mixed_output,
+                      P1ObjectiveStage::dirichlet_mixed_pullback};
+                    for (std::size_t solve = 0; solve < stages.size(); ++solve) {
+                        if (!pullback.solve_statuses[solve].converged()) {
+                            result.first_failure =
+                              p1_objective_solve_failure(stages[solve], site, axis, pullback.solve_statuses[solve]);
+                            return result;
+                        }
                     }
-                }
-                for (std::size_t node = 0; node < packet.node_count; ++node) {
-                    site_gradient[node] =
-                      geometry.linear_combination(nodes[node], 1, site_gradient[node], 1, pullback.derivative[node]);
+                    for (std::size_t node = 0; node < packet.node_count; ++node) {
+                        site_gradient[node] = geometry.linear_combination(
+                          nodes[node], 1, site_gradient[node], 1, pullback.derivative[node]);
+                    }
                 }
             }
         }
 
         result.value = std::fma(integration_weight, site_value, result.value);
         if (!std::isfinite(result.value)) { throw std::domain_error("P1 Dirichlet cell contribution is nonfinite"); }
-        for (std::size_t node = 0; node < packet.node_count; ++node) {
-            result.nodal_gradient[node] = geometry.linear_combination(
-              nodes[node], 1, result.nodal_gradient[node], integration_weight, site_gradient[node]);
-            p1_objective_require_finite_shape<std::domain_error>(
-              result.nodal_gradient[node], geometry.order(), "P1 Dirichlet nodal gradient is nonfinite");
+        if constexpr (WithGradient) {
+            for (std::size_t node = 0; node < packet.node_count; ++node) {
+                result.nodal_gradient[node] = geometry.linear_combination(
+                  nodes[node], 1, result.nodal_gradient[node], integration_weight, site_gradient[node]);
+                p1_objective_require_finite_shape<std::domain_error>(
+                  result.nodal_gradient[node], geometry.order(), "P1 Dirichlet nodal gradient is nonfinite");
+            }
         }
     }
     return result;
 }
 
 }   // namespace internals
+
+template <typename Scalar_, int Order_>
+P1ObjectiveValueResult p1_frobenius_data_site_value(
+  const manifold::LogEuclideanSPDGeometry<Scalar_, Order_>& geometry,
+  std::span<const typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_>::Point> nodal_values,
+  std::span<const double> barycentric_weights,
+  const typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_>::Tangent& observation) {
+    const auto value_result = p1_geodesic_value(geometry, nodal_values, barycentric_weights);
+    return internals::p1_frobenius_data_site_value_impl(geometry, value_result, observation);
+}
+
+template <typename Scalar_, int Order_>
+P1ObjectiveValueResult p1_frobenius_data_site_value(
+  const manifold::AffineInvariantSPDGeometry<Scalar_, Order_>& geometry,
+  std::span<const typename manifold::AffineInvariantSPDGeometry<Scalar_, Order_>::Point> nodal_values,
+  std::span<const double> barycentric_weights,
+  const typename manifold::AffineInvariantSPDGeometry<Scalar_, Order_>::Tangent& observation,
+  const manifold::WeightedKarcherMeanOptions& options = {}) {
+    const auto value_result = p1_geodesic_value(geometry, nodal_values, barycentric_weights, options);
+    return internals::p1_frobenius_data_site_value_impl(geometry, value_result, observation);
+}
 
 template <typename Scalar_, int Order_>
 P1ObjectiveContributionResult<typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_>::Tangent>
@@ -282,6 +339,29 @@ p1_frobenius_data_site_contribution(
       geometry, nodal_values, std::move(linearization), observation);
 }
 
+template <typename Scalar_, int Order_, std::size_t LocalDim, std::size_t EmbedDim, std::size_t QuadratureSize>
+P1ObjectiveValueResult p1_dirichlet_cell_value(
+  const manifold::LogEuclideanSPDGeometry<Scalar_, Order_>& geometry,
+  std::span<const typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_>::Point> nodal_values,
+  const P1FEMCellQuadrature<LocalDim, EmbedDim, QuadratureSize>& packet) {
+    auto builder = [&geometry](auto nodes, auto weights) {
+        return p1_geodesic_linearization(geometry, nodes, weights);
+    };
+    return internals::p1_dirichlet_cell_objective_impl<false>(geometry, nodal_values, packet, builder);
+}
+
+template <typename Scalar_, int Order_, std::size_t LocalDim, std::size_t EmbedDim, std::size_t QuadratureSize>
+P1ObjectiveValueResult p1_dirichlet_cell_value(
+  const manifold::AffineInvariantSPDGeometry<Scalar_, Order_>& geometry,
+  std::span<const typename manifold::AffineInvariantSPDGeometry<Scalar_, Order_>::Point> nodal_values,
+  const P1FEMCellQuadrature<LocalDim, EmbedDim, QuadratureSize>& packet,
+  const P1GeodesicLinearizationOptions& options = {}) {
+    auto builder = [&geometry, &options](auto nodes, auto weights) {
+        return p1_geodesic_linearization(geometry, nodes, weights, options);
+    };
+    return internals::p1_dirichlet_cell_objective_impl<false>(geometry, nodal_values, packet, builder);
+}
+
 // The returned gradient is packet-local: entry i is based at
 // nodal_values[packet.dofs[i]]. Global scattering and lambda scaling belong
 // to the caller.
@@ -294,7 +374,7 @@ p1_dirichlet_cell_contribution(
     auto builder = [&geometry](auto nodes, auto weights) {
         return p1_geodesic_linearization(geometry, nodes, weights);
     };
-    return internals::p1_dirichlet_cell_contribution_impl(geometry, nodal_values, packet, builder);
+    return internals::p1_dirichlet_cell_objective_impl<true>(geometry, nodal_values, packet, builder);
 }
 
 // The returned gradient follows the same packet-local contract as the
@@ -309,7 +389,7 @@ p1_dirichlet_cell_contribution(
     auto builder = [&geometry, &options](auto nodes, auto weights) {
         return p1_geodesic_linearization(geometry, nodes, weights, options);
     };
-    return internals::p1_dirichlet_cell_contribution_impl(geometry, nodal_values, packet, builder);
+    return internals::p1_dirichlet_cell_objective_impl<true>(geometry, nodal_values, packet, builder);
 }
 
 }   // namespace gfe
