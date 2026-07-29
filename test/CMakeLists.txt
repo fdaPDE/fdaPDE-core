@@ -131,6 +131,7 @@ add_executable(
   geometric_finite_elements/log_euclidean_p1_linearization.cpp
   geometric_finite_elements/p1_fem_adapter.cpp
   geometric_finite_elements/p1_objective_contributions.cpp
+  geometric_finite_elements/p1_discrete_tension.cpp
   src/dg_dof_test.cpp
   src/dg_expression_test.cpp
   src/dg_facet_coefficient_test.cpp

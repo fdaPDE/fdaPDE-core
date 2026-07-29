@@ -154,6 +154,19 @@ concept HeaderP1ObjectiveContributions = requires(
       fdapde::gfe::P1ObjectiveContributionResult<fdapde::manifold::tangent_t<Geometry>>>;
 };
 
+template <typename Geometry>
+concept HeaderP1DiscreteTension = requires(
+  const Geometry& geometry, std::span<const fdapde::manifold::point_t<Geometry>> nodal_values,
+  const fdapde::gfe::P1LumpedLaplacianStencil& stencil) {
+    {
+        fdapde::gfe::p1_discrete_tension_value(geometry, nodal_values, stencil)
+    } -> std::same_as<fdapde::gfe::P1ObjectiveValueResult>;
+    {
+        fdapde::gfe::p1_discrete_tension_contribution(geometry, nodal_values, stencil)
+    } -> std::same_as<
+      fdapde::gfe::P1ObjectiveContributionResult<fdapde::manifold::tangent_t<Geometry>>>;
+};
+
 using HeaderGenericResult = decltype(fdapde::gfe::p1_geodesic_value(
   std::declval<const HeaderGeometry&>(), std::declval<std::span<const double>>(),
   std::declval<std::span<const double>>(), 0.0));
@@ -237,6 +250,9 @@ static_assert(HeaderP1ObjectiveContributions<HeaderDynamicLogGeometry>);
 static_assert(HeaderP1ObjectiveContributions<HeaderAffineGeometry2>);
 static_assert(HeaderP1ObjectiveContributions<HeaderAffineGeometry>);
 static_assert(HeaderP1ObjectiveContributions<HeaderDynamicAffineGeometry>);
+static_assert(HeaderP1DiscreteTension<HeaderLogGeometry2>);
+static_assert(HeaderP1DiscreteTension<HeaderLogGeometry>);
+static_assert(HeaderP1DiscreteTension<HeaderDynamicLogGeometry>);
 static_assert(std::is_same_v<decltype(std::declval<fdapde::gfe::P1ObjectiveValueResult>().value), double>);
 static_assert(std::is_same_v<
               decltype(std::declval<fdapde::gfe::P1ObjectiveValueResult>().first_failure),
@@ -462,6 +478,29 @@ static_assert(std::is_same_v<
     static_cast<void>(affine_data);
     static_cast<void>(affine_dirichlet_value);
     static_cast<void>(affine_dirichlet);
+}
+
+template <typename Geometry> void instantiate_p1_log_discrete_tension_for(const Geometry& geometry) {
+    using Point = fdapde::manifold::point_t<Geometry>;
+    fdapde::linalg::Matrix<typename Geometry::Scalar, Point::Rows, Point::Cols> identity;
+    if constexpr (Point::Rows == fdapde::Dynamic) { identity.resize(geometry.order(), geometry.order()); }
+    identity.set_zero();
+    for (int i = 0; i < geometry.order(); ++i) { identity(i, i) = 1; }
+    const std::array<Point, 2> nodes {
+      {Point(identity, fdapde::linalg::checked), Point(identity, fdapde::linalg::checked)}};
+    const fdapde::gfe::P1LumpedLaplacianStencil stencil {{0.5, 0.5}, {{0, 1, -1}}};
+    const auto value = fdapde::gfe::p1_discrete_tension_value(
+      geometry, std::span<const Point>(nodes), stencil);
+    const auto contribution = fdapde::gfe::p1_discrete_tension_contribution(
+      geometry, std::span<const Point>(nodes), stencil);
+    static_cast<void>(value);
+    static_cast<void>(contribution);
+}
+
+[[maybe_unused]] void instantiate_p1_log_discrete_tension() {
+    instantiate_p1_log_discrete_tension_for(HeaderLogGeometry2 {});
+    instantiate_p1_log_discrete_tension_for(HeaderLogGeometry {});
+    instantiate_p1_log_discrete_tension_for(HeaderDynamicLogGeometry(2));
 }
 
 }   // namespace
