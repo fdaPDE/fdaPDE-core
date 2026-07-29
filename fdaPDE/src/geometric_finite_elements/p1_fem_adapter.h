@@ -131,6 +131,22 @@ auto p1_fem_cell_quadrature(const Space& space, std::size_t cell_id, const Quadr
     return result;
 }
 
+template <typename Space, typename Quadrature = typename Space::FeType::template cell_quadrature_t<Space::local_dim>>
+    requires(internals::p1_fem_adapter_source<Space, Quadrature>)
+auto p1_lumped_laplacian_stencil(const Space& space, const Quadrature& quadrature = Quadrature {}) {
+    if (!space.dof_handler()) { throw std::logic_error("P1 FEM adapter requires an initialized finite-element space"); }
+    const int cell_count = space.triangulation().n_cells();
+    if (cell_count <= 0) { throw std::invalid_argument("P1 lumped Laplacian stencil requires at least one cell"); }
+
+    using Packet = decltype(p1_fem_cell_quadrature(space, std::size_t {0}, quadrature));
+    std::vector<Packet> packets;
+    packets.reserve(static_cast<std::size_t>(cell_count));
+    for (int cell = 0; cell < cell_count; ++cell) {
+        packets.push_back(p1_fem_cell_quadrature(space, static_cast<std::size_t>(cell), quadrature));
+    }
+    return p1_lumped_laplacian_stencil(static_cast<std::size_t>(space.n_dofs()), std::span<const Packet>(packets));
+}
+
 }   // namespace gfe
 }   // namespace fdapde
 

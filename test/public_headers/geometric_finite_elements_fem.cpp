@@ -34,8 +34,10 @@ namespace {
 using HeaderSpace = fdapde::FeSpace<fdapde::Triangulation<2, 3>, fdapde::FeP<1, 1>>;
 using HeaderPacket =
   decltype(fdapde::gfe::p1_fem_cell_quadrature(std::declval<const HeaderSpace&>(), std::declval<std::size_t>()));
+using HeaderStencil = decltype(fdapde::gfe::p1_lumped_laplacian_stencil(std::declval<const HeaderSpace&>()));
 
 static_assert(std::is_same_v<HeaderPacket, fdapde::gfe::P1FEMCellQuadrature<2, 3, 3>>);
+static_assert(std::is_same_v<HeaderStencil, fdapde::gfe::P1LumpedLaplacianStencil>);
 static_assert(std::is_same_v<decltype(HeaderPacket::dofs), std::array<std::size_t, 3>>);
 static_assert(std::is_same_v<decltype(HeaderPacket::physical_weight_gradients), std::array<std::array<double, 3>, 3>>);
 static_assert(std::is_same_v<decltype(HeaderPacket::barycentric_weights), std::array<std::array<double, 3>, 3>>);

@@ -62,6 +62,8 @@ using HeaderDynamicLogTangent = fdapde::manifold::tangent_t<HeaderDynamicLogGeom
 using HeaderAffineTangent = fdapde::manifold::tangent_t<HeaderAffineGeometry>;
 using HeaderDynamicAffineTangent = fdapde::manifold::tangent_t<HeaderDynamicAffineGeometry>;
 using HeaderP1FEMCellQuadrature = fdapde::gfe::P1FEMCellQuadrature<2, 3, 4>;
+using HeaderP1LumpedLaplacianStencil = decltype(fdapde::gfe::p1_lumped_laplacian_stencil(
+  std::declval<std::size_t>(), std::declval<std::span<const HeaderP1FEMCellQuadrature>>()));
 
 template <typename Geometry>
 concept HeaderPermitsP1WithoutInitial = requires(
@@ -262,6 +264,10 @@ static_assert(
 static_assert(std::is_same_v<
               decltype(HeaderP1FEMCellQuadrature::integration_weights),
               std::array<double, HeaderP1FEMCellQuadrature::quadrature_size>>);
+static_assert(std::is_same_v<HeaderP1LumpedLaplacianStencil, fdapde::gfe::P1LumpedLaplacianStencil>);
+static_assert(std::is_same_v<decltype(fdapde::gfe::P1LumpedLaplacianStencil::lumped_masses), std::vector<double>>);
+static_assert(std::is_same_v<
+              decltype(fdapde::gfe::P1LumpedLaplacianStencil::edges), std::vector<fdapde::gfe::P1LumpedLaplacianEdge>>);
 
 [[maybe_unused]] void instantiate_generic_p1_value() {
     const HeaderGeometry geometry;

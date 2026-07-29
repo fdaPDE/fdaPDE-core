@@ -33,6 +33,7 @@
 
 #include "src/geometric_finite_elements/p1_fem_cell_quadrature.h"
 #include "src/geometric_finite_elements/p1_geodesic_value.h"
+#include "src/geometric_finite_elements/p1_lumped_laplacian_stencil.h"
 #include "src/geometric_finite_elements/p1_geodesic_linearization.h"
 #include "src/geometric_finite_elements/p1_objective_contributions.h"
 
