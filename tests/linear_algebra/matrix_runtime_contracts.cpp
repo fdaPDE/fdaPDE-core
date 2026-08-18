@@ -45,6 +45,29 @@ TEST(LinearAlgebraRuntimeContracts, SquareOperationsRejectRectangularMatrices) {
     EXPECT_THROW((void)matrix.determinant(), std::invalid_argument);
 }
 
+TEST(LinearAlgebraRuntimeContracts, DynamicBinaryExpressionsRejectIncompatibleShapes) {
+    Matrix<double, Dynamic, Dynamic> lhs(2, 3);
+    Matrix<double, Dynamic, Dynamic> wrong_cols_rhs(2, 2);
+    Matrix<double, Dynamic, Dynamic> wrong_rows_rhs(3, 3);
+    Matrix<double, Dynamic, Dynamic> product_rhs(2, 4);
+    Vector<double, Dynamic> short_vector(2);
+    Vector<double, Dynamic> vector(3);
+    Matrix<double, Dynamic, Dynamic> non_column_vector(3, 2);
+
+    EXPECT_THROW((void)(lhs + wrong_cols_rhs), std::invalid_argument);
+    EXPECT_THROW((void)(lhs - wrong_rows_rhs), std::invalid_argument);
+    EXPECT_THROW((void)(lhs * product_rhs), std::invalid_argument);
+    EXPECT_THROW((void)short_vector.cross(vector), std::invalid_argument);
+    EXPECT_THROW((void)non_column_vector.cross(vector), std::invalid_argument);
+
+    Vector<double, Dynamic> x(3);
+    Vector<double, Dynamic> y(3);
+    x[0] = 1;
+    y[1] = 1;
+    const Vector<double, 3> expected_cross({0, 0, 1});
+    EXPECT_EQ(x.cross(y), expected_cross);
+}
+
 TEST(LinearAlgebraRuntimeContracts, DenseDiagonalViewChecksShapeAndIndexes) {
     Matrix<double, Dynamic, Dynamic> rectangular(2, 3);
     EXPECT_THROW((void)rectangular.diagonal(), std::invalid_argument);

@@ -51,9 +51,9 @@ struct MatrixBinOp : public MatrixExpr<MatrixBinOp<LhsXprType_, RhsXprType_, Bin
     constexpr MatrixBinOp(LhsXprType__&& lhs, RhsXprType__&& rhs, BinaryOp op) :
         lhs_(std::forward<LhsXprType__>(lhs)), rhs_(std::forward<RhsXprType__>(rhs)), op_(op) {
         if constexpr (internals::is_dynamic_sized_v<LhsXprType> || internals::is_dynamic_sized_v<RhsXprType>) {
-            fdapde_assert(
-              std::cmp_equal(lhs_.rows() FDAPDE_COMMA rhs_.rows()) &&
-              std::cmp_equal(lhs_.cols() FDAPDE_COMMA rhs_.cols()));
+            if (!std::cmp_equal(lhs_.rows(), rhs_.rows()) || !std::cmp_equal(lhs_.cols(), rhs_.cols())) {
+                throw std::invalid_argument("matrix binary operation requires matching dimensions");
+            }
         }
     }
     constexpr Scalar operator()(int i, int j) const { return op_(lhs_(i, j), rhs_(i, j)); }
@@ -180,7 +180,9 @@ struct MatrixMultiplicationOp : public MatrixExpr<MatrixMultiplicationOp<LhsXprT
     constexpr MatrixMultiplicationOp(LhsXprType__&& lhs, RhsXprType__&& rhs) :
         lhs_(std::forward<LhsXprType__>(lhs)), rhs_(std::forward<RhsXprType__>(rhs)) {
         if constexpr (internals::is_dynamic_sized_v<LhsXprType> || internals::is_dynamic_sized_v<RhsXprType>) {
-            fdapde_assert(std::cmp_equal(lhs_.cols() FDAPDE_COMMA rhs_.rows()));
+            if (!std::cmp_equal(lhs_.cols(), rhs_.rows())) {
+                throw std::invalid_argument("matrix product requires compatible inner dimensions");
+            }
         }
     }
     constexpr Scalar operator()(int i, int j) const { return Executor::run(i, j, lhs_, rhs_); }
@@ -330,7 +332,9 @@ struct MatrixCrossProductOp : public MatrixExpr<MatrixCrossProductOp<LhsXprType_
     constexpr MatrixCrossProductOp(LhsXprType__&& lhs, RhsXprType__&& rhs) :
         lhs_(std::forward<LhsXprType__>(lhs)), rhs_(std::forward<RhsXprType__>(rhs)) {
         if constexpr (internals::is_dynamic_sized_v<LhsXprType> || internals::is_dynamic_sized_v<RhsXprType>) {
-            fdapde_assert(lhs_.rows() == 3 && rhs_.rows() == 3 && lhs_.cols() == 1 && rhs_.cols() == 1);
+            if (lhs_.rows() != 3 || rhs_.rows() != 3 || lhs_.cols() != 1 || rhs_.cols() != 1) {
+                throw std::invalid_argument("cross product requires three-dimensional column vectors");
+            }
         }
     }
     constexpr Scalar operator()(int i, [[maybe_unused]] int j) const {
