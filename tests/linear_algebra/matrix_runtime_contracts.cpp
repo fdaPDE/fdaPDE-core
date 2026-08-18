@@ -139,6 +139,58 @@ template <int StorageOrder> void check_matrix_reshape_runtime_contracts() {
     EXPECT_THROW(static_cast<void>(boolean_matrix.reshape(3, 2)), std::invalid_argument);
 }
 
+template <int StorageOrder> void check_matrix_coeffwise_runtime_contracts() {
+    using matrix_type = Matrix<double, Dynamic, Dynamic, StorageOrder>;
+    matrix_type lhs(2, 2);
+    matrix_type rhs(1, 4);
+    lhs.cwise() = 1.0;
+    rhs.cwise() = 2.0;
+    const matrix_type original = lhs;
+    EXPECT_THROW(static_cast<void>(lhs.cwise() + rhs.cwise()), std::invalid_argument);
+    EXPECT_THROW(lhs.cwise() += rhs.cwise(), std::invalid_argument);
+    EXPECT_EQ(lhs, original);
+
+    Matrix<double, Dynamic, 2, StorageOrder> partial_lhs(2, 2);
+    Matrix<double, Dynamic, 2, StorageOrder> partial_rhs(3, 2);
+    EXPECT_THROW(static_cast<void>(partial_lhs.cwise() + partial_rhs.cwise()), std::invalid_argument);
+
+    auto cwise = lhs.cwise();
+    const auto& const_cwise = cwise;
+    EXPECT_THROW(static_cast<void>(cwise(-1, 0)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(cwise(0, 2)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(const_cwise(-1, 0)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(const_cwise(0, 2)), std::out_of_range);
+
+    auto mwise = cwise.mwise();
+    const auto& const_mwise = mwise;
+    EXPECT_THROW(static_cast<void>(mwise(-1, 0)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(mwise(0, 2)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(const_mwise(-1, 0)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(const_mwise(0, 2)), std::out_of_range);
+
+    auto transformed = lhs.cwise().sqrt();
+    EXPECT_THROW(static_cast<void>(transformed(-1, 0)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(transformed(0, 2)), std::out_of_range);
+
+    auto binary = lhs.cwise() + lhs.cwise();
+    EXPECT_THROW(static_cast<void>(binary(-1, 0)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(binary(0, 2)), std::out_of_range);
+
+    Matrix<double, 1, 3, StorageOrder> row({1.0, 2.0, 3.0});
+    auto row_cwise = row.cwise();
+    auto row_mwise = row_cwise.mwise();
+    auto row_binary = row.cwise() + row.cwise();
+    EXPECT_DOUBLE_EQ(row_cwise[2], 3.0);
+    EXPECT_DOUBLE_EQ(row_mwise[2], 3.0);
+    EXPECT_DOUBLE_EQ(row_binary[2], 6.0);
+    EXPECT_THROW(static_cast<void>(row_cwise[-1]), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(row_cwise[3]), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(row_mwise[-1]), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(row_mwise[3]), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(row_binary[-1]), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(row_binary[3]), std::out_of_range);
+}
+
 }   // namespace
 
 TEST(LinearAlgebraRuntimeContracts, DynamicSquareOperationsRemainAvailable) {
@@ -324,6 +376,11 @@ TEST(LinearAlgebraRuntimeContracts, MatrixBlockChecksBoundsAndAssignments) {
 TEST(LinearAlgebraRuntimeContracts, MatrixReshapeChecksShapesSizesAndIndexes) {
     check_matrix_reshape_runtime_contracts<RowMajor>();
     check_matrix_reshape_runtime_contracts<ColMajor>();
+}
+
+TEST(LinearAlgebraRuntimeContracts, MatrixCoeffWiseChecksShapesAndIndexes) {
+    check_matrix_coeffwise_runtime_contracts<RowMajor>();
+    check_matrix_coeffwise_runtime_contracts<ColMajor>();
 }
 
 }   // namespace fdapde

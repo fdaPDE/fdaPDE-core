@@ -296,6 +296,52 @@ concept permits_const_reshape_vector_write = requires(const Reshape& reshape) { 
 template <typename Reshape>
 concept permits_reshape_assignment = requires(Reshape& lhs, const Reshape& rhs) { lhs = rhs; };
 
+template <typename Matrix, int ExpectedReadOnly>
+concept permits_temporary_cwise_accessor = requires(Matrix&& matrix) {
+    requires (decltype(std::move(matrix).cwise())::ReadOnly == ExpectedReadOnly);
+};
+
+template <typename Matrix>
+concept permits_temporary_cwise = requires(Matrix&& matrix) { std::move(matrix).cwise(); };
+
+template <typename Matrix>
+concept permits_direct_temporary_cwise = requires(Matrix&& matrix) {
+    MatrixCoeffWiseOp<Matrix, internals::identity_op> {std::move(matrix), internals::identity_op {}};
+};
+
+template <typename Matrix>
+concept exposes_temporary_cwise_derived = requires(Matrix& matrix) { matrix.cwise().derived(); };
+
+template <typename Matrix>
+concept exposes_temporary_transformed_cwise_xpr = requires(Matrix& matrix) {
+    matrix.cwise().sqrt().xpr();
+};
+
+template <typename Xpr>
+concept exposes_writable_cwise_xpr = requires(Xpr& xpr) { xpr.xpr()(0, 0) = 1.0; };
+
+template <typename Matrix>
+concept permits_const_cwise_mutation = requires(const Matrix& matrix) { matrix.cwise() += 1.0; };
+
+template <typename Matrix>
+concept permits_transformed_cwise_mutation = requires(Matrix& matrix) {
+    matrix.cwise().sqrt()(0, 0) = 1.0;
+};
+
+template <typename Xpr>
+concept permits_cwise_coefficient_write = requires(Xpr& xpr) { xpr(0, 0) = 1.0; };
+
+template <typename Xpr>
+concept permits_cwise_scalar_assignment = requires(Xpr& xpr) { xpr = 1.0; };
+
+template <typename Xpr>
+concept permits_cwise_scalar_compound = requires(Xpr& xpr) { xpr += 1.0; };
+
+struct writable_passthrough_op {
+    constexpr double& operator()(double& value) const { return value; }
+    constexpr const double& operator()(const double& value) const { return value; }
+};
+
 using lifetime_matrix = Matrix<double, 2, 2>;
 using lifetime_const_matrix = const lifetime_matrix;
 using lifetime_vector = Matrix<double, 3, 1>;
@@ -320,6 +366,19 @@ using lifetime_const_scalar_view_reshape =
   decltype(std::declval<lifetime_const_scalar_view&>().template reshape<1, 4>());
 using lifetime_const_scalar_view_column_reshape =
   decltype(std::declval<lifetime_const_scalar_view&>().template reshape<4>());
+using lifetime_cwise = decltype(std::declval<lifetime_matrix&>().cwise());
+using lifetime_const_owner_cwise = decltype(std::declval<const lifetime_matrix&>().cwise());
+using lifetime_transformed_cwise = decltype(std::declval<lifetime_matrix&>().cwise().sqrt());
+using lifetime_writable_applied_cwise =
+  decltype(std::declval<lifetime_cwise&>().apply(writable_passthrough_op {}));
+using lifetime_cwise_mwise = decltype(std::declval<lifetime_cwise&>().mwise());
+using lifetime_const_cwise_mwise = decltype(std::declval<const lifetime_cwise&>().mwise());
+using lifetime_const_scalar_view_cwise =
+  decltype(std::declval<lifetime_const_scalar_view&>().cwise());
+using lifetime_symmetric_cwise =
+  decltype(std::declval<SymmetricMatrix<double, 2, 2>&>().cwise());
+using lifetime_triangular_cwise =
+  decltype(std::declval<LowerTriangularMatrix<double, 2, 2>&>().cwise());
 static_assert(!permits_left_temporary_add<lifetime_matrix>);
 static_assert(!permits_right_temporary_add<lifetime_matrix>);
 static_assert(!permits_left_temporary_subtract<lifetime_matrix>);
@@ -438,6 +497,59 @@ static_assert(!permits_reshape_assignment<lifetime_const_owner_reshape>);
 using temporary_reshape_assignment_result = decltype(
   std::declval<lifetime_row_reshape&&>() = std::declval<const lifetime_row_reshape&>());
 static_assert(std::is_same_v<temporary_reshape_assignment_result, lifetime_row_reshape>);
+static_assert(!permits_temporary_cwise_accessor<lifetime_matrix, 0>);
+static_assert(!permits_temporary_cwise_accessor<lifetime_const_matrix, 1>);
+static_assert(!permits_temporary_cwise<lifetime_matrix>);
+static_assert(!permits_temporary_cwise<lifetime_const_matrix>);
+static_assert(permits_temporary_cwise_accessor<lifetime_expression, 1>);
+static_assert(permits_temporary_cwise_accessor<lifetime_view, 0>);
+static_assert(permits_temporary_cwise_accessor<const lifetime_view, 1>);
+static_assert(permits_temporary_cwise_accessor<lifetime_const_view, 1>);
+static_assert(!permits_direct_temporary_cwise<lifetime_matrix>);
+static_assert(!permits_direct_temporary_cwise<lifetime_const_matrix>);
+static_assert(!exposes_temporary_cwise_derived<lifetime_matrix>);
+static_assert(!exposes_temporary_transformed_cwise_xpr<lifetime_matrix>);
+static_assert(!exposes_writable_cwise_xpr<lifetime_transformed_cwise>);
+static_assert(lifetime_cwise::ReadOnly == 0);
+static_assert(lifetime_const_owner_cwise::ReadOnly == 1);
+static_assert(lifetime_transformed_cwise::ReadOnly == 1);
+static_assert(lifetime_const_scalar_view_cwise::ReadOnly == 1);
+static_assert(permits_cwise_coefficient_write<lifetime_cwise>);
+static_assert(!permits_cwise_coefficient_write<lifetime_const_owner_cwise>);
+static_assert(!permits_cwise_coefficient_write<lifetime_transformed_cwise>);
+static_assert(!permits_cwise_coefficient_write<lifetime_const_scalar_view_cwise>);
+static_assert(lifetime_writable_applied_cwise::ReadOnly == 0);
+static_assert(permits_cwise_coefficient_write<lifetime_writable_applied_cwise>);
+static_assert(!permits_cwise_scalar_assignment<lifetime_writable_applied_cwise>);
+static_assert(!permits_cwise_scalar_compound<lifetime_writable_applied_cwise>);
+static_assert(permits_cwise_coefficient_write<lifetime_cwise_mwise>);
+static_assert(!permits_cwise_coefficient_write<lifetime_const_cwise_mwise>);
+static_assert(lifetime_symmetric_cwise::ReadOnly == 0);
+static_assert(lifetime_triangular_cwise::ReadOnly == 0);
+static_assert(permits_cwise_coefficient_write<lifetime_symmetric_cwise>);
+static_assert(permits_cwise_coefficient_write<lifetime_triangular_cwise>);
+static_assert(!permits_const_cwise_mutation<lifetime_matrix>);
+static_assert(!permits_transformed_cwise_mutation<lifetime_matrix>);
+static_assert(std::is_same_v<decltype(std::declval<lifetime_cwise&>()(0, 0)), double&>);
+static_assert(std::is_same_v<decltype(std::declval<const lifetime_cwise&>().xpr()), const lifetime_matrix&>);
+using lifetime_const_applied_cwise =
+  decltype(std::declval<const lifetime_cwise&>().apply(internals::identity_op {}));
+static_assert(lifetime_const_applied_cwise::ReadOnly == 1);
+static_assert(!permits_cwise_coefficient_write<lifetime_const_applied_cwise>);
+using lifetime_integer_cwise_inverse =
+  decltype(std::declval<Matrix<int, 1, 2>&>().cwise().inv());
+using lifetime_cwise_comparison = decltype(std::declval<lifetime_matrix&>().cwise() < 1.0);
+static_assert(std::is_same_v<typename lifetime_integer_cwise_inverse::Scalar, double>);
+static_assert(std::is_same_v<typename lifetime_cwise_comparison::Scalar, bool>);
+using temporary_cwise_scalar_assignment_result =
+  decltype(std::declval<lifetime_cwise&&>() = 1.0);
+using temporary_cwise_scalar_compound_result =
+  decltype(std::declval<lifetime_cwise&&>() += 1.0);
+using temporary_cwise_expression_compound_result = decltype(
+  std::declval<lifetime_cwise&&>() += std::declval<const lifetime_cwise&>());
+static_assert(std::is_same_v<temporary_cwise_scalar_assignment_result, lifetime_cwise>);
+static_assert(std::is_same_v<temporary_cwise_scalar_compound_result, lifetime_cwise>);
+static_assert(std::is_same_v<temporary_cwise_expression_compound_result, lifetime_cwise>);
 
 template <int StorageOrder> void check_owner_behavior() {
     using fixed_matrix = Matrix<int, 2, 3, StorageOrder>;
@@ -610,6 +722,84 @@ template <int StorageOrder> void check_assignment_alias_materialization() {
     MatrixView<double, 2, 2, StorageOrder> destination(destination_data);
     destination = source;
     EXPECT_EQ(destination, source_owner);
+}
+
+template <int StorageOrder> void check_coefficientwise_behavior() {
+    using matrix_type = Matrix<double, 2, 2, StorageOrder>;
+    const matrix_type source({1.0, 4.0, 9.0, 16.0});
+
+    matrix_type scalar_assigned;
+    scalar_assigned.cwise() = 3.0;
+    EXPECT_EQ(scalar_assigned, matrix_type(3.0));
+
+    auto scalar_expression = source.cwise() + 1.0;
+    const matrix_type shifted = scalar_expression;
+    EXPECT_EQ(shifted, (matrix_type({2.0, 5.0, 10.0, 17.0})));
+    const matrix_type reverse_difference = 20.0 - source.cwise();
+    EXPECT_EQ(reverse_difference, (matrix_type({19.0, 16.0, 11.0, 4.0})));
+    const matrix_type reciprocal = 144.0 / source.cwise();
+    EXPECT_EQ(reciprocal, (matrix_type({144.0, 36.0, 16.0, 9.0})));
+
+    const Matrix<int, 1, 2, StorageOrder> integers({2, 4});
+    const Matrix<double, 1, 2, StorageOrder> inverses = integers.cwise().inv();
+    EXPECT_EQ(inverses, (Matrix<double, 1, 2, StorageOrder>({0.5, 0.25})));
+
+    const Matrix<bool, 2, 2, StorageOrder> comparison = source.cwise() < 10.0;
+    EXPECT_EQ(comparison, (Matrix<bool, 2, 2, StorageOrder>({true, true, true, false})));
+
+    const Matrix<double, 1, 3, StorageOrder> row({1.0, 2.0, 3.0});
+    const Matrix<double, 1, 3, StorageOrder> shifted_row = row.cwise() + 1.0;
+    EXPECT_DOUBLE_EQ(shifted_row[2], 4.0);
+
+    auto expression = (source + source).cwise().sqrt().mwise();
+    const matrix_type expression_value = expression;
+    EXPECT_TRUE(almost_equal(
+      expression_value,
+      matrix_type({fdapde::sqrt(2.0), fdapde::sqrt(8.0), fdapde::sqrt(18.0), fdapde::sqrt(32.0)})));
+
+    double mutable_view_data[4] {1.0, 2.0, 3.0, 4.0};
+    auto temporary_view_cwise = MatrixView<double, 2, 2, StorageOrder>(mutable_view_data).cwise();
+    temporary_view_cwise += 1.0;
+    for (int i = 0; i < 4; ++i) { EXPECT_DOUBLE_EQ(mutable_view_data[i], i + 2.0); }
+
+    auto temporary_const_view_cwise =
+      MatrixView<const double, 2, 2, StorageOrder>(source.data()).cwise();
+    const matrix_type const_view_value = temporary_const_view_cwise;
+    EXPECT_EQ(const_view_value, source);
+
+    Matrix<double, Dynamic, 2, StorageOrder> partial_dynamic(2, 2);
+    partial_dynamic = source;
+    const Matrix<double, Dynamic, 2, StorageOrder> partial_shifted = partial_dynamic.cwise() + 1.0;
+    EXPECT_EQ(partial_shifted, shifted);
+
+    matrix_type wrapped({1.0, 2.0, 3.0, 4.0});
+    auto wrapped_cwise = wrapped.cwise();
+    auto wrapped_mwise = wrapped_cwise.mwise();
+    wrapped_mwise(0, 0) = 7.0;
+    EXPECT_DOUBLE_EQ(wrapped(0, 0), 7.0);
+
+    const auto make_applied = [&source]() {
+        auto offset = [value = 0.5](double x) { return x + value; };
+        return source.cwise().apply(offset);
+    };
+    const matrix_type applied = make_applied();
+    EXPECT_EQ(applied, (matrix_type({1.5, 4.5, 9.5, 16.5})));
+
+    matrix_type add_alias({1.0, 2.0, 3.0, 4.0});
+    add_alias.cwise() += add_alias.transpose().cwise();
+    EXPECT_EQ(add_alias, (matrix_type({2.0, 5.0, 5.0, 8.0})));
+
+    matrix_type subtract_alias({1.0, 2.0, 3.0, 4.0});
+    subtract_alias.cwise() -= subtract_alias.transpose().cwise();
+    EXPECT_EQ(subtract_alias, (matrix_type({0.0, -1.0, 1.0, 0.0})));
+
+    matrix_type multiply_alias({1.0, 2.0, 3.0, 4.0});
+    multiply_alias.cwise() *= multiply_alias.transpose().cwise();
+    EXPECT_EQ(multiply_alias, (matrix_type({1.0, 6.0, 6.0, 16.0})));
+
+    matrix_type divide_alias({1.0, 2.0, 3.0, 4.0});
+    divide_alias.cwise() /= divide_alias.transpose().cwise();
+    EXPECT_EQ(divide_alias, (matrix_type({1.0, 2.0 / 3.0, 3.0 / 2.0, 1.0})));
 }
 
 template <int StorageOrder> void check_block_view_behavior() {
@@ -807,6 +997,11 @@ TEST(NativeDenseMatrix, ArithmeticExpressionNesting) {
 TEST(NativeDenseMatrix, AssignmentOperationsMaterializeAliases) {
     check_assignment_alias_materialization<RowMajor>();
     check_assignment_alias_materialization<ColMajor>();
+}
+
+TEST(NativeDenseMatrix, CoefficientWiseAdaptorsAreTypedLifetimeSafeAndAliasSafe) {
+    check_coefficientwise_behavior<RowMajor>();
+    check_coefficientwise_behavior<ColMajor>();
 }
 
 TEST(NativeDenseMatrix, BlocksRemainBoundedViews) {

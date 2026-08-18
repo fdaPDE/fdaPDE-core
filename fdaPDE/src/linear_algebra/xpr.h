@@ -209,12 +209,22 @@ template <typename XprType_> struct MatrixExpr {
         return os;
     }
     // coeffwise access
-    constexpr auto cwise() const {
+    constexpr auto cwise() const & {
         return MatrixCoeffWiseOp<const XprType, internals::identity_op>(derived(), internals::identity_op());
     }
-    constexpr auto cwise() {
+    constexpr auto cwise() & {
         return MatrixCoeffWiseOp<XprType, internals::identity_op>(derived(), internals::identity_op());
     }
+    constexpr auto cwise() const && requires(XprType::NestAsRef == 0) {
+        return MatrixCoeffWiseOp<const XprType, internals::identity_op>(
+          static_cast<const XprType&&>(*this), internals::identity_op());
+    }
+    constexpr auto cwise() && requires(XprType::NestAsRef == 0) {
+        return MatrixCoeffWiseOp<XprType, internals::identity_op>(
+          static_cast<XprType&&>(*this), internals::identity_op());
+    }
+    constexpr void cwise() const && requires(XprType::NestAsRef != 0) = delete;
+    constexpr void cwise() && requires(XprType::NestAsRef != 0) = delete;
 
     // redux operators
     // frobenius norm (squared L^2 norm)

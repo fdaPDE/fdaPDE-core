@@ -226,7 +226,7 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
     }
     template <typename RhsXprType_>   // cast MatrixExpr to bool
     constexpr Matrix(const MatrixExpr<RhsXprType_>& rhs) :
-        Base(), bitpacks_(StorageSize == Dynamic ? 0 : 1 + fdapde::ceil((Rows * Cols) / PackSize)) {
+        Base(), data_(), bitpacks_(StorageSize == Dynamic ? 0 : 1 + fdapde::ceil((Rows * Cols) / PackSize)) {
         fdapde_static_assert(
           internals::same_static_shape_weak_v<This FDAPDE_COMMA RhsXprType_>,
           INVALID_ASSIGNMENT__NOT_MATCHING_LHS_AND_RHS_STATIC_SIZES);
@@ -237,6 +237,8 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
             for (int j = 0; j < cols; ++j) { this->operator()(i, j) = rhs.derived()(i, j); }
         }
     }
+    template <typename RhsXprType_>   // materialize a coefficient-wise comparison
+    constexpr Matrix(const MatrixCoeffWiseExpr<RhsXprType_>& rhs) : Matrix(rhs.mwise()) { }
     // inherit assignment from base
     using Base::operator=;
 
