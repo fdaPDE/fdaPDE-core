@@ -26,8 +26,11 @@ namespace internals {
 struct task_parallel_reduce {
     task_parallel_reduce() = default;
 
-    template <typename Iterator, typename T, typename ReduxOp>
-        requires(std::is_invocable_r_v<T, ReduxOp, typename Iterator::value_type, typename Iterator::value_type>)
+    template <std::forward_iterator Iterator, typename T, typename ReduxOp>
+        requires(
+          std::convertible_to<std::iter_reference_t<Iterator>, T> &&
+          std::is_invocable_r_v<T, ReduxOp&, T, std::iter_reference_t<Iterator>> &&
+          std::is_invocable_r_v<T, ReduxOp&, T, T>)
     T run(threaded_executor_impl* executor, Iterator begin, Iterator end, int grain_size, T init, ReduxOp&& redux) {
         const int n = std::distance(begin, end);
         if (n <= 0) return init;   // nothing to loop on
@@ -35,8 +38,11 @@ struct task_parallel_reduce {
         grain_size = std::max(1, std::min(grain_size, n));
         return dispatch_(executor, begin, end, grain_size, init, std::forward<ReduxOp>(redux));
     }
-    template <typename Iterator, typename T, typename ReduxOp>
-        requires(std::is_invocable_r_v<T, ReduxOp, typename Iterator::value_type, typename Iterator::value_type>)
+    template <std::forward_iterator Iterator, typename T, typename ReduxOp>
+        requires(
+          std::convertible_to<std::iter_reference_t<Iterator>, T> &&
+          std::is_invocable_r_v<T, ReduxOp&, T, std::iter_reference_t<Iterator>> &&
+          std::is_invocable_r_v<T, ReduxOp&, T, T>)
     T run(threaded_executor_impl* executor, Iterator begin, Iterator end, T init, ReduxOp&& redux) {
         const int n = std::distance(begin, end);
         if (n <= 0) return init;   // nothing to loop on
@@ -45,28 +51,32 @@ struct task_parallel_reduce {
         return dispatch_(executor, begin, end, grain_size, init, std::forward<ReduxOp>(redux));
     }
    private:
-    template <typename Iterator, typename T, typename ReduxOp>
+    template <std::forward_iterator Iterator, typename T, typename ReduxOp>
     T dispatch_(
       threaded_executor_impl* executor, Iterator begin, Iterator end, int grain_size, T init, ReduxOp&& redux) {
-        std::vector<T> partials(executor->size());
+        const int n_chunks = (static_cast<int>(std::distance(begin, end)) + grain_size - 1) / grain_size;
+        std::vector<std::optional<T>> partials(static_cast<std::size_t>(n_chunks));
         std::atomic<int> local_task_count {1};
 
         Iterator chunk_begin = begin;
+        int chunk_index = 0;
         while (chunk_begin != end) {
             // register task in the group
             local_task_count.fetch_add(1, std::memory_order_release);
 
             Iterator chunk_end = std::next(chunk_begin, std::min(grain_size, int(std::distance(chunk_begin, end))));
-            auto loop_body = [chunk_begin, chunk_end, &redux, &local_task_count, &partials]() {
-                T local_init {};
-                for (Iterator it = chunk_begin; it != chunk_end; ++it) { local_init = redux(*it, local_init); }
-                partials[this_thread_id()] = redux(local_init, partials[this_thread_id()]);
+            auto loop_body = [chunk_begin, chunk_end, chunk_index, &redux, &local_task_count, &partials]() {
+                Iterator it = chunk_begin;
+                T local_value(*it);
+                for (++it; it != chunk_end; ++it) { local_value = std::invoke(redux, std::move(local_value), *it); }
+                partials[static_cast<std::size_t>(chunk_index)].emplace(std::move(local_value));
                 // signal task completion
                 local_task_count.fetch_sub(1, std::memory_order_release);
             };
             executor->execute(std::move(loop_body));
             // advance the loop
             chunk_begin = chunk_end;
+            chunk_index++;
         }
         // task_group collaborative wait
         local_task_count.fetch_sub(1, std::memory_order_release);
@@ -77,7 +87,7 @@ struct task_parallel_reduce {
 
         // perform final reduction sequentially
         T v = init;
-        for (auto& p : partials) { v = redux(p, v); }
+        for (auto& p : partials) { v = std::invoke(redux, std::move(v), std::move(*p)); }
         return v;
     }
 };
@@ -85,14 +95,20 @@ struct task_parallel_reduce {
 }   // namespace internals
 
 // general parallel reduction algorithm
-template <typename Iterator, typename T, typename ReduxOp>
-    requires(std::is_invocable_r_v<T, ReduxOp, typename Iterator::value_type, typename Iterator::value_type>)
+template <std::forward_iterator Iterator, typename T, typename ReduxOp>
+    requires(
+      std::convertible_to<std::iter_reference_t<Iterator>, T> &&
+      std::is_invocable_r_v<T, ReduxOp&, T, std::iter_reference_t<Iterator>> &&
+      std::is_invocable_r_v<T, ReduxOp&, T, T>)
 T parallel_reduce(Iterator begin, Iterator end, int grain_size, T init, ReduxOp&& redux) {
     return internals::threaded_executor::instance().execute(
       internals::task_parallel_reduce(), begin, end, grain_size, init, redux);
 }
-template <typename Iterator, typename T, typename ReduxOp>
-    requires(std::is_invocable_r_v<T, ReduxOp, typename Iterator::value_type, typename Iterator::value_type>)
+template <std::forward_iterator Iterator, typename T, typename ReduxOp>
+    requires(
+      std::convertible_to<std::iter_reference_t<Iterator>, T> &&
+      std::is_invocable_r_v<T, ReduxOp&, T, std::iter_reference_t<Iterator>> &&
+      std::is_invocable_r_v<T, ReduxOp&, T, T>)
 T parallel_reduce(Iterator begin, Iterator end, T init, ReduxOp&& redux) {
     return internals::threaded_executor::instance().execute(internals::task_parallel_reduce(), begin, end, init, redux);
 }

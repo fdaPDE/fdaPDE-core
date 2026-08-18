@@ -35,8 +35,7 @@ struct random_stealing_policy {
     explicit random_stealing_policy(std::size_t n, int probes = 2) :
         probes_(probes), dist_(0, static_cast<int>(n - 1)) { }
 
-    template <typename TryStealFunctor>
-    std::optional<task_handle*> pick(int self, TryStealFunctor&& try_steal) {
+    template <typename TryStealFunctor> std::optional<task_handle*> pick(int self, TryStealFunctor&& try_steal) {
         for (int k = 0; k < probes_; ++k) {
             int victim = dist_(tls_rng());
             if (victim != self) {
@@ -47,7 +46,7 @@ struct random_stealing_policy {
     }
    private:
     static std::mt19937& tls_rng() {   // thread local rng to avoid races
-        thread_local std::mt19937 rng{std::random_device{}()};
+        thread_local std::mt19937 rng {std::random_device {}()};
         return rng;
     }
     int probes_;
@@ -93,19 +92,30 @@ struct threaded_executor_impl {
     size_type size() const { return n_workers_; }
     bool is_active() const { return active_.load(std::memory_order_acquire); }
     // submits f(args...) for asynchronous execution. returns a std::future holding the result
-    template <typename F, typename... Args> [[nodiscard]] auto async(F&& f, Args&&... args) {
-        using ret_t = decltype(f(args...));
-        auto packaged_task =
-          std::make_shared<std::packaged_task<ret_t()>>([f_ = f, ... args_ = args]() mutable { return f_(args_...); });
-        // dispatch task for execution
-        dispatch_task_(std::move([packaged_task]() { (*packaged_task)(); }));
-        return packaged_task->get_future();
+    template <typename F, typename... Args>
+        requires(std::is_invocable_v<std::decay_t<F>&, std::decay_t<Args>&...>)
+    [[nodiscard]] auto async(F&& f, Args&&... args) {
+        using ret_t = std::invoke_result_t<std::decay_t<F>&, std::decay_t<Args>&...>;
+        auto bound_task = [f_ = std::forward<F>(f),
+                           args_ = std::tuple<std::decay_t<Args>...>(std::forward<Args>(args)...)]() mutable -> ret_t {
+            return std::apply([&f_](auto&... stored_args) -> ret_t { return std::invoke(f_, stored_args...); }, args_);
+        };
+        auto packaged_task = std::make_shared<std::packaged_task<ret_t()>>(std::move(bound_task));
+        auto result = packaged_task->get_future();
+        dispatch_task_([packaged_task]() { (*packaged_task)(); });
+        return result;
     };
     // executes a callable f(args...) asynchronously. doesn't wait for any result
     template <typename F, typename... Args>
-        requires(std::is_invocable_v<F, Args...>)
+        requires(
+          std::is_invocable_v<std::decay_t<F>&, std::decay_t<Args>&...> &&
+          std::is_copy_constructible_v<std::decay_t<F>> && (std::is_copy_constructible_v<std::decay_t<Args>> && ...))
     void execute(F&& f, Args&&... args) {
-        dispatch_task_(std::move([f_ = f, ... args_ = args]() mutable { f_(args_...); }));
+        auto bound_task = [f_ = std::forward<F>(f),
+                           args_ = std::tuple<std::decay_t<Args>...>(std::forward<Args>(args)...)]() mutable {
+            std::apply([&f_](auto&... stored_args) { std::invoke(f_, stored_args...); }, args_);
+        };
+        dispatch_task_(std::move(bound_task));
     }
     // executes a runnable task object
     template <typename Task, typename... Args>
@@ -294,19 +304,21 @@ inline int parallel_get_num_threads() {
 }
 // executes a callable object asynchronously
 template <typename F, typename... Args>
-    requires(std::is_invocable_v<F, Args...>)
+    requires(
+      std::is_invocable_v<std::decay_t<F>&, std::decay_t<Args>&...> && std::is_copy_constructible_v<std::decay_t<F>> &&
+      (std::is_copy_constructible_v<std::decay_t<Args>> && ...))
 void parallel_execute(F&& f, Args&&... args) {
     internals::threaded_executor::instance().execute(std::forward<F>(f), std::forward<Args>(args)...);
 }
 // executes a callable object asynchronously returning a std::future object for synchronization and result retrieval
 template <typename F, typename... Args>
-    requires(std::is_invocable_v<F, Args...>)
+    requires(std::is_invocable_v<std::decay_t<F>&, std::decay_t<Args>&...>)
 auto parallel_async(F&& f, Args&&... args) {
     return internals::threaded_executor::instance().async(std::forward<F>(f), std::forward<Args>(args)...);
 }
 // explicitly joins the executor until all work is completed
 inline void parallel_join() { internals::threaded_executor::instance().join(); }
-  
+
 }   // namespace fdapde
 
 #endif   // __FDAPDE_EXECUTION_THREADED_EXECUTOR_H__
