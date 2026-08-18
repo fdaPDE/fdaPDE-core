@@ -25,7 +25,7 @@ namespace internals {
 // given a static DAG shaped flow of tasks, loads and parallel executes it by threaded_executor
 struct task_graph {
     template <typename TaskGraph> void run(threaded_executor_impl* executor, TaskGraph& graph) {
-        fdapde_assert(!graph.has_cycles());   // not a valid DAG
+        if (graph.has_cycles()) { throw std::invalid_argument("TaskGraph must be acyclic"); }
         using task_pointer = typename threaded_executor_impl::task_pointer;
         const int num_nodes = graph.n_nodes();
         if (num_nodes == 0) return;
@@ -56,8 +56,8 @@ struct task_graph {
         }
         local_task_count.fetch_sub(1, std::memory_order_release);
         // send runnable tasks to execution (dependent tasks will be pulled by the executor autonomously)
-        executor->expect_tasks(num_nodes);
-        for (int i : runnable_indices) { executor->enqueue_task(i % num_threads, task_table[i]); }
+        executor->reserve_tasks(static_cast<typename threaded_executor_impl::size_type>(num_nodes));
+        for (int i : runnable_indices) { executor->enqueue_task(task_table[i]); }
         executor->notify_all();
         executor->active_join(this_thread_id(), [&] {
             // help the pool while the task group is not fully consumed
@@ -86,7 +86,7 @@ class TaskGraph {
     template <typename TaskGraph_> struct node_proxy {
         // constructor
         node_proxy(TaskGraph_* graph, int id) : graph_(graph), id_(id) {
-            fdapde_assert(id >= 0 && id < graph_->n_nodes());
+            if (id < 0 || id >= graph_->n_nodes()) { throw std::out_of_range("TaskGraph node index out of range"); }
         }
         // observers
         const std::vector<int>& succ_ids() const { return graph_->nodes_[id_].succ; }
@@ -102,16 +102,15 @@ class TaskGraph {
         template <typename... TaskNodes>
             requires(std::is_same_v<std::decay_t<TaskNodes>, node_proxy> && ...)
         void precedes(TaskNodes&&... nodes) {
-            internals::for_each_index_and_args<sizeof...(nodes)>(
-              [&]<int Ns_, typename TaskNode_>(const TaskNode_& node) { graph_->add_edge(*this, node); }, nodes...);
+            (graph_->add_edge(*this, std::forward<TaskNodes>(nodes)), ...);
         }
         template <typename... TaskNodes>
             requires(std::is_same_v<std::decay_t<TaskNodes>, node_proxy> && ...)
         void succeeds(TaskNodes&&... nodes) {
-            internals::for_each_index_and_args<sizeof...(nodes)>(
-              [&]<int Ns_, typename TaskNode_>(const TaskNode_& node) { graph_->add_edge(node, *this); }, nodes...);
+            (graph_->add_edge(std::forward<TaskNodes>(nodes), *this), ...);
         }
        private:
+        friend class TaskGraph;
         TaskGraph_* graph_;
         int id_;
     };
@@ -159,18 +158,23 @@ class TaskGraph {
     const_reference operator[](int i) const { return const_reference(this, i); }
     // modifiers
     template <typename Task_>
-        requires(std::is_invocable_v<Task_>)
+        requires(std::is_invocable_v<std::decay_t<Task_>&> && std::is_copy_constructible_v<std::decay_t<Task_>>)
     reference add_node(Task_&& task) {
         int i = nodes_.size();
         nodes_.emplace_back(std::forward<Task_>(task), i);
         return node_proxy(this, i);
     }
     template <typename... Tasks_>
-        requires(sizeof...(Tasks_) > 1 && (std::is_invocable_v<Tasks_> && ...))
+        requires(
+          sizeof...(Tasks_) > 1 && (std::is_invocable_v<std::decay_t<Tasks_>&> && ...) &&
+          (std::is_copy_constructible_v<std::decay_t<Tasks_>> && ...))
     auto add_node(Tasks_&&... tasks) {
         return std::make_tuple(add_node(std::forward<Tasks_>(tasks))...);
     }
     template <typename TaskGraph_> void add_edge(node_proxy<TaskGraph_> from, node_proxy<TaskGraph_> to) {
+        if (from.graph_ != this || to.graph_ != this) {
+            throw std::invalid_argument("TaskGraph edges must connect nodes from the same graph");
+        }
         nodes_[from.id()].succ.push_back(to.id());
         nodes_[to.id()].pred.push_back(from.id());
         return;

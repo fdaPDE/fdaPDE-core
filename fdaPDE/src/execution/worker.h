@@ -133,7 +133,9 @@ struct chase_lev_queue {
     chase_lev_queue() : chase_lev_queue(4096) { }
     explicit chase_lev_queue(size_type capacity) :
         buffer_(capacity), capacity_(capacity), mask_(capacity - 1), bottom_(0), top_(0) {
-        fdapde_assert(capacity > 0 && (capacity & (capacity - 1)) == 0);   // require capacity power of two
+        if (capacity == 0 || (capacity & (capacity - 1)) != 0) {
+            throw std::invalid_argument("Chase-Lev queue capacity must be a power of two");
+        }
     }
     // avoid copy/move-semantic
     chase_lev_queue(const chase_lev_queue&) = delete;
@@ -222,6 +224,10 @@ struct chase_lev_queue {
     bool empty() const {
         difference_type t = top_.load(std::memory_order_acquire), b = bottom_.load(std::memory_order_acquire);
         return t >= b;
+    }
+    bool full() const {
+        difference_type t = top_.load(std::memory_order_acquire), b = bottom_.load(std::memory_order_relaxed);
+        return std::cmp_greater_equal(b - t, capacity_ - 1);
     }
    private:
     std::vector<value_type> buffer_;
@@ -357,10 +363,11 @@ struct worker {
         auto&& mail = task_buffer_.pop();
         if (mail) {
             // drain task_buffer
-            auto&& tmp = task_buffer_.pop();
-            while (tmp.has_value()) {
-                task_queue_.push_front(std::move(*tmp));
-                tmp = task_buffer_.pop();
+            while (!task_queue_.full()) {
+                auto tmp = task_buffer_.pop();
+                if (!tmp.has_value()) break;
+                const bool pushed = task_queue_.push_front(std::move(*tmp));
+                if (!pushed) { std::terminate(); }
             }
             return mail;
         } else {
@@ -412,7 +419,7 @@ struct worker {
 
 // logical identifier of running thread
 inline int this_thread_id() noexcept { return internals::tls_worker_id; }
-  
+
 }   // namespace fdapde
 
 #endif   // __FDAPDE_EXECUTION_WORKER_H__
