@@ -530,21 +530,31 @@ class MatrixView :
     static constexpr int NestAsRef = 0;
 
     // constructors
-    constexpr MatrixView() : Base(), data_(nullptr) { }
+    constexpr MatrixView(const MatrixView&) = default;
+    constexpr MatrixView() requires(Rows_ == Dynamic || Cols_ == Dynamic) : Base(), data_(nullptr) { }
+    constexpr MatrixView() requires(Rows_ != Dynamic && Cols_ != Dynamic) = delete;
     constexpr explicit MatrixView(Scalar* data) : Base(), data_(data) {
         fdapde_static_assert(Rows_ != Dynamic && Cols_ != Dynamic, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
     }
     constexpr MatrixView(Scalar* data, int size) : Base(size), data_(data) {
         fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
-        fdapde_assert(size > 0);
+        if (size <= 0) { throw std::invalid_argument("matrix view size must be positive"); }
     }
     constexpr MatrixView(Scalar* data, int rows, int cols) : Base(rows, cols), data_(data) {
-        fdapde_assert(rows > 0 && cols > 0);
+        if (rows <= 0 || cols <= 0) { throw std::invalid_argument("matrix view dimensions must be positive"); }
     }
     // inherit assignment from Base
     using Base::operator=;
+    constexpr MatrixView& operator=(const MatrixView& other) & {
+        static_cast<MatrixExpr<MatrixView>&>(*this).template operator=<MatrixView>(other);
+        return *this;
+    }
+    constexpr MatrixView operator=(const MatrixView& other) && {
+        static_cast<MatrixExpr<MatrixView>&>(*this).template operator=<MatrixView>(other);
+        return *this;
+    }
     // data pointers
-    constexpr const StorageType data() const { return data_; }
+    constexpr const Scalar* data() const { return data_; }
     constexpr StorageType data() { return data_; }
    private:
     StorageType data_;

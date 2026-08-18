@@ -142,4 +142,36 @@ TEST(LinearAlgebraRuntimeContracts, ProceduralMatrixChecksShapeSizeAndIndexes) {
     EXPECT_THROW(static_cast<void>(matrix(2, 0)), std::out_of_range);
 }
 
+TEST(LinearAlgebraRuntimeContracts, MatrixViewRejectsInvalidRuntimeShapes) {
+    using dynamic_matrix_view = MatrixView<int, Dynamic, Dynamic>;
+    using partial_matrix_view = MatrixView<int, Dynamic, 3>;
+    using dynamic_vector_view = MatrixView<int, Dynamic, 1>;
+    using fixed_vector_view = MatrixView<int, 3, 1>;
+    int data[6] {};
+
+    dynamic_matrix_view empty;
+    EXPECT_EQ(empty.rows(), 0);
+    EXPECT_EQ(empty.cols(), 0);
+    EXPECT_EQ(empty.data(), nullptr);
+
+    EXPECT_THROW(static_cast<void>(dynamic_matrix_view(data, -1, 3)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(dynamic_matrix_view(data, 0, 3)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(dynamic_matrix_view(data, 2, 0)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(partial_matrix_view(data, 2, 2)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(dynamic_vector_view(data, 0)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(fixed_vector_view(data, 2)), std::invalid_argument);
+
+    int destination_data[4] {1, 2, 3, 4};
+    int source_data[6] {6, 5, 4, 3, 2, 1};
+    dynamic_matrix_view destination(destination_data, 2, 2);
+    dynamic_matrix_view source(source_data, 2, 3);
+    int* const destination_binding = destination.data();
+    EXPECT_THROW(destination = source, std::invalid_argument);
+    EXPECT_EQ(destination.data(), destination_binding);
+    EXPECT_EQ(destination.rows(), 2);
+    EXPECT_EQ(destination.cols(), 2);
+    EXPECT_EQ(destination(0, 0), 1);
+    EXPECT_EQ(destination(1, 1), 4);
+}
+
 }   // namespace fdapde

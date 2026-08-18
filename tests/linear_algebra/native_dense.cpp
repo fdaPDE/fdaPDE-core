@@ -18,10 +18,19 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace fdapde {
 namespace {
+
+static_assert(!std::is_default_constructible_v<MatrixView<int, 2, 2>>);
+static_assert(std::is_default_constructible_v<MatrixView<int, Dynamic, Dynamic>>);
+static_assert(std::is_default_constructible_v<MatrixView<int, Dynamic, 3>>);
+static_assert(std::is_same_v<decltype(std::declval<MatrixView<int, 2, 3>&>().data()), int*>);
+static_assert(std::is_same_v<decltype(std::declval<const MatrixView<int, 2, 3>&>().data()), const int*>);
+static_assert(std::is_same_v<decltype(std::declval<MatrixView<const int, 2, 3>&>().data()), const int*>);
 
 template <int StorageOrder> void check_owner_behavior() {
     using fixed_matrix = Matrix<int, 2, 3, StorageOrder>;
@@ -89,6 +98,50 @@ template <int StorageOrder> void check_owner_behavior() {
     EXPECT_EQ(other_order(1, 2), 6);
 }
 
+template <int StorageOrder> void check_numeric_view_behavior() {
+    using fixed_view = MatrixView<int, 2, 3, StorageOrder>;
+    static_assert(std::is_same_v<
+                  decltype(std::declval<fixed_view&&>() = std::declval<const fixed_view&>()), fixed_view>);
+
+    std::array<int, 6> view_storage {};
+    fixed_view view(view_storage.data());
+    view(0, 1) = 7;
+    constexpr int view_index = StorageOrder == RowMajor ? 1 : 2;
+    EXPECT_EQ(view_storage[view_index], 7);
+    const auto& const_view = view;
+    static_assert(std::is_same_v<decltype(const_view(0, 0)), const int&>);
+
+    std::array<int, 6> source_storage {};
+    fixed_view source_view(source_storage.data());
+    const auto source_alias = source_view;
+    EXPECT_EQ(source_alias.data(), source_view.data());
+    source_view(1, 2) = 11;
+    int* const destination = view.data();
+    view = source_view;
+    EXPECT_EQ(view.data(), destination);
+    EXPECT_EQ(view(1, 2), 11);
+
+    const Matrix<int, 2, 3, StorageOrder> matrix({1, 2, 3, 4, 5, 6});
+    view = matrix;
+    EXPECT_EQ(view.data(), destination);
+    EXPECT_EQ(view, matrix);
+
+    std::array<int, 6> temporary_destination {};
+    const auto assigned_temporary = fixed_view(temporary_destination.data()) = source_view;
+    EXPECT_EQ(assigned_temporary.data(), temporary_destination.data());
+    EXPECT_EQ(assigned_temporary(1, 2), 11);
+
+    std::array<int, 3> vector_storage {3, 2, 1};
+    MatrixView<int, 1, Dynamic, StorageOrder> row_view(vector_storage.data(), 3);
+    MatrixView<int, Dynamic, 1, StorageOrder> column_view(vector_storage.data(), 3);
+    EXPECT_EQ(row_view.rows(), 1);
+    EXPECT_EQ(row_view.cols(), 3);
+    EXPECT_EQ(row_view(0, 2), 1);
+    EXPECT_EQ(column_view.rows(), 3);
+    EXPECT_EQ(column_view.cols(), 1);
+    EXPECT_EQ(column_view(2, 0), 1);
+}
+
 }   // namespace
 
 TEST(NativeDenseMatrix, OwnerShapeStorageAndVectorCopy) {
@@ -101,6 +154,11 @@ TEST(NativeDenseMatrix, OwnerShapeStorageAndVectorCopy) {
     EXPECT_EQ(procedural.rows(), 2);
     EXPECT_EQ(procedural.cols(), 4);
     EXPECT_EQ(procedural(1, 3), 1);
+}
+
+TEST(NativeDenseMatrix, NumericViewBindingConstnessAndStorage) {
+    check_numeric_view_behavior<RowMajor>();
+    check_numeric_view_behavior<ColMajor>();
 }
 
 }   // namespace fdapde
