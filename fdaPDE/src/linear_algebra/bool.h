@@ -742,14 +742,14 @@ class BoolReshapeOp : public BoolMatrixExpr<BoolReshapeOp<Rows_, Cols_, XprType_
     }
     template <typename XprType__>
         requires(std::is_constructible_v<XprTypeNested, XprType__>)
-    constexpr explicit BoolReshapeOp(XprType__&& xpr) noexcept : xpr_(std::forward<XprType__>(xpr)) { }
+    constexpr explicit BoolReshapeOp(XprType__&& xpr) : xpr_(std::forward<XprType__>(xpr)) { }
     template <typename XprType__>
         requires(std::is_constructible_v<XprTypeNested, XprType__>)
-    constexpr BoolReshapeOp(XprType__&& xpr, int rows, int cols) noexcept :
+    constexpr BoolReshapeOp(XprType__&& xpr, int rows, int cols) :
         xpr_(std::forward<XprType__>(xpr), rows, cols) { }
     template <typename XprType__>
         requires(std::is_constructible_v<XprTypeNested, XprType__>)
-    constexpr BoolReshapeOp(XprType__&& xpr, int rows) noexcept : xpr_(std::forward<XprType__>(xpr), rows) { }
+    constexpr BoolReshapeOp(XprType__&& xpr, int rows) : xpr_(std::forward<XprType__>(xpr), rows) { }
 
     constexpr int rows() const { return xpr_.rows(); }
     constexpr int cols() const { return xpr_.cols(); }

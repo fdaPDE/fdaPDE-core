@@ -532,23 +532,63 @@ template <typename XprType_> struct MatrixExpr {
 
     // reshaping
     // static-sized
-    template <int ReshapedRows_, int ReshapedCols_> constexpr auto reshape() {
+    template <int ReshapedRows_, int ReshapedCols_> constexpr auto reshape() & {
         return ReshapeOp<ReshapedRows_, ReshapedCols_, XprType>(derived());
     }
-    template <int ReshapedRows_, int ReshapedCols_> constexpr auto reshape() const {
+    template <int ReshapedRows_, int ReshapedCols_> constexpr auto reshape() const & {
         return ReshapeOp<ReshapedRows_, ReshapedCols_, const XprType>(derived());
     }
-    template <int ReshapedRows_> constexpr auto reshape() { return ReshapeOp<ReshapedRows_, 1, XprType>(derived()); }
-    template <int ReshapedRows_> constexpr auto reshape() const {
+    template <int ReshapedRows_, int ReshapedCols_>
+    constexpr auto reshape() && requires(XprType::NestAsRef == 0) {
+        return ReshapeOp<ReshapedRows_, ReshapedCols_, XprType>(static_cast<XprType&>(*this));
+    }
+    template <int ReshapedRows_, int ReshapedCols_>
+    constexpr auto reshape() const && requires(XprType::NestAsRef == 0) {
+        return ReshapeOp<ReshapedRows_, ReshapedCols_, const XprType>(static_cast<const XprType&>(*this));
+    }
+    template <int ReshapedRows_, int ReshapedCols_>
+    constexpr void reshape() && requires(XprType::NestAsRef != 0) = delete;
+    template <int ReshapedRows_, int ReshapedCols_>
+    constexpr void reshape() const && requires(XprType::NestAsRef != 0) = delete;
+    template <int ReshapedRows_> constexpr auto reshape() & {
+        return ReshapeOp<ReshapedRows_, 1, XprType>(derived());
+    }
+    template <int ReshapedRows_> constexpr auto reshape() const & {
         return ReshapeOp<ReshapedRows_, 1, const XprType>(derived());
     }
+    template <int ReshapedRows_> constexpr auto reshape() && requires(XprType::NestAsRef == 0) {
+        return ReshapeOp<ReshapedRows_, 1, XprType>(static_cast<XprType&>(*this));
+    }
+    template <int ReshapedRows_> constexpr auto reshape() const && requires(XprType::NestAsRef == 0) {
+        return ReshapeOp<ReshapedRows_, 1, const XprType>(static_cast<const XprType&>(*this));
+    }
+    template <int ReshapedRows_> constexpr void reshape() && requires(XprType::NestAsRef != 0) = delete;
+    template <int ReshapedRows_> constexpr void reshape() const && requires(XprType::NestAsRef != 0) = delete;
     // dynamic-sized
-    constexpr auto reshape(int rows, int cols) { return ReshapeOp<Dynamic, Dynamic, XprType>(derived(), rows, cols); }
-    constexpr auto reshape(int rows, int cols) const {
+    constexpr auto reshape(int rows, int cols) & {
+        return ReshapeOp<Dynamic, Dynamic, XprType>(derived(), rows, cols);
+    }
+    constexpr auto reshape(int rows, int cols) const & {
         return ReshapeOp<Dynamic, Dynamic, const XprType>(derived(), rows, cols);
     }
-    constexpr auto reshape(int rows) { return ReshapeOp<Dynamic, 1, XprType>(derived(), rows); }
-    constexpr auto reshape(int rows) const { return ReshapeOp<Dynamic, 1, const XprType>(derived(), rows); }
+    constexpr auto reshape(int rows, int cols) && requires(XprType::NestAsRef == 0) {
+        return ReshapeOp<Dynamic, Dynamic, XprType>(static_cast<XprType&>(*this), rows, cols);
+    }
+    constexpr auto reshape(int rows, int cols) const && requires(XprType::NestAsRef == 0) {
+        return ReshapeOp<Dynamic, Dynamic, const XprType>(static_cast<const XprType&>(*this), rows, cols);
+    }
+    constexpr void reshape(int, int) && requires(XprType::NestAsRef != 0) = delete;
+    constexpr void reshape(int, int) const && requires(XprType::NestAsRef != 0) = delete;
+    constexpr auto reshape(int rows) & { return ReshapeOp<Dynamic, 1, XprType>(derived(), rows); }
+    constexpr auto reshape(int rows) const & { return ReshapeOp<Dynamic, 1, const XprType>(derived(), rows); }
+    constexpr auto reshape(int rows) && requires(XprType::NestAsRef == 0) {
+        return ReshapeOp<Dynamic, 1, XprType>(static_cast<XprType&>(*this), rows);
+    }
+    constexpr auto reshape(int rows) const && requires(XprType::NestAsRef == 0) {
+        return ReshapeOp<Dynamic, 1, const XprType>(static_cast<const XprType&>(*this), rows);
+    }
+    constexpr void reshape(int) && requires(XprType::NestAsRef != 0) = delete;
+    constexpr void reshape(int) const && requires(XprType::NestAsRef != 0) = delete;
 
     // square matrix methods
     constexpr auto symm_part() const & {

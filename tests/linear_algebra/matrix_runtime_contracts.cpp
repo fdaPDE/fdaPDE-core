@@ -82,6 +82,63 @@ template <int StorageOrder> void check_matrix_block_runtime_contracts() {
     EXPECT_EQ(matrix, original);
 }
 
+template <int StorageOrder> void check_matrix_reshape_runtime_contracts() {
+    using matrix_type = Matrix<int, Dynamic, Dynamic, StorageOrder>;
+    matrix_type matrix(2, 2);
+
+    EXPECT_THROW(static_cast<void>(matrix.reshape(-1, 4)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(matrix.reshape(1, -1)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(matrix.reshape(3, 2)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(matrix.reshape(3)), std::invalid_argument);
+    EXPECT_THROW(
+      static_cast<void>(matrix.reshape(std::numeric_limits<int>::max(), 2)),
+      std::length_error);
+    EXPECT_THROW(
+      static_cast<void>(ReshapeOp<2, Dynamic, matrix_type>(matrix, 3, 2)),
+      std::invalid_argument);
+    EXPECT_THROW(
+      static_cast<void>(ReshapeOp<Dynamic, 2, matrix_type>(matrix, 2, 3)),
+      std::invalid_argument);
+
+    auto reshaped = matrix.template reshape<1, 4>();
+    const auto& const_reshaped = reshaped;
+    EXPECT_THROW(static_cast<void>(reshaped(-1, 0)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(reshaped(0, 4)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(const_reshaped(-1, 0)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(const_reshaped(0, 4)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(reshaped[-1]), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(reshaped[4]), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(const_reshaped[-1]), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(const_reshaped[4]), std::out_of_range);
+
+    auto column = matrix.reshape(4);
+    const auto& const_column = column;
+    EXPECT_THROW(static_cast<void>(column[-1]), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(column[4]), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(const_column[-1]), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(const_column[4]), std::out_of_range);
+
+    matrix_type empty;
+    const auto empty_matrix = empty.reshape(0, 5);
+    const auto empty_column = empty.reshape(0);
+    EXPECT_EQ(empty_matrix.rows(), 0);
+    EXPECT_EQ(empty_matrix.cols(), 5);
+    EXPECT_EQ(empty_matrix.size(), 0);
+    EXPECT_EQ(empty_column.rows(), 0);
+    EXPECT_EQ(empty_column.cols(), 1);
+    EXPECT_EQ(empty_column.size(), 0);
+    EXPECT_THROW(static_cast<void>(matrix.reshape(0, 5)), std::invalid_argument);
+
+    const auto zero = [](int, int) { return 0.0; };
+    ProceduralMatrix<decltype(zero), Dynamic, 1> long_column(50000, zero);
+    ProceduralMatrix<decltype(zero), 1, Dynamic> long_row(50000, zero);
+    auto oversized_outer_product = long_column * long_row;
+    EXPECT_THROW(static_cast<void>(oversized_outer_product.reshape(1, 1)), std::length_error);
+
+    Matrix<bool, Dynamic, Dynamic, StorageOrder> boolean_matrix(2, 2);
+    EXPECT_THROW(static_cast<void>(boolean_matrix.reshape(3, 2)), std::invalid_argument);
+}
+
 }   // namespace
 
 TEST(LinearAlgebraRuntimeContracts, DynamicSquareOperationsRemainAvailable) {
@@ -262,6 +319,11 @@ TEST(LinearAlgebraRuntimeContracts, MatrixViewRejectsInvalidRuntimeShapes) {
 TEST(LinearAlgebraRuntimeContracts, MatrixBlockChecksBoundsAndAssignments) {
     check_matrix_block_runtime_contracts<RowMajor>();
     check_matrix_block_runtime_contracts<ColMajor>();
+}
+
+TEST(LinearAlgebraRuntimeContracts, MatrixReshapeChecksShapesSizesAndIndexes) {
+    check_matrix_reshape_runtime_contracts<RowMajor>();
+    check_matrix_reshape_runtime_contracts<ColMajor>();
 }
 
 }   // namespace fdapde

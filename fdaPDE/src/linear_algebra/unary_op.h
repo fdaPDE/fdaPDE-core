@@ -51,60 +51,118 @@ template <typename XprType> struct TransposeOp : public MatrixExpr<TransposeOp<X
 };
 
 // expression of a reshaped MatrixExpr operand. Reshaping modifes the expression dimensions without reallocating memory
-template <int Rows_, int Cols_, typename XprType>
-struct ReshapeOp : public MatrixExpr<ReshapeOp<Rows_, Cols_, XprType>> {
-    using Base = MatrixExpr<ReshapeOp<Rows_, Cols_, XprType>>;
-    using XprTypeNested = internals::ref_select_t<XprType>;
-    using Scalar = typename XprType::Scalar;
+template <int Rows_, int Cols_, typename XprType_>
+struct ReshapeOp : public MatrixExpr<ReshapeOp<Rows_, Cols_, XprType_>> {
+   private:
+    using Base = MatrixExpr<ReshapeOp<Rows_, Cols_, XprType_>>;
+    using XprType = std::remove_reference_t<XprType_>;
+    using XprTypeClean = std::remove_cv_t<XprType>;
+    using XprTypeNested = internals::ref_select_t<XprType_>;
+    fdapde_static_assert(
+      (Rows_ == Dynamic || Rows_ > 0) && (Cols_ == Dynamic || Cols_ > 0), INVALID_RESHAPE_DIMENSIONS);
+    fdapde_static_assert(
+      Rows_ == Dynamic || Cols_ == Dynamic ||
+        static_cast<std::uint64_t>(Rows_) * static_cast<std::uint64_t>(Cols_) <=
+          static_cast<std::uint64_t>(std::numeric_limits<int>::max()),
+      MATRIX_SIZE_EXCEEDS_SUPPORTED_RANGE);
+    fdapde_static_assert(
+      Rows_ == Dynamic || Cols_ == Dynamic || XprTypeClean::Rows == Dynamic || XprTypeClean::Cols == Dynamic ||
+        static_cast<std::uint64_t>(Rows_) * static_cast<std::uint64_t>(Cols_) ==
+          static_cast<std::uint64_t>(XprTypeClean::Rows) * static_cast<std::uint64_t>(XprTypeClean::Cols),
+      INVALID_RESHAPE__DIFFERENT_STATIC_SIZE);
+   public:
+    using Scalar = typename XprTypeClean::Scalar;
     static constexpr int Rows = Rows_;
     static constexpr int Cols = Cols_;
-    static constexpr int StorageOrder = XprType::StorageOrder;
+    static constexpr int StorageOrder = XprTypeClean::StorageOrder;
     static constexpr int NestAsRef = 0;
-    static constexpr int ReadOnly = XprType::ReadOnly;
+    static constexpr int ReadOnly = std::is_const_v<XprType> || XprTypeClean::ReadOnly;
+    using assignment_executor = std::conditional_t<
+      (Rows_ == 1 || Cols_ == 1) && !(Rows_ == 1 && Cols_ == 1), internals::vector_assignment_executor,
+      internals::generic_assignment_executor>;
 
-    template <typename XprType_>
-        requires(std::is_constructible_v<XprTypeNested, XprType_>)
-    constexpr explicit ReshapeOp(XprType_&& xpr) : rows_(Rows), cols_(Cols), xpr_(std::forward<XprType_>(xpr)) {
-        fdapde_static_assert(Rows_ != Dynamic && Cols != Dynamic, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
-        fdapde_assert(rows_ * cols_ == xpr.size());
+    constexpr ReshapeOp(const ReshapeOp&) = default;
+    template <typename XprType__>
+        requires(
+          !std::same_as<std::remove_cvref_t<XprType__>, ReshapeOp> &&
+          internals::safely_nestable<XprTypeNested, XprType__>)
+    constexpr explicit ReshapeOp(XprType__&& xpr) :
+        rows_(Rows), cols_(Cols), xpr_(std::forward<XprType__>(xpr)) {
+        fdapde_static_assert(Rows_ != Dynamic && Cols_ != Dynamic, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
+        validate_();
     }
-    template <typename XprType_>
-        requires(std::is_constructible_v<XprTypeNested, XprType_>)
-    constexpr ReshapeOp(XprType_&& xpr, int rows, int cols) :
-        rows_(Rows == Dynamic ? rows : Rows), cols_(Cols == Dynamic ? cols : Cols), xpr_(std::forward<XprType_>(xpr)) {
-        fdapde_assert(rows_ * cols_ == xpr.size());
+    template <typename XprType__>
+        requires(internals::safely_nestable<XprTypeNested, XprType__>)
+    constexpr ReshapeOp(XprType__&& xpr, int rows, int cols) :
+        rows_(Rows == Dynamic ? rows : Rows),
+        cols_(Cols == Dynamic ? cols : Cols),
+        xpr_(std::forward<XprType__>(xpr)) {
+        validate_((Rows == Dynamic || rows == Rows) && (Cols == Dynamic || cols == Cols));
     }
-    template <typename XprType_>
-        requires(std::is_constructible_v<XprTypeNested, XprType_>)
-    constexpr ReshapeOp(XprType_&& xpr, int rows) : ReshapeOp(xpr, rows, 1) {
+    template <typename XprType__>
+        requires(internals::safely_nestable<XprTypeNested, XprType__>)
+    constexpr ReshapeOp(XprType__&& xpr, int rows) :
+        ReshapeOp(
+          std::forward<XprType__>(xpr),
+          Rows_ == 1 && Cols_ != 1 ? 1 : rows,
+          Rows_ == 1 && Cols_ != 1 ? rows : 1) {
         fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_ONLY_FOR_ROW_OR_COLUMN_VECTORS);
     }
+    using Base::operator=;
+    constexpr ReshapeOp& operator=(const ReshapeOp& rhs) & requires(ReadOnly == 0) {
+        static_cast<Base&>(*this).template operator=<ReshapeOp>(rhs);
+        return *this;
+    }
+    constexpr ReshapeOp operator=(const ReshapeOp& rhs) && requires(ReadOnly == 0) {
+        static_cast<Base&>(*this).template operator=<ReshapeOp>(rhs);
+        return *this;
+    }
+    constexpr ReshapeOp& operator=(const ReshapeOp&) & requires(ReadOnly != 0) = delete;
+    constexpr ReshapeOp operator=(const ReshapeOp&) && requires(ReadOnly != 0) = delete;
     // access
     constexpr decltype(auto) operator()(int i, int j) const {
+        if (i < 0 || i >= rows_ || j < 0 || j >= cols_) {
+            throw std::out_of_range("reshape index out of range");
+        }
         const auto [row, col] = reshaped_(i, j);
-        return xpr_(row, col);
+        return std::as_const(xpr_)(row, col);
     }
     constexpr decltype(auto) operator[](int i) const {
         fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_ONLY_FOR_ROW_OR_COLUMN_VECTORS);
-        return Rows == 1 ? operator()(i, 0) : operator()(0, i);
+        if (i < 0 || i >= rows_ * cols_) { throw std::out_of_range("reshape index out of range"); }
+        return Rows == 1 ? operator()(0, i) : operator()(i, 0);
     }
-    constexpr decltype(auto) operator()(int i, int j) {
-        fdapde_static_assert(ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_LOCATION);
+    constexpr decltype(auto) operator()(int i, int j) requires(ReadOnly == 0) {
+        if (i < 0 || i >= rows_ || j < 0 || j >= cols_) {
+            throw std::out_of_range("reshape index out of range");
+        }
         const auto [row, col] = reshaped_(i, j);
         return xpr_(row, col);
     }
-    constexpr decltype(auto) operator[](int i) {
-        fdapde_static_assert(ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_LOCATION);
+    constexpr decltype(auto) operator[](int i) requires(ReadOnly == 0) {
         fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_ONLY_FOR_ROW_OR_COLUMN_VECTORS);
-        return Rows == 1 ? operator()(i, 0) : operator()(0, i);
+        if (i < 0 || i >= rows_ * cols_) { throw std::out_of_range("reshape index out of range"); }
+        return Rows == 1 ? operator()(0, i) : operator()(i, 0);
     }
     // observers
     constexpr int rows() const { return rows_; }
     constexpr int cols() const { return cols_; }
    private:
-    std::pair<int, int> reshaped_(int i, int j) const {
-        const int k = i * cols_ + j;
-        return std::make_pair(k / xpr_.cols(), k % xpr_.cols());
+    constexpr void validate_(bool target_matches = true) const {
+        if (!target_matches) { throw std::invalid_argument("reshape arguments do not match its static shape"); }
+        const int target_size = internals::checked_matrix_size(rows_, cols_);
+        const int source_size = internals::checked_matrix_size(xpr_.rows(), xpr_.cols());
+        if (target_size != source_size) {
+            throw std::invalid_argument("reshape requires matching source and target sizes");
+        }
+    }
+    constexpr std::pair<int, int> reshaped_(int i, int j) const {
+        const int k = StorageOrder == RowMajor ? i * cols_ + j : j * rows_ + i;
+        if constexpr (StorageOrder == RowMajor) {
+            return std::make_pair(k / xpr_.cols(), k % xpr_.cols());
+        } else {
+            return std::make_pair(k % xpr_.rows(), k / xpr_.rows());
+        }
     }
     int rows_, cols_;
     XprTypeNested xpr_;

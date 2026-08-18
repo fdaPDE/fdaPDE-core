@@ -237,6 +237,65 @@ concept has_const_bidirectional_block_iterator = requires {
     requires std::bidirectional_iterator<typename Block::const_iterator>;
 };
 
+template <typename Matrix>
+concept permits_temporary_static_matrix_reshape = requires(Matrix&& matrix) {
+    std::move(matrix).template reshape<1, 4>();
+};
+
+template <typename Matrix>
+concept permits_temporary_static_vector_reshape = requires(Matrix&& matrix) {
+    std::move(matrix).template reshape<4>();
+};
+
+template <typename Matrix>
+concept permits_temporary_dynamic_matrix_reshape = requires(Matrix&& matrix) {
+    std::move(matrix).reshape(1, 4);
+};
+
+template <typename Matrix>
+concept permits_temporary_dynamic_vector_reshape = requires(Matrix&& matrix) {
+    std::move(matrix).reshape(4);
+};
+
+template <typename Matrix, int ExpectedReadOnly>
+concept permits_all_temporary_reshape_accessors = requires(Matrix&& matrix) {
+    requires (decltype(std::move(matrix).template reshape<1, 4>())::ReadOnly == ExpectedReadOnly);
+    requires (decltype(std::move(matrix).template reshape<4>())::ReadOnly == ExpectedReadOnly);
+    requires (decltype(std::move(matrix).reshape(1, 4))::ReadOnly == ExpectedReadOnly);
+    requires (decltype(std::move(matrix).reshape(4))::ReadOnly == ExpectedReadOnly);
+};
+
+template <typename Matrix>
+concept permits_direct_temporary_static_reshape = requires(Matrix&& matrix) {
+    ReshapeOp<1, 4, Matrix> {std::move(matrix)};
+};
+
+template <typename Matrix>
+concept permits_direct_temporary_dynamic_reshape = requires(Matrix&& matrix) {
+    ReshapeOp<Dynamic, Dynamic, Matrix> {std::move(matrix), 1, 4};
+};
+
+template <typename Matrix>
+concept permits_direct_temporary_vector_reshape = requires(Matrix&& matrix) {
+    ReshapeOp<Dynamic, 1, Matrix> {std::move(matrix), 4};
+};
+
+template <typename Reshape>
+concept permits_reshape_coefficient_write = requires(Reshape& reshape) { reshape(0, 0) = 1.0; };
+
+template <typename Reshape>
+concept permits_const_reshape_coefficient_write =
+  requires(const Reshape& reshape) { reshape(0, 0) = 1.0; };
+
+template <typename Reshape>
+concept permits_reshape_vector_write = requires(Reshape& reshape) { reshape[0] = 1.0; };
+
+template <typename Reshape>
+concept permits_const_reshape_vector_write = requires(const Reshape& reshape) { reshape[0] = 1.0; };
+
+template <typename Reshape>
+concept permits_reshape_assignment = requires(Reshape& lhs, const Reshape& rhs) { lhs = rhs; };
+
 using lifetime_matrix = Matrix<double, 2, 2>;
 using lifetime_const_matrix = const lifetime_matrix;
 using lifetime_vector = Matrix<double, 3, 1>;
@@ -250,6 +309,17 @@ using lifetime_const_block = decltype(std::declval<const lifetime_matrix&>().tem
 using lifetime_const_view_block =
   decltype(std::declval<lifetime_const_view&>().template block<1, 1>(0, 0));
 using lifetime_row = decltype(std::declval<lifetime_matrix&>().row(0));
+using lifetime_row_reshape = decltype(std::declval<lifetime_matrix&>().template reshape<1, 4>());
+using lifetime_column_reshape = decltype(std::declval<lifetime_matrix&>().template reshape<4>());
+using lifetime_const_owner_reshape =
+  decltype(std::declval<const lifetime_matrix&>().template reshape<1, 4>());
+using lifetime_const_owner_column_reshape =
+  decltype(std::declval<const lifetime_matrix&>().template reshape<4>());
+using lifetime_const_scalar_view = MatrixView<const double, 2, 2>;
+using lifetime_const_scalar_view_reshape =
+  decltype(std::declval<lifetime_const_scalar_view&>().template reshape<1, 4>());
+using lifetime_const_scalar_view_column_reshape =
+  decltype(std::declval<lifetime_const_scalar_view&>().template reshape<4>());
 static_assert(!permits_left_temporary_add<lifetime_matrix>);
 static_assert(!permits_right_temporary_add<lifetime_matrix>);
 static_assert(!permits_left_temporary_subtract<lifetime_matrix>);
@@ -327,6 +397,47 @@ static_assert(std::is_same_v<std::iter_reference_t<typename lifetime_row::const_
 using temporary_row_initializer_result = decltype(
   std::declval<lifetime_row&&>() = std::declval<const std::initializer_list<double>&>());
 static_assert(!std::is_lvalue_reference_v<temporary_row_initializer_result>);
+static_assert(!permits_temporary_static_matrix_reshape<lifetime_matrix>);
+static_assert(!permits_temporary_static_vector_reshape<lifetime_matrix>);
+static_assert(!permits_temporary_dynamic_matrix_reshape<lifetime_matrix>);
+static_assert(!permits_temporary_dynamic_vector_reshape<lifetime_matrix>);
+static_assert(!permits_temporary_static_matrix_reshape<lifetime_const_matrix>);
+static_assert(!permits_temporary_static_vector_reshape<lifetime_const_matrix>);
+static_assert(!permits_temporary_dynamic_matrix_reshape<lifetime_const_matrix>);
+static_assert(!permits_temporary_dynamic_vector_reshape<lifetime_const_matrix>);
+static_assert(permits_all_temporary_reshape_accessors<lifetime_expression, 1>);
+static_assert(permits_all_temporary_reshape_accessors<lifetime_view, 0>);
+static_assert(permits_all_temporary_reshape_accessors<const lifetime_view, 1>);
+static_assert(permits_all_temporary_reshape_accessors<lifetime_const_view, 1>);
+static_assert(!permits_direct_temporary_static_reshape<lifetime_matrix>);
+static_assert(!permits_direct_temporary_dynamic_reshape<lifetime_matrix>);
+static_assert(!permits_direct_temporary_vector_reshape<lifetime_matrix>);
+static_assert(!permits_direct_temporary_static_reshape<lifetime_const_matrix>);
+static_assert(!permits_direct_temporary_dynamic_reshape<lifetime_const_matrix>);
+static_assert(!permits_direct_temporary_vector_reshape<lifetime_const_matrix>);
+static_assert(lifetime_const_owner_reshape::ReadOnly == 1);
+static_assert(lifetime_const_scalar_view_reshape::ReadOnly == 1);
+static_assert(std::is_same_v<decltype(std::declval<lifetime_row_reshape&>()(0, 0)), double&>);
+static_assert(std::is_same_v<decltype(std::declval<lifetime_row_reshape&>()[0]), double&>);
+static_assert(std::is_same_v<decltype(std::declval<lifetime_column_reshape&>()[0]), double&>);
+static_assert(std::is_same_v<decltype(std::declval<const lifetime_row_reshape&>()(0, 0)), const double&>);
+static_assert(std::is_same_v<decltype(std::declval<const lifetime_row_reshape&>()[0]), const double&>);
+static_assert(std::is_same_v<decltype(std::declval<const lifetime_column_reshape&>()[0]), const double&>);
+static_assert(
+  std::is_same_v<decltype(std::declval<lifetime_const_owner_column_reshape&>()[0]), const double&>);
+static_assert(
+  std::is_same_v<decltype(std::declval<lifetime_const_scalar_view_column_reshape&>()[0]), const double&>);
+static_assert(!permits_const_reshape_coefficient_write<lifetime_row_reshape>);
+static_assert(!permits_const_reshape_vector_write<lifetime_column_reshape>);
+static_assert(!permits_reshape_coefficient_write<lifetime_const_owner_reshape>);
+static_assert(!permits_reshape_coefficient_write<lifetime_const_scalar_view_reshape>);
+static_assert(!permits_reshape_vector_write<lifetime_const_owner_column_reshape>);
+static_assert(!permits_reshape_vector_write<lifetime_const_scalar_view_column_reshape>);
+static_assert(permits_reshape_assignment<lifetime_row_reshape>);
+static_assert(!permits_reshape_assignment<lifetime_const_owner_reshape>);
+using temporary_reshape_assignment_result = decltype(
+  std::declval<lifetime_row_reshape&&>() = std::declval<const lifetime_row_reshape&>());
+static_assert(std::is_same_v<temporary_reshape_assignment_result, lifetime_row_reshape>);
 
 template <int StorageOrder> void check_owner_behavior() {
     using fixed_matrix = Matrix<int, 2, 3, StorageOrder>;
@@ -589,6 +700,86 @@ template <int StorageOrder> void check_block_view_behavior() {
       (matrix_type({7.0, 8.0, 3.0, 4.0, 11.0, 12.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0})));
 }
 
+template <int StorageOrder> void check_reshape_behavior() {
+    using source_matrix = Matrix<double, 2, 3, StorageOrder>;
+    using target_matrix = Matrix<double, 3, 2, StorageOrder>;
+    source_matrix matrix({1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
+    const target_matrix expected = StorageOrder == RowMajor
+      ? target_matrix({1.0, 2.0, 3.0, 4.0, 5.0, 6.0})
+      : target_matrix({1.0, 5.0, 4.0, 3.0, 2.0, 6.0});
+
+    EXPECT_EQ((target_matrix(matrix.template reshape<3, 2>())), expected);
+    EXPECT_EQ((target_matrix(matrix.reshape(3, 2))), expected);
+    const auto row = matrix.template reshape<1, 6>();
+    const auto column = matrix.template reshape<6>();
+    for (int i = 0; i < matrix.size(); ++i) {
+        EXPECT_DOUBLE_EQ(row[i], matrix.data()[i]);
+        EXPECT_DOUBLE_EQ(column[i], matrix.data()[i]);
+    }
+    const ReshapeOp<1, Dynamic, source_matrix> direct_row(matrix, matrix.size());
+    EXPECT_EQ(direct_row.rows(), 1);
+    EXPECT_EQ(direct_row.cols(), matrix.size());
+    for (int i = 0; i < matrix.size(); ++i) { EXPECT_DOUBLE_EQ(direct_row[i], matrix.data()[i]); }
+
+    auto expression_reshape = (matrix + matrix).template reshape<3, 2>();
+    EXPECT_EQ((target_matrix(expression_reshape)), (target_matrix(expected + expected)));
+
+    auto temporary_const_view_reshape =
+      MatrixView<const double, 2, 3, StorageOrder>(matrix.data()).template reshape<3, 2>();
+    EXPECT_EQ((target_matrix(temporary_const_view_reshape)), expected);
+
+    double mutable_view_data[6] {1.0, 2.0, 3.0, 4.0, 5.0, 6.0};
+    auto temporary_mutable_view_reshape =
+      MatrixView<double, Dynamic, Dynamic, StorageOrder>(mutable_view_data, 2, 3).reshape(3, 2);
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 2; ++j) {
+            const int k = StorageOrder == RowMajor ? i * 2 + j : j * 3 + i;
+            EXPECT_DOUBLE_EQ(temporary_mutable_view_reshape(i, j), mutable_view_data[k]);
+        }
+    }
+    constexpr int mutated_index = StorageOrder == RowMajor ? 1 : 3;
+    temporary_mutable_view_reshape(0, 1) = 19.0;
+    EXPECT_DOUBLE_EQ(mutable_view_data[mutated_index], 19.0);
+
+    auto temporary_const_view_vector =
+      MatrixView<const double, Dynamic, Dynamic, StorageOrder>(matrix.data(), 2, 3).reshape(6);
+    for (int i = 0; i < matrix.size(); ++i) {
+        EXPECT_DOUBLE_EQ(temporary_const_view_vector[i], matrix.data()[i]);
+    }
+
+    source_matrix named_destination;
+    const source_matrix named_source({6.0, 5.0, 4.0, 3.0, 2.0, 1.0});
+    auto destination_reshape = named_destination.template reshape<1, 6>();
+    auto source_reshape = named_source.template reshape<1, 6>();
+    destination_reshape = source_reshape;
+    EXPECT_EQ(named_destination, named_source);
+
+    source_matrix reoriented_destination;
+    reoriented_destination.template reshape<1, 6>() = named_source.template reshape<6>();
+    EXPECT_EQ(reoriented_destination, named_source);
+
+    source_matrix temporary_destination;
+    temporary_destination.template reshape<1, 6>() = named_source.template reshape<1, 6>();
+    EXPECT_EQ(temporary_destination, named_source);
+    temporary_destination.template reshape<2, 3>() = matrix;
+    EXPECT_EQ(temporary_destination, matrix);
+
+    Matrix<double, 2, 2, StorageOrder> aliased({1.0, 2.0, 3.0, 4.0});
+    aliased.template reshape<2, 2>() = aliased.transpose();
+    EXPECT_EQ(aliased, (Matrix<double, 2, 2, StorageOrder>({1.0, 3.0, 2.0, 4.0})));
+
+    double destination_data[4] {};
+    double source_data[4] {4.0, 3.0, 2.0, 1.0};
+    auto view_destination =
+      MatrixView<double, 2, 2, StorageOrder>(destination_data).template reshape<1, 4>();
+    auto view_source = MatrixView<double, 2, 2, StorageOrder>(source_data).template reshape<1, 4>();
+    view_destination = view_source;
+    for (int i = 0; i < 4; ++i) { EXPECT_DOUBLE_EQ(destination_data[i], source_data[i]); }
+    view_destination[0] = 17.0;
+    EXPECT_DOUBLE_EQ(destination_data[0], 17.0);
+    EXPECT_DOUBLE_EQ(source_data[0], 4.0);
+}
+
 }   // namespace
 
 TEST(NativeDenseMatrix, OwnerShapeStorageAndVectorCopy) {
@@ -621,6 +812,11 @@ TEST(NativeDenseMatrix, AssignmentOperationsMaterializeAliases) {
 TEST(NativeDenseMatrix, BlocksRemainBoundedViews) {
     check_block_view_behavior<RowMajor>();
     check_block_view_behavior<ColMajor>();
+}
+
+TEST(NativeDenseMatrix, ReshapePreservesPhysicalOrderAndSafeViews) {
+    check_reshape_behavior<RowMajor>();
+    check_reshape_behavior<ColMajor>();
 }
 
 }   // namespace fdapde
