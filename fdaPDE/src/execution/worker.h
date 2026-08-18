@@ -152,6 +152,8 @@ struct chase_lev_queue {
         difference_type t = top_.load(std::memory_order_relaxed);
 
         if (std::cmp_less_equal(t, b)) {
+            difference_type idx = b & mask_;
+            value_type value = buffer_[idx].load(std::memory_order_relaxed);
             if (std::cmp_equal(t, b)) {
                 // last queue element
                 if (!top_.compare_exchange_strong(t, t + 1, std::memory_order_seq_cst, std::memory_order_relaxed)) {
@@ -161,8 +163,7 @@ struct chase_lev_queue {
                 }
                 bottom_.store(b + 1, std::memory_order_relaxed);
             }
-            difference_type idx = b & mask_;
-            return std::move(buffer_[idx]);   // atomic read
+            return value;
         } else {
             // empty queue
             bottom_.store(b + 1, std::memory_order_relaxed);
@@ -181,9 +182,8 @@ struct chase_lev_queue {
         if (std::cmp_greater_equal(b - t, capacity_ - 1)) { return false; }
         // write
         difference_type idx = b & mask_;
-        buffer_[idx] = std::move(value);
-        std::atomic_thread_fence(std::memory_order_release);
-        bottom_.store(b + 1, std::memory_order_relaxed);   // sync write
+        buffer_[idx].store(value_type(std::forward<T_>(value)), std::memory_order_relaxed);
+        bottom_.store(b + 1, std::memory_order_release);
         return true;
     }
     // constructs a new element at the end of the container. aborts if container full
@@ -199,9 +199,8 @@ struct chase_lev_queue {
         if (std::cmp_greater_equal(b - t, capacity_ - 1)) { return false; }
         // write
         difference_type idx = b & mask_;
-        buffer_[idx] = std::move(value);
-        std::atomic_thread_fence(std::memory_order_release);
-        bottom_.store(b + 1, std::memory_order_relaxed);   // sync write
+        buffer_[idx].store(value, std::memory_order_relaxed);
+        bottom_.store(b + 1, std::memory_order_release);
         return true;
     }
     // returns last element of the container, nullopt if container empty. the element is removed
@@ -212,13 +211,14 @@ struct chase_lev_queue {
         difference_type b = bottom_.load(std::memory_order_acquire);
         // abort if queue is empty
         if (std::cmp_greater_equal(t, b)) { return std::nullopt; }
-        // atomic read
         difference_type idx = t & mask_;
+        // Read before advancing top: after a successful claim the owner may immediately reuse this circular slot.
+        value_type value = buffer_[idx].load(std::memory_order_relaxed);
         // try to claim the element by incrementing top
         if (!top_.compare_exchange_strong(t, t + 1, std::memory_order_seq_cst, std::memory_order_relaxed)) {
             return std::nullopt;   // lost race
         }
-        return std::move(buffer_[idx]);   // we move now, after having win the CAS
+        return value;
     }
     // observers
     bool empty() const {
@@ -230,7 +230,7 @@ struct chase_lev_queue {
         return std::cmp_greater_equal(b - t, capacity_ - 1);
     }
    private:
-    std::vector<value_type> buffer_;
+    std::vector<std::atomic<value_type>> buffer_;
     const size_type capacity_;     // maximum buffer size (as power of 2)
     const difference_type mask_;   // 0b(capacity_ - 1), allows fast modulo capacity_
 
