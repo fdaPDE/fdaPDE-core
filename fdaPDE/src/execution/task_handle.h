@@ -39,9 +39,15 @@ class task_handle {
         if (sb_) {
             if (cp_) { cp_(storage_.buff_, other.storage_.buff_); }
         } else {
-            storage_.data_ = other.storage_.data_;
+            if (cp_) { cp_(&storage_.data_, other.storage_.data_); }
         }
         ref_count_.store(other.ref_count_.load(std::memory_order_acquire), std::memory_order_release);
+    }
+    task_handle& operator=(const task_handle& other) {
+        if (this == &other) return *this;
+        task_handle copy(other);
+        *this = std::move(copy);
+        return *this;
     }
     // move semantic
     task_handle(task_handle&& other) noexcept :
@@ -84,22 +90,28 @@ class task_handle {
         return *this;
     }
     template <typename F, typename AllocationContext>
-        requires(!std::is_same_v<std::decay_t<F>, task_handle> && std::is_invocable_v<F> &&
+        requires(!std::is_same_v<std::decay_t<F>, task_handle> && std::is_invocable_v<std::decay_t<F>&> &&
+                 std::is_copy_constructible_v<std::decay_t<F>> &&
                  std::is_constructible_v<std::optional<int>, AllocationContext>)
     task_handle(F&& f, AllocationContext allocation_context) :
         inverse_deps_(), ref_count_(0), allocation_context_(allocation_context) {
         using Fn = std::decay_t<F>;
-        constexpr bool sb = sizeof(F) <= buffer_size && alignof(Fn) <= alignof(union U);
+        constexpr bool sb =
+          sizeof(Fn) <= buffer_size && alignof(Fn) <= alignof(union U) && std::is_nothrow_move_constructible_v<Fn>;
         sb_ = sb;
         if constexpr (sb) {   // stack allocation for small task object
             new (storage_.buff_) Fn(std::forward<F>(f));
             rm_ = [](void* ptr) noexcept {
                 if (ptr) { reinterpret_cast<Fn*>(ptr)->~Fn(); }
             };
+            cp_ = [](void* dst, const void* src) { new (dst) Fn(*reinterpret_cast<const Fn*>(src)); };
         } else {   // if task cannot fit in small buffer, resort to heap allocation
             storage_.data_ = new Fn(std::forward<F>(f));
             rm_ = [](void* ptr) noexcept {
                 if (ptr) { delete reinterpret_cast<Fn*>(ptr); }
+            };
+            cp_ = [](void* dst, const void* src) {
+                *reinterpret_cast<void**>(dst) = new Fn(*reinterpret_cast<const Fn*>(src));
             };
         }   // type-erased function handlers
         fn_ = [](void* ptr) { (*reinterpret_cast<Fn*>(ptr))(); };
@@ -108,10 +120,11 @@ class task_handle {
             new (dst) Fn(std::move(*reinterpret_cast<Fn*>(src)));
             (*reinterpret_cast<Fn*>(src)).~Fn();
         };
-        cp_ = [](void* dst, const void* src) noexcept { new (dst) Fn(*reinterpret_cast<const Fn*>(src)); };
     }
     template <typename F>
-        requires(!std::is_same_v<std::decay_t<F>, task_handle> && std::is_invocable_v<F>)
+        requires(
+          !std::is_same_v<std::decay_t<F>, task_handle> && std::is_invocable_v<std::decay_t<F>&> &&
+          std::is_copy_constructible_v<std::decay_t<F>>)
     explicit task_handle(F&& f) : task_handle(std::forward<F>(f), std::nullopt) { }
 
     // invoke
