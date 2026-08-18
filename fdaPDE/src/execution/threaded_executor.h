@@ -236,9 +236,9 @@ template <typename Task, typename... Args>
 static constexpr bool is_runnable_task_v = is_runnable_task<Task, Args...>::value;
 
 // set number of worker threads
-void parallel_set_num_threads(int num_threads) { internals::parallel_num_threads = num_threads; }
+inline void parallel_set_num_threads(int num_threads) { internals::parallel_num_threads = num_threads; }
 // get number of worker threads
-int  parallel_get_num_threads() { return internals::parallel_num_threads; }
+inline int  parallel_get_num_threads() { return internals::parallel_num_threads; }
 // executes a callable object asynchronously
 template <typename F, typename... Args>
     requires(std::is_invocable_v<F, Args...>)
@@ -252,7 +252,7 @@ auto parallel_async(F&& f, Args&&... args) {
     return internals::threaded_executor::instance().async(std::forward<F>(f), std::forward<Args>(args)...);
 }
 // explicitly joins the executor until all work is completed
-void parallel_join() { internals::threaded_executor::instance().join(); }
+inline void parallel_join() { internals::threaded_executor::instance().join(); }
   
 }   // namespace fdapde
 
