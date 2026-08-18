@@ -21,9 +21,52 @@
 
 namespace fdapde {
 
+namespace internals {
+
+template <int Rows, int Cols> constexpr void validate_matrix_shape(int rows, int cols) {
+    if (rows < 0 || cols < 0 || (Rows != Dynamic && rows != Rows) || (Cols != Dynamic && cols != Cols)) {
+        throw std::invalid_argument("matrix dimensions do not match its static shape");
+    }
+}
+
+template <int Rows, int Cols> constexpr void validate_matrix_vector_size(int size) {
+    const int static_size = Rows == 1 ? Cols : Rows;
+    if (size < 0 || (Rows != Dynamic && Cols != Dynamic && size != static_size)) {
+        throw std::invalid_argument("vector size does not match its static shape");
+    }
+}
+
+constexpr int checked_matrix_size(int rows, int cols) {
+    if (rows < 0 || cols < 0) { throw std::invalid_argument("matrix dimensions must be nonnegative"); }
+    if (rows != 0 && cols > std::numeric_limits<int>::max() / rows) {
+        throw std::length_error("matrix size exceeds the supported range");
+    }
+    return rows * cols;
+}
+
+constexpr int checked_matrix_data_size(std::size_t size) {
+    if (size > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+        throw std::length_error("matrix input exceeds the supported range");
+    }
+    return static_cast<int>(size);
+}
+
+constexpr void validate_matrix_index(int i, int j, int rows, int cols) {
+    if (i < 0 || i >= rows || j < 0 || j >= cols) { throw std::out_of_range("matrix index out of range"); }
+}
+
+}   // namespace internals
+
 // procedural matrices generates matrices whose entries exhibit a fixed pattern, without allocating memory
 template <typename Functor_, int Rows_, int Cols_>
 struct ProceduralMatrix : public MatrixExpr<ProceduralMatrix<Functor_, Rows_, Cols_>> {
+    fdapde_static_assert(
+      (Rows_ == Dynamic || Rows_ > 0) && (Cols_ == Dynamic || Cols_ > 0), INVALID_MATRIX_DIMENSIONS);
+    fdapde_static_assert(
+      Rows_ == Dynamic || Cols_ == Dynamic ||
+        static_cast<std::uint64_t>(Rows_) * static_cast<std::uint64_t>(Cols_) <=
+          static_cast<std::uint64_t>(std::numeric_limits<int>::max()),
+      MATRIX_SIZE_EXCEEDS_SUPPORTED_RANGE);
     fdapde_static_assert(
       std::is_invocable_v<Functor_ FDAPDE_COMMA int FDAPDE_COMMA int>, FUNCTOR_NOT_CALLABLE_AT_INDEXES_PAIR);
     using Scalar = typename decltype(std::function {std::declval<Functor_>()})::result_type;
@@ -39,26 +82,35 @@ struct ProceduralMatrix : public MatrixExpr<ProceduralMatrix<Functor_, Rows_, Co
         rows_(Rows_ == Dynamic ? 0 : Rows), cols_(Cols_ == Dynamic ? 0 : Cols), f_(f) { }
     constexpr ProceduralMatrix(int rows, int cols, Functor_ f) :
         rows_(Rows == Dynamic ? rows : Rows), cols_(Cols == Dynamic ? cols : Cols), f_(f) {
-        fdapde_assert(rows >= 0 && cols >= 0);
+        internals::validate_matrix_shape<Rows, Cols>(rows, cols);
+        (void)internals::checked_matrix_size(rows_, cols_);
     }
     constexpr ProceduralMatrix(int rows, int cols) : ProceduralMatrix(rows, cols, Functor_()) { }
     constexpr explicit ProceduralMatrix(int size, Functor_ f) :
-        rows_(Rows_ == 1 ? 1 : size), cols_(Cols_ == 1 ? 1 : size), f_(f) {
+        rows_(Rows_ == Dynamic ? size : Rows), cols_(Cols_ == Dynamic ? size : Cols), f_(f) {
         fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
+        internals::validate_matrix_vector_size<Rows, Cols>(size);
+        (void)internals::checked_matrix_size(rows_, cols_);
     }
     constexpr explicit ProceduralMatrix(int size) : ProceduralMatrix(size, Functor_()) { }
 
-    constexpr Scalar operator()(int i, int j) const { return f_(i, j); }
+    constexpr Scalar operator()(int i, int j) const {
+        internals::validate_matrix_index(i, j, rows_, cols_);
+        return f_(i, j);
+    }
     constexpr Scalar operator[](int i) const {
         fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
+        if (i < 0 || i >= rows_ * cols_) { throw std::out_of_range("matrix index out of range"); }
         return f_(Rows == 1 ? 0 : i, Cols == 1 ? i : 0);
     }
     constexpr int rows() const { return rows_; }
     constexpr int cols() const { return cols_; }
     constexpr void resize(int rows, int cols) {
         fdapde_static_assert(Rows == Dynamic || Cols == Dynamic, THIS_METHOD_IS_FOR_DYNAMIC_SIZED_MATRICES_ONLY);
-        rows_ = rows;
-        cols_ = cols;
+        internals::validate_matrix_shape<Rows, Cols>(rows, cols);
+        (void)internals::checked_matrix_size(rows, cols);
+        rows_ = Rows == Dynamic ? rows : Rows;
+        cols_ = Cols == Dynamic ? cols : Cols;
     }
    private:
     int rows_, cols_;
@@ -85,7 +137,9 @@ struct generic_assignment_executor {
                internals::same_static_shape_v<DstMatrixType FDAPDE_COMMA SrcXprType>),
               INVALID_ASSIGNMENT__DIFFERENT_LHS_AND_RHS_STATIC_SIZES);
             if constexpr (internals::is_dynamic_sized_v<DstMatrixType> || internals::is_dynamic_sized_v<SrcXprType>) {
-                fdapde_assert(dst.rows() == src.rows() && dst.cols() == src.cols());
+                if (dst.rows() != src.rows() || dst.cols() != src.cols()) {
+                    throw std::invalid_argument("matrix assignment requires matching shapes");
+                }
             }
         }
         const int rows_ = dst.rows();
@@ -120,14 +174,19 @@ struct vector_assignment_executor {
             fdapde_static_assert(
               internals::is_vector_shaped_v<DstMatrixType>, INVALID_ASSIGNMENT__NOT_VECTOR_SHAPED_LVALUE);
             fdapde_static_assert(
+              internals::is_dynamic_sized_v<SrcXprType> || std::decay_t<SrcXprType>::Rows == 1 ||
+                std::decay_t<SrcXprType>::Cols == 1,
+              INVALID_ASSIGNMENT__NOT_VECTOR_SHAPED_RVALUE);
+            fdapde_static_assert(
               (internals::is_dynamic_sized_v<DstMatrixType> || internals::is_dynamic_sized_v<SrcXprType> ||
-               internals::same_static_shape_v<DstMatrixType FDAPDE_COMMA SrcXprType>),
-              INVALID_ASSIGNMENT__DIFFERENT_LHS_AND_RHS_STATIC_SIZES);	    
+               internals::same_static_size_v<DstMatrixType FDAPDE_COMMA SrcXprType>),
+              INVALID_ASSIGNMENT__DIFFERENT_LHS_AND_RHS_STATIC_SIZES);
             if constexpr (internals::is_dynamic_sized_v<DstMatrixType> || internals::is_dynamic_sized_v<SrcXprType>) {
-                fdapde_assert(
+                const bool compatible =
                   ((dst.rows() == 1 && src.rows() == 1) || (dst.cols() == 1 && src.cols() == 1) ||
                    (dst.rows() == 1 && src.cols() == 1) || (dst.cols() == 1 && src.rows() == 1)) &&
-                  dst.size() == src.size());
+                  dst.size() == src.size();
+                if (!compatible) { throw std::invalid_argument("vector assignment requires matching sizes"); }
             }
         }
         const int size_ = dst.size();
@@ -135,7 +194,7 @@ struct vector_assignment_executor {
             if constexpr (std::is_arithmetic_v<SrcXprType>) {
                 return src;
             } else {
-                return src(i, 0);
+                return src.rows() == 1 ? src(0, i) : src(i, 0);
             }
         };
         for (int i = 0; i < size_; ++i) { op(dst[i], fetch(src, i)); }
@@ -148,6 +207,12 @@ struct vector_assignment_executor {
 template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_, typename MatrixType>
 class MatrixBase : public MatrixExpr<MatrixType> {
     fdapde_static_assert((Rows_ == Dynamic || Rows_ > 0) && (Cols_ == Dynamic || Cols_ > 0), INVALID_MATRIX_DIMENSIONS);
+    fdapde_static_assert(
+      Rows_ == Dynamic || Cols_ == Dynamic ||
+        static_cast<std::uint64_t>(Rows_) * static_cast<std::uint64_t>(Cols_) <=
+          static_cast<std::uint64_t>(std::numeric_limits<int>::max()),
+      MATRIX_SIZE_EXCEEDS_SUPPORTED_RANGE);
+    fdapde_static_assert(StorageOrder_ == RowMajor || StorageOrder_ == ColMajor, INVALID_STORAGE_ORDER);
    protected:
     using Base = MatrixExpr<MatrixType>;
     using Base::derived;
@@ -172,13 +237,18 @@ class MatrixBase : public MatrixExpr<MatrixType> {
         rows_(Rows == Dynamic ? rows : Rows),
         cols_(Cols == Dynamic ? cols : Cols),
         row_stride_(StorageOrder == RowMajor ? cols_ : 1),
-        col_stride_(StorageOrder == RowMajor ? 1 : rows_) { }
+        col_stride_(StorageOrder == RowMajor ? 1 : rows_) {
+        internals::validate_matrix_shape<Rows, Cols>(rows, cols);
+        (void)internals::checked_matrix_size(rows_, cols_);
+    }
     constexpr MatrixBase(int size) :
-        rows_(Rows == 1 ? 1 : size),
-        cols_(Cols == 1 ? 1 : size),
+        rows_(Rows == Dynamic ? size : Rows),
+        cols_(Cols == Dynamic ? size : Cols),
         row_stride_(StorageOrder == RowMajor ? cols_ : 1),
         col_stride_(StorageOrder == RowMajor ? 1 : rows_) {
         fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
+        internals::validate_matrix_vector_size<Rows, Cols>(size);
+        (void)internals::checked_matrix_size(rows_, cols_);
     }
     // copy assignment
     constexpr MatrixType& operator=(const MatrixType& other) {
@@ -194,21 +264,21 @@ class MatrixBase : public MatrixExpr<MatrixType> {
     using Base::operator=;
     // access
     constexpr decltype(auto) operator()(int i, int j) const {
-        fdapde_assert(i >= 0 && i < rows_ && j >= 0 && j < cols_);
+        internals::validate_matrix_index(i, j, rows_, cols_);
         return derived().data()[i * row_stride_ + j * col_stride_];
     }
     constexpr decltype(auto) operator[](int i) const {
         fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
-        fdapde_assert(i >= 0 && i < rows_ * cols_);
+        if (i < 0 || i >= rows_ * cols_) { throw std::out_of_range("matrix index out of range"); }
         return derived().data()[i];
     }
     constexpr decltype(auto) operator()(int i, int j) {
-        fdapde_assert(i >= 0 && i < rows_ && j >= 0 && j < cols_);
+        internals::validate_matrix_index(i, j, rows_, cols_);
         return derived().data()[i * row_stride_ + j * col_stride_];
     }
     constexpr decltype(auto) operator[](const int i) {
         fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
-        fdapde_assert(i >= 0 && i < rows_ * cols_);
+        if (i < 0 || i >= rows_ * cols_) { throw std::out_of_range("matrix index out of range"); }
         return derived().data()[i];
     }
     // observers
@@ -224,10 +294,14 @@ template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_ = RowMajor>
 class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Scalar_, Rows_, Cols_, StorageOrder_>> {
    private:
     using Base = MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Scalar_, Rows_, Cols_, StorageOrder_>>;
-    static constexpr int StorageSize = (Rows_ == Dynamic || Cols_ == Dynamic) ? Dynamic : (Rows_ * Cols_);
+    static constexpr bool HasSupportedStaticStorage =
+      Rows_ > 0 && Cols_ > 0 &&
+      static_cast<std::uint64_t>(Rows_) * static_cast<std::uint64_t>(Cols_) <=
+        static_cast<std::uint64_t>(std::numeric_limits<int>::max());
+    static constexpr std::size_t StorageSize =
+      HasSupportedStaticStorage ? static_cast<std::size_t>(Rows_) * static_cast<std::size_t>(Cols_) : 0;
     using StorageType = std::conditional_t<
-      Rows_ == Dynamic || Cols_ == Dynamic, std::vector<Scalar_>,
-      std::array<Scalar_, (StorageSize < 0) ? 0 : static_cast<std::size_t>(StorageSize)>>;   // avoid clang narrowing
+      Rows_ == Dynamic || Cols_ == Dynamic, std::vector<Scalar_>, std::array<Scalar_, StorageSize>>;
    public:
     using Scalar = Scalar_;
     using iterator = typename StorageType::iterator;
@@ -258,14 +332,16 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
     // zero-initialized dynamic-sized matrix. For static-sized matrices does nothing (exposed for API compatibility)
     constexpr Matrix(int rows, int cols)
         requires(Rows_ != 1 && Cols_ != 1)
-        : Base(rows, cols) {
-        if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { data_.resize(rows * cols); }
+        : Base(rows, cols), data_() {
+        if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) {
+            data_.resize(static_cast<std::size_t>(internals::checked_matrix_size(this->rows(), this->cols())));
+        }
     }
     // value-initialized dynamic-sized matrix, avoid vectors
     constexpr Matrix(int rows, int cols, Scalar v)
         requires(Rows_ == Dynamic && Cols_ == Dynamic)
         : Matrix(rows, cols) {
-        for (int i = 0, n = rows * cols; i < n; ++i) { data_[i] = v; }
+        for (int i = 0, n = this->size(); i < n; ++i) { data_[i] = v; }
     }
 
     // Vector API
@@ -274,7 +350,9 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
         requires(Rows_ == Dynamic || Cols_ == Dynamic)
         : Base(size) {
         fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
-        if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { data_.resize(size); }
+        if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) {
+            data_.resize(static_cast<std::size_t>(internals::checked_matrix_size(this->rows(), this->cols())));
+        }
     }
     // value-initialized dynamic-sized vector
     constexpr Matrix(int size, Scalar v)
@@ -313,18 +391,25 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
     }
 
     // constructors taking external data
-    constexpr explicit Matrix(const std::vector<Scalar>& data) {
+    constexpr explicit Matrix(const std::vector<Scalar>& data) :
+        Base(
+          Rows_ == Dynamic ? internals::checked_matrix_data_size(data.size()) : Rows_,
+          Cols_ == Dynamic ? internals::checked_matrix_data_size(data.size()) : Cols_),
+        data_() {
         fdapde_static_assert(
           (Rows_ != Dynamic && Cols_ != Dynamic) || (Rows_ == 1 && Cols_ == Dynamic) ||
             (Cols_ == 1 && Rows_ == Dynamic),
           THIS_METHOD_IS_NOT_FOR_DYNAMIC_SIZED_MATRICES);
+        const int expected_size = internals::checked_matrix_size(this->rows(), this->cols());
+        if (!std::cmp_equal(expected_size FDAPDE_COMMA data.size())) {
+            throw std::invalid_argument("matrix input size does not match its shape");
+        }
         if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { data_.resize(data.size()); }
-        fdapde_assert(std::cmp_equal(data_.size() FDAPDE_COMMA data.size()));
         const int rows = this->rows();
         const int cols = this->cols();
         for (int i = 0, n = rows; i < n; ++i) {
             for (int j = 0, m = cols; j < m; ++j) {
-                this->operator()(i, j) = data[i * this->row_stride_ + j * this->col_stride_];
+                this->operator()(i, j) = data[i * cols + j];
             }
         }
     }
@@ -333,14 +418,18 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
           Rows_ != Dynamic && Cols_ != Dynamic && StorageSize == Size, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
         for (int i = 0; i < Rows_; ++i) {
             for (int j = 0; j < Cols_; ++j) {
-                this->operator()(i, j) = data[i * this->row_stride_ + j * this->col_stride_];
+                this->operator()(i, j) = data[i * Cols_ + j];
             }
         }
     }
     constexpr Matrix& operator=(const std::initializer_list<Scalar>& data) {
         fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
-        if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { data_.resize(data.size()); }
-        fdapde_assert(data_.size() == data.size());
+        const int size = internals::checked_matrix_data_size(data.size());
+        if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) {
+            resize(size);
+        } else if (this->size() != size) {
+            throw std::invalid_argument("vector input size does not match its static size");
+        }
         int i = 0;
         for (Scalar v : data) { this->operator[](i++) = v; }
         return *this;
@@ -367,12 +456,13 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
     static constexpr auto Constant(int rows, int cols, Scalar value) { return value * Ones(rows, cols); }
     static constexpr auto LinSpaced(int rows, Scalar a, Scalar b) {
         fdapde_static_assert(Cols_ == 1, THIS_METHOD_IS_FOR_COLUMN_VECTORS_ONLY);
-        fdapde_assert(rows > 1);
+        if (rows < 2) { throw std::invalid_argument("LinSpaced requires at least two points"); }
         auto linspace = [a, h = (double)(b - a) / double(rows - 1)](int i, int) { return a + i * h; };
         return ProceduralMatrix<decltype(linspace), Dynamic, 1>(rows, 1, linspace);
     }
     static constexpr auto LinSpaced(Scalar a, Scalar b) {
         fdapde_static_assert(Cols_ == 1, THIS_METHOD_IS_FOR_COLUMN_VECTORS_ONLY);
+        fdapde_static_assert(Rows_ != Dynamic && Rows_ > 1, LINSPACED_REQUIRES_AT_LEAST_TWO_STATIC_POINTS);
         auto linspace = [a, h = (double)(b - a) / double(Rows_ - 1)](int i, int) { return a + i * h; };
         return ProceduralMatrix<decltype(linspace), Rows_, 1>(linspace);
     }
@@ -380,15 +470,17 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
     // modifiers
     void resize(int rows, int cols) {
         fdapde_static_assert(Rows_ == Dynamic || Cols_ == Dynamic, THIS_METHOD_IS_FOR_DYNAMIC_SIZED_MATRICES_ONLY);
+        internals::validate_matrix_shape<Rows_, Cols_>(rows, cols);
         const int rows_ = Rows_ == Dynamic ? rows : Rows_;
         const int cols_ = Cols_ == Dynamic ? cols : Cols_;
         if (rows_ == this->rows_ && cols_ == this->cols_) return;   // do not reallocate memory if sizes didn't changed
-        // update and reallocate memory
+        const int size_ = internals::checked_matrix_size(rows_, cols_);
+        data_.resize(static_cast<std::size_t>(size_));
+        // update strides only after the new storage is valid
         this->rows_ = rows_;
         this->cols_ = cols_;
         this->row_stride_ = StorageOrder_ == RowMajor ? cols_ : 1;
         this->col_stride_ = StorageOrder_ == RowMajor ? 1 : rows_;
-        data_.resize(rows * cols);
         return;
     }
     void resize(int size) {
@@ -412,7 +504,13 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
     constexpr const_iterator end() const { return data_.end(); }
    private:
     template <typename RhsXprType> constexpr void clone_(const RhsXprType& rhs) {
-        if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { resize(rhs.rows(), rhs.cols()); }
+        if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) {
+            if constexpr (Rows_ == 1 || Cols_ == 1) {
+                resize(rhs.size());
+            } else {
+                resize(rhs.rows(), rhs.cols());
+            }
+        }
         using assignment_executor = typename Base::assignment_executor;
         assignment_executor::run(*this, rhs, [](auto&& l, const auto& r) { l = r; });
         return;
