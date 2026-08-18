@@ -18,7 +18,8 @@
 #include <gtest/gtest.h>
 
 // Availability skeleton only; do not add this source to CMake before the P4-E native MdArray boundary is restored.
-// Sources: 86ff6d12:fdaPDE/src/linear_algebra/mdarray.h and repaired evidence
-// 9c39f3f:test/linear_algebra/{native_mdarray.cpp,native_mdarray_no_debug.cpp}.
-// TODO(P4-E): cover checked shape/indexing, const and mutable views, copy/move/resize, row/column-major rectangular
-// storage, invalidation rules, and FDAPDE_NO_DEBUG without restoring BinaryMap or an implicit Eigen bridge.
+// Sources: 86ff6d12:fdaPDE/src/linear_algebra/mdarray.h, 9c39f3f:fdaPDE/src/linear_algebra/native/mdarray.h,
+// 9c39f3f:test/linear_algebra/native_mdarray.cpp, and 9c39f3f:test/linear_algebra/native_mdarray_no_debug.cpp.
+// TODO(P4-E): cover fixed/dynamic/map shapes, checked indexing, blocks/slices, iterators, copy/move/resize, aliasing,
+// const and mutable view lifetimes, rectangular storage orders, huge/empty dimensions, Boolean bit-packing, and
+// FDAPDE_NO_DEBUG without restoring BinaryMap or an implicit Eigen bridge.
