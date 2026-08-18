@@ -337,9 +337,108 @@ concept permits_cwise_scalar_assignment = requires(Xpr& xpr) { xpr = 1.0; };
 template <typename Xpr>
 concept permits_cwise_scalar_compound = requires(Xpr& xpr) { xpr += 1.0; };
 
+template <typename Matrix, int ExpectedReadOnly>
+concept permits_temporary_rowwise_accessor = requires(Matrix&& matrix) {
+    requires (decltype(std::move(matrix).rowwise())::ReadOnly == ExpectedReadOnly);
+};
+
+template <typename Matrix, int ExpectedReadOnly>
+concept permits_temporary_colwise_accessor = requires(Matrix&& matrix) {
+    requires (decltype(std::move(matrix).colwise())::ReadOnly == ExpectedReadOnly);
+};
+
+template <typename Matrix>
+concept permits_direct_temporary_rowwise = requires(Matrix&& matrix) {
+    MatrixRowWiseOp<Matrix> {std::move(matrix)};
+};
+
+template <typename Matrix>
+concept permits_direct_temporary_colwise = requires(Matrix&& matrix) {
+    MatrixColWiseOp<Matrix> {std::move(matrix)};
+};
+
+template <typename VectorWise, typename Rhs>
+concept permits_vectorwise_assignment = requires(VectorWise& lhs, const Rhs& rhs) { lhs = rhs; };
+
+template <typename VectorWise, typename Rhs>
+concept permits_vectorwise_addition_assignment = requires(VectorWise& lhs, const Rhs& rhs) { lhs += rhs; };
+
+template <typename VectorWise, typename Rhs>
+concept permits_vectorwise_subtraction_assignment = requires(VectorWise& lhs, const Rhs& rhs) { lhs -= rhs; };
+
+template <typename VectorWise, typename Rhs>
+concept permits_temporary_vectorwise_assignment = requires(VectorWise&& lhs, const Rhs& rhs) {
+    std::move(lhs) = rhs;
+};
+
+template <typename VectorWise, typename Rhs>
+concept permits_temporary_vectorwise_addition_assignment = requires(VectorWise&& lhs, const Rhs& rhs) {
+    std::move(lhs) += rhs;
+};
+
+template <typename VectorWise, typename Rhs>
+concept permits_temporary_vectorwise_subtraction_assignment = requires(VectorWise&& lhs, const Rhs& rhs) {
+    std::move(lhs) -= rhs;
+};
+
+template <typename VectorWise, typename Rhs>
+concept permits_vectorwise_comparison = requires(const VectorWise& lhs, const Rhs& rhs) {
+    { lhs == rhs } -> std::same_as<bool>;
+};
+
+template <typename VectorWise, typename Xpr, typename Reduction>
+concept permits_vectorwise_reduction = requires(const VectorWise& vectorwise, Xpr& xpr) {
+    vectorwise.redux(xpr, 0.0, Reduction {});
+};
+
+template <typename VectorWise, typename Rhs>
+inline constexpr bool vectorwise_temporary_mutations_return_values_v =
+  !std::is_reference_v<decltype(std::declval<VectorWise&&>() = std::declval<const Rhs&>())> &&
+  !std::is_reference_v<decltype(std::declval<VectorWise&&>() += std::declval<const Rhs&>())> &&
+  !std::is_reference_v<decltype(std::declval<VectorWise&&>() -= std::declval<const Rhs&>())>;
+
+template <typename Reduction> struct partial_reduction_traits;
+
+template <typename Xpr, typename Op, int Axis>
+struct partial_reduction_traits<internals::partial_matrix_redux_op<Xpr, Op, Axis>> {
+    using operation_type = Op;
+};
+
 struct writable_passthrough_op {
     constexpr double& operator()(double& value) const { return value; }
     constexpr const double& operator()(const double& value) const { return value; }
+};
+
+struct stateful_reduction_op {
+    double offset;
+
+    constexpr double operator()(double accumulated, double value) const {
+        return accumulated + value + offset;
+    }
+};
+
+struct move_only_reduction_op {
+    double offset;
+
+    constexpr explicit move_only_reduction_op(double offset_) : offset(offset_) { }
+    move_only_reduction_op(const move_only_reduction_op&) = delete;
+    constexpr move_only_reduction_op(move_only_reduction_op&&) = default;
+
+    constexpr double operator()(double accumulated, double value) const {
+        return accumulated + value + offset;
+    }
+};
+
+struct mutable_value_reduction_op {
+    constexpr double operator()(double accumulated, double& value) const {
+        return accumulated + value;
+    }
+};
+
+struct mutable_reduction_op {
+    constexpr double operator()(double accumulated, double value) {
+        return accumulated + value;
+    }
 };
 
 using lifetime_matrix = Matrix<double, 2, 2>;
@@ -379,6 +478,34 @@ using lifetime_symmetric_cwise =
   decltype(std::declval<SymmetricMatrix<double, 2, 2>&>().cwise());
 using lifetime_triangular_cwise =
   decltype(std::declval<LowerTriangularMatrix<double, 2, 2>&>().cwise());
+using lifetime_rowwise = decltype(std::declval<lifetime_matrix&>().rowwise());
+using lifetime_colwise = decltype(std::declval<lifetime_matrix&>().colwise());
+using lifetime_const_owner_rowwise = decltype(std::declval<const lifetime_matrix&>().rowwise());
+using lifetime_const_owner_colwise = decltype(std::declval<const lifetime_matrix&>().colwise());
+using lifetime_const_scalar_view_rowwise =
+  decltype(std::declval<lifetime_const_scalar_view&>().rowwise());
+using lifetime_const_scalar_view_colwise =
+  decltype(std::declval<lifetime_const_scalar_view&>().colwise());
+using lifetime_rowwise_sum = decltype(std::declval<lifetime_rowwise&>().sum());
+using lifetime_colwise_sum = decltype(std::declval<lifetime_colwise&>().sum());
+using lifetime_const_scalar_view_rowwise_sum =
+  decltype(std::declval<lifetime_const_scalar_view_rowwise&>().sum());
+using lifetime_rowwise_rhs = Matrix<double, 2, 1>;
+using lifetime_colwise_rhs = Matrix<double, 1, 2>;
+using lifetime_partial_row_source = Matrix<double, Dynamic, 2>;
+using lifetime_partial_col_source = Matrix<double, 2, Dynamic>;
+using lifetime_partial_rowwise = decltype(std::declval<lifetime_partial_row_source&>().rowwise());
+using lifetime_partial_colwise = decltype(std::declval<lifetime_partial_col_source&>().colwise());
+using lifetime_valid_partial_row_rhs = Matrix<double, Dynamic, 1>;
+using lifetime_invalid_partial_row_rhs = Matrix<double, Dynamic, 2>;
+using lifetime_valid_partial_col_rhs = Matrix<double, 1, Dynamic>;
+using lifetime_invalid_partial_col_rhs = Matrix<double, 2, Dynamic>;
+using lifetime_invalid_fixed_row_rhs = Matrix<double, 3, 1>;
+using lifetime_invalid_fixed_col_rhs = Matrix<double, 1, 3>;
+using lifetime_custom_reduction = decltype(std::declval<lifetime_rowwise&>().redux(
+  std::declval<lifetime_matrix&>(), 0.0, std::declval<stateful_reduction_op&>()));
+using lifetime_move_only_reduction = decltype(std::declval<lifetime_rowwise&>().redux(
+  std::declval<lifetime_matrix&>(), 0.0, std::declval<move_only_reduction_op>()));
 static_assert(!permits_left_temporary_add<lifetime_matrix>);
 static_assert(!permits_right_temporary_add<lifetime_matrix>);
 static_assert(!permits_left_temporary_subtract<lifetime_matrix>);
@@ -550,6 +677,61 @@ using temporary_cwise_expression_compound_result = decltype(
 static_assert(std::is_same_v<temporary_cwise_scalar_assignment_result, lifetime_cwise>);
 static_assert(std::is_same_v<temporary_cwise_scalar_compound_result, lifetime_cwise>);
 static_assert(std::is_same_v<temporary_cwise_expression_compound_result, lifetime_cwise>);
+static_assert(!permits_temporary_rowwise_accessor<lifetime_matrix, 0>);
+static_assert(!permits_temporary_colwise_accessor<lifetime_matrix, 0>);
+static_assert(!permits_temporary_rowwise_accessor<lifetime_const_matrix, 1>);
+static_assert(!permits_temporary_colwise_accessor<lifetime_const_matrix, 1>);
+static_assert(permits_temporary_rowwise_accessor<lifetime_expression, 1>);
+static_assert(permits_temporary_colwise_accessor<lifetime_expression, 1>);
+static_assert(permits_temporary_rowwise_accessor<lifetime_view, 0>);
+static_assert(permits_temporary_colwise_accessor<lifetime_view, 0>);
+static_assert(permits_temporary_rowwise_accessor<const lifetime_view, 1>);
+static_assert(permits_temporary_colwise_accessor<const lifetime_view, 1>);
+static_assert(permits_temporary_rowwise_accessor<lifetime_const_view, 1>);
+static_assert(permits_temporary_colwise_accessor<lifetime_const_view, 1>);
+static_assert(!permits_direct_temporary_rowwise<lifetime_matrix>);
+static_assert(!permits_direct_temporary_colwise<lifetime_matrix>);
+static_assert(!permits_direct_temporary_rowwise<lifetime_const_matrix>);
+static_assert(!permits_direct_temporary_colwise<lifetime_const_matrix>);
+static_assert(lifetime_rowwise::ReadOnly == 0);
+static_assert(lifetime_colwise::ReadOnly == 0);
+static_assert(lifetime_const_owner_rowwise::ReadOnly == 1);
+static_assert(lifetime_const_owner_colwise::ReadOnly == 1);
+static_assert(lifetime_const_scalar_view_rowwise::ReadOnly == 1);
+static_assert(lifetime_const_scalar_view_colwise::ReadOnly == 1);
+static_assert(lifetime_rowwise_sum::ReadOnly == 1);
+static_assert(lifetime_colwise_sum::ReadOnly == 1);
+static_assert(std::is_same_v<typename lifetime_const_scalar_view_rowwise_sum::Scalar, double>);
+static_assert(!permits_vectorwise_assignment<lifetime_const_owner_rowwise, lifetime_rowwise_rhs>);
+static_assert(!permits_vectorwise_addition_assignment<lifetime_const_owner_rowwise, lifetime_rowwise_rhs>);
+static_assert(!permits_vectorwise_subtraction_assignment<lifetime_const_owner_rowwise, lifetime_rowwise_rhs>);
+static_assert(!permits_temporary_vectorwise_assignment<lifetime_const_owner_rowwise, lifetime_rowwise_rhs>);
+static_assert(!permits_temporary_vectorwise_addition_assignment<lifetime_const_owner_rowwise, lifetime_rowwise_rhs>);
+static_assert(
+  !permits_temporary_vectorwise_subtraction_assignment<lifetime_const_owner_rowwise, lifetime_rowwise_rhs>);
+static_assert(!permits_vectorwise_assignment<lifetime_const_owner_colwise, lifetime_colwise_rhs>);
+static_assert(!permits_vectorwise_addition_assignment<lifetime_const_owner_colwise, lifetime_colwise_rhs>);
+static_assert(!permits_vectorwise_subtraction_assignment<lifetime_const_owner_colwise, lifetime_colwise_rhs>);
+static_assert(!permits_temporary_vectorwise_assignment<lifetime_const_owner_colwise, lifetime_colwise_rhs>);
+static_assert(!permits_temporary_vectorwise_addition_assignment<lifetime_const_owner_colwise, lifetime_colwise_rhs>);
+static_assert(
+  !permits_temporary_vectorwise_subtraction_assignment<lifetime_const_owner_colwise, lifetime_colwise_rhs>);
+static_assert(permits_vectorwise_assignment<lifetime_partial_rowwise, lifetime_valid_partial_row_rhs>);
+static_assert(!permits_vectorwise_assignment<lifetime_partial_rowwise, lifetime_invalid_partial_row_rhs>);
+static_assert(permits_vectorwise_assignment<lifetime_partial_colwise, lifetime_valid_partial_col_rhs>);
+static_assert(!permits_vectorwise_assignment<lifetime_partial_colwise, lifetime_invalid_partial_col_rhs>);
+static_assert(!permits_vectorwise_assignment<lifetime_rowwise, lifetime_invalid_fixed_row_rhs>);
+static_assert(!permits_vectorwise_assignment<lifetime_colwise, lifetime_invalid_fixed_col_rhs>);
+static_assert(!permits_vectorwise_comparison<lifetime_partial_rowwise, lifetime_invalid_partial_row_rhs>);
+static_assert(!permits_vectorwise_comparison<lifetime_partial_colwise, lifetime_invalid_partial_col_rhs>);
+static_assert(vectorwise_temporary_mutations_return_values_v<lifetime_rowwise, lifetime_rowwise_rhs>);
+static_assert(vectorwise_temporary_mutations_return_values_v<lifetime_colwise, lifetime_colwise_rhs>);
+static_assert(
+  !std::is_reference_v<typename partial_reduction_traits<lifetime_custom_reduction>::operation_type>);
+static_assert(std::is_move_constructible_v<lifetime_move_only_reduction>);
+static_assert(
+  !permits_vectorwise_reduction<lifetime_rowwise, lifetime_matrix, mutable_value_reduction_op>);
+static_assert(!permits_vectorwise_reduction<lifetime_rowwise, lifetime_matrix, mutable_reduction_op>);
 
 template <int StorageOrder> void check_owner_behavior() {
     using fixed_matrix = Matrix<int, 2, 3, StorageOrder>;
@@ -802,6 +984,84 @@ template <int StorageOrder> void check_coefficientwise_behavior() {
     EXPECT_EQ(divide_alias, (matrix_type({1.0, 2.0 / 3.0, 3.0 / 2.0, 1.0})));
 }
 
+template <int StorageOrder> void check_vectorwise_behavior() {
+    using matrix_type = Matrix<double, 2, 3, StorageOrder>;
+    using row_reduction_type = Matrix<double, 2, 1, StorageOrder>;
+    using col_reduction_type = Matrix<double, 1, 3, StorageOrder>;
+    const matrix_type source({1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
+
+    auto stored_rows = (source + source).rowwise();
+    auto stored_row_sums = stored_rows.sum();
+    const row_reduction_type row_sums = stored_row_sums;
+    EXPECT_EQ(row_sums, (row_reduction_type({12.0, 30.0})));
+
+    auto stored_cols = (source + source).colwise();
+    auto stored_col_sums = stored_cols.sum();
+    const col_reduction_type col_sums = stored_col_sums;
+    EXPECT_EQ(col_sums, (col_reduction_type({10.0, 14.0, 18.0})));
+
+    matrix_type row_view_owner({1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
+    auto temporary_view_rows = MatrixView<double, 2, 3, StorageOrder>(row_view_owner.data()).rowwise();
+    temporary_view_rows += row_reduction_type({10.0, 20.0});
+    EXPECT_EQ(row_view_owner, (matrix_type({11.0, 12.0, 13.0, 24.0, 25.0, 26.0})));
+
+    matrix_type col_view_owner({1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
+    auto temporary_view_cols = MatrixView<double, 2, 3, StorageOrder>(col_view_owner.data()).colwise();
+    temporary_view_cols += col_reduction_type({10.0, 20.0, 30.0});
+    EXPECT_EQ(col_view_owner, (matrix_type({11.0, 22.0, 33.0, 14.0, 25.0, 36.0})));
+
+    auto temporary_const_view_rows =
+      MatrixView<const double, 2, 3, StorageOrder>(source.data()).rowwise();
+    auto temporary_const_view_sum = temporary_const_view_rows.sum();
+    const row_reduction_type const_view_sums = temporary_const_view_sum;
+    EXPECT_EQ(const_view_sums, (row_reduction_type({6.0, 15.0})));
+
+    stateful_reduction_op reducer {0.25};
+    auto copied_reducer = source.rowwise().redux(source, 0.0, reducer);
+    reducer.offset = 100.0;
+    const row_reduction_type copied_reducer_result = copied_reducer;
+    EXPECT_EQ(copied_reducer_result, (row_reduction_type({6.75, 15.75})));
+
+    auto move_only_reducer =
+      source.rowwise().redux(source, 0.0, move_only_reduction_op {0.25});
+    const row_reduction_type move_only_reducer_result = move_only_reducer;
+    EXPECT_EQ(move_only_reducer_result, (row_reduction_type({6.75, 15.75})));
+
+    const auto make_reduction = [&source]() {
+        auto local_reducer = [offset = 0.5](double accumulated, double value) {
+            return accumulated + value + offset;
+        };
+        return source.rowwise().redux(source, 0.0, local_reducer);
+    };
+    auto stored_reduction = make_reduction();
+    const row_reduction_type stored_reduction_result = stored_reduction;
+    EXPECT_EQ(stored_reduction_result, (row_reduction_type({7.5, 16.5})));
+
+    matrix_type row_assign_alias({1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
+    row_assign_alias.rowwise() = row_assign_alias.col(0) + row_assign_alias.col(1);
+    EXPECT_EQ(row_assign_alias, (matrix_type({3.0, 3.0, 3.0, 9.0, 9.0, 9.0})));
+
+    matrix_type row_add_alias({1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
+    row_add_alias.rowwise() += row_add_alias.col(0) + row_add_alias.col(1);
+    EXPECT_EQ(row_add_alias, (matrix_type({4.0, 5.0, 6.0, 13.0, 14.0, 15.0})));
+
+    matrix_type row_subtract_alias({1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
+    row_subtract_alias.rowwise() -= row_subtract_alias.col(0) + row_subtract_alias.col(1);
+    EXPECT_EQ(row_subtract_alias, (matrix_type({-2.0, -1.0, 0.0, -5.0, -4.0, -3.0})));
+
+    matrix_type col_assign_alias({1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
+    col_assign_alias.colwise() = col_assign_alias.row(0) + col_assign_alias.row(1);
+    EXPECT_EQ(col_assign_alias, (matrix_type({5.0, 7.0, 9.0, 5.0, 7.0, 9.0})));
+
+    matrix_type col_add_alias({1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
+    col_add_alias.colwise() += col_add_alias.row(0) + col_add_alias.row(1);
+    EXPECT_EQ(col_add_alias, (matrix_type({6.0, 9.0, 12.0, 9.0, 12.0, 15.0})));
+
+    matrix_type col_subtract_alias({1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
+    col_subtract_alias.colwise() -= col_subtract_alias.row(0) + col_subtract_alias.row(1);
+    EXPECT_EQ(col_subtract_alias, (matrix_type({-4.0, -5.0, -6.0, -1.0, -2.0, -3.0})));
+}
+
 template <int StorageOrder> void check_block_view_behavior() {
     using matrix_type = Matrix<double, 3, 4, StorageOrder>;
     matrix_type matrix({1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0});
@@ -1002,6 +1262,11 @@ TEST(NativeDenseMatrix, AssignmentOperationsMaterializeAliases) {
 TEST(NativeDenseMatrix, CoefficientWiseAdaptorsAreTypedLifetimeSafeAndAliasSafe) {
     check_coefficientwise_behavior<RowMajor>();
     check_coefficientwise_behavior<ColMajor>();
+}
+
+TEST(NativeDenseMatrix, VectorWiseAdaptorsAreLifetimeSafeAndAliasSafe) {
+    check_vectorwise_behavior<RowMajor>();
+    check_vectorwise_behavior<ColMajor>();
 }
 
 TEST(NativeDenseMatrix, BlocksRemainBoundedViews) {

@@ -191,6 +191,93 @@ template <int StorageOrder> void check_matrix_coeffwise_runtime_contracts() {
     EXPECT_THROW(static_cast<void>(row_binary[3]), std::out_of_range);
 }
 
+template <int StorageOrder> void check_matrix_vectorwise_runtime_contracts() {
+    using dynamic_matrix = Matrix<double, Dynamic, Dynamic, StorageOrder>;
+    dynamic_matrix matrix = Matrix<double, 2, 3, StorageOrder>({1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
+    const dynamic_matrix original = matrix;
+    const Matrix<double, Dynamic, 1, StorageOrder> wrong_rows(std::vector<double> {1.0, 2.0, 3.0});
+    const Matrix<double, 1, Dynamic, StorageOrder> wrong_cols(std::vector<double> {1.0, 2.0, 3.0, 4.0});
+
+    EXPECT_THROW(static_cast<void>(matrix.rowwise() = wrong_rows), std::invalid_argument);
+    EXPECT_EQ(matrix, original);
+    EXPECT_THROW(static_cast<void>(matrix.rowwise() += wrong_rows), std::invalid_argument);
+    EXPECT_EQ(matrix, original);
+    EXPECT_THROW(static_cast<void>(matrix.rowwise() -= wrong_rows), std::invalid_argument);
+    EXPECT_EQ(matrix, original);
+    EXPECT_THROW(static_cast<void>(matrix.colwise() = wrong_cols), std::invalid_argument);
+    EXPECT_EQ(matrix, original);
+    EXPECT_THROW(static_cast<void>(matrix.colwise() += wrong_cols), std::invalid_argument);
+    EXPECT_EQ(matrix, original);
+    EXPECT_THROW(static_cast<void>(matrix.colwise() -= wrong_cols), std::invalid_argument);
+    EXPECT_EQ(matrix, original);
+    EXPECT_THROW(static_cast<void>(matrix.rowwise() == wrong_rows), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(matrix.colwise() == wrong_cols), std::invalid_argument);
+
+    const dynamic_matrix valid_rows =
+      Matrix<double, 2, 1, StorageOrder>(std::vector<double> {10.0, 20.0});
+    matrix.rowwise() = valid_rows;
+    EXPECT_EQ(matrix, (Matrix<double, 2, 3, StorageOrder>({10.0, 10.0, 10.0, 20.0, 20.0, 20.0})));
+    EXPECT_TRUE(matrix.rowwise() == valid_rows);
+    matrix = original;
+    matrix.rowwise() += valid_rows;
+    EXPECT_EQ(matrix, (Matrix<double, 2, 3, StorageOrder>({11.0, 12.0, 13.0, 24.0, 25.0, 26.0})));
+    matrix = original;
+    matrix.rowwise() -= valid_rows;
+    EXPECT_EQ(matrix, (Matrix<double, 2, 3, StorageOrder>({-9.0, -8.0, -7.0, -16.0, -15.0, -14.0})));
+
+    const dynamic_matrix valid_cols =
+      Matrix<double, 1, 3, StorageOrder>(std::vector<double> {10.0, 20.0, 30.0});
+    matrix.colwise() = valid_cols;
+    EXPECT_EQ(matrix, (Matrix<double, 2, 3, StorageOrder>({10.0, 20.0, 30.0, 10.0, 20.0, 30.0})));
+    EXPECT_TRUE(matrix.colwise() == valid_cols);
+    matrix = original;
+    matrix.colwise() += valid_cols;
+    EXPECT_EQ(matrix, (Matrix<double, 2, 3, StorageOrder>({11.0, 22.0, 33.0, 14.0, 25.0, 36.0})));
+    matrix = original;
+    matrix.colwise() -= valid_cols;
+    EXPECT_EQ(matrix, (Matrix<double, 2, 3, StorageOrder>({-9.0, -18.0, -27.0, -6.0, -15.0, -24.0})));
+
+    Matrix<double, Dynamic, 3, StorageOrder> partial_rows(2, 3);
+    const Matrix<double, Dynamic, 1, StorageOrder> valid_partial_rows(std::vector<double> {2.0, 3.0});
+    partial_rows.rowwise() = valid_partial_rows;
+    EXPECT_EQ(
+      partial_rows,
+      (Matrix<double, 2, 3, StorageOrder>({2.0, 2.0, 2.0, 3.0, 3.0, 3.0})));
+    const auto partial_rows_snapshot = partial_rows;
+    EXPECT_THROW(static_cast<void>(partial_rows.rowwise() = wrong_rows), std::invalid_argument);
+    EXPECT_EQ(partial_rows, partial_rows_snapshot);
+
+    Matrix<double, 2, Dynamic, StorageOrder> partial_cols(2, 3);
+    const Matrix<double, 1, Dynamic, StorageOrder> valid_partial_cols(std::vector<double> {2.0, 3.0, 4.0});
+    partial_cols.colwise() = valid_partial_cols;
+    EXPECT_EQ(
+      partial_cols,
+      (Matrix<double, 2, 3, StorageOrder>({2.0, 3.0, 4.0, 2.0, 3.0, 4.0})));
+    const auto partial_cols_snapshot = partial_cols;
+    EXPECT_THROW(static_cast<void>(partial_cols.colwise() = wrong_cols), std::invalid_argument);
+    EXPECT_EQ(partial_cols, partial_cols_snapshot);
+
+    auto row_sums = original.rowwise().sum();
+    EXPECT_DOUBLE_EQ(row_sums(1, 0), 15.0);
+    EXPECT_DOUBLE_EQ(row_sums[1], 15.0);
+    EXPECT_THROW(static_cast<void>(row_sums(-1, 0)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(row_sums(2, 0)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(row_sums(0, -1)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(row_sums(0, 1)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(row_sums[-1]), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(row_sums[2]), std::out_of_range);
+
+    auto col_sums = original.colwise().sum();
+    EXPECT_DOUBLE_EQ(col_sums(0, 2), 9.0);
+    EXPECT_DOUBLE_EQ(col_sums[2], 9.0);
+    EXPECT_THROW(static_cast<void>(col_sums(-1, 0)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(col_sums(1, 0)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(col_sums(0, -1)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(col_sums(0, 3)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(col_sums[-1]), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(col_sums[3]), std::out_of_range);
+}
+
 }   // namespace
 
 TEST(LinearAlgebraRuntimeContracts, DynamicSquareOperationsRemainAvailable) {
@@ -381,6 +468,11 @@ TEST(LinearAlgebraRuntimeContracts, MatrixReshapeChecksShapesSizesAndIndexes) {
 TEST(LinearAlgebraRuntimeContracts, MatrixCoeffWiseChecksShapesAndIndexes) {
     check_matrix_coeffwise_runtime_contracts<RowMajor>();
     check_matrix_coeffwise_runtime_contracts<ColMajor>();
+}
+
+TEST(LinearAlgebraRuntimeContracts, MatrixVectorWiseChecksShapesAndIndexes) {
+    check_matrix_vectorwise_runtime_contracts<RowMajor>();
+    check_matrix_vectorwise_runtime_contracts<ColMajor>();
 }
 
 }   // namespace fdapde

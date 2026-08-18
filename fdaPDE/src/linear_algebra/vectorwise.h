@@ -26,34 +26,40 @@ namespace fdapde {
 namespace internals {
 
 // Lazy expression representing a row-wise or column-wise reduction with a custom operator
-template <typename XprType, typename ReductionOp, int ByRow>
-struct partial_matrix_redux_op : public MatrixExpr<partial_matrix_redux_op<XprType, ReductionOp, ByRow>> {
+template <typename XprType_, typename ReductionOp, int ByRow>
+struct partial_matrix_redux_op : public MatrixExpr<partial_matrix_redux_op<XprType_, ReductionOp, ByRow>> {
    private:
-    using Base = MatrixExpr<partial_matrix_redux_op<XprType, ReductionOp, ByRow>>;
-    using XprTypeNested = internals::ref_select_t<std::conditional_t<XprType::ReadOnly, const XprType, XprType>>;
+    using Base = MatrixExpr<partial_matrix_redux_op<XprType_, ReductionOp, ByRow>>;
+    using XprType = std::decay_t<XprType_>;
+    using XprTypeNested = internals::ref_select_t<XprType_>;
    public:
-    using Scalar = typename XprType::Scalar;
+    using Scalar = std::remove_cv_t<typename XprType::Scalar>;
     static constexpr int Rows = ByRow ? 1 : XprType::Rows;
     static constexpr int Cols = ByRow ? XprType::Cols : 1;
     static constexpr int StorageOrder = XprType::StorageOrder;
     static constexpr int NestAsRef = 0;
-    static constexpr int ReadOnly = XprType::ReadOnly;
+    static constexpr int ReadOnly = 1;
 
-    template <typename XprType_>
-        requires(std::is_constructible_v<XprTypeNested, XprType_>)
-    constexpr partial_matrix_redux_op(XprType_&& xpr, Scalar init, ReductionOp op) noexcept :
-        xpr_(std::forward<XprType_>(xpr)), init_(init), op_(op) { }
+    template <typename XprType__>
+        requires(
+          !std::same_as<std::remove_cvref_t<XprType__>, partial_matrix_redux_op> &&
+          internals::safely_nestable<XprTypeNested, XprType__>)
+    constexpr partial_matrix_redux_op(XprType__&& xpr, Scalar init, ReductionOp op) :
+        xpr_(std::forward<XprType__>(xpr)), init_(init), op_(std::move(op)) { }
 
-    constexpr decltype(auto) operator()(int i, int j) const {
-        fdapde_assert(i >= 0 && i < rows() && j >= 0 && j < cols());
+    constexpr Scalar operator()(int i, int j) const {
+        if (i < 0 || i >= rows() || j < 0 || j >= cols()) {
+            throw std::out_of_range("vector-wise reduction index out of range");
+        }
         Scalar res(init_);
         const int k = ByRow ? j : i;
-        for (int h = 0, size_ = ByRow ? xpr_.rows() : xpr_.cols(); h < size_; ++h) {
-            res = op_(res, ByRow ? xpr_(h, k) : xpr_(k, h));
+        const auto& xpr = std::as_const(xpr_);
+        for (int h = 0, size_ = ByRow ? xpr.rows() : xpr.cols(); h < size_; ++h) {
+            res = op_(res, ByRow ? xpr(h, k) : xpr(k, h));
         }
         return res;
     }
-    constexpr decltype(auto) operator[](int i) const { return operator()(ByRow ? 0 : i, ByRow ? i : 0); }
+    constexpr Scalar operator[](int i) const { return operator()(ByRow ? 0 : i, ByRow ? i : 0); }
     // observers
     constexpr int rows() const { return ByRow ? Rows : xpr_.rows(); }
     constexpr int cols() const { return ByRow ? xpr_.cols() : Cols; }
@@ -65,32 +71,53 @@ struct partial_matrix_redux_op : public MatrixExpr<partial_matrix_redux_op<XprTy
 
 }   // namespace internals
 
-template <typename XprType, int ByRow>
-struct MatrixVectorWiseOp : public MatrixExpr<MatrixVectorWiseOp<XprType, ByRow>> {
+template <typename XprType_, int ByRow>
+struct MatrixVectorWiseOp : public MatrixExpr<MatrixVectorWiseOp<XprType_, ByRow>> {
    private:
-    using Base = MatrixExpr<MatrixVectorWiseOp<XprType, ByRow>>;
-    using XprTypeNested = internals::ref_select_t<std::conditional_t<XprType::ReadOnly, const XprType, XprType>>;
+    using Base = MatrixExpr<MatrixVectorWiseOp<XprType_, ByRow>>;
+    using XprType = std::decay_t<XprType_>;
+    using XprTypeNested = internals::ref_select_t<XprType_>;
+
+    static constexpr bool static_axis_compatible_(int lhs, int rhs) {
+        return lhs == Dynamic || rhs == Dynamic || lhs == rhs;
+    }
+    template <typename RhsXprType_>
+    static constexpr bool statically_compatible_rhs_ = [] {
+        using RhsXprType = std::decay_t<RhsXprType_>;
+        if constexpr (ByRow == 0) {
+            return static_axis_compatible_(XprType::Rows, RhsXprType::Rows) &&
+              static_axis_compatible_(1, RhsXprType::Cols);
+        } else {
+            return static_axis_compatible_(1, RhsXprType::Rows) &&
+              static_axis_compatible_(XprType::Cols, RhsXprType::Cols);
+        }
+    }();
    public:
-    using Scalar = typename XprType::Scalar;
+    using Scalar = std::remove_cv_t<typename XprType::Scalar>;
     static constexpr int Rows = ByRow ? 1 : XprType::Rows;
     static constexpr int Cols = ByRow ? XprType::Cols : 1;
     static constexpr int StorageOrder = XprType::StorageOrder;
     static constexpr int NestAsRef = 0;
-    static constexpr int ReadOnly = XprType::ReadOnly;
+    static constexpr int ReadOnly =
+      std::is_const_v<std::remove_reference_t<XprType_>> || XprType::ReadOnly;
 
-    template <typename XprType_>
-        requires(std::is_constructible_v<XprTypeNested, XprType_>)
-    constexpr MatrixVectorWiseOp(XprType_&& xpr) noexcept : xpr_(std::forward<XprType_>(xpr)) { }
+    template <typename XprType__>
+        requires(
+          !std::same_as<std::remove_cvref_t<XprType__>, MatrixVectorWiseOp> &&
+          internals::safely_nestable<XprTypeNested, XprType__>)
+    constexpr MatrixVectorWiseOp(XprType__&& xpr) : xpr_(std::forward<XprType__>(xpr)) { }
 
     // generic redux operator
-    template <typename XprType_, typename Scalar_, typename ReductionOp>
-        requires(requires(ReductionOp op, Scalar a, Scalar b) {
-            { op(a, b) } -> std::convertible_to<Scalar>;
+    template <typename XprType__, typename Scalar_, typename ReductionOp>
+        requires(requires(const std::decay_t<ReductionOp>& op, Scalar& accumulated, const Scalar& value) {
+            { op(accumulated, value) } -> std::convertible_to<Scalar>;
         })
-    constexpr auto redux(XprType_&& xpr, Scalar_ init, ReductionOp&& op) const {
+    constexpr auto redux(XprType__&& xpr, Scalar_ init, ReductionOp&& op) const {
         fdapde_static_assert(
           std::is_convertible_v<Scalar_ FDAPDE_COMMA Scalar>, INVALID_SCALAR_INIT_TYPE_IN_REDUX_OPERATION);
-        return internals::partial_matrix_redux_op<XprType, ReductionOp, ByRow>(std::forward<XprType_>(xpr), init, op);
+        using StoredOp = std::decay_t<ReductionOp>;
+        return internals::partial_matrix_redux_op<XprType_, StoredOp, ByRow>(
+          std::forward<XprType__>(xpr), static_cast<Scalar>(init), std::forward<ReductionOp>(op));
     }
     // standard reductions
     constexpr auto sum() const {
@@ -123,71 +150,123 @@ struct MatrixVectorWiseOp : public MatrixExpr<MatrixVectorWiseOp<XprType, ByRow>
     }
 
     // vector-wise assignment
-    template <typename XprType_> constexpr MatrixVectorWiseOp& operator=(const MatrixExpr<XprType_>& rhs) {
-        partial_redux_inplace_loop_(rhs, [](Scalar& a, Scalar b) { a = b; });
+    template <typename RhsXprType_>
+        requires(ReadOnly == 0 && statically_compatible_rhs_<RhsXprType_>)
+    constexpr MatrixVectorWiseOp& operator=(const MatrixExpr<RhsXprType_>& rhs) & {
+        require_compatible_shape_(rhs);
+        using RhsXprType = std::decay_t<RhsXprType_>;
+        using RhsScalar = std::remove_cv_t<typename RhsXprType::Scalar>;
+        Matrix<RhsScalar, RhsXprType::Rows, RhsXprType::Cols, RhsXprType::StorageOrder> tmp(rhs);
+        partial_redux_inplace_loop_(tmp, [](Scalar& a, Scalar b) { a = b; });
         return *this;
     }
-    template <typename XprType_> constexpr MatrixVectorWiseOp& operator+=(const MatrixExpr<XprType_>& rhs) {
-        partial_redux_inplace_loop_(rhs, [](Scalar& a, Scalar b) { a += b; });
+    template <typename RhsXprType_>
+        requires(ReadOnly == 0 && statically_compatible_rhs_<RhsXprType_>)
+    constexpr MatrixVectorWiseOp operator=(const MatrixExpr<RhsXprType_>& rhs) && {
+        static_cast<MatrixVectorWiseOp&>(*this).operator=(rhs);
         return *this;
     }
-    template <typename XprType_> constexpr MatrixVectorWiseOp& operator-=(const MatrixExpr<XprType_>& rhs) {
-        partial_redux_inplace_loop_(rhs, [](Scalar& a, Scalar b) { a -= b; });
+    template <typename RhsXprType_>
+        requires(ReadOnly == 0 && statically_compatible_rhs_<RhsXprType_>)
+    constexpr MatrixVectorWiseOp& operator+=(const MatrixExpr<RhsXprType_>& rhs) & {
+        require_compatible_shape_(rhs);
+        using RhsXprType = std::decay_t<RhsXprType_>;
+        using RhsScalar = std::remove_cv_t<typename RhsXprType::Scalar>;
+        Matrix<RhsScalar, RhsXprType::Rows, RhsXprType::Cols, RhsXprType::StorageOrder> tmp(rhs);
+        partial_redux_inplace_loop_(tmp, [](Scalar& a, Scalar b) { a += b; });
+        return *this;
+    }
+    template <typename RhsXprType_>
+        requires(ReadOnly == 0 && statically_compatible_rhs_<RhsXprType_>)
+    constexpr MatrixVectorWiseOp operator+=(const MatrixExpr<RhsXprType_>& rhs) && {
+        static_cast<MatrixVectorWiseOp&>(*this).operator+=(rhs);
+        return *this;
+    }
+    template <typename RhsXprType_>
+        requires(ReadOnly == 0 && statically_compatible_rhs_<RhsXprType_>)
+    constexpr MatrixVectorWiseOp& operator-=(const MatrixExpr<RhsXprType_>& rhs) & {
+        require_compatible_shape_(rhs);
+        using RhsXprType = std::decay_t<RhsXprType_>;
+        using RhsScalar = std::remove_cv_t<typename RhsXprType::Scalar>;
+        Matrix<RhsScalar, RhsXprType::Rows, RhsXprType::Cols, RhsXprType::StorageOrder> tmp(rhs);
+        partial_redux_inplace_loop_(tmp, [](Scalar& a, Scalar b) { a -= b; });
+        return *this;
+    }
+    template <typename RhsXprType_>
+        requires(ReadOnly == 0 && statically_compatible_rhs_<RhsXprType_>)
+    constexpr MatrixVectorWiseOp operator-=(const MatrixExpr<RhsXprType_>& rhs) && {
+        static_cast<MatrixVectorWiseOp&>(*this).operator-=(rhs);
         return *this;
     }
 
     // vectorwise comparison
-    template <typename XprType_>
-    friend constexpr bool operator==(const MatrixVectorWiseOp& lhs, const MatrixExpr<XprType_>& rhs) {
-        fdapde_static_assert(
-          internals::same_static_shape_weak_v<MatrixVectorWiseOp FDAPDE_COMMA XprType_>,
-          INVALID_VECTORWISE_COMPARISON__OPERANDS_HAVE_DIFFERENT_SIZES);
-        if constexpr (internals::is_dynamic_sized_v<MatrixVectorWiseOp> || internals::is_dynamic_sized_v<XprType_>) {
-            fdapde_assert(lhs.rows() == rhs.rows() && lhs.cols() == rhs.cols());
-        }
+    template <typename RhsXprType_>
+        requires(statically_compatible_rhs_<RhsXprType_>)
+    friend constexpr bool operator==(const MatrixVectorWiseOp& lhs, const MatrixExpr<RhsXprType_>& rhs) {
+        lhs.require_compatible_shape_(rhs);
         const auto& d2 = rhs.derived();
-        for (int i = 0, n = lhs.xpr_.rows(); i < n; ++i) {
-            for (int j = 0, m = lhs.xpr_.cols(); j < m; ++j) {
-                if (lhs.xpr_(i, j) != d2[ByRow ? j : i]) { return false; }
+        const auto& xpr = std::as_const(lhs.xpr_);
+        for (int i = 0, n = xpr.rows(); i < n; ++i) {
+            for (int j = 0, m = xpr.cols(); j < m; ++j) {
+                if (xpr(i, j) != (ByRow ? d2(0, j) : d2(i, 0))) { return false; }
             }
         }
         return true;
     }
-    template <typename XprType_>
-    friend constexpr bool operator==(const MatrixExpr<XprType_>& lhs, const MatrixVectorWiseOp& rhs) {
+    template <typename LhsXprType_>
+        requires(statically_compatible_rhs_<LhsXprType_>)
+    friend constexpr bool operator==(const MatrixExpr<LhsXprType_>& lhs, const MatrixVectorWiseOp& rhs) {
         return rhs == lhs;
     }
-    template <typename XprType_>
-    friend constexpr bool operator!=(const MatrixVectorWiseOp& lhs, const MatrixExpr<XprType_>& rhs) {
+    template <typename RhsXprType_>
+        requires(statically_compatible_rhs_<RhsXprType_>)
+    friend constexpr bool operator!=(const MatrixVectorWiseOp& lhs, const MatrixExpr<RhsXprType_>& rhs) {
         return !(lhs == rhs);
     }
-    template <typename XprType_>
-    friend constexpr bool operator!=(const MatrixExpr<XprType_>& lhs, const MatrixVectorWiseOp& rhs) {
+    template <typename LhsXprType_>
+        requires(statically_compatible_rhs_<LhsXprType_>)
+    friend constexpr bool operator!=(const MatrixExpr<LhsXprType_>& lhs, const MatrixVectorWiseOp& rhs) {
         return !(rhs == lhs);
     }
+    template <typename RhsXprType_>
+        requires(!statically_compatible_rhs_<RhsXprType_>)
+    friend constexpr bool operator==(const MatrixVectorWiseOp&, const MatrixExpr<RhsXprType_>&) = delete;
+    template <typename LhsXprType_>
+        requires(!statically_compatible_rhs_<LhsXprType_>)
+    friend constexpr bool operator==(const MatrixExpr<LhsXprType_>&, const MatrixVectorWiseOp&) = delete;
+    template <typename RhsXprType_>
+        requires(!statically_compatible_rhs_<RhsXprType_>)
+    friend constexpr bool operator!=(const MatrixVectorWiseOp&, const MatrixExpr<RhsXprType_>&) = delete;
+    template <typename LhsXprType_>
+        requires(!statically_compatible_rhs_<LhsXprType_>)
+    friend constexpr bool operator!=(const MatrixExpr<LhsXprType_>&, const MatrixVectorWiseOp&) = delete;
 
     // observers
     constexpr int rows() const { return ByRow ? Rows : xpr_.rows(); }
     constexpr int cols() const { return ByRow ? xpr_.cols() : Cols; }
    private:
     // internals
-    template <typename XprType_, typename Operator_>
-    constexpr void partial_redux_inplace_loop_(const MatrixExpr<XprType_>& rhs, Operator_&& op) {
-        constexpr int XprRows = XprType_::Rows, XprCols = XprType_::Cols;
-        fdapde_static_assert(
-          (Rows == 1 && XprRows == 1) || (Cols == 1 & XprCols == 1), NO_MATCHING_SIZES_IN_VECTORWISE_ASSIGNMENT);
-        fdapde_static_assert(XprType::ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_LOCATION);
-        fdapde_assert(Rows == 1 && xpr_.cols() == rhs.cols() || Cols == 1 && xpr_.rows() == rhs.rows());
-
+    template <typename RhsXprType_>
+    constexpr void require_compatible_shape_(const MatrixExpr<RhsXprType_>& rhs) const {
+        const bool compatible = ByRow == 0 ?
+          (rhs.rows() == xpr_.rows() && rhs.cols() == 1) :
+          (rhs.rows() == 1 && rhs.cols() == xpr_.cols());
+        if (!compatible) {
+            throw std::invalid_argument("vector-wise operation requires a matching broadcast vector");
+        }
+    }
+    template <typename RhsXprType_, typename Operator_>
+    constexpr void partial_redux_inplace_loop_(const MatrixExpr<RhsXprType_>& rhs, Operator_&& op) {
         int inner_size_ = ByRow ? xpr_.rows() : xpr_.cols();
         int outer_size_ = ByRow ? xpr_.cols() : xpr_.rows();
+        const auto& rhs_derived = rhs.derived();
         for (int i = 0; i < outer_size_; ++i) {
             for (int j = 0; j < inner_size_; ++j) {
-                if constexpr (ByRow == 0) op(xpr_(i, j), rhs.derived()[i]);
-                if constexpr (ByRow == 1) op(xpr_(j, i), rhs.derived()[i]);
+                if constexpr (ByRow == 0) op(xpr_(i, j), rhs_derived(i, 0));
+                if constexpr (ByRow == 1) op(xpr_(j, i), rhs_derived(0, i));
             }
         }
-	return;
+        return;
     }
   
     XprTypeNested xpr_;
@@ -196,15 +275,15 @@ struct MatrixVectorWiseOp : public MatrixExpr<MatrixVectorWiseOp<XprType, ByRow>
 // row-wise matrix reduction expression
 template <typename XprType> struct MatrixRowWiseOp : public MatrixVectorWiseOp<XprType, 0> {
     using Base = MatrixVectorWiseOp<XprType, 0>;
-    template <typename XprType_> constexpr explicit MatrixRowWiseOp(XprType_&& xpr) noexcept : Base(xpr) { }
+    using Base::Base;
     using Base::operator=;
 };
 // col-wise matrix reduction expression
 template <typename XprType> struct MatrixColWiseOp : public MatrixVectorWiseOp<XprType, 1> {
     using Base = MatrixVectorWiseOp<XprType, 1>;
-    template <typename XprType_> constexpr explicit MatrixColWiseOp(XprType_&& xpr) noexcept : Base(xpr) { }
+    using Base::Base;
     using Base::operator=;
-};  
+};
   
 }   // namespace fdapde
 

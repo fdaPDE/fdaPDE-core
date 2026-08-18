@@ -291,10 +291,30 @@ template <typename XprType_> struct MatrixExpr {
         return redux(int(0), [](int cnt, auto x) { return cnt + (bool(x) ? 1 : 0); });
     }
     // vector-wise redux operators
-    constexpr MatrixRowWiseOp<XprType> rowwise() { return MatrixRowWiseOp<XprType>(derived()); }
-    constexpr MatrixRowWiseOp<const XprType> rowwise() const { return MatrixRowWiseOp<const XprType>(derived()); }
-    constexpr MatrixColWiseOp<XprType> colwise() { return MatrixColWiseOp<XprType>(derived()); }
-    constexpr MatrixColWiseOp<const XprType> colwise() const { return MatrixColWiseOp<const XprType>(derived()); }
+    constexpr MatrixRowWiseOp<XprType> rowwise() & { return MatrixRowWiseOp<XprType>(derived()); }
+    constexpr MatrixRowWiseOp<const XprType> rowwise() const & {
+        return MatrixRowWiseOp<const XprType>(derived());
+    }
+    constexpr MatrixRowWiseOp<XprType> rowwise() && requires(XprType::NestAsRef == 0) {
+        return MatrixRowWiseOp<XprType>(static_cast<XprType&&>(*this));
+    }
+    constexpr MatrixRowWiseOp<const XprType> rowwise() const && requires(XprType::NestAsRef == 0) {
+        return MatrixRowWiseOp<const XprType>(static_cast<const XprType&&>(*this));
+    }
+    constexpr void rowwise() && requires(XprType::NestAsRef != 0) = delete;
+    constexpr void rowwise() const && requires(XprType::NestAsRef != 0) = delete;
+    constexpr MatrixColWiseOp<XprType> colwise() & { return MatrixColWiseOp<XprType>(derived()); }
+    constexpr MatrixColWiseOp<const XprType> colwise() const & {
+        return MatrixColWiseOp<const XprType>(derived());
+    }
+    constexpr MatrixColWiseOp<XprType> colwise() && requires(XprType::NestAsRef == 0) {
+        return MatrixColWiseOp<XprType>(static_cast<XprType&&>(*this));
+    }
+    constexpr MatrixColWiseOp<const XprType> colwise() const && requires(XprType::NestAsRef == 0) {
+        return MatrixColWiseOp<const XprType>(static_cast<const XprType&&>(*this));
+    }
+    constexpr void colwise() && requires(XprType::NestAsRef != 0) = delete;
+    constexpr void colwise() const && requires(XprType::NestAsRef != 0) = delete;
 
     // unary operators
     constexpr TransposeOp<XprType> transpose() const & { return TransposeOp<XprType>(derived()); }
