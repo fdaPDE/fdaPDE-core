@@ -22,6 +22,67 @@
 #include <vector>
 
 namespace fdapde {
+namespace {
+
+template <int StorageOrder> void check_matrix_block_runtime_contracts() {
+    using matrix_type = Matrix<int, 3, 4, StorageOrder>;
+    matrix_type matrix({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+
+    EXPECT_THROW(static_cast<void>(matrix.row(-1)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(matrix.row(3)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(matrix.col(-1)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(matrix.col(4)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(matrix.block(-1, 0, 1, 1)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(matrix.block(0, -1, 1, 1)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(matrix.block(2, 3, 2, 2)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(matrix.block(0, 0, 0, 2)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(matrix.block(0, 0, -1, 2)), std::invalid_argument);
+    EXPECT_THROW(
+      static_cast<void>(matrix.template block<2, 2>(2, 3)),
+      std::out_of_range);
+    EXPECT_THROW(static_cast<void>(matrix.top_rows(0)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(matrix.bottom_rows(0)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(matrix.left_cols(0)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(matrix.right_cols(0)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(matrix.top_rows(4)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(matrix.bottom_rows(4)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(matrix.left_cols(5)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(matrix.right_cols(5)), std::out_of_range);
+    EXPECT_THROW(
+      static_cast<void>(matrix.bottom_rows(std::numeric_limits<int>::min())),
+      std::invalid_argument);
+    EXPECT_THROW(
+      static_cast<void>(matrix.right_cols(std::numeric_limits<int>::min())),
+      std::invalid_argument);
+
+    const auto zero = [](int, int) { return 0.0; };
+    ProceduralMatrix<decltype(zero), Dynamic, 1> long_column(50000, zero);
+    ProceduralMatrix<decltype(zero), 1, Dynamic> long_row(50000, zero);
+    auto oversized_outer_product = long_column * long_row;
+    EXPECT_THROW(
+      static_cast<void>(oversized_outer_product.block(0, 0, 50000, 50000)),
+      std::length_error);
+
+    auto block = matrix.template block<2, 2>(1, 1);
+    const auto& const_block = block;
+    EXPECT_THROW(static_cast<void>(block(-1, 0)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(block(0, 2)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(const_block(-1, 0)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(const_block(0, 2)), std::out_of_range);
+
+    auto row = matrix.row(0);
+    const auto& const_row = row;
+    EXPECT_THROW(static_cast<void>(row[-1]), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(row[row.size()]), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(const_row[-1]), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(const_row[const_row.size()]), std::out_of_range);
+    const matrix_type original = matrix;
+    const std::initializer_list<int> short_row {20, 21};
+    EXPECT_THROW(row = short_row, std::invalid_argument);
+    EXPECT_EQ(matrix, original);
+}
+
+}   // namespace
 
 TEST(LinearAlgebraRuntimeContracts, DynamicSquareOperationsRemainAvailable) {
     Matrix<double, Dynamic, Dynamic> matrix = Matrix<double, 2, 2>({2, 1, 1, 3});
@@ -196,6 +257,11 @@ TEST(LinearAlgebraRuntimeContracts, MatrixViewRejectsInvalidRuntimeShapes) {
     EXPECT_EQ(destination.cols(), 2);
     EXPECT_EQ(destination(0, 0), 1);
     EXPECT_EQ(destination(1, 1), 4);
+}
+
+TEST(LinearAlgebraRuntimeContracts, MatrixBlockChecksBoundsAndAssignments) {
+    check_matrix_block_runtime_contracts<RowMajor>();
+    check_matrix_block_runtime_contracts<ColMajor>();
 }
 
 }   // namespace fdapde

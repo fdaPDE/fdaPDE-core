@@ -19,6 +19,7 @@
 
 #include <array>
 #include <initializer_list>
+#include <iterator>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -122,9 +123,133 @@ template <typename View>
 concept permits_temporary_view_add =
   requires(View& named, std::add_pointer_t<typename View::Scalar> data) { View(data) + named; };
 
+template <typename Matrix>
+concept permits_temporary_static_block = requires(Matrix&& matrix) {
+    std::move(matrix).template block<1, 1>(0, 0);
+};
+
+template <typename Matrix>
+concept permits_temporary_dynamic_block = requires(Matrix&& matrix) {
+    std::move(matrix).block(0, 0, 1, 1);
+};
+
+template <typename Matrix>
+concept permits_temporary_row = requires(Matrix&& matrix) { std::move(matrix).row(0); };
+
+template <typename Matrix>
+concept permits_temporary_col = requires(Matrix&& matrix) { std::move(matrix).col(0); };
+
+template <typename Matrix>
+concept permits_temporary_static_top_rows = requires(Matrix&& matrix) {
+    std::move(matrix).template top_rows<1>();
+};
+
+template <typename Matrix>
+concept permits_temporary_dynamic_top_rows = requires(Matrix&& matrix) {
+    std::move(matrix).top_rows(1);
+};
+
+template <typename Matrix>
+concept permits_temporary_static_bottom_rows = requires(Matrix&& matrix) {
+    std::move(matrix).template bottom_rows<1>();
+};
+
+template <typename Matrix>
+concept permits_temporary_dynamic_bottom_rows = requires(Matrix&& matrix) {
+    std::move(matrix).bottom_rows(1);
+};
+
+template <typename Matrix>
+concept permits_temporary_static_left_cols = requires(Matrix&& matrix) {
+    std::move(matrix).template left_cols<1>();
+};
+
+template <typename Matrix>
+concept permits_temporary_dynamic_left_cols = requires(Matrix&& matrix) {
+    std::move(matrix).left_cols(1);
+};
+
+template <typename Matrix>
+concept permits_temporary_static_right_cols = requires(Matrix&& matrix) {
+    std::move(matrix).template right_cols<1>();
+};
+
+template <typename Matrix>
+concept permits_temporary_dynamic_right_cols = requires(Matrix&& matrix) {
+    std::move(matrix).right_cols(1);
+};
+
+template <typename Matrix, int ExpectedReadOnly>
+concept permits_all_temporary_block_accessors = requires(Matrix&& matrix) {
+    requires (decltype(std::move(matrix).template block<1, 1>(0, 0))::ReadOnly == ExpectedReadOnly);
+    requires (decltype(std::move(matrix).block(0, 0, 1, 1))::ReadOnly == ExpectedReadOnly);
+    requires (decltype(std::move(matrix).row(0))::ReadOnly == ExpectedReadOnly);
+    requires (decltype(std::move(matrix).col(0))::ReadOnly == ExpectedReadOnly);
+    requires (decltype(std::move(matrix).template top_rows<1>())::ReadOnly == ExpectedReadOnly);
+    requires (decltype(std::move(matrix).top_rows(1))::ReadOnly == ExpectedReadOnly);
+    requires (decltype(std::move(matrix).template bottom_rows<1>())::ReadOnly == ExpectedReadOnly);
+    requires (decltype(std::move(matrix).bottom_rows(1))::ReadOnly == ExpectedReadOnly);
+    requires (decltype(std::move(matrix).template left_cols<1>())::ReadOnly == ExpectedReadOnly);
+    requires (decltype(std::move(matrix).left_cols(1))::ReadOnly == ExpectedReadOnly);
+    requires (decltype(std::move(matrix).template right_cols<1>())::ReadOnly == ExpectedReadOnly);
+    requires (decltype(std::move(matrix).right_cols(1))::ReadOnly == ExpectedReadOnly);
+};
+
+template <typename Matrix>
+concept permits_safe_temporary_block_access = requires(Matrix& a, Matrix& b) {
+    (a + b).template block<1, 1>(0, 0);
+    (a + b).row(0);
+};
+
+template <typename View>
+concept permits_temporary_fixed_view_row = requires(std::add_pointer_t<typename View::Scalar> data) {
+    View(data).row(0);
+};
+
+template <typename View>
+concept permits_temporary_dynamic_view_row = requires(std::add_pointer_t<typename View::Scalar> data) {
+    View(data, 2, 2).row(0);
+};
+
+template <typename Matrix>
+concept permits_direct_temporary_vector_block = requires(Matrix&& matrix) {
+    MatrixBlock<1, 1, Matrix> {std::move(matrix), 0};
+};
+
+template <typename Matrix>
+concept permits_direct_temporary_static_block = requires(Matrix&& matrix) {
+    MatrixBlock<1, 1, Matrix> {std::move(matrix), 0, 0};
+};
+
+template <typename Matrix>
+concept permits_direct_temporary_dynamic_block = requires(Matrix&& matrix) {
+    MatrixBlock<Dynamic, Dynamic, Matrix> {std::move(matrix), 0, 0, 1, 1};
+};
+
+template <typename Block>
+concept permits_const_block_coefficient_write = requires(const Block& block) { block(0, 0) = 1.0; };
+
+template <typename Block>
+concept exposes_temporary_block_iterator = requires(Block&& block) { std::move(block).begin(); };
+
+template <typename Block>
+concept has_const_bidirectional_block_iterator = requires {
+    requires std::bidirectional_iterator<typename Block::const_iterator>;
+};
+
 using lifetime_matrix = Matrix<double, 2, 2>;
+using lifetime_const_matrix = const lifetime_matrix;
 using lifetime_vector = Matrix<double, 3, 1>;
 using lifetime_initializer_vector = Matrix<double, 2, 1>;
+using lifetime_expression = decltype(
+  std::declval<lifetime_matrix&>() + std::declval<lifetime_matrix&>());
+using lifetime_view = MatrixView<double, 2, 2>;
+using lifetime_const_view = MatrixView<const double, 2, 2>;
+using lifetime_block = decltype(std::declval<lifetime_matrix&>().template block<1, 1>(0, 0));
+using lifetime_const_block = decltype(std::declval<const lifetime_matrix&>().template block<1, 1>(0, 0));
+using lifetime_const_view_block =
+  decltype(std::declval<lifetime_const_view&>().template block<1, 1>(0, 0));
+using lifetime_row = decltype(std::declval<lifetime_matrix&>().row(0));
 static_assert(!permits_left_temporary_add<lifetime_matrix>);
 static_assert(!permits_right_temporary_add<lifetime_matrix>);
 static_assert(!permits_left_temporary_subtract<lifetime_matrix>);
@@ -152,6 +277,56 @@ static_assert(!permits_temporary_initializer_assignment<lifetime_initializer_vec
 static_assert(permits_safe_expression_chaining<lifetime_matrix>);
 static_assert(permits_safe_cross_chaining<lifetime_vector>);
 static_assert(permits_temporary_view_add<MatrixView<double, 2, 2>>);
+static_assert(!permits_temporary_static_block<lifetime_matrix>);
+static_assert(!permits_temporary_dynamic_block<lifetime_matrix>);
+static_assert(!permits_temporary_row<lifetime_matrix>);
+static_assert(!permits_temporary_col<lifetime_matrix>);
+static_assert(!permits_temporary_static_top_rows<lifetime_matrix>);
+static_assert(!permits_temporary_dynamic_top_rows<lifetime_matrix>);
+static_assert(!permits_temporary_static_bottom_rows<lifetime_matrix>);
+static_assert(!permits_temporary_dynamic_bottom_rows<lifetime_matrix>);
+static_assert(!permits_temporary_static_left_cols<lifetime_matrix>);
+static_assert(!permits_temporary_dynamic_left_cols<lifetime_matrix>);
+static_assert(!permits_temporary_static_right_cols<lifetime_matrix>);
+static_assert(!permits_temporary_dynamic_right_cols<lifetime_matrix>);
+static_assert(!permits_temporary_static_block<lifetime_const_matrix>);
+static_assert(!permits_temporary_dynamic_block<lifetime_const_matrix>);
+static_assert(!permits_temporary_row<lifetime_const_matrix>);
+static_assert(!permits_temporary_col<lifetime_const_matrix>);
+static_assert(!permits_temporary_static_top_rows<lifetime_const_matrix>);
+static_assert(!permits_temporary_dynamic_top_rows<lifetime_const_matrix>);
+static_assert(!permits_temporary_static_bottom_rows<lifetime_const_matrix>);
+static_assert(!permits_temporary_dynamic_bottom_rows<lifetime_const_matrix>);
+static_assert(!permits_temporary_static_left_cols<lifetime_const_matrix>);
+static_assert(!permits_temporary_dynamic_left_cols<lifetime_const_matrix>);
+static_assert(!permits_temporary_static_right_cols<lifetime_const_matrix>);
+static_assert(!permits_temporary_dynamic_right_cols<lifetime_const_matrix>);
+static_assert(permits_all_temporary_block_accessors<lifetime_expression, 1>);
+static_assert(permits_all_temporary_block_accessors<lifetime_view, 0>);
+static_assert(permits_all_temporary_block_accessors<const lifetime_view, 1>);
+static_assert(permits_safe_temporary_block_access<lifetime_matrix>);
+static_assert(permits_temporary_fixed_view_row<MatrixView<double, 2, 2>>);
+static_assert(permits_temporary_dynamic_view_row<MatrixView<double, Dynamic, Dynamic>>);
+static_assert(!permits_direct_temporary_vector_block<lifetime_matrix>);
+static_assert(!permits_direct_temporary_static_block<lifetime_matrix>);
+static_assert(!permits_direct_temporary_dynamic_block<lifetime_matrix>);
+static_assert(!permits_direct_temporary_vector_block<lifetime_const_matrix>);
+static_assert(!permits_direct_temporary_static_block<lifetime_const_matrix>);
+static_assert(!permits_direct_temporary_dynamic_block<lifetime_const_matrix>);
+static_assert(lifetime_const_block::ReadOnly == 1);
+static_assert(lifetime_const_view_block::ReadOnly == 1);
+static_assert(!permits_const_block_coefficient_write<lifetime_block>);
+static_assert(!permits_const_block_coefficient_write<lifetime_const_view_block>);
+static_assert(std::is_same_v<decltype(std::declval<const lifetime_block&>()(0, 0)), const double&>);
+static_assert(std::is_same_v<decltype(std::declval<lifetime_const_view_block&>()(0, 0)), const double&>);
+static_assert(std::is_same_v<decltype(std::declval<const lifetime_row&>()[0]), const double&>);
+static_assert(!exposes_temporary_block_iterator<lifetime_row>);
+static_assert(std::bidirectional_iterator<typename lifetime_row::iterator>);
+static_assert(has_const_bidirectional_block_iterator<lifetime_row>);
+static_assert(std::is_same_v<std::iter_reference_t<typename lifetime_row::const_iterator>, const double&>);
+using temporary_row_initializer_result = decltype(
+  std::declval<lifetime_row&&>() = std::declval<const std::initializer_list<double>&>());
+static_assert(!std::is_lvalue_reference_v<temporary_row_initializer_result>);
 
 template <int StorageOrder> void check_owner_behavior() {
     using fixed_matrix = Matrix<int, 2, 3, StorageOrder>;
@@ -326,6 +501,94 @@ template <int StorageOrder> void check_assignment_alias_materialization() {
     EXPECT_EQ(destination, source_owner);
 }
 
+template <int StorageOrder> void check_block_view_behavior() {
+    using matrix_type = Matrix<double, 3, 4, StorageOrder>;
+    matrix_type matrix({1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0});
+
+    Matrix<double, 1, 3, StorageOrder> row_vector({1.0, 2.0, 3.0});
+    auto scalar_col = row_vector.col(2);
+    EXPECT_EQ(scalar_col.rows(), 1);
+    EXPECT_EQ(scalar_col.cols(), 1);
+    EXPECT_DOUBLE_EQ(scalar_col(0, 0), 3.0);
+    scalar_col(0, 0) = 4.0;
+    EXPECT_DOUBLE_EQ(row_vector(0, 2), 4.0);
+
+    Matrix<double, 3, 1, StorageOrder> column_vector({1.0, 2.0, 3.0});
+    auto scalar_row = column_vector.row(2);
+    EXPECT_EQ(scalar_row.rows(), 1);
+    EXPECT_EQ(scalar_row.cols(), 1);
+    EXPECT_DOUBLE_EQ(scalar_row(0, 0), 3.0);
+    scalar_row(0, 0) = 4.0;
+    EXPECT_DOUBLE_EQ(column_vector(2, 0), 4.0);
+
+    const Matrix<double, 2, 2, StorageOrder> fixed = matrix.template block<2, 2>(1, 1);
+    EXPECT_EQ(fixed, (Matrix<double, 2, 2, StorageOrder>({6.0, 7.0, 10.0, 11.0})));
+    const Matrix<double, 3, 2, StorageOrder> dynamic = matrix.block(0, 2, 3, 2);
+    EXPECT_EQ(dynamic, (Matrix<double, 3, 2, StorageOrder>({3.0, 4.0, 7.0, 8.0, 11.0, 12.0})));
+
+    auto safe_expression_block = (matrix + matrix).template block<1, 2>(0, 0);
+    const Matrix<double, 1, 2, StorageOrder> safe_expression_value = safe_expression_block;
+    EXPECT_EQ(safe_expression_value, (Matrix<double, 1, 2, StorageOrder>({2.0, 4.0})));
+
+    auto temporary_const_view_row =
+      MatrixView<const double, Dynamic, Dynamic, StorageOrder>(matrix.data(), 3, 4).row(1);
+    const Matrix<double, 1, 4, StorageOrder> temporary_view_value = temporary_const_view_row;
+    EXPECT_EQ(temporary_view_value, (Matrix<double, 1, 4, StorageOrder>({5.0, 6.0, 7.0, 8.0})));
+
+    double mutable_view_data[4] {1.0, 2.0, 3.0, 4.0};
+    MatrixView<double, 2, 2, StorageOrder> mutable_view(mutable_view_data);
+    auto temporary_mutable_view_row =
+      MatrixView<double, 2, 2, StorageOrder>(mutable_view_data).row(1);
+    static_assert(decltype(temporary_mutable_view_row)::ReadOnly == 0);
+    temporary_mutable_view_row(0, 0) = 9.0;
+    EXPECT_DOUBLE_EQ(mutable_view(1, 0), 9.0);
+
+    auto computed = matrix + matrix;
+    auto computed_row = computed.row(0);
+    static_assert(std::bidirectional_iterator<typename decltype(computed_row)::iterator>);
+    double computed_sum = 0.0;
+    for (const double value : computed_row) { computed_sum += value; }
+    EXPECT_DOUBLE_EQ(computed_sum, 20.0);
+
+    auto row = matrix.row(1);
+    int count = 0;
+    double sum = 0.0;
+    for (const double value : row) {
+        ++count;
+        sum += value;
+    }
+    EXPECT_EQ(count, row.size());
+    EXPECT_DOUBLE_EQ(sum, 26.0);
+
+    matrix.row(2) = {30.0, 31.0, 32.0, 33.0};
+    EXPECT_EQ(matrix.row(2), (Matrix<double, 1, 4, StorageOrder>({30.0, 31.0, 32.0, 33.0})));
+
+    matrix_type named_assignment({1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0});
+    auto destination = named_assignment.template block<2, 2>(0, 0);
+    auto source = named_assignment.template block<2, 2>(1, 2);
+    destination = source;
+    EXPECT_EQ(
+      named_assignment,
+      (matrix_type({7.0, 8.0, 3.0, 4.0, 11.0, 12.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0})));
+
+    matrix_type temporary_assignment({1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0});
+    temporary_assignment.template block<2, 2>(0, 0) = temporary_assignment.template block<2, 2>(1, 2);
+    EXPECT_EQ(
+      temporary_assignment,
+      (matrix_type({7.0, 8.0, 3.0, 4.0, 11.0, 12.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0})));
+
+    matrix_type view_owner({1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0});
+    MatrixView<double, 3, 4, StorageOrder> view(view_owner.data());
+    double* const binding = view.data();
+    auto view_destination = view.template block<2, 2>(0, 0);
+    auto view_source = view.template block<2, 2>(1, 2);
+    view_destination = view_source;
+    EXPECT_EQ(view.data(), binding);
+    EXPECT_EQ(
+      view_owner,
+      (matrix_type({7.0, 8.0, 3.0, 4.0, 11.0, 12.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0})));
+}
+
 }   // namespace
 
 TEST(NativeDenseMatrix, OwnerShapeStorageAndVectorCopy) {
@@ -353,6 +616,11 @@ TEST(NativeDenseMatrix, ArithmeticExpressionNesting) {
 TEST(NativeDenseMatrix, AssignmentOperationsMaterializeAliases) {
     check_assignment_alias_materialization<RowMajor>();
     check_assignment_alias_materialization<ColMajor>();
+}
+
+TEST(NativeDenseMatrix, BlocksRemainBoundedViews) {
+    check_block_view_behavior<RowMajor>();
+    check_block_view_behavior<ColMajor>();
 }
 
 }   // namespace fdapde
