@@ -278,6 +278,42 @@ template <int StorageOrder> void check_matrix_vectorwise_runtime_contracts() {
     EXPECT_THROW(static_cast<void>(col_sums[3]), std::out_of_range);
 }
 
+template <int StorageOrder> void check_matrix_reduction_runtime_contracts() {
+    const Matrix<double, 2, 3, StorageOrder> negative(
+      {-4.0, -2.0, -3.0, -9.0, -8.0, -7.0});
+    EXPECT_DOUBLE_EQ(negative.max(), -2.0);
+    EXPECT_EQ(
+      negative.rowwise().max(),
+      (Matrix<double, 2, 1, StorageOrder>({-2.0, -7.0})));
+    EXPECT_EQ(
+      negative.colwise().max(),
+      (Matrix<double, 1, 3, StorageOrder>({-4.0, -2.0, -3.0})));
+
+    const Matrix<int, Dynamic, Dynamic, StorageOrder> dynamic_negative =
+      Matrix<int, 2, 3, StorageOrder>({-6, -5, -4, -3, -2, -1});
+    EXPECT_EQ(dynamic_negative.max(), -1);
+
+    const Matrix<double, Dynamic, Dynamic, StorageOrder> empty;
+    EXPECT_DOUBLE_EQ(empty.sum(), 0.0);
+    EXPECT_DOUBLE_EQ(empty.prod(), 1.0);
+
+    const Matrix<double, 2, Dynamic, StorageOrder> empty_row_axes(2, 0);
+    EXPECT_EQ(
+      empty_row_axes.rowwise().sum(),
+      (Matrix<double, 2, 1, StorageOrder>({0.0, 0.0})));
+    EXPECT_EQ(
+      empty_row_axes.rowwise().prod(),
+      (Matrix<double, 2, 1, StorageOrder>({1.0, 1.0})));
+
+    const Matrix<double, Dynamic, 3, StorageOrder> empty_col_axes(0, 3);
+    EXPECT_EQ(
+      empty_col_axes.colwise().sum(),
+      (Matrix<double, 1, 3, StorageOrder>({0.0, 0.0, 0.0})));
+    EXPECT_EQ(
+      empty_col_axes.colwise().prod(),
+      (Matrix<double, 1, 3, StorageOrder>({1.0, 1.0, 1.0})));
+}
+
 }   // namespace
 
 TEST(LinearAlgebraRuntimeContracts, DynamicSquareOperationsRemainAvailable) {
@@ -473,6 +509,11 @@ TEST(LinearAlgebraRuntimeContracts, MatrixCoeffWiseChecksShapesAndIndexes) {
 TEST(LinearAlgebraRuntimeContracts, MatrixVectorWiseChecksShapesAndIndexes) {
     check_matrix_vectorwise_runtime_contracts<RowMajor>();
     check_matrix_vectorwise_runtime_contracts<ColMajor>();
+}
+
+TEST(LinearAlgebraRuntimeContracts, MatrixReductionsPreserveSignedExtremaAndEmptyIdentities) {
+    check_matrix_reduction_runtime_contracts<RowMajor>();
+    check_matrix_reduction_runtime_contracts<ColMajor>();
 }
 
 }   // namespace fdapde

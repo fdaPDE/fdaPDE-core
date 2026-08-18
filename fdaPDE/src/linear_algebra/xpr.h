@@ -269,7 +269,7 @@ template <typename XprType_> struct MatrixExpr {
     constexpr auto max() const {
         using Scalar = typename XprType::Scalar;
         return redux(
-          std::numeric_limits<Scalar>::min(), [](const Scalar& tmp, const Scalar& x) { return tmp > x ? tmp : x; });
+          std::numeric_limits<Scalar>::lowest(), [](const Scalar& tmp, const Scalar& x) { return tmp > x ? tmp : x; });
     }
     constexpr auto min() const {
         using Scalar = typename XprType::Scalar;

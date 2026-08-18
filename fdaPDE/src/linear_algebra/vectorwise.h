@@ -131,7 +131,8 @@ struct MatrixVectorWiseOp : public MatrixExpr<MatrixVectorWiseOp<XprType_, ByRow
         return sum() / size_;
     }
     constexpr auto max() const {
-        return redux(xpr_, std::numeric_limits<Scalar>::min(), [](Scalar tmp, Scalar x) { return tmp > x ? tmp : x; });
+        return redux(
+          xpr_, std::numeric_limits<Scalar>::lowest(), [](Scalar tmp, Scalar x) { return tmp > x ? tmp : x; });
     }
     constexpr auto min() const {
         return redux(xpr_, std::numeric_limits<Scalar>::max(), [](Scalar tmp, Scalar x) { return tmp < x ? tmp : x; });
