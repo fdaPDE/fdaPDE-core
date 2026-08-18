@@ -20,9 +20,9 @@ using namespace fdapde;
 
 TEST(execution, chase_lev_queue) {
     const int num_elements = 100000;
-    const int num_thieves = fdapde::available_concurrency() - 1;
+    const int num_thieves = 2;
     
-    internals::chase_lev_queue<int> queue(131072);
+    internals::chase_lev_queue<int> queue(1024);   // force repeated circular-slot reuse
 
     std::atomic<bool> start_signal {false};
     std::atomic<bool> owner_done   {false};
@@ -34,9 +34,9 @@ TEST(execution, chase_lev_queue) {
     for (int i = 0; i < num_thieves; ++i) {
         thieves.emplace_back([&, i]() {
             // spin until owner starts pushing to maximize immediate contention
-            while (!start_signal.load(std::memory_order_relaxed));
+            while (!start_signal.load(std::memory_order_acquire));
 	    // start stealing
-            while (!owner_done.load(std::memory_order_relaxed) || !queue.empty()) {
+            while (!owner_done.load(std::memory_order_acquire) || !queue.empty()) {
                 auto val = queue.pop_back();
                 if (val) { thief_results[i].push_back(*val); }
             }
@@ -45,7 +45,7 @@ TEST(execution, chase_lev_queue) {
     // producer thread
     std::vector<int> owner_results;
     owner_results.reserve(num_elements);
-    start_signal.store(true);
+    start_signal.store(true, std::memory_order_release);
     for (int i = 1; i <= num_elements; ++i) {
         // push
         while (!queue.push_front(i)) { std::this_thread::yield(); }
@@ -55,7 +55,7 @@ TEST(execution, chase_lev_queue) {
             if (val) { owner_results.push_back(*val); }
         }
     }
-    owner_done.store(true);
+    owner_done.store(true, std::memory_order_release);
     // wait stealers to finish
     for (auto& t : thieves) { t.join(); }
 
