@@ -15,96 +15,68 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <fdaPDE/execution.h>
+#include <gtest/gtest.h>
 
-#include <gtest/gtest.h>   // testing framework
-using namespace fdapde;
+#include <atomic>
+#include <functional>
+#include <numeric>
+#include <string>
+#include <vector>
 
-TEST(execution, parallel_for) {
-    std::vector<double> v1;
-    v1.resize(1000000);
-    for (int i = 0; i < int(v1.size()); ++i) { v1[i] = 1; }
-    std::vector<double> v2;
-    v2.resize(1000000);
-    for (int i = 0; i < int(v2.size()); ++i) { v2[i] = 2; }
-    std::vector<double> v3;
-    v3.resize(1000000);
-    std::fill(v3.begin(), v3.end(), 0);
+TEST(ExecutionParallelAlgorithms, ParallelForSupportsPartitioningSteppingAndEmptyRanges) {
+    std::vector<int> values(64, 0);
 
-    int batch_size = 10000;
-    fdapde::parallel_for(0, v1.size(), batch_size, [&](int i) { v3[i] += (v1[i] + v2[i]); });
-    for (double val : v3) { EXPECT_EQ(val, 3.0); }
+    fdapde::parallel_for(0, 64, 7, [&](int i) { values[static_cast<std::size_t>(i)] += 1; });
+    fdapde::parallel_for(0, 64, [&](int i) { values[static_cast<std::size_t>(i)] += 2; });
+    fdapde::parallel_for(
+      0, 64, 3, [&](int i) { values[static_cast<std::size_t>(i)] += 4; }, [](int i) { return i + 2; });
+    fdapde::parallel_for(4, 4, [&](int) { FAIL() << "empty ranges must not execute"; });
+    fdapde::parallel_for(5, 4, [&](int) { FAIL() << "reversed ranges must not execute"; });
 
-    // default batch_size
-    fdapde::parallel_for(0, v1.size(), [&](int i) { v3[i] += (v1[i] + v2[i]); });
-    for (double val : v3) { EXPECT_EQ(val, 6.0); }
+    for (int i = 0; i < 64; ++i) { EXPECT_EQ(values[static_cast<std::size_t>(i)], i % 2 == 0 ? 7 : 3); }
+}
 
-    // nested parallel_for (check each iteration is eventually considered)
-    int outer_size = 10;
-    int inner_size = 100;
-    std::vector<int> v4(inner_size * outer_size, 0);
-    std::atomic<int> counter;
+TEST(ExecutionParallelAlgorithms, ParallelForEachVisitsEachElementExactlyOnce) {
+    std::vector<int> values(97, 0);
 
-    fdapde::parallel_for(0, outer_size, [&](int i) {
-        fdapde::parallel_for(0, inner_size, [&](int j) { v4[i * inner_size + j] = 1; });
-        counter.fetch_add(1, std::memory_order_release);
+    fdapde::parallel_for_each(values, 11, [](int& value) { value += 1; });
+    fdapde::parallel_for_each(values, [](int& value) { value += 2; });
+
+    for (int value : values) { EXPECT_EQ(value, 3); }
+}
+
+TEST(ExecutionParallelAlgorithms, ParallelReduceHonorsTheInitialValueAndRawPointers) {
+    const std::vector<int> factors {2, 3, 4};
+    EXPECT_EQ(fdapde::parallel_reduce(factors.begin(), factors.end(), 2, 5, std::multiplies<>()), 120);
+    EXPECT_EQ(fdapde::parallel_reduce(factors.begin(), factors.end(), 5, std::multiplies<>()), 120);
+
+    const int values[] {1, 2, 3};
+    EXPECT_EQ(fdapde::parallel_reduce(values, values + 3, 2, 10, std::plus<>()), 16);
+    EXPECT_EQ(fdapde::parallel_reduce(values, values, 42, std::plus<>()), 42);
+
+    const std::vector<std::string> tokens {"a", "b", "c", "d"};
+    EXPECT_EQ(
+      fdapde::parallel_reduce(tokens.begin(), tokens.end(), 2, std::string("seed:"), std::plus<>()), "seed:abcd");
+}
+
+TEST(ExecutionParallelAlgorithms, NestedAlgorithmsCompleteBeforeTheirCallerReturns) {
+    constexpr int outer_size = 8;
+    constexpr int inner_size = 32;
+    std::vector<int> values(static_cast<std::size_t>(outer_size * inner_size), 0);
+    std::atomic<int> completed_rows {0};
+
+    fdapde::parallel_for(0, outer_size, [&](int row) {
+        const int begin = row * inner_size;
+        const int end = begin + inner_size;
+        fdapde::parallel_for(begin, end, [&](int i) { values[static_cast<std::size_t>(i)] = row + 1; });
+        const int sum = fdapde::parallel_reduce(values.data() + begin, values.data() + end, 0, std::plus<>());
+        if (sum == (row + 1) * inner_size) { completed_rows.fetch_add(1, std::memory_order_relaxed); }
     });
 
-    for (int val : v4) { EXPECT_EQ(val, 1); }   // all iterations considered
-    EXPECT_EQ(counter.load(), outer_size);      // all outer itereations waited for the inner iteration and proceed
-
-    // nesting a paralle_reduce inside a parallel_for
-    std::vector<int> v5(10000);
-    std::mt19937 rng(std::random_device {}());
-    std::uniform_int_distribution<> dist(1, 1000000);
-    int expected_max = 0;
-    for (int i = 0, n = v5.size(); i < n; ++i) {
-        int tmp = dist(rng);
-        if (tmp > expected_max) { expected_max = tmp; }
-        v5[i] = tmp;
-    }
-    std::vector<int> v6(parallel_get_num_threads(), 0);
-    // parallel computation of maximum
-    fdapde::parallel_for(0, v5.size() / 100, 100, [&](int i) {
-        int partial_max =
-          fdapde::parallel_reduce(v5.begin() + (i * 100), v5.begin() + ((i + 1) * 100 - 1), int(0), [](int a, int b) {
-              return std::max(a, b);
-          });
-        v6[this_thread_id()] = std::max(v6[this_thread_id()], partial_max);
-    });
-
-    int computed_max = 0;
-    for(int val : v6) { computed_max = std::max(computed_max, val); }
-    EXPECT_EQ(computed_max, expected_max);
-
-    // parallel for with custom stepping logic
-    std::vector<int> v7(10000, 0);
-    fdapde::parallel_for(0, v7.size(), [&](int i) { v7[i] = 1; }, [](int i) { return i + 2; });
-    // only even indices must be 1
-    for (int i = 0, n = v7.size(); i < n; ++i) {
-        if (i % 2 == 0) {
-            EXPECT_EQ(v7[i], 1);
-        } else {
-            EXPECT_EQ(v7[i], 0);
+    EXPECT_EQ(completed_rows.load(std::memory_order_relaxed), outer_size);
+    for (int row = 0; row < outer_size; ++row) {
+        for (int column = 0; column < inner_size; ++column) {
+            EXPECT_EQ(values[static_cast<std::size_t>(row * inner_size + column)], row + 1);
         }
     }
 }
-
-TEST(execution, parallel_for_each) {
-    std::vector<double> v;
-    v.resize(10000);
-    for(int i = 0, n = v.size(); i < n; ++i) { v[i] = 0; }
-
-    fdapde::parallel_for_each(v, [&](auto& i) { i += 1; });   // check all items are seen exactly once
-    for(int i = 0, n = v.size(); i < n; ++i) { EXPECT_EQ(v[i], 1); }
-}
-
-TEST(execution, parallel_reduce) {
-    std::vector<double> v;
-    v.resize(10000);
-    for(int i = 0, n = v.size(); i < n; ++i) { v[i] = 1; }
-
-    // compute parallel sum
-    int sum = fdapde::parallel_reduce(v.begin(), v.end(), int(0), [](auto a, auto b) { return a + b; });
-    EXPECT_EQ(sum, int(v.size()));
-}
-
