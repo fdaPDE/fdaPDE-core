@@ -76,7 +76,9 @@ template <typename XprType_> struct Diagonal : public MatrixExpr<Diagonal<XprTyp
         fdapde_static_assert(
           internals::is_dynamic_sized_v<XprType> || XprType::Rows == XprType::Cols,
           DIAGONAL_BLOCKS_ARE_FOR_SQUARE_MATRICES_ONLY);
-        if constexpr (internals::is_dynamic_sized_v<XprType>) { fdapde_assert(xpr_.rows() == xpr_.cols()); }
+        if constexpr (internals::is_dynamic_sized_v<XprType>) {
+            if (xpr_.rows() != xpr_.cols()) { throw std::invalid_argument("diagonal requires a square matrix"); }
+        }
     }
     // copy-semantic
     constexpr Diagonal(const Diagonal& other) :
@@ -90,20 +92,20 @@ template <typename XprType_> struct Diagonal : public MatrixExpr<Diagonal<XprTyp
     using Base::operator=;
     // const access
     constexpr Scalar operator()(int i, int j) const {
-        fdapde_assert(i >= 0 && i < rows() && j >= 0 && j < cols());
+        if (i < 0 || i >= rows() || j < 0 || j >= cols()) { throw std::out_of_range("diagonal index out of range"); }
         return xpr_(i, i);
     }
     constexpr Scalar operator[](int i) const {
-        fdapde_assert(i >= 0 && i < rows());
+        if (i < 0 || i >= rows()) { throw std::out_of_range("diagonal index out of range"); }
         return xpr_(i, i);
     }
     // non-const access
     constexpr Scalar& operator()(int i, int j) {
-        fdapde_assert(i >= 0 && i < rows() && j >= 0 && j < cols());
+        if (i < 0 || i >= rows() || j < 0 || j >= cols()) { throw std::out_of_range("diagonal index out of range"); }
         return xpr_(i, i);
     }
     constexpr Scalar& operator[](int i) {
-        fdapde_assert(i >= 0 && i < rows());
+        if (i < 0 || i >= rows()) { throw std::out_of_range("diagonal index out of range"); }
         return xpr_(i, i);
     }
     // observers

@@ -290,7 +290,9 @@ template <typename XprType_> struct MatrixExpr {
         fdapde_static_assert(
           Rows == Dynamic || Cols == Dynamic || Rows == Cols, THIS_METHODS_IS_FOR_SQUARE_MATRICES_ONLY);
         if constexpr (Rows == Dynamic || Cols == Dynamic) {
-            fdapde_assert(derived().rows() == derived().cols());
+            if (derived().rows() != derived().cols()) {
+                throw std::invalid_argument("symmetric part requires a square matrix");
+            }
         }
         return 0.5 * (derived() + derived().transpose());   // symmetric part
     }
@@ -299,7 +301,9 @@ template <typename XprType_> struct MatrixExpr {
         fdapde_static_assert(
           Rows == Dynamic || Cols == Dynamic || Rows == Cols, THIS_METHODS_IS_FOR_SQUARE_MATRICES_ONLY);
         if constexpr (Rows == Dynamic || Cols == Dynamic) {
-            fdapde_assert(derived().rows() == derived().cols());
+            if (derived().rows() != derived().cols()) {
+                throw std::invalid_argument("skew-symmetric part requires a square matrix");
+            }
         }
         return 0.5 * (derived() - derived().transpose());   // skew-symmetric part
     }
@@ -308,11 +312,10 @@ template <typename XprType_> struct MatrixExpr {
         constexpr int Rows = XprType::Rows, Cols = XprType::Cols;
         fdapde_static_assert(
           Rows == Dynamic || Cols == Dynamic || Rows == Cols, THIS_METHODS_IS_FOR_SQUARE_MATRICES_ONLY);
-        if constexpr (Rows == Dynamic || Cols == Dynamic) { fdapde_assert(derived().rows() == derived().cols()); }
         Matrix<Scalar, Rows, Cols> inverse_;
         const XprType& m = derived();
         const int rows_ = m.rows(), cols_ = m.cols();
-        fdapde_assert(rows_ == cols_);
+        if (rows_ != cols_) { throw std::invalid_argument("inverse requires a square matrix"); }
         if constexpr (Rows == Dynamic || Cols == Dynamic) { inverse_.resize(rows_, cols_); }
         // inverse computation
         if (rows_ == 1) {
@@ -363,12 +366,9 @@ template <typename XprType_> struct MatrixExpr {
         constexpr int Rows = XprType::Rows, Cols = XprType::Cols;
         fdapde_static_assert(
           Rows == Dynamic || Cols == Dynamic || Rows == Cols, THIS_METHODS_IS_FOR_SQUARE_MATRICES_ONLY);
-        if constexpr (Rows == Dynamic || Cols == Dynamic) {
-            fdapde_assert(derived().rows() == derived().cols());
-        }
         const XprType& m = derived();
         const int rows_ = m.rows(), cols_ = m.cols();
-        fdapde_assert(rows_ == cols_);
+        if (rows_ != cols_) { throw std::invalid_argument("determinant requires a square matrix"); }
 	// determinant computation
         if (rows_ == 1) { return m(0, 0); }
         if (rows_ == 2) {
