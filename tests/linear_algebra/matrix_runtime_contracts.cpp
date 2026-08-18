@@ -27,10 +27,11 @@ TEST(LinearAlgebraRuntimeContracts, DynamicSquareOperationsRemainAvailable) {
     Matrix<double, Dynamic, Dynamic> matrix = Matrix<double, 2, 2>({2, 1, 1, 3});
     const Matrix<double, 2, 2> zero = Matrix<double, 2, 2>::Zero();
     const Vector<double, 2> expected_diagonal({2, 3});
+    const Matrix<double, Dynamic, Dynamic> inverse = matrix.inverse();
 
     EXPECT_EQ(matrix.symm_part(), matrix);
     EXPECT_EQ(matrix.skew_part(), zero);
-    EXPECT_TRUE(almost_equal(matrix.inverse() * matrix, Matrix<double, 2, 2>({1, 0, 0, 1})));
+    EXPECT_TRUE(almost_equal(inverse * matrix, Matrix<double, 2, 2>({1, 0, 0, 1})));
     EXPECT_EQ(matrix.determinant(), 5);
     EXPECT_EQ(matrix.diagonal(), expected_diagonal);
 }

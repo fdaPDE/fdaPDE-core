@@ -311,7 +311,7 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
     constexpr Matrix() : data_() { }
     // copy semantic
     constexpr Matrix(const Matrix& other) : Base() { clone_(other); }
-    constexpr Matrix& operator=(const Matrix& other) {
+    constexpr Matrix& operator=(const Matrix& other) & {
         clone_(other);
         return *this;
     }
@@ -422,7 +422,7 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
             }
         }
     }
-    constexpr Matrix& operator=(const std::initializer_list<Scalar>& data) {
+    constexpr Matrix& operator=(const std::initializer_list<Scalar>& data) & {
         fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
         const int size = internals::checked_matrix_data_size(data.size());
         if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) {

@@ -32,10 +32,12 @@ template <typename XprType> struct TransposeOp : public MatrixExpr<TransposeOp<X
     static constexpr int Cols = XprType::Rows;
     static constexpr int StorageOrder = XprType::StorageOrder;
     static constexpr int NestAsRef = 0;
-    static constexpr int ReadOnly = std::is_const_v<std::remove_reference_t<XprType>>;
+    static constexpr int ReadOnly = 1;
 
     template <typename XprType_>
-        requires(std::is_constructible_v<XprTypeNested, XprType_>)
+        requires(
+          !std::same_as<std::remove_cvref_t<XprType_>, TransposeOp> &&
+          internals::safely_nestable<XprTypeNested, XprType_>)
     explicit constexpr TransposeOp(XprType_&& xpr) : xpr_(std::forward<XprType_>(xpr)) { }
     constexpr Scalar operator()(int i, int j) const { return xpr_(j, i); }
     constexpr Scalar operator[](int i) const {

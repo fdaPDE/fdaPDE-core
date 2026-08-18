@@ -46,8 +46,8 @@ struct MatrixBinOp : public MatrixExpr<MatrixBinOp<LhsXprType_, RhsXprType_, Bin
     static constexpr int ReadOnly = 1;
 
     template <typename LhsXprType__, typename RhsXprType__>
-        requires(std::is_constructible_v<LhsXprTypeNested, LhsXprType__> &&
-                 std::is_constructible_v<RhsXprTypeNested, RhsXprType__>)
+        requires(internals::safely_nestable<LhsXprTypeNested, LhsXprType__> &&
+                 internals::safely_nestable<RhsXprTypeNested, RhsXprType__>)
     constexpr MatrixBinOp(LhsXprType__&& lhs, RhsXprType__&& rhs, BinaryOp op) :
         lhs_(std::forward<LhsXprType__>(lhs)), rhs_(std::forward<RhsXprType__>(rhs)), op_(op) {
         if constexpr (internals::is_dynamic_sized_v<LhsXprType> || internals::is_dynamic_sized_v<RhsXprType>) {
@@ -83,6 +83,16 @@ constexpr auto operator-(const MatrixExpr<LhsXprType>& lhs, const MatrixExpr<Rhs
     return MatrixBinOp<LhsXprType, RhsXprType, std::minus<>>(lhs.derived(), rhs.derived(), std::minus<>());
 }
 
+template <internals::matrix_expression Lhs, internals::matrix_expression Rhs>
+    requires(
+      internals::is_owning_rvalue_expression_v<Lhs&&> || internals::is_owning_rvalue_expression_v<Rhs&&>)
+constexpr void operator+(Lhs&&, Rhs&&) = delete;
+
+template <internals::matrix_expression Lhs, internals::matrix_expression Rhs>
+    requires(
+      internals::is_owning_rvalue_expression_v<Lhs&&> || internals::is_owning_rvalue_expression_v<Rhs&&>)
+constexpr void operator-(Lhs&&, Rhs&&) = delete;
+
 // expression of the scalar-matrix multiplication between a scalar and a MatrixExpr
 template <typename XprType_, typename ScalarType>
 struct MatrixScalarMultiplicationOp : public MatrixExpr<MatrixScalarMultiplicationOp<XprType_, ScalarType>> {
@@ -98,7 +108,7 @@ struct MatrixScalarMultiplicationOp : public MatrixExpr<MatrixScalarMultiplicati
     static constexpr int ReadOnly = 1;
 
     template <typename XprType__>
-        requires(std::is_constructible_v<XprType, XprType__>)
+        requires(internals::safely_nestable<XprTypeNested, XprType__>)
     constexpr MatrixScalarMultiplicationOp(XprType__&& xpr, ScalarType s) :
         xpr_(std::forward<XprType__>(xpr)), s_(s) { }
     constexpr Scalar operator()(int i, int j) const { return xpr_(i, j) * s_; }
@@ -124,11 +134,24 @@ template <typename XprType, typename ScalarType>
 constexpr auto operator*(ScalarType lhs, const MatrixExpr<XprType>& rhs) {
     return rhs * lhs;
 }
+
+template <internals::matrix_expression XprType, typename ScalarType>
+    requires(std::is_arithmetic_v<ScalarType> && internals::is_owning_rvalue_expression_v<XprType&&>)
+constexpr void operator*(XprType&&, ScalarType) = delete;
+
+template <typename ScalarType, internals::matrix_expression XprType>
+    requires(std::is_arithmetic_v<ScalarType> && internals::is_owning_rvalue_expression_v<XprType&&>)
+constexpr void operator*(ScalarType, XprType&&) = delete;
+
 template <typename XprType, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
 constexpr auto operator/(const MatrixExpr<XprType>& lhs, ScalarType rhs) {
     return MatrixScalarMultiplicationOp<XprType, ScalarType>(lhs.derived(), ScalarType(1) / rhs);
 }
+
+template <internals::matrix_expression XprType, typename ScalarType>
+    requires(std::is_arithmetic_v<ScalarType> && internals::is_owning_rvalue_expression_v<XprType&&>)
+constexpr void operator/(XprType&&, ScalarType) = delete;
 
 // expression of the matrix-product of two MatrixExpr operands
 template <typename LhsXprType_, typename RhsXprType_, typename Executor>
@@ -152,8 +175,8 @@ struct MatrixMultiplicationOp : public MatrixExpr<MatrixMultiplicationOp<LhsXprT
     static constexpr int ReadOnly = 1;
 
     template <typename LhsXprType__, typename RhsXprType__>
-        requires(std::is_constructible_v<LhsXprTypeNested, LhsXprType__> &&
-                 std::is_constructible_v<RhsXprTypeNested, RhsXprType__>)
+        requires(internals::safely_nestable<LhsXprTypeNested, LhsXprType__> &&
+                 internals::safely_nestable<RhsXprTypeNested, RhsXprType__>)
     constexpr MatrixMultiplicationOp(LhsXprType__&& lhs, RhsXprType__&& rhs) :
         lhs_(std::forward<LhsXprType__>(lhs)), rhs_(std::forward<RhsXprType__>(rhs)) {
         if constexpr (internals::is_dynamic_sized_v<LhsXprType> || internals::is_dynamic_sized_v<RhsXprType>) {
@@ -218,6 +241,11 @@ constexpr auto operator*(const MatrixExpr<LhsXprType_>& lhs, const MatrixExpr<Rh
     }
 }
 
+template <internals::matrix_expression Lhs, internals::matrix_expression Rhs>
+    requires(
+      internals::is_owning_rvalue_expression_v<Lhs&&> || internals::is_owning_rvalue_expression_v<Rhs&&>)
+constexpr void operator*(Lhs&&, Rhs&&) = delete;
+
 // specialized binary operations
 
 // expression of the dense kronecker tensor product between two MatrixExpr operands
@@ -234,13 +262,14 @@ struct MatrixKroneckerProductOp : public MatrixExpr<MatrixKroneckerProductOp<Lhs
       LhsXprType::Rows == Dynamic || RhsXprType::Rows == Dynamic ? Dynamic : LhsXprType::Rows * RhsXprType::Rows;
     static constexpr int Cols =
       LhsXprType::Cols == Dynamic || RhsXprType::Cols == Dynamic ? Dynamic : LhsXprType::Cols * RhsXprType::Cols;
-    static constexpr int StrageOrder =
+    static constexpr int StorageOrder =
       internals::promote_storage_order_v<LhsXprType::StorageOrder, RhsXprType::StorageOrder>;
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
 
     template <typename LhsXprType__, typename RhsXprType__>
-        requires(std::is_constructible_v<LhsXprType, LhsXprType__> && std::is_constructible_v<RhsXprType, RhsXprType__>)
+        requires(internals::safely_nestable<LhsXprTypeNested, LhsXprType__> &&
+                 internals::safely_nestable<RhsXprTypeNested, RhsXprType__>)
     constexpr MatrixKroneckerProductOp(LhsXprType__&& lhs, RhsXprType__&& rhs) :
         lhs_(std::forward<LhsXprType__>(lhs)), rhs_(std::forward<RhsXprType__>(rhs)) { }
     constexpr Scalar operator()(int i, int j) const {
@@ -269,6 +298,11 @@ kron(const MatrixExpr<LhsXprType>& op1, const MatrixExpr<RhsXprType>& op2) {
     return MatrixKroneckerProductOp<LhsXprType, RhsXprType> {op1.derived(), op2.derived()};
 }
 
+template <internals::matrix_expression Lhs, internals::matrix_expression Rhs>
+    requires(
+      internals::is_owning_rvalue_expression_v<Lhs&&> || internals::is_owning_rvalue_expression_v<Rhs&&>)
+constexpr void kron(Lhs&&, Rhs&&) = delete;
+
 // expression of the cross product between two vector expressions
 template <typename LhsXprType_, typename RhsXprType_>
 struct MatrixCrossProductOp : public MatrixExpr<MatrixCrossProductOp<LhsXprType_, RhsXprType_>> {
@@ -285,13 +319,14 @@ struct MatrixCrossProductOp : public MatrixExpr<MatrixCrossProductOp<LhsXprType_
     using Scalar = promote_type_t<typename LhsXprType::Scalar, typename RhsXprType::Scalar>;
     static constexpr int Rows = 3;
     static constexpr int Cols = 1;
-    static constexpr int StrageOrder =
+    static constexpr int StorageOrder =
       internals::promote_storage_order_v<LhsXprType::StorageOrder, RhsXprType::StorageOrder>;
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
 
     template <typename LhsXprType__, typename RhsXprType__>
-        requires(std::is_constructible_v<LhsXprType, LhsXprType__> && std::is_constructible_v<RhsXprType, RhsXprType__>)
+        requires(internals::safely_nestable<LhsXprTypeNested, LhsXprType__> &&
+                 internals::safely_nestable<RhsXprTypeNested, RhsXprType__>)
     constexpr MatrixCrossProductOp(LhsXprType__&& lhs, RhsXprType__&& rhs) :
         lhs_(std::forward<LhsXprType__>(lhs)), rhs_(std::forward<RhsXprType__>(rhs)) {
         if constexpr (internals::is_dynamic_sized_v<LhsXprType> || internals::is_dynamic_sized_v<RhsXprType>) {

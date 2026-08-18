@@ -18,6 +18,7 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <initializer_list>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -31,6 +32,126 @@ static_assert(std::is_default_constructible_v<MatrixView<int, Dynamic, 3>>);
 static_assert(std::is_same_v<decltype(std::declval<MatrixView<int, 2, 3>&>().data()), int*>);
 static_assert(std::is_same_v<decltype(std::declval<const MatrixView<int, 2, 3>&>().data()), const int*>);
 static_assert(std::is_same_v<decltype(std::declval<MatrixView<const int, 2, 3>&>().data()), const int*>);
+
+template <typename Matrix>
+concept permits_left_temporary_add = requires(Matrix& named) { Matrix {} + named; };
+
+template <typename Matrix>
+concept permits_right_temporary_add = requires(Matrix& named) { named + Matrix {}; };
+
+template <typename Matrix>
+concept permits_left_temporary_subtract = requires(Matrix& named) { Matrix {} - named; };
+
+template <typename Matrix>
+concept permits_right_temporary_subtract = requires(Matrix& named) { named - Matrix {}; };
+
+template <typename Matrix>
+concept permits_temporary_scalar_multiply = requires { Matrix {} * 2.0; };
+
+template <typename Matrix>
+concept permits_scalar_temporary_multiply = requires { 2.0 * Matrix {}; };
+
+template <typename Matrix>
+concept permits_temporary_scalar_divide = requires { Matrix {} / 2.0; };
+
+template <typename Matrix>
+concept permits_left_temporary_product = requires(Matrix& named) { Matrix {} * named; };
+
+template <typename Matrix>
+concept permits_right_temporary_product = requires(Matrix& named) { named * Matrix {}; };
+
+template <typename Matrix>
+concept permits_left_temporary_kron = requires(Matrix& named) { kron(Matrix {}, named); };
+
+template <typename Matrix>
+concept permits_right_temporary_kron = requires(Matrix& named) { kron(named, Matrix {}); };
+
+template <typename Vector>
+concept permits_left_temporary_cross = requires(Vector& named) { Vector {}.cross(named); };
+
+template <typename Vector>
+concept permits_right_temporary_cross = requires(Vector& named) { named.cross(Vector {}); };
+
+template <typename Matrix>
+concept exposes_temporary_derived = requires { Matrix {}.derived(); };
+
+template <typename Matrix>
+concept permits_temporary_transpose = requires { Matrix {}.transpose(); };
+
+template <typename Matrix>
+concept permits_temporary_symm_part = requires { Matrix {}.symm_part(); };
+
+template <typename Matrix>
+concept permits_temporary_skew_part = requires { Matrix {}.skew_part(); };
+
+template <typename Matrix>
+concept permits_temporary_assignment_add = requires(Matrix& named) { (Matrix {} = named) + named; };
+
+template <typename Matrix>
+concept permits_temporary_add_assignment = requires(Matrix& named) { Matrix {} += named; };
+
+template <typename Matrix>
+concept permits_temporary_subtract_assignment = requires(Matrix& named) { Matrix {} -= named; };
+
+template <typename Matrix>
+concept permits_temporary_scalar_multiply_assignment = requires { Matrix {} *= 2.0; };
+
+template <typename Matrix>
+concept permits_temporary_scalar_divide_assignment = requires { Matrix {} /= 2.0; };
+
+template <typename Matrix>
+concept permits_temporary_product_assignment = requires(Matrix& named) { Matrix {} *= named; };
+
+template <typename Matrix>
+concept permits_temporary_initializer_assignment =
+  requires(std::initializer_list<typename Matrix::Scalar> values) { Matrix {} = values; };
+
+template <typename Matrix>
+concept permits_safe_expression_chaining = requires(Matrix& a, Matrix& b, Matrix& c) {
+    (a + b) + c;
+    (a + b).transpose();
+    (a + b).symm_part();
+    (a + b).skew_part();
+};
+
+template <typename Vector>
+concept permits_safe_cross_chaining =
+  requires(Vector& a, Vector& b, Vector& c) { (a + b).cross(c - b); };
+
+template <typename View>
+concept permits_temporary_view_add =
+  requires(View& named, std::add_pointer_t<typename View::Scalar> data) { View(data) + named; };
+
+using lifetime_matrix = Matrix<double, 2, 2>;
+using lifetime_vector = Matrix<double, 3, 1>;
+using lifetime_initializer_vector = Matrix<double, 2, 1>;
+static_assert(!permits_left_temporary_add<lifetime_matrix>);
+static_assert(!permits_right_temporary_add<lifetime_matrix>);
+static_assert(!permits_left_temporary_subtract<lifetime_matrix>);
+static_assert(!permits_right_temporary_subtract<lifetime_matrix>);
+static_assert(!permits_temporary_scalar_multiply<lifetime_matrix>);
+static_assert(!permits_scalar_temporary_multiply<lifetime_matrix>);
+static_assert(!permits_temporary_scalar_divide<lifetime_matrix>);
+static_assert(!permits_left_temporary_product<lifetime_matrix>);
+static_assert(!permits_right_temporary_product<lifetime_matrix>);
+static_assert(!permits_left_temporary_kron<lifetime_matrix>);
+static_assert(!permits_right_temporary_kron<lifetime_matrix>);
+static_assert(!permits_left_temporary_cross<lifetime_vector>);
+static_assert(!permits_right_temporary_cross<lifetime_vector>);
+static_assert(!exposes_temporary_derived<lifetime_matrix>);
+static_assert(!permits_temporary_transpose<lifetime_matrix>);
+static_assert(!permits_temporary_symm_part<lifetime_matrix>);
+static_assert(!permits_temporary_skew_part<lifetime_matrix>);
+static_assert(!permits_temporary_assignment_add<lifetime_matrix>);
+static_assert(!permits_temporary_add_assignment<lifetime_matrix>);
+static_assert(!permits_temporary_subtract_assignment<lifetime_matrix>);
+static_assert(!permits_temporary_scalar_multiply_assignment<lifetime_matrix>);
+static_assert(!permits_temporary_scalar_divide_assignment<lifetime_matrix>);
+static_assert(!permits_temporary_product_assignment<lifetime_matrix>);
+static_assert(!permits_temporary_initializer_assignment<lifetime_initializer_vector>);
+static_assert(permits_safe_expression_chaining<lifetime_matrix>);
+static_assert(permits_safe_cross_chaining<lifetime_vector>);
+static_assert(permits_temporary_view_add<MatrixView<double, 2, 2>>);
 
 template <int StorageOrder> void check_owner_behavior() {
     using fixed_matrix = Matrix<int, 2, 3, StorageOrder>;
@@ -142,6 +263,41 @@ template <int StorageOrder> void check_numeric_view_behavior() {
     EXPECT_EQ(column_view(2, 0), 1);
 }
 
+template <int StorageOrder> void check_arithmetic_expression_nesting() {
+    using matrix_type = Matrix<double, 2, 3, StorageOrder>;
+    const matrix_type matrix({-4.0, 0.0, 2.0, 1.0, -3.0, 5.0});
+
+    const matrix_type chained_sum = (matrix + matrix) + matrix;
+    EXPECT_EQ(chained_sum, (matrix_type({-12.0, 0.0, 6.0, 3.0, -9.0, 15.0})));
+
+    const Matrix<double, 3, 2, StorageOrder> transposed_sum = (matrix + matrix).transpose();
+    EXPECT_EQ(
+      transposed_sum,
+      (Matrix<double, 3, 2, StorageOrder>({-8.0, 2.0, 0.0, -6.0, 4.0, 10.0})));
+
+    const Matrix<double, 2, 2, StorageOrder> gram = matrix * matrix.transpose();
+    EXPECT_EQ(gram, (Matrix<double, 2, 2, StorageOrder>({20.0, 6.0, 6.0, 35.0})));
+
+    using square_matrix_type = Matrix<double, 2, 2, StorageOrder>;
+    const square_matrix_type square({1.0, 2.0, 3.0, 4.0});
+    const square_matrix_type symmetric = (square + square).symm_part();
+    const square_matrix_type skew = (square + square).skew_part();
+    EXPECT_EQ(symmetric, (square_matrix_type({2.0, 5.0, 5.0, 8.0})));
+    EXPECT_EQ(skew, (square_matrix_type({0.0, -1.0, 1.0, 0.0})));
+
+    using vector_type = Matrix<double, 3, 1, StorageOrder>;
+    const vector_type a({1.0, 0.0, 0.0});
+    const vector_type b({0.0, 1.0, 0.0});
+    const vector_type c({0.0, 0.0, 1.0});
+    const vector_type cross = (a + b).cross(c - b);
+    EXPECT_EQ(cross, (vector_type({1.0, -1.0, -1.0})));
+
+    using cross_expression = decltype(a.cross(b));
+    using kron_expression = decltype(kron(matrix, matrix));
+    static_assert(cross_expression::StorageOrder == StorageOrder);
+    static_assert(kron_expression::StorageOrder == StorageOrder);
+}
+
 }   // namespace
 
 TEST(NativeDenseMatrix, OwnerShapeStorageAndVectorCopy) {
@@ -159,6 +315,11 @@ TEST(NativeDenseMatrix, OwnerShapeStorageAndVectorCopy) {
 TEST(NativeDenseMatrix, NumericViewBindingConstnessAndStorage) {
     check_numeric_view_behavior<RowMajor>();
     check_numeric_view_behavior<ColMajor>();
+}
+
+TEST(NativeDenseMatrix, ArithmeticExpressionNesting) {
+    check_arithmetic_expression_nesting<RowMajor>();
+    check_arithmetic_expression_nesting<ColMajor>();
 }
 
 }   // namespace fdapde

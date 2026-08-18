@@ -26,7 +26,9 @@ template <typename XprType_> struct MatrixExpr {
     using XprType = XprType_;
 
     // assignment
-    template <typename RhsXprType_> constexpr XprType& operator=(const MatrixExpr<RhsXprType_>& rhs) {
+    template <typename RhsXprType_>
+        requires(XprType::ReadOnly == 0)
+    constexpr XprType& operator=(const MatrixExpr<RhsXprType_>& rhs) & {
         using executor = typename XprType::assignment_executor;
         constexpr int Rows = XprType::Rows;
         constexpr int Cols = XprType::Cols;
@@ -40,37 +42,108 @@ template <typename XprType_> struct MatrixExpr {
         executor::run(derived(), rhs.derived(), [](auto& l, const auto& r) { l = r; });
         return derived();
     }
-    template <typename RhsXprType_> constexpr XprType& operator=(const MatrixCoeffWiseExpr<RhsXprType_>& rhs) {
+    template <typename RhsXprType_>
+    constexpr XprType operator=(const MatrixExpr<RhsXprType_>& rhs) &&
+        requires(XprType::NestAsRef == 0 && XprType::ReadOnly == 0)
+    {
+        static_cast<MatrixExpr&>(*this).operator=(rhs);
+        return derived();
+    }
+    template <typename RhsXprType_>
+    constexpr void operator=(const MatrixExpr<RhsXprType_>&) &&
+        requires(XprType::NestAsRef != 0)
+      = delete;
+    template <typename RhsXprType_>
+    constexpr XprType& operator=(const MatrixCoeffWiseExpr<RhsXprType_>& rhs) &
+        requires(XprType::ReadOnly == 0)
+    {
         operator=(rhs.mwise());
         return derived();
     }
+    template <typename RhsXprType_>
+    constexpr XprType operator=(const MatrixCoeffWiseExpr<RhsXprType_>& rhs) &&
+        requires(XprType::NestAsRef == 0 && XprType::ReadOnly == 0)
+    {
+        static_cast<MatrixExpr&>(*this).operator=(rhs);
+        return derived();
+    }
+    template <typename RhsXprType_>
+    constexpr void operator=(const MatrixCoeffWiseExpr<RhsXprType_>&) &&
+        requires(XprType::NestAsRef != 0)
+      = delete;
     // compound algebra
-    template <typename RhsXprType_> constexpr XprType& operator+=(const MatrixExpr<RhsXprType_>& rhs) {
+    template <typename RhsXprType_>
+        requires(XprType::ReadOnly == 0)
+    constexpr XprType& operator+=(const MatrixExpr<RhsXprType_>& rhs) & {
         using executor = typename XprType::assignment_executor;
         executor::run(derived(), rhs.derived(), [](auto& l, const auto& r) { l += r; });
         return derived();
     }
-    template <typename RhsXprType_> constexpr XprType& operator-=(const MatrixExpr<RhsXprType_>& rhs) {
+    template <typename RhsXprType_>
+    constexpr XprType operator+=(const MatrixExpr<RhsXprType_>& rhs) &&
+        requires(XprType::NestAsRef == 0 && XprType::ReadOnly == 0)
+    {
+        static_cast<MatrixExpr&>(*this).operator+=(rhs);
+        return derived();
+    }
+    template <typename RhsXprType_>
+    constexpr void operator+=(const MatrixExpr<RhsXprType_>&) &&
+        requires(XprType::NestAsRef != 0)
+      = delete;
+    template <typename RhsXprType_>
+        requires(XprType::ReadOnly == 0)
+    constexpr XprType& operator-=(const MatrixExpr<RhsXprType_>& rhs) & {
         using executor = typename XprType::assignment_executor;
         executor::run(derived(), rhs.derived(), [](auto& l, const auto& r) { l -= r; });
         return derived();
     }
+    template <typename RhsXprType_>
+    constexpr XprType operator-=(const MatrixExpr<RhsXprType_>& rhs) &&
+        requires(XprType::NestAsRef == 0 && XprType::ReadOnly == 0)
+    {
+        static_cast<MatrixExpr&>(*this).operator-=(rhs);
+        return derived();
+    }
+    template <typename RhsXprType_>
+    constexpr void operator-=(const MatrixExpr<RhsXprType_>&) &&
+        requires(XprType::NestAsRef != 0)
+      = delete;
     template <typename Scalar_>
-        requires(std::is_arithmetic_v<Scalar_>)
-    constexpr XprType& operator*=(Scalar_ rhs) {
+        requires(std::is_arithmetic_v<Scalar_> && XprType::ReadOnly == 0)
+    constexpr XprType& operator*=(Scalar_ rhs) & {
         using executor = typename XprType::assignment_executor;
         executor::run(derived(), derived(), [rhs](auto& l, const auto& r) { l = rhs * r; });
         return derived();
     }
     template <typename Scalar_>
-        requires(std::is_arithmetic_v<Scalar_>)
-    constexpr XprType& operator/=(Scalar_ rhs) {
+        requires(std::is_arithmetic_v<Scalar_> && XprType::NestAsRef == 0 && XprType::ReadOnly == 0)
+    constexpr XprType operator*=(Scalar_ rhs) && {
+        static_cast<MatrixExpr&>(*this).operator*=(rhs);
+        return derived();
+    }
+    template <typename Scalar_>
+        requires(std::is_arithmetic_v<Scalar_> && XprType::NestAsRef != 0)
+    constexpr void operator*=(Scalar_) && = delete;
+    template <typename Scalar_>
+        requires(std::is_arithmetic_v<Scalar_> && XprType::ReadOnly == 0)
+    constexpr XprType& operator/=(Scalar_ rhs) & {
         using executor = typename XprType::assignment_executor;
         executor::run(derived(), derived(), [rhs](auto& l, const auto& r) { l = r / rhs; });
         return derived();
     }
+    template <typename Scalar_>
+        requires(std::is_arithmetic_v<Scalar_> && XprType::NestAsRef == 0 && XprType::ReadOnly == 0)
+    constexpr XprType operator/=(Scalar_ rhs) && {
+        static_cast<MatrixExpr&>(*this).operator/=(rhs);
+        return derived();
+    }
+    template <typename Scalar_>
+        requires(std::is_arithmetic_v<Scalar_> && XprType::NestAsRef != 0)
+    constexpr void operator/=(Scalar_) && = delete;
     // compound matrix multiplication
-    template <typename RhsXprType_> constexpr XprType& operator*=(const MatrixExpr<RhsXprType_>& rhs) {
+    template <typename RhsXprType_>
+        requires(XprType::ReadOnly == 0)
+    constexpr XprType& operator*=(const MatrixExpr<RhsXprType_>& rhs) & {
         using executor = typename XprType::assignment_executor;
         // avoid aliasing by evaluating the product in a temporary
         using Scalar = typename XprType::Scalar;
@@ -81,6 +154,17 @@ template <typename XprType_> struct MatrixExpr {
         executor::run(derived(), tmp, [](auto& l, const auto& r) { l = r; });
         return derived();
     }
+    template <typename RhsXprType_>
+    constexpr XprType operator*=(const MatrixExpr<RhsXprType_>& rhs) &&
+        requires(XprType::NestAsRef == 0 && XprType::ReadOnly == 0)
+    {
+        static_cast<MatrixExpr&>(*this).operator*=(rhs);
+        return derived();
+    }
+    template <typename RhsXprType_>
+    constexpr void operator*=(const MatrixExpr<RhsXprType_>&) &&
+        requires(XprType::NestAsRef != 0)
+      = delete;
 
     // observers
     constexpr int rows() const { return XprType::Rows == Dynamic ? derived().rows() : XprType::Rows; }
@@ -90,8 +174,10 @@ template <typename XprType_> struct MatrixExpr {
         constexpr int Cols = XprType::Cols;
         return (Rows != Dynamic && Cols != Dynamic) ? Rows * Cols : derived().rows() * derived().cols();
     }
-    constexpr const XprType& derived() const { return static_cast<const XprType&>(*this); }
-    constexpr XprType& derived() { return static_cast<XprType&>(*this); }
+    constexpr const XprType& derived() const & { return static_cast<const XprType&>(*this); }
+    constexpr XprType& derived() & { return static_cast<XprType&>(*this); }
+    constexpr void derived() const && = delete;
+    constexpr void derived() && = delete;
     // ostream
     friend std::ostream& operator<<(std::ostream& os, const MatrixExpr& m) {
         const int rows = m.derived().rows();
@@ -192,7 +278,11 @@ template <typename XprType_> struct MatrixExpr {
     constexpr MatrixColWiseOp<const XprType> colwise() const { return MatrixColWiseOp<const XprType>(derived()); }
 
     // unary operators
-    constexpr TransposeOp<XprType> transpose() const { return TransposeOp<XprType>(derived()); }
+    constexpr TransposeOp<XprType> transpose() const & { return TransposeOp<XprType>(derived()); }
+    constexpr TransposeOp<XprType> transpose() const && requires(XprType::NestAsRef == 0) {
+        return TransposeOp<XprType>(derived());
+    }
+    constexpr void transpose() const && requires(XprType::NestAsRef != 0) = delete;
     constexpr auto diagonal() const { return Diagonal<const XprType>(derived()); }
     constexpr auto diagonal() { return Diagonal<XprType>(derived()); }
     // block accessors
@@ -260,9 +350,21 @@ template <typename XprType_> struct MatrixExpr {
         return dot_;
     }
     // cross product
-    template <typename RhsXprType> constexpr auto cross(const MatrixExpr<RhsXprType>& rhs) const {
+    template <typename RhsXprType> constexpr auto cross(const MatrixExpr<RhsXprType>& rhs) const & {
         return MatrixCrossProductOp<XprType, RhsXprType>(derived(), rhs.derived());
     }
+    template <internals::matrix_expression RhsXprType>
+        requires(internals::is_owning_rvalue_expression_v<RhsXprType&&>)
+    constexpr void cross(RhsXprType&&) const & = delete;
+    template <typename RhsXprType>
+    constexpr auto cross(const MatrixExpr<RhsXprType>& rhs) const && requires(XprType::NestAsRef == 0) {
+        return MatrixCrossProductOp<XprType, RhsXprType>(derived(), rhs.derived());
+    }
+    template <internals::matrix_expression RhsXprType>
+        requires(internals::is_owning_rvalue_expression_v<RhsXprType&&>)
+    constexpr void cross(RhsXprType&&) const && = delete;
+    template <typename RhsXprType>
+    constexpr void cross(const MatrixExpr<RhsXprType>&) const && requires(XprType::NestAsRef != 0) = delete;
 
     // reshaping
     // static-sized
@@ -285,7 +387,7 @@ template <typename XprType_> struct MatrixExpr {
     constexpr auto reshape(int rows) const { return ReshapeOp<Dynamic, 1, const XprType>(derived(), rows); }
 
     // square matrix methods
-    constexpr auto symm_part() const {
+    constexpr auto symm_part() const & {
         constexpr int Rows = XprType::Rows, Cols = XprType::Cols;
         fdapde_static_assert(
           Rows == Dynamic || Cols == Dynamic || Rows == Cols, THIS_METHODS_IS_FOR_SQUARE_MATRICES_ONLY);
@@ -296,7 +398,7 @@ template <typename XprType_> struct MatrixExpr {
         }
         return 0.5 * (derived() + derived().transpose());   // symmetric part
     }
-    constexpr auto skew_part() const {
+    constexpr auto skew_part() const & {
         constexpr int Rows = XprType::Rows, Cols = XprType::Cols;
         fdapde_static_assert(
           Rows == Dynamic || Cols == Dynamic || Rows == Cols, THIS_METHODS_IS_FOR_SQUARE_MATRICES_ONLY);
@@ -307,6 +409,14 @@ template <typename XprType_> struct MatrixExpr {
         }
         return 0.5 * (derived() - derived().transpose());   // skew-symmetric part
     }
+    constexpr auto symm_part() const && requires(XprType::NestAsRef == 0) {
+        return static_cast<const MatrixExpr&>(*this).symm_part();
+    }
+    constexpr auto skew_part() const && requires(XprType::NestAsRef == 0) {
+        return static_cast<const MatrixExpr&>(*this).skew_part();
+    }
+    constexpr void symm_part() const && requires(XprType::NestAsRef != 0) = delete;
+    constexpr void skew_part() const && requires(XprType::NestAsRef != 0) = delete;
     constexpr auto inverse() const {
         using Scalar = typename XprType::Scalar;
         constexpr int Rows = XprType::Rows, Cols = XprType::Cols;

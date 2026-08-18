@@ -19,8 +19,30 @@
 
 #include "header_check.h"
 
+#include <concepts>
+
 namespace fdapde {
 namespace internals {
+
+template <typename T> using xpr_clean_t = std::remove_cvref_t<T>;
+
+template <typename T>
+concept matrix_expression = std::derived_from<xpr_clean_t<T>, MatrixExpr<xpr_clean_t<T>>>;
+
+template <typename Arg, bool HasNestAsRef = requires { xpr_clean_t<Arg>::NestAsRef; }>
+struct is_owning_rvalue_expression : std::false_type { };
+
+template <typename Arg> struct is_owning_rvalue_expression<Arg, true> :
+    std::bool_constant<!std::is_lvalue_reference_v<Arg> && (xpr_clean_t<Arg>::NestAsRef != 0)> { };
+
+template <typename Arg>
+inline constexpr bool is_owning_rvalue_expression_v = is_owning_rvalue_expression<Arg>::value;
+
+template <typename Nested, typename Arg>
+concept safely_nestable =
+  std::is_constructible_v<Nested, Arg> &&
+  (!std::is_reference_v<Nested> ||
+   (std::is_lvalue_reference_v<Arg> && std::same_as<std::remove_cvref_t<Nested>, std::remove_cvref_t<Arg>>));
 
 // sizing traits
 template <typename XprType_> struct is_dynamic_sized {
@@ -100,4 +122,3 @@ template <typename XprType> using assignment_executor_of_t = typename assignment
 }   // namespace fdapde
 
 #endif   //  __FDAPDE_LINALG_TRAITS_H__
-
