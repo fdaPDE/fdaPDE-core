@@ -28,6 +28,12 @@ TEST(linear_algebra, arithmetic) {
     static_assert((A * B)(0, 0) == 7);
     static_assert((2.0 * A)(0, 0) == 2);
     static_assert(((A + B) / 2.0)(0, 0) == 1);
+
+    constexpr Matrix<int, 1, 1> C(1);
+    constexpr Matrix<double, 1, 1> D(0.5);
+    using Mixed = decltype(C + D);
+    static_assert(std::is_same_v<typename Mixed::Scalar, double>);
+    static_assert((C + D)(0, 0) == 1.5);
 }
 
 TEST(linear_algebra, cwise) {
