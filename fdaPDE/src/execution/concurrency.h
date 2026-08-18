@@ -32,12 +32,17 @@ namespace internals {
 
 inline std::optional<std::size_t> get_env_concurrency_count(const char* envvar) {
     const char* count = std::getenv(envvar);
-    if (count) {
-        try {
-            return static_cast<std::size_t>(std::stoul(count));
-        } catch (...) { return std::nullopt; }
+    if (count == nullptr) return std::nullopt;
+
+    const std::string_view text(count);
+    std::size_t result = 0;
+    const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), result);
+    if (
+      error != std::errc {} || end != text.data() + text.size() || result == 0 ||
+      result > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+        return std::nullopt;
     }
-    return std::nullopt;
+    return result;
 }
 
 }   // namespace internals
@@ -47,13 +52,11 @@ inline std::size_t available_concurrency() noexcept {
 
     // detect the number of reserved cpus for processes running under:
     // open Portable Batch System (openPBS)
-    if (auto PBS_NCPUS   = internals::get_env_concurrency_count("NCPUS")) { return *PBS_NCPUS; }
+    if (auto PBS_NCPUS = internals::get_env_concurrency_count("NCPUS")) { return *PBS_NCPUS; }
     // SLURM
     if (auto SLURM_NCPUS = internals::get_env_concurrency_count("SLURM_CPUS_ON_NODE")) { return *SLURM_NCPUS; }
     // check if OpenMP has been configured
-    if (auto OMP_NCPUS   = internals::get_env_concurrency_count("OMP_NUM_THREADS")) {
-        if (*OMP_NCPUS > 1) return *OMP_NCPUS;
-    }
+    if (auto OMP_NCPUS = internals::get_env_concurrency_count("OMP_NUM_THREADS")) { return *OMP_NCPUS; }
 
     // second, check OS-specific settings
 #ifdef __linux__
@@ -62,11 +65,14 @@ inline std::size_t available_concurrency() noexcept {
     CPU_ZERO(&set);
     if (sched_getaffinity(0, sizeof(set), &set) == 0) {
         int ncpus = CPU_COUNT(&set);
-        if (ncpus > 0 && ncpus < (int)std::thread::hardware_concurrency()) { return static_cast<std::size_t>(ncpus); }
+        const unsigned int hardware_concurrency = std::thread::hardware_concurrency();
+        if (ncpus > 0 && (hardware_concurrency == 0 || static_cast<unsigned int>(ncpus) < hardware_concurrency)) {
+            return static_cast<std::size_t>(ncpus);
+        }
     }
 #endif
     // if all of the previous failed, fallbacks to number of physical CPU cores
-    int ncpus = std::thread::hardware_concurrency();
+    const unsigned int ncpus = std::thread::hardware_concurrency();
     return ncpus > 0 ? ncpus : 1;
 }
 

@@ -31,6 +31,7 @@ static constexpr execution_seq_t execution_seq;
 #include "utility.h"
 
 #include <atomic>
+#include <charconv>
 #include <mutex>
 #include <future>
 #include <latch>

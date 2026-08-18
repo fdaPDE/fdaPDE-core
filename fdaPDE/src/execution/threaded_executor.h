@@ -21,9 +21,12 @@
 
 namespace fdapde {
 namespace internals {
-  
-// number of thread to use. default to maximum number of logical threads on the hosing machine
-inline int parallel_num_threads = fdapde::available_concurrency();
+
+// executor configuration is mutable only before the first task initializes the worker pool
+inline std::mutex parallel_config_mutex;
+inline bool parallel_executor_initialized = false;
+inline int parallel_num_threads = static_cast<int>(
+  std::min(fdapde::available_concurrency(), static_cast<std::size_t>(std::numeric_limits<int>::max())));
 
 // implementation of the random stealing algorithm
 // * "Blumofe, R. D., & Leiserson, C. E. (1999). Scheduling multithreaded computations by work stealing. Journal of
@@ -53,11 +56,11 @@ struct random_stealing_policy {
 
 // implementation of the round-robin scheduling algorithm
 struct round_robin_scheduling_policy {
-    explicit round_robin_scheduling_policy(std::size_t n) : size_(n) {}
+    explicit round_robin_scheduling_policy(std::size_t n) : size_(n) { }
 
-    int pick() { return curr_.fetch_add(1, std::memory_order_relaxed) % size_; }
+    int pick() { return static_cast<int>(curr_.fetch_add(1, std::memory_order_relaxed) % size_); }
    private:
-    std::atomic<int> curr_ {0};
+    std::atomic<std::size_t> curr_ {0};
     std::size_t size_;
 };
 
@@ -72,9 +75,12 @@ struct threaded_executor_impl {
     using scheduling_policy = internals::round_robin_scheduling_policy;
 
     // constructor
-    threaded_executor_impl() : threaded_executor_impl(std::thread::hardware_concurrency()) { }
+    threaded_executor_impl() : threaded_executor_impl(fdapde::available_concurrency()) { }
     explicit threaded_executor_impl(size_type size) :
-        n_workers_(size), init_latch_(size + 1), stealing_policy_(size), scheduling_policy_(size) {
+        n_workers_(validate_size_(size)),
+        init_latch_(n_workers_ + 1),
+        stealing_policy_(n_workers_),
+        scheduling_policy_(n_workers_) {
         workers_.reserve(n_workers_);
         // start workers
         for (size_type i = 0; i < n_workers_; i++) {
@@ -112,16 +118,25 @@ struct threaded_executor_impl {
     template <typename Task> task_pointer allocate_task(int worker, Task&& task) {
         return workers_[worker]->allocate_task(std::forward<Task>(task));
     }
-    // sends a previously allocated task to worker for execution. worker is not notified
-    void enqueue_task(int worker, task_pointer task) { workers_[worker]->enqueue_task(task); }
+    // schedules a previously allocated task for execution. worker is not notified
+    void enqueue_task(task_pointer task) {
+        int worker = scheduling_policy_.pick();
+        workers_[worker]->enqueue_task(task);
+    }
     void notify_all() { cv_.notify_all(); }
-    // signals the intention to block the pool until task_count tasks have been completed
-    void expect_tasks(int task_count) { 
+    // reserves accounting for a group of preallocated tasks
+    void reserve_tasks(size_type task_count) {
         std::lock_guard<std::mutex> lock(m_);
-        task_count_ = task_count;
+        if (task_count > std::numeric_limits<size_type>::max() - task_count_) {
+            throw std::overflow_error("execution task counter overflow");
+        }
+        task_count_ += task_count;
     }
     // blocks caller until all tasks queued in the pool have been executed
     void join() {
+        if (this_thread_id() != main_thread_id) {
+            throw std::logic_error("parallel_join cannot be called from an executor worker");
+        }
         std::unique_lock<std::mutex> lock(m_);
         cv_.wait(lock, [&]() { return task_count_ == 0; });
     }
@@ -135,8 +150,8 @@ struct threaded_executor_impl {
             if (worker_id != main_thread_id) {
                 workers_[worker_id]->try_execute_one(this);
             } else {
-                // main thread cannot partecipate in active join, perform a standard join
-                join();
+                std::unique_lock<std::mutex> lock(m_);
+                cv_.wait(lock, [&]() { return !cond() || !active_.load(std::memory_order_acquire); });
             }
         }
         return;
@@ -153,23 +168,27 @@ struct threaded_executor_impl {
     // destructor
     ~threaded_executor_impl() { stop(); }
    private:
+    static size_type validate_size_(size_type size) {
+        if (size == 0 || size > static_cast<size_type>(std::numeric_limits<int>::max())) {
+            throw std::invalid_argument("executor size must be a positive int");
+        }
+        return size;
+    }
     // woorker coordination utilities
     friend worker_type;
     // invoked by a worker to signal the completion of a task
     void on_task_complete(task_pointer task) {
-        std::unique_lock<std::mutex> lock(m_);
-        task_count_--;
-        if (task_count_ == 0) {
-            cv_.notify_all();
-            return;
-        }
-        lock.unlock();
         // decrease ref count, dispatch completed successors back for execution
         for (task_pointer task_ptr : task->inverse_dependencies()) {
-            if (task_ptr->ref_count_fetch_sub(1, std::memory_order_release) == 1) { renqueue_task_(task_ptr); }
+            if (task_ptr->ref_count_fetch_sub(1, std::memory_order_acq_rel) == 1) { renqueue_task_(task_ptr); }
         }
-        // deallocate
-        workers_[task->allocation_context().value()]->deallocate_task(task);
+        const int allocation_context = task->allocation_context().value();
+        workers_[allocation_context]->deallocate_task(task);
+
+        std::lock_guard<std::mutex> lock(m_);
+        if (task_count_ == 0) { std::terminate(); }
+        task_count_--;
+        cv_.notify_all();
         return;
     }
     // invoked by a worker to signal its readyness
@@ -187,10 +206,29 @@ struct threaded_executor_impl {
     // allocates and submits task to the pool. notifies all workers for execution
     template <typename Task> void dispatch_task_(Task&& task) {
         int w_id = scheduling_policy_.pick();
-        workers_[w_id]->submit_task(task_type(std::move(task), w_id));
-        std::unique_lock<std::mutex> lock(m_);
-        task_count_++;
-        lock.unlock();
+        task_pointer task_ptr = workers_[w_id]->allocate_task(task_type(std::forward<Task>(task), w_id));
+        bool overflow = false;
+        {
+            std::lock_guard<std::mutex> lock(m_);
+            if (task_count_ == std::numeric_limits<size_type>::max()) {
+                overflow = true;
+            } else {
+                task_count_++;
+            }
+        }
+        if (overflow) {
+            workers_[w_id]->deallocate_task(task_ptr);
+            throw std::overflow_error("execution task counter overflow");
+        }
+        try {
+            workers_[w_id]->enqueue_task(task_ptr);
+        } catch (...) {
+            workers_[w_id]->deallocate_task(task_ptr);
+            std::lock_guard<std::mutex> lock(m_);
+            task_count_--;
+            cv_.notify_all();
+            throw;
+        }
         cv_.notify_all();
         return;
     }
@@ -218,7 +256,12 @@ struct threaded_executor {
     // accessing the executor after its destruction). To satisfy leak detectors, memory is statically allocated
     static auto& instance() {
         static std::aligned_storage_t<sizeof(threaded_executor_impl), alignof(threaded_executor_impl)> storage;
-        static threaded_executor_impl* exec = new (&storage) threaded_executor_impl(parallel_num_threads);
+        static threaded_executor_impl* exec = [] {
+            std::lock_guard<std::mutex> lock(parallel_config_mutex);
+            auto* result = new (&storage) threaded_executor_impl(parallel_num_threads);
+            parallel_executor_initialized = true;
+            return result;
+        }();
         return *exec;
     }
 };
@@ -236,9 +279,19 @@ template <typename Task, typename... Args>
 static constexpr bool is_runnable_task_v = is_runnable_task<Task, Args...>::value;
 
 // set number of worker threads
-inline void parallel_set_num_threads(int num_threads) { internals::parallel_num_threads = num_threads; }
+inline void parallel_set_num_threads(int num_threads) {
+    if (num_threads <= 0) { throw std::invalid_argument("parallel thread count must be positive"); }
+    std::lock_guard<std::mutex> lock(internals::parallel_config_mutex);
+    if (internals::parallel_executor_initialized) {
+        throw std::logic_error("parallel thread count cannot change after executor initialization");
+    }
+    internals::parallel_num_threads = num_threads;
+}
 // get number of worker threads
-inline int  parallel_get_num_threads() { return internals::parallel_num_threads; }
+inline int parallel_get_num_threads() {
+    std::lock_guard<std::mutex> lock(internals::parallel_config_mutex);
+    return internals::parallel_num_threads;
+}
 // executes a callable object asynchronously
 template <typename F, typename... Args>
     requires(std::is_invocable_v<F, Args...>)
