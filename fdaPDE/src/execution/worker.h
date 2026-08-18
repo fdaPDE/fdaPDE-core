@@ -25,7 +25,7 @@ namespace internals {
 static constexpr int main_thread_id = -1;
 inline thread_local int tls_worker_id = main_thread_id;   // worker logical index
 
-// concurrent pooled-object allocator, with fast lock-free deallocatin path.
+// concurrent pooled-object allocator
 template <typename T> struct pool_allocator {
     using value_type = T;
     using pointer = value_type*;
@@ -49,17 +49,13 @@ template <typename T> struct pool_allocator {
         // observers
         slot_type* data() const { return data_; }
         block_type* next() const { return next_; }
-        // accessors
-        const_reference operator[](int i) const { return *reinterpret_cast<const_pointer>(data_[i].storage); }
-        reference operator[](int i) { return *reinterpret_cast<pointer>(data_[i].storage); }
         // modifiers
         void set_next(block_type* next) { next_ = next; }
     };
    public:
     // constructors
     pool_allocator() : pool_allocator(1024) { }
-    explicit pool_allocator(size_type block_sz) :
-        block_sz_(block_sz), used_slots_(0), free_list_(nullptr), shared_free_list_(nullptr) {
+    explicit pool_allocator(size_type block_sz) : block_sz_(block_sz), used_slots_(0), free_list_(nullptr) {
         base_ = new block_type(block_sz_);
         block_list_ = base_;
     }
@@ -71,7 +67,6 @@ template <typename T> struct pool_allocator {
     template <typename... Args> pointer allocate(Args&&... args) {
         std::lock_guard<std::mutex> lock(m_);
         // fetch memory from free_list, if available
-        if (free_list_ == nullptr) { free_list_ = shared_free_list_.exchange(nullptr, std::memory_order_acquire); }
         if (free_list_ != nullptr) { return construct_at_free_slot_(std::forward<Args>(args)...); }
         // allocate memory if available space exhausted
         if (used_slots_ >= block_sz_) {
@@ -80,21 +75,18 @@ template <typename T> struct pool_allocator {
             block_list_ = new_block;
             used_slots_ = 0;
         }
-        pointer ptr = std::addressof((*block_list_)[used_slots_]);
+        void* storage = block_list_->data()[used_slots_].storage;
         used_slots_++;
-        new (ptr) value_type(std::forward<Args>(args)...);
-        return ptr;
+        return ::new (storage) value_type(std::forward<Args>(args)...);
     }
     // concurrently deallocate memory reserved to ptr
     void deallocate(pointer ptr) {
+        std::destroy_at(ptr);
         // the ptr memory layout is the one of a slot_type, here is safe to reinterpret ptr as a slot_type*
         slot_type* slot = reinterpret_cast<slot_type*>(ptr);
-        slot_type* head = shared_free_list_.load(std::memory_order_acquire);
-        // lock-free retry loop: append this slot to the shared free list
-        do {
-            slot->next = head;
-        } while (
-          !shared_free_list_.compare_exchange_strong(head, slot, std::memory_order_release, std::memory_order_relaxed));
+        std::lock_guard<std::mutex> lock(m_);
+        slot->next = free_list_;
+        free_list_ = slot;
         return;
     }
     ~pool_allocator() {
@@ -109,16 +101,13 @@ template <typename T> struct pool_allocator {
     template <typename... Args> pointer construct_at_free_slot_(Args&&... args) {
         slot_type* slot = free_list_;
         free_list_ = slot->next;
-        pointer ptr = reinterpret_cast<pointer>(std::addressof(slot->storage));
-        new (ptr) value_type(std::forward<Args>(args)...);
-        return ptr;
+        return ::new (static_cast<void*>(slot->storage)) value_type(std::forward<Args>(args)...);
     }
     const size_type block_sz_;
-    size_type used_slots_;                       // number of used slots in last block
-    block_type* block_list_;                     // list of allocated memory blocks
-    slot_type* free_list_;                       // already allocated slots available for writing
-    std::atomic<slot_type*> shared_free_list_;   // slots concurrently freed by other threads
-    block_type* base_;                           // first block of the pool
+    size_type used_slots_;     // number of used slots in last block
+    block_type* block_list_;   // list of allocated memory blocks
+    slot_type* free_list_;     // already allocated slots available for writing
+    block_type* base_;         // first block of the pool
     std::mutex m_;
 };
 
@@ -297,13 +286,17 @@ struct mpsc_queue {
         head_ = next;
         return std::move(value);
     }
+    ~mpsc_queue() {
+        while (head_ != nullptr) {
+            pointer next = head_->next.load(std::memory_order_relaxed);
+            allocator_.deallocate(head_);
+            head_ = next;
+        }
+    }
    private:
     pointer head_;
     alignas(64) std::atomic<pointer> tail_;
     allocator_type allocator_;
-
-  std::mutex m_;
-  
 };
 
 // logical execution component mapped to a physical execution unit (hardware thread)
