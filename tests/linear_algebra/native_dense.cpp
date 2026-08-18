@@ -298,6 +298,34 @@ template <int StorageOrder> void check_arithmetic_expression_nesting() {
     static_assert(kron_expression::StorageOrder == StorageOrder);
 }
 
+template <int StorageOrder> void check_assignment_alias_materialization() {
+    using matrix_type = Matrix<double, 2, 2, StorageOrder>;
+
+    matrix_type aliased({1.0, 2.0, 3.0, 4.0});
+    aliased += aliased.transpose();
+    EXPECT_EQ(aliased, (matrix_type({2.0, 5.0, 5.0, 8.0})));
+
+    aliased = matrix_type({1.0, 2.0, 3.0, 4.0});
+    aliased -= aliased.transpose();
+    EXPECT_EQ(aliased, (matrix_type({0.0, -1.0, 1.0, 0.0})));
+
+    aliased = matrix_type({1.0, 2.0, 3.0, 4.0});
+    aliased *= aliased;
+    EXPECT_EQ(aliased, (matrix_type({7.0, 10.0, 15.0, 22.0})));
+
+    matrix_type overlapping({1.0, 2.0, 3.0, 4.0});
+    overlapping.template block<2, 2>(0, 0) =
+      overlapping.template block<2, 2>(0, 0).transpose();
+    EXPECT_EQ(overlapping, (matrix_type({1.0, 3.0, 2.0, 4.0})));
+
+    const matrix_type source_owner({1.0, 2.0, 3.0, 4.0});
+    double destination_data[4] {};
+    MatrixView<const double, 2, 2, StorageOrder> source(source_owner.data());
+    MatrixView<double, 2, 2, StorageOrder> destination(destination_data);
+    destination = source;
+    EXPECT_EQ(destination, source_owner);
+}
+
 }   // namespace
 
 TEST(NativeDenseMatrix, OwnerShapeStorageAndVectorCopy) {
@@ -320,6 +348,11 @@ TEST(NativeDenseMatrix, NumericViewBindingConstnessAndStorage) {
 TEST(NativeDenseMatrix, ArithmeticExpressionNesting) {
     check_arithmetic_expression_nesting<RowMajor>();
     check_arithmetic_expression_nesting<ColMajor>();
+}
+
+TEST(NativeDenseMatrix, AssignmentOperationsMaterializeAliases) {
+    check_assignment_alias_materialization<RowMajor>();
+    check_assignment_alias_materialization<ColMajor>();
 }
 
 }   // namespace fdapde

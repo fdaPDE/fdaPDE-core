@@ -29,17 +29,20 @@ template <typename XprType_> struct MatrixExpr {
     template <typename RhsXprType_>
         requires(XprType::ReadOnly == 0)
     constexpr XprType& operator=(const MatrixExpr<RhsXprType_>& rhs) & {
+        using RhsXprType = std::decay_t<RhsXprType_>;
+        using RhsScalar = std::remove_cv_t<typename RhsXprType::Scalar>;
+        Matrix<RhsScalar, RhsXprType::Rows, RhsXprType::Cols, RhsXprType::StorageOrder> tmp(rhs);
         using executor = typename XprType::assignment_executor;
         constexpr int Rows = XprType::Rows;
         constexpr int Cols = XprType::Cols;
         if constexpr (requires(XprType_ xpr, int i, int j) {
                           xpr.resize(i, j);
                       } && (Rows == Dynamic || Cols == Dynamic)) {
-            if (derived().rows() != rhs.rows() || derived().cols() != rhs.cols()) {
-                derived().resize(rhs.rows(), rhs.cols());
+            if (derived().rows() != tmp.rows() || derived().cols() != tmp.cols()) {
+                derived().resize(tmp.rows(), tmp.cols());
             }
         }
-        executor::run(derived(), rhs.derived(), [](auto& l, const auto& r) { l = r; });
+        executor::run(derived(), tmp, [](auto& l, const auto& r) { l = r; });
         return derived();
     }
     template <typename RhsXprType_>
@@ -75,8 +78,11 @@ template <typename XprType_> struct MatrixExpr {
     template <typename RhsXprType_>
         requires(XprType::ReadOnly == 0)
     constexpr XprType& operator+=(const MatrixExpr<RhsXprType_>& rhs) & {
+        using RhsXprType = std::decay_t<RhsXprType_>;
+        using RhsScalar = std::remove_cv_t<typename RhsXprType::Scalar>;
+        Matrix<RhsScalar, RhsXprType::Rows, RhsXprType::Cols, RhsXprType::StorageOrder> tmp(rhs);
         using executor = typename XprType::assignment_executor;
-        executor::run(derived(), rhs.derived(), [](auto& l, const auto& r) { l += r; });
+        executor::run(derived(), tmp, [](auto& l, const auto& r) { l += r; });
         return derived();
     }
     template <typename RhsXprType_>
@@ -93,8 +99,11 @@ template <typename XprType_> struct MatrixExpr {
     template <typename RhsXprType_>
         requires(XprType::ReadOnly == 0)
     constexpr XprType& operator-=(const MatrixExpr<RhsXprType_>& rhs) & {
+        using RhsXprType = std::decay_t<RhsXprType_>;
+        using RhsScalar = std::remove_cv_t<typename RhsXprType::Scalar>;
+        Matrix<RhsScalar, RhsXprType::Rows, RhsXprType::Cols, RhsXprType::StorageOrder> tmp(rhs);
         using executor = typename XprType::assignment_executor;
-        executor::run(derived(), rhs.derived(), [](auto& l, const auto& r) { l -= r; });
+        executor::run(derived(), tmp, [](auto& l, const auto& r) { l -= r; });
         return derived();
     }
     template <typename RhsXprType_>
