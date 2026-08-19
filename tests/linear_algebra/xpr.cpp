@@ -64,6 +64,11 @@ TEST(linear_algebra, cwise) {
         return almost_equal(e.mwise(), r);
     }());
     static_assert([]() {
+        constexpr Matrix<double, 1, 2> values({1.0e-16, 4.0e-16});
+        constexpr Matrix<double, 1, 2> roots = values.cwise().sqrt();
+        return almost_equal(roots[0] / 1.0e-8, 1.0) && almost_equal(roots[1] / 2.0e-8, 1.0);
+    }());
+    static_assert([]() {
         constexpr auto e = C.cwise().inv();
         constexpr Matrix<double, 2, 2> r({-1, 1. / 2, 1. / 3, -1. / 4});
         return almost_equal(e.mwise(), r);
@@ -132,6 +137,14 @@ TEST(linear_algebra, redux) {
     static_assert(almost_equal(C.mean(), 4.7 / 4));
     static_assert(C.max() == 2);
     static_assert(C.min() == 0.2);
+    static_assert([]() {
+        constexpr Matrix<double, 1, 2> underflowing_square({3.0e-200, 4.0e-200});
+        constexpr Matrix<double, 1, 2> overflowing_square({3.0e200, 4.0e200});
+        constexpr Matrix<double, 1, 2> overflow_boundary({1.3313981757491274e308, 1.2079236336552887e308});
+        return almost_equal(underflowing_square.norm() / 5.0e-200, 1.0) &&
+          almost_equal(overflowing_square.norm() / 5.0e200, 1.0) &&
+          overflow_boundary.norm() == std::numeric_limits<double>::infinity();
+    }());
 }
 
 TEST(linear_algebra, vectorwise) {
@@ -160,7 +173,7 @@ TEST(linear_algebra, vectorwise) {
     }());
     static_assert([r]() {
         constexpr auto e = r.norm();
-        return e == Matrix<double, 1, 3>({2, 2, 2});
+        return almost_equal(e, Matrix<double, 1, 3>({2, 2, 2}));
     }());
     static_assert([r]() {
         constexpr auto e = r.inf_norm();
@@ -192,7 +205,12 @@ TEST(linear_algebra, vectorwise) {
     static_assert([c]() {
         constexpr auto e = c.norm();
         double s = fdapde::sqrt(3.0);
-        return e == Matrix<double, 4, 1>({s, s, s, s});
+        return almost_equal(e, Matrix<double, 4, 1>({s, s, s, s}));
+    }());
+    static_assert([]() {
+        constexpr Matrix<double, 2, 2> values({3.0e-200, 4.0e-200, 3.0e200, 4.0e200});
+        constexpr Matrix<double, 2, 1> norms = values.rowwise().norm();
+        return almost_equal(norms[0] / 5.0e-200, 1.0) && almost_equal(norms[1] / 5.0e200, 1.0);
     }());
     static_assert([c]() {
         constexpr auto e = c.inf_norm();

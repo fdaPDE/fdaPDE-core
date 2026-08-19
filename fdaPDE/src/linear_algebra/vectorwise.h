@@ -147,7 +147,11 @@ struct MatrixVectorWiseOp : public MatrixExpr<MatrixVectorWiseOp<XprType_, ByRow
     constexpr auto squared_norm() const {
         return redux(xpr_, Scalar(0), [](Scalar tmp, Scalar x) { return tmp + x * x; });
     }
-    constexpr auto norm() const { return squared_norm().cwise().sqrt().mwise(); }
+    constexpr auto norm() const requires(std::floating_point<Scalar>) {
+        return redux(xpr_, Scalar(0), [](Scalar norm, Scalar value) {
+            return internals::scale_safe_hypot(norm, value);
+        });
+    }
     // L^\infty norm
     constexpr auto inf_norm() const {
         return redux(xpr_, std::numeric_limits<Scalar>::min(), [](Scalar tmp, Scalar x) {

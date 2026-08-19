@@ -25,6 +25,29 @@
 namespace fdapde {
 namespace {
 
+template <typename MatrixType>
+concept permits_norm = requires(const MatrixType& matrix) { matrix.norm(); };
+
+template <typename MatrixType>
+concept permits_rowwise_norm = requires(const MatrixType& matrix) { matrix.rowwise().norm(); };
+
+template <typename MatrixType>
+concept permits_colwise_norm = requires(const MatrixType& matrix) { matrix.colwise().norm(); };
+
+template <typename MatrixType>
+concept permits_coefficient_sqrt = requires(const MatrixType& matrix) { matrix.cwise().sqrt(); };
+
+using floating_norm_matrix = Matrix<double, 2, 2>;
+using integral_norm_matrix = Matrix<int, 2, 2>;
+static_assert(permits_norm<floating_norm_matrix>);
+static_assert(permits_rowwise_norm<floating_norm_matrix>);
+static_assert(permits_colwise_norm<floating_norm_matrix>);
+static_assert(permits_coefficient_sqrt<floating_norm_matrix>);
+static_assert(!permits_norm<integral_norm_matrix>);
+static_assert(!permits_rowwise_norm<integral_norm_matrix>);
+static_assert(!permits_colwise_norm<integral_norm_matrix>);
+static_assert(!permits_coefficient_sqrt<integral_norm_matrix>);
+
 template <int StorageOrder> void check_matrix_block_runtime_contracts() {
     using matrix_type = Matrix<int, 3, 4, StorageOrder>;
     matrix_type matrix({1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
@@ -368,6 +391,39 @@ template <int StorageOrder> void check_matrix_reduction_runtime_contracts() {
     EXPECT_EQ(col_means, (Matrix<int, 1, 2, StorageOrder>({-2, -4})));
 }
 
+template <int StorageOrder> void check_matrix_norm_runtime_contracts() {
+    using pair_type = Matrix<double, 1, 2, StorageOrder>;
+    const pair_type tiny({3.0e-8, 4.0e-8});
+    const pair_type underflowing_square({3.0e-200, 4.0e-200});
+    const pair_type overflowing_square({3.0e200, 4.0e200});
+    EXPECT_DOUBLE_EQ(tiny.norm(), 5.0e-8);
+    EXPECT_DOUBLE_EQ(underflowing_square.norm(), 5.0e-200);
+    EXPECT_DOUBLE_EQ(overflowing_square.norm(), 5.0e200);
+
+    const Matrix<double, 3, 2, StorageOrder> rows(
+      {3.0e-8, 4.0e-8, 3.0e-200, 4.0e-200, 3.0e200, 4.0e200});
+    const auto row_norms = rows.rowwise().norm();
+    EXPECT_DOUBLE_EQ(row_norms[0], 5.0e-8);
+    EXPECT_DOUBLE_EQ(row_norms[1], 5.0e-200);
+    EXPECT_DOUBLE_EQ(row_norms[2], 5.0e200);
+
+    const Matrix<double, 2, 3, StorageOrder> cols(
+      {3.0e-8, 3.0e-200, 3.0e200, 4.0e-8, 4.0e-200, 4.0e200});
+    const auto col_norms = cols.colwise().norm();
+    EXPECT_DOUBLE_EQ(col_norms[0], 5.0e-8);
+    EXPECT_DOUBLE_EQ(col_norms[1], 5.0e-200);
+    EXPECT_DOUBLE_EQ(col_norms[2], 5.0e200);
+
+    const pair_type tiny_squares({1.0e-16, 4.0e-16});
+    const pair_type roots = tiny_squares.cwise().sqrt();
+    EXPECT_DOUBLE_EQ(roots[0], 1.0e-8);
+    EXPECT_DOUBLE_EQ(roots[1], 2.0e-8);
+
+    const double view_data[2] {3.0, 4.0};
+    const MatrixView<const double, 1, 2, StorageOrder> const_view(view_data);
+    EXPECT_DOUBLE_EQ(const_view.norm(), 5.0);
+}
+
 }   // namespace
 
 TEST(LinearAlgebraRuntimeContracts, DynamicSquareOperationsRemainAvailable) {
@@ -568,6 +624,11 @@ TEST(LinearAlgebraRuntimeContracts, MatrixVectorWiseChecksShapesAndIndexes) {
 TEST(LinearAlgebraRuntimeContracts, MatrixReductionsHonorEmptyAndIntegralContracts) {
     check_matrix_reduction_runtime_contracts<RowMajor>();
     check_matrix_reduction_runtime_contracts<ColMajor>();
+}
+
+TEST(LinearAlgebraRuntimeContracts, MatrixNormsRemainScaleSafe) {
+    check_matrix_norm_runtime_contracts<RowMajor>();
+    check_matrix_norm_runtime_contracts<ColMajor>();
 }
 
 }   // namespace fdapde

@@ -371,8 +371,13 @@ template <typename XprType_> struct MatrixCoeffWiseExpr {
     constexpr auto abs() const {
         return internals::make_cwise_op(derived(), [](const auto& x) { return fdapde::abs(x); });
     }
-    constexpr decltype(auto) sqrt() const {
-        return internals::make_cwise_op(derived(), [](const auto& x) { return fdapde::sqrt(x); });
+    constexpr decltype(auto) sqrt() const
+        requires(std::floating_point<std::remove_cv_t<typename XprType::Scalar>>)
+    {
+        using Scalar = std::remove_cv_t<typename XprType::Scalar>;
+        return internals::make_cwise_op(derived(), [](const auto& x) -> Scalar {
+            return internals::scale_safe_sqrt(static_cast<Scalar>(x));
+        });
     }
     constexpr auto inv() const {
         return internals::make_cwise_op(derived(), [](const auto& x) { return 1. / x; });

@@ -235,7 +235,18 @@ template <typename XprType_> struct MatrixExpr {
         }
         return norm_;
     }
-    constexpr auto norm() const { return fdapde::sqrt(squared_norm()); }
+    constexpr auto norm() const
+        requires(std::floating_point<std::remove_cv_t<typename XprType::Scalar>>)
+    {
+        using Scalar = std::remove_cv_t<typename XprType::Scalar>;
+        Scalar norm_ = Scalar(0);
+        for (int i = 0; i < derived().rows(); ++i) {
+            for (int j = 0; j < derived().cols(); ++j) {
+                norm_ = internals::scale_safe_hypot(norm_, static_cast<Scalar>(derived()(i, j)));
+            }
+        }
+        return norm_;
+    }
     // maximum norm (L^\infty norm)
     constexpr auto inf_norm() const {
         using Scalar = typename XprType::Scalar;
