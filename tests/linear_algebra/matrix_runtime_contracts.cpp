@@ -19,6 +19,7 @@
 
 #include <initializer_list>
 #include <limits>
+#include <type_traits>
 #include <vector>
 
 namespace fdapde {
@@ -279,6 +280,12 @@ template <int StorageOrder> void check_matrix_vectorwise_runtime_contracts() {
 }
 
 template <int StorageOrder> void check_matrix_reduction_runtime_contracts() {
+    const auto expect_empty_shape = [](const auto& result, int rows, int cols) {
+        EXPECT_EQ(result.rows(), rows);
+        EXPECT_EQ(result.cols(), cols);
+        EXPECT_EQ(result.size(), 0);
+    };
+
     const Matrix<double, 2, 3, StorageOrder> negative(
       {-4.0, -2.0, -3.0, -9.0, -8.0, -7.0});
     EXPECT_DOUBLE_EQ(negative.max(), -2.0);
@@ -296,22 +303,69 @@ template <int StorageOrder> void check_matrix_reduction_runtime_contracts() {
     const Matrix<double, Dynamic, Dynamic, StorageOrder> empty;
     EXPECT_DOUBLE_EQ(empty.sum(), 0.0);
     EXPECT_DOUBLE_EQ(empty.prod(), 1.0);
+    EXPECT_THROW(static_cast<void>(empty.mean()), std::domain_error);
+    EXPECT_THROW(static_cast<void>(empty.max()), std::domain_error);
+    EXPECT_THROW(static_cast<void>(empty.min()), std::domain_error);
+
+    const Matrix<int, Dynamic, Dynamic, StorageOrder> empty_int;
+    EXPECT_THROW(static_cast<void>(empty_int.mean()), std::domain_error);
+    EXPECT_THROW(static_cast<void>(empty_int.max()), std::domain_error);
+    EXPECT_THROW(static_cast<void>(empty_int.min()), std::domain_error);
 
     const Matrix<double, 2, Dynamic, StorageOrder> empty_row_axes(2, 0);
+    EXPECT_THROW(static_cast<void>(empty_row_axes.mean()), std::domain_error);
+    EXPECT_THROW(static_cast<void>(empty_row_axes.max()), std::domain_error);
+    EXPECT_THROW(static_cast<void>(empty_row_axes.min()), std::domain_error);
     EXPECT_EQ(
       empty_row_axes.rowwise().sum(),
       (Matrix<double, 2, 1, StorageOrder>({0.0, 0.0})));
     EXPECT_EQ(
       empty_row_axes.rowwise().prod(),
       (Matrix<double, 2, 1, StorageOrder>({1.0, 1.0})));
+    EXPECT_THROW(static_cast<void>(empty_row_axes.rowwise().mean()(0, 0)), std::domain_error);
+    EXPECT_THROW(static_cast<void>(empty_row_axes.rowwise().max()(0, 0)), std::domain_error);
+    EXPECT_THROW(static_cast<void>(empty_row_axes.rowwise().min()(0, 0)), std::domain_error);
+    expect_empty_shape(empty_row_axes.colwise().mean(), 1, 0);
+    expect_empty_shape(empty_row_axes.colwise().max(), 1, 0);
+    expect_empty_shape(empty_row_axes.colwise().min(), 1, 0);
 
     const Matrix<double, Dynamic, 3, StorageOrder> empty_col_axes(0, 3);
+    EXPECT_THROW(static_cast<void>(empty_col_axes.mean()), std::domain_error);
+    EXPECT_THROW(static_cast<void>(empty_col_axes.max()), std::domain_error);
+    EXPECT_THROW(static_cast<void>(empty_col_axes.min()), std::domain_error);
     EXPECT_EQ(
       empty_col_axes.colwise().sum(),
       (Matrix<double, 1, 3, StorageOrder>({0.0, 0.0, 0.0})));
     EXPECT_EQ(
       empty_col_axes.colwise().prod(),
       (Matrix<double, 1, 3, StorageOrder>({1.0, 1.0, 1.0})));
+    EXPECT_THROW(static_cast<void>(empty_col_axes.colwise().mean()(0, 0)), std::domain_error);
+    EXPECT_THROW(static_cast<void>(empty_col_axes.colwise().max()(0, 0)), std::domain_error);
+    EXPECT_THROW(static_cast<void>(empty_col_axes.colwise().min()(0, 0)), std::domain_error);
+    expect_empty_shape(empty_col_axes.rowwise().mean(), 0, 1);
+    expect_empty_shape(empty_col_axes.rowwise().max(), 0, 1);
+    expect_empty_shape(empty_col_axes.rowwise().min(), 0, 1);
+
+    expect_empty_shape(empty_int.rowwise().mean(), 0, 1);
+    expect_empty_shape(empty_int.rowwise().max(), 0, 1);
+    expect_empty_shape(empty_int.rowwise().min(), 0, 1);
+    expect_empty_shape(empty_int.colwise().mean(), 1, 0);
+    expect_empty_shape(empty_int.colwise().max(), 1, 0);
+    expect_empty_shape(empty_int.colwise().min(), 1, 0);
+
+    const Matrix<int, 2, 2, StorageOrder> integral({-1, -2, -4, -7});
+    const auto row_means = integral.rowwise().mean();
+    const auto col_means = integral.colwise().mean();
+    using RowMean = decltype(row_means);
+    using ColMean = decltype(col_means);
+    static_assert(std::is_same_v<typename RowMean::Scalar, int>);
+    static_assert(std::is_same_v<typename ColMean::Scalar, int>);
+    static_assert(std::is_same_v<decltype(row_means(0, 0)), int>);
+    static_assert(std::is_same_v<decltype(col_means(0, 0)), int>);
+    static_assert(RowMean::Rows == 2 && RowMean::Cols == 1);
+    static_assert(ColMean::Rows == 1 && ColMean::Cols == 2);
+    EXPECT_EQ(row_means, (Matrix<int, 2, 1, StorageOrder>({-1, -5})));
+    EXPECT_EQ(col_means, (Matrix<int, 1, 2, StorageOrder>({-2, -4})));
 }
 
 }   // namespace
@@ -511,7 +565,7 @@ TEST(LinearAlgebraRuntimeContracts, MatrixVectorWiseChecksShapesAndIndexes) {
     check_matrix_vectorwise_runtime_contracts<ColMajor>();
 }
 
-TEST(LinearAlgebraRuntimeContracts, MatrixReductionsPreserveSignedExtremaAndEmptyIdentities) {
+TEST(LinearAlgebraRuntimeContracts, MatrixReductionsHonorEmptyAndIntegralContracts) {
     check_matrix_reduction_runtime_contracts<RowMajor>();
     check_matrix_reduction_runtime_contracts<ColMajor>();
 }

@@ -127,14 +127,20 @@ struct MatrixVectorWiseOp : public MatrixExpr<MatrixVectorWiseOp<XprType_, ByRow
         return redux(xpr_, Scalar(1), [](Scalar tmp, Scalar x) { return tmp * x; });
     }
     constexpr auto mean() const {
-        Scalar size_ = ByRow ? xpr_.rows() : xpr_.cols();
-        return sum() / size_;
+        const int size = reduced_size_();
+        require_defined_reduction_(size);
+        return sum()
+          .cwise()
+          .apply([size](Scalar total) -> Scalar { return static_cast<Scalar>(total / size); })
+          .mwise();
     }
     constexpr auto max() const {
+        require_defined_reduction_(reduced_size_());
         return redux(
           xpr_, std::numeric_limits<Scalar>::lowest(), [](Scalar tmp, Scalar x) { return tmp > x ? tmp : x; });
     }
     constexpr auto min() const {
+        require_defined_reduction_(reduced_size_());
         return redux(xpr_, std::numeric_limits<Scalar>::max(), [](Scalar tmp, Scalar x) { return tmp < x ? tmp : x; });
     }
     // L^2 squared norm
@@ -247,6 +253,13 @@ struct MatrixVectorWiseOp : public MatrixExpr<MatrixVectorWiseOp<XprType_, ByRow
     constexpr int cols() const { return ByRow ? xpr_.cols() : Cols; }
    private:
     // internals
+    constexpr int reduced_size_() const { return ByRow ? xpr_.rows() : xpr_.cols(); }
+    constexpr void require_defined_reduction_(int reduced_size) const {
+        const int output_size = ByRow ? xpr_.cols() : xpr_.rows();
+        if (reduced_size == 0 && output_size > 0) {
+            throw std::domain_error("vector-wise reduction requires a nonempty reduced axis");
+        }
+    }
     template <typename RhsXprType_>
     constexpr void require_compatible_shape_(const MatrixExpr<RhsXprType_>& rhs) const {
         const bool compatible = ByRow == 0 ?

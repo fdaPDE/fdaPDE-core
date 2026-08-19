@@ -265,14 +265,19 @@ template <typename XprType_> struct MatrixExpr {
         if (derived().size() == 0) return Scalar(1);
         return redux(Scalar(1), [](const Scalar& tmp, const Scalar& x) { return tmp * x; });
     }
-    constexpr auto mean() const { return derived().sum() / derived().size(); }
+    constexpr auto mean() const {
+        if (derived().size() == 0) { throw std::domain_error("mean requires a nonempty matrix"); }
+        return derived().sum() / derived().size();
+    }
     constexpr auto max() const {
         using Scalar = typename XprType::Scalar;
+        if (derived().size() == 0) { throw std::domain_error("max requires a nonempty matrix"); }
         return redux(
           std::numeric_limits<Scalar>::lowest(), [](const Scalar& tmp, const Scalar& x) { return tmp > x ? tmp : x; });
     }
     constexpr auto min() const {
         using Scalar = typename XprType::Scalar;
+        if (derived().size() == 0) { throw std::domain_error("min requires a nonempty matrix"); }
         return redux(
           std::numeric_limits<Scalar>::max(), [](const Scalar& tmp, const Scalar& x) { return tmp < x ? tmp : x; });
     }
