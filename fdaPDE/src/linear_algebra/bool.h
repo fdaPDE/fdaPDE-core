@@ -28,6 +28,15 @@ template <typename XprType_> struct BoolMatrixExpr;
 
 namespace internals {
 
+constexpr int bitpack_count(int size, int pack_size) {
+    return size <= 0 ? 0 : 1 + (size - 1) / pack_size;
+}
+
+template <typename BitPack> constexpr BitPack low_bits_mask(int used_bits) {
+    constexpr int pack_size = sizeof(BitPack) * 8;
+    return used_bits == pack_size ? ~BitPack(0) : (BitPack(1) << used_bits) - 1;
+}
+
 struct bitpack_assignment_executor {
     template <typename DstMatrixType, typename SrcXprType, typename AssignmentOp>
         requires(
@@ -59,6 +68,11 @@ template <int Rows_, int Cols_, int StorageOrder_, typename BoolMatrixType_>
 class MatrixBase<bool, Rows_, Cols_, StorageOrder_, BoolMatrixType_> : public BoolMatrixExpr<BoolMatrixType_> {
     fdapde_static_assert(
       (Rows_ == Dynamic || Rows_ > 0) && (Cols_ == Dynamic || Cols_ > 0), ZERO_STATICALLY_SIZED_MATRICES_ARE_INVALID);
+    fdapde_static_assert(
+      Rows_ == Dynamic || Cols_ == Dynamic ||
+        static_cast<std::uint64_t>(Rows_) * static_cast<std::uint64_t>(Cols_) <=
+          static_cast<std::uint64_t>(std::numeric_limits<int>::max()),
+      MATRIX_SIZE_EXCEEDS_SUPPORTED_RANGE);
    private:
     using BoolMatrixType = std::decay_t<BoolMatrixType_>;
     using Base = BoolMatrixExpr<BoolMatrixType>;
@@ -200,8 +214,19 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
     static constexpr int NestAsRef = 1;
     static constexpr int ReadOnly = std::is_const_v<Scalar>;
     static constexpr std::size_t PackSize = Base::PackSize;
-    static constexpr int StorageSize =
-      Rows == Dynamic || Cols == Dynamic ? Dynamic : (static_cast<int>(1 + (Rows * Cols) / PackSize));
+    static constexpr int StorageSize = [] {
+        if constexpr (Rows == Dynamic || Cols == Dynamic) {
+            return Dynamic;
+        } else {
+            constexpr std::uint64_t size =
+              static_cast<std::uint64_t>(Rows) * static_cast<std::uint64_t>(Cols);
+            if constexpr (size > static_cast<std::uint64_t>(std::numeric_limits<int>::max())) {
+                return 0;
+            } else {
+                return internals::bitpack_count(static_cast<int>(size), static_cast<int>(PackSize));
+            }
+        }
+    }();
     using StorageType = std::conditional_t<
       Rows == Dynamic || Cols == Dynamic, std::vector<bitpack_t>,
       std::array<bitpack_t, static_cast<std::size_t>(StorageSize)>>;   // avoid clang narrowing
@@ -210,9 +235,9 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
     using assignment_executor = typename Base::assignment_executor;
   
     constexpr Matrix() noexcept :
-        Base(), data_(), bitpacks_(StorageSize == Dynamic ? 0 : 1 + fdapde::ceil((Rows * Cols) / PackSize)) { }
+        Base(), data_(), bitpacks_(StorageSize == Dynamic ? 0 : StorageSize) { }
     constexpr Matrix(const Matrix& other) :
-        Base(), data_(), bitpacks_(StorageSize == Dynamic ? 0 : 1 + fdapde::ceil((Rows * Cols) / PackSize)) {
+        Base(), data_(), bitpacks_(StorageSize == Dynamic ? 0 : StorageSize) {
         if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { resize(other.rows(), other.cols()); }
         assignment_executor::run(*this, other, [](bitpack_t& l, const bitpack_t& r) { l = r; });
     }
@@ -223,13 +248,13 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
     }
     template <typename RhsXprType_>   // construct from plain BoolMatrixExpr
     constexpr Matrix(const BoolMatrixExpr<RhsXprType_>& rhs) :
-        Base(), bitpacks_(StorageSize == Dynamic ? 0 : 1 + fdapde::ceil((Rows * Cols) / PackSize)) {
+        Base(), bitpacks_(StorageSize == Dynamic ? 0 : StorageSize) {
         if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { resize(rhs.rows(), rhs.cols()); }
         assignment_executor::run(*this, rhs.derived(), [](bitpack_t& l, const bitpack_t& r) { l = r; });
     }
     template <typename RhsXprType_>   // cast MatrixExpr to bool
     constexpr Matrix(const MatrixExpr<RhsXprType_>& rhs) :
-        Base(), data_(), bitpacks_(StorageSize == Dynamic ? 0 : 1 + fdapde::ceil((Rows * Cols) / PackSize)) {
+        Base(), data_(), bitpacks_(StorageSize == Dynamic ? 0 : StorageSize) {
         fdapde_static_assert(
           internals::same_static_shape_weak_v<This FDAPDE_COMMA RhsXprType_>,
           INVALID_ASSIGNMENT__NOT_MATCHING_LHS_AND_RHS_STATIC_SIZES);
@@ -249,14 +274,14 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
     // value-initialized static-sized matrix
     constexpr explicit Matrix(bool v)
         requires(Rows_ != Dynamic && Cols_ != Dynamic)
-        : data_(), bitpacks_(StorageSize == Dynamic ? 0 : 1 + fdapde::ceil((Rows * Cols) / PackSize)) {
+        : data_(), bitpacks_(StorageSize == Dynamic ? 0 : StorageSize) {
         bitpack_t v_ = v ? -1 : 0;
         for (int i = 0; i < bitpacks_; ++i) { data_[i] = v_; }
     }
     // false-initialized dynamic-sized matrix. For static-sized matrices does nothing (exposed for API compatibility)
     constexpr Matrix(int rows, int cols)
         requires(Rows_ != 1 && Cols_ != 1)
-        : Base(rows, cols), bitpacks_(1 + std::ceil((rows * cols) / PackSize)) {
+        : Base(rows, cols), bitpacks_(internals::bitpack_count(this->size(), static_cast<int>(PackSize))) {
         if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { data_.resize(bitpacks_, 0); }
     }
     // value-initialized dynamic-sized matrix, avoid vectors
@@ -271,7 +296,7 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
     // false-initialized dynamic-sized vector
     constexpr explicit Matrix(int size)
         requires(Rows_ == Dynamic || Cols_ == Dynamic)
-        : Base(size), data_(), bitpacks_(1 + std::ceil(size / PackSize)) {
+        : Base(size), data_(), bitpacks_(internals::bitpack_count(this->size(), static_cast<int>(PackSize))) {
         fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
         if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { data_.resize(bitpacks_, 0); }
     }
@@ -290,7 +315,7 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
     template <typename Scalar, std::size_t Size>
         requires(std::is_convertible_v<Scalar, bool>)
     constexpr explicit Matrix(const Scalar (&data)[Size]) :
-        Base(), data_(), bitpacks_(1 + fdapde::ceil(Size / PackSize)) {
+        Base(), data_(), bitpacks_(StorageSize) {
         fdapde_static_assert(
           Rows_ != Dynamic && Cols_ != Dynamic && Rows * Cols == Size, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
         for (int i = 0; i < Rows; ++i) {
@@ -313,7 +338,7 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
                 this->operator()(i, j) = data[i * this->row_stride_ + j * this->col_stride_];
             }
         }
-        bitpacks_ = 1 + fdapde::ceil(data_.size() / PackSize);
+        bitpacks_ = internals::bitpack_count(this->rows_ * this->cols_, static_cast<int>(PackSize));
         return;
     }
     // static named constructors
@@ -344,7 +369,7 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
         this->cols_ = cols_;
         this->row_stride_ = StorageOrder_ == RowMajor ? cols_ : 1;
         this->col_stride_ = StorageOrder_ == RowMajor ? 1 : rows_;
-        bitpacks_ = 1 + std::ceil((rows_ * cols_) / PackSize);
+        bitpacks_ = internals::bitpack_count(rows_ * cols_, static_cast<int>(PackSize));
         data_.resize(bitpacks_, 0);
         return;
     }
@@ -525,8 +550,6 @@ class BoolMatrixBlock : public BoolMatrixExpr<BoolMatrixBlock<BlockRows_, BlockC
         start_col_(BlockCols_ == 1 ? i : 0),
         block_rows_(BlockRows_ == 1 ? 1 : xpr.rows()),
         block_cols_(BlockCols_ == 1 ? 1 : xpr.cols()),
-        start_bitpack_((start_row_ * xpr.cols() + start_col_) / PackSize),
-        end_bitpack_(1 + ((start_row_ + block_rows_) * xpr.cols() + start_col_ + block_cols_) / PackSize),
         xpr_(std::forward<XprType__>(xpr)) {
         fdapde_static_assert(BlockRows_ == 1 || BlockCols_ == 1, THIS_METHOD_IS_FOR_ROW_AND_COLUMN_BLOCKS_ONLY);
         fdapde_assert(
@@ -540,8 +563,6 @@ class BoolMatrixBlock : public BoolMatrixExpr<BoolMatrixBlock<BlockRows_, BlockC
         start_col_(start_col),
         block_rows_(BlockRows_),
         block_cols_(BlockCols_),
-        start_bitpack_((start_row_ * xpr.cols() + start_col_) / PackSize),
-        end_bitpack_(1 + ((start_row_ + block_rows_) * xpr.cols() + start_col_ + block_cols_) / PackSize),
         xpr_(std::forward<XprType__>(xpr)) {
         fdapde_static_assert(
           BlockRows_ != Dynamic && BlockCols_ != Dynamic, THIS_METHOD_IS_FOR_STATIC_SIZED_BLOCKS_ONLY);
@@ -557,8 +578,6 @@ class BoolMatrixBlock : public BoolMatrixExpr<BoolMatrixBlock<BlockRows_, BlockC
         start_col_(start_col),
         block_rows_(block_rows),
         block_cols_(block_cols),
-        start_bitpack_((start_row_ * xpr.cols() + start_col_) / PackSize),
-        end_bitpack_(1 + ((start_row_ + block_rows_) * xpr.cols() + start_col_ + block_cols_) / PackSize),
         xpr_(std::forward<XprType__>(xpr)) {
         fdapde_static_assert(
           BlockRows_ == Dynamic && BlockCols_ == Dynamic, THIS_METHOD_IS_FOR_DYNAMIC_SIZED_BLOCKS_ONLY);
@@ -572,7 +591,7 @@ class BoolMatrixBlock : public BoolMatrixExpr<BoolMatrixBlock<BlockRows_, BlockC
     constexpr int rows() const noexcept { return BlockRows_ != Dynamic ? BlockRows_ : block_rows_; }
     constexpr int cols() const noexcept { return BlockCols_ != Dynamic ? BlockCols_ : block_cols_; }
     constexpr int size() const { return rows() * cols(); }
-    constexpr int bitpacks() const { return (1 + fdapde::ceil(size() / PackSize)); }
+    constexpr int bitpacks() const { return internals::bitpack_count(size(), PackSize); }
     constexpr decltype(auto) operator()(int i, int j) const {
         fdapde_assert(i >= 0 && i < block_rows_ && j >= 0 && j < block_cols_);
         return xpr_(i + start_row_, j + start_col_);
@@ -597,14 +616,18 @@ class BoolMatrixBlock : public BoolMatrixExpr<BoolMatrixBlock<BlockRows_, BlockC
         xpr_.set(i + start_row_, j + start_col_);
     }
     constexpr void set() noexcept {
-      for (int i = start_bitpack_; i < end_bitpack_; ++i) { xpr_.bitpack(i) |= bitpack_mask_(i); }
+        for (int i = 0; i < rows(); ++i) {
+            for (int j = 0; j < cols(); ++j) { xpr_.set(start_row_ + i, start_col_ + j); }
+        }
     }
     constexpr void clear(int i, int j) noexcept {
         fdapde_assert(i >= 0 && i < block_rows_ && j >= 0 && j < block_cols_);
         xpr_.clear(i + start_row_, j + start_col_);
     }
     constexpr void clear() noexcept {
-        for (int i = start_bitpack_; i < end_bitpack_; ++i) { xpr_.bitpack(i) &= ~bitpack_mask_(i); }
+        for (int i = 0; i < rows(); ++i) {
+            for (int j = 0; j < cols(); ++j) { xpr_.clear(start_row_ + i, start_col_ + j); }
+        }
     }
     constexpr bitpack_t bitpack(int i) const {
         fdapde_assert(i >= 0 && i < bitpacks());
@@ -627,29 +650,8 @@ class BoolMatrixBlock : public BoolMatrixExpr<BoolMatrixBlock<BlockRows_, BlockC
         return out;
     }
    private:
-    // generates a mask for active block bits in i-th global bitpack
-    constexpr bitpack_t bitpack_mask_(int i) const {
-        fdapde_assert(i >= 0 && i < xpr_.bitpacks());
-        bitpack_t out = bitpack_t(0);
-        // precompute block bit layout
-        const int max_col = start_col_ + block_cols_;
-	const int max_row = start_row_ + block_rows_;
-        int col = (i * PackSize % xpr_.cols());
-        int row = (i * PackSize / xpr_.cols());
-	// flag as 1 all block bits intersected by this bitpack
-        constexpr bitpack_t mask = bitpack_t(1);
-        for (int j = 0; j < PackSize; ++j) {
-            out |= (mask & (row >= start_row_ && row < max_row && col >= start_col_ && col < max_col)) << j;
-            if (++col == xpr_.cols()) {
-                col = 0;
-                row++;
-            }
-        }
-        return out;
-    }
     int start_row_ = 0, start_col_ = 0;
     int block_rows_ = 0, block_cols_ = 0;
-    int start_bitpack_ = 0, end_bitpack_ = 0;   // index of first and last intersected bitpack
     XprTypeNested xpr_;
 };
 
@@ -965,7 +967,7 @@ constexpr bool operator==(const BoolMatrixExpr<LhsXprType>& lhs, const BoolMatri
     // fast first n bitpacks comparison
     for (int i = 0; i < n && result; i++) { result &= (d1.bitpack(i) == d2.bitpack(i)); }
     // process last bitpack
-    bitpack_t mask = ~(bitpack_t)0 >> (pack_size - (d1.size() - pack_size * n));
+    const bitpack_t mask = internals::low_bits_mask<bitpack_t>(d1.size() - pack_size * n);
     result &= ((mask & d1.bitpack(n)) == (mask & d2.bitpack(n)));
     return result;
 }
@@ -1044,10 +1046,10 @@ class MatrixView<bool, Rows_, Cols_, StorageOrder_> :
     constexpr explicit MatrixView(Scalar_* data) :
         Base(), data_(reinterpret_cast<bitpack_t*>(data)), bitpacks_(0), last_bitpack_mask_(0) {
         fdapde_static_assert(Rows_ != Dynamic && Cols_ != Dynamic, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
-        bitpacks_ = 1 + std::ceil(Rows * Cols / PackSize);
+        bitpacks_ = internals::bitpack_count(Rows * Cols, PackSize);
         // compute last bitpack
         const int last_used_bits = (Rows * Cols - (bitpacks_ - 1) * PackSize);
-        last_bitpack_mask_ = ((bitpack_t(1) << last_used_bits) - 1);
+        last_bitpack_mask_ = internals::low_bits_mask<bitpack_t>(last_used_bits);
     }
     template <typename Scalar_>
         requires(std::is_convertible_v<Scalar_, bitpack_t>)
@@ -1055,20 +1057,22 @@ class MatrixView<bool, Rows_, Cols_, StorageOrder_> :
         Base(size), data_(reinterpret_cast<bitpack_t*>(data)), bitpacks_(0), last_bitpack_mask_(0) {
         fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
         fdapde_assert(size > 0);
-        bitpacks_ = 1 + std::ceil(size / PackSize);
-        // compute last bitpack mask
-        const int last_used_bits = (size - (bitpacks_ - 1) * PackSize);
-        last_bitpack_mask_ = ((bitpack_t(1) << last_used_bits) - 1);
+        bitpacks_ = internals::bitpack_count(this->size(), PackSize);
+        if (bitpacks_ > 0) {
+            const int last_used_bits = (this->size() - (bitpacks_ - 1) * PackSize);
+            last_bitpack_mask_ = internals::low_bits_mask<bitpack_t>(last_used_bits);
+        }
     }
     template <typename Scalar_>
         requires(std::is_convertible_v<Scalar_, bitpack_t>)
     constexpr MatrixView(Scalar_* data, int rows, int cols) :
         Base(rows, cols), data_(reinterpret_cast<bitpack_t*>(data)), bitpacks_(0), last_bitpack_mask_(0) {
         fdapde_assert(rows > 0 && cols > 0);
-        bitpacks_ = 1 + std::ceil(rows * cols / PackSize);
-        // compute last bitpack mask
-        const int last_used_bits = (rows * cols - (bitpacks_ - 1) * PackSize);
-        last_bitpack_mask_ = ((bitpack_t(1) << last_used_bits) - 1);
+        bitpacks_ = internals::bitpack_count(this->size(), PackSize);
+        if (bitpacks_ > 0) {
+            const int last_used_bits = (this->size() - (bitpacks_ - 1) * PackSize);
+            last_bitpack_mask_ = internals::low_bits_mask<bitpack_t>(last_used_bits);
+        }
     }
     // inherit assignment from Base
     using Base::operator=;
