@@ -40,8 +40,11 @@ struct bitpack_assignment_executor {
           internals::same_static_shape_weak_v<DstMatrixType FDAPDE_COMMA SrcXprType>,
           INVALID_ASSIGNMENT__NOT_MATCHING_LHS_AND_RHS_STATIC_SIZES);
         if constexpr (internals::is_dynamic_sized_v<DstMatrixType> || internals::is_dynamic_sized_v<SrcXprType>) {
-            fdapde_assert(dst.rows() == src.rows() && dst.cols() == src.cols());
+            if (dst.rows() != src.rows() || dst.cols() != src.cols()) {
+                throw std::invalid_argument("Boolean matrix dimensions do not match");
+            }
         }
+        if (dst.size() == 0) return;
         auto& d = dst.derived();
         const auto& s = src.derived();
         // fast bitpack assignment
@@ -817,6 +820,7 @@ template <typename XprType_> struct BoolMatrixExpr {
     friend std::ostream& operator<<(std::ostream& out, const BoolMatrixExpr& m) {
         const int rows = m.derived().rows();
         const int cols = m.derived().cols();
+        if (rows == 0 || cols == 0) return out;
         const auto& d = m.derived();
         for (int i = 0; i < rows - 1; ++i) {
             for (int j = 0; j < cols; ++j) { out << d(i, j) << " "; }
@@ -895,12 +899,15 @@ template <typename XprType_> struct BoolMatrixExpr {
     constexpr auto right_cols(int cols) const { return block(0, derived().cols() - cols, derived().rows(), cols); }
     // visitor support
     constexpr bool all() const {
+        if (derived().size() == 0) return true;
         return internals::matrix_redux_bitpack_executor::run(derived(), 1, internals::all_redux_bitpack_executor());
     }
     constexpr bool any() const {
+        if (derived().size() == 0) return false;
         return internals::matrix_redux_bitpack_executor::run(derived(), 1, internals::any_redux_bitpack_executor());
     }
     constexpr int count() const {
+        if (derived().size() == 0) return 0;
         return internals::matrix_redux_bitpack_executor::run(derived(), 0, internals::cnt_redux_bitpack_executor());
     }
     // binary selection
@@ -943,13 +950,16 @@ constexpr bool operator==(const BoolMatrixExpr<LhsXprType>& lhs, const BoolMatri
        internals::same_static_shape_v<LhsXprType FDAPDE_COMMA RhsXprType>),
       INVALID_COMPARISON__MATRICES_OF_DIFFERENT_STATIC_SIZE);
     if constexpr (internals::is_dynamic_sized_v<LhsXprType> || internals::is_dynamic_sized_v<RhsXprType>) {
-        fdapde_assert(lhs.rows() == rhs.rows() && lhs.cols() == rhs.cols());
+        if (lhs.rows() != rhs.rows() || lhs.cols() != rhs.cols()) {
+            throw std::invalid_argument("Boolean matrix dimensions do not match");
+        }
     }
     using bitpack_t = typename LhsXprType::bitpack_t;
     constexpr int pack_size = sizeof(bitpack_t) * 8;
 
     const auto& d1 = lhs.derived();
     const auto& d2 = rhs.derived();
+    if (d1.size() == 0) return true;
     bool result = true;
     int n = d1.bitpacks() - 1;
     // fast first n bitpacks comparison
@@ -1082,6 +1092,7 @@ class MatrixView<bool, Rows_, Cols_, StorageOrder_> :
         this->operator[](i).set();
     }
     constexpr void set() {
+        if (bitpacks_ == 0) return;
         for (int i = 0; i < bitpacks_ - 1; ++i) { data_[i] = ~bitpack_t(0); }
         data_[bitpacks_ - 1] |= last_bitpack_mask_;
     }
@@ -1091,6 +1102,7 @@ class MatrixView<bool, Rows_, Cols_, StorageOrder_> :
         this->operator[](i).clear();
     }
     constexpr void clear() {
+        if (bitpacks_ == 0) return;
         for (int i = 0; i < bitpacks_ - 1; ++i) { data_[i] = bitpack_t(0); }
         data_[bitpacks_ - 1] &= ~last_bitpack_mask_;
     }

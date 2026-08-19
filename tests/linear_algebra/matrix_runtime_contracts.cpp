@@ -19,6 +19,7 @@
 
 #include <initializer_list>
 #include <limits>
+#include <sstream>
 #include <type_traits>
 #include <vector>
 
@@ -424,6 +425,60 @@ template <int StorageOrder> void check_matrix_norm_runtime_contracts() {
     EXPECT_DOUBLE_EQ(const_view.norm(), 5.0);
 }
 
+template <int StorageOrder> void check_empty_boolean_runtime_contracts() {
+    using dynamic_matrix = Matrix<bool, Dynamic, Dynamic, StorageOrder>;
+
+    const dynamic_matrix empty;
+    EXPECT_TRUE(empty.all());
+    EXPECT_FALSE(empty.any());
+    EXPECT_EQ(empty.count(), 0);
+    EXPECT_TRUE(empty == dynamic_matrix());
+    EXPECT_FALSE(empty != dynamic_matrix());
+
+    const dynamic_matrix zero_rows(0, 3);
+    const dynamic_matrix zero_cols(3, 0);
+    EXPECT_TRUE(zero_rows.all());
+    EXPECT_FALSE(zero_rows.any());
+    EXPECT_EQ(zero_rows.count(), 0);
+    EXPECT_TRUE(zero_rows == dynamic_matrix(0, 3));
+    EXPECT_TRUE(zero_cols.all());
+    EXPECT_FALSE(zero_cols.any());
+    EXPECT_EQ(zero_cols.count(), 0);
+    EXPECT_TRUE(zero_cols == dynamic_matrix(3, 0));
+    EXPECT_THROW(static_cast<void>(zero_rows == zero_cols), std::invalid_argument);
+    dynamic_matrix mismatched_assignment(0, 3);
+    EXPECT_THROW(mismatched_assignment &= zero_cols, std::invalid_argument);
+    EXPECT_EQ(mismatched_assignment.rows(), 0);
+    EXPECT_EQ(mismatched_assignment.cols(), 3);
+
+    dynamic_matrix assigned(1, 2);
+    assigned(0, 1) = true;
+    assigned = empty;
+    EXPECT_EQ(assigned.rows(), 0);
+    EXPECT_EQ(assigned.cols(), 0);
+    EXPECT_TRUE(assigned.all());
+    EXPECT_FALSE(assigned.any());
+    EXPECT_EQ(assigned.count(), 0);
+
+    dynamic_matrix expression_assigned(2, 1);
+    expression_assigned(1, 0) = true;
+    expression_assigned = ~empty;
+    EXPECT_EQ(expression_assigned.rows(), 0);
+    EXPECT_EQ(expression_assigned.cols(), 0);
+    EXPECT_TRUE(expression_assigned.all());
+    EXPECT_FALSE(expression_assigned.any());
+    EXPECT_EQ(expression_assigned.count(), 0);
+
+    std::ostringstream stream;
+    stream << empty << zero_rows << zero_cols;
+    EXPECT_TRUE(stream.str().empty());
+
+    MatrixView<bool, Dynamic, Dynamic, StorageOrder> empty_view;
+    EXPECT_EQ(empty_view.bitpacks(), 0);
+    empty_view.set();
+    empty_view.clear();
+}
+
 }   // namespace
 
 TEST(LinearAlgebraRuntimeContracts, DynamicSquareOperationsRemainAvailable) {
@@ -629,6 +684,11 @@ TEST(LinearAlgebraRuntimeContracts, MatrixReductionsHonorEmptyAndIntegralContrac
 TEST(LinearAlgebraRuntimeContracts, MatrixNormsRemainScaleSafe) {
     check_matrix_norm_runtime_contracts<RowMajor>();
     check_matrix_norm_runtime_contracts<ColMajor>();
+}
+
+TEST(LinearAlgebraRuntimeContracts, EmptyBooleanExpressionsAreTerminalSafe) {
+    check_empty_boolean_runtime_contracts<RowMajor>();
+    check_empty_boolean_runtime_contracts<ColMajor>();
 }
 
 }   // namespace fdapde
