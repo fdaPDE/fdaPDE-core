@@ -19,6 +19,7 @@
 
 #include <array>
 #include <limits>
+#include <vector>
 
 namespace {
 
@@ -113,6 +114,145 @@ template <int StorageOrder> void check_exact_boolean_pack_accounting() {
     EXPECT_EQ(partial_storage[2], canary);
 }
 
+template <int StorageOrder> void check_boolean_owner_contracts() {
+    using fixed_matrix = fdapde::Matrix<bool, 2, 3, StorageOrder>;
+    using dynamic_matrix = fdapde::Matrix<bool, fdapde::Dynamic, fdapde::Dynamic, StorageOrder>;
+    using partial_matrix = fdapde::Matrix<bool, 2, fdapde::Dynamic, StorageOrder>;
+    using dynamic_row = fdapde::Matrix<bool, 1, fdapde::Dynamic, StorageOrder>;
+    using dynamic_column = fdapde::Matrix<bool, fdapde::Dynamic, 1, StorageOrder>;
+    constexpr int OppositeOrder = StorageOrder == fdapde::RowMajor ? fdapde::ColMajor : fdapde::RowMajor;
+
+    EXPECT_THROW(static_cast<void>(dynamic_matrix(-1, 2)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(partial_matrix(3, 4)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(fixed_matrix(3, 2)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(dynamic_column(-1)), std::invalid_argument);
+    EXPECT_THROW(
+      static_cast<void>(dynamic_matrix(std::numeric_limits<int>::max(), 2)), std::length_error);
+
+    const fixed_matrix fixed_zero(2, 3);
+    EXPECT_FALSE(fixed_zero.any());
+    EXPECT_EQ(fixed_zero.count(), 0);
+    const dynamic_matrix dynamic_zero(2, 65);
+    EXPECT_FALSE(dynamic_zero.any());
+    EXPECT_EQ(dynamic_zero.count(), 0);
+    const dynamic_matrix dynamic_ones(2, 65, true);
+    EXPECT_TRUE(dynamic_ones.all());
+    EXPECT_EQ(dynamic_ones.count(), 130);
+
+    const std::array<bool, 6> expected {false, true, false, true, true, false};
+    const auto expect_logical_values = [&expected](const auto& matrix) {
+        EXPECT_EQ(matrix.rows(), 2);
+        EXPECT_EQ(matrix.cols(), 3);
+        for (int i = 0; i < matrix.rows(); ++i) {
+            for (int j = 0; j < matrix.cols(); ++j) {
+                EXPECT_EQ(bool(matrix(i, j)), expected[static_cast<std::size_t>(i * matrix.cols() + j)]);
+            }
+        }
+    };
+
+    const bool array_data[6] {false, true, false, true, true, false};
+    const fixed_matrix from_array(array_data);
+    expect_logical_values(from_array);
+    const std::vector<bool> vector_data {false, true, false, true, true, false};
+    const fixed_matrix from_vector(vector_data);
+    expect_logical_values(from_vector);
+    const std::vector<bool> short_vector_data(5);
+    EXPECT_THROW(static_cast<void>(fixed_matrix(short_vector_data)), std::invalid_argument);
+
+    std::vector<bool> boundary_data(130);
+    for (int i : {0, 63, 64, 129}) boundary_data[static_cast<std::size_t>(i)] = true;
+    const dynamic_column boundary_vector(boundary_data);
+    EXPECT_EQ(boundary_vector.size(), 130);
+    for (int i = 0; i < boundary_vector.size(); ++i) {
+        EXPECT_EQ(bool(boundary_vector[i]), i == 0 || i == 63 || i == 64 || i == 129);
+    }
+
+    const fdapde::Matrix<int, 2, 3, OppositeOrder> numeric({0, 2, -3, 0, 4, 0});
+    const fixed_matrix converted(numeric);
+    const std::array<bool, 6> converted_expected {false, true, true, false, true, false};
+    for (int i = 0; i < converted.rows(); ++i) {
+        for (int j = 0; j < converted.cols(); ++j) {
+            EXPECT_EQ(
+              bool(converted(i, j)), converted_expected[static_cast<std::size_t>(i * converted.cols() + j)]);
+        }
+    }
+    const fdapde::Matrix<int, fdapde::Dynamic, fdapde::Dynamic, OppositeOrder> smaller_numeric(1, 2);
+    EXPECT_THROW(static_cast<void>(fixed_matrix(smaller_numeric)), std::invalid_argument);
+
+    fdapde::Matrix<bool, 1, 2, StorageOrder> proxy_values;
+    proxy_values(0, 1) = true;
+    proxy_values(0, 0) = proxy_values(0, 1);
+    proxy_values(0, 1) = false;
+    EXPECT_TRUE(proxy_values(0, 0));
+
+    dynamic_matrix copy_source(2, 65);
+    copy_source(0, 0) = true;
+    copy_source(1, 64) = true;
+    dynamic_matrix copy_target(1, 2, true);
+    copy_target = copy_source;
+    EXPECT_EQ(copy_target.rows(), 2);
+    EXPECT_EQ(copy_target.cols(), 65);
+    EXPECT_EQ(copy_target.bitpacks(), 3);
+    EXPECT_EQ(copy_target.count(), 2);
+    EXPECT_TRUE(copy_target(0, 0));
+    EXPECT_TRUE(copy_target(1, 64));
+    copy_source.clear();
+    EXPECT_EQ(copy_target.count(), 2);
+
+    const auto row_zero_xpr = dynamic_row::Zero(5);
+    const auto row_ones_xpr = dynamic_row::Ones(5);
+    EXPECT_EQ(row_zero_xpr.rows(), 1);
+    EXPECT_EQ(row_zero_xpr.cols(), 5);
+    EXPECT_EQ(row_ones_xpr.rows(), 1);
+    EXPECT_EQ(row_ones_xpr.cols(), 5);
+    if (row_zero_xpr.rows() == 1 && row_zero_xpr.cols() == 5 && row_ones_xpr.rows() == 1 &&
+        row_ones_xpr.cols() == 5) {
+        const dynamic_row row_zero(row_zero_xpr);
+        const dynamic_row row_ones(row_ones_xpr);
+        EXPECT_FALSE(row_zero.any());
+        EXPECT_TRUE(row_ones.all());
+    }
+    const dynamic_column column_zero = dynamic_column::Zero(5);
+    const dynamic_column column_ones = dynamic_column::Ones(5);
+    EXPECT_EQ(column_zero.rows(), 5);
+    EXPECT_EQ(column_zero.cols(), 1);
+    EXPECT_FALSE(column_zero.any());
+    EXPECT_TRUE(column_ones.all());
+
+    dynamic_column retained(10);
+    retained[1] = true;
+    retained[9] = true;
+    retained.resize(5);
+    retained.resize(10);
+    EXPECT_TRUE(retained[1]);
+    EXPECT_FALSE(retained[9]);
+
+    dynamic_column exposed_padding(5, true);
+    exposed_padding.resize(10);
+    for (int i = 0; i < 5; ++i) EXPECT_TRUE(exposed_padding[i]);
+    for (int i = 5; i < 10; ++i) EXPECT_FALSE(exposed_padding[i]);
+
+    partial_matrix partial(2, 3);
+    partial(1, 2) = true;
+    const int partial_bitpacks = partial.bitpacks();
+    EXPECT_THROW(partial.resize(3, 3), std::invalid_argument);
+    EXPECT_EQ(partial.rows(), 2);
+    EXPECT_EQ(partial.cols(), 3);
+    EXPECT_EQ(partial.bitpacks(), partial_bitpacks);
+    EXPECT_TRUE(partial(1, 2));
+
+    dynamic_matrix bounded(1, 2);
+    bounded(0, 1) = true;
+    const int bounded_bitpacks = bounded.bitpacks();
+    EXPECT_THROW(bounded.resize(std::numeric_limits<int>::max(), 2), std::length_error);
+    EXPECT_EQ(bounded.rows(), 1);
+    EXPECT_EQ(bounded.cols(), 2);
+    EXPECT_EQ(bounded.bitpacks(), bounded_bitpacks);
+    if (bounded.rows() == 1 && bounded.cols() == 2 && bounded.bitpacks() == bounded_bitpacks) {
+        EXPECT_TRUE(bounded(0, 1));
+    }
+}
+
 }   // namespace
 
 TEST(linear_algebra, boolean) {
@@ -143,13 +283,15 @@ TEST(linear_algebra, boolean) {
 
     check_exact_boolean_pack_accounting<fdapde::RowMajor>();
     check_exact_boolean_pack_accounting<fdapde::ColMajor>();
+    check_boolean_owner_contracts<fdapde::RowMajor>();
+    check_boolean_owner_contracts<fdapde::ColMajor>();
 }
 
 // Current regression adapted from 86ff6d12:tests/linear_algebra/bool.cpp.
 // Stable source: a2a9c88:test/src/binary_matrix_test.cpp.
 // Stable declarations (9): static_sized_matrix, dynamic_sized_matrix, binary_vector, block_operations,
 // binary_expresssions, visitors, block_repeat, eigen_assignment_and_construct, and reshaped.
-// TODO(P4-B): cover exact pack sizing, resize, views, aliasing, Boolean vectors, row/column/block access,
-// expressions and reductions, repeat, reshape, and select.
+// TODO(P4-B): cover views, aliasing, row/column/block access, expressions and reductions, repeat, reshape,
+// select, and the remaining two-dimensional resize policy.
 // Replace the historical Eigen assignment/construct assertion with native numeric-matrix conversion; do not
 // restore an implicit Eigen bridge.

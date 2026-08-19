@@ -107,13 +107,16 @@ class MatrixBase<bool, Rows_, Cols_, StorageOrder_, BoolMatrixType_> : public Bo
 
         constexpr bit_proxy() noexcept : data_(nullptr), pack_id_(0), bitmask_(0) { }
         template <typename BitPackT_>
+            requires(std::is_convertible_v<BitPackT_* FDAPDE_COMMA BitPackT*>)
         constexpr bit_proxy(const bit_proxy<BitPackT_>& other) :
-            data_(const_cast<BitPackT*>(other.data_)), pack_id_(other.pack_id_), bitmask_(other.bitmask_) { }
-        template <typename BitPackT_> constexpr bit_proxy& operator=(const bit_proxy<BitPackT_>& other) {
-            data_ = const_cast<BitPackT*>(other.data_);
-            pack_id_ = other.pack_id_;
-            bitmask_ = other.bitmask_;
-            return *this;
+            data_(other.data_), pack_id_(other.pack_id_), bitmask_(other.bitmask_) { }
+        constexpr bit_proxy& operator=(const bit_proxy& other) requires(!std::is_const_v<BitPackT>) {
+            return operator=(bool(other));
+        }
+        template <typename BitPackT_>
+            requires(!std::is_const_v<BitPackT>)
+        constexpr bit_proxy& operator=(const bit_proxy<BitPackT_>& other) {
+            return operator=(bool(other));
         }
         constexpr bit_proxy(BitPackT* data, int row, int col, int row_stride, int col_stride) :
             data_(data), pack_id_(), bitmask_() {
@@ -124,10 +127,10 @@ class MatrixBase<bool, Rows_, Cols_, StorageOrder_, BoolMatrixType_> : public Bo
         constexpr bit_proxy(BitPackT* data, int row) :
             data_(data), pack_id_(row / PackSize), bitmask_(bitpack_t(1) << row % PackSize) { }
         // modifiers
-        constexpr void set() { data_[pack_id_] |= bitmask_; }
-        constexpr void clear() { data_[pack_id_] &= ~bitmask_; }
+        constexpr void set() requires(!std::is_const_v<BitPackT>) { data_[pack_id_] |= bitmask_; }
+        constexpr void clear() requires(!std::is_const_v<BitPackT>) { data_[pack_id_] &= ~bitmask_; }
         template <typename T>
-            requires(std::is_convertible_v<T, bool>)
+            requires(!std::is_const_v<BitPackT> && std::is_convertible_v<T, bool>)
         constexpr bit_proxy& operator=(T b) {
             b ? set() : clear();
             return *this;
@@ -206,6 +209,14 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
    private:
     using This = Matrix<bool, Rows_, Cols_, StorageOrder_>;
     using Base = MatrixBase<bool, Rows_, Cols_, StorageOrder_, This>;
+    static constexpr int checked_size_(int rows, int cols) {
+        internals::validate_matrix_shape<Rows_, Cols_>(rows, cols);
+        return internals::checked_matrix_size(Rows_ == Dynamic ? rows : Rows_, Cols_ == Dynamic ? cols : Cols_);
+    }
+    static constexpr int checked_vector_size_(int size) {
+        internals::validate_matrix_vector_size<Rows_, Cols_>(size);
+        return internals::checked_matrix_size(Rows_ == Dynamic ? size : Rows_, Cols_ == Dynamic ? size : Cols_);
+    }
    public:
     using Scalar = typename Base::Scalar;
     using bitpack_t = typename Base::bitpack_t;
@@ -242,13 +253,12 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
         assignment_executor::run(*this, other, [](bitpack_t& l, const bitpack_t& r) { l = r; });
     }
     constexpr Matrix& operator=(const Matrix& other) {
-        bitpacks_ = other.bitpacks_;
         Base::operator=(other);
         return *this;
     }
     template <typename RhsXprType_>   // construct from plain BoolMatrixExpr
     constexpr Matrix(const BoolMatrixExpr<RhsXprType_>& rhs) :
-        Base(), bitpacks_(StorageSize == Dynamic ? 0 : StorageSize) {
+        Base(), data_(), bitpacks_(StorageSize == Dynamic ? 0 : StorageSize) {
         if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { resize(rhs.rows(), rhs.cols()); }
         assignment_executor::run(*this, rhs.derived(), [](bitpack_t& l, const bitpack_t& r) { l = r; });
     }
@@ -259,8 +269,11 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
           internals::same_static_shape_weak_v<This FDAPDE_COMMA RhsXprType_>,
           INVALID_ASSIGNMENT__NOT_MATCHING_LHS_AND_RHS_STATIC_SIZES);
         if constexpr (internals::is_dynamic_sized_v<This>) { resize(rhs.rows(), rhs.cols()); }
-        const int rows = rhs.rows();
-        const int cols = rhs.cols();
+        if (this->rows() != rhs.rows() || this->cols() != rhs.cols()) {
+            throw std::invalid_argument("matrix dimensions do not match its static shape");
+        }
+        const int rows = this->rows();
+        const int cols = this->cols();
         for (int i = 0; i < rows; ++i) {
             for (int j = 0; j < cols; ++j) { this->operator()(i, j) = rhs.derived()(i, j); }
         }
@@ -281,7 +294,8 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
     // false-initialized dynamic-sized matrix. For static-sized matrices does nothing (exposed for API compatibility)
     constexpr Matrix(int rows, int cols)
         requires(Rows_ != 1 && Cols_ != 1)
-        : Base(rows, cols), bitpacks_(internals::bitpack_count(this->size(), static_cast<int>(PackSize))) {
+        : Base(rows, cols), data_(),
+          bitpacks_(internals::bitpack_count(checked_size_(rows, cols), static_cast<int>(PackSize))) {
         if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { data_.resize(bitpacks_, 0); }
     }
     // value-initialized dynamic-sized matrix, avoid vectors
@@ -296,7 +310,8 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
     // false-initialized dynamic-sized vector
     constexpr explicit Matrix(int size)
         requires(Rows_ == Dynamic || Cols_ == Dynamic)
-        : Base(size), data_(), bitpacks_(internals::bitpack_count(this->size(), static_cast<int>(PackSize))) {
+        : Base(size), data_(),
+          bitpacks_(internals::bitpack_count(checked_vector_size_(size), static_cast<int>(PackSize))) {
         fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
         if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { data_.resize(bitpacks_, 0); }
     }
@@ -320,38 +335,44 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
           Rows_ != Dynamic && Cols_ != Dynamic && Rows * Cols == Size, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
         for (int i = 0; i < Rows; ++i) {
             for (int j = 0; j < Cols; ++j) {
-                this->operator()(i, j) = data[i * this->row_stride_ + j * this->col_stride_];
+                this->operator()(i, j) = data[i * Cols + j];
             }
         }
         return;
     }
     template <typename Scalar_>
         requires(std::is_convertible_v<Scalar_, Scalar>)
-    constexpr explicit Matrix(const std::vector<Scalar_>& data) : Base(), data_() {
+    constexpr explicit Matrix(const std::vector<Scalar_>& data) :
+        Base(), data_(), bitpacks_(StorageSize == Dynamic ? 0 : StorageSize) {
         fdapde_static_assert(
           (Rows_ != Dynamic && Cols_ != Dynamic) || (Rows_ == 1 || Cols_ == 1),
           THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_OR_VECTORS);
-        if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { resize(data.size()); }   // dynamic-sized vector
-        fdapde_assert(std::cmp_equal(this->rows_ * this->cols_, data.size()));
-        for (int i = 0; i < Rows; ++i) {
-            for (int j = 0; j < Cols; ++j) {
-                this->operator()(i, j) = data[i * this->row_stride_ + j * this->col_stride_];
+        const int input_size = internals::checked_matrix_data_size(data.size());
+        if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) {
+            resize(input_size);
+        } else if (this->size() != input_size) {
+            throw std::invalid_argument("matrix input size does not match its shape");
+        }
+        const int rows = this->rows();
+        const int cols = this->cols();
+        for (int i = 0; i < rows; ++i) {
+            for (int j = 0; j < cols; ++j) {
+                this->operator()(i, j) = data[static_cast<std::size_t>(i * cols + j)];
             }
         }
-        bitpacks_ = internals::bitpack_count(this->rows_ * this->cols_, static_cast<int>(PackSize));
         return;
     }
     // static named constructors
     static constexpr auto Zero() { return ZeroMatrix<bool, Rows_, Cols_>(); }
     static constexpr auto Zero(int rows) {
         fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
-        return ZeroMatrix<bool, Dynamic, Dynamic>(rows, 1);
+        return ZeroMatrix<bool, Rows_ == 1 ? Rows_ : Dynamic, Cols_ == 1 ? Cols_ : Dynamic>(rows);
     }
     static constexpr auto Zero(int rows, int cols) { return ZeroMatrix<bool, Dynamic, Dynamic>(rows, cols); }
     static constexpr auto Ones() { return OnesMatrix<bool, Rows_, Cols_>(); }
     static constexpr auto Ones(int rows) {
         fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
-        return OnesMatrix<bool, Dynamic, Dynamic>(rows, 1);
+        return OnesMatrix<bool, Rows_ == 1 ? Rows_ : Dynamic, Cols_ == 1 ? Cols_ : Dynamic>(rows);
     }
     static constexpr auto Ones(int rows, int cols) { return OnesMatrix<bool, Dynamic, Dynamic>(rows, cols); }
     // observers
@@ -361,16 +382,26 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
     // modifiers
     void resize(int rows, int cols) {
         fdapde_static_assert(Rows_ == Dynamic || Cols_ == Dynamic, THIS_METHOD_IS_FOR_DYNAMIC_SIZED_MATRICES_ONLY);
-        const int rows_ = Rows_ == Dynamic ? rows : Rows_;
-        const int cols_ = Cols_ == Dynamic ? cols : Cols_;
-        if (rows_ == this->rows_ && cols_ == this->cols_) return;   // do not reallocate memory if sizes didn't changed
-        // update and reallocate memory
-        this->rows_ = rows_;
-        this->cols_ = cols_;
-        this->row_stride_ = StorageOrder_ == RowMajor ? cols_ : 1;
-        this->col_stride_ = StorageOrder_ == RowMajor ? 1 : rows_;
-        bitpacks_ = internals::bitpack_count(rows_ * cols_, static_cast<int>(PackSize));
-        data_.resize(bitpacks_, 0);
+        const int size = checked_size_(rows, cols);
+        const int new_rows = Rows_ == Dynamic ? rows : Rows_;
+        const int new_cols = Cols_ == Dynamic ? cols : Cols_;
+        if (new_rows == this->rows_ && new_cols == this->cols_) return;
+        const int old_size = this->size();
+        const int new_bitpacks = internals::bitpack_count(size, static_cast<int>(PackSize));
+        data_.resize(static_cast<std::size_t>(new_bitpacks), 0);
+        for (int i = old_size; i < size; ++i) {
+            data_[static_cast<std::size_t>(i / static_cast<int>(PackSize))] &=
+              ~(bitpack_t(1) << (i % static_cast<int>(PackSize)));
+        }
+        if (new_bitpacks > 0) {
+            const int used_bits = size - (new_bitpacks - 1) * static_cast<int>(PackSize);
+            data_.back() &= internals::low_bits_mask<bitpack_t>(used_bits);
+        }
+        bitpacks_ = new_bitpacks;
+        this->rows_ = new_rows;
+        this->cols_ = new_cols;
+        this->row_stride_ = StorageOrder_ == RowMajor ? new_cols : 1;
+        this->col_stride_ = StorageOrder_ == RowMajor ? 1 : new_rows;
         return;
     }
     void resize(int size) {
