@@ -109,6 +109,161 @@ static_assert(fdapde::is_boolean_matrix_v<const boolean_mask&>);
 static_assert(fdapde::is_boolean_vector_v<const fdapde::Matrix<bool, 1, 2>&>);
 static_assert(!fdapde::is_boolean_vector_v<int>);
 
+template <typename Matrix>
+concept exposes_static_boolean_block = requires(Matrix&& matrix) {
+    std::forward<Matrix>(matrix).template block<1, 2>(0, 0);
+};
+
+template <typename Matrix>
+concept exposes_dynamic_boolean_block = requires(Matrix&& matrix) {
+    std::forward<Matrix>(matrix).block(0, 0, 1, 2);
+};
+
+template <typename Matrix>
+concept exposes_boolean_row = requires(Matrix&& matrix) { std::forward<Matrix>(matrix).row(0); };
+
+template <typename Matrix>
+concept exposes_boolean_col = requires(Matrix&& matrix) { std::forward<Matrix>(matrix).col(0); };
+
+template <typename Matrix>
+concept exposes_static_boolean_top_rows = requires(Matrix&& matrix) {
+    std::forward<Matrix>(matrix).template top_rows<1>();
+};
+
+template <typename Matrix>
+concept exposes_dynamic_boolean_top_rows = requires(Matrix&& matrix) {
+    std::forward<Matrix>(matrix).top_rows(1);
+};
+
+template <typename Matrix>
+concept exposes_static_boolean_bottom_rows = requires(Matrix&& matrix) {
+    std::forward<Matrix>(matrix).template bottom_rows<1>();
+};
+
+template <typename Matrix>
+concept exposes_dynamic_boolean_bottom_rows = requires(Matrix&& matrix) {
+    std::forward<Matrix>(matrix).bottom_rows(1);
+};
+
+template <typename Matrix>
+concept exposes_static_boolean_left_cols = requires(Matrix&& matrix) {
+    std::forward<Matrix>(matrix).template left_cols<1>();
+};
+
+template <typename Matrix>
+concept exposes_dynamic_boolean_left_cols = requires(Matrix&& matrix) {
+    std::forward<Matrix>(matrix).left_cols(1);
+};
+
+template <typename Matrix>
+concept exposes_static_boolean_right_cols = requires(Matrix&& matrix) {
+    std::forward<Matrix>(matrix).template right_cols<1>();
+};
+
+template <typename Matrix>
+concept exposes_dynamic_boolean_right_cols = requires(Matrix&& matrix) {
+    std::forward<Matrix>(matrix).right_cols(1);
+};
+
+template <typename Block>
+concept permits_boolean_block_coordinate_assignment = requires(Block& block) {
+    block(0, 0) = true;
+};
+
+template <typename Block>
+concept permits_boolean_block_vector_assignment = requires(Block& block) { block[0] = true; };
+
+template <typename Block>
+concept permits_boolean_block_mutation = requires(Block& block) {
+    block.set();
+    block.set(0, 0);
+    block.clear();
+    block.clear(0, 0);
+};
+
+using boolean_block_owner = fdapde::Matrix<bool, 3, 4>;
+using mutable_boolean_block =
+  decltype(std::declval<boolean_block_owner&>().template block<1, 2>(0, 0));
+using const_boolean_block =
+  decltype(std::declval<const boolean_block_owner&>().template block<1, 2>(0, 0));
+using mutable_boolean_row = decltype(std::declval<boolean_block_owner&>().row(0));
+using const_boolean_row = decltype(std::declval<const boolean_block_owner&>().row(0));
+using safe_boolean_block_expression =
+  decltype(std::declval<boolean_block_owner&>() | std::declval<boolean_block_owner&>());
+using safe_boolean_expression_block = decltype(
+  std::declval<safe_boolean_block_expression>().template block<1, 2>(0, 0));
+
+static_assert(exposes_static_boolean_block<boolean_block_owner&>);
+static_assert(exposes_dynamic_boolean_block<boolean_block_owner&>);
+static_assert(exposes_boolean_row<boolean_block_owner&>);
+static_assert(exposes_boolean_col<boolean_block_owner&>);
+static_assert(exposes_static_boolean_top_rows<boolean_block_owner&>);
+static_assert(exposes_dynamic_boolean_top_rows<boolean_block_owner&>);
+static_assert(exposes_static_boolean_bottom_rows<boolean_block_owner&>);
+static_assert(exposes_dynamic_boolean_bottom_rows<boolean_block_owner&>);
+static_assert(exposes_static_boolean_left_cols<boolean_block_owner&>);
+static_assert(exposes_dynamic_boolean_left_cols<boolean_block_owner&>);
+static_assert(exposes_static_boolean_right_cols<boolean_block_owner&>);
+static_assert(exposes_dynamic_boolean_right_cols<boolean_block_owner&>);
+static_assert(
+  !exposes_static_boolean_block<boolean_block_owner> &&
+  !exposes_dynamic_boolean_block<boolean_block_owner> && !exposes_boolean_row<boolean_block_owner> &&
+  !exposes_boolean_col<boolean_block_owner> && !exposes_static_boolean_top_rows<boolean_block_owner> &&
+  !exposes_dynamic_boolean_top_rows<boolean_block_owner> &&
+  !exposes_static_boolean_bottom_rows<boolean_block_owner> &&
+  !exposes_dynamic_boolean_bottom_rows<boolean_block_owner> &&
+  !exposes_static_boolean_left_cols<boolean_block_owner> &&
+  !exposes_dynamic_boolean_left_cols<boolean_block_owner> &&
+  !exposes_static_boolean_right_cols<boolean_block_owner> &&
+  !exposes_dynamic_boolean_right_cols<boolean_block_owner>);
+static_assert(
+  !exposes_static_boolean_block<const boolean_block_owner> &&
+  !exposes_dynamic_boolean_block<const boolean_block_owner> &&
+  !exposes_boolean_row<const boolean_block_owner> && !exposes_boolean_col<const boolean_block_owner> &&
+  !exposes_static_boolean_top_rows<const boolean_block_owner> &&
+  !exposes_dynamic_boolean_top_rows<const boolean_block_owner> &&
+  !exposes_static_boolean_bottom_rows<const boolean_block_owner> &&
+  !exposes_dynamic_boolean_bottom_rows<const boolean_block_owner> &&
+  !exposes_static_boolean_left_cols<const boolean_block_owner> &&
+  !exposes_dynamic_boolean_left_cols<const boolean_block_owner> &&
+  !exposes_static_boolean_right_cols<const boolean_block_owner> &&
+  !exposes_dynamic_boolean_right_cols<const boolean_block_owner>);
+static_assert(
+  exposes_static_boolean_block<safe_boolean_block_expression> &&
+  exposes_dynamic_boolean_block<safe_boolean_block_expression> &&
+  exposes_boolean_row<safe_boolean_block_expression> &&
+  exposes_boolean_col<safe_boolean_block_expression> &&
+  exposes_static_boolean_top_rows<safe_boolean_block_expression> &&
+  exposes_dynamic_boolean_top_rows<safe_boolean_block_expression> &&
+  exposes_static_boolean_bottom_rows<safe_boolean_block_expression> &&
+  exposes_dynamic_boolean_bottom_rows<safe_boolean_block_expression> &&
+  exposes_static_boolean_left_cols<safe_boolean_block_expression> &&
+  exposes_dynamic_boolean_left_cols<safe_boolean_block_expression> &&
+  exposes_static_boolean_right_cols<safe_boolean_block_expression> &&
+  exposes_dynamic_boolean_right_cols<safe_boolean_block_expression>);
+static_assert(safe_boolean_expression_block::ReadOnly == 1);
+
+static_assert(mutable_boolean_block::ReadOnly == 0);
+static_assert(const_boolean_block::ReadOnly == 1);
+static_assert(permits_boolean_block_coordinate_assignment<mutable_boolean_block>);
+static_assert(permits_boolean_block_vector_assignment<mutable_boolean_row>);
+static_assert(!permits_boolean_block_coordinate_assignment<const mutable_boolean_block>);
+static_assert(!permits_boolean_block_vector_assignment<const mutable_boolean_row>);
+static_assert(!permits_boolean_block_coordinate_assignment<const_boolean_block>);
+static_assert(!permits_boolean_block_vector_assignment<const_boolean_row>);
+static_assert(!permits_boolean_block_mutation<const_boolean_block>);
+
+using direct_boolean_row_block =
+  fdapde::BoolMatrixBlock<1, boolean_block_owner::Cols, const boolean_block_owner>;
+using direct_static_boolean_block =
+  fdapde::BoolMatrixBlock<1, 2, const boolean_block_owner>;
+using direct_dynamic_boolean_block =
+  fdapde::BoolMatrixBlock<fdapde::Dynamic, fdapde::Dynamic, const boolean_block_owner>;
+static_assert(!std::is_constructible_v<direct_boolean_row_block, boolean_block_owner&&, int>);
+static_assert(!std::is_constructible_v<direct_static_boolean_block, boolean_block_owner&&, int, int>);
+static_assert(
+  !std::is_constructible_v<direct_dynamic_boolean_block, boolean_block_owner&&, int, int, int, int>);
+
 template <int StorageOrder> void check_exact_boolean_pack_accounting() {
     using exact_pack = fdapde::Matrix<bool, 8, 8, StorageOrder>;
     using partial_pack = fdapde::Matrix<bool, 5, 13, StorageOrder>;
@@ -396,6 +551,146 @@ template <int StorageOrder> void check_boolean_expression_contracts() {
     expect_values(xor_overlap, std::array {true, true, true, true});
 }
 
+template <int StorageOrder> void check_boolean_block_contracts() {
+    using fixed_matrix = fdapde::Matrix<bool, 3, 4, StorageOrder>;
+    using dynamic_matrix = fdapde::Matrix<bool, fdapde::Dynamic, fdapde::Dynamic, StorageOrder>;
+
+    const auto expect_values = [](const auto& matrix, const auto& expected) {
+        ASSERT_EQ(matrix.size(), static_cast<int>(expected.size()));
+        for (int i = 0; i < matrix.rows(); ++i) {
+            for (int j = 0; j < matrix.cols(); ++j) {
+                EXPECT_EQ(
+                  bool(matrix(i, j)), expected[static_cast<std::size_t>(i * matrix.cols() + j)]);
+            }
+        }
+    };
+
+    const fixed_matrix source(
+      {false, true, false, true, true, false, true, false, false, true, true, false});
+    const auto static_block = source.template block<2, 2>(1, 1);
+    EXPECT_EQ(static_block.rows(), 2);
+    EXPECT_EQ(static_block.cols(), 2);
+    expect_values(static_block, std::array {false, true, true, true});
+    const fdapde::Matrix<bool, 2, 2, StorageOrder> static_materialized(static_block);
+    expect_values(static_materialized, std::array {false, true, true, true});
+
+    const auto dynamic_block = source.block(1, 1, 2, 2);
+    EXPECT_EQ(dynamic_block.rows(), 2);
+    EXPECT_EQ(dynamic_block.cols(), 2);
+    expect_values(dynamic_block, std::array {false, true, true, true});
+    const dynamic_matrix dynamic_materialized(dynamic_block);
+    expect_values(dynamic_materialized, std::array {false, true, true, true});
+
+    expect_values(source.row(1), std::array {true, false, true, false});
+    expect_values(source.col(2), std::array {false, true, true});
+    expect_values(source.template top_rows<1>(), std::array {false, true, false, true});
+    expect_values(source.top_rows(1), std::array {false, true, false, true});
+    expect_values(source.template bottom_rows<1>(), std::array {false, true, true, false});
+    expect_values(source.bottom_rows(1), std::array {false, true, true, false});
+    expect_values(source.template left_cols<1>(), std::array {false, true, false});
+    expect_values(source.left_cols(1), std::array {false, true, false});
+    expect_values(
+      source.template right_cols<2>(), std::array {false, true, true, false, true, false});
+    expect_values(source.right_cols(2), std::array {false, true, true, false, true, false});
+
+    fdapde::Matrix<bool, 1, 3, StorageOrder> row_vector({false, true, true});
+    auto row_scalar = row_vector.col(2);
+    EXPECT_EQ(row_scalar.rows(), 1);
+    EXPECT_EQ(row_scalar.cols(), 1);
+    EXPECT_TRUE(row_scalar(0, 0));
+    row_scalar(0, 0) = false;
+    EXPECT_FALSE(row_vector(0, 2));
+
+    fdapde::Matrix<bool, 3, 1, StorageOrder> column_vector({false, true, true});
+    auto column_scalar = column_vector.row(2);
+    EXPECT_EQ(column_scalar.rows(), 1);
+    EXPECT_EQ(column_scalar.cols(), 1);
+    EXPECT_TRUE(column_scalar(0, 0));
+    column_scalar(0, 0) = false;
+    EXPECT_FALSE(column_vector(2, 0));
+
+    fdapde::Matrix<bool, 5, 25, StorageOrder> packed_owner;
+    packed_owner(1, 2) = true;
+    packed_owner(3, 1) = true;
+    packed_owner(2, 22) = true;
+    packed_owner(3, 23) = true;
+    const auto packed_block = packed_owner.block(1, 1, 3, 23);
+    using bitpack_t = typename decltype(packed_owner)::bitpack_t;
+    EXPECT_EQ(packed_block.bitpacks(), 2);
+    if constexpr (StorageOrder == fdapde::RowMajor) {
+        EXPECT_EQ(
+          packed_block.bitpack(0),
+          (bitpack_t(1) << 1) | (bitpack_t(1) << 44) | (bitpack_t(1) << 46));
+        EXPECT_EQ(packed_block.bitpack(1), bitpack_t(1) << 4);
+    } else {
+        EXPECT_EQ(packed_block.bitpack(0), (bitpack_t(1) << 2) | (bitpack_t(1) << 3));
+        EXPECT_EQ(packed_block.bitpack(1), (bitpack_t(1) << 0) | (bitpack_t(1) << 4));
+    }
+
+    fdapde::Matrix<bool, 2, 4, StorageOrder> named_assignment(
+      {false, false, true, false, false, false, false, true});
+    auto named_destination = named_assignment.template block<2, 2>(0, 0);
+    const auto named_source = named_assignment.template block<2, 2>(0, 2);
+    named_destination = named_source;
+    expect_values(named_assignment, std::array {true, false, true, false, false, true, false, true});
+    named_destination(0, 0) = false;
+    EXPECT_FALSE(named_assignment(0, 0));
+    EXPECT_TRUE(named_assignment(0, 2));
+
+    fdapde::Matrix<bool, 1, 4, StorageOrder> overlapping_assignment({true, false, true, false});
+    overlapping_assignment.template block<1, 3>(0, 1) =
+      overlapping_assignment.template block<1, 3>(0, 0);
+    expect_values(overlapping_assignment, std::array {true, true, false, true});
+
+    fixed_matrix expression_lhs(
+      {false, false, false, false, false, true, false, true, false, false, false, false});
+    fixed_matrix expression_rhs(
+      {false, false, false, false, true, false, true, false, false, false, false, false});
+    const auto stored_expression_block = [&expression_lhs, &expression_rhs] {
+        return (expression_lhs | expression_rhs).template block<1, 2>(1, 1);
+    }();
+    const fdapde::Matrix<bool, 1, 2, StorageOrder> stored_expression_result(stored_expression_block);
+    expect_values(stored_expression_result, std::array {true, true});
+
+    dynamic_matrix bounds(3, 4);
+    bounds(1, 1) = true;
+    EXPECT_THROW(static_cast<void>(bounds.row(-1)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(bounds.row(bounds.rows())), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(bounds.col(-1)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(bounds.col(bounds.cols())), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(bounds.template block<2, 2>(-1, 0)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(bounds.template block<2, 2>(2, 3)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(bounds.block(0, 0, 0, 1)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(bounds.block(0, 0, 1, -1)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(bounds.block(-1, 0, 1, 1)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(bounds.block(0, -1, 1, 1)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(bounds.block(2, 3, 2, 2)), std::out_of_range);
+    EXPECT_THROW(
+      static_cast<void>(bounds.bottom_rows(std::numeric_limits<int>::min())), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(bounds.bottom_rows(4)), std::out_of_range);
+    EXPECT_THROW(
+      static_cast<void>(bounds.right_cols(std::numeric_limits<int>::min())), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(bounds.right_cols(5)), std::out_of_range);
+
+    auto local_block = bounds.block(0, 0, 2, 2);
+    const auto& const_local_block = local_block;
+    EXPECT_THROW(static_cast<void>(local_block(-1, 0)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(local_block(2, 0)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(const_local_block(0, -1)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(const_local_block(0, 2)), std::out_of_range);
+    auto local_row = bounds.row(1);
+    const auto& const_local_row = local_row;
+    EXPECT_THROW(static_cast<void>(local_row[-1]), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(local_row[local_row.size()]), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(const_local_row[-1]), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(const_local_row[const_local_row.size()]), std::out_of_range);
+    EXPECT_THROW(local_block.set(-1, 0), std::out_of_range);
+    EXPECT_THROW(local_block.clear(0, 2), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(local_block.bitpack(-1)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(local_block.bitpack(local_block.bitpacks())), std::out_of_range);
+    EXPECT_TRUE(bounds(1, 1));
+}
+
 }   // namespace
 
 TEST(linear_algebra, boolean) {
@@ -430,13 +725,15 @@ TEST(linear_algebra, boolean) {
     check_boolean_owner_contracts<fdapde::ColMajor>();
     check_boolean_expression_contracts<fdapde::RowMajor>();
     check_boolean_expression_contracts<fdapde::ColMajor>();
+    check_boolean_block_contracts<fdapde::RowMajor>();
+    check_boolean_block_contracts<fdapde::ColMajor>();
 }
 
 // Current regression adapted from 86ff6d12:tests/linear_algebra/bool.cpp.
 // Stable source: a2a9c88:test/src/binary_matrix_test.cpp.
 // Stable declarations (9): static_sized_matrix, dynamic_sized_matrix, binary_vector, block_operations,
 // binary_expresssions, visitors, block_repeat, eigen_assignment_and_construct, and reshaped.
-// TODO(P4-B): cover full block/MatrixView contracts, reshape/select lifetime seams, reductions/equality/which,
+// TODO(P4-B): cover packed MatrixView contracts, reshape/select lifetime seams, reductions/equality/which,
 // repeat, and the remaining two-dimensional resize policy.
 // Replace the historical Eigen assignment/construct assertion with native numeric-matrix conversion; do not
 // restore an implicit Eigen bridge.

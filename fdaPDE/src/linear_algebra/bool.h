@@ -591,40 +591,52 @@ template <int BlockRows_, int BlockCols_, typename XprType_>
 class BoolMatrixBlock : public BoolMatrixExpr<BoolMatrixBlock<BlockRows_, BlockCols_, XprType_>> {
    private:
     using Base = BoolMatrixExpr<BoolMatrixBlock<BlockRows_, BlockCols_, XprType_>>;
-    using XprType = std::decay_t<XprType_>;
+    using XprType = std::remove_reference_t<XprType_>;
+    using XprTypeClean = std::remove_cv_t<XprType>;
     fdapde_static_assert(
-      internals::is_dynamic_sized_v<XprType> ||
-        ((BlockRows_ == Dynamic || (BlockRows_ > 0 && BlockRows_ <= XprType::Rows)) &&
-         (BlockCols_ == Dynamic || (BlockCols_ > 0 && BlockCols_ <= XprType::Cols))),
+      (BlockRows_ == Dynamic || BlockRows_ > 0) && (BlockCols_ == Dynamic || BlockCols_ > 0),
+      INVALID_BLOCK_DIMENSIONS);
+    fdapde_static_assert(
+      BlockRows_ == Dynamic || BlockCols_ == Dynamic ||
+        static_cast<std::uint64_t>(BlockRows_) * static_cast<std::uint64_t>(BlockCols_) <=
+          static_cast<std::uint64_t>(std::numeric_limits<int>::max()),
+      MATRIX_SIZE_EXCEEDS_SUPPORTED_RANGE);
+    fdapde_static_assert(
+      (BlockRows_ == Dynamic || XprTypeClean::Rows == Dynamic || BlockRows_ <= XprTypeClean::Rows) &&
+        (BlockCols_ == Dynamic || XprTypeClean::Cols == Dynamic || BlockCols_ <= XprTypeClean::Cols),
       INVALID_BLOCK__STATIC_SIZES_DONT_FIT_WRAPPED_EXPRESSION);
     using XprTypeNested = internals::ref_select_t<XprType_>;   // derive constness from wrapped expression
-    static constexpr int PackSize = Base::PackSize;
    public:
-    using Scalar = typename XprType::Scalar;
-    using bitpack_t = typename XprType::bitpack_t;
+    using Scalar = typename XprTypeClean::Scalar;
+    using bitpack_t = typename XprTypeClean::bitpack_t;
     static constexpr int Rows = BlockRows_;
     static constexpr int Cols = BlockCols_;
     static constexpr int NestAsRef = 0;
-    static constexpr int StorageOrder = XprType::StorageOrder;
-    static constexpr int ReadOnly = XprType::ReadOnly;
+    static constexpr int StorageOrder = XprTypeClean::StorageOrder;
+    static constexpr int ReadOnly = std::is_const_v<XprType> || XprTypeClean::ReadOnly;
+    static constexpr int PackSize = Base::PackSize;
     using assignment_executor = internals::generic_assignment_executor;   // bitwise assignment loop
 
     // row/column constructor
+    constexpr BoolMatrixBlock(const BoolMatrixBlock&) = default;
     template <typename XprType__>
-        requires(std::is_constructible_v<XprTypeNested, XprType__>)
+        requires(internals::safely_nestable<XprTypeNested, XprType__>)
     constexpr BoolMatrixBlock(XprType__&& xpr, int i) :
-        start_row_(BlockRows_ == 1 ? i : 0),
-        start_col_(BlockCols_ == 1 ? i : 0),
+        start_row_(BlockRows_ == 1 ? min(i, xpr.rows() - 1) : 0),
+        start_col_(BlockCols_ == 1 ? min(i, xpr.cols() - 1) : 0),
         block_rows_(BlockRows_ == 1 ? 1 : xpr.rows()),
         block_cols_(BlockCols_ == 1 ? 1 : xpr.cols()),
         xpr_(std::forward<XprType__>(xpr)) {
         fdapde_static_assert(BlockRows_ == 1 || BlockCols_ == 1, THIS_METHOD_IS_FOR_ROW_AND_COLUMN_BLOCKS_ONLY);
-        fdapde_assert(
-          i >= 0 && ((BlockRows_ == 1 && i < xpr_.rows()) || (BlockCols_ == 1 && i < xpr_.cols())));
+        if (
+          i < 0 ||
+          !((BlockRows_ == 1 && i < xpr_.rows()) || (BlockCols_ == 1 && i < xpr_.cols()))) {
+            throw std::out_of_range("Boolean matrix block row or column index out of range");
+        }
     }
     // static-sized constructor
     template <typename XprType__>
-        requires(std::is_constructible_v<XprTypeNested, XprType__>)
+        requires(internals::safely_nestable<XprTypeNested, XprType__>)
     constexpr BoolMatrixBlock(XprType__&& xpr, int start_row, int start_col) :
         start_row_(start_row),
         start_col_(start_col),
@@ -633,13 +645,15 @@ class BoolMatrixBlock : public BoolMatrixExpr<BoolMatrixBlock<BlockRows_, BlockC
         xpr_(std::forward<XprType__>(xpr)) {
         fdapde_static_assert(
           BlockRows_ != Dynamic && BlockCols_ != Dynamic, THIS_METHOD_IS_FOR_STATIC_SIZED_BLOCKS_ONLY);
-        fdapde_assert(
-          start_row >= 0 && start_row + block_rows_ <= xpr_.rows() && start_col >= 0 &&
-          start_col + block_cols_ <= xpr.cols());
+        if (
+          start_row < 0 || start_col < 0 || block_rows_ > xpr_.rows() || block_cols_ > xpr_.cols() ||
+          start_row > xpr_.rows() - block_rows_ || start_col > xpr_.cols() - block_cols_) {
+            throw std::out_of_range("Boolean matrix block is outside expression bounds");
+        }
     }
     // dynamic-sized constructor
     template <typename XprType__>
-        requires(std::is_constructible_v<XprTypeNested, XprType__>)
+        requires(internals::safely_nestable<XprTypeNested, XprType__>)
     constexpr BoolMatrixBlock(XprType__&& xpr, int start_row, int start_col, int block_rows, int block_cols) :
         start_row_(start_row),
         start_col_(start_col),
@@ -648,71 +662,94 @@ class BoolMatrixBlock : public BoolMatrixExpr<BoolMatrixBlock<BlockRows_, BlockC
         xpr_(std::forward<XprType__>(xpr)) {
         fdapde_static_assert(
           BlockRows_ == Dynamic && BlockCols_ == Dynamic, THIS_METHOD_IS_FOR_DYNAMIC_SIZED_BLOCKS_ONLY);
-        fdapde_assert(
-          start_row >= 0 && start_row + block_rows_ <= xpr_.rows() && start_col >= 0 &&
-          start_col + block_cols_ <= xpr.cols());
+        if (block_rows <= 0 || block_cols <= 0) {
+            throw std::invalid_argument("Boolean matrix block dimensions must be positive");
+        }
+        if (
+          start_row < 0 || start_col < 0 || block_rows_ > xpr_.rows() || block_cols_ > xpr_.cols() ||
+          start_row > xpr_.rows() - block_rows_ || start_col > xpr_.cols() - block_cols_) {
+            throw std::out_of_range("Boolean matrix block is outside expression bounds");
+        }
+        (void)internals::checked_matrix_size(block_rows_, block_cols_);
     }
     // inherit assignment from base
     using Base::operator=;
+    constexpr BoolMatrixBlock& operator=(const BoolMatrixBlock& rhs) & requires(ReadOnly == 0) {
+        static_cast<Base&>(*this).template operator=<BoolMatrixBlock>(rhs);
+        return *this;
+    }
+    constexpr BoolMatrixBlock operator=(const BoolMatrixBlock& rhs) && requires(ReadOnly == 0) {
+        static_cast<Base&>(*this).template operator=<BoolMatrixBlock>(rhs);
+        return *this;
+    }
     // observers
     constexpr int rows() const noexcept { return BlockRows_ != Dynamic ? BlockRows_ : block_rows_; }
     constexpr int cols() const noexcept { return BlockCols_ != Dynamic ? BlockCols_ : block_cols_; }
     constexpr int size() const { return rows() * cols(); }
     constexpr int bitpacks() const { return internals::bitpack_count(size(), PackSize); }
     constexpr decltype(auto) operator()(int i, int j) const {
-        fdapde_assert(i >= 0 && i < block_rows_ && j >= 0 && j < block_cols_);
-        return xpr_(i + start_row_, j + start_col_);
+        if (i < 0 || i >= rows() || j < 0 || j >= cols()) {
+            throw std::out_of_range("Boolean matrix block index out of range");
+        }
+        return std::as_const(xpr_)(i + start_row_, j + start_col_);
     }
     constexpr decltype(auto) operator[](int i) const {
         fdapde_static_assert(BlockRows_ == 1 || BlockCols_ == 1, THIS_METHOD_IS_FOR_ROW_AND_COLUMN_BLOCKS_ONLY);
-        if constexpr (Rows == 1) return xpr_(start_row_, start_col_ + i);
-        if constexpr (Cols == 1) return xpr_(start_row_ + i, start_col_);
+        if (i < 0 || i >= size()) { throw std::out_of_range("Boolean matrix block index out of range"); }
+        if constexpr (Rows == 1) return std::as_const(xpr_)(start_row_, start_col_ + i);
+        if constexpr (Cols == 1) return std::as_const(xpr_)(start_row_ + i, start_col_);
     }
-    constexpr decltype(auto) operator()(int i, int j) {
-        fdapde_assert(i >= 0 && i < block_rows_ && j >= 0 && j < block_cols_);
+    constexpr decltype(auto) operator()(int i, int j) requires(ReadOnly == 0) {
+        if (i < 0 || i >= rows() || j < 0 || j >= cols()) {
+            throw std::out_of_range("Boolean matrix block index out of range");
+        }
         return xpr_(start_row_ + i, start_col_ + j);
     }
-    constexpr decltype(auto) operator[](int i) {
+    constexpr decltype(auto) operator[](int i) requires(ReadOnly == 0) {
         fdapde_static_assert(BlockRows_ == 1 || BlockCols_ == 1, THIS_METHOD_IS_FOR_ROW_AND_COLUMN_BLOCKS_ONLY);
+        if (i < 0 || i >= size()) { throw std::out_of_range("Boolean matrix block index out of range"); }
         if constexpr (Rows == 1) return xpr_(start_row_, start_col_ + i);
         if constexpr (Cols == 1) return xpr_(start_row_ + i, start_col_);
     }
     // modifiers
-    constexpr void set(int i, int j) noexcept {
-        fdapde_assert(i >= 0 && i < block_rows_ && j >= 0 && j < block_cols_);
+    constexpr void set(int i, int j) requires(ReadOnly == 0) {
+        if (i < 0 || i >= rows() || j < 0 || j >= cols()) {
+            throw std::out_of_range("Boolean matrix block index out of range");
+        }
         xpr_.set(i + start_row_, j + start_col_);
     }
-    constexpr void set() noexcept {
+    constexpr void set() noexcept requires(ReadOnly == 0) {
         for (int i = 0; i < rows(); ++i) {
             for (int j = 0; j < cols(); ++j) { xpr_.set(start_row_ + i, start_col_ + j); }
         }
     }
-    constexpr void clear(int i, int j) noexcept {
-        fdapde_assert(i >= 0 && i < block_rows_ && j >= 0 && j < block_cols_);
+    constexpr void clear(int i, int j) requires(ReadOnly == 0) {
+        if (i < 0 || i >= rows() || j < 0 || j >= cols()) {
+            throw std::out_of_range("Boolean matrix block index out of range");
+        }
         xpr_.clear(i + start_row_, j + start_col_);
     }
-    constexpr void clear() noexcept {
+    constexpr void clear() noexcept requires(ReadOnly == 0) {
         for (int i = 0; i < rows(); ++i) {
             for (int j = 0; j < cols(); ++j) { xpr_.clear(start_row_ + i, start_col_ + j); }
         }
     }
     constexpr bitpack_t bitpack(int i) const {
-        fdapde_assert(i >= 0 && i < bitpacks());
+        if (i < 0 || i >= bitpacks()) { throw std::out_of_range("Boolean matrix block bit-pack index out of range"); }
         bitpack_t out = bitpack_t(0);
-        // precompute block bit layout
         const int base_bit = i * PackSize;
-        const int col_offset = start_col_ + ((base_bit) % cols());
-        const int row_offset = start_row_ + ((base_bit) / cols());
-	const int max_col = start_col_ + block_cols_;
-        // assembly block bitpack
-        constexpr bitpack_t mask = bitpack_t(1);
-        int row = row_offset, col = col_offset;
+        int row = 0;
+        int col = 0;
         for (int j = 0, size_ = size(); j < PackSize && base_bit + j < size_; ++j) {
-            out |= (mask & xpr_(row, col)) << j;
-            if (++col == max_col) {
-                col = start_col_;
-                row++;
+            const int index = base_bit + j;
+            if constexpr (StorageOrder == RowMajor) {
+                row = index / cols();
+                col = index % cols();
+            } else {
+                row = index % rows();
+                col = index / rows();
             }
+            out |= bitpack_t(bool(std::as_const(xpr_)(start_row_ + row, start_col_ + col))) << j;
         }
         return out;
     }
@@ -997,50 +1034,210 @@ template <typename XprType_> struct BoolMatrixExpr {
     // block accessors
     // static-sized block
     template <int BlockRows, int BlockCols>
-    constexpr BoolMatrixBlock<BlockRows, BlockCols, XprType> block(int i, int j) {
+    constexpr BoolMatrixBlock<BlockRows, BlockCols, XprType> block(int i, int j) & {
         return BoolMatrixBlock<BlockRows, BlockCols, XprType>(derived(), i, j);
     }
     template <int BlockRows, int BlockCols>
-    constexpr BoolMatrixBlock<BlockRows, BlockCols, const XprType> block(int i, int j) const {
+    constexpr BoolMatrixBlock<BlockRows, BlockCols, const XprType> block(int i, int j) const & {
         return BoolMatrixBlock<BlockRows, BlockCols, const XprType>(derived(), i, j);
     }
+    template <int BlockRows, int BlockCols>
+    constexpr BoolMatrixBlock<BlockRows, BlockCols, XprType> block(int i, int j) &&
+        requires(XprType::NestAsRef == 0)
+    {
+        return BoolMatrixBlock<BlockRows, BlockCols, XprType>(static_cast<XprType&>(*this), i, j);
+    }
+    template <int BlockRows, int BlockCols>
+    constexpr BoolMatrixBlock<BlockRows, BlockCols, const XprType> block(int i, int j) const &&
+        requires(XprType::NestAsRef == 0)
+    {
+        return BoolMatrixBlock<BlockRows, BlockCols, const XprType>(static_cast<const XprType&>(*this), i, j);
+    }
+    template <int BlockRows, int BlockCols>
+    constexpr void block(int, int) && requires(XprType::NestAsRef != 0) = delete;
+    template <int BlockRows, int BlockCols>
+    constexpr void block(int, int) const && requires(XprType::NestAsRef != 0) = delete;
     // dynamic-sized block
-    constexpr BoolMatrixBlock<Dynamic, Dynamic, XprType> block(int i, int j, int rows, int cols) {
+    constexpr BoolMatrixBlock<Dynamic, Dynamic, XprType> block(int i, int j, int rows, int cols) & {
         return BoolMatrixBlock<Dynamic, Dynamic, XprType>(derived(), i, j, rows, cols);
     }
-    constexpr BoolMatrixBlock<Dynamic, Dynamic, const XprType> block(int i, int j, int rows, int cols) const {
+    constexpr BoolMatrixBlock<Dynamic, Dynamic, const XprType> block(int i, int j, int rows, int cols) const & {
         return BoolMatrixBlock<Dynamic, Dynamic, const XprType>(derived(), i, j, rows, cols);
     }
+    constexpr BoolMatrixBlock<Dynamic, Dynamic, XprType> block(int i, int j, int rows, int cols) &&
+        requires(XprType::NestAsRef == 0)
+    {
+        return BoolMatrixBlock<Dynamic, Dynamic, XprType>(
+          static_cast<XprType&>(*this), i, j, rows, cols);
+    }
+    constexpr BoolMatrixBlock<Dynamic, Dynamic, const XprType> block(
+      int i, int j, int rows, int cols) const && requires(XprType::NestAsRef == 0) {
+        return BoolMatrixBlock<Dynamic, Dynamic, const XprType>(
+          static_cast<const XprType&>(*this), i, j, rows, cols);
+    }
+    constexpr void block(int, int, int, int) && requires(XprType::NestAsRef != 0) = delete;
+    constexpr void block(int, int, int, int) const && requires(XprType::NestAsRef != 0) = delete;
     // row/col accessors
-    constexpr auto col(int i) { return BoolMatrixBlock<XprType::Rows, 1, XprType>(derived(), i); }
-    constexpr auto col(int i) const { return BoolMatrixBlock<XprType::Rows, 1, const XprType>(derived(), i); }
-    constexpr auto row(int i) { return BoolMatrixBlock<1, XprType::Cols, XprType>(derived(), i); }
-    constexpr auto row(int i) const { return BoolMatrixBlock<1, XprType::Cols, const XprType>(derived(), i); }
+    constexpr auto col(int i) & { return BoolMatrixBlock<XprType::Rows, 1, XprType>(derived(), i); }
+    constexpr auto col(int i) const & { return BoolMatrixBlock<XprType::Rows, 1, const XprType>(derived(), i); }
+    constexpr auto col(int i) && requires(XprType::NestAsRef == 0) {
+        return BoolMatrixBlock<XprType::Rows, 1, XprType>(static_cast<XprType&>(*this), i);
+    }
+    constexpr auto col(int i) const && requires(XprType::NestAsRef == 0) {
+        return BoolMatrixBlock<XprType::Rows, 1, const XprType>(static_cast<const XprType&>(*this), i);
+    }
+    constexpr void col(int) && requires(XprType::NestAsRef != 0) = delete;
+    constexpr void col(int) const && requires(XprType::NestAsRef != 0) = delete;
+    constexpr auto row(int i) & { return BoolMatrixBlock<1, XprType::Cols, XprType>(derived(), i); }
+    constexpr auto row(int i) const & { return BoolMatrixBlock<1, XprType::Cols, const XprType>(derived(), i); }
+    constexpr auto row(int i) && requires(XprType::NestAsRef == 0) {
+        return BoolMatrixBlock<1, XprType::Cols, XprType>(static_cast<XprType&>(*this), i);
+    }
+    constexpr auto row(int i) const && requires(XprType::NestAsRef == 0) {
+        return BoolMatrixBlock<1, XprType::Cols, const XprType>(static_cast<const XprType&>(*this), i);
+    }
+    constexpr void row(int) && requires(XprType::NestAsRef != 0) = delete;
+    constexpr void row(int) const && requires(XprType::NestAsRef != 0) = delete;
     // other block-type accessors
-    template <int BlockRows> constexpr auto top_rows() { return block<BlockRows, XprType::Cols>(0, 0); }
-    template <int BlockRows> constexpr auto top_rows() const { return block<BlockRows, XprType::Cols>(0, 0); }
-    constexpr auto top_rows(int rows) { return block(0, 0, rows, derived().cols()); }
-    constexpr auto top_rows(int rows) const { return block(0, 0, rows, derived().cols()); }
-    template <int BlockRows> constexpr auto bottom_rows() {
+    template <int BlockRows> constexpr auto top_rows() & { return block<BlockRows, XprType::Cols>(0, 0); }
+    template <int BlockRows> constexpr auto top_rows() const & { return block<BlockRows, XprType::Cols>(0, 0); }
+    template <int BlockRows> constexpr auto top_rows() && requires(XprType::NestAsRef == 0) {
+        return BoolMatrixBlock<BlockRows, XprType::Cols, XprType>(static_cast<XprType&>(*this), 0, 0);
+    }
+    template <int BlockRows> constexpr auto top_rows() const && requires(XprType::NestAsRef == 0) {
+        return BoolMatrixBlock<BlockRows, XprType::Cols, const XprType>(
+          static_cast<const XprType&>(*this), 0, 0);
+    }
+    template <int BlockRows> constexpr void top_rows() && requires(XprType::NestAsRef != 0) = delete;
+    template <int BlockRows> constexpr void top_rows() const && requires(XprType::NestAsRef != 0) = delete;
+    constexpr auto top_rows(int rows) & { return block(0, 0, rows, derived().cols()); }
+    constexpr auto top_rows(int rows) const & { return block(0, 0, rows, derived().cols()); }
+    constexpr auto top_rows(int rows) && requires(XprType::NestAsRef == 0) {
+        auto& xpr = static_cast<XprType&>(*this);
+        return BoolMatrixBlock<Dynamic, Dynamic, XprType>(xpr, 0, 0, rows, xpr.cols());
+    }
+    constexpr auto top_rows(int rows) const && requires(XprType::NestAsRef == 0) {
+        const auto& xpr = static_cast<const XprType&>(*this);
+        return BoolMatrixBlock<Dynamic, Dynamic, const XprType>(xpr, 0, 0, rows, xpr.cols());
+    }
+    constexpr void top_rows(int) && requires(XprType::NestAsRef != 0) = delete;
+    constexpr void top_rows(int) const && requires(XprType::NestAsRef != 0) = delete;
+
+    template <int BlockRows> constexpr auto bottom_rows() & {
         return block<BlockRows, XprType::Cols>(derived().rows() - BlockRows, 0);
     }
-    template <int BlockRows> constexpr auto bottom_rows() const {
+    template <int BlockRows> constexpr auto bottom_rows() const & {
         return block<BlockRows, XprType::Cols>(derived().rows() - BlockRows, 0);
     }
-    constexpr auto bottom_rows(int rows) { return block(derived().rows() - rows, 0, rows, derived().cols()); }
-    constexpr auto bottom_rows(int rows) const { return block(derived().rows() - rows, 0, rows, derived().cols()); }
-    template <int BlockCols> constexpr auto left_cols() { return block<XprType::Rows, BlockCols>(0, 0); }
-    template <int BlockCols> constexpr auto left_cols() const { return block<XprType::Rows, BlockCols>(0, 0); }
-    constexpr auto left_cols(int cols) { return block(0, 0, derived().rows(), cols); }
-    constexpr auto left_cols(int cols) const { return block(0, 0, derived().rows(), cols); }
-    template <int BlockCols> constexpr auto right_cols() {
-        return block<XprType::Rows, BlockCols>(0, derived().rows() - BlockCols);
+    template <int BlockRows> constexpr auto bottom_rows() && requires(XprType::NestAsRef == 0) {
+        auto& xpr = static_cast<XprType&>(*this);
+        return BoolMatrixBlock<BlockRows, XprType::Cols, XprType>(xpr, xpr.rows() - BlockRows, 0);
     }
-    template <int BlockCols> constexpr auto right_cols() const {
-        return block<XprType::Rows, BlockCols>(0, derived().rows() - BlockCols);
+    template <int BlockRows> constexpr auto bottom_rows() const && requires(XprType::NestAsRef == 0) {
+        const auto& xpr = static_cast<const XprType&>(*this);
+        return BoolMatrixBlock<BlockRows, XprType::Cols, const XprType>(xpr, xpr.rows() - BlockRows, 0);
     }
-    constexpr auto right_cols(int cols) { return block(0, derived().cols() - cols, derived().rows(), cols); }
-    constexpr auto right_cols(int cols) const { return block(0, derived().cols() - cols, derived().rows(), cols); }
+    template <int BlockRows> constexpr void bottom_rows() && requires(XprType::NestAsRef != 0) = delete;
+    template <int BlockRows> constexpr void bottom_rows() const && requires(XprType::NestAsRef != 0) = delete;
+    constexpr auto bottom_rows(int rows) & {
+        const int xpr_rows = derived().rows();
+        if (rows <= 0) { throw std::invalid_argument("bottom row count must be positive"); }
+        if (rows > xpr_rows) { throw std::out_of_range("bottom rows exceed Boolean expression bounds"); }
+        return block(xpr_rows - rows, 0, rows, derived().cols());
+    }
+    constexpr auto bottom_rows(int rows) const & {
+        const int xpr_rows = derived().rows();
+        if (rows <= 0) { throw std::invalid_argument("bottom row count must be positive"); }
+        if (rows > xpr_rows) { throw std::out_of_range("bottom rows exceed Boolean expression bounds"); }
+        return block(xpr_rows - rows, 0, rows, derived().cols());
+    }
+    constexpr auto bottom_rows(int rows) && requires(XprType::NestAsRef == 0) {
+        auto& xpr = static_cast<XprType&>(*this);
+        const int xpr_rows = xpr.rows();
+        if (rows <= 0) { throw std::invalid_argument("bottom row count must be positive"); }
+        if (rows > xpr_rows) { throw std::out_of_range("bottom rows exceed Boolean expression bounds"); }
+        return BoolMatrixBlock<Dynamic, Dynamic, XprType>(xpr, xpr_rows - rows, 0, rows, xpr.cols());
+    }
+    constexpr auto bottom_rows(int rows) const && requires(XprType::NestAsRef == 0) {
+        const auto& xpr = static_cast<const XprType&>(*this);
+        const int xpr_rows = xpr.rows();
+        if (rows <= 0) { throw std::invalid_argument("bottom row count must be positive"); }
+        if (rows > xpr_rows) { throw std::out_of_range("bottom rows exceed Boolean expression bounds"); }
+        return BoolMatrixBlock<Dynamic, Dynamic, const XprType>(
+          xpr, xpr_rows - rows, 0, rows, xpr.cols());
+    }
+    constexpr void bottom_rows(int) && requires(XprType::NestAsRef != 0) = delete;
+    constexpr void bottom_rows(int) const && requires(XprType::NestAsRef != 0) = delete;
+
+    template <int BlockCols> constexpr auto left_cols() & { return block<XprType::Rows, BlockCols>(0, 0); }
+    template <int BlockCols> constexpr auto left_cols() const & { return block<XprType::Rows, BlockCols>(0, 0); }
+    template <int BlockCols> constexpr auto left_cols() && requires(XprType::NestAsRef == 0) {
+        return BoolMatrixBlock<XprType::Rows, BlockCols, XprType>(static_cast<XprType&>(*this), 0, 0);
+    }
+    template <int BlockCols> constexpr auto left_cols() const && requires(XprType::NestAsRef == 0) {
+        return BoolMatrixBlock<XprType::Rows, BlockCols, const XprType>(
+          static_cast<const XprType&>(*this), 0, 0);
+    }
+    template <int BlockCols> constexpr void left_cols() && requires(XprType::NestAsRef != 0) = delete;
+    template <int BlockCols> constexpr void left_cols() const && requires(XprType::NestAsRef != 0) = delete;
+    constexpr auto left_cols(int cols) & { return block(0, 0, derived().rows(), cols); }
+    constexpr auto left_cols(int cols) const & { return block(0, 0, derived().rows(), cols); }
+    constexpr auto left_cols(int cols) && requires(XprType::NestAsRef == 0) {
+        auto& xpr = static_cast<XprType&>(*this);
+        return BoolMatrixBlock<Dynamic, Dynamic, XprType>(xpr, 0, 0, xpr.rows(), cols);
+    }
+    constexpr auto left_cols(int cols) const && requires(XprType::NestAsRef == 0) {
+        const auto& xpr = static_cast<const XprType&>(*this);
+        return BoolMatrixBlock<Dynamic, Dynamic, const XprType>(xpr, 0, 0, xpr.rows(), cols);
+    }
+    constexpr void left_cols(int) && requires(XprType::NestAsRef != 0) = delete;
+    constexpr void left_cols(int) const && requires(XprType::NestAsRef != 0) = delete;
+
+    template <int BlockCols> constexpr auto right_cols() & {
+        return block<XprType::Rows, BlockCols>(0, derived().cols() - BlockCols);
+    }
+    template <int BlockCols> constexpr auto right_cols() const & {
+        return block<XprType::Rows, BlockCols>(0, derived().cols() - BlockCols);
+    }
+    template <int BlockCols> constexpr auto right_cols() && requires(XprType::NestAsRef == 0) {
+        auto& xpr = static_cast<XprType&>(*this);
+        return BoolMatrixBlock<XprType::Rows, BlockCols, XprType>(xpr, 0, xpr.cols() - BlockCols);
+    }
+    template <int BlockCols> constexpr auto right_cols() const && requires(XprType::NestAsRef == 0) {
+        const auto& xpr = static_cast<const XprType&>(*this);
+        return BoolMatrixBlock<XprType::Rows, BlockCols, const XprType>(xpr, 0, xpr.cols() - BlockCols);
+    }
+    template <int BlockCols> constexpr void right_cols() && requires(XprType::NestAsRef != 0) = delete;
+    template <int BlockCols> constexpr void right_cols() const && requires(XprType::NestAsRef != 0) = delete;
+    constexpr auto right_cols(int cols) & {
+        const int xpr_cols = derived().cols();
+        if (cols <= 0) { throw std::invalid_argument("right column count must be positive"); }
+        if (cols > xpr_cols) { throw std::out_of_range("right columns exceed Boolean expression bounds"); }
+        return block(0, xpr_cols - cols, derived().rows(), cols);
+    }
+    constexpr auto right_cols(int cols) const & {
+        const int xpr_cols = derived().cols();
+        if (cols <= 0) { throw std::invalid_argument("right column count must be positive"); }
+        if (cols > xpr_cols) { throw std::out_of_range("right columns exceed Boolean expression bounds"); }
+        return block(0, xpr_cols - cols, derived().rows(), cols);
+    }
+    constexpr auto right_cols(int cols) && requires(XprType::NestAsRef == 0) {
+        auto& xpr = static_cast<XprType&>(*this);
+        const int xpr_cols = xpr.cols();
+        if (cols <= 0) { throw std::invalid_argument("right column count must be positive"); }
+        if (cols > xpr_cols) { throw std::out_of_range("right columns exceed Boolean expression bounds"); }
+        return BoolMatrixBlock<Dynamic, Dynamic, XprType>(xpr, 0, xpr_cols - cols, xpr.rows(), cols);
+    }
+    constexpr auto right_cols(int cols) const && requires(XprType::NestAsRef == 0) {
+        const auto& xpr = static_cast<const XprType&>(*this);
+        const int xpr_cols = xpr.cols();
+        if (cols <= 0) { throw std::invalid_argument("right column count must be positive"); }
+        if (cols > xpr_cols) { throw std::out_of_range("right columns exceed Boolean expression bounds"); }
+        return BoolMatrixBlock<Dynamic, Dynamic, const XprType>(
+          xpr, 0, xpr_cols - cols, xpr.rows(), cols);
+    }
+    constexpr void right_cols(int) && requires(XprType::NestAsRef != 0) = delete;
+    constexpr void right_cols(int) const && requires(XprType::NestAsRef != 0) = delete;
     // visitor support
     constexpr bool all() const {
         if (derived().size() == 0) return true;
