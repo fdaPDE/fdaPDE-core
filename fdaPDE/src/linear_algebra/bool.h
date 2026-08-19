@@ -28,6 +28,10 @@ template <typename XprType_> struct BoolMatrixExpr;
 
 namespace internals {
 
+template <typename T>
+concept bool_matrix_expression =
+  std::derived_from<std::remove_cvref_t<T>, BoolMatrixExpr<std::remove_cvref_t<T>>>;
+
 constexpr int bitpack_count(int size, int pack_size) {
     return size <= 0 ? 0 : 1 + (size - 1) / pack_size;
 }
@@ -164,7 +168,7 @@ class MatrixBase<bool, Rows_, Cols_, StorageOrder_, BoolMatrixType_> : public Bo
         fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
     }
     // copy assignment
-    constexpr BoolMatrixType& operator=(const BoolMatrixType& other) {
+    constexpr BoolMatrixType& operator=(const BoolMatrixType& other) & {
         fdapde_static_assert(ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_LOCATION);
         if (this == std::addressof(other)) { return derived(); }
         if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) {
@@ -252,15 +256,17 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
         if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { resize(other.rows(), other.cols()); }
         assignment_executor::run(*this, other, [](bitpack_t& l, const bitpack_t& r) { l = r; });
     }
-    constexpr Matrix& operator=(const Matrix& other) {
+    constexpr Matrix& operator=(const Matrix& other) & {
         Base::operator=(other);
         return *this;
     }
+    constexpr void operator=(const Matrix&) && = delete;
     template <typename RhsXprType_>   // construct from plain BoolMatrixExpr
     constexpr Matrix(const BoolMatrixExpr<RhsXprType_>& rhs) :
         Base(), data_(), bitpacks_(StorageSize == Dynamic ? 0 : StorageSize) {
         if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { resize(rhs.rows(), rhs.cols()); }
-        assignment_executor::run(*this, rhs.derived(), [](bitpack_t& l, const bitpack_t& r) { l = r; });
+        internals::generic_assignment_executor::run(
+          *this, rhs.derived(), [](auto&& l, const auto& r) { l = bool(r); });
     }
     template <typename RhsXprType_>   // cast MatrixExpr to bool
     constexpr Matrix(const MatrixExpr<RhsXprType_>& rhs) :
@@ -456,7 +462,7 @@ struct BoolMatrixBitWiseOp : public BoolMatrixExpr<BoolMatrixBitWiseOp<XprType_,
     static constexpr int ReadOnly = 1;
 
     template <typename XprType__>
-        requires(std::is_constructible_v<XprTypeNested, XprType__>)
+        requires(internals::safely_nestable<XprTypeNested, XprType__>)
     constexpr BoolMatrixBitWiseOp(XprType__&& xpr, BitWiseOperation bitwise_op, BitPackOperation bitpack_op) :
         xpr_(std::forward<XprType__>(xpr)), bitwise_op_(bitwise_op), bitpack_op_(bitpack_op) { }
 
@@ -492,6 +498,7 @@ struct BoolMatrixBinOp :
    public:
     using Scalar = promote_type_t<typename LhsXprType::Scalar, typename RhsXprType::Scalar>;
     using bitpack_t = typename LhsXprType::bitpack_t;
+    static constexpr int PackSize = sizeof(bitpack_t) * 8;
     static constexpr int Rows =
       (LhsXprType::Rows == Dynamic || RhsXprType::Rows == Dynamic) ? Dynamic : LhsXprType::Rows;
     static constexpr int Cols =
@@ -502,8 +509,8 @@ struct BoolMatrixBinOp :
     static constexpr int ReadOnly = 1;
 
     template <typename LhsXprType__, typename RhsXprType__>
-        requires(std::is_constructible_v<LhsXprTypeNested, LhsXprType__> &&
-                 std::is_constructible_v<RhsXprTypeNested, RhsXprType__>)
+        requires(internals::safely_nestable<LhsXprTypeNested, LhsXprType__> &&
+                 internals::safely_nestable<RhsXprTypeNested, RhsXprType__>)
     constexpr BoolMatrixBinOp(
       LhsXprType__&& lhs, RhsXprType__&& rhs, BitWiseOperation bitwise_op, BitPackOperation bitpack_op) :
         lhs_(std::forward<LhsXprType__>(lhs)),
@@ -511,9 +518,9 @@ struct BoolMatrixBinOp :
         bitwise_op_(bitwise_op),
         bitpack_op_(bitpack_op) {
         if constexpr (internals::is_dynamic_sized_v<LhsXprType> || internals::is_dynamic_sized_v<RhsXprType>) {
-            fdapde_assert(
-              std::cmp_equal(lhs_.rows() FDAPDE_COMMA rhs_.rows()) &&
-              std::cmp_equal(lhs_.cols() FDAPDE_COMMA rhs_.cols()));
+            if (!std::cmp_equal(lhs_.rows(), rhs_.rows()) || !std::cmp_equal(lhs_.cols(), rhs_.cols())) {
+                throw std::invalid_argument("Boolean binary operation requires matching dimensions");
+            }
         }
     }
     constexpr Scalar operator()(int i, int j) const { return bitwise_op_(lhs_(i, j), rhs_(i, j)); }
@@ -523,7 +530,21 @@ struct BoolMatrixBinOp :
           THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
         return bitwise_op_(lhs_[i], rhs_[i]);
     }
-    constexpr bitpack_t bitpack(int i) const { return bitpack_op_(lhs_.bitpack(i), rhs_.bitpack(i)); }
+    constexpr bitpack_t bitpack(int i) const {
+        if constexpr (LhsXprType::StorageOrder == RhsXprType::StorageOrder) {
+            return bitpack_op_(lhs_.bitpack(i), rhs_.bitpack(i));
+        } else {
+            bitpack_t out = bitpack_t(0);
+            const int base = i * PackSize;
+            for (int offset = 0; offset < PackSize && base + offset < rows() * cols(); ++offset) {
+                const int index = base + offset;
+                const int row = StorageOrder == RowMajor ? index / cols() : index % rows();
+                const int col = StorageOrder == RowMajor ? index % cols() : index / rows();
+                if (bool(bitwise_op_(lhs_(row, col), rhs_(row, col)))) out |= bitpack_t(1) << offset;
+            }
+            return out;
+        }
+    }
     constexpr int rows() const { return Rows != Dynamic ? Rows : lhs_.rows(); }
     constexpr int cols() const { return Cols != Dynamic ? Cols : lhs_.cols(); }
     constexpr int bitpacks() const { return lhs_.bitpacks(); }
@@ -549,6 +570,21 @@ constexpr auto operator^(const BoolMatrixExpr<LhsXprType>& lhs, const BoolMatrix
     return BoolMatrixBinOp<LhsXprType, RhsXprType, std::bit_xor<>, std::bit_xor<>>(
       lhs.derived(), rhs.derived(), std::bit_xor<>(), std::bit_xor<>());
 }
+
+template <internals::bool_matrix_expression Lhs, internals::bool_matrix_expression Rhs>
+    requires(
+      internals::is_owning_rvalue_expression_v<Lhs&&> || internals::is_owning_rvalue_expression_v<Rhs&&>)
+constexpr void operator&(Lhs&&, Rhs&&) = delete;
+
+template <internals::bool_matrix_expression Lhs, internals::bool_matrix_expression Rhs>
+    requires(
+      internals::is_owning_rvalue_expression_v<Lhs&&> || internals::is_owning_rvalue_expression_v<Rhs&&>)
+constexpr void operator|(Lhs&&, Rhs&&) = delete;
+
+template <internals::bool_matrix_expression Lhs, internals::bool_matrix_expression Rhs>
+    requires(
+      internals::is_owning_rvalue_expression_v<Lhs&&> || internals::is_owning_rvalue_expression_v<Rhs&&>)
+constexpr void operator^(Lhs&&, Rhs&&) = delete;
 
 // dense-block of binary matrix
 template <int BlockRows_, int BlockCols_, typename XprType_>
@@ -810,35 +846,101 @@ template <typename XprType_> struct BoolMatrixExpr {
 
     // assignment
     template <typename RhsXprType_>
-    constexpr XprType& operator=(const BoolMatrixExpr<RhsXprType_>& rhs) {
+        requires(XprType::ReadOnly == 0)
+    constexpr XprType& operator=(const BoolMatrixExpr<RhsXprType_>& rhs) & {
+        using RhsXprType = std::decay_t<RhsXprType_>;
+        Matrix<bool, RhsXprType::Rows, RhsXprType::Cols, XprType::StorageOrder> tmp(rhs);
         using executor = typename XprType::assignment_executor;
-	constexpr int Rows = XprType::Rows, Cols = XprType::Cols;
+        constexpr int Rows = XprType::Rows;
+        constexpr int Cols = XprType::Cols;
         if constexpr (requires(XprType_ xpr, int i, int j) {
                           xpr.resize(i, j);
                       } && (Rows == Dynamic || Cols == Dynamic)) {
-            if (derived().rows() != rhs.rows() || derived().cols() != rhs.cols()) {
-                derived().resize(rhs.rows(), rhs.cols());
+            if (derived().rows() != tmp.rows() || derived().cols() != tmp.cols()) {
+                derived().resize(tmp.rows(), tmp.cols());
             }
         }
-        executor::run(derived(), rhs.derived(), [](auto&& l, const auto& r) { l = r; });
+        executor::run(derived(), tmp, [](auto&& l, const auto& r) {
+            if constexpr (std::is_same_v<std::remove_cvref_t<decltype(l)> FDAPDE_COMMA bitpack_t>) {
+                l = r;
+            } else {
+                l = bool(r);
+            }
+        });
         return derived();
     }
+    template <typename RhsXprType_>
+    constexpr XprType operator=(const BoolMatrixExpr<RhsXprType_>& rhs) &&
+        requires(XprType::NestAsRef == 0 && XprType::ReadOnly == 0)
+    {
+        static_cast<BoolMatrixExpr&>(*this).operator=(rhs);
+        return derived();
+    }
+    template <typename RhsXprType_>
+    constexpr void operator=(const BoolMatrixExpr<RhsXprType_>&) &&
+        requires(XprType::NestAsRef != 0)
+      = delete;
     // compound boolean algebra
-    template <typename RhsXprType_> constexpr XprType& operator&=(const BoolMatrixExpr<RhsXprType_>& other) {
+    template <typename RhsXprType_>
+        requires(XprType::ReadOnly == 0)
+    constexpr XprType& operator&=(const BoolMatrixExpr<RhsXprType_>& other) & {
+        using RhsXprType = std::decay_t<RhsXprType_>;
+        Matrix<bool, RhsXprType::Rows, RhsXprType::Cols, XprType::StorageOrder> tmp(other);
         using executor = typename XprType::assignment_executor;
-        executor::run(derived(), other.derived(), [](auto&& l, const auto& r) { l &= r; });
+        executor::run(derived(), tmp, [](auto&& l, const auto& r) { l = std::bit_and<>()(l, r); });
         return derived();
     }
-    template <typename RhsXprType_> constexpr XprType& operator|=(const BoolMatrixExpr<RhsXprType_>& other) {
-        using executor = typename XprType::assignment_executor;
-        executor::run(derived(), other.derived(), [](auto&& l, const auto& r) { l |= r; });
+    template <typename RhsXprType_>
+    constexpr XprType operator&=(const BoolMatrixExpr<RhsXprType_>& other) &&
+        requires(XprType::NestAsRef == 0 && XprType::ReadOnly == 0)
+    {
+        static_cast<BoolMatrixExpr&>(*this).operator&=(other);
         return derived();
     }
-    template <typename RhsXprType_> constexpr XprType& operator^=(const BoolMatrixExpr<RhsXprType_>& other) {
+    template <typename RhsXprType_>
+    constexpr void operator&=(const BoolMatrixExpr<RhsXprType_>&) &&
+        requires(XprType::NestAsRef != 0)
+      = delete;
+    template <typename RhsXprType_>
+        requires(XprType::ReadOnly == 0)
+    constexpr XprType& operator|=(const BoolMatrixExpr<RhsXprType_>& other) & {
+        using RhsXprType = std::decay_t<RhsXprType_>;
+        Matrix<bool, RhsXprType::Rows, RhsXprType::Cols, XprType::StorageOrder> tmp(other);
         using executor = typename XprType::assignment_executor;
-        executor::run(derived(), other.derived(), [](auto&& l, const auto& r) { l ^= r; });
+        executor::run(derived(), tmp, [](auto&& l, const auto& r) { l = std::bit_or<>()(l, r); });
         return derived();
     }
+    template <typename RhsXprType_>
+    constexpr XprType operator|=(const BoolMatrixExpr<RhsXprType_>& other) &&
+        requires(XprType::NestAsRef == 0 && XprType::ReadOnly == 0)
+    {
+        static_cast<BoolMatrixExpr&>(*this).operator|=(other);
+        return derived();
+    }
+    template <typename RhsXprType_>
+    constexpr void operator|=(const BoolMatrixExpr<RhsXprType_>&) &&
+        requires(XprType::NestAsRef != 0)
+      = delete;
+    template <typename RhsXprType_>
+        requires(XprType::ReadOnly == 0)
+    constexpr XprType& operator^=(const BoolMatrixExpr<RhsXprType_>& other) & {
+        using RhsXprType = std::decay_t<RhsXprType_>;
+        Matrix<bool, RhsXprType::Rows, RhsXprType::Cols, XprType::StorageOrder> tmp(other);
+        using executor = typename XprType::assignment_executor;
+        executor::run(derived(), tmp, [](auto&& l, const auto& r) { l = std::bit_xor<>()(l, r); });
+        return derived();
+    }
+    template <typename RhsXprType_>
+    constexpr XprType operator^=(const BoolMatrixExpr<RhsXprType_>& other) &&
+        requires(XprType::NestAsRef == 0 && XprType::ReadOnly == 0)
+    {
+        static_cast<BoolMatrixExpr&>(*this).operator^=(other);
+        return derived();
+    }
+    template <typename RhsXprType_>
+    constexpr void operator^=(const BoolMatrixExpr<RhsXprType_>&) &&
+        requires(XprType::NestAsRef != 0)
+      = delete;
     // observers
     constexpr int rows() const { return XprType::Rows == Dynamic ? derived().rows() : XprType::Rows; }
     constexpr int cols() const { return XprType::Cols == Dynamic ? derived().cols() : XprType::Cols; }
@@ -847,8 +949,10 @@ template <typename XprType_> struct BoolMatrixExpr {
         constexpr int Cols = XprType::Cols;
         return (Rows != Dynamic && Cols != Dynamic) ? Rows * Cols : derived().rows() * derived().cols();
     }
-    constexpr const XprType& derived() const { return static_cast<const XprType&>(*this); }
-    constexpr XprType& derived() { return static_cast<XprType&>(*this); }
+    constexpr const XprType& derived() const & { return static_cast<const XprType&>(*this); }
+    constexpr XprType& derived() & { return static_cast<XprType&>(*this); }
+    constexpr void derived() const && = delete;
+    constexpr void derived() && = delete;
     // ostream
     friend std::ostream& operator<<(std::ostream& out, const BoolMatrixExpr& m) {
         const int rows = m.derived().rows();
@@ -879,10 +983,17 @@ template <typename XprType_> struct BoolMatrixExpr {
         return result;
     }
     // unary bitwise negation
-    constexpr BoolMatrixBitWiseOp<XprType, std::logical_not<>, std::bit_not<>> operator~() const {
+    constexpr BoolMatrixBitWiseOp<XprType, std::logical_not<>, std::bit_not<>> operator~() const & {
         return BoolMatrixBitWiseOp<XprType, std::logical_not<>, std::bit_not<>>(
           derived(), std::logical_not<>(), std::bit_not<>());
     }
+    constexpr BoolMatrixBitWiseOp<XprType, std::logical_not<>, std::bit_not<>> operator~() const &&
+        requires(XprType::NestAsRef == 0)
+    {
+        return BoolMatrixBitWiseOp<XprType, std::logical_not<>, std::bit_not<>>(
+          derived(), std::logical_not<>(), std::bit_not<>());
+    }
+    constexpr void operator~() const && requires(XprType::NestAsRef != 0) = delete;
     // block accessors
     // static-sized block
     template <int BlockRows, int BlockCols>
@@ -1009,12 +1120,19 @@ constexpr bool operator!=(const BoolMatrixExpr<LhsXprType>& op1, const BoolMatri
 
 // detection trait
 template <typename XprType> struct is_boolean_matrix {
-    static constexpr bool value = std::is_base_of_v<BoolMatrixExpr<std::decay_t<XprType>>, XprType>;
+    using CleanXprType = std::remove_cvref_t<XprType>;
+    static constexpr bool value = std::is_base_of_v<BoolMatrixExpr<CleanXprType>, CleanXprType>;
 };
 template <typename XprType> static constexpr bool is_boolean_matrix_v = is_boolean_matrix<XprType>::value;
 template <typename XprType> struct is_boolean_vector {
-    static constexpr bool value =
-      is_boolean_matrix_v<XprType> && (std::decay_t<XprType>::Cols == 1 || std::decay_t<XprType>::Rows == 1);
+    using CleanXprType = std::remove_cvref_t<XprType>;
+    static constexpr bool value = [] {
+        if constexpr (is_boolean_matrix_v<CleanXprType>) {
+            return CleanXprType::Cols == 1 || CleanXprType::Rows == 1;
+        } else {
+            return false;
+        }
+    }();
 };
 template <typename XprType> static constexpr bool is_boolean_vector_v = is_boolean_vector<XprType>::value;
   

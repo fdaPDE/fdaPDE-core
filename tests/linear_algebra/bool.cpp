@@ -18,7 +18,11 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <functional>
 #include <limits>
+#include <stdexcept>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -30,6 +34,80 @@ static_assert(fdapde::internals::bitpack_count(64, 64) == 1);
 static_assert(fdapde::internals::bitpack_count(65, 64) == 2);
 static_assert(
   fdapde::internals::bitpack_count(std::numeric_limits<int>::max(), 64) == 33'554'432);
+
+template <typename Lhs, typename Rhs, typename Operation>
+concept permits_boolean_binary = requires(Lhs&& lhs, Rhs&& rhs, Operation operation) {
+    operation(std::forward<Lhs>(lhs), std::forward<Rhs>(rhs));
+};
+
+template <typename Matrix>
+concept permits_boolean_negation = requires(Matrix&& matrix) { ~std::forward<Matrix>(matrix); };
+
+template <typename Matrix>
+concept exposes_boolean_rvalue_derived = requires(Matrix&& matrix) { std::move(matrix).derived(); };
+
+template <typename Matrix>
+concept permits_temporary_boolean_assignment = requires(Matrix&& matrix, const Matrix& rhs) {
+    std::move(matrix) = rhs;
+};
+
+template <typename Matrix>
+concept permits_temporary_boolean_and_assignment = requires(Matrix&& matrix, const Matrix& rhs) {
+    std::move(matrix) &= rhs;
+};
+
+template <typename Matrix>
+concept permits_temporary_boolean_or_assignment = requires(Matrix&& matrix, const Matrix& rhs) {
+    std::move(matrix) |= rhs;
+};
+
+template <typename Matrix>
+concept permits_temporary_boolean_xor_assignment = requires(Matrix&& matrix, const Matrix& rhs) {
+    std::move(matrix) ^= rhs;
+};
+
+template <typename Matrix>
+concept permits_named_boolean_chain = requires(Matrix& lhs, Matrix& rhs) { ~((lhs | rhs) ^ (lhs & rhs)); };
+
+using boolean_mask = fdapde::Matrix<bool, 2, 2>;
+using boolean_unary_node =
+  fdapde::BoolMatrixBitWiseOp<boolean_mask, std::logical_not<>, std::bit_not<>>;
+using boolean_binary_node =
+  fdapde::BoolMatrixBinOp<boolean_mask, boolean_mask, std::bit_and<>, std::bit_and<>>;
+
+static_assert(permits_boolean_binary<boolean_mask&, boolean_mask&, std::bit_and<>>);
+static_assert(!permits_boolean_binary<boolean_mask, boolean_mask&, std::bit_and<>>);
+static_assert(!permits_boolean_binary<boolean_mask&, boolean_mask, std::bit_and<>>);
+static_assert(!permits_boolean_binary<boolean_mask, boolean_mask&, std::bit_or<>>);
+static_assert(!permits_boolean_binary<boolean_mask&, boolean_mask, std::bit_or<>>);
+static_assert(!permits_boolean_binary<boolean_mask, boolean_mask&, std::bit_xor<>>);
+static_assert(!permits_boolean_binary<boolean_mask&, boolean_mask, std::bit_xor<>>);
+static_assert(permits_boolean_negation<boolean_mask&>);
+static_assert(!permits_boolean_negation<boolean_mask>);
+static_assert(!exposes_boolean_rvalue_derived<boolean_mask>);
+static_assert(!permits_temporary_boolean_assignment<boolean_mask>);
+static_assert(!permits_temporary_boolean_and_assignment<boolean_mask>);
+static_assert(!permits_temporary_boolean_or_assignment<boolean_mask>);
+static_assert(!permits_temporary_boolean_xor_assignment<boolean_mask>);
+static_assert(permits_named_boolean_chain<boolean_mask>);
+static_assert(std::is_constructible_v<
+              boolean_unary_node, const boolean_mask&, std::logical_not<>, std::bit_not<>>);
+static_assert(!std::is_constructible_v<
+              boolean_unary_node, boolean_mask&&, std::logical_not<>, std::bit_not<>>);
+static_assert(std::is_constructible_v<
+              boolean_binary_node,
+              const boolean_mask&,
+              const boolean_mask&,
+              std::bit_and<>,
+              std::bit_and<>>);
+static_assert(!std::is_constructible_v<
+              boolean_binary_node, boolean_mask&&, const boolean_mask&, std::bit_and<>, std::bit_and<>>);
+static_assert(!std::is_constructible_v<
+              boolean_binary_node, const boolean_mask&, boolean_mask&&, std::bit_and<>, std::bit_and<>>);
+static_assert(fdapde::is_boolean_matrix_v<boolean_mask&>);
+static_assert(fdapde::is_boolean_matrix_v<const boolean_mask&>);
+static_assert(fdapde::is_boolean_vector_v<const fdapde::Matrix<bool, 1, 2>&>);
+static_assert(!fdapde::is_boolean_vector_v<int>);
 
 template <int StorageOrder> void check_exact_boolean_pack_accounting() {
     using exact_pack = fdapde::Matrix<bool, 8, 8, StorageOrder>;
@@ -253,6 +331,71 @@ template <int StorageOrder> void check_boolean_owner_contracts() {
     }
 }
 
+template <int StorageOrder> void check_boolean_expression_contracts() {
+    using fixed_matrix = fdapde::Matrix<bool, 2, 2, StorageOrder>;
+    using layout_matrix = fdapde::Matrix<bool, 2, 3, StorageOrder>;
+    using dynamic_matrix = fdapde::Matrix<bool, fdapde::Dynamic, fdapde::Dynamic, StorageOrder>;
+    using overlap_matrix = fdapde::Matrix<bool, 1, 4, StorageOrder>;
+    constexpr int OppositeOrder = StorageOrder == fdapde::RowMajor ? fdapde::ColMajor : fdapde::RowMajor;
+    using opposite_layout_matrix = fdapde::Matrix<bool, 2, 3, OppositeOrder>;
+
+    const auto expect_values = [](const auto& matrix, const auto& expected) {
+        ASSERT_EQ(matrix.size(), static_cast<int>(expected.size()));
+        for (int i = 0; i < matrix.rows(); ++i) {
+            for (int j = 0; j < matrix.cols(); ++j) {
+                EXPECT_EQ(
+                  bool(matrix(i, j)), expected[static_cast<std::size_t>(i * matrix.cols() + j)]);
+            }
+        }
+    };
+
+    fixed_matrix lhs({true, false, true, false});
+    fixed_matrix rhs({true, true, false, false});
+    const auto stored_expression = [&lhs, &rhs] { return ~((lhs | rhs) ^ (lhs & rhs)); }();
+    const fixed_matrix stored_result(stored_expression);
+    expect_values(stored_result, std::array {true, false, false, true});
+
+    const std::array layout_values {false, true, true, true, false, false};
+    const layout_matrix layout(std::vector<bool>(layout_values.begin(), layout_values.end()));
+    const opposite_layout_matrix other_layout(std::vector<bool>(layout_values.begin(), layout_values.end()));
+    EXPECT_EQ((layout ^ other_layout).bitpack(0), typename layout_matrix::bitpack_t(0));
+
+    const layout_matrix constructed(other_layout);
+    expect_values(constructed, layout_values);
+    layout_matrix assigned;
+    assigned = other_layout;
+    expect_values(assigned, layout_values);
+    layout_matrix compounded(layout);
+    compounded ^= other_layout;
+    expect_values(compounded, std::array {false, false, false, false, false, false});
+
+    dynamic_matrix dynamic_lhs(2, 3);
+    dynamic_lhs(0, 1) = true;
+    const dynamic_matrix dynamic_rhs(3, 2);
+    EXPECT_THROW(static_cast<void>(dynamic_lhs & dynamic_rhs), std::invalid_argument);
+    EXPECT_THROW(dynamic_lhs |= dynamic_rhs, std::invalid_argument);
+    EXPECT_EQ(dynamic_lhs.rows(), 2);
+    EXPECT_EQ(dynamic_lhs.cols(), 3);
+    EXPECT_TRUE(dynamic_lhs(0, 1));
+    EXPECT_EQ(dynamic_lhs.count(), 1);
+
+    overlap_matrix assignment_overlap({true, false, true, false});
+    assignment_overlap.right_cols(3) = assignment_overlap.template left_cols<3>();
+    expect_values(assignment_overlap, std::array {true, true, false, true});
+
+    overlap_matrix and_overlap({true, false, true, true});
+    and_overlap.right_cols(3) &= and_overlap.template left_cols<3>();
+    expect_values(and_overlap, std::array {true, false, false, true});
+
+    overlap_matrix or_overlap({false, true, false, false});
+    or_overlap.right_cols(3) |= or_overlap.template left_cols<3>();
+    expect_values(or_overlap, std::array {false, true, true, false});
+
+    overlap_matrix xor_overlap({true, false, true, false});
+    xor_overlap.right_cols(3) ^= xor_overlap.template left_cols<3>();
+    expect_values(xor_overlap, std::array {true, true, true, true});
+}
+
 }   // namespace
 
 TEST(linear_algebra, boolean) {
@@ -285,13 +428,15 @@ TEST(linear_algebra, boolean) {
     check_exact_boolean_pack_accounting<fdapde::ColMajor>();
     check_boolean_owner_contracts<fdapde::RowMajor>();
     check_boolean_owner_contracts<fdapde::ColMajor>();
+    check_boolean_expression_contracts<fdapde::RowMajor>();
+    check_boolean_expression_contracts<fdapde::ColMajor>();
 }
 
 // Current regression adapted from 86ff6d12:tests/linear_algebra/bool.cpp.
 // Stable source: a2a9c88:test/src/binary_matrix_test.cpp.
 // Stable declarations (9): static_sized_matrix, dynamic_sized_matrix, binary_vector, block_operations,
 // binary_expresssions, visitors, block_repeat, eigen_assignment_and_construct, and reshaped.
-// TODO(P4-B): cover views, aliasing, row/column/block access, expressions and reductions, repeat, reshape,
-// select, and the remaining two-dimensional resize policy.
+// TODO(P4-B): cover full block/MatrixView contracts, reshape/select lifetime seams, reductions/equality/which,
+// repeat, and the remaining two-dimensional resize policy.
 // Replace the historical Eigen assignment/construct assertion with native numeric-matrix conversion; do not
 // restore an implicit Eigen bridge.
