@@ -686,6 +686,36 @@ template <int StorageOrder> void check_boolean_owner_contracts() {
     for (int i = 0; i < 5; ++i) EXPECT_TRUE(exposed_padding[i]);
     for (int i = 5; i < 10; ++i) EXPECT_FALSE(exposed_padding[i]);
 
+    dynamic_matrix stable_resize(5, 100);
+    stable_resize(0, 0) = true;
+    stable_resize(4, 99) = true;
+    stable_resize.resize(20, 20);
+    EXPECT_EQ(stable_resize.rows(), 20);
+    EXPECT_EQ(stable_resize.cols(), 20);
+    EXPECT_FALSE(stable_resize.any());
+
+    dynamic_matrix same_size_resize(2, 3);
+    same_size_resize(0, 0) = true;
+    same_size_resize(0, 2) = true;
+    same_size_resize(1, 1) = true;
+    same_size_resize.resize(2, 3);
+    EXPECT_EQ(same_size_resize.count(), 3);
+    same_size_resize.resize(3, 2);
+    EXPECT_EQ(same_size_resize.rows(), 3);
+    EXPECT_EQ(same_size_resize.cols(), 2);
+    EXPECT_FALSE(same_size_resize.any());
+
+    partial_matrix partial_resize(2, 32);
+    partial_resize(0, 0) = true;
+    partial_resize(1, 31) = true;
+    partial_resize.resize(2, 33);
+    EXPECT_EQ(partial_resize.bitpacks(), 2);
+    EXPECT_FALSE(partial_resize.any());
+
+    dynamic_matrix runtime_row_resize(1, 3, true);
+    runtime_row_resize.resize(1, 4);
+    EXPECT_FALSE(runtime_row_resize.any());
+
     partial_matrix partial(2, 3);
     partial(1, 2) = true;
     const int partial_bitpacks = partial.bitpacks();
@@ -1550,6 +1580,5 @@ TEST(linear_algebra, boolean) {
 // Stable source: a2a9c88:test/src/binary_matrix_test.cpp.
 // Stable declarations (9): static_sized_matrix, dynamic_sized_matrix, binary_vector, block_operations,
 // binary_expresssions, visitors, block_repeat, eigen_assignment_and_construct, and reshaped.
-// TODO(P4-B): cover the remaining two-dimensional resize policy.
 // Replace the historical Eigen assignment/construct assertion with native numeric-matrix conversion; do not
 // restore an implicit Eigen bridge.

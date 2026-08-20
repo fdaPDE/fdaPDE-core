@@ -387,22 +387,28 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
     constexpr bitpack_t bitpack(int i) const { return data_[i]; }
     constexpr bitpack_t& bitpack(int i) { return data_[i]; }
     // modifiers
+    // TODO: add conservativeResize(rows, cols) with logical common-rectangle preservation.
     void resize(int rows, int cols) {
         fdapde_static_assert(Rows_ == Dynamic || Cols_ == Dynamic, THIS_METHOD_IS_FOR_DYNAMIC_SIZED_MATRICES_ONLY);
         const int size = checked_size_(rows, cols);
         const int new_rows = Rows_ == Dynamic ? rows : Rows_;
         const int new_cols = Cols_ == Dynamic ? cols : Cols_;
         if (new_rows == this->rows_ && new_cols == this->cols_) return;
-        const int old_size = this->size();
         const int new_bitpacks = internals::bitpack_count(size, static_cast<int>(PackSize));
-        data_.resize(static_cast<std::size_t>(new_bitpacks), 0);
-        for (int i = old_size; i < size; ++i) {
-            data_[static_cast<std::size_t>(i / static_cast<int>(PackSize))] &=
-              ~(bitpack_t(1) << (i % static_cast<int>(PackSize)));
-        }
-        if (new_bitpacks > 0) {
-            const int used_bits = size - (new_bitpacks - 1) * static_cast<int>(PackSize);
-            data_.back() &= internals::low_bits_mask<bitpack_t>(used_bits);
+        if constexpr (Rows_ == 1 || Cols_ == 1) {
+            const int old_size = this->size();
+            data_.resize(static_cast<std::size_t>(new_bitpacks), 0);
+            for (int i = old_size; i < size; ++i) {
+                data_[static_cast<std::size_t>(i / static_cast<int>(PackSize))] &=
+                  ~(bitpack_t(1) << (i % static_cast<int>(PackSize)));
+            }
+            if (new_bitpacks > 0) {
+                const int used_bits = size - (new_bitpacks - 1) * static_cast<int>(PackSize);
+                data_.back() &= internals::low_bits_mask<bitpack_t>(used_bits);
+            }
+        } else {
+            StorageType replacement(static_cast<std::size_t>(new_bitpacks), bitpack_t(0));
+            data_.swap(replacement);
         }
         bitpacks_ = new_bitpacks;
         this->rows_ = new_rows;
