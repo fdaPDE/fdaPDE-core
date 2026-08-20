@@ -109,6 +109,43 @@ static_assert(fdapde::is_boolean_matrix_v<const boolean_mask&>);
 static_assert(fdapde::is_boolean_vector_v<const fdapde::Matrix<bool, 1, 2>&>);
 static_assert(!fdapde::is_boolean_vector_v<int>);
 
+template <typename Condition, typename TrueXpr, typename FalseXpr>
+concept permits_boolean_selection = requires(Condition&& condition, TrueXpr&& true_xpr, FalseXpr&& false_xpr) {
+    std::forward<Condition>(condition).select(
+      std::forward<TrueXpr>(true_xpr), std::forward<FalseXpr>(false_xpr));
+};
+
+using selection_mask = fdapde::Matrix<bool, 2, 2>;
+using selection_values = fdapde::Matrix<double, 2, 2>;
+using selection_condition_expression = decltype(~std::declval<selection_mask&>());
+using selection_value_expression =
+  decltype(std::declval<selection_values&>() + std::declval<selection_values&>());
+using selection_mask_view = fdapde::MatrixView<const bool, 2, 2>;
+using selection_value_view = fdapde::MatrixView<const double, 2, 2>;
+using direct_ternary = fdapde::TernaryOp<selection_mask, selection_values, selection_values>;
+using safe_selection = decltype(std::declval<selection_condition_expression>().select(
+  std::declval<selection_value_expression>(), std::declval<selection_value_expression>()));
+
+static_assert(permits_boolean_selection<selection_mask&, selection_values&, selection_values&>);
+static_assert(!permits_boolean_selection<selection_mask, selection_values&, selection_values&>);
+static_assert(!permits_boolean_selection<const selection_mask, selection_values&, selection_values&>);
+static_assert(!permits_boolean_selection<selection_mask&, selection_values, selection_values&>);
+static_assert(!permits_boolean_selection<selection_mask&, selection_values&, selection_values>);
+static_assert(permits_boolean_selection<
+              selection_condition_expression, selection_value_expression, selection_value_expression>);
+static_assert(permits_boolean_selection<selection_mask_view, selection_value_view, selection_values&>);
+static_assert(safe_selection::ReadOnly == 1);
+static_assert(safe_selection::StorageOrder == fdapde::RowMajor);
+static_assert(std::same_as<typename safe_selection::Scalar, double>);
+static_assert(std::is_constructible_v<
+              direct_ternary, const selection_mask&, const selection_values&, const selection_values&>);
+static_assert(!std::is_constructible_v<
+              direct_ternary, selection_mask&&, const selection_values&, const selection_values&>);
+static_assert(!std::is_constructible_v<
+              direct_ternary, const selection_mask&, selection_values&&, const selection_values&>);
+static_assert(!std::is_constructible_v<
+              direct_ternary, const selection_mask&, const selection_values&, selection_values&&>);
+
 template <typename Matrix>
 concept exposes_static_boolean_block = requires(Matrix&& matrix) {
     std::forward<Matrix>(matrix).template block<1, 2>(0, 0);
@@ -982,6 +1019,99 @@ template <int StorageOrder> void check_boolean_reshape_contracts() {
     EXPECT_EQ(empty_column.bitpacks(), 0);
 }
 
+template <int StorageOrder> void check_boolean_selection_contracts() {
+    constexpr int OppositeOrder = StorageOrder == fdapde::RowMajor ? fdapde::ColMajor : fdapde::RowMajor;
+    using mask_matrix = fdapde::Matrix<bool, 2, 2, StorageOrder>;
+    using value_matrix = fdapde::Matrix<double, 2, 2, StorageOrder>;
+    using opposite_value_matrix = fdapde::Matrix<double, 2, 2, OppositeOrder>;
+    using mask_view = fdapde::MatrixView<const bool, 2, 2, StorageOrder>;
+    using value_view = fdapde::MatrixView<const double, 2, 2, StorageOrder>;
+    using dynamic_mask =
+      fdapde::Matrix<bool, fdapde::Dynamic, fdapde::Dynamic, StorageOrder>;
+    using dynamic_values =
+      fdapde::Matrix<double, fdapde::Dynamic, fdapde::Dynamic, StorageOrder>;
+
+    const auto expect_values = [](const auto& matrix, const auto& expected) {
+        ASSERT_EQ(matrix.size(), static_cast<int>(expected.size()));
+        for (int i = 0; i < matrix.rows(); ++i) {
+            for (int j = 0; j < matrix.cols(); ++j) {
+                EXPECT_DOUBLE_EQ(
+                  matrix(i, j), expected[static_cast<std::size_t>(i * matrix.cols() + j)]);
+            }
+        }
+    };
+
+    const mask_matrix diagonal({true, false, false, true});
+    const value_matrix true_values({1.0, 2.0, 3.0, 4.0});
+    const opposite_value_matrix false_values({10.0, 20.0, 30.0, 40.0});
+    const value_matrix selected(diagonal.select(true_values, false_values));
+    expect_values(selected, std::array {1.0, 20.0, 30.0, 4.0});
+    const value_matrix inverse_selected((~diagonal).select(true_values, false_values));
+    expect_values(inverse_selected, std::array {10.0, 2.0, 3.0, 40.0});
+
+    const value_matrix zero;
+    const opposite_value_matrix opposite_zero;
+    const auto stored_expression = [&] {
+        return (~diagonal).select(true_values + zero, false_values - opposite_zero);
+    }();
+    const value_matrix stored_result(stored_expression);
+    expect_values(stored_result, std::array {10.0, 2.0, 3.0, 40.0});
+
+    const auto stored_views =
+      mask_view(diagonal.data()).select(value_view(true_values.data()), false_values);
+    const value_matrix view_result(stored_views);
+    expect_values(view_result, std::array {1.0, 20.0, 30.0, 4.0});
+
+    value_matrix aliased(true_values);
+    aliased = diagonal.select(aliased, false_values);
+    expect_values(aliased, std::array {1.0, 20.0, 30.0, 4.0});
+
+    dynamic_mask condition(2, 3);
+    condition(0, 0) = true;
+    condition(1, 2) = true;
+    dynamic_values dynamic_true(2, 3);
+    dynamic_values dynamic_false(2, 3);
+    dynamic_true(0, 0) = 1.0;
+    dynamic_true(1, 2) = 2.0;
+    dynamic_false(0, 1) = 3.0;
+    const dynamic_values dynamic_selected(condition.select(dynamic_true, dynamic_false));
+    EXPECT_EQ(dynamic_selected.rows(), 2);
+    EXPECT_EQ(dynamic_selected.cols(), 3);
+    EXPECT_DOUBLE_EQ(dynamic_selected(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ(dynamic_selected(0, 1), 3.0);
+    EXPECT_DOUBLE_EQ(dynamic_selected(1, 2), 2.0);
+
+    const dynamic_values wrong_shape(3, 2);
+    EXPECT_THROW(static_cast<void>(condition.select(wrong_shape, dynamic_false)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(condition.select(dynamic_true, wrong_shape)), std::invalid_argument);
+
+    const dynamic_mask empty_condition(0, 3);
+    const dynamic_values empty_true(0, 3);
+    const dynamic_values empty_false(0, 3);
+    const auto empty_selection = empty_condition.select(empty_true, empty_false);
+    EXPECT_EQ(empty_selection.rows(), 0);
+    EXPECT_EQ(empty_selection.cols(), 3);
+    EXPECT_EQ(empty_selection.size(), 0);
+
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const fdapde::Matrix<double, 2, 2, StorageOrder> nan_values({0.0, nan, 2.0, nan});
+    const auto nan_mask = fdapde::nan_indicator(nan_values);
+    EXPECT_EQ(nan_mask.rows(), 2);
+    EXPECT_EQ(nan_mask.cols(), 2);
+    EXPECT_FALSE(bool(nan_mask(0, 0)));
+    EXPECT_TRUE(bool(nan_mask(0, 1)));
+    EXPECT_FALSE(bool(nan_mask(1, 0)));
+    EXPECT_TRUE(bool(nan_mask(1, 1)));
+
+    const fdapde::Matrix<double, 1, 3, StorageOrder> nan_row({nan, 1.0, nan});
+    const auto nan_row_mask = fdapde::nan_indicator(nan_row);
+    EXPECT_EQ(nan_row_mask.rows(), 1);
+    EXPECT_EQ(nan_row_mask.cols(), 3);
+    EXPECT_TRUE(bool(nan_row_mask(0, 0)));
+    EXPECT_FALSE(bool(nan_row_mask(0, 1)));
+    EXPECT_TRUE(bool(nan_row_mask(0, 2)));
+}
+
 template <int StorageOrder> void check_boolean_terminal_contracts() {
     using exact_matrix = fdapde::Matrix<bool, 8, 8, StorageOrder>;
     using tail_matrix = fdapde::Matrix<bool, 5, 13, StorageOrder>;
@@ -1253,16 +1383,39 @@ TEST(linear_algebra, boolean) {
     check_boolean_block_contracts<fdapde::ColMajor>();
     check_boolean_reshape_contracts<fdapde::RowMajor>();
     check_boolean_reshape_contracts<fdapde::ColMajor>();
+    check_boolean_selection_contracts<fdapde::RowMajor>();
+    check_boolean_selection_contracts<fdapde::ColMajor>();
     check_boolean_terminal_contracts<fdapde::RowMajor>();
     check_boolean_terminal_contracts<fdapde::ColMajor>();
     check_boolean_view_contracts<fdapde::RowMajor>();
     check_boolean_view_contracts<fdapde::ColMajor>();
+
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const std::vector<double> nan_values {nan, 1.0, nan};
+    const auto nan_mask = fdapde::nan_indicator(nan_values);
+    EXPECT_EQ(nan_mask.rows(), 3);
+    EXPECT_EQ(nan_mask.cols(), 1);
+    EXPECT_TRUE(bool(nan_mask(0, 0)));
+    EXPECT_FALSE(bool(nan_mask(1, 0)));
+    EXPECT_TRUE(bool(nan_mask(2, 0)));
+
+    const std::vector<int> markers {2, 1, 2, 3};
+    const auto marker_mask = fdapde::value_indicator(markers.cbegin(), markers.cend(), 2);
+    EXPECT_EQ(marker_mask.rows(), 4);
+    EXPECT_EQ(marker_mask.cols(), 1);
+    EXPECT_TRUE(bool(marker_mask[0]));
+    EXPECT_FALSE(bool(marker_mask[1]));
+    EXPECT_TRUE(bool(marker_mask[2]));
+    EXPECT_FALSE(bool(marker_mask[3]));
+    const auto empty_marker_mask = fdapde::value_indicator(markers.cend(), markers.cend(), 2);
+    EXPECT_EQ(empty_marker_mask.rows(), 0);
+    EXPECT_EQ(empty_marker_mask.cols(), 1);
 }
 
 // Current regression adapted from 86ff6d12:tests/linear_algebra/bool.cpp.
 // Stable source: a2a9c88:test/src/binary_matrix_test.cpp.
 // Stable declarations (9): static_sized_matrix, dynamic_sized_matrix, binary_vector, block_operations,
 // binary_expresssions, visitors, block_repeat, eigen_assignment_and_construct, and reshaped.
-// TODO(P4-B): cover select lifetime seams, repeat, and the remaining two-dimensional resize policy.
+// TODO(P4-B): cover repeat and the remaining two-dimensional resize policy.
 // Replace the historical Eigen assignment/construct assertion with native numeric-matrix conversion; do not
 // restore an implicit Eigen bridge.

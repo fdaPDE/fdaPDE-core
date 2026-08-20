@@ -1267,11 +1267,28 @@ template <typename XprType_> struct BoolMatrixExpr {
     }
     // binary selection
     template <typename TrueXprType, typename FalseXprType>
-        requires(internals::is_matrix_like_v<TrueXprType> && internals::is_matrix_like_v<FalseXprType>)
-    constexpr auto select(TrueXprType&& true_xpr, FalseXprType&& false_xpr) const {
+        requires(
+          internals::is_matrix_like_v<TrueXprType> && internals::is_matrix_like_v<FalseXprType> &&
+          !internals::is_owning_rvalue_expression_v<TrueXprType&&> &&
+          !internals::is_owning_rvalue_expression_v<FalseXprType&&>)
+    constexpr auto select(TrueXprType&& true_xpr, FalseXprType&& false_xpr) const & {
         return TernaryOp<XprType, std::decay_t<TrueXprType>, std::decay_t<FalseXprType>>(
           derived(), std::forward<TrueXprType>(true_xpr), std::forward<FalseXprType>(false_xpr));
     }
+    template <typename TrueXprType, typename FalseXprType>
+        requires(
+          XprType::NestAsRef == 0 && internals::is_matrix_like_v<TrueXprType> &&
+          internals::is_matrix_like_v<FalseXprType> &&
+          !internals::is_owning_rvalue_expression_v<TrueXprType&&> &&
+          !internals::is_owning_rvalue_expression_v<FalseXprType&&>)
+    constexpr auto select(TrueXprType&& true_xpr, FalseXprType&& false_xpr) const && {
+        return TernaryOp<XprType, std::decay_t<TrueXprType>, std::decay_t<FalseXprType>>(
+          static_cast<const XprType&>(*this),
+          std::forward<TrueXprType>(true_xpr),
+          std::forward<FalseXprType>(false_xpr));
+    }
+    template <typename TrueXprType, typename FalseXprType>
+    constexpr void select(TrueXprType&&, FalseXprType&&) const && requires(XprType::NestAsRef != 0) = delete;
     // reshaping
     // static-sized
     template <int ReshapedRows_, int ReshapedCols_> constexpr auto reshape() & {
@@ -1411,18 +1428,48 @@ Vector<bool, Dynamic> value_indicator(const Iterator& first, const Iterator& las
     return vec;
 }
 
+namespace internals {
+
+template <typename DataType, bool IsMatrix = internals::is_matrix_like_v<DataType>>
+struct nan_indicator_input {
+    static constexpr bool valid = true;
+    static constexpr bool is_vector = false;
+};
+
+template <typename DataType> struct nan_indicator_input<DataType, false> {
+    static constexpr bool valid = internals::is_vector_like_v<DataType>;
+    static constexpr bool is_vector = true;
+};
+
+}   // namespace internals
+
 // return boolean matrix m such that m(i, j) = true \iff (i,j)-th element of DataType is nan
 template <typename DataType>
-    requires(internals::is_vector_like_v<DataType> || internals::is_matrix_like_v<DataType>)
+    requires(internals::nan_indicator_input<DataType>::valid)
 Matrix<bool, Dynamic, Dynamic> nan_indicator(DataType&& data) {
-    const int rows = internals::is_vector_like_v<DataType> ? data.size() : data.rows();
-    const int cols = internals::is_vector_like_v<DataType> ? 1 : data.cols();
+    constexpr bool IsVector = internals::nan_indicator_input<DataType>::is_vector;
+    const int rows = [&] {
+        if constexpr (IsVector) {
+            return static_cast<int>(data.size());
+        } else {
+            return static_cast<int>(data.rows());
+        }
+    }();
+    const int cols = [&] {
+        if constexpr (IsVector) {
+            return 1;
+        } else {
+            return static_cast<int>(data.cols());
+        }
+    }();
     Matrix<bool, Dynamic, Dynamic> mask(rows, cols);
     for (int i = 0; i < rows; ++i) {
         for (int j = 0; j < cols; ++j) {
-            const auto val =
-              internals::is_vector_like_v<DataType> ? internals::vector_like_access(data, i) : data(i, j);
-            if (std::isnan(val)) mask.set(i, j);
+            if constexpr (IsVector) {
+                if (std::isnan(internals::vector_like_access(data, i))) mask.set(i, j);
+            } else {
+                if (std::isnan(data(i, j))) mask.set(i, j);
+            }
         }
     }
     return mask;

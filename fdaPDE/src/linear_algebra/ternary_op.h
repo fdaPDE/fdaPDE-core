@@ -41,16 +41,16 @@ class TernaryOp : public MatrixExpr<TernaryOp<ConditionXprType, LhsXprType, RhsX
       (LhsXprType::Rows == Dynamic || RhsXprType::Rows == Dynamic) ? Dynamic : LhsXprType::Rows;
     static constexpr int Cols =
       (LhsXprType::Cols == Dynamic || RhsXprType::Cols == Dynamic) ? Dynamic : LhsXprType::Cols;
-    static constexpr int StrageOrder = internals::promote_storage_order_v<
+    static constexpr int StorageOrder = internals::promote_storage_order_v<
       ConditionXprType::StorageOrder,
       internals::promote_storage_order_v<LhsXprType::StorageOrder, RhsXprType::StorageOrder>>;
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
 
     template <typename ConditionXprType_, typename LhsXprType_, typename RhsXprType_>
-        requires(std::is_constructible_v<ConditionXprTypeNested, ConditionXprType_> &&
-                 std::is_constructible_v<LhsXprTypeNested, LhsXprType_> &&
-                 std::is_constructible_v<RhsXprTypeNested, RhsXprType_>)
+        requires(internals::safely_nestable<ConditionXprTypeNested, ConditionXprType_> &&
+                 internals::safely_nestable<LhsXprTypeNested, LhsXprType_> &&
+                 internals::safely_nestable<RhsXprTypeNested, RhsXprType_>)
     constexpr TernaryOp(ConditionXprType_&& cond, LhsXprType_&& lhs, RhsXprType_&& rhs) :
         cond_(std::forward<ConditionXprType_>(cond)),
         lhs_(std::forward<LhsXprType_>(lhs)),
@@ -58,11 +58,10 @@ class TernaryOp : public MatrixExpr<TernaryOp<ConditionXprType, LhsXprType, RhsX
         if constexpr (
           internals::is_dynamic_sized_v<ConditionXprType> || internals::is_dynamic_sized_v<LhsXprType> ||
           internals::is_dynamic_sized_v<RhsXprType>) {
-            fdapde_assert(
-              std::cmp_equal(cond_.rows() FDAPDE_COMMA lhs_.rows()) &&
-              std::cmp_equal(cond_.cols() FDAPDE_COMMA lhs_.cols()) &&
-              std::cmp_equal(cond_.rows() FDAPDE_COMMA rhs_.rows()) &&
-              std::cmp_equal(cond_.cols() FDAPDE_COMMA rhs_.cols()));
+            if (!std::cmp_equal(cond_.rows(), lhs_.rows()) || !std::cmp_equal(cond_.cols(), lhs_.cols()) ||
+                !std::cmp_equal(cond_.rows(), rhs_.rows()) || !std::cmp_equal(cond_.cols(), rhs_.cols())) {
+                throw std::invalid_argument("matrix ternary operation requires matching dimensions");
+            }
         }
     }
     constexpr Scalar operator()(int i, int j) const { return cond_(i, j) ? lhs_(i, j) : rhs_(i, j); }
