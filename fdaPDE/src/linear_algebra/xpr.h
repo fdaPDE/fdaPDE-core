@@ -774,10 +774,20 @@ template <typename XprType_> struct MatrixExpr {
     template <int BlockMode>
     constexpr void triangular_block() const && requires(XprType::NestAsRef != 0) = delete;
     // cast
-    template <int ViewMode> constexpr auto as_symmetric() { return internals::symmetric_cast<ViewMode>(derived()); }
-    template <int ViewMode> constexpr auto as_symmetric() const {
+    template <int ViewMode> constexpr auto as_symmetric() & {
         return internals::symmetric_cast<ViewMode>(derived());
     }
+    template <int ViewMode> constexpr auto as_symmetric() const & {
+        return internals::symmetric_cast<ViewMode>(derived());
+    }
+    template <int ViewMode> constexpr auto as_symmetric() && requires(XprType::NestAsRef == 0) {
+        return internals::symmetric_cast<ViewMode>(std::move(derived()));
+    }
+    template <int ViewMode> constexpr auto as_symmetric() const && requires(XprType::NestAsRef == 0) {
+        return internals::symmetric_cast<ViewMode>(std::move(derived()));
+    }
+    template <int ViewMode> constexpr void as_symmetric() && requires(XprType::NestAsRef != 0) = delete;
+    template <int ViewMode> constexpr void as_symmetric() const && requires(XprType::NestAsRef != 0) = delete;
     constexpr auto as_diagonal() & {
         fdapde_static_assert(XprType::Rows == 1 || XprType::Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
         return internals::diagonal_cast(derived());
