@@ -365,6 +365,63 @@ using temporary_boolean_reshape_assignment_result = decltype(
   std::declval<const mutable_boolean_matrix_reshape&>());
 static_assert(std::is_same_v<temporary_boolean_reshape_assignment_result, mutable_boolean_matrix_reshape>);
 
+template <typename View>
+concept permits_boolean_view_coordinate_write = requires(View& view) { view(0, 0) = true; };
+
+template <typename View>
+concept permits_boolean_view_vector_write = requires(View& view) { view[0] = true; };
+
+template <typename View>
+concept permits_boolean_view_bulk_mutation = requires(View& view) {
+    view.set();
+    view.clear();
+};
+
+template <typename View, typename Rhs>
+concept permits_boolean_view_assignment = requires(View& view, const Rhs& rhs) { view = rhs; };
+
+using fixed_boolean_view = fdapde::MatrixView<bool, 2, 3>;
+using fixed_const_boolean_view = fdapde::MatrixView<const bool, 2, 3>;
+using dynamic_boolean_view = fdapde::MatrixView<bool, fdapde::Dynamic, fdapde::Dynamic>;
+using partial_boolean_view = fdapde::MatrixView<bool, 2, fdapde::Dynamic>;
+using dynamic_const_boolean_view =
+  fdapde::MatrixView<const bool, fdapde::Dynamic, fdapde::Dynamic>;
+using boolean_view_word = typename fixed_boolean_view::bitpack_t;
+
+static_assert(!std::is_default_constructible_v<fixed_boolean_view>);
+static_assert(!std::is_default_constructible_v<fixed_const_boolean_view>);
+static_assert(std::is_default_constructible_v<dynamic_boolean_view>);
+static_assert(std::is_default_constructible_v<partial_boolean_view>);
+static_assert(std::is_default_constructible_v<dynamic_const_boolean_view>);
+static_assert(std::is_constructible_v<fixed_boolean_view, boolean_view_word*>);
+static_assert(!std::is_constructible_v<fixed_boolean_view, const boolean_view_word*>);
+static_assert(!std::is_constructible_v<fixed_boolean_view, bool*>);
+static_assert(!std::is_constructible_v<fixed_boolean_view, unsigned char*>);
+static_assert(std::is_constructible_v<fixed_const_boolean_view, boolean_view_word*>);
+static_assert(std::is_constructible_v<fixed_const_boolean_view, const boolean_view_word*>);
+static_assert(!std::is_constructible_v<fixed_const_boolean_view, const bool*>);
+static_assert(std::is_same_v<decltype(std::declval<fixed_boolean_view&>().data()), boolean_view_word*>);
+static_assert(
+  std::is_same_v<decltype(std::declval<const fixed_boolean_view&>().data()), const boolean_view_word*>);
+static_assert(
+  std::is_same_v<decltype(std::declval<fixed_const_boolean_view&>().data()), const boolean_view_word*>);
+static_assert(fdapde::is_boolean_matrix_v<fixed_const_boolean_view>);
+static_assert(fixed_const_boolean_view::ReadOnly == 1);
+static_assert(permits_boolean_view_coordinate_write<fixed_boolean_view>);
+static_assert(!permits_boolean_view_coordinate_write<const fixed_boolean_view>);
+static_assert(!permits_boolean_view_coordinate_write<fixed_const_boolean_view>);
+static_assert(permits_boolean_view_vector_write<fdapde::MatrixView<bool, 1, 3>>);
+static_assert(!permits_boolean_view_vector_write<const fdapde::MatrixView<bool, 1, 3>>);
+static_assert(!permits_boolean_view_vector_write<fdapde::MatrixView<const bool, 1, 3>>);
+static_assert(permits_boolean_view_bulk_mutation<fixed_boolean_view>);
+static_assert(!permits_boolean_view_bulk_mutation<const fixed_boolean_view>);
+static_assert(!permits_boolean_view_bulk_mutation<fixed_const_boolean_view>);
+static_assert(permits_boolean_view_assignment<fixed_boolean_view, fixed_boolean_view>);
+static_assert(!permits_boolean_view_assignment<fixed_const_boolean_view, fixed_const_boolean_view>);
+using temporary_boolean_view_assignment_result =
+  decltype(std::declval<fixed_boolean_view&&>() = std::declval<const fixed_boolean_view&>());
+static_assert(std::is_same_v<temporary_boolean_view_assignment_result, fixed_boolean_view>);
+
 template <int StorageOrder> void check_exact_boolean_pack_accounting() {
     using exact_pack = fdapde::Matrix<bool, 8, 8, StorageOrder>;
     using partial_pack = fdapde::Matrix<bool, 5, 13, StorageOrder>;
@@ -1002,6 +1059,162 @@ template <int StorageOrder> void check_boolean_terminal_contracts() {
     EXPECT_TRUE(zero_cols.which(false).empty());
 }
 
+template <int StorageOrder> void check_boolean_view_contracts() {
+    using fixed_view = fdapde::MatrixView<bool, 2, 3, StorageOrder>;
+    using dynamic_view =
+      fdapde::MatrixView<bool, fdapde::Dynamic, fdapde::Dynamic, StorageOrder>;
+    using const_dynamic_view =
+      fdapde::MatrixView<const bool, fdapde::Dynamic, fdapde::Dynamic, StorageOrder>;
+    using partial_view = fdapde::MatrixView<bool, 5, fdapde::Dynamic, StorageOrder>;
+    using row_view = fdapde::MatrixView<bool, 1, fdapde::Dynamic, StorageOrder>;
+    using column_view = fdapde::MatrixView<bool, fdapde::Dynamic, 1, StorageOrder>;
+    using fixed_column_view = fdapde::MatrixView<bool, 3, 1, StorageOrder>;
+    using bitpack_t = typename fixed_view::bitpack_t;
+    constexpr int OppositeOrder = StorageOrder == fdapde::RowMajor ? fdapde::ColMajor : fdapde::RowMajor;
+    using opposite_view = fdapde::MatrixView<bool, 2, 3, OppositeOrder>;
+
+    const bitpack_t outside_canary = bitpack_t(0x5a5a);
+    const bitpack_t hidden_canary = bitpack_t(1) << (fixed_view::PackSize - 1);
+    std::array<bitpack_t, 2> storage {bitpack_t(0), outside_canary};
+    fixed_view view(storage.data());
+    view(1, 0) = true;
+    constexpr int mapped_bit = StorageOrder == fdapde::RowMajor ? 3 : 1;
+    EXPECT_NE(storage[0] & (bitpack_t(1) << mapped_bit), bitpack_t(0));
+    EXPECT_EQ(storage[1], outside_canary);
+    const auto& const_view_handle = view;
+    EXPECT_TRUE(bool(const_view_handle(1, 0)));
+
+    const fixed_view shallow_alias(view);
+    EXPECT_EQ(shallow_alias.data(), view.data());
+
+    std::array<bitpack_t, 1> source_storage {bitpack_t(0)};
+    fixed_view source(source_storage.data());
+    source(0, 1) = true;
+    source(1, 2) = true;
+    storage[0] = hidden_canary;
+    bitpack_t* const binding = view.data();
+    view = source;
+    EXPECT_EQ(view.data(), binding);
+    EXPECT_TRUE(bool(view(0, 1)));
+    EXPECT_TRUE(bool(view(1, 2)));
+    EXPECT_EQ(storage[0] & hidden_canary, hidden_canary);
+
+    const fdapde::Matrix<bool, 2, 3, StorageOrder> owner(
+      std::vector<bool> {true, false, true, false, true, false});
+    const fdapde::Matrix<bool, 2, 3, StorageOrder> owner_zero;
+    view = owner | owner_zero;
+    EXPECT_EQ(view.data(), binding);
+    for (int i = 0; i < owner.rows(); ++i) {
+        for (int j = 0; j < owner.cols(); ++j) { EXPECT_EQ(bool(view(i, j)), bool(owner(i, j))); }
+    }
+    EXPECT_EQ(storage[0] & hidden_canary, hidden_canary);
+
+    std::array<bitpack_t, 1> opposite_storage {bitpack_t(0)};
+    opposite_view other(opposite_storage.data());
+    other(0, 0) = true;
+    other(1, 1) = true;
+    view = other;
+    EXPECT_TRUE(bool(view(0, 0)));
+    EXPECT_TRUE(bool(view(1, 1)));
+    EXPECT_FALSE(bool(view(0, 1)));
+
+    std::array<bitpack_t, 1> temporary_storage {bitpack_t(0)};
+    const auto assigned_temporary = fixed_view(temporary_storage.data()) = source;
+    EXPECT_EQ(assigned_temporary.data(), temporary_storage.data());
+    EXPECT_TRUE(bool(assigned_temporary(0, 1)));
+    EXPECT_TRUE(bool(assigned_temporary(1, 2)));
+
+    const auto stored_expression = [&source_storage] { return ~fixed_view(source_storage.data()); }();
+    const fdapde::Matrix<bool, 2, 3, StorageOrder> stored_result(stored_expression);
+    for (int i = 0; i < source.rows(); ++i) {
+        for (int j = 0; j < source.cols(); ++j) {
+            EXPECT_EQ(bool(stored_result(i, j)), !bool(source(i, j)));
+        }
+    }
+
+    std::array<bitpack_t, 3> tail_storage {bitpack_t(0), hidden_canary, outside_canary};
+    dynamic_view tail(tail_storage.data(), 5, 13);
+    partial_view partial(tail_storage.data(), 5, 13);
+    EXPECT_EQ(tail.bitpacks(), 2);
+    EXPECT_EQ(partial.bitpacks(), 2);
+    tail(4, 12) = true;
+    EXPECT_EQ(tail.bitpack(1), bitpack_t(1));
+    EXPECT_TRUE(bool(partial(4, 12)));
+    EXPECT_EQ(tail_storage[2], outside_canary);
+    tail.set();
+    EXPECT_EQ(tail.bitpack(0), std::numeric_limits<bitpack_t>::max());
+    EXPECT_EQ(tail.bitpack(1), bitpack_t(1));
+    EXPECT_EQ(tail_storage[1] & hidden_canary, hidden_canary);
+    EXPECT_EQ(tail_storage[2], outside_canary);
+    tail.clear();
+    EXPECT_EQ(tail.bitpack(0), bitpack_t(0));
+    EXPECT_EQ(tail.bitpack(1), bitpack_t(0));
+    EXPECT_EQ(tail_storage[1] & hidden_canary, hidden_canary);
+    EXPECT_EQ(tail_storage[2], outside_canary);
+    const const_dynamic_view read_only_tail(tail_storage.data(), 5, 13);
+    EXPECT_EQ(read_only_tail.data(), tail_storage.data());
+    EXPECT_FALSE(bool(read_only_tail(4, 12)));
+
+    std::array<bitpack_t, 1> vector_storage {bitpack_t(0)};
+    row_view row(vector_storage.data(), 5);
+    column_view column(vector_storage.data(), 5);
+    row[4] = true;
+    EXPECT_TRUE(bool(column[4]));
+    column[4] = false;
+    EXPECT_FALSE(bool(row[4]));
+
+    dynamic_view empty;
+    partial_view partial_empty;
+    const_dynamic_view const_empty;
+    EXPECT_EQ(empty.rows(), 0);
+    EXPECT_EQ(empty.cols(), 0);
+    EXPECT_EQ(empty.data(), nullptr);
+    EXPECT_EQ(empty.bitpacks(), 0);
+    EXPECT_EQ(partial_empty.rows(), 5);
+    EXPECT_EQ(partial_empty.cols(), 0);
+    EXPECT_EQ(partial_empty.data(), nullptr);
+    EXPECT_EQ(partial_empty.bitpacks(), 0);
+    EXPECT_EQ(const_empty.data(), nullptr);
+    empty.set();
+    empty.clear();
+    partial_empty.set();
+    partial_empty.clear();
+
+    EXPECT_THROW(static_cast<void>(dynamic_view(tail_storage.data(), -1, 2)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(dynamic_view(tail_storage.data(), 0, 2)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(dynamic_view(tail_storage.data(), 2, 0)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(partial_view(tail_storage.data(), 4, 13)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(row_view(vector_storage.data(), -1)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(row_view(vector_storage.data(), 0)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(fixed_column_view(vector_storage.data(), 2)), std::invalid_argument);
+    EXPECT_THROW(
+      static_cast<void>(dynamic_view(tail_storage.data(), std::numeric_limits<int>::max(), 2)),
+      std::length_error);
+
+    std::array<bitpack_t, 1> mismatch_destination_storage {hidden_canary};
+    std::array<bitpack_t, 1> mismatch_source_storage {bitpack_t(3)};
+    dynamic_view mismatch_destination(mismatch_destination_storage.data(), 2, 2);
+    dynamic_view mismatch_source(mismatch_source_storage.data(), 2, 3);
+    bitpack_t* const mismatch_binding = mismatch_destination.data();
+    const bitpack_t mismatch_snapshot = mismatch_destination_storage[0];
+    EXPECT_THROW(mismatch_destination = mismatch_source, std::invalid_argument);
+    EXPECT_EQ(mismatch_destination.data(), mismatch_binding);
+    EXPECT_EQ(mismatch_destination.rows(), 2);
+    EXPECT_EQ(mismatch_destination.cols(), 2);
+    EXPECT_EQ(mismatch_destination_storage[0], mismatch_snapshot);
+
+    const bitpack_t bounds_snapshot = storage[0];
+    EXPECT_THROW(static_cast<void>(view(-1, 0)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(view(2, 0)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(const_view_handle(0, -1)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(const_view_handle(0, 3)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(row[-1]), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(row[row.size()]), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(tail.bitpack(-1)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(tail.bitpack(tail.bitpacks())), std::out_of_range);
+    EXPECT_EQ(storage[0], bounds_snapshot);
+}
+
 }   // namespace
 
 TEST(linear_algebra, boolean) {
@@ -1042,13 +1255,14 @@ TEST(linear_algebra, boolean) {
     check_boolean_reshape_contracts<fdapde::ColMajor>();
     check_boolean_terminal_contracts<fdapde::RowMajor>();
     check_boolean_terminal_contracts<fdapde::ColMajor>();
+    check_boolean_view_contracts<fdapde::RowMajor>();
+    check_boolean_view_contracts<fdapde::ColMajor>();
 }
 
 // Current regression adapted from 86ff6d12:tests/linear_algebra/bool.cpp.
 // Stable source: a2a9c88:test/src/binary_matrix_test.cpp.
 // Stable declarations (9): static_sized_matrix, dynamic_sized_matrix, binary_vector, block_operations,
 // binary_expresssions, visitors, block_repeat, eigen_assignment_and_construct, and reshaped.
-// TODO(P4-B): cover packed MatrixView contracts, select lifetime seams, reductions/equality/which,
-// repeat, and the remaining two-dimensional resize policy.
+// TODO(P4-B): cover select lifetime seams, repeat, and the remaining two-dimensional resize policy.
 // Replace the historical Eigen assignment/construct assertion with native numeric-matrix conversion; do not
 // restore an implicit Eigen bridge.

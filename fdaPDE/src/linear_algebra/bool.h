@@ -68,8 +68,9 @@ struct bitpack_assignment_executor {
 
 }   // namespace internals
 
-template <int Rows_, int Cols_, int StorageOrder_, typename BoolMatrixType_>
-class MatrixBase<bool, Rows_, Cols_, StorageOrder_, BoolMatrixType_> : public BoolMatrixExpr<BoolMatrixType_> {
+template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_, typename BoolMatrixType_>
+    requires(std::same_as<std::remove_const_t<Scalar_>, bool>)
+class MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, BoolMatrixType_> : public BoolMatrixExpr<BoolMatrixType_> {
     fdapde_static_assert(
       (Rows_ == Dynamic || Rows_ > 0) && (Cols_ == Dynamic || Cols_ > 0), ZERO_STATICALLY_SIZED_MATRICES_ARE_INVALID);
     fdapde_static_assert(
@@ -81,7 +82,7 @@ class MatrixBase<bool, Rows_, Cols_, StorageOrder_, BoolMatrixType_> : public Bo
     using BoolMatrixType = std::decay_t<BoolMatrixType_>;
     using Base = BoolMatrixExpr<BoolMatrixType>;
    public:
-    using Scalar = typename Base::Scalar;
+    using Scalar = Scalar_;
     using bitpack_t = typename Base::bitpack_t;
     static constexpr int Rows = Rows_;
     static constexpr int Cols = Cols_;
@@ -147,7 +148,7 @@ class MatrixBase<bool, Rows_, Cols_, StorageOrder_, BoolMatrixType_> : public Bo
         int pack_id_;
         bitpack_t bitmask_;
     };
-    using reference = bit_proxy<bitpack_t>;
+    using reference = std::conditional_t<ReadOnly == 0, bit_proxy<bitpack_t>, bit_proxy<const bitpack_t>>;
     using const_reference = bit_proxy<const bitpack_t>;
     // constructors
     constexpr MatrixBase() noexcept :
@@ -1428,61 +1429,84 @@ Matrix<bool, Dynamic, Dynamic> nan_indicator(DataType&& data) {
 }
 
 // non-owning Matrix view of an existing block of data
-template <int Rows_, int Cols_, int StorageOrder_>
-class MatrixView<bool, Rows_, Cols_, StorageOrder_> :
-    public MatrixBase<bool, Rows_, Cols_, StorageOrder_, MatrixView<bool, Rows_, Cols_, StorageOrder_>> {
+template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_>
+    requires(std::same_as<std::remove_const_t<Scalar_>, bool>)
+class MatrixView<Scalar_, Rows_, Cols_, StorageOrder_> :
+    public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, MatrixView<Scalar_, Rows_, Cols_, StorageOrder_>> {
    private:
-    using Base = MatrixBase<bool, Rows_, Cols_, StorageOrder_, MatrixView<bool, Rows_, Cols_, StorageOrder_>>;
+    using This = MatrixView<Scalar_, Rows_, Cols_, StorageOrder_>;
+    using Base = MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, This>;
+    using BoolBase = BoolMatrixExpr<This>;
    public:
-    using Scalar = typename Base::Scalar;
+    using Scalar = Scalar_;
     using bitpack_t = typename Base::bitpack_t;   // machine largest integer type for bit-packing
-    using StorageType = bitpack_t*;
+    using StorageType = std::conditional_t<std::is_const_v<Scalar>, const bitpack_t*, bitpack_t*>;
+    using reference = typename Base::reference;
+    using const_reference = typename Base::const_reference;
     static constexpr int Rows = Rows_;
     static constexpr int Cols = Cols_;
     static constexpr int PackSize = sizeof(bitpack_t) * 8;
     static constexpr int NestAsRef = 0;
+    static constexpr int ReadOnly = Base::ReadOnly;
+    using assignment_executor = internals::generic_assignment_executor;
 
     // constructors
-    constexpr MatrixView() : Base(), data_(nullptr), bitpacks_(0), last_bitpack_mask_(0) { }
-    template <typename Scalar_>
-        requires(std::is_convertible_v<Scalar_, bitpack_t>)
-    constexpr explicit MatrixView(Scalar_* data) :
-        Base(), data_(reinterpret_cast<bitpack_t*>(data)), bitpacks_(0), last_bitpack_mask_(0) {
+    constexpr MatrixView(const MatrixView&) = default;
+    constexpr MatrixView() requires(Rows_ == Dynamic || Cols_ == Dynamic) :
+        Base(), data_(nullptr), bitpacks_(0), last_bitpack_mask_(0) { }
+    constexpr MatrixView() requires(Rows_ != Dynamic && Cols_ != Dynamic) = delete;
+    constexpr explicit MatrixView(StorageType data) :
+        Base(), data_(data), bitpacks_(0), last_bitpack_mask_(0) {
         fdapde_static_assert(Rows_ != Dynamic && Cols_ != Dynamic, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
         bitpacks_ = internals::bitpack_count(Rows * Cols, PackSize);
-        // compute last bitpack
-        const int last_used_bits = (Rows * Cols - (bitpacks_ - 1) * PackSize);
-        last_bitpack_mask_ = internals::low_bits_mask<bitpack_t>(last_used_bits);
+        set_last_bitpack_mask_();
     }
-    template <typename Scalar_>
-        requires(std::is_convertible_v<Scalar_, bitpack_t>)
-    constexpr MatrixView(Scalar_* data, int size) :
-        Base(size), data_(reinterpret_cast<bitpack_t*>(data)), bitpacks_(0), last_bitpack_mask_(0) {
+    constexpr MatrixView(StorageType data, int size) :
+        Base(checked_vector_size_(size)), data_(data), bitpacks_(0), last_bitpack_mask_(0) {
         fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
-        fdapde_assert(size > 0);
         bitpacks_ = internals::bitpack_count(this->size(), PackSize);
-        if (bitpacks_ > 0) {
-            const int last_used_bits = (this->size() - (bitpacks_ - 1) * PackSize);
-            last_bitpack_mask_ = internals::low_bits_mask<bitpack_t>(last_used_bits);
-        }
+        set_last_bitpack_mask_();
     }
-    template <typename Scalar_>
-        requires(std::is_convertible_v<Scalar_, bitpack_t>)
-    constexpr MatrixView(Scalar_* data, int rows, int cols) :
-        Base(rows, cols), data_(reinterpret_cast<bitpack_t*>(data)), bitpacks_(0), last_bitpack_mask_(0) {
-        fdapde_assert(rows > 0 && cols > 0);
+    constexpr MatrixView(StorageType data, int rows, int cols) :
+        Base(checked_rows_(rows, cols), cols), data_(data), bitpacks_(0), last_bitpack_mask_(0) {
         bitpacks_ = internals::bitpack_count(this->size(), PackSize);
-        if (bitpacks_ > 0) {
-            const int last_used_bits = (this->size() - (bitpacks_ - 1) * PackSize);
-            last_bitpack_mask_ = internals::low_bits_mask<bitpack_t>(last_used_bits);
-        }
+        set_last_bitpack_mask_();
     }
-    // inherit assignment from Base
-    using Base::operator=;
+    // inherit expression assignment without the owner-style MatrixBase copy assignment
+    using BoolBase::operator=;
+    constexpr MatrixView& operator=(const MatrixView& other) & requires(ReadOnly == 0) {
+        static_cast<BoolBase&>(*this).template operator=<This>(other);
+        return *this;
+    }
+    constexpr MatrixView operator=(const MatrixView& other) && requires(ReadOnly == 0) {
+        static_cast<BoolBase&>(*this).template operator=<This>(other);
+        return *this;
+    }
+    constexpr MatrixView& operator=(const MatrixView&) & requires(ReadOnly != 0) = delete;
+    constexpr MatrixView operator=(const MatrixView&) && requires(ReadOnly != 0) = delete;
+    // access
+    constexpr reference operator()(int i, int j) requires(ReadOnly == 0) {
+        internals::validate_matrix_index(i, j, this->rows(), this->cols());
+        return Base::operator()(i, j);
+    }
+    constexpr reference operator[](int i) requires(ReadOnly == 0) {
+        fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
+        if (i < 0 || i >= this->size()) { throw std::out_of_range("matrix view index out of range"); }
+        return Base::operator[](i);
+    }
+    constexpr const_reference operator()(int i, int j) const {
+        internals::validate_matrix_index(i, j, this->rows(), this->cols());
+        return Base::operator()(i, j);
+    }
+    constexpr const_reference operator[](int i) const {
+        fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
+        if (i < 0 || i >= this->size()) { throw std::out_of_range("matrix view index out of range"); }
+        return Base::operator[](i);
+    }
     // observers
     constexpr int bitpacks() const { return bitpacks_; }
-    bitpack_t bitpack(int i) const {
-        fdapde_assert(i >= 0 && i < bitpacks_);
+    constexpr bitpack_t bitpack(int i) const {
+        if (i < 0 || i >= bitpacks_) { throw std::out_of_range("Boolean view bit-pack index out of range"); }
         if (i < bitpacks_ - 1) {
             return data_[i];
         } else {
@@ -1491,29 +1515,46 @@ class MatrixView<bool, Rows_, Cols_, StorageOrder_> :
     }
     // data pointers
     constexpr const bitpack_t* data() const { return data_; }
-    constexpr bitpack_t* data() { return data_; }
+    constexpr StorageType data() { return data_; }
     // modifiers
-    constexpr void set(int i, int j) { this->operator()(i, j).set(); }
-    constexpr void set(int i) {
+    constexpr void set(int i, int j) requires(ReadOnly == 0) { this->operator()(i, j).set(); }
+    constexpr void set(int i) requires(ReadOnly == 0) {
         fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
         this->operator[](i).set();
     }
-    constexpr void set() {
+    constexpr void set() requires(ReadOnly == 0) {
         if (bitpacks_ == 0) return;
         for (int i = 0; i < bitpacks_ - 1; ++i) { data_[i] = ~bitpack_t(0); }
         data_[bitpacks_ - 1] |= last_bitpack_mask_;
     }
-    constexpr void clear(int i, int j) { this->operator()(i, j).clear(); }
-    constexpr void clear(int i) {
+    constexpr void clear(int i, int j) requires(ReadOnly == 0) { this->operator()(i, j).clear(); }
+    constexpr void clear(int i) requires(ReadOnly == 0) {
         fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
         this->operator[](i).clear();
     }
-    constexpr void clear() {
+    constexpr void clear() requires(ReadOnly == 0) {
         if (bitpacks_ == 0) return;
         for (int i = 0; i < bitpacks_ - 1; ++i) { data_[i] = bitpack_t(0); }
         data_[bitpacks_ - 1] &= ~last_bitpack_mask_;
     }
    private:
+    static constexpr int checked_vector_size_(int size) {
+        internals::validate_matrix_vector_size<Rows_, Cols_>(size);
+        if (size <= 0) { throw std::invalid_argument("matrix view size must be positive"); }
+        (void)internals::checked_matrix_size(Rows_ == Dynamic ? size : Rows_, Cols_ == Dynamic ? size : Cols_);
+        return size;
+    }
+    static constexpr int checked_rows_(int rows, int cols) {
+        internals::validate_matrix_shape<Rows_, Cols_>(rows, cols);
+        if (rows <= 0 || cols <= 0) { throw std::invalid_argument("matrix view dimensions must be positive"); }
+        (void)internals::checked_matrix_size(Rows_ == Dynamic ? rows : Rows_, Cols_ == Dynamic ? cols : Cols_);
+        return rows;
+    }
+    constexpr void set_last_bitpack_mask_() {
+        if (bitpacks_ == 0) return;
+        const int last_used_bits = this->size() - (bitpacks_ - 1) * PackSize;
+        last_bitpack_mask_ = internals::low_bits_mask<bitpack_t>(last_used_bits);
+    }
     StorageType data_;
     int bitpacks_;
     bitpack_t last_bitpack_mask_;
