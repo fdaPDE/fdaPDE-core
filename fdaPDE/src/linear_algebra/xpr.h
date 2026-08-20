@@ -755,12 +755,24 @@ template <typename XprType_> struct MatrixExpr {
     }
 
     // triangular block accessors
-    template <int BlockMode> constexpr Triangular<BlockMode, const XprType> triangular_block() const {
+    template <int BlockMode> constexpr Triangular<BlockMode, const XprType> triangular_block() const & {
         return Triangular<BlockMode, const XprType>(derived());
     }
-    template <int BlockMode> constexpr Triangular<BlockMode, XprType> triangular_block() {
+    template <int BlockMode> constexpr Triangular<BlockMode, XprType> triangular_block() & {
         return Triangular<BlockMode, XprType>(derived());
     }
+    template <int BlockMode>
+    constexpr Triangular<BlockMode, XprType> triangular_block() && requires(XprType::NestAsRef == 0) {
+        return Triangular<BlockMode, XprType>(std::move(derived()));
+    }
+    template <int BlockMode>
+    constexpr Triangular<BlockMode, const XprType> triangular_block() const && requires(XprType::NestAsRef == 0) {
+        return Triangular<BlockMode, const XprType>(std::move(derived()));
+    }
+    template <int BlockMode>
+    constexpr void triangular_block() && requires(XprType::NestAsRef != 0) = delete;
+    template <int BlockMode>
+    constexpr void triangular_block() const && requires(XprType::NestAsRef != 0) = delete;
     // cast
     template <int ViewMode> constexpr auto as_symmetric() { return internals::symmetric_cast<ViewMode>(derived()); }
     template <int ViewMode> constexpr auto as_symmetric() const {
