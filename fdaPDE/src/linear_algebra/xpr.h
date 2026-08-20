@@ -338,8 +338,16 @@ template <typename XprType_> struct MatrixExpr {
         return TransposeOp<XprType>(derived());
     }
     constexpr void transpose() const && requires(XprType::NestAsRef != 0) = delete;
-    constexpr auto diagonal() const { return Diagonal<const XprType>(derived()); }
-    constexpr auto diagonal() { return Diagonal<XprType>(derived()); }
+    constexpr Diagonal<XprType> diagonal() & { return Diagonal<XprType>(derived()); }
+    constexpr Diagonal<const XprType> diagonal() const & { return Diagonal<const XprType>(derived()); }
+    constexpr Diagonal<XprType> diagonal() && requires(XprType::NestAsRef == 0) {
+        return Diagonal<XprType>(std::move(derived()));
+    }
+    constexpr Diagonal<const XprType> diagonal() const && requires(XprType::NestAsRef == 0) {
+        return Diagonal<const XprType>(std::move(derived()));
+    }
+    constexpr void diagonal() && requires(XprType::NestAsRef != 0) = delete;
+    constexpr void diagonal() const && requires(XprType::NestAsRef != 0) = delete;
     // block accessors
     // static-sized block
     template <int BlockRows, int BlockCols>
@@ -758,14 +766,24 @@ template <typename XprType_> struct MatrixExpr {
     template <int ViewMode> constexpr auto as_symmetric() const {
         return internals::symmetric_cast<ViewMode>(derived());
     }
-    constexpr auto as_diagonal() const {
+    constexpr auto as_diagonal() & {
         fdapde_static_assert(XprType::Rows == 1 || XprType::Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
         return internals::diagonal_cast(derived());
     }
-    constexpr auto as_diagonal() {
+    constexpr auto as_diagonal() const & {
         fdapde_static_assert(XprType::Rows == 1 || XprType::Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
         return internals::diagonal_cast(derived());
     }
+    constexpr auto as_diagonal() && requires(XprType::NestAsRef == 0) {
+        fdapde_static_assert(XprType::Rows == 1 || XprType::Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
+        return internals::diagonal_cast(std::move(derived()));
+    }
+    constexpr auto as_diagonal() const && requires(XprType::NestAsRef == 0) {
+        fdapde_static_assert(XprType::Rows == 1 || XprType::Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
+        return internals::diagonal_cast(std::move(derived()));
+    }
+    constexpr void as_diagonal() && requires(XprType::NestAsRef != 0) = delete;
+    constexpr void as_diagonal() const && requires(XprType::NestAsRef != 0) = delete;
 };
 
 // comparison operators
