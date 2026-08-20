@@ -264,6 +264,107 @@ static_assert(!std::is_constructible_v<direct_static_boolean_block, boolean_bloc
 static_assert(
   !std::is_constructible_v<direct_dynamic_boolean_block, boolean_block_owner&&, int, int, int, int>);
 
+template <typename Matrix>
+concept exposes_static_boolean_matrix_reshape = requires(Matrix&& matrix) {
+    std::forward<Matrix>(matrix).template reshape<2, 2>();
+};
+
+template <typename Matrix>
+concept exposes_static_boolean_vector_reshape = requires(Matrix&& matrix) {
+    std::forward<Matrix>(matrix).template reshape<4>();
+};
+
+template <typename Matrix>
+concept exposes_dynamic_boolean_matrix_reshape = requires(Matrix&& matrix) {
+    std::forward<Matrix>(matrix).reshape(2, 2);
+};
+
+template <typename Matrix>
+concept exposes_dynamic_boolean_vector_reshape = requires(Matrix&& matrix) {
+    std::forward<Matrix>(matrix).reshape(4);
+};
+
+template <typename Matrix, int ExpectedReadOnly>
+concept exposes_all_safe_boolean_reshape_accessors = requires(Matrix&& matrix) {
+    requires (decltype(std::forward<Matrix>(matrix).template reshape<2, 2>())::ReadOnly == ExpectedReadOnly);
+    requires (decltype(std::forward<Matrix>(matrix).template reshape<4>())::ReadOnly == ExpectedReadOnly);
+    requires (decltype(std::forward<Matrix>(matrix).reshape(2, 2))::ReadOnly == ExpectedReadOnly);
+    requires (decltype(std::forward<Matrix>(matrix).reshape(4))::ReadOnly == ExpectedReadOnly);
+};
+
+template <typename Matrix>
+concept permits_direct_temporary_static_boolean_reshape = requires(Matrix&& matrix) {
+    fdapde::BoolReshapeOp<2, 2, Matrix> {std::move(matrix)};
+};
+
+template <typename Matrix>
+concept permits_direct_temporary_dynamic_boolean_reshape = requires(Matrix&& matrix) {
+    fdapde::BoolReshapeOp<fdapde::Dynamic, fdapde::Dynamic, Matrix> {std::move(matrix), 2, 2};
+};
+
+template <typename Matrix>
+concept permits_direct_temporary_vector_boolean_reshape = requires(Matrix&& matrix) {
+    fdapde::BoolReshapeOp<fdapde::Dynamic, 1, Matrix> {std::move(matrix), 4};
+};
+
+template <typename Reshape>
+concept permits_boolean_reshape_coordinate_write = requires(Reshape& reshape) { reshape(0, 0) = true; };
+
+template <typename Reshape>
+concept permits_boolean_reshape_vector_write = requires(Reshape& reshape) { reshape[0] = true; };
+
+template <typename Reshape>
+concept permits_boolean_reshape_assignment = requires(Reshape& lhs, const Reshape& rhs) { lhs = rhs; };
+
+using boolean_reshape_owner = fdapde::Matrix<bool, 2, 2>;
+using mutable_boolean_matrix_reshape =
+  decltype(std::declval<boolean_reshape_owner&>().template reshape<2, 2>());
+using mutable_boolean_vector_reshape =
+  decltype(std::declval<boolean_reshape_owner&>().template reshape<4>());
+using const_owner_boolean_matrix_reshape =
+  decltype(std::declval<const boolean_reshape_owner&>().template reshape<2, 2>());
+using const_owner_boolean_vector_reshape =
+  decltype(std::declval<const boolean_reshape_owner&>().template reshape<4>());
+using safe_boolean_reshape_expression =
+  decltype(std::declval<boolean_reshape_owner&>() | std::declval<boolean_reshape_owner&>());
+
+static_assert(exposes_static_boolean_matrix_reshape<boolean_reshape_owner&>);
+static_assert(exposes_static_boolean_vector_reshape<boolean_reshape_owner&>);
+static_assert(exposes_dynamic_boolean_matrix_reshape<boolean_reshape_owner&>);
+static_assert(exposes_dynamic_boolean_vector_reshape<boolean_reshape_owner&>);
+static_assert(
+  !exposes_static_boolean_matrix_reshape<boolean_reshape_owner> &&
+  !exposes_static_boolean_vector_reshape<boolean_reshape_owner> &&
+  !exposes_dynamic_boolean_matrix_reshape<boolean_reshape_owner> &&
+  !exposes_dynamic_boolean_vector_reshape<boolean_reshape_owner>);
+static_assert(
+  !exposes_static_boolean_matrix_reshape<const boolean_reshape_owner> &&
+  !exposes_static_boolean_vector_reshape<const boolean_reshape_owner> &&
+  !exposes_dynamic_boolean_matrix_reshape<const boolean_reshape_owner> &&
+  !exposes_dynamic_boolean_vector_reshape<const boolean_reshape_owner>);
+static_assert(exposes_all_safe_boolean_reshape_accessors<safe_boolean_reshape_expression, 1>);
+static_assert(exposes_all_safe_boolean_reshape_accessors<const safe_boolean_reshape_expression, 1>);
+static_assert(!permits_direct_temporary_static_boolean_reshape<boolean_reshape_owner>);
+static_assert(!permits_direct_temporary_dynamic_boolean_reshape<boolean_reshape_owner>);
+static_assert(!permits_direct_temporary_vector_boolean_reshape<boolean_reshape_owner>);
+static_assert(!permits_direct_temporary_static_boolean_reshape<const boolean_reshape_owner>);
+static_assert(!permits_direct_temporary_dynamic_boolean_reshape<const boolean_reshape_owner>);
+static_assert(!permits_direct_temporary_vector_boolean_reshape<const boolean_reshape_owner>);
+static_assert(mutable_boolean_matrix_reshape::ReadOnly == 0);
+static_assert(const_owner_boolean_matrix_reshape::ReadOnly == 1);
+static_assert(permits_boolean_reshape_coordinate_write<mutable_boolean_matrix_reshape>);
+static_assert(permits_boolean_reshape_vector_write<mutable_boolean_vector_reshape>);
+static_assert(!permits_boolean_reshape_coordinate_write<const mutable_boolean_matrix_reshape>);
+static_assert(!permits_boolean_reshape_vector_write<const mutable_boolean_vector_reshape>);
+static_assert(!permits_boolean_reshape_coordinate_write<const_owner_boolean_matrix_reshape>);
+static_assert(!permits_boolean_reshape_vector_write<const_owner_boolean_vector_reshape>);
+static_assert(permits_boolean_reshape_assignment<mutable_boolean_matrix_reshape>);
+static_assert(!permits_boolean_reshape_assignment<const_owner_boolean_matrix_reshape>);
+using temporary_boolean_reshape_assignment_result = decltype(
+  std::declval<mutable_boolean_matrix_reshape&&>() =
+  std::declval<const mutable_boolean_matrix_reshape&>());
+static_assert(std::is_same_v<temporary_boolean_reshape_assignment_result, mutable_boolean_matrix_reshape>);
+
 template <int StorageOrder> void check_exact_boolean_pack_accounting() {
     using exact_pack = fdapde::Matrix<bool, 8, 8, StorageOrder>;
     using partial_pack = fdapde::Matrix<bool, 5, 13, StorageOrder>;
@@ -691,6 +792,139 @@ template <int StorageOrder> void check_boolean_block_contracts() {
     EXPECT_TRUE(bounds(1, 1));
 }
 
+template <int StorageOrder> void check_boolean_reshape_contracts() {
+    using source_matrix = fdapde::Matrix<bool, 2, 3, StorageOrder>;
+    using target_matrix = fdapde::Matrix<bool, 3, 2, StorageOrder>;
+    using dynamic_matrix =
+      fdapde::Matrix<bool, fdapde::Dynamic, fdapde::Dynamic, StorageOrder>;
+
+    const auto expect_values = [](const auto& matrix, const auto& expected) {
+        ASSERT_EQ(matrix.size(), static_cast<int>(expected.size()));
+        for (int i = 0; i < matrix.rows(); ++i) {
+            for (int j = 0; j < matrix.cols(); ++j) {
+                EXPECT_EQ(
+                  bool(matrix(i, j)), expected[static_cast<std::size_t>(i * matrix.cols() + j)]);
+            }
+        }
+    };
+
+    source_matrix source({false, true, true, false, true, false});
+    const std::array<bool, 6> reshaped_expected = StorageOrder == fdapde::RowMajor
+      ? std::array<bool, 6> {false, true, true, false, true, false}
+      : std::array<bool, 6> {false, true, false, true, true, false};
+    const std::array<bool, 6> flat_expected = StorageOrder == fdapde::RowMajor
+      ? std::array<bool, 6> {false, true, true, false, true, false}
+      : std::array<bool, 6> {false, false, true, true, true, false};
+
+    auto static_reshape = source.template reshape<3, 2>();
+    auto dynamic_reshape = source.reshape(3, 2);
+    expect_values(target_matrix(static_reshape), reshaped_expected);
+    expect_values(target_matrix(dynamic_reshape), reshaped_expected);
+    EXPECT_EQ(static_reshape.bitpacks(), source.bitpacks());
+    EXPECT_EQ(static_reshape.bitpack(0), source.bitpack(0));
+
+    dynamic_matrix packed_source(5, 13);
+    packed_source(0, 0) = true;
+    packed_source(4, 12) = true;
+    const auto packed_static_reshape = packed_source.template reshape<1, 65>();
+    const auto packed_dynamic_reshape = packed_source.reshape(1, 65);
+    const auto packed_column_reshape = packed_source.reshape(65);
+    EXPECT_EQ(packed_static_reshape.bitpacks(), 2);
+    EXPECT_EQ(packed_dynamic_reshape.bitpacks(), 2);
+    for (int i = 0; i < packed_source.bitpacks(); ++i) {
+        EXPECT_EQ(packed_static_reshape.bitpack(i), packed_source.bitpack(i));
+        EXPECT_EQ(packed_dynamic_reshape.bitpack(i), packed_source.bitpack(i));
+    }
+    EXPECT_TRUE(packed_static_reshape[64]);
+    EXPECT_TRUE(packed_column_reshape[64]);
+
+    const dynamic_matrix packed_zero(5, 13);
+    const auto stored_packed_expression = [&packed_source, &packed_zero] {
+        return (packed_source | packed_zero).template reshape<1, 65>();
+    }();
+    EXPECT_EQ(stored_packed_expression.bitpacks(), 2);
+    for (int i = 0; i < packed_source.bitpacks(); ++i) {
+        EXPECT_EQ(stored_packed_expression.bitpack(i), packed_source.bitpack(i));
+    }
+
+    auto row = source.template reshape<1, 6>();
+    auto column = source.template reshape<6>();
+    const fdapde::BoolReshapeOp<1, fdapde::Dynamic, source_matrix> direct_row(source, source.size());
+    EXPECT_EQ(direct_row.rows(), 1);
+    EXPECT_EQ(direct_row.cols(), source.size());
+    for (int i = 0; i < source.size(); ++i) {
+        EXPECT_EQ(bool(row[i]), flat_expected[static_cast<std::size_t>(i)]);
+        EXPECT_EQ(bool(column[i]), flat_expected[static_cast<std::size_t>(i)]);
+        EXPECT_EQ(bool(direct_row[i]), flat_expected[static_cast<std::size_t>(i)]);
+    }
+
+    static_reshape(0, 1) = false;
+    if constexpr (StorageOrder == fdapde::RowMajor) {
+        EXPECT_FALSE(source(0, 1));
+        EXPECT_TRUE(source(1, 1));
+    } else {
+        EXPECT_TRUE(source(0, 1));
+        EXPECT_FALSE(source(1, 1));
+    }
+
+    const source_matrix lifetime_source({false, true, true, false, true, false});
+    const source_matrix lifetime_zero;
+    const auto stored_expression = [&lifetime_source, &lifetime_zero] {
+        return (lifetime_source | lifetime_zero).template reshape<3, 2>();
+    }();
+    expect_values(target_matrix(stored_expression), reshaped_expected);
+
+    source_matrix named_destination;
+    source_matrix named_source({true, false, true, true, false, true});
+    auto destination_reshape = named_destination.template reshape<3, 2>();
+    const auto source_reshape = named_source.template reshape<3, 2>();
+    destination_reshape = source_reshape;
+    expect_values(named_destination, std::array {true, false, true, true, false, true});
+    destination_reshape(0, 0) = false;
+    EXPECT_TRUE(named_source(0, 0));
+
+    source_matrix temporary_destination;
+    temporary_destination.template reshape<3, 2>() = named_source.template reshape<3, 2>();
+    expect_values(temporary_destination, std::array {true, false, true, true, false, true});
+
+    fdapde::Matrix<bool, 4, 1, StorageOrder> vector_destination;
+    const fdapde::Matrix<bool, 2, 2, StorageOrder> matrix_source({true, false, false, true});
+    vector_destination.template reshape<2, 2>() = matrix_source;
+    const auto matrix_shaped_destination = vector_destination.template reshape<2, 2>();
+    expect_values(matrix_shaped_destination, std::array {true, false, false, true});
+
+    fdapde::Matrix<bool, 1, 5, StorageOrder> overlapping({true, false, true, false, false});
+    overlapping.template block<1, 4>(0, 1).template reshape<1, 4>() =
+      overlapping.template block<1, 4>(0, 0).template reshape<1, 4>();
+    expect_values(overlapping, std::array {true, true, false, true, false});
+
+    const auto& const_static_reshape = static_reshape;
+    EXPECT_THROW(static_cast<void>(static_reshape(-1, 0)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(static_reshape(3, 0)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(const_static_reshape(0, -1)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(const_static_reshape(0, 2)), std::out_of_range);
+    const auto& const_row = row;
+    EXPECT_THROW(static_cast<void>(row[-1]), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(row[row.size()]), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(const_row[-1]), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(const_row[const_row.size()]), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(static_reshape.bitpack(-1)), std::out_of_range);
+    EXPECT_THROW(
+      static_cast<void>(static_reshape.bitpack(static_reshape.bitpacks())), std::out_of_range);
+
+    dynamic_matrix empty;
+    const auto empty_matrix = empty.reshape(0, 5);
+    const auto empty_column = empty.reshape(0);
+    EXPECT_EQ(empty_matrix.rows(), 0);
+    EXPECT_EQ(empty_matrix.cols(), 5);
+    EXPECT_EQ(empty_matrix.size(), 0);
+    EXPECT_EQ(empty_matrix.bitpacks(), 0);
+    EXPECT_EQ(empty_column.rows(), 0);
+    EXPECT_EQ(empty_column.cols(), 1);
+    EXPECT_EQ(empty_column.size(), 0);
+    EXPECT_EQ(empty_column.bitpacks(), 0);
+}
+
 }   // namespace
 
 TEST(linear_algebra, boolean) {
@@ -727,13 +961,15 @@ TEST(linear_algebra, boolean) {
     check_boolean_expression_contracts<fdapde::ColMajor>();
     check_boolean_block_contracts<fdapde::RowMajor>();
     check_boolean_block_contracts<fdapde::ColMajor>();
+    check_boolean_reshape_contracts<fdapde::RowMajor>();
+    check_boolean_reshape_contracts<fdapde::ColMajor>();
 }
 
 // Current regression adapted from 86ff6d12:tests/linear_algebra/bool.cpp.
 // Stable source: a2a9c88:test/src/binary_matrix_test.cpp.
 // Stable declarations (9): static_sized_matrix, dynamic_sized_matrix, binary_vector, block_operations,
 // binary_expresssions, visitors, block_repeat, eigen_assignment_and_construct, and reshaped.
-// TODO(P4-B): cover packed MatrixView contracts, reshape/select lifetime seams, reductions/equality/which,
+// TODO(P4-B): cover packed MatrixView contracts, select lifetime seams, reductions/equality/which,
 // repeat, and the remaining two-dimensional resize policy.
 // Replace the historical Eigen assignment/construct assertion with native numeric-matrix conversion; do not
 // restore an implicit Eigen bridge.

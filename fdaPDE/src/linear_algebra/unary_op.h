@@ -147,6 +147,16 @@ struct ReshapeOp : public MatrixExpr<ReshapeOp<Rows_, Cols_, XprType_>> {
     // observers
     constexpr int rows() const { return rows_; }
     constexpr int cols() const { return cols_; }
+    constexpr decltype(auto) bitpack(int i) const
+        requires requires(const XprTypeClean& xpr) { xpr.bitpack(i); }
+    {
+        return std::as_const(xpr_).bitpack(i);
+    }
+    constexpr int bitpacks() const
+        requires requires(const XprTypeClean& xpr) { xpr.bitpacks(); }
+    {
+        return std::as_const(xpr_).bitpacks();
+    }
    private:
     constexpr void validate_(bool target_matches = true) const {
         if (!target_matches) { throw std::invalid_argument("reshape arguments do not match its static shape"); }

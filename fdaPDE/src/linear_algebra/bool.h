@@ -837,22 +837,35 @@ struct cnt_redux_bitpack_executor {
 template <int Rows_, int Cols_, typename XprType_>
 class BoolReshapeOp : public BoolMatrixExpr<BoolReshapeOp<Rows_, Cols_, XprType_>> {
    private:
-    using XprType = std::decay_t<XprType_>;
+    using Base = BoolMatrixExpr<BoolReshapeOp<Rows_, Cols_, XprType_>>;
+    using XprType = std::remove_reference_t<XprType_>;
+    using XprTypeClean = std::remove_cv_t<XprType>;
     using XprTypeNested = ReshapeOp<Rows_, Cols_, XprType_>;   // reuse standard reshaping
    public:
     static constexpr int Rows = Rows_;
     static constexpr int Cols = Cols_;
+    static constexpr int StorageOrder = XprTypeClean::StorageOrder;
     static constexpr int NestAsRef = 0;
-    static constexpr int ReadOnly = XprType::ReadOnly;
+    static constexpr int ReadOnly = std::is_const_v<XprType> || XprTypeClean::ReadOnly;
+    using assignment_executor = internals::generic_assignment_executor;
 
     constexpr BoolReshapeOp() = default;
-    constexpr BoolReshapeOp(const BoolReshapeOp& other) : xpr_(other.xpr_) { }
-    constexpr BoolReshapeOp& operator=(const BoolReshapeOp& other) {
-        xpr_ = other.xpr_;
+    constexpr BoolReshapeOp(const BoolReshapeOp&) = default;
+    using Base::operator=;
+    constexpr BoolReshapeOp& operator=(const BoolReshapeOp& other) & requires(ReadOnly == 0) {
+        static_cast<Base&>(*this).template operator=<BoolReshapeOp>(other);
         return *this;
     }
+    constexpr BoolReshapeOp operator=(const BoolReshapeOp& other) && requires(ReadOnly == 0) {
+        static_cast<Base&>(*this).template operator=<BoolReshapeOp>(other);
+        return *this;
+    }
+    constexpr BoolReshapeOp& operator=(const BoolReshapeOp&) & requires(ReadOnly != 0) = delete;
+    constexpr BoolReshapeOp operator=(const BoolReshapeOp&) && requires(ReadOnly != 0) = delete;
     template <typename XprType__>
-        requires(std::is_constructible_v<XprTypeNested, XprType__>)
+        requires(
+          !std::same_as<std::remove_cvref_t<XprType__>, BoolReshapeOp> &&
+          std::is_constructible_v<XprTypeNested, XprType__>)
     constexpr explicit BoolReshapeOp(XprType__&& xpr) : xpr_(std::forward<XprType__>(xpr)) { }
     template <typename XprType__>
         requires(std::is_constructible_v<XprTypeNested, XprType__>)
@@ -864,12 +877,16 @@ class BoolReshapeOp : public BoolMatrixExpr<BoolReshapeOp<Rows_, Cols_, XprType_
 
     constexpr int rows() const { return xpr_.rows(); }
     constexpr int cols() const { return xpr_.cols(); }
-    constexpr decltype(auto) bitpack(int i) const { return xpr_.bitpack(i); }
+    constexpr int bitpacks() const { return xpr_.bitpacks(); }
+    constexpr decltype(auto) bitpack(int i) const {
+        if (i < 0 || i >= bitpacks()) { throw std::out_of_range("Boolean reshape bit-pack index out of range"); }
+        return xpr_.bitpack(i);
+    }
     // access
-    constexpr decltype(auto) operator()(int i, int j) const { return xpr_(i, j); }
-    constexpr decltype(auto) operator[](int i) const { return Rows == 1 ? operator()(i, 0) : operator()(0, i); }
-    constexpr decltype(auto) operator()(int i, int j) { return xpr_(i, j); }
-    constexpr decltype(auto) operator[](int i) { return Rows == 1 ? operator()(i, 0) : operator()(0, i); }
+    constexpr decltype(auto) operator()(int i, int j) const { return std::as_const(xpr_)(i, j); }
+    constexpr decltype(auto) operator[](int i) const { return std::as_const(xpr_)[i]; }
+    constexpr decltype(auto) operator()(int i, int j) requires(ReadOnly == 0) { return xpr_(i, j); }
+    constexpr decltype(auto) operator[](int i) requires(ReadOnly == 0) { return xpr_[i]; }
    private:
     XprTypeNested xpr_;
 };
@@ -1260,27 +1277,63 @@ template <typename XprType_> struct BoolMatrixExpr {
     }
     // reshaping
     // static-sized
-    template <int ReshapedRows_, int ReshapedCols_> constexpr auto reshape() {
+    template <int ReshapedRows_, int ReshapedCols_> constexpr auto reshape() & {
         return BoolReshapeOp<ReshapedRows_, ReshapedCols_, XprType>(derived());
     }
-    template <int ReshapedRows_, int ReshapedCols_> constexpr auto reshape() const {
+    template <int ReshapedRows_, int ReshapedCols_> constexpr auto reshape() const & {
         return BoolReshapeOp<ReshapedRows_, ReshapedCols_, const XprType>(derived());
     }
-    template <int ReshapedRows_> constexpr auto reshape() {
+    template <int ReshapedRows_, int ReshapedCols_>
+    constexpr auto reshape() && requires(XprType::NestAsRef == 0) {
+        return BoolReshapeOp<ReshapedRows_, ReshapedCols_, XprType>(static_cast<XprType&>(*this));
+    }
+    template <int ReshapedRows_, int ReshapedCols_>
+    constexpr auto reshape() const && requires(XprType::NestAsRef == 0) {
+        return BoolReshapeOp<ReshapedRows_, ReshapedCols_, const XprType>(static_cast<const XprType&>(*this));
+    }
+    template <int ReshapedRows_, int ReshapedCols_>
+    constexpr void reshape() && requires(XprType::NestAsRef != 0) = delete;
+    template <int ReshapedRows_, int ReshapedCols_>
+    constexpr void reshape() const && requires(XprType::NestAsRef != 0) = delete;
+    template <int ReshapedRows_> constexpr auto reshape() & {
         return BoolReshapeOp<ReshapedRows_, 1, XprType>(derived());
     }
-    template <int ReshapedRows_> constexpr auto reshape() const {
+    template <int ReshapedRows_> constexpr auto reshape() const & {
         return BoolReshapeOp<ReshapedRows_, 1, const XprType>(derived());
     }
+    template <int ReshapedRows_> constexpr auto reshape() && requires(XprType::NestAsRef == 0) {
+        return BoolReshapeOp<ReshapedRows_, 1, XprType>(static_cast<XprType&>(*this));
+    }
+    template <int ReshapedRows_> constexpr auto reshape() const && requires(XprType::NestAsRef == 0) {
+        return BoolReshapeOp<ReshapedRows_, 1, const XprType>(static_cast<const XprType&>(*this));
+    }
+    template <int ReshapedRows_> constexpr void reshape() && requires(XprType::NestAsRef != 0) = delete;
+    template <int ReshapedRows_> constexpr void reshape() const && requires(XprType::NestAsRef != 0) = delete;
     // dynamic-sized
-    constexpr auto reshape(int rows, int cols) {
+    constexpr auto reshape(int rows, int cols) & {
         return BoolReshapeOp<Dynamic, Dynamic, XprType>(derived(), rows, cols);
     }
-    constexpr auto reshape(int rows, int cols) const {
+    constexpr auto reshape(int rows, int cols) const & {
         return BoolReshapeOp<Dynamic, Dynamic, const XprType>(derived(), rows, cols);
     }
-    constexpr auto reshape(int rows) { return BoolReshapeOp<Dynamic, 1, XprType>(derived(), rows); }
-    constexpr auto reshape(int rows) const { return BoolReshapeOp<Dynamic, 1, const XprType>(derived(), rows); }
+    constexpr auto reshape(int rows, int cols) && requires(XprType::NestAsRef == 0) {
+        return BoolReshapeOp<Dynamic, Dynamic, XprType>(static_cast<XprType&>(*this), rows, cols);
+    }
+    constexpr auto reshape(int rows, int cols) const && requires(XprType::NestAsRef == 0) {
+        return BoolReshapeOp<Dynamic, Dynamic, const XprType>(static_cast<const XprType&>(*this), rows, cols);
+    }
+    constexpr void reshape(int, int) && requires(XprType::NestAsRef != 0) = delete;
+    constexpr void reshape(int, int) const && requires(XprType::NestAsRef != 0) = delete;
+    constexpr auto reshape(int rows) & { return BoolReshapeOp<Dynamic, 1, XprType>(derived(), rows); }
+    constexpr auto reshape(int rows) const & { return BoolReshapeOp<Dynamic, 1, const XprType>(derived(), rows); }
+    constexpr auto reshape(int rows) && requires(XprType::NestAsRef == 0) {
+        return BoolReshapeOp<Dynamic, 1, XprType>(static_cast<XprType&>(*this), rows);
+    }
+    constexpr auto reshape(int rows) const && requires(XprType::NestAsRef == 0) {
+        return BoolReshapeOp<Dynamic, 1, const XprType>(static_cast<const XprType&>(*this), rows);
+    }
+    constexpr void reshape(int) && requires(XprType::NestAsRef != 0) = delete;
+    constexpr void reshape(int) const && requires(XprType::NestAsRef != 0) = delete;
 };
     
 // comparison operator
