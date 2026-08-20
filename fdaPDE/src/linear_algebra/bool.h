@@ -1024,14 +1024,10 @@ template <typename XprType_> struct BoolMatrixExpr {
     // returns all the indices (in row-major order) having coefficients equal to b
     std::vector<int> which(bool b) const {
         std::vector<int> result;
-        const int bitpacks_ = derived().bitpacks();
-        const int size_ = derived().size();
-        int j = 0;
-        for (int i = 0; i < bitpacks_; ++i) {
-            bitpack_t pack = derived().bitpack(i);
-            for (int bit = 0; bit < PackSize && j < size_; ++bit, ++j) {
-                if ((pack & 0x1) == static_cast<bitpack_t>(b)) result.push_back(j);
-                pack >>= 1;
+        const auto& d = derived();
+        for (int i = 0; i < d.rows(); ++i) {
+            for (int j = 0; j < d.cols(); ++j) {
+                if (bool(d(i, j)) == b) result.push_back(i * d.cols() + j);
             }
         }
         return result;
@@ -1354,6 +1350,14 @@ constexpr bool operator==(const BoolMatrixExpr<LhsXprType>& lhs, const BoolMatri
     const auto& d1 = lhs.derived();
     const auto& d2 = rhs.derived();
     if (d1.size() == 0) return true;
+    if constexpr (LhsXprType::StorageOrder != RhsXprType::StorageOrder) {
+        for (int i = 0; i < d1.rows(); ++i) {
+            for (int j = 0; j < d1.cols(); ++j) {
+                if (bool(d1(i, j)) != bool(d2(i, j))) return false;
+            }
+        }
+        return true;
+    }
     bool result = true;
     int n = d1.bitpacks() - 1;
     // fast first n bitpacks comparison

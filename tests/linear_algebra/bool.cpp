@@ -925,6 +925,83 @@ template <int StorageOrder> void check_boolean_reshape_contracts() {
     EXPECT_EQ(empty_column.bitpacks(), 0);
 }
 
+template <int StorageOrder> void check_boolean_terminal_contracts() {
+    using exact_matrix = fdapde::Matrix<bool, 8, 8, StorageOrder>;
+    using tail_matrix = fdapde::Matrix<bool, 5, 13, StorageOrder>;
+    using layout_matrix = fdapde::Matrix<bool, 2, 3, StorageOrder>;
+    using dynamic_matrix =
+      fdapde::Matrix<bool, fdapde::Dynamic, fdapde::Dynamic, StorageOrder>;
+    constexpr int OppositeOrder = StorageOrder == fdapde::RowMajor ? fdapde::ColMajor : fdapde::RowMajor;
+    using opposite_tail_matrix = fdapde::Matrix<bool, 5, 13, OppositeOrder>;
+    using opposite_layout_matrix = fdapde::Matrix<bool, 2, 3, OppositeOrder>;
+
+    exact_matrix exact(true);
+    EXPECT_TRUE(exact.all());
+    EXPECT_TRUE(exact.any());
+    EXPECT_EQ(exact.count(), 64);
+    exact(7, 7) = false;
+    EXPECT_FALSE(exact.all());
+    EXPECT_TRUE(exact.any());
+    EXPECT_EQ(exact.count(), 63);
+
+    const tail_matrix zeros;
+    const tail_matrix logical_ones(std::vector<bool>(65, true));
+    const auto inverted_zeros = ~zeros;
+    const auto hidden_only = ~logical_ones;
+    EXPECT_TRUE(inverted_zeros.all());
+    EXPECT_TRUE(inverted_zeros.any());
+    EXPECT_EQ(inverted_zeros.count(), 65);
+    EXPECT_TRUE(logical_ones.all());
+    EXPECT_EQ(logical_ones.count(), 65);
+    EXPECT_FALSE(hidden_only.all());
+    EXPECT_FALSE(hidden_only.any());
+    EXPECT_EQ(hidden_only.count(), 0);
+    EXPECT_TRUE(inverted_zeros == logical_ones);
+    tail_matrix missing_last(logical_ones);
+    missing_last(4, 12) = false;
+    EXPECT_FALSE(inverted_zeros == missing_last);
+
+    std::vector<bool> tail_values(65);
+    for (const int index : {1, 12, 13, 51, 64}) {
+        tail_values[static_cast<std::size_t>(index)] = true;
+    }
+    const tail_matrix tail_layout(tail_values);
+    opposite_tail_matrix other_tail_layout(tail_values);
+    EXPECT_TRUE(tail_layout == other_tail_layout);
+    EXPECT_FALSE(tail_layout != other_tail_layout);
+    const auto stored_tail_expression = [&tail_layout, &zeros] { return tail_layout | zeros; }();
+    EXPECT_TRUE(stored_tail_expression == other_tail_layout);
+    other_tail_layout(3, 12) = !bool(other_tail_layout(3, 12));
+    EXPECT_FALSE(tail_layout == other_tail_layout);
+    EXPECT_TRUE(tail_layout != other_tail_layout);
+
+    const std::array<bool, 6> layout_values {false, true, true, true, false, false};
+    const layout_matrix layout(std::vector<bool>(layout_values.begin(), layout_values.end()));
+    const opposite_layout_matrix other_layout(
+      std::vector<bool>(layout_values.begin(), layout_values.end()));
+    EXPECT_TRUE(layout == other_layout);
+    EXPECT_EQ(layout.which(true), (std::vector<int> {1, 2, 3}));
+    EXPECT_EQ(layout.which(false), (std::vector<int> {0, 4, 5}));
+    EXPECT_EQ(fdapde::which(layout), (std::vector<int> {1, 2, 3}));
+
+    const layout_matrix layout_zeros;
+    const auto stored_layout_expression = [&layout, &layout_zeros] { return layout | layout_zeros; }();
+    EXPECT_EQ(stored_layout_expression.which(true), (std::vector<int> {1, 2, 3}));
+    EXPECT_EQ(fdapde::which(stored_layout_expression), (std::vector<int> {1, 2, 3}));
+
+    const dynamic_matrix empty;
+    const dynamic_matrix zero_rows(0, 3);
+    const dynamic_matrix zero_cols(3, 0);
+    const dynamic_matrix mismatched_rows(2, 3);
+    const dynamic_matrix mismatched_cols(3, 2);
+    EXPECT_THROW(static_cast<void>(mismatched_rows == mismatched_cols), std::invalid_argument);
+    EXPECT_TRUE(empty.which(true).empty());
+    EXPECT_TRUE(empty.which(false).empty());
+    EXPECT_TRUE(fdapde::which(empty).empty());
+    EXPECT_TRUE(zero_rows.which(true).empty());
+    EXPECT_TRUE(zero_cols.which(false).empty());
+}
+
 }   // namespace
 
 TEST(linear_algebra, boolean) {
@@ -963,6 +1040,8 @@ TEST(linear_algebra, boolean) {
     check_boolean_block_contracts<fdapde::ColMajor>();
     check_boolean_reshape_contracts<fdapde::RowMajor>();
     check_boolean_reshape_contracts<fdapde::ColMajor>();
+    check_boolean_terminal_contracts<fdapde::RowMajor>();
+    check_boolean_terminal_contracts<fdapde::ColMajor>();
 }
 
 // Current regression adapted from 86ff6d12:tests/linear_algebra/bool.cpp.
