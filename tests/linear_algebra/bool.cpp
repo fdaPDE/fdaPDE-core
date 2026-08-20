@@ -147,6 +147,32 @@ static_assert(!std::is_constructible_v<
               direct_ternary, const selection_mask&, const selection_values&, selection_values&&>);
 
 template <typename Matrix>
+concept exposes_boolean_repeat = requires(Matrix&& matrix) {
+    std::forward<Matrix>(matrix).repeat(2, 3);
+};
+
+using repeat_owner = fdapde::Matrix<bool, 2, 3>;
+using repeat_expression = decltype(~std::declval<repeat_owner&>());
+using repeat_view = fdapde::MatrixView<const bool, 2, 3>;
+using repeat_result = decltype(std::declval<const repeat_owner&>().repeat(2, 3));
+using direct_repeat = fdapde::BoolMatrixRepeatOp<repeat_owner>;
+
+static_assert(exposes_boolean_repeat<repeat_owner&>);
+static_assert(exposes_boolean_repeat<const repeat_owner&>);
+static_assert(!exposes_boolean_repeat<repeat_owner>);
+static_assert(!exposes_boolean_repeat<const repeat_owner>);
+static_assert(exposes_boolean_repeat<repeat_expression>);
+static_assert(exposes_boolean_repeat<repeat_view>);
+static_assert(repeat_result::Rows == fdapde::Dynamic);
+static_assert(repeat_result::Cols == fdapde::Dynamic);
+static_assert(repeat_result::StorageOrder == fdapde::RowMajor);
+static_assert(repeat_result::ReadOnly == 1);
+static_assert(repeat_result::NestAsRef == 0);
+static_assert(std::same_as<typename repeat_result::Scalar, bool>);
+static_assert(std::is_constructible_v<direct_repeat, const repeat_owner&, int, int>);
+static_assert(!std::is_constructible_v<direct_repeat, repeat_owner&&, int, int>);
+
+template <typename Matrix>
 concept exposes_static_boolean_block = requires(Matrix&& matrix) {
     std::forward<Matrix>(matrix).template block<1, 2>(0, 0);
 };
@@ -1112,6 +1138,112 @@ template <int StorageOrder> void check_boolean_selection_contracts() {
     EXPECT_TRUE(bool(nan_row_mask(0, 2)));
 }
 
+template <int StorageOrder> void check_boolean_repeat_contracts() {
+    using dynamic_matrix =
+      fdapde::Matrix<bool, fdapde::Dynamic, fdapde::Dynamic, StorageOrder>;
+    using dynamic_column = fdapde::Matrix<bool, fdapde::Dynamic, 1, StorageOrder>;
+
+    dynamic_matrix source(3, 4);
+    source(0, 0) = true;
+    source(0, 2) = true;
+    source(1, 1) = true;
+    source(2, 0) = true;
+    source(2, 1) = true;
+    source(2, 3) = true;
+
+    const auto repeated = source.repeat(2, 4);
+    EXPECT_EQ(repeated.rows(), 6);
+    EXPECT_EQ(repeated.cols(), 16);
+    EXPECT_EQ(repeated.bitpacks(), 2);
+    EXPECT_TRUE(repeated.any());
+    EXPECT_FALSE(repeated.all());
+    EXPECT_EQ(repeated.count(), source.count() * 8);
+
+    dynamic_matrix expected(6, 16);
+    for (int i = 0; i < expected.rows(); ++i) {
+        for (int j = 0; j < expected.cols(); ++j) {
+            expected(i, j) = bool(source(i % source.rows(), j % source.cols()));
+            EXPECT_EQ(bool(repeated(i, j)), bool(expected(i, j)));
+        }
+    }
+    for (int i = 0; i < repeated.bitpacks(); ++i) {
+        EXPECT_EQ(repeated.bitpack(i), expected.bitpack(i));
+    }
+
+    dynamic_column column(5);
+    column[1] = true;
+    column[4] = true;
+    const auto tiled_column = column.repeat(1, 4);
+    EXPECT_EQ(tiled_column.rows(), 5);
+    EXPECT_EQ(tiled_column.cols(), 4);
+    for (int i = 0; i < tiled_column.rows(); ++i) {
+        for (int j = 0; j < tiled_column.cols(); ++j) {
+            EXPECT_EQ(bool(tiled_column(i, j)), bool(column[i]));
+        }
+    }
+
+    const auto stored_expression = [&] { return (~source).repeat(1, 2); }();
+    const dynamic_matrix stored_result(stored_expression);
+    EXPECT_EQ(stored_result.rows(), 3);
+    EXPECT_EQ(stored_result.cols(), 8);
+    for (int i = 0; i < stored_result.rows(); ++i) {
+        for (int j = 0; j < stored_result.cols(); ++j) {
+            EXPECT_EQ(bool(stored_result(i, j)), !bool(source(i, j % source.cols())));
+        }
+    }
+
+    const auto stored_view =
+      fdapde::MatrixView<const bool, 3, 4, StorageOrder>(source.data()).repeat(2, 1);
+    const dynamic_matrix view_result(stored_view);
+    EXPECT_EQ(view_result.rows(), 6);
+    EXPECT_EQ(view_result.cols(), 4);
+    for (int i = 0; i < view_result.rows(); ++i) {
+        for (int j = 0; j < view_result.cols(); ++j) {
+            EXPECT_EQ(bool(view_result(i, j)), bool(source(i % source.rows(), j)));
+        }
+    }
+
+    dynamic_matrix aliased(1, 3);
+    aliased(0, 0) = true;
+    aliased(0, 2) = true;
+    aliased = aliased.repeat(2, 1);
+    EXPECT_EQ(aliased.rows(), 2);
+    EXPECT_EQ(aliased.cols(), 3);
+    for (int i = 0; i < aliased.rows(); ++i) {
+        EXPECT_TRUE(bool(aliased(i, 0)));
+        EXPECT_FALSE(bool(aliased(i, 1)));
+        EXPECT_TRUE(bool(aliased(i, 2)));
+    }
+
+    const dynamic_matrix zero_rows(0, 3);
+    const dynamic_matrix zero_cols(3, 0);
+    const auto repeated_zero_rows = zero_rows.repeat(2, 4);
+    const auto repeated_zero_cols = zero_cols.repeat(2, 4);
+    EXPECT_EQ(repeated_zero_rows.rows(), 0);
+    EXPECT_EQ(repeated_zero_rows.cols(), 12);
+    EXPECT_EQ(repeated_zero_rows.bitpacks(), 0);
+    EXPECT_EQ(repeated_zero_cols.rows(), 6);
+    EXPECT_EQ(repeated_zero_cols.cols(), 0);
+    EXPECT_EQ(repeated_zero_cols.bitpacks(), 0);
+
+    EXPECT_THROW(static_cast<void>(source.repeat(0, 1)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(source.repeat(1, 0)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(source.repeat(-1, 1)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(source.repeat(1, -1)), std::invalid_argument);
+    EXPECT_THROW(
+      static_cast<void>(source.repeat(std::numeric_limits<int>::max(), 1)), std::length_error);
+    EXPECT_THROW(
+      static_cast<void>(source.repeat(1, std::numeric_limits<int>::max())), std::length_error);
+    EXPECT_THROW(static_cast<void>(source.repeat(20'000, 20'000)), std::length_error);
+
+    EXPECT_THROW(static_cast<void>(repeated(-1, 0)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(repeated(repeated.rows(), 0)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(repeated(0, -1)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(repeated(0, repeated.cols())), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(repeated.bitpack(-1)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(repeated.bitpack(repeated.bitpacks())), std::out_of_range);
+}
+
 template <int StorageOrder> void check_boolean_terminal_contracts() {
     using exact_matrix = fdapde::Matrix<bool, 8, 8, StorageOrder>;
     using tail_matrix = fdapde::Matrix<bool, 5, 13, StorageOrder>;
@@ -1385,6 +1517,8 @@ TEST(linear_algebra, boolean) {
     check_boolean_reshape_contracts<fdapde::ColMajor>();
     check_boolean_selection_contracts<fdapde::RowMajor>();
     check_boolean_selection_contracts<fdapde::ColMajor>();
+    check_boolean_repeat_contracts<fdapde::RowMajor>();
+    check_boolean_repeat_contracts<fdapde::ColMajor>();
     check_boolean_terminal_contracts<fdapde::RowMajor>();
     check_boolean_terminal_contracts<fdapde::ColMajor>();
     check_boolean_view_contracts<fdapde::RowMajor>();
@@ -1416,6 +1550,6 @@ TEST(linear_algebra, boolean) {
 // Stable source: a2a9c88:test/src/binary_matrix_test.cpp.
 // Stable declarations (9): static_sized_matrix, dynamic_sized_matrix, binary_vector, block_operations,
 // binary_expresssions, visitors, block_repeat, eigen_assignment_and_construct, and reshaped.
-// TODO(P4-B): cover repeat and the remaining two-dimensional resize policy.
+// TODO(P4-B): cover the remaining two-dimensional resize policy.
 // Replace the historical Eigen assignment/construct assertion with native numeric-matrix conversion; do not
 // restore an implicit Eigen bridge.

@@ -834,6 +834,62 @@ struct cnt_redux_bitpack_executor {
   
 }   // namespace internals
 
+// non-writable expression of a Boolean matrix repetition
+template <typename XprType_>
+class BoolMatrixRepeatOp : public BoolMatrixExpr<BoolMatrixRepeatOp<XprType_>> {
+   private:
+    using XprType = std::decay_t<XprType_>;
+    using XprTypeNested = internals::ref_select_t<const XprType>;
+   public:
+    using Scalar = bool;
+    using bitpack_t = typename XprType::bitpack_t;
+    static constexpr int PackSize = sizeof(bitpack_t) * 8;
+    static constexpr int Rows = Dynamic;
+    static constexpr int Cols = Dynamic;
+    static constexpr int StorageOrder = XprType::StorageOrder;
+    static constexpr int NestAsRef = 0;
+    static constexpr int ReadOnly = 1;
+
+    template <typename XprType__>
+        requires(internals::safely_nestable<XprTypeNested, XprType__>)
+    constexpr BoolMatrixRepeatOp(XprType__&& xpr, int repeat_rows, int repeat_cols) :
+        xpr_(std::forward<XprType__>(xpr)), rows_(0), cols_(0), size_(0) {
+        if (repeat_rows <= 0 || repeat_cols <= 0) {
+            throw std::invalid_argument("Boolean matrix repeat counts must be positive");
+        }
+        rows_ = internals::checked_matrix_size(xpr_.rows(), repeat_rows);
+        cols_ = internals::checked_matrix_size(xpr_.cols(), repeat_cols);
+        size_ = internals::checked_matrix_size(rows_, cols_);
+    }
+
+    constexpr Scalar operator()(int i, int j) const {
+        internals::validate_matrix_index(i, j, rows_, cols_);
+        return bool(xpr_(i % xpr_.rows(), j % xpr_.cols()));
+    }
+    constexpr bitpack_t bitpack(int i) const {
+        if (i < 0 || i >= bitpacks()) {
+            throw std::out_of_range("Boolean matrix repeat bit-pack index out of range");
+        }
+        bitpack_t out = bitpack_t(0);
+        const int base = i * PackSize;
+        for (int offset = 0; offset < PackSize && base + offset < size_; ++offset) {
+            const int index = base + offset;
+            const int row = StorageOrder == RowMajor ? index / cols_ : index % rows_;
+            const int col = StorageOrder == RowMajor ? index % cols_ : index / rows_;
+            if (bool(xpr_(row % xpr_.rows(), col % xpr_.cols()))) out |= bitpack_t(1) << offset;
+        }
+        return out;
+    }
+    constexpr int rows() const { return rows_; }
+    constexpr int cols() const { return cols_; }
+    constexpr int bitpacks() const { return internals::bitpack_count(size_, PackSize); }
+   private:
+    XprTypeNested xpr_;
+    int rows_;
+    int cols_;
+    int size_;
+};
+
 // reshaping operation with bitpack support. As reshaping mantains the physical memory layout, bitpacks are preserved
 template <int Rows_, int Cols_, typename XprType_>
 class BoolReshapeOp : public BoolMatrixExpr<BoolReshapeOp<Rows_, Cols_, XprType_>> {
@@ -1289,6 +1345,15 @@ template <typename XprType_> struct BoolMatrixExpr {
     }
     template <typename TrueXprType, typename FalseXprType>
     constexpr void select(TrueXprType&&, FalseXprType&&) const && requires(XprType::NestAsRef != 0) = delete;
+    // matrix repetition
+    constexpr auto repeat(int repeat_rows, int repeat_cols) const & {
+        return BoolMatrixRepeatOp<XprType>(derived(), repeat_rows, repeat_cols);
+    }
+    constexpr auto repeat(int repeat_rows, int repeat_cols) const && requires(XprType::NestAsRef == 0) {
+        return BoolMatrixRepeatOp<XprType>(
+          static_cast<const XprType&>(*this), repeat_rows, repeat_cols);
+    }
+    constexpr void repeat(int, int) const && requires(XprType::NestAsRef != 0) = delete;
     // reshaping
     // static-sized
     template <int ReshapedRows_, int ReshapedCols_> constexpr auto reshape() & {
