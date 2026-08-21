@@ -154,7 +154,7 @@ struct MatrixVectorWiseOp : public MatrixExpr<MatrixVectorWiseOp<XprType_, ByRow
     }
     // L^\infty norm
     constexpr auto inf_norm() const {
-        return redux(xpr_, std::numeric_limits<Scalar>::min(), [](Scalar tmp, Scalar x) {
+        return redux(xpr_, Scalar(0), [](Scalar tmp, Scalar x) {
             Scalar x_abs = fdapde::abs(x);
             return tmp > x_abs ? tmp : x_abs;
         });

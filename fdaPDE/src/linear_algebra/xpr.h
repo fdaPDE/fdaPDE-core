@@ -249,8 +249,8 @@ template <typename XprType_> struct MatrixExpr {
     }
     // maximum norm (L^\infty norm)
     constexpr auto inf_norm() const {
-        using Scalar = typename XprType::Scalar;
-        Scalar norm_ = std::numeric_limits<Scalar>::min();
+        using Scalar = std::remove_cv_t<typename XprType::Scalar>;
+        Scalar norm_ = Scalar(0);
         const int rows = derived().rows();
         const int cols = derived().cols();
         for (int i = 0; i < rows; ++i) {

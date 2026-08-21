@@ -425,6 +425,44 @@ template <int StorageOrder> void check_matrix_norm_runtime_contracts() {
     EXPECT_DOUBLE_EQ(const_view.norm(), 5.0);
 }
 
+template <int StorageOrder> void check_matrix_inf_norm_runtime_contracts() {
+    const Matrix<double, 2, 3, StorageOrder> zero = Matrix<double, 2, 3, StorageOrder>::Zero();
+    EXPECT_DOUBLE_EQ(zero.inf_norm(), 0.0);
+    EXPECT_EQ(zero.rowwise().inf_norm(), (Matrix<double, 2, 1, StorageOrder>({0.0, 0.0})));
+    EXPECT_EQ(
+      zero.colwise().inf_norm(),
+      (Matrix<double, 1, 3, StorageOrder>({0.0, 0.0, 0.0})));
+
+    const double denormal = std::numeric_limits<double>::denorm_min();
+    const Matrix<double, 1, 1, StorageOrder> subnormal({denormal});
+    EXPECT_DOUBLE_EQ(subnormal.inf_norm(), denormal);
+    EXPECT_DOUBLE_EQ(subnormal.rowwise().inf_norm()[0], denormal);
+    EXPECT_DOUBLE_EQ(subnormal.colwise().inf_norm()[0], denormal);
+
+    const Matrix<double, Dynamic, Dynamic, StorageOrder> empty;
+    EXPECT_DOUBLE_EQ(empty.inf_norm(), 0.0);
+
+    const Matrix<double, 2, Dynamic, StorageOrder> empty_row_axes(2, 0);
+    EXPECT_EQ(
+      empty_row_axes.rowwise().inf_norm(),
+      (Matrix<double, 2, 1, StorageOrder>({0.0, 0.0})));
+
+    const Matrix<double, Dynamic, 3, StorageOrder> empty_col_axes(0, 3);
+    EXPECT_EQ(
+      empty_col_axes.colwise().inf_norm(),
+      (Matrix<double, 1, 3, StorageOrder>({0.0, 0.0, 0.0})));
+
+    const Matrix<double, 2, 3, StorageOrder> view_owner({-4.0, 0.0, 2.0, 1.0, -3.0, 5.0});
+    const MatrixView<const double, 2, 3, StorageOrder> const_view(view_owner.data());
+    EXPECT_DOUBLE_EQ(const_view.inf_norm(), 5.0);
+    EXPECT_EQ(
+      const_view.rowwise().inf_norm(),
+      (Matrix<double, 2, 1, StorageOrder>({4.0, 5.0})));
+    EXPECT_EQ(
+      const_view.colwise().inf_norm(),
+      (Matrix<double, 1, 3, StorageOrder>({4.0, 3.0, 5.0})));
+}
+
 template <int StorageOrder> void check_empty_boolean_runtime_contracts() {
     using dynamic_matrix = Matrix<bool, Dynamic, Dynamic, StorageOrder>;
 
@@ -684,6 +722,11 @@ TEST(LinearAlgebraRuntimeContracts, MatrixReductionsHonorEmptyAndIntegralContrac
 TEST(LinearAlgebraRuntimeContracts, MatrixNormsRemainScaleSafe) {
     check_matrix_norm_runtime_contracts<RowMajor>();
     check_matrix_norm_runtime_contracts<ColMajor>();
+}
+
+TEST(LinearAlgebraRuntimeContracts, MatrixInfinityNormsUseZeroIdentity) {
+    check_matrix_inf_norm_runtime_contracts<RowMajor>();
+    check_matrix_inf_norm_runtime_contracts<ColMajor>();
 }
 
 TEST(LinearAlgebraRuntimeContracts, EmptyBooleanExpressionsAreTerminalSafe) {
