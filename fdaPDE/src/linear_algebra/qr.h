@@ -19,111 +19,170 @@
 
 #include "header_check.h"
 
+#include <cmath>
+#include <limits>
+#include <stdexcept>
+#include <type_traits>
+#include <utility>
+#include <vector>
+
 namespace fdapde {
 
-// implementation of Householder QR as detailed in "Golub, G. H., & Van Loan, C. F. (2013). Matrix computations. JHU
-// press. Sec.5.2.2"
-template <typename Scalar_, int Rows_, int Cols_>
-struct HouseholderQR {
-public:
-    using Scalar = Scalar_;
+// Full Householder QR following Golub and Van Loan, Matrix Computations,
+// Algorithm 5.1.1: A = Q * R, Q is rows-by-rows and R has A's shape.
+template <typename Scalar_, int Rows_, int Cols_> class HouseholderQR {
+   public:
+    using Scalar = std::remove_cv_t<Scalar_>;
     static constexpr int Rows = Rows_;
     static constexpr int Cols = Cols_;
+    fdapde_static_assert(std::is_floating_point_v<Scalar>, QR_DECOMPOSITION_REQUIRES_FLOATING_POINT_SCALARS);
 
-    constexpr HouseholderQR() : A_(), R_(), Q_(), taus_() { }
-
-    template <int Rows_, int Cols_, typename XprType_>
-    constexpr explicit HouseholderQR(const MatrixExpr<Rows_, Cols_, XprType_>& m) {
-        compute(m);
+    constexpr HouseholderQR() = default;
+    template <typename MatrixType> constexpr explicit HouseholderQR(const MatrixExpr<MatrixType>& matrix) {
+        compute(matrix);
     }
 
-    template <int Rows_, int Cols_, typename XprType_>
-    constexpr void compute(const MatrixExpr<Rows_, Cols_, XprType_>& m) {
-        // initialization
-        const int n_rows = m.rows();
-        const int n_cols = m.cols();
-        const int kmax = std::min(n_rows, n_cols);
-        if constexpr (Rows == Dynamic || Cols == Dynamic) {
-            A_.resize(n_rows, n_cols);
-            taus_.resize(kmax);
+    template <typename MatrixType> constexpr void compute(const MatrixExpr<MatrixType>& matrix) {
+        fdapde_static_assert(
+          MatrixType::Rows == Dynamic || Rows == Dynamic || MatrixType::Rows == Rows, INVALID_QR_MATRIX_STATIC_SHAPE);
+        fdapde_static_assert(
+          MatrixType::Cols == Dynamic || Cols == Dynamic || MatrixType::Cols == Cols, INVALID_QR_MATRIX_STATIC_SHAPE);
+
+        computed_ = false;
+        rank_ = 0;
+        const int rows = matrix.rows();
+        const int cols = matrix.cols();
+        const bool shape_valid =
+          rows > 0 && cols > 0 && (Rows == Dynamic || rows == Rows) && (Cols == Dynamic || cols == Cols);
+        if (!shape_valid) {
+            throw std::invalid_argument("HouseholderQR requires a nonempty matrix matching its static shape");
         }
-        A_ = m.derived();   // assign expression to dense storage
 
-        // Householder QR iteration
-        for (int k = 0; k < kmax; ++k) {
-            // build Householder reflector
-            // see "Golub, G. H., & Van Loan, C. F. (2013). Matrix computations. JHU press. Alg.5.1.1"
-            int len = n_rows - k;
-            Vector<Scalar, Rows> x(len);   // vector A[k:n-1, k]
-            for (int i = 0; i < len; ++i) { x[i] = A_(k + i, k); }
-
-            // compute reflector
-            Scalar alpha = x[0];
-            Scalar sigma = x.tail(len - 1).squared_norm();
-            taus_[k] = Scalar(0);
-            if (almost_zero(sigma)) {   // x = c * e_k, e_k: k-th canonical basis vector
-                tau = Scalar(0);
-            } else {
-                Scalar norm_x = fdapde::sqrt(alpha * alpha + sigma);
-                Scalar beta = (alpha <= Scalar(0)) ? (norm_x) : (-sigma / (alpha + norm_x));
-                tau = (beta - alpha) / beta;
-                x[0] = Scalar(1);
-                x.tail(len - 1) /= (alpha - beta);
-
-                // apply H = I - tau * v v^T to trailing submatrix A[k:m-1, k:n-1]
-                for (int j = k; j < n_cols; ++j) {
-                    Scalar dot = Scalar(0);
-                    for (int i = 0; i < len; ++i) dot += x[i] * A_(k + i, j);
-                    dot *= tau;
-                    for (int i = 0; i < len; ++i) A_(k + i, j) -= x[i] * dot;
+        if constexpr (Rows == Dynamic) Q_.resize(rows, rows);
+        if constexpr (Rows == Dynamic || Cols == Dynamic) R_.resize(rows, cols);
+        Scalar scale = Scalar(0);
+        for (int row = 0; row < rows; ++row) {
+            for (int col = 0; col < cols; ++col) {
+                const Scalar value = static_cast<Scalar>(matrix.derived()(row, col));
+                if (!is_finite_(value)) {
+                    throw std::invalid_argument("HouseholderQR requires finite matrix coefficients");
                 }
-
-		// store beta in diagonal
-                A_(k, k) = beta;
-                for (int i = 1; i < len; ++i) A_(k + i, k) = x[i];   // store R_ in the upper triangular part
-                taus_[k] = tau;
+                scale = fdapde::max(scale, fdapde::abs(value));
+                R_(row, col) = value;
             }
         }
+
+        const Scalar normalization = scale == Scalar(0) ? Scalar(1) : scale;
+        R_ /= normalization;
+        Q_.set_zero();
+        for (int i = 0; i < rows; ++i) Q_(i, i) = Scalar(1);
+
+        const int reflectors = fdapde::min(rows, cols);
+        for (int k = 0; k < reflectors; ++k) {
+            const int length = rows - k;
+            std::vector<Scalar> reflector(static_cast<std::size_t>(length));
+            Scalar norm = Scalar(0);
+            for (int i = 0; i < length; ++i) {
+                reflector[static_cast<std::size_t>(i)] = R_(k + i, k);
+                norm = internals::scale_safe_hypot(norm, reflector[static_cast<std::size_t>(i)]);
+            }
+            if (norm == Scalar(0)) continue;
+
+            for (Scalar& value : reflector) value /= norm;
+            const Scalar alpha = -std::copysign(Scalar(1), reflector[0]);
+            reflector[0] -= alpha;
+            Scalar squared_norm = Scalar(0);
+            for (const Scalar value : reflector) squared_norm += value * value;
+            if (squared_norm == Scalar(0)) continue;
+            const Scalar beta = Scalar(2) / squared_norm;
+
+            for (int col = k; col < cols; ++col) {
+                Scalar dot = Scalar(0);
+                for (int i = 0; i < length; ++i) {
+                    dot += reflector[static_cast<std::size_t>(i)] * R_(k + i, col);
+                }
+                dot *= beta;
+                for (int i = 0; i < length; ++i) {
+                    R_(k + i, col) -= reflector[static_cast<std::size_t>(i)] * dot;
+                }
+            }
+            R_(k, k) = alpha * norm;
+            for (int i = k + 1; i < rows; ++i) R_(i, k) = Scalar(0);
+
+            // Q <- Q * H. Householder reflectors are symmetric.
+            for (int row = 0; row < rows; ++row) {
+                Scalar dot = Scalar(0);
+                for (int i = 0; i < length; ++i) {
+                    dot += Q_(row, k + i) * reflector[static_cast<std::size_t>(i)];
+                }
+                dot *= beta;
+                for (int i = 0; i < length; ++i) {
+                    Q_(row, k + i) -= dot * reflector[static_cast<std::size_t>(i)];
+                }
+            }
+        }
+
+        const Scalar tolerance = std::numeric_limits<Scalar>::epsilon() * static_cast<Scalar>(fdapde::max(rows, cols));
+        rank_ = numerical_rank_(R_, tolerance);
+        R_ *= normalization;
+        computed_ = true;
     }
 
-    // Build Q explicitly, apply householder vectors in reverse order
-    constexpr const auto& Q() {
-        if (Q_cached_) return Q_;
-        const int n_rows = A_.rows();
-        const int n_cols = A_.cols();
-        const int kmax = std::min(n_rows, n_cols);
-
-        Q_.setZero();
-        for (int i = 0; i < n_rows; ++i) Q_(i, i) = Scalar(1);
-
-        // apply reflectors backwards
-        for (int k = kmax - 1; k >= 0; --k) {
-            Scalar tau = taus_[k];
-            if (tau == Scalar(0)) continue;
-
-            int len = n_rows - k;
-            Vector<Scalar, Rows> v(len);
-            v[0] = 1;
-            for (int i = 1; i < len; ++i) v[i] = A_(k + i, k);
-
-            for (int j = 0; j < n_rows; ++j) {
-                Scalar dot = 0;
-                for (int i = 0; i < len; ++i) dot += v[i] * Q_(k + i, j);
-                dot *= tau;
-                for (int i = 0; i < len; ++i) Q_(k + i, j) -= v[i] * dot;
-            }
-        }
-
-        Q_cached_ = true;
+    constexpr const Matrix<Scalar, Rows, Rows>& Q() const & {
+        fdapde_assert(computed_);
         return Q_;
     }
+    constexpr void Q() const && = delete;
+    constexpr const Matrix<Scalar, Rows, Cols>& R() const & {
+        fdapde_assert(computed_);
+        return R_;
+    }
+    constexpr void R() const && = delete;
+    constexpr int rank() const { return rank_; }
+    constexpr bool computed() const { return computed_; }
 
-    constexpr auto R() const { return A_.template triangular_block<Upper>(); }
    private:
-    Matrix<Scalar, Rows, Cols> A_;
-    Vector<Scalar, Rows> taus_;      // Householder scalars
+    static constexpr bool is_finite_(Scalar value) {
+        const Scalar infinity = std::numeric_limits<Scalar>::infinity();
+        return value == value && value != infinity && value != -infinity;
+    }
+
+    template <typename MatrixType> static constexpr int numerical_rank_(const MatrixType& matrix, Scalar tolerance) {
+        Matrix<Scalar, Dynamic, Dynamic> echelon(matrix);
+        int pivot_row = 0;
+        for (int col = 0; col < echelon.cols() && pivot_row < echelon.rows(); ++col) {
+            int pivot = pivot_row;
+            Scalar largest = Scalar(0);
+            for (int row = pivot_row; row < echelon.rows(); ++row) {
+                const Scalar candidate = fdapde::abs(echelon(row, col));
+                if (candidate > largest) {
+                    largest = candidate;
+                    pivot = row;
+                }
+            }
+            if (!(largest > tolerance)) continue;
+            if (pivot != pivot_row) {
+                for (int j = col; j < echelon.cols(); ++j) std::swap(echelon(pivot_row, j), echelon(pivot, j));
+            }
+            for (int row = pivot_row + 1; row < echelon.rows(); ++row) {
+                const Scalar multiplier = echelon(row, col) / echelon(pivot_row, col);
+                for (int j = col; j < echelon.cols(); ++j) echelon(row, j) -= multiplier * echelon(pivot_row, j);
+            }
+            ++pivot_row;
+        }
+        return pivot_row;
+    }
+
+    Matrix<Scalar, Rows, Rows> Q_;
+    Matrix<Scalar, Rows, Cols> R_;
+    int rank_ = 0;
+    bool computed_ = false;
 };
-  
+
+template <typename XprType>
+HouseholderQR(const MatrixExpr<XprType>&)
+  -> HouseholderQR<typename XprType::Scalar, XprType::Rows, XprType::Cols>;
+
 }   // namespace fdapde
 
-#endif   // _FDAPDE_LINALG_QR_H__
+#endif   // __FDAPDE_LINALG_QR_H__
