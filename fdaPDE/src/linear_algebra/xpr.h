@@ -675,83 +675,51 @@ template <typename XprType_> struct MatrixExpr {
     }
     constexpr void symm_part() const && requires(XprType::NestAsRef != 0) = delete;
     constexpr void skew_part() const && requires(XprType::NestAsRef != 0) = delete;
-    constexpr auto inverse() const {
-        using Scalar = typename XprType::Scalar;
+    constexpr auto inverse() const
+        requires(std::is_floating_point_v<std::remove_cv_t<typename XprType::Scalar>>)
+    {
+        using Scalar = std::remove_cv_t<typename XprType::Scalar>;
         constexpr int Rows = XprType::Rows, Cols = XprType::Cols;
         fdapde_static_assert(
           Rows == Dynamic || Cols == Dynamic || Rows == Cols, THIS_METHODS_IS_FOR_SQUARE_MATRICES_ONLY);
-        Matrix<Scalar, Rows, Cols> inverse_;
         const XprType& m = derived();
         const int rows_ = m.rows(), cols_ = m.cols();
-        if (rows_ != cols_) { throw std::invalid_argument("inverse requires a square matrix"); }
-        if constexpr (Rows == Dynamic || Cols == Dynamic) { inverse_.resize(rows_, cols_); }
-        // inverse computation
-        if (rows_ == 1) {
-            inverse_(0, 0) = Scalar(1) / m(0, 0);
-            return inverse_;
+        if (rows_ <= 0 || rows_ != cols_) { throw std::invalid_argument("inverse requires a nonempty square matrix"); }
+        Matrix<Scalar, Rows, Cols> matrix(m);
+        PartialPivLU<Matrix<Scalar, Rows, Cols>> factorization(matrix);
+        if (factorization.info() != 0) { throw std::domain_error("inverse requires a nonsingular matrix"); }
+        Matrix<Scalar, Rows, Cols> identity;
+        if constexpr (Rows == Dynamic || Cols == Dynamic) { identity.resize(rows_, cols_); }
+        for (int row = 0; row < rows_; ++row) {
+            for (int col = 0; col < cols_; ++col) identity(row, col) = row == col ? Scalar(1) : Scalar(0);
         }
-        if (rows_ == 2) {
-            const Scalar a00 = m(0, 0), a01 = m(0, 1), a10 = m(1, 0), a11 = m(1, 1);
-            const Scalar det = a00 * a11 - a01 * a10;
-            const Scalar inv_det = Scalar(1) / det;
-            inverse_(0, 0) =  a11 * inv_det;
-            inverse_(0, 1) = -a01 * inv_det;
-            inverse_(1, 0) = -a10 * inv_det;
-            inverse_(1, 1) =  a00 * inv_det;
-            return inverse_;
-        }
-        if (rows_ == 3) {
-            const Scalar a00 = m(0, 0), a01 = m(0, 1), a02 = m(0, 2);
-            const Scalar a10 = m(1, 0), a11 = m(1, 1), a12 = m(1, 2);
-            const Scalar a20 = m(2, 0), a21 = m(2, 1), a22 = m(2, 2);
-            // cache shared cofactors
-            const Scalar c00 = a11 * a22 - a12 * a21;
-            const Scalar c10 = a12 * a20 - a10 * a22;
-            const Scalar c20 = a10 * a21 - a11 * a20;
-            // compute determinant and assemble inverse
-            const Scalar det = a00 * c00 + a01 * c10 + a02 * c20;
-            const Scalar inv_det = Scalar(1) / det;
-            inverse_(0, 0) = c00 * inv_det;
-            inverse_(1, 0) = c10 * inv_det;
-            inverse_(2, 0) = c20 * inv_det;
-            inverse_(0, 1) = -(a01 * a22 - a02 * a21) * inv_det;
-            inverse_(1, 1) =  (a00 * a22 - a02 * a20) * inv_det;
-            inverse_(2, 1) = -(a00 * a21 - a01 * a20) * inv_det;
-            inverse_(0, 2) =  (a01 * a12 - a02 * a11) * inv_det;
-            inverse_(1, 2) = -(a00 * a12 - a02 * a10) * inv_det;
-            inverse_(2, 2) =  (a00 * a11 - a01 * a10) * inv_det;
-            return inverse_;
-        }
-        // general fallback (compute M*X = I by LU factorizatoin)
-        PartialPivLU<Matrix<Scalar, Rows, Cols>> lu(m);
-        Matrix<Scalar, Rows, Cols> I;
-        if constexpr (Rows == Dynamic || Cols == Dynamic) { I.resize(rows_, cols_); }
-        for (int i = 0; i < rows_; ++i) { I(i, i) = Scalar(1); }
-        return lu.solve(I);
+        return factorization.solve(identity);
     }
-    auto determinant() const {
-        using Scalar = typename XprType::Scalar;
+    constexpr auto determinant() const {
+        using Scalar = std::remove_cv_t<typename XprType::Scalar>;
         constexpr int Rows = XprType::Rows, Cols = XprType::Cols;
         fdapde_static_assert(
           Rows == Dynamic || Cols == Dynamic || Rows == Cols, THIS_METHODS_IS_FOR_SQUARE_MATRICES_ONLY);
         const XprType& m = derived();
         const int rows_ = m.rows(), cols_ = m.cols();
-        if (rows_ != cols_) { throw std::invalid_argument("determinant requires a square matrix"); }
-	// determinant computation
-        if (rows_ == 1) { return m(0, 0); }
-        if (rows_ == 2) {
-            const Scalar a00 = m(0, 0), a01 = m(0, 1), a10 = m(1, 0), a11 = m(1, 1);
-            return a00 * a11 - a01 * a10;
+        if (rows_ <= 0 || rows_ != cols_) {
+            throw std::invalid_argument("determinant requires a nonempty square matrix");
         }
-        if (rows_ == 3) {
+        if constexpr (std::is_floating_point_v<Scalar>) {
+            const PartialPivLU<XprType> factorization(m);
+            return factorization.determinant();
+        } else {
+            fdapde_static_assert(
+              Rows != Dynamic && Cols != Dynamic && Rows <= 3,
+              DETERMINANTS_REQUIRE_FLOATING_POINT_SCALARS_ABOVE_FIXED_THREE_BY_THREE);
+            if constexpr (Rows == 1) return Scalar(m(0, 0));
+            if constexpr (Rows == 2) return Scalar(m(0, 0) * m(1, 1) - m(0, 1) * m(1, 0));
             const Scalar a00 = m(0, 0), a01 = m(0, 1), a02 = m(0, 2);
             const Scalar a10 = m(1, 0), a11 = m(1, 1), a12 = m(1, 2);
             const Scalar a20 = m(2, 0), a21 = m(2, 1), a22 = m(2, 2);
-            return a00 * (a11 * a22 - a12 * a21) + a01 * (a12 * a20 - a10 * a22) + a02 * (a10 * a21 - a11 * a20);
+            return a00 * (a11 * a22 - a12 * a21) + a01 * (a12 * a20 - a10 * a22) +
+                   a02 * (a10 * a21 - a11 * a20);
         }
-        // general fallback (factorize and extract determinant)
-        PartialPivLU<XprType> lu(m);
-        return m.determinant();
     }
 
     // triangular block accessors
