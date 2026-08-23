@@ -116,9 +116,9 @@ class spd_matrix_base<Scalar_, Rows_, Cols_, StorageOrder_, log_euclidean, SPDMa
     constexpr auto operator()(int i, int j) = delete;
     // computes matrix logarithm
     constexpr SymmetricMatrix<Scalar, Rows, Cols> log() const {
-        // extract eigenvalues' logarithm
-        Vector<Scalar, Rows> log_eigval = derived().evd().eigenvalues().cwise().log();
-        return (derived().evd().eigenvectors() * log_eigval.as_diagonal() * derived().evd().eigenvectors().transpose())
+        const auto decomposition = derived().evd();
+        Vector<Scalar, Rows> log_eigval = decomposition.eigenvalues().cwise().log();
+        return (decomposition.eigenvectors() * log_eigval.as_diagonal() * decomposition.eigenvectors().transpose())
           .template as_symmetric<Lower>();
     }
    protected:
