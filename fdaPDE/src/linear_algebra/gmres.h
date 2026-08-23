@@ -17,154 +17,357 @@
 #ifndef __FDAPDE_LINALG_GMRES_H__
 #define __FDAPDE_LINALG_GMRES_H__
 
+#include <cmath>
+#include <concepts>
+#include <limits>
+#include <stdexcept>
+#include <type_traits>
+#include <utility>
+#include <vector>
+
 #include "header_check.h"
 
 namespace fdapde {
 
-// preconditioned m-step generalized minimum residual (GMRES) method with restart
+// Left-preconditioned restarted GMRES using Arnoldi iteration and Givens
+// rotations as in Golub and Van Loan, Matrix Computations, Section 10.5.
+// The coefficient matrix is materialized so the solver never retains a
+// dangling or subsequently mutated expression.
 template <typename XprType_, typename Preconditioner_> class GMRES {
     using XprType = std::decay_t<XprType_>;
     fdapde_static_assert(
       XprType::Rows == Dynamic || XprType::Cols == Dynamic || XprType::Rows == XprType::Cols,
       THIS_CLASS_IS_FOR_SQUARE_MATRICES_ONLY);
+   public:
+    using Scalar = std::remove_cv_t<typename XprType::Scalar>;
     static constexpr int Rows = XprType::Rows;
     static constexpr int Cols = XprType::Cols;
-    using Scalar = typename XprType::Scalar;
-   public:
-    template <typename Preconditioner__>
-        requires(std::is_constructible_v<Preconditioner_, Preconditioner__>)
-    constexpr GMRES(Preconditioner__&& P, int max_iter, int restart, double tolerance) :
-        max_iter_(max_iter), restart_(restart), tolerance_(tolerance), P_(std::forward<Preconditioner__>(P)) { }
-    template <typename Preconditioner__>
-        requires(std::is_constructible_v<Preconditioner_, Preconditioner__>)
-    constexpr GMRES(Preconditioner__&& P) : GMRES(std::forward<Preconditioner__>(P), 500, 50, 1e-6) { }
+    fdapde_static_assert(std::is_floating_point_v<Scalar>, GMRES_REQUIRES_FLOATING_POINT_SCALARS);
 
-    template <typename XprType__, typename Preconditioner__>
-        requires(std::is_constructible_v<Preconditioner_, Preconditioner__> &&
-                 std::is_same_v<XprType, std::decay_t<XprType__>>)
-    constexpr explicit GMRES(
-      const MatrixExpr<XprType__>& m, Preconditioner__&& P, int max_iter, int restart, double tolerance) :
-        max_iter_(max_iter), restart_(restart), tolerance_(tolerance), P_(std::forward<Preconditioner__>(P)) {
-        if constexpr (Rows == Dynamic || Cols == Dynamic) {
-            fdapde_assert(m.rows() == m.cols());
-            fdapde_assert(max_iter > 0 && tolerance > 0);
+    template <typename Preconditioner>
+        requires(std::is_constructible_v<Preconditioner_, Preconditioner>)
+    constexpr GMRES(Preconditioner&& preconditioner, int max_iterations, int restart, Scalar tolerance) :
+        max_iterations_(max_iterations),
+        restart_(restart),
+        tolerance_(tolerance),
+        preconditioner_(std::forward<Preconditioner>(preconditioner)) {
+        if (max_iterations_ <= 0 || restart_ <= 0 || !(tolerance_ > Scalar(0)) || !std::isfinite(tolerance_)) {
+            throw std::invalid_argument("GMRES requires positive iteration limits and a finite positive tolerance");
         }
-        compute(m);
     }
-    template <typename XprType__, typename Preconditioner__>
-    constexpr explicit GMRES(const MatrixExpr<XprType__>& m, Preconditioner__&& P) :
-        GMRES(m, std::forward<Preconditioner__>(P), 500, 50, 1e-6) { }
 
-    template <typename XprType__>
-        requires(std::is_same_v<XprType, std::decay_t<XprType__>>)
-    constexpr void compute(const MatrixExpr<XprType__>& m) {
-        P_.compute(m.derived());
-        m_ = std::addressof(m.derived());
-        // pre-allocate memory
-        H_.resize(restart_ + 1, restart_);
-        V_.resize(m.rows(), restart_ + 1);
-        c_.resize(restart_);
-        s_.resize(restart_);
-        g_.resize(restart_ + 1);
-        if constexpr (Rows == Dynamic) { r_.resize(m_->rows()); }
-        return;
+    template <typename Preconditioner>
+        requires(std::is_constructible_v<Preconditioner_, Preconditioner>)
+    constexpr explicit GMRES(Preconditioner&& preconditioner) :
+        GMRES(std::forward<Preconditioner>(preconditioner), 500, 50, Scalar(1e-6)) { }
+
+    template <typename MatrixType, typename Preconditioner>
+        requires(
+          std::is_same_v<XprType, std::decay_t<MatrixType>> && std::is_constructible_v<Preconditioner_, Preconditioner>)
+    constexpr GMRES(
+      const MatrixExpr<MatrixType>& matrix, Preconditioner&& preconditioner, int max_iterations, int restart,
+      Scalar tolerance) :
+        GMRES(std::forward<Preconditioner>(preconditioner), max_iterations, restart, tolerance) {
+        compute(matrix);
     }
-    template <typename RhsXprType, typename InitXprType>
-    constexpr auto solve(const MatrixExpr<RhsXprType>& b, const MatrixExpr<InitXprType>& x0) {
-        fdapde_assert(m_ != nullptr);
-        fdapde_assert(b.cols() == 1 && b.rows() == m_->rows() && x0.cols() == 1 && x0.rows() == m_->rows());
-        Vector<Scalar, Rows> x = x0;   // x = \argmin_{x \in x0 + V_} \| b - m * x \|_2
 
-        int iter = 0;
-        while (iter < max_iter_) {
-            bool converged = false;
-            // compute preconditioned residual r = P^-1 * (b - A * x)
-            r_ = P_.solve(b - (*m_) * x);
-            double beta = r_.norm();
-            double r0_norm = beta;
-            // initial guess already good
-            if (r0_norm < tolerance_) { return x; }
+    template <typename MatrixType, typename Preconditioner>
+        requires(
+          std::is_same_v<XprType, std::decay_t<MatrixType>> && std::is_constructible_v<Preconditioner_, Preconditioner>)
+    constexpr GMRES(const MatrixExpr<MatrixType>& matrix, Preconditioner&& preconditioner) :
+        GMRES(matrix, std::forward<Preconditioner>(preconditioner), 500, 50, Scalar(1e-6)) { }
 
-            // start iterative procedure
+    template <typename MatrixType>
+        requires(std::is_same_v<XprType, std::decay_t<MatrixType>>)
+    constexpr void compute(const MatrixExpr<MatrixType>& matrix) {
+        initialized_ = false;
+        reset_observers_();
+        const int n = matrix.rows();
+        if (n <= 0 || n != matrix.cols() || (Rows != Dynamic && n != Rows) || (Cols != Dynamic && n != Cols)) {
+            throw std::invalid_argument("GMRES requires a nonempty square matrix matching its static shape");
+        }
+        for (int row = 0; row < n; ++row) {
+            for (int col = 0; col < n; ++col) {
+                if (!std::isfinite(static_cast<Scalar>(matrix.derived()(row, col)))) {
+                    throw std::invalid_argument("GMRES requires finite matrix coefficients");
+                }
+            }
+        }
+
+        matrix_ = matrix;
+        preconditioner_.compute(matrix_);
+        if (!preconditioner_valid_()) { throw std::domain_error("GMRES requires a valid preconditioner"); }
+
+        krylov_dimension_ = fdapde::min(restart_, n);
+        H_.resize(krylov_dimension_ + 1, krylov_dimension_);
+        V_.resize(n, krylov_dimension_ + 1);
+        c_.resize(krylov_dimension_);
+        s_.resize(krylov_dimension_);
+        g_.resize(krylov_dimension_ + 1);
+        initialized_ = true;
+    }
+
+    template <typename RhsType, typename InitialType>
+    constexpr auto solve(const MatrixExpr<RhsType>& rhs, const MatrixExpr<InitialType>& initial) {
+        fdapde_static_assert(
+          RhsType::Cols == 1 && InitialType::Cols == 1, GMRES_REQUIRES_COLUMN_VECTOR_RIGHT_HAND_SIDE_AND_INITIAL_GUESS);
+        fdapde_static_assert(
+          RhsType::Rows == Dynamic || Rows == Dynamic || RhsType::Rows == Rows, INVALID_GMRES_RHS_STATIC_SHAPE);
+        fdapde_static_assert(
+          InitialType::Rows == Dynamic || Rows == Dynamic || InitialType::Rows == Rows,
+          INVALID_GMRES_INITIAL_GUESS_STATIC_SHAPE);
+
+        reset_observers_();
+        if (!initialized_) { throw std::domain_error("GMRES solve requires a successfully computed solver"); }
+        if (
+          rhs.cols() != 1 || initial.cols() != 1 || rhs.rows() != matrix_.rows() || initial.rows() != matrix_.rows()) {
+            throw std::invalid_argument("GMRES requires matching column-vector right-hand side and initial guess");
+        }
+        for (int row = 0; row < matrix_.rows(); ++row) {
+            if (
+              !std::isfinite(static_cast<Scalar>(rhs.derived()(row, 0))) ||
+              !std::isfinite(static_cast<Scalar>(initial.derived()(row, 0)))) {
+                throw std::invalid_argument("GMRES requires finite right-hand side and initial-guess coefficients");
+            }
+        }
+
+        Vector<Scalar, Rows> solution(initial);
+        const Vector<Scalar, Rows> preconditioned_rhs(preconditioner_.solve(rhs));
+        const NormComponents rhs_norm = norm_components_(preconditioned_rhs);
+        if (!rhs_norm.finite) return solution;
+
+        while (last_iterations_ < max_iterations_) {
+            Vector<Scalar, Rows> residual = preconditioned_residual_(rhs, solution);
+            NormComponents residual_norm = norm_components_(residual);
+            last_residual_ = materialized_norm_(residual_norm);
+            if (!residual_norm.finite) return solution;
+            if (within_tolerance_(residual_norm, rhs_norm)) {
+                converged_ = true;
+                return solution;
+            }
+            const Scalar residual_scale = residual_norm.scale;
+            const Scalar beta = residual_norm.magnitude;
+
+            H_.set_zero();
+            V_.set_zero();
+            c_.set_zero();
+            s_.set_zero();
             g_.set_zero();
+            for (int row = 0; row < matrix_.rows(); ++row) V_(row, 0) = (residual[row] / residual_scale) / beta;
             g_[0] = beta;
-            int j = 0;
-            for (; j < restart_ && iter < max_iter_; ++j, ++iter) {
-                // update Krylov subspace by Arnoldi process
-                // See "Golub, G. H., & Van Loan, C. F. (2013). Matrix computations. JHU press. Alg.10.5.1"
-                V_.col(j) = r_ / beta;
-                r_ = P_.solve((*m_) * V_.col(j));
+
+            int used = 0;
+            bool solution_updated = false;
+            bool breakdown = false;
+            for (int j = 0; j < krylov_dimension_ && last_iterations_ < max_iterations_; ++j) {
+                Vector<Scalar, Rows> basis_vector;
+                if constexpr (Rows == Dynamic) basis_vector.resize(matrix_.rows());
+                for (int row = 0; row < matrix_.rows(); ++row) basis_vector[row] = V_(row, j);
+
+                Vector<Scalar, Rows> product(matrix_ * basis_vector);
+                Vector<Scalar, Rows> arnoldi(preconditioner_.solve(product));
+                const Scalar arnoldi_scale = arnoldi.norm();
                 for (int i = 0; i <= j; ++i) {
-                    H_(i, j) = V_.col(i).dot(r_);
-                    r_ -= H_(i, j) * V_.col(i);
+                    Scalar projection = Scalar(0);
+                    for (int row = 0; row < matrix_.rows(); ++row) projection += V_(row, i) * arnoldi[row];
+                    H_(i, j) = projection;
+                    for (int row = 0; row < matrix_.rows(); ++row) arnoldi[row] -= projection * V_(row, i);
                 }
-                H_(j + 1, j) = r_.norm();
-                beta = H_(j + 1, j);
+                H_(j + 1, j) = arnoldi.norm();
+                const Scalar breakdown_threshold =
+                  std::numeric_limits<Scalar>::epsilon() * static_cast<Scalar>(matrix_.rows()) * arnoldi_scale;
+                const bool happy_breakdown = H_(j + 1, j) <= breakdown_threshold;
+                if (!happy_breakdown) {
+                    for (int row = 0; row < matrix_.rows(); ++row) V_(row, j + 1) = arnoldi[row] / H_(j + 1, j);
+                }
 
-                // QR update by Givens rotation
-                // apply G_1, \ldots, G_{j-1} to j-th Hessenberg column H(1:j, j)
                 for (int i = 0; i < j; ++i) {
-                    double tmp = c_[i] * H_(i, j) + s_[i] * H_(i + 1, j);
+                    const Scalar upper = c_[i] * H_(i, j) + s_[i] * H_(i + 1, j);
                     H_(i + 1, j) = -s_[i] * H_(i, j) + c_[i] * H_(i + 1, j);
-                    H_(i, j) = tmp;
+                    H_(i, j) = upper;
                 }
 
-                // compute new rotation G_j to eliminate H(j + 1, j)
-                // See "Golub, G. H., & Van Loan, C. F. (2013). Matrix computations. JHU press. Alg.5.1.3"
-                double a_ = H_(j, j), b_ = H_(j + 1, j);
-                if (almost_zero(b_)) {
-                    c_[j] = 1.0;
-                    s_[j] = 0.0;
-                } else if (std::abs(b_) > std::abs(a_)) {
-                    double tau = a_ / b_;
-                    s_[j] = 1.0 / std::sqrt(1.0 + tau * tau);
-                    c_[j] = s_[j] * tau;
-                } else {
-                    double tau = b_ / a_;
-                    c_[j] = 1.0 / std::sqrt(1.0 + tau * tau);
-                    s_[j] = c_[j] * tau;
+                const Scalar diagonal = H_(j, j);
+                const Scalar subdiagonal = H_(j + 1, j);
+                const Scalar rotation_norm = std::hypot(diagonal, subdiagonal);
+                if (!(rotation_norm > Scalar(0)) || !std::isfinite(rotation_norm)) {
+                    breakdown = true;
+                    break;
                 }
+                c_[j] = diagonal / rotation_norm;
+                s_[j] = subdiagonal / rotation_norm;
+                H_(j, j) = rotation_norm;
+                H_(j + 1, j) = Scalar(0);
+                const Scalar previous = g_[j];
+                g_[j] = c_[j] * previous;
+                g_[j + 1] = -s_[j] * previous;
+                used = j + 1;
+                ++last_iterations_;
 
-                // compute G_j^\top * (G_{j-1}^\top * G_1 * H)
-                H_(j, j) = c_[j] * H_(j, j) + s_[j] * H_(j + 1, j);
-                H_(j + 1, j) = 0.0;
-                // compute G_j^\top * (G_{j-1}^\top * G_1 * (beta * e_1))
-                double tmp = g_[j];
-                g_[j] = c_[j] * tmp;        // s_[j] * g_[j + 1] = 0
-                g_[j + 1] = -s_[j] * tmp;   // c_[j] * g_[j + 1] = 0
-
-                // convergence check
-                if (std::abs(g_[j + 1]) / r0_norm < tolerance_) {
-                    j++;
-                    converged = true;
+                const Scalar estimated_magnitude = fdapde::abs(g_[j + 1]);
+                const NormComponents estimated_norm {
+                  estimated_magnitude == Scalar(0) ? Scalar(0) : residual_scale, estimated_magnitude, true};
+                if (within_tolerance_(estimated_norm, rhs_norm) || happy_breakdown) {
+                    solution_updated = update_solution_(solution, used, residual_scale);
+                    if (!solution_updated) {
+                        breakdown = true;
+                        break;
+                    }
+                    residual = preconditioned_residual_(rhs, solution);
+                    residual_norm = norm_components_(residual);
+                    last_residual_ = materialized_norm_(residual_norm);
+                    if (within_tolerance_(residual_norm, rhs_norm)) {
+                        converged_ = true;
+                        return solution;
+                    }
+                    breakdown = happy_breakdown;
                     break;
                 }
             }
-            // solve \min_{y \in R^restart} \| beta * e_1 - H * y \|_2 by QR-solve H * y = g
-            auto y = H_.block(0, 0, j, j).template triangular_block<Upper>().solve(g_.top_rows(j));
-            // update solution in Krylov space x = x + V_ * y
-            x += V_.left_cols(j) * y;
-            if (converged) { return x; }
-        }
-        return x;
-    }
-    template <typename RhsXprType> constexpr auto solve(const MatrixExpr<RhsXprType>& b) {
-        Vector<Scalar, Rows> x0 = Vector<Scalar, Rows>::Zero(b.rows());
-        return solve(b, x0);
-    }
-   private:
-    int max_iter_;       // maximum number of iterations
-    int restart_;        // maximum Krylov subspace dimension
-    double tolerance_;   // accepted tolerance on l2-norm of relative residual
 
-    const XprType_* m_ = nullptr;
-    Preconditioner_ P_;
-    Matrix<Scalar, Dynamic, Dynamic> H_;             // Hessenberg matrix
-    Matrix<Scalar, Dynamic, Dynamic, ColMajor> V_;   // Krylov subspace
-    Vector<Scalar, Dynamic> c_, s_;                  // Givens rotation G_i = (c[i], s[i]; -s[i], c[i])
-    Vector<Scalar, Dynamic> g_;                      // G_i^\top * G_{i-1}^\top * ... * G_1^\top * (beta * e_1)
-    Vector<Scalar, Rows> r_;                         // Arnoldi vector
+            if (!solution_updated && used > 0) {
+                if (!update_solution_(solution, used, residual_scale)) breakdown = true;
+            }
+            if (breakdown) {
+                const Vector<Scalar, Rows> residual = preconditioned_residual_(rhs, solution);
+                last_residual_ = materialized_norm_(norm_components_(residual));
+                return solution;
+            }
+        }
+
+        const Vector<Scalar, Rows> residual = preconditioned_residual_(rhs, solution);
+        const NormComponents residual_norm = norm_components_(residual);
+        last_residual_ = materialized_norm_(residual_norm);
+        converged_ = within_tolerance_(residual_norm, rhs_norm);
+        return solution;
+    }
+
+    template <typename RhsType> constexpr auto solve(const MatrixExpr<RhsType>& rhs) {
+        Vector<Scalar, Rows> initial;
+        if constexpr (Rows == Dynamic) initial.resize(rhs.rows());
+        initial.set_zero();
+        return solve(rhs, initial);
+    }
+
+    constexpr bool converged() const { return converged_; }
+    constexpr int iterations() const { return last_iterations_; }
+    // Norm of the left-preconditioned residual P^-1 (b - A x).
+    constexpr Scalar residual() const { return last_residual_; }
+    constexpr bool initialized() const { return initialized_; }
+   private:
+    struct NormComponents {
+        Scalar scale;
+        Scalar magnitude;
+        bool finite;
+    };
+
+    template <typename VectorType> static constexpr NormComponents norm_components_(const VectorType& vector) {
+        Scalar scale = Scalar(0);
+        for (int row = 0; row < vector.rows(); ++row) {
+            const Scalar value = static_cast<Scalar>(vector[row]);
+            if (!std::isfinite(value)) return {Scalar(0), Scalar(0), false};
+            scale = fdapde::max(scale, fdapde::abs(value));
+        }
+        if (scale == Scalar(0)) return {Scalar(0), Scalar(0), true};
+        Scalar squared_magnitude = Scalar(0);
+        for (int row = 0; row < vector.rows(); ++row) {
+            const Scalar normalized = static_cast<Scalar>(vector[row]) / scale;
+            squared_magnitude += normalized * normalized;
+        }
+        return {scale, std::sqrt(squared_magnitude), true};
+    }
+
+    static constexpr Scalar materialized_norm_(const NormComponents& norm) {
+        if (!norm.finite) return std::numeric_limits<Scalar>::infinity();
+        if (norm.scale == Scalar(0) || norm.magnitude == Scalar(0)) return Scalar(0);
+        if (norm.scale > std::numeric_limits<Scalar>::max() / norm.magnitude)
+            return std::numeric_limits<Scalar>::infinity();
+        return norm.scale * norm.magnitude;
+    }
+
+    constexpr bool within_tolerance_(const NormComponents& residual, const NormComponents& reference) const {
+        if (!residual.finite || !reference.finite) return false;
+        if (residual.scale == Scalar(0) || residual.magnitude == Scalar(0)) return true;
+        if (reference.scale == Scalar(0) || reference.magnitude == Scalar(0))
+            return residual.scale <= tolerance_ / residual.magnitude;
+        if (residual.scale <= reference.scale) {
+            return residual.scale / reference.scale <= tolerance_ * (reference.magnitude / residual.magnitude);
+        }
+        return residual.magnitude / reference.magnitude <= tolerance_ * (reference.scale / residual.scale);
+    }
+
+    constexpr bool preconditioner_valid_() const {
+        if constexpr (requires(const Preconditioner_& preconditioner) {
+                          { preconditioner.valid() } -> std::convertible_to<bool>;
+                      }) {
+            return static_cast<bool>(preconditioner_.valid());
+        }
+        return true;
+    }
+
+    template <typename RhsType>
+    constexpr Vector<Scalar, Rows>
+    preconditioned_residual_(const MatrixExpr<RhsType>& rhs, const Vector<Scalar, Rows>& solution) const {
+        Vector<Scalar, Rows> raw(rhs - matrix_ * solution);
+        return Vector<Scalar, Rows>(preconditioner_.solve(raw));
+    }
+
+    constexpr bool update_solution_(Vector<Scalar, Rows>& solution, int used, Scalar correction_scale) {
+        Scalar scale = Scalar(0);
+        for (int i = 0; i < used; ++i) {
+            for (int j = i; j < used; ++j) scale = fdapde::max(scale, fdapde::abs(H_(i, j)));
+        }
+        if (!(scale > Scalar(0))) return false;
+        const Scalar threshold = std::numeric_limits<Scalar>::epsilon() * static_cast<Scalar>(used) * scale;
+        std::vector<Scalar> coefficients(static_cast<std::size_t>(used), Scalar(0));
+        for (int i = used - 1; i >= 0; --i) {
+            if (!(fdapde::abs(H_(i, i)) > threshold)) return false;
+            Scalar value = g_[i];
+            for (int j = i + 1; j < used; ++j) value -= H_(i, j) * coefficients[static_cast<std::size_t>(j)];
+            coefficients[static_cast<std::size_t>(i)] = value / H_(i, i);
+        }
+        Vector<Scalar, Rows> updated(solution);
+        for (int row = 0; row < matrix_.rows(); ++row) {
+            Scalar normalized_correction = Scalar(0);
+            for (int j = 0; j < used; ++j)
+                normalized_correction += V_(row, j) * coefficients[static_cast<std::size_t>(j)];
+            const Scalar correction = normalized_correction * correction_scale;
+            if (!std::isfinite(correction)) return false;
+            updated[row] += correction;
+            if (!std::isfinite(updated[row])) return false;
+        }
+        solution = updated;
+        return true;
+    }
+
+    constexpr void reset_observers_() {
+        converged_ = false;
+        last_iterations_ = 0;
+        last_residual_ = std::numeric_limits<Scalar>::infinity();
+    }
+
+    int max_iterations_;
+    int restart_;
+    Scalar tolerance_;
+    Preconditioner_ preconditioner_;
+    Matrix<Scalar, Rows, Cols> matrix_;
+    Matrix<Scalar, Dynamic, Dynamic> H_;
+    Matrix<Scalar, Dynamic, Dynamic, ColMajor> V_;
+    Vector<Scalar, Dynamic> c_;
+    Vector<Scalar, Dynamic> s_;
+    Vector<Scalar, Dynamic> g_;
+    int krylov_dimension_ = 0;
+    bool initialized_ = false;
+    bool converged_ = false;
+    int last_iterations_ = 0;
+    Scalar last_residual_ = std::numeric_limits<Scalar>::infinity();
 };
+
+template <typename XprType, typename Preconditioner>
+GMRES(const MatrixExpr<XprType>&, Preconditioner&&, int, int, std::remove_cv_t<typename XprType::Scalar>)
+  -> GMRES<XprType, std::decay_t<Preconditioner>>;
+template <typename XprType, typename Preconditioner>
+GMRES(const MatrixExpr<XprType>&, Preconditioner&&) -> GMRES<XprType, std::decay_t<Preconditioner>>;
 
 }   // namespace fdapde
 
