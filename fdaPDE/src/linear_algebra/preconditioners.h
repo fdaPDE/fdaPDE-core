@@ -17,6 +17,10 @@
 #ifndef __FDAPDE_LINALG_PRECONDITIONERS_H__
 #define __FDAPDE_LINALG_PRECONDITIONERS_H__
 
+#include <cmath>
+#include <stdexcept>
+#include <type_traits>
+
 #include "header_check.h"
 
 namespace fdapde {
@@ -26,18 +30,53 @@ template <typename XprType_> class IdentityPreconditioner {
     fdapde_static_assert(
       XprType::Rows == Dynamic || XprType::Cols == Dynamic || XprType::Rows == XprType::Cols,
       THIS_CLASS_IS_FOR_SQUARE_MATRICES_ONLY);
+   public:
+    using Scalar = std::remove_cv_t<typename XprType::Scalar>;
     static constexpr int Rows = XprType::Rows;
     static constexpr int Cols = XprType::Cols;
-    using Scalar = typename XprType::Scalar;
-   public:
-    IdentityPreconditioner() = default;
-    template <typename XprType> explicit IdentityPreconditioner(const MatrixExpr<XprType>& m) {
-        fdapde_assert(m.rows() == m.cols());
+
+    constexpr IdentityPreconditioner() = default;
+    template <typename MatrixType> constexpr explicit IdentityPreconditioner(const MatrixExpr<MatrixType>& matrix) {
+        compute(matrix);
     }
-    template <typename XprType> constexpr void compute(const MatrixExpr<XprType>&) { return; }
-    template <typename RhsXprType> constexpr decltype(auto) solve(const MatrixExpr<RhsXprType>& b) const {
-        return b.derived();
+
+    template <typename MatrixType> constexpr void compute(const MatrixExpr<MatrixType>& matrix) {
+        fdapde_static_assert(
+          MatrixType::Rows == Dynamic || Rows == Dynamic || MatrixType::Rows == Rows,
+          INVALID_PRECONDITIONER_MATRIX_STATIC_SHAPE);
+        fdapde_static_assert(
+          MatrixType::Cols == Dynamic || Cols == Dynamic || MatrixType::Cols == Cols,
+          INVALID_PRECONDITIONER_MATRIX_STATIC_SHAPE);
+        reset_();
+        const int n = matrix.rows();
+        if (n <= 0 || n != matrix.cols() || (Rows != Dynamic && n != Rows) || (Cols != Dynamic && n != Cols)) {
+            throw std::invalid_argument(
+              "IdentityPreconditioner requires a nonempty square matrix matching its static shape");
+        }
+        size_ = n;
+        valid_ = true;
     }
+
+    template <typename RhsType> constexpr auto solve(const MatrixExpr<RhsType>& rhs) const {
+        fdapde_static_assert(
+          RhsType::Rows == Dynamic || Rows == Dynamic || RhsType::Rows == Rows,
+          INVALID_PRECONDITIONER_RHS_STATIC_SHAPE);
+        if (!valid_) { throw std::domain_error("IdentityPreconditioner solve requires a valid preconditioner"); }
+        if (rhs.rows() != size_ || rhs.cols() <= 0) {
+            throw std::invalid_argument("IdentityPreconditioner solve requires a matching nonempty right-hand side");
+        }
+        return Matrix<Scalar, RhsType::Rows, RhsType::Cols>(rhs);
+    }
+
+    constexpr bool valid() const { return valid_; }
+   private:
+    constexpr void reset_() {
+        size_ = 0;
+        valid_ = false;
+    }
+
+    int size_ = 0;
+    bool valid_ = false;
 };
 
 template <typename XprType_> class DiagonalPreconditioner {
@@ -45,27 +84,82 @@ template <typename XprType_> class DiagonalPreconditioner {
     fdapde_static_assert(
       XprType::Rows == Dynamic || XprType::Cols == Dynamic || XprType::Rows == XprType::Cols,
       THIS_CLASS_IS_FOR_SQUARE_MATRICES_ONLY);
+   public:
+    using Scalar = std::remove_cv_t<typename XprType::Scalar>;
     static constexpr int Rows = XprType::Rows;
     static constexpr int Cols = XprType::Cols;
-    using Scalar = typename XprType::Scalar;
-   public:
-    DiagonalPreconditioner() = default;
-    template <typename XprType> explicit DiagonalPreconditioner(const MatrixExpr<XprType>& m) {
-        fdapde_assert(m.rows() == m.cols());
-        compute(m);
+    fdapde_static_assert(std::is_floating_point_v<Scalar>, PRECONDITIONERS_REQUIRE_FLOATING_POINT_SCALARS);
+
+    constexpr DiagonalPreconditioner() = default;
+    template <typename MatrixType> constexpr explicit DiagonalPreconditioner(const MatrixExpr<MatrixType>& matrix) {
+        compute(matrix);
     }
-    template <typename XprType> constexpr void compute(const MatrixExpr<XprType>& m) {
-        if constexpr (Rows == Dynamic || Cols == Dynamic) { inverse_.resize(m.rows()); }
-        for (int i = 0; i < inverse_.size(); ++i) { inverse_[i] = 1.0 / m.derived()(i, i); }
-        return;
+
+    template <typename MatrixType> constexpr void compute(const MatrixExpr<MatrixType>& matrix) {
+        fdapde_static_assert(
+          MatrixType::Rows == Dynamic || Rows == Dynamic || MatrixType::Rows == Rows,
+          INVALID_PRECONDITIONER_MATRIX_STATIC_SHAPE);
+        fdapde_static_assert(
+          MatrixType::Cols == Dynamic || Cols == Dynamic || MatrixType::Cols == Cols,
+          INVALID_PRECONDITIONER_MATRIX_STATIC_SHAPE);
+        reset_();
+        const int n = matrix.rows();
+        if (n <= 0 || n != matrix.cols() || (Rows != Dynamic && n != Rows) || (Cols != Dynamic && n != Cols)) {
+            throw std::invalid_argument(
+              "DiagonalPreconditioner requires a nonempty square matrix matching its static shape");
+        }
+        if constexpr (Rows == Dynamic) inverse_.resize(n);
+        for (int i = 0; i < n; ++i) {
+            const Scalar diagonal = static_cast<Scalar>(matrix.derived()(i, i));
+            if (!std::isfinite(diagonal)) {
+                reset_();
+                throw std::invalid_argument("DiagonalPreconditioner requires finite diagonal coefficients");
+            }
+            if (diagonal == Scalar(0)) {
+                reset_();
+                throw std::domain_error("DiagonalPreconditioner requires nonzero diagonal coefficients");
+            }
+            const Scalar inverse = Scalar(1) / diagonal;
+            if (!std::isfinite(inverse)) {
+                reset_();
+                throw std::domain_error("DiagonalPreconditioner diagonal reciprocal is not finite");
+            }
+            inverse_[i] = inverse;
+        }
+        size_ = n;
+        valid_ = true;
     }
-    template <typename RhsXprType> constexpr auto solve(const MatrixExpr<RhsXprType>& b) const {
-        Vector<Scalar, Rows> v = b;
-        for (int i = 0; i < v.size(); ++i) { v[i] *= inverse_[i]; }
-        return v;
+
+    template <typename RhsType> constexpr auto solve(const MatrixExpr<RhsType>& rhs) const {
+        fdapde_static_assert(
+          RhsType::Rows == Dynamic || Rows == Dynamic || RhsType::Rows == Rows,
+          INVALID_PRECONDITIONER_RHS_STATIC_SHAPE);
+        if (!valid_) { throw std::domain_error("DiagonalPreconditioner solve requires a valid preconditioner"); }
+        if (rhs.rows() != size_ || rhs.cols() <= 0) {
+            throw std::invalid_argument("DiagonalPreconditioner solve requires a matching nonempty right-hand side");
+        }
+        Matrix<Scalar, RhsType::Rows, RhsType::Cols> result(rhs);
+        for (int row = 0; row < result.rows(); ++row) {
+            for (int col = 0; col < result.cols(); ++col) result(row, col) *= inverse_[row];
+        }
+        return result;
     }
+
+    constexpr bool valid() const { return valid_; }
    private:
+    constexpr void reset_() {
+        if constexpr (Rows == Dynamic) {
+            inverse_.resize(0);
+        } else {
+            inverse_.set_zero();
+        }
+        size_ = 0;
+        valid_ = false;
+    }
+
     Vector<Scalar, Rows> inverse_;
+    int size_ = 0;
+    bool valid_ = false;
 };
 
 }   // namespace fdapde
