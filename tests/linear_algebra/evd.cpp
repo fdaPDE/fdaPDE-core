@@ -45,6 +45,24 @@ static_assert(std::is_same_v<typename const_view_evd::Scalar, double>);
 static_assert(!permits_rvalue_eigenvalues<fixed_evd>);
 static_assert(!permits_rvalue_eigenvectors<fixed_evd>);
 
+struct oversized_symmetric_expression : SymmetricMatrixExpr<oversized_symmetric_expression> {
+    using Scalar = double;
+    static constexpr int Rows = Dynamic;
+    static constexpr int Cols = Dynamic;
+
+    explicit oversized_symmetric_expression(bool& coefficient_accessed) : coefficient_accessed_(&coefficient_accessed) { }
+
+    double operator()(int, int) const {
+        *coefficient_accessed_ = true;
+        return 0.0;
+    }
+    constexpr int rows() const { return 46341; }
+    constexpr int cols() const { return 46341; }
+
+   private:
+    bool* coefficient_accessed_;
+};
+
 template <typename MatrixType, typename Decomposition>
 void expect_valid_evd(const MatrixType& source, const Decomposition& decomposition, double tolerance = 1.0e-10) {
     ASSERT_TRUE(decomposition.computed());
@@ -159,6 +177,17 @@ void check_evd_invalid_input_contracts() {
     valid(1, 1) = 3.0;
     reusable.compute(valid);
     EXPECT_TRUE(reusable.computed());
+
+    bool coefficient_accessed = false;
+    const oversized_symmetric_expression oversized(coefficient_accessed);
+    try {
+        reusable.compute(oversized);
+        FAIL() << "oversized EVD workspace was accepted";
+    } catch (const std::length_error& error) {
+        EXPECT_STREQ(error.what(), "EVD: dense workspace size exceeds supported range");
+    }
+    EXPECT_FALSE(coefficient_accessed);
+    EXPECT_FALSE(reusable.computed());
 
     valid(0, 0) = std::numeric_limits<double>::quiet_NaN();
     EXPECT_THROW(reusable.compute(valid), std::invalid_argument);
