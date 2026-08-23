@@ -19,171 +19,141 @@
 
 #include "header_check.h"
 
+#include <cmath>
+#include <cstddef>
+#include <limits>
+#include <stdexcept>
+#include <type_traits>
+
 namespace fdapde {
 
-// computes the eigen-decomposition of a matrix
 template <typename XprType_> class EVD {
     using XprType = std::decay_t<XprType_>;
     fdapde_static_assert(
       XprType::Rows == Dynamic || XprType::Cols == Dynamic || XprType::Rows == XprType::Cols,
       THIS_CLASS_IS_FOR_SQUARE_MATRICES_ONLY);
+   public:
+    using Scalar = std::remove_cv_t<typename XprType::Scalar>;
     static constexpr int Rows = XprType::Rows;
     static constexpr int Cols = XprType::Cols;
-    using Scalar = typename XprType::Scalar;
+    fdapde_static_assert(std::is_floating_point_v<Scalar>, EVD_REQUIRES_FLOATING_POINT_SCALARS);
 
-    // tridiagonalize a symmetric matrix via householder reflectors
-    // see "Golub, G. H., & Van Loan, C. F. (2013). Matrix computations. JHU press. Sec.8.3.1"
-    template <typename XprType>
-    std::tuple<Matrix<Scalar, Rows, Cols>, OrthogonalMatrix<Scalar, Rows, Cols>>
-    householder_tridiagonalize_(const XprType& m) const {
-        const int n = m.rows();
-        Matrix<Scalar, Rows, Cols> T = m;
-        Matrix<Scalar, Rows, Cols> Q = IdentityMatrix<Scalar, Rows, Cols>(n, n);
-
-        for (int k = 0; k < n - 2; ++k) {
-            const int m = n - k - 1;
-            Vector<Scalar, Dynamic> u(m);
-            for (int i = 0; i < m; ++i) { u[i] = T(k + 1 + i, k); }
-            Scalar u_norm = u.norm();
-            if (almost_equal(u_norm, 0.0, 1e-14)) continue;   // column is already zero below diagonal
-
-            // compute householder reflector
-            Scalar alpha = -std::copysign(u_norm, u[0]);
-            u[0] -= alpha;
-            Scalar beta = Scalar(2) / u.squared_norm();
-            // update symmetric block A_22 = T[k+1:n-1, k+1:n-1]
-            auto A22 = T.block(k + 1, k + 1, m, m);
-            Vector<Scalar, Dynamic> w = beta * (A22 * u);
-            Scalar tau = 0.5 * beta * u.dot(w);
-            w -= tau * u;
-            A22 -= u * w.transpose() + w * u.transpose();
-            // update top-right block A_01 = T[0:k, k+1:n-1]
-            auto A01 = T.block(0, k + 1, k + 1, m);
-            Vector<Scalar, Dynamic> z = beta * (A01 * u);
-            A01 -= z * u.transpose();
-            // symmetrize (block A_10)
-            T.block(k + 1, 0, m, k + 1) = A01.transpose();
-            // set (k+1,k) bidiagonal element, zero column below it
-            T(k + 1, k) = alpha;
-            T(k, k + 1) = alpha;
-            for (int i = k + 2; i < n; ++i) { T(i, k) = T(k, i) = Scalar(0); }
-
-            // Q update
-            Vector<Scalar, Dynamic> zQ = Q.block(0, k + 1, n, m) * u;
-            Q.block(0, k + 1, n, m) -= zQ * (beta * u.transpose());
-        }
-        return std::make_pair(T, OrthogonalMatrix<Scalar, Rows, Cols>(Q, unchecked));
-    }
-
-    int max_iter_ = 30;   // taken from LAPACK, actual number of iteration is scaled by matrix size
-   public:
     constexpr EVD() = default;
-    template <typename XprType__> constexpr explicit EVD(const SymmetricMatrixExpr<XprType__>& m) {
-        if constexpr (Rows == Dynamic || Cols == Dynamic) { fdapde_assert(m.rows() == m.cols()); }
-        compute(m);
+    template <typename MatrixType> constexpr explicit EVD(const SymmetricMatrixExpr<MatrixType>& matrix) {
+        compute(matrix);
     }
 
-    // computes the EVD of a symmetric matrix using the implicit QR-iteration with Wilkinson shift
-    // see "Golub, G. H., & Van Loan, C. F. (2013). Matrix computations. JHU press. Ch.8.3"
-    template <typename XprType__> constexpr void compute(const SymmetricMatrixExpr<XprType__>& m) {
-        auto [T, Q_] = householder_tridiagonalize_(m.derived());
-        const int n = T.rows();
-        const int max_iter = max_iter_ * n;
-        Matrix<Scalar, Rows, Cols> Q = IdentityMatrix<Scalar, Rows, Cols>(n, n);
-        // extract diagonal and subdiagonal
-        Vector<Scalar, Rows> dd;
-        Vector<Scalar, Rows == Dynamic ? Dynamic : (Rows - 1)> sd;
-        if constexpr (Rows == Dynamic) {
-            dd.resize(n);
-            sd.resize(n - 1);
+    // Maximum-pivot Jacobi rotations with scale normalization; see Golub and
+    // Van Loan, Matrix Computations, Section 8.5.
+    template <typename MatrixType> constexpr void compute(const SymmetricMatrixExpr<MatrixType>& matrix) {
+        computed_ = false;
+        fdapde_static_assert(
+          MatrixType::Rows == Dynamic || Rows == Dynamic || MatrixType::Rows == Rows, INVALID_EVD_MATRIX_STATIC_SHAPE);
+        fdapde_static_assert(
+          MatrixType::Cols == Dynamic || Cols == Dynamic || MatrixType::Cols == Cols, INVALID_EVD_MATRIX_STATIC_SHAPE);
+
+        const int n = matrix.rows();
+        const bool shape_valid =
+          n > 0 && n == matrix.cols() && (Rows == Dynamic || n == Rows) && (Cols == Dynamic || n == Cols);
+        if (!shape_valid) {
+            throw std::invalid_argument("EVD requires a nonempty square matrix matching its static shape");
         }
-        for (int i = 0; i < n; ++i) { dd[i] = T(i, i); }
-        for (int i = 0; i < n - 1; ++i) { sd[i] = T(i + 1, i); }
-        int i = 0, j = n - 1;   // active diagonal range
-        int iter = 0;           // iteration counter
 
-        while (j > 1 && iter < max_iter) {
-            // deflate small subdiagonals
-            for (int k = i; k < j; ++k) {
-                Scalar s = sd[k];
-                if (abs(s) < std::numeric_limits<Scalar>::min()) {   // underflow, force to zero
-                    sd[k] = Scalar(0);
-                    continue;
+        Matrix<Scalar, Rows, Cols> diagonalized(matrix);
+        Scalar matrix_scale = Scalar(0);
+        for (int row = 0; row < n; ++row) {
+            for (int col = 0; col < n; ++col) {
+                const Scalar value = diagonalized(row, col);
+                if (!std::isfinite(value)) {
+                    throw std::invalid_argument("EVD requires finite matrix coefficients");
                 }
-                // check relative size against neighboring diagonals
-                Scalar scaled_s = s / std::numeric_limits<Scalar>::epsilon();
-                if (scaled_s * scaled_s <= (abs(dd[k]) + abs(dd[k + 1]))) { sd[k] = Scalar(0); }
+                matrix_scale = fdapde::max(matrix_scale, fdapde::abs(value));
             }
-            // adapt active diagonal range
-            while (j > 1 && almost_zero(sd[j - 1])) { j--; }
-            if (j == 0) break;
-            i = j - 1;
-            while (i > 0 && !almost_zero(sd[i - 1])) { i--; }
-            // stable computation of Wilkinson shift from 2x2 block
-            // [T(m-2, m-2) T(m-2, m-1)
-            //  T(m-1, m-2) T(m-2, m-2)]
-            Scalar t = (dd[j - 1] - dd[j]) * 0.5;
-            Scalar e = sd[j - 1];
-            Scalar mu = dd[j];
-            if (almost_zero(t)) {
-                mu -= abs(e);
-            } else {
-                Scalar e2 = e * e;
-                Scalar h = std::hypot(t, e);
-                mu -= e2 / (t + (t > 0 ? h : -h));
-            }
-            // Francis implicit tridiagonal-QR step
-            Scalar x = dd[i] - mu;
-            Scalar z = sd[i];
-
-            for (int k = i; k < j && !almost_zero(z); ++k) {
-                Scalar r = std::hypot(x, z);
-                Scalar c = (r == Scalar(0)) ? Scalar(1) : x / r;
-                Scalar s = (r == Scalar(0)) ? Scalar(0) : z / r;
-                // apply Givens rotation G = [c -s 0; s c 0; 0 0 1] to 3 x 3 block
-                // [T(k, k)     T(k, k + 1)     0
-                //  T(k + 1, k) T(k + 1, k + 1) T(k + 1, k + 2)
-                //  0           T(k + 2, k + 1) T(k + 2, k + 2)]
-                Scalar m0 = dd[k];
-                Scalar m1 = sd[k];
-                Scalar m3 = dd[k + 1];
-                // compute G^\top T_{k:k+1, k:k+1} G
-                dd[k] = c * c * m0 + 2 * c * s * m1 + s * s * m3;
-                sd[k] = c * s * (m3 - m0) + (c * c - s * s) * m1;
-                dd[k + 1] = s * s * m0 - 2 * c * s * m1 + c * c * m3;
-                // update previous subdiagonal
-                if (k > i) { sd[k - 1] = c * sd[k - 1] + s * z; }
-                // handle 3 x 3 block
-                x = sd[k];
-                if (k < j - 1) {
-                    Scalar m4 = sd[k + 1];
-                    sd[k + 1] = c * m4;
-                    z = s * m4;
-                }
-
-                // update matrix Q <- Q * G
-                for (int h = 0; h < n; ++h) {
-                    Scalar q1 = Q(h, k), q2 = Q(h, k + 1);
-                    Q(h, k) = c * q1 + s * q2;
-                    Q(h, k + 1) = -s * q1 + c * q2;
-                }
-            }
-            ++iter;
         }
-        // store decomposition
-        eigenvectors_ = Q_ * Q;
-        eigenvalues_ = dd;
+        const Scalar normalization = matrix_scale == Scalar(0) ? Scalar(1) : matrix_scale;
+        diagonalized /= normalization;
+
+        if constexpr (Rows == Dynamic || Cols == Dynamic) eigenvectors_.resize(n, n);
+        eigenvectors_.set_zero();
+        for (int i = 0; i < n; ++i) eigenvectors_(i, i) = Scalar(1);
+
+        const Scalar epsilon = std::numeric_limits<Scalar>::epsilon();
+        const Scalar tolerance = fdapde::max(std::numeric_limits<Scalar>::min(), epsilon * static_cast<Scalar>(n));
+        constexpr std::size_t iteration_factor = 50;
+        const std::size_t dimension = static_cast<std::size_t>(n);
+        const std::size_t max_size = std::numeric_limits<std::size_t>::max();
+        const std::size_t max_iterations = dimension > max_size / iteration_factor / dimension ?
+                                             max_size :
+                                             iteration_factor * dimension * dimension;
+
+        for (std::size_t iteration = 0;; ++iteration) {
+            int p = 0;
+            int q = 0;
+            Scalar largest_off_diagonal = Scalar(0);
+            for (int row = 0; row < n; ++row) {
+                for (int col = row + 1; col < n; ++col) {
+                    const Scalar candidate = fdapde::abs(diagonalized(row, col));
+                    if (candidate > largest_off_diagonal) {
+                        largest_off_diagonal = candidate;
+                        p = row;
+                        q = col;
+                    }
+                }
+            }
+            if (largest_off_diagonal <= tolerance) break;
+            if (iteration == max_iterations) throw std::runtime_error("EVD: Jacobi iteration did not converge");
+
+            const Scalar app = diagonalized(p, p);
+            const Scalar aqq = diagonalized(q, q);
+            const Scalar apq = diagonalized(p, q);
+            const Scalar tau = (aqq - app) / (Scalar(2) * apq);
+            const Scalar tangent =
+              std::copysign(Scalar(1), tau) / (fdapde::abs(tau) + std::hypot(Scalar(1), tau));
+            const Scalar cosine = Scalar(1) / std::hypot(Scalar(1), tangent);
+            const Scalar sine = tangent * cosine;
+
+            diagonalized(p, p) = app - tangent * apq;
+            diagonalized(q, q) = aqq + tangent * apq;
+            diagonalized(p, q) = diagonalized(q, p) = Scalar(0);
+            for (int row = 0; row < n; ++row) {
+                if (row == p || row == q) continue;
+                const Scalar arp = diagonalized(row, p);
+                const Scalar arq = diagonalized(row, q);
+                diagonalized(row, p) = diagonalized(p, row) = cosine * arp - sine * arq;
+                diagonalized(row, q) = diagonalized(q, row) = sine * arp + cosine * arq;
+            }
+            for (int row = 0; row < n; ++row) {
+                const Scalar erp = eigenvectors_(row, p);
+                const Scalar erq = eigenvectors_(row, q);
+                eigenvectors_(row, p) = cosine * erp - sine * erq;
+                eigenvectors_(row, q) = sine * erp + cosine * erq;
+            }
+        }
+
+        if constexpr (Rows == Dynamic) eigenvalues_.resize(n);
+        for (int i = 0; i < n; ++i) eigenvalues_[i] = diagonalized(i, i) * normalization;
+        computed_ = true;
     }
-    // observers
-    constexpr const Vector<Scalar, Rows>& eigenvalues() const { return eigenvalues_; }
-    constexpr auto eigenvectors() const {
-      return internals::orthogonal_wrapper<Matrix<Scalar, Rows, Cols>>(eigenvectors_);
+
+    constexpr const Vector<Scalar, Rows>& eigenvalues() const & {
+        fdapde_assert(computed_);
+        return eigenvalues_;
     }
+    constexpr void eigenvalues() const && = delete;
+    constexpr auto eigenvectors() const & {
+        fdapde_assert(computed_);
+        return internals::orthogonal_cast(eigenvectors_);
+    }
+    constexpr void eigenvectors() const && = delete;
+    constexpr bool computed() const { return computed_; }
+
    private:
     Matrix<Scalar, Rows, Cols> eigenvectors_;
     Vector<Scalar, Rows> eigenvalues_;
+    bool computed_ = false;
 };
-template <typename XprType> EVD(const SymmetricMatrixExpr<XprType>& m) -> EVD<XprType>;
+
+template <typename XprType> EVD(const SymmetricMatrixExpr<XprType>&) -> EVD<XprType>;
 
 }   // namespace fdapde
 
