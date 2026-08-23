@@ -26,13 +26,6 @@ template <typename XprType> struct SymmetricMatrixExpr;
 
 // forward decls
 template <typename XprType> class EVD;
-struct log_euclidean;
-namespace internals {
-
-template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_, typename MetricType_> class spd_matrix_impl;
-template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_, typename MetricType_> class spd_matrix_view_impl;
-
-}   // namespace internals
   
 namespace internals {
 
@@ -95,22 +88,6 @@ template <typename XprType_> struct SymmetricMatrixExpr : public MatrixExpr<XprT
     using Base::operator=;
 
     auto evd() const { return EVD<XprType>(derived()); }
-    // compute matrix exponential, returns SPD matrix bound to MetricType
-    template <typename MetricType> constexpr auto exp() const {
-        using Scalar = typename XprType::Scalar;
-        constexpr int Rows = XprType::Rows;
-        constexpr int Cols = XprType::Cols;
-        // symmetric matrices are already the tangent space to the SPD cone under the log-euclidean metric
-        if constexpr (std::is_same_v<std::decay_t<MetricType>, log_euclidean>) {
-            return internals::spd_matrix_impl<Scalar, Rows, Cols, RowMajor, log_euclidean>(derived());
-        } else {
-            // generic fallback
-            EVD<XprType> evd_(derived());
-            Vector<Scalar, Rows> exp_eigval = evd_.eigenvalues().cwise().exp();   // extract eigenvalues' exponential
-            return internals::spd_matrix_impl<double, Rows, Cols, RowMajor, MetricType>(
-              evd_.eigenvectors() * exp_eigval.as_diagonal() * evd_.eigenvectors().transpose(), fdapde::unchecked);
-        }
-    }
 
     // internal triangular matrix representation
     constexpr decltype(auto) rep() const { return derived().rep(); }
