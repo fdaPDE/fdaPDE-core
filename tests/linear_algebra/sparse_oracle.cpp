@@ -124,4 +124,126 @@ TEST(NativeSparseOracle, MatchesEigenAcrossShapesAndDensities) {
     }
 }
 
+void expect_same_sparse(const fdapde::SparseMatrix<double>& native, const eigen_sparse& oracle) {
+    ASSERT_EQ(native.rows(), oracle.rows());
+    ASSERT_EQ(native.cols(), oracle.cols());
+    ASSERT_EQ(native.non_zeros(), oracle.nonZeros());
+    for (int row = 0; row < native.rows(); ++row) {
+        auto native_it = native.row(row).begin();
+        const auto native_end = native.row(row).end();
+        for (eigen_sparse::InnerIterator oracle_it(oracle, row); oracle_it; ++oracle_it) {
+            ASSERT_NE(native_it, native_end);
+            EXPECT_EQ((*native_it).column(), oracle_it.col());
+            EXPECT_DOUBLE_EQ((*native_it).value(), oracle_it.value());
+            ++native_it;
+        }
+        EXPECT_EQ(native_it, native_end);
+    }
+}
+
+eigen_sparse make_eigen_sparse(int rows, int cols, const std::vector<native_triplet>& triplets) {
+    std::vector<Eigen::Triplet<double, int>> eigen_triplets;
+    eigen_triplets.reserve(triplets.size());
+    for (const auto& triplet : triplets) { eigen_triplets.emplace_back(triplet.row(), triplet.col(), triplet.value()); }
+    eigen_sparse result(rows, cols);
+    result.setFromTriplets(eigen_triplets.begin(), eigen_triplets.end());
+    result.prune(0.0);
+    result.makeCompressed();
+    return result;
+}
+
+TEST(NativeSparseOracle, MatchesEigenRequiredOperations) {
+    const std::vector<native_triplet> triplets {
+      {0, 0, 2.0 },
+      {0, 2, -1.0},
+      {1, 1, 3.0 },
+      {1, 3, 4.0 },
+      {2, 0, 5.0 }
+    };
+    const fdapde::SparseMatrix<double> native(3, 4, triplets);
+    const eigen_sparse oracle = make_eigen_sparse(3, 4, triplets);
+
+    eigen_sparse eigen_transpose = oracle.transpose();
+    eigen_transpose.makeCompressed();
+    expect_same_sparse(native.transpose(), eigen_transpose);
+
+    const std::vector<native_triplet> lower_triplets {
+      {0, 0, 2.0 },
+      {1, 0, -1.0},
+      {1, 1, 3.0 },
+      {2, 0, 4.0 },
+      {2, 2, 5.0 }
+    };
+    const fdapde::SparseMatrix<double> native_lower(3, 3, lower_triplets);
+    const eigen_sparse eigen_lower = make_eigen_sparse(3, 3, lower_triplets);
+    eigen_sparse eigen_symmetric = eigen_lower.selfadjointView<Eigen::Lower>();
+    eigen_symmetric.makeCompressed();
+    const auto native_symmetric = native_lower.symmetric_expanded(fdapde::Lower);
+    expect_same_sparse(native_symmetric, eigen_symmetric);
+
+    const std::vector<native_triplet> upper_triplets {
+      {0, 0, 2.0 },
+      {0, 1, -1.0},
+      {0, 2, 4.0 },
+      {1, 1, 3.0 },
+      {2, 2, 5.0 }
+    };
+    const fdapde::SparseMatrix<double> native_upper(3, 3, upper_triplets);
+    const eigen_sparse eigen_upper = make_eigen_sparse(3, 3, upper_triplets);
+    eigen_sparse eigen_upper_symmetric = eigen_upper.selfadjointView<Eigen::Upper>();
+    eigen_upper_symmetric.makeCompressed();
+    expect_same_sparse(native_upper.symmetric_expanded(fdapde::Upper), eigen_upper_symmetric);
+
+    const fdapde::Vector<double, 4> native_vector({1.0, 2.0, 3.0, 4.0});
+    const Eigen::Vector4d eigen_vector(1.0, 2.0, 3.0, 4.0);
+    const auto native_vector_product = native * native_vector;
+    const Eigen::VectorXd eigen_vector_product = oracle * eigen_vector;
+    ASSERT_EQ(native_vector_product.size(), eigen_vector_product.size());
+    for (int i = 0; i < native_vector_product.size(); ++i) {
+        EXPECT_DOUBLE_EQ(native_vector_product[i], eigen_vector_product[i]);
+    }
+
+    const double dense_values[8] {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0};
+    const fdapde::Matrix<double, 4, 2, fdapde::ColMajor> native_dense(dense_values);
+    Eigen::Matrix<double, 4, 2> eigen_dense;
+    eigen_dense << 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0;
+    const auto native_dense_product = native * native_dense;
+    const Eigen::MatrixXd eigen_dense_product = oracle * eigen_dense;
+    ASSERT_EQ(native_dense_product.rows(), eigen_dense_product.rows());
+    ASSERT_EQ(native_dense_product.cols(), eigen_dense_product.cols());
+    for (int i = 0; i < native_dense_product.rows(); ++i) {
+        for (int j = 0; j < native_dense_product.cols(); ++j) {
+            EXPECT_DOUBLE_EQ(native_dense_product(i, j), eigen_dense_product(i, j));
+        }
+    }
+
+    const fdapde::Matrix<double, 4, 2> native_row_major_dense(dense_values);
+    Eigen::Matrix<double, 4, 2, Eigen::RowMajor> eigen_row_major_dense;
+    eigen_row_major_dense << 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0;
+    const auto native_row_major_product = native * native_row_major_dense;
+    const Eigen::Matrix<double, 3, 2, Eigen::RowMajor> eigen_row_major_product = oracle * eigen_row_major_dense;
+    for (int i = 0; i < native_row_major_product.rows(); ++i) {
+        for (int j = 0; j < native_row_major_product.cols(); ++j) {
+            EXPECT_DOUBLE_EQ(native_row_major_product(i, j), eigen_row_major_product(i, j));
+        }
+    }
+
+    const auto native_sums = native.row_sums();
+    const Eigen::VectorXd eigen_sums = oracle * Eigen::VectorXd::Ones(oracle.cols());
+    for (int i = 0; i < native_sums.size(); ++i) { EXPECT_DOUBLE_EQ(native_sums[i], eigen_sums[i]); }
+
+    const auto native_diagonal = native_symmetric.diagonal();
+    const Eigen::VectorXd eigen_diagonal = eigen_symmetric.diagonal();
+    for (int i = 0; i < native_diagonal.size(); ++i) { EXPECT_DOUBLE_EQ(native_diagonal[i], eigen_diagonal[i]); }
+    expect_same_sparse(
+      fdapde::SparseMatrix<double>::from_diagonal(native_diagonal),
+      eigen_diagonal.asDiagonal().toDenseMatrix().sparseView());
+
+    const fdapde::Vector<double, 3> native_quadratic_vector({1.0, 2.0, 3.0});
+    const Eigen::Vector3d eigen_quadratic_vector(1.0, 2.0, 3.0);
+    EXPECT_DOUBLE_EQ(
+      native_symmetric.quadratic_form(native_quadratic_vector),
+      eigen_quadratic_vector.dot(eigen_symmetric * eigen_quadratic_vector));
+}
+
 }   // namespace

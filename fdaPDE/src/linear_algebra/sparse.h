@@ -235,6 +235,179 @@ template <typename Scalar_> class SparseMatrix {
     /// @brief rebuilds the current shape from an initializer list
     void rebuild(std::initializer_list<triplet_type> triplets) { rebuild(std::vector<triplet_type>(triplets)); }
 
+    // Fresh sparse results restore the canonical no-explicit-zero pattern even
+    // when value_ref left an exact zero in the source structure.
+    SparseMatrix transpose() const {
+        SparseMatrix result(cols_, rows_);
+        for (Index row = 0; row < rows_; ++row) {
+            for (Index current = row_offsets_[row]; current < row_offsets_[row + 1]; ++current) {
+                if (values_[current] != Scalar {}) { ++result.row_offsets_[column_indices_[current] + 1]; }
+            }
+        }
+        for (Index row = 0; row < result.rows_; ++row) { result.row_offsets_[row + 1] += result.row_offsets_[row]; }
+        result.column_indices_.resize(static_cast<std::size_t>(result.row_offsets_.back()));
+        result.values_.resize(static_cast<std::size_t>(result.row_offsets_.back()));
+        std::vector<Index> next(result.row_offsets_);
+        for (Index row = 0; row < rows_; ++row) {
+            for (Index current = row_offsets_[row]; current < row_offsets_[row + 1]; ++current) {
+                if (values_[current] == Scalar {}) continue;
+                const Index transposed_row = column_indices_[current];
+                const Index position = next[transposed_row]++;
+                result.column_indices_[position] = row;
+                result.values_[position] = values_[current];
+            }
+        }
+        return result;
+    }
+
+    // Expand one authoritative triangle into an owning symmetric CSR matrix.
+    // Entries in the opposite triangle are rejected rather than discarded.
+    SparseMatrix symmetric_expanded(int triangle) const {
+        if (triangle != Upper && triangle != Lower) {
+            throw std::invalid_argument("symmetric expansion requires an upper or lower triangle");
+        }
+        if (rows_ != cols_) { throw std::invalid_argument("symmetric expansion requires a square matrix"); }
+
+        std::size_t output_size = 0;
+        for (Index row = 0; row < rows_; ++row) {
+            for (Index current = row_offsets_[row]; current < row_offsets_[row + 1]; ++current) {
+                const Index col = column_indices_[current];
+                if ((triangle == Upper && row > col) || (triangle == Lower && row < col)) {
+                    throw std::invalid_argument("stored coefficient lies outside the declared triangle");
+                }
+                if (values_[current] != Scalar {}) {
+                    const std::size_t increment = row == col ? 1 : 2;
+                    if (output_size > static_cast<std::size_t>(std::numeric_limits<Index>::max()) - increment) {
+                        throw std::length_error("symmetric expansion exceeds the supported int range");
+                    }
+                    output_size += increment;
+                }
+            }
+        }
+
+        std::vector<triplet_type> triplets;
+        triplets.reserve(output_size);
+        for (Index row = 0; row < rows_; ++row) {
+            for (Index current = row_offsets_[row]; current < row_offsets_[row + 1]; ++current) {
+                const Index col = column_indices_[current];
+                const Scalar& value = values_[current];
+                if (value == Scalar {}) continue;
+                triplets.emplace_back(row, col, value);
+                if (row != col) triplets.emplace_back(col, row, value);
+            }
+        }
+        return SparseMatrix(rows_, cols_, triplets);
+    }
+
+    template <internals::matrix_expression RhsXprType>
+        requires(std::remove_cvref_t<RhsXprType>::Cols == 1)
+    auto operator*(const RhsXprType& rhs) const {
+        using RhsScalar = std::remove_cv_t<typename std::remove_cvref_t<RhsXprType>::Scalar>;
+        using ResultScalar = std::common_type_t<Scalar, RhsScalar>;
+        if (rhs.size() != cols_) {
+            throw std::invalid_argument("sparse-vector product requires matching inner dimensions");
+        }
+        Vector<ResultScalar, Dynamic> result(rows_);
+        ResultScalar* result_data = result.data();
+        for (Index row = 0; row < rows_; ++row) {
+            ResultScalar value {};
+            for (Index current = row_offsets_[row]; current < row_offsets_[row + 1]; ++current) {
+                if constexpr (has_plain_dense_storage_<RhsXprType>) {
+                    value += static_cast<ResultScalar>(values_[current]) *
+                             static_cast<ResultScalar>(rhs.data()[column_indices_[current]]);
+                } else {
+                    value += static_cast<ResultScalar>(values_[current]) *
+                             static_cast<ResultScalar>(rhs[column_indices_[current]]);
+                }
+            }
+            result_data[row] = value;
+        }
+        return result;
+    }
+
+    template <internals::matrix_expression RhsXprType>
+        requires(std::remove_cvref_t<RhsXprType>::Cols != 1)
+    auto operator*(const RhsXprType& rhs) const {
+        using RhsScalar = std::remove_cv_t<typename std::remove_cvref_t<RhsXprType>::Scalar>;
+        using ResultScalar = std::common_type_t<Scalar, RhsScalar>;
+        if (rhs.rows() != cols_) {
+            throw std::invalid_argument("sparse-dense product requires matching inner dimensions");
+        }
+        const Index result_cols = rhs.cols();
+        Matrix<ResultScalar, Dynamic, Dynamic> result(rows_, result_cols);
+        ResultScalar* result_data = result.data();
+        for (Index row = 0; row < rows_; ++row) {
+            for (Index current = row_offsets_[row]; current < row_offsets_[row + 1]; ++current) {
+                const Index inner = column_indices_[current];
+                const ResultScalar lhs = static_cast<ResultScalar>(values_[current]);
+                for (Index col = 0; col < result_cols; ++col) {
+                    if constexpr (has_plain_dense_storage_<RhsXprType>) {
+                        constexpr int RhsStorageOrder = std::remove_cvref_t<RhsXprType>::StorageOrder;
+                        const Index rhs_index =
+                          RhsStorageOrder == RowMajor ? inner * result_cols + col : col * rhs.rows() + inner;
+                        result_data[row * result_cols + col] += lhs * static_cast<ResultScalar>(rhs.data()[rhs_index]);
+                    } else {
+                        result_data[row * result_cols + col] += lhs * static_cast<ResultScalar>(rhs(inner, col));
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
+    Vector<Scalar, Dynamic> row_sums() const {
+        Vector<Scalar, Dynamic> result(rows_);
+        for (Index row = 0; row < rows_; ++row) {
+            Scalar value {};
+            for (Index current = row_offsets_[row]; current < row_offsets_[row + 1]; ++current) {
+                value += values_[current];
+            }
+            result[row] = value;
+        }
+        return result;
+    }
+
+    // Match the root dense diagonal adaptor: extraction is square-only.
+    Vector<Scalar, Dynamic> diagonal() const {
+        if (rows_ != cols_) { throw std::invalid_argument("sparse diagonal requires a square matrix"); }
+        Vector<Scalar, Dynamic> result(rows_);
+        for (Index row = 0; row < rows_; ++row) {
+            const Index position = find_position_(row, row);
+            if (position != missing_) result[row] = values_[position];
+        }
+        return result;
+    }
+
+    template <internals::matrix_expression DiagonalXprType>
+        requires(std::remove_cvref_t<DiagonalXprType>::Rows == 1 || std::remove_cvref_t<DiagonalXprType>::Cols == 1)
+    static SparseMatrix from_diagonal(const DiagonalXprType& diagonal) {
+        std::vector<triplet_type> triplets;
+        triplets.reserve(static_cast<std::size_t>(diagonal.size()));
+        for (Index i = 0; i < diagonal.size(); ++i) {
+            const Scalar value = static_cast<Scalar>(diagonal[i]);
+            if (value != Scalar {}) triplets.emplace_back(i, i, value);
+        }
+        return SparseMatrix(diagonal.size(), diagonal.size(), triplets);
+    }
+
+    template <internals::matrix_expression VectorXprType>
+        requires(std::remove_cvref_t<VectorXprType>::Rows == 1 || std::remove_cvref_t<VectorXprType>::Cols == 1)
+    auto quadratic_form(const VectorXprType& vector) const {
+        using VectorScalar = std::remove_cv_t<typename std::remove_cvref_t<VectorXprType>::Scalar>;
+        using ResultScalar = std::common_type_t<Scalar, VectorScalar>;
+        if (rows_ != cols_) { throw std::invalid_argument("sparse quadratic form requires a square matrix"); }
+        if (vector.size() != cols_) { throw std::invalid_argument("sparse quadratic form requires a matching vector"); }
+        ResultScalar result {};
+        for (Index row = 0; row < rows_; ++row) {
+            const ResultScalar lhs = static_cast<ResultScalar>(vector[row]);
+            for (Index current = row_offsets_[row]; current < row_offsets_[row + 1]; ++current) {
+                result += lhs * static_cast<ResultScalar>(values_[current]) *
+                          static_cast<ResultScalar>(vector[column_indices_[current]]);
+            }
+        }
+        return result;
+    }
+
     /// @brief exchanges dimensions and storage without allocating
     void swap(SparseMatrix& other) noexcept {
         using std::swap;
@@ -248,6 +421,15 @@ template <typename Scalar_> class SparseMatrix {
     friend void swap(SparseMatrix& lhs, SparseMatrix& rhs) noexcept { lhs.swap(rhs); }
    private:
     static constexpr Index missing_ = -1;
+
+    template <typename XprType_>
+    static constexpr bool has_plain_dense_storage_ = [] {
+        using XprType = std::remove_cvref_t<XprType_>;
+        return std::same_as<
+                 XprType, Matrix<typename XprType::Scalar, XprType::Rows, XprType::Cols, XprType::StorageOrder>> ||
+               std::same_as<
+                 XprType, MatrixView<typename XprType::Scalar, XprType::Rows, XprType::Cols, XprType::StorageOrder>>;
+    }();
 
     /// @brief adds duplicate coefficients and rejects integral overflow before evaluating the sum
     static Scalar add_(const Scalar& lhs, const Scalar& rhs) {

@@ -461,4 +461,252 @@ TEST(linear_algebra, sparse_moved_from_recovery) {
     EXPECT_EQ(source.coeff(0, 1), 5);
 }
 
+sparse_double make_rectangular_fixture() {
+    return sparse_double(
+      3, 4,
+      {
+        {0, 0, 2.0 },
+        {0, 2, -1.0},
+        {1, 1, 3.0 },
+        {1, 3, 4.0 },
+        {2, 0, 5.0 }
+    });
+}
+
+void check_sparse_transforms() {
+    const sparse_double matrix = make_rectangular_fixture();
+    const auto transposed = matrix.transpose();
+    EXPECT_EQ(transposed.rows(), 4);
+    EXPECT_EQ(transposed.cols(), 3);
+    EXPECT_EQ(transposed.non_zeros(), 5);
+    EXPECT_EQ(
+      collect_row(transposed, 0), (std::vector<std::pair<int, double>> {
+                                    {0, 2.0},
+                                    {2, 5.0}
+    }));
+    EXPECT_EQ(
+      collect_row(transposed, 1), (std::vector<std::pair<int, double>> {
+                                    {1, 3.0}
+    }));
+    EXPECT_EQ(
+      collect_row(transposed, 2), (std::vector<std::pair<int, double>> {
+                                    {0, -1.0}
+    }));
+    EXPECT_EQ(
+      collect_row(transposed, 3), (std::vector<std::pair<int, double>> {
+                                    {1, 4.0}
+    }));
+    EXPECT_EQ(matrix.non_zeros(), 5);
+    EXPECT_DOUBLE_EQ(matrix.coeff(0, 2), -1.0);
+    const auto repeated_transpose = matrix.transpose();
+    for (int row = 0; row < transposed.rows(); ++row) {
+        EXPECT_EQ(collect_row(repeated_transpose, row), collect_row(transposed, row));
+    }
+
+    sparse_double retained_zero(
+      1, 2,
+      {
+        {0, 1, 1.0}
+    });
+    retained_zero.value_ref(0, 1) = 0.0;
+    EXPECT_EQ(retained_zero.non_zeros(), 1);
+    EXPECT_EQ(retained_zero.transpose().non_zeros(), 0);
+
+    const auto zero_rows_transposed = sparse_double(0, 4).transpose();
+    const auto zero_cols_transposed = sparse_double(3, 0).transpose();
+    EXPECT_EQ(zero_rows_transposed.rows(), 4);
+    EXPECT_EQ(zero_rows_transposed.cols(), 0);
+    EXPECT_EQ(zero_rows_transposed.non_zeros(), 0);
+    EXPECT_EQ(zero_cols_transposed.rows(), 0);
+    EXPECT_EQ(zero_cols_transposed.cols(), 3);
+    EXPECT_EQ(zero_cols_transposed.non_zeros(), 0);
+
+    const sparse_double lower(
+      3, 3,
+      {
+        {0, 0, 2.0 },
+        {1, 0, -1.0},
+        {1, 1, 3.0 },
+        {2, 0, 4.0 },
+        {2, 2, 5.0 }
+    });
+    const sparse_double upper(
+      3, 3,
+      {
+        {0, 0, 2.0 },
+        {0, 1, -1.0},
+        {0, 2, 4.0 },
+        {1, 1, 3.0 },
+        {2, 2, 5.0 }
+    });
+    const auto expanded_lower = lower.symmetric_expanded(fdapde::Lower);
+    const auto expanded_upper = upper.symmetric_expanded(fdapde::Upper);
+    EXPECT_EQ(expanded_lower.non_zeros(), 7);
+    EXPECT_EQ(expanded_upper.non_zeros(), 7);
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) { EXPECT_DOUBLE_EQ(expanded_lower.coeff(i, j), expanded_upper.coeff(i, j)); }
+    }
+    EXPECT_DOUBLE_EQ(expanded_lower.coeff(0, 1), -1.0);
+    EXPECT_DOUBLE_EQ(expanded_lower.coeff(1, 0), -1.0);
+    EXPECT_DOUBLE_EQ(expanded_lower.coeff(0, 2), 4.0);
+    EXPECT_DOUBLE_EQ(expanded_lower.coeff(2, 0), 4.0);
+    const auto repeated_expansion = lower.symmetric_expanded(fdapde::Lower);
+    for (int row = 0; row < expanded_lower.rows(); ++row) {
+        EXPECT_EQ(collect_row(repeated_expansion, row), collect_row(expanded_lower, row));
+    }
+
+    EXPECT_THROW(static_cast<void>(matrix.symmetric_expanded(fdapde::Lower)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(upper.symmetric_expanded(fdapde::Lower)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(lower.symmetric_expanded(fdapde::Upper)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(lower.symmetric_expanded(17)), std::invalid_argument);
+    sparse_double retained_opposite_zero(
+      2, 2,
+      {
+        {0, 1, 1.0}
+    });
+    retained_opposite_zero.value_ref(0, 1) = 0.0;
+    EXPECT_THROW(static_cast<void>(retained_opposite_zero.symmetric_expanded(fdapde::Lower)), std::invalid_argument);
+
+    const auto sums = matrix.row_sums();
+    EXPECT_EQ(sums.rows(), 3);
+    EXPECT_EQ(sums.cols(), 1);
+    EXPECT_DOUBLE_EQ(sums[0], 1.0);
+    EXPECT_DOUBLE_EQ(sums[1], 7.0);
+    EXPECT_DOUBLE_EQ(sums[2], 5.0);
+    EXPECT_THROW(static_cast<void>(matrix.diagonal()), std::invalid_argument);
+
+    const auto diagonal = lower.diagonal();
+    EXPECT_EQ(diagonal.size(), 3);
+    EXPECT_DOUBLE_EQ(diagonal[0], 2.0);
+    EXPECT_DOUBLE_EQ(diagonal[1], 3.0);
+    EXPECT_DOUBLE_EQ(diagonal[2], 5.0);
+
+    const fdapde::Vector<double, 4> diagonal_values({2.0, 0.0, -1.0, 4.0});
+    const auto diagonal_matrix = sparse_double::from_diagonal(diagonal_values);
+    EXPECT_EQ(diagonal_matrix.rows(), 4);
+    EXPECT_EQ(diagonal_matrix.cols(), 4);
+    EXPECT_EQ(diagonal_matrix.non_zeros(), 3);
+    EXPECT_DOUBLE_EQ(diagonal_matrix.coeff(0, 0), 2.0);
+    EXPECT_DOUBLE_EQ(diagonal_matrix.coeff(1, 1), 0.0);
+    EXPECT_DOUBLE_EQ(diagonal_matrix.coeff(2, 2), -1.0);
+    EXPECT_DOUBLE_EQ(diagonal_matrix.coeff(3, 3), 4.0);
+
+    const sparse_double empty;
+    EXPECT_EQ(empty.symmetric_expanded(fdapde::Lower).non_zeros(), 0);
+    EXPECT_EQ(empty.row_sums().size(), 0);
+    EXPECT_EQ(empty.diagonal().size(), 0);
+    EXPECT_EQ(sparse_double::from_diagonal(fdapde::Vector<double, fdapde::Dynamic>()).non_zeros(), 0);
+}
+
+void check_sparse_products() {
+    const sparse_double matrix = make_rectangular_fixture();
+    const fdapde::Vector<int, 4> vector({1, 2, 3, 4});
+    const auto product = matrix * vector;
+    EXPECT_EQ(product.rows(), 3);
+    EXPECT_EQ(product.cols(), 1);
+    EXPECT_DOUBLE_EQ(product[0], -1.0);
+    EXPECT_DOUBLE_EQ(product[1], 22.0);
+    EXPECT_DOUBLE_EQ(product[2], 5.0);
+
+    const auto expression_product = matrix * (vector + vector);
+    EXPECT_DOUBLE_EQ(expression_product[0], -2.0);
+    EXPECT_DOUBLE_EQ(expression_product[1], 44.0);
+    EXPECT_DOUBLE_EQ(expression_product[2], 10.0);
+
+    const int rhs_values[8] {1, 2, 3, 4, 5, 6, 7, 8};
+    const fdapde::Matrix<int, 4, 2, fdapde::ColMajor> col_major_rhs(rhs_values);
+    const auto dense_product = matrix * col_major_rhs;
+    EXPECT_EQ(dense_product.rows(), 3);
+    EXPECT_EQ(dense_product.cols(), 2);
+    EXPECT_DOUBLE_EQ(dense_product(0, 0), -3.0);
+    EXPECT_DOUBLE_EQ(dense_product(0, 1), -2.0);
+    EXPECT_DOUBLE_EQ(dense_product(1, 0), 37.0);
+    EXPECT_DOUBLE_EQ(dense_product(1, 1), 44.0);
+    EXPECT_DOUBLE_EQ(dense_product(2, 0), 5.0);
+    EXPECT_DOUBLE_EQ(dense_product(2, 1), 10.0);
+
+    const fdapde::Matrix<int, 4, 2> row_major_rhs(rhs_values);
+    const auto row_major_product = matrix * row_major_rhs;
+    for (int i = 0; i < dense_product.rows(); ++i) {
+        for (int j = 0; j < dense_product.cols(); ++j) {
+            EXPECT_DOUBLE_EQ(row_major_product(i, j), dense_product(i, j));
+        }
+    }
+
+    const fdapde::MatrixView<const int, 4, 2, fdapde::ColMajor> rhs_view(col_major_rhs.data());
+    const auto view_product = matrix * rhs_view;
+    EXPECT_DOUBLE_EQ(view_product(0, 0), -3.0);
+    EXPECT_DOUBLE_EQ(view_product(1, 1), 44.0);
+
+    const auto dense_expression_product = matrix * (col_major_rhs + col_major_rhs);
+    EXPECT_DOUBLE_EQ(dense_expression_product(0, 0), -6.0);
+    EXPECT_DOUBLE_EQ(dense_expression_product(1, 1), 88.0);
+
+    const sparse_double single_column(
+      3, 1,
+      {
+        {0, 0, 2.0 },
+        {2, 0, -1.0}
+    });
+    const int one_row_values[2] {3, 4};
+    const fdapde::Matrix<int, 1, 2> one_row_rhs(one_row_values);
+    const auto one_row_product = single_column * one_row_rhs;
+    EXPECT_EQ(one_row_product.rows(), 3);
+    EXPECT_EQ(one_row_product.cols(), 2);
+    EXPECT_DOUBLE_EQ(one_row_product(0, 0), 6.0);
+    EXPECT_DOUBLE_EQ(one_row_product(0, 1), 8.0);
+    EXPECT_DOUBLE_EQ(one_row_product(1, 0), 0.0);
+    EXPECT_DOUBLE_EQ(one_row_product(1, 1), 0.0);
+    EXPECT_DOUBLE_EQ(one_row_product(2, 0), -3.0);
+    EXPECT_DOUBLE_EQ(one_row_product(2, 1), -4.0);
+
+    const fdapde::Vector<double, fdapde::Dynamic> empty_vector;
+    const auto zero_row_product = sparse_double(0, 4) * vector;
+    const auto zero_col_product = sparse_double(3, 0) * empty_vector;
+    EXPECT_EQ(zero_row_product.size(), 0);
+    EXPECT_EQ(zero_col_product.size(), 3);
+    EXPECT_DOUBLE_EQ(zero_col_product[0], 0.0);
+    EXPECT_DOUBLE_EQ(zero_col_product[1], 0.0);
+    EXPECT_DOUBLE_EQ(zero_col_product[2], 0.0);
+
+    const fdapde::Matrix<double, fdapde::Dynamic, fdapde::Dynamic> empty_rhs(0, 2);
+    const auto zero_col_dense_product = sparse_double(3, 0) * empty_rhs;
+    EXPECT_EQ(zero_col_dense_product.rows(), 3);
+    EXPECT_EQ(zero_col_dense_product.cols(), 2);
+    EXPECT_DOUBLE_EQ(zero_col_dense_product(2, 1), 0.0);
+
+    const fdapde::Vector<double, 3> short_vector({1.0, 2.0, 3.0});
+    const fdapde::Matrix<double, fdapde::Dynamic, fdapde::Dynamic> short_matrix(3, 2);
+    EXPECT_THROW(static_cast<void>(matrix * short_vector), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(matrix * short_matrix), std::invalid_argument);
+    EXPECT_EQ(matrix.non_zeros(), 5);
+    EXPECT_DOUBLE_EQ(matrix.coeff(1, 3), 4.0);
+}
+
+void check_sparse_quadratic_form() {
+    const sparse_double lower(
+      3, 3,
+      {
+        {0, 0, 2.0 },
+        {1, 0, -1.0},
+        {1, 1, 3.0 },
+        {2, 0, 4.0 },
+        {2, 2, 5.0 }
+    });
+    const auto matrix = lower.symmetric_expanded(fdapde::Lower);
+    const fdapde::Vector<int, 3> vector({1, 2, 3});
+    EXPECT_DOUBLE_EQ(matrix.quadratic_form(vector), 79.0);
+    EXPECT_DOUBLE_EQ(sparse_double().quadratic_form(fdapde::Vector<double, fdapde::Dynamic>()), 0.0);
+
+    const fdapde::Vector<double, 2> short_vector({1.0, 2.0});
+    EXPECT_THROW(static_cast<void>(matrix.quadratic_form(short_vector)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(make_rectangular_fixture().quadratic_form(vector)), std::invalid_argument);
+}
+
+TEST(linear_algebra, sparse_matrix_transforms) { check_sparse_transforms(); }
+
+TEST(linear_algebra, sparse_matrix_products) { check_sparse_products(); }
+
+TEST(linear_algebra, sparse_matrix_quadratic_form) { check_sparse_quadratic_form(); }
+
 }   // namespace
