@@ -60,6 +60,21 @@ std::vector<native_triplet> make_grid_triplets(int subdivisions) {
     return triplets;
 }
 
+std::vector<int> make_boundary_dofs(int subdivisions) {
+    const int nodes_per_side = subdivisions + 1;
+    std::vector<int> dofs;
+    dofs.reserve(static_cast<std::size_t>(4 * subdivisions));
+    for (int col = 0; col < nodes_per_side; ++col) {
+        dofs.push_back(col);
+        dofs.push_back(subdivisions * nodes_per_side + col);
+    }
+    for (int row = 1; row < subdivisions; ++row) {
+        dofs.push_back(row * nodes_per_side);
+        dofs.push_back(row * nodes_per_side + subdivisions);
+    }
+    return dofs;
+}
+
 // returns the central sample after sorting the odd-sized timing set
 double median(std::vector<double>& samples) {
     std::sort(samples.begin(), samples.end());
@@ -205,6 +220,24 @@ bool benchmark_case(int subdivisions, int repetitions) {
     eigen_matrix.prune(0.0);
     eigen_matrix.makeCompressed();
 
+    const std::vector<int> boundary_dofs = make_boundary_dofs(subdivisions);
+    auto native_constraints = [&] {
+        fdapde::SparseMatrix<double> result(native_matrix);
+        result.rebuild_with_constraints(boundary_dofs);
+        return observe_native_sparse(result);
+    };
+    auto eigen_constraints = [&] {
+        eigen_sparse result(eigen_matrix);
+        for (const int dof : boundary_dofs) {
+            result.row(dof) *= 0.0;
+            result.col(dof) *= 0.0;
+            result.coeffRef(dof, dof) = 1.0;
+        }
+        result.prune(0.0);
+        result.makeCompressed();
+        return observe_eigen_sparse(result);
+    };
+
     auto native_transpose = [&] { return observe_native_sparse(native_matrix.transpose()); };
     auto eigen_transpose = [&] {
         eigen_sparse result = eigen_matrix.transpose();
@@ -243,6 +276,8 @@ bool benchmark_case(int subdivisions, int repetitions) {
 
     const bool construction_green =
       benchmark_operation("construction", subdivisions, repetitions, 16, native_construction, eigen_construction);
+    const bool constraints_green =
+      benchmark_operation("constraints", subdivisions, repetitions, 16, native_constraints, eigen_constraints);
     const bool transpose_green =
       benchmark_operation("transpose", subdivisions, repetitions, 32, native_transpose, eigen_transpose);
     const bool matvec_green =
@@ -252,7 +287,7 @@ bool benchmark_case(int subdivisions, int repetitions) {
 
     std::cout << "nodes=" << nodes << " raw_triplets=" << native_triplets.size()
               << " nonzeros=" << native_matrix.non_zeros() << '\n';
-    return construction_green && transpose_green && matvec_green && sparse_dense_green;
+    return construction_green && constraints_green && transpose_green && matvec_green && sparse_dense_green;
 }
 
 }   // namespace

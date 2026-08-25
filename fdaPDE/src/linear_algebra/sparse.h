@@ -236,6 +236,53 @@ template <typename Scalar_> class SparseMatrix {
     /// @brief rebuilds the current shape from an initializer list
     void rebuild(std::initializer_list<triplet_type> triplets) { rebuild(std::vector<triplet_type>(triplets)); }
 
+    // Rebuild a square system matrix after imposing unit constraints. Every
+    // selected row and column is cleared and replaced by one unit diagonal.
+    // The empty list is a true no-op; nonempty rebuilds are canonical and
+    // failure-atomic.
+    void rebuild_with_constraints(const std::vector<Index>& dofs) {
+        if (dofs.empty()) return;
+        if (rows_ != cols_) { throw std::invalid_argument("sparse constraints require a square matrix"); }
+        for (const Index dof : dofs) validate_row_(dof);
+
+        std::vector<unsigned char> constrained(static_cast<std::size_t>(rows_), 0);
+        std::size_t output_size = 0;
+        for (const Index dof : dofs) {
+            if (constrained[dof] == 0) {
+                constrained[dof] = 1;
+                ++output_size;
+            }
+        }
+        for (Index row = 0; row < rows_; ++row) {
+            if (constrained[row] != 0) continue;
+            for (Index current = row_offsets_[row]; current < row_offsets_[row + 1]; ++current) {
+                if (constrained[column_indices_[current]] != 0 || values_[current] == Scalar {}) continue;
+                if (output_size == static_cast<std::size_t>(std::numeric_limits<Index>::max())) {
+                    throw std::length_error("constrained sparse matrix exceeds the supported int range");
+                }
+                ++output_size;
+            }
+        }
+
+        SparseMatrix replacement(rows_, cols_);
+        replacement.column_indices_.reserve(output_size);
+        replacement.values_.reserve(output_size);
+        for (Index row = 0; row < rows_; ++row) {
+            if (constrained[row] != 0) {
+                replacement.column_indices_.push_back(row);
+                replacement.values_.push_back(Scalar {1});
+            } else {
+                for (Index current = row_offsets_[row]; current < row_offsets_[row + 1]; ++current) {
+                    if (constrained[column_indices_[current]] != 0 || values_[current] == Scalar {}) continue;
+                    replacement.column_indices_.push_back(column_indices_[current]);
+                    replacement.values_.push_back(values_[current]);
+                }
+            }
+            replacement.row_offsets_[row + 1] = static_cast<Index>(replacement.values_.size());
+        }
+        swap(replacement);
+    }
+
     /// @brief returns an owning transpose with sorted rows and explicit zeros removed
     SparseMatrix transpose() const {
         SparseMatrix result(cols_, rows_);
