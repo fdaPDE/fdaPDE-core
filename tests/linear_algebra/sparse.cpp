@@ -993,4 +993,127 @@ TEST(linear_algebra, sparse_diagonal_conversion) {
     EXPECT_EQ(narrow.coeff(0, 0), 7);
 }
 
+template <typename Scalar>
+void expect_same_sparse(const fdapde::SparseMatrix<Scalar>& lhs, const fdapde::SparseMatrix<Scalar>& rhs) {
+    ASSERT_EQ(lhs.rows(), rhs.rows());
+    ASSERT_EQ(lhs.cols(), rhs.cols());
+    ASSERT_EQ(lhs.non_zeros(), rhs.non_zeros());
+    for (int row = 0; row < lhs.rows(); ++row) { EXPECT_EQ(collect_row(lhs, row), collect_row(rhs, row)); }
+}
+
+void check_sparse_constraint_rebuilding() {
+    const sparse_double source(
+      4, 4,
+      {
+        {0, 0, 2.0 },
+        {0, 1, 3.0 },
+        {0, 3, 4.0 },
+        {1, 0, 5.0 },
+        {1, 2, 6.0 },
+        {2, 1, 7.0 },
+        {2, 2, 8.0 },
+        {2, 3, 9.0 },
+        {3, 0, 10.0},
+        {3, 2, 11.0},
+        {3, 3, 12.0}
+    });
+
+    sparse_double constrained(source);
+    constrained.rebuild_with_constraints(std::vector<int> {1});
+    EXPECT_EQ(
+      collect_row(constrained, 0), (std::vector<std::pair<int, double>> {
+                                     {0, 2.0},
+                                     {3, 4.0}
+    }));
+    EXPECT_EQ(
+      collect_row(constrained, 1), (std::vector<std::pair<int, double>> {
+                                     {1, 1.0}
+    }));
+    EXPECT_EQ(
+      collect_row(constrained, 2), (std::vector<std::pair<int, double>> {
+                                     {2, 8.0},
+                                     {3, 9.0}
+    }));
+    EXPECT_EQ(
+      collect_row(constrained, 3), (std::vector<std::pair<int, double>> {
+                                     {0, 10.0},
+                                     {2, 11.0},
+                                     {3, 12.0}
+    }));
+    EXPECT_DOUBLE_EQ(source.coeff(0, 1), 3.0);
+    EXPECT_DOUBLE_EQ(source.coeff(1, 2), 6.0);
+
+    sparse_double duplicated(source);
+    duplicated.rebuild_with_constraints(std::vector<int> {3, 1, 3});
+    sparse_double permuted(source);
+    permuted.rebuild_with_constraints(std::vector<int> {1, 3});
+    expect_same_sparse(duplicated, permuted);
+
+    const sparse_double symmetric = sparse_double(
+                                      4, 4,
+                                      {
+                                        {0, 0, 4.0 },
+                                        {1, 0, 1.0 },
+                                        {1, 1, 5.0 },
+                                        {2, 0, 2.0 },
+                                        {2, 1, 3.0 },
+                                        {2, 2, 6.0 },
+                                        {3, 0, 7.0 },
+                                        {3, 1, 8.0 },
+                                        {3, 2, 9.0 },
+                                        {3, 3, 10.0}
+    })
+                                      .symmetric_expanded(fdapde::Lower);
+    sparse_double symmetric_constrained(symmetric);
+    symmetric_constrained.rebuild_with_constraints(std::vector<int> {1, 3});
+    for (int row = 0; row < symmetric_constrained.rows(); ++row) {
+        for (int col = 0; col < symmetric_constrained.cols(); ++col) {
+            EXPECT_DOUBLE_EQ(symmetric_constrained.coeff(row, col), symmetric_constrained.coeff(col, row));
+        }
+    }
+    EXPECT_DOUBLE_EQ(symmetric_constrained.coeff(1, 1), 1.0);
+    EXPECT_DOUBLE_EQ(symmetric_constrained.coeff(3, 3), 1.0);
+
+    sparse_double no_op(source);
+    no_op.value_ref(0, 1) = 0.0;
+    const sparse_double no_op_snapshot(no_op);
+    no_op.rebuild_with_constraints(std::vector<int> {});
+    expect_same_sparse(no_op, no_op_snapshot);
+    EXPECT_TRUE(no_op.contains(0, 1));
+
+    sparse_double retained_zero(
+      3, 3,
+      {
+        {0, 1, 4.0},
+        {1, 1, 5.0},
+        {1, 2, 6.0},
+        {2, 1, 7.0},
+        {2, 2, 8.0}
+    });
+    retained_zero.value_ref(0, 1) = 0.0;
+    retained_zero.value_ref(1, 1) = 0.0;
+    retained_zero.rebuild_with_constraints(std::vector<int> {1});
+    EXPECT_TRUE(retained_zero.contains(1, 1));
+    EXPECT_DOUBLE_EQ(retained_zero.coeff(1, 1), 1.0);
+    EXPECT_FALSE(retained_zero.contains(0, 1));
+    EXPECT_FALSE(retained_zero.contains(2, 1));
+    EXPECT_EQ(
+      collect_row(retained_zero, 2), (std::vector<std::pair<int, double>> {
+                                       {2, 8.0}
+    }));
+
+    sparse_double failed(source);
+    EXPECT_THROW(failed.rebuild_with_constraints(std::vector<int> {1, -1}), std::out_of_range);
+    expect_same_sparse(failed, source);
+    EXPECT_THROW(failed.rebuild_with_constraints(std::vector<int> {1, 4}), std::out_of_range);
+    expect_same_sparse(failed, source);
+
+    sparse_double rectangular = make_rectangular_fixture();
+    const sparse_double rectangular_snapshot(rectangular);
+    EXPECT_THROW(rectangular.rebuild_with_constraints(std::vector<int> {1}), std::invalid_argument);
+    expect_same_sparse(rectangular, rectangular_snapshot);
+}
+
+TEST(linear_algebra, sparse_matrix_constraint_rebuilding) { check_sparse_constraint_rebuilding(); }
+
 }   // namespace
