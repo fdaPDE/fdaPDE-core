@@ -14,43 +14,35 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_LUMPING_H__
-#define __FDAPDE_LUMPING_H__
+#ifndef __FDAPDE_LINALG_LUMPING_H__
+#define __FDAPDE_LINALG_LUMPING_H__
 
 #include "header_check.h"
 
 namespace fdapde {
 
-// returns the lumped matrix of a sparse expression. row-sum lumping operator
-template <typename ExprType>
-Eigen::SparseMatrix<typename ExprType::Scalar> lump(const Eigen::SparseMatrixBase<ExprType>& expr) {
-    fdapde_assert(
-      expr.rows() == expr.cols(), std::invalid_argument,
-      "matrix lumping requires a square matrix");   // stop if not square
-    using Scalar_ = typename ExprType::Scalar;
-    // reserve space for triplets
-    std::vector<Triplet<Scalar_>> triplet_list;
-    triplet_list.reserve(expr.rows());
-    for (int i = 0; i < expr.rows(); ++i) { triplet_list.emplace_back(i, i, expr.row(i).sum()); }
-    // matrix lumping
-    Eigen::SparseMatrix<Scalar_> lumped_matrix(expr.rows(), expr.rows());
-    lumped_matrix.setFromTriplets(triplet_list.begin(), triplet_list.end());
-    lumped_matrix.makeCompressed();
-    return lumped_matrix;
+// Row-sum lumping of a sparse matrix.
+template <typename Scalar> SparseMatrix<Scalar> lump(const SparseMatrix<Scalar>& matrix) {
+    if (matrix.rows() != matrix.cols()) { throw std::invalid_argument("matrix lumping requires a square matrix"); }
+    return SparseMatrix<Scalar>::from_diagonal(matrix.row_sums());
 }
 
-// returns the lumped matrix of a dense expression. row-sum lumping operator
-template <typename ExprType>
-Eigen::DiagonalMatrix<typename ExprType::Scalar, Dynamic, Dynamic> lump(const Eigen::MatrixBase<ExprType>& expr) {
-    fdapde_assert(
-      expr.rows() == expr.cols(), std::invalid_argument,
-      "matrix lumping requires a square matrix");   // stop if not square
-    using Scalar_ = typename ExprType::Scalar;
-    // matrix lumping
-    Eigen::Matrix<Scalar_, Dynamic, 1> lumped_matrix = expr.array().rowwise().sum();
-    return lumped_matrix.asDiagonal();
+// Row-sum lumping of a dense matrix expression.
+template <internals::matrix_expression XprType> auto lump(const XprType& matrix) {
+    using Xpr = std::remove_cvref_t<XprType>;
+    using Scalar = std::remove_cv_t<typename Xpr::Scalar>;
+    fdapde_static_assert(
+      Xpr::Rows == Dynamic || Xpr::Cols == Dynamic || Xpr::Rows == Xpr::Cols, THIS_METHODS_IS_FOR_SQUARE_MATRICES_ONLY);
+    if (matrix.rows() != matrix.cols()) { throw std::invalid_argument("matrix lumping requires a square matrix"); }
+    DiagonalMatrix<Scalar, Dynamic> result(matrix.rows());
+    for (int i = 0; i < matrix.rows(); ++i) {
+        Scalar row_sum {};
+        for (int j = 0; j < matrix.cols(); ++j) { row_sum += static_cast<Scalar>(matrix(i, j)); }
+        result[i] = row_sum;
+    }
+    return result;
 }
 
 }   // namespace fdapde
 
-#endif   // __FDAPDE_LUMPING_H__
+#endif   // __FDAPDE_LINALG_LUMPING_H__
