@@ -1244,4 +1244,62 @@ TEST(linear_algebra, sparse_constraint_copy_failure) {
     expect_same_sparse(matrix, snapshot);
 }
 
+template <int StorageOrder> void check_dense_lumping() {
+    const fdapde::Matrix<double, 3, 3, StorageOrder> matrix({1.0, 2.0, -3.0, 4.0, -1.0, 2.0, 0.5, 1.5, 2.0});
+    const auto lumped = fdapde::lump(matrix);
+    EXPECT_EQ(lumped.rows(), 3);
+    EXPECT_EQ(lumped.cols(), 3);
+    EXPECT_DOUBLE_EQ(lumped[0], 0.0);
+    EXPECT_DOUBLE_EQ(lumped[1], 5.0);
+    EXPECT_DOUBLE_EQ(lumped[2], 4.0);
+    EXPECT_DOUBLE_EQ(lumped(0, 1), 0.0);
+
+    const auto expression = fdapde::lump(matrix + matrix);
+    EXPECT_DOUBLE_EQ(expression[0], 0.0);
+    EXPECT_DOUBLE_EQ(expression[1], 10.0);
+    EXPECT_DOUBLE_EQ(expression[2], 8.0);
+
+    const auto temporary = fdapde::lump(fdapde::Matrix<double, 2, 2, StorageOrder>({1.0, 2.0, 3.0, 4.0}));
+    EXPECT_DOUBLE_EQ(temporary[0], 3.0);
+    EXPECT_DOUBLE_EQ(temporary[1], 7.0);
+}
+
+void check_matrix_lumping() {
+    check_dense_lumping<fdapde::RowMajor>();
+    check_dense_lumping<fdapde::ColMajor>();
+
+    const sparse_double source(
+      3, 3,
+      {
+        {0, 0, 2.0 },
+        {0, 2, -2.0},
+        {1, 1, 3.0 },
+        {2, 0, -1.0},
+        {2, 2, 4.0 }
+    });
+    const auto sparse_lumped = fdapde::lump(source);
+    EXPECT_EQ(sparse_lumped.rows(), 3);
+    EXPECT_EQ(sparse_lumped.cols(), 3);
+    EXPECT_EQ(sparse_lumped.non_zeros(), 2);
+    EXPECT_TRUE(sparse_lumped.row(0).empty());
+    EXPECT_DOUBLE_EQ(sparse_lumped.coeff(1, 1), 3.0);
+    EXPECT_DOUBLE_EQ(sparse_lumped.coeff(2, 2), 3.0);
+    EXPECT_EQ(source.non_zeros(), 5);
+    EXPECT_DOUBLE_EQ(source.coeff(0, 2), -2.0);
+
+    const auto sparse_empty = fdapde::lump(sparse_double());
+    EXPECT_EQ(sparse_empty.rows(), 0);
+    EXPECT_EQ(sparse_empty.cols(), 0);
+    EXPECT_EQ(sparse_empty.non_zeros(), 0);
+    const auto dense_empty = fdapde::lump(fdapde::Matrix<double, fdapde::Dynamic, fdapde::Dynamic>(0, 0));
+    EXPECT_EQ(dense_empty.rows(), 0);
+    EXPECT_EQ(dense_empty.cols(), 0);
+
+    EXPECT_THROW(static_cast<void>(fdapde::lump(make_rectangular_fixture())), std::invalid_argument);
+    const fdapde::Matrix<double, fdapde::Dynamic, fdapde::Dynamic> rectangular(2, 3);
+    EXPECT_THROW(static_cast<void>(fdapde::lump(rectangular)), std::invalid_argument);
+}
+
+TEST(linear_algebra, matrix_lumping) { check_matrix_lumping(); }
+
 }   // namespace
