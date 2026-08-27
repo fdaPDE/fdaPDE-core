@@ -258,12 +258,25 @@ struct MatrixKroneckerProductOp : public MatrixExpr<MatrixKroneckerProductOp<Lhs
     using RhsXprType = std::decay_t<RhsXprType_>;
     using LhsXprTypeNested = internals::ref_select_t<const LhsXprType>;
     using RhsXprTypeNested = internals::ref_select_t<const RhsXprType>;
+    static constexpr bool HasSupportedStaticRows =
+      LhsXprType::Rows == Dynamic || RhsXprType::Rows == Dynamic ||
+      static_cast<std::uint64_t>(LhsXprType::Rows) * static_cast<std::uint64_t>(RhsXprType::Rows) <=
+        static_cast<std::uint64_t>(std::numeric_limits<int>::max());
+    static constexpr bool HasSupportedStaticCols =
+      LhsXprType::Cols == Dynamic || RhsXprType::Cols == Dynamic ||
+      static_cast<std::uint64_t>(LhsXprType::Cols) * static_cast<std::uint64_t>(RhsXprType::Cols) <=
+        static_cast<std::uint64_t>(std::numeric_limits<int>::max());
+
+    fdapde_static_assert(
+      HasSupportedStaticRows && HasSupportedStaticCols, MATRIX_SIZE_EXCEEDS_SUPPORTED_RANGE);
    public:
     using Scalar = promote_type_t<typename LhsXprType::Scalar, typename RhsXprType::Scalar>;
-    static constexpr int Rows =
-      LhsXprType::Rows == Dynamic || RhsXprType::Rows == Dynamic ? Dynamic : LhsXprType::Rows * RhsXprType::Rows;
-    static constexpr int Cols =
-      LhsXprType::Cols == Dynamic || RhsXprType::Cols == Dynamic ? Dynamic : LhsXprType::Cols * RhsXprType::Cols;
+    static constexpr int Rows = LhsXprType::Rows == Dynamic || RhsXprType::Rows == Dynamic ?
+                                  Dynamic :
+                                  (HasSupportedStaticRows ? LhsXprType::Rows * RhsXprType::Rows : 0);
+    static constexpr int Cols = LhsXprType::Cols == Dynamic || RhsXprType::Cols == Dynamic ?
+                                  Dynamic :
+                                  (HasSupportedStaticCols ? LhsXprType::Cols * RhsXprType::Cols : 0);
     static constexpr int StorageOrder =
       internals::promote_storage_order_v<LhsXprType::StorageOrder, RhsXprType::StorageOrder>;
     static constexpr int NestAsRef = 0;
@@ -283,12 +296,14 @@ struct MatrixKroneckerProductOp : public MatrixExpr<MatrixKroneckerProductOp<Lhs
         return lhs_(row_lhs, col_lhs) * rhs_(row_rhs, col_rhs);
     }
     constexpr int rows() const {
-        return (LhsXprType::Rows != Dynamic ? LhsXprType::Rows : lhs_.rows()) *
-               (RhsXprType::Rows != Dynamic ? RhsXprType::Rows : rhs_.rows());
+        return internals::checked_matrix_size(
+          LhsXprType::Rows != Dynamic ? LhsXprType::Rows : lhs_.rows(),
+          RhsXprType::Rows != Dynamic ? RhsXprType::Rows : rhs_.rows());
     }
     constexpr int cols() const {
-        return (LhsXprType::Cols != Dynamic ? LhsXprType::Cols : lhs_.cols()) *
-               (RhsXprType::Cols != Dynamic ? RhsXprType::Cols : rhs_.cols());
+        return internals::checked_matrix_size(
+          LhsXprType::Cols != Dynamic ? LhsXprType::Cols : lhs_.cols(),
+          RhsXprType::Cols != Dynamic ? RhsXprType::Cols : rhs_.cols());
     }
    private:
     LhsXprTypeNested lhs_;
