@@ -14,232 +14,72 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_KRONECKER_PRODUCT_H__
-#define __FDAPDE_KRONECKER_PRODUCT_H__
+#ifndef __FDAPDE_LINALG_KRONECKER_H__
+#define __FDAPDE_LINALG_KRONECKER_H__
 
 #include "header_check.h"
 
 namespace fdapde {
 
-// Eigen-compatible implementation of the Kronecker tensor product between matrices.
-template <typename Lhs_, typename Rhs_, typename LhsStorageKind_, typename RhsStorageKind_>
-struct EigenKroneckerProduct;
+// Eager sparse Kronecker product. The owning result is canonical CSR,
+// so exact-zero products are not retained in its pattern.
+template <typename LhsScalar, typename RhsScalar>
+auto kron(const SparseMatrix<LhsScalar>& lhs, const SparseMatrix<RhsScalar>& rhs) {
+    using ResultScalar = promote_type_t<LhsScalar, RhsScalar>;
+    using Result = SparseMatrix<ResultScalar>;
 
-template <typename XprType_> struct KroneckerBase {
-    using XprType = XprType_;
-    using Lhs       = typename Eigen::internal::traits<XprType>::Lhs;
-    using Rhs       = typename Eigen::internal::traits<XprType>::Rhs;
-    using LhsNested = typename Eigen::internal::ref_selector<Lhs>::type;
-    using RhsNested = typename Eigen::internal::ref_selector<Rhs>::type;
-    using Nested    = typename Eigen::internal::ref_selector<XprType>::type;
-    LhsNested lhs_;
-    RhsNested rhs_;
-    KroneckerBase(const Lhs& lhs, const Rhs& rhs) : lhs_(lhs), rhs_(rhs) { }
-    inline Eigen::Index rows() const { return lhs_.rows() * rhs_.rows(); }
-    inline Eigen::Index cols() const { return lhs_.cols() * rhs_.cols(); }
-};
+    const int result_rows = internals::checked_matrix_size(lhs.rows(), rhs.rows());
+    const int result_cols = internals::checked_matrix_size(lhs.cols(), rhs.cols());
+    const auto count_nonzero_entries = [](const auto& matrix) {
+        std::size_t count = 0;
+        for (int row = 0; row < matrix.rows(); ++row) {
+            for (const auto entry : matrix.row(row)) {
+                if (entry.value() != typename std::remove_cvref_t<decltype(matrix)>::Scalar {}) ++count;
+            }
+        }
+        return count;
+    };
+    const std::size_t lhs_entries = count_nonzero_entries(lhs);
+    const std::size_t rhs_entries = count_nonzero_entries(rhs);
+    if (lhs_entries != 0 && rhs_entries > static_cast<std::size_t>(std::numeric_limits<int>::max()) / lhs_entries) {
+        throw std::length_error("sparse Kronecker product exceeds the supported int range");
+    }
 
-using Eigen::Dense;
-// dense-dense Kronecker tensor product
-template <typename Lhs, typename Rhs>
-struct EigenKroneckerProduct<Lhs, Rhs, Dense, Dense> :
-    public Eigen::MatrixBase<EigenKroneckerProduct<Lhs, Rhs, Dense, Dense>>,
-    public KroneckerBase<EigenKroneckerProduct<Lhs, Rhs, Dense, Dense>> {
-    using Base = KroneckerBase<EigenKroneckerProduct<Lhs, Rhs, Dense, Dense>>;
-    using Base::cols;
-    using Base::rows;
-    EigenKroneckerProduct(const Lhs& lhs, const Rhs& rhs) : Base(lhs, rhs) {};
-};
-  using Eigen::Sparse;
-// sparse-sparse Kronecker tensor product.
-template <typename Lhs, typename Rhs>
-struct EigenKroneckerProduct<Lhs, Rhs, Sparse, Sparse> :
-    public Eigen::SparseMatrixBase<EigenKroneckerProduct<Lhs, Rhs, Sparse, Sparse>>,
-    public KroneckerBase<EigenKroneckerProduct<Lhs, Rhs, Sparse, Sparse>> {
-    using Base = KroneckerBase<EigenKroneckerProduct<Lhs, Rhs, Sparse, Sparse>>;
-    using Base::cols;
-    using Base::rows;
-    EigenKroneckerProduct(const Lhs& lhs, const Rhs& rhs) : Base(lhs, rhs) {};
-};
-
-template <typename Lhs, typename Rhs>
-EigenKroneckerProduct<Lhs, Rhs, Dense, Dense>
-kronecker(const Eigen::MatrixBase<Lhs>& lhs, const Eigen::MatrixBase<Rhs>& rhs) {
-    return EigenKroneckerProduct<Lhs, Rhs, Dense, Dense>(lhs.derived(), rhs.derived());
+    std::vector<typename Result::triplet_type> triplets;
+    triplets.reserve(lhs_entries * rhs_entries);
+    for (int lhs_row = 0; lhs_row < lhs.rows(); ++lhs_row) {
+        for (const auto lhs_entry : lhs.row(lhs_row)) {
+            if (lhs_entry.value() == typename SparseMatrix<LhsScalar>::Scalar {}) continue;
+            for (int rhs_row = 0; rhs_row < rhs.rows(); ++rhs_row) {
+                for (const auto rhs_entry : rhs.row(rhs_row)) {
+                    const ResultScalar value =
+                      static_cast<ResultScalar>(lhs_entry.value()) * static_cast<ResultScalar>(rhs_entry.value());
+                    if (value == ResultScalar {}) continue;
+                    triplets.emplace_back(
+                      lhs_row * rhs.rows() + rhs_row, lhs_entry.column() * rhs.cols() + rhs_entry.column(), value);
+                }
+            }
+        }
+    }
+    return Result(result_rows, result_cols, triplets);
 }
-template <typename Lhs, typename Rhs>
-EigenKroneckerProduct<Lhs, Rhs, Sparse, Sparse>
-kronecker(const Eigen::SparseMatrixBase<Lhs>& lhs, const Eigen::SparseMatrixBase<Rhs>& rhs) {
-    return EigenKroneckerProduct<Lhs, Rhs, Sparse, Sparse>(lhs.derived(), rhs.derived());
+
+// TODO(P4-M): keep the historical spelling until downstream callers have
+// migrated to the canonical native kron API.
+template <typename LhsXprType, typename RhsXprType>
+constexpr auto kronecker(const MatrixExpr<LhsXprType>& lhs, const MatrixExpr<RhsXprType>& rhs) {
+    return kron(lhs, rhs);
+}
+
+template <internals::matrix_expression Lhs, internals::matrix_expression Rhs>
+    requires(internals::is_owning_rvalue_expression_v<Lhs &&> || internals::is_owning_rvalue_expression_v<Rhs &&>)
+constexpr void kronecker(Lhs&&, Rhs&&) = delete;
+
+template <typename LhsScalar, typename RhsScalar>
+auto kronecker(const SparseMatrix<LhsScalar>& lhs, const SparseMatrix<RhsScalar>& rhs) {
+    return kron(lhs, rhs);
 }
 
 }   // namespace fdapde
 
-// definition of proper symbols in Eigen::internal namespace
-namespace Eigen {
-namespace internal {
-
-// import symbols from fdapde namespace
-using fdapde::EigenKroneckerProduct;
-
-// template specialization for KroneckerProduct traits (required by Eigen).
-template <typename Lhs_, typename Rhs_> struct traits<EigenKroneckerProduct<Lhs_, Rhs_, Dense, Dense>> {
-    // export operands type
-    typedef Lhs_ Lhs;
-    typedef Rhs_ Rhs;
-    // typedef required by eigen
-    typedef typename std::decay<Lhs>::type LhsCleaned;
-    typedef typename std::decay<Rhs>::type RhsCleaned;
-    typedef traits<LhsCleaned> LhsTraits;
-    typedef traits<RhsCleaned> RhsTraits;
-    typedef Eigen::MatrixXpr XprKind;   // expression type (matrix-expression)
-    typedef typename ScalarBinaryOpTraits<
-      typename traits<LhsCleaned>::Scalar, typename traits<RhsCleaned>::Scalar>::ReturnType Scalar;
-    typedef typename product_promote_storage_type<
-      typename LhsTraits::StorageKind, typename RhsTraits::StorageKind, internal::product_type<Lhs, Rhs>::ret>::ret
-      StorageKind;
-    typedef typename promote_index_type<typename LhsTraits::StorageIndex, typename RhsTraits::StorageIndex>::type
-      StorageIndex;
-    enum {   // definition of required compile time informations
-        Flags = Eigen::ColMajor,
-        RowsAtCompileTime = (Lhs::RowsAtCompileTime == Dynamic || Rhs::RowsAtCompileTime == Dynamic) ?
-                              Dynamic :
-                              int(Lhs::RowsAtCompileTime) * int(Rhs::RowsAtCompileTime),
-        ColsAtCompileTime = (Lhs::ColsAtCompileTime == Dynamic || Rhs::ColsAtCompileTime == Dynamic) ?
-                              Dynamic :
-                              int(Lhs::ColsAtCompileTime) * int(Rhs::ColsAtCompileTime),
-        MaxRowsAtCompileTime = (Lhs::MaxRowsAtCompileTime == Dynamic || Rhs::MaxRowsAtCompileTime == Dynamic) ?
-                                 Dynamic :
-                                 int(Lhs::MaxRowsAtCompileTime) * int(Rhs::MaxRowsAtCompileTime),
-        MaxColsAtCompileTime = (Lhs::MaxColsAtCompileTime == Dynamic || Rhs::MaxColsAtCompileTime == Dynamic) ?
-                                 Dynamic :
-                                 int(Lhs::MaxColsAtCompileTime) * int(Rhs::MaxColsAtCompileTime)
-    };
-};
-
-// trait specialization for the sparse-sparse version
-template <typename Lhs, typename Rhs>
-struct traits<EigenKroneckerProduct<Lhs, Rhs, Sparse, Sparse>> :
-    public traits<EigenKroneckerProduct<Lhs, Rhs, Dense, Dense>> { };
-
-// dense-dense evaluator
-template <typename Lhs_, typename Rhs_>
-class evaluator<EigenKroneckerProduct<Lhs_, Rhs_, Dense, Dense>> :
-    public evaluator_base<EigenKroneckerProduct<Lhs_, Rhs_, Dense, Dense>> {
-   public:
-    // typedefs expected by eigen internals
-    typedef EigenKroneckerProduct<Lhs_, Rhs_, Dense, Dense> XprType;
-    typedef typename nested_eval<Lhs_, 1>::type LhsNested;
-    typedef typename nested_eval<Rhs_, 1>::type RhsNested;
-    typedef typename XprType::CoeffReturnType CoeffReturnType;
-    enum {   // required compile time constants
-        CoeffReadCost = int(evaluator<typename std::decay<LhsNested>::type>::CoeffReadCost) +
-                        int(evaluator<typename std::decay<RhsNested>::type>::CoeffReadCost),
-        Flags = Eigen::ColMajor   // only ColMajor storage orders accepted
-    };
-    // Kronecker product operands
-    evaluator<typename std::decay<LhsNested>::type> lhs_;
-    evaluator<typename std::decay<RhsNested>::type> rhs_;
-    evaluator(const XprType& xpr) : lhs_(xpr.lhs_), rhs_(xpr.rhs_), xpr_(xpr) { }
-    // evaluate the (i,j)-th element of the kronecker product between lhs and rhs
-    CoeffReturnType coeff(Eigen::Index row, Eigen::Index col) const {
-        return lhs_.coeff(row / xpr_.rhs_.rows(), col / xpr_.rhs_.cols()) *
-               rhs_.coeff(row % xpr_.rhs_.rows(), col % xpr_.rhs_.cols());
-    }
-   private:
-    const XprType& xpr_;
-};
-
-// sparse-sparse evaluator
-template <typename Lhs_, typename Rhs_>
-class evaluator<EigenKroneckerProduct<Lhs_, Rhs_, Sparse, Sparse>> :
-    public evaluator_base<EigenKroneckerProduct<Lhs_, Rhs_, Sparse, Sparse>> {
-   public:
-    // typedefs expected by eigen internals
-    typedef EigenKroneckerProduct<Lhs_, Rhs_, Sparse, Sparse> XprType;
-    typedef typename evaluator<Lhs_>::InnerIterator LhsIterator;
-    typedef typename evaluator<Rhs_>::InnerIterator RhsIterator;
-    enum {   // required compile time constants
-        CoeffReadCost = int(evaluator<Lhs_>::CoeffReadCost) + int(evaluator<Rhs_>::CoeffReadCost),
-        Flags = Eigen::ColMajor   // only ColMajor storage orders accepted
-    };
-    // Kronecker product operands
-    evaluator<Lhs_> lhs_;
-    evaluator<Rhs_> rhs_;
-    // rhs sizes
-    Index rhs_outer_, rhs_inner_;
-    inline Index nonZerosEstimate() const { return lhs_.nonZerosEstimate() * rhs_.nonZerosEstimate(); }
-    // InnerIterator providing the kronecker tensor product of the operands.
-    class InnerIterator {
-       public:
-        // usefull typedefs
-        typedef typename traits<XprType>::Scalar Scalar;
-        typedef typename traits<XprType>::StorageIndex StorageIndex;
-        // costructor (outer is the index of the column over which we are iterating).
-        InnerIterator(const evaluator<XprType>& eval, Index outer) :
-            lhs_it(eval.lhs_, outer / eval.rhs_outer_),
-            rhs_it(eval.rhs_, outer % eval.rhs_outer_),
-            m_index(lhs_it.index() * eval.rhs_inner_ - 1),
-            outer_(outer),
-            eval_(eval) {
-            // column of rhs detected empty, operator++ immediately returns end of iterator
-            if (!rhs_it) rhs_empty = true;
-            this->operator++();   // init iterator
-        };
-        InnerIterator& operator++() {
-            if (rhs_empty) {
-                m_index = -1;
-                return *this;
-            }
-            if (rhs_it && lhs_it) {
-                m_index = lhs_it.index() * eval_.rhs_inner_ + rhs_it.index();
-                // (i,j)-th kronecker product value
-                m_value = lhs_it.value() * rhs_it.value();
-                ++rhs_it;
-            } else if (!rhs_it && ++lhs_it) {                                  // start new block a_{ij}*B[,j]
-                rhs_it = RhsIterator(eval_.rhs_, outer_ % eval_.rhs_outer_);   // reset rhs iterator
-                m_index = lhs_it.index() * eval_.rhs_inner_ + rhs_it.index();
-                // (i,j)-th kronecker product value
-                m_value = lhs_it.value() * rhs_it.value();
-                ++rhs_it;
-            } else {
-                // end of the iterator
-                m_index = -1;
-            }
-            return *this;
-        };
-        // access methods
-        inline Scalar value() const { return m_value; }         // value pointed by the iterator
-        inline Index col() const { return outer_; }             // current column (assume ColMajor order)
-        inline Index row() const { return index(); }            // current row (assume ColMajor order)
-        inline Index outer() const { return outer_; }           // outer index
-        inline StorageIndex index() const { return m_index; }   // inner index
-        operator bool() const { return m_index >= 0; }          // false when the iterator is over
-       protected:
-        // reference to operands' iterators
-        LhsIterator lhs_it;
-        RhsIterator rhs_it;
-        StorageIndex m_index;   // current inner index
-        Index outer_;           // outer index as received from the constructor
-        Scalar m_value;         // the value pointed by the iterator
-        const evaluator<XprType>& eval_;
-       private:
-        // this flag is set whenever the currently considered column of rhs is detected empty from the
-        // very beginning. In this case operator++ immediately returns end-of-iterator.
-        bool rhs_empty = false;
-    };
-    // constructor
-    evaluator(const XprType& xpr) :
-        lhs_(xpr.lhs_),
-        rhs_(xpr.rhs_),
-        rhs_outer_(xpr.rhs_.outerSize()),
-        rhs_inner_(xpr.rhs_.innerSize()),
-        xpr_(xpr) { }
-   private:
-    const XprType& xpr_;
-};
-
-}   // namespace internal
-}   // namespace Eigen
-
-#endif   // __KRONECKER_PRODUCT_H__
+#endif   // __FDAPDE_LINALG_KRONECKER_H__
