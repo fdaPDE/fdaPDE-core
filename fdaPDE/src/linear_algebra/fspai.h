@@ -150,9 +150,86 @@ template <typename Scalar_> class FSPAI {
         return factor_ * factor_.transpose();
     }
 
-    // TODO(P4-M): adapt the archived dense/sparse solve and solveInPlace
-    // overloads only when a native consumer selects their result contract.
+    // Apply the complete approximate inverse L * L.transpose(), matching the
+    // final archived dense/sparse solve contract. Results own their storage.
+    template <internals::matrix_expression RhsXprType>
+        requires(std::convertible_to<typename RhsXprType::Scalar, Scalar>)
+    Matrix<Scalar, Dynamic, Dynamic> solve(const MatrixExpr<RhsXprType>& rhs) const {
+        require_ready_();
+        const RhsXprType& rhs_derived = rhs.derived();
+        validate_dense_rhs_(rhs_derived);
+        const Matrix<Scalar, Dynamic, Dynamic> rhs_owned(rhs_derived);
+        const Matrix<Scalar, Dynamic, Dynamic> result(inverse() * rhs_owned);
+        validate_finite_dense_result_(result);
+        return result;
+    }
+
+    SparseMatrixType solve(const SparseMatrixType& rhs) const {
+        require_ready_();
+        validate_sparse_rhs_(rhs);
+        const SparseMatrixType result = inverse() * rhs;
+        validate_finite_sparse_result_(result);
+        return result;
+    }
+
+    template <int Rows, int Cols, int StorageOrder>
+    void solveInPlace(Matrix<Scalar, Rows, Cols, StorageOrder>& rhs) const {
+        const Matrix<Scalar, Dynamic, Dynamic> result = solve(rhs);
+        Matrix<Scalar, Rows, Cols, StorageOrder> replacement(result);
+        rhs = replacement;
+    }
+
+    void solveInPlace(SparseMatrixType& rhs) const {
+        SparseMatrixType replacement = solve(rhs);
+        rhs.swap(replacement);
+    }
    private:
+    template <internals::matrix_expression RhsXprType> void validate_dense_rhs_(const RhsXprType& rhs) const {
+        if (rhs.rows() != rows() || rhs.cols() <= 0) {
+            throw std::invalid_argument("FSPAI solve requires a matching nonempty dense right-hand side");
+        }
+        for (int row = 0; row < rhs.rows(); ++row) {
+            for (int col = 0; col < rhs.cols(); ++col) {
+                if (!std::isfinite(static_cast<Scalar>(rhs(row, col)))) {
+                    throw std::invalid_argument("FSPAI solve requires finite right-hand-side coefficients");
+                }
+            }
+        }
+    }
+
+    void validate_sparse_rhs_(const SparseMatrixType& rhs) const {
+        if (rhs.rows() != rows() || rhs.cols() <= 0) {
+            throw std::invalid_argument("FSPAI solve requires a matching nonempty sparse right-hand side");
+        }
+        for (int row = 0; row < rhs.rows(); ++row) {
+            for (const auto entry : rhs.row(row)) {
+                if (!std::isfinite(entry.value())) {
+                    throw std::invalid_argument("FSPAI solve requires finite right-hand-side coefficients");
+                }
+            }
+        }
+    }
+
+    static void validate_finite_dense_result_(const Matrix<Scalar, Dynamic, Dynamic>& result) {
+        for (int row = 0; row < result.rows(); ++row) {
+            for (int col = 0; col < result.cols(); ++col) {
+                if (!std::isfinite(result(row, col))) {
+                    throw std::domain_error("FSPAI solve produced a nonfinite coefficient");
+                }
+            }
+        }
+    }
+
+    static void validate_finite_sparse_result_(const SparseMatrixType& result) {
+        for (int row = 0; row < result.rows(); ++row) {
+            for (const auto entry : result.row(row)) {
+                if (!std::isfinite(entry.value())) {
+                    throw std::domain_error("FSPAI solve produced a nonfinite coefficient");
+                }
+            }
+        }
+    }
+
     void compute_impl_(const SparseMatrixType& matrix, int alpha, int beta, Scalar epsilon) {
         if (alpha < 0 || beta < 0 || !std::isfinite(epsilon) || epsilon < Scalar(0)) {
             throw std::invalid_argument(

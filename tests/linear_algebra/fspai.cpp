@@ -156,6 +156,14 @@ void expect_same_sparse(const sparse_matrix& lhs, const sparse_matrix& rhs) {
     }
 }
 
+template <typename Lhs, typename Rhs> void expect_same_dense(const Lhs& lhs, const Rhs& rhs) {
+    ASSERT_EQ(lhs.rows(), rhs.rows());
+    ASSERT_EQ(lhs.cols(), rhs.cols());
+    for (int row = 0; row < lhs.rows(); ++row) {
+        for (int col = 0; col < lhs.cols(); ++col) { EXPECT_DOUBLE_EQ(lhs(row, col), rhs(row, col)); }
+    }
+}
+
 // Adapted from a2a9c88:test/src/fspai_test.cpp. Eigen's archived loadMarket
 // ignored the symmetric banner, so this fixture is the stored lower factor.
 // The approved inverse oracle compares the native result with an independent
@@ -230,6 +238,114 @@ TEST(FspaiTestSuite, FactorsAreOwningOrientedAndCopySafe) {
     EXPECT_DOUBLE_EQ(diagonal_only.getL().coeff(0, 0), 0.5);
     EXPECT_DOUBLE_EQ(diagonal_only.getL().coeff(1, 1), 1.0 / std::sqrt(3.0));
     EXPECT_DOUBLE_EQ(diagonal_only.getL().coeff(2, 2), 1.0 / std::sqrt(2.0));
+}
+
+// Native adaptation of 86ff6d12:src/linear_algebra/eigen/fspai.h, final
+// behavior introduced by da0b274: all solve overloads apply L * L.transpose().
+TEST(FspaiTestSuite, SolvesDenseAndSparseRightHandSidesByTheCompleteApproximateInverse) {
+    const sparse_matrix system(
+      2, 2,
+      {
+        {0, 0, 4.0},
+        {1, 1, 9.0}
+    });
+    const fdapde::FSPAI<double> fspai(system, 0, 0, 0.0);
+
+    fdapde::Matrix<double, fdapde::Dynamic, fdapde::Dynamic> dense_rhs(2, 3);
+    dense_rhs(0, 0) = 4.0;
+    dense_rhs(0, 1) = 8.0;
+    dense_rhs(0, 2) = 12.0;
+    dense_rhs(1, 0) = 9.0;
+    dense_rhs(1, 1) = 18.0;
+    dense_rhs(1, 2) = 27.0;
+    const auto retained_dense_rhs = dense_rhs;
+    const auto dense_expected = fspai.inverse() * dense_rhs;
+    const auto dense_result = fspai.solve(dense_rhs);
+    expect_same_dense(dense_result, dense_expected);
+    expect_same_dense(dense_rhs, retained_dense_rhs);
+
+    fdapde::Vector<double, fdapde::Dynamic> vector_rhs(2);
+    vector_rhs[0] = 8.0;
+    vector_rhs[1] = 27.0;
+    const auto vector_expected = fspai.inverse() * vector_rhs;
+    const auto vector_result = fspai.solve(vector_rhs);
+    expect_same_dense(vector_result, vector_expected);
+
+    const sparse_matrix sparse_rhs(
+      2, 3,
+      {
+        {0, 0, 4.0 },
+        {0, 2, 12.0},
+        {1, 1, 18.0}
+    });
+    const sparse_matrix sparse_expected = fspai.inverse() * sparse_rhs;
+    const sparse_matrix sparse_result = fspai.solve(sparse_rhs);
+    expect_same_sparse(sparse_result, sparse_expected);
+
+    auto dense_in_place = dense_rhs;
+    fspai.solveInPlace(dense_in_place);
+    expect_same_dense(dense_in_place, dense_expected);
+    auto sparse_in_place = sparse_rhs;
+    fspai.solveInPlace(sparse_in_place);
+    expect_same_sparse(sparse_in_place, sparse_expected);
+}
+
+TEST(FspaiTestSuite, SolveFailuresRemainCheckedAndInPlaceUpdatesAreAtomic) {
+    fdapde::FSPAI<double> unready;
+    fdapde::Matrix<double, fdapde::Dynamic, fdapde::Dynamic> dense_rhs(2, 1);
+    dense_rhs(0, 0) = 4.0;
+    dense_rhs(1, 0) = 9.0;
+    const auto retained_dense = dense_rhs;
+    EXPECT_THROW(static_cast<void>(unready.solve(dense_rhs)), std::domain_error);
+    EXPECT_THROW(unready.solveInPlace(dense_rhs), std::domain_error);
+    expect_same_dense(dense_rhs, retained_dense);
+
+    const fdapde::FSPAI<double> fspai(
+      sparse_matrix(
+        2, 2,
+        {
+          {0, 0, 4.0},
+          {1, 1, 9.0}
+    }),
+      0, 0, 0.0);
+    fdapde::Matrix<double, fdapde::Dynamic, fdapde::Dynamic> wrong_dense(3, 1);
+    const auto retained_wrong_dense = wrong_dense;
+    EXPECT_THROW(static_cast<void>(fspai.solve(wrong_dense)), std::invalid_argument);
+    EXPECT_THROW(fspai.solveInPlace(wrong_dense), std::invalid_argument);
+    expect_same_dense(wrong_dense, retained_wrong_dense);
+
+    dense_rhs(0, 0) = std::numeric_limits<double>::infinity();
+    EXPECT_THROW(static_cast<void>(fspai.solve(dense_rhs)), std::invalid_argument);
+    EXPECT_THROW(fspai.solveInPlace(dense_rhs), std::invalid_argument);
+    EXPECT_TRUE(std::isinf(dense_rhs(0, 0)));
+
+    sparse_matrix sparse_rhs(
+      2, 1,
+      {
+        {0, 0, 4.0},
+        {1, 0, 9.0}
+    });
+    const sparse_matrix retained_sparse = sparse_rhs;
+    sparse_matrix wrong_sparse(
+      3, 1,
+      {
+        {0, 0, 4.0}
+    });
+    const sparse_matrix retained_wrong_sparse = wrong_sparse;
+    EXPECT_THROW(static_cast<void>(fspai.solve(wrong_sparse)), std::invalid_argument);
+    EXPECT_THROW(fspai.solveInPlace(wrong_sparse), std::invalid_argument);
+    expect_same_sparse(wrong_sparse, retained_wrong_sparse);
+    sparse_rhs.value_ref(0, 0) = std::numeric_limits<double>::quiet_NaN();
+    EXPECT_THROW(static_cast<void>(fspai.solve(sparse_rhs)), std::invalid_argument);
+    EXPECT_THROW(fspai.solveInPlace(sparse_rhs), std::invalid_argument);
+    EXPECT_TRUE(std::isnan(sparse_rhs.coeff(0, 0)));
+    expect_same_sparse(
+      retained_sparse, sparse_matrix(
+                         2, 1,
+                         {
+                           {0, 0, 4.0},
+                           {1, 0, 9.0}
+    }));
 }
 
 TEST(FspaiTestSuite, ContractsRemainActiveWithoutDebugAssertions) {
