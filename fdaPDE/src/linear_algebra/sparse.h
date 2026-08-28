@@ -25,6 +25,7 @@
 #include <limits>
 #include <stdexcept>
 #include <type_traits>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -296,6 +297,92 @@ template <typename Scalar_> class SparseMatrix {
             }
         }
         return SparseMatrix(rows_, cols_, triplets);
+    }
+
+    SparseMatrix operator*(const SparseMatrix& rhs) const {
+        if (cols_ != rhs.rows_) { throw std::invalid_argument("sparse product requires matching inner dimensions"); }
+
+        SparseMatrix result(rows_, rhs.cols_);
+        std::vector<Index> columns;
+        const std::size_t sparse_workspace_limit = rhs.values_.size() > std::numeric_limits<std::size_t>::max() / 2 ?
+                                                     std::numeric_limits<std::size_t>::max() :
+                                                     std::max<std::size_t>(4096, 2 * rhs.values_.size());
+        if (static_cast<std::size_t>(rhs.cols_) <= sparse_workspace_limit) {
+            std::vector<Scalar> accumulator(static_cast<std::size_t>(rhs.cols_));
+            std::vector<Index> marker(static_cast<std::size_t>(rhs.cols_), missing_);
+            for (Index row = 0; row < rows_; ++row) {
+                columns.clear();
+                for (Index left = row_offsets_[row]; left < row_offsets_[row + 1]; ++left) {
+                    const Scalar& lhs_value = values_[left];
+                    if (lhs_value == Scalar {}) continue;
+                    const Index inner = column_indices_[left];
+                    for (Index right = rhs.row_offsets_[inner]; right < rhs.row_offsets_[inner + 1]; ++right) {
+                        const Scalar& rhs_value = rhs.values_[right];
+                        if (rhs_value == Scalar {}) continue;
+                        const Scalar product = multiply_(lhs_value, rhs_value);
+                        if (product == Scalar {}) continue;
+                        const Index col = rhs.column_indices_[right];
+                        if (marker[static_cast<std::size_t>(col)] != row) {
+                            marker[static_cast<std::size_t>(col)] = row;
+                            accumulator[static_cast<std::size_t>(col)] = product;
+                            columns.push_back(col);
+                        } else {
+                            accumulator[static_cast<std::size_t>(col)] =
+                              add_(accumulator[static_cast<std::size_t>(col)], product);
+                        }
+                    }
+                }
+                std::sort(columns.begin(), columns.end());
+                for (const Index col : columns) {
+                    const Scalar& value = accumulator[static_cast<std::size_t>(col)];
+                    if (value == Scalar {}) continue;
+                    if (result.values_.size() == static_cast<std::size_t>(std::numeric_limits<Index>::max())) {
+                        throw std::length_error("sparse product exceeds the supported int range");
+                    }
+                    result.column_indices_.push_back(col);
+                    result.values_.push_back(value);
+                }
+                result.row_offsets_[row + 1] = static_cast<Index>(result.values_.size());
+            }
+        } else {
+            // Preserve very-wide sparse shapes without a workspace proportional
+            // to their mostly empty column domain.
+            std::unordered_map<Index, Scalar> accumulator;
+            for (Index row = 0; row < rows_; ++row) {
+                accumulator.clear();
+                columns.clear();
+                for (Index left = row_offsets_[row]; left < row_offsets_[row + 1]; ++left) {
+                    const Scalar& lhs_value = values_[left];
+                    if (lhs_value == Scalar {}) continue;
+                    const Index inner = column_indices_[left];
+                    for (Index right = rhs.row_offsets_[inner]; right < rhs.row_offsets_[inner + 1]; ++right) {
+                        const Scalar& rhs_value = rhs.values_[right];
+                        if (rhs_value == Scalar {}) continue;
+                        const Scalar product = multiply_(lhs_value, rhs_value);
+                        if (product == Scalar {}) continue;
+                        const Index col = rhs.column_indices_[right];
+                        const auto [entry, inserted] = accumulator.try_emplace(col, product);
+                        if (inserted) {
+                            columns.push_back(col);
+                        } else {
+                            entry->second = add_(entry->second, product);
+                        }
+                    }
+                }
+                std::sort(columns.begin(), columns.end());
+                for (const Index col : columns) {
+                    const Scalar& value = accumulator.find(col)->second;
+                    if (value == Scalar {}) continue;
+                    if (result.values_.size() == static_cast<std::size_t>(std::numeric_limits<Index>::max())) {
+                        throw std::length_error("sparse product exceeds the supported int range");
+                    }
+                    result.column_indices_.push_back(col);
+                    result.values_.push_back(value);
+                }
+                result.row_offsets_[row + 1] = static_cast<Index>(result.values_.size());
+            }
+        }
+        return result;
     }
 
     /// @brief multiplies a matching column-vector expression into an independent dense vector
