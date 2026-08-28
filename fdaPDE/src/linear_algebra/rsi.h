@@ -312,8 +312,8 @@ class NysRSI {
         for (int iteration = 0; iteration < max_iterations_; ++iteration) {
             const FactorType basis = Ops::orthonormalize(range_input);
             FactorType product = Ops::multiply(source, basis);
-            candidate = nystrom_state_(basis, product, shift, rank);
-            if (residual_(source, candidate) <= normalized_tolerance) break;
+            candidate = Ops::nystrom_state(basis, product, shift, rank, false);
+            if (Ops::eigen_residual(source, candidate) <= normalized_tolerance) break;
             range_input = std::move(product);
         }
 
@@ -333,113 +333,7 @@ class NysRSI {
     int rank() const { return state_->values.rows(); }
    private:
     using Ops = internals::randomized_svd_ops<FactorType>;
-
-    struct State {
-        FactorType vectors;
-        EigenValuesType values;
-
-        State() = default;
-        State(FactorType&& vectors_, EigenValuesType&& values_) :
-            vectors(std::move(vectors_)), values(std::move(values_)) { }
-    };
-
-    static State nystrom_state_(const FactorType& basis, const FactorType& product, Scalar shift, int rank) {
-        FactorType shifted(product);
-        for (int row = 0; row < shifted.rows(); ++row) {
-            for (int col = 0; col < shifted.cols(); ++col) {
-                shifted(row, col) += shift * basis(row, col);
-                if (!std::isfinite(shifted(row, col))) {
-                    throw std::domain_error("NysRSI shifted range contains a nonfinite coefficient");
-                }
-            }
-        }
-
-        FactorType gram(basis.cols(), basis.cols());
-        gram.set_zero();
-        Scalar gram_scale = Scalar(0);
-        for (int row = 0; row < gram.rows(); ++row) {
-            for (int col = 0; col <= row; ++col) {
-                Scalar lower = Scalar(0);
-                Scalar upper = Scalar(0);
-                for (int k = 0; k < basis.rows(); ++k) {
-                    lower += basis(k, row) * shifted(k, col);
-                    upper += basis(k, col) * shifted(k, row);
-                }
-                const Scalar value = Scalar(0.5) * (lower + upper);
-                if (!std::isfinite(value)) {
-                    throw std::domain_error("NysRSI stabilized Gram matrix contains a nonfinite coefficient");
-                }
-                gram(row, col) = gram(col, row) = value;
-                gram_scale = fdapde::max(gram_scale, fdapde::abs(value));
-            }
-        }
-
-        const auto symmetric = gram.template as_symmetric<Lower>();
-        const EVD decomposition(symmetric);
-        const auto eigenvectors = decomposition.eigenvectors();
-        const auto& eigenvalues = decomposition.eigenvalues();
-        const Scalar spectral_roundoff = Scalar(64) * std::numeric_limits<Scalar>::epsilon() *
-                                         static_cast<Scalar>(gram.rows()) * fdapde::max(Scalar(1), gram_scale);
-        FactorType inverse_sqrt(gram.rows(), gram.cols());
-        inverse_sqrt.set_zero();
-        for (int component = 0; component < gram.rows(); ++component) {
-            const Scalar eigenvalue = eigenvalues[component];
-            if (!std::isfinite(eigenvalue) || eigenvalue < -spectral_roundoff) {
-                throw std::domain_error("NysRSI requires a positive-semidefinite matrix");
-            }
-            const Scalar stabilized = fdapde::max(shift, eigenvalue);
-            const Scalar inverse_root = Scalar(1) / std::sqrt(stabilized);
-            if (!std::isfinite(inverse_root)) {
-                throw std::domain_error("NysRSI stabilized Gram inverse is not representable");
-            }
-            for (int row = 0; row < inverse_sqrt.rows(); ++row) {
-                for (int col = 0; col < inverse_sqrt.cols(); ++col) {
-                    inverse_sqrt(row, col) +=
-                      eigenvectors(row, component) * inverse_root * eigenvectors(col, component);
-                }
-            }
-        }
-
-        const FactorType factor = Ops::multiply(shifted, inverse_sqrt);
-        FactorType factor_transpose(factor.cols(), factor.rows());
-        for (int row = 0; row < factor.rows(); ++row) {
-            for (int col = 0; col < factor.cols(); ++col) factor_transpose(col, row) = factor(row, col);
-        }
-        typename Ops::Result compact = Ops::compact_svd(factor_transpose, rank);
-        EigenValuesType values(rank);
-        const Scalar value_roundoff =
-          Scalar(128) * std::numeric_limits<Scalar>::epsilon() * static_cast<Scalar>(factor.rows());
-        for (int i = 0; i < rank; ++i) {
-            const Scalar square = compact.values[i] * compact.values[i];
-            const Scalar value = square - shift;
-            const Scalar tolerance = value_roundoff * fdapde::max(Scalar(1), fdapde::max(square, shift));
-            if (!std::isfinite(value) || value < -tolerance) {
-                throw std::domain_error("NysRSI produced a non-positive-semidefinite approximation");
-            }
-            values[i] = value > tolerance ? value : Scalar(0);
-        }
-        return {std::move(compact.right), std::move(values)};
-    }
-
-    static Scalar residual_(const FactorType& source, const State& state) {
-        Scalar maximum = Scalar(0);
-        for (int col = 0; col < state.values.rows(); ++col) {
-            Scalar norm = Scalar(0);
-            for (int row = 0; row < source.rows(); ++row) {
-                Scalar value = Scalar(0);
-                for (int inner = 0; inner < source.cols(); ++inner) {
-                    value += source(row, inner) * state.vectors(inner, col);
-                }
-                value -= state.vectors(row, col) * state.values[col];
-                if (!std::isfinite(value)) {
-                    throw std::domain_error("NysRSI eigen-residual contains a nonfinite coefficient");
-                }
-                norm = internals::scale_safe_hypot(norm, value);
-            }
-            maximum = fdapde::max(maximum, norm);
-        }
-        return std::sqrt(Scalar(2)) * maximum;
-    }
+    using State = typename Ops::NystromResult;
 
     void publish_(FactorType&& vectors, EigenValuesType&& values) {
         auto replacement = std::make_shared<const State>(std::move(vectors), std::move(values));
@@ -462,9 +356,6 @@ class NysRSI {
     int max_iterations_ = 50;
     unsigned int seed_;
 };
-
-// TODO(P4-M): NysRBKI remains preserved in the dormant Eigen archive until its native
-// positive-semidefinite compact-decomposition slice is dependency-closed.
 
 }   // namespace fdapde
 

@@ -41,6 +41,15 @@ template <typename FactorType_> struct randomized_svd_ops {
         SingularValuesType values;
     };
 
+    struct NystromResult {
+        FactorType vectors;
+        SingularValuesType values;
+
+        NystromResult() = default;
+        NystromResult(FactorType&& vectors_, SingularValuesType&& values_) :
+            vectors(std::move(vectors_)), values(std::move(values_)) { }
+    };
+
     static FactorType multiply(const FactorType& lhs, const FactorType& rhs) {
         if (lhs.cols() != rhs.rows()) {
             throw std::logic_error("randomized SVD internal matrix product has incompatible shapes");
@@ -281,6 +290,123 @@ template <typename FactorType_> struct randomized_svd_ops {
         Result compact = compact_svd(core, requested_rank);
         FactorType left = multiply(range, compact.left);
         return {std::move(left), std::move(compact.right), std::move(compact.values)};
+    }
+
+    static NystromResult nystrom_state(
+      const FactorType& basis, const FactorType& product, Scalar shift, int requested_rank, bool rank_revealing) {
+        FactorType shifted(product);
+        for (int row = 0; row < shifted.rows(); ++row) {
+            for (int col = 0; col < shifted.cols(); ++col) {
+                shifted(row, col) += shift * basis(row, col);
+                if (!std::isfinite(shifted(row, col))) {
+                    throw std::domain_error("randomized Nystrom shifted range contains a nonfinite coefficient");
+                }
+            }
+        }
+
+        FactorType gram(basis.cols(), basis.cols());
+        gram.set_zero();
+        Scalar gram_scale = Scalar(0);
+        for (int row = 0; row < gram.rows(); ++row) {
+            for (int col = 0; col <= row; ++col) {
+                Scalar lower = Scalar(0);
+                Scalar upper = Scalar(0);
+                for (int k = 0; k < basis.rows(); ++k) {
+                    lower += basis(k, row) * shifted(k, col);
+                    upper += basis(k, col) * shifted(k, row);
+                }
+                const Scalar value = Scalar(0.5) * (lower + upper);
+                if (!std::isfinite(value)) {
+                    throw std::domain_error(
+                      "randomized Nystrom stabilized Gram matrix contains a nonfinite coefficient");
+                }
+                gram(row, col) = gram(col, row) = value;
+                gram_scale = fdapde::max(gram_scale, fdapde::abs(value));
+            }
+        }
+
+        const auto symmetric = gram.template as_symmetric<Lower>();
+        const EVD decomposition(symmetric);
+        const auto eigenvectors = decomposition.eigenvectors();
+        const auto& eigenvalues = decomposition.eigenvalues();
+        const Scalar spectral_roundoff = Scalar(64) * std::numeric_limits<Scalar>::epsilon() *
+                                         static_cast<Scalar>(gram.rows()) * fdapde::max(Scalar(1), gram_scale);
+        FactorType inverse_sqrt(gram.rows(), gram.cols());
+        inverse_sqrt.set_zero();
+        for (int component = 0; component < gram.rows(); ++component) {
+            const Scalar eigenvalue = eigenvalues[component];
+            if (!std::isfinite(eigenvalue) || eigenvalue < -spectral_roundoff) {
+                throw std::domain_error("randomized Nystrom approximation requires a positive-semidefinite matrix");
+            }
+            const Scalar stabilized = fdapde::max(shift, eigenvalue);
+            const Scalar inverse_root =
+              rank_revealing && eigenvalue <= spectral_roundoff ? Scalar(0) : Scalar(1) / std::sqrt(stabilized);
+            if (!std::isfinite(inverse_root)) {
+                throw std::domain_error("randomized Nystrom stabilized Gram inverse is not representable");
+            }
+            for (int row = 0; row < inverse_sqrt.rows(); ++row) {
+                for (int col = 0; col < inverse_sqrt.cols(); ++col) {
+                    inverse_sqrt(row, col) +=
+                      eigenvectors(row, component) * inverse_root * eigenvectors(col, component);
+                }
+            }
+        }
+
+        const FactorType factor = multiply(shifted, inverse_sqrt);
+        FactorType factor_transpose(factor.cols(), factor.rows());
+        for (int row = 0; row < factor.rows(); ++row) {
+            for (int col = 0; col < factor.cols(); ++col) factor_transpose(col, row) = factor(row, col);
+        }
+        Result compact = compact_svd(factor_transpose, requested_rank);
+        SingularValuesType values(requested_rank);
+        const Scalar value_roundoff =
+          Scalar(128) * std::numeric_limits<Scalar>::epsilon() * static_cast<Scalar>(factor.rows());
+        int resolved_rank = 0;
+        for (int i = 0; i < requested_rank; ++i) {
+            const Scalar square = compact.values[i] * compact.values[i];
+            const Scalar value = square - shift;
+            const Scalar tolerance = value_roundoff * fdapde::max(Scalar(1), fdapde::max(square, shift));
+            if (!std::isfinite(value) || value < -tolerance) {
+                throw std::domain_error("randomized Nystrom produced a non-positive-semidefinite approximation");
+            }
+            values[i] = value > tolerance ? value : Scalar(0);
+            if (values[i] > Scalar(0)) resolved_rank = i + 1;
+        }
+        if (rank_revealing && resolved_rank < requested_rank) {
+            FactorType resolved(compact.right.rows(), resolved_rank);
+            for (int row = 0; row < resolved.rows(); ++row) {
+                for (int col = 0; col < resolved.cols(); ++col) resolved(row, col) = compact.right(row, col);
+            }
+            FactorType missing(compact.right.rows(), requested_rank - resolved_rank);
+            missing.set_zero();
+            const FactorType completion = orthonormalize(missing, resolved);
+            for (int row = 0; row < completion.rows(); ++row) {
+                for (int col = 0; col < completion.cols(); ++col) {
+                    compact.right(row, resolved_rank + col) = completion(row, col);
+                }
+            }
+        }
+        return {std::move(compact.right), std::move(values)};
+    }
+
+    static Scalar eigen_residual(const FactorType& source, const NystromResult& result) {
+        Scalar maximum = Scalar(0);
+        for (int col = 0; col < result.values.rows(); ++col) {
+            Scalar norm = Scalar(0);
+            for (int row = 0; row < source.rows(); ++row) {
+                Scalar value = Scalar(0);
+                for (int inner = 0; inner < source.cols(); ++inner) {
+                    value += source(row, inner) * result.vectors(inner, col);
+                }
+                value -= result.vectors(row, col) * result.values[col];
+                if (!std::isfinite(value)) {
+                    throw std::domain_error("randomized Nystrom eigen-residual contains a nonfinite coefficient");
+                }
+                norm = scale_safe_hypot(norm, value);
+            }
+            maximum = fdapde::max(maximum, norm);
+        }
+        return std::sqrt(Scalar(2)) * maximum;
     }
 
     template <typename ResultType> static Scalar residual(const FactorType& source, const ResultType& result) {
