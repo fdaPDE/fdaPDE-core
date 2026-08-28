@@ -540,6 +540,151 @@ TEST(rand_evd_test, nysrsi_state_is_reusable_and_failures_are_atomic) {
       static_cast<void>(approximation_type(std::numeric_limits<double>::quiet_NaN(), 8, 1)), std::invalid_argument);
 }
 
+template <int StorageOrder> void check_nysrbki_spectrum() {
+    using matrix_type = Matrix<double, Dynamic, Dynamic, StorageOrder>;
+    const matrix_type source = diagonal_spectrum<StorageOrder>(5, 5);
+    const NysRBKI<matrix_type> approximation(source, 3, 1.0e-12, 8, 1729);
+
+    EXPECT_EQ(approximation.rank(), 3);
+    EXPECT_EQ(approximation.matrixU().rows(), 5);
+    EXPECT_EQ(approximation.matrixU().cols(), 3);
+    EXPECT_EQ(approximation.eigenValues().rows(), 3);
+    EXPECT_NEAR(approximation.eigenValues()[0], 9.0, 1.0e-10);
+    EXPECT_NEAR(approximation.eigenValues()[1], 7.0, 1.0e-10);
+    EXPECT_NEAR(approximation.eigenValues()[2], 5.0, 1.0e-10);
+    EXPECT_LT(nys_eigen_residual(source, approximation), 1.0e-10);
+}
+
+TEST(rand_evd_test, nysrbki_leading_spectra_and_psd_rank_contract) {
+    check_nysrbki_spectrum<RowMajor>();
+    check_nysrbki_spectrum<ColMajor>();
+
+    using matrix_type = Matrix<double, Dynamic, Dynamic>;
+    matrix_type rank_deficient(4, 4);
+    rank_deficient.set_zero();
+    rank_deficient(0, 0) = 9.0;
+    NysRBKI<matrix_type> deficient(1.0e-12, 4, 1729);
+    deficient.compute(rank_deficient, 3, 3);
+    ASSERT_EQ(deficient.rank(), 3);
+    EXPECT_NEAR(deficient.eigenValues()[0], 9.0, 1.0e-10);
+    EXPECT_DOUBLE_EQ(deficient.eigenValues()[1], 0.0);
+    EXPECT_DOUBLE_EQ(deficient.eigenValues()[2], 0.0);
+    EXPECT_LT(nys_eigen_residual(rank_deficient, deficient), 1.0e-10);
+
+    matrix_type zero(3, 3);
+    zero.set_zero();
+    NysRBKI<matrix_type> zero_approximation(0.0, 1, 1729);
+    zero_approximation.compute(zero, 2, 2);
+    ASSERT_EQ(zero_approximation.rank(), 2);
+    EXPECT_EQ(zero_approximation.matrixU().rows(), 3);
+    EXPECT_EQ(zero_approximation.matrixU().cols(), 2);
+    EXPECT_DOUBLE_EQ(zero_approximation.eigenValues()[0], 0.0);
+    EXPECT_DOUBLE_EQ(zero_approximation.eigenValues()[1], 0.0);
+}
+
+TEST(rand_evd_test, nysrbki_uses_absolute_tolerance_and_respects_iteration_cap) {
+    using matrix_type = Matrix<double, Dynamic, Dynamic>;
+    matrix_type source(4, 4);
+    source.set_zero();
+    source(0, 0) = 1.0;
+    source(1, 1) = 0.45;
+    source(2, 2) = 0.2;
+    source(3, 3) = 0.05;
+
+    NysRBKI<matrix_type> initial(std::numeric_limits<double>::max(), 1, 271828);
+    initial.compute(source, 1, 1);
+    const double initial_residual = nys_eigen_residual(source, initial);
+    ASSERT_GT(initial_residual, 0.0);
+
+    const double tolerance = 1.1 * initial_residual;
+    NysRBKI<matrix_type> unscaled(tolerance, 2, 271828);
+    unscaled.compute(source, 1, 1);
+    EXPECT_NEAR(nys_eigen_residual(source, unscaled), initial_residual, 1.0e-13);
+
+    const matrix_type scaled_source(source * 16.0);
+    NysRBKI<matrix_type> scaled(tolerance, 2, 271828);
+    scaled.compute(scaled_source, 1, 1);
+    EXPECT_LT(nys_eigen_residual(scaled_source, scaled) / 16.0, 0.8 * initial_residual);
+
+    NysRBKI<matrix_type> capped(0.0, 1, 271828);
+    EXPECT_NO_THROW(capped.compute(source, 1, 1));
+    EXPECT_EQ(capped.rank(), 1);
+    EXPECT_GT(nys_eigen_residual(source, capped), 0.0);
+    EXPECT_TRUE(std::isfinite(capped.eigenValues()[0]));
+
+    NysRBKI<matrix_type> default_block(std::numeric_limits<double>::max(), 1, 271828);
+    default_block.compute(source, 3);
+    EXPECT_EQ(default_block.rank(), 1);
+}
+
+TEST(rand_evd_test, nysrbki_state_is_reusable_and_failures_are_atomic) {
+    using matrix_type = Matrix<double, Dynamic, Dynamic>;
+    using approximation_type = NysRBKI<matrix_type>;
+    static_assert(std::is_same_v<typename approximation_type::Scalar, double>);
+    static_assert(std::is_same_v<typename approximation_type::MatrixType, matrix_type>);
+    static_assert(std::is_same_v<typename approximation_type::FactorType, matrix_type>);
+    static_assert(std::is_same_v<typename approximation_type::EigenValuesType, Vector<double, Dynamic>>);
+    static_assert(!exposes_rvalue_eigenvectors<approximation_type>);
+    static_assert(!exposes_rvalue_eigenvalues<approximation_type>);
+
+    approximation_type approximation(1.0e-12, 8, 314159);
+    approximation.compute(diagonal_spectrum<RowMajor>(5, 5), 3, 1);
+    EXPECT_EQ(approximation.rank(), 3);
+
+    matrix_type second = diagonal_spectrum<RowMajor>(5, 5, 0.5);
+    for (int i = 2; i < second.rows(); ++i) second(i, i) = 0.0;
+    approximation.compute(second, 2, 2);
+    ASSERT_EQ(approximation.rank(), 2);
+    EXPECT_NEAR(approximation.eigenValues()[0], 4.5, 1.0e-10);
+    EXPECT_NEAR(approximation.eigenValues()[1], 3.5, 1.0e-10);
+    EXPECT_LT(nys_eigen_residual(second, approximation), 1.0e-10);
+
+    approximation_type fresh(1.0e-12, 8, 314159);
+    fresh.compute(second, 2, 2);
+    EXPECT_DOUBLE_EQ((approximation.matrixU() - fresh.matrixU()).norm(), 0.0);
+    EXPECT_DOUBLE_EQ((approximation.eigenValues() - fresh.eigenValues()).norm(), 0.0);
+
+    const matrix_type retained_vectors(approximation.matrixU());
+    const Vector<double, Dynamic> retained_values(approximation.eigenValues());
+
+    matrix_type empty;
+    matrix_type nonsquare(2, 3);
+    nonsquare.set_zero();
+    matrix_type nonfinite(second);
+    nonfinite(0, 0) = std::numeric_limits<double>::infinity();
+    matrix_type asymmetric(second);
+    asymmetric(0, 1) = 1.0;
+    matrix_type indefinite(2, 2);
+    indefinite(0, 0) = 1.0;
+    indefinite(0, 1) = 2.0;
+    indefinite(1, 0) = 2.0;
+    indefinite(1, 1) = 1.0;
+    matrix_type projected_indefinite(3, 3);
+    for (int row = 0; row < projected_indefinite.rows(); ++row) {
+        for (int col = 0; col < projected_indefinite.cols(); ++col) {
+            projected_indefinite(row, col) = row == col ? 1.0 : -0.9;
+        }
+    }
+
+    EXPECT_THROW(approximation.compute(empty, 1), std::invalid_argument);
+    EXPECT_THROW(approximation.compute(nonsquare, 1), std::invalid_argument);
+    EXPECT_THROW(approximation.compute(nonfinite, 2), std::invalid_argument);
+    EXPECT_THROW(approximation.compute(asymmetric, 2), std::invalid_argument);
+    EXPECT_THROW(approximation.compute(indefinite, 1), std::domain_error);
+    EXPECT_THROW(approximation.compute(projected_indefinite, 1, 3), std::domain_error);
+    EXPECT_THROW(approximation.compute(second, 0), std::invalid_argument);
+    EXPECT_THROW(approximation.compute(second, 6), std::invalid_argument);
+    EXPECT_THROW(approximation.compute(second, 2, 0), std::invalid_argument);
+    EXPECT_THROW(approximation.compute(second, 2, 6), std::invalid_argument);
+    EXPECT_DOUBLE_EQ((approximation.matrixU() - retained_vectors).norm(), 0.0);
+    EXPECT_DOUBLE_EQ((approximation.eigenValues() - retained_values).norm(), 0.0);
+
+    EXPECT_THROW(static_cast<void>(approximation_type(-1.0, 8, 1)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(approximation_type(1.0e-5, 0, 1)), std::invalid_argument);
+    EXPECT_THROW(
+      static_cast<void>(approximation_type(std::numeric_limits<double>::quiet_NaN(), 8, 1)), std::invalid_argument);
+}
+
 template <int StorageOrder> void check_reconstruction(int block_size, int rank, int seed) {
     using matrix_type = Matrix<double, Dynamic, Dynamic, StorageOrder>;
     const matrix_type source = low_rank_spd<StorageOrder>(rank);
@@ -670,7 +815,6 @@ TEST(nys_approximation, contracts_remain_active_without_debug_assertions) {
 }
 
 // Source: a2a9c88:test/src/rand_linear_algebra_test.cpp.
-// TODO(P4-M): restore seeded NysRBKI leading-spectrum assertions in its native compact-decomposition slice.
 // Eigen may be an opt-in test oracle only, never a production dependency.
 
 }   // namespace

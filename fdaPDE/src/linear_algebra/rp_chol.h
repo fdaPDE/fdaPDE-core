@@ -246,9 +246,6 @@ template <internals::matrix_expression MatrixType_> class RpChol {
     unsigned int seed_;
 };
 
-// TODO(P4-M): NysRBKI remains preserved in the dormant Eigen archive until its native
-// compact-decomposition slice restores the remaining randomized-spectrum assertions.
-
 }   // namespace fdapde
 
 #endif   // __FDAPDE_LINALG_RP_CHOL_H__
