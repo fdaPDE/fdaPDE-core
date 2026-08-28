@@ -14,86 +14,241 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __RANDOMLY_PERMUTED_CHOLESKY_H__
-#define __RANDOMLY_PERMUTED_CHOLESKY_H__
+#ifndef __FDAPDE_LINALG_RP_CHOL_H__
+#define __FDAPDE_LINALG_RP_CHOL_H__
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <limits>
+#include <numeric>
+#include <random>
+#include <stdexcept>
+#include <type_traits>
+#include <unordered_set>
+#include <vector>
+
+#include "header_check.h"
 
 namespace fdapde {
 
-// computes a low rank approximation of an SPD matrix using the randomly pivoted cholesky, as detailed in "Y., Chen,
-// E.N., Epperly, J.A., Tropp and R.J. Webber. (2023) Randomly pivoted Cholesky: Practical approximation of a kernel
-// matrix with few entry evaluations", Alg 5, pag 12.
-template <typename MatrixType>
-    requires(internals::is_eigen_dense_xpr_v<MatrixType>)
-class RpChol {
-    using matrix_t = Eigen::Matrix<double, Dynamic, Dynamic>;
-    using vector_t = Eigen::Matrix<double, Dynamic, 1>;
-    using chol_t   = Eigen::LLT<matrix_t>;
+// Randomly pivoted Cholesky approximation of a symmetric positive-semidefinite matrix.
+// The block size controls how many distinct pivots are sampled from one residual distribution;
+// sampled pivots are then incorporated one at a time to avoid a public dense-Cholesky dependency.
+template <internals::matrix_expression MatrixType_> class RpChol {
    public:
-  
-    RpChol() noexcept = default;
-    RpChol(const MatrixType& A, double tol, int block_sz, int max_iter, int seed = random_seed) :
-        block_sz_(block_sz), max_iter_(max_iter), seed_(seed == random_seed ? std::random_device()() : seed) {
-        compute(A, tol);
+    using MatrixType = std::remove_cvref_t<MatrixType_>;
+    using Scalar = std::remove_cv_t<typename MatrixType::Scalar>;
+    using FactorType = Matrix<Scalar, Dynamic, Dynamic, MatrixType::StorageOrder>;
+    fdapde_static_assert(std::is_floating_point_v<Scalar>, RP_CHOL_REQUIRES_FLOATING_POINT_SCALARS);
+    fdapde_static_assert(
+      MatrixType::Rows == Dynamic || MatrixType::Cols == Dynamic || MatrixType::Rows == MatrixType::Cols,
+      RP_CHOL_REQUIRES_A_SQUARE_MATRIX);
+
+    RpChol() : seed_(resolve_seed_(random_seed)) { }
+    RpChol(int block_size, int max_iterations, int seed = random_seed) :
+        block_size_(block_size), max_iterations_(max_iterations), seed_(resolve_seed_(seed)) {
+        validate_configuration_();
     }
-    RpChol(int block_sz, int max_iter, int seed = random_seed) noexcept :
-        block_sz_(block_sz), max_iter_(max_iter), seed_(seed == random_seed ? std::random_device()() : seed) { }
-  
-    void compute(const MatrixType& A, double tol) {
-        fdapde_assert(tol < 1, std::invalid_argument, "Cholesky tolerance must be less than one");
-        int rows = A.rows();
-        int cols = A.cols();
+    RpChol(const MatrixType& matrix, Scalar tolerance, int block_size, int max_iterations, int seed = random_seed) :
+        RpChol(block_size, max_iterations, seed) {
+        compute(matrix, tolerance);
+    }
 
-	// initialization
-        int max_iter = std::min(max_iter_, int_ceil(cols, block_sz_));
-        std::mt19937 rng(seed_);
-        std::vector<int> col_idxs(cols);
-        std::iota(col_idxs.begin(), col_idxs.end(), 0);
-	vector_t diag_res = A.diagonal();
-        L_ = matrix_t::Zero(rows, max_iter * block_sz_);
-        double norm = A.norm();
-	double err = norm;
-	
-        int i = 0;
-        while (i < max_iter * block_sz_ && err > tol * norm) {
-            // sample pivots with a probabilty proportional to diagonal elements of residuals
-            std::discrete_distribution<int> distr(diag_res.begin(), diag_res.end());
-            std::unordered_set<int> pivot_set(block_sz_);
-            for (std::size_t j = 0; pivot_set.size() < block_sz_ && j < 2 * block_sz_; j++) {
-                pivot_set.insert(distr(rng));
-            }
-            pivot_set_.merge(pivot_set);
-            std::vector<int> pivot_vec(pivot_set.begin(), pivot_set.end());
-
-	    for(int kk : pivot_vec) std::cout << kk << " ";
-	    std::cout << std::endl;
-	    
-            // evaluate columns at pivot_set, remove overlap with previously choosen columns
-            matrix_t G = A(Eigen::all, pivot_vec) - L_.leftCols(i) * L_(pivot_vec, Eigen::all).leftCols(i).transpose();
-            // compute stabilized cholesky
-            double shift = std::numeric_limits<double>::epsilon() * G(pivot_vec, Eigen::all).trace();
-            chol_t chol(G(pivot_vec, Eigen::all) + shift * matrix_t::Identity(pivot_vec.size(), pivot_vec.size()));
-            // update step
-            L_.middleCols(i, pivot_vec.size()) = chol.matrixU().solve<Eigen::OnTheRight>(G);
-            diag_res = (diag_res - L_.middleCols(i, pivot_vec.size()).rowwise().squaredNorm()).array().max(0);
-            i += pivot_vec.size();
-            err = (A - L_.leftCols(i) * L_.leftCols(i).transpose()).norm();
+    void compute(const MatrixType& matrix, Scalar tolerance) {
+        validate_configuration_();
+        if (!std::isfinite(tolerance) || tolerance < Scalar(0) || tolerance >= Scalar(1)) {
+            throw std::invalid_argument("RpChol tolerance must be finite and in [0, 1)");
         }
-        // store result
-        L_ = L_.leftCols(i);
-        return;
-    }
-    // observers
-    const matrix_t& matrixL() const { return L_; }
-    const std::unordered_set<int>& pivotSet() const { return pivot_set_; }
-   private:
-    matrix_t L_;                          // matrix L defining the Nystrom approximation of A \approx L_ * L_^\top
-    std::unordered_set<int> pivot_set_;   // set of columns of A selected for the approximation
+        const int rows = matrix.rows();
+        const int cols = matrix.cols();
+        if (rows <= 0 || rows != cols) { throw std::invalid_argument("RpChol requires a nonempty square matrix"); }
+        (void)internals::checked_matrix_size(rows, cols);
 
-    int block_sz_;
-    int max_iter_ = 50;
-    int seed_;
+        FactorType source(rows, cols);
+        Scalar scale = Scalar(0);
+        for (int row = 0; row < rows; ++row) {
+            for (int col = 0; col < cols; ++col) {
+                const Scalar value = static_cast<Scalar>(matrix(row, col));
+                if (!std::isfinite(value)) {
+                    throw std::invalid_argument("RpChol requires finite matrix coefficients");
+                }
+                source(row, col) = value;
+                scale = std::max(scale, fdapde::abs(value));
+            }
+        }
+        if (scale != Scalar(0)) {
+            for (int row = 0; row < rows; ++row) {
+                for (int col = 0; col < cols; ++col) source(row, col) /= scale;
+            }
+        }
+        const Scalar roundoff = Scalar(64) * std::numeric_limits<Scalar>::epsilon() * static_cast<Scalar>(rows);
+        // ponytail: exact PSD certification is cubic and defeats this low-rank routine. Preserve the historical
+        // SPD-input precondition, reject cheap necessary-condition failures here, and reject detected breakdowns below.
+        for (int row = 0; row < rows; ++row) {
+            if (source(row, row) < -roundoff) {
+                throw std::domain_error("RpChol requires a positive-semidefinite matrix");
+            }
+            for (int col = row + 1; col < cols; ++col) {
+                if (fdapde::abs(source(row, col) - source(col, row)) > roundoff) {
+                    throw std::invalid_argument("RpChol requires a symmetric matrix");
+                }
+                const Scalar diagonal_product = source(row, row) * source(col, col);
+                const Scalar coefficient_square = source(row, col) * source(row, col);
+                if (coefficient_square > diagonal_product + roundoff) {
+                    throw std::domain_error("RpChol requires a positive-semidefinite matrix");
+                }
+            }
+        }
+
+        const std::int64_t requested_capacity =
+          static_cast<std::int64_t>(block_size_) * static_cast<std::int64_t>(max_iterations_);
+        const int capacity = static_cast<int>(std::min<std::int64_t>(rows, requested_capacity));
+        FactorType workspace(rows, capacity);
+        workspace.set_zero();
+        std::vector<Scalar> residual_diagonal(static_cast<std::size_t>(rows));
+        for (int i = 0; i < rows; ++i) residual_diagonal[static_cast<std::size_t>(i)] = source(i, i);
+        std::vector<bool> selected(static_cast<std::size_t>(rows), false);
+        std::vector<int> pivots;
+        pivots.reserve(static_cast<std::size_t>(capacity));
+        std::mt19937 random_engine(seed_);
+
+        const Scalar source_norm = source.norm();
+        Scalar residual_norm = source_norm;
+        int factor_rank = 0;
+        while (factor_rank < capacity && residual_norm > tolerance * source_norm) {
+            int available = 0;
+            for (int i = 0; i < rows; ++i) {
+                const Scalar residual = residual_diagonal[static_cast<std::size_t>(i)];
+                if (!selected[static_cast<std::size_t>(i)] && residual > Scalar(0)) ++available;
+            }
+            if (available == 0) {
+                throw std::domain_error("RpChol factorization broke down before reaching its tolerance");
+            }
+
+            const int batch_size = std::min({block_size_, capacity - factor_rank, available});
+            std::vector<int> batch;
+            batch.reserve(static_cast<std::size_t>(batch_size));
+            std::vector<bool> batch_selected(selected);
+            std::vector<double> weights(static_cast<std::size_t>(rows), 0.0);
+            for (int i = 0; i < batch_size; ++i) {
+                Scalar weight_scale = Scalar(0);
+                for (int row = 0; row < rows; ++row) {
+                    if (!batch_selected[static_cast<std::size_t>(row)]) {
+                        weight_scale = std::max(weight_scale, residual_diagonal[static_cast<std::size_t>(row)]);
+                    }
+                }
+                for (int row = 0; row < rows; ++row) {
+                    const Scalar residual = residual_diagonal[static_cast<std::size_t>(row)];
+                    const bool eligible = !batch_selected[static_cast<std::size_t>(row)] && residual > Scalar(0);
+                    weights[static_cast<std::size_t>(row)] =
+                      eligible ? static_cast<double>(residual / weight_scale) : 0.0;
+                }
+                std::discrete_distribution<int> distribution(weights.begin(), weights.end());
+                const int pivot = distribution(random_engine);
+                batch.push_back(pivot);
+                batch_selected[static_cast<std::size_t>(pivot)] = true;
+            }
+
+            const int previous_rank = factor_rank;
+            for (const int pivot : batch) {
+                Scalar pivot_residual = source(pivot, pivot);
+                for (int k = 0; k < factor_rank; ++k) { pivot_residual -= workspace(pivot, k) * workspace(pivot, k); }
+                if (pivot_residual < -roundoff) {
+                    throw std::domain_error("RpChol requires a positive-semidefinite matrix");
+                }
+                if (!(pivot_residual > Scalar(0))) continue;
+
+                const Scalar denominator = std::sqrt(pivot_residual);
+                for (int row = 0; row < rows; ++row) {
+                    Scalar value = source(row, pivot);
+                    for (int k = 0; k < factor_rank; ++k) { value -= workspace(row, k) * workspace(pivot, k); }
+                    value /= denominator;
+                    if (!std::isfinite(value)) {
+                        throw std::domain_error("RpChol produced a nonfinite factor coefficient");
+                    }
+                    workspace(row, factor_rank) = value;
+                }
+                selected[static_cast<std::size_t>(pivot)] = true;
+                pivots.push_back(pivot);
+                ++factor_rank;
+
+                for (int row = 0; row < rows; ++row) {
+                    Scalar& residual = residual_diagonal[static_cast<std::size_t>(row)];
+                    residual -= workspace(row, factor_rank - 1) * workspace(row, factor_rank - 1);
+                    if (residual < -roundoff) {
+                        throw std::domain_error("RpChol requires a positive-semidefinite matrix");
+                    }
+                    if (residual < Scalar(0)) residual = Scalar(0);
+                }
+            }
+            if (factor_rank == previous_rank) {
+                throw std::domain_error("RpChol factorization made no numerical progress");
+            }
+            residual_norm = residual_norm_(source, workspace, factor_rank);
+        }
+
+        FactorType factor(rows, factor_rank);
+        const Scalar factor_scale = std::sqrt(scale);
+        for (int row = 0; row < rows; ++row) {
+            for (int col = 0; col < factor_rank; ++col) {
+                factor(row, col) = workspace(row, col) * factor_scale;
+                if (!std::isfinite(factor(row, col))) {
+                    throw std::domain_error("RpChol factor coefficients are not representable");
+                }
+            }
+        }
+        std::unordered_set<int> pivot_set(pivots.begin(), pivots.end());
+        factor_ = std::move(factor);
+        pivots_ = std::move(pivots);
+        pivot_set_ = std::move(pivot_set);
+    }
+
+    const FactorType& matrixL() const& { return factor_; }
+    void matrixL() const&& = delete;
+    const FactorType& factor() const& { return factor_; }
+    void factor() const&& = delete;
+    const std::unordered_set<int>& pivotSet() const& { return pivot_set_; }
+    void pivotSet() const&& = delete;
+    const std::vector<int>& pivots() const& { return pivots_; }
+    void pivots() const&& = delete;
+    int rank() const { return factor_.cols(); }
+   private:
+    static unsigned int resolve_seed_(int seed) {
+        return seed == random_seed ? std::random_device {}() : static_cast<unsigned int>(seed);
+    }
+
+    void validate_configuration_() const {
+        if (block_size_ <= 0) { throw std::invalid_argument("RpChol block size must be positive"); }
+        if (max_iterations_ <= 0) { throw std::invalid_argument("RpChol maximum iterations must be positive"); }
+    }
+
+    static Scalar residual_norm_(const FactorType& matrix, const FactorType& factor, int rank) {
+        Scalar norm = Scalar(0);
+        for (int row = 0; row < matrix.rows(); ++row) {
+            for (int col = 0; col < matrix.cols(); ++col) {
+                Scalar residual = matrix(row, col);
+                for (int k = 0; k < rank; ++k) residual -= factor(row, k) * factor(col, k);
+                if (!std::isfinite(residual)) {
+                    throw std::domain_error("RpChol produced a nonfinite reconstruction residual");
+                }
+                norm = internals::scale_safe_hypot(norm, residual);
+            }
+        }
+        return norm;
+    }
+
+    FactorType factor_;
+    std::vector<int> pivots_;
+    std::unordered_set<int> pivot_set_;
+    int block_size_ = 1;
+    int max_iterations_ = 50;
+    unsigned int seed_;
 };
+
+// TODO(P4-M): RSI, RBKI, NysRSI, and NysRBKI remain preserved in the dormant Eigen archive until their native
+// compact-decomposition slice restores the remaining four historical randomized-spectrum assertions.
 
 }   // namespace fdapde
 
-#endif // __RANDOMLY_PERMUTED_CHOLESKY_H__
+#endif   // __FDAPDE_LINALG_RP_CHOL_H__
