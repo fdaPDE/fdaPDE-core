@@ -30,6 +30,18 @@ using namespace fdapde;
 template <typename Approximation>
 concept exposes_rvalue_factor = requires(Approximation&& approximation) { std::move(approximation).matrixL(); };
 
+template <typename Approximation>
+concept exposes_rvalue_left_singular_vectors =
+  requires(Approximation&& approximation) { std::move(approximation).matrixU(); };
+
+template <typename Approximation>
+concept exposes_rvalue_right_singular_vectors =
+  requires(Approximation&& approximation) { std::move(approximation).matrixV(); };
+
+template <typename Approximation>
+concept exposes_rvalue_singular_values =
+  requires(Approximation&& approximation) { std::move(approximation).singularValues(); };
+
 template <int StorageOrder> auto low_rank_spd(int columns) {
     Matrix<double, Dynamic, Dynamic, StorageOrder> generator(12, columns);
     for (int row = 0; row < generator.rows(); ++row) {
@@ -44,6 +56,150 @@ template <typename MatrixType, typename FactorType>
 double relative_reconstruction_error(const MatrixType& matrix, const FactorType& factor) {
     const Matrix<double, Dynamic, Dynamic, MatrixType::StorageOrder> reconstructed(factor * factor.transpose());
     return (matrix - reconstructed).norm() / matrix.norm();
+}
+
+template <int StorageOrder> auto diagonal_spectrum(int rows, int cols, double scale = 1.0) {
+    Matrix<double, Dynamic, Dynamic, StorageOrder> matrix(rows, cols);
+    matrix.set_zero();
+    const double values[] = {9.0, 7.0, 5.0, 3.0, 1.0};
+    for (int i = 0; i < fdapde::min(rows, cols); ++i) matrix(i, i) = scale * values[i];
+    return matrix;
+}
+
+template <typename MatrixType, typename Approximation>
+double rsi_residual(const MatrixType& matrix, const Approximation& approximation) {
+    double maximum = 0.0;
+    for (int col = 0; col < approximation.rank(); ++col) {
+        double squared_norm = 0.0;
+        for (int row = 0; row < matrix.rows(); ++row) {
+            double projected = 0.0;
+            for (int inner = 0; inner < matrix.cols(); ++inner) {
+                projected += matrix(row, inner) * approximation.matrixV()(inner, col);
+            }
+            const double residual = projected - approximation.matrixU()(row, col) * approximation.singularValues()[col];
+            squared_norm += residual * residual;
+        }
+        maximum = fdapde::max(maximum, std::sqrt(squared_norm));
+    }
+    return maximum;
+}
+
+template <int StorageOrder> void check_rsi_spectrum(int rows, int cols) {
+    using matrix_type = Matrix<double, Dynamic, Dynamic, StorageOrder>;
+    const matrix_type source = diagonal_spectrum<StorageOrder>(rows, cols);
+    const RSI<matrix_type> approximation(source, 3, 1.0e-12, 8, 1729);
+
+    EXPECT_EQ(approximation.rank(), 3);
+    EXPECT_EQ(approximation.matrixU().rows(), rows);
+    EXPECT_EQ(approximation.matrixU().cols(), 3);
+    EXPECT_EQ(approximation.matrixV().rows(), cols);
+    EXPECT_EQ(approximation.matrixV().cols(), 3);
+    EXPECT_EQ(approximation.singularValues().rows(), 3);
+    EXPECT_NEAR(approximation.singularValues()[0], 9.0, 1.0e-10);
+    EXPECT_NEAR(approximation.singularValues()[1], 7.0, 1.0e-10);
+    EXPECT_NEAR(approximation.singularValues()[2], 5.0, 1.0e-10);
+    EXPECT_LT(rsi_residual(source, approximation), 1.0e-10);
+}
+
+TEST(rand_svd_test, rsi_square_tall_and_wide_leading_spectra) {
+    check_rsi_spectrum<RowMajor>(5, 5);
+    check_rsi_spectrum<ColMajor>(5, 5);
+    check_rsi_spectrum<RowMajor>(8, 5);
+    check_rsi_spectrum<ColMajor>(8, 5);
+    check_rsi_spectrum<RowMajor>(5, 8);
+    check_rsi_spectrum<ColMajor>(5, 8);
+
+    using matrix_type = Matrix<double, Dynamic, Dynamic>;
+    matrix_type rank_deficient(4, 5);
+    rank_deficient.set_zero();
+    rank_deficient(0, 0) = 9.0;
+    const RSI<matrix_type> deficient(rank_deficient, 3, 1.0e-12, 4, 1729);
+    ASSERT_EQ(deficient.rank(), 3);
+    EXPECT_NEAR(deficient.singularValues()[0], 9.0, 1.0e-10);
+    EXPECT_DOUBLE_EQ(deficient.singularValues()[1], 0.0);
+    EXPECT_DOUBLE_EQ(deficient.singularValues()[2], 0.0);
+    EXPECT_LT(rsi_residual(rank_deficient, deficient), 1.0e-10);
+
+    matrix_type zero(3, 4);
+    zero.set_zero();
+    const RSI<matrix_type> zero_approximation(zero, 2, 0.0, 1, 1729);
+    ASSERT_EQ(zero_approximation.rank(), 2);
+    EXPECT_EQ(zero_approximation.matrixU().rows(), 3);
+    EXPECT_EQ(zero_approximation.matrixU().cols(), 2);
+    EXPECT_EQ(zero_approximation.matrixV().rows(), 4);
+    EXPECT_EQ(zero_approximation.matrixV().cols(), 2);
+    EXPECT_DOUBLE_EQ(zero_approximation.singularValues()[0], 0.0);
+    EXPECT_DOUBLE_EQ(zero_approximation.singularValues()[1], 0.0);
+}
+
+TEST(rand_svd_test, rsi_uses_absolute_tolerance_and_returns_best_capped_result) {
+    using matrix_type = Matrix<double, Dynamic, Dynamic>;
+    matrix_type source(4, 4);
+    source.set_zero();
+    source(0, 0) = 1.0;
+    source(1, 1) = 0.45;
+    source(2, 2) = 0.2;
+    source(3, 3) = 0.05;
+
+    RSI<matrix_type> initial(std::numeric_limits<double>::max(), 1, 271828);
+    initial.compute(source, 1, 1);
+    const double initial_residual = rsi_residual(source, initial);
+    ASSERT_GT(initial_residual, 0.0);
+
+    const double tolerance = 1.1 * initial_residual;
+    RSI<matrix_type> unscaled(tolerance, 1, 271828);
+    unscaled.compute(source, 1, 1);
+    EXPECT_NEAR(rsi_residual(source, unscaled), initial_residual, 1.0e-13);
+
+    const matrix_type scaled_source(source * 16.0);
+    RSI<matrix_type> scaled(tolerance, 1, 271828);
+    scaled.compute(scaled_source, 1, 1);
+    EXPECT_LT(rsi_residual(scaled_source, scaled) / 16.0, 0.8 * initial_residual);
+
+    RSI<matrix_type> capped(0.0, 1, 271828);
+    EXPECT_NO_THROW(capped.compute(source, 1, 1));
+    EXPECT_EQ(capped.rank(), 1);
+    EXPECT_GT(rsi_residual(source, capped), 0.0);
+    EXPECT_TRUE(std::isfinite(capped.singularValues()[0]));
+}
+
+TEST(rand_svd_test, rsi_state_is_reusable_and_failures_are_atomic) {
+    using matrix_type = Matrix<double, Dynamic, Dynamic>;
+    using approximation_type = RSI<matrix_type>;
+    static_assert(std::is_same_v<typename approximation_type::Scalar, double>);
+    static_assert(std::is_same_v<typename approximation_type::MatrixType, matrix_type>);
+    static_assert(std::is_same_v<typename approximation_type::FactorType, matrix_type>);
+    static_assert(!exposes_rvalue_left_singular_vectors<approximation_type>);
+    static_assert(!exposes_rvalue_right_singular_vectors<approximation_type>);
+    static_assert(!exposes_rvalue_singular_values<approximation_type>);
+
+    approximation_type approximation(1.0e-12, 8, 314159);
+    approximation.compute(diagonal_spectrum<RowMajor>(5, 5), 3, 3);
+    EXPECT_EQ(approximation.rank(), 3);
+
+    const matrix_type second = diagonal_spectrum<RowMajor>(8, 5, 0.5);
+    approximation.compute(second, 2, 3);
+    ASSERT_EQ(approximation.rank(), 2);
+    EXPECT_NEAR(approximation.singularValues()[0], 4.5, 1.0e-10);
+    EXPECT_NEAR(approximation.singularValues()[1], 3.5, 1.0e-10);
+
+    const matrix_type retained_u(approximation.matrixU());
+    const matrix_type retained_v(approximation.matrixV());
+    const Vector<double, Dynamic> retained_values(approximation.singularValues());
+
+    matrix_type nonfinite(second);
+    nonfinite(0, 0) = std::numeric_limits<double>::infinity();
+    EXPECT_THROW(approximation.compute(nonfinite, 2, 3), std::invalid_argument);
+    EXPECT_THROW(approximation.compute(second, 0, 3), std::invalid_argument);
+    EXPECT_THROW(approximation.compute(second, 3, 2), std::invalid_argument);
+    EXPECT_DOUBLE_EQ((approximation.matrixU() - retained_u).norm(), 0.0);
+    EXPECT_DOUBLE_EQ((approximation.matrixV() - retained_v).norm(), 0.0);
+    EXPECT_DOUBLE_EQ((approximation.singularValues() - retained_values).norm(), 0.0);
+
+    EXPECT_THROW(static_cast<void>(approximation_type(-1.0, 8, 1)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(approximation_type(1.0e-5, 0, 1)), std::invalid_argument);
+    EXPECT_THROW(
+      static_cast<void>(approximation_type(std::numeric_limits<double>::quiet_NaN(), 8, 1)), std::invalid_argument);
 }
 
 template <int StorageOrder> void check_reconstruction(int block_size, int rank, int seed) {
@@ -176,7 +332,7 @@ TEST(nys_approximation, contracts_remain_active_without_debug_assertions) {
 }
 
 // Source: a2a9c88:test/src/rand_linear_algebra_test.cpp.
-// TODO(P4-M): restore the four seeded RSI/RBKI and NysRSI/NysRBKI leading-spectrum assertions in their own native
-// compact-decomposition slice. Eigen may be an opt-in test oracle only, never a production dependency.
+// TODO(P4-M): restore seeded RBKI, NysRSI, and NysRBKI leading-spectrum assertions in their own native
+// compact-decomposition slices. Eigen may be an opt-in test oracle only, never a production dependency.
 
 }   // namespace

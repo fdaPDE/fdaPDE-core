@@ -246,8 +246,8 @@ template <internals::matrix_expression MatrixType_> class RpChol {
     unsigned int seed_;
 };
 
-// TODO(P4-M): RSI, RBKI, NysRSI, and NysRBKI remain preserved in the dormant Eigen archive until their native
-// compact-decomposition slice restores the remaining four historical randomized-spectrum assertions.
+// TODO(P4-M): RBKI, NysRSI, and NysRBKI remain preserved in the dormant Eigen archive until their native
+// compact-decomposition slices restore the remaining randomized-spectrum assertions.
 
 }   // namespace fdapde
 
