@@ -24,6 +24,7 @@
 #include <cstdint>
 #include <initializer_list>
 #include <limits>
+#include <memory>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
@@ -45,16 +46,16 @@ inline constexpr bool is_native_sparse_matrix_v = is_native_sparse_matrix<std::r
 // static; block and global extents are runtime values. Supplied matrix blocks
 // are materialized immediately, so temporaries and copies are independent.
 //
-// TODO(resurrection): replace the archived Eigen Options/StorageIndex,
-// evaluator/InnerIterator, and sparse-expression nesting only after a native
-// sparse-expression protocol exists. coeffRef intentionally remains a
-// stored-coefficient-only compatibility spelling until native CSR supports
-// failure-atomic pattern insertion.
-template <typename Scalar_, int BlockRows_, int BlockCols_> class SparseBlockMatrix {
+// The public storage contract is column-major traversal over owning CSR
+// blocks. Generic sparse expressions are materialized explicitly.
+template <typename Scalar_, int BlockRows_, int BlockCols_, int Options_ = ColMajor, typename StorageIndex_ = int>
+    requires(Options_ == ColMajor && std::signed_integral<StorageIndex_>)
+class SparseBlockMatrix {
    public:
     using Index = int;
     using Scalar = std::remove_cvref_t<Scalar_>;
-    using StorageIndex = Index;
+    using StorageIndex = StorageIndex_;
+    using Nested = const SparseBlockMatrix&;
     using block_type = SparseMatrix<Scalar>;
     using triplet_type = Triplet<Scalar>;
 
@@ -72,7 +73,11 @@ template <typename Scalar_, int BlockRows_, int BlockCols_> class SparseBlockMat
     template <typename T>
     static constexpr bool is_matrix_block_ = [] {
         using Block = std::remove_cvref_t<T>;
-        if constexpr (internals::matrix_expression<Block> || internals::is_native_sparse_matrix_v<Block>) {
+        if constexpr (
+          internals::matrix_expression<Block> || internals::is_native_sparse_matrix_v<Block> ||
+          requires(const Block& value) {
+              requires internals::is_native_sparse_matrix_v<decltype(value.to_sparse())>;
+          }) {
             return std::convertible_to<typename Block::Scalar, Scalar>;
         } else {
             return false;
@@ -87,6 +92,92 @@ template <typename Scalar_, int BlockRows_, int BlockCols_> class SparseBlockMat
    public:
     static constexpr Index BlockRows = BlockRows_;
     static constexpr Index BlockCols = BlockCols_;
+    static constexpr int StorageOrder = Options_;
+
+    // Iterators borrow an lvalue matrix and follow its blocks' vector-style
+    // invalidation rules. Insert-on-miss, rebuild, mutable-block structural
+    // edits, assignment, move, or swap invalidate them.
+    class InnerIterator {
+       public:
+        InnerIterator() = default;
+        InnerIterator(SparseBlockMatrix& matrix, Index outer) : matrix_(&matrix), mutable_matrix_(&matrix) {
+            initialize_(outer);
+        }
+        InnerIterator(const SparseBlockMatrix& matrix, Index outer) : matrix_(&matrix) { initialize_(outer); }
+        InnerIterator(SparseBlockMatrix&&, Index) = delete;
+        InnerIterator(const SparseBlockMatrix&&, Index) = delete;
+
+        InnerIterator& operator++() {
+            validate_current_();
+            ++row_;
+            seek_();
+            return *this;
+        }
+        operator bool() const { return value_ != nullptr; }
+        const Scalar& value() const {
+            validate_current_();
+            return *value_;
+        }
+        Scalar& valueRef() {
+            validate_current_();
+            if (mutable_matrix_ == nullptr) {
+                throw std::logic_error("SparseBlockMatrix const iterator has no mutable coefficient");
+            }
+            return mutable_matrix_->value_ref(row_, outer_);
+        }
+        Index row() const {
+            validate_current_();
+            return row_;
+        }
+        Index col() const {
+            validate_current_();
+            return outer_;
+        }
+        Index outer() const {
+            validate_current_();
+            return outer_;
+        }
+        StorageIndex index() const {
+            validate_current_();
+            return static_cast<StorageIndex>(row_);
+        }
+       private:
+        void initialize_(Index outer) {
+            matrix_->validate_block_shapes_();
+            matrix_->validate_global_col_(outer);
+            outer_ = outer;
+            block_col_ = matrix_->outerBlockIndex(outer);
+            local_col_ = outer - matrix_->col_offsets_[block_col_];
+            seek_();
+        }
+        void seek_() {
+            value_ = nullptr;
+            while (row_ < matrix_->rows_) {
+                const Index block_row = matrix_->innerBlockIndex(row_);
+                const Index local_row = row_ - matrix_->row_offsets_[block_row];
+                const auto& current = matrix_->blocks_[flat_index_(block_row, block_col_)];
+                for (const auto entry : current.row(local_row)) {
+                    if (entry.column() == local_col_) {
+                        value_ = std::addressof(entry.value());
+                        return;
+                    }
+                    if (entry.column() > local_col_) break;
+                }
+                ++row_;
+            }
+        }
+        void validate_current_() const {
+            if (value_ == nullptr) { throw std::logic_error("SparseBlockMatrix iterator is not dereferenceable"); }
+        }
+
+        const SparseBlockMatrix* matrix_ = nullptr;
+        SparseBlockMatrix* mutable_matrix_ = nullptr;
+        const Scalar* value_ = nullptr;
+        Index outer_ = 0;
+        Index row_ = 0;
+        Index block_col_ = 0;
+        Index local_col_ = 0;
+    };
 
     SparseBlockMatrix() = default;
 
@@ -268,7 +359,72 @@ template <typename Scalar_, int BlockRows_, int BlockCols_> class SparseBlockMat
         return blocks_[flat_index_(block_row, block_col)].value_ref(
           row - row_offsets_[block_row], col - col_offsets_[block_col]);
     }
-    Scalar& coeffRef(Index row, Index col) { return value_ref(row, col); }
+    Scalar& coeffRef(Index row, Index col) {
+        validate_block_shapes_();
+        const Index block_row = innerBlockIndex(row);
+        const Index block_col = outerBlockIndex(col);
+        return blocks_[flat_index_(block_row, block_col)].coeffRef(
+          row - row_offsets_[block_row], col - col_offsets_[block_col]);
+    }
+
+    SparseMatrix<Scalar> to_sparse() const {
+        validate_block_shapes_();
+        std::vector<triplet_type> triplets;
+        std::vector<std::pair<Index, Index>> stored_zeros;
+        triplets.reserve(non_zeros());
+        for (Index block_row = 0; block_row < BlockRows_; ++block_row) {
+            for (Index block_col = 0; block_col < BlockCols_; ++block_col) {
+                const auto& current = blocks_[flat_index_(block_row, block_col)];
+                for (Index row = 0; row < current.rows(); ++row) {
+                    for (const auto entry : current.row(row)) {
+                        const Index global_row = row_offsets_[block_row] + row;
+                        const Index global_col = col_offsets_[block_col] + entry.column();
+                        if (entry.value() == Scalar {}) {
+                            stored_zeros.emplace_back(global_row, global_col);
+                        } else {
+                            triplets.emplace_back(global_row, global_col, entry.value());
+                        }
+                    }
+                }
+            }
+        }
+        SparseMatrix<Scalar> result(rows_, cols_, triplets);
+        for (const auto [row, col] : stored_zeros) result.coeffRef(row, col);
+        return result;
+    }
+
+    Matrix<Scalar, Dynamic, Dynamic> to_dense() const {
+        validate_block_shapes_();
+        Matrix<Scalar, Dynamic, Dynamic> result(rows_, cols_);
+        result.set_zero();
+        for (Index block_row = 0; block_row < BlockRows_; ++block_row) {
+            for (Index block_col = 0; block_col < BlockCols_; ++block_col) {
+                const auto& current = blocks_[flat_index_(block_row, block_col)];
+                for (Index row = 0; row < current.rows(); ++row) {
+                    for (const auto entry : current.row(row)) {
+                        result(row_offsets_[block_row] + row, col_offsets_[block_col] + entry.column()) = entry.value();
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
+    void rebuild_with_constraints(const std::vector<Index>& dofs) {
+        if (dofs.empty()) return;
+        if (rows_ != cols_) { throw std::invalid_argument("SparseBlockMatrix constraints require a square matrix"); }
+        SparseMatrix<Scalar> constrained = to_sparse();
+        constrained.rebuild_with_constraints(dofs);
+
+        std::vector<triplet_type> triplets;
+        triplets.reserve(static_cast<std::size_t>(constrained.non_zeros()));
+        for (Index row = 0; row < constrained.rows(); ++row) {
+            for (const auto entry : constrained.row(row)) { triplets.emplace_back(row, entry.column(), entry.value()); }
+        }
+        SparseBlockMatrix replacement(row_extents_, col_extents_);
+        replacement.rebuild(triplets);
+        swap(replacement);
+    }
 
     template <typename TripletList> void rebuild(const TripletList& triplets) {
         std::vector<std::vector<triplet_type>> block_triplets(block_count_);
@@ -367,6 +523,7 @@ template <typename Scalar_, int BlockRows_, int BlockCols_> class SparseBlockMat
         std::array<Index, BlockCols_ + 1> col_offsets {};
         const Index rows = fill_offsets_(row_extents, row_offsets);
         const Index cols = fill_offsets_(col_extents, col_offsets);
+        if (rows > 0) checked_storage_index_(rows - 1);
 
         std::array<block_type, block_count_> blocks {};
         for (Index row = 0; row < BlockRows_; ++row) {
@@ -383,27 +540,54 @@ template <typename Scalar_, int BlockRows_, int BlockCols_> class SparseBlockMat
         blocks_.swap(blocks);
     }
 
-    template <typename Block> block_type materialize_(const Block& block) const {
+    template <typename SparseBlock> block_type materialize_sparse_(const SparseBlock& block) const {
         const Index rows = checked_block_dimension_(block.rows());
         const Index cols = checked_block_dimension_(block.cols());
         std::vector<triplet_type> triplets;
-        if constexpr (internals::is_native_sparse_matrix_v<Block>) {
-            triplets.reserve(static_cast<std::size_t>(block.non_zeros()));
-            for (Index row = 0; row < rows; ++row) {
-                for (const auto entry : block.row(row)) {
-                    const Scalar value = static_cast<Scalar>(entry.value());
-                    if (value != Scalar {}) triplets.emplace_back(row, entry.column(), value);
+        std::vector<std::pair<Index, Index>> stored_zeros;
+        triplets.reserve(static_cast<std::size_t>(block.non_zeros()));
+        for (Index row = 0; row < rows; ++row) {
+            for (const auto entry : block.row(row)) {
+                const Scalar value = static_cast<Scalar>(entry.value());
+                if (value == Scalar {}) {
+                    stored_zeros.emplace_back(row, entry.column());
+                } else {
+                    triplets.emplace_back(row, entry.column(), value);
                 }
             }
+        }
+        block_type result(rows, cols, triplets);
+        for (const auto [row, col] : stored_zeros) result.coeffRef(row, col);
+        return result;
+    }
+
+    template <typename Block> block_type materialize_(const Block& block) const {
+        if constexpr (internals::is_native_sparse_matrix_v<Block>) {
+            return materialize_sparse_(block);
+        } else if constexpr (requires(const Block& value) {
+                                 requires internals::is_native_sparse_matrix_v<decltype(value.to_sparse())>;
+                             }) {
+            const auto sparse = block.to_sparse();
+            return materialize_sparse_(sparse);
         } else {
+            const Index rows = checked_block_dimension_(block.rows());
+            const Index cols = checked_block_dimension_(block.cols());
+            std::vector<triplet_type> triplets;
             for (Index row = 0; row < rows; ++row) {
                 for (Index col = 0; col < cols; ++col) {
                     const Scalar value = static_cast<Scalar>(block(row, col));
                     if (value != Scalar {}) triplets.emplace_back(row, col, value);
                 }
             }
+            return block_type(rows, cols, triplets);
         }
-        return block_type(rows, cols, triplets);
+    }
+
+    static StorageIndex checked_storage_index_(Index value) {
+        if (!std::in_range<StorageIndex>(value)) {
+            throw std::length_error("SparseBlockMatrix dimension exceeds the storage-index range");
+        }
+        return static_cast<StorageIndex>(value);
     }
 
     void validate_block_index_(Index row, Index col) const {

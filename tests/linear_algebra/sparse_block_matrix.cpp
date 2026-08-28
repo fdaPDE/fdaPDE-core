@@ -18,8 +18,10 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <cstdint>
 #include <limits>
 #include <string>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -27,9 +29,21 @@
 namespace {
 
 using block_matrix = fdapde::SparseBlockMatrix<double, 2, 2>;
+using explicit_block_matrix = fdapde::SparseBlockMatrix<double, 2, 2, fdapde::ColMajor, int>;
+using narrow_block_matrix = fdapde::SparseBlockMatrix<double, 2, 2, fdapde::ColMajor, std::int8_t>;
 
+template <int Options, typename StorageIndex>
+concept valid_block_matrix = requires { typename fdapde::SparseBlockMatrix<double, 2, 2, Options, StorageIndex>; };
+
+static_assert(std::is_same_v<block_matrix, explicit_block_matrix>);
 static_assert(std::is_same_v<typename block_matrix::Scalar, double>);
 static_assert(std::is_same_v<typename block_matrix::Index, int>);
+static_assert(std::is_same_v<typename block_matrix::StorageIndex, int>);
+static_assert(std::is_same_v<typename block_matrix::Nested, const block_matrix&>);
+static_assert(block_matrix::StorageOrder == fdapde::ColMajor);
+static_assert(valid_block_matrix<fdapde::ColMajor, short>);
+static_assert(!valid_block_matrix<fdapde::RowMajor, int>);
+static_assert(!valid_block_matrix<fdapde::ColMajor, unsigned>);
 static_assert(std::is_same_v<decltype(std::declval<block_matrix&>().block(0, 0)), fdapde::SparseMatrix<double>&>);
 static_assert(
   std::is_same_v<decltype(std::declval<const block_matrix&>().block(0, 0)), const fdapde::SparseMatrix<double>&>);
@@ -136,6 +150,144 @@ TEST(linear_algebra, sparse_block_matrix_rebuilds_global_and_local_coordinates) 
     matrix.makeCompressed();
 }
 
+TEST(linear_algebra, sparse_block_matrix_inserts_and_iterates_stored_entries) {
+    block_matrix matrix(std::array<int, 2> {1, 2}, std::array<int, 2> {2, 1});
+    matrix.rebuild({
+      {0, 0, 1.0},
+      {0, 2, 5.0},
+      {1, 0, 2.0},
+      {1, 2, 6.0},
+      {2, 0, 3.0},
+      {2, 1, 4.0}
+    });
+
+    double& inserted = matrix.coeffRef(2, 2);
+    EXPECT_DOUBLE_EQ(inserted, 0.0);
+    EXPECT_TRUE(matrix.contains(2, 2));
+    EXPECT_EQ(matrix.block(1, 1).non_zeros(), 2);
+    EXPECT_THROW(static_cast<void>(matrix.value_ref(0, 1)), std::out_of_range);
+
+    std::vector<std::tuple<int, int, double>> entries;
+    for (int outer = 0; outer < matrix.outerSize(); ++outer) {
+        for (block_matrix::InnerIterator entry(matrix, outer); entry; ++entry) {
+            entries.emplace_back(entry.row(), entry.col(), entry.value());
+            EXPECT_EQ(entry.outer(), outer);
+            EXPECT_EQ(entry.index(), entry.row());
+            if (entry.row() == 1 && entry.col() == 0) entry.valueRef() = 8.0;
+        }
+    }
+    EXPECT_EQ(
+      entries, (std::vector<std::tuple<int, int, double>> {
+                 {0, 0, 1.0},
+                 {1, 0, 2.0},
+                 {2, 0, 3.0},
+                 {2, 1, 4.0},
+                 {0, 2, 5.0},
+                 {1, 2, 6.0},
+                 {2, 2, 0.0}
+    }));
+    EXPECT_DOUBLE_EQ(matrix.coeff(1, 0), 8.0);
+
+    const block_matrix& const_matrix = matrix;
+    block_matrix::InnerIterator const_entry(const_matrix, 1);
+    ASSERT_TRUE(const_entry);
+    EXPECT_EQ(const_entry.row(), 2);
+    EXPECT_DOUBLE_EQ(const_entry.value(), 4.0);
+    EXPECT_THROW(static_cast<void>(const_entry.valueRef()), std::logic_error);
+    EXPECT_THROW(static_cast<void>(block_matrix::InnerIterator(matrix, -1)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(block_matrix::InnerIterator(matrix, matrix.cols())), std::out_of_range);
+
+    block_matrix empty_extents(std::array<int, 2> {0, 2}, std::array<int, 2> {1, 0});
+    empty_extents.rebuild({
+      {0, 0, 9.0}
+    });
+    block_matrix::InnerIterator after_empty_row(empty_extents, 0);
+    ASSERT_TRUE(after_empty_row);
+    EXPECT_EQ(after_empty_row.row(), 0);
+    EXPECT_DOUBLE_EQ(after_empty_row.value(), 9.0);
+    EXPECT_FALSE(++after_empty_row);
+}
+
+TEST(linear_algebra, sparse_block_matrix_materializes_owning_native_matrices) {
+    block_matrix source = make_mixed_blocks();
+    source.coeffRef(2, 0);
+    const auto sparse = source.to_sparse();
+    const auto dense = source.to_dense();
+    static_assert(std::is_same_v<std::remove_cvref_t<decltype(sparse)>, fdapde::SparseMatrix<double>>);
+    static_assert(
+      std::is_same_v<std::remove_cvref_t<decltype(dense)>, fdapde::Matrix<double, fdapde::Dynamic, fdapde::Dynamic>>);
+
+    EXPECT_EQ(sparse.rows(), 3);
+    EXPECT_EQ(sparse.cols(), 3);
+    EXPECT_TRUE(sparse.contains(2, 0));
+    EXPECT_DOUBLE_EQ(sparse.coeff(0, 2), 2.0);
+    EXPECT_DOUBLE_EQ(dense(1, 2), 3.0);
+    EXPECT_DOUBLE_EQ(dense(2, 2), 4.0);
+
+    source.coeffRef(0, 0) = 9.0;
+    EXPECT_DOUBLE_EQ(sparse.coeff(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ(dense(0, 0), 1.0);
+
+    const auto from_temporary = make_mixed_blocks().to_sparse();
+    EXPECT_DOUBLE_EQ(from_temporary.coeff(2, 2), 4.0);
+}
+
+TEST(linear_algebra, sparse_block_matrix_eagerly_owns_nested_blocks_and_sparse_patterns) {
+    using nested_row = fdapde::SparseBlockMatrix<double, 1, 2>;
+    using nested_owner = fdapde::SparseBlockMatrix<double, 2, 1>;
+
+    fdapde::SparseMatrix<double> stored_zero(1, 1);
+    stored_zero.coeffRef(0, 0);
+    nested_row nested(
+      stored_zero, fdapde::SparseMatrix<double>(
+                     1, 1,
+                     {
+                       {0, 0, 2.0}
+    }));
+    nested_owner owner(nested, fdapde::Matrix<double, 1, 2>({3.0, 4.0}));
+
+    EXPECT_TRUE(owner.block(0, 0).contains(0, 0));
+    EXPECT_DOUBLE_EQ(owner.coeff(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ(owner.coeff(0, 1), 2.0);
+    EXPECT_DOUBLE_EQ(owner.coeff(1, 0), 3.0);
+    EXPECT_DOUBLE_EQ(owner.coeff(1, 1), 4.0);
+
+    stored_zero.coeffRef(0, 0) = 8.0;
+    nested.coeffRef(0, 1) = 9.0;
+    EXPECT_DOUBLE_EQ(owner.coeff(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ(owner.coeff(0, 1), 2.0);
+    const auto flattened = owner.to_sparse();
+    EXPECT_TRUE(flattened.contains(0, 0));
+}
+
+TEST(linear_algebra, sparse_block_matrix_rebuilds_unit_constraints_atomically) {
+    block_matrix matrix(std::array<int, 2> {1, 2}, std::array<int, 2> {2, 1});
+    matrix.rebuild({
+      {0, 0, 2.0},
+      {0, 1, 3.0},
+      {1, 0, 4.0},
+      {1, 1, 5.0},
+      {1, 2, 6.0},
+      {2, 1, 7.0},
+      {2, 2, 8.0}
+    });
+    matrix.rebuild_with_constraints({1});
+
+    EXPECT_DOUBLE_EQ(matrix.coeff(0, 0), 2.0);
+    EXPECT_DOUBLE_EQ(matrix.coeff(1, 1), 1.0);
+    EXPECT_DOUBLE_EQ(matrix.coeff(2, 2), 8.0);
+    EXPECT_DOUBLE_EQ(matrix.coeff(0, 1), 0.0);
+    EXPECT_DOUBLE_EQ(matrix.coeff(1, 0), 0.0);
+    EXPECT_DOUBLE_EQ(matrix.coeff(1, 2), 0.0);
+    EXPECT_DOUBLE_EQ(matrix.coeff(2, 1), 0.0);
+    EXPECT_EQ(matrix.non_zeros(), 3U);
+
+    EXPECT_THROW(matrix.rebuild_with_constraints({3}), std::out_of_range);
+    EXPECT_DOUBLE_EQ(matrix.coeff(1, 1), 1.0);
+    EXPECT_EQ(matrix.non_zeros(), 3U);
+    EXPECT_THROW(block_matrix(1, 2).rebuild_with_constraints({0}), std::invalid_argument);
+}
+
 TEST(linear_algebra, sparse_block_matrix_supports_explicit_and_empty_extents) {
     const std::vector<int> row_extents {1, 2};
     const std::vector<int> col_extents {2, 1};
@@ -196,6 +348,10 @@ TEST(linear_algebra, sparse_block_matrix_contracts_remain_active_without_debug_a
     EXPECT_THROW(static_cast<void>(matrix.outerBlockIndex(6)), std::out_of_range);
     EXPECT_THROW(static_cast<void>(matrix.indexToBlockInner(-1)), std::out_of_range);
     EXPECT_THROW(static_cast<void>(matrix.indexToBlockOuter(6)), std::out_of_range);
+    const std::size_t old_nonzeros = matrix.non_zeros();
+    EXPECT_THROW(static_cast<void>(matrix.coeffRef(-1, 0)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(matrix.coeffRef(0, 6)), std::out_of_range);
+    EXPECT_EQ(matrix.non_zeros(), old_nonzeros);
 
     EXPECT_THROW(
       matrix.rebuild({
@@ -220,6 +376,20 @@ TEST(linear_algebra, sparse_block_matrix_contracts_remain_active_without_debug_a
       static_cast<void>(
         block_matrix(std::array<int, 2> {std::numeric_limits<int>::max(), 1}, std::array<int, 2> {0, 0})),
       std::length_error);
+    narrow_block_matrix narrow_boundary(std::array<int, 2> {64, 64}, std::array<int, 2> {100, 100});
+    EXPECT_EQ(narrow_boundary.rows(), 128);
+    EXPECT_EQ(narrow_boundary.cols(), 200);
+    narrow_boundary.coeffRef(127, 199) = 3.0;
+    narrow_block_matrix::InnerIterator narrow_entry(narrow_boundary, 199);
+    ASSERT_TRUE(narrow_entry);
+    EXPECT_EQ(static_cast<int>(narrow_entry.index()), 127);
+    EXPECT_THROW(
+      static_cast<void>(narrow_block_matrix(std::array<int, 2> {64, 65}, std::array<int, 2> {1, 1})),
+      std::length_error);
+
+    const fdapde::Matrix<double, 8, 8> full = fdapde::Matrix<double, 8, 8>::Ones();
+    const narrow_block_matrix narrow_full(full, full, full, full);
+    EXPECT_EQ(narrow_full.nonZerosEstimate(), 256);
 }
 
 }   // namespace
