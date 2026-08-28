@@ -212,6 +212,28 @@ template <typename Scalar_> class SparseMatrix {
           position != missing_, std::out_of_range, "SparseMatrix value_ref requires an existing stored coefficient");
         return values_[position];
     }
+    Scalar& coeff_ref(Index row, Index col) {
+        validate_index_(row, col);
+        const Index position = find_position_(row, col);
+        if (position != missing_) return values_[position];
+        if (values_.size() == static_cast<std::size_t>(std::numeric_limits<Index>::max())) {
+            throw std::length_error("sparse coefficient insertion exceeds the supported int range");
+        }
+
+        // ponytail: insertion copies O(nnz) for a strong guarantee; use rebuild
+        // for bulk structural changes.
+        SparseMatrix replacement(*this);
+        const Index insertion = static_cast<Index>(
+          std::lower_bound(
+            replacement.column_indices_.begin() + replacement.row_offsets_[row],
+            replacement.column_indices_.begin() + replacement.row_offsets_[row + 1], col) -
+          replacement.column_indices_.begin());
+        replacement.column_indices_.insert(replacement.column_indices_.begin() + insertion, col);
+        replacement.values_.insert(replacement.values_.begin() + insertion, Scalar {});
+        for (Index i = row + 1; i <= rows_; ++i) ++replacement.row_offsets_[i];
+        swap(replacement);
+        return values_[insertion];
+    }
     /// @brief borrows a checked row from an lvalue matrix
     ConstRowView row(Index row_index) const& {
         validate_row_(row_index);
