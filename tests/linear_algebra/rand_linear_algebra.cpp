@@ -84,6 +84,21 @@ double rsi_residual(const MatrixType& matrix, const Approximation& approximation
     return maximum;
 }
 
+template <typename MatrixType, typename Approximation>
+double relative_svd_reconstruction_error(const MatrixType& matrix, const Approximation& approximation) {
+    Matrix<double, Dynamic, Dynamic, MatrixType::StorageOrder> reconstructed(matrix.rows(), matrix.cols());
+    reconstructed.set_zero();
+    for (int row = 0; row < matrix.rows(); ++row) {
+        for (int col = 0; col < matrix.cols(); ++col) {
+            for (int k = 0; k < approximation.rank(); ++k) {
+                reconstructed(row, col) +=
+                  approximation.matrixU()(row, k) * approximation.singularValues()[k] * approximation.matrixV()(col, k);
+            }
+        }
+    }
+    return (matrix - reconstructed).norm() / matrix.norm();
+}
+
 template <int StorageOrder> void check_rsi_spectrum(int rows, int cols) {
     using matrix_type = Matrix<double, Dynamic, Dynamic, StorageOrder>;
     const matrix_type source = diagonal_spectrum<StorageOrder>(rows, cols);
@@ -192,6 +207,160 @@ TEST(rand_svd_test, rsi_state_is_reusable_and_failures_are_atomic) {
     EXPECT_THROW(approximation.compute(nonfinite, 2, 3), std::invalid_argument);
     EXPECT_THROW(approximation.compute(second, 0, 3), std::invalid_argument);
     EXPECT_THROW(approximation.compute(second, 3, 2), std::invalid_argument);
+    EXPECT_DOUBLE_EQ((approximation.matrixU() - retained_u).norm(), 0.0);
+    EXPECT_DOUBLE_EQ((approximation.matrixV() - retained_v).norm(), 0.0);
+    EXPECT_DOUBLE_EQ((approximation.singularValues() - retained_values).norm(), 0.0);
+
+    EXPECT_THROW(static_cast<void>(approximation_type(-1.0, 8, 1)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(approximation_type(1.0e-5, 0, 1)), std::invalid_argument);
+    EXPECT_THROW(
+      static_cast<void>(approximation_type(std::numeric_limits<double>::quiet_NaN(), 8, 1)), std::invalid_argument);
+}
+
+template <int StorageOrder> void check_rbki_spectrum(int rows, int cols) {
+    using matrix_type = Matrix<double, Dynamic, Dynamic, StorageOrder>;
+    const matrix_type source = diagonal_spectrum<StorageOrder>(rows, cols);
+    const RBKI<matrix_type> approximation(source, 3, 1.0e-12, 8, 1729);
+
+    EXPECT_EQ(approximation.rank(), 3);
+    EXPECT_EQ(approximation.matrixU().rows(), rows);
+    EXPECT_EQ(approximation.matrixU().cols(), 3);
+    EXPECT_EQ(approximation.matrixV().rows(), cols);
+    EXPECT_EQ(approximation.matrixV().cols(), 3);
+    EXPECT_EQ(approximation.singularValues().rows(), 3);
+    EXPECT_NEAR(approximation.singularValues()[0], 9.0, 1.0e-10);
+    EXPECT_NEAR(approximation.singularValues()[1], 7.0, 1.0e-10);
+    EXPECT_NEAR(approximation.singularValues()[2], 5.0, 1.0e-10);
+    EXPECT_LT(rsi_residual(source, approximation), 1.0e-10);
+}
+
+template <int StorageOrder> void check_rbki_rectangular_reconstruction() {
+    using matrix_type = Matrix<double, Dynamic, Dynamic, StorageOrder>;
+    const double left[][2] = {
+      {1.0,  2.0 },
+      {2.0,  -1.0},
+      {-1.0, 3.0 },
+      {4.0,  0.5 }
+    };
+    const double right[][3] = {
+      {1.0,  0.0, 2.0},
+      {-2.0, 1.0, 0.5}
+    };
+    matrix_type tall(4, 3);
+    for (int row = 0; row < tall.rows(); ++row) {
+        for (int col = 0; col < tall.cols(); ++col) {
+            tall(row, col) = left[row][0] * right[0][col] + left[row][1] * right[1][col];
+        }
+    }
+
+    const RBKI<matrix_type> tall_approximation(tall, 2, 1.0e-12, 4, 1729);
+    EXPECT_LT(relative_svd_reconstruction_error(tall, tall_approximation), 1.0e-10);
+
+    const matrix_type wide(tall.transpose());
+    const RBKI<matrix_type> wide_approximation(wide, 2, 1.0e-12, 4, 1729);
+    EXPECT_LT(relative_svd_reconstruction_error(wide, wide_approximation), 1.0e-10);
+}
+
+TEST(rand_svd_test, rbki_square_tall_and_wide_leading_spectra) {
+    check_rbki_spectrum<RowMajor>(5, 5);
+    check_rbki_spectrum<ColMajor>(5, 5);
+    check_rbki_spectrum<RowMajor>(8, 5);
+    check_rbki_spectrum<ColMajor>(8, 5);
+    check_rbki_spectrum<RowMajor>(5, 8);
+    check_rbki_spectrum<ColMajor>(5, 8);
+    check_rbki_rectangular_reconstruction<RowMajor>();
+    check_rbki_rectangular_reconstruction<ColMajor>();
+
+    using matrix_type = Matrix<double, Dynamic, Dynamic>;
+    matrix_type rank_deficient(4, 5);
+    rank_deficient.set_zero();
+    rank_deficient(0, 0) = 9.0;
+    RBKI<matrix_type> deficient(1.0e-12, 4, 1729);
+    deficient.compute(rank_deficient, 3, 3);
+    ASSERT_EQ(deficient.rank(), 3);
+    EXPECT_NEAR(deficient.singularValues()[0], 9.0, 1.0e-10);
+    EXPECT_DOUBLE_EQ(deficient.singularValues()[1], 0.0);
+    EXPECT_DOUBLE_EQ(deficient.singularValues()[2], 0.0);
+    EXPECT_LT(rsi_residual(rank_deficient, deficient), 1.0e-10);
+
+    matrix_type zero(3, 4);
+    zero.set_zero();
+    RBKI<matrix_type> zero_explicit(0.0, 1, 1729);
+    zero_explicit.compute(zero, 2, 2);
+    ASSERT_EQ(zero_explicit.rank(), 2);
+    EXPECT_DOUBLE_EQ(zero_explicit.singularValues()[0], 0.0);
+    EXPECT_DOUBLE_EQ(zero_explicit.singularValues()[1], 0.0);
+
+    const RBKI<matrix_type> zero_default(zero, 2, 0.0, 1, 1729);
+    EXPECT_EQ(zero_default.rank(), 1);
+    EXPECT_DOUBLE_EQ(zero_default.singularValues()[0], 0.0);
+}
+
+TEST(rand_svd_test, rbki_uses_absolute_tolerance_and_respects_iteration_cap) {
+    using matrix_type = Matrix<double, Dynamic, Dynamic>;
+    matrix_type source(4, 4);
+    source.set_zero();
+    source(0, 0) = 1.0;
+    source(1, 1) = 0.45;
+    source(2, 2) = 0.2;
+    source(3, 3) = 0.05;
+
+    RBKI<matrix_type> initial(std::numeric_limits<double>::max(), 1, 271828);
+    initial.compute(source, 1, 1);
+    const double initial_residual = rsi_residual(source, initial);
+    ASSERT_GT(initial_residual, 0.0);
+
+    const double tolerance = 1.1 * initial_residual;
+    RBKI<matrix_type> unscaled(tolerance, 1, 271828);
+    unscaled.compute(source, 1, 1);
+    EXPECT_NEAR(rsi_residual(source, unscaled), initial_residual, 1.0e-13);
+
+    const matrix_type scaled_source(source * 16.0);
+    RBKI<matrix_type> scaled(tolerance, 1, 271828);
+    scaled.compute(scaled_source, 1, 1);
+    EXPECT_LT(rsi_residual(scaled_source, scaled) / 16.0, 0.8 * initial_residual);
+
+    RBKI<matrix_type> capped(0.0, 1, 271828);
+    EXPECT_NO_THROW(capped.compute(source, 3, 1));
+    EXPECT_EQ(capped.rank(), 2);
+    EXPECT_TRUE(std::isfinite(capped.singularValues()[0]));
+    EXPECT_TRUE(std::isfinite(capped.singularValues()[1]));
+    EXPECT_GT(rsi_residual(source, capped), 0.0);
+}
+
+TEST(rand_svd_test, rbki_state_is_reusable_and_failures_are_atomic) {
+    using matrix_type = Matrix<double, Dynamic, Dynamic>;
+    using approximation_type = RBKI<matrix_type>;
+    static_assert(std::is_same_v<typename approximation_type::Scalar, double>);
+    static_assert(std::is_same_v<typename approximation_type::MatrixType, matrix_type>);
+    static_assert(std::is_same_v<typename approximation_type::FactorType, matrix_type>);
+    static_assert(!exposes_rvalue_left_singular_vectors<approximation_type>);
+    static_assert(!exposes_rvalue_right_singular_vectors<approximation_type>);
+    static_assert(!exposes_rvalue_singular_values<approximation_type>);
+
+    approximation_type approximation(1.0e-12, 8, 314159);
+    approximation.compute(diagonal_spectrum<RowMajor>(5, 5), 3, 1);
+    EXPECT_EQ(approximation.rank(), 3);
+
+    const matrix_type second = diagonal_spectrum<RowMajor>(8, 5, 0.5);
+    approximation.compute(second, 2, 2);
+    ASSERT_EQ(approximation.rank(), 2);
+    EXPECT_NEAR(approximation.singularValues()[0], 4.5, 1.0e-10);
+    EXPECT_NEAR(approximation.singularValues()[1], 3.5, 1.0e-10);
+
+    const matrix_type retained_u(approximation.matrixU());
+    const matrix_type retained_v(approximation.matrixV());
+    const Vector<double, Dynamic> retained_values(approximation.singularValues());
+
+    matrix_type nonfinite(second);
+    nonfinite(0, 0) = std::numeric_limits<double>::infinity();
+    EXPECT_THROW(approximation.compute(nonfinite, 2, 2), std::invalid_argument);
+    EXPECT_THROW(approximation.compute(second, 0, 2), std::invalid_argument);
+    EXPECT_THROW(approximation.compute(second, 6, 2), std::invalid_argument);
+    EXPECT_THROW(approximation.compute(second, 2, 0), std::invalid_argument);
+    EXPECT_THROW(approximation.compute(second, 2, 6), std::invalid_argument);
+    matrix_type empty(0, 0);
+    EXPECT_THROW(approximation.compute(empty, 1), std::invalid_argument);
     EXPECT_DOUBLE_EQ((approximation.matrixU() - retained_u).norm(), 0.0);
     EXPECT_DOUBLE_EQ((approximation.matrixV() - retained_v).norm(), 0.0);
     EXPECT_DOUBLE_EQ((approximation.singularValues() - retained_values).norm(), 0.0);
@@ -332,7 +501,7 @@ TEST(nys_approximation, contracts_remain_active_without_debug_assertions) {
 }
 
 // Source: a2a9c88:test/src/rand_linear_algebra_test.cpp.
-// TODO(P4-M): restore seeded RBKI, NysRSI, and NysRBKI leading-spectrum assertions in their own native
+// TODO(P4-M): restore seeded NysRSI and NysRBKI leading-spectrum assertions in their own native
 // compact-decomposition slices. Eigen may be an opt-in test oracle only, never a production dependency.
 
 }   // namespace

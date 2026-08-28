@@ -14,238 +14,181 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __RBKI_H__
-#define __RBKI_H__
+#ifndef __FDAPDE_LINALG_RBKI_H__
+#define __FDAPDE_LINALG_RBKI_H__
+
+#include <cmath>
+#include <memory>
+#include <random>
+#include <stdexcept>
+#include <type_traits>
+#include <utility>
+
+#include "header_check.h"
+#include "randomized_svd.h"
 
 namespace fdapde {
 
-// randomized SVD decomposition of a matrix, as described in
-// J. A. Tropp and R. J. Webber. (2023) Randomized algorithms for low-rank matrix approximation: Design, analysis, and
-// applications, Alg 5.4, pag 18.
-template <typename MatrixType>
-    requires(internals::is_eigen_dense_xpr_v<MatrixType>)
+// Randomized block Krylov iteration for a compact rank-revealing SVD.
+// The stopping tolerance is absolute, matching the direct API introduced in
+// b4b43f8 and officially exposed by 53b5e92.
+template <typename MatrixType_>
+    requires(internals::matrix_expression<MatrixType_>)
 class RBKI {
-    using matrix_t = Eigen::Matrix<double, Dynamic, Dynamic>;
-    using vector_t = Eigen::Matrix<double, Dynamic, 1>;
-    using qr_t     = Eigen::HouseholderQR<matrix_t>;
-    using svd_t    = Eigen::JacobiSVD<matrix_t>;
    public:
+    using MatrixType = std::remove_cvref_t<MatrixType_>;
+    using Scalar = std::remove_cv_t<typename MatrixType::Scalar>;
+    using FactorType = Matrix<Scalar, Dynamic, Dynamic, MatrixType::StorageOrder>;
+    using SingularValuesType = Vector<Scalar, Dynamic>;
+    fdapde_static_assert(std::is_floating_point_v<Scalar>, RBKI_REQUIRES_FLOATING_POINT_SCALARS);
 
-    RBKI() noexcept =default;
-    RBKI(const MatrixType& m, int rank) : tol_(1e-5), max_iter_(50), seed_(std::random_device()()) { compute(m, rank); }
-    RBKI(const MatrixType& m, int rank, double tol, int max_iter, int seed = random_seed) :
-        tol_(tol), max_iter_(max_iter), seed_(seed == random_seed ? std::random_device()() : seed) {
-        compute(m, rank);
+    RBKI() : seed_(resolve_seed_(random_seed)) { }
+    RBKI(const RBKI&) = default;
+    RBKI& operator=(const RBKI&) = default;
+    RBKI(const MatrixType& matrix, int rank) : RBKI() { compute(matrix, rank); }
+    RBKI(const MatrixType& matrix, int rank, Scalar tolerance, int max_iterations, int seed = random_seed) :
+        RBKI(tolerance, max_iterations, seed) {
+        compute(matrix, rank);
     }
-    RBKI(double tol, int max_iter, int seed = random_seed) :
-        tol_(tol), max_iter_(max_iter), seed_(seed == random_seed ? std::random_device()() : seed) { }
+    RBKI(Scalar tolerance, int max_iterations, int seed = random_seed) :
+        tolerance_(tolerance), max_iterations_(max_iterations), seed_(resolve_seed_(seed)) {
+        validate_configuration_();
+    }
 
-    // computes the decomposition
-    void compute(const MatrixType& A, int rank) {
-        bool transposed = A.rows() > A.cols();
-        int block_sz = ((transposed ? A.cols() : A.rows()) <= 100) ? 1 : 10;
-        transposed ? compute_(A.transpose(), rank, block_sz) : compute(A, rank, block_sz);
-        return;
+    void compute(const MatrixType& matrix, int rank) {
+        const int minimum_dimension = fdapde::min(matrix.rows(), matrix.cols());
+        compute(matrix, rank, minimum_dimension <= 100 ? 1 : 10);
     }
-    void compute(const MatrixType& A, int rank, int block_sz) {
-        A.rows() > A.cols() ? compute_(A.transpose(), rank, block_sz) : compute(A, rank, block_sz);
-        return;
-    }
-    // observers
-    const matrix_t& matrixU() const { return U_; }
-    const matrix_t& matrixV() const { return V_; }
-    const vector_t& singularValues() const { return Sigma_; }
-    int rank() const { return rank_; }
-   private:
-    template <typename MatrixType_>
-        requires(internals::is_eigen_dense_xpr_v<MatrixType_>)
-    void compute_(const MatrixType_& A, int rank, int block_sz) {
-        int rows = A.rows();
-        int cols = A.cols();
-        // adjust maximum iteration number and maximum Krylov Subspace dimension
-        int max_iter = std::min(max_iter_, std::min(rows, cols) / block_sz + 1);
-        int max_dim = (max_iter + 1) * block_sz;
 
-        // approximate range of A
-        matrix_t Omega = internals::gaussian_matrix(cols, block_sz, 1.0, seed_);
-        matrix_t Q(rows, max_dim);
-        matrix_t B(cols, max_dim);
-        Q.leftCols(block_sz) = A * Omega;
-        qr_t qr(Q.leftCols(block_sz));
-        Q.leftCols(block_sz) = qr.householderQ() * matrix_t::Identity(rows, block_sz);
-        B.leftCols(block_sz) = A.transpose() * Q.leftCols(block_sz);
-        // Krylov subspace iteration loop initialization
-        int i = 0;
-        svd_t svd(B.leftCols(block_sz).transpose(), Eigen::ComputeThinU | Eigen::ComputeThinV);
-        int n = std::min(rank, block_sz);
-        int m = block_sz;
-        matrix_t Ar = A * svd.matrixV().leftCols(n);
-        matrix_t E = Ar - Q.leftCols(block_sz) * svd.matrixU().leftCols(n) * svd.singularValues().head(n).asDiagonal();
-        double res_err = E.colwise().template lpNorm<2>().maxCoeff();
-        // compute Krylov subspace [A * \Omega, (A * A^\top) * A * \Omega, ..., (A * A^\top)^{q} * A * \Omega]
-        for (; res_err > tol_ && i < max_iter; i++) {
-            // krylov subspace update
-            Q.middleCols((i + 1) * block_sz, block_sz) = A * B.middleCols(i * block_sz, block_sz);
-            Q.middleCols((i + 1) * block_sz, block_sz) =
-              BCGS_(Q.leftCols((i + 1) * block_sz), Q.middleCols((i + 1) * block_sz, block_sz));
-            B.middleCols((i + 1) * block_sz, block_sz) = A.transpose() * Q.middleCols((i + 1) * block_sz, block_sz);
-            // residual error update
-            svd.compute(B.leftCols((i + 2) * block_sz).transpose(), Eigen::ComputeThinU | Eigen::ComputeThinV);
-            int n = std::min(rank, (i + 2) * block_sz);
-            E = A * svd.matrixV().leftCols(n) -
-                Q.leftCols((i + 2) * block_sz) * svd.matrixU().leftCols(n) * svd.singularValues().head(n).asDiagonal();
-            res_err = E.colwise().template lpNorm<2>().maxCoeff();
-            m += block_sz;
+    void compute(const MatrixType& matrix, int rank, int block_size) {
+        validate_configuration_();
+        const int rows = matrix.rows();
+        const int cols = matrix.cols();
+        const int minimum_dimension = fdapde::min(rows, cols);
+        if (rows <= 0 || cols <= 0) { throw std::invalid_argument("RBKI requires a nonempty matrix"); }
+        (void)internals::checked_matrix_size(rows, cols);
+        if (rank <= 0 || rank > minimum_dimension) {
+            throw std::invalid_argument("RBKI rank must be positive and no larger than either matrix dimension");
         }
-        // store result
-        rank = fdapde::min(svd.singularValues().size(), rank);
-        rank_ = rank;
-        Sigma_ = svd.singularValues().head(rank);
-        U_ = Q.leftCols(m) * svd.matrixU().leftCols(rank);
-        V_ = svd.matrixV().leftCols(rank);
-        return;
-    }
+        if (block_size <= 0 || block_size > minimum_dimension) {
+            throw std::invalid_argument("RBKI block size must be positive and fit both matrix dimensions");
+        }
 
-    // for X = [X_1 ... X_n], X_i \in R^{n, m} and y \in R^{n, m}, performs a Block Classical Gram-Schmidt step as
-    // y = y - \sum_{j} (X_j * X_j^\top) * y
-    template <typename Lhs_, typename Rhs_> matrix_t BCGS_(const Lhs_& X, const Rhs_& y) {
-        int rows = y.rows();
-        int cols = y.cols();
-        qr_t qr;
-        matrix_t proj = (matrix_t::Identity(rows, rows) - X * X.transpose()); // (I - X * X^\top)
-
-        matrix_t orth_block = proj * y;   // (I - X * X^\top) * y = y - \sum_{j} (X_j * X_j^\top) * y
-        orth_block = proj * orth_block;   // repeat orthogonalization (stabilize)
-
-	// perform final stabilzed QR
-        qr.compute(orth_block);
-        orth_block = qr.householderQ() * matrix_t::Identity(rows, cols);
-        return orth_block;
-    }
-
-    double tol_ = 1e-5;
-    int max_iter_ = 50;
-    int seed_;
-
-    matrix_t U_, V_;
-    vector_t Sigma_;
-    int rank_;
-};
-
-// randomized eigenvalue decomposition of a (SPD) matrix, as described in
-// J. A. Tropp and R. J. Webber. (2023) Randomized algorithms for low-rank matrix approximation: Design, analysis, and
-// applications, Alg 5.8, pag 22.
-template <typename MatrixType>
-    requires(internals::is_eigen_dense_xpr_v<MatrixType>)
-class NysRBKI {
-    using matrix_t = Eigen::Matrix<double, Dynamic, Dynamic>;
-    using vector_t = Eigen::Matrix<double, Dynamic, 1>;
-    using qr_t     = Eigen::HouseholderQR<matrix_t>;
-    using chol_t   = Eigen::LLT<matrix_t>;
-    using svd_t    = Eigen::JacobiSVD<matrix_t>;
-   public:
-
-    NysRBKI() noexcept =default;
-    NysRBKI(const MatrixType& m, int rank) noexcept : tol_(1e-5), max_iter_(50), seed_(std::random_device()()) {
-        compute(m, rank);
-    }
-    NysRBKI(const MatrixType& m, int rank, double tol, int max_iter, int seed = random_seed) noexcept :
-        tol_(tol), max_iter_(max_iter), seed_(seed == random_seed ? std::random_device()() : seed) {
-        compute(m, rank);
-    }
-    NysRBKI(double tol, int max_iter, int seed = random_seed) noexcept :
-        tol_(tol), max_iter_(max_iter), seed_(seed == random_seed ? std::random_device()() : seed) { }
-
-    // computes the decomposition
-    void compute(const MatrixType& A, int rank) { compute(A, rank, (A.rows() <= 100) ? 1 : 10); }
-    void compute(const MatrixType& A, int rank, int block_sz) {
-        rank_ = rank;
-        int rows = A.rows();
-        int cols = A.cols();
-        // adjust maximum iteration number and maximum Krylov Subspace dimension
-        int max_iter = std::min(max_iter_, std::min(rows, cols) / block_sz + 1);
-        int max_dim = (max_iter + 1) * block_sz;
-        double shift = A.diagonal().sum() * std::numeric_limits<double>::epsilon();   // epsilon_shift
-
-        // Krylov subspace iteration loop initialization
-        matrix_t X(rows, max_dim), Y(rows, max_dim);
-        qr_t qr(internals::gaussian_matrix(rows, block_sz, 1.0, seed_));
-        X.leftCols(block_sz) = qr.householderQ() * matrix_t::Identity(rows, block_sz);
-        Y.leftCols(block_sz) = A * X.leftCols(block_sz);
-        matrix_t S = matrix_t::Zero(max_dim, max_dim);   // matrix [X_0, ..., X_{i - 1}]^\top * [Y_1, ..., Y_{i}]
-        svd_t svd;
-        int i = 0;
-        double res_err = std::numeric_limits<double>::max();
-        // compute Krylov subspace [A * \Omega, (A * A^\top) * A * \Omega, ..., (A * A^\top)^{q} * A * \Omega]
-        for (; res_err > tol_ && i < max_iter; i++) {
-            // krylov subspace update
-            X.middleCols((i + 1) * block_sz, block_sz) =
-              Y.middleCols(i * block_sz, block_sz) + shift * X.middleCols(i * block_sz, block_sz);
-            // incremental update of [X_0, ..., X_{i - 1}]^\top * [Y_1, ..., Y_{i}]
-            {
-                matrix_t tmp = matrix_t::Zero(X.rows(), (i + 1) * block_sz);
-                tmp.middleCols(std::max(i - 1, 0) * block_sz, block_sz) =
-                  X.middleCols(std::max(i - 1, 0) * block_sz, block_sz);
-                tmp.middleCols(i * block_sz, block_sz) = X.middleCols(i * block_sz, block_sz);
-                S.block(0, i * block_sz, (i + 1) * block_sz, block_sz) =
-                  tmp.transpose() * X.middleCols((i + 1) * block_sz, block_sz);
+        Scalar scale = Scalar(0);
+        for (int row = 0; row < rows; ++row) {
+            for (int col = 0; col < cols; ++col) {
+                const Scalar value = static_cast<Scalar>(matrix(row, col));
+                if (!std::isfinite(value)) { throw std::invalid_argument("RBKI requires finite matrix coefficients"); }
+                scale = fdapde::max(scale, fdapde::abs(value));
             }
-            // subspace orthogonalization
-            auto [Q, R] = BCGS_(X.leftCols((i + 1) * block_sz), X.middleCols((i + 1) * block_sz, block_sz));
-            X.middleCols((i + 1) * block_sz, block_sz) = Q;
-	    Y.middleCols((i + 1) * block_sz, block_sz) = A * X.middleCols((i + 1) * block_sz, block_sz);
-            // Nystrom factor computation
-            chol_t chol(S.block(0, 0, (i + 1) * block_sz, (i + 1) * block_sz));
-            S.block((i + 1) * block_sz, i * block_sz, block_sz, block_sz) = R;
-            matrix_t F = chol.matrixU().solve<Eigen::OnTheRight>(S.block(0, 0, (i + 2) * block_sz, (i + 1) * block_sz));
-            // residual error update
-            svd.compute(F, Eigen::ComputeThinU | Eigen::ComputeThinV);
-            int m = std::min(rank, (i + 1) * block_sz);
-            matrix_t E = Y.leftCols((i + 2) * block_sz) * svd.matrixU().leftCols(m) -
-                         X.leftCols((i + 2) * block_sz) * svd.matrixU().leftCols(m) *
-                           (svd.singularValues().head(m).array().pow(2) - shift).matrix().asDiagonal();
-            res_err = std::sqrt(2) * E.colwise().template lpNorm<2>().maxCoeff();
         }
-	// store result
-        rank = fdapde::min(svd.singularValues().size(), rank);
-        U_ = X.leftCols((i + 1) * block_sz) * svd.matrixU().leftCols(rank);
-        Lambda_ = (svd.singularValues().head(rank).array().pow(2) - shift).matrix();
-        for (int i = 0; i < Lambda_.rows(); ++i) {   // set to zero possible negative eigenvalues due to epsilon shift
-            if (Lambda_[i] < 0) Lambda_[i] = 0;
+
+        const Scalar normalization = scale == Scalar(0) ? Scalar(1) : scale;
+        const bool transposed = rows > cols;
+        FactorType source(transposed ? cols : rows, transposed ? rows : cols);
+        for (int row = 0; row < rows; ++row) {
+            for (int col = 0; col < cols; ++col) {
+                const Scalar value = static_cast<Scalar>(matrix(row, col)) / normalization;
+                if (transposed) {
+                    source(col, row) = value;
+                } else {
+                    source(row, col) = value;
+                }
+            }
         }
-        return;
+
+        std::mt19937 engine(seed_);
+        std::normal_distribution<Scalar> normal(Scalar(0), Scalar(1));
+        FactorType omega(source.cols(), block_size);
+        for (int row = 0; row < omega.rows(); ++row) {
+            for (int col = 0; col < omega.cols(); ++col) {
+                omega(row, col) = normal(engine);
+                if (!std::isfinite(omega(row, col))) {
+                    throw std::domain_error("RBKI Gaussian sampling produced a nonfinite coefficient");
+                }
+            }
+        }
+
+        FactorType range = Ops::orthonormalize(Ops::multiply(source, omega));
+        FactorType last_corange = Ops::transpose_multiply(source, range);
+        typename Ops::Result candidate = Ops::compact_state(source, range, fdapde::min(rank, range.cols()));
+        Scalar residual = Ops::residual(source, candidate);
+        const Scalar normalized_tolerance = tolerance_ / normalization;
+
+        for (int expansion = 0;
+             residual > normalized_tolerance && expansion < max_iterations_ && range.cols() < minimum_dimension;
+             ++expansion) {
+            const int added_columns = fdapde::min(block_size, minimum_dimension - range.cols());
+            const FactorType raw_full = Ops::multiply(source, last_corange);
+            FactorType raw(raw_full.rows(), added_columns);
+            for (int row = 0; row < raw.rows(); ++row) {
+                for (int col = 0; col < raw.cols(); ++col) raw(row, col) = raw_full(row, col);
+            }
+            FactorType next = Ops::orthonormalize(raw, range);
+            range = Ops::append_columns(range, next);
+            last_corange = Ops::transpose_multiply(source, next);
+            candidate = Ops::compact_state(source, range, fdapde::min(rank, range.cols()));
+            residual = Ops::residual(source, candidate);
+        }
+
+        for (int i = 0; i < candidate.values.rows(); ++i) {
+            candidate.values[i] *= normalization;
+            if (!std::isfinite(candidate.values[i])) {
+                throw std::domain_error("RBKI singular values exceed the supported scalar range");
+            }
+        }
+        if (transposed) {
+            publish_(std::move(candidate.right), std::move(candidate.left), std::move(candidate.values));
+        } else {
+            publish_(std::move(candidate.left), std::move(candidate.right), std::move(candidate.values));
+        }
     }
-    // observers
-    const matrix_t& matrixU() const { return U_; }
-    const vector_t& eigenValues() const { return Lambda_; }
-    int rank() const { return rank_; }
+
+    const FactorType& matrixU() const& { return state_->left; }
+    void matrixU() const&& = delete;
+    const FactorType& matrixV() const& { return state_->right; }
+    void matrixV() const&& = delete;
+    const SingularValuesType& singularValues() const& { return state_->values; }
+    void singularValues() const&& = delete;
+    int rank() const { return state_->values.rows(); }
    private:
-    // for X = [X_1 ... X_n], X_i \in R^{n, m} and y \in R^{n, m}, performs a Block Classical Gram-Schmidt step as
-    // y = y - \sum_{j} (X_j * X_j^\top) * y
-    template <typename Lhs_, typename Rhs_> std::pair<matrix_t, matrix_t> BCGS_(const Lhs_& X, const Rhs_& y) {
-        int rows = y.rows();
-        int cols = y.cols();
-        qr_t qr;
-        matrix_t proj = (matrix_t::Identity(rows, rows) - X * X.transpose()); // (I - X * X^\top)
+    using Ops = internals::randomized_svd_ops<FactorType>;
 
-        matrix_t orth_block = proj * y;   // (I - X * X^\top) * y = y - \sum_{j} (X_j * X_j^\top) * y
-        orth_block = proj * orth_block;   // repeat orthogonalization (stabilize)
+    struct State {
+        FactorType left;
+        FactorType right;
+        SingularValuesType values;
 
-	// perform final stabilzed QR
-        qr.compute(orth_block);
-        orth_block = qr.householderQ() * matrix_t::Identity(rows, cols);
-        return std::make_pair(orth_block, qr.matrixQR().triangularView<Eigen::Upper>().toDenseMatrix().topRows(cols));
+        State() = default;
+        State(FactorType&& left_, FactorType&& right_, SingularValuesType&& values_) :
+            left(std::move(left_)), right(std::move(right_)), values(std::move(values_)) { }
+    };
+
+    void publish_(FactorType&& left, FactorType&& right, SingularValuesType&& values) {
+        auto replacement = std::make_shared<const State>(std::move(left), std::move(right), std::move(values));
+        state_.swap(replacement);
     }
 
-    double tol_ = 1e-5;
-    int max_iter_ = 50;
-    int seed_;
+    void validate_configuration_() const {
+        if (!std::isfinite(tolerance_) || tolerance_ < Scalar(0)) {
+            throw std::invalid_argument("RBKI tolerance must be finite and nonnegative");
+        }
+        if (max_iterations_ <= 0) { throw std::invalid_argument("RBKI maximum iterations must be positive"); }
+    }
 
-    matrix_t U_;
-    vector_t Lambda_;
-    int rank_;
+    static unsigned int resolve_seed_(int seed) {
+        return seed == random_seed ? std::random_device {}() : static_cast<unsigned int>(seed);
+    }
+
+    std::shared_ptr<const State> state_ = std::make_shared<State>();
+    Scalar tolerance_ = Scalar(1.0e-5);
+    int max_iterations_ = 50;
+    unsigned int seed_;
 };
-  
+
+// TODO(P4-M): NysRBKI remains preserved in the dormant Eigen archive until its native
+// positive-semidefinite compact-decomposition slice is dependency-closed.
+
 }   // namespace fdapde
 
-#endif // __RBKI_H__
+#endif   // __FDAPDE_LINALG_RBKI_H__
