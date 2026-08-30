@@ -205,10 +205,20 @@ TEST(rand_svd_test, rsi_uses_absolute_tolerance_and_returns_best_capped_result) 
 
 TEST(rand_svd_test, rsi_state_is_reusable_and_failures_are_atomic) {
     using matrix_type = Matrix<double, Dynamic, Dynamic>;
+    using float_matrix_type = Matrix<float, Dynamic, Dynamic>;
     using approximation_type = RSI<matrix_type>;
+    using deduced_from_rank = decltype(RSI(std::declval<const matrix_type&>(), 2));
+    using deduced_with_default_seed = decltype(RSI(std::declval<const matrix_type&>(), 2, 1.0e-5, 8));
+    using deduced_with_explicit_seed = decltype(RSI(std::declval<const matrix_type&>(), 2, 1.0e-5, 8, 314159));
+    using deduced_float_with_double_tolerance =
+      decltype(RSI(std::declval<const float_matrix_type&>(), 2, 1.0e-5, 8, 314159));
     static_assert(std::is_same_v<typename approximation_type::Scalar, double>);
     static_assert(std::is_same_v<typename approximation_type::MatrixType, matrix_type>);
     static_assert(std::is_same_v<typename approximation_type::FactorType, matrix_type>);
+    static_assert(std::is_same_v<deduced_from_rank, approximation_type>);
+    static_assert(std::is_same_v<deduced_with_default_seed, approximation_type>);
+    static_assert(std::is_same_v<deduced_with_explicit_seed, approximation_type>);
+    static_assert(std::is_same_v<deduced_float_with_double_tolerance, RSI<float_matrix_type>>);
     static_assert(!exposes_rvalue_left_singular_vectors<approximation_type>);
     static_assert(!exposes_rvalue_right_singular_vectors<approximation_type>);
     static_assert(!exposes_rvalue_singular_values<approximation_type>);
@@ -480,11 +490,21 @@ TEST(rand_evd_test, nysrsi_uses_absolute_tolerance_and_respects_iteration_cap) {
 
 TEST(rand_evd_test, nysrsi_state_is_reusable_and_failures_are_atomic) {
     using matrix_type = Matrix<double, Dynamic, Dynamic>;
+    using float_matrix_type = Matrix<float, Dynamic, Dynamic>;
     using approximation_type = NysRSI<matrix_type>;
+    using deduced_from_rank = decltype(NysRSI(std::declval<const matrix_type&>(), 2));
+    using deduced_with_default_seed = decltype(NysRSI(std::declval<const matrix_type&>(), 2, 1.0e-5, 8));
+    using deduced_with_explicit_seed = decltype(NysRSI(std::declval<const matrix_type&>(), 2, 1.0e-5, 8, 314159));
+    using deduced_float_with_double_tolerance =
+      decltype(NysRSI(std::declval<const float_matrix_type&>(), 2, 1.0e-5, 8, 314159));
     static_assert(std::is_same_v<typename approximation_type::Scalar, double>);
     static_assert(std::is_same_v<typename approximation_type::MatrixType, matrix_type>);
     static_assert(std::is_same_v<typename approximation_type::FactorType, matrix_type>);
     static_assert(std::is_same_v<typename approximation_type::EigenValuesType, Vector<double, Dynamic>>);
+    static_assert(std::is_same_v<deduced_from_rank, approximation_type>);
+    static_assert(std::is_same_v<deduced_with_default_seed, approximation_type>);
+    static_assert(std::is_same_v<deduced_with_explicit_seed, approximation_type>);
+    static_assert(std::is_same_v<deduced_float_with_double_tolerance, NysRSI<float_matrix_type>>);
     static_assert(!exposes_rvalue_eigenvectors<approximation_type>);
     static_assert(!exposes_rvalue_eigenvalues<approximation_type>);
 

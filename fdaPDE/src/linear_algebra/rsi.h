@@ -357,6 +357,28 @@ class NysRSI {
     unsigned int seed_;
 };
 
+template <internals::matrix_expression MatrixType>
+RSI(const MatrixType&, int) -> RSI<std::remove_cvref_t<MatrixType>>;
+
+template <internals::matrix_expression MatrixType>
+RSI(const MatrixType&, int, typename std::remove_cvref_t<MatrixType>::Scalar, int)
+  -> RSI<std::remove_cvref_t<MatrixType>>;
+
+template <internals::matrix_expression MatrixType>
+RSI(const MatrixType&, int, typename std::remove_cvref_t<MatrixType>::Scalar, int, int)
+  -> RSI<std::remove_cvref_t<MatrixType>>;
+
+template <internals::matrix_expression MatrixType>
+NysRSI(const MatrixType&, int) -> NysRSI<std::remove_cvref_t<MatrixType>>;
+
+template <internals::matrix_expression MatrixType>
+NysRSI(const MatrixType&, int, typename std::remove_cvref_t<MatrixType>::Scalar, int)
+  -> NysRSI<std::remove_cvref_t<MatrixType>>;
+
+template <internals::matrix_expression MatrixType>
+NysRSI(const MatrixType&, int, typename std::remove_cvref_t<MatrixType>::Scalar, int, int)
+  -> NysRSI<std::remove_cvref_t<MatrixType>>;
+
 }   // namespace fdapde
 
 #endif   // __FDAPDE_LINALG_RSI_H__
