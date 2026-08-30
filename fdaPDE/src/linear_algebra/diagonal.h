@@ -343,9 +343,9 @@ class DiagonalMatrix : public DiagonalMatrixExpr<DiagonalMatrix<Scalar_, Rows_>>
         clone_(rhs);
         return *this;
     }
-    constexpr explicit DiagonalMatrix(int size) : Base(size), data_() {
-        fdapde_static_assert(
-          Rows == Dynamic || Cols == Dynamic, THIS_METHOD_IS_FOR_DYNAMIC_SIZED_DIAGONAL_MATRICES_ONLY);
+    template <typename Size>
+        requires(Rows == Dynamic && std::same_as<Size, int>)
+    constexpr explicit DiagonalMatrix(Size size) : Base(size), data_() {
         if (size < 0) { throw std::invalid_argument("diagonal matrix size must be nonnegative"); }
         data_.resize(size);
     }
@@ -368,8 +368,9 @@ class DiagonalMatrix : public DiagonalMatrixExpr<DiagonalMatrix<Scalar_, Rows_>>
         for (int i = 0, n = data_.size(); i < n; ++i) { data_[i] = data[i]; }
     }
     // constructor for 1 x 1, 2 x 2, 3 x 3 static sized diagonals
-    constexpr explicit DiagonalMatrix(Scalar x) : Base() {
-        fdapde_static_assert(Rows == 1, THIS_METHOD_IS_FOR_1_X_1_DIAGONAL_MATRICES_ONLY);
+    constexpr explicit DiagonalMatrix(Scalar x)
+        requires(Rows == 1)
+        : Base() {
         data_[0] = x;
     }
     constexpr DiagonalMatrix(Scalar x, Scalar y) : Base() {
