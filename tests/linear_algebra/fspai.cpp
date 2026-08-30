@@ -34,11 +34,22 @@
 namespace {
 
 using sparse_matrix = fdapde::SparseMatrix<double>;
+using float_fspai = fdapde::FSPAI<float>;
 
 template <typename T>
 concept has_rvalue_lower_factor = requires(T&& value) { std::move(value).getL(); };
 
 static_assert(std::is_same_v<typename fdapde::FSPAI<double>::Scalar, double>);
+static_assert(std::is_same_v<typename float_fspai::MatrixType, fdapde::SparseMatrix<float>>);
+static_assert(std::is_same_v<typename float_fspai::StorageIndex, int>);
+static_assert(
+  std::is_same_v<typename float_fspai::DenseMatrixType, fdapde::Matrix<float, fdapde::Dynamic, fdapde::Dynamic>>);
+static_assert(std::is_same_v<typename float_fspai::DenseVectorType, fdapde::Vector<float, fdapde::Dynamic>>);
+static_assert(std::is_same_v<typename float_fspai::MatrixL, fdapde::SparseMatrix<float>>);
+static_assert(std::is_same_v<typename float_fspai::MatrixU, fdapde::SparseMatrix<float>>);
+static_assert(
+  std::is_same_v<decltype(std::declval<const float_fspai&>().getL()), const float_fspai::MatrixL&>);
+static_assert(std::is_same_v<decltype(std::declval<const float_fspai&>().getU()), float_fspai::MatrixU>);
 static_assert(!has_rvalue_lower_factor<fdapde::FSPAI<double>>);
 
 std::string next_market_line(std::ifstream& input) {
@@ -162,6 +173,34 @@ template <typename Lhs, typename Rhs> void expect_same_dense(const Lhs& lhs, con
     for (int row = 0; row < lhs.rows(); ++row) {
         for (int col = 0; col < lhs.cols(); ++col) { EXPECT_DOUBLE_EQ(lhs(row, col), rhs(row, col)); }
     }
+}
+
+TEST(FspaiTestSuite, NativeAliasesSupportFloatScalars) {
+    const float_fspai::MatrixType source(
+      2, 2,
+      {
+        {0, 0, 4.0f},
+        {1, 1, 9.0f}
+    });
+    const fdapde::FSPAI default_parameters(source);
+    const fdapde::FSPAI fspai(source, 0, 0, 0.0);
+    static_assert(std::is_same_v<std::remove_cvref_t<decltype(default_parameters)>, float_fspai>);
+    static_assert(std::is_same_v<std::remove_cvref_t<decltype(fspai)>, float_fspai>);
+    EXPECT_EQ(default_parameters.rows(), 2);
+
+    const float_fspai::MatrixL lower = fspai.getL();
+    const float_fspai::MatrixU upper = fspai.getU();
+    EXPECT_FLOAT_EQ(lower.coeff(0, 0), 0.5f);
+    EXPECT_FLOAT_EQ(lower.coeff(1, 1), 1.0f / 3.0f);
+    EXPECT_FLOAT_EQ(upper.coeff(0, 0), 0.5f);
+    EXPECT_FLOAT_EQ(upper.coeff(1, 1), 1.0f / 3.0f);
+
+    float_fspai::DenseVectorType rhs(2);
+    rhs[0] = 4.0f;
+    rhs[1] = 9.0f;
+    const float_fspai::DenseMatrixType solved = fspai.solve(rhs);
+    EXPECT_FLOAT_EQ(solved(0, 0), 1.0f);
+    EXPECT_FLOAT_EQ(solved(1, 0), 1.0f);
 }
 
 // Adapted from a2a9c88:test/src/fspai_test.cpp. Eigen's archived loadMarket

@@ -100,6 +100,12 @@ template <typename Scalar_> class FSPAI {
     using Scalar = std::remove_cvref_t<Scalar_>;
     using Index = int;
     using SparseMatrixType = SparseMatrix<Scalar>;
+    using MatrixType = SparseMatrixType;
+    using StorageIndex = Index;
+    using DenseMatrixType = Matrix<Scalar, Dynamic, Dynamic>;
+    using DenseVectorType = Vector<Scalar, Dynamic>;
+    using MatrixL = SparseMatrixType;
+    using MatrixU = SparseMatrixType;
 
     fdapde_static_assert(
       (std::is_same_v<Scalar_, Scalar> && std::is_floating_point_v<Scalar>),
@@ -411,7 +417,9 @@ template <typename Scalar_> class FSPAI {
 };
 
 template <typename Scalar> FSPAI(const SparseMatrix<Scalar>&) -> FSPAI<Scalar>;
-template <typename Scalar> FSPAI(const SparseMatrix<Scalar>&, int, int, Scalar) -> FSPAI<Scalar>;
+template <typename Scalar, typename Epsilon>
+    requires std::convertible_to<Epsilon, Scalar>
+FSPAI(const SparseMatrix<Scalar>&, int, int, Epsilon) -> FSPAI<Scalar>;
 
 }   // namespace fdapde
 
