@@ -17,6 +17,7 @@
 #include <fdaPDE/sparse_linear_algebra.h>
 #include <gtest/gtest.h>
 
+#include <complex>
 #include <limits>
 #include <type_traits>
 #include <utility>
@@ -1244,6 +1245,50 @@ TEST(linear_algebra, sparse_constraint_copy_failure) {
     expect_same_sparse(matrix, snapshot);
 }
 
+using dense_lump_result = decltype(fdapde::lump(std::declval<const fdapde::Matrix<double, 2, 2>&>()));
+using dense_float_lump_result =
+  decltype(fdapde::lump(std::declval<const fdapde::Matrix<float, 2, 2, fdapde::ColMajor>&>()));
+using dense_int_lump_result = decltype(fdapde::lump(std::declval<const fdapde::Matrix<int, 2, 2>&>()));
+using partial_float_lump_result =
+  decltype(fdapde::lump(std::declval<const fdapde::Matrix<float, fdapde::Dynamic, 2>&>()));
+using dynamic_float_lump_result =
+  decltype(fdapde::lump(std::declval<const fdapde::Matrix<float, fdapde::Dynamic, fdapde::Dynamic>&>()));
+using dense_float_container = fdapde::Matrix<float, 3, 3, fdapde::ColMajor>;
+using dense_float_view = decltype(std::declval<dense_float_container&>().template block<2, 2>(0, 0));
+using dense_float_view_lump_result = decltype(fdapde::lump(std::declval<const dense_float_view&>()));
+using sparse_lump_result = decltype(fdapde::lump(std::declval<const sparse_double&>()));
+using sparse_float_lump_result = decltype(fdapde::lump(std::declval<const fdapde::SparseMatrix<float>&>()));
+using dense_complex_lump_result =
+  decltype(fdapde::lump(std::declval<const fdapde::Matrix<std::complex<double>, 2, 2>&>()));
+using sparse_complex_lump_result =
+  decltype(fdapde::lump(std::declval<const fdapde::SparseMatrix<std::complex<double>>&>()));
+
+static_assert(std::is_same_v<dense_lump_result, fdapde::DiagonalMatrix<double, fdapde::Dynamic>>);
+static_assert(std::is_same_v<dense_float_lump_result, fdapde::DiagonalMatrix<float, fdapde::Dynamic>>);
+static_assert(std::is_same_v<dense_int_lump_result, fdapde::DiagonalMatrix<int, fdapde::Dynamic>>);
+static_assert(std::is_same_v<partial_float_lump_result, fdapde::DiagonalMatrix<float, fdapde::Dynamic>>);
+static_assert(std::is_same_v<dynamic_float_lump_result, fdapde::DiagonalMatrix<float, fdapde::Dynamic>>);
+static_assert(std::is_same_v<dense_float_view_lump_result, fdapde::DiagonalMatrix<float, fdapde::Dynamic>>);
+static_assert(std::is_same_v<sparse_lump_result, sparse_double>);
+static_assert(std::is_same_v<sparse_float_lump_result, fdapde::SparseMatrix<float>>);
+static_assert(std::is_same_v<dense_complex_lump_result, fdapde::DiagonalMatrix<std::complex<double>, fdapde::Dynamic>>);
+static_assert(std::is_same_v<sparse_complex_lump_result, fdapde::SparseMatrix<std::complex<double>>>);
+static_assert(std::is_constructible_v<fdapde::DiagonalMatrix<int, fdapde::Dynamic>, int>);
+static_assert(std::is_constructible_v<fdapde::DiagonalMatrix<int, 1>, int>);
+static_assert(!std::is_constructible_v<fdapde::DiagonalMatrix<double, fdapde::Dynamic>, double>);
+
+struct add_assign_only_scalar {
+    int value = 0;
+
+    add_assign_only_scalar() = default;
+    add_assign_only_scalar(int value_) : value(value_) { }
+    add_assign_only_scalar& operator+=(const add_assign_only_scalar& other) {
+        value += other.value;
+        return *this;
+    }
+    friend bool operator==(const add_assign_only_scalar&, const add_assign_only_scalar&) = default;
+};
+
 template <int StorageOrder> void check_dense_lumping() {
     const fdapde::Matrix<double, 3, 3, StorageOrder> matrix({1.0, 2.0, -3.0, 4.0, -1.0, 2.0, 0.5, 1.5, 2.0});
     const auto lumped = fdapde::lump(matrix);
@@ -1280,12 +1325,80 @@ void check_matrix_lumping() {
     const auto sparse_lumped = fdapde::lump(source);
     EXPECT_EQ(sparse_lumped.rows(), 3);
     EXPECT_EQ(sparse_lumped.cols(), 3);
-    EXPECT_EQ(sparse_lumped.non_zeros(), 2);
-    EXPECT_TRUE(sparse_lumped.row(0).empty());
+    EXPECT_EQ(sparse_lumped.non_zeros(), 3);
+    EXPECT_TRUE(sparse_lumped.contains(0, 0));
+    EXPECT_EQ(
+      collect_row(sparse_lumped, 0), (std::vector<std::pair<int, double>> {
+                                       {0, 0.0}
+    }));
     EXPECT_DOUBLE_EQ(sparse_lumped.coeff(1, 1), 3.0);
     EXPECT_DOUBLE_EQ(sparse_lumped.coeff(2, 2), 3.0);
     EXPECT_EQ(source.non_zeros(), 5);
     EXPECT_DOUBLE_EQ(source.coeff(0, 2), -2.0);
+
+    const sparse_double structurally_empty(2, 2);
+    const auto zero_lumped = fdapde::lump(structurally_empty);
+    EXPECT_EQ(zero_lumped.non_zeros(), 2);
+    EXPECT_TRUE(zero_lumped.contains(0, 0));
+    EXPECT_TRUE(zero_lumped.contains(1, 1));
+
+    const fdapde::Matrix<float, 2, 2, fdapde::ColMajor> dense_float({1.0f, 2.0f, 3.0f, 4.0f});
+    const auto dense_float_lumped = fdapde::lump(dense_float);
+    EXPECT_FLOAT_EQ(dense_float_lumped[0], 3.0f);
+    EXPECT_FLOAT_EQ(dense_float_lumped[1], 7.0f);
+    const fdapde::Matrix<float, fdapde::Dynamic, 2> partial_float(dense_float);
+    EXPECT_EQ(fdapde::lump(partial_float), dense_float_lumped);
+    dense_float_container container({1.0f, 2.0f, 99.0f, 3.0f, 4.0f, 99.0f, 99.0f, 99.0f, 99.0f});
+    const auto view_lumped = fdapde::lump(container.block<2, 2>(0, 0));
+    container = dense_float_container();
+    EXPECT_EQ(view_lumped, dense_float_lumped);
+
+    const fdapde::Matrix<int, 2, 2> dense_int({1, 2, 3, 4});
+    const auto dense_int_lumped = fdapde::lump(dense_int);
+    EXPECT_EQ(dense_int_lumped[0], 3);
+    EXPECT_EQ(dense_int_lumped[1], 7);
+    const fdapde::DiagonalMatrix<int, 1> single_int_diagonal(9);
+    EXPECT_EQ(single_int_diagonal[0], 9);
+    const fdapde::SparseMatrix<float> sparse_float(
+      2, 2,
+      {
+        {0, 0, 1.5f },
+        {0, 1, -1.5f},
+        {1, 1, 2.0f }
+    });
+    const auto sparse_float_lumped = fdapde::lump(sparse_float);
+    EXPECT_EQ(sparse_float_lumped.non_zeros(), 2);
+    EXPECT_TRUE(sparse_float_lumped.contains(0, 0));
+    EXPECT_FLOAT_EQ(sparse_float_lumped.coeff(0, 0), 0.0f);
+    EXPECT_FLOAT_EQ(sparse_float_lumped.coeff(1, 1), 2.0f);
+
+    using complex_scalar = std::complex<double>;
+    const fdapde::Matrix<complex_scalar, 2, 2> dense_complex(
+      {complex_scalar(1.0, 2.0), complex_scalar(2.0, -1.0), complex_scalar(3.0, 0.0), complex_scalar(4.0, 1.0)});
+    const auto dense_complex_lumped = fdapde::lump(dense_complex);
+    EXPECT_EQ(dense_complex_lumped[0], complex_scalar(3.0, 1.0));
+    EXPECT_EQ(dense_complex_lumped[1], complex_scalar(7.0, 1.0));
+    const fdapde::SparseMatrix<complex_scalar> sparse_complex(
+      2, 2,
+      {
+        {0, 0, complex_scalar(1.0,  2.0) },
+        {0, 1, complex_scalar(-1.0, -2.0)},
+        {1, 1, complex_scalar(3.0,  1.0) }
+    });
+    const auto sparse_complex_lumped = fdapde::lump(sparse_complex);
+    EXPECT_EQ(sparse_complex_lumped.non_zeros(), 2);
+    EXPECT_TRUE(sparse_complex_lumped.contains(0, 0));
+    EXPECT_EQ(sparse_complex_lumped.coeff(0, 0), complex_scalar {});
+    EXPECT_EQ(sparse_complex_lumped.coeff(1, 1), complex_scalar(3.0, 1.0));
+
+    fdapde::Matrix<add_assign_only_scalar, 2, 2> add_assign_only;
+    add_assign_only(0, 0) = 1;
+    add_assign_only(0, 1) = 2;
+    add_assign_only(1, 0) = 3;
+    add_assign_only(1, 1) = 4;
+    const auto add_assign_only_lumped = fdapde::lump(add_assign_only);
+    EXPECT_EQ(add_assign_only_lumped[0], add_assign_only_scalar(3));
+    EXPECT_EQ(add_assign_only_lumped[1], add_assign_only_scalar(7));
 
     const auto sparse_empty = fdapde::lump(sparse_double());
     EXPECT_EQ(sparse_empty.rows(), 0);
@@ -1298,6 +1411,47 @@ void check_matrix_lumping() {
     EXPECT_THROW(static_cast<void>(fdapde::lump(make_rectangular_fixture())), std::invalid_argument);
     const fdapde::Matrix<double, fdapde::Dynamic, fdapde::Dynamic> rectangular(2, 3);
     EXPECT_THROW(static_cast<void>(fdapde::lump(rectangular)), std::invalid_argument);
+
+    const fdapde::Matrix<int, 2, 2> dense_int_overflow({std::numeric_limits<int>::max(), 1, 0, 0});
+    EXPECT_THROW(static_cast<void>(fdapde::lump(dense_int_overflow)), std::overflow_error);
+    const fdapde::Matrix<unsigned int, 2, 2> dense_unsigned_overflow(
+      {std::numeric_limits<unsigned int>::max(), 1U, 0U, 0U});
+    EXPECT_THROW(static_cast<void>(fdapde::lump(dense_unsigned_overflow)), std::overflow_error);
+    const fdapde::SparseMatrix<int> sparse_int_overflow(
+      2, 2,
+      {
+        {0, 0, std::numeric_limits<int>::max()},
+        {0, 1, 1                              }
+    });
+    const fdapde::SparseMatrix<int> sparse_int_snapshot(sparse_int_overflow);
+    EXPECT_THROW(static_cast<void>(fdapde::lump(sparse_int_overflow)), std::overflow_error);
+    expect_same_sparse(sparse_int_overflow, sparse_int_snapshot);
+
+    const double infinity = std::numeric_limits<double>::infinity();
+    const fdapde::Matrix<double, 2, 2> dense_nonfinite({infinity, 0.0, 0.0, 0.0});
+    EXPECT_THROW(static_cast<void>(fdapde::lump(dense_nonfinite)), std::invalid_argument);
+    const fdapde::Matrix<double, 2, 2> dense_sum_overflow(
+      {std::numeric_limits<double>::max(), std::numeric_limits<double>::max(), 0.0, 0.0});
+    EXPECT_THROW(static_cast<void>(fdapde::lump(dense_sum_overflow)), std::overflow_error);
+    const sparse_double sparse_nonfinite(
+      2, 2,
+      {
+        {0, 0, infinity}
+    });
+    EXPECT_THROW(static_cast<void>(fdapde::lump(sparse_nonfinite)), std::invalid_argument);
+    const sparse_double sparse_sum_overflow(
+      2, 2,
+      {
+        {0, 0, std::numeric_limits<double>::max()},
+        {0, 1, std::numeric_limits<double>::max()}
+    });
+    EXPECT_THROW(static_cast<void>(fdapde::lump(sparse_sum_overflow)), std::overflow_error);
+    const fdapde::Matrix<complex_scalar, 1, 1> complex_nonfinite(complex_scalar(infinity, 0.0));
+    EXPECT_THROW(static_cast<void>(fdapde::lump(complex_nonfinite)), std::invalid_argument);
+    const fdapde::Matrix<complex_scalar, 2, 2> complex_sum_overflow(
+      {complex_scalar(std::numeric_limits<double>::max(), 0.0), complex_scalar(std::numeric_limits<double>::max(), 0.0),
+       complex_scalar {}, complex_scalar {}});
+    EXPECT_THROW(static_cast<void>(fdapde::lump(complex_sum_overflow)), std::overflow_error);
 }
 
 TEST(linear_algebra, matrix_lumping) { check_matrix_lumping(); }
