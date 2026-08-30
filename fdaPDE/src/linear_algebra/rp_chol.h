@@ -246,6 +246,14 @@ template <internals::matrix_expression MatrixType_> class RpChol {
     unsigned int seed_;
 };
 
+template <internals::matrix_expression MatrixType>
+RpChol(const MatrixType&, typename std::remove_cvref_t<MatrixType>::Scalar, int, int)
+  -> RpChol<std::remove_cvref_t<MatrixType>>;
+
+template <internals::matrix_expression MatrixType>
+RpChol(const MatrixType&, typename std::remove_cvref_t<MatrixType>::Scalar, int, int, int)
+  -> RpChol<std::remove_cvref_t<MatrixType>>;
+
 }   // namespace fdapde
 
 #endif   // __FDAPDE_LINALG_RP_CHOL_H__
