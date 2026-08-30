@@ -710,9 +710,19 @@ TEST(nys_approximation, block_larger_than_one) {
 
 TEST(nys_approximation, state_is_reusable_and_failures_are_atomic) {
     using matrix_type = Matrix<double, Dynamic, Dynamic>;
+    using float_matrix_type = Matrix<float, Dynamic, Dynamic>;
     using approximation_type = RpChol<matrix_type>;
+    using deduced_with_default_seed =
+      decltype(RpChol(std::declval<const matrix_type&>(), 1.0e-3, 2, 12));
+    using deduced_with_explicit_seed =
+      decltype(RpChol(std::declval<const matrix_type&>(), 1.0e-3, 2, 12, 314159));
+    using deduced_float_with_double_tolerance =
+      decltype(RpChol(std::declval<const float_matrix_type&>(), 1.0e-3, 2, 12, 314159));
     static_assert(std::is_same_v<typename approximation_type::Scalar, double>);
     static_assert(std::is_same_v<typename approximation_type::MatrixType, matrix_type>);
+    static_assert(std::is_same_v<deduced_with_default_seed, approximation_type>);
+    static_assert(std::is_same_v<deduced_with_explicit_seed, approximation_type>);
+    static_assert(std::is_same_v<deduced_float_with_double_tolerance, RpChol<float_matrix_type>>);
     static_assert(
       std::is_same_v<decltype(std::declval<const approximation_type&>().pivotSet()), const std::unordered_set<int>&>);
     static_assert(!exposes_rvalue_factor<approximation_type>);
