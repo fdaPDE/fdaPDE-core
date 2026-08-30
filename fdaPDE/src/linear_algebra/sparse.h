@@ -477,6 +477,8 @@ template <typename Scalar_> class SparseMatrix {
     /// @brief exchanges two matrices through their storage swap
     friend void swap(SparseMatrix& lhs, SparseMatrix& rhs) noexcept { lhs.swap(rhs); }
    private:
+    template <typename OtherScalar> friend SparseMatrix<OtherScalar> lump(const SparseMatrix<OtherScalar>& matrix);
+
     static constexpr Index missing_ = -1;
 
     template <typename XprType_>
