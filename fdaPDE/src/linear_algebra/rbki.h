@@ -367,6 +367,28 @@ class NysRBKI {
     unsigned int seed_;
 };
 
+template <internals::matrix_expression MatrixType>
+RBKI(const MatrixType&, int) -> RBKI<std::remove_cvref_t<MatrixType>>;
+
+template <internals::matrix_expression MatrixType>
+RBKI(const MatrixType&, int, typename std::remove_cvref_t<MatrixType>::Scalar, int)
+  -> RBKI<std::remove_cvref_t<MatrixType>>;
+
+template <internals::matrix_expression MatrixType>
+RBKI(const MatrixType&, int, typename std::remove_cvref_t<MatrixType>::Scalar, int, int)
+  -> RBKI<std::remove_cvref_t<MatrixType>>;
+
+template <internals::matrix_expression MatrixType>
+NysRBKI(const MatrixType&, int) -> NysRBKI<std::remove_cvref_t<MatrixType>>;
+
+template <internals::matrix_expression MatrixType>
+NysRBKI(const MatrixType&, int, typename std::remove_cvref_t<MatrixType>::Scalar, int)
+  -> NysRBKI<std::remove_cvref_t<MatrixType>>;
+
+template <internals::matrix_expression MatrixType>
+NysRBKI(const MatrixType&, int, typename std::remove_cvref_t<MatrixType>::Scalar, int, int)
+  -> NysRBKI<std::remove_cvref_t<MatrixType>>;
+
 }   // namespace fdapde
 
 #endif   // __FDAPDE_LINALG_RBKI_H__

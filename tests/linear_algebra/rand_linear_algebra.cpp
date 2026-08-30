@@ -361,14 +361,31 @@ TEST(rand_svd_test, rbki_uses_absolute_tolerance_and_respects_iteration_cap) {
     EXPECT_TRUE(std::isfinite(capped.singularValues()[0]));
     EXPECT_TRUE(std::isfinite(capped.singularValues()[1]));
     EXPECT_GT(rsi_residual(source, capped), 0.0);
+
+    matrix_type large_source(101, 101);
+    large_source.set_zero();
+    for (int i = 0; i < large_source.rows(); ++i) large_source(i, i) = 1.0;
+    RBKI<matrix_type> large_default(std::numeric_limits<double>::max(), 1, 271828);
+    large_default.compute(large_source, 11);
+    EXPECT_EQ(large_default.rank(), 10);
 }
 
 TEST(rand_svd_test, rbki_state_is_reusable_and_failures_are_atomic) {
     using matrix_type = Matrix<double, Dynamic, Dynamic>;
+    using float_matrix_type = Matrix<float, Dynamic, Dynamic>;
     using approximation_type = RBKI<matrix_type>;
+    using deduced_from_rank = decltype(RBKI(std::declval<const matrix_type&>(), 2));
+    using deduced_with_default_seed = decltype(RBKI(std::declval<const matrix_type&>(), 2, 1.0e-5, 8));
+    using deduced_with_explicit_seed = decltype(RBKI(std::declval<const matrix_type&>(), 2, 1.0e-5, 8, 314159));
+    using deduced_float_with_double_tolerance =
+      decltype(RBKI(std::declval<const float_matrix_type&>(), 2, 1.0e-5, 8, 314159));
     static_assert(std::is_same_v<typename approximation_type::Scalar, double>);
     static_assert(std::is_same_v<typename approximation_type::MatrixType, matrix_type>);
     static_assert(std::is_same_v<typename approximation_type::FactorType, matrix_type>);
+    static_assert(std::is_same_v<deduced_from_rank, approximation_type>);
+    static_assert(std::is_same_v<deduced_with_default_seed, approximation_type>);
+    static_assert(std::is_same_v<deduced_with_explicit_seed, approximation_type>);
+    static_assert(std::is_same_v<deduced_float_with_double_tolerance, RBKI<float_matrix_type>>);
     static_assert(!exposes_rvalue_left_singular_vectors<approximation_type>);
     static_assert(!exposes_rvalue_right_singular_vectors<approximation_type>);
     static_assert(!exposes_rvalue_singular_values<approximation_type>);
@@ -635,15 +652,32 @@ TEST(rand_evd_test, nysrbki_uses_absolute_tolerance_and_respects_iteration_cap) 
     NysRBKI<matrix_type> default_block(std::numeric_limits<double>::max(), 1, 271828);
     default_block.compute(source, 3);
     EXPECT_EQ(default_block.rank(), 1);
+
+    matrix_type large_source(101, 101);
+    large_source.set_zero();
+    for (int i = 0; i < large_source.rows(); ++i) large_source(i, i) = 1.0;
+    NysRBKI<matrix_type> large_default(std::numeric_limits<double>::max(), 1, 271828);
+    large_default.compute(large_source, 11);
+    EXPECT_EQ(large_default.rank(), 10);
 }
 
 TEST(rand_evd_test, nysrbki_state_is_reusable_and_failures_are_atomic) {
     using matrix_type = Matrix<double, Dynamic, Dynamic>;
+    using float_matrix_type = Matrix<float, Dynamic, Dynamic>;
     using approximation_type = NysRBKI<matrix_type>;
+    using deduced_from_rank = decltype(NysRBKI(std::declval<const matrix_type&>(), 2));
+    using deduced_with_default_seed = decltype(NysRBKI(std::declval<const matrix_type&>(), 2, 1.0e-5, 8));
+    using deduced_with_explicit_seed = decltype(NysRBKI(std::declval<const matrix_type&>(), 2, 1.0e-5, 8, 314159));
+    using deduced_float_with_double_tolerance =
+      decltype(NysRBKI(std::declval<const float_matrix_type&>(), 2, 1.0e-5, 8, 314159));
     static_assert(std::is_same_v<typename approximation_type::Scalar, double>);
     static_assert(std::is_same_v<typename approximation_type::MatrixType, matrix_type>);
     static_assert(std::is_same_v<typename approximation_type::FactorType, matrix_type>);
     static_assert(std::is_same_v<typename approximation_type::EigenValuesType, Vector<double, Dynamic>>);
+    static_assert(std::is_same_v<deduced_from_rank, approximation_type>);
+    static_assert(std::is_same_v<deduced_with_default_seed, approximation_type>);
+    static_assert(std::is_same_v<deduced_with_explicit_seed, approximation_type>);
+    static_assert(std::is_same_v<deduced_float_with_double_tolerance, NysRBKI<float_matrix_type>>);
     static_assert(!exposes_rvalue_eigenvectors<approximation_type>);
     static_assert(!exposes_rvalue_eigenvalues<approximation_type>);
 
