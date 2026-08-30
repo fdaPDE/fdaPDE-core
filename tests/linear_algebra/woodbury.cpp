@@ -146,11 +146,44 @@ using fixed_solver = PartialPivLU<Matrix<double, 3, 3>>;
 using fixed_woodbury = Woodbury<fixed_solver>;
 using fixed_rhs = Matrix<double, 3, 1>;
 using fixed_result = decltype(std::declval<fixed_woodbury&>().solve(std::declval<const fixed_rhs&>()));
+using fixed_float_rhs = Matrix<float, 3, 2, ColMajor>;
+using fixed_float_result = decltype(std::declval<fixed_woodbury&>().solve(std::declval<const fixed_float_rhs&>()));
+using partial_float_rhs = Matrix<float, Dynamic, 2, ColMajor>;
+using partial_float_result = decltype(std::declval<fixed_woodbury&>().solve(std::declval<const partial_float_rhs&>()));
+using partial_cols_float_rhs = Matrix<float, 3, Dynamic, RowMajor>;
+using partial_cols_float_result =
+  decltype(std::declval<fixed_woodbury&>().solve(std::declval<const partial_cols_float_rhs&>()));
+using dynamic_float_rhs = Matrix<float, Dynamic, Dynamic, ColMajor>;
+using dynamic_float_result = decltype(std::declval<fixed_woodbury&>().solve(std::declval<const dynamic_float_rhs&>()));
+using fixed_int_rhs = Matrix<int, 3, 1, ColMajor>;
+using fixed_int_result = decltype(std::declval<fixed_woodbury&>().solve(std::declval<const fixed_int_rhs&>()));
+using fixed_float_expression_result =
+  decltype(std::declval<fixed_woodbury&>().solve(2.0 * std::declval<const fixed_float_rhs&>()));
+using fixed_float_container = Matrix<float, 3, 3, ColMajor>;
+using fixed_float_view = decltype(std::declval<fixed_float_container&>().template block<3, 2>(0, 0));
+using fixed_float_view_result =
+  decltype(std::declval<fixed_woodbury&>().solve(std::declval<const fixed_float_view&>()));
+using fixed_update = Matrix<double, 3, 1>;
+using fixed_inverse_core = Matrix<double, 1, 1>;
+using fixed_transpose_update = Matrix<double, 1, 3>;
+using fixed_free_result = decltype(woodbury_system_solve(
+  std::declval<fixed_solver&>(), std::declval<const fixed_update&>(), std::declval<const fixed_inverse_core&>(),
+  std::declval<const fixed_transpose_update&>(), std::declval<const fixed_float_rhs&>()));
 static_assert(std::is_same_v<typename fixed_woodbury::Scalar, double>);
 static_assert(std::is_same_v<typename fixed_woodbury::SparseSolver, fixed_solver>);
 static_assert(std::is_same_v<typename fixed_woodbury::MatrixType, Matrix<double, Dynamic, Dynamic>>);
-static_assert(std::is_same_v<fixed_result, Matrix<double, Dynamic, Dynamic>>);
+static_assert(std::is_same_v<typename fixed_woodbury::DenseSolver, PartialPivLU<Matrix<double, Dynamic, Dynamic>>>);
+static_assert(std::is_same_v<fixed_result, Matrix<double, 3, 1, RowMajor>>);
+static_assert(std::is_same_v<fixed_float_result, Matrix<float, 3, 2, ColMajor>>);
+static_assert(std::is_same_v<partial_float_result, Matrix<float, Dynamic, 2, ColMajor>>);
+static_assert(std::is_same_v<partial_cols_float_result, Matrix<float, 3, Dynamic, RowMajor>>);
+static_assert(std::is_same_v<dynamic_float_result, Matrix<float, Dynamic, Dynamic, ColMajor>>);
+static_assert(std::is_same_v<fixed_int_result, Matrix<int, 3, 1, ColMajor>>);
+static_assert(std::is_same_v<fixed_float_expression_result, Matrix<double, 3, 2, ColMajor>>);
+static_assert(std::is_same_v<fixed_float_view_result, Matrix<float, 3, 2, ColMajor>>);
+static_assert(std::is_same_v<fixed_free_result, Matrix<double, Dynamic, Dynamic>>);
 static_assert(!std::is_reference_v<fixed_result>);
+static_assert(fixed_float_result::NestAsRef == 1);
 
 TEST(linear_algebra, woodbury_matches_direct_dense_system) {
     check_woodbury_against_direct_dense_solve<RowMajor>();
@@ -171,6 +204,80 @@ TEST(linear_algebra, woodbury_caches_base_update_for_repeated_solves) {
     EXPECT_EQ(*calls, 2);
     expect_matrix_near(cached.solve(2.0 * rhs), Matrix<double, 2, 1>({2.0, 6.0}));
     EXPECT_EQ(*calls, 3);
+}
+
+TEST(linear_algebra, woodbury_preserves_owning_rhs_result_shape_scalar_and_storage) {
+    using base_matrix = Matrix<double, 3, 3, ColMajor>;
+    const base_matrix base({4.0, 1.0, 0.0, 1.0, 3.0, 1.0, 0.0, 1.0, 2.0});
+    const fixed_update u({1.0, 0.0, 1.0});
+    const fixed_inverse_core inverse_c(2.0);
+    const fixed_transpose_update v({1.0, 0.0, 1.0});
+    const fixed_float_rhs rhs({1.25f, -0.5f, 3.0f, 2.0f, -1.0f, 4.5f});
+
+    fixed_solver base_solver(base);
+    fixed_woodbury decomposition(base_solver, u, inverse_c, v);
+    const auto member_result = decomposition.solve(rhs);
+    const auto free_result = woodbury_system_solve(base_solver, u, inverse_c, v, rhs);
+
+    const Matrix<double, 1, 1> c(inverse_c.inverse());
+    const Matrix<double, 3, 3> full_system(base + u * c * v);
+    const PartialPivLU direct_solver(full_system);
+    const Matrix<double, 3, 2> expected(direct_solver.solve(Matrix<double, 3, 2>(rhs)));
+    expect_matrix_near(member_result, expected, 1.0e-5);
+    expect_matrix_near(free_result, expected, 1.0e-11);
+
+    partial_float_rhs partial(rhs);
+    expect_matrix_near(decomposition.solve(partial), expected, 1.0e-5);
+    dynamic_float_rhs dynamic(rhs);
+    expect_matrix_near(decomposition.solve(dynamic), expected, 1.0e-5);
+    partial_cols_float_rhs partial_cols(rhs);
+    expect_matrix_near(decomposition.solve(partial_cols), expected, 1.0e-5);
+
+    fixed_float_container container;
+    for (int row = 0; row < rhs.rows(); ++row) {
+        for (int col = 0; col < rhs.cols(); ++col) container(row, col) = rhs(row, col);
+        container(row, 2) = 99.0f;
+    }
+    auto view = container.block<3, 2>(0, 0);
+    const auto view_result = decomposition.solve(view);
+    for (int row = 0; row < rhs.rows(); ++row) {
+        for (int col = 0; col < rhs.cols(); ++col) container(row, col) = 0.0f;
+    }
+    expect_matrix_near(view_result, expected, 1.0e-5);
+
+    const auto expression_result = [&] {
+        fixed_float_rhs temporary(rhs);
+        return decomposition.solve(2.0 * temporary);
+    }();
+    expect_matrix_near(expression_result, 2.0 * expected, 1.0e-11);
+}
+
+TEST(linear_algebra, woodbury_result_conversion_is_checked_and_reusable) {
+    using base_matrix = Matrix<double, 2, 2>;
+    const base_matrix base({0.25, 0.0, 0.0, 0.25});
+    const Matrix<double, 2, 1> u({0.0, 0.0});
+    const Matrix<double, 1, 1> inverse_c(1.0);
+    const Matrix<double, 1, 2> v({0.0, 0.0});
+    PartialPivLU base_solver(base);
+    Woodbury decomposition(base_solver, u, inverse_c, v);
+
+    const Matrix<float, 2, 1> overflowing_float({std::numeric_limits<float>::max(), 1.0f});
+    EXPECT_THROW(static_cast<void>(decomposition.solve(overflowing_float)), std::domain_error);
+    const Matrix<int, 2, 1> overflowing_int({std::numeric_limits<int>::max(), 1});
+    EXPECT_THROW(static_cast<void>(decomposition.solve(overflowing_int)), std::domain_error);
+
+    const Matrix<float, 2, 1> valid_float({1.0f, 2.0f});
+    EXPECT_EQ(decomposition.solve(valid_float), (Matrix<float, 2, 1>({4.0f, 8.0f})));
+    const Matrix<int, 2, 1> valid_int({1, 2});
+    EXPECT_EQ(decomposition.solve(valid_int), (Matrix<int, 2, 1>({4, 8})));
+
+    const base_matrix identity({1.0, 0.0, 0.0, 1.0});
+    PartialPivLU identity_solver(identity);
+    Woodbury identity_decomposition(identity_solver, u, inverse_c, v);
+    const Matrix<long long, 2, 1> rounded_above_long_long_max({std::numeric_limits<long long>::max(), 1});
+    EXPECT_THROW(static_cast<void>(identity_decomposition.solve(rounded_above_long_long_max)), std::domain_error);
+    const Matrix<long long, 2, 1> valid_long_long({1, 2});
+    EXPECT_EQ(identity_decomposition.solve(valid_long_long), valid_long_long);
 }
 
 TEST(linear_algebra, woodbury_default_and_numerical_failures_are_checked) {

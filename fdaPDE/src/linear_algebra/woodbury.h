@@ -20,6 +20,7 @@
 #include <cmath>
 #include <concepts>
 #include <functional>
+#include <limits>
 #include <optional>
 #include <stdexcept>
 #include <type_traits>
@@ -39,6 +40,12 @@ template <typename Solver>
 concept woodbury_solver = requires(std::remove_cvref_t<Solver>& solver, const Vector<double, Dynamic>& rhs) {
     requires matrix_expression<decltype(unwrap_woodbury_solver(solver).solve(rhs))>;
 };
+
+template <typename RhsType>
+using woodbury_result_t = std::conditional_t<
+  std::is_arithmetic_v<std::remove_cv_t<typename RhsType::Scalar>>,
+  Matrix<std::remove_cv_t<typename RhsType::Scalar>, RhsType::Rows, RhsType::Cols, RhsType::StorageOrder>,
+  Matrix<double, Dynamic, Dynamic>>;
 
 }   // namespace internals
 
@@ -87,7 +94,7 @@ class Woodbury {
 
     template <internals::matrix_expression RhsType>
         requires(std::convertible_to<typename RhsType::Scalar, Scalar>)
-    MatrixType solve(const MatrixExpr<RhsType>& rhs) {
+    internals::woodbury_result_t<RhsType> solve(const MatrixExpr<RhsType>& rhs) {
         if (!state_) { throw std::domain_error("Woodbury solve requires an initialized decomposition"); }
         const RhsType& rhs_derived = rhs.derived();
         if (rhs_derived.rows() != state_->dimension || rhs_derived.cols() <= 0) {
@@ -108,7 +115,7 @@ class Woodbury {
         const MatrixType correction(state_->inverse_a_u * t);
         const MatrixType result(y - correction);
         if (!all_finite_(result)) { throw std::domain_error("Woodbury solve produced nonfinite values"); }
-        return result;
+        return materialize_result_<internals::woodbury_result_t<RhsType>>(result);
     }
    private:
     struct State {
@@ -137,6 +144,36 @@ class Woodbury {
             }
         }
         return true;
+    }
+
+    template <typename ResultType> static ResultType materialize_result_(const MatrixType& result) {
+        using ResultScalar = typename ResultType::Scalar;
+        if constexpr (std::is_floating_point_v<ResultScalar>) {
+            const long double lowest = static_cast<long double>(std::numeric_limits<ResultScalar>::lowest());
+            const long double maximum = static_cast<long double>(std::numeric_limits<ResultScalar>::max());
+            for (int row = 0; row < result.rows(); ++row) {
+                for (int col = 0; col < result.cols(); ++col) {
+                    const long double value = static_cast<long double>(result(row, col));
+                    if (value < lowest || value > maximum) {
+                        throw std::domain_error("Woodbury result is not representable in the right-hand-side scalar");
+                    }
+                }
+            }
+        } else if constexpr (std::is_integral_v<ResultScalar>) {
+            const long double upper_exclusive = std::ldexp(1.0L, std::numeric_limits<ResultScalar>::digits);
+            for (int row = 0; row < result.rows(); ++row) {
+                for (int col = 0; col < result.cols(); ++col) {
+                    const long double value = std::trunc(static_cast<long double>(result(row, col)));
+                    const bool out_of_range =
+                      value >= upper_exclusive ||
+                      (std::is_signed_v<ResultScalar> ? value < -upper_exclusive : value < 0.0L);
+                    if (out_of_range) {
+                        throw std::domain_error("Woodbury result is not representable in the right-hand-side scalar");
+                    }
+                }
+            }
+        }
+        return ResultType(result);
     }
 
     static MatrixType base_solve_(SparseSolver& solver, const MatrixType& rhs, int expected_rows, int expected_cols) {
@@ -192,12 +229,13 @@ Woodbury(Solver, const MatrixExpr<UType>&, const MatrixExpr<CInvType>&, const Ma
 template <
   typename Solver, internals::matrix_expression UType, internals::matrix_expression CInvType,
   internals::matrix_expression VType, internals::matrix_expression RhsType>
-auto woodbury_system_solve(
+Matrix<double, Dynamic, Dynamic> woodbury_system_solve(
   Solver&& solver, const MatrixExpr<UType>& u, const MatrixExpr<CInvType>& inverse_c, const MatrixExpr<VType>& v,
   const MatrixExpr<RhsType>& rhs) {
     auto solver_reference = std::ref(solver);
     Woodbury decomposition(solver_reference, u, inverse_c, v);
-    return decomposition.solve(rhs);
+    const Matrix<double, Dynamic, Dynamic> rhs_owned(rhs);
+    return decomposition.solve(rhs_owned);
 }
 
 }   // namespace fdapde
