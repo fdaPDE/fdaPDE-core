@@ -148,7 +148,9 @@ template <typename BaseT, typename ExpT>
     requires(std::is_floating_point_v<BaseT> && internals::is_integer_v<ExpT>)
 constexpr BaseT pow(BaseT base, ExpT exp) {
     if (exp == 0) return BaseT {1};
-    unsigned int abs_exp = static_cast<unsigned int>((exp < 0) ? -exp : exp);
+    using UnsignedExp = std::make_unsigned_t<std::remove_cvref_t<ExpT>>;
+    const UnsignedExp unsigned_exp = static_cast<UnsignedExp>(exp);
+    UnsignedExp abs_exp = exp < 0 ? UnsignedExp {0} - unsigned_exp : unsigned_exp;
     BaseT result = BaseT {1};
     while (abs_exp > 0) {
         if (abs_exp % 2 == 1) result *= base;
