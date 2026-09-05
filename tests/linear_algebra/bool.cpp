@@ -1578,7 +1578,6 @@ TEST(linear_algebra, boolean) {
 
 // Current regression adapted from 86ff6d12:tests/linear_algebra/bool.cpp.
 // Stable source: a2a9c88:test/src/binary_matrix_test.cpp.
-// Stable declarations (9): static_sized_matrix, dynamic_sized_matrix, binary_vector, block_operations,
-// binary_expresssions, visitors, block_repeat, eigen_assignment_and_construct, and reshaped.
-// Replace the historical Eigen assignment/construct assertion with native numeric-matrix conversion; do not
-// restore an implicit Eigen bridge.
+// Stable declarations cover static/dynamic sizing, binary vectors, block operations, expressions, visitors, repeats,
+// assignment/construction, and reshaping. The assignment/construct assertion uses native numeric-matrix conversion;
+// no implicit backend bridge is restored.
