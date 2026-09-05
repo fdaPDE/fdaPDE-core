@@ -879,6 +879,5 @@ TEST(nys_approximation, contracts_remain_active_without_debug_assertions) {
 }
 
 // Source: a2a9c88:test/src/rand_linear_algebra_test.cpp.
-// Eigen may be an opt-in test oracle only, never a production dependency.
 
 }   // namespace
