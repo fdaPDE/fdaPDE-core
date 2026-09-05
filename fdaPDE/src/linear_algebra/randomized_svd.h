@@ -400,7 +400,7 @@ template <typename FactorType_> struct randomized_svd_ops {
                 }
                 value -= result.vectors(row, col) * result.values[col];
                 if (!std::isfinite(value)) {
-                    throw std::domain_error("randomized Nystrom eigen-residual contains a nonfinite coefficient");
+                    throw std::domain_error("randomized Nystrom residual contains a nonfinite coefficient");
                 }
                 norm = scale_safe_hypot(norm, value);
             }
