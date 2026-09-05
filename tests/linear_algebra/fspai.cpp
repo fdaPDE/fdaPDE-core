@@ -203,8 +203,8 @@ TEST(FspaiTestSuite, NativeAliasesSupportFloatScalars) {
     EXPECT_FLOAT_EQ(solved(1, 0), 1.0f);
 }
 
-// Adapted from a2a9c88:test/src/fspai_test.cpp. Eigen's archived loadMarket
-// ignored the symmetric banner, so this fixture is the stored lower factor.
+// Adapted from a2a9c88:test/src/fspai_test.cpp. The archived loader ignored
+// the symmetric banner, so this fixture is the stored lower factor.
 // The approved inverse oracle compares the native result with an independent
 // test-local dense factor product.
 TEST(FspaiTestSuite, FspaiTest) {
@@ -279,8 +279,8 @@ TEST(FspaiTestSuite, FactorsAreOwningOrientedAndCopySafe) {
     EXPECT_DOUBLE_EQ(diagonal_only.getL().coeff(2, 2), 1.0 / std::sqrt(2.0));
 }
 
-// Native adaptation of 86ff6d12:src/linear_algebra/eigen/fspai.h, final
-// behavior introduced by da0b274: all solve overloads apply L * L.transpose().
+// Native adaptation of the archived FSPAI implementation at 86ff6d12; final behavior introduced by da0b274:
+// all solve overloads apply L * L.transpose().
 TEST(FspaiTestSuite, SolvesDenseAndSparseRightHandSidesByTheCompleteApproximateInverse) {
     const sparse_matrix system(
       2, 2,
