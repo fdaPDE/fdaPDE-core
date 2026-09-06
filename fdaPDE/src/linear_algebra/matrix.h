@@ -55,6 +55,26 @@ constexpr void validate_matrix_index(int i, int j, int rows, int cols) {
     if (i < 0 || i >= rows || j < 0 || j >= cols) { throw std::out_of_range("matrix index out of range"); }
 }
 
+// Named callables keep procedural-matrix alias specializations stable across compilers.
+template <typename Scalar, int Value> struct constant_matrix_functor {
+    constexpr Scalar operator()(int, int) const { return Scalar(Value); }
+};
+
+template <typename Scalar> struct identity_matrix_functor {
+    constexpr Scalar operator()(int i, int j) const { return i == j ? Scalar(1) : Scalar(0); }
+};
+
+}   // namespace internals
+
+template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_> class MatrixView;
+
+namespace internals {
+
+// CRTP writable constraints can form before MatrixView's inherited ReadOnly member is visible.
+template <typename Scalar, int Rows, int Cols, int StorageOrder>
+struct is_mutable_matrix_view<MatrixView<Scalar, Rows, Cols, StorageOrder>> : std::bool_constant<!std::is_const_v<Scalar>> {
+};
+
 }   // namespace internals
 
 // procedural matrices generates matrices whose entries exhibit a fixed pattern, without allocating memory
@@ -118,12 +138,11 @@ struct ProceduralMatrix : public MatrixExpr<ProceduralMatrix<Functor_, Rows_, Co
 };
 // definition of procedrual matrices
 template <typename Scalar, int Rows, int Cols>
-using ZeroMatrix = ProceduralMatrix<decltype([](int, int) { return Scalar(0); }), Rows, Cols>;
+using ZeroMatrix = ProceduralMatrix<internals::constant_matrix_functor<Scalar, 0>, Rows, Cols>;
 template <typename Scalar, int Rows, int Cols>
-using OnesMatrix = ProceduralMatrix<decltype([](int, int) { return Scalar(1); }), Rows, Cols>;
+using OnesMatrix = ProceduralMatrix<internals::constant_matrix_functor<Scalar, 1>, Rows, Cols>;
 template <typename Scalar, int Rows, int Cols>
-using IdentityMatrix =
-  ProceduralMatrix<decltype([](int i, int j) { return i == j ? Scalar(1) : Scalar(0); }), Rows, Cols>;
+using IdentityMatrix = ProceduralMatrix<internals::identity_matrix_functor<Scalar>, Rows, Cols>;
 
 namespace internals {
 
@@ -524,10 +543,12 @@ class MatrixView :
     public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, MatrixView<Scalar_, Rows_, Cols_, StorageOrder_>> {
    private:
     using Base = MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, MatrixView<Scalar_, Rows_, Cols_, StorageOrder_>>;
+    using XprBase = MatrixExpr<MatrixView<Scalar_, Rows_, Cols_, StorageOrder_>>;
     using StorageType = std::add_pointer_t<Scalar_>;
    public:
     using Scalar = Scalar_;
     static constexpr int NestAsRef = 0;
+    static constexpr int ReadOnly = Base::ReadOnly;
 
     // constructors
     constexpr MatrixView(const MatrixView&) = default;
@@ -543,14 +564,14 @@ class MatrixView :
     constexpr MatrixView(Scalar* data, int rows, int cols) : Base(rows, cols), data_(data) {
         if (rows <= 0 || cols <= 0) { throw std::invalid_argument("matrix view dimensions must be positive"); }
     }
-    // inherit assignment from Base
-    using Base::operator=;
-    constexpr MatrixView& operator=(const MatrixView& other) & {
-        static_cast<MatrixExpr<MatrixView>&>(*this).template operator=<MatrixView>(other);
+    // inherit expression assignment without the owner-style MatrixBase copy assignment
+    using XprBase::operator=;
+    constexpr MatrixView& operator=(const MatrixView& other) & requires(ReadOnly == 0) {
+        static_cast<XprBase&>(*this).template operator=<MatrixView>(other);
         return *this;
     }
-    constexpr MatrixView operator=(const MatrixView& other) && {
-        static_cast<MatrixExpr<MatrixView>&>(*this).template operator=<MatrixView>(other);
+    constexpr MatrixView operator=(const MatrixView& other) && requires(ReadOnly == 0) {
+        static_cast<XprBase&>(*this).template operator=<MatrixView>(other);
         return *this;
     }
     // data pointers

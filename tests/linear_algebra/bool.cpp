@@ -443,6 +443,13 @@ concept permits_boolean_view_bulk_mutation = requires(View& view) {
 template <typename View, typename Rhs>
 concept permits_boolean_view_assignment = requires(View& view, const Rhs& rhs) { view = rhs; };
 
+template <typename View>
+concept permits_boolean_view_compound_assignment = requires(View& lhs, const View& rhs) {
+    lhs &= rhs;
+    lhs |= rhs;
+    lhs ^= rhs;
+};
+
 using fixed_boolean_view = fdapde::MatrixView<bool, 2, 3>;
 using fixed_const_boolean_view = fdapde::MatrixView<const bool, 2, 3>;
 using dynamic_boolean_view = fdapde::MatrixView<bool, fdapde::Dynamic, fdapde::Dynamic>;
@@ -481,6 +488,8 @@ static_assert(!permits_boolean_view_bulk_mutation<const fixed_boolean_view>);
 static_assert(!permits_boolean_view_bulk_mutation<fixed_const_boolean_view>);
 static_assert(permits_boolean_view_assignment<fixed_boolean_view, fixed_boolean_view>);
 static_assert(!permits_boolean_view_assignment<fixed_const_boolean_view, fixed_const_boolean_view>);
+static_assert(permits_boolean_view_compound_assignment<fixed_boolean_view>);
+static_assert(!permits_boolean_view_compound_assignment<fixed_const_boolean_view>);
 using temporary_boolean_view_assignment_result =
   decltype(std::declval<fixed_boolean_view&&>() = std::declval<const fixed_boolean_view&>());
 static_assert(std::is_same_v<temporary_boolean_view_assignment_result, fixed_boolean_view>);

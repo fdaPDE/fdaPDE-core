@@ -296,6 +296,12 @@ concept permits_const_reshape_vector_write = requires(const Reshape& reshape) { 
 template <typename Reshape>
 concept permits_reshape_assignment = requires(Reshape& lhs, const Reshape& rhs) { lhs = rhs; };
 
+template <typename View, typename Rhs>
+concept permits_view_assignment = requires(View& lhs, const Rhs& rhs) { lhs = rhs; };
+
+template <typename View, typename Rhs>
+concept permits_view_cwise_assignment = requires(View& lhs, Rhs& rhs) { lhs = rhs.cwise(); };
+
 template <typename Matrix, int ExpectedReadOnly>
 concept permits_temporary_cwise_accessor = requires(Matrix&& matrix) {
     requires (decltype(std::move(matrix).cwise())::ReadOnly == ExpectedReadOnly);
@@ -533,6 +539,10 @@ static_assert(!permits_temporary_initializer_assignment<lifetime_initializer_vec
 static_assert(permits_safe_expression_chaining<lifetime_matrix>);
 static_assert(permits_safe_cross_chaining<lifetime_vector>);
 static_assert(permits_temporary_view_add<MatrixView<double, 2, 2>>);
+static_assert(permits_view_assignment<lifetime_view, lifetime_matrix>);
+static_assert(!permits_view_assignment<lifetime_const_view, lifetime_matrix>);
+static_assert(permits_view_cwise_assignment<lifetime_view, lifetime_matrix>);
+static_assert(!permits_view_cwise_assignment<lifetime_const_view, lifetime_matrix>);
 static_assert(!permits_temporary_static_block<lifetime_matrix>);
 static_assert(!permits_temporary_dynamic_block<lifetime_matrix>);
 static_assert(!permits_temporary_row<lifetime_matrix>);

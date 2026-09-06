@@ -38,6 +38,9 @@ template <typename Arg> struct is_owning_rvalue_expression<Arg, true> :
 template <typename Arg>
 inline constexpr bool is_owning_rvalue_expression_v = is_owning_rvalue_expression<Arg>::value;
 
+template <typename T> struct is_mutable_matrix_view : std::false_type { };
+template <typename T> inline constexpr bool is_mutable_matrix_view_v = is_mutable_matrix_view<T>::value;
+
 template <typename Nested, typename Arg>
 concept safely_nestable =
   std::is_constructible_v<Nested, Arg> &&
