@@ -104,7 +104,7 @@ struct threaded_executor_impl {
         auto result = packaged_task->get_future();
         dispatch_task_([packaged_task]() { (*packaged_task)(); });
         return result;
-    };
+    }
     // executes a callable f(args...) asynchronously. doesn't wait for any result
     template <typename F, typename... Args>
         requires(
