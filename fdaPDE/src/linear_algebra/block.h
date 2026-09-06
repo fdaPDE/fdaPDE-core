@@ -26,6 +26,19 @@ namespace fdapde {
 // expression representing a dense sub-block (static or dynamic) of a MatrixExpr operand.
 // Supports general blocks as well as row/column vector views.
 
+template <int BlockRows_, int BlockCols_, typename XprType_> class MatrixBlock;
+
+namespace internals {
+
+template <int BlockRows, int BlockCols, typename XprType_>
+struct is_mutable_matrix_view<MatrixBlock<BlockRows, BlockCols, XprType_>> {
+    using XprType = std::remove_reference_t<XprType_>;
+    using XprTypeClean = std::remove_cv_t<XprType>;
+    static constexpr bool value = !std::is_const_v<XprType> && XprTypeClean::ReadOnly == 0;
+};
+
+}   // namespace internals
+
 template <int BlockRows_, int BlockCols_, typename XprType_>
 class MatrixBlock : public MatrixExpr<MatrixBlock<BlockRows_, BlockCols_, XprType_>> {
    private:

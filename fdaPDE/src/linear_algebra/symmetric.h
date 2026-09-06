@@ -23,6 +23,15 @@ namespace fdapde {
 
 // symmetric matrix type system
 template <typename XprType> struct SymmetricMatrixExpr;
+template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_> class SymmetricMatrixView;
+
+namespace internals {
+
+template <typename Scalar, int Rows, int Cols, int StorageOrder>
+struct is_mutable_matrix_view<SymmetricMatrixView<Scalar, Rows, Cols, StorageOrder>> :
+    std::bool_constant<!std::is_const_v<Scalar>> { };
+
+}   // namespace internals
 
 // forward decls
 template <typename XprType> class EVD;

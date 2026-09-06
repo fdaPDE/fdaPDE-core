@@ -23,6 +23,15 @@ namespace fdapde {
 
 // diagonal matrix type system
 template <typename XprType> struct DiagonalMatrixExpr;
+template <typename Scalar_, int Rows_> class DiagonalMatrixView;
+
+namespace internals {
+
+// Two-level CRTP constraints form before DiagonalMatrixView publishes ReadOnly.
+template <typename Scalar, int Rows>
+struct is_mutable_matrix_view<DiagonalMatrixView<Scalar, Rows>> : std::bool_constant<!std::is_const_v<Scalar>> { };
+
+}   // namespace internals
   
 namespace internals {
 

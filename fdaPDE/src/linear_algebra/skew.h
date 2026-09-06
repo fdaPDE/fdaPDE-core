@@ -22,6 +22,15 @@
 namespace fdapde {
 
 template <typename XprType> struct SkewSymmetricMatrixExpr;
+template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_> class SkewSymmetricMatrixView;
+
+namespace internals {
+
+template <typename Scalar, int Rows, int Cols, int StorageOrder>
+struct is_mutable_matrix_view<SkewSymmetricMatrixView<Scalar, Rows, Cols, StorageOrder>> :
+    std::bool_constant<!std::is_const_v<Scalar>> { };
+
+}   // namespace internals
 
 namespace internals {
 

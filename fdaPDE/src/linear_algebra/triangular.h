@@ -24,6 +24,15 @@ namespace fdapde {
 // triangular matrix type system
 template <typename XprType> struct TriangularMatrixExpr;
 template <typename Scalar_, int Rows_, int Cols_, int ViewMode_, int StorageOrder_ = RowMajor> struct TriangularMatrix;
+template <typename Scalar_, int Rows_, int Cols_, int ViewMode_, int StorageOrder_> class TriangularMatrixView;
+
+namespace internals {
+
+template <typename Scalar, int Rows, int Cols, int ViewMode, int StorageOrder>
+struct is_mutable_matrix_view<TriangularMatrixView<Scalar, Rows, Cols, ViewMode, StorageOrder>> :
+    std::bool_constant<!std::is_const_v<Scalar>> { };
+
+}   // namespace internals
 
 namespace internals {
 

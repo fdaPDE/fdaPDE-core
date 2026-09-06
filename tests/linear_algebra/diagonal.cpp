@@ -65,11 +65,18 @@ concept permits_owning_rvalue_copy_assignment = requires(MatrixType& lhs, Matrix
     std::move(lhs) = rhs;
 };
 
+template <typename Destination, typename Source>
+concept permits_diagonal_assignment = requires(Destination& destination, const Source& source) {
+    destination = source;
+};
+
 using lifetime_matrix = Matrix<double, 3, 3>;
 using lifetime_vector = Vector<double, 3>;
 using owning_diagonal = DiagonalMatrix<double, 3>;
 using mutable_dense_diagonal = decltype(std::declval<lifetime_matrix&>().diagonal());
 using const_dense_diagonal = decltype(std::declval<const lifetime_matrix&>().diagonal());
+using mutable_diagonal_view = DiagonalMatrixView<double, 3>;
+using const_diagonal_view = DiagonalMatrixView<const double, 3>;
 
 static_assert(!permits_temporary_diagonal<lifetime_matrix>);
 static_assert(!permits_const_temporary_diagonal<lifetime_matrix>);
@@ -86,6 +93,10 @@ static_assert(!std::is_constructible_v<DiagonalMatrixView<double, 3>, double*, i
 static_assert(!exposes_owning_rvalue_derived<owning_diagonal>);
 static_assert(!permits_owning_rvalue_inverse<owning_diagonal>);
 static_assert(!permits_owning_rvalue_copy_assignment<owning_diagonal>);
+static_assert(permits_diagonal_assignment<mutable_diagonal_view, owning_diagonal>);
+static_assert(!permits_diagonal_assignment<const_diagonal_view, owning_diagonal>);
+static_assert(permits_diagonal_assignment<mutable_diagonal_view, mutable_diagonal_view>);
+static_assert(!permits_diagonal_assignment<const_diagonal_view, mutable_diagonal_view>);
 static_assert(is_diagonal_matrix_v<const owning_diagonal&>);
 static_assert(std::is_same_v<decltype(std::declval<const DiagonalMatrix<float, 2>&>().determinant()), float>);
 static_assert(!std::is_constructible_v<owning_diagonal, lifetime_matrix&>);
