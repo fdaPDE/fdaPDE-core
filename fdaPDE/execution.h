@@ -32,6 +32,7 @@ static constexpr execution_seq_t execution_seq;
 #include <atomic>
 #include <charconv>
 #include <cmath>
+#include <compare>
 #include <concepts>
 #include <condition_variable>
 #include <cstddef>
@@ -52,6 +53,7 @@ static constexpr execution_seq_t execution_seq;
 #include <random>
 #include <stdexcept>
 #include <string_view>
+#include <system_error>
 #include <thread>
 #include <tuple>
 #include <type_traits>

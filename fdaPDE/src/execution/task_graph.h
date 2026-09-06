@@ -134,7 +134,8 @@ class TaskGraph {
             queue.pop();
             order.push_back(curr);
 
-            for (int next : node(curr).succ_ids()) {
+            const auto current = node(curr);
+            for (int next : current.succ_ids()) {
                 in_degrees[next]--;   // decrease dependency count
                 if (in_degrees[next] == 0) { queue.push(next); }
             }

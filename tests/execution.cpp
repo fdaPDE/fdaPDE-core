@@ -15,6 +15,18 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <fdaPDE/execution.h>
-#include <fdaPDE/core.h>
+#include <gtest/gtest.h>
 
-int fdapde_execution_then_core_odr() { return 2; }
+#include "execution/concurrency.cpp"
+#include "execution/parallel_algorithms.cpp"
+#include "execution/queues.cpp"
+#include "execution/task_graph.cpp"
+#include "execution/threaded_executor.cpp"
+
+int main(int argc, char** argv) {
+    fdapde::parallel_set_num_threads(4);
+    testing::InitGoogleTest(&argc, argv);
+    const int result = RUN_ALL_TESTS();
+    fdapde::parallel_join();
+    return result;
+}

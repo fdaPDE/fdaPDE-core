@@ -14,7 +14,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <fdaPDE/core.h>
 #include <fdaPDE/execution.h>
 
-int fdapde_core_then_execution_odr() { return 1; }
+int fdapde_execution_odr_a() { return 1; }

@@ -16,16 +16,19 @@
 
 #include <fdaPDE/execution.h>
 #include <gtest/gtest.h>   // testing framework
+
+#include <memory>
+#include <set>
 using namespace fdapde;
 
 TEST(execution, chase_lev_queue) {
     const int num_elements = 100000;
     const int num_thieves = 2;
-    
+
     internals::chase_lev_queue<int> queue(1024);   // force repeated circular-slot reuse
 
     std::atomic<bool> start_signal {false};
-    std::atomic<bool> owner_done   {false};
+    std::atomic<bool> owner_done {false};
 
     // spawn consumer threads
     std::vector<std::vector<int>> thief_results(num_thieves);
@@ -35,7 +38,7 @@ TEST(execution, chase_lev_queue) {
         thieves.emplace_back([&, i]() {
             // spin until owner starts pushing to maximize immediate contention
             while (!start_signal.load(std::memory_order_acquire));
-	    // start stealing
+            // start stealing
             while (!owner_done.load(std::memory_order_acquire) || !queue.empty()) {
                 auto val = queue.pop_back();
                 if (val) { thief_results[i].push_back(*val); }
@@ -69,6 +72,17 @@ TEST(execution, chase_lev_queue) {
 }
 
 TEST(execution, mpsc_queue) {
+    {
+        auto queued_resource = std::make_shared<int>(0);
+        std::weak_ptr<int> queued_observer = queued_resource;
+        {
+            fdapde::internals::mpsc_queue<std::shared_ptr<int>> queue;
+            queue.push(queued_resource);
+            queued_resource.reset();
+            EXPECT_FALSE(queued_observer.expired());
+        }
+        EXPECT_TRUE(queued_observer.expired());
+    }
     // single-thread correctness
     internals::mpsc_queue<int> queue;
     queue.push(10);
@@ -76,9 +90,9 @@ TEST(execution, mpsc_queue) {
     auto v1 = queue.pop();
     auto v2 = queue.pop();
     auto v3 = queue.pop();   // expected empty
-    EXPECT_TRUE (v1.has_value());
+    EXPECT_TRUE(v1.has_value());
     EXPECT_EQ(v1.value(), 10);
-    EXPECT_TRUE (v2.has_value());
+    EXPECT_TRUE(v2.has_value());
     EXPECT_EQ(v2.value(), 20);
     EXPECT_FALSE(v3.has_value());
 
@@ -98,7 +112,7 @@ TEST(execution, mpsc_queue) {
 
         std::atomic<int> global_received_count {0};
         std::vector<std::thread> workers;
-	std::vector<std::vector<int>> received(num_threads);
+        std::vector<std::vector<int>> received(num_threads);
 
         for (int i = 0; i < num_threads; ++i) {
             workers.emplace_back([&, thread_id = i]() {
@@ -128,12 +142,12 @@ TEST(execution, mpsc_queue) {
                 }
             });
         }
-	// wait for the test to finish
+        // wait for the test to finish
         for (auto& t : workers) { t.join(); }
 
-	// check all messages exchanged
+        // check all messages exchanged
         EXPECT_EQ(global_received_count.load(), total_messages);
-	// check no duplicates
+        // check no duplicates
         std::set<int> unique_vals;
         for (int i = 0; i < num_threads; ++i) { unique_vals.insert(received[i].begin(), received[i].end()); }
         EXPECT_EQ(unique_vals.size(), total_messages);
@@ -172,5 +186,20 @@ TEST(execution, mpsc_queue) {
         EXPECT_EQ(results.size(), num_producers * items_per_producer);
         std::set<int> unique_vals(results.begin(), results.end());
         EXPECT_EQ(unique_vals.size(), num_producers * items_per_producer);
+    }
+}
+
+TEST(execution, pool_allocator) {
+    {
+        auto pooled_resource = std::make_shared<int>(0);
+        std::weak_ptr<int> pooled_observer = pooled_resource;
+        {
+            fdapde::internals::pool_allocator<std::shared_ptr<int>> allocator(1);
+            auto* object = allocator.allocate(pooled_resource);
+            pooled_resource.reset();
+            EXPECT_FALSE(pooled_observer.expired());
+            allocator.deallocate(object);
+            EXPECT_TRUE(pooled_observer.expired());
+        }
     }
 }

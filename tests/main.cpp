@@ -15,6 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <gtest/gtest.h>   // testing framework
+
 #include <cstring>
 
 class fdapde_testing_printer : public ::testing::EmptyTestEventListener {
@@ -102,17 +103,12 @@ class fdapde_testing_printer : public ::testing::EmptyTestEventListener {
 };
 
 #include "linear_algebra/block.cpp"
-#include "linear_algebra/xpr.cpp"
-#include "linear_algebra/matrix.cpp"
 #include "linear_algebra/diagonal.cpp"
+#include "linear_algebra/matrix.cpp"
 #include "linear_algebra/triangular.cpp"
+#include "linear_algebra/xpr.cpp"
 // #include "linear_algebra/bool.cpp"
 #include "linear_algebra/symmetric.cpp"
-
-#include "execution/queues.cpp"
-#include "execution/parallel_algorithms.cpp"
-#include "execution/task_graphs.cpp"
-
 
 // #include "geometry/triangle.cpp"
 
