@@ -389,7 +389,7 @@ class SparseBlockMatrix {
             }
         }
         SparseMatrix<Scalar> result(rows_, cols_, triplets);
-        for (const auto [row, col] : stored_zeros) result.coeffRef(row, col);
+        for (const auto& [row, col] : stored_zeros) result.coeffRef(row, col);
         return result;
     }
 
@@ -557,7 +557,7 @@ class SparseBlockMatrix {
             }
         }
         block_type result(rows, cols, triplets);
-        for (const auto [row, col] : stored_zeros) result.coeffRef(row, col);
+        for (const auto& [row, col] : stored_zeros) result.coeffRef(row, col);
         return result;
     }
 
