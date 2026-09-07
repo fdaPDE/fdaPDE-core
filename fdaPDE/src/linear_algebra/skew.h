@@ -249,7 +249,7 @@ template <typename XprType, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
 constexpr auto operator/(const SkewSymmetricMatrixExpr<XprType>& lhs, ScalarType rhs) {
     return internals::skew_symmetric_cast<Upper>(
-      MatrixScalarMultiplicationOp<XprType, ScalarType>(lhs.derived(), ScalarType(1) / rhs));
+      static_cast<const MatrixExpr<XprType>&>(lhs) / rhs);
 }
 
 template <typename Scalar_, int Rows_, int Cols_ = Rows_, int StorageOrder_ = RowMajor>

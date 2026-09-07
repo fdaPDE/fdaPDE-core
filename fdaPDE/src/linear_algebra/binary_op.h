@@ -146,7 +146,8 @@ constexpr void operator*(ScalarType, XprType&&) = delete;
 template <typename XprType, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
 constexpr auto operator/(const MatrixExpr<XprType>& lhs, ScalarType rhs) {
-    return MatrixScalarMultiplicationOp<XprType, ScalarType>(lhs.derived(), ScalarType(1) / rhs);
+    using Scalar = promote_type_t<typename XprType::Scalar, ScalarType>;
+    return lhs.cwise().apply([rhs](const auto& value) -> Scalar { return value / rhs; }).mwise();
 }
 
 template <internals::matrix_expression XprType, typename ScalarType>

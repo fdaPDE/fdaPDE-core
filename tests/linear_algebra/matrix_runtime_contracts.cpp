@@ -21,6 +21,7 @@
 #include <limits>
 #include <sstream>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace fdapde {
@@ -37,6 +38,12 @@ concept permits_colwise_norm = requires(const MatrixType& matrix) { matrix.colwi
 
 template <typename MatrixType>
 concept permits_coefficient_sqrt = requires(const MatrixType& matrix) { matrix.cwise().sqrt(); };
+
+template <typename MatrixType>
+concept permits_temporary_integer_division = requires { MatrixType {} / 2; };
+
+template <typename MatrixType>
+concept permits_const_temporary_integer_division = requires(const MatrixType&& matrix) { std::move(matrix) / 2; };
 
 using floating_norm_matrix = Matrix<double, 2, 2>;
 using integral_norm_matrix = Matrix<int, 2, 2>;
@@ -732,6 +739,91 @@ TEST(LinearAlgebraRuntimeContracts, MatrixInfinityNormsUseZeroIdentity) {
 TEST(LinearAlgebraRuntimeContracts, EmptyBooleanExpressionsAreTerminalSafe) {
     check_empty_boolean_runtime_contracts<RowMajor>();
     check_empty_boolean_runtime_contracts<ColMajor>();
+}
+
+TEST(LinearAlgebraRuntimeContracts, ScalarDivisionUsesCoefficientArithmeticAndSafeNesting) {
+    const auto check_storage = []<int StorageOrder>() {
+        using matrix_type = Matrix<double, 2, 2, StorageOrder>;
+        static_assert(!permits_temporary_integer_division<matrix_type>);
+        static_assert(!permits_const_temporary_integer_division<matrix_type>);
+        constexpr matrix_type source({3.0, -5.0, 7.0, -9.0});
+        constexpr double first = (source / 2)(0, 0);
+        EXPECT_DOUBLE_EQ(first, 1.5);
+        const matrix_type expected({1.5, -2.5, 3.5, -4.5});
+        const auto divided = source / 2;
+        static_assert(std::is_same_v<typename decltype(divided)::Scalar, double>);
+        static_assert(decltype(divided)::ReadOnly == 1 && decltype(divided)::StorageOrder == StorageOrder);
+        EXPECT_EQ(matrix_type(divided), expected);
+        EXPECT_EQ(matrix_type(source / 2.0), expected);
+        EXPECT_EQ(matrix_type(source / -2), matrix_type(expected * -1));
+        matrix_type compound(source);
+        compound /= 2;
+        EXPECT_EQ(compound, expected);
+        matrix_type alias(source);
+        alias = alias.transpose() / 2;
+        EXPECT_EQ(alias, matrix_type({1.5, 3.5, -2.5, -4.5}));
+        const auto nested = [&] {
+            const auto block = source.template block<2, 2>(0, 0);
+            const int divisor = 2;
+            return (block + block) / divisor;
+        }();
+        EXPECT_EQ(matrix_type(nested), source);
+        matrix_type view_owner(source);
+        const auto view_divided = MatrixView<double, 2, 2, StorageOrder>(view_owner.data()) / 2;
+        EXPECT_EQ(matrix_type(view_divided), expected);
+
+        const Matrix<int, 2, 2, StorageOrder> integers({3, -5, 7, -9});
+        const auto integer_divided = integers / 2;
+        static_assert(std::is_same_v<typename decltype(integer_divided)::Scalar, int>);
+        EXPECT_EQ((Matrix<int, 2, 2, StorageOrder>(integer_divided)),
+                  (Matrix<int, 2, 2, StorageOrder>({1, -2, 3, -4})));
+        const auto promoted = integers / 2.0;
+        static_assert(std::is_same_v<typename decltype(promoted)::Scalar, double>);
+        EXPECT_EQ(matrix_type(promoted), expected);
+        const Matrix<float, Dynamic, 1, StorageOrder> vector(std::vector<float> {3.0f, -5.0f});
+        const auto vector_divided = vector / 2;
+        static_assert(std::is_same_v<typename decltype(vector_divided)::Scalar, float>);
+        EXPECT_EQ(vector_divided.rows(), 2);
+        EXPECT_EQ(vector_divided.cols(), 1);
+        EXPECT_FLOAT_EQ(vector_divided[0], 1.5f);
+        EXPECT_FLOAT_EQ(vector_divided[1], -2.5f);
+        const Matrix<short, 1, 1> narrow(static_cast<short>(7));
+        const auto narrow_divided = narrow / static_cast<short>(2);
+        static_assert(std::is_same_v<typename decltype(narrow_divided)::Scalar, short>);
+        EXPECT_EQ(narrow_divided(0, 0), 3);
+    };
+    check_storage.template operator()<RowMajor>();
+    check_storage.template operator()<ColMajor>();
+}
+
+TEST(LinearAlgebraRuntimeContracts, ScalarDivisionPreservesStructuredMatrixCategories) {
+    const double symmetric_values[] {3.0, -5.0, 7.0};
+    const SymmetricMatrix<double, 2, 2> symmetric(symmetric_values);
+    const auto symmetric_divided = symmetric / 2;
+    static_assert(is_symmetric_matrix_v<decltype(symmetric_divided)>);
+    static_assert(!permits_temporary_integer_division<SymmetricMatrix<double, 2, 2>>);
+    EXPECT_EQ((Matrix<double, 2, 2>(symmetric_divided)), (Matrix<double, 2, 2>({1.5, -2.5, -2.5, 3.5})));
+    const auto symmetric_nested = [&] { return (symmetric + symmetric) / 2; }();
+    EXPECT_EQ((Matrix<double, 2, 2>(symmetric_nested)), (Matrix<double, 2, 2>(symmetric)));
+
+    const double skew_values[] {3.0, -5.0, 7.0};
+    const SkewSymmetricMatrix<double, 3> skew(skew_values);
+    const auto skew_divided = skew / 2;
+    static_assert(is_skew_symmetric_matrix_v<decltype(skew_divided)>);
+    static_assert(!permits_temporary_integer_division<SkewSymmetricMatrix<double, 3>>);
+    EXPECT_EQ((Matrix<double, 3, 3>(skew_divided)),
+              (Matrix<double, 3, 3>({0.0, 1.5, -2.5, -1.5, 0.0, 3.5, 2.5, -3.5, 0.0})));
+    const auto skew_nested = [&] { return (skew + skew) / 2; }();
+    EXPECT_EQ((Matrix<double, 3, 3>(skew_nested)), (Matrix<double, 3, 3>(skew)));
+
+    const Vector<double, 2> diagonal_values({3.0, 5.0});
+    const auto diagonal_divided = diagonal_values.as_diagonal() / 2;
+    static_assert(is_diagonal_matrix_v<decltype(diagonal_divided)>);
+    EXPECT_EQ((Matrix<double, 2, 2>(diagonal_divided)), (Matrix<double, 2, 2>({1.5, 0.0, 0.0, 2.5})));
+    const LowerTriangularMatrix<double, 2, 2> triangular(symmetric_values);
+    const auto triangular_divided = triangular / 2;
+    static_assert(is_triangular_matrix_v<decltype(triangular_divided)>);
+    EXPECT_EQ((Matrix<double, 2, 2>(triangular_divided)), (Matrix<double, 2, 2>({1.5, 0.0, -2.5, 3.5})));
 }
 
 }   // namespace fdapde
