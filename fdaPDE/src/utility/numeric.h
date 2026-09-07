@@ -126,15 +126,26 @@ template <typename T> constexpr bool almost_zero(T a) { return almost_zero(a, ma
 template <typename T>
     requires(std::is_floating_point_v<T>)
 constexpr T sqrt(T x) {
-    auto heron_method = [](T x) {
-        T curr = x, prev = 0;
-        while (fdapde::abs(curr - prev) > machine_epsilon) {
-            prev = curr;
-            curr = 0.5 * (curr + x / curr);
-        }
-        return curr;
-    };
-    return x >= 0 && x < std::numeric_limits<T>::infinity() ? heron_method(x) : std::numeric_limits<T>::quiet_NaN();
+    if (x == T(0) || x == std::numeric_limits<T>::infinity()) return x;
+    if (!(x > T(0))) return std::numeric_limits<T>::quiet_NaN();
+    if (!std::is_constant_evaluated()) return std::sqrt(x);
+
+    // Scale into [1,4) so Heron's iteration is safe at both ends of the floating-point range.
+    T scale = T(1);
+    while (x < T(1)) {
+        x *= T(4);
+        scale *= T(0.5);
+    }
+    while (x >= T(4)) {
+        x *= T(0.25);
+        scale *= T(2);
+    }
+    T curr = x, prev = T(0);
+    while (fdapde::abs(curr - prev) > std::numeric_limits<T>::epsilon() * curr) {
+        prev = curr;
+        curr = T(0.5) * (curr + x / curr);
+    }
+    return curr * scale;
 }
 
 // constexpr ceil
@@ -246,22 +257,20 @@ constexpr int ilogb(double x) {
     return exp - 1023;   // remove IEEE bias
 }
 
-// constexpr frexp: scales x's mantissa in range [0.5,1), store exponent in out such that x * 2^exp = num
+// constexpr frexp: x = fraction * 2^out, with |fraction| in [0.5,1) for finite nonzero x.
 constexpr double frexp(double x, int& out) {
-    if (x == 0.0) {
-        out = 0;
-        return 0.0;
+    out = 0;
+    if (x == 0.0 || x != x || fdapde::abs(x) == std::numeric_limits<double>::infinity()) return x;
+    if (!std::is_constant_evaluated()) return std::frexp(x, &out);
+    while (fdapde::abs(x) >= 1.0) {
+        x *= 0.5;
+        ++out;
     }
-    std::uint64_t bits = std::bit_cast<std::uint64_t>(x);   // reover bit expression
-    int exp = static_cast<int>((bits >> 52) & 0x7FF);
-    if (exp == 0) {   // subnormal
-        while ((bits & (1ULL << 52)) == 0) bits <<= 1;
-        exp = 1;
+    while (fdapde::abs(x) < 0.5) {
+        x *= 2.0;
+        --out;
     }
-    out = exp - 1022;  // force mantissa into [0.5,1)
-
-    // mask exponent and replace with 1022 (0x3FE)
-    return std::bit_cast<double>((bits & ((1ULL << 52) - 1)) | (0x3FEULL << 52));
+    return x;
 }
 
 // constexpr log (inspired from fdlibm)
@@ -279,7 +288,8 @@ constexpr double log(double x) {
     constexpr double Lg7 = 1.479819860511658591e-01;
 
     if (x < 0.0 || x != x) { return std::numeric_limits<double>::quiet_NaN(); }
-    if (x == 0.0 || x == std::numeric_limits<double>::infinity()) { return -std::numeric_limits<double>::infinity(); }
+    if (x == 0.0) { return -std::numeric_limits<double>::infinity(); }
+    if (x == std::numeric_limits<double>::infinity()) { return x; }
     // decompose
     int k;
     double m = fdapde::frexp(x, k);   // x = m * 2^k, m in [0.5,1)
