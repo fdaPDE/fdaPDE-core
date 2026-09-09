@@ -24,7 +24,9 @@ namespace fdapde {
 // returns the lumped matrix of a sparse expression. row-sum lumping operator
 template <typename ExprType>
 Eigen::SparseMatrix<typename ExprType::Scalar> lump(const Eigen::SparseMatrixBase<ExprType>& expr) {
-    fdapde_assert(expr.rows() == expr.cols());   // stop if not square
+    fdapde_assert(
+      expr.rows() == expr.cols(), std::invalid_argument,
+      "matrix lumping requires a square matrix");   // stop if not square
     using Scalar_ = typename ExprType::Scalar;
     // reserve space for triplets
     std::vector<Triplet<Scalar_>> triplet_list;
@@ -40,7 +42,9 @@ Eigen::SparseMatrix<typename ExprType::Scalar> lump(const Eigen::SparseMatrixBas
 // returns the lumped matrix of a dense expression. row-sum lumping operator
 template <typename ExprType>
 Eigen::DiagonalMatrix<typename ExprType::Scalar, Dynamic, Dynamic> lump(const Eigen::MatrixBase<ExprType>& expr) {
-    fdapde_assert(expr.rows() == expr.cols());   // stop if not square
+    fdapde_assert(
+      expr.rows() == expr.cols(), std::invalid_argument,
+      "matrix lumping requires a square matrix");   // stop if not square
     using Scalar_ = typename ExprType::Scalar;
     // matrix lumping
     Eigen::Matrix<Scalar_, Dynamic, 1> lumped_matrix = expr.array().rowwise().sum();

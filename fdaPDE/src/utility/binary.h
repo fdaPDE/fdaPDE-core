@@ -145,7 +145,11 @@ template <int Rows, int Cols = Rows> class BinaryMatrix : public BinMtxBase<Rows
     typename std::enable_if<Rows_ == Dynamic || Cols_ == Dynamic, void>::type
     resize(int rows, int cols) {
         fdapde_assert(
-          (Rows_ == Dynamic || (Rows_ == 1 && rows == 1)) && (Cols_ == Dynamic || (Cols_ == 1 && cols == 1)));
+          Rows_ == Dynamic || (Rows_ == 1 && rows == 1), std::invalid_argument,
+          "row count must match the static vector extent");
+        fdapde_assert(
+          Cols_ == Dynamic || (Cols_ == 1 && cols == 1), std::invalid_argument,
+          "column count must match the static vector extent");
         n_rows_ = rows;
         n_cols_ = cols;
         Base::n_bitpacks_ = 1 + std::ceil((n_rows_ * n_cols_) / PackSize);
@@ -171,7 +175,8 @@ template <int Rows, int Cols = Rows> class BinaryMatrix : public BinMtxBase<Rows
     BitPackType& bitpack(int i) { return data_[i]; }   // non-const access to i-th bitpack
     // setters
     void set(int i, int j) {   // set (i,j)-th bit
-        fdapde_assert(i < n_rows_ && j < n_cols_);
+        fdapde_assert(i < n_rows_, std::out_of_range, "row index out of range");
+        fdapde_assert(j < n_cols_, std::out_of_range, "column index out of range");
         data_[pack_of(i, j)] |= (BitPackType(1) << ((i * Base::n_cols_ + j) % PackSize));
     }
     void set(int i) {
@@ -186,7 +191,8 @@ template <int Rows, int Cols = Rows> class BinaryMatrix : public BinMtxBase<Rows
         }
     }  
     void clear(int i, int j) {   // clear (i,j)-th bit (sets to 0)
-        fdapde_assert(i < n_rows_ && j < n_cols_);
+        fdapde_assert(i < n_rows_, std::out_of_range, "row index out of range");
+        fdapde_assert(j < n_cols_, std::out_of_range, "column index out of range");
         data_[pack_of(i, j)] &= ~(BitPackType(1) << ((i * Base::n_cols_ + j) % PackSize));
     }
     void clear(int i) {
@@ -274,7 +280,8 @@ struct BinMtxBinaryOp : public BinMtxBase<Rows, Cols, BinMtxBinaryOp<Rows, Cols,
 
     BinMtxBinaryOp(const Lhs& op1, const Rhs& op2, BinaryOperation f) :
         Base(op1.rows(), op1.cols()), op1_(op1), op2_(op2), f_(f) {
-        fdapde_assert(op1_.rows() == op2_.rows() && op1_.cols() == op2_.cols());
+        fdapde_assert(op1_.rows() == op2_.rows(), std::invalid_argument, "operand row counts must match");
+        fdapde_assert(op1_.cols() == op2_.cols(), std::invalid_argument, "operand column counts must match");
     }
     bool operator()(int i, int j) const { return f_(op1_(i, j), op2_(i, j)); }
     BitPackType bitpack(int i) const { return f_(op1_.bitpack(i), op2_.bitpack(i)); }
@@ -309,28 +316,38 @@ class BinMtxBlock : public BinMtxBase<BlockRows, BlockCols, BinMtxBlock<BlockRow
         start_row_(BlockRows == 1 ? i : 0),
         start_col_(BlockCols == 1 ? i : 0) {
         fdapde_static_assert(BlockRows == 1 || BlockCols == 1, THIS_METHOD_IS_ONLY_FOR_ROW_AND_COLUMN_BLOCKS);
-        fdapde_assert(i >= 0 && ((BlockRows == 1 && i < xpr_.rows()) || (BlockCols == 1 && i < xpr_.cols())));
+        fdapde_assert(i >= 0, std::out_of_range, "block index must be nonnegative");
+        fdapde_assert(
+          (BlockRows == 1 && i < xpr_.rows()) || (BlockCols == 1 && i < xpr_.cols()), std::out_of_range,
+          "block index out of range");
     }
     // fixed-sized constructor
     BinMtxBlock(XprTypeNested& xpr, int start_row, int start_col) :
         Base(BlockRows, BlockCols), xpr_(xpr), start_row_(start_row), start_col_(start_col) {
         fdapde_static_assert(
           BlockRows != Dynamic && BlockCols != Dynamic, THIS_METHOD_IS_ONLY_FOR_STATIC_SIZED_MATRIX_BLOCKS);
-        fdapde_assert(
-          start_row_ >= 0 && BlockRows >= 0 && start_row_ + BlockRows <= xpr_.rows() && start_col_ >= 0 &&
-          BlockCols >= 0 && start_col_ + BlockCols <= xpr_.cols());
+        fdapde_assert(start_row_ >= 0, std::out_of_range, "block starting row must be nonnegative");
+        fdapde_assert(BlockRows >= 0, std::invalid_argument, "block row count must be nonnegative");
+        fdapde_assert(start_row_ + BlockRows <= xpr_.rows(), std::out_of_range, "block exceeds the available rows");
+        fdapde_assert(start_col_ >= 0, std::out_of_range, "block starting column must be nonnegative");
+        fdapde_assert(BlockCols >= 0, std::invalid_argument, "block column count must be nonnegative");
+        fdapde_assert(start_col_ + BlockCols <= xpr_.cols(), std::out_of_range, "block exceeds the available columns");
     }
     // dynamic-sized constructor
     BinMtxBlock(XprTypeNested& xpr, int start_row, int start_col, int block_rows, int block_cols) :
         Base(block_rows, block_cols), xpr_(xpr), start_row_(start_row), start_col_(start_col) {
-        fdapde_assert(BlockRows == Dynamic || BlockCols == Dynamic);
         fdapde_assert(
-          start_row_ >= 0 && start_row_ + block_rows <= xpr_.rows() && start_col_ >= 0 &&
-          start_col_ + block_cols <= xpr_.cols());
+          BlockRows == Dynamic || BlockCols == Dynamic, std::logic_error,
+          "runtime block sizes require a dynamic block extent");
+        fdapde_assert(start_row_ >= 0, std::out_of_range, "block starting row must be nonnegative");
+        fdapde_assert(start_row_ + block_rows <= xpr_.rows(), std::out_of_range, "block exceeds the available rows");
+        fdapde_assert(start_col_ >= 0, std::out_of_range, "block starting column must be nonnegative");
+        fdapde_assert(start_col_ + block_cols <= xpr_.cols(), std::out_of_range, "block exceeds the available columns");
     }
 
     bool operator()(int i, int j) const {
-        fdapde_assert(i < n_rows_ && j < n_cols_);
+        fdapde_assert(i < n_rows_, std::out_of_range, "row index out of range");
+        fdapde_assert(j < n_cols_, std::out_of_range, "column index out of range");
         return xpr_(i + start_row_, j + start_col_);
     }
     void set(int i, int j) { xpr_.set(i + start_row_, j + start_col_); }
@@ -364,7 +381,8 @@ class BinMtxBlock : public BinMtxBase<BlockRows, BlockCols, BinMtxBlock<BlockRow
           (BlockRows == Dynamic || BlockCols == Dynamic) || (BlockRows == Rows_ && BlockCols == Cols_) ||
             (BlockCols == 1 && (Rows_ == 1 || Cols_ == 1)),
           INVALID_BLOCK_ASSIGNMENT);
-        fdapde_assert(rhs.rows() == n_rows_ && rhs.cols() == n_cols_);
+        fdapde_assert(rhs.rows() == n_rows_, std::invalid_argument, "operand row counts must match");
+        fdapde_assert(rhs.cols() == n_cols_, std::invalid_argument, "operand column counts must match");
         for (int i = 0; i < rhs.rows(); ++i) {
             for (int j = 0; j < rhs.cols(); ++j) {
                 if (rhs(i, j)) set(i, j);
@@ -481,7 +499,8 @@ class BinMtxRepeatOp : public BinMtxBase<Rows, Cols, BinMtxRepeatOp<Rows, Cols, 
         Base(xpr.rows() * rep_row, xpr.cols() * rep_col), xpr_(xpr), rep_row_(rep_row), rep_col_(rep_col) {
     }
     bool operator()(int i, int j) const {
-        fdapde_assert(i < n_rows_ && j < n_cols_);
+        fdapde_assert(i < n_rows_, std::out_of_range, "row index out of range");
+        fdapde_assert(j < n_cols_, std::out_of_range, "column index out of range");
         return xpr_(i % xpr_.rows(), j % xpr_.cols());
     }
     BitPackType bitpack(int i) const {
@@ -511,10 +530,13 @@ public:
   
     BinMtxReshapeOp(const XprTypeNested& xpr, int reshaped_rows, int reshaped_cols) :
         Base(reshaped_rows, reshaped_cols), xpr_(xpr), reshaped_rows_(reshaped_rows), reshaped_cols_(reshaped_cols) {
-        fdapde_assert(reshaped_rows * reshaped_cols == xpr.rows() * xpr.cols());
+        fdapde_assert(
+          reshaped_rows * reshaped_cols == xpr.rows() * xpr.cols(), std::invalid_argument,
+          "reshaping must preserve the number of coefficients");
     }
     bool operator()(int i, int j) const {
-        fdapde_assert(i < reshaped_rows_ && j < reshaped_cols_);
+        fdapde_assert(i < reshaped_rows_, std::out_of_range, "reshaped row index out of range");
+        fdapde_assert(j < reshaped_cols_, std::out_of_range, "reshaped column index out of range");
         return xpr_((i * reshaped_cols_ + j) / xpr_.cols(), (i * reshaped_cols_ + j) % xpr_.cols());
     }
     BitPackType bitpack(int i) const { return xpr_.bitpack(i); }   // no changes in storage layout
@@ -546,7 +568,8 @@ template <int Rows, int Cols, typename XprType> class BinMtxBase {
     const XprType& get() const { return static_cast<const XprType&>(*this); }
     // access operator on base type E
     bool operator()(int i, int j) const {
-        fdapde_assert(i < n_rows_ && j < n_cols_);
+        fdapde_assert(i < n_rows_, std::out_of_range, "row index out of range");
+        fdapde_assert(j < n_cols_, std::out_of_range, "column index out of range");
         return get().operator()(i, j);
     }
     bool operator[](int i) const {
@@ -619,7 +642,8 @@ template <int Rows, int Cols, typename XprType> class BinMtxBase {
         requires(internals::is_eigen_dense_xpr_v<ExprType> && std::is_convertible_v<Scalar, typename ExprType::Scalar>)
     Eigen::Matrix<typename ExprType::Scalar, Dynamic, Dynamic>
     select(const Eigen::MatrixBase<ExprType>& mtx, Scalar false_val = Scalar(0)) const {
-        fdapde_assert(n_rows_ == mtx.rows() && n_cols_ == mtx.cols());
+        fdapde_assert(n_rows_ == mtx.rows(), std::invalid_argument, "mask and matrix row counts must match");
+        fdapde_assert(n_cols_ == mtx.cols(), std::invalid_argument, "mask and matrix column counts must match");
         using Scalar_ = typename ExprType::Scalar;
         Eigen::Matrix<Scalar_, Dynamic, Dynamic> masked_mtx = mtx;   // assign to dense storage
         for (int i = 0; i < n_rows_; ++i) {
@@ -637,8 +661,15 @@ template <int Rows, int Cols, typename XprType> class BinMtxBase {
     Eigen::Matrix<typename TrueExpr::Scalar, Dynamic, Dynamic>
     select(const Eigen::MatrixBase<TrueExpr>& true_expr, const Eigen::MatrixBase<FalseExpr>& false_expr) {
         fdapde_assert(
-          n_rows_ == true_expr.rows() && n_cols_ == true_expr.cols() && true_expr.rows() == false_expr.rows() &&
-          true_expr.cols() == false_expr.cols());
+          n_rows_ == true_expr.rows(), std::invalid_argument, "mask and true expression row counts must match");
+        fdapde_assert(
+          n_cols_ == true_expr.cols(), std::invalid_argument, "mask and true expression column counts must match");
+        fdapde_assert(
+          true_expr.rows() == false_expr.rows(), std::invalid_argument,
+          "true and false expression row counts must match");
+        fdapde_assert(
+          true_expr.cols() == false_expr.cols(), std::invalid_argument,
+          "true and false expression column counts must match");
         using Scalar_ = typename TrueExpr::Scalar;
         Eigen::Matrix<Scalar_, Dynamic, Dynamic> masked_mtx = true_expr;
         Eigen::Matrix<Scalar_, Dynamic, Dynamic> tmp = false_expr;   // evaluate false_expr in temporary
@@ -654,7 +685,8 @@ template <int Rows, int Cols, typename XprType> class BinMtxBase {
         requires(internals::is_eigen_sparse_xpr_v<ExprType> && std::is_convertible_v<Scalar, typename ExprType::Scalar>)
     Eigen::SparseMatrix<typename ExprType::Scalar>
     select(const Eigen::SparseMatrixBase<ExprType>& mtx, Scalar false_val = Scalar(0)) const {
-        fdapde_assert(n_rows_ == mtx.rows() && n_cols_ == mtx.cols());
+        fdapde_assert(n_rows_ == mtx.rows(), std::invalid_argument, "mask and matrix row counts must match");
+        fdapde_assert(n_cols_ == mtx.cols(), std::invalid_argument, "mask and matrix column counts must match");
         using Scalar_ = typename ExprType::Scalar;
 	Eigen::SparseMatrix<Scalar_> masked_mtx = mtx;   // assign to sparse storage
         for (int k = 0; k < masked_mtx.outerSize(); ++k) {
@@ -671,8 +703,15 @@ template <int Rows, int Cols, typename XprType> class BinMtxBase {
     Eigen::SparseMatrix<typename TrueExpr::Scalar>
     select(const Eigen::SparseMatrixBase<TrueExpr>& true_expr, const Eigen::SparseMatrixBase<FalseExpr>& false_expr) {
         fdapde_assert(
-          n_rows_ == true_expr.rows() && n_cols_ == true_expr.cols() && true_expr.rows() == false_expr.rows() &&
-          true_expr.cols() == false_expr.cols());
+          n_rows_ == true_expr.rows(), std::invalid_argument, "mask and true expression row counts must match");
+        fdapde_assert(
+          n_cols_ == true_expr.cols(), std::invalid_argument, "mask and true expression column counts must match");
+        fdapde_assert(
+          true_expr.rows() == false_expr.rows(), std::invalid_argument,
+          "true and false expression row counts must match");
+        fdapde_assert(
+          true_expr.cols() == false_expr.cols(), std::invalid_argument,
+          "true and false expression column counts must match");
         using Scalar_ = typename TrueExpr::Scalar;
         Eigen::SparseMatrix<Scalar_> masked_mtx = true_expr;
         Eigen::SparseMatrix<Scalar_> tmp = false_expr;   // evaluate false_expr in temporary
@@ -721,7 +760,8 @@ bool operator==(const BinMtxBase<Rows1, Cols1, XprType1>& op1, const BinMtxBase<
       !(Rows1 != Dynamic && Cols1 != Dynamic && Rows2 != Dynamic && Cols2 != Dynamic) ||
         (Rows1 == Cols1 && Rows2 == Cols2),
       YOU_MIXED_MATRICES_OF_DIFFERENT_SIZE);
-    fdapde_assert(op1.rows() == op2.rows() && op1.cols() == op2.cols());
+    fdapde_assert(op1.rows() == op2.rows(), std::invalid_argument, "operand row counts must match");
+    fdapde_assert(op1.cols() == op2.cols(), std::invalid_argument, "operand column counts must match");
     using BitPackType = typename XprType1::BitPackType;
     static constexpr int PackSize = XprType1::PackSize;
     bool result = true;
@@ -738,7 +778,8 @@ bool operator!=(const BinMtxBase<Rows1, Cols1, XprType1>& op1, const BinMtxBase<
       !(Rows1 != Dynamic && Cols1 != Dynamic && Rows2 != Dynamic && Cols2 != Dynamic) ||
         (Rows1 == Cols1 && Rows2 == Cols2),
       YOU_MIXED_MATRICES_OF_DIFFERENT_SIZE);
-    fdapde_assert(op1.rows() == op2.rows() && op1.cols() == op2.cols());
+    fdapde_assert(op1.rows() == op2.rows(), std::invalid_argument, "operand row counts must match");
+    fdapde_assert(op1.cols() == op2.cols(), std::invalid_argument, "operand column counts must match");
     using BitPackType = typename XprType1::BitPackType;
     static constexpr int PackSize = XprType1::PackSize;    
     bool result = false;
@@ -827,7 +868,8 @@ class BinaryMap : public BinMtxBase<Rows, Cols, BinaryMap<Rows, Cols, XprTypeNes
     BitPackType& bitpack(int i) { return data_[i]; }   // non-const access to i-th bitpack
 
     void set(int i, int j) {   // set (i,j)-th bit
-        fdapde_assert(i < n_rows_ && j < n_cols_);
+        fdapde_assert(i < n_rows_, std::out_of_range, "row index out of range");
+        fdapde_assert(j < n_cols_, std::out_of_range, "column index out of range");
         data_[pack_of(i, j)] |= (BitPackType(1) << ((i * n_cols_ + j) % PackSize));
     }
     void set(int i) {
@@ -842,7 +884,8 @@ class BinaryMap : public BinMtxBase<Rows, Cols, BinaryMap<Rows, Cols, XprTypeNes
         }
     }  
     void clear(int i, int j) {   // clear (i,j)-th bit (sets to 0)
-        fdapde_assert(i < n_rows_ && j < n_cols_);
+        fdapde_assert(i < n_rows_, std::out_of_range, "row index out of range");
+        fdapde_assert(j < n_cols_, std::out_of_range, "column index out of range");
         data_[pack_of(i, j)] &= ~(BitPackType(1) << ((i * n_cols_ + j) % PackSize));
     }
     void clear(int i) {

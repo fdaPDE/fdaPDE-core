@@ -122,14 +122,15 @@ template <> class Triangulation<1, 2> : public TriangulationBase<1, 2, Triangula
         requires(requires(Lambda lambda, typename Base::NodeType e) {
             { lambda(e) } -> std::same_as<bool>;
         }) {
-        fdapde_assert(marker >= 0);
+        fdapde_assert(marker >= 0, std::invalid_argument, "marker must be nonnegative");
         nodes_markers_.resize(n_nodes_);
         for (boundary_node_iterator it = boundary_nodes_begin(); it != boundary_nodes_end(); ++it) {
             nodes_markers_[it->id()] = lambda(*it) ? marker : Unmarked;
         }
     }
     template <int Rows, typename XprType> void mark_boundary(const BinMtxBase<Rows, 1, XprType>& mask) {
-        fdapde_assert(mask.rows() == n_nodes_);
+        fdapde_assert(
+          mask.rows() == n_nodes_, std::invalid_argument, "boundary mask size must match the number of nodes");
         nodes_markers_.resize(n_nodes_);
         for (boundary_node_iterator it = boundary_nodes_begin(); it != boundary_nodes_end(); ++it) {
             nodes_markers_[it->id()] = mask[it->id()] ? 1 : 0;
@@ -140,13 +141,15 @@ template <> class Triangulation<1, 2> : public TriangulationBase<1, 2, Triangula
           std::is_convertible_v<typename Iterator::value_type FDAPDE_COMMA int>, INVALID_ITERATOR_RANGE);
         int n_markers = std::distance(first, last);
 	bool all_markers_positive = std::all_of(first, last, [](auto marker) { return marker >= 0; });
-        fdapde_assert(n_markers == n_nodes() && all_markers_positive);
-        nodes_markers_.resize(n_nodes_, Unmarked);
-        for (int i = 0; i < n_nodes_; ++i) { nodes_markers_[i] = *(first + i); }
+    fdapde_assert(
+      n_markers == n_nodes(), std::invalid_argument, "boundary marker count must match the number of nodes");
+    fdapde_assert(all_markers_positive, std::invalid_argument, "boundary markers must be nonnegative");
+    nodes_markers_.resize(n_nodes_, Unmarked);
+    for (int i = 0; i < n_nodes_; ++i) { nodes_markers_[i] = *(first + i); }
     }
     // marks all boundary edges
     void mark_boundary(int marker) {
-        fdapde_assert(marker >= 0);
+        fdapde_assert(marker >= 0, std::invalid_argument, "marker must be nonnegative");
         nodes_markers_.resize(n_nodes_, Unmarked);
         std::for_each(nodes_markers_.begin(), nodes_markers_.end(), [marker](int& marker_) { marker_ = marker; });
     }

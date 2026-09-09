@@ -116,11 +116,11 @@ template <typename DofHandler> class DofTetrahedron : public Tetrahedron<typenam
     }
     // overload geometric getters to return dof-informed structures
     EdgeType edge(int n) const {
-        fdapde_assert(n < Base::n_edges);
+        fdapde_assert(n < Base::n_edges, std::out_of_range, "edge index out of range");
         return EdgeType(dof_handler_->triangulation()->cell_to_edges()(Base::id(), n), dof_handler_);
     }
     FaceType face(int n) const {
-        fdapde_assert(n < Base::n_faces);
+        fdapde_assert(n < Base::n_faces, std::out_of_range, "face index out of range");
         return FaceType(dof_handler_->triangulation()->cell_to_faces()(Base::id(), n), dof_handler_);
     }
     // iterator over tetrahedron edges

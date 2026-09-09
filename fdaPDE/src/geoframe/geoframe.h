@@ -123,7 +123,8 @@ template <typename... Triangulation_> struct GeoFrame {
            ...))
     auto& insert_scalar_layer_(const std::string& name, Args&&... args) {
         fdapde_static_assert(sizeof...(GeoInfo) == Order, BAD_LAYER_CONSTRUCTION__NO_MATCHING_ORDER);
-	fdapde_assert(!name.empty() && !has_layer(name));
+        fdapde_assert(!name.empty(), std::invalid_argument, "layer name must not be empty");
+        fdapde_assert(!has_layer(name), std::invalid_argument, "layer name already exists");
         using geo_layer_t = GeoLayer<Triangulation, std::tuple<GeoInfo...>>;
         layers_.emplace_back(
           name,                                                                // layer name
@@ -153,7 +154,8 @@ template <typename... Triangulation_> struct GeoFrame {
         return insert_scalar_layer_<GeoInfo...>(name, row_filter);
     }
     auto& load_shp(const std::string& name, const std::string& filename) {
-        fdapde_assert(!name.empty() && !has_layer(name));
+        fdapde_assert(!name.empty(), std::invalid_argument, "layer name must not be empty");
+        fdapde_assert(!has_layer(name), std::invalid_argument, "layer name already exists");
         auto& l = insert_scalar_layer_<POLYGON>(name, triangulation_);
         l.load_shp(filename);
         return geo_cast<POLYGON>(operator[](name));

@@ -34,8 +34,9 @@ template <> class Triangulation<1, 1> : public TriangulationBase<1, 1, Triangula
 
     Triangulation() = default;
     Triangulation(const Eigen::Matrix<double, Dynamic, 1>& nodes, int flags = 0) : Base() {
-        fdapde_assert(nodes.rows() > 1 && nodes.cols() == 1);
-	Base::flags_ = flags;
+        fdapde_assert(nodes.rows() > 1, std::invalid_argument, "interval requires at least two nodes");
+        fdapde_assert(nodes.cols() == 1, std::invalid_argument, "interval nodes must form a column vector");
+        Base::flags_ = flags;
         nodes_ = nodes;
         // store number of nodes and elements
         n_nodes_ = nodes_.rows();
@@ -105,7 +106,8 @@ template <> class Triangulation<1, 1> : public TriangulationBase<1, 1, Triangula
         if constexpr (Cols == 1) {
             return locate_(p[0]);
         } else {
-            fdapde_assert(p.rows() > 0 && p.cols() == 1);
+            fdapde_assert(p.rows() > 0, std::invalid_argument, "query points must not be empty");
+            fdapde_assert(p.cols() == 1, std::invalid_argument, "interval query points must form a column vector");
             Eigen::Matrix<int, Dynamic, 1> result;
             result.resize(p.rows());
             // start search

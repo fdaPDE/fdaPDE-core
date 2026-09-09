@@ -17,43 +17,27 @@
 #ifndef __FDAPDE_ASSERT_H__
 #define __FDAPDE_ASSERT_H__
 
-#include "header_check.h"
-
-namespace fdapde {
+#include <stdexcept>
 
 #define FDAPDE_COMMA ,
-  
-namespace internals {
-  
-inline void fdapde_assert_failed_(const char* str, const char* file, int line) {
-    std::cerr << file << ":" << line << ". Assertion: '" << str << "' failed." << std::endl;
-    abort();
-}
 
-}   // namespace internals
+/// @brief throws the requested exception on failure, including when debug checks are disabled
+#define fdapde_strong_assert(condition, exception_type, message)                                                       \
+    do {                                                                                                               \
+        if (!(condition)) { throw exception_type(message); }                                                           \
+    } while (false)
 
+/// @brief checks a precondition in debug mode without evaluating disabled arguments
 #ifdef FDAPDE_NO_DEBUG
-#    define fdapde_assert(condition) (void)0
+#    define fdapde_assert(condition, exception_type, message) ((void)0)
 #else
-#    define fdapde_assert(condition)                                                                                   \
-        if (!(condition)) { internals::fdapde_assert_failed_(#condition, __FILE__, __LINE__); }
-  
-#endif   // NDEBUG
+#    define fdapde_assert(condition, exception_type, message)                                                          \
+        fdapde_strong_assert((condition), exception_type, (message))
+#endif
 
 #define fdapde_static_assert(condition, message) static_assert(condition, #message)
 
-#ifdef FDAPDE_NO_DEBUG
-#    define fdapde_constexpr_assert(condition) (void)0
-#else
-#    define fdapde_constexpr_assert(condition)                                                                         \
-        if (std::is_constant_evaluated()) {                                                                            \
-            if (!(condition)) { throw std::logic_error(#condition); }                                                  \
-        } else {                                                                                                       \
-            fdapde_assert(condition);                                                                                  \
-        }
-
-#endif   // NDEBUG
-
-}   // namespace fdapde
+/// @brief preserves the legacy constexpr check with the same debug-only runtime behavior
+#define fdapde_constexpr_assert(condition)       fdapde_assert((condition), std::logic_error, #condition)
 
 #endif   // __FDAPDE_ASSERT_H__

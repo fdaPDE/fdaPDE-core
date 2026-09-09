@@ -32,7 +32,7 @@ template <typename Triangulation_> struct point_layer {
     point_layer() : triangulation_(nullptr), coords_(), points_at_dofs_(false) { }
     template <typename GeoDescriptor>
         requires(is_eigen_dense_xpr_v<GeoDescriptor> || is_vector_like_v<GeoDescriptor>)
-    point_layer(Triangulation_* triangulation, const GeoDescriptor& coords) noexcept :
+    point_layer(Triangulation_* triangulation, const GeoDescriptor& coords) :
         triangulation_(triangulation), points_at_dofs_(false) {
         if constexpr (is_eigen_dense_xpr_v<GeoDescriptor>) {
             coords_.reserve(coords.size());
@@ -41,7 +41,9 @@ template <typename Triangulation_> struct point_layer {
             }
             n_rows_ = coords.rows();
         } else {
-            fdapde_assert(coords.size() % embed_dim == 0);
+            fdapde_assert(
+              coords.size() % embed_dim == 0, std::invalid_argument,
+              "coordinate count must be divisible by the embedding dimension");
             coords_.reserve(coords.size());
             for (int i = 0, n = coords.size(); i < n; ++i) { coords_.push_back(coords[i]); }
             n_rows_ = coords.size() / embed_dim;
@@ -79,9 +81,11 @@ template <typename Triangulation_> struct point_layer {
             }
             n_rows_ += coords.rows();
         } else {
-            fdapde_assert(coords.size() % embed_dim == 0);
-	    coords_.insert(coords_.end(), coords.begin(), coords.end());
-	    n_rows_ += coords.size() / embed_dim;
+            fdapde_assert(
+              coords.size() % embed_dim == 0, std::invalid_argument,
+              "coordinate count must be divisible by the embedding dimension");
+            coords_.insert(coords_.end(), coords.begin(), coords.end());
+            n_rows_ += coords.size() / embed_dim;
         }
 	return;
     }

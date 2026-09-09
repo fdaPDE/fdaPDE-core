@@ -65,7 +65,7 @@ struct geo_col_view :
         Base(geo_data->data(), desc), row_begin_(0), geo_data_(geo_data) { }
     // observers
     auto geometry(int i) const {
-        fdapde_assert(i < rows_);
+        fdapde_assert(i < rows_, std::out_of_range, "row index out of range");
         return geo_data_->geometry(row_begin_ + i);
     }
     const GeoLayer& geo_data() const { return *geo_data_; }
@@ -114,7 +114,7 @@ struct geo_row_view :
 
     geo_row_view() noexcept = default;
     geo_row_view(GeoLayer* geo_data, int row) : Base(std::addressof(geo_data->data()), row), geo_data_(geo_data) {
-        fdapde_assert(row < geo_data_->rows());
+        fdapde_assert(row < geo_data_->rows(), std::out_of_range, "row index out of range");
     }
     // observers
     auto geometry() const { return geo_data_->geometry(this->id()); }
@@ -155,9 +155,11 @@ struct random_access_geo_row_view :
     template <typename Iterator>
     random_access_geo_row_view(GeoLayer* geo_data, Iterator begin, Iterator end) :
         Base(std::addressof(geo_data->data()), begin, end), geo_data_(geo_data) {
-        fdapde_assert(std::all_of(begin FDAPDE_COMMA end FDAPDE_COMMA [this](index_t i) {
-            return std::cmp_less(i FDAPDE_COMMA geo_data_->rows());
-        }));
+        fdapde_assert(
+          std::all_of(begin FDAPDE_COMMA end FDAPDE_COMMA[this](index_t i) {
+              return std::cmp_less(i FDAPDE_COMMA geo_data_->rows());
+          }),
+          std::out_of_range, "selected geometry row index out of range");
     }
     template <typename Filter>
         requires(requires(Filter f, index_t i) {
@@ -172,7 +174,9 @@ struct random_access_geo_row_view :
                 })
     random_access_geo_row_view(GeoLayer* geo_data, const LogicalVec& vec) :
         Base(std::addressof(geo_data->data()), vec), geo_data_(geo_data) {
-        fdapde_assert(vec.size() < geo_data_->rows());
+        fdapde_assert(
+          vec.size() < geo_data_->rows(), std::invalid_argument,
+          "geometry filter size must be smaller than the geometry row count");
     }
     // observers
     auto geometry(int i) const { return geo_data_->geometry(this->idxs_[i]); }
@@ -331,8 +335,11 @@ struct GeoLayer {
     storage_t& data() { return data_; }
     void make_structured() {
         if (Order == 1 || structured_) { return; }
-        internals::for_each_index_in_pack<Order>(
-          [&]<int Ns_>() { fdapde_assert(std::get<Ns_>(geo_data_).rows() != 0); });
+        internals::for_each_index_in_pack<Order>([&]<int Ns_>() {
+            fdapde_assert(
+              std::get<Ns_>(geo_data_).rows() != 0, std::logic_error,
+              "geometry must be initialized before making the layer structured");
+        });
 
         constexpr int full_embed_dim = std::accumulate(embed_dim.begin(), embed_dim.end(), 0);	
         using point_t = std::array<double, full_embed_dim>;
@@ -430,8 +437,9 @@ struct GeoLayer {
     // data import
     template <typename T> void load_csv(const std::vector<std::string>& colnames, const std::string& filename) {
         auto csv = read_csv<T>(filename);
-	fdapde_assert(csv.cols() == colnames.size());
-	load_table_<T>(colnames, csv);
+        fdapde_assert(
+          csv.cols() == colnames.size(), std::invalid_argument, "column name count must match the input table");
+        load_table_<T>(colnames, csv);
         return;
     }
     template <typename T> void load_csv(const std::string& filename) {
@@ -441,7 +449,8 @@ struct GeoLayer {
     }
     template <typename T> void load_txt(const std::vector<std::string>& colnames, const std::string& filename) {
         auto txt = read_txt<T>(filename);
-        fdapde_assert(txt.cols() == colnames.size());
+        fdapde_assert(
+          txt.cols() == colnames.size(), std::invalid_argument, "column name count must match the input table");
         load_table_<T>(colnames, txt);
         return;
     }
@@ -492,10 +501,14 @@ struct GeoLayer {
     template <typename... Ts>
         requires(internals::is_vector_like_v<Ts> && ...)
     void load_vec(const std::vector<std::string>& colnames, const Ts&... data) {
-        fdapde_assert(colnames.size() == sizeof...(data));
+        fdapde_assert(
+          colnames.size() == sizeof...(data), std::invalid_argument,
+          "column name count must match the number of data vectors");
         internals::for_each_index_and_args<sizeof...(data)>(
           [&, this]<int Ns_, typename Ts_>(const Ts_& ts) {
-              fdapde_assert(std::cmp_equal(ts.size() FDAPDE_COMMA n_rows_));
+              fdapde_assert(
+                std::cmp_equal(ts.size() FDAPDE_COMMA n_rows_), std::invalid_argument,
+                "data row count must match the geometry row count");
               data_.append_vec(colnames[Ns_], ts);
           },
           data...);
@@ -509,7 +522,9 @@ struct GeoLayer {
     }
   
     template <typename T> void load_blk(const std::string& colname, const T& data) {
-        fdapde_assert(std::cmp_equal(data.rows() FDAPDE_COMMA n_rows_));
+        fdapde_assert(
+          std::cmp_equal(data.rows() FDAPDE_COMMA n_rows_), std::invalid_argument,
+          "data row count must match the geometry row count");
         data_.append_blk(colname, data);
         return;
     }
@@ -526,8 +541,8 @@ struct GeoLayer {
         return std::get<N>(geo_data_);
     }
     auto geometry(int i) const {
-        fdapde_assert(i < n_rows_);
-	using internals::apply_index_pack;
+        fdapde_assert(i < n_rows_, std::out_of_range, "row index out of range");
+        using internals::apply_index_pack;
         if constexpr (Order == 1) {
             return apply_index_pack<Order>([&]<int... Ns>() { return std::make_tuple(geometry<Ns>()[i]...); });
         } else {
@@ -551,22 +566,22 @@ struct GeoLayer {
 
     // column access
     template <typename T> internals::geo_col_view<T, GeoLayer> col(size_t col) {
-        fdapde_assert(col < cols());
+        fdapde_assert(col < cols(), std::out_of_range, "column index out of range");
         return internals::geo_col_view<T, GeoLayer>(this, data_.header()[col]);
     }
     template <typename T> internals::geo_col_view<T, const GeoLayer> col(size_t col) const {
-        fdapde_assert(col < cols());
+        fdapde_assert(col < cols(), std::out_of_range, "column index out of range");
         return internals::geo_col_view<T, const GeoLayer>(this, data_.header()[col]);
     }
     template <typename T> internals::geo_col_view<T, GeoLayer> col(const std::string& colname) {
-        fdapde_assert(data_.contains(colname));
-	int i = 0;
+        fdapde_assert(data_.contains(colname), std::out_of_range, "column name not found");
+        int i = 0;
         for (; i < cols() && data_.header()[i].colname() != colname; ++i);
         return col<T>(i);
     }
     template <typename T> internals::geo_col_view<T, const GeoLayer> col(const std::string& colname) const {
-        fdapde_assert(data_.contains(colname));
-	int i = 0;
+        fdapde_assert(data_.contains(colname), std::out_of_range, "column name not found");
+        int i = 0;
         for (; i < cols() && data_.header()[i].colname() != colname; ++i);
         return col<T>(i);
     }
@@ -732,16 +747,18 @@ struct GeoLayer {
     // internal reading utility
     template <typename T, typename ParsedFile>
     void load_table_(const std::vector<std::string>& colnames, const ParsedFile& parsed_file) {
-        fdapde_assert(colnames.size() == parsed_file.cols());
-	int i = 0, n_col = parsed_file.cols();
+        fdapde_assert(
+          colnames.size() == parsed_file.cols(), std::invalid_argument, "column name count must match the input table");
+        int i = 0, n_col = parsed_file.cols();
         std::vector<std::vector<T>> data(parsed_file.cols());
         for (const T& s : parsed_file.data()) {
             data[i].push_back(s);
             i = (i + 1) % n_col;
         }
         for (int i = 0; i < n_col; ++i) { data_.append_vec(colnames[i], data[i]); }
-	fdapde_assert(n_rows_ == data_.rows());
-	return;
+        fdapde_assert(
+          n_rows_ == data_.rows(), std::invalid_argument, "data row count must match the geometry row count");
+        return;
     }
     template <typename Scalar>
     Eigen::Matrix<Scalar, Dynamic, Dynamic>
@@ -764,7 +781,12 @@ struct GeoLayer {
         fdapde_static_assert(
           Order == 1 || is_full_geo_point, THIS_METHOD_IS_FOR_ORDER_ONE_OR_FULL_POINT_GEOFRAMES_ONLY);
         constexpr int full_embed_dim = std::accumulate(embed_dim.begin(), embed_dim.end(), 0);
-        fdapde_assert((n_rows_ == 0 || n_rows_ == coords.rows()) && coords.cols() == full_embed_dim);
+        fdapde_assert(
+          n_rows_ == 0 || n_rows_ == coords.rows(), std::invalid_argument,
+          "coordinate row count must match existing geometry");
+        fdapde_assert(
+          coords.cols() == full_embed_dim, std::invalid_argument,
+          "coordinate column count must match the full embedding dimension");
         int offset = 0;
         internals::for_each_index_in_pack<Order>([&]<int Ns_>() {
             Eigen::Matrix<double, Dynamic, Dynamic> coords_ = coords.middleCols(offset, embed_dim[Ns_]);
@@ -800,7 +822,9 @@ struct GeoLayer {
     }
     // single geometric indexes reading utilities
     template <int N> void load_geometry_index_(const Eigen::Matrix<double, Dynamic, Dynamic>& coords) {
-        fdapde_assert(coords.cols() == embed_dim[N]);
+        fdapde_assert(
+          coords.cols() == embed_dim[N], std::invalid_argument,
+          "coordinate column count must match the embedding dimension");
         std::get<N>(geo_data_) = std::tuple_element_t<N, geo_storage_t>(std::get<N>(triangulation_), coords);
         if (n_rows_ == 0) { n_rows_ = coords.rows(); }
         return;
@@ -809,7 +833,7 @@ struct GeoLayer {
         fdapde_static_assert(
           std::is_same_v<POINT FDAPDE_COMMA std::tuple_element_t<N FDAPDE_COMMA GeoInfo>>,
           THIS_METHOD_IS_FOR_POINT_INDEXES_ONLY);
-        fdapde_assert(flag == MESH_NODES);
+        fdapde_assert(flag == MESH_NODES, std::invalid_argument, "point geometry flag must be MESH_NODES");
         std::get<N>(geo_data_) = std::tuple_element_t<N, geo_storage_t>(std::get<N>(triangulation_));
         if (n_rows_ == 0) { n_rows_ = std::get<N>(triangulation_)->nodes().rows(); }
         return;

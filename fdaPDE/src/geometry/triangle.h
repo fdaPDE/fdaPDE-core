@@ -67,7 +67,7 @@ template <typename Triangulation> class Triangle : public Simplex<Triangulation:
     bool on_boundary() const { return boundary_; }
     operator bool() const { return mesh_ != nullptr; }
     EdgeType edge(int n) const {
-        fdapde_assert(n < this->n_edges);
+        fdapde_assert(n < this->n_edges, std::out_of_range, "edge index out of range");
         return EdgeType(mesh_->cell_to_edges()(id_, n), mesh_);
     }
     // cell marker
