@@ -44,7 +44,19 @@ add_library(fdapde_core_header_check OBJECT public_headers/core.cpp)
 fdapde_configure_target(fdapde_core_header_check)
 target_link_libraries(fdapde_core_header_check PRIVATE Eigen3::Eigen)
 
-add_executable(fdapde_stable_callers_test utility/stable_callers.cpp utility/assert_callers.cpp)
+add_executable(fdapde_stable_callers_test utility/stable_callers.cpp utility/assert_callers.cpp utility/numeric_callers.cpp)
 fdapde_configure_target(fdapde_stable_callers_test)
 target_link_libraries(fdapde_stable_callers_test PRIVATE GTest::gtest_main Eigen3::Eigen)
 gtest_discover_tests(fdapde_stable_callers_test PROPERTIES TIMEOUT 30)
+
+add_executable(fdapde_numeric_test utility/numeric.cpp utility/meta.cpp)
+fdapde_configure_target(fdapde_numeric_test)
+target_link_libraries(fdapde_numeric_test PRIVATE GTest::gtest_main)
+gtest_discover_tests(fdapde_numeric_test PROPERTIES TIMEOUT 30)
+
+add_library(fdapde_utility_header_check OBJECT public_headers/utility.cpp)
+fdapde_configure_target(fdapde_utility_header_check)
+
+add_library(fdapde_linear_algebra_header_check OBJECT public_headers/linear_algebra.cpp)
+fdapde_configure_target(fdapde_linear_algebra_header_check)
+target_link_libraries(fdapde_linear_algebra_header_check PRIVATE Eigen3::Eigen)

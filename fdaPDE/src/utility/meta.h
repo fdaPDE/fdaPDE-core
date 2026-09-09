@@ -22,6 +22,24 @@
 namespace fdapde {
 namespace internals {
 
+/// @brief selects expression storage according to its NestAsRef flag
+template <typename XprType, bool has_ref_bit> struct ref_select_impl;
+/// @brief uses the declared nesting policy of an expression
+template <typename XprType> struct ref_select_impl<XprType, true> {
+   private:
+    using XprTypeClean = std::decay_t<XprType>;
+   public:
+    using type = std::conditional_t<
+      XprTypeClean::NestAsRef == 0, std::remove_reference_t<XprType>, std::add_lvalue_reference_t<XprType>>;
+};
+/// @brief preserves types without an expression nesting flag
+template <typename XprType> struct ref_select_impl<XprType, false> : std::type_identity<XprType> { };
+/// @brief dispatches storage selection for an expression type
+template <typename XprType> struct ref_select {
+    using type = ref_select_impl<XprType, requires(XprType) { XprType::NestAsRef; }>::type;
+};
+template <typename XprType> using ref_select_t = typename ref_select<XprType>::type;
+
 // apply lambda F_ to each value in index pack {0, ..., N_ - 1}
 template <int N_, typename F_> constexpr decltype(auto) apply_index_pack(F_&& f) {
     return [&]<int... Ns_>(std::integer_sequence<int, Ns_...>) -> decltype(auto) {
@@ -91,10 +109,9 @@ template <typename... Ts> struct is_tuple<std::tuple<Ts...>> : std::true_type { 
 template <typename T1, typename T2>   // std::pair detected as tuple instance
 struct is_tuple<std::pair<T1, T2>> : std::true_type { };
 template <typename T> static constexpr bool is_tuple_v = is_tuple<std::decay_t<T>>::value;
-  
+
 // detect if T is a pair-like object
-template <typename T>
-struct is_pair {
+template <typename T> struct is_pair {
     static constexpr bool value = []() {
         if constexpr (is_tuple_v<std::decay_t<T>>) {
             if constexpr (std::tuple_size_v<std::decay_t<T>> == 2) {
@@ -111,13 +128,13 @@ template <typename T> static constexpr bool is_pair_v = is_pair<T>::value;
 
 // detect if T is a shared_ptr instance
 template <typename T> struct is_shared_ptr : std::false_type { };
-template <typename T> struct is_shared_ptr<std::shared_ptr<T>> : std::true_type {};
+template <typename T> struct is_shared_ptr<std::shared_ptr<T>> : std::true_type { };
 template <typename T> static constexpr bool is_shared_ptr_v = is_shared_ptr<T>::value;
-  // given a type E, returns T if E = std::shared_ptr<T>, or directly returns E otherwise
+// given a type E, returns T if E = std::shared_ptr<T>, or directly returns E otherwise
 template <typename E> struct remove_shared_ptr {
     using type = decltype([]() {
-      if constexpr (is_shared_ptr_v<std::decay_t<E>>) {
-          return typename E::element_type();
+        if constexpr (is_shared_ptr_v<std::decay_t<E>>) {
+            return typename E::element_type();
         } else {
             return E();
         }
@@ -153,7 +170,7 @@ template <typename T, int Order, typename IndexT> class is_indexable {
 };
 template <typename T, int Order, typename IndexT>
 static constexpr bool is_indexable_v = is_indexable<T, Order, IndexT>::value;
-  
+
 // detects if T behaves like a vector
 template <typename T> class is_vector_like {
     using T_ = std::decay_t<T>;
@@ -182,15 +199,15 @@ decltype(auto) vector_like_access(T&& data, int index) {
         return data(index);
     }
 }
-  
+
 // detect if T behaves like a matrix
 template <typename T> class is_matrix_like {
     using T_ = std::decay_t<T>;
-  public:
-   static constexpr bool value = internals::is_indexable_v<T_, 2, int> && requires(T_ t) {
-       { t.rows() } -> std::convertible_to<int>;
-       { t.cols() } -> std::convertible_to<int>;
-   };
+   public:
+    static constexpr bool value = internals::is_indexable_v<T_, 2, int> && requires(T_ t) {
+        { t.rows() } -> std::convertible_to<int>;
+        { t.cols() } -> std::convertible_to<int>;
+    };
 };
 template <typename T> static constexpr bool is_matrix_like_v = is_matrix_like<T>::value;
 
@@ -199,7 +216,7 @@ template <int N, typename... Ts>
     requires(sizeof...(Ts) >= N)
 struct pack_element : std::type_identity<std::tuple_element_t<N, std::tuple<Ts...>>> { };
 template <int N, typename... Ts> using pack_element_t = typename pack_element<N, Ts...>::type;
-  
+
 // detect whether there are no duplicate types in pack
 template <typename... Ts> struct unique;
 template <typename T1, typename T2, typename... Ts> struct unique<T1, T2, Ts...> {
@@ -218,7 +235,7 @@ template <typename T, typename T1, typename... Ts> struct all_same<T, T1, Ts...>
 };
 template <typename T> struct all_same<T> : std::true_type { };
 template <typename T, typename... Ts> static constexpr bool all_same_v = all_same<T, Ts...>::value;
-  
+
 // detect wheter all types in pack are equal
 template <typename... Ts> struct all_equal;
 template <typename T1, typename... Ts> struct all_equal<T1, Ts...> {
@@ -242,7 +259,7 @@ template <typename T, typename... Ts> struct index_of<T, std::tuple<Ts...>> {
     }
    public:
     static constexpr int value = find_idx(std::index_sequence_for<Ts...> {});
-};  
+};
 
 // returns std::true_type if tuple contains type T
 template <typename T, typename Tuple> struct has_type { };
@@ -304,7 +321,7 @@ template <typename SwitchCase> struct switch_type<SwitchCase> {   // end of recu
     fdapde_static_assert(SwitchCase::value, NO_TRUE_CONDITION_IN_SWITCH_TYPE_STATEMENT);
     using type = typename SwitchCase::type;
 };
-  
+
 // member function pointers trait
 template <typename F> struct fn_ptr_traits_base { };
 template <typename R, typename T, typename... Args> struct fn_ptr_traits_base<R (T::*)(Args...)> {
@@ -312,7 +329,7 @@ template <typename R, typename T, typename... Args> struct fn_ptr_traits_base<R 
     using ArgsType = std::tuple<Args...>;
     static constexpr int n_args = sizeof...(Args);
     using ClassType = T;
-    using FnPtrType = R (*)(void*, Args&&...);    // void* is the pointer to the object instance
+    using FnPtrType = R (*)(void*, Args&&...);   // void* is the pointer to the object instance
 };
 template <typename F> struct fn_ptr_traits_impl { };
 template <typename R, typename T, typename... Args>
@@ -324,21 +341,6 @@ struct fn_ptr_traits_impl<R (T::*)(Args...) const> : public fn_ptr_traits_base<R
     using MemFnPtrType = R (T::*)(Args...) const;
 };
 template <auto FnPtr> struct fn_ptr_traits : public fn_ptr_traits_impl<decltype(FnPtr)> { };
-
-// if XprType has its NestAsRef bit set, returns the type XprType&, otherwise return XprType.
-template <typename XprType>
-concept has_nest_as_ref_bit = requires(XprType t) { XprType::NestAsRef; };
-
-template <typename XprType, bool v> struct ref_select_impl;
-template <typename XprType> struct ref_select_impl<XprType, true> {
-    using type = std::conditional_t<
-      XprType::NestAsRef == 0, std::remove_reference_t<XprType>, std::add_lvalue_reference_t<XprType>>;
-};
-template <typename XprType> struct ref_select_impl<XprType, false> {
-    using type = XprType;
-};
-template <typename XprType> struct ref_select : ref_select_impl<XprType, has_nest_as_ref_bit<XprType>> { };
-template <typename XprType> using ref_select_t = ref_select<XprType>::type;
 
 // selects one between arg1 and arg2 based on condition f
 template <typename Arg1, typename Arg2, typename F>
@@ -376,7 +378,7 @@ template <typename T, typename W> struct prefer_most_derived {
     using type = std::conditional_t<std::is_same_v<T, W>, T, std::conditional_t<std::is_base_of_v<T, W>, W, T>>;
 };
 template <typename T, typename W> using prefer_most_derived_t = typename prefer_most_derived<T, W>::type;
-  
+
 }   // namespace internals
 }   // namespace fdapde
 
