@@ -14,23 +14,19 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_CORE_MODULE_H__
-#define __FDAPDE_CORE_MODULE_H__
-
 // clang-format off
-
-// include modules
-#include "linear_algebra.h"    // pull Eigen first
-#include "utility.h"
-#include "execution.h"
-#include "fields.h"
-#include "geometry.h"
-#include "io.h"
-#include "finite_elements.h"
-#include "splines.h"
-#include "optimization.h"
-#include "geoframe.h"
-
+#include <fdaPDE/execution.h>
+#include <fdaPDE/core.h>
 // clang-format on
 
-#endif   // __FDAPDE_CORE_MODULE_H__
+/// @brief observes configuration set from another translation unit
+int execution_configuration() { return fdapde::parallel_get_num_threads(); }
+/// @brief exposes the singleton address through execution-first inclusion
+const void* execution_executor_address() { return &fdapde::internals::threaded_executor::instance(); }
+/// @brief runs and joins a task through execution-first inclusion
+int execute_answer() {
+    auto answer = fdapde::parallel_async([] { return 42; });
+    int result = answer.get();
+    fdapde::parallel_join();
+    return result;
+}
