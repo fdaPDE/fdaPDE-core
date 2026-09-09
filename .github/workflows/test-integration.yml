@@ -1,0 +1,19 @@
+name: integration-pilot
+on:
+  pull_request:
+  push:
+    branches: [develop, 'codex/assert-foundation', 'codex/execution-foundation']
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        # GCC 13 crashes while emitting DWARF for the stable GeoFrame templates
+        compiler: [g++-14, clang++]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libeigen3-dev g++-14
+      - run: cmake -S tests -B build/integration -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=${{ matrix.compiler }}
+      - run: cmake --build build/integration --parallel 2
+      - run: ctest --test-dir build/integration --output-on-failure

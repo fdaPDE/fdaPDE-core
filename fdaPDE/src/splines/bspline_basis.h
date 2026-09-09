@@ -40,7 +40,9 @@ class BSplineBasis {
                     { knots.size() } -> std::convertible_to<std::size_t>;
                 })
     BSplineBasis(KnotsVectorType&& knots, int order) : order_(order) {
-        fdapde_assert(std::is_sorted(knots.begin() FDAPDE_COMMA knots.end(), std::less_equal<double>()));
+        fdapde_assert(
+          std::is_sorted(knots.begin() FDAPDE_COMMA knots.end(), std::less_equal<double>()), std::invalid_argument,
+          "spline knots must be strictly increasing");
         int n = knots.size();
         knots_.resize(n);
         for (int i = 0; i < n; ++i) { knots_[i] = knots[i]; }
@@ -52,7 +54,9 @@ class BSplineBasis {
     BSplineBasis(const Triangulation<1, 1>& interval, int order) : order_(order) {
         // construct knots vector
         Eigen::Matrix<double, Dynamic, 1> knots = interval.nodes();
-        fdapde_assert(std::is_sorted(knots.begin() FDAPDE_COMMA knots.end() FDAPDE_COMMA std::less_equal<double>()));
+        fdapde_assert(
+          std::is_sorted(knots.begin() FDAPDE_COMMA knots.end() FDAPDE_COMMA std::less_equal<double>()),
+          std::invalid_argument, "spline knots must be strictly increasing");
         int n = knots.size();
         knots_.resize(n + 2 * order_);
         // pad the knot vector to obtain a full basis for the whole knot span [knots[0], knots[n-1]]

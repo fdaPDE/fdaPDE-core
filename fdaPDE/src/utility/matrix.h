@@ -380,8 +380,10 @@ class MatrixBlock : public MatrixBase<BlockRows_, BlockCols_, MatrixBlock<BlockR
     constexpr MatrixBlock(Derived& xpr, int i) :
         start_row_(BlockRows_ == 1 ? i : 0), start_col_(BlockCols_ == 1 ? i : 0), xpr_(xpr) {
         fdapde_static_assert(BlockRows_ == 1 || BlockCols_ == 1, THIS_METHOD_IS_ONLY_FOR_ROW_AND_COLUMN_BLOCKS);
-        fdapde_constexpr_assert(
-          i >= 0 && ((BlockRows_ == 1 && i < xpr_.rows()) || (BlockCols_ == 1 && i < xpr_.cols())));
+        fdapde_assert(i >= 0, std::out_of_range, "block index must be nonnegative");
+        fdapde_assert(
+          ((BlockRows_ == 1 && i < xpr_.rows()) || (BlockCols_ == 1 && i < xpr_.cols())), std::out_of_range,
+          "block index out of range");
     }
     constexpr MatrixBlock(Derived& xpr, int start_row, int start_col) :
         start_row_(start_row), start_col_(start_col), xpr_(xpr) { }
@@ -442,7 +444,8 @@ class Matrix : public MatrixBase<Rows_, Cols_, Matrix<Scalar_, Rows_, Cols_, Nes
     constexpr Matrix() : data_() {};
     constexpr explicit Matrix(const std::array<Scalar, Rows * Cols>& data) : data_(data) { }
     constexpr explicit Matrix(const std::vector<Scalar>& data) : data_() {
-        fdapde_constexpr_assert(data.size() == Rows * Cols);
+        fdapde_assert(
+          data.size() == Rows * Cols, std::invalid_argument, "coefficient count must match the matrix size");
         for (int i = 0; i < rows(); ++i) {
             for (int j = 0; j < cols(); ++j) { data_[i * Cols + j] = data[i * Cols + j]; }
         }
@@ -616,7 +619,7 @@ template <typename XprType, typename Functor> struct linear_matrix_redux_op {
     using Scalar = typename XprType::Scalar;
 
     static constexpr Scalar run(const XprType& xpr, Scalar init, Functor f) {
-        fdapde_constexpr_assert(xpr.size() > 0);
+        fdapde_assert(xpr.size() > 0, std::invalid_argument, "matrix reduction requires a nonempty expression");
         Scalar res = init;
         int rows_ = xpr.rows(), cols_ = xpr.cols();
         for (int i = 0; i < rows_; ++i) {
@@ -672,7 +675,8 @@ template <int Rows, int Cols, typename Derived> struct MatrixBase {
     // redux operators
     template <typename Scalar_, typename Functor> constexpr auto redux(Scalar_ init, Functor&& f) const {
         using Scalar = typename Derived::Scalar;
-        fdapde_constexpr_assert(derived().rows() > 0 && derived().cols() > 0);
+        fdapde_assert(derived().rows() > 0, std::invalid_argument, "matrix reduction requires at least one row");
+        fdapde_assert(derived().cols() > 0, std::invalid_argument, "matrix reduction requires at least one column");
         fdapde_static_assert(
           std::is_convertible_v<Scalar_ FDAPDE_COMMA Scalar>, INVALID_SCALAR_INIT_TYPE_IN_REDUX_OPERATION);
         // perform reduction loop
@@ -979,7 +983,8 @@ template <typename MatrixType> class PartialPivLU {
     template <typename RhsType> constexpr Matrix<Scalar, Size, 1> solve(const RhsType& rhs) {
         fdapde_static_assert(
           std::is_same_v<Scalar FDAPDE_COMMA typename RhsType::Scalar>, INVALID_SCALAR_TYPE_FOR_RHS_OPERAND);
-        fdapde_constexpr_assert(rhs.rows() == Size && rhs.cols() == 1);
+        fdapde_assert(rhs.rows() == Size, std::invalid_argument, "right-hand side size must match the factorization");
+        fdapde_assert(rhs.cols() == 1, std::invalid_argument, "right-hand side must be a column vector");
         Matrix<Scalar, Size, 1> x;
         // evaluate U^{-1} * (L^{-1} * (P * rhs))
         x = P_ * rhs;
@@ -1007,7 +1012,8 @@ class Map : public MatrixBase<Rows_, Cols_, Map<Scalar_, Rows_, Cols_, StorageOr
         data_(data), outer_stride_(outer_stride), inner_stride_(inner_stride) { }
     // const access
     constexpr Scalar operator()(int i, int j) const {
-        fdapde_assert(i < Rows && j < Cols);
+        fdapde_assert(i < Rows, std::out_of_range, "row index out of range");
+        fdapde_assert(j < Cols, std::out_of_range, "column index out of range");
         return data_[i * rowStride() + j * colStride()];
     }
     constexpr Scalar operator[](int i) const
@@ -1017,7 +1023,8 @@ class Map : public MatrixBase<Rows_, Cols_, Map<Scalar_, Rows_, Cols_, StorageOr
     }
     // non-const access
     constexpr Scalar& operator()(int i, int j) {
-        fdapde_assert(i < Rows && j < Cols);
+        fdapde_assert(i < Rows, std::out_of_range, "row index out of range");
+        fdapde_assert(j < Cols, std::out_of_range, "column index out of range");
         return data_[i * rowStride() + j * colStride()];
     }
     constexpr Scalar& operator[](int i)

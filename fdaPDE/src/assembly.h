@@ -75,7 +75,8 @@ constexpr auto scalar_or_kth_component_of(const T& t, std::size_t k) {
     if constexpr (std::is_floating_point_v<T>) {
         return t;
     } else {
-        fdapde_constexpr_assert(std::cmp_less(k FDAPDE_COMMA t.size()));
+        fdapde_assert(
+          std::cmp_less(k FDAPDE_COMMA t.size()), std::out_of_range, "assembly coefficient index out of range");
         return t[k];
     }
 }
@@ -95,7 +96,8 @@ struct assembly_add_op : public assembly_xpr_base<assembly_add_op<Lhs, Rhs>> {
       CANNOT_SUM_ASSEMBLY_LOOPS_OF_USING_DIFFERENT_DISCRETIZATION_CATEGORIES);
     using OutputType = decltype(std::declval<Lhs>().assemble());
     assembly_add_op(const Lhs& lhs, const Rhs& rhs) : lhs_(lhs), rhs_(rhs) {
-        fdapde_assert(lhs.rows() == rhs.rows() && lhs.cols() == rhs.cols());
+        fdapde_assert(lhs.rows() == rhs.rows(), std::invalid_argument, "operand row counts must match");
+        fdapde_assert(lhs.cols() == rhs.cols(), std::invalid_argument, "operand column counts must match");
     }
     OutputType assemble() const {
         if constexpr (std::is_same_v<OutputType, Eigen::SparseMatrix<double>>) {
@@ -302,9 +304,9 @@ struct CellDiameter :
     static constexpr int XprBits = 0 | int(geo_assembler_flags::compute_geo_id);
 
     constexpr CellDiameter() noexcept : triangulation_(nullptr) { }
-    constexpr CellDiameter(const Triangulation_& triangulation) noexcept :
-        triangulation_(std::addressof(triangulation)) {
-        fdapde_assert(triangulation_->n_nodes() != 0 && triangulation_->n_cells() != 0);
+    constexpr CellDiameter(const Triangulation_& triangulation) : triangulation_(std::addressof(triangulation)) {
+        fdapde_assert(triangulation_->n_nodes() != 0, std::invalid_argument, "triangulation must contain nodes");
+        fdapde_assert(triangulation_->n_cells() != 0, std::invalid_argument, "triangulation must contain cells");
     }
     // assembly evaluation
     constexpr Scalar operator()(const InputType& geo_packet) const {
@@ -329,9 +331,9 @@ struct FaceNormal :
     static constexpr int XprBits = 0 | int(geo_assembler_flags::compute_face_normal);
 
     constexpr FaceNormal() noexcept : triangulation_(nullptr) { }
-    constexpr FaceNormal(const Triangulation_& triangulation) noexcept :
-        triangulation_(std::addressof(triangulation)) {
-        fdapde_assert(triangulation_->n_nodes() != 0 && triangulation_->n_cells() != 0);
+    constexpr FaceNormal(const Triangulation_& triangulation) : triangulation_(std::addressof(triangulation)) {
+        fdapde_assert(triangulation_->n_nodes() != 0, std::invalid_argument, "triangulation must contain nodes");
+        fdapde_assert(triangulation_->n_cells() != 0, std::invalid_argument, "triangulation must contain cells");
     }
     // assembly evaluation
     constexpr Eigen::Matrix<double, Rows, Cols> operator()(const InputType& geo_packet) const {

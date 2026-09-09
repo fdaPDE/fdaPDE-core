@@ -257,7 +257,7 @@ template <typename T> class BinaryTree {
     }
     // sets this tree as a deep copy of other
     void clone_(const BinaryTree& other) {
-        fdapde_assert(!other.empty());
+        fdapde_assert(!other.empty(), std::logic_error, "source tree must not be empty when cloning");
         clear();
         // insert new root and clone by bfs visit
         root_ = new node_type(*other.root(), 0);

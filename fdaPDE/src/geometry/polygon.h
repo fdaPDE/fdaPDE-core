@@ -29,8 +29,11 @@ template <int LocalDim, int EmbedDim> class Polygon {
 
     // constructors
     Polygon() noexcept = default;
-    Polygon(const Eigen::Matrix<double, Dynamic, Dynamic>& nodes) noexcept : triangulation_() {
-        fdapde_assert(nodes.rows() > 0 && nodes.cols() == embed_dim);
+    Polygon(const Eigen::Matrix<double, Dynamic, Dynamic>& nodes) : triangulation_() {
+        fdapde_assert(nodes.rows() > 0, std::invalid_argument, "polygon nodes must not be empty");
+        fdapde_assert(
+          nodes.cols() == embed_dim, std::invalid_argument,
+          "polygon coordinate dimension must match the embedding dimension");
         if (internals::are_2d_counterclockwise_sorted(nodes)) {
             triangulate_(nodes);
         } else {   // nodes are in clocwise order, reverse node ordering
@@ -40,7 +43,7 @@ template <int LocalDim, int EmbedDim> class Polygon {
             triangulate_(reversed_nodes);
         }
     }
-  
+
     Polygon(const Polygon&) noexcept = default;
     Polygon(Polygon&&) noexcept = default;  
     // observers

@@ -63,16 +63,21 @@ template <typename DofHandler> class DofConstraints {
     }
     template <typename SystemMatrix, typename SystemRhs>
     void enforce_constraints(SystemMatrix&& A, SystemRhs&& b) const {
-        fdapde_assert(A.rows() == b.rows());
-	enforce_constraints(A);
-	enforce_constraints(b);
+        fdapde_assert(
+          A.rows() == b.rows(), std::invalid_argument, "system matrix and right-hand side row counts must match");
+        enforce_constraints(A);
+        enforce_constraints(b);
         return;
     }
     // set dirichlet constraint type on boundary nodes with marker_id = marker
     template <typename... Callable> void set_dirichlet_constraint(int marker, Callable&&... g) {
         int n_boundary_dofs = dof_handler_->n_boundary_dofs(marker);
         fdapde_assert(
-          sizeof...(Callable) == dof_handler_->dof_multiplicity() && (marker == BoundaryAll || n_boundary_dofs > 0));
+          sizeof...(Callable) == dof_handler_->dof_multiplicity(), std::invalid_argument,
+          "boundary function count must match the degree-of-freedom multiplicity");
+        fdapde_assert(
+          marker == BoundaryAll || n_boundary_dofs > 0, std::invalid_argument,
+          "boundary marker must select at least one degree of freedom");
 
         for (typename DofHandlerType::boundary_dofs_iterator it = dof_handler_->boundary_dofs_begin(marker);
              it != dof_handler_->boundary_dofs_end(marker); ++it) {

@@ -42,7 +42,9 @@ class Divergence : public ScalarFieldBase<Derived_::StaticInputSize, Divergence<
 
     explicit constexpr Divergence(const Derived_& xpr) : Base(), data_(), xpr_(xpr) {
         if constexpr (StaticInputSize == Dynamic) {
-            fdapde_constexpr_assert(xpr_.input_size() == xpr_.rows());
+            fdapde_assert(
+              xpr_.input_size() == xpr_.rows(), std::invalid_argument,
+              "divergence requires one field component per input dimension");
             data_.resize(xpr_.rows());
         }
         for (int i = 0; i < xpr_.rows(); ++i) { data_[i] = FunctorType(xpr_[i], i); }

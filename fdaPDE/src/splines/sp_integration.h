@@ -130,7 +130,8 @@ template <typename T>
         { t.resize(i, j) } -> std::same_as<void>;
     })
 void get_sp_quadrature(int order, T& quad_nodes, T& quad_weights) {
-    fdapde_assert(order >= 0 && order <= 7);
+    fdapde_assert(order >= 0, std::invalid_argument, "spline quadrature order must be nonnegative");
+    fdapde_assert(order <= 7, std::invalid_argument, "spline quadrature order must not exceed seven");
     auto copy_ = []<typename QuadRule>(QuadRule q, T& quad_nodes_, T& quad_weights_) {
         quad_nodes_  .resize(q.order, q.local_dim);
         quad_weights_.resize(q.order, q.local_dim);

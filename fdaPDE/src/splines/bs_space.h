@@ -126,9 +126,9 @@ template <typename Triangulation_> class BsSpace {
     }
     // return i-th basis function on physical domain
     SpFunction<BsSpace<Triangulation_>> operator[](int i) {
-        fdapde_assert(i < dof_handler_.n_dofs());
-	Eigen::Matrix<double, Dynamic, 1> coeff = Eigen::Matrix<double, Dynamic, 1>::Zero(dof_handler_.n_dofs());
-	coeff[i] = 1;
+        fdapde_assert(i < dof_handler_.n_dofs(), std::out_of_range, "basis function index out of range");
+        Eigen::Matrix<double, Dynamic, 1> coeff = Eigen::Matrix<double, Dynamic, 1>::Zero(dof_handler_.n_dofs());
+        coeff[i] = 1;
         return BsFunction<BsSpace<Triangulation_>>(*this, coeff);
     }
    private:

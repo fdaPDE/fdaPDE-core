@@ -35,13 +35,15 @@ template <typename Triangulation_> struct areal_layer {
     template <typename GeoDescriptor>
         requires(is_vector_like_v<GeoDescriptor> &&
                  std::is_convertible_v<subscript_result_of_t<GeoDescriptor, int>, int>)
-    areal_layer(Triangulation_* triangulation, const GeoDescriptor& regions) noexcept :
+    areal_layer(Triangulation_* triangulation, const GeoDescriptor& regions) :
         triangulation_(triangulation), incidence_matrix_(), n_regions_(0) {
-        fdapde_assert(std::cmp_equal(regions.size() FDAPDE_COMMA triangulation_->n_cells()));
+        fdapde_assert(
+          std::cmp_equal(regions.size() FDAPDE_COMMA triangulation_->n_cells()), std::invalid_argument,
+          "region descriptor count must match the number of cells");
         // count number of regions
         std::unordered_set<int> unique_region_ids;
         for (int i = 0, n = regions.size(); i < n; ++i) {
-            fdapde_assert(regions[i] >= 0);
+            fdapde_assert(regions[i] >= 0, std::invalid_argument, "region identifiers must be nonnegative");
             unique_region_ids.insert(regions[i]);
         }
         n_regions_ = unique_region_ids.size();
@@ -49,17 +51,21 @@ template <typename Triangulation_> struct areal_layer {
         incidence_matrix_.resize(n_regions_, triangulation_->n_cells());
         for (int i = 0, n = triangulation_->n_cells(); i < n; ++i) { incidence_matrix_.set(regions[i], i); }
     }
-    areal_layer(Triangulation* triangulation, const binary_t& incidence_matrix) noexcept :
+    areal_layer(Triangulation* triangulation, const binary_t& incidence_matrix) :
         triangulation_(triangulation), incidence_matrix_(incidence_matrix), n_regions_(incidence_matrix.rows()) {
-        fdapde_assert(incidence_matrix.cols() == triangulation_->n_cells());
+        fdapde_assert(
+          incidence_matrix.cols() == triangulation_->n_cells(), std::invalid_argument,
+          "incidence matrix column count must match the number of cells");
     }
     template <typename GeoDescriptor>
         requires(is_vector_like_v<GeoDescriptor> &&
                  std::is_same_v<
                    std::decay_t<subscript_result_of_t<GeoDescriptor, int>>, MultiPolygon<local_dim, embed_dim>>)
-    areal_layer(Triangulation_* triangulation, const GeoDescriptor& regions) noexcept :
+    areal_layer(Triangulation_* triangulation, const GeoDescriptor& regions) :
         triangulation_(triangulation), incidence_matrix_(), n_regions_(0) {
-        fdapde_assert(regions.size() == triangulation_->n_cells());
+        fdapde_assert(
+          regions.size() == triangulation_->n_cells(), std::invalid_argument,
+          "region descriptor count must match the number of cells");
         // count number of regions
         n_regions_ = regions.size();
         incidence_matrix_.resize(n_regions_, triangulation_->n_cells());
@@ -69,11 +75,13 @@ template <typename Triangulation_> struct areal_layer {
             }
 	}
     }
-    areal_layer(Triangulation_* triangulation, const std::vector<BinaryMatrix<Dynamic, 1>>& regions) noexcept :
+    areal_layer(Triangulation_* triangulation, const std::vector<BinaryMatrix<Dynamic, 1>>& regions) :
         triangulation_(triangulation), incidence_matrix_(), n_regions_(regions.size()) {
         incidence_matrix_.resize(n_regions_, triangulation_->n_cells());
         for (int i = 0; i < n_regions_; ++i) {
-            fdapde_assert(regions[i].rows() == triangulation_->n_cells());
+            fdapde_assert(
+              regions[i].rows() == triangulation_->n_cells(), std::invalid_argument,
+              "region mask size must match the number of cells");
             for (int j = 0, n = triangulation_->n_cells(); j < n; ++j) {
                 if (regions[i][j]) incidence_matrix_.set(i, j);
             }
@@ -84,7 +92,7 @@ template <typename Triangulation_> struct areal_layer {
     int rows() const { return n_regions_; }
     // geometry
     BinaryVector<Dynamic> operator[](int i) const {
-        fdapde_assert(i < n_regions_);
+        fdapde_assert(i < n_regions_, std::out_of_range, "region index out of range");
         return incidence_matrix_.row(i);
     }
     Triangulation& triangulation() { return *triangulation_; }

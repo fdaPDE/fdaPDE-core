@@ -35,7 +35,7 @@ template <int K> class KDTree {
     // computes the kd-tree structure for a set of points
     KDTree() = default;
     template <typename DataType_> explicit KDTree(DataType_&& data) : data_(std::forward<DataType_>(data)) {
-        fdapde_assert(data_.cols() == K);
+        fdapde_assert(data_.cols() == K, std::invalid_argument, "data dimension must match the kd-tree dimension");
         std::vector<int> ids(data_.rows());   // vector of points ids (filled from 0 up to n-1 by std::iota)
         std::iota(ids.begin(), ids.end(), 0);
         int split_dim = 0;   // current hyperplane splitting direction
@@ -74,7 +74,7 @@ template <int K> class KDTree {
 
     // returns an iterator to the nearest neighbor of p. Average O(log(n)) complexity (worst case is O(n))
     iterator nn_search(const Eigen::Matrix<double, Dynamic, 1>& p) const {
-        fdapde_assert(p.size() == K);
+        fdapde_assert(p.size() == K, std::invalid_argument, "query point dimension must match the kd-tree dimension");
         if (kdtree_.empty()) return kdtree_.cend();   // nothing to search
         const data_type& data = data_;
         std::stack<iterator> stack;

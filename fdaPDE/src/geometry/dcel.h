@@ -46,7 +46,11 @@ template <int LocalDim, int EmbedDim> class DCEL {
         node_t(int id, halfedge_t* halfedge, bool boundary, const CoordsType& coords) :
             id_(id), halfedge_(halfedge), boundary_(boundary), coords_() {
             fdapde_assert(
-              (coords.rows() == 1 && coords.cols() == embed_dim) || (coords.rows() == embed_dim && coords.cols() == 1));
+              coords.rows() == 1 || coords.cols() == 1, std::invalid_argument,
+              "node coordinates must form a row or column vector");
+            fdapde_assert(
+              coords.size() == embed_dim, std::invalid_argument,
+              "node coordinate count must match the embedding dimension");
             if (coords.rows() == 1) {
                 coords_ = coords.transpose();
             } else {
@@ -159,7 +163,9 @@ template <int LocalDim, int EmbedDim> class DCEL {
     DCEL() : nodes_(), halfedges_(), n_nodes_(0), n_halfedges_(0), n_cells_(0) { }
     // constructs a closed loop structure linking nodes one after the other
     static DCEL<local_dim, embed_dim> make_polygon(const Eigen::Matrix<double, Dynamic, Dynamic>& nodes) {
-        fdapde_assert(nodes.cols() == embed_dim);
+        fdapde_assert(
+          nodes.cols() == embed_dim, std::invalid_argument,
+          "node coordinate dimension must match the embedding dimension");
         int n_nodes = nodes.rows();
         DCEL<local_dim, embed_dim> dcel;
         // create polygon cell

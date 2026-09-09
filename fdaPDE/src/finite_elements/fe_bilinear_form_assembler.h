@@ -94,7 +94,12 @@ class fe_bilinear_form_assembly_loop :
         requires(sizeof...(quadrature) <= 1)
         : Base(form, begin, end, quadrature...), trial_space_(&internals::trial_space(form_)) {
         if constexpr (is_petrov_galerkin) { trial_dof_handler_ = &internals::trial_space(form_).dof_handler(); }
-        fdapde_assert(test_dof_handler()->n_dofs() != 0 && trial_dof_handler()->n_dofs() != 0);
+        fdapde_assert(
+          test_dof_handler()->n_dofs() != 0, std::logic_error,
+          "test degrees of freedom must be initialized before assembly");
+        fdapde_assert(
+          trial_dof_handler()->n_dofs() != 0, std::logic_error,
+          "trial degrees of freedom must be initialized before assembly");
     }
 
     Eigen::SparseMatrix<double> assemble() const {

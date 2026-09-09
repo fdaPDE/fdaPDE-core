@@ -104,11 +104,21 @@ template <int LocalDim, int EmbedDim, typename Derived> class fe_dof_handler_bas
     };  
     cell_iterator cells_begin(int marker = TriangulationAll) const {
         const std::vector<int>& cells_markers = triangulation_->cells_markers();
-        fdapde_assert(marker == TriangulationAll || (marker >= 0 && cells_markers.size() != 0));
+        fdapde_assert(
+          marker == TriangulationAll || marker >= 0, std::invalid_argument,
+          "cell marker must be nonnegative or TriangulationAll");
+        fdapde_assert(
+          marker == TriangulationAll || cells_markers.size() != 0, std::logic_error,
+          "cell markers must be initialized before filtering");
         return cell_iterator(0, static_cast<const Derived*>(this), marker);
     }
     cell_iterator cells_end(int marker = TriangulationAll) const {
-        fdapde_assert(marker == TriangulationAll || (marker >= 0 && triangulation_->cells_markers().size() != 0));
+        fdapde_assert(
+          marker == TriangulationAll || marker >= 0, std::invalid_argument,
+          "cell marker must be nonnegative or TriangulationAll");
+        fdapde_assert(
+          marker == TriangulationAll || triangulation_->cells_markers().size() != 0, std::logic_error,
+          "cell markers must be initialized before filtering");
         return cell_iterator(triangulation_->n_cells(), static_cast<const Derived*>(this), marker);
     }
     class BoundaryDofType {
@@ -164,7 +174,9 @@ template <int LocalDim, int EmbedDim, typename Derived> class fe_dof_handler_bas
     }
     // dofs constaints handling
     template <typename... Data> void set_dirichlet_constraint(int on, Data&&... g) {
-        fdapde_assert(sizeof...(Data) == derived().dof_multiplicity());
+        fdapde_assert(
+          sizeof...(Data) == derived().dof_multiplicity(), std::invalid_argument,
+          "boundary function count must match the degree-of-freedom multiplicity");
         dof_constraints_.set_dirichlet_constraint(on, g...);
     }
     template <typename... Data> void set_dirichlet_constraint(const std::initializer_list<int>& on, Data&&... g) {
@@ -173,8 +185,10 @@ template <int LocalDim, int EmbedDim, typename Derived> class fe_dof_handler_bas
     template <typename Iterator, typename... Data>
         requires(std::input_iterator<Iterator>)
     void set_dirichlet_constraint(Iterator begin, Iterator end, Data&&... g) {
-        fdapde_assert(sizeof...(Data) == derived().dof_multiplicity());
-	for(auto it = begin; it != end; ++it) { dof_constraints_.set_dirichlet_constraint(*it, g...); }
+        fdapde_assert(
+          sizeof...(Data) == derived().dof_multiplicity(), std::invalid_argument,
+          "boundary function count must match the degree-of-freedom multiplicity");
+        for (auto it = begin; it != end; ++it) { dof_constraints_.set_dirichlet_constraint(*it, g...); }
     }
     template <typename... Data> void set_dirichlet_constraint(Data&&... g) {
         set_dirichlet_constraint(BoundaryAll, g...);
