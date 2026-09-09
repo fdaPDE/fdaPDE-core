@@ -14,7 +14,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#define FDAPDE_NO_DEBUG
 #include <fdaPDE/linear_algebra.h>
 
 fdapde::LowerTriangularMatrix<double, 3, 3, fdapde::ColMajor> col_major_triangular_matrix;

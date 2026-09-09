@@ -11,7 +11,6 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 
-#define FDAPDE_NO_DEBUG
 #include <fdaPDE/linear_algebra.h>
 
 using oversized_mdarray_extents = fdapde::MdExtents<50000, 50000>;

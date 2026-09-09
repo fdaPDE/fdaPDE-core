@@ -17,8 +17,6 @@
 #ifndef __FDAPDE_LINALG_QR_H__
 #define __FDAPDE_LINALG_QR_H__
 
-#include "header_check.h"
-
 #include <cmath>
 #include <limits>
 #include <stdexcept>
@@ -26,10 +24,13 @@
 #include <utility>
 #include <vector>
 
+#include "header_check.h"
+
 namespace fdapde {
 
-// Full Householder QR following Golub and Van Loan, Matrix Computations,
-// Algorithm 5.1.1: A = Q * R, Q is rows-by-rows and R has A's shape.
+// full Householder QR following Golub and Van Loan, Matrix Computations,
+// algorithm 5.1.1: A = Q * R, Q is rows-by-rows and R has A's shape
+/// @brief factors a rectangular matrix using Householder reflections
 template <typename Scalar_, int Rows_, int Cols_> class HouseholderQR {
    public:
     using Scalar = std::remove_cv_t<Scalar_>;
@@ -37,11 +38,14 @@ template <typename Scalar_, int Rows_, int Cols_> class HouseholderQR {
     static constexpr int Cols = Cols_;
     fdapde_static_assert(std::is_floating_point_v<Scalar>, QR_DECOMPOSITION_REQUIRES_FLOATING_POINT_SCALARS);
 
+    /// @brief constructs householder qr from the supplied state
     constexpr HouseholderQR() = default;
+    /// @brief constructs householder qr from the supplied state
     template <typename MatrixType> constexpr explicit HouseholderQR(const MatrixExpr<MatrixType>& matrix) {
         compute(matrix);
     }
 
+    /// @brief computes the factorization of the supplied matrix
     template <typename MatrixType> constexpr void compute(const MatrixExpr<MatrixType>& matrix) {
         fdapde_static_assert(
           MatrixType::Rows == Dynamic || Rows == Dynamic || MatrixType::Rows == Rows, INVALID_QR_MATRIX_STATIC_SHAPE);
@@ -54,9 +58,8 @@ template <typename Scalar_, int Rows_, int Cols_> class HouseholderQR {
         const int cols = matrix.cols();
         const bool shape_valid =
           rows > 0 && cols > 0 && (Rows == Dynamic || rows == Rows) && (Cols == Dynamic || cols == Cols);
-        if (!shape_valid) {
-            throw std::invalid_argument("HouseholderQR requires a nonempty matrix matching its static shape");
-        }
+        fdapde_strong_assert(
+          !(!shape_valid), std::invalid_argument, "HouseholderQR requires a nonempty matrix matching its static shape");
 
         if constexpr (Rows == Dynamic) Q_.resize(rows, rows);
         if constexpr (Rows == Dynamic || Cols == Dynamic) R_.resize(rows, cols);
@@ -64,9 +67,8 @@ template <typename Scalar_, int Rows_, int Cols_> class HouseholderQR {
         for (int row = 0; row < rows; ++row) {
             for (int col = 0; col < cols; ++col) {
                 const Scalar value = static_cast<Scalar>(matrix.derived()(row, col));
-                if (!is_finite_(value)) {
-                    throw std::invalid_argument("HouseholderQR requires finite matrix coefficients");
-                }
+                fdapde_strong_assert(
+                  !(!is_finite_(value)), std::invalid_argument, "HouseholderQR requires finite matrix coefficients");
                 scale = fdapde::max(scale, fdapde::abs(value));
                 R_(row, col) = value;
             }
@@ -98,27 +100,19 @@ template <typename Scalar_, int Rows_, int Cols_> class HouseholderQR {
 
             for (int col = k; col < cols; ++col) {
                 Scalar dot = Scalar(0);
-                for (int i = 0; i < length; ++i) {
-                    dot += reflector[static_cast<std::size_t>(i)] * R_(k + i, col);
-                }
+                for (int i = 0; i < length; ++i) { dot += reflector[static_cast<std::size_t>(i)] * R_(k + i, col); }
                 dot *= beta;
-                for (int i = 0; i < length; ++i) {
-                    R_(k + i, col) -= reflector[static_cast<std::size_t>(i)] * dot;
-                }
+                for (int i = 0; i < length; ++i) { R_(k + i, col) -= reflector[static_cast<std::size_t>(i)] * dot; }
             }
             R_(k, k) = alpha * norm;
             for (int i = k + 1; i < rows; ++i) R_(i, k) = Scalar(0);
 
-            // Q <- Q * H. Householder reflectors are symmetric.
+            // q <- Q * H. Householder reflectors are symmetric
             for (int row = 0; row < rows; ++row) {
                 Scalar dot = Scalar(0);
-                for (int i = 0; i < length; ++i) {
-                    dot += Q_(row, k + i) * reflector[static_cast<std::size_t>(i)];
-                }
+                for (int i = 0; i < length; ++i) { dot += Q_(row, k + i) * reflector[static_cast<std::size_t>(i)]; }
                 dot *= beta;
-                for (int i = 0; i < length; ++i) {
-                    Q_(row, k + i) -= dot * reflector[static_cast<std::size_t>(i)];
-                }
+                for (int i = 0; i < length; ++i) { Q_(row, k + i) -= dot * reflector[static_cast<std::size_t>(i)]; }
             }
         }
 
@@ -128,25 +122,32 @@ template <typename Scalar_, int Rows_, int Cols_> class HouseholderQR {
         computed_ = true;
     }
 
-    constexpr const Matrix<Scalar, Rows, Rows>& Q() const & {
-        fdapde_assert(computed_);
+    /// @brief returns the orthogonal factor
+    constexpr const Matrix<Scalar, Rows, Rows>& Q() const& {
+        fdapde_assert(computed_, std::logic_error, "QR factorization has not been computed");
         return Q_;
     }
-    constexpr void Q() const && = delete;
-    constexpr const Matrix<Scalar, Rows, Cols>& R() const & {
-        fdapde_assert(computed_);
+    /// @brief returns the orthogonal factor
+    constexpr void Q() const&& = delete;
+    /// @brief returns the upper triangular factor
+    constexpr const Matrix<Scalar, Rows, Cols>& R() const& {
+        fdapde_assert(computed_, std::logic_error, "QR factorization has not been computed");
         return R_;
     }
-    constexpr void R() const && = delete;
+    /// @brief returns the upper triangular factor
+    constexpr void R() const&& = delete;
+    /// @brief returns the numerical rank
     constexpr int rank() const { return rank_; }
+    /// @brief reports whether a factorization has been computed
     constexpr bool computed() const { return computed_; }
-
    private:
+    /// @brief reports is finite
     static constexpr bool is_finite_(Scalar value) {
         const Scalar infinity = std::numeric_limits<Scalar>::infinity();
         return value == value && value != infinity && value != -infinity;
     }
 
+    /// @brief returns the estimated numerical rank
     template <typename MatrixType> static constexpr int numerical_rank_(const MatrixType& matrix, Scalar tolerance) {
         Matrix<Scalar, Dynamic, Dynamic> echelon(matrix);
         int pivot_row = 0;
@@ -180,8 +181,7 @@ template <typename Scalar_, int Rows_, int Cols_> class HouseholderQR {
 };
 
 template <typename XprType>
-HouseholderQR(const MatrixExpr<XprType>&)
-  -> HouseholderQR<typename XprType::Scalar, XprType::Rows, XprType::Cols>;
+HouseholderQR(const MatrixExpr<XprType>&) -> HouseholderQR<typename XprType::Scalar, XprType::Rows, XprType::Cols>;
 
 }   // namespace fdapde
 

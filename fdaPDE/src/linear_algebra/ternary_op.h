@@ -22,6 +22,7 @@
 namespace fdapde {
 
 // expression of a matrix ternary operator, i.e., A(i, j) ? B(i, j) : C(i, j)
+/// @brief represents ternary op
 template <typename ConditionXprType, typename LhsXprType, typename RhsXprType>
 class TernaryOp : public MatrixExpr<TernaryOp<ConditionXprType, LhsXprType, RhsXprType>> {
     fdapde_static_assert(
@@ -47,6 +48,7 @@ class TernaryOp : public MatrixExpr<TernaryOp<ConditionXprType, LhsXprType, RhsX
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
 
+    /// @brief constructs ternary op from the supplied state
     template <typename ConditionXprType_, typename LhsXprType_, typename RhsXprType_>
         requires(internals::safely_nestable<ConditionXprTypeNested, ConditionXprType_> &&
                  internals::safely_nestable<LhsXprTypeNested, LhsXprType_> &&
@@ -58,21 +60,25 @@ class TernaryOp : public MatrixExpr<TernaryOp<ConditionXprType, LhsXprType, RhsX
         if constexpr (
           internals::is_dynamic_sized_v<ConditionXprType> || internals::is_dynamic_sized_v<LhsXprType> ||
           internals::is_dynamic_sized_v<RhsXprType>) {
-            if (!std::cmp_equal(cond_.rows(), lhs_.rows()) || !std::cmp_equal(cond_.cols(), lhs_.cols()) ||
-                !std::cmp_equal(cond_.rows(), rhs_.rows()) || !std::cmp_equal(cond_.cols(), rhs_.cols())) {
-                throw std::invalid_argument("matrix ternary operation requires matching dimensions");
-            }
+            fdapde_assert(
+              !(!std::cmp_equal(cond_.rows(), lhs_.rows()) || !std::cmp_equal(cond_.cols(), lhs_.cols()) ||
+                !std::cmp_equal(cond_.rows(), rhs_.rows()) || !std::cmp_equal(cond_.cols(), rhs_.cols())),
+              std::invalid_argument, "matrix ternary operation requires matching dimensions");
         }
     }
+    /// @brief accesses or evaluates the requested coefficient
     constexpr Scalar operator()(int i, int j) const { return cond_(i, j) ? lhs_(i, j) : rhs_(i, j); }
+    /// @brief accesses the requested vector coefficient
     constexpr Scalar operator[](int i) const {
         fdapde_static_assert(
           (ConditionXprType::Cols == 1 && LhsXprType::Cols == 1 && RhsXprType::Cols == 1) ||
-          (ConditionXprType::Rows == 1 && LhsXprType::Rows == 1 && RhsXprType::Rows == 1),
+            (ConditionXprType::Rows == 1 && LhsXprType::Rows == 1 && RhsXprType::Rows == 1),
           THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
         return cond_[i] ? lhs_[i] : rhs_[i];
     }
+    /// @brief returns the row count
     constexpr int rows() const { return Rows != Dynamic ? Rows : cond_.rows(); }
+    /// @brief returns the column count
     constexpr int cols() const { return Cols != Dynamic ? Cols : cond_.cols(); }
    private:
     ConditionXprTypeNested cond_;

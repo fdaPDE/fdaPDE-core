@@ -21,11 +21,14 @@
 
 namespace fdapde {
 
+/// @brief represents skew symmetric matrix expr
 template <typename XprType> struct SkewSymmetricMatrixExpr;
+/// @brief represents skew symmetric matrix view
 template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_> class SkewSymmetricMatrixView;
 
 namespace internals {
 
+/// @brief detects is mutable matrix view
 template <typename Scalar, int Rows, int Cols, int StorageOrder>
 struct is_mutable_matrix_view<SkewSymmetricMatrixView<Scalar, Rows, Cols, StorageOrder>> :
     std::bool_constant<!std::is_const_v<Scalar>> { };
@@ -34,6 +37,7 @@ struct is_mutable_matrix_view<SkewSymmetricMatrixView<Scalar, Rows, Cols, Storag
 
 namespace internals {
 
+/// @brief infers the skew-symmetric dimension from packed storage size
 constexpr int compute_skew_symmetric_shape(int storage_size) {
     if (storage_size < 0) return -1;
     int size = 0;
@@ -41,19 +45,23 @@ constexpr int compute_skew_symmetric_shape(int storage_size) {
     return static_cast<long long>(size) * (size - 1) / 2 == storage_size ? size : -1;
 }
 
+/// @brief validates the skew-symmetric matrix dimension
 constexpr int checked_skew_symmetric_shape(std::size_t size) {
     const int input_size = checked_matrix_data_size(size);
     const int shape = compute_skew_symmetric_shape(input_size);
-    if (shape < 0) { throw std::invalid_argument("packed skew-symmetric input has an invalid length"); }
+    fdapde_assert(!(shape < 0), std::invalid_argument, "packed skew-symmetric input has an invalid length");
     return shape;
 }
 
+/// @brief computes the packed skew-symmetric size with overflow checks
 constexpr int checked_skew_symmetric_storage_size(int rows) {
     (void)checked_matrix_size(rows, rows);
     return static_cast<int>(static_cast<long long>(rows) * (rows - 1) / 2);
 }
 
+/// @brief represents skew symmetric assignment executor
 struct skew_symmetric_assignment_executor {
+    /// @brief executes the coefficient operation over the supplied expressions
     template <typename DstXprType, typename SrcXprType, typename AssignmentOp>
     static constexpr void run(DstXprType& dst, const SrcXprType& src, AssignmentOp&& op) {
         fdapde_static_assert(DstXprType::ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_LOCATION);
@@ -62,9 +70,9 @@ struct skew_symmetric_assignment_executor {
               internals::is_dynamic_sized_v<DstXprType> || internals::is_dynamic_sized_v<SrcXprType> ||
                 internals::same_static_shape_v<DstXprType FDAPDE_COMMA SrcXprType>,
               INVALID_ASSIGNMENT__DIFFERENT_LHS_AND_RHS_STATIC_SHAPES);
-            if (dst.rows() != src.rows() || dst.cols() != src.cols()) {
-                throw std::invalid_argument("skew-symmetric assignment requires matching dimensions");
-            }
+            fdapde_assert(
+              !(dst.rows() != src.rows() || dst.cols() != src.cols()), std::invalid_argument,
+              "skew-symmetric assignment requires matching dimensions");
         }
         auto fetch = [](const SrcXprType& source, [[maybe_unused]] int i, [[maybe_unused]] int j) -> decltype(auto) {
             if constexpr (std::is_arithmetic_v<SrcXprType>) {
@@ -82,6 +90,7 @@ struct skew_symmetric_assignment_executor {
     }
 };
 
+/// @brief represents skew symmetric wrapper
 template <int ViewMode_, typename SkewXprType_>
 class skew_symmetric_wrapper : public SkewSymmetricMatrixExpr<skew_symmetric_wrapper<ViewMode_, SkewXprType_>> {
    private:
@@ -99,38 +108,44 @@ class skew_symmetric_wrapper : public SkewSymmetricMatrixExpr<skew_symmetric_wra
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
 
+    /// @brief constructs skew symmetric wrapper from the supplied state
     constexpr skew_symmetric_wrapper(const skew_symmetric_wrapper&) = default;
+    /// @brief constructs skew symmetric wrapper from the supplied state
     template <typename XprType__>
-        requires(
-          !std::same_as<std::remove_cvref_t<XprType__>, skew_symmetric_wrapper> &&
-          internals::safely_nestable<XprTypeNested, XprType__>)
+        requires(!std::same_as<std::remove_cvref_t<XprType__>, skew_symmetric_wrapper> &&
+                 internals::safely_nestable<XprTypeNested, XprType__>)
     constexpr explicit skew_symmetric_wrapper(XprType__&& xpr) :
         Base(), xpr_(std::forward<XprType__>(xpr)), size_(xpr_.rows() == xpr_.cols() ? xpr_.rows() : 0) {
         fdapde_static_assert(
           Rows == Dynamic || Cols == Dynamic || Rows == Cols, THIS_CLASS_IS_FOR_SQUARE_MATRICES_ONLY);
-        if (xpr_.rows() < 0 || xpr_.rows() != xpr_.cols()) {
-            throw std::invalid_argument("skew-symmetric view requires square dimensions");
-        }
+        fdapde_assert(
+          !(xpr_.rows() < 0 || xpr_.rows() != xpr_.cols()), std::invalid_argument,
+          "skew-symmetric view requires square dimensions");
     }
+    /// @brief accesses or evaluates the requested coefficient
     constexpr Scalar operator()(int i, int j) const {
         internals::validate_matrix_index(i, j, size_, size_);
         if (i == j) return Scalar(0);
         if constexpr (ViewMode == Upper) { return i < j ? xpr_(i, j) : -xpr_(j, i); }
         if constexpr (ViewMode == Lower) { return i > j ? xpr_(i, j) : -xpr_(j, i); }
     }
+    /// @brief returns the row count
     constexpr int rows() const { return size_; }
+    /// @brief returns the column count
     constexpr int cols() const { return size_; }
    private:
     XprTypeNested xpr_;
     int size_;
 };
 
+/// @brief adapts an expression to skew-symmetric matrix operations
 template <int ViewMode_, typename XprType_> constexpr auto skew_symmetric_cast(XprType_&& xpr) {
     return skew_symmetric_wrapper<ViewMode_, XprType_>(std::forward<XprType_>(xpr));
 }
 
 }   // namespace internals
 
+/// @brief represents skew symmetric matrix expr
 template <typename XprType_> struct SkewSymmetricMatrixExpr : public MatrixExpr<XprType_> {
     using XprType = std::decay_t<XprType_>;
     using Base = MatrixExpr<XprType_>;
@@ -138,9 +153,11 @@ template <typename XprType_> struct SkewSymmetricMatrixExpr : public MatrixExpr<
     using Base::operator=;
     using Base::operator*=;
 
+    /// @brief multiplies in place by the supplied operand
     template <internals::matrix_expression RhsXprType> constexpr void operator*=(const RhsXprType&) = delete;
 };
 
+/// @brief represents skew symmetric matrix base
 template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_, typename SkewMatrixType>
 class SkewSymmetricMatrixBase : public SkewSymmetricMatrixExpr<SkewMatrixType> {
    protected:
@@ -154,25 +171,27 @@ class SkewSymmetricMatrixBase : public SkewSymmetricMatrixExpr<SkewMatrixType> {
     static constexpr int ReadOnly = std::is_const_v<Scalar_>;
     using Base::operator=;
 
+    /// @brief represents skew symmetric proxy
     template <typename Scalar__>
         requires(std::is_same_v<std::remove_cv_t<Scalar>, std::remove_cv_t<Scalar__>>)
     class skew_symmetric_proxy {
        private:
         using Value = std::remove_const_t<Scalar__>;
        public:
+        /// @brief constructs skew symmetric proxy from the supplied state
         constexpr skew_symmetric_proxy(Scalar__* data, int i, int j, int size) :
             data_(data),
             index_(compute_linear_index_(i < j ? i : j, i < j ? j : i, size)),
             sign_flip_(i > j),
             diagonal_(i == j) { }
+        /// @brief assigns the supplied coefficients
         template <typename T>
             requires(std::is_convertible_v<T, Value> && !std::is_const_v<Scalar__>)
         constexpr skew_symmetric_proxy& operator=(T value) {
             const Value converted = static_cast<Value>(value);
             if (diagonal_) {
-                if (converted != Value(0)) {
-                    throw std::invalid_argument("skew-symmetric diagonal coefficients must be zero");
-                }
+                fdapde_assert(
+                  !(converted != Value(0)), std::invalid_argument, "skew-symmetric diagonal coefficients must be zero");
                 return *this;
             }
             data_[index_] = sign_flip_ ? -converted : converted;
@@ -184,6 +203,7 @@ class SkewSymmetricMatrixBase : public SkewSymmetricMatrixExpr<SkewMatrixType> {
             return value == Value(0) || !sign_flip_ ? value : -value;
         }
        private:
+        /// @brief maps a matrix coordinate to packed storage
         static constexpr int compute_linear_index_(int i, int j, int size) {
             return i * (2 * size - i - 1) / 2 + (j - i - 1);
         }
@@ -195,24 +215,34 @@ class SkewSymmetricMatrixBase : public SkewSymmetricMatrixExpr<SkewMatrixType> {
     using reference = skew_symmetric_proxy<Scalar>;
     using const_reference = skew_symmetric_proxy<const std::remove_const_t<Scalar>>;
 
+    /// @brief constructs skew symmetric matrix base from the supplied state
     constexpr SkewSymmetricMatrixBase() : rows_(default_shape_()), cols_(default_shape_()) { }
+    /// @brief constructs skew symmetric matrix base from the supplied state
     constexpr SkewSymmetricMatrixBase(int rows, int cols) : rows_(rows), cols_(cols) {
         internals::validate_matrix_shape<Rows, Cols>(rows, cols);
         (void)internals::checked_matrix_size(rows, cols);
-        if (rows != cols) { throw std::invalid_argument("skew-symmetric matrix requires square dimensions"); }
+        fdapde_assert(!(rows != cols), std::invalid_argument, "skew-symmetric matrix requires square dimensions");
     }
+    /// @brief accesses or evaluates the requested coefficient
     constexpr const_reference operator()(int i, int j) const {
         internals::validate_matrix_index(i, j, rows_, cols_);
         return const_reference(derived().data(), i, j, rows_);
     }
-    constexpr reference operator()(int i, int j) requires(ReadOnly == 0) {
+    /// @brief accesses or evaluates the requested coefficient
+    constexpr reference operator()(int i, int j)
+        requires(ReadOnly == 0)
+    {
         internals::validate_matrix_index(i, j, rows_, cols_);
         return reference(derived().data(), i, j, rows_);
     }
+    /// @brief returns the row count
     constexpr int rows() const { return rows_; }
+    /// @brief returns the column count
     constexpr int cols() const { return cols_; }
+    /// @brief returns the number of stored coefficients
     constexpr int storage_size() const { return rows_ * (rows_ - 1) / 2; }
    protected:
+    /// @brief returns the default matrix dimensions
     static constexpr int default_shape_() {
         if constexpr (Rows != Dynamic) return Rows;
         if constexpr (Cols != Dynamic) return Cols;
@@ -221,37 +251,41 @@ class SkewSymmetricMatrixBase : public SkewSymmetricMatrixExpr<SkewMatrixType> {
     int rows_, cols_;
 };
 
-// Skew-symmetric matrices form a vector space. Products generally do not preserve the structure.
+// skew-symmetric matrices form a vector space. Products generally do not preserve the structure
+/// @brief implements the operator+ expression operation
 template <typename LhsXprType, typename RhsXprType>
 constexpr auto
 operator+(const SkewSymmetricMatrixExpr<LhsXprType>& lhs, const SkewSymmetricMatrixExpr<RhsXprType>& rhs) {
     return internals::skew_symmetric_cast<Upper>(
       MatrixBinOp<LhsXprType, RhsXprType, std::plus<>>(lhs.derived(), rhs.derived(), std::plus<>()));
 }
+/// @brief implements the operator- expression operation
 template <typename LhsXprType, typename RhsXprType>
 constexpr auto
 operator-(const SkewSymmetricMatrixExpr<LhsXprType>& lhs, const SkewSymmetricMatrixExpr<RhsXprType>& rhs) {
     return internals::skew_symmetric_cast<Upper>(
       MatrixBinOp<LhsXprType, RhsXprType, std::minus<>>(lhs.derived(), rhs.derived(), std::minus<>()));
 }
+/// @brief implements the operator* expression operation
 template <typename XprType, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
 constexpr auto operator*(const SkewSymmetricMatrixExpr<XprType>& lhs, ScalarType rhs) {
-    return internals::skew_symmetric_cast<Upper>(
-      MatrixScalarMultiplicationOp<XprType, ScalarType>(lhs.derived(), rhs));
+    return internals::skew_symmetric_cast<Upper>(MatrixScalarMultiplicationOp<XprType, ScalarType>(lhs.derived(), rhs));
 }
+/// @brief implements the operator* expression operation
 template <typename XprType, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
 constexpr auto operator*(ScalarType lhs, const SkewSymmetricMatrixExpr<XprType>& rhs) {
     return rhs * lhs;
 }
+/// @brief implements the operator/ expression operation
 template <typename XprType, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
 constexpr auto operator/(const SkewSymmetricMatrixExpr<XprType>& lhs, ScalarType rhs) {
-    return internals::skew_symmetric_cast<Upper>(
-      static_cast<const MatrixExpr<XprType>&>(lhs) / rhs);
+    return internals::skew_symmetric_cast<Upper>(static_cast<const MatrixExpr<XprType>&>(lhs) / rhs);
 }
 
+/// @brief owns a skew-symmetric matrix
 template <typename Scalar_, int Rows_, int Cols_ = Rows_, int StorageOrder_ = RowMajor>
 class SkewSymmetricMatrix :
     public SkewSymmetricMatrixBase<
@@ -261,12 +295,10 @@ class SkewSymmetricMatrix :
       Scalar_, Rows_, Cols_, StorageOrder_, SkewSymmetricMatrix<Scalar_, Rows_, Cols_, StorageOrder_>>;
     static constexpr int StaticShape = Rows_ != Dynamic ? Rows_ : Cols_;
     static constexpr bool HasSupportedStaticStorage =
-      StaticShape == Dynamic ||
-      static_cast<std::uint64_t>(StaticShape) * static_cast<std::uint64_t>(StaticShape) <=
-        static_cast<std::uint64_t>(std::numeric_limits<int>::max());
+      StaticShape == Dynamic || static_cast<std::uint64_t>(StaticShape) * static_cast<std::uint64_t>(StaticShape) <=
+                                  static_cast<std::uint64_t>(std::numeric_limits<int>::max());
    public:
-    fdapde_static_assert(
-      (Rows_ == Dynamic || Rows_ > 0) && (Cols_ == Dynamic || Cols_ > 0), INVALID_MATRIX_DIMENSIONS);
+    fdapde_static_assert((Rows_ == Dynamic || Rows_ > 0) && (Cols_ == Dynamic || Cols_ > 0), INVALID_MATRIX_DIMENSIONS);
     fdapde_static_assert(
       Rows_ == Dynamic || Cols_ == Dynamic || Rows_ == Cols_, THIS_CLASS_IS_FOR_SQUARE_MATRICES_ONLY);
     fdapde_static_assert(StorageOrder_ == RowMajor, PACKED_COL_MAJOR_STRUCTURED_STORAGE_IS_NOT_SUPPORTED);
@@ -280,13 +312,14 @@ class SkewSymmetricMatrix :
     static constexpr int NestAsRef = 1;
     static constexpr int ReadOnly = std::is_const_v<Scalar_>;
     using assignment_executor = internals::skew_symmetric_assignment_executor;
-    using StorageType = std::conditional_t<
-      StorageSize == Dynamic, std::vector<Scalar_>,
-      std::array<Scalar_, StorageSize < 0 ? 0 : static_cast<std::size_t>(StorageSize)>>;
+    using StorageType = std::conditional_t < StorageSize == Dynamic, std::vector<Scalar_>,
+          std::array<Scalar_, StorageSize<0 ? 0 : static_cast<std::size_t>(StorageSize)>>;
 
+    /// @brief constructs skew symmetric matrix from the supplied state
     constexpr SkewSymmetricMatrix() : Base(), data_() { }
-    constexpr SkewSymmetricMatrix(const SkewSymmetricMatrix& rhs) :
-        Base(rhs.rows(), rhs.cols()), data_(rhs.data_) { }
+    /// @brief constructs skew symmetric matrix from the supplied state
+    constexpr SkewSymmetricMatrix(const SkewSymmetricMatrix& rhs) : Base(rhs.rows(), rhs.cols()), data_(rhs.data_) { }
+    /// @brief assigns the supplied coefficients
     constexpr SkewSymmetricMatrix& operator=(const SkewSymmetricMatrix& rhs) & {
         if (this == std::addressof(rhs)) return *this;
         data_ = rhs.data_;
@@ -296,15 +329,19 @@ class SkewSymmetricMatrix :
         }
         return *this;
     }
+    /// @brief assigns the supplied coefficients
     constexpr void operator=(const SkewSymmetricMatrix&) && = delete;
     using Base::operator=;
 
+    /// @brief constructs skew symmetric matrix from the supplied state
     constexpr explicit SkewSymmetricMatrix(int size) : SkewSymmetricMatrix(size, size) { }
+    /// @brief constructs skew symmetric matrix from the supplied state
     constexpr SkewSymmetricMatrix(int rows, int cols) : Base(rows, cols), data_() {
         fdapde_static_assert(Rows == Dynamic || Cols == Dynamic, THIS_METHOD_IS_FOR_DYNAMIC_SIZED_MATRICES_ONLY);
         const int storage_size = internals::checked_skew_symmetric_storage_size(this->rows_);
         if constexpr (StorageSize == Dynamic) { data_.resize(static_cast<std::size_t>(storage_size)); }
     }
+    /// @brief constructs skew symmetric matrix from the supplied state
     template <typename RhsXprType_>
     constexpr SkewSymmetricMatrix(const SkewSymmetricMatrixExpr<RhsXprType_>& rhs) :
         Base(rhs.rows(), rhs.cols()), data_() {
@@ -313,25 +350,27 @@ class SkewSymmetricMatrix :
         }
         assignment_executor::run(*this, rhs.derived(), [](auto& l, const auto& r) { l = r; });
     }
+    /// @brief assigns the supplied coefficients
     template <typename RhsXprType_>
     constexpr SkewSymmetricMatrix& operator=(const SkewSymmetricMatrixExpr<RhsXprType_>& rhs) & {
-        static_cast<MatrixExpr<SkewSymmetricMatrix>&>(*this).template operator=<RhsXprType_>(rhs);
+        static_cast<MatrixExpr<SkewSymmetricMatrix>&>(*this).template operator= <RhsXprType_>(rhs);
         return *this;
     }
+    /// @brief constructs skew symmetric matrix from the supplied state
     template <typename Scalar__>
         requires(std::is_constructible_v<Scalar_, Scalar__>)
     constexpr explicit SkewSymmetricMatrix(const std::vector<Scalar__>& data) :
         Base(
-          internals::checked_skew_symmetric_shape(data.size()),
-          internals::checked_skew_symmetric_shape(data.size())),
+          internals::checked_skew_symmetric_shape(data.size()), internals::checked_skew_symmetric_shape(data.size())),
         data_() {
         const int input_size = internals::checked_matrix_data_size(data.size());
         if constexpr (StorageSize == Dynamic) { data_.resize(data.size()); }
-        if (!std::cmp_equal(data_.size(), input_size)) {
-            throw std::invalid_argument("packed skew-symmetric input does not match its static size");
-        }
+        fdapde_assert(
+          !(!std::cmp_equal(data_.size(), input_size)), std::invalid_argument,
+          "packed skew-symmetric input does not match its static size");
         for (int i = 0; i < input_size; ++i) data_[static_cast<std::size_t>(i)] = data[static_cast<std::size_t>(i)];
     }
+    /// @brief constructs skew symmetric matrix from the supplied state
     template <typename Scalar__, std::size_t Size>
         requires(std::is_constructible_v<Scalar_, Scalar__>)
     constexpr explicit SkewSymmetricMatrix(const Scalar__ (&data)[Size]) : Base(), data_() {
@@ -340,30 +379,36 @@ class SkewSymmetricMatrix :
           THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
         for (int i = 0; i < StorageSize; ++i) data_[static_cast<std::size_t>(i)] = data[static_cast<std::size_t>(i)];
     }
+    /// @brief resizes the owned storage to the requested dimensions
     void resize(int size) { resize(size, size); }
+    /// @brief resizes the owned storage to the requested dimensions
     void resize(int rows, int cols) {
         fdapde_static_assert(Rows == Dynamic || Cols == Dynamic, THIS_METHOD_IS_FOR_DYNAMIC_SIZED_MATRICES_ONLY);
         internals::validate_matrix_shape<Rows, Cols>(rows, cols);
         const int effective_rows = Rows == Dynamic ? rows : Rows;
         const int effective_cols = Cols == Dynamic ? cols : Cols;
-        if (effective_rows != effective_cols) {
-            throw std::invalid_argument("skew-symmetric matrix resize requires square dimensions");
-        }
+        fdapde_assert(
+          !(effective_rows != effective_cols), std::invalid_argument,
+          "skew-symmetric matrix resize requires square dimensions");
         const int storage_size = internals::checked_skew_symmetric_storage_size(effective_rows);
-        if (this->rows_ == effective_rows && this->cols_ == effective_cols &&
-            std::cmp_equal(data_.size(), storage_size)) {
+        if (
+          this->rows_ == effective_rows && this->cols_ == effective_cols &&
+          std::cmp_equal(data_.size(), storage_size)) {
             return;
         }
         if constexpr (StorageSize == Dynamic) { data_.resize(static_cast<std::size_t>(storage_size)); }
         this->rows_ = effective_rows;
         this->cols_ = effective_cols;
     }
+    /// @brief returns the underlying storage pointer
     constexpr const std::remove_const_t<Scalar_>* data() const { return data_.data(); }
+    /// @brief returns the underlying storage pointer
     constexpr Scalar_* data() { return data_.data(); }
    private:
     StorageType data_;
 };
 
+/// @brief represents skew symmetric matrix view
 template <typename Scalar_, int Rows_, int Cols_ = Rows_, int StorageOrder_ = RowMajor>
 class SkewSymmetricMatrixView :
     public SkewSymmetricMatrixBase<
@@ -373,12 +418,10 @@ class SkewSymmetricMatrixView :
       Scalar_, Rows_, Cols_, StorageOrder_, SkewSymmetricMatrixView<Scalar_, Rows_, Cols_, StorageOrder_>>;
     static constexpr int StaticShape = Rows_ != Dynamic ? Rows_ : Cols_;
     static constexpr bool HasSupportedStaticStorage =
-      StaticShape == Dynamic ||
-      static_cast<std::uint64_t>(StaticShape) * static_cast<std::uint64_t>(StaticShape) <=
-        static_cast<std::uint64_t>(std::numeric_limits<int>::max());
+      StaticShape == Dynamic || static_cast<std::uint64_t>(StaticShape) * static_cast<std::uint64_t>(StaticShape) <=
+                                  static_cast<std::uint64_t>(std::numeric_limits<int>::max());
    public:
-    fdapde_static_assert(
-      (Rows_ == Dynamic || Rows_ > 0) && (Cols_ == Dynamic || Cols_ > 0), INVALID_MATRIX_DIMENSIONS);
+    fdapde_static_assert((Rows_ == Dynamic || Rows_ > 0) && (Cols_ == Dynamic || Cols_ > 0), INVALID_MATRIX_DIMENSIONS);
     fdapde_static_assert(
       Rows_ == Dynamic || Cols_ == Dynamic || Rows_ == Cols_, THIS_CLASS_IS_FOR_SQUARE_MATRICES_ONLY);
     fdapde_static_assert(StorageOrder_ == RowMajor, PACKED_COL_MAJOR_STRUCTURED_STORAGE_IS_NOT_SUPPORTED);
@@ -393,48 +436,71 @@ class SkewSymmetricMatrixView :
     static constexpr int ReadOnly = std::is_const_v<Scalar_>;
     using assignment_executor = internals::skew_symmetric_assignment_executor;
 
+    /// @brief constructs skew symmetric matrix view from the supplied state
     constexpr SkewSymmetricMatrixView(const SkewSymmetricMatrixView&) = default;
-    constexpr SkewSymmetricMatrixView() requires(Rows_ == Dynamic && Cols_ == Dynamic) : Base(), data_(nullptr) { }
-    constexpr SkewSymmetricMatrixView() requires(Rows_ != Dynamic || Cols_ != Dynamic) = delete;
+    /// @brief constructs skew symmetric matrix view from the supplied state
+    constexpr SkewSymmetricMatrixView()
+        requires(Rows_ == Dynamic && Cols_ == Dynamic)
+        : Base(), data_(nullptr) { }
+    /// @brief constructs skew symmetric matrix view from the supplied state
+    constexpr SkewSymmetricMatrixView()
+        requires(Rows_ != Dynamic || Cols_ != Dynamic)
+    = delete;
+    /// @brief constructs skew symmetric matrix view from the supplied state
     template <typename Scalar__>
         requires(std::is_convertible_v<Scalar__*, Scalar_*>)
     constexpr explicit SkewSymmetricMatrixView(Scalar__* data) : Base(), data_(data) {
         fdapde_static_assert(Rows != Dynamic && Cols != Dynamic, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
-        if (StorageSize > 0 && data == nullptr) {
-            throw std::invalid_argument("nonempty skew-symmetric view requires storage");
-        }
+        fdapde_assert(
+          !(StorageSize > 0 && data == nullptr), std::invalid_argument,
+          "nonempty skew-symmetric view requires storage");
     }
+    /// @brief constructs skew symmetric matrix view from the supplied state
     template <typename Scalar__>
         requires(std::is_convertible_v<Scalar__*, Scalar_*>)
     constexpr SkewSymmetricMatrixView(Scalar__* data, int size) : SkewSymmetricMatrixView(data, size, size) { }
+    /// @brief constructs skew symmetric matrix view from the supplied state
     template <typename Scalar__>
         requires(std::is_convertible_v<Scalar__*, Scalar_*>)
     constexpr SkewSymmetricMatrixView(Scalar__* data, int rows, int cols) : Base(rows, cols), data_(data) {
-        if (this->storage_size() > 0 && data == nullptr) {
-            throw std::invalid_argument("nonempty skew-symmetric view requires storage");
-        }
+        fdapde_assert(
+          !(this->storage_size() > 0 && data == nullptr), std::invalid_argument,
+          "nonempty skew-symmetric view requires storage");
     }
     using Base::operator=;
-    constexpr SkewSymmetricMatrixView& operator=(const SkewSymmetricMatrixView& other) & requires(ReadOnly == 0) {
-        static_cast<Base&>(*this).template operator=<SkewSymmetricMatrixView>(other);
+    /// @brief assigns the supplied coefficients
+    constexpr SkewSymmetricMatrixView& operator=(const SkewSymmetricMatrixView& other) &
+        requires(ReadOnly == 0)
+    {
+        static_cast<Base&>(*this).template operator= <SkewSymmetricMatrixView>(other);
         return *this;
     }
-    constexpr SkewSymmetricMatrixView operator=(const SkewSymmetricMatrixView& other) && requires(ReadOnly == 0) {
-        static_cast<Base&>(*this).template operator=<SkewSymmetricMatrixView>(other);
-        return *this;
+    /// @brief assigns the supplied coefficients
+    constexpr SkewSymmetricMatrixView operator=(const SkewSymmetricMatrixView& other) &&
+      requires(ReadOnly == 0) {
+          static_cast<Base&>(*this).template operator= <SkewSymmetricMatrixView>(other);
+          return *this;
+      }
+      /// @brief returns the underlying storage pointer
+      constexpr const std::remove_const_t<Scalar_>* data() const {
+        return data_;
     }
-    constexpr const std::remove_const_t<Scalar_>* data() const { return data_; }
-    constexpr Scalar_* data() requires(!std::is_const_v<Scalar_>) { return data_; }
+    /// @brief returns the underlying storage pointer
+    constexpr Scalar_* data()
+        requires(!std::is_const_v<Scalar_>)
+    {
+        return data_;
+    }
    private:
     Scalar_* data_;
 };
 
+/// @brief detects is skew symmetric matrix
 template <typename XprType> struct is_skew_symmetric_matrix {
     using Type = std::remove_cvref_t<XprType>;
     static constexpr bool value = std::is_base_of_v<SkewSymmetricMatrixExpr<Type>, Type>;
 };
-template <typename XprType>
-static constexpr bool is_skew_symmetric_matrix_v = is_skew_symmetric_matrix<XprType>::value;
+template <typename XprType> static constexpr bool is_skew_symmetric_matrix_v = is_skew_symmetric_matrix<XprType>::value;
 
 }   // namespace fdapde
 

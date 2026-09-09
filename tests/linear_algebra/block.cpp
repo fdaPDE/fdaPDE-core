@@ -18,62 +18,95 @@
 #include <gtest/gtest.h>   // testing framework
 using namespace fdapde;
 
+// verifies block through the public algebra API
 TEST(linear_algebra, block) {
     // static-sized
     {
         static constexpr Matrix<double, 3, 3> A({1, 2, 3, 4, 5, 6, 7, 8, 9});
         // static sized block
         constexpr auto b1 = A.block<2, 2>(0, 0);
+        // checks at compile time: b1.rows() == 2
         static_assert(b1.rows() == 2);
+        // checks at compile time: b1.cols() == 2
         static_assert(b1.cols() == 2);
+        // checks at compile time: b1.size() == 4
         static_assert(b1.size() == 4);
+        // checks at compile time: b1 == Matrix<double, 2, 2>({1, 2, 4, 5})
         static_assert(b1 == Matrix<double, 2, 2>({1, 2, 4, 5}));
         // dynamic sized block of static-sized matrix
         constexpr auto b2 = A.block(0, 0, 2, 2);
+        // checks at compile time: b2.rows() == 2
         static_assert(b2.rows() == 2);
+        // checks at compile time: b2.cols() == 2
         static_assert(b2.cols() == 2);
+        // checks at compile time: b2.size() == 4
         static_assert(b2.size() == 4);
+        // checks at compile time: b2 == Matrix<double, 2, 2>({1, 2, 4, 5})
         static_assert(b2 == Matrix<double, 2, 2>({1, 2, 4, 5}));
         // column block
         constexpr auto b3 = A.col(0);
+        // checks at compile time: b3.rows() == 3
         static_assert(b3.rows() == 3);
+        // checks at compile time: b3.cols() == 1
         static_assert(b3.cols() == 1);
+        // checks at compile time: b3.size() == 3
         static_assert(b3.size() == 3);
+        // checks at compile time: b3 == Matrix<double, 3, 1>({1, 4, 7})
         static_assert(b3 == Matrix<double, 3, 1>({1, 4, 7}));
         // row block
         constexpr auto b4 = A.row(0);
+        // checks at compile time: b4.rows() == 1
         static_assert(b4.rows() == 1);
+        // checks at compile time: b4.cols() == 3
         static_assert(b4.cols() == 3);
+        // checks at compile time: b4.size() == 3
         static_assert(b4.size() == 3);
+        // checks at compile time: b4 == Matrix<double, 1, 3>({1, 2, 3})
         static_assert(b4 == Matrix<double, 1, 3>({1, 2, 3}));
 
         // special block accessors
         constexpr auto b5 = A.top_rows<2>();
+        // checks at compile time: b5.rows() == 2
         static_assert(b5.rows() == 2);
+        // checks at compile time: b5.cols() == 3
         static_assert(b5.cols() == 3);
+        // checks at compile time: b5.size() == 6
         static_assert(b5.size() == 6);
+        // checks at compile time: b5 == Matrix<double, 2, 3>({1, 2, 3, 4, 5, 6})
         static_assert(b5 == Matrix<double, 2, 3>({1, 2, 3, 4, 5, 6}));
         // colwise block reduction
+        // checks at compile time: [b5]() {
         static_assert([b5]() {
             constexpr auto e = b5.colwise().prod();
             return e == Matrix<double, 1, 3>({4, 10, 18});
         }());
 
         constexpr auto b6 = A.top_rows(2);
+        // checks at compile time: b6.rows() == 2
         static_assert(b6.rows() == 2);
+        // checks at compile time: b6.cols() == 3
         static_assert(b6.cols() == 3);
+        // checks at compile time: b6.size() == 6
         static_assert(b6.size() == 6);
+        // checks at compile time: b6 == Matrix<double, 2, 3>({1, 2, 3, 4, 5, 6})
         static_assert(b6 == Matrix<double, 2, 3>({1, 2, 3, 4, 5, 6}));
         // block redux
+        // checks at compile time: b6.squared_norm() == 91
         static_assert(b6.squared_norm() == 91);
+        // checks at compile time: b6.inf_norm() == 6
         static_assert(b6.inf_norm() == 6);
 
         constexpr auto b7 = A.bottom_rows<2>();
+        // checks at compile time: b7.rows() == 2
         static_assert(b7.rows() == 2);
+        // checks at compile time: b7.cols() == 3
         static_assert(b7.cols() == 3);
+        // checks at compile time: b7.size() == 6
         static_assert(b7.size() == 6);
+        // checks at compile time: b7 == Matrix<double, 2, 3>({4, 5, 6, 7, 8, 9})
         static_assert(b7 == Matrix<double, 2, 3>({4, 5, 6, 7, 8, 9}));
         // block coeff-wise
+        // checks at compile time: [b7]() {
         static_assert([b7]() {
             constexpr auto e = b7.cwise().exp();
 
@@ -87,54 +120,80 @@ TEST(linear_algebra, block) {
         }());
 
         constexpr auto b8 = A.bottom_rows(2);
+        // checks at compile time: b8.rows() == 2
         static_assert(b8.rows() == 2);
+        // checks at compile time: b8.cols() == 3
         static_assert(b8.cols() == 3);
+        // checks at compile time: b8.size() == 6
         static_assert(b8.size() == 6);
+        // checks at compile time: b8 == Matrix<double, 2, 3>({4, 5, 6, 7, 8, 9})
         static_assert(b8 == Matrix<double, 2, 3>({4, 5, 6, 7, 8, 9}));
         // block-transpose
+        // checks at compile time: b8.transpose() == Matrix<double, 3, 2>({4, 7, 5, 8, 6, 9})
         static_assert(b8.transpose() == Matrix<double, 3, 2>({4, 7, 5, 8, 6, 9}));
 
         constexpr auto b9 = A.left_cols<2>();
+        // checks at compile time: b9.rows() == 3
         static_assert(b9.rows() == 3);
+        // checks at compile time: b9.cols() == 2
         static_assert(b9.cols() == 2);
+        // checks at compile time: b9.size() == 6
         static_assert(b9.size() == 6);
+        // checks at compile time: b9 == Matrix<double, 3, 2>({1, 2, 4, 5, 7, 8})
         static_assert(b9 == Matrix<double, 3, 2>({1, 2, 4, 5, 7, 8}));
         // column block of block
+        // checks at compile time: [b9]() {
         static_assert([b9]() {
             constexpr auto e = b9.col(0);
             return e.sum() == 12;
         }());
 
         constexpr auto b10 = A.left_cols(2);
+        // checks at compile time: b10.rows() == 3
         static_assert(b10.rows() == 3);
+        // checks at compile time: b10.cols() == 2
         static_assert(b10.cols() == 2);
+        // checks at compile time: b10.size() == 6
         static_assert(b10.size() == 6);
+        // checks at compile time: b10 == Matrix<double, 3, 2>({1, 2, 4, 5, 7, 8})
         static_assert(b10 == Matrix<double, 3, 2>({1, 2, 4, 5, 7, 8}));
         // block of block-expression
+        // checks at compile time: [b1, b10]() {
         static_assert([b1, b10]() {
             constexpr auto e = 2 * b1 + b10.transpose() * b10;
             return e.block<1, 2>(0, 0) == Matrix<double, 1, 2>({68, 82});
         }());
 
         constexpr auto b11 = A.right_cols<2>();
+        // checks at compile time: b11.rows() == 3
         static_assert(b11.rows() == 3);
+        // checks at compile time: b11.cols() == 2
         static_assert(b11.cols() == 2);
+        // checks at compile time: b11.size() == 6
         static_assert(b11.size() == 6);
+        // checks at compile time: b11 == Matrix<double, 3, 2>({2, 3, 5, 6, 8, 9})
         static_assert(b11 == Matrix<double, 3, 2>({2, 3, 5, 6, 8, 9}));
         // rowwise block redux
+        // checks at compile time: [b11]() {
         static_assert([b11]() {
             constexpr auto e = b11.rowwise().sum();
             return e == Matrix<double, 3, 1>({5, 11, 17});
         }());
         // block expression
+        // checks at compile time: (2 * b10 + b11) == Matrix<double, 3, 2>({4, 7, 13, 16, 22, 25})
         static_assert((2 * b10 + b11) == Matrix<double, 3, 2>({4, 7, 13, 16, 22, 25}));
 
         constexpr auto b12 = A.right_cols(2);
+        // checks at compile time: b12.rows() == 3
         static_assert(b12.rows() == 3);
+        // checks at compile time: b12.cols() == 2
         static_assert(b12.cols() == 2);
+        // checks at compile time: b12.size() == 6
         static_assert(b12.size() == 6);
+        // checks at compile time: b11 == Matrix<double, 3, 2>({2, 3, 5, 6, 8, 9})
         static_assert(b11 == Matrix<double, 3, 2>({2, 3, 5, 6, 8, 9}));
         // row block of block
+        // checks at compile time: [b12]() {
         static_assert([b12]() {
             constexpr auto e = b12.row(1);
             return almost_equal(e.mean(), 11. / 2);
@@ -145,16 +204,21 @@ TEST(linear_algebra, block) {
     {
         Matrix<double, Dynamic, Dynamic> A(8, 10);
         auto b = A.block<5, 5>(1, 1);
+        // compares b.rows(), 5 using eq semantics
         EXPECT_EQ(b.rows(), 5);
+        // compares b.cols(), 5 using eq semantics
         EXPECT_EQ(b.cols(), 5);
+        // compares b.size(), 25 using eq semantics
         EXPECT_EQ(b.size(), 25);
 
         auto check_block_eq = [](const auto& mtx, auto value) {
             for (int i = 0; i < mtx.rows(); ++i) {
                 for (int j = 0; j < mtx.cols(); ++j) {
                     if ((i >= 1 && i < 6) && (j >= 1 && j < 6)) {
+                        // compares mtx(i, j), value using eq semantics
                         EXPECT_EQ(mtx(i, j), value);
                     } else {
+                        // compares mtx(i, j), 0 using eq semantics
                         EXPECT_EQ(mtx(i, j), 0);
                     }
                 }

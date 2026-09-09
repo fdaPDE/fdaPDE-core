@@ -17,16 +17,17 @@
 #ifndef __FDAPDE_LINALG_NUMERIC_H__
 #define __FDAPDE_LINALG_NUMERIC_H__
 
-#include "header_check.h"
-
 #include <cmath>
 #include <concepts>
 #include <limits>
 #include <type_traits>
 
+#include "header_check.h"
+
 namespace fdapde {
 namespace internals {
 
+/// @brief computes a square root with scaling during constant evaluation
 template <std::floating_point Scalar> constexpr Scalar scale_safe_sqrt(Scalar value) {
     if (!std::is_constant_evaluated()) { return std::sqrt(value); }
 
@@ -56,6 +57,7 @@ template <std::floating_point Scalar> constexpr Scalar scale_safe_sqrt(Scalar va
     return result;
 }
 
+/// @brief computes the Euclidean length with scaled intermediate arithmetic
 template <std::floating_point Scalar> constexpr Scalar scale_safe_hypot(Scalar lhs, Scalar rhs) {
     if (!std::is_constant_evaluated()) { return std::hypot(lhs, rhs); }
 

@@ -18,20 +18,28 @@
 #include <gtest/gtest.h>   // testing framework
 using namespace fdapde;
 
+// verifies matrix through the public algebra API
 TEST(linear_algebra, matrix) {
     // static-sized
     {
         // construct empty
         constexpr Matrix<double, 2, 2> M0;
+        // checks at compile time: M0.rows() == 2
         static_assert(M0.rows() == 2);
+        // checks at compile time: M0.cols() == 2
         static_assert(M0.cols() == 2);
+        // checks at compile time: M0.size() == 4
         static_assert(M0.size() == 4);
 
         // construct from C-array
         constexpr Matrix<double, 2, 3> M1({1, 2, 3, 4, 5, 6});
+        // checks at compile time: M1.rows() == 2
         static_assert(M1.rows() == 2);
+        // checks at compile time: M1.cols() == 3
         static_assert(M1.cols() == 3);
+        // checks at compile time: M1.size() == 6
         static_assert(M1.size() == 6);
+        // checks at compile time: [M1]() {
         static_assert([M1]() {
             bool v = true;
             int k = 1;
@@ -46,23 +54,35 @@ TEST(linear_algebra, matrix) {
         // construct empty and assign
         Matrix<double, 2, 3> M2;
         M2 = M1;
+        // compares M2.rows(), M1.rows() using eq semantics
         EXPECT_EQ(M2.rows(), M1.rows());
+        // compares M2.cols(), M1.cols() using eq semantics
         EXPECT_EQ(M2.cols(), M1.cols());
+        // compares M2.size(), M1.size() using eq semantics
         EXPECT_EQ(M2.size(), M1.size());
+        // compares M2, M1 using eq semantics
         EXPECT_EQ(M2, M1);
 
         // copy-construct
         Matrix<double, 2, 3> M3 = M1;
+        // compares M3.rows(), M1.rows() using eq semantics
         EXPECT_EQ(M3.rows(), M1.rows());
+        // compares M3.cols(), M1.cols() using eq semantics
         EXPECT_EQ(M3.cols(), M1.cols());
+        // compares M3.size(), M1.size() using eq semantics
         EXPECT_EQ(M3.size(), M1.size());
+        // compares M3, M1 using eq semantics
         EXPECT_EQ(M3, M1);
 
         // value-construct
         constexpr Matrix<int, 3, 3> M4(6);
+        // checks at compile time: M4.rows() == 3
         static_assert(M4.rows() == 3);
+        // checks at compile time: M4.cols() == 3
         static_assert(M4.cols() == 3);
+        // checks at compile time: M4.size() == 9
         static_assert(M4.size() == 9);
+        // checks at compile time: [M4]() {
         static_assert([M4]() {
             bool v = true;
             for (int i = 0; i < M4.rows(); ++i) {
@@ -73,15 +93,20 @@ TEST(linear_algebra, matrix) {
 
         // static-construct
         constexpr Matrix<int, 4, 4> M6 = Matrix<int, 4, 4>::Zero();
+        // checks at compile time: M6 == Matrix<int, 4, 4>::Zero()
         static_assert(M6 == Matrix<int, 4, 4>::Zero());
         constexpr Matrix<int, 4, 4> M7 = Matrix<int, 4, 4>::Ones();
+        // checks at compile time: M7 == Matrix<int, 4, 4>::Ones()
         static_assert(M7 == Matrix<int, 4, 4>::Ones());
 
         // const-access
+        // compares M1(0, 0), 1 using eq semantics
         EXPECT_EQ(M1(0, 0), 1);
+        // checks at compile time: M1(0, 0) == 1
         static_assert(M1(0, 0) == 1);
         // non-const access
         M2(1, 1) = 10;
+        // compares M2(1, 1), 10 using eq semantics
         EXPECT_EQ(M2(1, 1), 10);
     }
 
@@ -89,84 +114,119 @@ TEST(linear_algebra, matrix) {
     {
         // construct empty
         Matrix<double, Dynamic, Dynamic> M0;
+        // compares M0.rows(), 0 using eq semantics
         EXPECT_EQ(M0.rows(), 0);
+        // compares M0.cols(), 0 using eq semantics
         EXPECT_EQ(M0.cols(), 0);
+        // compares M0.size(), 0 using eq semantics
         EXPECT_EQ(M0.size(), 0);
 
         // construct empty and resize
         Matrix<double, Dynamic, Dynamic> M1;
         M1.resize(3, 3);   // allocate memory
+        // compares M1.rows(), 3 using eq semantics
         EXPECT_EQ(M1.rows(), 3);
+        // compares M1.cols(), 3 using eq semantics
         EXPECT_EQ(M1.cols(), 3);
+        // compares M1.size(), 9 using eq semantics
         EXPECT_EQ(M1.size(), 9);
         for (int i = 0; i < M1.rows(); ++i) {
+            // compares M1(i, j), 0 using eq semantics
             for (int j = 0; j < M1.cols(); ++j) { EXPECT_EQ(M1(i, j), 0); }
         }
 
         // construct with sizes
         Matrix<double, Dynamic, Dynamic> M2(5, 5);
+        // compares M2.rows(), 5 using eq semantics
         EXPECT_EQ(M2.rows(), 5);
+        // compares M2.cols(), 5 using eq semantics
         EXPECT_EQ(M2.cols(), 5);
+        // compares M2.size(), 25 using eq semantics
         EXPECT_EQ(M2.size(), 25);
         for (int i = 0; i < M2.rows(); ++i) {
+            // compares M2(i, j), 0 using eq semantics
             for (int j = 0; j < M2.cols(); ++j) { EXPECT_EQ(M2(i, j), 0); }
         }
 
         // value-construct
         Matrix<double, Dynamic, Dynamic> M3(5, 5, 1.0);
+        // compares M3.rows(), 5 using eq semantics
         EXPECT_EQ(M3.rows(), 5);
+        // compares M3.cols(), 5 using eq semantics
         EXPECT_EQ(M3.cols(), 5);
+        // compares M3.size(), 25 using eq semantics
         EXPECT_EQ(M3.size(), 25);
         for (int i = 0; i < M3.rows(); ++i) {
+            // compares M3(i, j), 1.0 using eq semantics
             for (int j = 0; j < M3.cols(); ++j) { EXPECT_EQ(M3(i, j), 1.0); }
         }
 
         // static-construct
         Matrix<int, Dynamic, Dynamic> M4 = Matrix<int, Dynamic, Dynamic>::Zero(10, 10);
         for (int i = 0; i < M4.rows(); ++i) {
+            // compares M4(i, j), 0 using eq semantics
             for (int j = 0; j < M4.cols(); ++j) { EXPECT_EQ(M4(i, j), 0); }
         }
         Matrix<int, Dynamic, Dynamic> M5 = Matrix<int, Dynamic, Dynamic>::Ones(10, 10);
         for (int i = 0; i < M5.rows(); ++i) {
+            // compares M5(i, j), 1 using eq semantics
             for (int j = 0; j < M5.cols(); ++j) { EXPECT_EQ(M5(i, j), 1); }
         }
 
         // assignement
         M1 = M2;   // dynamic-sized to dynamic-sized
+        // compares M1.rows(), M2.rows() using eq semantics
         EXPECT_EQ(M1.rows(), M2.rows());
+        // compares M1.cols(), M2.cols() using eq semantics
         EXPECT_EQ(M1.cols(), M2.cols());
+        // compares M1.size(), M2.size() using eq semantics
         EXPECT_EQ(M1.size(), M2.size());
+        // compares M1, M2 using eq semantics
         EXPECT_EQ(M1, M2);
 
         constexpr Matrix<double, 2, 3> M6({1, 2, 3, 4, 5, 6});
         M1 = M6;   // static-sized to dynamic-sized
+        // compares M1.rows(), M6.rows() using eq semantics
         EXPECT_EQ(M1.rows(), M6.rows());
+        // compares M1.cols(), M6.cols() using eq semantics
         EXPECT_EQ(M1.cols(), M6.cols());
+        // compares M1.size(), M6.size() using eq semantics
         EXPECT_EQ(M1.size(), M6.size());
+        // compares M1, M6 using eq semantics
         EXPECT_EQ(M1, M6);
 
         // const access
+        // compares M1(1, 1), 5 using eq semantics
         EXPECT_EQ(M1(1, 1), 5);
         // non-const access
         M1(1, 1) = 4;
+        // compares M1(1, 1), 4 using eq semantics
         EXPECT_EQ(M1(1, 1), 4);
     }
 }
 
+// verifies vector through the public algebra API
 TEST(linear_algebra, vector) {
     // static-sized
     {
         // construct empty
         constexpr Vector<double, 3> v0;
+        // checks at compile time: v0.rows() == 3
         static_assert(v0.rows() == 3);
+        // checks at compile time: v0.cols() == 1
         static_assert(v0.cols() == 1);
+        // checks at compile time: v0.size() == 3
         static_assert(v0.size() == 3);
 
         // construct from C-array
         constexpr Vector<double, 6> v1({1, 2, 3, 4, 5, 6});
+        // checks at compile time: v1.rows() == 6
         static_assert(v1.rows() == 6);
+        // checks at compile time: v1.cols() == 1
         static_assert(v1.cols() == 1);
+        // checks at compile time: v1.size() == 6
         static_assert(v1.size() == 6);
+        // checks at compile time: [v1]() {
         static_assert([v1]() {
             bool v = true;
             for (int i = 0; i < v1.size(); ++i) v &= v1[i] == (i + 1) ? true : false;
@@ -175,87 +235,122 @@ TEST(linear_algebra, vector) {
 
         // point constructors
         constexpr Vector<double, 1> p1(1);
+        // checks at compile time: p1[0] == 1
         static_assert(p1[0] == 1);
         constexpr Vector<double, 2> p2(1, 2);
+        // checks at compile time: p2[0] == 1 && p2[1] == 2
         static_assert(p2[0] == 1 && p2[1] == 2);
         constexpr Vector<double, 3> p3(1, 2, 3);
+        // checks at compile time: p3[0] == 1 && p3[1] == 2 && p3[2] == 3
         static_assert(p3[0] == 1 && p3[1] == 2 && p3[2] == 3);
-	
+
         // construct empty and assign
         Vector<double, 6> v2;
         v2 = v1;
+        // compares v2.rows(), v1.rows() using eq semantics
         EXPECT_EQ(v2.rows(), v1.rows());
+        // compares v2.size(), v1.size() using eq semantics
         EXPECT_EQ(v2.size(), v1.size());
+        // compares v2, v1 using eq semantics
         EXPECT_EQ(v2, v1);
 
         // copy-construct
         Vector<double, 6> v3 = v2;
+        // compares v3.rows(), v2.rows() using eq semantics
         EXPECT_EQ(v3.rows(), v2.rows());
+        // compares v3.size(), v2.size() using eq semantics
         EXPECT_EQ(v3.size(), v2.size());
+        // compares v3, v2 using eq semantics
         EXPECT_EQ(v3, v2);
 
-	// value-initialize
+        // value-initialize
         Vector<double, 6> v4(2.0);
+        // compares v4[i], 2.0 using eq semantics
         for (int i = 0; i < v4.size(); ++i) { EXPECT_EQ(v4[i], 2.0); }
 
         // const access
+        // compares v1[0], 1 using eq semantics
         EXPECT_EQ(v1[0], 1);
+        // checks at compile time: v1[0] == 1
         static_assert(v1[0] == 1);
         // non-const access
         v3[0] = 10;
+        // compares v3[0], 10 using eq semantics
         EXPECT_EQ(v3[0], 10);
 
         // range-for
         int i = 0;
+        // compares value, v3[i++] using eq semantics
         for (const auto& value : v3) { EXPECT_EQ(value, v3[i++]); }
         for (auto& value : v3) { value = 5; }
+        // compares value, 5 using eq semantics
         for (const auto& value : v3) { EXPECT_EQ(value, 5); }
+        // checks at compile time: std::accumulate(v1.begin(), v1.end(), 0) == 21
         static_assert(std::accumulate(v1.begin(), v1.end(), 0) == 21);   // constexpr begin/end
     }
-    
+
     // dynamic-sized
     {
         // construct empty
         Vector<double, Dynamic> v0;
+        // compares v0.rows(), 0 using eq semantics
         EXPECT_EQ(v0.rows(), 0);
+        // compares v0.cols(), 1 using eq semantics
         EXPECT_EQ(v0.cols(), 1);
+        // compares v0.size(), 0 using eq semantics
         EXPECT_EQ(v0.size(), 0);
 
         // construct empty and resize
         Vector<double, Dynamic> v1;
         v1.resize(10);   // allocate memory
+        // compares v1.rows(), 10 using eq semantics
         EXPECT_EQ(v1.rows(), 10);
+        // compares v1.size(), 10 using eq semantics
         EXPECT_EQ(v1.size(), 10);
+        // compares v1[i], 0 using eq semantics
         for (int i = 0; i < v1.size(); ++i) { EXPECT_EQ(v1[i], 0); }
 
         // construct with sizes
         Vector<double, Dynamic> v2(5);
+        // compares v2.rows(), 5 using eq semantics
         EXPECT_EQ(v2.rows(), 5);
+        // compares v2.size(), 5 using eq semantics
         EXPECT_EQ(v2.size(), 5);
+        // compares v2[i], 0 using eq semantics
         for (int i = 0; i < v2.size(); ++i) { EXPECT_EQ(v2[i], 0); }
 
         // value-construct
         Vector<double, Dynamic> v3(10, 5.0);
+        // compares v3.rows(), 10 using eq semantics
         EXPECT_EQ(v3.rows(), 10);
+        // compares v3.size(), 10 using eq semantics
         EXPECT_EQ(v3.size(), 10);
+        // compares v3[i], 5.0 using eq semantics
         for (int i = 0; i < v3.size(); ++i) { EXPECT_EQ(v3[i], 5.0); }
 
         // static-construct
         Vector<int, Dynamic> v5 = Vector<int, Dynamic>::Zero(5);
+        // compares v5[i], 0 using eq semantics
         for (int i = 0; i < v5.size(); ++i) { EXPECT_EQ(v5[i], 0); }
         Vector<int, Dynamic> v6 = Vector<int, Dynamic>::Ones(5);
+        // compares v6[i], 1 using eq semantics
         for (int i = 0; i < v6.size(); ++i) { EXPECT_EQ(v6[i], 1); }
         Vector<double, Dynamic> v7 = Vector<double, Dynamic>::LinSpaced(10, 0, 1);
-        for (double i = 0; i < v7.size(); ++i) { EXPECT_EQ(v7[i], i * (1./9)); }
+        // compares v7[i], i * (1./9) using eq semantics
+        for (double i = 0; i < v7.size(); ++i) { EXPECT_EQ(v7[i], i * (1. / 9)); }
         // const access
+        // compares v1[0], 0 using eq semantics
         EXPECT_EQ(v1[0], 0);
         // non-const access
         v3[0] = 10;
+        // compares v3[0], 10 using eq semantics
         EXPECT_EQ(v3[0], 10);
 
         // range-for
+        // compares value, 0 using eq semantics
         for (const auto& value : v5) { EXPECT_EQ(value, 0); }
         for (auto& value : v5) { value = 5; }
+        // compares value, 5 using eq semantics
         for (const auto& value : v5) { EXPECT_EQ(value, 5); }
     }
 }

@@ -38,27 +38,30 @@ namespace internals {
 template <typename T>
 concept md_index = std::integral<std::remove_cvref_t<T>> && (!std::same_as<std::remove_cvref_t<T>, bool>);
 
+/// @brief converts an index after checking its supported range
 template <md_index T> constexpr bool checked_index_cast(T value, int& result) {
     if (!std::in_range<int>(value)) return false;
     result = static_cast<int>(value);
     return true;
 }
 
+/// @brief validates and converts an axis length
 template <md_index T> constexpr int checked_md_dimension(T value) {
-    if (!std::in_range<int>(value)) {
-        if (std::cmp_less(value, 0)) { throw std::invalid_argument("MdArray extents must be nonnegative"); }
-        throw std::length_error("MdArray extent exceeds the supported int range");
-    }
+    fdapde_assert(!std::cmp_less(value, 0), std::invalid_argument, "MdArray extents must be nonnegative");
+    fdapde_strong_assert(
+      std::in_range<int>(value), std::length_error, "MdArray extent exceeds the supported int range");
     const int result = static_cast<int>(value);
-    if (result < 0) { throw std::invalid_argument("MdArray extents must be nonnegative"); }
+    fdapde_assert(!(result < 0), std::invalid_argument, "MdArray extents must be nonnegative");
     return result;
 }
 
+/// @brief validates and converts a multidimensional coordinate
 template <md_index T> constexpr int checked_md_coordinate(T value) {
-    if (!std::in_range<int>(value)) { throw std::out_of_range("MdArray index is outside the supported range"); }
+    fdapde_assert(!(!std::in_range<int>(value)), std::out_of_range, "MdArray index is outside the supported range");
     return static_cast<int>(value);
 }
 
+/// @brief computes the shape size with overflow checks
 template <std::size_t Size> constexpr bool checked_shape_size(const std::array<int, Size>& extents, int& size) {
     bool empty = false;
     for (int extent : extents) {
@@ -81,24 +84,26 @@ template <std::size_t Size> constexpr bool checked_shape_size(const std::array<i
     return true;
 }
 
+/// @brief computes the multidimensional coefficient count with overflow checks
 template <std::size_t Size> constexpr int checked_md_shape_size(const std::array<int, Size>& extents) {
     bool empty = false;
     for (int extent : extents) {
-        if (extent < 0) { throw std::invalid_argument("MdArray extents must be nonnegative"); }
+        fdapde_assert(!(extent < 0), std::invalid_argument, "MdArray extents must be nonnegative");
         empty = empty || extent == 0;
     }
     if (empty) return 0;
 
     std::size_t product = 1;
     for (int extent : extents) {
-        if (product > static_cast<std::size_t>(std::numeric_limits<int>::max()) / static_cast<std::size_t>(extent)) {
-            throw std::length_error("MdArray size exceeds the supported int range");
-        }
+        fdapde_strong_assert(
+          !(product > static_cast<std::size_t>(std::numeric_limits<int>::max()) / static_cast<std::size_t>(extent)),
+          std::length_error, "MdArray size exceeds the supported int range");
         product *= static_cast<std::size_t>(extent);
     }
     return static_cast<int>(product);
 }
 
+/// @brief computes the compile-time multidimensional coefficient count
 template <int... Extents> consteval int static_md_size() {
     if constexpr (((Extents == Dynamic) || ...)) {
         return Dynamic;
@@ -117,6 +122,7 @@ template <int... Extents> consteval int static_md_size() {
     }
 }
 
+/// @brief checks that slice axes are distinct
 template <int... Values> consteval bool unique_axes() {
     constexpr std::array<int, sizeof...(Values)> values {Values...};
     for (std::size_t i = 0; i < values.size(); ++i) {
@@ -138,6 +144,7 @@ concept md_index_pack = requires(const T& value) {
 
 }   // namespace internals
 
+/// @brief stores and validates multidimensional extents
 template <int... StaticExtents> class MdExtents {
     static_assert(sizeof...(StaticExtents) > 0, "MdExtents requires at least one axis");
     static_assert(
@@ -155,59 +162,71 @@ template <int... StaticExtents> class MdExtents {
 
     fdapde_static_assert(DynamicOrder != 0 || StaticSize != Dynamic, MDARRAY_STATIC_SIZE_EXCEEDS_SUPPORTED_RANGE);
 
+    /// @brief constructs md extents from the supplied state
     constexpr MdExtents() : extents_ {((StaticExtents == Dynamic) ? 0 : StaticExtents)...}, valid_(true) { }
 
+    /// @brief constructs md extents from the supplied state
     template <internals::md_index... Dims>
         requires(DynamicOrder > 0 && sizeof...(Dims) == DynamicOrder)
     constexpr explicit MdExtents(Dims... dims) : MdExtents() {
-        assign_dynamic_(std::array {dims...});
+        assign_dynamic_(std::array<int, sizeof...(Dims)> {internals::checked_md_dimension(dims)...});
     }
 
+    /// @brief constructs md extents from the supplied state
     template <internals::md_index... Dims>
         requires(DynamicOrder > 0 && sizeof...(Dims) == Order && sizeof...(Dims) != DynamicOrder)
     constexpr explicit MdExtents(Dims... dims) : MdExtents() {
-        assign_full_(std::array {dims...});
+        assign_full_(std::array<int, sizeof...(Dims)> {internals::checked_md_dimension(dims)...});
     }
 
+    /// @brief constructs md extents from the supplied state
     template <internals::md_index T> constexpr explicit MdExtents(const std::array<T, Order>& dims) : MdExtents() {
         assign_full_(dims);
     }
 
+    /// @brief returns the number of axes
     constexpr order_t order() const noexcept { return Order; }
+    /// @brief returns the number of runtime-sized axes
     constexpr order_t order_dynamic() const noexcept { return DynamicOrder; }
+    /// @brief returns the requested axis length
     constexpr int extent(order_t axis) const {
-        if (axis >= Order) { throw std::out_of_range("MdArray extent axis is out of range"); }
+        fdapde_assert(!(axis >= Order), std::out_of_range, "MdArray extent axis is out of range");
         return valid_ ? extents_[axis] : 0;
     }
-    constexpr int size() const noexcept {
+    /// @brief returns the coefficient count
+    constexpr int size() const {
         if (!valid_) return 0;
         int result = 0;
         const bool valid = internals::checked_shape_size(extents_, result);
-        fdapde_assert(valid);
+        fdapde_assert(valid, std::logic_error, "invalid mdarray precondition");
         return valid ? result : 0;
     }
+    /// @brief reports whether the shape and storage are valid
     constexpr bool valid() const noexcept { return valid_; }
 
+    /// @brief resizes the owned storage to the requested dimensions
     template <internals::md_index... Dims>
         requires(DynamicOrder > 0 && sizeof...(Dims) == DynamicOrder)
     constexpr bool resize(Dims... dims) {
         MdExtents candidate(*this);
-        candidate.assign_dynamic_(std::array {dims...});
+        candidate.assign_dynamic_(std::array<int, sizeof...(Dims)> {internals::checked_md_dimension(dims)...});
         *this = candidate;
         valid_ = true;
         return true;
     }
 
+    /// @brief resizes the owned storage to the requested dimensions
     template <internals::md_index... Dims>
         requires(DynamicOrder > 0 && sizeof...(Dims) == Order && sizeof...(Dims) != DynamicOrder)
     constexpr bool resize(Dims... dims) {
         MdExtents candidate(*this);
-        candidate.assign_full_(std::array {dims...});
+        candidate.assign_full_(std::array<int, sizeof...(Dims)> {internals::checked_md_dimension(dims)...});
         *this = candidate;
         valid_ = true;
         return true;
     }
 
+    /// @brief resizes the owned storage to the requested dimensions
     template <internals::md_index T> constexpr bool resize(const std::array<T, Order>& dims) {
         MdExtents candidate(*this);
         candidate.assign_full_(dims);
@@ -216,8 +235,10 @@ template <int... StaticExtents> class MdExtents {
         return true;
     }
 
+    /// @brief compares iterator positions
     friend constexpr bool operator==(const MdExtents&, const MdExtents&) = default;
    private:
+    /// @brief assigns runtime extents to the dynamic axes
     template <typename Dims, std::size_t... Is>
     constexpr bool assign_dynamic_impl_(const Dims& dims, std::index_sequence<Is...>) {
         const std::array<int, DynamicOrder> values {internals::checked_md_dimension(dims[Is])...};
@@ -229,23 +250,26 @@ template <int... StaticExtents> class MdExtents {
         return true;
     }
 
+    /// @brief validates and assigns the dynamic axis lengths
     template <typename Dims> constexpr bool assign_dynamic_(const Dims& dims) {
         return assign_dynamic_impl_(dims, std::make_index_sequence<DynamicOrder> {});
     }
 
+    /// @brief assigns the full axis-length sequence
     template <typename Dims, std::size_t... Is>
     constexpr bool assign_full_impl_(const Dims& dims, std::index_sequence<Is...>) {
         const std::array<int, Order> values {internals::checked_md_dimension(dims[Is])...};
         for (std::size_t axis = 0; axis < Order; ++axis) {
-            if (static_extents[axis] != Dynamic && values[axis] != static_extents[axis]) {
-                throw std::invalid_argument("MdArray extents do not match the static shape");
-            }
+            fdapde_assert(
+              !(static_extents[axis] != Dynamic && values[axis] != static_extents[axis]), std::invalid_argument,
+              "MdArray extents do not match the static shape");
         }
         static_cast<void>(internals::checked_md_shape_size(values));
         extents_ = values;
         return true;
     }
 
+    /// @brief validates and assigns all axis lengths
     template <typename Dims> constexpr bool assign_full_(const Dims& dims) {
         return assign_full_impl_(dims, std::make_index_sequence<Order> {});
     }
@@ -256,39 +280,49 @@ template <int... StaticExtents> class MdExtents {
 
 namespace internals {
 
+/// @brief forms an extent type with every axis sized at runtime
 template <int N, std::size_t... Is>
 auto make_full_dynamic_extents(std::index_sequence<Is...>) -> MdExtents<((void)Is, Dynamic)...>;
 
+/// @brief represents md mapping
 template <typename Extents, int StorageOrder> class MdMapping {
     static_assert(StorageOrder == RowMajor || StorageOrder == ColMajor, "Unsupported MdArray storage order");
    public:
     static constexpr int Order = static_cast<int>(Extents::Order);
     using extents_t = Extents;
 
+    /// @brief constructs md mapping from the supplied state
     constexpr MdMapping() : extents_(), strides_() { initialize_(); }
+    /// @brief constructs md mapping from the supplied state
     constexpr explicit MdMapping(const Extents& extents) : extents_(extents), strides_() { initialize_(); }
 
+    /// @brief returns the requested axis stride
     constexpr int stride(int axis) const {
-        if (axis < 0 || axis >= Order) { throw std::out_of_range("MdArray stride axis is out of range"); }
+        fdapde_assert(!(axis < 0 || axis >= Order), std::out_of_range, "MdArray stride axis is out of range");
         return strides_[axis];
     }
+    /// @brief returns the stored multidimensional extents
     constexpr const Extents& extents() const noexcept { return extents_; }
 
+    /// @brief accesses or evaluates the requested coefficient
     template <internals::md_index... Indices>
         requires(sizeof...(Indices) == Extents::Order)
     constexpr int operator()(Indices... indices) const {
         const std::array<int, Order> values {internals::checked_md_coordinate(indices)...};
-        if (!indices_valid_(values)) { throw std::out_of_range("MdArray index is out of range"); }
+        fdapde_assert(!(!indices_valid_(values)), std::out_of_range, "MdArray index is out of range");
         return map_unchecked_(values);
     }
 
+    /// @brief accesses or evaluates the requested coefficient
     constexpr int operator()(const std::array<int, Order>& indices) const {
-        if (!indices_valid_(indices)) { throw std::out_of_range("MdArray index is out of range"); }
+        fdapde_assert(!(!indices_valid_(indices)), std::out_of_range, "MdArray index is out of range");
         return map_unchecked_(indices);
     }
 
+    /// @brief compares iterator positions
     friend constexpr bool operator==(const MdMapping&, const MdMapping&) = default;
    private:
+    /// @brief initializes view extents and parent-axis mapping
     constexpr void initialize_() {
         constexpr std::size_t MaxIndex = static_cast<std::size_t>(std::numeric_limits<int>::max());
         std::size_t stride = 1;
@@ -310,6 +344,7 @@ template <typename Extents, int StorageOrder> class MdMapping {
         }
     }
 
+    /// @brief checks that every coordinate lies within its axis
     constexpr bool indices_valid_(const std::array<int, Order>& indices) const {
         for (int axis = 0; axis < Order; ++axis) {
             if (indices[axis] < 0 || indices[axis] >= extents_.extent(static_cast<std::size_t>(axis))) return false;
@@ -317,6 +352,7 @@ template <typename Extents, int StorageOrder> class MdMapping {
         return true;
     }
 
+    /// @brief maps coordinates to storage without bounds checks
     constexpr int map_unchecked_(const std::array<int, Order>& indices) const {
         int result = 0;
         for (int axis = 0; axis < Order; ++axis) result += indices[axis] * strides_[axis];
@@ -342,39 +378,51 @@ concept md_readable = requires(const T& value) {
 template <int N>
 using full_dynamic_extent_t = decltype(internals::make_full_dynamic_extents<N>(std::make_index_sequence<N> {}));
 
+/// @brief views a strided region of a multidimensional parent
 template <typename Parent, int Order> class MdView;
 
 namespace internals {
 
+/// @brief represents md access base
 template <typename Derived, typename Scalar_, int Order_> class MdAccessBase {
    public:
     using Scalar = Scalar_;
     static constexpr int Order = Order_;
 
-    constexpr int size() const noexcept { return derived_().md_size(); }
+    /// @brief returns the coefficient count
+    constexpr int size() const { return derived_().md_size(); }
+    /// @brief returns the requested axis length
     constexpr int extent(int axis) const { return derived_().md_extent(axis); }
+    /// @brief reports whether the shape and storage are valid
     constexpr bool valid() const noexcept { return derived_().md_valid(); }
 
+    /// @brief accesses or evaluates the requested coefficient
     template <internals::md_index... Indices>
         requires(sizeof...(Indices) == Order)
     constexpr decltype(auto) operator()(Indices... indices) & {
         return coefficient_(make_indices_(indices...));
     }
+    /// @brief accesses or evaluates the requested coefficient
     template <internals::md_index... Indices>
         requires(sizeof...(Indices) == Order)
     constexpr decltype(auto) operator()(Indices... indices) const& {
         return coefficient_(make_indices_(indices...));
     }
+    /// @brief accesses or evaluates the requested coefficient
     template <internals::md_index... Indices> constexpr void operator()(Indices...) && = delete;
+    /// @brief accesses or evaluates the requested coefficient
     template <internals::md_index... Indices> constexpr void operator()(Indices...) const&& = delete;
 
+    /// @brief accesses or evaluates the requested coefficient
     template <internals::md_index_pack IndexPack> constexpr decltype(auto) operator()(const IndexPack& indices) & {
         return coefficient_(indices_from_pack_(indices));
     }
+    /// @brief accesses or evaluates the requested coefficient
     template <internals::md_index_pack IndexPack> constexpr decltype(auto) operator()(const IndexPack& indices) const& {
         return coefficient_(indices_from_pack_(indices));
     }
 
+    /// @brief iterates over the logical coefficients of a multidimensional expression
     template <typename Owner> class iterator {
        public:
         using difference_type = std::ptrdiff_t;
@@ -382,66 +430,88 @@ template <typename Derived, typename Scalar_, int Order_> class MdAccessBase {
         using reference = decltype(std::declval<Owner&>().md_coefficient_at_position(0));
         using iterator_category = std::forward_iterator_tag;
 
+        /// @brief constructs iterator from the supplied state
         constexpr iterator() noexcept : owner_(nullptr), position_(0) { }
+        /// @brief constructs iterator from the supplied state
         constexpr iterator(Owner* owner, int position) noexcept : owner_(owner), position_(position) { }
+        /// @brief dereferences the current iterator position
         constexpr decltype(auto) operator*() const { return owner_->md_coefficient_at_position(position_); }
+        /// @brief advances the iterator
         constexpr iterator& operator++() noexcept {
             ++position_;
             return *this;
         }
+        /// @brief advances the iterator
         constexpr iterator operator++(int) noexcept {
             iterator copy(*this);
             ++(*this);
             return copy;
         }
+        /// @brief returns the physical storage index of the current iterator position
         constexpr int mapped_index() const { return owner_->md_mapped_index_at_position(position_); }
+        /// @brief compares iterator positions
         friend constexpr bool operator==(const iterator&, const iterator&) = default;
        private:
         Owner* owner_;
         int position_;
     };
 
+    /// @brief returns an iterator to the first coefficient
     constexpr auto begin() & noexcept { return iterator<Derived>(std::addressof(derived_()), 0); }
+    /// @brief returns the past-the-end iterator
     constexpr auto end() & noexcept { return iterator<Derived>(std::addressof(derived_()), size()); }
+    /// @brief returns an iterator to the first coefficient
     constexpr auto begin() const& noexcept { return iterator<const Derived>(std::addressof(derived_()), 0); }
+    /// @brief returns the past-the-end iterator
     constexpr auto end() const& noexcept { return iterator<const Derived>(std::addressof(derived_()), size()); }
+    /// @brief returns an iterator to the first coefficient
     constexpr void begin() && = delete;
+    /// @brief returns the past-the-end iterator
     constexpr void end() && = delete;
+    /// @brief returns an iterator to the first coefficient
     constexpr void begin() const&& = delete;
+    /// @brief returns the past-the-end iterator
     constexpr void end() const&& = delete;
 
+    /// @brief accesses a coefficient in logical iteration order
     constexpr decltype(auto) md_coefficient_at_position(int position) & {
-        if (position < 0 || position >= size()) { throw std::out_of_range("MdArray position is out of range"); }
+        fdapde_assert(!(position < 0 || position >= size()), std::out_of_range, "MdArray position is out of range");
         return coefficient_(indices_at_position_(position));
     }
+    /// @brief accesses a coefficient in logical iteration order
     constexpr decltype(auto) md_coefficient_at_position(int position) const& {
-        if (position < 0 || position >= size()) { throw std::out_of_range("MdArray position is out of range"); }
+        fdapde_assert(!(position < 0 || position >= size()), std::out_of_range, "MdArray position is out of range");
         return coefficient_(indices_at_position_(position));
     }
+    /// @brief maps a logical iterator position to parent storage
     constexpr int md_mapped_index_at_position(int position) const {
-        if (position < 0 || position >= size()) { throw std::out_of_range("MdArray position is out of range"); }
+        fdapde_assert(!(position < 0 || position >= size()), std::out_of_range, "MdArray position is out of range");
         const auto indices = indices_at_position_(position);
         int result = derived_().md_offset();
         for (int axis = 0; axis < Order; ++axis) result += indices[axis] * derived_().md_stride(axis);
         return result;
     }
    protected:
+    /// @brief returns the concrete multidimensional expression
     constexpr Derived& derived_() { return static_cast<Derived&>(*this); }
+    /// @brief returns the concrete multidimensional expression
     constexpr const Derived& derived_() const { return static_cast<const Derived&>(*this); }
    private:
+    /// @brief converts a coordinate argument pack to an index array
     template <internals::md_index... Indices> constexpr std::array<int, Order> make_indices_(Indices... indices) const {
         return {internals::checked_md_coordinate(indices)...};
     }
 
+    /// @brief validates and converts a coordinate container
     template <typename IndexPack> constexpr std::array<int, Order> indices_from_pack_(const IndexPack& indices) const {
         std::array<int, Order> result {};
-        if (!std::cmp_equal(indices.size(), Order)) {
-            throw std::invalid_argument("MdArray index pack has the wrong rank");
-        }
+        fdapde_assert(
+          !(!std::cmp_equal(indices.size(), Order)), std::invalid_argument, "MdArray index pack has the wrong rank");
         for (int axis = 0; axis < Order; ++axis) { result[axis] = internals::checked_md_coordinate(indices[axis]); }
         return result;
     }
 
+    /// @brief decodes a logical iteration position into coordinates
     constexpr std::array<int, Order> indices_at_position_(int position) const {
         std::array<int, Order> result {};
         for (int axis = Order - 1; axis >= 0; --axis) {
@@ -453,6 +523,7 @@ template <typename Derived, typename Scalar_, int Order_> class MdAccessBase {
         return result;
     }
 
+    /// @brief checks that every coordinate lies within its axis
     constexpr bool indices_valid_(const std::array<int, Order>& indices) const {
         if (!valid()) return false;
         for (int axis = 0; axis < Order; ++axis) {
@@ -461,82 +532,102 @@ template <typename Derived, typename Scalar_, int Order_> class MdAccessBase {
         return true;
     }
 
+    /// @brief accesses storage at the mapped multidimensional coordinate
     constexpr decltype(auto) coefficient_(const std::array<int, Order>& indices) & {
-        if (!indices_valid_(indices)) { throw std::out_of_range("MdArray index is out of range"); }
+        fdapde_assert(!(!indices_valid_(indices)), std::out_of_range, "MdArray index is out of range");
         int mapped = derived_().md_offset();
         for (int axis = 0; axis < Order; ++axis) mapped += indices[axis] * derived_().md_stride(axis);
         return derived_().md_linear_at(mapped);
     }
+    /// @brief accesses storage at the mapped multidimensional coordinate
     constexpr decltype(auto) coefficient_(const std::array<int, Order>& indices) const& {
-        if (!indices_valid_(indices)) { throw std::out_of_range("MdArray index is out of range"); }
+        fdapde_assert(!(!indices_valid_(indices)), std::out_of_range, "MdArray index is out of range");
         int mapped = derived_().md_offset();
         for (int axis = 0; axis < Order; ++axis) mapped += indices[axis] * derived_().md_stride(axis);
         return derived_().md_linear_at(mapped);
     }
 };
 
+/// @brief represents md viewable base
 template <typename Derived, typename Scalar, int Order>
 class MdViewableBase : public MdAccessBase<Derived, Scalar, Order> {
     using Base = MdAccessBase<Derived, Scalar, Order>;
    public:
     using Base::operator();
 
+    /// @brief returns a view of the requested rectangular region
     template <typename... Slicers>
         requires(sizeof...(Slicers) == Order && (internals::md_slicer<Slicers> && ...))
     constexpr auto block(Slicers... slicers) & {
         return make_block_(this->derived_(), slicers...);
     }
+    /// @brief returns a view of the requested rectangular region
     template <typename... Slicers>
         requires(sizeof...(Slicers) == Order && (internals::md_slicer<Slicers> && ...))
     constexpr auto block(Slicers... slicers) const& {
         return make_block_(std::as_const(this->derived_()), slicers...);
     }
+    /// @brief returns a view of the requested rectangular region
     template <typename... Slicers> constexpr void block(Slicers...) && = delete;
+    /// @brief returns a view of the requested rectangular region
     template <typename... Slicers> constexpr void block(Slicers...) const&& = delete;
 
+    /// @brief returns a view with the selected axes fixed
     template <int... Axes, internals::md_index... Indices>
         requires(sizeof...(Axes) == sizeof...(Indices) && sizeof...(Axes) > 0 && sizeof...(Axes) < Order)
     constexpr auto slice(Indices... indices) & {
         return make_slice_<Axes...>(this->derived_(), indices...);
     }
+    /// @brief returns a view with the selected axes fixed
     template <int... Axes, internals::md_index... Indices>
         requires(sizeof...(Axes) == sizeof...(Indices) && sizeof...(Axes) > 0 && sizeof...(Axes) < Order)
     constexpr auto slice(Indices... indices) const& {
         return make_slice_<Axes...>(std::as_const(this->derived_()), indices...);
     }
+    /// @brief returns a view with the selected axes fixed
     template <int... Axes, typename... Indices> constexpr void slice(Indices...) && = delete;
+    /// @brief returns a view with the selected axes fixed
     template <int... Axes, typename... Indices> constexpr void slice(Indices...) const&& = delete;
 
+    /// @brief returns a view of the requested row
     constexpr auto row(int index) &
         requires(Order == 2)
     {
         return block(index, full_extent);
     }
+    /// @brief returns a view of the requested row
     constexpr auto row(int index) const&
         requires(Order == 2)
     {
         return block(index, full_extent);
     }
+    /// @brief returns a view of the requested column
     constexpr auto col(int index) &
         requires(Order == 2)
     {
         return block(full_extent, index);
     }
+    /// @brief returns a view of the requested column
     constexpr auto col(int index) const&
         requires(Order == 2)
     {
         return block(full_extent, index);
     }
+    /// @brief returns a view of the requested row
     constexpr void row(int) && = delete;
+    /// @brief returns a view of the requested row
     constexpr void row(int) const&& = delete;
+    /// @brief returns a view of the requested column
     constexpr void col(int) && = delete;
+    /// @brief returns a view of the requested column
     constexpr void col(int) const&& = delete;
    private:
+    /// @brief constructs a view from the selected axis ranges
     template <typename Parent, typename Tuple, std::size_t... Is>
     static constexpr auto make_block_impl_(Parent& parent, const Tuple& slicers, std::index_sequence<Is...>) {
         std::array<int, Order> extents {};
         std::array<int, Order> strides {};
-        if (!parent.valid()) { throw std::invalid_argument("cannot create a view from an invalid MdArray"); }
+        fdapde_assert(!(!parent.valid()), std::invalid_argument, "cannot create a view from an invalid MdArray");
         int offset = parent.md_offset();
         bool valid = true;
 
@@ -566,15 +657,17 @@ class MdViewableBase : public MdAccessBase<Derived, Scalar, Order> {
             }
         };
         (consume.template operator()<Is>(std::get<Is>(slicers)), ...);
-        if (!valid) { throw std::out_of_range("MdArray block is out of range"); }
+        fdapde_assert(!(!valid), std::out_of_range, "MdArray block is out of range");
         return MdView<Parent, Order>(std::addressof(parent), extents, strides, offset, true);
     }
 
+    /// @brief validates axis ranges and constructs a block view
     template <typename Parent, typename... Slicers>
     static constexpr auto make_block_(Parent& parent, Slicers... slicers) {
         return make_block_impl_(parent, std::tuple<Slicers...>(slicers...), std::index_sequence_for<Slicers...> {});
     }
 
+    /// @brief constructs a view with selected axes fixed
     template <int... Axes, typename Parent, typename... Indices>
     static constexpr auto make_slice_(Parent& parent, Indices... indices) {
         static_assert(((Axes >= 0 && Axes < Order) && ...), "Slice axis is out of range");
@@ -583,7 +676,7 @@ class MdViewableBase : public MdAccessBase<Derived, Scalar, Order> {
         constexpr std::array<int, sizeof...(Axes)> axes {Axes...};
         std::array<int, sizeof...(Axes)> fixed {};
         std::size_t fixed_index = 0;
-        if (!parent.valid()) { throw std::invalid_argument("cannot create a view from an invalid MdArray"); }
+        fdapde_assert(!(!parent.valid()), std::invalid_argument, "cannot create a view from an invalid MdArray");
         bool valid = (internals::checked_index_cast(indices, fixed[fixed_index++]) && ...);
         int offset = parent.md_offset();
         std::array<bool, Order> removed {};
@@ -603,15 +696,16 @@ class MdViewableBase : public MdAccessBase<Derived, Scalar, Order> {
                 ++target;
             }
         }
-        if (!valid) { throw std::out_of_range("MdArray slice is out of range"); }
+        fdapde_assert(!(!valid), std::out_of_range, "MdArray slice is out of range");
         return MdView<Parent, ViewOrder>(std::addressof(parent), extents, strides, offset, true);
     }
 };
 
 }   // namespace internals
 
+/// @brief views a strided region of a multidimensional parent
 template <typename Parent, int Order_>
-// Non-owning view. Operations that replace or release the parent's storage invalidate the view; direct construction
+// non-owning view. Operations that replace or release the parent's storage invalidate the view; direct construction
 // also leaves offset and stride validity to the caller. Prefer the checked block, slice, row, and column factories.
 class MdView :
     public internals::MdAccessBase<MdView<Parent, Order_>, typename std::remove_const_t<Parent>::Scalar, Order_> {
@@ -623,33 +717,40 @@ class MdView :
     static constexpr int ReadOnly =
       std::is_const_v<Parent> || std::is_const_v<typename std::remove_const_t<Parent>::Scalar>;
 
+    /// @brief constructs md view from the supplied state
     MdView() = delete;
+    /// @brief constructs md view from the supplied state
     constexpr MdView(const MdView&) = default;
+    /// @brief constructs md view from the supplied state
     constexpr MdView(
       Parent* parent, const std::array<int, Order>& extents, const std::array<int, Order>& strides, int offset,
       bool valid) :
         parent_(parent), extents_(extents), strides_(strides), offset_(offset), valid_(valid) { }
 
+    /// @brief assigns the supplied coefficients
     constexpr MdView& operator=(const MdView& other) &
         requires(ReadOnly == 0)
     {
         return assign_inplace_from(other);
     }
+    /// @brief assigns the supplied coefficients
     constexpr MdView& operator=(const MdView&) &
         requires(ReadOnly != 0)
     = delete;
+    /// @brief assigns the supplied coefficients
     template <internals::md_readable Other>
         requires(Other::Order == Order && ReadOnly == 0 && !std::same_as<std::remove_cvref_t<Other>, MdView>)
     constexpr MdView& operator=(const Other& other) & {
         return assign_inplace_from(other);
     }
 
+    /// @brief copies coefficients into this view after checking its extents
     template <internals::md_readable Other>
         requires(Other::Order == Order && ReadOnly == 0)
     constexpr MdView& assign_inplace_from(const Other& other) {
         bool compatible = other.valid() && other.size() == this->size();
         for (int axis = 0; axis < Order; ++axis) compatible = compatible && other.extent(axis) == this->extent(axis);
-        if (!compatible) { throw std::invalid_argument("MdArray view dimensions do not match"); }
+        fdapde_assert(!(!compatible), std::invalid_argument, "MdArray view dimensions do not match");
         std::vector<raw_scalar> temporary;
         temporary.reserve(static_cast<std::size_t>(other.size()));
         for (const auto& value : other) temporary.push_back(static_cast<raw_scalar>(value));
@@ -658,26 +759,37 @@ class MdView :
         return *this;
     }
 
+    /// @brief accesses the requested vector coefficient
     constexpr decltype(auto) operator[](int position) & { return this->md_coefficient_at_position(position); }
+    /// @brief accesses the requested vector coefficient
     constexpr decltype(auto) operator[](int position) const& { return this->md_coefficient_at_position(position); }
+    /// @brief accesses the requested vector coefficient
     constexpr void operator[](int) && = delete;
+    /// @brief accesses the requested vector coefficient
     constexpr void operator[](int) const&& = delete;
 
+    /// @brief provides size for multidimensional access
     constexpr int md_size() const noexcept {
         int size = 0;
         return valid_ && internals::checked_shape_size(extents_, size) ? size : 0;
     }
+    /// @brief provides extent for multidimensional access
     constexpr int md_extent(int axis) const {
-        if (axis < 0 || axis >= Order) { throw std::out_of_range("MdArray extent axis is out of range"); }
+        fdapde_assert(!(axis < 0 || axis >= Order), std::out_of_range, "MdArray extent axis is out of range");
         return valid_ ? extents_[axis] : 0;
     }
+    /// @brief provides valid for multidimensional access
     constexpr bool md_valid() const noexcept { return valid_ && parent_ != nullptr && parent_->valid(); }
+    /// @brief provides stride for multidimensional access
     constexpr int md_stride(int axis) const {
-        if (axis < 0 || axis >= Order) { throw std::out_of_range("MdArray stride axis is out of range"); }
+        fdapde_assert(!(axis < 0 || axis >= Order), std::out_of_range, "MdArray stride axis is out of range");
         return valid_ ? strides_[axis] : 0;
     }
+    /// @brief provides offset for multidimensional access
     constexpr int md_offset() const noexcept { return offset_; }
+    /// @brief accesses the parent storage at the supplied physical position
     constexpr decltype(auto) md_linear_at(int index) { return parent_->md_linear_at(index); }
+    /// @brief accesses the parent storage at the supplied physical position
     constexpr decltype(auto) md_linear_at(int index) const { return std::as_const(*parent_).md_linear_at(index); }
    private:
     Parent* parent_;
@@ -687,9 +799,7 @@ class MdView :
     bool valid_;
 };
 
-template <typename Parent, int Order> using MdArrayBlock = MdView<Parent, Order>;
-template <typename Parent, int Order> using MdArraySlice = MdView<Parent, Order>;
-
+/// @brief owns a multidimensional array with the selected storage order
 template <typename Scalar_, typename Extents_, int StorageOrder_ = RowMajor>
 class MdArray : public internals::MdViewableBase<MdArray<Scalar_, Extents_, StorageOrder_>, Scalar_, Extents_::Order> {
     static_assert(!std::is_const_v<Scalar_>, "Owning MdArray scalars cannot be const");
@@ -706,30 +816,37 @@ class MdArray : public internals::MdViewableBase<MdArray<Scalar_, Extents_, Stor
     static constexpr int StorageOrder = StorageOrder_;
     static constexpr auto static_extents = extents_t::static_extents;
 
+    /// @brief constructs md array from the supplied state
     constexpr MdArray() : extents_(), mapping_(extents_), storage_() { }
 
+    /// @brief constructs md array from the supplied state
     template <internals::md_index... Dims>
         requires(DynamicOrder > 0 && sizeof...(Dims) == extents_t::DynamicOrder)
     constexpr explicit MdArray(Dims... dims) : extents_(dims...), mapping_(extents_), storage_(extents_.size()) { }
 
+    /// @brief constructs md array from the supplied state
     template <internals::md_index... Dims>
         requires(DynamicOrder > 0 && sizeof...(Dims) == extents_t::Order && sizeof...(Dims) != extents_t::DynamicOrder)
     constexpr explicit MdArray(Dims... dims) : extents_(dims...), mapping_(extents_), storage_(extents_.size()) { }
 
+    /// @brief constructs md array from the supplied state
     constexpr MdArray(const MdArray&) = default;
 
+    /// @brief constructs md array from the supplied state
     template <internals::md_readable Other>
         requires(Other::Order == Order)
     constexpr explicit MdArray(const Other& other) : MdArray() {
         assign_from_(other);
     }
 
+    /// @brief assigns the supplied coefficients
     constexpr MdArray& operator=(const MdArray& other) & {
         if (this == std::addressof(other)) return *this;
         assign_from_(other);
         return *this;
     }
 
+    /// @brief assigns the supplied coefficients
     template <internals::md_readable Other>
         requires(Other::Order == Order && !std::same_as<std::remove_cvref_t<Other>, MdArray>)
     constexpr MdArray& operator=(const Other& other) & {
@@ -737,6 +854,7 @@ class MdArray : public internals::MdViewableBase<MdArray<Scalar_, Extents_, Stor
         return *this;
     }
 
+    /// @brief resizes the owned storage to the requested dimensions
     template <internals::md_index... Dims>
         requires(DynamicOrder > 0 && sizeof...(Dims) == extents_t::DynamicOrder)
     constexpr bool resize(Dims... dims) {
@@ -745,6 +863,7 @@ class MdArray : public internals::MdViewableBase<MdArray<Scalar_, Extents_, Stor
         return resize_from_extents_(candidate);
     }
 
+    /// @brief resizes the owned storage to the requested dimensions
     template <internals::md_index... Dims>
         requires(DynamicOrder > 0 && sizeof...(Dims) == extents_t::Order && sizeof...(Dims) != extents_t::DynamicOrder)
     constexpr bool resize(Dims... dims) {
@@ -753,49 +872,67 @@ class MdArray : public internals::MdViewableBase<MdArray<Scalar_, Extents_, Stor
         return resize_from_extents_(candidate);
     }
 
+    /// @brief accesses the requested vector coefficient
     constexpr decltype(auto) operator[](int index) & {
-        if (index < 0 || index >= md_size()) { throw std::out_of_range("MdArray position is out of range"); }
+        fdapde_assert(!(index < 0 || index >= md_size()), std::out_of_range, "MdArray position is out of range");
         return storage_[index];
     }
+    /// @brief accesses the requested vector coefficient
     constexpr decltype(auto) operator[](int index) const& {
-        if (index < 0 || index >= md_size()) { throw std::out_of_range("MdArray position is out of range"); }
+        fdapde_assert(!(index < 0 || index >= md_size()), std::out_of_range, "MdArray position is out of range");
         return storage_[index];
     }
+    /// @brief accesses the requested vector coefficient
     constexpr void operator[](int) && = delete;
+    /// @brief accesses the requested vector coefficient
     constexpr void operator[](int) const&& = delete;
 
+    /// @brief returns the underlying storage pointer
     constexpr decltype(auto) data() { return storage_.data(); }
+    /// @brief returns the underlying storage pointer
     constexpr decltype(auto) data() const { return storage_.data(); }
+    /// @brief returns the layout mapping
     constexpr const mapping_t& mapping() const noexcept { return mapping_; }
+    /// @brief returns the number of occupied storage words
     constexpr int bitpacks() const
         requires(std::same_as<Scalar, bool>)
     {
         return storage_.bitpacks();
     }
+    /// @brief sets the selected coefficients to true
     constexpr void set()
         requires(std::same_as<Scalar, bool>)
     {
         storage_.set();
     }
+    /// @brief sets the selected coefficients to false
     constexpr void clear()
         requires(std::same_as<Scalar, bool>)
     {
         storage_.clear();
     }
 
+    /// @brief provides size for multidimensional access
     constexpr int md_size() const noexcept { return extents_.size(); }
+    /// @brief provides extent for multidimensional access
     constexpr int md_extent(int axis) const {
-        if (axis < 0) { throw std::out_of_range("MdArray extent axis is out of range"); }
+        fdapde_assert(!(axis < 0), std::out_of_range, "MdArray extent axis is out of range");
         return extents_.extent(static_cast<std::size_t>(axis));
     }
+    /// @brief provides valid for multidimensional access
     constexpr bool md_valid() const noexcept { return extents_.valid(); }
+    /// @brief provides stride for multidimensional access
     constexpr int md_stride(int axis) const { return mapping_.stride(axis); }
+    /// @brief provides offset for multidimensional access
     constexpr int md_offset() const noexcept { return 0; }
+    /// @brief accesses the parent storage at the supplied physical position
     constexpr decltype(auto) md_linear_at(int index) { return storage_[index]; }
+    /// @brief accesses the parent storage at the supplied physical position
     constexpr decltype(auto) md_linear_at(int index) const { return storage_[index]; }
    private:
+    /// @brief copies logical coefficients after checking the source extents
     template <internals::md_readable Other> constexpr void assign_from_(const Other& other) {
-        if (!other.valid()) { throw std::invalid_argument("cannot assign from an invalid MdArray expression"); }
+        fdapde_assert(!(!other.valid()), std::invalid_argument, "cannot assign from an invalid MdArray expression");
         std::array<int, Order> dimensions {};
         for (int axis = 0; axis < Order; ++axis) dimensions[axis] = other.extent(axis);
         extents_t candidate(extents_);
@@ -803,14 +940,13 @@ class MdArray : public internals::MdViewableBase<MdArray<Scalar_, Extents_, Stor
             candidate.resize(dimensions);
         } else {
             for (int axis = 0; axis < Order; ++axis) {
-                if (dimensions[axis] != static_extents[axis]) {
-                    throw std::invalid_argument("MdArray assignment dimensions do not match the static shape");
-                }
+                fdapde_assert(
+                  !(dimensions[axis] != static_extents[axis]), std::invalid_argument,
+                  "MdArray assignment dimensions do not match the static shape");
             }
         }
-        if (other.size() != candidate.size()) {
-            throw std::invalid_argument("MdArray assignment dimensions are inconsistent");
-        }
+        fdapde_assert(
+          !(other.size() != candidate.size()), std::invalid_argument, "MdArray assignment dimensions are inconsistent");
 
         std::vector<Scalar> temporary;
         temporary.reserve(static_cast<std::size_t>(other.size()));
@@ -820,6 +956,7 @@ class MdArray : public internals::MdViewableBase<MdArray<Scalar_, Extents_, Stor
         for (auto&& value : *this) value = temporary[static_cast<std::size_t>(i++)];
     }
 
+    /// @brief resizes storage to match the supplied extents
     constexpr bool resize_from_extents_(const extents_t& extents) {
         if (extents == extents_) return true;
         storage_.resize(extents.size());
@@ -833,8 +970,9 @@ class MdArray : public internals::MdViewableBase<MdArray<Scalar_, Extents_, Stor
     storage_t storage_;
 };
 
-// Non-owning raw map. The caller owns the backing storage and must keep it alive and stationary for the lifetime of
+// non-owning raw map. The caller owns the backing storage and must keep it alive and stationary for the lifetime of
 // the map and every view derived from it; no generation or lifetime tracking is performed.
+/// @brief maps external contiguous multidimensional storage
 template <typename Scalar_, typename Extents_, int StorageOrder_ = RowMajor>
 class MdMap : public internals::MdViewableBase<MdMap<Scalar_, Extents_, StorageOrder_>, Scalar_, Extents_::Order> {
     static_assert(StorageOrder_ == RowMajor || StorageOrder_ == ColMajor, "Unsupported MdMap storage order");
@@ -849,62 +987,83 @@ class MdMap : public internals::MdViewableBase<MdMap<Scalar_, Extents_, StorageO
     static constexpr int StorageOrder = StorageOrder_;
     static constexpr auto static_extents = extents_t::static_extents;
 
+    /// @brief constructs md map from the supplied state
     constexpr MdMap()
         requires(DynamicOrder > 0)
         : extents_(), mapping_(extents_), data_(nullptr), valid_(true) { }
+    /// @brief constructs md map from the supplied state
     constexpr MdMap()
         requires(DynamicOrder == 0)
     = delete;
 
+    /// @brief constructs md map from the supplied state
     constexpr explicit MdMap(pointer data)
         requires(DynamicOrder == 0)
         : extents_(), mapping_(extents_), data_(data), valid_(true) {
-        if (data == nullptr && extents_.size() != 0) {
-            throw std::invalid_argument("a nonempty MdMap requires nonnull storage");
-        }
+        fdapde_strong_assert(
+          !(data == nullptr && extents_.size() != 0), std::invalid_argument,
+          "a nonempty MdMap requires nonnull storage");
     }
 
+    /// @brief constructs md map from the supplied state
     template <internals::md_index... Dims>
         requires(DynamicOrder > 0 && sizeof...(Dims) == extents_t::DynamicOrder)
     constexpr MdMap(pointer data, Dims... dims) : extents_(dims...), mapping_(extents_), data_(data), valid_(true) {
-        if (data == nullptr && extents_.size() != 0) {
-            throw std::invalid_argument("a nonempty MdMap requires nonnull storage");
-        }
+        fdapde_strong_assert(
+          !(data == nullptr && extents_.size() != 0), std::invalid_argument,
+          "a nonempty MdMap requires nonnull storage");
     }
 
+    /// @brief constructs md map from the supplied state
     template <internals::md_index... Dims>
         requires(DynamicOrder > 0 && sizeof...(Dims) == extents_t::Order && sizeof...(Dims) != extents_t::DynamicOrder)
     constexpr MdMap(pointer data, Dims... dims) : extents_(dims...), mapping_(extents_), data_(data), valid_(true) {
-        if (data == nullptr && extents_.size() != 0) {
-            throw std::invalid_argument("a nonempty MdMap requires nonnull storage");
-        }
+        fdapde_strong_assert(
+          !(data == nullptr && extents_.size() != 0), std::invalid_argument,
+          "a nonempty MdMap requires nonnull storage");
     }
 
+    /// @brief accesses the requested vector coefficient
     constexpr decltype(auto) operator[](int index) & {
-        if (!valid_ || index < 0 || index >= md_size()) { throw std::out_of_range("MdMap position is out of range"); }
+        fdapde_assert(
+          !(!valid_ || index < 0 || index >= md_size()), std::out_of_range, "MdMap position is out of range");
         return data_[index];
     }
+    /// @brief accesses the requested vector coefficient
     constexpr decltype(auto) operator[](int index) const& {
-        if (!valid_ || index < 0 || index >= md_size()) { throw std::out_of_range("MdMap position is out of range"); }
+        fdapde_assert(
+          !(!valid_ || index < 0 || index >= md_size()), std::out_of_range, "MdMap position is out of range");
         using raw_scalar = std::remove_const_t<Scalar>;
         return static_cast<const raw_scalar&>(data_[index]);
     }
+    /// @brief accesses the requested vector coefficient
     constexpr void operator[](int) && = delete;
+    /// @brief accesses the requested vector coefficient
     constexpr void operator[](int) const&& = delete;
 
+    /// @brief returns the underlying storage pointer
     constexpr pointer data() noexcept { return data_; }
+    /// @brief returns the underlying storage pointer
     constexpr const std::remove_const_t<Scalar>* data() const noexcept { return data_; }
+    /// @brief returns the layout mapping
     constexpr const mapping_t& mapping() const noexcept { return mapping_; }
 
+    /// @brief provides size for multidimensional access
     constexpr int md_size() const noexcept { return valid_ ? extents_.size() : 0; }
+    /// @brief provides extent for multidimensional access
     constexpr int md_extent(int axis) const {
-        if (axis < 0) { throw std::out_of_range("MdArray extent axis is out of range"); }
+        fdapde_assert(!(axis < 0), std::out_of_range, "MdArray extent axis is out of range");
         return valid_ ? extents_.extent(static_cast<std::size_t>(axis)) : 0;
     }
+    /// @brief provides valid for multidimensional access
     constexpr bool md_valid() const noexcept { return valid_; }
+    /// @brief provides stride for multidimensional access
     constexpr int md_stride(int axis) const { return mapping_.stride(axis); }
+    /// @brief provides offset for multidimensional access
     constexpr int md_offset() const noexcept { return 0; }
+    /// @brief accesses the parent storage at the supplied physical position
     constexpr decltype(auto) md_linear_at(int index) { return data_[index]; }
+    /// @brief accesses the parent storage at the supplied physical position
     constexpr decltype(auto) md_linear_at(int index) const {
         using raw_scalar = std::remove_const_t<Scalar>;
         return static_cast<const raw_scalar&>(data_[index]);
@@ -916,9 +1075,11 @@ class MdMap : public internals::MdViewableBase<MdMap<Scalar_, Extents_, StorageO
     bool valid_;
 };
 
+/// @brief returns a view of selected multidimensional ranges
 template <typename Parent, typename... Slicers> constexpr auto submdarray(Parent& parent, Slicers... slicers) {
     return parent.block(slicers...);
 }
+/// @brief returns a view of selected multidimensional ranges
 template <typename Parent, typename... Slicers> void submdarray(Parent&&, Slicers...) = delete;
 
 }   // namespace fdapde

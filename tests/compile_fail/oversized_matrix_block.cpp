@@ -14,10 +14,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#define FDAPDE_NO_DEBUG
 #include <fdaPDE/linear_algebra.h>
 
+/// @brief supplies zero coefficients without allocating matrix storage
 struct zero_functor {
+    /// @brief returns zero for any requested coefficient
     constexpr double operator()(int, int) const { return 0.0; }
 };
 

@@ -17,8 +17,6 @@
 #ifndef __FDAPDE_LINALG_EVD_H__
 #define __FDAPDE_LINALG_EVD_H__
 
-#include "header_check.h"
-
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -26,8 +24,11 @@
 #include <stdexcept>
 #include <type_traits>
 
+#include "header_check.h"
+
 namespace fdapde {
 
+/// @brief computes the eigendecomposition of a symmetric matrix
 template <typename XprType_> class EVD {
     using XprType = std::decay_t<XprType_>;
     fdapde_static_assert(
@@ -43,13 +44,16 @@ template <typename XprType_> class EVD {
     static constexpr int Cols = XprType::Cols;
     fdapde_static_assert(std::is_floating_point_v<Scalar>, EVD_REQUIRES_FLOATING_POINT_SCALARS);
 
+    /// @brief constructs evd from the supplied state
     constexpr EVD() = default;
+    /// @brief constructs evd from the supplied state
     template <typename MatrixType> constexpr explicit EVD(const SymmetricMatrixExpr<MatrixType>& matrix) {
         compute(matrix);
     }
 
-    // Maximum-pivot Jacobi rotations with scale normalization; see Golub and
-    // Van Loan, Matrix Computations, Section 8.5.
+    // maximum-pivot Jacobi rotations with scale normalization; see Golub and
+    // van Loan, Matrix Computations, Section 8.5
+    /// @brief computes the factorization of the supplied matrix
     template <typename MatrixType> constexpr void compute(const SymmetricMatrixExpr<MatrixType>& matrix) {
         computed_ = false;
         fdapde_static_assert(
@@ -60,22 +64,20 @@ template <typename XprType_> class EVD {
         const int n = matrix.rows();
         const bool shape_valid =
           n > 0 && n == matrix.cols() && (Rows == Dynamic || n == Rows) && (Cols == Dynamic || n == Cols);
-        if (!shape_valid) {
-            throw std::invalid_argument("EVD requires a nonempty square matrix matching its static shape");
-        }
+        fdapde_strong_assert(
+          !(!shape_valid), std::invalid_argument, "EVD requires a nonempty square matrix matching its static shape");
         const std::int64_t dense_dimension = n;
-        if (dense_dimension * dense_dimension > std::numeric_limits<int>::max()) {
-            throw std::length_error("EVD: dense workspace size exceeds supported range");
-        }
+        fdapde_strong_assert(
+          !(dense_dimension * dense_dimension > std::numeric_limits<int>::max()), std::length_error,
+          "EVD: dense workspace size exceeds supported range");
 
         Matrix<Scalar, Rows, Cols> diagonalized(matrix);
         Scalar matrix_scale = Scalar(0);
         for (int row = 0; row < n; ++row) {
             for (int col = 0; col < n; ++col) {
                 const Scalar value = diagonalized(row, col);
-                if (!std::isfinite(value)) {
-                    throw std::invalid_argument("EVD requires finite matrix coefficients");
-                }
+                fdapde_strong_assert(
+                  !(!std::isfinite(value)), std::invalid_argument, "EVD requires finite matrix coefficients");
                 matrix_scale = fdapde::max(matrix_scale, fdapde::abs(value));
             }
         }
@@ -91,9 +93,8 @@ template <typename XprType_> class EVD {
         constexpr std::size_t iteration_factor = 50;
         const std::size_t dimension = static_cast<std::size_t>(n);
         const std::size_t max_size = std::numeric_limits<std::size_t>::max();
-        const std::size_t max_iterations = dimension > max_size / iteration_factor / dimension ?
-                                             max_size :
-                                             iteration_factor * dimension * dimension;
+        const std::size_t max_iterations =
+          dimension > max_size / iteration_factor / dimension ? max_size : iteration_factor * dimension * dimension;
 
         for (std::size_t iteration = 0;; ++iteration) {
             int p = 0;
@@ -116,8 +117,7 @@ template <typename XprType_> class EVD {
             const Scalar aqq = diagonalized(q, q);
             const Scalar apq = diagonalized(p, q);
             const Scalar tau = (aqq - app) / (Scalar(2) * apq);
-            const Scalar tangent =
-              std::copysign(Scalar(1), tau) / (fdapde::abs(tau) + std::hypot(Scalar(1), tau));
+            const Scalar tangent = std::copysign(Scalar(1), tau) / (fdapde::abs(tau) + std::hypot(Scalar(1), tau));
             const Scalar cosine = Scalar(1) / std::hypot(Scalar(1), tangent);
             const Scalar sine = tangent * cosine;
 
@@ -144,18 +144,22 @@ template <typename XprType_> class EVD {
         computed_ = true;
     }
 
-    constexpr const Vector<Scalar, Rows>& eigenvalues() const & {
-        fdapde_assert(computed_);
+    /// @brief returns the computed eigenvalues
+    constexpr const Vector<Scalar, Rows>& eigenvalues() const& {
+        fdapde_assert(computed_, std::logic_error, "eigendecomposition has not been computed");
         return eigenvalues_;
     }
-    constexpr void eigenvalues() const && = delete;
-    constexpr auto eigenvectors() const & {
-        fdapde_assert(computed_);
+    /// @brief returns the computed eigenvalues
+    constexpr void eigenvalues() const&& = delete;
+    /// @brief returns the computed eigenvectors
+    constexpr auto eigenvectors() const& {
+        fdapde_assert(computed_, std::logic_error, "eigendecomposition has not been computed");
         return internals::orthogonal_cast(eigenvectors_);
     }
-    constexpr void eigenvectors() const && = delete;
+    /// @brief returns the computed eigenvectors
+    constexpr void eigenvectors() const&& = delete;
+    /// @brief reports whether a factorization has been computed
     constexpr bool computed() const { return computed_; }
-
    private:
     Matrix<Scalar, Rows, Cols> eigenvectors_;
     Vector<Scalar, Rows> eigenvalues_;

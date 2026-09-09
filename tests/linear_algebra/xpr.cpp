@@ -18,41 +18,54 @@
 #include <gtest/gtest.h>   // testing framework
 using namespace fdapde;
 
+// verifies arithmetic through the public algebra API
 TEST(linear_algebra, arithmetic) {
     // constexpr arithmetic
     constexpr Matrix<double, 2, 2> A({1, 2, 3, 4});
     constexpr Matrix<double, 2, 2> B({1, 2, 3, 4});
 
+    // checks at compile time: (A + B)(0, 0) == 2
     static_assert((A + B)(0, 0) == 2);
+    // checks at compile time: (A - B)(0, 0) == 0
     static_assert((A - B)(0, 0) == 0);
+    // checks at compile time: (A * B)(0, 0) == 7
     static_assert((A * B)(0, 0) == 7);
+    // checks at compile time: (2.0 * A)(0, 0) == 2
     static_assert((2.0 * A)(0, 0) == 2);
+    // checks at compile time: ((A + B) / 2.0)(0, 0) == 1
     static_assert(((A + B) / 2.0)(0, 0) == 1);
 
     constexpr Matrix<int, 1, 1> C(1);
     constexpr Matrix<double, 1, 1> D(0.5);
     using Mixed = decltype(C + D);
+    // checks at compile time: std::is_same_v<typename Mixed::Scalar, double>
     static_assert(std::is_same_v<typename Mixed::Scalar, double>);
+    // checks at compile time: (C + D)(0, 0) == 1.5
     static_assert((C + D)(0, 0) == 1.5);
 }
 
+// verifies cwise through the public algebra API
 TEST(linear_algebra, cwise) {
     static constexpr Matrix<double, 2, 2> C({-1, 2, 3, -4});   // need static address for constexpr expressions
+    // checks at compile time: []() {
     static_assert([]() {
         constexpr auto e = C.cwise().abs();
         constexpr Matrix<double, 2, 2> r({1, 2, 3, 4});
         return e.mwise() == r;
     }());
+    // checks at compile time: []() {
     static_assert([]() {
         constexpr auto e = C.cwise().pow(3);
         constexpr Matrix<double, 2, 2> r({-1, 8, 27, -64});
         return e.mwise() == r;
     }());
+    // checks at compile time: []() {
     static_assert([]() {
         constexpr auto e = C.cwise().pow2();
         constexpr Matrix<double, 2, 2> r({1, 4, 9, 16});
         return e.mwise() == r;
     }());
+    // checks at compile time: []() {
     static_assert([]() {
         constexpr auto e = C.cwise().abs().sqrt();
 
@@ -63,16 +76,19 @@ TEST(linear_algebra, cwise) {
         constexpr Matrix<double, 2, 2> r({r1, r2, r3, r4});
         return almost_equal(e.mwise(), r);
     }());
+    // checks at compile time: []() {
     static_assert([]() {
         constexpr Matrix<double, 1, 2> values({1.0e-16, 4.0e-16});
         constexpr Matrix<double, 1, 2> roots = values.cwise().sqrt();
         return almost_equal(roots[0] / 1.0e-8, 1.0) && almost_equal(roots[1] / 2.0e-8, 1.0);
     }());
+    // checks at compile time: []() {
     static_assert([]() {
         constexpr auto e = C.cwise().inv();
         constexpr Matrix<double, 2, 2> r({-1, 1. / 2, 1. / 3, -1. / 4});
         return almost_equal(e.mwise(), r);
     }());
+    // checks at compile time: []() {
     static_assert([]() {
         constexpr auto e = C.cwise().exp();
 
@@ -83,6 +99,7 @@ TEST(linear_algebra, cwise) {
         constexpr Matrix<double, 2, 2> r({r1, r2, r3, r4});
         return almost_equal(e.mwise(), r);
     }());
+    // checks at compile time: []() {
     static_assert([]() {
         constexpr auto e = C.cwise().abs().log();
 
@@ -121,60 +138,80 @@ TEST(linear_algebra, cwise) {
 
     // std::cout << AA << std::endl;
     // std::cout << BB << std::endl;
-    
+
     AA.cwise() *= BB.cwise();
 
     // std::cout << AA << std::endl;
 }
 
+// verifies redux through the public algebra API
 TEST(linear_algebra, redux) {
     static constexpr Matrix<double, 2, 2> C({2, 1.5, 1, 0.2});   // need static address for constexpr expressions
+    // checks at compile time: almost_equal((3 * C).squared_norm(), 65.61)
     static_assert(almost_equal((3 * C).squared_norm(), 65.61));
+    // checks at compile time: almost_equal((C + C).norm(), 5.4)
     static_assert(almost_equal((C + C).norm(), 5.4));
+    // checks at compile time: almost_equal(C.inf_norm(), 2.0)
     static_assert(almost_equal(C.inf_norm(), 2.0));
+    // checks at compile time: almost_equal(C.sum(), 4.7)
     static_assert(almost_equal(C.sum(), 4.7));
+    // checks at compile time: almost_equal(C.prod(), 0.6)
     static_assert(almost_equal(C.prod(), 0.6));
+    // checks at compile time: almost_equal(C.mean(), 4.7 / 4)
     static_assert(almost_equal(C.mean(), 4.7 / 4));
+    // checks at compile time: C.max() == 2
     static_assert(C.max() == 2);
+    // checks at compile time: C.min() == 0.2
     static_assert(C.min() == 0.2);
+    // checks at compile time: []() {
     static_assert([]() {
         constexpr Matrix<double, 1, 2> underflowing_square({3.0e-200, 4.0e-200});
         constexpr Matrix<double, 1, 2> overflowing_square({3.0e200, 4.0e200});
         constexpr Matrix<double, 1, 2> overflow_boundary({1.3313981757491274e308, 1.2079236336552887e308});
         return almost_equal(underflowing_square.norm() / 5.0e-200, 1.0) &&
-          almost_equal(overflowing_square.norm() / 5.0e200, 1.0) &&
-          overflow_boundary.norm() == std::numeric_limits<double>::infinity();
+               almost_equal(overflowing_square.norm() / 5.0e200, 1.0) &&
+               overflow_boundary.norm() == std::numeric_limits<double>::infinity();
     }());
 }
 
+// verifies vectorwise through the public algebra API
 TEST(linear_algebra, vectorwise) {
     static constexpr Matrix<double, 4, 3> A = Matrix<double, 4, 3>::Ones();
     // colwise
     constexpr auto r = A.colwise();
+    // checks at compile time: r.rows() == 1
     static_assert(r.rows() == 1);
+    // checks at compile time: r.cols() == A.cols()
     static_assert(r.cols() == A.cols());
+    // checks at compile time: r.size() == A.cols()
     static_assert(r.size() == A.cols());
     // reductions
+    // checks at compile time: [r]() {
     static_assert([r]() {
         constexpr auto e = r.sum();
         return e == Matrix<double, 1, 3>({4, 4, 4});
     }());
+    // checks at compile time: [r]() {
     static_assert([r]() {
         constexpr auto e = r.prod();
         return e == Matrix<double, 1, 3>({1, 1, 1});
     }());
+    // checks at compile time: [r]() {
     static_assert([r]() {
         constexpr auto e = r.mean();
         return e == Matrix<double, 1, 3>({1, 1, 1});
     }());
+    // checks at compile time: [r]() {
     static_assert([r]() {
         constexpr auto e = r.squared_norm();
         return e == Matrix<double, 1, 3>({4, 4, 4});
     }());
+    // checks at compile time: [r]() {
     static_assert([r]() {
         constexpr auto e = r.norm();
         return almost_equal(e, Matrix<double, 1, 3>({2, 2, 2}));
     }());
+    // checks at compile time: [r]() {
     static_assert([r]() {
         constexpr auto e = r.inf_norm();
         return e == Matrix<double, 1, 3>({1, 1, 1});
@@ -182,49 +219,61 @@ TEST(linear_algebra, vectorwise) {
 
     // rowwise
     constexpr auto c = A.rowwise();
+    // checks at compile time: c.rows() == A.rows()
     static_assert(c.rows() == A.rows());
+    // checks at compile time: c.cols() == 1
     static_assert(c.cols() == 1);
+    // checks at compile time: c.size() == A.rows()
     static_assert(c.size() == A.rows());
     // reductions
+    // checks at compile time: [c]() {
     static_assert([c]() {
         constexpr auto e = c.sum();
         return e == Matrix<double, 4, 1>({3, 3, 3, 3});
     }());
+    // checks at compile time: [c]() {
     static_assert([c]() {
         constexpr auto e = c.prod();
         return e == Matrix<double, 4, 1>({1, 1, 1, 1});
     }());
+    // checks at compile time: [c]() {
     static_assert([c]() {
         constexpr auto e = c.mean();
         return e == Matrix<double, 4, 1>({1, 1, 1, 1});
     }());
+    // checks at compile time: [c]() {
     static_assert([c]() {
         constexpr auto e = c.squared_norm();
         return e == Matrix<double, 4, 1>({3, 3, 3, 3});
     }());
+    // checks at compile time: [c]() {
     static_assert([c]() {
         constexpr auto e = c.norm();
         double s = fdapde::sqrt(3.0);
         return almost_equal(e, Matrix<double, 4, 1>({s, s, s, s}));
     }());
+    // checks at compile time: []() {
     static_assert([]() {
         constexpr Matrix<double, 2, 2> values({3.0e-200, 4.0e-200, 3.0e200, 4.0e200});
         constexpr Matrix<double, 2, 1> norms = values.rowwise().norm();
         return almost_equal(norms[0] / 5.0e-200, 1.0) && almost_equal(norms[1] / 5.0e200, 1.0);
     }());
+    // checks at compile time: [c]() {
     static_assert([c]() {
         constexpr auto e = c.inf_norm();
         return e == Matrix<double, 4, 1>({1, 1, 1, 1});
     }());
 }
 
+// verifies transpose through the public algebra API
 TEST(linear_algebra, transpose) {
     // static-sized
     {
         static constexpr Matrix<double, 3, 3> A({1, 2, 3, 4, 5, 6, 7, 8, 9});
+        // checks at compile time: A.transpose() == Matrix<double, 3, 3>({1, 4, 7, 2, 5, 8, 3, 6, 9})
         static_assert(A.transpose() == Matrix<double, 3, 3>({1, 4, 7, 2, 5, 8, 3, 6, 9}));
 
-	// test static sized rows/cols for non square matrices
+        // test static sized rows/cols for non square matrices
     }
 
     // dynamic-sized
@@ -235,29 +284,39 @@ TEST(linear_algebra, transpose) {
         A(7, 1) = 3;
 
         auto At = A.transpose();
+        // compares At.rows(), A.cols() using eq semantics
         EXPECT_EQ(At.rows(), A.cols());
+        // compares At.cols(), A.rows() using eq semantics
         EXPECT_EQ(At.cols(), A.rows());
+        // compares At.size(), A.size() using eq semantics
         EXPECT_EQ(At.size(), A.size());
+        // compares At(3, 2), 4 using eq semantics
         EXPECT_EQ(At(3, 2), 4);
+        // compares At(7, 7), 1 using eq semantics
         EXPECT_EQ(At(7, 7), 1);
+        // compares At(1, 7), 3 using eq semantics
         EXPECT_EQ(At(1, 7), 3);
     }
 }
 
+// verifies inverse through the public algebra API
 TEST(linear_algebra, inverse) {
     // static sized
     {
         // 1 x 1 inverse
         constexpr Matrix<double, 1, 1> A1(4.0);
         constexpr auto invA1 = A1.inverse();
+        // checks at compile time: invA1 == Matrix<double, 1, 1>(1. / 4)
         static_assert(invA1 == Matrix<double, 1, 1>(1. / 4));
         // 2 x 2 inverse
         constexpr Matrix<double, 2, 2> A2({4.0, 7.0, 2.0, 6.0});
         constexpr auto invA2 = A2.inverse();
+        // checks at compile time: almost_equal(invA2 * A2, Matrix<double, 2, 2>({1, 0, 0, 1}))
         static_assert(almost_equal(invA2 * A2, Matrix<double, 2, 2>({1, 0, 0, 1})));
         // 3 x 3 inverse
         constexpr Matrix<double, 3, 3> A3({1.0, 2.0, 3.0, 0.0, 1.0, 4.0, 5.0, 6.0, 0.0});
         constexpr auto invA3 = A3.inverse();
+        // checks at compile time: almost_equal(invA3 * A3, Matrix<double, 3, 3>({1, 0, 0, 0, 1, 0, 0, 0, 1}))
         static_assert(almost_equal(invA3 * A3, Matrix<double, 3, 3>({1, 0, 0, 0, 1, 0, 0, 0, 1})));
     }
 

@@ -17,8 +17,6 @@
 #ifndef __FDAPDE_LINALG_PARTIAL_PIV_LU_H__
 #define __FDAPDE_LINALG_PARTIAL_PIV_LU_H__
 
-#include "header_check.h"
-
 #include <cmath>
 #include <limits>
 #include <stdexcept>
@@ -26,9 +24,12 @@
 #include <utility>
 #include <vector>
 
+#include "header_check.h"
+
 namespace fdapde {
 
-// Doolittle LU factorization with partial row pivoting.
+// doolittle LU factorization with partial row pivoting
+/// @brief factors a square matrix using partial pivoting
 template <typename XprType_> class PartialPivLU {
     using XprType = std::decay_t<XprType_>;
     fdapde_static_assert(
@@ -40,11 +41,14 @@ template <typename XprType_> class PartialPivLU {
     static constexpr int Cols = XprType::Cols;
     fdapde_static_assert(std::is_floating_point_v<Scalar>, LU_DECOMPOSITION_REQUIRES_FLOATING_POINT_SCALARS);
 
+    /// @brief constructs partial piv lu from the supplied state
     constexpr PartialPivLU() = default;
+    /// @brief constructs partial piv lu from the supplied state
     template <typename MatrixType> constexpr explicit PartialPivLU(const MatrixExpr<MatrixType>& matrix) {
         compute(matrix);
     }
 
+    /// @brief computes the factorization of the supplied matrix
     template <typename MatrixType> constexpr void compute(const MatrixExpr<MatrixType>& matrix) {
         fdapde_static_assert(
           MatrixType::Rows == Dynamic || Rows == Dynamic || MatrixType::Rows == Rows, INVALID_LU_MATRIX_STATIC_SHAPE);
@@ -55,7 +59,9 @@ template <typename XprType_> class PartialPivLU {
           n > 0 && n == matrix.cols() && (Rows == Dynamic || n == Rows) && (Cols == Dynamic || n == Cols);
         if (!shape_valid) {
             reset_();
-            throw std::invalid_argument("PartialPivLU requires a nonempty square matrix matching its static shape");
+            fdapde_strong_assert(
+              shape_valid, std::invalid_argument,
+              "PartialPivLU requires a nonempty square matrix matching its static shape");
         }
 
         determinant_ = Scalar(0);
@@ -67,7 +73,8 @@ template <typename XprType_> class PartialPivLU {
                 const Scalar value = normalized(row, col);
                 if (!is_finite_(value)) {
                     reset_();
-                    throw std::invalid_argument("PartialPivLU requires finite matrix coefficients");
+                    fdapde_strong_assert(
+                      is_finite_(value), std::invalid_argument, "PartialPivLU requires finite matrix coefficients");
                 }
                 scale = fdapde::max(scale, fdapde::abs(value));
             }
@@ -134,29 +141,39 @@ template <typename XprType_> class PartialPivLU {
         P_ = PermutationMatrix<Rows, Cols>(permutation);
     }
 
-    constexpr const PermutationMatrix<Rows, Cols>& P() const & { return P_; }
-    constexpr void P() const && = delete;
-    constexpr const LowerTriangularMatrix<Scalar, Rows, Cols>& L() const & { return L_; }
-    constexpr void L() const && = delete;
-    // U is reported in the input scale. It can overflow even when the normalized solve remains usable.
-    constexpr const UpperTriangularMatrix<Scalar, Rows, Cols>& U() const & { return U_; }
-    constexpr void U() const && = delete;
+    /// @brief returns the row permutation factor
+    constexpr const PermutationMatrix<Rows, Cols>& P() const& { return P_; }
+    /// @brief returns the row permutation factor
+    constexpr void P() const&& = delete;
+    /// @brief returns the unit lower triangular factor
+    constexpr const LowerTriangularMatrix<Scalar, Rows, Cols>& L() const& { return L_; }
+    /// @brief returns the unit lower triangular factor
+    constexpr void L() const&& = delete;
+    // u is reported in the input scale. It can overflow even when the normalized solve remains usable
+    /// @brief returns the upper triangular factor
+    constexpr const UpperTriangularMatrix<Scalar, Rows, Cols>& U() const& { return U_; }
+    /// @brief returns the upper triangular factor
+    constexpr void U() const&& = delete;
     // -1: factors unavailable, 0: success, >0: first unusable pivot (one based).
+    /// @brief returns the factorization status
     constexpr int info() const { return info_; }
+    /// @brief returns the numerical rank
     constexpr int rank() const { return rank_; }
 
+    /// @brief returns the matrix determinant
     constexpr Scalar determinant() const {
-        if (!determinant_computed_) { throw std::domain_error("PartialPivLU determinant is unavailable"); }
+        fdapde_assert(!(!determinant_computed_), std::domain_error, "PartialPivLU determinant is unavailable");
         return determinant_;
     }
 
+    /// @brief solves the factored linear system for the supplied right-hand side
     template <typename RhsType> constexpr auto solve(const MatrixExpr<RhsType>& rhs) const {
         fdapde_static_assert(
           RhsType::Rows == Dynamic || Rows == Dynamic || RhsType::Rows == Rows, INVALID_LU_RHS_STATIC_SHAPE);
-        if (rhs.rows() != L_.rows() || rhs.cols() <= 0) {
-            throw std::invalid_argument("PartialPivLU solve requires a matching nonempty right-hand side");
-        }
-        if (info_ != 0) { throw std::domain_error("PartialPivLU solve requires a nonsingular factorization"); }
+        fdapde_assert(
+          !(rhs.rows() != L_.rows() || rhs.cols() <= 0), std::invalid_argument,
+          "PartialPivLU solve requires a matching nonempty right-hand side");
+        fdapde_assert(!(info_ != 0), std::domain_error, "PartialPivLU solve requires a nonsingular factorization");
 
         Matrix<Scalar, RhsType::Rows, RhsType::Cols> solution(rhs);
         for (int row = 0; row < solution.rows(); ++row) {
@@ -181,16 +198,19 @@ template <typename XprType_> class PartialPivLU {
         return solution;
     }
    private:
+    /// @brief represents scaled value
     struct ScaledValue {
         Scalar significand = Scalar(0);
         long long exponent = 0;
     };
 
+    /// @brief reports is finite
     static constexpr bool is_finite_(Scalar value) {
         const Scalar infinity = std::numeric_limits<Scalar>::infinity();
         return value == value && value != infinity && value != -infinity;
     }
 
+    /// @brief normalizes a significand and binary exponent
     static constexpr ScaledValue normalize_(Scalar significand, long long exponent) {
         if (significand == Scalar(0)) return {};
         int shift = 0;
@@ -198,8 +218,10 @@ template <typename XprType_> class PartialPivLU {
         return {normalized, exponent + shift};
     }
 
+    /// @brief converts a scalar to a normalized significand and exponent
     static constexpr ScaledValue scaled_value_(Scalar value) { return normalize_(value, 0); }
 
+    /// @brief compares magnitudes of scaled values
     static constexpr bool abs_greater_(const ScaledValue& lhs, const ScaledValue& rhs) {
         if (lhs.significand == Scalar(0)) return false;
         if (rhs.significand == Scalar(0)) return true;
@@ -207,15 +229,18 @@ template <typename XprType_> class PartialPivLU {
         return fdapde::abs(lhs.significand) > fdapde::abs(rhs.significand);
     }
 
+    /// @brief multiplies scaled values while retaining their exponent representation
     static constexpr ScaledValue multiply_(const ScaledValue& lhs, const ScaledValue& rhs) {
         if (lhs.significand == Scalar(0) || rhs.significand == Scalar(0)) return {};
         return normalize_(lhs.significand * rhs.significand, lhs.exponent + rhs.exponent);
     }
 
+    /// @brief divides scaled values while retaining their exponent representation
     static constexpr ScaledValue divide_(const ScaledValue& lhs, const ScaledValue& rhs) {
         return normalize_(lhs.significand / rhs.significand, lhs.exponent - rhs.exponent);
     }
 
+    /// @brief subtracts scaled values after aligning their exponents
     static constexpr ScaledValue subtract_(const ScaledValue& lhs, const ScaledValue& rhs) {
         if (rhs.significand == Scalar(0)) return lhs;
         if (lhs.significand == Scalar(0)) return {-rhs.significand, rhs.exponent};
@@ -230,17 +255,17 @@ template <typename XprType_> class PartialPivLU {
         return normalize_(std::ldexp(lhs.significand, static_cast<int>(shift)) - rhs.significand, rhs.exponent);
     }
 
+    /// @brief converts a scaled value to the scalar type
     static constexpr Scalar materialize_(const ScaledValue& value) {
         if (value.significand == Scalar(0)) return Scalar(0);
         if (value.exponent > std::numeric_limits<int>::max()) {
             return std::copysign(std::numeric_limits<Scalar>::infinity(), value.significand);
         }
-        if (value.exponent < std::numeric_limits<int>::min()) {
-            return std::copysign(Scalar(0), value.significand);
-        }
+        if (value.exponent < std::numeric_limits<int>::min()) { return std::copysign(Scalar(0), value.significand); }
         return std::ldexp(value.significand, static_cast<int>(value.exponent));
     }
 
+    /// @brief computes the determinant during constant evaluation
     template <typename MatrixType> static constexpr Scalar constexpr_determinant_(const MatrixType& matrix) {
         Matrix<Scalar, Rows, Cols> work(matrix);
         Scalar determinant = Scalar(1);
@@ -275,7 +300,8 @@ template <typename XprType_> class PartialPivLU {
         return determinant;
     }
 
-    // Exponent-tracked complete-pivot elimination avoids intermediate range loss for runtime determinants.
+    // exponent-tracked complete-pivot elimination avoids intermediate range loss for runtime determinants
+    /// @brief computes the determinant without applying the numerical-rank threshold
     template <typename MatrixType> static constexpr Scalar algebraic_determinant_(const MatrixType& matrix) {
         if (std::is_constant_evaluated()) return constexpr_determinant_(matrix);
 
@@ -322,6 +348,7 @@ template <typename XprType_> class PartialPivLU {
         return materialize_(determinant);
     }
 
+    /// @brief returns the estimated numerical rank
     template <typename MatrixType> static constexpr int numerical_rank_(const MatrixType& matrix, Scalar threshold) {
         Matrix<Scalar, Dynamic, Dynamic> echelon(matrix);
         int pivot_row = 0;
@@ -348,6 +375,7 @@ template <typename XprType_> class PartialPivLU {
         return pivot_row;
     }
 
+    /// @brief clears the stored decomposition factors
     constexpr void reset_factors_() {
         L_ = LowerTriangularMatrix<Scalar, Rows, Cols>();
         U_ = UpperTriangularMatrix<Scalar, Rows, Cols>();
@@ -358,6 +386,7 @@ template <typename XprType_> class PartialPivLU {
         rank_ = 0;
     }
 
+    /// @brief clears factorization state
     constexpr void reset_() {
         reset_factors_();
         determinant_ = Scalar(0);

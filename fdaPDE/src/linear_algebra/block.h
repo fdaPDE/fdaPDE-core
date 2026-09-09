@@ -17,19 +17,21 @@
 #ifndef __FDAPDE_LINALG_BLOCK_H__
 #define __FDAPDE_LINALG_BLOCK_H__
 
-#include "header_check.h"
-
 #include <iterator>
+
+#include "header_check.h"
 
 namespace fdapde {
 
 // expression representing a dense sub-block (static or dynamic) of a MatrixExpr operand.
-// Supports general blocks as well as row/column vector views.
+// supports general blocks as well as row/column vector views
 
+/// @brief represents matrix block
 template <int BlockRows_, int BlockCols_, typename XprType_> class MatrixBlock;
 
 namespace internals {
 
+/// @brief detects is mutable matrix view
 template <int BlockRows, int BlockCols, typename XprType_>
 struct is_mutable_matrix_view<MatrixBlock<BlockRows, BlockCols, XprType_>> {
     using XprType = std::remove_reference_t<XprType_>;
@@ -39,6 +41,7 @@ struct is_mutable_matrix_view<MatrixBlock<BlockRows, BlockCols, XprType_>> {
 
 }   // namespace internals
 
+/// @brief represents matrix block
 template <int BlockRows_, int BlockCols_, typename XprType_>
 class MatrixBlock : public MatrixExpr<MatrixBlock<BlockRows_, BlockCols_, XprType_>> {
    private:
@@ -46,8 +49,7 @@ class MatrixBlock : public MatrixExpr<MatrixBlock<BlockRows_, BlockCols_, XprTyp
     using XprType = std::remove_reference_t<XprType_>;
     using XprTypeClean = std::remove_cv_t<XprType>;
     fdapde_static_assert(
-      (BlockRows_ == Dynamic || BlockRows_ > 0) && (BlockCols_ == Dynamic || BlockCols_ > 0),
-      INVALID_BLOCK_DIMENSIONS);
+      (BlockRows_ == Dynamic || BlockRows_ > 0) && (BlockCols_ == Dynamic || BlockCols_ > 0), INVALID_BLOCK_DIMENSIONS);
     fdapde_static_assert(
       BlockRows_ == Dynamic || BlockCols_ == Dynamic ||
         static_cast<std::uint64_t>(BlockRows_) * static_cast<std::uint64_t>(BlockCols_) <=
@@ -67,6 +69,7 @@ class MatrixBlock : public MatrixExpr<MatrixBlock<BlockRows_, BlockCols_, XprTyp
     static constexpr int ReadOnly = std::is_const_v<XprType> || XprTypeClean::ReadOnly;
     using assignment_executor = internals::generic_assignment_executor;
     // iterator support (only for vector blocks)
+    /// @brief represents block iterator
     template <bool IsConst> struct block_iterator {
         using BlockType = std::conditional_t<IsConst, const MatrixBlock, MatrixBlock>;
        public:
@@ -79,30 +82,41 @@ class MatrixBlock : public MatrixExpr<MatrixBlock<BlockRows_, BlockCols_, XprTyp
         using iterator_concept = std::bidirectional_iterator_tag;
         using iterator_category = std::bidirectional_iterator_tag;
 
+        /// @brief constructs block iterator from the supplied state
         constexpr block_iterator() : blk_(nullptr), i_(0) { }
+        /// @brief constructs block iterator from the supplied state
         constexpr block_iterator(BlockType* blk, int i) : blk_(blk), i_(i) { }
+        /// @brief dereferences the current iterator position
         constexpr decltype(auto) operator*() const { return blk_->operator[](i_); }
-        constexpr auto operator->() const requires(std::is_reference_v<reference>) {
+        /// @brief returns a pointer to the current iterator value
+        constexpr auto operator->() const
+            requires(std::is_reference_v<reference>)
+        {
             return std::addressof(blk_->operator[](i_));
         }
+        /// @brief advances the iterator
         constexpr block_iterator& operator++() {
             i_++;
             return *this;
         }
+        /// @brief advances the iterator
         constexpr block_iterator operator++(int) {
             block_iterator previous = *this;
             ++(*this);
             return previous;
         }
+        /// @brief moves the iterator backward
         constexpr block_iterator& operator--() {
             i_--;
             return *this;
         }
+        /// @brief moves the iterator backward
         constexpr block_iterator operator--(int) {
             block_iterator previous = *this;
             --(*this);
             return previous;
         }
+        /// @brief compares iterator positions
         friend constexpr bool operator==(const block_iterator& lhs, const block_iterator& rhs) {
             return lhs.blk_ == rhs.blk_ && lhs.i_ == rhs.i_;
         }
@@ -114,7 +128,9 @@ class MatrixBlock : public MatrixExpr<MatrixBlock<BlockRows_, BlockCols_, XprTyp
     using const_iterator = block_iterator<true>;
 
     // row/column constructor
+    /// @brief constructs matrix block from the supplied state
     constexpr MatrixBlock(const MatrixBlock&) = default;
+    /// @brief constructs matrix block from the supplied state
     template <typename XprType__>
         requires(internals::safely_nestable<XprTypeNested, XprType__>)
     constexpr MatrixBlock(XprType__&& xpr, int i) :
@@ -124,12 +140,11 @@ class MatrixBlock : public MatrixExpr<MatrixBlock<BlockRows_, BlockCols_, XprTyp
         block_cols_(BlockCols_ == 1 ? 1 : xpr.cols()),
         xpr_(std::forward<XprType__>(xpr)) {
         fdapde_static_assert(BlockRows_ == 1 || BlockCols_ == 1, THIS_METHOD_IS_FOR_ROW_AND_COLUMN_BLOCKS_ONLY);
-        if (
-          i < 0 ||
-          !((BlockRows_ == 1 && i < xpr_.rows()) || (BlockCols_ == 1 && i < xpr_.cols()))) {
-            throw std::out_of_range("matrix block row or column index out of range");
-        }
+        fdapde_assert(
+          !(i < 0 || !((BlockRows_ == 1 && i < xpr_.rows()) || (BlockCols_ == 1 && i < xpr_.cols()))),
+          std::out_of_range, "matrix block row or column index out of range");
     }
+    /// @brief constructs matrix block from the supplied state
     template <typename XprType__>
         requires(internals::safely_nestable<XprTypeNested, XprType__>)
     constexpr MatrixBlock(XprType__&& xpr, int start_row, int start_col) :
@@ -140,12 +155,12 @@ class MatrixBlock : public MatrixExpr<MatrixBlock<BlockRows_, BlockCols_, XprTyp
         xpr_(std::forward<XprType__>(xpr)) {
         fdapde_static_assert(
           BlockRows_ != Dynamic && BlockCols_ != Dynamic, THIS_METHOD_IS_FOR_STATIC_SIZED_BLOCKS_ONLY);
-        if (
-          start_row < 0 || start_col < 0 || block_rows_ > xpr_.rows() || block_cols_ > xpr_.cols() ||
-          start_row > xpr_.rows() - block_rows_ || start_col > xpr_.cols() - block_cols_) {
-            throw std::out_of_range("matrix block is outside expression bounds");
-        }
+        fdapde_assert(
+          !(start_row < 0 || start_col < 0 || block_rows_ > xpr_.rows() || block_cols_ > xpr_.cols() ||
+            start_row > xpr_.rows() - block_rows_ || start_col > xpr_.cols() - block_cols_),
+          std::out_of_range, "matrix block is outside expression bounds");
     }
+    /// @brief constructs matrix block from the supplied state
     template <typename XprType__>
         requires(internals::safely_nestable<XprTypeNested, XprType__>)
     constexpr MatrixBlock(XprType__&& xpr, int start_row, int start_col, int block_rows, int block_cols) :
@@ -156,65 +171,79 @@ class MatrixBlock : public MatrixExpr<MatrixBlock<BlockRows_, BlockCols_, XprTyp
         xpr_(std::forward<XprType__>(xpr)) {
         fdapde_static_assert(
           BlockRows_ == Dynamic && BlockCols_ == Dynamic, THIS_METHOD_IS_FOR_DYNAMIC_SIZED_BLOCKS_ONLY);
-        if (block_rows <= 0 || block_cols <= 0) {
-            throw std::invalid_argument("matrix block dimensions must be positive");
-        }
-        if (
-          start_row < 0 || start_col < 0 || block_rows_ > xpr_.rows() || block_cols_ > xpr_.cols() ||
-          start_row > xpr_.rows() - block_rows_ || start_col > xpr_.cols() - block_cols_) {
-            throw std::out_of_range("matrix block is outside expression bounds");
-        }
+        fdapde_assert(
+          !(block_rows <= 0 || block_cols <= 0), std::invalid_argument, "matrix block dimensions must be positive");
+        fdapde_assert(
+          !(start_row < 0 || start_col < 0 || block_rows_ > xpr_.rows() || block_cols_ > xpr_.cols() ||
+            start_row > xpr_.rows() - block_rows_ || start_col > xpr_.cols() - block_cols_),
+          std::out_of_range, "matrix block is outside expression bounds");
         (void)internals::checked_matrix_size(block_rows_, block_cols_);
     }
 
+    /// @brief returns the row count
     constexpr int rows() const { return Rows != Dynamic ? Rows : block_rows_; }
+    /// @brief returns the column count
     constexpr int cols() const { return Cols != Dynamic ? Cols : block_cols_; }
+    /// @brief returns the coefficient count
     constexpr int size() const { return rows() * cols(); }
+    /// @brief accesses or evaluates the requested coefficient
     constexpr decltype(auto) operator()(int i, int j) const {
-        if (i < 0 || i >= rows() || j < 0 || j >= cols()) {
-            throw std::out_of_range("matrix block index out of range");
-        }
+        fdapde_assert(
+          !(i < 0 || i >= rows() || j < 0 || j >= cols()), std::out_of_range, "matrix block index out of range");
         return std::as_const(xpr_)(start_row_ + i, start_col_ + j);
     }
+    /// @brief accesses the requested vector coefficient
     constexpr decltype(auto) operator[](int i) const {
         fdapde_static_assert(BlockRows_ == 1 || BlockCols_ == 1, THIS_METHOD_IS_FOR_ROW_AND_COLUMN_BLOCKS_ONLY);
-        if (i < 0 || i >= size()) { throw std::out_of_range("matrix block index out of range"); }
+        fdapde_assert(!(i < 0 || i >= size()), std::out_of_range, "matrix block index out of range");
         if constexpr (Rows == 1) return std::as_const(xpr_)(start_row_, start_col_ + i);
         if constexpr (Cols == 1) return std::as_const(xpr_)(start_row_ + i, start_col_);
     }
-    constexpr decltype(auto) operator()(int i, int j) requires(ReadOnly == 0) {
-        if (i < 0 || i >= rows() || j < 0 || j >= cols()) {
-            throw std::out_of_range("matrix block index out of range");
-        }
+    /// @brief accesses or evaluates the requested coefficient
+    constexpr decltype(auto) operator()(int i, int j)
+        requires(ReadOnly == 0)
+    {
+        fdapde_assert(
+          !(i < 0 || i >= rows() || j < 0 || j >= cols()), std::out_of_range, "matrix block index out of range");
         return xpr_(start_row_ + i, start_col_ + j);
     }
-    constexpr decltype(auto) operator[](int i) requires(ReadOnly == 0) {
+    /// @brief accesses the requested vector coefficient
+    constexpr decltype(auto) operator[](int i)
+        requires(ReadOnly == 0)
+    {
         fdapde_static_assert(BlockRows_ == 1 || BlockCols_ == 1, THIS_METHOD_IS_FOR_ROW_AND_COLUMN_BLOCKS_ONLY);
-        if (i < 0 || i >= size()) { throw std::out_of_range("matrix block index out of range"); }
+        fdapde_assert(!(i < 0 || i >= size()), std::out_of_range, "matrix block index out of range");
         if constexpr (Rows == 1) return xpr_(start_row_, start_col_ + i);
         if constexpr (Cols == 1) return xpr_(start_row_ + i, start_col_);
     }
     // inherit standard assignment operator
     using Base::operator=;
-    constexpr MatrixBlock& operator=(const MatrixBlock& rhs) & requires(ReadOnly == 0) {
-        static_cast<Base&>(*this).template operator=<MatrixBlock>(rhs);
+    /// @brief assigns the supplied coefficients
+    constexpr MatrixBlock& operator=(const MatrixBlock& rhs) &
+        requires(ReadOnly == 0)
+    {
+        static_cast<Base&>(*this).template operator= <MatrixBlock>(rhs);
         return *this;
     }
-    constexpr MatrixBlock operator=(const MatrixBlock& rhs) && requires(ReadOnly == 0) {
-        static_cast<Base&>(*this).template operator=<MatrixBlock>(rhs);
-        return *this;
-    }
-    template <typename Scalar_>
-        requires(ReadOnly == 0 && std::is_constructible_v<Scalar, Scalar_>)
-    constexpr MatrixBlock& operator=(const std::initializer_list<Scalar_>& data) & {
+    /// @brief assigns the supplied coefficients
+    constexpr MatrixBlock operator=(const MatrixBlock& rhs) &&
+      requires(ReadOnly == 0) {
+          static_cast<Base&>(*this).template operator= <MatrixBlock>(rhs);
+          return *this;
+      }
+      /// @brief assigns the supplied coefficients
+      template <typename Scalar_>
+          requires(ReadOnly == 0 && std::is_constructible_v<Scalar, Scalar_>)
+      constexpr MatrixBlock& operator=(const std::initializer_list<Scalar_>& data) & {
         fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
-        if (!std::cmp_equal(this->size() FDAPDE_COMMA data.size())) {
-            throw std::invalid_argument("matrix block initializer size does not match its shape");
-        }
+        fdapde_assert(
+          !(!std::cmp_equal(this->size() FDAPDE_COMMA data.size())), std::invalid_argument,
+          "matrix block initializer size does not match its shape");
         int i = 0;
         for (const auto& v : data) { operator[](i++) = v; }
         return *this;
     }
+    /// @brief assigns the supplied coefficients
     template <typename Scalar_>
         requires(ReadOnly == 0 && std::is_constructible_v<Scalar, Scalar_>)
     constexpr MatrixBlock operator=(const std::initializer_list<Scalar_>& data) && {
@@ -222,20 +251,44 @@ class MatrixBlock : public MatrixExpr<MatrixBlock<BlockRows_, BlockCols_, XprTyp
         return *this;
     }
     // iterators
-    constexpr iterator begin() & requires(Rows == 1 || Cols == 1) { return iterator(this, 0); }
-    constexpr iterator end() & requires(Rows == 1 || Cols == 1) { return iterator(this, size()); }
-    constexpr const_iterator begin() const & requires(Rows == 1 || Cols == 1) { return const_iterator(this, 0); }
-    constexpr const_iterator end() const & requires(Rows == 1 || Cols == 1) { return const_iterator(this, size()); }
+    /// @brief returns an iterator to the first coefficient
+    constexpr iterator begin() &
+        requires(Rows == 1 || Cols == 1)
+    {
+        return iterator(this, 0);
+    }
+    /// @brief returns the past-the-end iterator
+    constexpr iterator end() &
+        requires(Rows == 1 || Cols == 1)
+    {
+        return iterator(this, size());
+    }
+    /// @brief returns an iterator to the first coefficient
+    constexpr const_iterator begin() const&
+        requires(Rows == 1 || Cols == 1)
+    {
+        return const_iterator(this, 0);
+    }
+    /// @brief returns the past-the-end iterator
+    constexpr const_iterator end() const&
+        requires(Rows == 1 || Cols == 1)
+    {
+        return const_iterator(this, size());
+    }
+    /// @brief returns an iterator to the first coefficient
     constexpr void begin() && = delete;
+    /// @brief returns the past-the-end iterator
     constexpr void end() && = delete;
-    constexpr void begin() const && = delete;
-    constexpr void end() const && = delete;
+    /// @brief returns an iterator to the first coefficient
+    constexpr void begin() const&& = delete;
+    /// @brief returns the past-the-end iterator
+    constexpr void end() const&& = delete;
    private:
     int start_row_ = 0, start_col_ = 0;
     int block_rows_ = 0, block_cols_ = 0;
     XprTypeNested xpr_;
 };
-  
+
 }   // namespace fdapde
 
-#endif // __FDAPDE_LINALG_BLOCK_H__
+#endif   // __FDAPDE_LINALG_BLOCK_H__

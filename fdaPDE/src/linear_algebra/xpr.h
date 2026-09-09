@@ -21,11 +21,13 @@
 
 namespace fdapde {
 
-// MatrixExpr type-system base class
+// matrixExpr type-system base class
+/// @brief provides the dense matrix expression interface
 template <typename XprType_> struct MatrixExpr {
     using XprType = XprType_;
 
     // assignment
+    /// @brief assigns the supplied coefficients
     template <typename RhsXprType_>
         requires(XprType::ReadOnly == 0 || internals::is_mutable_matrix_view_v<XprType>)
     constexpr XprType& operator=(const MatrixExpr<RhsXprType_>& rhs) & {
@@ -45,18 +47,17 @@ template <typename XprType_> struct MatrixExpr {
         executor::run(derived(), tmp, [](auto& l, const auto& r) { l = r; });
         return derived();
     }
+    /// @brief assigns the supplied coefficients
     template <typename RhsXprType_>
-    constexpr XprType operator=(const MatrixExpr<RhsXprType_>& rhs) &&
-        requires(
-          (XprType::NestAsRef == 0 && XprType::ReadOnly == 0) || internals::is_mutable_matrix_view_v<XprType>)
-    {
-        static_cast<MatrixExpr&>(*this).operator=(rhs);
-        return derived();
-    }
-    template <typename RhsXprType_>
-    constexpr void operator=(const MatrixExpr<RhsXprType_>&) &&
-        requires(XprType::NestAsRef != 0)
-      = delete;
+      constexpr XprType operator=(const MatrixExpr<RhsXprType_>& rhs) &&
+      requires((XprType::NestAsRef == 0 && XprType::ReadOnly == 0) || internals::is_mutable_matrix_view_v<XprType>) {
+          static_cast<MatrixExpr&>(*this).operator=(rhs);
+          return derived();
+      }
+      /// @brief assigns the supplied coefficients
+      template <typename RhsXprType_>
+      constexpr void operator=(const MatrixExpr<RhsXprType_>&) && requires(XprType::NestAsRef != 0) = delete;
+    /// @brief assigns the supplied coefficients
     template <typename RhsXprType_>
     constexpr XprType& operator=(const MatrixCoeffWiseExpr<RhsXprType_>& rhs) &
         requires(XprType::ReadOnly == 0 || internals::is_mutable_matrix_view_v<XprType>)
@@ -64,19 +65,18 @@ template <typename XprType_> struct MatrixExpr {
         operator=(rhs.mwise());
         return derived();
     }
+    /// @brief assigns the supplied coefficients
     template <typename RhsXprType_>
-    constexpr XprType operator=(const MatrixCoeffWiseExpr<RhsXprType_>& rhs) &&
-        requires(
-          (XprType::NestAsRef == 0 && XprType::ReadOnly == 0) || internals::is_mutable_matrix_view_v<XprType>)
-    {
-        static_cast<MatrixExpr&>(*this).operator=(rhs);
-        return derived();
-    }
-    template <typename RhsXprType_>
-    constexpr void operator=(const MatrixCoeffWiseExpr<RhsXprType_>&) &&
-        requires(XprType::NestAsRef != 0)
-      = delete;
+      constexpr XprType operator=(const MatrixCoeffWiseExpr<RhsXprType_>& rhs) &&
+      requires((XprType::NestAsRef == 0 && XprType::ReadOnly == 0) || internals::is_mutable_matrix_view_v<XprType>) {
+          static_cast<MatrixExpr&>(*this).operator=(rhs);
+          return derived();
+      }
+      /// @brief assigns the supplied coefficients
+      template <typename RhsXprType_>
+      constexpr void operator=(const MatrixCoeffWiseExpr<RhsXprType_>&) && requires(XprType::NestAsRef != 0) = delete;
     // compound algebra
+    /// @brief adds the supplied coefficients in place
     template <typename RhsXprType_>
         requires(XprType::ReadOnly == 0 || internals::is_mutable_matrix_view_v<XprType>)
     constexpr XprType& operator+=(const MatrixExpr<RhsXprType_>& rhs) & {
@@ -87,18 +87,17 @@ template <typename XprType_> struct MatrixExpr {
         executor::run(derived(), tmp, [](auto& l, const auto& r) { l += r; });
         return derived();
     }
+    /// @brief adds the supplied coefficients in place
     template <typename RhsXprType_>
-    constexpr XprType operator+=(const MatrixExpr<RhsXprType_>& rhs) &&
-        requires(
-          (XprType::NestAsRef == 0 && XprType::ReadOnly == 0) || internals::is_mutable_matrix_view_v<XprType>)
-    {
-        static_cast<MatrixExpr&>(*this).operator+=(rhs);
-        return derived();
-    }
-    template <typename RhsXprType_>
-    constexpr void operator+=(const MatrixExpr<RhsXprType_>&) &&
-        requires(XprType::NestAsRef != 0)
-      = delete;
+      constexpr XprType operator+=(const MatrixExpr<RhsXprType_>& rhs) &&
+      requires((XprType::NestAsRef == 0 && XprType::ReadOnly == 0) || internals::is_mutable_matrix_view_v<XprType>) {
+          static_cast<MatrixExpr&>(*this).operator+=(rhs);
+          return derived();
+      }
+      /// @brief adds the supplied coefficients in place
+      template <typename RhsXprType_>
+      constexpr void operator+=(const MatrixExpr<RhsXprType_>&) && requires(XprType::NestAsRef != 0) = delete;
+    /// @brief subtracts the supplied coefficients in place
     template <typename RhsXprType_>
         requires(XprType::ReadOnly == 0 || internals::is_mutable_matrix_view_v<XprType>)
     constexpr XprType& operator-=(const MatrixExpr<RhsXprType_>& rhs) & {
@@ -109,27 +108,26 @@ template <typename XprType_> struct MatrixExpr {
         executor::run(derived(), tmp, [](auto& l, const auto& r) { l -= r; });
         return derived();
     }
+    /// @brief subtracts the supplied coefficients in place
     template <typename RhsXprType_>
-    constexpr XprType operator-=(const MatrixExpr<RhsXprType_>& rhs) &&
-        requires(
-          (XprType::NestAsRef == 0 && XprType::ReadOnly == 0) || internals::is_mutable_matrix_view_v<XprType>)
-    {
-        static_cast<MatrixExpr&>(*this).operator-=(rhs);
-        return derived();
-    }
-    template <typename RhsXprType_>
-    constexpr void operator-=(const MatrixExpr<RhsXprType_>&) &&
-        requires(XprType::NestAsRef != 0)
-      = delete;
+      constexpr XprType operator-=(const MatrixExpr<RhsXprType_>& rhs) &&
+      requires((XprType::NestAsRef == 0 && XprType::ReadOnly == 0) || internals::is_mutable_matrix_view_v<XprType>) {
+          static_cast<MatrixExpr&>(*this).operator-=(rhs);
+          return derived();
+      }
+      /// @brief subtracts the supplied coefficients in place
+      template <typename RhsXprType_>
+      constexpr void operator-=(const MatrixExpr<RhsXprType_>&) && requires(XprType::NestAsRef != 0) = delete;
+    /// @brief multiplies in place by the supplied operand
     template <typename Scalar_>
         requires(
-          std::is_arithmetic_v<Scalar_> &&
-          (XprType::ReadOnly == 0 || internals::is_mutable_matrix_view_v<XprType>))
+          std::is_arithmetic_v<Scalar_> && (XprType::ReadOnly == 0 || internals::is_mutable_matrix_view_v<XprType>))
     constexpr XprType& operator*=(Scalar_ rhs) & {
         using executor = typename XprType::assignment_executor;
         executor::run(derived(), derived(), [rhs](auto& l, const auto& r) { l = rhs * r; });
         return derived();
     }
+    /// @brief multiplies in place by the supplied operand
     template <typename Scalar_>
         requires(
           std::is_arithmetic_v<Scalar_> &&
@@ -138,18 +136,20 @@ template <typename XprType_> struct MatrixExpr {
         static_cast<MatrixExpr&>(*this).operator*=(rhs);
         return derived();
     }
+    /// @brief multiplies in place by the supplied operand
     template <typename Scalar_>
         requires(std::is_arithmetic_v<Scalar_> && XprType::NestAsRef != 0)
     constexpr void operator*=(Scalar_) && = delete;
+    /// @brief divides in place by the supplied scalar
     template <typename Scalar_>
         requires(
-          std::is_arithmetic_v<Scalar_> &&
-          (XprType::ReadOnly == 0 || internals::is_mutable_matrix_view_v<XprType>))
+          std::is_arithmetic_v<Scalar_> && (XprType::ReadOnly == 0 || internals::is_mutable_matrix_view_v<XprType>))
     constexpr XprType& operator/=(Scalar_ rhs) & {
         using executor = typename XprType::assignment_executor;
         executor::run(derived(), derived(), [rhs](auto& l, const auto& r) { l = r / rhs; });
         return derived();
     }
+    /// @brief divides in place by the supplied scalar
     template <typename Scalar_>
         requires(
           std::is_arithmetic_v<Scalar_> &&
@@ -158,49 +158,57 @@ template <typename XprType_> struct MatrixExpr {
         static_cast<MatrixExpr&>(*this).operator/=(rhs);
         return derived();
     }
+    /// @brief divides in place by the supplied scalar
     template <typename Scalar_>
         requires(std::is_arithmetic_v<Scalar_> && XprType::NestAsRef != 0)
     constexpr void operator/=(Scalar_) && = delete;
     // compound matrix multiplication
+    /// @brief multiplies in place by the supplied operand
     template <typename RhsXprType_>
         requires(XprType::ReadOnly == 0 || internals::is_mutable_matrix_view_v<XprType>)
     constexpr XprType& operator*=(const MatrixExpr<RhsXprType_>& rhs) & {
         using executor = typename XprType::assignment_executor;
         // avoid aliasing by evaluating the product in a temporary
         using Scalar = typename XprType::Scalar;
-	constexpr int Rows = XprType::Rows;
-	constexpr int Cols = XprType::Cols;
+        constexpr int Rows = XprType::Rows;
+        constexpr int Cols = XprType::Cols;
         Matrix<Scalar, Rows, Cols> tmp = derived() * rhs;
         // assign
         executor::run(derived(), tmp, [](auto& l, const auto& r) { l = r; });
         return derived();
     }
+    /// @brief multiplies in place by the supplied operand
     template <typename RhsXprType_>
-    constexpr XprType operator*=(const MatrixExpr<RhsXprType_>& rhs) &&
-        requires(
-          (XprType::NestAsRef == 0 && XprType::ReadOnly == 0) || internals::is_mutable_matrix_view_v<XprType>)
-    {
-        static_cast<MatrixExpr&>(*this).operator*=(rhs);
-        return derived();
-    }
-    template <typename RhsXprType_>
-    constexpr void operator*=(const MatrixExpr<RhsXprType_>&) &&
-        requires(XprType::NestAsRef != 0)
-      = delete;
+      constexpr XprType operator*=(const MatrixExpr<RhsXprType_>& rhs) &&
+      requires((XprType::NestAsRef == 0 && XprType::ReadOnly == 0) || internals::is_mutable_matrix_view_v<XprType>) {
+          static_cast<MatrixExpr&>(*this).operator*=(rhs);
+          return derived();
+      }
+      /// @brief multiplies in place by the supplied operand
+      template <typename RhsXprType_>
+      constexpr void operator*=(const MatrixExpr<RhsXprType_>&) && requires(XprType::NestAsRef != 0) = delete;
 
     // observers
+    /// @brief returns the row count
     constexpr int rows() const { return XprType::Rows == Dynamic ? derived().rows() : XprType::Rows; }
+    /// @brief returns the column count
     constexpr int cols() const { return XprType::Cols == Dynamic ? derived().cols() : XprType::Cols; }
+    /// @brief returns the coefficient count
     constexpr int size() const {
         constexpr int Rows = XprType::Rows;
         constexpr int Cols = XprType::Cols;
         return (Rows != Dynamic && Cols != Dynamic) ? Rows * Cols : derived().rows() * derived().cols();
     }
-    constexpr const XprType& derived() const & { return static_cast<const XprType&>(*this); }
+    /// @brief returns the concrete expression
+    constexpr const XprType& derived() const& { return static_cast<const XprType&>(*this); }
+    /// @brief returns the concrete expression
     constexpr XprType& derived() & { return static_cast<XprType&>(*this); }
-    constexpr void derived() const && = delete;
+    /// @brief returns the concrete expression
+    constexpr void derived() const&& = delete;
+    /// @brief returns the concrete expression
     constexpr void derived() && = delete;
     // ostream
+    /// @brief implements the operator<< expression operation
     friend std::ostream& operator<<(std::ostream& os, const MatrixExpr& m) {
         const int rows = m.derived().rows();
         const int cols = m.derived().cols();
@@ -222,25 +230,37 @@ template <typename XprType_> struct MatrixExpr {
         return os;
     }
     // coeffwise access
-    constexpr auto cwise() const & {
+    /// @brief returns the coefficient-wise algebra adaptor
+    constexpr auto cwise() const& {
         return MatrixCoeffWiseOp<const XprType, internals::identity_op>(derived(), internals::identity_op());
     }
+    /// @brief returns the coefficient-wise algebra adaptor
     constexpr auto cwise() & {
         return MatrixCoeffWiseOp<XprType, internals::identity_op>(derived(), internals::identity_op());
     }
-    constexpr auto cwise() const && requires(XprType::NestAsRef == 0) {
+    /// @brief returns the coefficient-wise algebra adaptor
+    constexpr auto cwise() const&&
+        requires(XprType::NestAsRef == 0)
+    {
         return MatrixCoeffWiseOp<const XprType, internals::identity_op>(
           static_cast<const XprType&&>(*this), internals::identity_op());
     }
-    constexpr auto cwise() && requires(XprType::NestAsRef == 0) {
-        return MatrixCoeffWiseOp<XprType, internals::identity_op>(
-          static_cast<XprType&&>(*this), internals::identity_op());
-    }
-    constexpr void cwise() const && requires(XprType::NestAsRef != 0) = delete;
+    /// @brief returns the coefficient-wise algebra adaptor
+    constexpr auto cwise() &&
+      requires(XprType::NestAsRef == 0) {
+          return MatrixCoeffWiseOp<XprType, internals::identity_op>(
+            static_cast<XprType &&>(*this), internals::identity_op());
+      }
+      /// @brief returns the coefficient-wise algebra adaptor
+      constexpr void cwise() const&&
+          requires(XprType::NestAsRef != 0)
+      = delete;
+    /// @brief returns the coefficient-wise algebra adaptor
     constexpr void cwise() && requires(XprType::NestAsRef != 0) = delete;
 
     // redux operators
     // frobenius norm (squared L^2 norm)
+    /// @brief returns the sum of squared coefficients
     constexpr auto squared_norm() const {
         typename XprType::Scalar norm_ = 0;
         for (int i = 0; i < derived().rows(); ++i) {
@@ -248,6 +268,7 @@ template <typename XprType_> struct MatrixExpr {
         }
         return norm_;
     }
+    /// @brief returns the Euclidean or Frobenius norm
     constexpr auto norm() const
         requires(std::floating_point<std::remove_cv_t<typename XprType::Scalar>>)
     {
@@ -261,6 +282,7 @@ template <typename XprType_> struct MatrixExpr {
         return norm_;
     }
     // maximum norm (L^\infty norm)
+    /// @brief returns the maximum absolute coefficient
     constexpr auto inf_norm() const {
         using Scalar = std::remove_cv_t<typename XprType::Scalar>;
         Scalar norm_ = Scalar(0);
@@ -275,304 +297,479 @@ template <typename XprType_> struct MatrixExpr {
         return norm_;
     }
     // general redux executor
+    /// @brief reduces coefficients using the supplied callable
     template <typename Scalar_, typename ReduxOp> constexpr auto redux(Scalar_ init, ReduxOp&& op) const {
-        fdapde_assert(derived().rows() > 0 && derived().cols() > 0);
+        fdapde_assert(
+          derived().rows() > 0 && derived().cols() > 0, std::invalid_argument, "reduction requires a nonempty matrix");
         return internals::matrix_redux_linear_executor::run(derived(), init, op);
     }
+    /// @brief returns the sum of coefficients
     constexpr auto sum() const {
         using Scalar = typename XprType::Scalar;
         if (derived().size() == 0) return Scalar(0);
         return redux(Scalar(0), [](const Scalar& tmp, const Scalar& x) { return tmp + x; });
     }
+    /// @brief returns the product of coefficients
     constexpr auto prod() const {
         using Scalar = typename XprType::Scalar;
         if (derived().size() == 0) return Scalar(1);
         return redux(Scalar(1), [](const Scalar& tmp, const Scalar& x) { return tmp * x; });
     }
+    /// @brief returns the arithmetic mean of coefficients
     constexpr auto mean() const {
-        if (derived().size() == 0) { throw std::domain_error("mean requires a nonempty matrix"); }
+        fdapde_assert(!(derived().size() == 0), std::domain_error, "reduction requires a nonempty matrix");
         return derived().sum() / derived().size();
     }
+    /// @brief returns the maximum coefficient
     constexpr auto max() const {
         using Scalar = typename XprType::Scalar;
-        if (derived().size() == 0) { throw std::domain_error("max requires a nonempty matrix"); }
+        fdapde_assert(!(derived().size() == 0), std::domain_error, "max requires a nonempty matrix");
         return redux(
           std::numeric_limits<Scalar>::lowest(), [](const Scalar& tmp, const Scalar& x) { return tmp > x ? tmp : x; });
     }
+    /// @brief returns the minimum coefficient
     constexpr auto min() const {
         using Scalar = typename XprType::Scalar;
-        if (derived().size() == 0) { throw std::domain_error("min requires a nonempty matrix"); }
+        fdapde_assert(!(derived().size() == 0), std::domain_error, "min requires a nonempty matrix");
         return redux(
           std::numeric_limits<Scalar>::max(), [](const Scalar& tmp, const Scalar& x) { return tmp < x ? tmp : x; });
     }
     // boolean reductions
     // true if at least one of the coefficients of the expression evalutes true
+    /// @brief reports whether any coefficient is true
     constexpr bool any() const {
-        return internals::boolean_redux_linear_executor::run(derived(), 1, [](const auto& x) { return  bool(x); });
+        return internals::boolean_redux_linear_executor::run(derived(), 1, [](const auto& x) { return bool(x); });
     }
     // true if none of the coefficients of the expression evaluates false
+    /// @brief reports whether every coefficient is true
     constexpr bool all() const {
         return internals::boolean_redux_linear_executor::run(derived(), 0, [](const auto& x) { return !bool(x); });
     }
     // number of coefficients evaluating true in the expression
+    /// @brief counts the true coefficients
     constexpr int count() const {
         if (derived().size() == 0) return int(0);
         return redux(int(0), [](int cnt, auto x) { return cnt + (bool(x) ? 1 : 0); });
     }
     // vector-wise redux operators
+    /// @brief returns the row-wise reduction adaptor
     constexpr MatrixRowWiseOp<XprType> rowwise() & { return MatrixRowWiseOp<XprType>(derived()); }
-    constexpr MatrixRowWiseOp<const XprType> rowwise() const & {
-        return MatrixRowWiseOp<const XprType>(derived());
-    }
-    constexpr MatrixRowWiseOp<XprType> rowwise() && requires(XprType::NestAsRef == 0) {
-        return MatrixRowWiseOp<XprType>(static_cast<XprType&&>(*this));
-    }
-    constexpr MatrixRowWiseOp<const XprType> rowwise() const && requires(XprType::NestAsRef == 0) {
+    /// @brief returns the row-wise reduction adaptor
+    constexpr MatrixRowWiseOp<const XprType> rowwise() const& { return MatrixRowWiseOp<const XprType>(derived()); }
+    /// @brief returns the row-wise reduction adaptor
+    constexpr MatrixRowWiseOp<XprType> rowwise() &&
+      requires(XprType::NestAsRef == 0) { return MatrixRowWiseOp<XprType>(static_cast<XprType &&>(*this)); }
+      /// @brief returns the row-wise reduction adaptor
+      constexpr MatrixRowWiseOp<const XprType> rowwise() const&&
+          requires(XprType::NestAsRef == 0)
+    {
         return MatrixRowWiseOp<const XprType>(static_cast<const XprType&&>(*this));
     }
+    /// @brief returns the row-wise reduction adaptor
     constexpr void rowwise() && requires(XprType::NestAsRef != 0) = delete;
-    constexpr void rowwise() const && requires(XprType::NestAsRef != 0) = delete;
+    /// @brief returns the row-wise reduction adaptor
+    constexpr void rowwise() const&&
+        requires(XprType::NestAsRef != 0)
+    = delete;
+    /// @brief returns the column-wise reduction adaptor
     constexpr MatrixColWiseOp<XprType> colwise() & { return MatrixColWiseOp<XprType>(derived()); }
-    constexpr MatrixColWiseOp<const XprType> colwise() const & {
-        return MatrixColWiseOp<const XprType>(derived());
-    }
-    constexpr MatrixColWiseOp<XprType> colwise() && requires(XprType::NestAsRef == 0) {
-        return MatrixColWiseOp<XprType>(static_cast<XprType&&>(*this));
-    }
-    constexpr MatrixColWiseOp<const XprType> colwise() const && requires(XprType::NestAsRef == 0) {
+    /// @brief returns the column-wise reduction adaptor
+    constexpr MatrixColWiseOp<const XprType> colwise() const& { return MatrixColWiseOp<const XprType>(derived()); }
+    /// @brief returns the column-wise reduction adaptor
+    constexpr MatrixColWiseOp<XprType> colwise() &&
+      requires(XprType::NestAsRef == 0) { return MatrixColWiseOp<XprType>(static_cast<XprType &&>(*this)); }
+      /// @brief returns the column-wise reduction adaptor
+      constexpr MatrixColWiseOp<const XprType> colwise() const&&
+          requires(XprType::NestAsRef == 0)
+    {
         return MatrixColWiseOp<const XprType>(static_cast<const XprType&&>(*this));
     }
+    /// @brief returns the column-wise reduction adaptor
     constexpr void colwise() && requires(XprType::NestAsRef != 0) = delete;
-    constexpr void colwise() const && requires(XprType::NestAsRef != 0) = delete;
+    /// @brief returns the column-wise reduction adaptor
+    constexpr void colwise() const&&
+        requires(XprType::NestAsRef != 0)
+    = delete;
 
     // unary operators
-    constexpr TransposeOp<XprType> transpose() const & { return TransposeOp<XprType>(derived()); }
-    constexpr TransposeOp<XprType> transpose() const && requires(XprType::NestAsRef == 0) {
-        return TransposeOp<XprType>(derived());
-    }
-    constexpr void transpose() const && requires(XprType::NestAsRef != 0) = delete;
-    constexpr Diagonal<XprType> diagonal() & { return Diagonal<XprType>(derived()); }
-    constexpr Diagonal<const XprType> diagonal() const & { return Diagonal<const XprType>(derived()); }
-    constexpr Diagonal<XprType> diagonal() && requires(XprType::NestAsRef == 0) {
-        return Diagonal<XprType>(std::move(derived()));
-    }
-    constexpr Diagonal<const XprType> diagonal() const && requires(XprType::NestAsRef == 0) {
-        return Diagonal<const XprType>(std::move(derived()));
-    }
-    constexpr void diagonal() && requires(XprType::NestAsRef != 0) = delete;
-    constexpr void diagonal() const && requires(XprType::NestAsRef != 0) = delete;
-    // block accessors
-    // static-sized block
-    template <int BlockRows, int BlockCols>
-    constexpr MatrixBlock<BlockRows, BlockCols, XprType> block(int i, int j) & {
-        return MatrixBlock<BlockRows, BlockCols, XprType>(derived(), i, j);
-    }
-    template <int BlockRows, int BlockCols>
-    constexpr MatrixBlock<BlockRows, BlockCols, const XprType> block(int i, int j) const & {
-        return MatrixBlock<BlockRows, BlockCols, const XprType>(derived(), i, j);
-    }
-    template <int BlockRows, int BlockCols>
-    constexpr MatrixBlock<BlockRows, BlockCols, XprType> block(int i, int j) &&
+    /// @brief returns the transposed expression
+    constexpr TransposeOp<XprType> transpose() const& { return TransposeOp<XprType>(derived()); }
+    /// @brief returns the transposed expression
+    constexpr TransposeOp<XprType> transpose() const&&
         requires(XprType::NestAsRef == 0)
     {
-        return MatrixBlock<BlockRows, BlockCols, XprType>(static_cast<XprType&>(*this), i, j);
+        return TransposeOp<XprType>(derived());
     }
+    /// @brief returns the transposed expression
+    constexpr void transpose() const&&
+        requires(XprType::NestAsRef != 0)
+    = delete;
+    /// @brief returns the main diagonal representation
+    constexpr Diagonal<XprType> diagonal() & { return Diagonal<XprType>(derived()); }
+    /// @brief returns the main diagonal representation
+    constexpr Diagonal<const XprType> diagonal() const& { return Diagonal<const XprType>(derived()); }
+    /// @brief returns the main diagonal representation
+    constexpr Diagonal<XprType> diagonal() &&
+      requires(XprType::NestAsRef == 0) { return Diagonal<XprType>(std::move(derived())); }
+      /// @brief returns the main diagonal representation
+      constexpr Diagonal<const XprType> diagonal() const&&
+          requires(XprType::NestAsRef == 0)
+    {
+        return Diagonal<const XprType>(std::move(derived()));
+    }
+    /// @brief returns the main diagonal representation
+    constexpr void diagonal() && requires(XprType::NestAsRef != 0) = delete;
+    /// @brief returns the main diagonal representation
+    constexpr void diagonal() const&&
+        requires(XprType::NestAsRef != 0)
+    = delete;
+    // block accessors
+    // static-sized block
+    /// @brief returns a view of the requested rectangular region
+    template <int BlockRows, int BlockCols> constexpr MatrixBlock<BlockRows, BlockCols, XprType> block(int i, int j) & {
+        return MatrixBlock<BlockRows, BlockCols, XprType>(derived(), i, j);
+    }
+    /// @brief returns a view of the requested rectangular region
     template <int BlockRows, int BlockCols>
-    constexpr MatrixBlock<BlockRows, BlockCols, const XprType> block(int i, int j) const &&
-        requires(XprType::NestAsRef == 0)
+    constexpr MatrixBlock<BlockRows, BlockCols, const XprType> block(int i, int j) const& {
+        return MatrixBlock<BlockRows, BlockCols, const XprType>(derived(), i, j);
+    }
+    /// @brief returns a view of the requested rectangular region
+    template <int BlockRows, int BlockCols>
+      constexpr MatrixBlock<BlockRows, BlockCols, XprType> block(int i, int j) &&
+      requires(XprType::NestAsRef == 0) {
+          return MatrixBlock<BlockRows, BlockCols, XprType>(static_cast<XprType&>(*this), i, j);
+      }
+      /// @brief returns a view of the requested rectangular region
+      template <int BlockRows, int BlockCols>
+      constexpr MatrixBlock<BlockRows, BlockCols, const XprType> block(int i, int j) const&&
+          requires(XprType::NestAsRef == 0)
     {
         return MatrixBlock<BlockRows, BlockCols, const XprType>(static_cast<const XprType&>(*this), i, j);
     }
+    /// @brief returns a view of the requested rectangular region
     template <int BlockRows, int BlockCols>
-    constexpr void block(int, int) && requires(XprType::NestAsRef != 0) = delete;
+      constexpr void block(int, int) && requires(XprType::NestAsRef != 0) = delete;
+    /// @brief returns a view of the requested rectangular region
     template <int BlockRows, int BlockCols>
-    constexpr void block(int, int) const && requires(XprType::NestAsRef != 0) = delete;
+    constexpr void block(int, int) const&&
+        requires(XprType::NestAsRef != 0)
+    = delete;
     // dynamic-sized block
+    /// @brief returns a view of the requested rectangular region
     constexpr MatrixBlock<Dynamic, Dynamic, XprType> block(int i, int j, int rows, int cols) & {
         return MatrixBlock<Dynamic, Dynamic, XprType>(derived(), i, j, rows, cols);
     }
-    constexpr MatrixBlock<Dynamic, Dynamic, const XprType> block(int i, int j, int rows, int cols) const & {
+    /// @brief returns a view of the requested rectangular region
+    constexpr MatrixBlock<Dynamic, Dynamic, const XprType> block(int i, int j, int rows, int cols) const& {
         return MatrixBlock<Dynamic, Dynamic, const XprType>(derived(), i, j, rows, cols);
     }
+    /// @brief returns a view of the requested rectangular region
     constexpr MatrixBlock<Dynamic, Dynamic, XprType> block(int i, int j, int rows, int cols) &&
-        requires(XprType::NestAsRef == 0)
+      requires(XprType::NestAsRef == 0) {
+          return MatrixBlock<Dynamic, Dynamic, XprType>(static_cast<XprType&>(*this), i, j, rows, cols);
+      }
+      /// @brief returns a view of the requested rectangular region
+      constexpr MatrixBlock<Dynamic, Dynamic, const XprType> block(int i, int j, int rows, int cols) const&&
+          requires(XprType::NestAsRef == 0)
     {
-        return MatrixBlock<Dynamic, Dynamic, XprType>(
-          static_cast<XprType&>(*this), i, j, rows, cols);
+        return MatrixBlock<Dynamic, Dynamic, const XprType>(static_cast<const XprType&>(*this), i, j, rows, cols);
     }
-    constexpr MatrixBlock<Dynamic, Dynamic, const XprType> block(int i, int j, int rows, int cols) const &&
-        requires(XprType::NestAsRef == 0)
-    {
-        return MatrixBlock<Dynamic, Dynamic, const XprType>(
-          static_cast<const XprType&>(*this), i, j, rows, cols);
-    }
+    /// @brief returns a view of the requested rectangular region
     constexpr void block(int, int, int, int) && requires(XprType::NestAsRef != 0) = delete;
-    constexpr void block(int, int, int, int) const && requires(XprType::NestAsRef != 0) = delete;
+    /// @brief returns a view of the requested rectangular region
+    constexpr void block(int, int, int, int) const&&
+        requires(XprType::NestAsRef != 0)
+    = delete;
     // row/col accessors
+    /// @brief returns a view of the requested column
     constexpr auto col(int i) & { return MatrixBlock<XprType::Rows, 1, XprType>(derived(), i); }
-    constexpr auto col(int i) const & { return MatrixBlock<XprType::Rows, 1, const XprType>(derived(), i); }
-    constexpr auto col(int i) && requires(XprType::NestAsRef == 0) {
-        return MatrixBlock<XprType::Rows, 1, XprType>(static_cast<XprType&>(*this), i);
-    }
-    constexpr auto col(int i) const && requires(XprType::NestAsRef == 0) {
+    /// @brief returns a view of the requested column
+    constexpr auto col(int i) const& { return MatrixBlock<XprType::Rows, 1, const XprType>(derived(), i); }
+    /// @brief returns a view of the requested column
+    constexpr auto col(int i) &&
+      requires(XprType::NestAsRef == 0) {
+          return MatrixBlock<XprType::Rows, 1, XprType>(static_cast<XprType&>(*this), i);
+      }
+      /// @brief returns a view of the requested column
+      constexpr auto col(int i) const&&
+          requires(XprType::NestAsRef == 0)
+    {
         return MatrixBlock<XprType::Rows, 1, const XprType>(static_cast<const XprType&>(*this), i);
     }
+    /// @brief returns a view of the requested column
     constexpr void col(int) && requires(XprType::NestAsRef != 0) = delete;
-    constexpr void col(int) const && requires(XprType::NestAsRef != 0) = delete;
+    /// @brief returns a view of the requested column
+    constexpr void col(int) const&&
+        requires(XprType::NestAsRef != 0)
+    = delete;
+    /// @brief returns a view of the requested row
     constexpr auto row(int i) & { return MatrixBlock<1, XprType::Cols, XprType>(derived(), i); }
-    constexpr auto row(int i) const & { return MatrixBlock<1, XprType::Cols, const XprType>(derived(), i); }
-    constexpr auto row(int i) && requires(XprType::NestAsRef == 0) {
-        return MatrixBlock<1, XprType::Cols, XprType>(static_cast<XprType&>(*this), i);
-    }
-    constexpr auto row(int i) const && requires(XprType::NestAsRef == 0) {
+    /// @brief returns a view of the requested row
+    constexpr auto row(int i) const& { return MatrixBlock<1, XprType::Cols, const XprType>(derived(), i); }
+    /// @brief returns a view of the requested row
+    constexpr auto row(int i) &&
+      requires(XprType::NestAsRef == 0) {
+          return MatrixBlock<1, XprType::Cols, XprType>(static_cast<XprType&>(*this), i);
+      }
+      /// @brief returns a view of the requested row
+      constexpr auto row(int i) const&&
+          requires(XprType::NestAsRef == 0)
+    {
         return MatrixBlock<1, XprType::Cols, const XprType>(static_cast<const XprType&>(*this), i);
     }
+    /// @brief returns a view of the requested row
     constexpr void row(int) && requires(XprType::NestAsRef != 0) = delete;
-    constexpr void row(int) const && requires(XprType::NestAsRef != 0) = delete;
+    /// @brief returns a view of the requested row
+    constexpr void row(int) const&&
+        requires(XprType::NestAsRef != 0)
+    = delete;
     // other block-type accessors
+    /// @brief returns the requested top rows view
     template <int BlockRows> constexpr auto top_rows() & { return block<BlockRows, XprType::Cols>(0, 0); }
-    template <int BlockRows> constexpr auto top_rows() const & { return block<BlockRows, XprType::Cols>(0, 0); }
-    template <int BlockRows> constexpr auto top_rows() && requires(XprType::NestAsRef == 0) {
-        return MatrixBlock<BlockRows, XprType::Cols, XprType>(static_cast<XprType&>(*this), 0, 0);
-    }
-    template <int BlockRows> constexpr auto top_rows() const && requires(XprType::NestAsRef == 0) {
+    /// @brief returns the requested top rows view
+    template <int BlockRows> constexpr auto top_rows() const& { return block<BlockRows, XprType::Cols>(0, 0); }
+    /// @brief returns the requested top rows view
+    template <int BlockRows>
+      constexpr auto top_rows() &&
+      requires(XprType::NestAsRef == 0) {
+          return MatrixBlock<BlockRows, XprType::Cols, XprType>(static_cast<XprType&>(*this), 0, 0);
+      }
+      /// @brief returns the requested top rows view
+      template <int BlockRows>
+      constexpr auto top_rows() const&&
+          requires(XprType::NestAsRef == 0)
+    {
         return MatrixBlock<BlockRows, XprType::Cols, const XprType>(static_cast<const XprType&>(*this), 0, 0);
     }
+    /// @brief returns the requested top rows view
     template <int BlockRows> constexpr void top_rows() && requires(XprType::NestAsRef != 0) = delete;
-    template <int BlockRows> constexpr void top_rows() const && requires(XprType::NestAsRef != 0) = delete;
+    /// @brief returns the requested top rows view
+    template <int BlockRows>
+    constexpr void top_rows() const&&
+        requires(XprType::NestAsRef != 0)
+    = delete;
+    /// @brief returns the requested top rows view
     constexpr auto top_rows(int rows) & { return block(0, 0, rows, derived().cols()); }
-    constexpr auto top_rows(int rows) const & { return block(0, 0, rows, derived().cols()); }
-    constexpr auto top_rows(int rows) && requires(XprType::NestAsRef == 0) {
-        auto& xpr = static_cast<XprType&>(*this);
-        return MatrixBlock<Dynamic, Dynamic, XprType>(xpr, 0, 0, rows, xpr.cols());
-    }
-    constexpr auto top_rows(int rows) const && requires(XprType::NestAsRef == 0) {
+    /// @brief returns the requested top rows view
+    constexpr auto top_rows(int rows) const& { return block(0, 0, rows, derived().cols()); }
+    /// @brief returns the requested top rows view
+    constexpr auto top_rows(int rows) &&
+      requires(XprType::NestAsRef == 0) {
+          auto& xpr = static_cast<XprType&>(*this);
+          return MatrixBlock<Dynamic, Dynamic, XprType>(xpr, 0, 0, rows, xpr.cols());
+      }
+      /// @brief returns the requested top rows view
+      constexpr auto top_rows(int rows) const&&
+          requires(XprType::NestAsRef == 0)
+    {
         const auto& xpr = static_cast<const XprType&>(*this);
         return MatrixBlock<Dynamic, Dynamic, const XprType>(xpr, 0, 0, rows, xpr.cols());
     }
+    /// @brief returns the requested top rows view
     constexpr void top_rows(int) && requires(XprType::NestAsRef != 0) = delete;
-    constexpr void top_rows(int) const && requires(XprType::NestAsRef != 0) = delete;
+    /// @brief returns the requested top rows view
+    constexpr void top_rows(int) const&&
+        requires(XprType::NestAsRef != 0)
+    = delete;
 
+    /// @brief returns the requested bottom rows view
     template <int BlockRows> constexpr auto bottom_rows() & {
         return block<BlockRows, XprType::Cols>(derived().rows() - BlockRows, 0);
     }
-    template <int BlockRows> constexpr auto bottom_rows() const & {
+    /// @brief returns the requested bottom rows view
+    template <int BlockRows> constexpr auto bottom_rows() const& {
         return block<BlockRows, XprType::Cols>(derived().rows() - BlockRows, 0);
     }
-    template <int BlockRows> constexpr auto bottom_rows() && requires(XprType::NestAsRef == 0) {
-        auto& xpr = static_cast<XprType&>(*this);
-        return MatrixBlock<BlockRows, XprType::Cols, XprType>(xpr, xpr.rows() - BlockRows, 0);
-    }
-    template <int BlockRows> constexpr auto bottom_rows() const && requires(XprType::NestAsRef == 0) {
+    /// @brief returns the requested bottom rows view
+    template <int BlockRows>
+      constexpr auto bottom_rows() &&
+      requires(XprType::NestAsRef == 0) {
+          auto& xpr = static_cast<XprType&>(*this);
+          return MatrixBlock<BlockRows, XprType::Cols, XprType>(xpr, xpr.rows() - BlockRows, 0);
+      }
+      /// @brief returns the requested bottom rows view
+      template <int BlockRows>
+      constexpr auto bottom_rows() const&&
+          requires(XprType::NestAsRef == 0)
+    {
         const auto& xpr = static_cast<const XprType&>(*this);
         return MatrixBlock<BlockRows, XprType::Cols, const XprType>(xpr, xpr.rows() - BlockRows, 0);
     }
+    /// @brief returns the requested bottom rows view
     template <int BlockRows> constexpr void bottom_rows() && requires(XprType::NestAsRef != 0) = delete;
-    template <int BlockRows> constexpr void bottom_rows() const && requires(XprType::NestAsRef != 0) = delete;
+    /// @brief returns the requested bottom rows view
+    template <int BlockRows>
+    constexpr void bottom_rows() const&&
+        requires(XprType::NestAsRef != 0)
+    = delete;
+    /// @brief returns the requested bottom rows view
     constexpr auto bottom_rows(int rows) & {
         const int xpr_rows = derived().rows();
-        if (rows <= 0) { throw std::invalid_argument("bottom row count must be positive"); }
-        if (rows > xpr_rows) { throw std::out_of_range("bottom rows exceed expression bounds"); }
+        fdapde_assert(!(rows <= 0), std::invalid_argument, "bottom row count must be positive");
+        fdapde_assert(!(rows > xpr_rows), std::out_of_range, "bottom rows exceed expression bounds");
         return block(xpr_rows - rows, 0, rows, derived().cols());
     }
-    constexpr auto bottom_rows(int rows) const & {
+    /// @brief returns the requested bottom rows view
+    constexpr auto bottom_rows(int rows) const& {
         const int xpr_rows = derived().rows();
-        if (rows <= 0) { throw std::invalid_argument("bottom row count must be positive"); }
-        if (rows > xpr_rows) { throw std::out_of_range("bottom rows exceed expression bounds"); }
+        fdapde_assert(!(rows <= 0), std::invalid_argument, "bottom row count must be positive");
+        fdapde_assert(!(rows > xpr_rows), std::out_of_range, "bottom rows exceed expression bounds");
         return block(xpr_rows - rows, 0, rows, derived().cols());
     }
-    constexpr auto bottom_rows(int rows) && requires(XprType::NestAsRef == 0) {
-        auto& xpr = static_cast<XprType&>(*this);
-        const int xpr_rows = xpr.rows();
-        if (rows <= 0) { throw std::invalid_argument("bottom row count must be positive"); }
-        if (rows > xpr_rows) { throw std::out_of_range("bottom rows exceed expression bounds"); }
-        return MatrixBlock<Dynamic, Dynamic, XprType>(xpr, xpr_rows - rows, 0, rows, xpr.cols());
-    }
-    constexpr auto bottom_rows(int rows) const && requires(XprType::NestAsRef == 0) {
+    /// @brief returns the requested bottom rows view
+    constexpr auto bottom_rows(int rows) &&
+      requires(XprType::NestAsRef == 0) {
+          auto& xpr = static_cast<XprType&>(*this);
+          const int xpr_rows = xpr.rows();
+          fdapde_assert(!(rows <= 0), std::invalid_argument, "bottom row count must be positive");
+          fdapde_assert(!(rows > xpr_rows), std::out_of_range, "bottom rows exceed expression bounds");
+          return MatrixBlock<Dynamic, Dynamic, XprType>(xpr, xpr_rows - rows, 0, rows, xpr.cols());
+      }
+      /// @brief returns the requested bottom rows view
+      constexpr auto bottom_rows(int rows) const&&
+          requires(XprType::NestAsRef == 0)
+    {
         const auto& xpr = static_cast<const XprType&>(*this);
         const int xpr_rows = xpr.rows();
-        if (rows <= 0) { throw std::invalid_argument("bottom row count must be positive"); }
-        if (rows > xpr_rows) { throw std::out_of_range("bottom rows exceed expression bounds"); }
+        fdapde_assert(!(rows <= 0), std::invalid_argument, "bottom row count must be positive");
+        fdapde_assert(!(rows > xpr_rows), std::out_of_range, "bottom rows exceed expression bounds");
         return MatrixBlock<Dynamic, Dynamic, const XprType>(xpr, xpr_rows - rows, 0, rows, xpr.cols());
     }
+    /// @brief returns the requested bottom rows view
     constexpr void bottom_rows(int) && requires(XprType::NestAsRef != 0) = delete;
-    constexpr void bottom_rows(int) const && requires(XprType::NestAsRef != 0) = delete;
+    /// @brief returns the requested bottom rows view
+    constexpr void bottom_rows(int) const&&
+        requires(XprType::NestAsRef != 0)
+    = delete;
 
+    /// @brief returns the requested left cols view
     template <int BlockCols> constexpr auto left_cols() & { return block<XprType::Rows, BlockCols>(0, 0); }
-    template <int BlockCols> constexpr auto left_cols() const & { return block<XprType::Rows, BlockCols>(0, 0); }
-    template <int BlockCols> constexpr auto left_cols() && requires(XprType::NestAsRef == 0) {
-        return MatrixBlock<XprType::Rows, BlockCols, XprType>(static_cast<XprType&>(*this), 0, 0);
-    }
-    template <int BlockCols> constexpr auto left_cols() const && requires(XprType::NestAsRef == 0) {
+    /// @brief returns the requested left cols view
+    template <int BlockCols> constexpr auto left_cols() const& { return block<XprType::Rows, BlockCols>(0, 0); }
+    /// @brief returns the requested left cols view
+    template <int BlockCols>
+      constexpr auto left_cols() &&
+      requires(XprType::NestAsRef == 0) {
+          return MatrixBlock<XprType::Rows, BlockCols, XprType>(static_cast<XprType&>(*this), 0, 0);
+      }
+      /// @brief returns the requested left cols view
+      template <int BlockCols>
+      constexpr auto left_cols() const&&
+          requires(XprType::NestAsRef == 0)
+    {
         return MatrixBlock<XprType::Rows, BlockCols, const XprType>(static_cast<const XprType&>(*this), 0, 0);
     }
+    /// @brief returns the requested left cols view
     template <int BlockCols> constexpr void left_cols() && requires(XprType::NestAsRef != 0) = delete;
-    template <int BlockCols> constexpr void left_cols() const && requires(XprType::NestAsRef != 0) = delete;
+    /// @brief returns the requested left cols view
+    template <int BlockCols>
+    constexpr void left_cols() const&&
+        requires(XprType::NestAsRef != 0)
+    = delete;
+    /// @brief returns the requested left cols view
     constexpr auto left_cols(int cols) & { return block(0, 0, derived().rows(), cols); }
-    constexpr auto left_cols(int cols) const & { return block(0, 0, derived().rows(), cols); }
-    constexpr auto left_cols(int cols) && requires(XprType::NestAsRef == 0) {
-        auto& xpr = static_cast<XprType&>(*this);
-        return MatrixBlock<Dynamic, Dynamic, XprType>(xpr, 0, 0, xpr.rows(), cols);
-    }
-    constexpr auto left_cols(int cols) const && requires(XprType::NestAsRef == 0) {
+    /// @brief returns the requested left cols view
+    constexpr auto left_cols(int cols) const& { return block(0, 0, derived().rows(), cols); }
+    /// @brief returns the requested left cols view
+    constexpr auto left_cols(int cols) &&
+      requires(XprType::NestAsRef == 0) {
+          auto& xpr = static_cast<XprType&>(*this);
+          return MatrixBlock<Dynamic, Dynamic, XprType>(xpr, 0, 0, xpr.rows(), cols);
+      }
+      /// @brief returns the requested left cols view
+      constexpr auto left_cols(int cols) const&&
+          requires(XprType::NestAsRef == 0)
+    {
         const auto& xpr = static_cast<const XprType&>(*this);
         return MatrixBlock<Dynamic, Dynamic, const XprType>(xpr, 0, 0, xpr.rows(), cols);
     }
+    /// @brief returns the requested left cols view
     constexpr void left_cols(int) && requires(XprType::NestAsRef != 0) = delete;
-    constexpr void left_cols(int) const && requires(XprType::NestAsRef != 0) = delete;
+    /// @brief returns the requested left cols view
+    constexpr void left_cols(int) const&&
+        requires(XprType::NestAsRef != 0)
+    = delete;
 
+    /// @brief returns the requested right cols view
     template <int BlockCols> constexpr auto right_cols() & {
         return block<XprType::Rows, BlockCols>(0, derived().cols() - BlockCols);
     }
-    template <int BlockCols> constexpr auto right_cols() const & {
+    /// @brief returns the requested right cols view
+    template <int BlockCols> constexpr auto right_cols() const& {
         return block<XprType::Rows, BlockCols>(0, derived().cols() - BlockCols);
     }
-    template <int BlockCols> constexpr auto right_cols() && requires(XprType::NestAsRef == 0) {
-        auto& xpr = static_cast<XprType&>(*this);
-        return MatrixBlock<XprType::Rows, BlockCols, XprType>(xpr, 0, xpr.cols() - BlockCols);
-    }
-    template <int BlockCols> constexpr auto right_cols() const && requires(XprType::NestAsRef == 0) {
+    /// @brief returns the requested right cols view
+    template <int BlockCols>
+      constexpr auto right_cols() &&
+      requires(XprType::NestAsRef == 0) {
+          auto& xpr = static_cast<XprType&>(*this);
+          return MatrixBlock<XprType::Rows, BlockCols, XprType>(xpr, 0, xpr.cols() - BlockCols);
+      }
+      /// @brief returns the requested right cols view
+      template <int BlockCols>
+      constexpr auto right_cols() const&&
+          requires(XprType::NestAsRef == 0)
+    {
         const auto& xpr = static_cast<const XprType&>(*this);
         return MatrixBlock<XprType::Rows, BlockCols, const XprType>(xpr, 0, xpr.cols() - BlockCols);
     }
+    /// @brief returns the requested right cols view
     template <int BlockCols> constexpr void right_cols() && requires(XprType::NestAsRef != 0) = delete;
-    template <int BlockCols> constexpr void right_cols() const && requires(XprType::NestAsRef != 0) = delete;
+    /// @brief returns the requested right cols view
+    template <int BlockCols>
+    constexpr void right_cols() const&&
+        requires(XprType::NestAsRef != 0)
+    = delete;
+    /// @brief returns the requested right cols view
     constexpr auto right_cols(int cols) & {
         const int xpr_cols = derived().cols();
-        if (cols <= 0) { throw std::invalid_argument("right column count must be positive"); }
-        if (cols > xpr_cols) { throw std::out_of_range("right columns exceed expression bounds"); }
+        fdapde_assert(!(cols <= 0), std::invalid_argument, "right column count must be positive");
+        fdapde_assert(!(cols > xpr_cols), std::out_of_range, "right columns exceed expression bounds");
         return block(0, xpr_cols - cols, derived().rows(), cols);
     }
-    constexpr auto right_cols(int cols) const & {
+    /// @brief returns the requested right cols view
+    constexpr auto right_cols(int cols) const& {
         const int xpr_cols = derived().cols();
-        if (cols <= 0) { throw std::invalid_argument("right column count must be positive"); }
-        if (cols > xpr_cols) { throw std::out_of_range("right columns exceed expression bounds"); }
+        fdapde_assert(!(cols <= 0), std::invalid_argument, "right column count must be positive");
+        fdapde_assert(!(cols > xpr_cols), std::out_of_range, "right columns exceed expression bounds");
         return block(0, xpr_cols - cols, derived().rows(), cols);
     }
-    constexpr auto right_cols(int cols) && requires(XprType::NestAsRef == 0) {
-        auto& xpr = static_cast<XprType&>(*this);
-        const int xpr_cols = xpr.cols();
-        if (cols <= 0) { throw std::invalid_argument("right column count must be positive"); }
-        if (cols > xpr_cols) { throw std::out_of_range("right columns exceed expression bounds"); }
-        return MatrixBlock<Dynamic, Dynamic, XprType>(xpr, 0, xpr_cols - cols, xpr.rows(), cols);
-    }
-    constexpr auto right_cols(int cols) const && requires(XprType::NestAsRef == 0) {
+    /// @brief returns the requested right cols view
+    constexpr auto right_cols(int cols) &&
+      requires(XprType::NestAsRef == 0) {
+          auto& xpr = static_cast<XprType&>(*this);
+          const int xpr_cols = xpr.cols();
+          fdapde_assert(!(cols <= 0), std::invalid_argument, "right column count must be positive");
+          fdapde_assert(!(cols > xpr_cols), std::out_of_range, "right columns exceed expression bounds");
+          return MatrixBlock<Dynamic, Dynamic, XprType>(xpr, 0, xpr_cols - cols, xpr.rows(), cols);
+      }
+      /// @brief returns the requested right cols view
+      constexpr auto right_cols(int cols) const&&
+          requires(XprType::NestAsRef == 0)
+    {
         const auto& xpr = static_cast<const XprType&>(*this);
         const int xpr_cols = xpr.cols();
-        if (cols <= 0) { throw std::invalid_argument("right column count must be positive"); }
-        if (cols > xpr_cols) { throw std::out_of_range("right columns exceed expression bounds"); }
+        fdapde_assert(!(cols <= 0), std::invalid_argument, "right column count must be positive");
+        fdapde_assert(!(cols > xpr_cols), std::out_of_range, "right columns exceed expression bounds");
         return MatrixBlock<Dynamic, Dynamic, const XprType>(xpr, 0, xpr_cols - cols, xpr.rows(), cols);
     }
+    /// @brief returns the requested right cols view
     constexpr void right_cols(int) && requires(XprType::NestAsRef != 0) = delete;
-    constexpr void right_cols(int) const && requires(XprType::NestAsRef != 0) = delete;
+    /// @brief returns the requested right cols view
+    constexpr void right_cols(int) const&&
+        requires(XprType::NestAsRef != 0)
+    = delete;
 
     // // dot product
+    /// @brief returns the vector inner product
     template <typename RhsXprType> constexpr auto dot(const MatrixExpr<RhsXprType>& rhs) const {
         constexpr int RhsRows = RhsXprType::Rows, Rows = XprType::Rows;
         constexpr int RhsCols = RhsXprType::Cols, Cols = XprType::Cols;
         fdapde_static_assert(
           (RhsRows == 1 || RhsCols == 1) && (Rows == 1 || Cols == 1), THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
-        fdapde_assert(derived().size() == rhs.derived().size());
+        fdapde_assert(
+          derived().size() == rhs.derived().size(), std::invalid_argument, "matrix dimensions are incompatible");
         using Scalar = std::common_type_t<typename XprType::Scalar, typename RhsXprType::Scalar>;
         Scalar dot_ = 0;
         for (int i = 0, n = fdapde::max(rows(), cols()); i < n; ++i) {
@@ -581,113 +778,176 @@ template <typename XprType_> struct MatrixExpr {
         return dot_;
     }
     // cross product
-    template <typename RhsXprType> constexpr auto cross(const MatrixExpr<RhsXprType>& rhs) const & {
+    /// @brief returns the three-dimensional vector cross product
+    template <typename RhsXprType> constexpr auto cross(const MatrixExpr<RhsXprType>& rhs) const& {
         return MatrixCrossProductOp<XprType, RhsXprType>(derived(), rhs.derived());
     }
+    /// @brief returns the three-dimensional vector cross product
     template <internals::matrix_expression RhsXprType>
-        requires(internals::is_owning_rvalue_expression_v<RhsXprType&&>)
-    constexpr void cross(RhsXprType&&) const & = delete;
+        requires(internals::is_owning_rvalue_expression_v<RhsXprType &&>)
+    constexpr void cross(RhsXprType&&) const& = delete;
+    /// @brief returns the three-dimensional vector cross product
     template <typename RhsXprType>
-    constexpr auto cross(const MatrixExpr<RhsXprType>& rhs) const && requires(XprType::NestAsRef == 0) {
+    constexpr auto cross(const MatrixExpr<RhsXprType>& rhs) const&&
+        requires(XprType::NestAsRef == 0)
+    {
         return MatrixCrossProductOp<XprType, RhsXprType>(derived(), rhs.derived());
     }
+    /// @brief returns the three-dimensional vector cross product
     template <internals::matrix_expression RhsXprType>
-        requires(internals::is_owning_rvalue_expression_v<RhsXprType&&>)
-    constexpr void cross(RhsXprType&&) const && = delete;
+        requires(internals::is_owning_rvalue_expression_v<RhsXprType &&>)
+    constexpr void cross(RhsXprType&&) const&& = delete;
+    /// @brief returns the three-dimensional vector cross product
     template <typename RhsXprType>
-    constexpr void cross(const MatrixExpr<RhsXprType>&) const && requires(XprType::NestAsRef != 0) = delete;
+    constexpr void cross(const MatrixExpr<RhsXprType>&) const&&
+        requires(XprType::NestAsRef != 0)
+    = delete;
 
     // reshaping
     // static-sized
+    /// @brief reinterprets the expression with the requested dimensions
     template <int ReshapedRows_, int ReshapedCols_> constexpr auto reshape() & {
         return ReshapeOp<ReshapedRows_, ReshapedCols_, XprType>(derived());
     }
-    template <int ReshapedRows_, int ReshapedCols_> constexpr auto reshape() const & {
+    /// @brief reinterprets the expression with the requested dimensions
+    template <int ReshapedRows_, int ReshapedCols_> constexpr auto reshape() const& {
         return ReshapeOp<ReshapedRows_, ReshapedCols_, const XprType>(derived());
     }
+    /// @brief reinterprets the expression with the requested dimensions
     template <int ReshapedRows_, int ReshapedCols_>
-    constexpr auto reshape() && requires(XprType::NestAsRef == 0) {
-        return ReshapeOp<ReshapedRows_, ReshapedCols_, XprType>(static_cast<XprType&>(*this));
-    }
-    template <int ReshapedRows_, int ReshapedCols_>
-    constexpr auto reshape() const && requires(XprType::NestAsRef == 0) {
+      constexpr auto reshape() &&
+      requires(XprType::NestAsRef == 0) {
+          return ReshapeOp<ReshapedRows_, ReshapedCols_, XprType>(static_cast<XprType&>(*this));
+      }
+      /// @brief reinterprets the expression with the requested dimensions
+      template <int ReshapedRows_, int ReshapedCols_>
+      constexpr auto reshape() const&&
+          requires(XprType::NestAsRef == 0)
+    {
         return ReshapeOp<ReshapedRows_, ReshapedCols_, const XprType>(static_cast<const XprType&>(*this));
     }
+    /// @brief reinterprets the expression with the requested dimensions
     template <int ReshapedRows_, int ReshapedCols_>
-    constexpr void reshape() && requires(XprType::NestAsRef != 0) = delete;
+      constexpr void reshape() && requires(XprType::NestAsRef != 0) = delete;
+    /// @brief reinterprets the expression with the requested dimensions
     template <int ReshapedRows_, int ReshapedCols_>
-    constexpr void reshape() const && requires(XprType::NestAsRef != 0) = delete;
-    template <int ReshapedRows_> constexpr auto reshape() & {
-        return ReshapeOp<ReshapedRows_, 1, XprType>(derived());
-    }
-    template <int ReshapedRows_> constexpr auto reshape() const & {
+    constexpr void reshape() const&&
+        requires(XprType::NestAsRef != 0)
+    = delete;
+    /// @brief reinterprets the expression with the requested dimensions
+    template <int ReshapedRows_> constexpr auto reshape() & { return ReshapeOp<ReshapedRows_, 1, XprType>(derived()); }
+    /// @brief reinterprets the expression with the requested dimensions
+    template <int ReshapedRows_> constexpr auto reshape() const& {
         return ReshapeOp<ReshapedRows_, 1, const XprType>(derived());
     }
-    template <int ReshapedRows_> constexpr auto reshape() && requires(XprType::NestAsRef == 0) {
-        return ReshapeOp<ReshapedRows_, 1, XprType>(static_cast<XprType&>(*this));
-    }
-    template <int ReshapedRows_> constexpr auto reshape() const && requires(XprType::NestAsRef == 0) {
+    /// @brief reinterprets the expression with the requested dimensions
+    template <int ReshapedRows_>
+      constexpr auto reshape() &&
+      requires(XprType::NestAsRef == 0) { return ReshapeOp<ReshapedRows_, 1, XprType>(static_cast<XprType&>(*this)); }
+      /// @brief reinterprets the expression with the requested dimensions
+      template <int ReshapedRows_>
+      constexpr auto reshape() const&&
+          requires(XprType::NestAsRef == 0)
+    {
         return ReshapeOp<ReshapedRows_, 1, const XprType>(static_cast<const XprType&>(*this));
     }
+    /// @brief reinterprets the expression with the requested dimensions
     template <int ReshapedRows_> constexpr void reshape() && requires(XprType::NestAsRef != 0) = delete;
-    template <int ReshapedRows_> constexpr void reshape() const && requires(XprType::NestAsRef != 0) = delete;
+    /// @brief reinterprets the expression with the requested dimensions
+    template <int ReshapedRows_>
+    constexpr void reshape() const&&
+        requires(XprType::NestAsRef != 0)
+    = delete;
     // dynamic-sized
-    constexpr auto reshape(int rows, int cols) & {
-        return ReshapeOp<Dynamic, Dynamic, XprType>(derived(), rows, cols);
-    }
-    constexpr auto reshape(int rows, int cols) const & {
+    /// @brief reinterprets the expression with the requested dimensions
+    constexpr auto reshape(int rows, int cols) & { return ReshapeOp<Dynamic, Dynamic, XprType>(derived(), rows, cols); }
+    /// @brief reinterprets the expression with the requested dimensions
+    constexpr auto reshape(int rows, int cols) const& {
         return ReshapeOp<Dynamic, Dynamic, const XprType>(derived(), rows, cols);
     }
-    constexpr auto reshape(int rows, int cols) && requires(XprType::NestAsRef == 0) {
-        return ReshapeOp<Dynamic, Dynamic, XprType>(static_cast<XprType&>(*this), rows, cols);
-    }
-    constexpr auto reshape(int rows, int cols) const && requires(XprType::NestAsRef == 0) {
+    /// @brief reinterprets the expression with the requested dimensions
+    constexpr auto reshape(int rows, int cols) &&
+      requires(XprType::NestAsRef == 0) {
+          return ReshapeOp<Dynamic, Dynamic, XprType>(static_cast<XprType&>(*this), rows, cols);
+      }
+      /// @brief reinterprets the expression with the requested dimensions
+      constexpr auto reshape(int rows, int cols) const&&
+          requires(XprType::NestAsRef == 0)
+    {
         return ReshapeOp<Dynamic, Dynamic, const XprType>(static_cast<const XprType&>(*this), rows, cols);
     }
+    /// @brief reinterprets the expression with the requested dimensions
     constexpr void reshape(int, int) && requires(XprType::NestAsRef != 0) = delete;
-    constexpr void reshape(int, int) const && requires(XprType::NestAsRef != 0) = delete;
+    /// @brief reinterprets the expression with the requested dimensions
+    constexpr void reshape(int, int) const&&
+        requires(XprType::NestAsRef != 0)
+    = delete;
+    /// @brief reinterprets the expression with the requested dimensions
     constexpr auto reshape(int rows) & { return ReshapeOp<Dynamic, 1, XprType>(derived(), rows); }
-    constexpr auto reshape(int rows) const & { return ReshapeOp<Dynamic, 1, const XprType>(derived(), rows); }
-    constexpr auto reshape(int rows) && requires(XprType::NestAsRef == 0) {
-        return ReshapeOp<Dynamic, 1, XprType>(static_cast<XprType&>(*this), rows);
-    }
-    constexpr auto reshape(int rows) const && requires(XprType::NestAsRef == 0) {
+    /// @brief reinterprets the expression with the requested dimensions
+    constexpr auto reshape(int rows) const& { return ReshapeOp<Dynamic, 1, const XprType>(derived(), rows); }
+    /// @brief reinterprets the expression with the requested dimensions
+    constexpr auto reshape(int rows) &&
+      requires(XprType::NestAsRef == 0) { return ReshapeOp<Dynamic, 1, XprType>(static_cast<XprType&>(*this), rows); }
+      /// @brief reinterprets the expression with the requested dimensions
+      constexpr auto reshape(int rows) const&&
+          requires(XprType::NestAsRef == 0)
+    {
         return ReshapeOp<Dynamic, 1, const XprType>(static_cast<const XprType&>(*this), rows);
     }
+    /// @brief reinterprets the expression with the requested dimensions
     constexpr void reshape(int) && requires(XprType::NestAsRef != 0) = delete;
-    constexpr void reshape(int) const && requires(XprType::NestAsRef != 0) = delete;
+    /// @brief reinterprets the expression with the requested dimensions
+    constexpr void reshape(int) const&&
+        requires(XprType::NestAsRef != 0)
+    = delete;
 
     // square matrix methods
-    constexpr auto symm_part() const & {
+    /// @brief returns the symmetric part of the matrix
+    constexpr auto symm_part() const& {
         constexpr int Rows = XprType::Rows, Cols = XprType::Cols;
         fdapde_static_assert(
           Rows == Dynamic || Cols == Dynamic || Rows == Cols, THIS_METHODS_IS_FOR_SQUARE_MATRICES_ONLY);
         if constexpr (Rows == Dynamic || Cols == Dynamic) {
-            if (derived().rows() != derived().cols()) {
-                throw std::invalid_argument("symmetric part requires a square matrix");
-            }
+            fdapde_assert(
+              !(derived().rows() != derived().cols()), std::invalid_argument,
+              "symmetric part requires a square matrix");
         }
         return 0.5 * (derived() + derived().transpose());   // symmetric part
     }
-    constexpr auto skew_part() const & {
+    /// @brief returns the skew-symmetric part of the matrix
+    constexpr auto skew_part() const& {
         constexpr int Rows = XprType::Rows, Cols = XprType::Cols;
         fdapde_static_assert(
           Rows == Dynamic || Cols == Dynamic || Rows == Cols, THIS_METHODS_IS_FOR_SQUARE_MATRICES_ONLY);
         if constexpr (Rows == Dynamic || Cols == Dynamic) {
-            if (derived().rows() != derived().cols()) {
-                throw std::invalid_argument("skew-symmetric part requires a square matrix");
-            }
+            fdapde_assert(
+              !(derived().rows() != derived().cols()), std::invalid_argument,
+              "skew-symmetric part requires a square matrix");
         }
         return 0.5 * (derived() - derived().transpose());   // skew-symmetric part
     }
-    constexpr auto symm_part() const && requires(XprType::NestAsRef == 0) {
+    /// @brief returns the symmetric part of the matrix
+    constexpr auto symm_part() const&&
+        requires(XprType::NestAsRef == 0)
+    {
         return static_cast<const MatrixExpr&>(*this).symm_part();
     }
-    constexpr auto skew_part() const && requires(XprType::NestAsRef == 0) {
+    /// @brief returns the skew-symmetric part of the matrix
+    constexpr auto skew_part() const&&
+        requires(XprType::NestAsRef == 0)
+    {
         return static_cast<const MatrixExpr&>(*this).skew_part();
     }
-    constexpr void symm_part() const && requires(XprType::NestAsRef != 0) = delete;
-    constexpr void skew_part() const && requires(XprType::NestAsRef != 0) = delete;
+    /// @brief returns the symmetric part of the matrix
+    constexpr void symm_part() const&&
+        requires(XprType::NestAsRef != 0)
+    = delete;
+    /// @brief returns the skew-symmetric part of the matrix
+    constexpr void skew_part() const&&
+        requires(XprType::NestAsRef != 0)
+    = delete;
+    /// @brief returns the inverse matrix expression
     constexpr auto inverse() const
         requires(std::is_floating_point_v<std::remove_cv_t<typename XprType::Scalar>>)
     {
@@ -697,10 +957,11 @@ template <typename XprType_> struct MatrixExpr {
           Rows == Dynamic || Cols == Dynamic || Rows == Cols, THIS_METHODS_IS_FOR_SQUARE_MATRICES_ONLY);
         const XprType& m = derived();
         const int rows_ = m.rows(), cols_ = m.cols();
-        if (rows_ <= 0 || rows_ != cols_) { throw std::invalid_argument("inverse requires a nonempty square matrix"); }
+        fdapde_assert(
+          !(rows_ <= 0 || rows_ != cols_), std::invalid_argument, "inverse requires a nonempty square matrix");
         Matrix<Scalar, Rows, Cols> matrix(m);
         PartialPivLU<Matrix<Scalar, Rows, Cols>> factorization(matrix);
-        if (factorization.info() != 0) { throw std::domain_error("inverse requires a nonsingular matrix"); }
+        fdapde_assert(!(factorization.info() != 0), std::domain_error, "inverse requires a nonsingular matrix");
         Matrix<Scalar, Rows, Cols> identity;
         if constexpr (Rows == Dynamic || Cols == Dynamic) { identity.resize(rows_, cols_); }
         for (int row = 0; row < rows_; ++row) {
@@ -708,6 +969,7 @@ template <typename XprType_> struct MatrixExpr {
         }
         return factorization.solve(identity);
     }
+    /// @brief returns the matrix determinant
     constexpr auto determinant() const {
         using Scalar = std::remove_cv_t<typename XprType::Scalar>;
         constexpr int Rows = XprType::Rows, Cols = XprType::Cols;
@@ -715,9 +977,8 @@ template <typename XprType_> struct MatrixExpr {
           Rows == Dynamic || Cols == Dynamic || Rows == Cols, THIS_METHODS_IS_FOR_SQUARE_MATRICES_ONLY);
         const XprType& m = derived();
         const int rows_ = m.rows(), cols_ = m.cols();
-        if (rows_ <= 0 || rows_ != cols_) {
-            throw std::invalid_argument("determinant requires a nonempty square matrix");
-        }
+        fdapde_assert(
+          !(rows_ <= 0 || rows_ != cols_), std::invalid_argument, "determinant requires a nonempty square matrix");
         if constexpr (std::is_floating_point_v<Scalar>) {
             const PartialPivLU<XprType> factorization(m);
             return factorization.determinant();
@@ -730,89 +991,131 @@ template <typename XprType_> struct MatrixExpr {
             const Scalar a00 = m(0, 0), a01 = m(0, 1), a02 = m(0, 2);
             const Scalar a10 = m(1, 0), a11 = m(1, 1), a12 = m(1, 2);
             const Scalar a20 = m(2, 0), a21 = m(2, 1), a22 = m(2, 2);
-            return a00 * (a11 * a22 - a12 * a21) + a01 * (a12 * a20 - a10 * a22) +
-                   a02 * (a10 * a21 - a11 * a20);
+            return a00 * (a11 * a22 - a12 * a21) + a01 * (a12 * a20 - a10 * a22) + a02 * (a10 * a21 - a11 * a20);
         }
     }
 
     // triangular block accessors
-    template <int BlockMode> constexpr Triangular<BlockMode, const XprType> triangular_block() const & {
+    /// @brief returns a view of the selected triangular region
+    template <int BlockMode> constexpr Triangular<BlockMode, const XprType> triangular_block() const& {
         return Triangular<BlockMode, const XprType>(derived());
     }
+    /// @brief returns a view of the selected triangular region
     template <int BlockMode> constexpr Triangular<BlockMode, XprType> triangular_block() & {
         return Triangular<BlockMode, XprType>(derived());
     }
+    /// @brief returns a view of the selected triangular region
     template <int BlockMode>
-    constexpr Triangular<BlockMode, XprType> triangular_block() && requires(XprType::NestAsRef == 0) {
-        return Triangular<BlockMode, XprType>(std::move(derived()));
-    }
-    template <int BlockMode>
-    constexpr Triangular<BlockMode, const XprType> triangular_block() const && requires(XprType::NestAsRef == 0) {
+      constexpr Triangular<BlockMode, XprType> triangular_block() &&
+      requires(XprType::NestAsRef == 0) { return Triangular<BlockMode, XprType>(std::move(derived())); }
+      /// @brief returns a view of the selected triangular region
+      template <int BlockMode>
+      constexpr Triangular<BlockMode, const XprType> triangular_block() const&&
+          requires(XprType::NestAsRef == 0)
+    {
         return Triangular<BlockMode, const XprType>(std::move(derived()));
     }
+    /// @brief returns a view of the selected triangular region
+    template <int BlockMode> constexpr void triangular_block() && requires(XprType::NestAsRef != 0) = delete;
+    /// @brief returns a view of the selected triangular region
     template <int BlockMode>
-    constexpr void triangular_block() && requires(XprType::NestAsRef != 0) = delete;
-    template <int BlockMode>
-    constexpr void triangular_block() const && requires(XprType::NestAsRef != 0) = delete;
+    constexpr void triangular_block() const&&
+        requires(XprType::NestAsRef != 0)
+    = delete;
     // cast
-    template <int ViewMode> constexpr auto as_symmetric() & {
+    /// @brief returns a symmetric matrix adaptor
+    template <int ViewMode> constexpr auto as_symmetric() & { return internals::symmetric_cast<ViewMode>(derived()); }
+    /// @brief returns a symmetric matrix adaptor
+    template <int ViewMode> constexpr auto as_symmetric() const& {
         return internals::symmetric_cast<ViewMode>(derived());
     }
-    template <int ViewMode> constexpr auto as_symmetric() const & {
-        return internals::symmetric_cast<ViewMode>(derived());
-    }
-    template <int ViewMode> constexpr auto as_symmetric() && requires(XprType::NestAsRef == 0) {
+    /// @brief returns a symmetric matrix adaptor
+    template <int ViewMode>
+      constexpr auto as_symmetric() &&
+      requires(XprType::NestAsRef == 0) { return internals::symmetric_cast<ViewMode>(std::move(derived())); }
+      /// @brief returns a symmetric matrix adaptor
+      template <int ViewMode>
+      constexpr auto as_symmetric() const&&
+          requires(XprType::NestAsRef == 0)
+    {
         return internals::symmetric_cast<ViewMode>(std::move(derived()));
     }
-    template <int ViewMode> constexpr auto as_symmetric() const && requires(XprType::NestAsRef == 0) {
-        return internals::symmetric_cast<ViewMode>(std::move(derived()));
-    }
+    /// @brief returns a symmetric matrix adaptor
     template <int ViewMode> constexpr void as_symmetric() && requires(XprType::NestAsRef != 0) = delete;
-    template <int ViewMode> constexpr void as_symmetric() const && requires(XprType::NestAsRef != 0) = delete;
+    /// @brief returns a symmetric matrix adaptor
+    template <int ViewMode>
+    constexpr void as_symmetric() const&&
+        requires(XprType::NestAsRef != 0)
+    = delete;
+    /// @brief returns a skew-symmetric matrix adaptor
     template <int ViewMode> constexpr auto as_skew_symmetric() & {
         return internals::skew_symmetric_cast<ViewMode>(derived());
     }
-    template <int ViewMode> constexpr auto as_skew_symmetric() const & {
+    /// @brief returns a skew-symmetric matrix adaptor
+    template <int ViewMode> constexpr auto as_skew_symmetric() const& {
         return internals::skew_symmetric_cast<ViewMode>(derived());
     }
-    template <int ViewMode> constexpr auto as_skew_symmetric() && requires(XprType::NestAsRef == 0) {
+    /// @brief returns a skew-symmetric matrix adaptor
+    template <int ViewMode>
+      constexpr auto as_skew_symmetric() &&
+      requires(XprType::NestAsRef == 0) { return internals::skew_symmetric_cast<ViewMode>(std::move(derived())); }
+      /// @brief returns a skew-symmetric matrix adaptor
+      template <int ViewMode>
+      constexpr auto as_skew_symmetric() const&&
+          requires(XprType::NestAsRef == 0)
+    {
         return internals::skew_symmetric_cast<ViewMode>(std::move(derived()));
     }
-    template <int ViewMode> constexpr auto as_skew_symmetric() const && requires(XprType::NestAsRef == 0) {
-        return internals::skew_symmetric_cast<ViewMode>(std::move(derived()));
-    }
+    /// @brief returns a skew-symmetric matrix adaptor
     template <int ViewMode> constexpr void as_skew_symmetric() && requires(XprType::NestAsRef != 0) = delete;
-    template <int ViewMode> constexpr void as_skew_symmetric() const && requires(XprType::NestAsRef != 0) = delete;
+    /// @brief returns a skew-symmetric matrix adaptor
+    template <int ViewMode>
+    constexpr void as_skew_symmetric() const&&
+        requires(XprType::NestAsRef != 0)
+    = delete;
+    /// @brief returns a diagonal matrix adaptor
     constexpr auto as_diagonal() & {
         fdapde_static_assert(XprType::Rows == 1 || XprType::Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
         return internals::diagonal_cast(derived());
     }
-    constexpr auto as_diagonal() const & {
+    /// @brief returns a diagonal matrix adaptor
+    constexpr auto as_diagonal() const& {
         fdapde_static_assert(XprType::Rows == 1 || XprType::Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
         return internals::diagonal_cast(derived());
     }
-    constexpr auto as_diagonal() && requires(XprType::NestAsRef == 0) {
+    /// @brief returns a diagonal matrix adaptor
+    constexpr auto as_diagonal() &&
+      requires(XprType::NestAsRef == 0) {
+          fdapde_static_assert(XprType::Rows == 1 || XprType::Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
+          return internals::diagonal_cast(std::move(derived()));
+      }
+      /// @brief returns a diagonal matrix adaptor
+      constexpr auto as_diagonal() const&&
+          requires(XprType::NestAsRef == 0)
+    {
         fdapde_static_assert(XprType::Rows == 1 || XprType::Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
         return internals::diagonal_cast(std::move(derived()));
     }
-    constexpr auto as_diagonal() const && requires(XprType::NestAsRef == 0) {
-        fdapde_static_assert(XprType::Rows == 1 || XprType::Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
-        return internals::diagonal_cast(std::move(derived()));
-    }
+    /// @brief returns a diagonal matrix adaptor
     constexpr void as_diagonal() && requires(XprType::NestAsRef != 0) = delete;
-    constexpr void as_diagonal() const && requires(XprType::NestAsRef != 0) = delete;
+    /// @brief returns a diagonal matrix adaptor
+    constexpr void as_diagonal() const&&
+        requires(XprType::NestAsRef != 0)
+    = delete;
 };
 
 // comparison operators
+/// @brief implements the operator== expression operation
 template <typename LhsXprType, typename RhsXprType>
-constexpr bool
-operator==(const MatrixExpr<LhsXprType>& lhs, const MatrixExpr<RhsXprType>& rhs) {
+constexpr bool operator==(const MatrixExpr<LhsXprType>& lhs, const MatrixExpr<RhsXprType>& rhs) {
     fdapde_static_assert(
       (internals::is_dynamic_sized_v<LhsXprType> || internals::is_dynamic_sized_v<RhsXprType> ||
        internals::same_static_shape_v<LhsXprType FDAPDE_COMMA RhsXprType>),
       INVALID_COMPARISON__MATRICES_OF_DIFFERENT_STATIC_SIZE);
     if constexpr (internals::is_dynamic_sized_v<LhsXprType> || internals::is_dynamic_sized_v<RhsXprType>) {
-        fdapde_assert(lhs.rows() == rhs.rows() && lhs.cols() == rhs.cols());
+        fdapde_assert(
+          lhs.rows() == rhs.rows() && lhs.cols() == rhs.cols(), std::invalid_argument,
+          "matrix dimensions are incompatible");
     }
     const auto& d1 = lhs.derived();
     const auto& d2 = rhs.derived();
@@ -823,10 +1126,12 @@ operator==(const MatrixExpr<LhsXprType>& lhs, const MatrixExpr<RhsXprType>& rhs)
     }
     return true;
 }
+/// @brief implements the operator!= expression operation
 template <typename LhsXprType, typename RhsXprType>
 constexpr bool operator!=(const MatrixExpr<LhsXprType>& op1, const MatrixExpr<RhsXprType>& op2) {
     return !(op1 == op2);
 }
+/// @brief compares coefficients with relative tolerance
 template <typename LhsXprType, typename RhsXprType>
 constexpr bool
 almost_equal(const MatrixExpr<LhsXprType>& lhs, const MatrixExpr<RhsXprType>& rhs, double epsilon = 1e-7) {
@@ -835,7 +1140,9 @@ almost_equal(const MatrixExpr<LhsXprType>& lhs, const MatrixExpr<RhsXprType>& rh
        internals::same_static_shape_v<LhsXprType FDAPDE_COMMA RhsXprType>),
       INVALID_COMPARISON__MATRICES_OF_DIFFERENT_STATIC_SIZE);
     if constexpr (internals::is_dynamic_sized_v<LhsXprType> || internals::is_dynamic_sized_v<RhsXprType>) {
-        fdapde_assert(lhs.rows() == rhs.rows() && lhs.cols() == rhs.cols());
+        fdapde_assert(
+          lhs.rows() == rhs.rows() && lhs.cols() == rhs.cols(), std::invalid_argument,
+          "matrix dimensions are incompatible");
     }
     using Scalar_ = std::common_type_t<typename LhsXprType::Scalar, typename RhsXprType::Scalar>;
     const auto& d1 = lhs.derived();
@@ -855,10 +1162,12 @@ almost_equal(const MatrixExpr<LhsXprType>& lhs, const MatrixExpr<RhsXprType>& rh
 }
 
 // detection trait
+/// @brief detects is matrix
 template <typename XprType> struct is_matrix {
     static constexpr bool value = std::is_base_of_v<MatrixExpr<std::decay_t<XprType>>, XprType>;
 };
 template <typename XprType> static constexpr bool is_matrix_v = is_matrix<XprType>::value;
+/// @brief detects is vector
 template <typename XprType> struct is_vector {
     static constexpr bool value =
       is_matrix_v<XprType> && (std::decay_t<XprType>::Cols == 1 || std::decay_t<XprType>::Rows == 1);
@@ -867,4 +1176,4 @@ template <typename XprType> static constexpr bool is_vector_v = is_vector<XprTyp
 
 }   // namespace fdapde
 
-#endif // __FDAPDE_LINALG_XPR_H__
+#endif   // __FDAPDE_LINALG_XPR_H__

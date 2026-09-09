@@ -22,10 +22,11 @@
 namespace fdapde {
 
 // definition of matrix vector-wise operations: row- or column-wise reductions and assignments
-  
+
 namespace internals {
 
-// Lazy expression representing a row-wise or column-wise reduction with a custom operator
+// lazy expression representing a row-wise or column-wise reduction with a custom operator
+/// @brief represents partial matrix redux op
 template <typename XprType_, typename ReductionOp, int ByRow>
 struct partial_matrix_redux_op : public MatrixExpr<partial_matrix_redux_op<XprType_, ReductionOp, ByRow>> {
    private:
@@ -40,17 +41,18 @@ struct partial_matrix_redux_op : public MatrixExpr<partial_matrix_redux_op<XprTy
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
 
+    /// @brief constructs partial matrix redux op from the supplied state
     template <typename XprType__>
-        requires(
-          !std::same_as<std::remove_cvref_t<XprType__>, partial_matrix_redux_op> &&
-          internals::safely_nestable<XprTypeNested, XprType__>)
+        requires(!std::same_as<std::remove_cvref_t<XprType__>, partial_matrix_redux_op> &&
+                 internals::safely_nestable<XprTypeNested, XprType__>)
     constexpr partial_matrix_redux_op(XprType__&& xpr, Scalar init, ReductionOp op) :
         xpr_(std::forward<XprType__>(xpr)), init_(init), op_(std::move(op)) { }
 
+    /// @brief accesses or evaluates the requested coefficient
     constexpr Scalar operator()(int i, int j) const {
-        if (i < 0 || i >= rows() || j < 0 || j >= cols()) {
-            throw std::out_of_range("vector-wise reduction index out of range");
-        }
+        fdapde_assert(
+          !(i < 0 || i >= rows() || j < 0 || j >= cols()), std::out_of_range,
+          "vector-wise reduction index out of range");
         Scalar res(init_);
         const int k = ByRow ? j : i;
         const auto& xpr = std::as_const(xpr_);
@@ -59,9 +61,12 @@ struct partial_matrix_redux_op : public MatrixExpr<partial_matrix_redux_op<XprTy
         }
         return res;
     }
+    /// @brief accesses the requested vector coefficient
     constexpr Scalar operator[](int i) const { return operator()(ByRow ? 0 : i, ByRow ? i : 0); }
     // observers
+    /// @brief returns the row count
     constexpr int rows() const { return ByRow ? Rows : xpr_.rows(); }
+    /// @brief returns the column count
     constexpr int cols() const { return ByRow ? xpr_.cols() : Cols; }
    private:
     XprTypeNested xpr_;
@@ -71,6 +76,7 @@ struct partial_matrix_redux_op : public MatrixExpr<partial_matrix_redux_op<XprTy
 
 }   // namespace internals
 
+/// @brief represents matrix vector wise op
 template <typename XprType_, int ByRow>
 struct MatrixVectorWiseOp : public MatrixExpr<MatrixVectorWiseOp<XprType_, ByRow>> {
    private:
@@ -78,6 +84,7 @@ struct MatrixVectorWiseOp : public MatrixExpr<MatrixVectorWiseOp<XprType_, ByRow
     using XprType = std::decay_t<XprType_>;
     using XprTypeNested = internals::ref_select_t<XprType_>;
 
+    /// @brief checks compile-time broadcasting dimensions
     static constexpr bool static_axis_compatible_(int lhs, int rhs) {
         return lhs == Dynamic || rhs == Dynamic || lhs == rhs;
     }
@@ -86,10 +93,10 @@ struct MatrixVectorWiseOp : public MatrixExpr<MatrixVectorWiseOp<XprType_, ByRow
         using RhsXprType = std::decay_t<RhsXprType_>;
         if constexpr (ByRow == 0) {
             return static_axis_compatible_(XprType::Rows, RhsXprType::Rows) &&
-              static_axis_compatible_(1, RhsXprType::Cols);
+                   static_axis_compatible_(1, RhsXprType::Cols);
         } else {
             return static_axis_compatible_(1, RhsXprType::Rows) &&
-              static_axis_compatible_(XprType::Cols, RhsXprType::Cols);
+                   static_axis_compatible_(XprType::Cols, RhsXprType::Cols);
         }
     }();
    public:
@@ -98,9 +105,9 @@ struct MatrixVectorWiseOp : public MatrixExpr<MatrixVectorWiseOp<XprType_, ByRow
     static constexpr int Cols = ByRow ? XprType::Cols : 1;
     static constexpr int StorageOrder = XprType::StorageOrder;
     static constexpr int NestAsRef = 0;
-    static constexpr int ReadOnly =
-      std::is_const_v<std::remove_reference_t<XprType_>> || XprType::ReadOnly;
+    static constexpr int ReadOnly = std::is_const_v<std::remove_reference_t<XprType_>> || XprType::ReadOnly;
 
+    /// @brief constructs matrix vector wise op from the supplied state
     template <typename XprType__>
         requires(
           !std::same_as<std::remove_cvref_t<XprType__>, MatrixVectorWiseOp> &&
@@ -108,6 +115,7 @@ struct MatrixVectorWiseOp : public MatrixExpr<MatrixVectorWiseOp<XprType_, ByRow
     constexpr MatrixVectorWiseOp(XprType__&& xpr) : xpr_(std::forward<XprType__>(xpr)) { }
 
     // generic redux operator
+    /// @brief reduces coefficients using the supplied callable
     template <typename XprType__, typename Scalar_, typename ReductionOp>
         requires(requires(const std::decay_t<ReductionOp>& op, Scalar& accumulated, const Scalar& value) {
             { op(accumulated, value) } -> std::convertible_to<Scalar>;
@@ -120,12 +128,15 @@ struct MatrixVectorWiseOp : public MatrixExpr<MatrixVectorWiseOp<XprType_, ByRow
           std::forward<XprType__>(xpr), static_cast<Scalar>(init), std::forward<ReductionOp>(op));
     }
     // standard reductions
+    /// @brief returns the sum of coefficients
     constexpr auto sum() const {
         return redux(xpr_, Scalar(0), [](Scalar tmp, Scalar x) { return tmp + x; });
     }
+    /// @brief returns the product of coefficients
     constexpr auto prod() const {
         return redux(xpr_, Scalar(1), [](Scalar tmp, Scalar x) { return tmp * x; });
     }
+    /// @brief returns the arithmetic mean of coefficients
     constexpr auto mean() const {
         const int size = reduced_size_();
         require_defined_reduction_(size);
@@ -134,25 +145,31 @@ struct MatrixVectorWiseOp : public MatrixExpr<MatrixVectorWiseOp<XprType_, ByRow
           .apply([size](Scalar total) -> Scalar { return static_cast<Scalar>(total / size); })
           .mwise();
     }
+    /// @brief returns the maximum coefficient
     constexpr auto max() const {
         require_defined_reduction_(reduced_size_());
         return redux(
           xpr_, std::numeric_limits<Scalar>::lowest(), [](Scalar tmp, Scalar x) { return tmp > x ? tmp : x; });
     }
+    /// @brief returns the minimum coefficient
     constexpr auto min() const {
         require_defined_reduction_(reduced_size_());
         return redux(xpr_, std::numeric_limits<Scalar>::max(), [](Scalar tmp, Scalar x) { return tmp < x ? tmp : x; });
     }
-    // L^2 squared norm
+    // l^2 squared norm
+    /// @brief returns the sum of squared coefficients
     constexpr auto squared_norm() const {
         return redux(xpr_, Scalar(0), [](Scalar tmp, Scalar x) { return tmp + x * x; });
     }
-    constexpr auto norm() const requires(std::floating_point<Scalar>) {
-        return redux(xpr_, Scalar(0), [](Scalar norm, Scalar value) {
-            return internals::scale_safe_hypot(norm, value);
-        });
+    /// @brief returns the Euclidean or Frobenius norm
+    constexpr auto norm() const
+        requires(std::floating_point<Scalar>)
+    {
+        return redux(
+          xpr_, Scalar(0), [](Scalar norm, Scalar value) { return internals::scale_safe_hypot(norm, value); });
     }
-    // L^\infty norm
+    // l^\infty norm
+    /// @brief returns the maximum absolute coefficient
     constexpr auto inf_norm() const {
         return redux(xpr_, Scalar(0), [](Scalar tmp, Scalar x) {
             Scalar x_abs = fdapde::abs(x);
@@ -161,6 +178,7 @@ struct MatrixVectorWiseOp : public MatrixExpr<MatrixVectorWiseOp<XprType_, ByRow
     }
 
     // vector-wise assignment
+    /// @brief assigns the supplied coefficients
     template <typename RhsXprType_>
         requires(ReadOnly == 0 && statically_compatible_rhs_<RhsXprType_>)
     constexpr MatrixVectorWiseOp& operator=(const MatrixExpr<RhsXprType_>& rhs) & {
@@ -171,12 +189,14 @@ struct MatrixVectorWiseOp : public MatrixExpr<MatrixVectorWiseOp<XprType_, ByRow
         partial_redux_inplace_loop_(tmp, [](Scalar& a, Scalar b) { a = b; });
         return *this;
     }
+    /// @brief assigns the supplied coefficients
     template <typename RhsXprType_>
         requires(ReadOnly == 0 && statically_compatible_rhs_<RhsXprType_>)
     constexpr MatrixVectorWiseOp operator=(const MatrixExpr<RhsXprType_>& rhs) && {
         static_cast<MatrixVectorWiseOp&>(*this).operator=(rhs);
         return *this;
     }
+    /// @brief adds the supplied coefficients in place
     template <typename RhsXprType_>
         requires(ReadOnly == 0 && statically_compatible_rhs_<RhsXprType_>)
     constexpr MatrixVectorWiseOp& operator+=(const MatrixExpr<RhsXprType_>& rhs) & {
@@ -187,12 +207,14 @@ struct MatrixVectorWiseOp : public MatrixExpr<MatrixVectorWiseOp<XprType_, ByRow
         partial_redux_inplace_loop_(tmp, [](Scalar& a, Scalar b) { a += b; });
         return *this;
     }
+    /// @brief adds the supplied coefficients in place
     template <typename RhsXprType_>
         requires(ReadOnly == 0 && statically_compatible_rhs_<RhsXprType_>)
     constexpr MatrixVectorWiseOp operator+=(const MatrixExpr<RhsXprType_>& rhs) && {
         static_cast<MatrixVectorWiseOp&>(*this).operator+=(rhs);
         return *this;
     }
+    /// @brief subtracts the supplied coefficients in place
     template <typename RhsXprType_>
         requires(ReadOnly == 0 && statically_compatible_rhs_<RhsXprType_>)
     constexpr MatrixVectorWiseOp& operator-=(const MatrixExpr<RhsXprType_>& rhs) & {
@@ -203,6 +225,7 @@ struct MatrixVectorWiseOp : public MatrixExpr<MatrixVectorWiseOp<XprType_, ByRow
         partial_redux_inplace_loop_(tmp, [](Scalar& a, Scalar b) { a -= b; });
         return *this;
     }
+    /// @brief subtracts the supplied coefficients in place
     template <typename RhsXprType_>
         requires(ReadOnly == 0 && statically_compatible_rhs_<RhsXprType_>)
     constexpr MatrixVectorWiseOp operator-=(const MatrixExpr<RhsXprType_>& rhs) && {
@@ -211,6 +234,7 @@ struct MatrixVectorWiseOp : public MatrixExpr<MatrixVectorWiseOp<XprType_, ByRow
     }
 
     // vectorwise comparison
+    /// @brief implements the operator== expression operation
     template <typename RhsXprType_>
         requires(statically_compatible_rhs_<RhsXprType_>)
     friend constexpr bool operator==(const MatrixVectorWiseOp& lhs, const MatrixExpr<RhsXprType_>& rhs) {
@@ -224,55 +248,65 @@ struct MatrixVectorWiseOp : public MatrixExpr<MatrixVectorWiseOp<XprType_, ByRow
         }
         return true;
     }
+    /// @brief implements the operator== expression operation
     template <typename LhsXprType_>
         requires(statically_compatible_rhs_<LhsXprType_>)
     friend constexpr bool operator==(const MatrixExpr<LhsXprType_>& lhs, const MatrixVectorWiseOp& rhs) {
         return rhs == lhs;
     }
+    /// @brief implements the operator!= expression operation
     template <typename RhsXprType_>
         requires(statically_compatible_rhs_<RhsXprType_>)
     friend constexpr bool operator!=(const MatrixVectorWiseOp& lhs, const MatrixExpr<RhsXprType_>& rhs) {
         return !(lhs == rhs);
     }
+    /// @brief implements the operator!= expression operation
     template <typename LhsXprType_>
         requires(statically_compatible_rhs_<LhsXprType_>)
     friend constexpr bool operator!=(const MatrixExpr<LhsXprType_>& lhs, const MatrixVectorWiseOp& rhs) {
         return !(rhs == lhs);
     }
+    /// @brief implements the operator== expression operation
     template <typename RhsXprType_>
         requires(!statically_compatible_rhs_<RhsXprType_>)
     friend constexpr bool operator==(const MatrixVectorWiseOp&, const MatrixExpr<RhsXprType_>&) = delete;
+    /// @brief implements the operator== expression operation
     template <typename LhsXprType_>
         requires(!statically_compatible_rhs_<LhsXprType_>)
     friend constexpr bool operator==(const MatrixExpr<LhsXprType_>&, const MatrixVectorWiseOp&) = delete;
+    /// @brief implements the operator!= expression operation
     template <typename RhsXprType_>
         requires(!statically_compatible_rhs_<RhsXprType_>)
     friend constexpr bool operator!=(const MatrixVectorWiseOp&, const MatrixExpr<RhsXprType_>&) = delete;
+    /// @brief implements the operator!= expression operation
     template <typename LhsXprType_>
         requires(!statically_compatible_rhs_<LhsXprType_>)
     friend constexpr bool operator!=(const MatrixExpr<LhsXprType_>&, const MatrixVectorWiseOp&) = delete;
 
     // observers
+    /// @brief returns the row count
     constexpr int rows() const { return ByRow ? Rows : xpr_.rows(); }
+    /// @brief returns the column count
     constexpr int cols() const { return ByRow ? xpr_.cols() : Cols; }
    private:
     // internals
+    /// @brief returns the number of coefficients in each reduction
     constexpr int reduced_size_() const { return ByRow ? xpr_.rows() : xpr_.cols(); }
+    /// @brief checks that the reduction has a nonempty domain
     constexpr void require_defined_reduction_(int reduced_size) const {
         const int output_size = ByRow ? xpr_.cols() : xpr_.rows();
-        if (reduced_size == 0 && output_size > 0) {
-            throw std::domain_error("vector-wise reduction requires a nonempty reduced axis");
-        }
+        fdapde_assert(
+          !(reduced_size == 0 && output_size > 0), std::domain_error,
+          "vector-wise reduction requires a nonempty reduced axis");
     }
-    template <typename RhsXprType_>
-    constexpr void require_compatible_shape_(const MatrixExpr<RhsXprType_>& rhs) const {
-        const bool compatible = ByRow == 0 ?
-          (rhs.rows() == xpr_.rows() && rhs.cols() == 1) :
-          (rhs.rows() == 1 && rhs.cols() == xpr_.cols());
-        if (!compatible) {
-            throw std::invalid_argument("vector-wise operation requires a matching broadcast vector");
-        }
+    /// @brief checks broadcasting dimensions against the selected axis
+    template <typename RhsXprType_> constexpr void require_compatible_shape_(const MatrixExpr<RhsXprType_>& rhs) const {
+        const bool compatible =
+          ByRow == 0 ? (rhs.rows() == xpr_.rows() && rhs.cols() == 1) : (rhs.rows() == 1 && rhs.cols() == xpr_.cols());
+        fdapde_assert(
+          !(!compatible), std::invalid_argument, "vector-wise operation requires a matching broadcast vector");
     }
+    /// @brief reduces each selected row or column into its destination coefficient
     template <typename RhsXprType_, typename Operator_>
     constexpr void partial_redux_inplace_loop_(const MatrixExpr<RhsXprType_>& rhs, Operator_&& op) {
         int inner_size_ = ByRow ? xpr_.rows() : xpr_.cols();
@@ -286,23 +320,25 @@ struct MatrixVectorWiseOp : public MatrixExpr<MatrixVectorWiseOp<XprType_, ByRow
         }
         return;
     }
-  
+
     XprTypeNested xpr_;
 };
 
 // row-wise matrix reduction expression
+/// @brief represents matrix row wise op
 template <typename XprType> struct MatrixRowWiseOp : public MatrixVectorWiseOp<XprType, 0> {
     using Base = MatrixVectorWiseOp<XprType, 0>;
     using Base::Base;
     using Base::operator=;
 };
 // col-wise matrix reduction expression
+/// @brief represents matrix col wise op
 template <typename XprType> struct MatrixColWiseOp : public MatrixVectorWiseOp<XprType, 1> {
     using Base = MatrixVectorWiseOp<XprType, 1>;
     using Base::Base;
     using Base::operator=;
 };
-  
+
 }   // namespace fdapde
 
-#endif // __FDAPDE_LINALG_VECTORWISE_H__
+#endif   // __FDAPDE_LINALG_VECTORWISE_H__

@@ -14,8 +14,4 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <fdaPDE/linear_algebra.h>
-
-fdapde::SymmetricMatrix<double, 3, 3, fdapde::ColMajor> col_major_symmetric_matrix;
-
-int main() { return col_major_symmetric_matrix.rows(); }
+#include <fdaPDE/geometry.h>
