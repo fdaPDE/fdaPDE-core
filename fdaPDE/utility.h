@@ -22,6 +22,8 @@
 // STL includes
 #include <utility>
 #include <algorithm>
+#include <bit>
+#include <cstdint>
 #include <cmath>
 #include <functional>
 #include <iostream>

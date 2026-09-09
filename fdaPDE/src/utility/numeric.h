@@ -21,7 +21,7 @@
 
 namespace fdapde {
 
-// factorial of n
+/// @brief factorial of n
 constexpr int factorial(const int n) {
     fdapde_assert(n >= 0, std::domain_error, "factorial is undefined for negative integers");
     int factorial_ = 1;
@@ -33,12 +33,12 @@ constexpr int factorial(const int n) {
     }
     return factorial_;
 }
-// binomial coefficient n over m
+/// @brief binomial coefficient n over m
 constexpr int binomial_coefficient(const int n, const int m) {
     if (m == 0 || n == m) return 1;
     return factorial(n) / (factorial(m) * factorial(n - m));
 }
-// binomial_coefficient(n, k) x k matrix of combinations of k elements from a set of n
+/// @brief binomial_coefficient(n, k) x k matrix of combinations of k elements from a set of n
 constexpr std::vector<int> combinations(int k, int n) {
     std::vector<bool> bitmask(k, 1);
     bitmask.resize(n, 0);
@@ -57,20 +57,20 @@ constexpr std::vector<int> combinations(int k, int n) {
     return result;
 }
 
-// integer division with round up
+/// @brief integer division with round up
 template <typename T1, typename T2>
     requires(internals::is_integer_v<T1> && internals::is_integer_v<T2>)
 constexpr std::common_type_t<T1, T2> int_ceil(T1 a, T2 b) {
     return ((a ^ b) >= 0) ? a / b + (a % b != 0) : a / b;
 }
-// integer division with round down
+/// @brief integer division with round down
 template <typename T1, typename T2>
     requires(internals::is_integer_v<T1> && internals::is_integer_v<T2>)
 constexpr std::common_type_t<T1, T2> int_floor(T1 a, T2 b) {
     return ((a ^ b) < 0 && a % b != 0) ? a / b - 1 : a / b;
 }
 
-// min function with common type conversion
+/// @brief min function with common type conversion
 template <typename T1, typename T2>
     requires requires(T1 a, T2 b) {
         (static_cast<std::common_type_t<T1, T2>>(a) <= static_cast<std::common_type_t<T1, T2>>(b)) ? 0 : 0;
@@ -79,7 +79,7 @@ constexpr std::common_type_t<T1, T2> min(T1 a, T2 b) {
     using T = std::common_type_t<T1, T2>;
     return (static_cast<T>(a) <= static_cast<T>(b)) ? static_cast<T>(a) : static_cast<T>(b);
 }
-// max function with common type conversion
+/// @brief max function with common type conversion
 template <typename T1, typename T2>
     requires requires(T1 a, T2 b) {
         (static_cast<std::common_type_t<T1, T2>>(a) >= static_cast<std::common_type_t<T1, T2>>(b)) ? 0 : 0;
@@ -89,40 +89,73 @@ constexpr std::common_type_t<T1, T2> max(T1 a, T2 b) {
     return (static_cast<T>(a) >= static_cast<T>(b)) ? static_cast<T>(a) : static_cast<T>(b);
 }
 
-// constexpr absoulte value
-template <typename T> requires(std::is_arithmetic_v<T>) constexpr T abs(T x) { return x < 0 ? -x : x; }
-template <typename T> requires(std::is_floating_point_v<T>) constexpr T fabs(T x) { return x < 0 ? -x : x; }
-  
-// test for floating point equality
+/// @brief constexpr absolute value
+template <typename T>
+    requires(std::is_arithmetic_v<T>)
+constexpr T abs(T x) {
+    return x < 0 ? -x : x;
+}
+/// @brief returns the absolute floating-point value
+template <typename T>
+    requires(std::is_floating_point_v<T>)
+constexpr T fabs(T x) {
+    return x < 0 ? -x : x;
+}
+
+/// @brief test for floating point equality
 [[maybe_unused]] constexpr double double_tolerance = 1e-10;
-[[maybe_unused]] constexpr double machine_epsilon  = 50 * std::numeric_limits<double>::epsilon();   // approx 10^-14
+[[maybe_unused]] constexpr double machine_epsilon = 50 * std::numeric_limits<double>::epsilon();   // approx 10^-14
+/// @brief compares values with absolute and relative tolerance
 template <typename T>
     requires(std::is_floating_point_v<T>)
 constexpr bool almost_equal(T a, T b, T epsilon) {
     return fdapde::fabs(a - b) < epsilon ||
            fdapde::fabs(a - b) < ((fdapde::fabs(a) < fdapde::fabs(b) ? fdapde::fabs(b) : fdapde::fabs(a)) * epsilon);
 }
+/// @brief compares values with absolute and relative tolerance
 template <typename T> constexpr bool almost_equal(T a, T b) { return almost_equal(a, b, double_tolerance); }
+/// @brief checks a non-strict difference against relative tolerance
 template <typename T>
     requires(std::is_floating_point_v<T>)
 constexpr bool greater_equal(T a, T b, T epsilon) {
     return (a - b) >= ((fdapde::fabs(a) < fdapde::fabs(b) ? fdapde::fabs(b) : fdapde::fabs(a)) * epsilon);
 }
+/// @brief checks a non-strict difference against relative tolerance
 template <typename T> constexpr bool greater_equal(T a, T b) { return greater_equal(a, b, double_tolerance); }
+/// @brief checks a reversed non-strict difference against relative tolerance
 template <typename T>
     requires(std::is_floating_point_v<T>)
 constexpr bool less_equal(T a, T b, T epsilon) {
     return (b - a) >= ((fdapde::fabs(a) < fdapde::fabs(b) ? fdapde::fabs(b) : fdapde::fabs(a)) * epsilon);
 }
+/// @brief checks a reversed non-strict difference against relative tolerance
 template <typename T> constexpr bool less_equal(T a, T b) { return less_equal(a, b, double_tolerance); }
+/// @brief checks a strict difference against relative tolerance
+template <typename T>
+    requires(std::is_floating_point_v<T>)
+constexpr bool greater_than(T a, T b, T epsilon) {
+    return (a - b) > ((fdapde::fabs(a) < fdapde::fabs(b) ? fdapde::fabs(b) : fdapde::fabs(a)) * epsilon);
+}
+/// @brief checks a strict difference against relative tolerance
+template <typename T> constexpr bool greater_than(T a, T b) { return greater_than(a, b, double_tolerance); }
+/// @brief checks a reversed strict difference against relative tolerance
+template <typename T>
+    requires(std::is_floating_point_v<T>)
+constexpr bool less_than(T a, T b, T epsilon) {
+    return (b - a) > ((fdapde::fabs(a) < fdapde::fabs(b) ? fdapde::fabs(b) : fdapde::fabs(a)) * epsilon);
+}
+/// @brief checks a reversed strict difference against relative tolerance
+template <typename T> constexpr bool less_than(T a, T b) { return less_than(a, b, double_tolerance); }
+/// @brief checks absolute magnitude against a tolerance
 template <typename T>
     requires(std::is_floating_point_v<T>)
 constexpr bool almost_zero(T a, T epsilon) {
     return fdapde::fabs(a) < epsilon;
 }
+/// @brief checks absolute magnitude against a tolerance
 template <typename T> constexpr bool almost_zero(T a) { return almost_zero(a, machine_epsilon); }
 
-// constexpr square root
+/// @brief constexpr square root
 template <typename T>
     requires(std::is_floating_point_v<T>)
 constexpr T sqrt(T x) {
@@ -130,7 +163,7 @@ constexpr T sqrt(T x) {
     if (!(x > T(0))) return std::numeric_limits<T>::quiet_NaN();
     if (!std::is_constant_evaluated()) return std::sqrt(x);
 
-    // Scale into [1,4) so Heron's iteration is safe at both ends of the floating-point range.
+    // scale into [1,4) so Heron's iteration is safe at both ends of the floating-point range
     T scale = T(1);
     while (x < T(1)) {
         x *= T(4);
@@ -148,21 +181,21 @@ constexpr T sqrt(T x) {
     return curr * scale;
 }
 
-// constexpr ceil
+/// @brief constexpr ceil
 template <typename T> constexpr std::conditional_t<std::is_floating_point_v<T>, T, double> ceil(T x) {
     long int int_part = static_cast<long int>(x);
     return (x > 0.0 && x != static_cast<T>(int_part)) ? int_part + 1.0 : int_part;
 }
-// constexpr floor
+/// @brief constexpr floor
 template <typename T> constexpr std::conditional_t<std::is_floating_point_v<T>, T, double> floor(T x) {
     long int int_part = static_cast<long int>(x);
     return (x < 0.0 && x != static_cast<T>(int_part)) ? int_part - 1.0 : int_part;
 }
 
-// constexpr sign function
+/// @brief returns one for nonnegative inputs and zero otherwise
 template <typename T> constexpr int sign(T x) { return x >= 0 ? 1 : 0; }
 
-// constexpr pow, only integer exponent support
+/// @brief constexpr pow, only integer exponent support
 template <typename BaseT, typename ExpT>
     requires(std::is_floating_point_v<BaseT> && internals::is_integer_v<ExpT>)
 constexpr BaseT pow(BaseT base, ExpT exp) {
@@ -179,47 +212,48 @@ constexpr BaseT pow(BaseT base, ExpT exp) {
     return exp < 0 ? BaseT {1} / result : result;
 }
 
-// constexpr ldexp, computes num * 2^exp
+/// @brief constexpr ldexp, computes num * 2^exp
 template <typename BaseT, typename ExpT>
     requires(std::is_floating_point_v<BaseT> && internals::is_integer_v<ExpT>)
 constexpr BaseT ldexp(BaseT num, ExpT exp) {
-    if (num == 0.0) return num;  // preserve signed zero
-    if (num != num) return std::numeric_limits<double>::quiet_NaN();
-    if (num == std::numeric_limits<double>::infinity() || num == -std::numeric_limits<double>::infinity())
-        return num;
+    using Limits = std::numeric_limits<BaseT>;
+    if (num == BaseT(0) || num != num || fdapde::abs(num) == Limits::infinity()) return num;
+    constexpr int exponent_bound = Limits::max_exponent - Limits::min_exponent + Limits::digits;
+    if (std::cmp_greater(+exp, exponent_bound)) return num < 0 ? -Limits::infinity() : Limits::infinity();
+    if (std::cmp_less(+exp, -exponent_bound)) return num < 0 ? -BaseT(0) : BaseT(0);
+    int exponent = static_cast<int>(exp);
+    if (!std::is_constant_evaluated()) return std::ldexp(num, exponent);
 
-    constexpr std::uint64_t SIGN_MASK = 0x8000000000000000ULL;
-    constexpr std::uint64_t EXP_MASK  = 0x7FF0000000000000ULL;
-    constexpr std::uint64_t MANT_MASK = 0x000FFFFFFFFFFFFFULL;
-
-    auto u = std::bit_cast<std::uint64_t>(num);   // recover bit representation of num
-    int exponent = static_cast<int>((u & EXP_MASK) >> 52);
-    std::uint64_t mantissa = u & MANT_MASK;
-    std::uint64_t sign = u & SIGN_MASK;
-
-    if (exponent == 0) {   // subnormal number
-        while ((mantissa & (1ULL << 52)) == 0) {
-            mantissa <<= 1;
-            exponent--;
-        }
-        mantissa &= MANT_MASK;
-        exponent++;
+    // normalize exactly before scaling to avoid intermediate overflow and repeated subnormal rounding
+    while (fdapde::abs(num) >= BaseT(1)) {
+        num *= BaseT(0.5);
+        ++exponent;
     }
-    if (exponent == 0x7FF) { return num; }   // NaN/inf
-    exponent += exp;
-    if (exponent <= 0) { return sign ? -0.0 : 0.0; }   // underflow
-    if (exponent >= 0x7FF) {                           // overflow
-        return sign ? -std::numeric_limits<double>::infinity() : std::numeric_limits<double>::infinity();
+    while (fdapde::abs(num) < BaseT(0.5)) {
+        num *= BaseT(2);
+        --exponent;
     }
-    // reconstruct IEEE 753 representation
-    return std::bit_cast<double>(sign | ((static_cast<std::uint64_t>(exponent) << 52) & EXP_MASK) | mantissa);
+    if (exponent > Limits::max_exponent) return num < 0 ? -Limits::infinity() : Limits::infinity();
+    if (exponent < Limits::min_exponent - Limits::digits) return num < 0 ? -BaseT(0) : BaseT(0);
+    BaseT scale = BaseT(1);
+    if (exponent < Limits::min_exponent) {
+        // form subnormal results with a single final rounding at the minimum normal scale
+        for (int i = exponent; i < Limits::min_exponent - 1; ++i) num *= BaseT(0.5);
+        return num * Limits::min();
+    }
+    if (exponent > 0) {
+        for (int i = 1; i < exponent; ++i) scale *= BaseT(2);
+        return (num * BaseT(2)) * scale;
+    }
+    for (int i = 0; i > exponent; --i) scale *= BaseT(0.5);
+    return num * scale;
 }
 
-// constexpr exp
+/// @brief approximates the exponential with a reduced Taylor polynomial
 constexpr double exp(double x) {
-    constexpr double ln2    = 0.69314718055994530941723212145817656;   // ln(2)
+    constexpr double ln2 = 0.69314718055994530941723212145817656;      // ln(2)
     constexpr double invln2 = 1.44269504088896340735992468100189214;   // 1/ln(2)
-    // polynomial coefficients for exp(r) Taylor's expansion on [-ln2/2, ln2/2]
+    // polynomial coefficients for the reduced exponential Taylor expansion
     constexpr double C1 = 1.0;
     constexpr double C2 = 1.0;                         // 1
     constexpr double C3 = 0.5;                         // 1/2
@@ -229,20 +263,20 @@ constexpr double exp(double x) {
     constexpr double C7 = 1.38888888888888894189e-3;   // 1/720
 
     if (x != x) return std::numeric_limits<double>::quiet_NaN();
-    if (x >  709.782712893384) return std::numeric_limits<double>::infinity();
+    if (x > 709.782712893384) return std::numeric_limits<double>::infinity();
     if (x < -745.133219101941) return 0.0;
     // reduction
     int k = static_cast<int>(x * invln2 + sign(x) * 0.5);
     double r = x - k * ln2;
-    // Talyor expansion evaluation by horner
+    // evaluate the Taylor polynomial using Horner's method
     double R = ((((((C7 * r + C6) * r + C5) * r + C4) * r + C3) * r + C2) * r + C1);
     return ldexp(R, k);
 };
 
-// constexpr ilogb: integer log2 of |x|: floor(\log_2(|x|))
+/// @brief constexpr ilogb: integer log2 of |x|: floor(\log_2(|x|))
 constexpr int ilogb(double x) {
-    if (x == 0.0) return std::numeric_limits<int>::min();   // FP_ILOGB0
-    if (x != x)   return std::numeric_limits<int>::max();   // FP_ILOGBNAN
+    if (x == 0.0) return std::numeric_limits<int>::min();   // fP_ILOGB0
+    if (x != x) return std::numeric_limits<int>::max();     // fP_ILOGBNAN
 
     std::uint64_t bits = std::bit_cast<std::uint64_t>(x < 0 ? -x : x);   // recover bit expression
     int exp = static_cast<int>((bits >> 52) & 0x7FF);
@@ -257,7 +291,7 @@ constexpr int ilogb(double x) {
     return exp - 1023;   // remove IEEE bias
 }
 
-// constexpr frexp: x = fraction * 2^out, with |fraction| in [0.5,1) for finite nonzero x.
+/// @brief constexpr frexp: x = fraction * 2^out, with |fraction| in [0.5,1) for finite nonzero x
 constexpr double frexp(double x, int& out) {
     out = 0;
     if (x == 0.0 || x != x || fdapde::abs(x) == std::numeric_limits<double>::infinity()) return x;
@@ -273,7 +307,7 @@ constexpr double frexp(double x, int& out) {
     return x;
 }
 
-// constexpr log (inspired from fdlibm)
+/// @brief approximates the natural logarithm with a polynomial inspired by fdlibm
 constexpr double log(double x) {
     // constants split for accuracy
     constexpr double ln2_hi = 6.93147180369123816490e-01;
@@ -297,13 +331,13 @@ constexpr double log(double x) {
     double f = m - 1.0;   // in [-0.5,0)
     double s = f / (2.0 + f);
     double z = s * s;
-    // approximate log(1 + z) for small f, with z = s * s, s = f/(2 + f). Perform Horner evaluation of taylor expansion
-    double R = z*(Lg1 + z*(Lg2 + z*(Lg3 + z*(Lg4 + z*(Lg5 + z*(Lg6 + z*Lg7))))));
+    // evaluate the reduced logarithm polynomial using Horner's method
+    double R = z * (Lg1 + z * (Lg2 + z * (Lg3 + z * (Lg4 + z * (Lg5 + z * (Lg6 + z * Lg7))))));
     double hfsq = 0.5 * f * f;
     return k * ln2_hi - ((hfsq - (s * (hfsq + R) + k * ln2_lo)) - f);
 }
 
-// constexpr log1p
+/// @brief constexpr log1p
 constexpr double log1p(double x) {
     if (x == 0.0) { return 0.0; }
     if (x == -1.0) { return -std::numeric_limits<double>::infinity(); }   // log(0)
@@ -316,20 +350,19 @@ constexpr double log1p(double x) {
         double x4 = x3 * x;
         return x - 0.5 * x2 + x3 / 3.0 - x4 / 4.0;
     }
-    return fdapde::log(1.0 + x);   // fallback to standard log
+    return fdapde::log(1.0 + x);
 }
 
-// numerical stable log(1 + exp(x)) computation (see "Machler, M. (2012). Accurately computing log(1-exp(-|a|))")
+/// @brief computes log(1 + exp(x)) with range-dependent approximations to avoid overflow
 template <typename T>
     requires(std::is_floating_point_v<T>)
 constexpr T log1pexp(T x) {
     if (x <= -37.0) return fdapde::exp(x);
-    if (x <=  18.0) return fdapde::log1p(fdapde::exp(x));
-    if (x >   33.3) return x;
+    if (x <= 18.0) return fdapde::log1p(fdapde::exp(x));
+    if (x > 33.3) return x;
     return x + fdapde::exp(-x);
 }
 
-  
 }   // namespace fdapde
 
 #endif   // __FDAPDE_NUMERIC_H__
