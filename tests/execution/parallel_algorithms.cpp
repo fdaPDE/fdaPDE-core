@@ -23,6 +23,7 @@
 #include <string>
 #include <vector>
 
+// verifies parallel for supports partitioning stepping and empty ranges
 TEST(ExecutionParallelAlgorithms, ParallelForSupportsPartitioningSteppingAndEmptyRanges) {
     std::vector<int> values(64, 0);
 
@@ -30,35 +31,55 @@ TEST(ExecutionParallelAlgorithms, ParallelForSupportsPartitioningSteppingAndEmpt
     fdapde::parallel_for(0, 64, [&](int i) { values[static_cast<std::size_t>(i)] += 2; });
     fdapde::parallel_for(
       0, 64, 3, [&](int i) { values[static_cast<std::size_t>(i)] += 4; }, [](int i) { return i + 2; });
-    fdapde::parallel_for(4, 4, [&](int) { FAIL() << "empty ranges must not execute"; });
-    fdapde::parallel_for(5, 4, [&](int) { FAIL() << "reversed ranges must not execute"; });
+    fdapde::parallel_for(4, 4, [&](int) {
+        // fails if an empty range invokes its loop body
+        FAIL() << "empty ranges must not execute";
+    });
+    fdapde::parallel_for(5, 4, [&](int) {
+        // fails if a reversed range invokes its loop body
+        FAIL() << "reversed ranges must not execute";
+    });
 
-    for (int i = 0; i < 64; ++i) { EXPECT_EQ(values[static_cast<std::size_t>(i)], i % 2 == 0 ? 7 : 3); }
+    for (int i = 0; i < 64; ++i) {
+        // compares each element with the expected unit-step and even-index contributions
+        EXPECT_EQ(values[static_cast<std::size_t>(i)], i % 2 == 0 ? 7 : 3);
+    }
 }
 
+// verifies parallel for each visits each element exactly once
 TEST(ExecutionParallelAlgorithms, ParallelForEachVisitsEachElementExactlyOnce) {
     std::vector<int> values(97, 0);
 
     fdapde::parallel_for_each(values, 11, [](int& value) { value += 1; });
     fdapde::parallel_for_each(values, [](int& value) { value += 2; });
 
-    for (int value : values) { EXPECT_EQ(value, 3); }
+    for (int value : values) {
+        // checks each element received both for-each updates exactly once
+        EXPECT_EQ(value, 3);
+    }
 }
 
+// verifies parallel reduce honors the initial value and raw pointers
 TEST(ExecutionParallelAlgorithms, ParallelReduceHonorsTheInitialValueAndRawPointers) {
     const std::vector<int> factors {2, 3, 4};
+    // checks explicit chunking multiplies the seed by all factors exactly once
     EXPECT_EQ(fdapde::parallel_reduce(factors.begin(), factors.end(), 2, 5, std::multiplies<>()), 120);
+    // checks automatic chunking preserves the same multiplicative seed
     EXPECT_EQ(fdapde::parallel_reduce(factors.begin(), factors.end(), 5, std::multiplies<>()), 120);
 
     const int values[] {1, 2, 3};
+    // checks reduction over raw pointers adds the seed once
     EXPECT_EQ(fdapde::parallel_reduce(values, values + 3, 2, 10, std::plus<>()), 16);
+    // checks an empty pointer range returns the unchanged seed
     EXPECT_EQ(fdapde::parallel_reduce(values, values, 42, std::plus<>()), 42);
 
     const std::vector<std::string> tokens {"a", "b", "c", "d"};
+    // compares concatenation with input order and a single leading seed
     EXPECT_EQ(
       fdapde::parallel_reduce(tokens.begin(), tokens.end(), 2, std::string("seed:"), std::plus<>()), "seed:abcd");
 }
 
+// verifies nested algorithms complete before their caller returns
 TEST(ExecutionParallelAlgorithms, NestedAlgorithmsCompleteBeforeTheirCallerReturns) {
     constexpr int outer_size = 8;
     constexpr int inner_size = 32;
@@ -73,10 +94,30 @@ TEST(ExecutionParallelAlgorithms, NestedAlgorithmsCompleteBeforeTheirCallerRetur
         if (sum == (row + 1) * inner_size) { completed_rows.fetch_add(1, std::memory_order_relaxed); }
     });
 
+    // counts outer tasks whose nested reduction observed a fully completed inner loop
     EXPECT_EQ(completed_rows.load(std::memory_order_relaxed), outer_size);
     for (int row = 0; row < outer_size; ++row) {
         for (int column = 0; column < inner_size; ++column) {
+            // checks every cell was written before the nested parallel call returned
             EXPECT_EQ(values[static_cast<std::size_t>(row * inner_size + column)], row + 1);
         }
     }
+}
+
+namespace {
+/// @brief supplies a reduction value that cannot be initialized with an artificial default identity
+struct Product {
+    int value;
+    /// @brief constructs the reduction value from an input factor
+    explicit Product(int value_) : value(value_) { }
+};
+}   // namespace
+
+// verifies partial reductions initialize from input elements when the result has no default constructor
+TEST(ExecutionParallelAlgorithms, ReductionNeedsNoDefaultConstructedIdentity) {
+    const std::vector<Product> factors {Product(2), Product(3), Product(4)};
+    auto multiply = [](Product lhs, Product rhs) { return Product(lhs.value * rhs.value); };
+    const auto product = fdapde::parallel_reduce(factors.begin(), factors.end(), 2, Product(5), multiply);
+    // compares the result with the seed applied once to the three factors
+    EXPECT_EQ(product.value, 120);
 }

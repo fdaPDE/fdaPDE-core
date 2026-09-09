@@ -42,3 +42,18 @@ The Linux integration workflow uses GCC 14 and Clang with debug assertions and
 warnings as errors. GCC 13.3 on the Ubuntu 24.04 runner crashes inside
 `add_alignment_attribute` while emitting DWARF for the stable GeoFrame templates.
 Compiler jobs run independently so a failure in one does not cancel the other.
+
+The execution suite contains 23 cases. With the 16 assertion and caller-contract
+cases and one multi-TU runtime test, CTest runs 40 cases.
+Two standalone header checks plus eight include-order units compile in the same build.
+Execution configuration and one-worker saturation run in separate processes so singleton
+configuration is never changed after initialization. All execution tests use debug assertions.
+
+The new suite checks ownership, accounting, bounded queues, dependency ordering,
+nested parallel execution, reduction order/identity and configuration validation.
+The multi-TU test checks shared configuration, singleton identity and real execution.
+The CI workflow targets this incremental suite; native-only gates are intentionally
+absent while the stable numerical modules still depend on Eigen.
+
+See [the execution contract](../docs/execution.md) for the
+API requirements and runtime limits.

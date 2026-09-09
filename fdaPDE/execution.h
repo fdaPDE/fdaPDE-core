@@ -21,7 +21,9 @@
 
 namespace fdapde {
 
+/// @brief selects parallel execution
 struct execution_par_t { };
+/// @brief selects sequential execution
 struct execution_seq_t { };
 static constexpr execution_par_t execution_par;
 static constexpr execution_seq_t execution_seq;
@@ -58,6 +60,7 @@ static constexpr execution_seq_t execution_seq;
 #include <utility>
 #include <vector>
 
+#include "src/utility/assert.h"
 #include "src/execution/concurrency.h"
 
 // basic threaded runtime

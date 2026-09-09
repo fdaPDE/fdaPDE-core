@@ -22,11 +22,12 @@
 namespace fdapde {
 namespace internals {
 
-// specialized parallelized for loop task
+/// @brief partitions integer iteration ranges into cooperatively joined tasks
 struct task_parallel_for {
+    /// @brief constructs a stateless parallel task descriptor
     task_parallel_for() = default;
 
-    // optimized for loop with standard ++i increment
+    /// @brief partitions work and waits cooperatively for its task group
     template <typename LoopBody>
         requires(std::is_invocable_v<LoopBody, int>)
     void run(threaded_executor_impl* executor, int begin, int end, int grain_size, LoopBody&& f) {
@@ -56,7 +57,7 @@ struct task_parallel_for {
         });
         return;
     }
-    // for loop with custom step logic
+    /// @brief partitions work and waits cooperatively for its task group
     template <typename LoopBody, typename NextFunctor>
         requires(std::is_invocable_v<LoopBody, int> && std::is_invocable_r_v<int, NextFunctor, int>)
     void run(threaded_executor_impl* executor, int begin, int end, int grain_size, LoopBody&& f, NextFunctor&& next) {
@@ -99,13 +100,14 @@ struct task_parallel_for {
 
 }   // namespace internals
 
-// splits [begin, end) into contiguous chunks of size grain_size and submits one task per chunk. Custom loop step logic
+/// @brief executes an integer range in parallel and waits for its chunks
 template <typename LoopBody, typename NextFunctor>
     requires(std::is_invocable_v<LoopBody, int> && std::is_invocable_r_v<int, NextFunctor, int>)
 void parallel_for(int begin, int end, int grain_size, LoopBody&& loop_body, NextFunctor&& next) {
     internals::threaded_executor::instance().execute(
       internals::task_parallel_for(), begin, end, grain_size, loop_body, next);
 }
+/// @brief executes an integer range in parallel and waits for its chunks
 template <typename LoopBody, typename NextFunctor>
     requires(std::is_invocable_v<LoopBody, int> && std::is_invocable_r_v<int, NextFunctor, int>)
 void parallel_for(int begin, int end, LoopBody&& loop_body, NextFunctor&& next) {
@@ -113,12 +115,13 @@ void parallel_for(int begin, int end, LoopBody&& loop_body, NextFunctor&& next) 
     internals::threaded_executor::instance().execute(
       internals::task_parallel_for(), begin, end, grain_size, loop_body, next);
 }
-// splits [begin, end) into contiguous chunks of size grain_size and submits one task per chunk
+/// @brief executes an integer range in parallel and waits for its chunks
 template <typename LoopBody>
     requires(std::is_invocable_v<LoopBody, int>)
 void parallel_for(int begin, int end, int grain_size, LoopBody&& loop_body) {
     internals::threaded_executor::instance().execute(internals::task_parallel_for(), begin, end, grain_size, loop_body);
 }
+/// @brief executes an integer range in parallel and waits for its chunks
 template <typename LoopBody>
     requires(std::is_invocable_v<LoopBody, int>)
 void parallel_for(int begin, int end, LoopBody&& loop_body) {

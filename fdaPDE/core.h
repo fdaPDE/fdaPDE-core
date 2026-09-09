@@ -22,6 +22,7 @@
 // include modules
 #include "linear_algebra.h"    // pull Eigen first
 #include "utility.h"
+#include "execution.h"
 #include "fields.h"
 #include "geometry.h"
 #include "io.h"

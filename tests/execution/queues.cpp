@@ -16,16 +16,19 @@
 
 #include <fdaPDE/execution.h>
 #include <gtest/gtest.h>   // testing framework
+
+#include <set>
 using namespace fdapde;
 
+// verifies chase lev queue
 TEST(execution, chase_lev_queue) {
     const int num_elements = 100000;
     const int num_thieves = 2;
-    
+
     internals::chase_lev_queue<int> queue(1024);   // force repeated circular-slot reuse
 
     std::atomic<bool> start_signal {false};
-    std::atomic<bool> owner_done   {false};
+    std::atomic<bool> owner_done {false};
 
     // spawn consumer threads
     std::vector<std::vector<int>> thief_results(num_thieves);
@@ -35,7 +38,7 @@ TEST(execution, chase_lev_queue) {
         thieves.emplace_back([&, i]() {
             // spin until owner starts pushing to maximize immediate contention
             while (!start_signal.load(std::memory_order_acquire));
-	    // start stealing
+            // start stealing
             while (!owner_done.load(std::memory_order_acquire) || !queue.empty()) {
                 auto val = queue.pop_back();
                 if (val) { thief_results[i].push_back(*val); }
@@ -61,13 +64,29 @@ TEST(execution, chase_lev_queue) {
 
     // check that every element 1, ..., n  found exactly once
     std::vector<int> registry(num_elements + 1, 0);
-    for (int val : owner_results) { registry[val]++; }
-    for (const auto& tr : thief_results) {
-        for (int val : tr) { registry[val]++; }
+    for (int val : owner_results) {
+        // rejects corrupt owner values before using them as registry indices
+        ASSERT_GE(val, 1);
+        // bounds owner values by the largest published task id
+        ASSERT_LE(val, num_elements);
+        registry[val]++;
     }
-    for (int i = 1; i <= num_elements; ++i) { EXPECT_EQ(registry[i], 1); }   // each element found exactly once
+    for (const auto& tr : thief_results) {
+        for (int val : tr) {
+            // rejects corrupt stolen values before using them as registry indices
+            ASSERT_GE(val, 1);
+            // bounds stolen values by the largest published task id
+            ASSERT_LE(val, num_elements);
+            registry[val]++;
+        }
+    }
+    for (int i = 1; i <= num_elements; ++i) {
+        // checks every published id appears exactly once across owner and thief results
+        EXPECT_EQ(registry[i], 1);
+    }   // each element found exactly once
 }
 
+// verifies mpsc queue
 TEST(execution, mpsc_queue) {
     // single-thread correctness
     internals::mpsc_queue<int> queue;
@@ -76,17 +95,22 @@ TEST(execution, mpsc_queue) {
     auto v1 = queue.pop();
     auto v2 = queue.pop();
     auto v3 = queue.pop();   // expected empty
-    EXPECT_TRUE (v1.has_value());
+    // checks the first pop contains a value before reading it
+    ASSERT_TRUE(v1.has_value());
+    // compares the first pop with the first submitted value
     EXPECT_EQ(v1.value(), 10);
-    EXPECT_TRUE (v2.has_value());
+    // checks the second pop contains a value before reading it
+    ASSERT_TRUE(v2.has_value());
+    // compares the second pop with the second submitted value
     EXPECT_EQ(v2.value(), 20);
+    // checks the drained queue has no third value
     EXPECT_FALSE(v3.has_value());
 
     // multi-threaded test
     // P2P: simulate the exchange of messages from multiple threads, each owning a private mpsc queue, emulating a
     // nested parallelism burst, where tasks start to inject tasks to other workers
     {
-        const int num_threads = std::thread::hardware_concurrency();
+        const int num_threads = 4;
         const int messages_per_thread = 20000;
         const int total_messages = num_threads * messages_per_thread;
 
@@ -98,7 +122,7 @@ TEST(execution, mpsc_queue) {
 
         std::atomic<int> global_received_count {0};
         std::vector<std::thread> workers;
-	std::vector<std::vector<int>> received(num_threads);
+        std::vector<std::vector<int>> received(num_threads);
 
         for (int i = 0; i < num_threads; ++i) {
             workers.emplace_back([&, thread_id = i]() {
@@ -128,14 +152,16 @@ TEST(execution, mpsc_queue) {
                 }
             });
         }
-	// wait for the test to finish
+        // wait for the test to finish
         for (auto& t : workers) { t.join(); }
 
-	// check all messages exchanged
+        // check all messages exchanged
+        // compares total deliveries with all peer-to-peer submissions
         EXPECT_EQ(global_received_count.load(), total_messages);
-	// check no duplicates
+        // check no duplicates
         std::set<int> unique_vals;
         for (int i = 0; i < num_threads; ++i) { unique_vals.insert(received[i].begin(), received[i].end()); }
+        // checks the set of delivered ids contains every submitted id exactly once
         EXPECT_EQ(unique_vals.size(), total_messages);
     }
 
@@ -143,7 +169,7 @@ TEST(execution, mpsc_queue) {
     // test the high contention of a single mpsc queue
     {
         internals::mpsc_queue<int> queue;
-        const int num_producers = std::thread::hardware_concurrency() - 1;
+        const int num_producers = 3;
         const int items_per_producer = 10000;
 
         std::vector<std::thread> producers;
@@ -169,8 +195,35 @@ TEST(execution, mpsc_queue) {
         for (auto& t : producers) { t.join(); }
         consumer.join();
 
+        // compares the single-consumer result count with all producer submissions
         EXPECT_EQ(results.size(), num_producers * items_per_producer);
         std::set<int> unique_vals(results.begin(), results.end());
+        // checks high-contention deliveries contain no duplicate ids
         EXPECT_EQ(unique_vals.size(), num_producers * items_per_producer);
     }
+}
+
+// verifies the bounded deque reports saturation and keeps owner/thief order at circular wraparound
+TEST(execution, chase_lev_capacity_and_wraparound) {
+    internals::chase_lev_queue<int> queue(4);
+    for (int round = 0; round < 20; ++round) {
+        // the first item must fit in an empty deque
+        EXPECT_TRUE(queue.push_front(round * 3));
+        // the second item must fit without changing the oldest item
+        EXPECT_TRUE(queue.emplace_front(round * 3 + 1));
+        // the third item fills the usable capacity of a four-slot deque
+        EXPECT_TRUE(queue.push_front(round * 3 + 2));
+        // saturation must be reported without publishing the extra value
+        EXPECT_FALSE(queue.push_front(-1));
+        // thieves take the oldest published item
+        EXPECT_EQ(queue.pop_back(), round * 3);
+        // the owner takes the newest published item
+        EXPECT_EQ(queue.pop_front(), round * 3 + 2);
+        // the remaining item is claimed once by the thief
+        EXPECT_EQ(queue.pop_back(), round * 3 + 1);
+        // the final claim must leave the deque empty before slot reuse
+        EXPECT_TRUE(queue.empty());
+    }
+    // an invalid internal buffer size is rejected with debug checks enabled
+    EXPECT_THROW(internals::chase_lev_queue<int>(3), std::invalid_argument);
 }

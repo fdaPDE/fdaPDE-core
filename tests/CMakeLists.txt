@@ -48,3 +48,32 @@ add_executable(fdapde_stable_callers_test utility/stable_callers.cpp utility/ass
 fdapde_configure_target(fdapde_stable_callers_test)
 target_link_libraries(fdapde_stable_callers_test PRIVATE GTest::gtest_main Eigen3::Eigen)
 gtest_discover_tests(fdapde_stable_callers_test PROPERTIES TIMEOUT 30)
+
+find_package(Threads REQUIRED)
+add_executable(fdapde_execution_test
+  execution/runtime.cpp execution/task_graph.cpp execution/parallel_algorithms.cpp execution/queues.cpp)
+add_executable(fdapde_execution_configuration_test execution/configuration.cpp)
+add_executable(fdapde_execution_queue_capacity_test execution/queue_capacity.cpp)
+foreach(target fdapde_execution_test fdapde_execution_configuration_test fdapde_execution_queue_capacity_test)
+  fdapde_configure_target(${target})
+  target_link_libraries(${target} PRIVATE GTest::gtest_main Threads::Threads)
+  gtest_discover_tests(${target} PROPERTIES TIMEOUT 120)
+endforeach()
+
+add_library(fdapde_execution_header_check OBJECT public_headers/execution.cpp)
+fdapde_configure_target(fdapde_execution_header_check)
+target_link_libraries(fdapde_execution_header_check PRIVATE Threads::Threads)
+
+foreach(module utility linear_algebra optimization core)
+  add_library(fdapde_execution_${module}_composition OBJECT
+    public_headers/execution_then_${module}.cpp public_headers/${module}_then_execution.cpp)
+  fdapde_configure_target(fdapde_execution_${module}_composition)
+  target_link_libraries(fdapde_execution_${module}_composition PRIVATE Eigen3::Eigen Threads::Threads)
+endforeach()
+
+add_executable(fdapde_core_execution_odr
+  public_headers/core_execution_odr_a.cpp public_headers/core_execution_odr_b.cpp
+  public_headers/core_execution_odr_main.cpp)
+fdapde_configure_target(fdapde_core_execution_odr)
+target_link_libraries(fdapde_core_execution_odr PRIVATE GTest::gtest_main Eigen3::Eigen Threads::Threads)
+gtest_discover_tests(fdapde_core_execution_odr PROPERTIES TIMEOUT 30)

@@ -19,7 +19,7 @@
 
 #include "header_check.h"
 
-// returns the maximum number of logical CPUs on which the current process is allowed to execute concurrently.
+// returns the maximum number of logical CPUs on which the current process is allowed to execute concurrently
 #ifdef __linux__
 
 #    include <sched.h>
@@ -30,6 +30,7 @@
 namespace fdapde {
 namespace internals {
 
+/// @brief parses a positive int-sized environment count or returns no value
 inline std::optional<std::size_t> get_env_concurrency_count(const char* envvar) {
     const char* count = std::getenv(envvar);
     if (count == nullptr) return std::nullopt;
@@ -47,13 +48,14 @@ inline std::optional<std::size_t> get_env_concurrency_count(const char* envvar) 
 
 }   // namespace internals
 
+/// @brief detects scheduler, affinity or hardware concurrency with a minimum of one
 inline std::size_t available_concurrency() noexcept {
     // first, check if the process is scheduler-managed
 
     // detect the number of reserved cpus for processes running under:
     // open Portable Batch System (openPBS)
     if (auto PBS_NCPUS = internals::get_env_concurrency_count("NCPUS")) { return *PBS_NCPUS; }
-    // SLURM
+    // sLURM
     if (auto SLURM_NCPUS = internals::get_env_concurrency_count("SLURM_CPUS_ON_NODE")) { return *SLURM_NCPUS; }
     // check if OpenMP has been configured
     if (auto OMP_NCPUS = internals::get_env_concurrency_count("OMP_NUM_THREADS")) { return *OMP_NCPUS; }

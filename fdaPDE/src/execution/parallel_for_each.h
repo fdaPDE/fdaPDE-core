@@ -22,10 +22,12 @@
 namespace fdapde {
 namespace internals {
 
-// specialized parallelized for-range loop task
+/// @brief partitions a container into cooperatively joined tasks
 struct task_parallel_for_each {
+    /// @brief constructs a stateless parallel task descriptor
     task_parallel_for_each() = default;
 
+    /// @brief partitions work and waits cooperatively for its task group
     template <typename Container, typename LoopBody>
         requires(std::is_invocable_v<LoopBody, typename Container::reference>)
     void run(threaded_executor_impl* executor, Container& container, int grain_size, LoopBody&& f) {
@@ -36,6 +38,7 @@ struct task_parallel_for_each {
         dispatch_(executor, container, grain_size, std::forward<LoopBody>(f));
         return;
     }
+    /// @brief partitions work and waits cooperatively for its task group
     template <typename Container, typename LoopBody>
         requires(std::is_invocable_v<LoopBody, typename Container::reference>)
     void run(threaded_executor_impl* executor, Container& container, LoopBody&& f) {
@@ -47,6 +50,7 @@ struct task_parallel_for_each {
         return;
     }
    private:
+    /// @brief submits chunks and cooperatively waits for their completion
     template <typename Container, typename LoopBody>
         requires(std::is_invocable_v<LoopBody, typename Container::reference>)
     void dispatch_(threaded_executor_impl* executor, Container& container, int grain_size, LoopBody&& f) {
@@ -86,13 +90,14 @@ struct task_parallel_for_each {
 
 }   // namespace internals
 
-// executes for(auto& value : container) { loop_body } in parallel
+/// @brief applies a callable to each container element and waits for completion
 template <typename Container, typename LoopBody>
     requires(std::is_invocable_v<LoopBody, typename std::decay_t<Container>::reference>)
 void parallel_for_each(Container& container, int grain_size, LoopBody&& loop_body) {
     internals::threaded_executor::instance().execute(
       internals::task_parallel_for_each(), container, grain_size, loop_body);
 }
+/// @brief applies a callable to each container element and waits for completion
 template <typename Container, typename LoopBody>
     requires(std::is_invocable_v<LoopBody, typename std::decay_t<Container>::reference>)
 void parallel_for_each(Container& container, LoopBody&& loop_body) {

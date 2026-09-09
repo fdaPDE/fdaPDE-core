@@ -22,10 +22,12 @@
 namespace fdapde {
 namespace internals {
 
-// specialized parallelized reduce task
+/// @brief reduces ordered chunks and applies the initial value exactly once
 struct task_parallel_reduce {
+    /// @brief constructs a stateless parallel task descriptor
     task_parallel_reduce() = default;
 
+    /// @brief partitions work and waits cooperatively for its task group
     template <std::forward_iterator Iterator, typename T, typename ReduxOp>
         requires(
           std::convertible_to<std::iter_reference_t<Iterator>, T> &&
@@ -38,6 +40,7 @@ struct task_parallel_reduce {
         grain_size = std::max(1, std::min(grain_size, n));
         return dispatch_(executor, begin, end, grain_size, init, std::forward<ReduxOp>(redux));
     }
+    /// @brief partitions work and waits cooperatively for its task group
     template <std::forward_iterator Iterator, typename T, typename ReduxOp>
         requires(
           std::convertible_to<std::iter_reference_t<Iterator>, T> &&
@@ -51,6 +54,7 @@ struct task_parallel_reduce {
         return dispatch_(executor, begin, end, grain_size, init, std::forward<ReduxOp>(redux));
     }
    private:
+    /// @brief submits chunks and cooperatively waits for their completion
     template <std::forward_iterator Iterator, typename T, typename ReduxOp>
     T dispatch_(
       threaded_executor_impl* executor, Iterator begin, Iterator end, int grain_size, T init, ReduxOp&& redux) {
@@ -94,7 +98,7 @@ struct task_parallel_reduce {
 
 }   // namespace internals
 
-// general parallel reduction algorithm
+/// @brief combines ordered chunk reductions with one initial value and waits for completion
 template <std::forward_iterator Iterator, typename T, typename ReduxOp>
     requires(
       std::convertible_to<std::iter_reference_t<Iterator>, T> &&
@@ -104,6 +108,7 @@ T parallel_reduce(Iterator begin, Iterator end, int grain_size, T init, ReduxOp&
     return internals::threaded_executor::instance().execute(
       internals::task_parallel_reduce(), begin, end, grain_size, init, redux);
 }
+/// @brief combines ordered chunk reductions with one initial value and waits for completion
 template <std::forward_iterator Iterator, typename T, typename ReduxOp>
     requires(
       std::convertible_to<std::iter_reference_t<Iterator>, T> &&

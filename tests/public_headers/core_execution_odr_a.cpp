@@ -14,7 +14,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+// clang-format off
 #include <fdaPDE/core.h>
 #include <fdaPDE/execution.h>
+// clang-format on
 
-int fdapde_core_then_execution_odr() { return 1; }
+/// @brief changes shared configuration through the core-first translation unit
+void configure_execution() { fdapde::parallel_set_num_threads(2); }
+/// @brief exposes the singleton address to check identity across translation units
+const void* core_executor_address() { return &fdapde::internals::threaded_executor::instance(); }

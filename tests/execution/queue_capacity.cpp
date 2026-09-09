@@ -23,9 +23,12 @@
 
 namespace {
 
+/// @brief isolates queue saturation on a single worker
 class OneWorkerEnvironment : public ::testing::Environment {
+    /// @brief selects one worker before the saturation test initializes the runtime
     void SetUp() override {
         fdapde::parallel_set_num_threads(1);
+        // checks the isolated runtime has exactly one worker before saturation
         ASSERT_EQ(fdapde::parallel_get_num_threads(), 1);
     }
 };
@@ -35,6 +38,7 @@ class OneWorkerEnvironment : public ::testing::Environment {
 
 }   // namespace
 
+// verifies gated burst beyond local queue capacity loses no tasks
 TEST(ExecutionQueueCapacity, GatedBurstBeyondLocalQueueCapacityLosesNoTasks) {
     using namespace std::chrono_literals;
 
@@ -45,6 +49,7 @@ TEST(ExecutionQueueCapacity, GatedBurstBeyondLocalQueueCapacityLosesNoTasks) {
         blocker_started.set_value();
         release.wait();
     });
+    // waits up to two seconds for the worker to block before queueing the burst
     ASSERT_EQ(blocker_started.get_future().wait_for(2s), std::future_status::ready);
 
     constexpr int task_count = 9'000;
@@ -55,5 +60,6 @@ TEST(ExecutionQueueCapacity, GatedBurstBeyondLocalQueueCapacityLosesNoTasks) {
 
     release_blocker.set_value();
     fdapde::parallel_join();
+    // compares completed tasks with the full burst after the global join
     EXPECT_EQ(completed.load(std::memory_order_relaxed), task_count);
 }
