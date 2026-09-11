@@ -125,10 +125,13 @@ template <int StorageOrder> void check_dense_skew_views() {
     expect_matrix_near(temporary_upper, matrix_type({0.0, 4.0, 6.0, -4.0, 0.0, 12.0, -6.0, -12.0, 0.0}));
     expect_matrix_near(temporary_lower, matrix_type({0.0, -8.0, -14.0, 8.0, 0.0, -16.0, 14.0, 16.0, 0.0}));
 
+    // runtime indices avoid GCC 14 diagnosing the unreachable access after the throwing guard
+    volatile int negative_row = -1;
+    volatile int past_last_row = 3;
     // skew-wrapper access rejects a negative row
-    EXPECT_THROW(static_cast<void>(upper(-1, 0)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(upper(negative_row, 0)), std::out_of_range);
     // const skew-wrapper access rejects a row equal to its dimension
-    EXPECT_THROW(static_cast<void>(lower(3, 0)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(lower(past_last_row, 0)), std::out_of_range);
     Matrix<double, Dynamic, Dynamic, StorageOrder> rectangular(2, 3);
     // skew wrapping rejects a rectangular dense matrix
     EXPECT_THROW(static_cast<void>(rectangular.template as_skew_symmetric<Upper>()), std::invalid_argument);
