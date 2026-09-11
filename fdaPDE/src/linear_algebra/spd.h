@@ -35,6 +35,13 @@ template <typename XprType_> struct SPDMatrixExpr : public SymmetricMatrixExpr<X
     using SymmetricMatrixExpr<XprType_>::derived;
 };
 
+/// @brief returns a validated SPD exponential from a finite symmetric expression
+template <typename XprType_> auto matrix_exp(const SymmetricMatrixExpr<XprType_>& matrix);
+/// @brief returns a validated SPD principal square root
+template <typename XprType_> auto matrix_sqrt(const SPDMatrixExpr<XprType_>& matrix);
+/// @brief returns a validated SPD inverse principal square root
+template <typename XprType_> auto matrix_inverse_sqrt(const SPDMatrixExpr<XprType_>& matrix);
+
 namespace internals {
 
 /// @brief rejects nonfinite eigenvalues and spectra with min <= 64 * dimension * epsilon * max
@@ -95,13 +102,12 @@ class spd_matrix_impl : public SPDMatrixExpr<spd_matrix_impl<Scalar_, Rows_, Col
     /// @brief copies square finite input after checking shape, symmetry and numerical positive definiteness
     /// @details symmetry uses 32 * dimension * epsilon * max_abs_coefficient; the lower triangle is stored
     template <typename RhsXprType_>
-    explicit spd_matrix_impl(const MatrixExpr<RhsXprType_>& rhs, checked_t) :
-        Base(), data_(make_storage_(rhs.derived())) {
+    explicit spd_matrix_impl(const MatrixExpr<RhsXprType_>& rhs) : Base(), data_(make_storage_(rhs.derived())) {
         validate_spd_(rhs.derived(), data_);
     }
 
     /// @brief validates replacement coefficients before committing them, preserving the owner on validation failure
-    template <typename RhsXprType_> spd_matrix_impl& assign(const MatrixExpr<RhsXprType_>& rhs, checked_t) & {
+    template <typename RhsXprType_> spd_matrix_impl& assign(const MatrixExpr<RhsXprType_>& rhs) & {
         // validate independent storage before replacing the current coefficients or dimensions
         StorageType candidate = make_storage_(rhs.derived());
         validate_spd_(rhs.derived(), candidate);
@@ -130,6 +136,25 @@ class spd_matrix_impl : public SPDMatrixExpr<spd_matrix_impl<Scalar_, Rows_, Col
         return os;
     }
    private:
+    template <typename XprType_> friend auto fdapde::matrix_exp(const SymmetricMatrixExpr<XprType_>& matrix);
+    template <typename XprType_> friend auto fdapde::matrix_sqrt(const SPDMatrixExpr<XprType_>& matrix);
+    template <typename XprType_> friend auto fdapde::matrix_inverse_sqrt(const SPDMatrixExpr<XprType_>& matrix);
+
+    /// @brief permits storage adoption only after a spectral primitive has established the SPD postconditions
+    struct trusted_t { };
+
+    /// @brief copies validated symmetric storage without repeating validation or creating a spectral cache
+    spd_matrix_impl(const StorageType& storage, trusted_t) : Base(), data_(storage) { }
+
+    /// @brief certifies the rounded finite reconstruction before invoking the private trusted constructor
+    /// @details only spectral friends may call this after reconstruct_symmetric has checked every coefficient
+    static spd_matrix_impl from_spectral_(const StorageType& storage) {
+        // positive transformed eigenvalues alone do not certify the rounded reconstructed matrix
+        validate_shape_(storage);
+        validate_spectrum_(storage);
+        return spd_matrix_impl(storage, trusted_t {});
+    }
+
     /// @brief rejects empty, nonsquare or incompatible input and dense workspaces beyond the int index range
     template <typename RhsXprType_> static void validate_shape_(const RhsXprType_& rhs) {
         fdapde_strong_assert(
@@ -179,9 +204,14 @@ class spd_matrix_impl : public SPDMatrixExpr<spd_matrix_impl<Scalar_, Rows_, Col
             }
         }
 
+        validate_spectrum_(storage);
+    }
+
+    /// @brief rejects eigensolver failure or numerical loss of positive definiteness in finite symmetric storage
+    static void validate_spectrum_(const StorageType& storage) {
         const EVD<StorageType> evd(storage);
         fdapde_strong_assert(evd.computed(), std::domain_error, "SPDMatrix: eigendecomposition failed");
-        validate_positive_spectrum(evd.eigenvalues(), rhs.rows());
+        validate_positive_spectrum(evd.eigenvalues(), storage.rows());
     }
 
     StorageType data_;
@@ -331,7 +361,7 @@ auto frechet_symmetric(
 }   // namespace internals
 
 /// @brief provides checked SPD ownership for unqualified floating scalars and square fixed or fully dynamic shapes
-/// @details only row-major packed storage is supported; construction requires the checked tag
+/// @details only row-major packed storage is supported; public construction always validates the input
 template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_ = RowMajor>
 using SPDMatrix = internals::spd_matrix_impl<Scalar_, Rows_, Cols_, StorageOrder_>;
 
@@ -357,8 +387,8 @@ template <typename XprType_> auto matrix_exp(const SymmetricMatrixExpr<XprType_>
     internals::require_computed(evd);
     const auto eigenvalues = internals::transform_eigenvalues(evd, value.rows(), [](auto x) { return std::exp(x); });
     internals::validate_positive_spectrum(eigenvalues, value.rows());
-    return SPDMatrix<Scalar, XprType::Rows, XprType::Cols>(
-      internals::reconstruct_symmetric(evd, value.rows(), eigenvalues), checked);
+    return SPDMatrix<Scalar, XprType::Rows, XprType::Cols>::from_spectral_(
+      internals::reconstruct_symmetric(evd, value.rows(), eigenvalues));
 }
 
 /// @brief returns the checked SPD principal square root, preserving the input scalar and static shape
@@ -371,8 +401,8 @@ template <typename XprType_> auto matrix_sqrt(const SPDMatrixExpr<XprType_>& mat
     internals::require_computed(evd);
     internals::validate_positive_spectrum(evd.eigenvalues(), value.rows());
     const auto eigenvalues = internals::transform_eigenvalues(evd, value.rows(), [](auto x) { return std::sqrt(x); });
-    return SPDMatrix<Scalar, XprType::Rows, XprType::Cols>(
-      internals::reconstruct_symmetric(evd, value.rows(), eigenvalues), checked);
+    return SPDMatrix<Scalar, XprType::Rows, XprType::Cols>::from_spectral_(
+      internals::reconstruct_symmetric(evd, value.rows(), eigenvalues));
 }
 
 /// @brief returns the checked SPD inverse principal square root of a numerically positive-definite expression
@@ -387,8 +417,8 @@ template <typename XprType_> auto matrix_inverse_sqrt(const SPDMatrixExpr<XprTyp
     const auto eigenvalues =
       internals::transform_eigenvalues(evd, value.rows(), [](auto x) { return Scalar(1) / std::sqrt(x); });
     internals::validate_positive_spectrum(eigenvalues, value.rows());
-    return SPDMatrix<Scalar, XprType::Rows, XprType::Cols>(
-      internals::reconstruct_symmetric(evd, value.rows(), eigenvalues), checked);
+    return SPDMatrix<Scalar, XprType::Rows, XprType::Cols>::from_spectral_(
+      internals::reconstruct_symmetric(evd, value.rows(), eigenvalues));
 }
 
 /// @brief returns the owned symmetric Frechet derivative of log at an SPD point along a symmetric direction

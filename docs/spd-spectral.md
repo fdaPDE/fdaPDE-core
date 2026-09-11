@@ -12,28 +12,30 @@ fixed and equal, or both `Dynamic`; packed storage supports `RowMajor` only.
 
 ```cpp
 const fdapde::Matrix<double, 2, 2> a({4.0, 1.0, 1.0, 3.0});
-fdapde::SPDMatrix<double, 2, 2> point(a, fdapde::checked);
+fdapde::SPDMatrix<double, 2, 2> point(a);
 const auto logarithm = fdapde::matrix_log(point);
 const auto root = fdapde::matrix_sqrt(point);
-point.assign(a * 2.0, fdapde::checked);
+point.assign(a * 2.0);
 ```
 
-Construction and `assign(..., checked)` require nonempty square input, compatible
+Construction and `assign(...)` require nonempty square input, compatible
 fixed dimensions, finite coefficients, numerical symmetry and numerical positive
 definiteness. The symmetry tolerance is
 `32 * dimension * epsilon<Scalar> * max_abs_coefficient`; the lower triangle is
 stored. Positive definiteness requires
 `min_eigenvalue > 64 * dimension * epsilon<Scalar> * max_eigenvalue` and
-`max_eigenvalue > 0`, with finite eigenvalues. These are floating-point acceptance criteria: a mathematically
-positive-definite matrix can be rejected when too ill-conditioned numerically.
+`max_eigenvalue > 0`, with finite eigenvalues. These are floating-point acceptance
+criteria: a mathematically positive-definite matrix can be rejected when too
+ill-conditioned numerically.
 The dense workspace must fit the supported `int` index range.
 
 Coefficients are read-only. `rep()` borrows a const symmetric representation and
 `data()` borrows a const pointer to lower-triangular coefficients packed row by
 row. These borrows require a living owner and may be invalidated by replacement;
 borrowing from a temporary is disabled. Copying a validated owner is permitted.
-Default construction, unchecked construction and individual coefficient writes
-are unavailable. Failed validation during checked assignment leaves the existing
+Construction from a matrix is explicit and always validates, without a public
+validation tag. Default construction, unchecked construction and individual
+coefficient writes are unavailable. Failed validation during checked assignment leaves the existing
 coefficients and dimensions unchanged.
 
 ## Typed operations
@@ -55,8 +57,14 @@ Results own their coefficients and can outlive input views and temporary owners.
 The inputs must remain valid throughout the call.
 
 Typed exponential, square-root and inverse-square-root results must satisfy the
-same checked SPD invariant as direct construction. Exponentiation can therefore
-report a domain error after underflow or loss of numerical positive definiteness,
+same checked SPD invariant as direct construction. After checking finite
+reconstructed coefficients, the three primitives use a private factory to validate the rounded
+result's shape and actual eigenspectrum, then invoke a private trusted constructor.
+The trusted constructor only stores symmetric coefficients; it maintains no EVD or
+logarithm cache. Neither its tag nor the factory is accessible to callers. This
+avoids repeating coefficient validation in the public constructor, while retaining
+the final numerical positivity check on the reconstructed matrix. Exponentiation
+can therefore report a domain error after underflow or loss of numerical positive definiteness,
 even if the mathematical result would be positive definite.
 
 ## Functions on ordinary native matrices
