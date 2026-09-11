@@ -21,7 +21,7 @@
 
 namespace fdapde {
 namespace internals {
-  
+
 // galerkin and petrov-galerkin vector finite element assembly loop
 template <typename Triangulation_, typename Form_, int Options_, typename... Quadrature_>
 class fe_bilinear_form_assembly_loop :
@@ -30,7 +30,7 @@ class fe_bilinear_form_assembly_loop :
    public:
     // detect trial and test spaces from bilinear form
     using TrialSpace = trial_space_t<Form_>;
-    using TestSpace  = test_space_t <Form_>;
+    using TestSpace = test_space_t<Form_>;
     static_assert(TrialSpace::local_dim == TestSpace::local_dim && TrialSpace::embed_dim == TestSpace::embed_dim);
     static constexpr bool is_galerkin = std::is_same_v<TrialSpace, TestSpace>;
     static constexpr bool is_petrov_galerkin = !is_galerkin;
@@ -72,12 +72,12 @@ class fe_bilinear_form_assembly_loop :
     static constexpr int n_quadrature_nodes = Quadrature::order;
    private:
     // selected Quadrature could be different than Base::Quadrature, evaluate trial and (re-evaluate) test functions
-    static constexpr auto test_shape_values_  = Base::template eval_shape_values<Quadrature, test_fe_traits >();
+    static constexpr auto test_shape_values_ = Base::template eval_shape_values<Quadrature, test_fe_traits>();
     static constexpr auto trial_shape_values_ = Base::template eval_shape_values<Quadrature, trial_fe_traits>();
-    static constexpr auto test_shape_grads_   = Base::template eval_shape_grads <Quadrature, test_fe_traits >();
-    static constexpr auto trial_shape_grads_  = Base::template eval_shape_grads <Quadrature, trial_fe_traits>();
-    static constexpr auto test_shape_hess_    = Base::template eval_shape_hess  <Quadrature, test_fe_traits >();
-    static constexpr auto trial_shape_hess_   = Base::template eval_shape_hess  <Quadrature, trial_fe_traits>();
+    static constexpr auto test_shape_grads_ = Base::template eval_shape_grads<Quadrature, test_fe_traits>();
+    static constexpr auto trial_shape_grads_ = Base::template eval_shape_grads<Quadrature, trial_fe_traits>();
+    static constexpr auto test_shape_hess_ = Base::template eval_shape_hess<Quadrature, test_fe_traits>();
+    static constexpr auto trial_shape_hess_ = Base::template eval_shape_hess<Quadrature, trial_fe_traits>();
     // private data members
     const DofHandlerType* trial_dof_handler_;
     Quadrature quadrature_ {};
@@ -105,8 +105,8 @@ class fe_bilinear_form_assembly_loop :
     Eigen::SparseMatrix<double> assemble() const {
         Eigen::SparseMatrix<double> assembled_mat(test_dof_handler()->n_dofs(), trial_dof_handler()->n_dofs());
         std::vector<Eigen::Triplet<double>> triplet_list;
-	assemble(triplet_list);
-	// linearity of the integral is implicitly used here, as duplicated triplets are summed up (see Eigen docs)
+        assemble(triplet_list);
+        // linearity of the integral is implicitly used here, as duplicated triplets are summed up (see Eigen docs)
         assembled_mat.setFromTriplets(triplet_list.begin(), triplet_list.end());
         assembled_mat.makeCompressed();
         return assembled_mat;
@@ -114,15 +114,14 @@ class fe_bilinear_form_assembly_loop :
     void assemble(std::vector<Eigen::Triplet<double>>& triplet_list) const {
         using iterator = typename Base::fe_traits::dof_iterator;
         iterator begin(Base::begin_.index(), test_dof_handler(), Base::begin_.marker());
-        iterator end  (Base::end_.index(),   test_dof_handler(), Base::end_.marker()  );
+        iterator end(Base::end_.index(), test_dof_handler(), Base::end_.marker());
         // prepare assembly loop
-	Eigen::Matrix<int, Dynamic, 1> test_active_dofs, trial_active_dofs;
-        MdArray<double, MdExtents<n_test_basis,  n_quadrature_nodes, embed_dim, n_test_components >> test_grads;
+        Eigen::Matrix<int, Dynamic, 1> test_active_dofs, trial_active_dofs;
+        MdArray<double, MdExtents<n_test_basis, n_quadrature_nodes, embed_dim, n_test_components>> test_grads;
         MdArray<double, MdExtents<n_trial_basis, n_quadrature_nodes, embed_dim, n_trial_components>> trial_grads;
-        Matrix<double, n_test_basis , n_quadrature_nodes> test_divs;
+        Matrix<double, n_test_basis, n_quadrature_nodes> test_divs;
         Matrix<double, n_trial_basis, n_quadrature_nodes> trial_divs;
-        MdArray<double, MdExtents<n_test_basis,  n_quadrature_nodes, n_test_components,  embed_dim, embed_dim>>
-	  test_hess;
+        MdArray<double, MdExtents<n_test_basis, n_quadrature_nodes, n_test_components, embed_dim, embed_dim>> test_hess;
         MdArray<double, MdExtents<n_trial_basis, n_quadrature_nodes, n_trial_components, embed_dim, embed_dim>>
           trial_hess;
 
@@ -131,14 +130,14 @@ class fe_bilinear_form_assembly_loop :
         }
         // start assembly loop
         internals::fe_assembler_packet<embed_dim> fe_packet(n_trial_components, n_test_components);
-	// if hessians are zero, assemble physical hessian once and never update
+        // if hessians are zero, assemble physical hessian once and never update
         constexpr bool test_hess_is_zero = std::all_of(
           test_shape_hess_.data(), test_shape_hess_.data() + test_shape_hess_.size(), [](double x) { return x == 0; });
         constexpr bool trial_hess_is_zero =
           std::all_of(trial_shape_hess_.data(), trial_shape_hess_.data() + trial_shape_hess_.size(), [](double x) {
               return x == 0;
           });
-        if constexpr (test_hess_is_zero ) { std::fill_n(fe_packet.test_hess.data(), fe_packet.test_hess.size(), 0.0); }
+        if constexpr (test_hess_is_zero) { std::fill_n(fe_packet.test_hess.data(), fe_packet.test_hess.size(), 0.0); }
         if constexpr (trial_hess_is_zero) {
             std::fill_n(fe_packet.trial_hess.data(), fe_packet.trial_hess.size(), 0.0);
         }
@@ -150,7 +149,8 @@ class fe_bilinear_form_assembly_loop :
             if constexpr (Form::XprBits & int(geo_assembler_flags::compute_geo_id)) { fe_packet.geo_id = it->id(); }
             if constexpr (Form::XprBits & int(geo_assembler_flags::compute_face_normal)) {
                 fdapde_static_assert(Options_ == FaceMajor, BILINEAR_FORM_REQUIRES_A_FACE_MAJOR_ASSEMBLY_LOOP);
-                fe_packet.normal.assign_inplace_from(it->normal());
+                const auto normal = it->normal();
+                for (int d = 0; d < embed_dim; ++d) { fe_packet.normal(d, 0) = normal[d]; }
             }
             if constexpr (Form::XprBits & int(fe_assembler_flags::compute_shape_grad)) {
                 Base::eval_shape_grads_on_cell(it, test_shape_grads_, test_grads);
@@ -178,13 +178,13 @@ class fe_bilinear_form_assembly_loop :
                     double value = 0;
                     for (int q_k = 0; q_k < n_quadrature_nodes; ++q_k) {
                         if constexpr (Form::XprBits & int(fe_assembler_flags::compute_shape_values)) {
-                            fe_packet.trial_value.assign_inplace_from(trial_shape_values_.template slice<0, 1>(i, q_k));
-                            fe_packet.test_value .assign_inplace_from(test_shape_values_ .template slice<0, 1>(j, q_k));
+                            fe_packet.trial_value = trial_shape_values_.template slice<0, 1>(i, q_k);
+                            fe_packet.test_value = test_shape_values_.template slice<0, 1>(j, q_k);
                         }
                         if constexpr (Form::XprBits & int(fe_assembler_flags::compute_shape_grad)) {
-                            fe_packet.trial_grad.assign_inplace_from(is_galerkin ?
-                                test_grads.template slice<0, 1>(i, q_k) : trial_grads.template slice<0, 1>(i, q_k));
-                            fe_packet.test_grad .assign_inplace_from(test_grads.template slice<0, 1>(j, q_k));
+                            fe_packet.trial_grad = is_galerkin ? test_grads.template slice<0, 1>(i, q_k) :
+                                                                 trial_grads.template slice<0, 1>(i, q_k);
+                            fe_packet.test_grad = test_grads.template slice<0, 1>(j, q_k);
                         }
                         if constexpr (Form::XprBits & int(fe_assembler_flags::compute_shape_div)) {
                             if constexpr (n_trial_components != 1) {
@@ -195,10 +195,10 @@ class fe_bilinear_form_assembly_loop :
                         }
                         if constexpr (Form::XprBits & int(fe_assembler_flags::compute_shape_hess)) {
                             if constexpr (!trial_hess_is_zero)
-                                fe_packet.trial_hess.assign_inplace_from(is_galerkin ?
-				    test_hess.template slice<0, 1>(i, q_k) : trial_hess.template slice<0, 1>(i, q_k));
+                                fe_packet.trial_hess = is_galerkin ? test_hess.template slice<0, 1>(i, q_k) :
+                                                                     trial_hess.template slice<0, 1>(i, q_k);
                             if constexpr (!test_hess_is_zero)
-                                fe_packet.test_hess.assign_inplace_from(test_hess.template slice<0, 1>(j, q_k));
+                                fe_packet.test_hess = test_hess.template slice<0, 1>(j, q_k);
                         }
                         if constexpr (Form::XprBits & int(fe_assembler_flags::compute_physical_quad_nodes)) {
                             fe_packet.quad_node_id = local_cell_id * n_quadrature_nodes + q_k;
@@ -219,7 +219,6 @@ class fe_bilinear_form_assembly_loop :
     constexpr int cols() const { return trial_dof_handler()->n_dofs(); }
     constexpr const TrialSpace& trial_space() const { return *trial_space_; }
 };
-
 
 // optimized computation of discretized laplace operator (\int_D (\grad{\psi_i} * \grad{\psi_j})) for scalar elements
 template <typename DofHandler, typename FeType> class scalar_fe_grad_grad_assembly_loop {
@@ -266,7 +265,8 @@ template <typename DofHandler, typename FeType> class scalar_fe_grad_grad_assemb
             for (int i = 0; i < n_basis; ++i) {
                 for (int j = 0; j < n_quadrature_nodes; ++j) {
                     shape_grad[i].col(j) =
-                      Map<const double, local_dim, embed_dim>(it->invJ().data()).transpose() * shape_grad_[i].col(j);
+                      MatrixView<const double, local_dim, embed_dim, ColMajor>(it->invJ().data()).transpose() *
+                      shape_grad_[i].col(j);
                 }
             }
             for (int i = 0; i < BasisType::n_basis; ++i) {
@@ -283,13 +283,13 @@ template <typename DofHandler, typename FeType> class scalar_fe_grad_grad_assemb
         // linearity of the integral is implicitly used here, as duplicated triplets are summed up (see Eigen docs)
         assembled_mat.setFromTriplets(triplet_list.begin(), triplet_list.end());
         assembled_mat.makeCompressed();
-	return assembled_mat.selfadjointView<Eigen::Upper>();
+        return assembled_mat.selfadjointView<Eigen::Upper>();
     }
     constexpr int n_dofs() const { return dof_handler_->n_dofs(); }
     constexpr int rows() const { return n_dofs(); }
-    constexpr int cols() const { return n_dofs(); }  
+    constexpr int cols() const { return n_dofs(); }
 };
-  
+
 }   // namespace internals
 }   // namespace fdapde
 

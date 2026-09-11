@@ -19,6 +19,8 @@
 
 // clang-format off
 
+#include "linear_algebra.h"
+
 // include required modules
 #include "utility.h"
 

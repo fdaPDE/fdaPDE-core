@@ -1,6 +1,6 @@
 # Numeric utilities
 
-Include `<fdaPDE/utility.h>` to use scalar utilities in runtime code and C++20 constant expressions. Dense matrix types and Eigen-backed modules retain their existing public headers.
+Include `<fdaPDE/utility.h>` to use scalar utilities in runtime code and C++20 constant expressions. Include `<fdaPDE/linear_algebra.h>` for native dense matrix types and the existing Eigen-backed algebra modules.
 
 ```cpp
 #include <fdaPDE/utility.h>

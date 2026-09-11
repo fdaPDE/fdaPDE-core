@@ -1,6 +1,6 @@
 # Incremental integration tests
 
-Configure and run this stable-compatible pilot with:
+Configure and run the integration suite with:
 
 ```sh
 cmake -S tests -B build/integration -DCMAKE_BUILD_TYPE=Debug
@@ -28,7 +28,7 @@ The typed macro also supports constant evaluation; the one-argument constexpr
 helper remains available for compatibility.
 
 The assertion header is self-contained so execution can use the shared macros
-without pulling in the stable utility matrix implementation.
+without pulling in the dense algebra implementation.
 The single `AssertionsDisabled` case is a focused exception to debug-only
 verification: argument erasure cannot be demonstrated with debug enabled.
 No ordinary suite is duplicated with `FDAPDE_NO_DEBUG`.
@@ -42,3 +42,20 @@ The Linux integration workflow uses GCC 14 and Clang with debug assertions and
 warnings as errors. GCC 13.3 on the Ubuntu 24.04 runner crashes inside
 `add_alignment_attribute` while emitting DWARF for the stable GeoFrame templates.
 Compiler jobs run independently so a failure in one does not cancel the other.
+
+## Dense algebra
+
+The dense target exercises matrices, expressions, packed Boolean storage,
+multidimensional arrays, structured types, and LU/QR/EVD. The caller target checks
+P1/P2 cardinality in 1D/2D/3D, exact P1 and P2 triangle assembly, mixed extent types
+GeoFrame column storage and grid-search storage order. Header checks compile each public aggregate alone.
+
+Configuration also compiles fifteen negative programs and requires each to emit
+its specific static-assert diagnostic. Logs are written beneath
+`compile_fail/` in the build directory. Debug assertions remain enabled in these
+programs; none duplicates the suite in NoDebug mode.
+
+Eight cases from `test/src/binary_matrix_test.cpp` are executed in
+`linear_algebra/historical_boolean.cpp`. Their original locations retain precise
+replacement pointers. The historical Eigen conversion case remains in place,
+as do historical FEM and other cases whose complete coverage is not replaced.

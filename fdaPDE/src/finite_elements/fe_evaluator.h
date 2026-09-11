@@ -78,19 +78,24 @@ template <typename Form_> struct fe_pointwise_evaluator_loop {
             if (cell_ids_[i] != -1) {   // point falls inside domain
                 auto cell = dof_handler_->cell(cell_ids_[i]);
                 // map i-th point to reference element
-                Matrix<double, embed_dim, 1> ref_p = cell.invJ() * (locs_.row(i).transpose() - cell.node(0));
+                const Eigen::Matrix<double, embed_dim, 1> mapped =
+                  cell.invJ() * (locs_.row(i).transpose() - cell.node(0));
+                Matrix<double, embed_dim, 1> ref_p;
+                for (int d = 0; d < embed_dim; ++d) { ref_p[d] = mapped[d]; }
                 for (int h = 0; h < n_shape_functions; ++h) {
                     if constexpr (Form::XprBits & int(fe_assembler_flags::compute_shape_values)) {
                         fe_packet.test_value(0) = fe_space_->eval_cell_value(h, cell_ids_[i], ref_p);
                     }
                     if constexpr (Form::XprBits & int(fe_assembler_flags::compute_shape_grad)) {
-                        fe_packet.test_grad.template slice<0>(0).assign_inplace_from(
-                          fe_space_->eval_cell_grad(h, cell_ids_[i], ref_p));
+                        const auto gradient = fe_space_->eval_cell_grad(h, cell_ids_[i], ref_p);
+                        for (int d = 0; d < embed_dim; ++d) { fe_packet.test_grad(d, 0) = gradient[d]; }
                     }
                     if constexpr (Form::XprBits & int(fe_assembler_flags::compute_shape_hess)) {
                         if constexpr (!FeType::is_hess_zero) {
-                            fe_packet.test_hess.template slice<0>(0).assign_inplace_from(
-                              fe_space_->eval_cell_hess(h, cell_ids_[i], ref_p));
+                            const auto hessian = fe_space_->eval_cell_hess(h, cell_ids_[i], ref_p);
+                            for (int r = 0; r < embed_dim; ++r) {
+                                for (int c = 0; c < embed_dim; ++c) { fe_packet.test_hess(0, r, c) = hessian(r, c); }
+                            }
                         }
                     }
                     // evaluate form
