@@ -59,3 +59,26 @@ Eight cases from `test/src/binary_matrix_test.cpp` are executed in
 `linear_algebra/historical_boolean.cpp`. Their original locations retain precise
 replacement pointers. The historical Eigen conversion case remains in place,
 as do historical FEM and other cases whose complete coverage is not replaced.
+
+## Native SPD geometry
+
+The native dense/SPD tests now include `dense_linear_algebra.h` directly and
+have no Eigen target dependency. LE/AIRM geometry tests cover independent SPD(2)
+oracles for float/double and fixed/dynamic orders, noncommuting SPD(3) maps,
+congruence invariance, parallel transport, gradient duality, and the AIRM
+second-order retraction. A focused `FDAPDE_NO_DEBUG` target verifies public error
+contracts and owning results; it suppresses inherited dense unused-operand
+warnings only while including the dense prerequisite.
+
+Run with Eigen unavailable to the compiler:
+
+```sh
+cmake -S tests -B build/native -DFDAPDE_NATIVE_ONLY=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build/native --parallel 4
+ctest --test-dir build/native --output-on-failure
+```
+
+This lane omits the legacy Eigen-dependent core callers. The default lane still
+builds them and checks both geometry/linear-algebra header orders in linked
+translation units. Configuration now checks 22 negative programs, including
+unsupported SPD geometry scalars, zero order, and oversized static order.

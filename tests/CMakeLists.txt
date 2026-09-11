@@ -14,7 +14,17 @@ FetchContent_Declare(googletest
   URL https://github.com/google/googletest/archive/f8d7d77c06936315286eb55f8de22cd23c188571.zip)
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
-find_package(Eigen3 3.4 REQUIRED NO_MODULE)
+option(FDAPDE_NATIVE_ONLY "Build native dense/SPD geometry checks with Eigen unavailable" OFF)
+if(FDAPDE_NATIVE_ONLY)
+  include(CheckIncludeFileCXX)
+  unset(FDAPDE_EIGEN_DISCOVERABLE CACHE)
+  check_include_file_cxx("Eigen/Eigen" FDAPDE_EIGEN_DISCOVERABLE)
+  if(FDAPDE_EIGEN_DISCOVERABLE)
+    message(FATAL_ERROR "The native-only lane requires Eigen to be unavailable")
+  endif()
+else()
+  find_package(Eigen3 3.4 REQUIRED NO_MODULE)
+endif()
 
 enable_testing()
 include(GoogleTest)
@@ -40,14 +50,16 @@ target_compile_definitions(fdapde_assert_disabled_test PRIVATE FDAPDE_NO_DEBUG)
 target_link_libraries(fdapde_assert_disabled_test PRIVATE GTest::gtest_main)
 gtest_discover_tests(fdapde_assert_disabled_test PROPERTIES TIMEOUT 30)
 
-add_library(fdapde_core_header_check OBJECT public_headers/core.cpp)
-fdapde_configure_target(fdapde_core_header_check)
-target_link_libraries(fdapde_core_header_check PRIVATE Eigen3::Eigen)
+if(NOT FDAPDE_NATIVE_ONLY)
+  add_library(fdapde_core_header_check OBJECT public_headers/core.cpp)
+  fdapde_configure_target(fdapde_core_header_check)
+  target_link_libraries(fdapde_core_header_check PRIVATE Eigen3::Eigen)
 
-add_executable(fdapde_stable_callers_test utility/stable_callers.cpp utility/assert_callers.cpp utility/numeric_callers.cpp)
-fdapde_configure_target(fdapde_stable_callers_test)
-target_link_libraries(fdapde_stable_callers_test PRIVATE GTest::gtest_main Eigen3::Eigen)
-gtest_discover_tests(fdapde_stable_callers_test PROPERTIES TIMEOUT 30)
+  add_executable(fdapde_stable_callers_test utility/stable_callers.cpp utility/assert_callers.cpp utility/numeric_callers.cpp)
+  fdapde_configure_target(fdapde_stable_callers_test)
+  target_link_libraries(fdapde_stable_callers_test PRIVATE GTest::gtest_main Eigen3::Eigen)
+  gtest_discover_tests(fdapde_stable_callers_test PROPERTIES TIMEOUT 30)
+endif()
 
 add_executable(fdapde_numeric_test utility/numeric.cpp utility/meta.cpp)
 fdapde_configure_target(fdapde_numeric_test)
@@ -57,9 +69,11 @@ gtest_discover_tests(fdapde_numeric_test PROPERTIES TIMEOUT 30)
 add_library(fdapde_utility_header_check OBJECT public_headers/utility.cpp)
 fdapde_configure_target(fdapde_utility_header_check)
 
-add_library(fdapde_linear_algebra_header_check OBJECT public_headers/linear_algebra.cpp)
-fdapde_configure_target(fdapde_linear_algebra_header_check)
-target_link_libraries(fdapde_linear_algebra_header_check PRIVATE Eigen3::Eigen)
+if(NOT FDAPDE_NATIVE_ONLY)
+  add_library(fdapde_linear_algebra_header_check OBJECT public_headers/linear_algebra.cpp)
+  fdapde_configure_target(fdapde_linear_algebra_header_check)
+  target_link_libraries(fdapde_linear_algebra_header_check PRIVATE Eigen3::Eigen)
+endif()
 
 set(dense_sources
   linear_algebra/block.cpp
@@ -82,18 +96,20 @@ set(dense_sources
 )
 add_executable(fdapde_dense_test ${dense_sources})
 fdapde_configure_target(fdapde_dense_test)
-target_link_libraries(fdapde_dense_test PRIVATE GTest::gtest_main Eigen3::Eigen)
+target_link_libraries(fdapde_dense_test PRIVATE GTest::gtest_main)
 gtest_discover_tests(fdapde_dense_test PROPERTIES TIMEOUT 60)
 
 add_executable(fdapde_spd_test linear_algebra/spd.cpp linear_algebra/spectral.cpp)
 fdapde_configure_target(fdapde_spd_test)
-target_link_libraries(fdapde_spd_test PRIVATE GTest::gtest_main Eigen3::Eigen)
+target_link_libraries(fdapde_spd_test PRIVATE GTest::gtest_main)
 gtest_discover_tests(fdapde_spd_test PROPERTIES TIMEOUT 60)
 
-add_executable(fdapde_dense_callers_test integration/dense_callers.cpp)
-fdapde_configure_target(fdapde_dense_callers_test)
-target_link_libraries(fdapde_dense_callers_test PRIVATE GTest::gtest_main Eigen3::Eigen)
-gtest_discover_tests(fdapde_dense_callers_test PROPERTIES TIMEOUT 60)
+if(NOT FDAPDE_NATIVE_ONLY)
+  add_executable(fdapde_dense_callers_test integration/dense_callers.cpp)
+  fdapde_configure_target(fdapde_dense_callers_test)
+  target_link_libraries(fdapde_dense_callers_test PRIVATE GTest::gtest_main Eigen3::Eigen)
+  gtest_discover_tests(fdapde_dense_callers_test PROPERTIES TIMEOUT 60)
+endif()
 
 # each rejected program must fail for its intended static assertion
 function(fdapde_reject_program name diagnostic)
@@ -101,7 +117,6 @@ function(fdapde_reject_program name diagnostic)
   try_compile(compiles "${CMAKE_CURRENT_BINARY_DIR}/compile_fail/${name}"
     "${CMAKE_CURRENT_SOURCE_DIR}/compile_fail/${name}.cpp"
     CMAKE_FLAGS "-DINCLUDE_DIRECTORIES:STRING=${CMAKE_CURRENT_SOURCE_DIR}/.."
-    LINK_LIBRARIES Eigen3::Eigen
     OUTPUT_VARIABLE output)
   file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/compile_fail/${name}.log" "${output}")
   if(compiles OR NOT output MATCHES "${diagnostic}")
@@ -129,9 +144,41 @@ fdapde_reject_program(oversized_spd_matrix SPD_DENSE_WORKSPACE_SIZE_EXCEEDS_SUPP
 fdapde_reject_program(partial_dynamic_spd_matrix SPD_MATRICES_MUST_BE_SQUARE_AND_EITHER_FULLY_STATIC_OR_FULLY_DYNAMIC)
 fdapde_reject_program(qualified_scalar_spd_matrix SPD_MATRICES_REQUIRE_AN_UNQUALIFIED_FLOATING_POINT_SCALAR)
 
-add_library(fdapde_module_header_checks OBJECT
-  public_headers/fields.cpp public_headers/geometry.cpp public_headers/io.cpp
-  public_headers/finite_elements.cpp public_headers/splines.cpp
-  public_headers/optimization.cpp public_headers/geoframe.cpp)
-fdapde_configure_target(fdapde_module_header_checks)
-target_link_libraries(fdapde_module_header_checks PRIVATE Eigen3::Eigen)
+if(NOT FDAPDE_NATIVE_ONLY)
+  add_library(fdapde_module_header_checks OBJECT
+    public_headers/fields.cpp public_headers/geometry.cpp public_headers/io.cpp
+    public_headers/finite_elements.cpp public_headers/splines.cpp
+    public_headers/optimization.cpp public_headers/geoframe.cpp)
+  fdapde_configure_target(fdapde_module_header_checks)
+  target_link_libraries(fdapde_module_header_checks PRIVATE Eigen3::Eigen)
+endif()
+
+add_executable(fdapde_spd_geometry_test
+  manifold_optimization/log_euclidean_spd.cpp manifold_optimization/affine_invariant_spd.cpp
+  manifold_optimization/spd_geometry.cpp)
+fdapde_configure_target(fdapde_spd_geometry_test)
+target_link_libraries(fdapde_spd_geometry_test PRIVATE GTest::gtest_main)
+gtest_discover_tests(fdapde_spd_geometry_test PROPERTIES TIMEOUT 60)
+
+# Focused public error/ownership contracts remain checked when debug assertions are disabled.
+add_executable(fdapde_spd_geometry_contract_test manifold_optimization/contracts.cpp)
+fdapde_configure_target(fdapde_spd_geometry_contract_test)
+target_compile_definitions(fdapde_spd_geometry_contract_test PRIVATE FDAPDE_NO_DEBUG)
+target_link_libraries(fdapde_spd_geometry_contract_test PRIVATE GTest::gtest_main)
+gtest_discover_tests(fdapde_spd_geometry_contract_test PROPERTIES TIMEOUT 60)
+
+add_library(fdapde_native_header_checks OBJECT
+  public_headers/dense_linear_algebra.cpp public_headers/manifold_optimization.cpp)
+fdapde_configure_target(fdapde_native_header_checks)
+
+if(NOT FDAPDE_NATIVE_ONLY)
+  add_executable(fdapde_geometry_header_order_test
+    public_headers/manifold_then_linear_algebra.cpp public_headers/linear_algebra_then_manifold.cpp)
+  fdapde_configure_target(fdapde_geometry_header_order_test)
+  target_link_libraries(fdapde_geometry_header_order_test PRIVATE Eigen3::Eigen)
+  add_test(NAME GeometryHeaderOrder COMMAND fdapde_geometry_header_order_test)
+endif()
+
+fdapde_reject_program(qualified_scalar_spd_geometry SPD_GEOMETRIES_REQUIRE_AN_UNQUALIFIED_FLOATING_POINT_SCALAR)
+fdapde_reject_program(zero_order_spd_geometry INVALID_SPD_GEOMETRY_ORDER)
+fdapde_reject_program(oversized_spd_geometry SPD_GEOMETRY_DENSE_WORKSPACE_SIZE_EXCEEDS_SUPPORTED_RANGE)

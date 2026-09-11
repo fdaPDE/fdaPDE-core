@@ -14,8 +14,19 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <fdaPDE/dense_linear_algebra.h>
+#ifndef __FDAPDE_MANIFOLD_OPTIMIZATION_MODULE_H__
+#define __FDAPDE_MANIFOLD_OPTIMIZATION_MODULE_H__
 
-fdapde::LowerTriangularMatrix<double, 3, 3, fdapde::ColMajor> col_major_triangular_matrix;
+// clang-format off
 
-int main() { return col_major_triangular_matrix.rows(); }
+#include "dense_linear_algebra.h"
+#include <concepts>
+#include <cstddef>
+
+#include "src/manifold_optimization/manifold.h"
+#include "src/manifold_optimization/log_euclidean_spd.h"
+#include "src/manifold_optimization/affine_invariant_spd.h"
+
+// clang-format on
+
+#endif   // __FDAPDE_MANIFOLD_OPTIMIZATION_MODULE_H__

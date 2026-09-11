@@ -1,4 +1,4 @@
-#include <fdaPDE/linear_algebra.h>
+#include <fdaPDE/dense_linear_algebra.h>
 #include <gtest/gtest.h>
 
 #include <cmath>

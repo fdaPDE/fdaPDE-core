@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <fdaPDE/linear_algebra.h>
+#include <fdaPDE/dense_linear_algebra.h>
 #include <gtest/gtest.h>
 
 #include <array>
@@ -106,6 +106,10 @@ void expect_matrix_near(const Actual& actual, const Expected& expected, double t
     }
 }
 
+// keep intentional invalid-index probes behind a runtime call boundary in GCC 14 Release
+// so its bounds diagnostics cannot inline them into a known local storage object
+template <typename View> double read_skew_entry(const View& view, int row, int col) { return view(row, col); }
+
 template <int StorageOrder> void check_dense_skew_views() {
     using matrix_type = Matrix<double, 3, 3, StorageOrder>;
     matrix_type dense({1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0});
@@ -125,10 +129,12 @@ template <int StorageOrder> void check_dense_skew_views() {
     expect_matrix_near(temporary_upper, matrix_type({0.0, 4.0, 6.0, -4.0, 0.0, 12.0, -6.0, -12.0, 0.0}));
     expect_matrix_near(temporary_lower, matrix_type({0.0, -8.0, -14.0, 8.0, 0.0, -16.0, 14.0, 16.0, 0.0}));
 
+    auto* volatile read_upper = &read_skew_entry<decltype(upper)>;
+    auto* volatile read_lower = &read_skew_entry<decltype(lower)>;
     // skew-wrapper access rejects a negative row
-    EXPECT_THROW(static_cast<void>(upper(-1, 0)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(read_upper(upper, -1, 0)), std::out_of_range);
     // const skew-wrapper access rejects a row equal to its dimension
-    EXPECT_THROW(static_cast<void>(lower(3, 0)), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(read_lower(lower, 3, 0)), std::out_of_range);
     Matrix<double, Dynamic, Dynamic, StorageOrder> rectangular(2, 3);
     // skew wrapping rejects a rectangular dense matrix
     EXPECT_THROW(static_cast<void>(rectangular.template as_skew_symmetric<Upper>()), std::invalid_argument);

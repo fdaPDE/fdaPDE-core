@@ -11,7 +11,7 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 
-#include <fdaPDE/linear_algebra.h>
+#include <fdaPDE/dense_linear_algebra.h>
 
 using oversized_mdarray_extents = fdapde::MdExtents<50000, 50000>;
 static_assert(sizeof(oversized_mdarray_extents) > 0);

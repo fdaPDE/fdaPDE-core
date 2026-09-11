@@ -14,8 +14,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <fdaPDE/dense_linear_algebra.h>
-
-fdapde::LowerTriangularMatrix<double, 3, 3, fdapde::ColMajor> col_major_triangular_matrix;
-
-int main() { return col_major_triangular_matrix.rows(); }
+#ifndef __FDAPDE_MANIFOLD_OPTIMIZATION_MODULE_H__
+#    error "Include fdaPDE/manifold_optimization.h instead of including internal headers directly."
+#endif

@@ -308,6 +308,13 @@ auto frechet_symmetric(
       "SPD spectral operation: incompatible direction dimensions");
     validate_finite_symmetric(direction);
 
+    // preserve a known static loop bound when GCC inlines packed coefficient access
+    constexpr int StaticOrder = Rows != Dynamic ? Rows : std::decay_t<DirectionXprType_>::Rows;
+    fdapde_strong_assert(
+      StaticOrder == Dynamic || dimension == StaticOrder, std::invalid_argument,
+      "SPD spectral operation: incompatible static dimensions");
+    const int extent = StaticOrder == Dynamic ? dimension : StaticOrder;
+
     Matrix<Scalar, Rows, Cols> hq;
     Matrix<Scalar, Rows, Cols> coefficients;
     Matrix<Scalar, Rows, Cols> q_coefficients;
@@ -319,37 +326,37 @@ auto frechet_symmetric(
 
     // rotate the direction into the eigenvector basis before applying the divided differences
     const auto eigenvectors = evd.eigenvectors();
-    for (int i = 0; i < dimension; ++i) {
-        for (int j = 0; j < dimension; ++j) {
+    for (int i = 0; i < extent; ++i) {
+        for (int j = 0; j < extent; ++j) {
             Scalar value = Scalar(0);
-            for (int k = 0; k < dimension; ++k) value += static_cast<Scalar>(direction(i, k)) * eigenvectors(k, j);
+            for (int k = 0; k < extent; ++k) value += static_cast<Scalar>(direction(i, k)) * eigenvectors(k, j);
             hq(i, j) = value;
         }
     }
-    for (int i = 0; i < dimension; ++i) {
-        for (int j = 0; j < dimension; ++j) {
+    for (int i = 0; i < extent; ++i) {
+        for (int j = 0; j < extent; ++j) {
             Scalar value = Scalar(0);
-            for (int k = 0; k < dimension; ++k) { value += eigenvectors(k, i) * hq(k, j); }
+            for (int k = 0; k < extent; ++k) { value += eigenvectors(k, i) * hq(k, j); }
             coefficients(i, j) = divided_difference(evd.eigenvalues()[i], evd.eigenvalues()[j]) * value;
             fdapde_strong_assert(
               std::isfinite(coefficients(i, j)), std::domain_error,
               "SPD spectral operation: nonfinite Frechet derivative");
         }
     }
-    for (int i = 0; i < dimension; ++i) {
-        for (int j = 0; j < dimension; ++j) {
+    for (int i = 0; i < extent; ++i) {
+        for (int j = 0; j < extent; ++j) {
             Scalar value = Scalar(0);
-            for (int k = 0; k < dimension; ++k) { value += eigenvectors(i, k) * coefficients(k, j); }
+            for (int k = 0; k < extent; ++k) { value += eigenvectors(i, k) * coefficients(k, j); }
             q_coefficients(i, j) = value;
         }
     }
 
     SymmetricMatrix<Scalar, Rows, Cols> result;
     if constexpr (Rows == Dynamic) { result.resize(dimension, dimension); }
-    for (int i = 0; i < dimension; ++i) {
+    for (int i = 0; i < extent; ++i) {
         for (int j = 0; j <= i; ++j) {
             Scalar value = Scalar(0);
-            for (int k = 0; k < dimension; ++k) { value += q_coefficients(i, k) * eigenvectors(j, k); }
+            for (int k = 0; k < extent; ++k) { value += q_coefficients(i, k) * eigenvectors(j, k); }
             fdapde_strong_assert(
               std::isfinite(value), std::domain_error, "SPD spectral operation: nonfinite Frechet derivative");
             result(i, j) = value;

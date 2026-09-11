@@ -176,15 +176,10 @@ template <typename T> class is_vector_like {
     using T_ = std::decay_t<T>;
    public:
     static constexpr bool value = []() {
-#ifdef __FDAPDE_HAS_EIGEN__
-        if constexpr (internals::is_eigen_dense_xpr_v<T_>) {
-            return internals::is_eigen_dense_vec_v<T_>;
-        } else
-#endif
-            return (is_subscriptable<T_, int> || (is_indexable_v<T_, 1, int> && !is_indexable_v<T_, 2, int>)) &&
-                   requires(T_ t) {
-                       { t.size() } -> std::convertible_to<int>;
-                   };
+        return (is_subscriptable<T_, int> || (is_indexable_v<T_, 1, int> && !is_indexable_v<T_, 2, int>)) &&
+               requires(T_ t) {
+                   { t.size() } -> std::convertible_to<int>;
+               };
     }();
 };
 template <typename T> static constexpr bool is_vector_like_v = is_vector_like<T>::value;
