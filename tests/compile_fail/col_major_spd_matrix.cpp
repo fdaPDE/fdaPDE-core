@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <fdaPDE/linear_algebra.h>
+#include <fdaPDE/dense_linear_algebra.h>
 
 // column-major packed SPD storage must fail with its dedicated storage-order diagnostic
 using col_major_spd_matrix = fdapde::SPDMatrix<double, 3, 3, fdapde::ColMajor>;

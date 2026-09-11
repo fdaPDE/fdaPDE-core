@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <fdaPDE/linear_algebra.h>
+#include <fdaPDE/dense_linear_algebra.h>
 
 // const-qualified coefficients must fail with the unqualified-floating-scalar SPD diagnostic
 using qualified_scalar_spd_matrix = fdapde::SPDMatrix<const double, 3, 3>;

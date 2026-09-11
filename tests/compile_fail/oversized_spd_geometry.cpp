@@ -14,8 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <fdaPDE/dense_linear_algebra.h>
+#include <fdaPDE/manifold_optimization.h>
 
-fdapde::LowerTriangularMatrix<double, 3, 3, fdapde::ColMajor> col_major_triangular_matrix;
-
-int main() { return col_major_triangular_matrix.rows(); }
+static_assert(sizeof(fdapde::manifold::LogEuclideanSPDGeometry<double, 46341>) > 0);
+static_assert(sizeof(fdapde::manifold::AffineInvariantSPDGeometry<double, 46341>) > 0);
+int main() { }
