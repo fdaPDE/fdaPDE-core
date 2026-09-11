@@ -85,6 +85,11 @@ fdapde_configure_target(fdapde_dense_test)
 target_link_libraries(fdapde_dense_test PRIVATE GTest::gtest_main Eigen3::Eigen)
 gtest_discover_tests(fdapde_dense_test PROPERTIES TIMEOUT 60)
 
+add_executable(fdapde_spd_test linear_algebra/spd.cpp linear_algebra/spectral.cpp)
+fdapde_configure_target(fdapde_spd_test)
+target_link_libraries(fdapde_spd_test PRIVATE GTest::gtest_main Eigen3::Eigen)
+gtest_discover_tests(fdapde_spd_test PROPERTIES TIMEOUT 60)
+
 add_executable(fdapde_dense_callers_test integration/dense_callers.cpp)
 fdapde_configure_target(fdapde_dense_callers_test)
 target_link_libraries(fdapde_dense_callers_test PRIVATE GTest::gtest_main Eigen3::Eigen)
@@ -118,6 +123,11 @@ fdapde_reject_program(oversized_reshape MATRIX_SIZE_EXCEEDS_SUPPORTED_RANGE)
 fdapde_reject_program(reshape_static_size_mismatch INVALID_RESHAPE__DIFFERENT_STATIC_SIZE)
 fdapde_reject_program(zero_static_boolean_block INVALID_BLOCK_DIMENSIONS)
 fdapde_reject_program(zero_static_reshape INVALID_RESHAPE_DIMENSIONS)
+
+fdapde_reject_program(col_major_spd_matrix PACKED_COL_MAJOR_STRUCTURED_STORAGE_IS_NOT_SUPPORTED)
+fdapde_reject_program(oversized_spd_matrix SPD_DENSE_WORKSPACE_SIZE_EXCEEDS_SUPPORTED_RANGE)
+fdapde_reject_program(partial_dynamic_spd_matrix SPD_MATRICES_MUST_BE_SQUARE_AND_EITHER_FULLY_STATIC_OR_FULLY_DYNAMIC)
+fdapde_reject_program(qualified_scalar_spd_matrix SPD_MATRICES_REQUIRE_AN_UNQUALIFIED_FLOATING_POINT_SCALAR)
 
 add_library(fdapde_module_header_checks OBJECT
   public_headers/fields.cpp public_headers/geometry.cpp public_headers/io.cpp
