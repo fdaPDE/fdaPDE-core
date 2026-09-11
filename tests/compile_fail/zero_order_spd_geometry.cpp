@@ -16,6 +16,10 @@
 
 #include <fdaPDE/manifold_optimization.h>
 
+// force log-Euclidean instantiation to check rejection of
+// zero order instead of a positive compile-time matrix order
 static_assert(sizeof(fdapde::manifold::LogEuclideanSPDGeometry<double, 0>) > 0);
+// force affine-invariant instantiation to check rejection of
+// zero order instead of a positive compile-time matrix order
 static_assert(sizeof(fdapde::manifold::AffineInvariantSPDGeometry<double, 0>) > 0);
 int main() { }

@@ -78,7 +78,7 @@ static_assert(fixed_spd::ReadOnly == 1);
 static_assert(is_spd_matrix_v<fixed_spd>);
 // cv and reference qualifiers do not hide the SPD expression contract
 static_assert(is_spd_matrix_v<const fixed_spd&>);
-// SPD owners remain accepted by symmetric-expression algorithms
+// validated SPD owners remain accepted by symmetric-expression algorithms
 static_assert(is_symmetric_matrix_v<fixed_spd>);
 // an SPD owner cannot exist before its coefficients have been validated
 static_assert(!std::is_default_constructible_v<fixed_spd>);
@@ -488,7 +488,7 @@ TEST(linear_algebra, spd_spectral_operations_reject_invalid_numerics_and_directi
     fixed_symmetric nonfinite;
     set_symmetric_zero(nonfinite);
     nonfinite(0, 0) = std::numeric_limits<double>::quiet_NaN();
-    // NaN coefficients are rejected before exponentiation
+    // nonfinite NaN coefficients are rejected before exponentiation
     EXPECT_THROW(matrix_exp(nonfinite), std::invalid_argument);
 
     const fixed_spd point(reference_spd());
@@ -532,7 +532,7 @@ TEST(linear_algebra, spd_float_results_match_diagonal_oracles) {
 
 }   // namespace
 
-// Fixed and mixed extents keep the same checked Frechet action without dynamic copies.
+// fixed and mixed extents keep the same checked Frechet action without dynamic copies
 TEST(linear_algebra, spd_frechet_static_bounds_and_mixed_directions) {
     SymmetricMatrix<double, 2, 2> chart;
     chart(0, 0) = 0.2;
@@ -548,15 +548,22 @@ TEST(linear_algebra, spd_frechet_static_bounds_and_mixed_directions) {
     const auto mixed_base = matrix_exp_frechet(dynamic_chart, direction);
     const auto mixed_direction = matrix_exp_frechet(chart, dynamic_direction);
     const double off_diagonal = 0.7 * (std::exp(0.4) - std::exp(0.2)) / 0.2;
+    // at a diagonal point the first diagonal exp differential equals exp(0.2) times the unit direction coefficient
     EXPECT_NEAR(fixed(0, 0), std::exp(0.2), 1e-13);
+    // the off-diagonal differential matches the analytic exponential divided difference
     EXPECT_NEAR(fixed(1, 0), off_diagonal, 1e-13);
+    // the second diagonal differential equals exp(0.4) times its negative direction coefficient
     EXPECT_NEAR(fixed(1, 1), -2 * std::exp(0.4), 1e-13);
+    // a dynamic base and fixed direction retain the same off-diagonal divided-difference value
     EXPECT_NEAR(mixed_base(1, 0), off_diagonal, 1e-13);
+    // a fixed base and dynamic direction retain the same off-diagonal value
     EXPECT_NEAR(mixed_direction(1, 0), off_diagonal, 1e-13);
     SymmetricMatrix<double, Dynamic, Dynamic> wrong(3, 3);
     for (int i = 0; i < 3; ++i) {
         for (int j = 0; j <= i; ++j) wrong(i, j) = 0;
     }
+    // a fixed order-two base rejects a dynamic order-three direction
     EXPECT_THROW(matrix_exp_frechet(chart, wrong), std::invalid_argument);
+    // a dynamic order-three base rejects a fixed order-two direction
     EXPECT_THROW(matrix_exp_frechet(wrong, direction), std::invalid_argument);
 }

@@ -37,10 +37,12 @@ template <typename Scalar_, int Order_> class AffineInvariantSPDGeometry {
     using Point = fdapde::SPDMatrix<Scalar, Order_, Order_>;
     using Tangent = fdapde::SymmetricMatrix<Scalar, Order_, Order_>;
 
+    /// @brief constructs the fixed-order geometry using its positive compile-time matrix order
     AffineInvariantSPDGeometry()
         requires(Order_ != fdapde::Dynamic)
     = default;
 
+    /// @brief constructs a dynamic geometry after checking positive order and the supported dense workspace bound
     explicit AffineInvariantSPDGeometry(int order)
         requires(Order_ == fdapde::Dynamic)
         : order_(order) {
@@ -173,7 +175,9 @@ template <typename Scalar_, int Order_> class AffineInvariantSPDGeometry {
         return internals::symmetric_congruence<Scalar, Order_>(point, euclidean_gradient, order_);
     }
    private:
+    /// @brief checks the point order and finite packed coefficients against this geometry
     void check_point_(const Point& point) const { internals::check_spd_geometry_shape(point, order_); }
+    /// @brief checks the tangent order and finite packed coefficients against this geometry
     void check_tangent_(const Tangent& tangent) const { internals::check_spd_geometry_shape(tangent, order_); }
 
     int order_ = Order_ == fdapde::Dynamic ? 0 : Order_;
