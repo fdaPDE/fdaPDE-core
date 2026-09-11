@@ -14,11 +14,18 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <fdaPDE/linear_algebra.h>
+// preserve the reversed aggregate order exercised by this translation unit
+// clang-format off
 #include <fdaPDE/manifold_optimization.h>
+#include <fdaPDE/linear_algebra.h>
+// clang-format on
 
+// the Eigen dynamic vectors retain their vector classification with this inclusion order
 static_assert(fdapde::internals::is_vector_like_v<Eigen::VectorXd>);
+// the Eigen dynamic matrices are not misclassified as vectors with this inclusion order
 static_assert(!fdapde::internals::is_vector_like_v<Eigen::MatrixXd>);
+// the log-Euclidean geometry retains its geodesic interface with this inclusion order
 static_assert(fdapde::manifold::GeodesicGeometry<fdapde::manifold::LogEuclideanSPDGeometry<double, 2>>);
 int geometry_header_order();
+// the linked geometry reports the three independent coefficients of a symmetric two-by-two tangent
 int main() { return geometry_header_order() == 3 ? 0 : 1; }

@@ -308,7 +308,7 @@ auto frechet_symmetric(
       "SPD spectral operation: incompatible direction dimensions");
     validate_finite_symmetric(direction);
 
-    // Preserve a known static loop bound when GCC inlines packed coefficient access.
+    // preserve a known static loop bound when GCC inlines packed coefficient access
     constexpr int StaticOrder = Rows != Dynamic ? Rows : std::decay_t<DirectionXprType_>::Rows;
     fdapde_strong_assert(
       StaticOrder == Dynamic || dimension == StaticOrder, std::invalid_argument,

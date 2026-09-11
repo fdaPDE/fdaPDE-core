@@ -16,6 +16,10 @@
 
 #include <fdaPDE/manifold_optimization.h>
 
+// force log-Euclidean instantiation to check rejection of
+// an order whose dense workspace exceeds the supported index range
 static_assert(sizeof(fdapde::manifold::LogEuclideanSPDGeometry<double, 46341>) > 0);
+// force affine-invariant instantiation to check rejection of
+// an order whose dense workspace exceeds the supported index range
 static_assert(sizeof(fdapde::manifold::AffineInvariantSPDGeometry<double, 46341>) > 0);
 int main() { }

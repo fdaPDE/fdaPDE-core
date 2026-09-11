@@ -16,6 +16,10 @@
 
 #include <fdaPDE/manifold_optimization.h>
 
+// force log-Euclidean instantiation to check rejection of
+// a const-qualified scalar instead of an unqualified floating-point type
 static_assert(sizeof(fdapde::manifold::LogEuclideanSPDGeometry<const double, 2>) > 0);
+// force affine-invariant instantiation to check rejection of
+// a const-qualified scalar instead of an unqualified floating-point type
 static_assert(sizeof(fdapde::manifold::AffineInvariantSPDGeometry<const double, 2>) > 0);
 int main() { }

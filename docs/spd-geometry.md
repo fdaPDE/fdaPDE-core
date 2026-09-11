@@ -55,8 +55,8 @@ uses the relative principal square root and congruence transformations.
 
 `logarithm(P,Q)` is the negative Riemannian gradient at `P` of
 `distance(P,Q)^2 / 2`. The exposed `FirstOrderGeometry`, `GeodesicGeometry`, and
-`VectorTransportGeometry` concepts describe the operations needed by subsequent
-optimization and interpolation slices; they do not implement an optimizer.
+`VectorTransportGeometry` concepts describe the operations available to
+optimization and interpolation consumers.
 
 LE `retract` equals its exponential. AIRM deliberately retains the second-order
 retraction `P^1/2 (I + W + W^2/2) P^1/2`, where
@@ -90,11 +90,5 @@ compiler-discoverable. CI also removes the Eigen development package in this lan
 
 The older `<fdaPDE/linear_algebra.h>` still includes Eigen and the existing
 Eigen-backed sparse/randomized helpers. The complete core is therefore **not**
-Eigen-free on this incremental branch. This split supplies the minimal native
-prerequisite for SPD geometry without importing the sparse/FEM migration from
-`develop-resurrection`. Both aggregate inclusion orders are checked, including
+Eigen-free on this incremental branch. Both aggregate inclusion orders are checked, including
 Eigen matrix/vector classification and a multi-translation-unit link.
-
-Weighted means, GFE interpolation and linearizations, nodal derivatives,
-second Fréchet derivatives, optimizer implementations, C-LE, prepared-point
-caches and global smoothing objectives are outside this slice.

@@ -17,9 +17,13 @@
 #include <fdaPDE/linear_algebra.h>
 #include <fdaPDE/manifold_optimization.h>
 
+// the Eigen dynamic vectors retain their vector classification with this inclusion order
 static_assert(fdapde::internals::is_vector_like_v<Eigen::VectorXd>);
+// the Eigen dynamic matrices are not misclassified as vectors with this inclusion order
 static_assert(!fdapde::internals::is_vector_like_v<Eigen::MatrixXd>);
+// the log-Euclidean geometry retains its geodesic interface with this inclusion order
 static_assert(fdapde::manifold::GeodesicGeometry<fdapde::manifold::LogEuclideanSPDGeometry<double, 2>>);
+// supplies the SPD(2) tangent dimension from a separate translation unit for the link check
 int geometry_header_order() {
     return static_cast<int>(fdapde::manifold::AffineInvariantSPDGeometry<double, 2>().dimension());
 }
