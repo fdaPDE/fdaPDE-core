@@ -14,9 +14,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#define FDAPDE_NO_DEBUG
 #include <fdaPDE/linear_algebra.h>
 
-fdapde::SPDMatrix<double, 3, 3, fdapde::ColMajor> col_major_spd_matrix;
+// column-major packed SPD storage must fail with its dedicated storage-order diagnostic
+using col_major_spd_matrix = fdapde::SPDMatrix<double, 3, 3, fdapde::ColMajor>;
 
-int main() { return col_major_spd_matrix.rows(); }
+// sizeof instantiates the invalid type without also requiring a deleted default constructor
+int main() { return sizeof(col_major_spd_matrix); }

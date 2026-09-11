@@ -14,9 +14,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#define FDAPDE_NO_DEBUG
 #include <fdaPDE/linear_algebra.h>
 
+// a fixed dimension whose dense workspace exceeds int indexing must fail with the workspace diagnostic
 using oversized_spd_matrix = fdapde::SPDMatrix<double, 46341, 46341>;
 
+// sizeof instantiates the invalid type without also requiring a deleted default constructor
 int main() { return sizeof(oversized_spd_matrix); }

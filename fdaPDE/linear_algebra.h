@@ -112,6 +112,8 @@ struct unchecked_t { };
 #include "src/linear_algebra/qr.h"
 #include "src/linear_algebra/evd.h"
 #include "src/linear_algebra/xpr.h"
+#include "src/linear_algebra/spd.h"
+#include "src/linear_algebra/spectral.h"
 
 #include "src/linear_algebra/utility.h"
 

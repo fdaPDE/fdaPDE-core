@@ -22,6 +22,7 @@ namespace fdapde {
 
 namespace internals {
 
+/// @brief materializes arithmetic input as double after checking square shape, finite values and relative symmetry
 template <typename XprType_> auto spectral_matrix(const MatrixExpr<XprType_>& matrix) {
     using XprType = std::decay_t<XprType_>;
     using Scalar = std::remove_cv_t<typename XprType::Scalar>;
@@ -30,36 +31,36 @@ template <typename XprType_> auto spectral_matrix(const MatrixExpr<XprType_>& ma
     constexpr int Rows = XprType::Rows;
     constexpr int Cols = XprType::Cols;
     const auto& input = matrix.derived();
-    if (input.rows() <= 0 || input.rows() != input.cols()) {
-        throw std::invalid_argument("spectral matrix function requires a nonempty square matrix");
-    }
+    fdapde_strong_assert(
+      input.rows() > 0 && input.rows() == input.cols(), std::invalid_argument,
+      "spectral matrix function requires a nonempty square matrix");
     const std::int64_t dimension = input.rows();
-    if (dimension * dimension > std::numeric_limits<int>::max()) {
-        throw std::length_error("spectral matrix function dense workspace exceeds supported range");
-    }
+    fdapde_strong_assert(
+      dimension * dimension <= std::numeric_limits<int>::max(), std::length_error,
+      "spectral matrix function dense workspace exceeds supported range");
 
     Matrix<double, Rows, Cols> dense(input);
     double scale = 0.0;
     for (int i = 0; i < input.rows(); ++i) {
         for (int j = 0; j < input.cols(); ++j) {
             const double value = dense(i, j);
-            if (!std::isfinite(value)) {
-                throw std::invalid_argument("spectral matrix function requires finite coefficients");
-            }
+            fdapde_strong_assert(
+              std::isfinite(value), std::invalid_argument, "spectral matrix function requires finite coefficients");
             scale = std::max(scale, std::abs(value));
         }
     }
     const double tolerance = 32.0 * static_cast<double>(input.rows()) * std::numeric_limits<double>::epsilon() * scale;
     for (int i = 0; i < input.rows(); ++i) {
         for (int j = 0; j < i; ++j) {
-            if (std::abs(dense(i, j) - dense(j, i)) > tolerance) {
-                throw std::invalid_argument("spectral matrix function requires a symmetric matrix");
-            }
+            fdapde_strong_assert(
+              std::abs(dense(i, j) - dense(j, i)) <= tolerance, std::invalid_argument,
+              "spectral matrix function requires a symmetric matrix");
         }
     }
     return dense;
 }
 
+/// @brief transforms a symmetric eigenspectrum and reconstructs an owned double matrix with the input static shape
 template <typename XprType_, typename UnaryOp_>
 auto apply_spectral_function(const MatrixExpr<XprType_>& matrix, UnaryOp_&& operation) {
     using XprType = std::decay_t<XprType_>;
@@ -67,17 +68,17 @@ auto apply_spectral_function(const MatrixExpr<XprType_>& matrix, UnaryOp_&& oper
     constexpr int Cols = XprType::Cols;
 
     if constexpr (Rows != Dynamic && Cols != Dynamic && Rows != Cols) {
-        throw std::invalid_argument("spectral matrix function requires a square matrix");
+        fdapde_strong_assert(false, std::invalid_argument, "spectral matrix function requires a square matrix");
     } else {
         auto dense = spectral_matrix(matrix);
         const int dimension = dense.rows();
         const EVD decomposition(dense.template as_symmetric<Lower>());
-        if (!decomposition.computed()) { throw std::domain_error("spectral eigendecomposition failed"); }
+        fdapde_strong_assert(decomposition.computed(), std::domain_error, "spectral eigendecomposition failed");
 
         double spectrum_scale = 0.0;
         for (int i = 0; i < dimension; ++i) {
             const double eigenvalue = decomposition.eigenvalues()[i];
-            if (!std::isfinite(eigenvalue)) { throw std::domain_error("spectral eigendecomposition failed"); }
+            fdapde_strong_assert(std::isfinite(eigenvalue), std::domain_error, "spectral eigendecomposition failed");
             spectrum_scale = std::max(spectrum_scale, std::abs(eigenvalue));
         }
         const double spectrum_tolerance =
@@ -87,9 +88,8 @@ auto apply_spectral_function(const MatrixExpr<XprType_>& matrix, UnaryOp_&& oper
         if constexpr (Rows == Dynamic) { eigenvalues.resize(dimension); }
         for (int i = 0; i < dimension; ++i) {
             eigenvalues[i] = operation(decomposition.eigenvalues()[i], spectrum_tolerance);
-            if (!std::isfinite(eigenvalues[i])) {
-                throw std::domain_error("spectral matrix function produced a nonfinite result");
-            }
+            fdapde_strong_assert(
+              std::isfinite(eigenvalues[i]), std::domain_error, "spectral matrix function produced a nonfinite result");
         }
 
         Matrix<double, Rows, Cols> result;
@@ -101,9 +101,8 @@ auto apply_spectral_function(const MatrixExpr<XprType_>& matrix, UnaryOp_&& oper
                 for (int k = 0; k < dimension; ++k) {
                     value += eigenvectors(i, k) * eigenvalues[k] * eigenvectors(j, k);
                 }
-                if (!std::isfinite(value)) {
-                    throw std::domain_error("spectral matrix function produced a nonfinite result");
-                }
+                fdapde_strong_assert(
+                  std::isfinite(value), std::domain_error, "spectral matrix function produced a nonfinite result");
                 result(i, j) = value;
             }
         }
@@ -113,40 +112,39 @@ auto apply_spectral_function(const MatrixExpr<XprType_>& matrix, UnaryOp_&& oper
 
 }   // namespace internals
 
+/// @brief returns the real symmetric matrix logarithm as an owned double matrix
+/// @details requires eigenvalues above 64 * dimension * double epsilon * spectral radius
 template <typename XprType_> auto logm(const MatrixExpr<XprType_>& matrix) {
     return internals::apply_spectral_function(matrix, [](double eigenvalue, double tolerance) {
-        if (!(eigenvalue > tolerance)) { throw std::domain_error("logm requires a positive definite matrix"); }
+        fdapde_strong_assert(eigenvalue > tolerance, std::domain_error, "logm requires a positive definite matrix");
         return std::log(eigenvalue);
     });
 }
 
+/// @brief returns the real symmetric matrix exponential as an owned double matrix, rejecting nonfinite results
 template <typename XprType_> auto expm(const MatrixExpr<XprType_>& matrix) {
     return internals::apply_spectral_function(matrix, [](double eigenvalue, double) { return std::exp(eigenvalue); });
 }
 
+/// @brief returns an integer power of a real symmetric matrix as an owned double matrix
+/// @details negative powers require every eigenvalue magnitude above the relative spectral tolerance
 template <typename XprType_> auto powm(const MatrixExpr<XprType_>& matrix, int exponent) {
     return internals::apply_spectral_function(matrix, [exponent](double eigenvalue, double tolerance) {
-        if (exponent < 0 && std::abs(eigenvalue) <= tolerance) {
-            throw std::domain_error("powm with a negative exponent requires an invertible matrix");
-        }
+        fdapde_strong_assert(
+          exponent >= 0 || std::abs(eigenvalue) > tolerance, std::domain_error,
+          "powm with a negative exponent requires an invertible matrix");
         return std::pow(eigenvalue, exponent);
     });
 }
 
+/// @brief returns the principal square root of a real symmetric positive-semidefinite matrix
+/// @details negative eigenvalues within the relative spectral tolerance are clamped to zero; others are rejected
 template <typename XprType_> auto sqrtm(const MatrixExpr<XprType_>& matrix) {
     return internals::apply_spectral_function(matrix, [](double eigenvalue, double tolerance) {
-        if (eigenvalue < -tolerance) { throw std::domain_error("sqrtm requires a positive semidefinite matrix"); }
+        fdapde_strong_assert(
+          eigenvalue >= -tolerance, std::domain_error, "sqrtm requires a positive semidefinite matrix");
         return std::sqrt(std::max(eigenvalue, 0.0));
     });
-}
-
-template <typename XprType_> constexpr bool is_empty(const MatrixExpr<XprType_>& matrix) {
-    const auto& value = matrix.derived();
-    return value.rows() == 0 || value.cols() == 0;
-}
-
-template <typename Scalar_> constexpr bool is_empty(const SparseMatrix<Scalar_>& matrix) {
-    return matrix.rows() == 0 || matrix.cols() == 0;
 }
 
 }   // namespace fdapde
