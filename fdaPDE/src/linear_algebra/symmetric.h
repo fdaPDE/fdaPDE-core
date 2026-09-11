@@ -22,14 +22,14 @@
 namespace fdapde {
 
 // symmetric matrix type system
-/// @brief represents symmetric matrix expr
+/// @brief provides symmetric matrix expressions and eigendecomposition access
 template <typename XprType> struct SymmetricMatrixExpr;
-/// @brief represents symmetric matrix view
+/// @brief views packed lower-triangular storage as a symmetric matrix
 template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_> class SymmetricMatrixView;
 
 namespace internals {
 
-/// @brief detects is mutable matrix view
+/// @brief identifies a view whose scalar type permits writes
 template <typename Scalar, int Rows, int Cols, int StorageOrder>
 struct is_mutable_matrix_view<SymmetricMatrixView<Scalar, Rows, Cols, StorageOrder>> :
     std::bool_constant<!std::is_const_v<Scalar>> { };
@@ -43,7 +43,7 @@ template <typename XprType> class EVD;
 namespace internals {
 
 // class wrapping a generic expression to the expression of a symmetric matrix. internal usage only
-/// @brief represents symmetric wrapper
+/// @brief mirrors one selected triangle of a square expression
 template <int ViewMode_, typename SymmetricXprType_>
 struct symmetric_wrapper : public SymmetricMatrixExpr<symmetric_wrapper<ViewMode_, SymmetricXprType_>> {
    private:
@@ -61,9 +61,9 @@ struct symmetric_wrapper : public SymmetricMatrixExpr<symmetric_wrapper<ViewMode
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
 
-    /// @brief constructs symmetric wrapper from the supplied state
+    /// @brief copies the symmetric adaptor while retaining its nested expression
     constexpr symmetric_wrapper(const symmetric_wrapper&) = default;
-    /// @brief constructs symmetric wrapper from the supplied state
+    /// @brief borrows one triangle of a nonempty square expression and mirrors it across the diagonal
     template <typename XprType__>
         requires(!std::same_as<std::remove_cvref_t<XprType__>, symmetric_wrapper> &&
                  internals::safely_nestable<XprTypeNested, XprType__>)
@@ -75,7 +75,7 @@ struct symmetric_wrapper : public SymmetricMatrixExpr<symmetric_wrapper<ViewMode
           !(xpr_.rows() <= 0 || xpr_.rows() != xpr_.cols()), std::invalid_argument,
           "symmetric view requires positive square dimensions");
     }
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief reflects the selected source triangle across the main diagonal
     constexpr Scalar operator()(int i, int j) const {
         internals::validate_matrix_index(i, j, size_, size_);
         if constexpr (ViewMode == Upper) { return i > j ? xpr_(j, i) : xpr_(i, j); }
@@ -100,7 +100,7 @@ template <int ViewMode_, typename XprType_> constexpr auto symmetric_cast(XprTyp
 
 }   // namespace internals
 
-/// @brief represents symmetric matrix expr
+/// @brief provides symmetric matrix expressions and eigendecomposition access
 template <typename XprType_> struct SymmetricMatrixExpr : public MatrixExpr<XprType_> {
     using XprType = std::decay_t<XprType_>;
     using Base = MatrixExpr<XprType_>;
@@ -119,7 +119,7 @@ template <typename XprType_> struct SymmetricMatrixExpr : public MatrixExpr<XprT
 };
 
 // base class for symmetric matrices
-/// @brief represents symmetric matrix base
+/// @brief maps symmetric coordinates to a shared packed lower triangle
 template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_, typename SymmetricMatrixType>
 class SymmetricMatrixBase : public SymmetricMatrixExpr<SymmetricMatrixType> {
    private:
@@ -133,22 +133,23 @@ class SymmetricMatrixBase : public SymmetricMatrixExpr<SymmetricMatrixType> {
     static constexpr int ReadOnly = std::is_const_v<Scalar_>;
     using Base::operator=;
 
-    /// @brief represents symmetric proxy
+    /// @brief reads or updates the shared storage entry for a pair of mirrored coordinates
     template <typename Scalar__>
         requires(std::is_same_v<std::remove_cv_t<Scalar>, std::remove_cv_t<Scalar__>>)
     struct symmetric_proxy {
         using Scalar = Scalar__;
 
-        /// @brief constructs symmetric proxy from the supplied state
+        /// @brief maps either mirrored coordinate to the same packed lower-triangular coefficient
         constexpr symmetric_proxy(Scalar__* data, int i, int j, int size) :
             data_(data), index_(compute_linear_index_(i < j ? j : i, i < j ? i : j, size)) { }
-        /// @brief assigns the supplied coefficients
+        /// @brief writes the packed coefficient shared by the two reflected coordinates
         template <typename T>
             requires(std::is_convertible_v<T, Scalar> && !std::is_const_v<Scalar__>)
         constexpr symmetric_proxy& operator=(T value) {
             data_[index_] = value;
             return *this;
         }
+        /// @brief reads the packed coefficient shared by reflected coordinates
         constexpr operator Scalar() const { return data_[index_]; }
        private:
         /// @brief maps a matrix coordinate to packed storage
@@ -162,15 +163,15 @@ class SymmetricMatrixBase : public SymmetricMatrixExpr<SymmetricMatrixType> {
     using reference = symmetric_proxy<Scalar>;
     using const_reference = symmetric_proxy<const Scalar>;
 
-    /// @brief constructs symmetric matrix base from the supplied state
+    /// @brief initializes the shared interface for packed symmetric coefficient access
     constexpr SymmetricMatrixBase() = default;
     // access
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief returns a read-only proxy to the packed coefficient shared by reflected coordinates
     constexpr auto operator()(int i, int j) const {
         internals::validate_matrix_index(i, j, derived().rows(), derived().cols());
         return const_reference(derived().data(), i, j, derived().rows());
     }
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief returns a writable proxy to the packed coefficient shared by reflected coordinates
     constexpr auto operator()(int i, int j)
         requires(ReadOnly == 0)
     {
@@ -180,29 +181,29 @@ class SymmetricMatrixBase : public SymmetricMatrixExpr<SymmetricMatrixType> {
 };
 
 // symmetric matrices vector-space structure (additive group)
-/// @brief implements the operator+ expression operation
+/// @brief adds equally shaped operands while preserving symmetry
 template <typename LhsXprType, typename RhsXprType>
 constexpr auto operator+(const SymmetricMatrixExpr<LhsXprType>& lhs, const SymmetricMatrixExpr<RhsXprType>& rhs) {
     return internals::symmetric_cast<Lower>(lhs.rep() + rhs.rep());
 }
-/// @brief implements the operator- expression operation
+/// @brief subtracts equally shaped operands while preserving symmetry
 template <typename LhsXprType, typename RhsXprType>
 constexpr auto operator-(const SymmetricMatrixExpr<LhsXprType>& lhs, const SymmetricMatrixExpr<RhsXprType>& rhs) {
     return internals::symmetric_cast<Lower>(lhs.rep() - rhs.rep());
 }
-/// @brief implements the operator* expression operation
+/// @brief scales by the right scalar while preserving symmetry
 template <typename XprType, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
 constexpr auto operator*(const SymmetricMatrixExpr<XprType>& lhs, ScalarType rhs) {
     return internals::symmetric_cast<Lower>(lhs.rep() * rhs);
 }
-/// @brief implements the operator* expression operation
+/// @brief scales by the left scalar while preserving symmetry
 template <typename XprType, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
 constexpr auto operator*(ScalarType lhs, const SymmetricMatrixExpr<XprType>& rhs) {
     return internals::symmetric_cast<Lower>(lhs * rhs.rep());
 }
-/// @brief implements the operator/ expression operation
+/// @brief divides each coefficient by the scalar while preserving symmetry
 template <typename XprType, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
 constexpr auto operator/(const SymmetricMatrixExpr<XprType>& lhs, ScalarType rhs) {
@@ -234,38 +235,38 @@ class SymmetricMatrix :
     static constexpr int ReadOnly = std::is_const_v<Scalar_>;
     using assignment_executor = typename StorageType::assignment_executor;
 
-    /// @brief constructs symmetric matrix from the supplied state
+    /// @brief value-initializes fixed packed storage and leaves dynamic storage empty
     constexpr SymmetricMatrix() : Base(), data_() { }
     // copy semantic
-    /// @brief constructs symmetric matrix from the supplied state
+    /// @brief copies the packed lower triangle into independent storage
     constexpr SymmetricMatrix(const SymmetricMatrix& rhs) : Base(), data_(rhs.rep()) { }
-    /// @brief assigns the supplied coefficients
+    /// @brief copies the source triangle and shape into independent packed storage
     constexpr SymmetricMatrix& operator=(const SymmetricMatrix& rhs) & {
         data_ = rhs.rep();
         return *this;
     }
-    /// @brief assigns the supplied coefficients
+    /// @brief rejects assignment to a temporary symmetric owner
     constexpr void operator=(const SymmetricMatrix&) && = delete;
     using Base::operator=;
 
-    /// @brief constructs symmetric matrix from the supplied state
+    /// @brief allocates packed storage for the requested dynamic dimensions
     constexpr explicit SymmetricMatrix(int rows, int cols) : Base(), data_(rows, cols) {
         fdapde_static_assert(Rows == Dynamic || Cols == Dynamic, THIS_METHOD_IS_FOR_DYNAMIC_SIZED_MATRICES_ONLY);
     }
-    /// @brief constructs symmetric matrix from the supplied state
+    /// @brief evaluates the lower triangle of a symmetric expression into owned storage
     template <typename RhsXprType_>
     constexpr SymmetricMatrix(const SymmetricMatrixExpr<RhsXprType_>& rhs) : Base(), data_(rhs) { }
-    /// @brief assigns the supplied coefficients
+    /// @brief evaluates a symmetric expression into this owner's packed triangle
     template <typename RhsXprType_>
     constexpr SymmetricMatrix& operator=(const SymmetricMatrixExpr<RhsXprType_>& rhs) & {
         data_ = rhs;
         return *this;
     }
-    /// @brief constructs symmetric matrix from the supplied state
+    /// @brief copies packed lower-triangular coefficients and infers dynamic dimensions from their count
     template <typename Scalar__>
         requires(std::is_constructible_v<Scalar_, Scalar__>)
     constexpr explicit SymmetricMatrix(const std::vector<Scalar__>& data) : Base(), data_(data) { }
-    /// @brief constructs symmetric matrix from the supplied state
+    /// @brief copies a C array of packed lower-triangular coefficients into fixed storage
     template <typename Scalar__, std::size_t Size>
         requires(std::is_constructible_v<Scalar_, Scalar__>)
     constexpr explicit SymmetricMatrix(const Scalar__ (&data)[Size]) : Base(), data_(data) {
@@ -296,7 +297,7 @@ class SymmetricMatrix :
 };
 
 // symmetric view of an existing block of data
-/// @brief represents symmetric matrix view
+/// @brief views packed lower-triangular storage as a symmetric matrix
 template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_ = RowMajor>
 class SymmetricMatrixView :
     public SymmetricMatrixBase<
@@ -319,35 +320,35 @@ class SymmetricMatrixView :
     using assignment_executor = typename StorageType::assignment_executor;
 
     // constructors
-    /// @brief constructs symmetric matrix view from the supplied state
+    /// @brief copies the packed-storage binding without copying coefficients
     constexpr SymmetricMatrixView(const SymmetricMatrixView&) = default;
-    /// @brief constructs symmetric matrix view from the supplied state
+    /// @brief creates an empty dynamic symmetric view without external storage
     constexpr SymmetricMatrixView()
         requires(Rows_ == Dynamic && Cols_ == Dynamic)
         : Base(), data_() { }
-    /// @brief constructs symmetric matrix view from the supplied state
+    /// @brief rejects default construction when either dimension is fixed
     constexpr SymmetricMatrixView()
         requires(Rows_ != Dynamic || Cols_ != Dynamic)
     = delete;
-    /// @brief constructs symmetric matrix view from the supplied state
+    /// @brief binds fixed dimensions to external packed lower-triangular storage
     template <typename Scalar__>
         requires(std::is_convertible_v<Scalar__*, Scalar_*>)
     constexpr explicit SymmetricMatrixView(Scalar__* data) : Base(), data_(data) {
         fdapde_static_assert(Rows != Dynamic && Cols != Dynamic, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
     }
-    /// @brief constructs symmetric matrix view from the supplied state
+    /// @brief binds explicit dimensions to external packed lower-triangular storage
     template <typename Scalar__>
         requires(std::is_convertible_v<Scalar__*, Scalar_*>)
     constexpr SymmetricMatrixView(Scalar__* data, int rows, int cols) : Base(), data_(data, rows, cols) { }
     using Base::operator=;
-    /// @brief assigns the supplied coefficients
+    /// @brief copies a symmetric source snapshot into bound storage without rebinding the view
     constexpr SymmetricMatrixView& operator=(const SymmetricMatrixView& other) &
         requires(ReadOnly == 0)
     {
         static_cast<Base&>(*this).template operator= <SymmetricMatrixView>(other);
         return *this;
     }
-    /// @brief assigns the supplied coefficients
+    /// @brief copies into a temporary symmetric view and returns its binding by value
     constexpr SymmetricMatrixView operator=(const SymmetricMatrixView& other) &&
       requires(ReadOnly == 0) {
           static_cast<Base&>(*this).template operator= <SymmetricMatrixView>(other);
@@ -378,7 +379,7 @@ class SymmetricMatrixView :
 };
 
 // detection trait
-/// @brief detects is symmetric matrix
+/// @brief identifies symmetric matrix expressions after removing cv and reference qualifiers
 template <typename XprType> struct is_symmetric_matrix {
     using Type = std::remove_cvref_t<XprType>;
     static constexpr bool value = std::is_base_of_v<SymmetricMatrixExpr<Type>, Type>;

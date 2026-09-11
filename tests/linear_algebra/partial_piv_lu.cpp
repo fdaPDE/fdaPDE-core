@@ -35,23 +35,23 @@ concept permits_rvalue_lu_factors = requires(Decomposition decomposition) {
 
 using fixed_lu = PartialPivLU<Matrix<double, 3, 3>>;
 using const_view_lu = PartialPivLU<MatrixView<const double, 3, 3>>;
-// checks at compile time: !permits_rvalue_lu_factors<fixed_lu>
+// the LU factors cannot be borrowed from a temporary decomposition
 static_assert(!permits_rvalue_lu_factors<fixed_lu>);
-// checks at compile time: std::is_same_v<typename const_view_lu::Scalar, double>
+// a const input view produces owned double-valued factors
 static_assert(std::is_same_v<typename const_view_lu::Scalar, double>);
 constexpr Matrix<int, 2, 2> integral_matrix({1, 2, 3, 4});
-// checks at compile time: integral_matrix.determinant() == -2
+// the integral two-by-two determinant remains a constant expression
 static_assert(integral_matrix.determinant() == -2);
 
 template <typename Actual, typename Expected>
 void expect_matrix_near(const Actual& actual, const Expected& expected, double tolerance = 1.0e-12) {
-    // compares actual.rows(), expected.rows() using eq semantics
+    // matrix comparison requires matching row counts before coefficient access
     ASSERT_EQ(actual.rows(), expected.rows());
-    // compares actual.cols(), expected.cols() using eq semantics
+    // matrix comparison requires matching column counts before coefficient access
     ASSERT_EQ(actual.cols(), expected.cols());
     for (int row = 0; row < actual.rows(); ++row) {
         for (int col = 0; col < actual.cols(); ++col) {
-            // compares the computed and expected values within the stated absolute tolerance
+            // each computed coefficient matches its independently assembled reference within absolute tolerance
             EXPECT_NEAR(static_cast<double>(actual(row, col)), static_cast<double>(expected(row, col)), tolerance);
         }
     }
@@ -65,11 +65,11 @@ template <int StorageOrder> void check_partial_piv_lu_contracts() {
     const vector_type rhs(matrix * expected);
 
     const PartialPivLU factorization(matrix);
-    // compares factorization.info(), 0 using eq semantics
+    // a nonsingular matrix produces usable LU factors
     EXPECT_EQ(factorization.info(), 0);
-    // compares factorization.rank(), 3 using eq semantics
+    // all three independent directions are retained by rank detection
     EXPECT_EQ(factorization.rank(), 3);
-    // compares factorization.determinant(), -7.0 using double_eq semantics
+    // the pivoted determinant equals the independently calculated value minus seven
     EXPECT_DOUBLE_EQ(factorization.determinant(), -7.0);
     expect_matrix_near(factorization.solve(rhs), expected);
     const Matrix<double, 3, 2, StorageOrder> expected_multiple({1.0, -1.0, 2.0, 0.5, -3.0, 4.0});
@@ -80,7 +80,7 @@ template <int StorageOrder> void check_partial_piv_lu_contracts() {
 
     const MatrixView<const double, 3, 3, StorageOrder> const_view(matrix.data());
     const PartialPivLU const_view_factorization(const_view);
-    // compares const_view_factorization.determinant(), -7.0 using double_eq semantics
+    // factoring a const view produces the same determinant
     EXPECT_DOUBLE_EQ(const_view_factorization.determinant(), -7.0);
     expect_matrix_near(const_view_factorization.solve(rhs), expected);
 
@@ -93,59 +93,59 @@ template <int StorageOrder> void check_partial_piv_lu_contracts() {
 
     const matrix_type singular({1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0});
     const PartialPivLU singular_factorization(singular);
-    // compares singular_factorization.info(), 2 using eq semantics
+    // the first unusable pivot in the singular example is the second one
     EXPECT_EQ(singular_factorization.info(), 2);
-    // compares singular_factorization.rank(), 2 using eq semantics
+    // rank detection retains two independent directions despite singularity
     EXPECT_EQ(singular_factorization.rank(), 2);
-    // compares singular_factorization.determinant(), 0.0 using double_eq semantics
+    // the singular example has algebraic determinant zero
     EXPECT_DOUBLE_EQ(singular_factorization.determinant(), 0.0);
     expect_matrix_near(
       Matrix<double, 3, 3>(singular_factorization.P() * singular),
       Matrix<double, 3, 3>(singular_factorization.L() * singular_factorization.U()));
-    // checks the exception category for the supplied invalid operation
+    // solving with a singular factorization raises a domain error
     EXPECT_THROW(static_cast<void>(singular_factorization.solve(rhs)), std::domain_error);
 
     const matrix_type zero = matrix_type::Zero();
     const PartialPivLU zero_factorization(zero);
-    // compares zero_factorization.info(), 1 using eq semantics
+    // the zero matrix reports its first pivot as unusable
     EXPECT_EQ(zero_factorization.info(), 1);
-    // compares zero_factorization.rank(), 0 using eq semantics
+    // the zero matrix has rank zero
     EXPECT_EQ(zero_factorization.rank(), 0);
-    // compares zero_factorization.determinant(), 0.0 using double_eq semantics
+    // the zero matrix has determinant zero
     EXPECT_DOUBLE_EQ(zero_factorization.determinant(), 0.0);
     const Matrix<double, 3, 3> zero_reconstruction(zero_factorization.L() * zero_factorization.U());
     expect_matrix_near(Matrix<double, 3, 3>(zero_factorization.P() * zero), zero_reconstruction);
     for (int row = 0; row < 3; ++row) {
-        // checks std::isfinite(zero_reconstruction(row, col))
+        // reconstructing the zero matrix from its factors does not produce NaN or infinity
         for (int col = 0; col < 3; ++col) EXPECT_TRUE(std::isfinite(zero_reconstruction(row, col)));
     }
 
     Matrix<double, Dynamic, Dynamic, StorageOrder> rectangular(2, 3);
     Matrix<double, Dynamic, Dynamic, StorageOrder> empty(0, 0);
-    // checks the exception category for the supplied invalid operation
+    // the LU rejects a rectangular input matrix
     EXPECT_THROW(static_cast<void>(PartialPivLU(rectangular)), std::invalid_argument);
-    // checks the exception category for the supplied invalid operation
+    // the LU rejects an empty input matrix
     EXPECT_THROW(static_cast<void>(PartialPivLU(empty)), std::invalid_argument);
 
     matrix_type nonfinite = matrix;
     nonfinite(1, 1) = std::numeric_limits<double>::quiet_NaN();
-    // checks the exception category for the supplied invalid operation
+    // the LU rejects a NaN input coefficient
     EXPECT_THROW(static_cast<void>(PartialPivLU(nonfinite)), std::invalid_argument);
     nonfinite(1, 1) = std::numeric_limits<double>::infinity();
-    // checks the exception category for the supplied invalid operation
+    // the LU rejects an infinite input coefficient
     EXPECT_THROW(static_cast<void>(PartialPivLU(nonfinite)), std::invalid_argument);
 
     Matrix<double, Dynamic, 1, StorageOrder> wrong_rows(2);
-    // checks the exception category for the supplied invalid operation
+    // the right-hand side must have one row for each matrix row
     EXPECT_THROW(static_cast<void>(factorization.solve(wrong_rows)), std::invalid_argument);
     Matrix<double, Dynamic, Dynamic, StorageOrder> no_columns(3, 0);
-    // checks the exception category for the supplied invalid operation
+    // solving requires at least one right-hand-side column
     EXPECT_THROW(static_cast<void>(factorization.solve(no_columns)), std::invalid_argument);
     PartialPivLU<Matrix<double, Dynamic, Dynamic, StorageOrder>> unavailable;
     Matrix<double, Dynamic, 1, StorageOrder> zero_row_rhs(0);
-    // checks the exception category for the supplied invalid operation
+    // an uncomputed factorization cannot solve a system
     EXPECT_THROW(static_cast<void>(unavailable.solve(zero_row_rhs)), std::domain_error);
-    // checks the exception category for the supplied invalid operation
+    // an uncomputed factorization has no available determinant
     EXPECT_THROW(static_cast<void>(unavailable.determinant()), std::domain_error);
 }
 
@@ -153,24 +153,24 @@ template <int StorageOrder> void check_partial_piv_lu_scale_and_determinant() {
     const Matrix<double, 2, 2, StorageOrder> large({1.0e308, 1.0e308, -1.0e308, 1.0e308});
     const Matrix<double, 2, 1, StorageOrder> large_rhs({1.0e308, 0.0});
     const PartialPivLU large_factorization(large);
-    // compares large_factorization.info(), 0 using eq semantics
+    // normalization keeps the large-scale system numerically usable
     ASSERT_EQ(large_factorization.info(), 0);
     expect_matrix_near(large_factorization.solve(large_rhs), Matrix<double, 2, 1, StorageOrder>({0.5, 0.5}));
 
     const Matrix<double, 2, 2, StorageOrder> small_pivot({1.0, 0.0, 0.0, 1.0e-20});
     const PartialPivLU small_pivot_factorization(small_pivot);
-    // compares small_pivot_factorization.info(), 2 using eq semantics
+    // the small second pivot falls below the numerical-rank threshold
     EXPECT_EQ(small_pivot_factorization.info(), 2);
-    // compares small_pivot_factorization.rank(), 1 using eq semantics
+    // the small-pivot matrix is treated as numerically rank one
     EXPECT_EQ(small_pivot_factorization.rank(), 1);
-    // compares small_pivot_factorization.determinant(), 1.0e-20 using double_eq semantics
+    // the algebraic determinant retains the small pivot instead of being forced to zero
     EXPECT_DOUBLE_EQ(small_pivot_factorization.determinant(), 1.0e-20);
-    // compares small_pivot.determinant(), 1.0e-20 using double_eq semantics
+    // the matrix determinant agrees with the factorization's nonzero algebraic determinant
     EXPECT_DOUBLE_EQ(small_pivot.determinant(), 1.0e-20);
 
     const Matrix<double, 4, 4, StorageOrder> matrix(
       {0.0, 3.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 4.0, 0.0, 0.0, 0.0, 0.0, 5.0});
-    // compares matrix.determinant(), -120.0 using double_eq semantics
+    // the signed permutation and diagonal factors produce determinant minus one hundred twenty
     EXPECT_DOUBLE_EQ(matrix.determinant(), -120.0);
     const Matrix<double, 4, 4, StorageOrder> inverse(matrix.inverse());
     Matrix<double, 4, 4, StorageOrder> identity;
@@ -181,18 +181,18 @@ template <int StorageOrder> void check_partial_piv_lu_scale_and_determinant() {
     const Matrix<double, 4, 4, StorageOrder> shifted(matrix + identity);
     const Matrix<double, 4, 4, StorageOrder> expression_inverse((matrix + identity).inverse());
     expect_matrix_near(Matrix<double, 4, 4, StorageOrder>(shifted * expression_inverse), identity);
-    // compares (matrix + identity).determinant(), shifted.determinant() using double_eq semantics
+    // determinant evaluation of a lazy sum agrees with its materialized matrix
     EXPECT_DOUBLE_EQ((matrix + identity).determinant(), shifted.determinant());
 
     Matrix<double, Dynamic, Dynamic, StorageOrder> dynamic(matrix);
-    // compares dynamic.determinant(), -120.0 using double_eq semantics
+    // dynamic storage produces the same determinant as fixed storage
     EXPECT_DOUBLE_EQ(dynamic.determinant(), -120.0);
     const Matrix<double, Dynamic, Dynamic, StorageOrder> dynamic_inverse(dynamic.inverse());
     expect_matrix_near(Matrix<double, Dynamic, Dynamic, StorageOrder>(dynamic * dynamic_inverse), identity);
 
     const Matrix<double, 4, 4, StorageOrder> mixed_exponents(
       {1.0e300, 0.0, 0.0, 0.0, 0.0, 1.0e-100, 0.0, 0.0, 0.0, 0.0, 1.0e-100, 0.0, 0.0, 0.0, 0.0, 1.0e-100});
-    // compares mixed_exponents.determinant(), 1.0 using double_eq semantics
+    // opposing binary exponents cancel without losing the unit determinant
     EXPECT_DOUBLE_EQ(mixed_exponents.determinant(), 1.0);
 
     const double small = std::ldexp(1.0, -40);
@@ -201,7 +201,7 @@ template <int StorageOrder> void check_partial_piv_lu_scale_and_determinant() {
     const double larger_value = std::ldexp(1.0, 80);
     const Matrix<double, 3, 3, StorageOrder> complete_pivot_case(
       {small, 0.0, coefficient, 1.0, large_value, larger_value, small, 0.0, 0.0});
-    // compares complete_pivot_case.determinant(), -coefficient using double_eq semantics
+    // pivoting preserves the determinant sign in the tiny-coefficient example
     EXPECT_DOUBLE_EQ(complete_pivot_case.determinant(), -coefficient);
 
     constexpr int wilkinson_size = 130;
@@ -213,20 +213,20 @@ template <int StorageOrder> void check_partial_piv_lu_scale_and_determinant() {
         for (int col = 0; col < row; ++col) wilkinson(row, col) = -0.5F;
     }
     const PartialPivLU wilkinson_factorization(wilkinson);
-    // compares wilkinson_factorization.info(), -1 using eq semantics
+    // nonfinite factor growth marks the LU factors unavailable
     EXPECT_EQ(wilkinson_factorization.info(), -1);
-    // compares wilkinson_factorization.determinant(), 0.5F using float_eq semantics
+    // the algebraic determinant remains available even when LU factor growth overflows
     EXPECT_FLOAT_EQ(wilkinson_factorization.determinant(), 0.5F);
-    // compares wilkinson.determinant(), 0.5F using float_eq semantics
+    // the matrix determinant uses the same independent determinant calculation
     EXPECT_FLOAT_EQ(wilkinson.determinant(), 0.5F);
 
     Matrix<double, Dynamic, Dynamic, StorageOrder> singular(4, 4);
     singular.set_zero();
-    // checks the exception category for the supplied invalid operation
+    // a singular matrix cannot produce an inverse
     EXPECT_THROW(static_cast<void>(singular.inverse()), std::domain_error);
 }
 
-// verifies partial piv lu through the public algebra API
+// checks pivoted LU solves, singular-state reporting and determinants across extreme coefficient scales
 TEST(linear_algebra, partial_piv_lu) {
     check_partial_piv_lu_contracts<RowMajor>();
     check_partial_piv_lu_contracts<ColMajor>();

@@ -23,10 +23,10 @@ namespace fdapde {
 
 // implementation of the symmetric group S_n
 
-/// @brief represents permutation inverse op
+/// @brief evaluates inverse permutation indices without allocating a new permutation vector
 template <typename XprType> struct PermutationInverseOp;
 
-/// @brief represents permutation matrix expr
+/// @brief provides permutation actions, transpose and inverse operations
 template <typename XprType_> struct PermutationMatrixExpr : public OrthogonalMatrixExpr<XprType_> {
    private:
     using Base = OrthogonalMatrixExpr<XprType_>;
@@ -42,7 +42,7 @@ template <typename XprType_> struct PermutationMatrixExpr : public OrthogonalMat
     {
         return PermutationInverseOp<XprType_>(derived());
     }
-    /// @brief returns the inverse matrix expression
+    /// @brief rejects borrowing an inverse expression from a temporary owner
     constexpr void inverse() const&&
         requires(XprType::NestAsRef != 0)
     = delete;
@@ -76,7 +76,7 @@ template <typename XprType_> struct PermutationMatrixExpr : public OrthogonalMat
     /// @brief returns the Euclidean or Frobenius norm
     constexpr auto norm() const { return fdapde::sqrt(static_cast<double>(squared_norm())); }
     // ostream
-    /// @brief implements the operator<< expression operation
+    /// @brief writes logical matrix rows separated by newlines without a trailing newline
     friend std::ostream& operator<<(std::ostream& out, const PermutationMatrixExpr& m) {
         const int rows = m.derived().rows();
         const int cols = m.derived().cols();
@@ -93,7 +93,7 @@ template <typename XprType_> struct PermutationMatrixExpr : public OrthogonalMat
 };
 
 // expression of the inverse of a permutation
-/// @brief represents permutation inverse op
+/// @brief evaluates inverse permutation indices without allocating a new permutation vector
 template <typename XprType_>
 struct PermutationInverseOp : public PermutationMatrixExpr<PermutationInverseOp<XprType_>> {
    private:
@@ -107,15 +107,15 @@ struct PermutationInverseOp : public PermutationMatrixExpr<PermutationInverseOp<
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
 
-    /// @brief constructs permutation inverse op from the supplied state
+    /// @brief copies the inverse-permutation expression while sharing its nested operand
     constexpr PermutationInverseOp(const PermutationInverseOp&) = default;
-    /// @brief constructs permutation inverse op from the supplied state
+    /// @brief borrows a permutation whose inverse images are found on demand
     template <typename XprType__>
         requires(
           !std::same_as<std::remove_cvref_t<XprType__>, PermutationInverseOp> &&
           internals::safely_nestable<XprTypeNested, XprType__>)
     constexpr explicit PermutationInverseOp(XprType__&& xpr) : xpr_(std::forward<XprType__>(xpr)) { }
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief returns one when the source mapping sends column j to row i, and zero otherwise
     constexpr Scalar operator()(int i, int j) const {
         internals::validate_matrix_index(i, j, rows(), cols());
         return xpr_.image(j) == i ? Scalar(1) : Scalar(0);
@@ -147,9 +147,9 @@ struct PermutationInverseOp : public PermutationMatrixExpr<PermutationInverseOp<
 // action products
 namespace internals {
 
-/// @brief represents permutation product executor
+/// @brief applies a permutation through row or column index lookup
 template <typename LhsXprType, typename RhsXprType, int ProductMode> struct permutation_product_executor {
-    /// @brief executes the coefficient operation over the supplied expressions
+    /// @brief evaluates a product coefficient by applying the permutation to the selected row or column
     static constexpr auto run(int i, int j, const LhsXprType& lhs, const RhsXprType& rhs) {
         using Scalar = promote_type_t<typename LhsXprType::Scalar, typename RhsXprType::Scalar>;
         if constexpr (ProductMode == LhsMode) { return Scalar(rhs(lhs.image(i), j)); }   // RowPermutation
@@ -165,7 +165,7 @@ template <typename LhsXprType, typename RhsXprType, int ProductMode> struct perm
 }   // namespace internals
 
 // p * M (RowPermutation)
-/// @brief implements the operator* expression operation
+/// @brief permutes the right operand rows according to the left permutation
 template <typename LhsXprType, typename RhsXprType>
     requires(
       !is_orthogonal_matrix_v<RhsXprType> && !is_diagonal_matrix_v<RhsXprType> && !is_triangular_matrix_v<RhsXprType>)
@@ -175,7 +175,7 @@ constexpr auto operator*(const PermutationMatrixExpr<LhsXprType>& lhs, const Mat
       lhs.derived(), rhs.derived()};
 }
 // m * P (ColPermutation)
-/// @brief implements the operator* expression operation
+/// @brief permutes the left operand columns according to the right permutation
 template <typename LhsXprType, typename RhsXprType>
     requires(
       !is_orthogonal_matrix_v<LhsXprType> && !is_diagonal_matrix_v<LhsXprType> && !is_triangular_matrix_v<LhsXprType>)
@@ -186,7 +186,7 @@ constexpr auto operator*(const MatrixExpr<LhsXprType>& lhs, const PermutationMat
 }
 
 // symmetric group product closure
-/// @brief represents permutation composition op
+/// @brief represents composition of two permutations through nested index lookup
 template <typename LhsXprType_, typename RhsXprType_>
 struct PermutationCompositionOp : public PermutationMatrixExpr<PermutationCompositionOp<LhsXprType_, RhsXprType_>> {
    private:
@@ -207,7 +207,7 @@ struct PermutationCompositionOp : public PermutationMatrixExpr<PermutationCompos
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
 
-    /// @brief constructs permutation composition op from the supplied state
+    /// @brief nests two permutations after checking that their shapes match
     template <typename LhsXprType__, typename RhsXprType__>
         requires(internals::safely_nestable<LhsXprTypeNested, LhsXprType__> &&
                  internals::safely_nestable<RhsXprTypeNested, RhsXprType__>)
@@ -217,7 +217,7 @@ struct PermutationCompositionOp : public PermutationMatrixExpr<PermutationCompos
           !(lhs_.rows() != rhs_.rows() || lhs_.cols() != rhs_.cols()), std::invalid_argument,
           "permutation composition requires matching shapes");
     }
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief returns the binary coefficient selected by the composed index mapping
     constexpr Scalar operator()(int i, int j) const {
         internals::validate_matrix_index(i, j, rows(), cols());
         return (image(i) == j) ? Scalar(1) : Scalar(0);
@@ -242,7 +242,7 @@ struct PermutationCompositionOp : public PermutationMatrixExpr<PermutationCompos
     LhsXprTypeNested lhs_;
     RhsXprTypeNested rhs_;
 };
-/// @brief implements the operator* expression operation
+/// @brief composes index mappings in matrix-product order
 template <typename LhsXprType, typename RhsXprType>
 constexpr auto operator*(const PermutationMatrixExpr<LhsXprType>& lhs, const PermutationMatrixExpr<RhsXprType>& rhs) {
     return PermutationCompositionOp<LhsXprType, RhsXprType>(lhs.derived(), rhs.derived());
@@ -265,19 +265,19 @@ class PermutationMatrix : public PermutationMatrixExpr<PermutationMatrix<Rows_, 
     static constexpr int ReadOnly = 1;
     using assignment_executor = typename StorageType::assignment_executor;
     // constructors
-    /// @brief constructs permutation matrix from the supplied state
+    /// @brief creates a fixed identity permutation or an empty dynamic permutation
     constexpr PermutationMatrix() : permutation_() {
         if constexpr (Rows_ != Dynamic || Cols_ != Dynamic) set_identity_(static_shape_());
     }
     // copy-semantic
-    /// @brief constructs permutation matrix from the supplied state
+    /// @brief copies the permutation indices into independent storage
     constexpr PermutationMatrix(const PermutationMatrix& other) : permutation_() { clone_(other); }
-    /// @brief assigns the supplied coefficients
+    /// @brief copies the source dimension and validated index mapping into independent storage
     constexpr PermutationMatrix& operator=(const PermutationMatrix& rhs) & {
         clone_(rhs);
         return *this;
     }
-    /// @brief constructs permutation matrix from the supplied state
+    /// @brief validates a vector expression as a bijection of indices from zero to size minus one
     template <typename RhsXprType_>
         requires(std::integral<std::remove_cv_t<typename std::remove_cvref_t<RhsXprType_>::Scalar>>)
     constexpr explicit PermutationMatrix(const MatrixExpr<RhsXprType_>& rhs) : permutation_() {
@@ -290,14 +290,14 @@ class PermutationMatrix : public PermutationMatrixExpr<PermutationMatrix<Rows_, 
           "permutation input must be a row or column vector");
         load_(rhs.size(), [&rhs](int i) { return rhs.rows() == 1 ? rhs.derived()(0, i) : rhs.derived()(i, 0); });
     }
-    /// @brief constructs permutation matrix from the supplied state
+    /// @brief validates and copies a vector of permutation indices
     template <typename Scalar__>
         requires(std::integral<std::remove_cv_t<Scalar__>>)
     constexpr explicit PermutationMatrix(const std::vector<Scalar__>& vec) : permutation_() {
         const int size = internals::checked_matrix_data_size(vec.size());
         load_(size, [&vec](int i) { return vec[static_cast<std::size_t>(i)]; });
     }
-    /// @brief constructs permutation matrix from the supplied state
+    /// @brief validates and copies a C array matching the fixed permutation size
     template <typename Scalar__, std::size_t Size>
         requires(std::integral<std::remove_cv_t<Scalar__>>)
     constexpr explicit PermutationMatrix(const Scalar__ (&permutation)[Size]) : permutation_() {
@@ -311,7 +311,7 @@ class PermutationMatrix : public PermutationMatrixExpr<PermutationMatrix<Rows_, 
     constexpr int rows() const { return permutation_.size(); }
     /// @brief returns the column count
     constexpr int cols() const { return permutation_.size(); }
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief returns one at the stored image of row i, and zero otherwise
     constexpr Scalar operator()(int i, int j) const {
         internals::validate_matrix_index(i, j, rows(), cols());
         return permutation_[i] == j ? Scalar(1) : Scalar(0);
@@ -357,7 +357,7 @@ class PermutationMatrix : public PermutationMatrixExpr<PermutationMatrix<Rows_, 
             permutation_[i] = value;
         }
     }
-    /// @brief returns an owning copy of the coefficients
+    /// @brief copies permutation dimensions and indices into this owner
     constexpr void clone_(const PermutationMatrix& rhs) {
         if (this == std::addressof(rhs)) return;
         if constexpr (Rows_ == Dynamic) permutation_.resize(rhs.rows());
@@ -367,7 +367,7 @@ class PermutationMatrix : public PermutationMatrixExpr<PermutationMatrix<Rows_, 
 };
 
 // detection trait
-/// @brief detects is permutation matrix
+/// @brief identifies permutation matrix expressions after removing cv and reference qualifiers
 template <typename XprType> struct is_permutation_matrix {
     using Type = std::remove_cvref_t<XprType>;
     static constexpr bool value = std::is_base_of_v<PermutationMatrixExpr<Type>, Type>;

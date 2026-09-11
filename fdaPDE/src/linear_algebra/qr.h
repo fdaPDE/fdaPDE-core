@@ -38,9 +38,9 @@ template <typename Scalar_, int Rows_, int Cols_> class HouseholderQR {
     static constexpr int Cols = Cols_;
     fdapde_static_assert(std::is_floating_point_v<Scalar>, QR_DECOMPOSITION_REQUIRES_FLOATING_POINT_SCALARS);
 
-    /// @brief constructs householder qr from the supplied state
+    /// @brief creates an uncomputed decomposition with no available factors
     constexpr HouseholderQR() = default;
-    /// @brief constructs householder qr from the supplied state
+    /// @brief computes full Householder QR factors from a finite, nonempty matrix
     template <typename MatrixType> constexpr explicit HouseholderQR(const MatrixExpr<MatrixType>& matrix) {
         compute(matrix);
     }
@@ -122,26 +122,26 @@ template <typename Scalar_, int Rows_, int Cols_> class HouseholderQR {
         computed_ = true;
     }
 
-    /// @brief returns the orthogonal factor
+    /// @brief returns the full square orthogonal factor after a completed decomposition
     constexpr const Matrix<Scalar, Rows, Rows>& Q() const& {
         fdapde_assert(computed_, std::logic_error, "QR factorization has not been computed");
         return Q_;
     }
-    /// @brief returns the orthogonal factor
+    /// @brief rejects access through a temporary decomposition to prevent dangling factor references
     constexpr void Q() const&& = delete;
-    /// @brief returns the upper triangular factor
+    /// @brief returns the upper-trapezoidal factor with the input matrix shape and scale
     constexpr const Matrix<Scalar, Rows, Cols>& R() const& {
         fdapde_assert(computed_, std::logic_error, "QR factorization has not been computed");
         return R_;
     }
-    /// @brief returns the upper triangular factor
+    /// @brief rejects access through a temporary decomposition to prevent dangling factor references
     constexpr void R() const&& = delete;
     /// @brief returns the numerical rank
     constexpr int rank() const { return rank_; }
     /// @brief reports whether a factorization has been computed
     constexpr bool computed() const { return computed_; }
    private:
-    /// @brief reports is finite
+    /// @brief returns whether the scalar is finite and not NaN
     static constexpr bool is_finite_(Scalar value) {
         const Scalar infinity = std::numeric_limits<Scalar>::infinity();
         return value == value && value != infinity && value != -infinity;

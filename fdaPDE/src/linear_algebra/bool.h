@@ -41,9 +41,9 @@ template <typename BitPack> constexpr BitPack low_bits_mask(int used_bits) {
     return used_bits == pack_size ? ~BitPack(0) : (BitPack(1) << used_bits) - 1;
 }
 
-/// @brief represents bitpack assignment executor
+/// @brief assigns Boolean expressions while respecting packed layout and padding bits
 struct bitpack_assignment_executor {
-    /// @brief executes the coefficient operation over the supplied expressions
+    /// @brief assigns aligned packed words or remaps individual bits when operand storage orders differ
     template <typename DstMatrixType, typename SrcXprType, typename AssignmentOp>
         requires(
           requires(AssignmentOp op, typename DstMatrixType::bitpack_t& l, const typename SrcXprType::bitpack_t& r) {
@@ -115,33 +115,33 @@ class MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, BoolMatrixType_> : public
         friend bit_proxy<bitpack_t>;
         friend bit_proxy<const bitpack_t>;
 
-        /// @brief constructs bit proxy from the supplied state
+        /// @brief creates an unbound bit proxy with no accessible coefficient
         constexpr bit_proxy() noexcept : data_(nullptr), pack_id_(0), bitmask_(0) { }
-        /// @brief constructs bit proxy from the supplied state
+        /// @brief copies a compatible bit binding while preserving storage constness
         template <typename BitPackT_>
             requires(std::is_convertible_v<BitPackT_ * FDAPDE_COMMA BitPackT*>)
         constexpr bit_proxy(const bit_proxy<BitPackT_>& other) :
             data_(other.data_), pack_id_(other.pack_id_), bitmask_(other.bitmask_) { }
-        /// @brief assigns the supplied coefficients
+        /// @brief copies the other proxy's bit value without changing this binding
         constexpr bit_proxy& operator=(const bit_proxy& other)
             requires(!std::is_const_v<BitPackT>)
         {
             return operator=(bool(other));
         }
-        /// @brief assigns the supplied coefficients
+        /// @brief copies a compatible proxy's bit value without changing this binding
         template <typename BitPackT_>
             requires(!std::is_const_v<BitPackT>)
         constexpr bit_proxy& operator=(const bit_proxy<BitPackT_>& other) {
             return operator=(bool(other));
         }
-        /// @brief constructs bit proxy from the supplied state
+        /// @brief maps matrix coordinates and strides to a packed word and bit mask
         constexpr bit_proxy(BitPackT* data, int row, int col, int row_stride, int col_stride) :
             data_(data), pack_id_(), bitmask_() {
             auto [pack_id, bit_off] = pack_of_(row, col, row_stride, col_stride);
             pack_id_ = pack_id;
             bitmask_ = bitpack_t(1) << bit_off;
         }
-        /// @brief constructs bit proxy from the supplied state
+        /// @brief maps a vector index to its packed word and bit mask
         constexpr bit_proxy(BitPackT* data, int row) :
             data_(data), pack_id_(row / PackSize), bitmask_(bitpack_t(1) << row % PackSize) { }
         // modifiers
@@ -157,7 +157,7 @@ class MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, BoolMatrixType_> : public
         {
             data_[pack_id_] &= ~bitmask_;
         }
-        /// @brief assigns the supplied coefficients
+        /// @brief sets or clears the bound bit after conversion to bool
         template <typename T>
             requires(!std::is_const_v<BitPackT> && std::is_convertible_v<T, bool>)
         constexpr bit_proxy& operator=(T b) {
@@ -165,7 +165,9 @@ class MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, BoolMatrixType_> : public
             return *this;
         }
         // observers
+        /// @brief reads the bound bit as a Boolean value
         constexpr operator bool() const { return (data_[pack_id_] & bitmask_) != 0; }
+        /// @brief reads the bound bit without changing its storage
         constexpr operator bool() { return (data_[pack_id_] & bitmask_) != 0; }
        private:
         BitPackT* data_;
@@ -175,19 +177,19 @@ class MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, BoolMatrixType_> : public
     using reference = std::conditional_t<ReadOnly == 0, bit_proxy<bitpack_t>, bit_proxy<const bitpack_t>>;
     using const_reference = bit_proxy<const bitpack_t>;
     // constructors
-    /// @brief constructs matrix base from the supplied state
+    /// @brief initializes fixed Boolean dimensions or empty dynamic axes and their bit strides
     constexpr MatrixBase() noexcept :
         rows_(Rows_ == Dynamic ? 0 : Rows_),
         cols_(Cols_ == Dynamic ? 0 : Cols_),
         row_stride_(StorageOrder == RowMajor ? cols_ : 1),
         col_stride_(StorageOrder == RowMajor ? 1 : rows_) { }
-    /// @brief constructs matrix base from the supplied state
+    /// @brief sets runtime Boolean dimensions and derives bit strides for the selected storage order
     constexpr MatrixBase(int rows, int cols) :
         rows_(Rows == Dynamic ? rows : Rows),
         cols_(Cols == Dynamic ? cols : Cols),
         row_stride_(StorageOrder == RowMajor ? cols_ : 1),
         col_stride_(StorageOrder == RowMajor ? 1 : rows_) { }
-    /// @brief constructs matrix base from the supplied state
+    /// @brief sets a Boolean vector length and its row or column bit strides
     constexpr MatrixBase(int size) :
         rows_(Rows == 1 ? 1 : size),
         cols_(Cols == 1 ? 1 : size),
@@ -196,7 +198,7 @@ class MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, BoolMatrixType_> : public
         fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
     }
     // copy assignment
-    /// @brief assigns the supplied coefficients
+    /// @brief copies packed coefficients, resizing a dynamic owner when its shape differs
     constexpr BoolMatrixType& operator=(const BoolMatrixType& other) & {
         fdapde_static_assert(ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_LOCATION);
         if (this == std::addressof(other)) { return derived(); }
@@ -209,7 +211,7 @@ class MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, BoolMatrixType_> : public
     // inherit assignment from base
     using Base::operator=;
     // access
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief returns a bit proxy at the layout-mapped coordinate
     constexpr reference operator()(int i, int j) {
         fdapde_assert(
           i >= 0 && i < rows_ && j >= 0 && j < cols_, std::out_of_range, "Boolean matrix index out of range");
@@ -221,7 +223,7 @@ class MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, BoolMatrixType_> : public
         fdapde_assert(i >= 0 && i < rows_ * cols_, std::out_of_range, "Boolean matrix index out of range");
         return reference(derived().data(), i);
     }
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief returns a read-only bit proxy at the layout-mapped coordinate
     constexpr const_reference operator()(int i, int j) const {
         fdapde_assert(
           i >= 0 && i < rows_ && j >= 0 && j < cols_, std::out_of_range, "Boolean matrix index out of range");
@@ -289,28 +291,28 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
     using const_iterator = typename StorageType::const_iterator;
     using assignment_executor = typename Base::assignment_executor;
 
-    /// @brief constructs matrix from the supplied state
+    /// @brief clears fixed packed storage and leaves a dynamic Boolean matrix empty
     constexpr Matrix() noexcept : Base(), data_(), bitpacks_(StorageSize == Dynamic ? 0 : StorageSize) { }
-    /// @brief constructs matrix from the supplied state
+    /// @brief copies Boolean dimensions and packed coefficients into independent storage
     constexpr Matrix(const Matrix& other) : Base(), data_(), bitpacks_(StorageSize == Dynamic ? 0 : StorageSize) {
         if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { resize(other.rows(), other.cols()); }
         assignment_executor::run(*this, other, [](bitpack_t& l, const bitpack_t& r) { l = r; });
     }
-    /// @brief assigns the supplied coefficients
+    /// @brief copies the source shape and packed bits into independent owner storage
     constexpr Matrix& operator=(const Matrix& other) & {
         Base::operator=(other);
         return *this;
     }
-    /// @brief assigns the supplied coefficients
+    /// @brief rejects assignment to a temporary Boolean owner
     constexpr void operator=(const Matrix&) && = delete;
-    /// @brief constructs matrix from the supplied state
+    /// @brief evaluates Boolean expression coefficients into independent packed storage
     template <typename RhsXprType_>   // construct from plain BoolMatrixExpr
     constexpr Matrix(const BoolMatrixExpr<RhsXprType_>& rhs) :
         Base(), data_(), bitpacks_(StorageSize == Dynamic ? 0 : StorageSize) {
         if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { resize(rhs.rows(), rhs.cols()); }
         internals::generic_assignment_executor::run(*this, rhs.derived(), [](auto&& l, const auto& r) { l = bool(r); });
     }
-    /// @brief constructs matrix from the supplied state
+    /// @brief converts each numeric matrix coefficient to a Boolean value in packed storage
     template <typename RhsXprType_>   // cast MatrixExpr to bool
     constexpr Matrix(const MatrixExpr<RhsXprType_>& rhs) :
         Base(), data_(), bitpacks_(StorageSize == Dynamic ? 0 : StorageSize) {
@@ -327,7 +329,7 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
             for (int j = 0; j < cols; ++j) { this->operator()(i, j) = rhs.derived()(i, j); }
         }
     }
-    /// @brief constructs matrix from the supplied state
+    /// @brief materializes coefficient-wise results as packed Boolean coefficients
     template <typename RhsXprType_>   // materialize a coefficient-wise comparison
     constexpr Matrix(const MatrixCoeffWiseExpr<RhsXprType_>& rhs) : Matrix(rhs.mwise()) { }
     // inherit assignment from base
@@ -335,7 +337,7 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
 
     // matrix API
     // value-initialized static-sized matrix
-    /// @brief constructs matrix from the supplied state
+    /// @brief fills fixed packed storage with the supplied Boolean value
     constexpr explicit Matrix(bool v)
         requires(Rows_ != Dynamic && Cols_ != Dynamic)
         : data_(), bitpacks_(StorageSize == Dynamic ? 0 : StorageSize) {
@@ -352,7 +354,7 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
         if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { data_.resize(bitpacks_, 0); }
     }
     // value-initialized dynamic-sized matrix, avoid vectors
-    /// @brief constructs matrix from the supplied state
+    /// @brief allocates dynamic packed matrix storage and fills it with the supplied Boolean value
     constexpr Matrix(int rows, int cols, bool v)
         requires(Rows_ == Dynamic && Cols_ == Dynamic)
         : Matrix(rows, cols) {
@@ -362,7 +364,7 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
 
     // vector API
     // false-initialized dynamic-sized vector
-    /// @brief constructs matrix from the supplied state
+    /// @brief allocates a dynamic Boolean vector with every bit cleared
     constexpr explicit Matrix(int size)
         requires(Rows_ == Dynamic || Cols_ == Dynamic)
         :
@@ -373,7 +375,7 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
         if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { data_.resize(bitpacks_, 0); }
     }
     // value-initialized dynamic-sized vector
-    /// @brief constructs matrix from the supplied state
+    /// @brief allocates a dynamic Boolean vector filled with the supplied value
     constexpr Matrix(int size, Scalar v)
         requires(Rows_ == Dynamic || Cols_ == Dynamic)
         : Matrix(size) {
@@ -385,7 +387,7 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
     }
 
     // constructors taking external data
-    /// @brief constructs matrix from the supplied state
+    /// @brief copies row-ordered C-array values into fixed packed Boolean coordinates
     template <typename Scalar, std::size_t Size>
         requires(std::is_convertible_v<Scalar, bool>)
     constexpr explicit Matrix(const Scalar (&data)[Size]) : Base(), data_(), bitpacks_(StorageSize) {
@@ -396,7 +398,7 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
         }
         return;
     }
-    /// @brief constructs matrix from the supplied state
+    /// @brief copies row-ordered vector values, inferring the length only for a dynamic Boolean vector
     template <typename Scalar_>
         requires(std::is_convertible_v<Scalar_, Scalar>)
     constexpr explicit Matrix(const std::vector<Scalar_>& data) :
@@ -444,8 +446,8 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
     /// @brief accesses the requested packed word
     constexpr bitpack_t& bitpack(int i) { return data_[i]; }
     // modifiers
-    // TODO: add conservativeResize(rows, cols) with logical common-rectangle preservation.
-    /// @brief resizes the owned storage to the requested dimensions
+    // todo: add conservativeResize(rows, cols) with logical common-rectangle preservation.
+    /// @brief preserves the retained prefix for compile-time vector shapes; otherwise clears bits when shape changes
     void resize(int rows, int cols) {
         fdapde_static_assert(Rows_ == Dynamic || Cols_ == Dynamic, THIS_METHOD_IS_FOR_DYNAMIC_SIZED_MATRICES_ONLY);
         const int size = checked_size_(rows, cols);
@@ -475,7 +477,7 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
         this->col_stride_ = StorageOrder_ == RowMajor ? 1 : new_rows;
         return;
     }
-    /// @brief resizes the owned storage to the requested dimensions
+    /// @brief resizes a Boolean vector, preserving retained bits and clearing newly exposed positions
     void resize(int size) {
         fdapde_static_assert(
           (Rows_ == 1 && Cols_ == Dynamic) || (Cols_ == 1 && Rows_ == Dynamic),
@@ -525,7 +527,7 @@ class Matrix<bool, Rows_, Cols_, StorageOrder_> :
 };
 
 // unary bitwise operation on binary expression
-/// @brief represents bool matrix bit wise op
+/// @brief evaluates a unary Boolean operation by individual bits or packed words
 template <typename XprType_, typename BitWiseOperation, typename BitPackOperation>
 struct BoolMatrixBitWiseOp : public BoolMatrixExpr<BoolMatrixBitWiseOp<XprType_, BitWiseOperation, BitPackOperation>> {
    private:
@@ -540,13 +542,13 @@ struct BoolMatrixBitWiseOp : public BoolMatrixExpr<BoolMatrixBitWiseOp<XprType_,
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
 
-    /// @brief constructs bool matrix bit wise op from the supplied state
+    /// @brief nests a Boolean operand and stores equivalent single-bit and packed-word functors
     template <typename XprType__>
         requires(internals::safely_nestable<XprTypeNested, XprType__>)
     constexpr BoolMatrixBitWiseOp(XprType__&& xpr, BitWiseOperation bitwise_op, BitPackOperation bitpack_op) :
         xpr_(std::forward<XprType__>(xpr)), bitwise_op_(bitwise_op), bitpack_op_(bitpack_op) { }
 
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief applies the unary Boolean operation to one logical coefficient
     constexpr Scalar operator()(int i, int j) const { return bitwise_op_(xpr_(i, j)); }
     /// @brief accesses the requested vector coefficient
     constexpr Scalar operator[](int i) const {
@@ -567,7 +569,7 @@ struct BoolMatrixBitWiseOp : public BoolMatrixExpr<BoolMatrixBitWiseOp<XprType_,
     BitPackOperation bitpack_op_;
 };
 
-/// @brief represents bool matrix bin op
+/// @brief evaluates binary Boolean operations across equal or mixed storage orders
 template <typename LhsXprType_, typename RhsXprType_, typename BitWiseOperation, typename BitPackOperation>
 struct BoolMatrixBinOp :
     public BoolMatrixExpr<BoolMatrixBinOp<LhsXprType_, RhsXprType_, BitWiseOperation, BitPackOperation>> {
@@ -595,7 +597,7 @@ struct BoolMatrixBinOp :
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
 
-    /// @brief constructs bool matrix bin op from the supplied state
+    /// @brief nests equally shaped Boolean operands and their single-bit and packed-word functors
     template <typename LhsXprType__, typename RhsXprType__>
         requires(internals::safely_nestable<LhsXprTypeNested, LhsXprType__> &&
                  internals::safely_nestable<RhsXprTypeNested, RhsXprType__>)
@@ -611,7 +613,7 @@ struct BoolMatrixBinOp :
               std::invalid_argument, "Boolean binary operation requires matching dimensions");
         }
     }
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief applies the binary Boolean operation to corresponding logical coefficients
     constexpr Scalar operator()(int i, int j) const { return bitwise_op_(lhs_(i, j), rhs_(i, j)); }
     /// @brief accesses the requested vector coefficient
     constexpr Scalar operator[](int i) const {
@@ -649,42 +651,42 @@ struct BoolMatrixBinOp :
     BitPackOperation bitpack_op_;
 };
 // boolean arithmetic
-/// @brief implements the operator& expression operation
+/// @brief returns the lazy coefficientwise Boolean AND of equally shaped operands
 template <typename LhsXprType, typename RhsXprType>
 constexpr auto operator&(const BoolMatrixExpr<LhsXprType>& lhs, const BoolMatrixExpr<RhsXprType>& rhs) {
     return BoolMatrixBinOp<LhsXprType, RhsXprType, std::bit_and<>, std::bit_and<>>(
       lhs.derived(), rhs.derived(), std::bit_and<>(), std::bit_and<>());
 }
-/// @brief implements the operator| expression operation
+/// @brief returns the lazy coefficientwise Boolean OR of equally shaped operands
 template <typename LhsXprType, typename RhsXprType>
 constexpr auto operator|(const BoolMatrixExpr<LhsXprType>& lhs, const BoolMatrixExpr<RhsXprType>& rhs) {
     return BoolMatrixBinOp<LhsXprType, RhsXprType, std::bit_or<>, std::bit_or<>>(
       lhs.derived(), rhs.derived(), std::bit_or<>(), std::bit_or<>());
 }
-/// @brief implements the operator^ expression operation
+/// @brief returns the lazy coefficientwise Boolean XOR of equally shaped operands
 template <typename LhsXprType, typename RhsXprType>
 constexpr auto operator^(const BoolMatrixExpr<LhsXprType>& lhs, const BoolMatrixExpr<RhsXprType>& rhs) {
     return BoolMatrixBinOp<LhsXprType, RhsXprType, std::bit_xor<>, std::bit_xor<>>(
       lhs.derived(), rhs.derived(), std::bit_xor<>(), std::bit_xor<>());
 }
 
-/// @brief implements the operator& expression operation
+/// @brief rejects Boolean AND that would borrow a temporary owner
 template <internals::bool_matrix_expression Lhs, internals::bool_matrix_expression Rhs>
     requires(internals::is_owning_rvalue_expression_v<Lhs &&> || internals::is_owning_rvalue_expression_v<Rhs &&>)
 constexpr void operator&(Lhs&&, Rhs&&) = delete;
 
-/// @brief implements the operator| expression operation
+/// @brief rejects Boolean OR that would borrow a temporary owner
 template <internals::bool_matrix_expression Lhs, internals::bool_matrix_expression Rhs>
     requires(internals::is_owning_rvalue_expression_v<Lhs &&> || internals::is_owning_rvalue_expression_v<Rhs &&>)
 constexpr void operator|(Lhs&&, Rhs&&) = delete;
 
-/// @brief implements the operator^ expression operation
+/// @brief rejects Boolean XOR that would borrow a temporary owner
 template <internals::bool_matrix_expression Lhs, internals::bool_matrix_expression Rhs>
     requires(internals::is_owning_rvalue_expression_v<Lhs &&> || internals::is_owning_rvalue_expression_v<Rhs &&>)
 constexpr void operator^(Lhs&&, Rhs&&) = delete;
 
 // dense-block of binary matrix
-/// @brief represents bool matrix block
+/// @brief borrows a Boolean rectangle and repacks requested words from parent coordinates
 template <int BlockRows_, int BlockCols_, typename XprType_>
 class BoolMatrixBlock : public BoolMatrixExpr<BoolMatrixBlock<BlockRows_, BlockCols_, XprType_>> {
    private:
@@ -715,9 +717,9 @@ class BoolMatrixBlock : public BoolMatrixExpr<BoolMatrixBlock<BlockRows_, BlockC
     using assignment_executor = internals::generic_assignment_executor;   // bitwise assignment loop
 
     // row/column constructor
-    /// @brief constructs bool matrix block from the supplied state
+    /// @brief copies Boolean block coordinates while sharing the parent expression
     constexpr BoolMatrixBlock(const BoolMatrixBlock&) = default;
-    /// @brief constructs bool matrix block from the supplied state
+    /// @brief borrows a complete Boolean row or column after checking its index
     template <typename XprType__>
         requires(internals::safely_nestable<XprTypeNested, XprType__>)
     constexpr BoolMatrixBlock(XprType__&& xpr, int i) :
@@ -732,7 +734,7 @@ class BoolMatrixBlock : public BoolMatrixExpr<BoolMatrixBlock<BlockRows_, BlockC
           std::out_of_range, "Boolean matrix block row or column index out of range");
     }
     // static-sized constructor
-    /// @brief constructs bool matrix block from the supplied state
+    /// @brief borrows a fixed Boolean rectangle contained in the parent
     template <typename XprType__>
         requires(internals::safely_nestable<XprTypeNested, XprType__>)
     constexpr BoolMatrixBlock(XprType__&& xpr, int start_row, int start_col) :
@@ -749,7 +751,7 @@ class BoolMatrixBlock : public BoolMatrixExpr<BoolMatrixBlock<BlockRows_, BlockC
           std::out_of_range, "Boolean matrix block is outside expression bounds");
     }
     // dynamic-sized constructor
-    /// @brief constructs bool matrix block from the supplied state
+    /// @brief borrows a positive-size dynamic Boolean rectangle contained in the parent
     template <typename XprType__>
         requires(internals::safely_nestable<XprTypeNested, XprType__>)
     constexpr BoolMatrixBlock(XprType__&& xpr, int start_row, int start_col, int block_rows, int block_cols) :
@@ -771,14 +773,14 @@ class BoolMatrixBlock : public BoolMatrixExpr<BoolMatrixBlock<BlockRows_, BlockC
     }
     // inherit assignment from base
     using Base::operator=;
-    /// @brief assigns the supplied coefficients
+    /// @brief copies a source snapshot into the Boolean block without rebinding it
     constexpr BoolMatrixBlock& operator=(const BoolMatrixBlock& rhs) &
         requires(ReadOnly == 0)
     {
         static_cast<Base&>(*this).template operator= <BoolMatrixBlock>(rhs);
         return *this;
     }
-    /// @brief assigns the supplied coefficients
+    /// @brief copies into a temporary Boolean block and returns its binding by value
     constexpr BoolMatrixBlock operator=(const BoolMatrixBlock& rhs) &&
       requires(ReadOnly == 0) {
           static_cast<Base&>(*this).template operator= <BoolMatrixBlock>(rhs);
@@ -795,7 +797,7 @@ class BoolMatrixBlock : public BoolMatrixExpr<BoolMatrixBlock<BlockRows_, BlockC
     constexpr int size() const { return rows() * cols(); }
     /// @brief returns the number of occupied storage words
     constexpr int bitpacks() const { return internals::bitpack_count(size(), PackSize); }
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief reads a block-local bit through the const parent expression
     constexpr decltype(auto) operator()(int i, int j) const {
         fdapde_assert(
           !(i < 0 || i >= rows() || j < 0 || j >= cols()), std::out_of_range,
@@ -809,7 +811,7 @@ class BoolMatrixBlock : public BoolMatrixExpr<BoolMatrixBlock<BlockRows_, BlockC
         if constexpr (Rows == 1) return std::as_const(xpr_)(start_row_, start_col_ + i);
         if constexpr (Cols == 1) return std::as_const(xpr_)(start_row_ + i, start_col_);
     }
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief returns a writable bit proxy at the translated parent coordinate
     constexpr decltype(auto) operator()(int i, int j)
         requires(ReadOnly == 0)
     {
@@ -893,9 +895,9 @@ class BoolMatrixBlock : public BoolMatrixExpr<BoolMatrixBlock<BlockRows_, BlockC
 namespace internals {
 
 // bitpack reduction loop on matrix expressions
-/// @brief represents matrix redux bitpack executor
+/// @brief reduces only logical Boolean coefficients, excluding unused bits in the final word
 struct matrix_redux_bitpack_executor {
-    /// @brief executes the coefficient operation over the supplied expressions
+    /// @brief reduces packed words while excluding padding bits and honoring the functor early-exit condition
     template <typename XprType, typename Scalar, typename Executor>
     static constexpr Scalar run(const XprType& xpr, Scalar init, Executor executor) {
         fdapde_assert(xpr.size() > 0, std::out_of_range, "Boolean matrix index out of range");
@@ -919,16 +921,16 @@ struct matrix_redux_bitpack_executor {
 };
 
 // evaluates true if all the coefficients of XprType are true
-/// @brief represents all redux bitpack executor
+/// @brief tests whether all logical bits are set and stops at the first cleared bit
 struct all_redux_bitpack_executor {
-    /// @brief constructs all redux bitpack executor from the supplied state
+    /// @brief initializes an all-bits reduction to true before visiting packed words
     constexpr all_redux_bitpack_executor() noexcept : all_(true) { }
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief accumulates whether every bit in the full word is set
     template <typename bitpack_t> constexpr bool operator()([[maybe_unused]] bool b, bitpack_t p) noexcept {
         all_ &= (p == std::numeric_limits<bitpack_t>::max());
         return all_;
     }
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief accumulates whether every valid bit in the partial word is set
     template <typename bitpack_t> constexpr bool operator()([[maybe_unused]] bool b, bitpack_t p, int size) noexcept {
         const bitpack_t mask = (bitpack_t(1) << size) - 1;
         all_ &= ((p & mask) == mask);
@@ -940,16 +942,16 @@ struct all_redux_bitpack_executor {
     bool all_;
 };
 // evaluates true if at least one coefficient of XprType is true
-/// @brief represents any redux bitpack executor
+/// @brief tests whether any logical bit is set and stops at the first match
 struct any_redux_bitpack_executor {
-    /// @brief constructs any redux bitpack executor from the supplied state
+    /// @brief initializes an any-bit reduction to false before visiting packed words
     constexpr any_redux_bitpack_executor() noexcept : any_(false) { }
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief accumulates whether the full word contains any set bit
     template <typename bitpack_t> constexpr bool operator()([[maybe_unused]] bool b, bitpack_t p) noexcept {
         any_ |= (p != bitpack_t(0));
         return any_;
     }
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief accumulates whether the partial word contains any valid set bit
     template <typename bitpack_t> constexpr bool operator()([[maybe_unused]] bool b, bitpack_t p, int size) noexcept {
         const bitpack_t mask = ((bitpack_t(1) << size) - 1);
         any_ |= ((p & mask) != bitpack_t(0));
@@ -961,15 +963,15 @@ struct any_redux_bitpack_executor {
     bool any_;
 };
 // number of true coefficients in XprType, based on popcnt machine istruction for fast scalar counting
-/// @brief represents cnt redux bitpack executor
+/// @brief counts set logical bits in whole or partial packed words
 struct cnt_redux_bitpack_executor {
-    /// @brief constructs cnt redux bitpack executor from the supplied state
+    /// @brief creates a stateless packed-word population-count functor
     constexpr cnt_redux_bitpack_executor() noexcept = default;
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief adds the full word's population count to the running count
     template <typename bitpack_t> constexpr int operator()(int cnt, bitpack_t p) const noexcept {
         return cnt + std::popcount(p);
     }
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief adds only valid tail bits to the running population count
     template <typename bitpack_t> constexpr int operator()(int cnt, bitpack_t p, int size) const noexcept {
         const bitpack_t mask = ((bitpack_t(1) << size) - 1);
         return cnt + std::popcount(p & mask);
@@ -981,7 +983,7 @@ struct cnt_redux_bitpack_executor {
 }   // namespace internals
 
 // non-writable expression of a Boolean matrix repetition
-/// @brief represents bool matrix repeat op
+/// @brief tiles a borrowed Boolean expression without materializing the repeated matrix
 template <typename XprType_> class BoolMatrixRepeatOp : public BoolMatrixExpr<BoolMatrixRepeatOp<XprType_>> {
    private:
     using XprType = std::decay_t<XprType_>;
@@ -996,7 +998,7 @@ template <typename XprType_> class BoolMatrixRepeatOp : public BoolMatrixExpr<Bo
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
 
-    /// @brief constructs bool matrix repeat op from the supplied state
+    /// @brief nests the source and validates positive repetition counts and representable output dimensions
     template <typename XprType__>
         requires(internals::safely_nestable<XprTypeNested, XprType__>)
     constexpr BoolMatrixRepeatOp(XprType__&& xpr, int repeat_rows, int repeat_cols) :
@@ -1009,7 +1011,7 @@ template <typename XprType_> class BoolMatrixRepeatOp : public BoolMatrixExpr<Bo
         size_ = internals::checked_matrix_size(rows_, cols_);
     }
 
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief maps a repeated coordinate back into its source tile
     constexpr Scalar operator()(int i, int j) const {
         internals::validate_matrix_index(i, j, rows_, cols_);
         return bool(xpr_(i % xpr_.rows(), j % xpr_.cols()));
@@ -1042,7 +1044,7 @@ template <typename XprType_> class BoolMatrixRepeatOp : public BoolMatrixExpr<Bo
 };
 
 // reshaping operation with bitpack support. As reshaping mantains the physical memory layout, bitpacks are preserved
-/// @brief represents bool reshape op
+/// @brief reinterprets Boolean coefficient positions while preserving the nested storage binding
 template <int Rows_, int Cols_, typename XprType_>
 class BoolReshapeOp : public BoolMatrixExpr<BoolReshapeOp<Rows_, Cols_, XprType_>> {
    private:
@@ -1058,41 +1060,41 @@ class BoolReshapeOp : public BoolMatrixExpr<BoolReshapeOp<Rows_, Cols_, XprType_
     static constexpr int ReadOnly = std::is_const_v<XprType> || XprTypeClean::ReadOnly;
     using assignment_executor = internals::generic_assignment_executor;
 
-    /// @brief constructs bool reshape op from the supplied state
+    /// @brief inherits the nested reshape's default-construction availability
     constexpr BoolReshapeOp() = default;
-    /// @brief constructs bool reshape op from the supplied state
+    /// @brief copies reshape metadata while sharing the nested Boolean expression
     constexpr BoolReshapeOp(const BoolReshapeOp&) = default;
     using Base::operator=;
-    /// @brief assigns the supplied coefficients
+    /// @brief copies a source snapshot through the Boolean reshape without rebinding it
     constexpr BoolReshapeOp& operator=(const BoolReshapeOp& other) &
         requires(ReadOnly == 0)
     {
         static_cast<Base&>(*this).template operator= <BoolReshapeOp>(other);
         return *this;
     }
-    /// @brief assigns the supplied coefficients
+    /// @brief copies through a temporary Boolean reshape and returns its binding by value
     constexpr BoolReshapeOp operator=(const BoolReshapeOp& other) &&
       requires(ReadOnly == 0) {
           static_cast<Base&>(*this).template operator= <BoolReshapeOp>(other);
           return *this;
       }
-      /// @brief assigns the supplied coefficients
+      /// @brief rejects assignment through a read-only Boolean reshape
       constexpr BoolReshapeOp& operator=(const BoolReshapeOp&) &
           requires(ReadOnly != 0)
       = delete;
-    /// @brief assigns the supplied coefficients
+    /// @brief rejects assignment through a temporary read-only Boolean reshape
     constexpr BoolReshapeOp operator=(const BoolReshapeOp&) && requires(ReadOnly != 0) = delete;
-    /// @brief constructs bool reshape op from the supplied state
+    /// @brief borrows Boolean coefficients using the compile-time target shape
     template <typename XprType__>
         requires(
           !std::same_as<std::remove_cvref_t<XprType__>, BoolReshapeOp> &&
           std::is_constructible_v<XprTypeNested, XprType__>)
     constexpr explicit BoolReshapeOp(XprType__&& xpr) : xpr_(std::forward<XprType__>(xpr)) { }
-    /// @brief constructs bool reshape op from the supplied state
+    /// @brief borrows Boolean coefficients after validating the requested target dimensions
     template <typename XprType__>
         requires(std::is_constructible_v<XprTypeNested, XprType__>)
     constexpr BoolReshapeOp(XprType__&& xpr, int rows, int cols) : xpr_(std::forward<XprType__>(xpr), rows, cols) { }
-    /// @brief constructs bool reshape op from the supplied state
+    /// @brief borrows Boolean coefficients as a vector with the requested matching length
     template <typename XprType__>
         requires(std::is_constructible_v<XprTypeNested, XprType__>)
     constexpr BoolReshapeOp(XprType__&& xpr, int rows) : xpr_(std::forward<XprType__>(xpr), rows) { }
@@ -1109,11 +1111,11 @@ class BoolReshapeOp : public BoolMatrixExpr<BoolReshapeOp<Rows_, Cols_, XprType_
         return xpr_.bitpack(i);
     }
     // access
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief reads a Boolean coefficient through the nested const reshape
     constexpr decltype(auto) operator()(int i, int j) const { return std::as_const(xpr_)(i, j); }
     /// @brief accesses the requested vector coefficient
     constexpr decltype(auto) operator[](int i) const { return std::as_const(xpr_)[i]; }
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief returns writable access through the nested Boolean reshape
     constexpr decltype(auto) operator()(int i, int j)
         requires(ReadOnly == 0)
     {
@@ -1138,7 +1140,7 @@ template <typename XprType_> struct BoolMatrixExpr {
     static constexpr std::size_t PackSize = sizeof(bitpack_t) * 8;   // number of bits in a packet
 
     // assignment
-    /// @brief assigns the supplied coefficients
+    /// @brief snapshots the source in the destination layout before assigning its logical bits
     template <typename RhsXprType_>
         requires(XprType::ReadOnly == 0 || internals::is_mutable_matrix_view_v<XprType>)
     constexpr XprType& operator=(const BoolMatrixExpr<RhsXprType_>& rhs) & {
@@ -1163,18 +1165,18 @@ template <typename XprType_> struct BoolMatrixExpr {
         });
         return derived();
     }
-    /// @brief assigns the supplied coefficients
+    /// @brief assigns a source snapshot and returns the temporary expression or view by value
     template <typename RhsXprType_>
       constexpr XprType operator=(const BoolMatrixExpr<RhsXprType_>& rhs) &&
       requires((XprType::NestAsRef == 0 && XprType::ReadOnly == 0) || internals::is_mutable_matrix_view_v<XprType>) {
           static_cast<BoolMatrixExpr&>(*this).operator=(rhs);
           return derived();
       }
-      /// @brief assigns the supplied coefficients
+      /// @brief rejects assignment to a temporary Boolean owner
       template <typename RhsXprType_>
       constexpr void operator=(const BoolMatrixExpr<RhsXprType_>&) && requires(XprType::NestAsRef != 0) = delete;
     // compound boolean algebra
-    /// @brief implements the operator&= expression operation
+    /// @brief applies Boolean AND in place after materializing the right operand to protect aliases
     template <typename RhsXprType_>
         requires(XprType::ReadOnly == 0 || internals::is_mutable_matrix_view_v<XprType>)
     constexpr XprType& operator&=(const BoolMatrixExpr<RhsXprType_>& other) & {
@@ -1184,17 +1186,17 @@ template <typename XprType_> struct BoolMatrixExpr {
         executor::run(derived(), tmp, [](auto&& l, const auto& r) { l = std::bit_and<>()(l, r); });
         return derived();
     }
-    /// @brief implements the operator&= expression operation
+    /// @brief applies Boolean AND through a temporary view and returns its binding by value
     template <typename RhsXprType_>
       constexpr XprType operator&=(const BoolMatrixExpr<RhsXprType_>& other) &&
       requires((XprType::NestAsRef == 0 && XprType::ReadOnly == 0) || internals::is_mutable_matrix_view_v<XprType>) {
           static_cast<BoolMatrixExpr&>(*this).operator&=(other);
           return derived();
       }
-      /// @brief implements the operator&= expression operation
+      /// @brief rejects Boolean AND assignment to a temporary owner
       template <typename RhsXprType_>
       constexpr void operator&=(const BoolMatrixExpr<RhsXprType_>&) && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief implements the operator|= expression operation
+    /// @brief applies Boolean OR in place after materializing the right operand to protect aliases
     template <typename RhsXprType_>
         requires(XprType::ReadOnly == 0 || internals::is_mutable_matrix_view_v<XprType>)
     constexpr XprType& operator|=(const BoolMatrixExpr<RhsXprType_>& other) & {
@@ -1204,17 +1206,17 @@ template <typename XprType_> struct BoolMatrixExpr {
         executor::run(derived(), tmp, [](auto&& l, const auto& r) { l = std::bit_or<>()(l, r); });
         return derived();
     }
-    /// @brief implements the operator|= expression operation
+    /// @brief applies Boolean OR through a temporary view and returns its binding by value
     template <typename RhsXprType_>
       constexpr XprType operator|=(const BoolMatrixExpr<RhsXprType_>& other) &&
       requires((XprType::NestAsRef == 0 && XprType::ReadOnly == 0) || internals::is_mutable_matrix_view_v<XprType>) {
           static_cast<BoolMatrixExpr&>(*this).operator|=(other);
           return derived();
       }
-      /// @brief implements the operator|= expression operation
+      /// @brief rejects Boolean OR assignment to a temporary owner
       template <typename RhsXprType_>
       constexpr void operator|=(const BoolMatrixExpr<RhsXprType_>&) && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief implements the operator^= expression operation
+    /// @brief applies Boolean XOR in place after materializing the right operand to protect aliases
     template <typename RhsXprType_>
         requires(XprType::ReadOnly == 0 || internals::is_mutable_matrix_view_v<XprType>)
     constexpr XprType& operator^=(const BoolMatrixExpr<RhsXprType_>& other) & {
@@ -1224,14 +1226,14 @@ template <typename XprType_> struct BoolMatrixExpr {
         executor::run(derived(), tmp, [](auto&& l, const auto& r) { l = std::bit_xor<>()(l, r); });
         return derived();
     }
-    /// @brief implements the operator^= expression operation
+    /// @brief applies Boolean XOR through a temporary view and returns its binding by value
     template <typename RhsXprType_>
       constexpr XprType operator^=(const BoolMatrixExpr<RhsXprType_>& other) &&
       requires((XprType::NestAsRef == 0 && XprType::ReadOnly == 0) || internals::is_mutable_matrix_view_v<XprType>) {
           static_cast<BoolMatrixExpr&>(*this).operator^=(other);
           return derived();
       }
-      /// @brief implements the operator^= expression operation
+      /// @brief rejects Boolean XOR assignment to a temporary owner
       template <typename RhsXprType_>
       constexpr void operator^=(const BoolMatrixExpr<RhsXprType_>&) && requires(XprType::NestAsRef != 0) = delete;
     // observers
@@ -1249,12 +1251,12 @@ template <typename XprType_> struct BoolMatrixExpr {
     constexpr const XprType& derived() const& { return static_cast<const XprType&>(*this); }
     /// @brief returns the concrete expression
     constexpr XprType& derived() & { return static_cast<XprType&>(*this); }
-    /// @brief returns the concrete expression
+    /// @brief rejects returning a reference to state held by a temporary expression
     constexpr void derived() const&& = delete;
-    /// @brief returns the concrete expression
+    /// @brief rejects returning a reference to state held by a temporary expression
     constexpr void derived() && = delete;
     // ostream
-    /// @brief implements the operator<< expression operation
+    /// @brief writes logical matrix rows separated by newlines without a trailing newline
     friend std::ostream& operator<<(std::ostream& out, const BoolMatrixExpr& m) {
         const int rows = m.derived().rows();
         const int cols = m.derived().cols();
@@ -1281,19 +1283,19 @@ template <typename XprType_> struct BoolMatrixExpr {
         return result;
     }
     // unary bitwise negation
-    /// @brief implements the operator~ expression operation
+    /// @brief returns lazy logical negation with packed-word evaluation
     constexpr BoolMatrixBitWiseOp<XprType, std::logical_not<>, std::bit_not<>> operator~() const& {
         return BoolMatrixBitWiseOp<XprType, std::logical_not<>, std::bit_not<>>(
           derived(), std::logical_not<>(), std::bit_not<>());
     }
-    /// @brief implements the operator~ expression operation
+    /// @brief negates a temporary expression or view retained by value
     constexpr BoolMatrixBitWiseOp<XprType, std::logical_not<>, std::bit_not<>> operator~() const&&
         requires(XprType::NestAsRef == 0)
     {
         return BoolMatrixBitWiseOp<XprType, std::logical_not<>, std::bit_not<>>(
           derived(), std::logical_not<>(), std::bit_not<>());
     }
-    /// @brief implements the operator~ expression operation
+    /// @brief rejects negation that would borrow a temporary owner
     constexpr void operator~() const&&
         requires(XprType::NestAsRef != 0)
     = delete;
@@ -1322,10 +1324,10 @@ template <typename XprType_> struct BoolMatrixExpr {
     {
         return BoolMatrixBlock<BlockRows, BlockCols, const XprType>(static_cast<const XprType&>(*this), i, j);
     }
-    /// @brief returns a view of the requested rectangular region
+    /// @brief rejects borrowing a block from a temporary owner
     template <int BlockRows, int BlockCols>
       constexpr void block(int, int) && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief returns a view of the requested rectangular region
+    /// @brief rejects borrowing a block from a temporary owner
     template <int BlockRows, int BlockCols>
     constexpr void block(int, int) const&&
         requires(XprType::NestAsRef != 0)
@@ -1350,9 +1352,9 @@ template <typename XprType_> struct BoolMatrixExpr {
     {
         return BoolMatrixBlock<Dynamic, Dynamic, const XprType>(static_cast<const XprType&>(*this), i, j, rows, cols);
     }
-    /// @brief returns a view of the requested rectangular region
+    /// @brief rejects borrowing a block from a temporary owner
     constexpr void block(int, int, int, int) && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief returns a view of the requested rectangular region
+    /// @brief rejects borrowing a block from a temporary owner
     constexpr void block(int, int, int, int) const&&
         requires(XprType::NestAsRef != 0)
     = delete;
@@ -1372,9 +1374,9 @@ template <typename XprType_> struct BoolMatrixExpr {
     {
         return BoolMatrixBlock<XprType::Rows, 1, const XprType>(static_cast<const XprType&>(*this), i);
     }
-    /// @brief returns a view of the requested column
+    /// @brief rejects borrowing a column view from a temporary owner
     constexpr void col(int) && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief returns a view of the requested column
+    /// @brief rejects borrowing a column view from a temporary owner
     constexpr void col(int) const&&
         requires(XprType::NestAsRef != 0)
     = delete;
@@ -1393,9 +1395,9 @@ template <typename XprType_> struct BoolMatrixExpr {
     {
         return BoolMatrixBlock<1, XprType::Cols, const XprType>(static_cast<const XprType&>(*this), i);
     }
-    /// @brief returns a view of the requested row
+    /// @brief rejects borrowing a row view from a temporary owner
     constexpr void row(int) && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief returns a view of the requested row
+    /// @brief rejects borrowing a row view from a temporary owner
     constexpr void row(int) const&&
         requires(XprType::NestAsRef != 0)
     = delete;
@@ -1417,9 +1419,9 @@ template <typename XprType_> struct BoolMatrixExpr {
     {
         return BoolMatrixBlock<BlockRows, XprType::Cols, const XprType>(static_cast<const XprType&>(*this), 0, 0);
     }
-    /// @brief returns the requested top rows view
+    /// @brief rejects borrowing a top-row view from a temporary owner
     template <int BlockRows> constexpr void top_rows() && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief returns the requested top rows view
+    /// @brief rejects borrowing a top-row view from a temporary owner
     template <int BlockRows>
     constexpr void top_rows() const&&
         requires(XprType::NestAsRef != 0)
@@ -1441,9 +1443,9 @@ template <typename XprType_> struct BoolMatrixExpr {
         const auto& xpr = static_cast<const XprType&>(*this);
         return BoolMatrixBlock<Dynamic, Dynamic, const XprType>(xpr, 0, 0, rows, xpr.cols());
     }
-    /// @brief returns the requested top rows view
+    /// @brief rejects borrowing a top-row view from a temporary owner
     constexpr void top_rows(int) && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief returns the requested top rows view
+    /// @brief rejects borrowing a top-row view from a temporary owner
     constexpr void top_rows(int) const&&
         requires(XprType::NestAsRef != 0)
     = delete;
@@ -1471,9 +1473,9 @@ template <typename XprType_> struct BoolMatrixExpr {
         const auto& xpr = static_cast<const XprType&>(*this);
         return BoolMatrixBlock<BlockRows, XprType::Cols, const XprType>(xpr, xpr.rows() - BlockRows, 0);
     }
-    /// @brief returns the requested bottom rows view
+    /// @brief rejects borrowing a bottom-row view from a temporary owner
     template <int BlockRows> constexpr void bottom_rows() && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief returns the requested bottom rows view
+    /// @brief rejects borrowing a bottom-row view from a temporary owner
     template <int BlockRows>
     constexpr void bottom_rows() const&&
         requires(XprType::NestAsRef != 0)
@@ -1511,9 +1513,9 @@ template <typename XprType_> struct BoolMatrixExpr {
         fdapde_assert(!(rows > xpr_rows), std::out_of_range, "bottom rows exceed Boolean expression bounds");
         return BoolMatrixBlock<Dynamic, Dynamic, const XprType>(xpr, xpr_rows - rows, 0, rows, xpr.cols());
     }
-    /// @brief returns the requested bottom rows view
+    /// @brief rejects borrowing a bottom-row view from a temporary owner
     constexpr void bottom_rows(int) && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief returns the requested bottom rows view
+    /// @brief rejects borrowing a bottom-row view from a temporary owner
     constexpr void bottom_rows(int) const&&
         requires(XprType::NestAsRef != 0)
     = delete;
@@ -1535,9 +1537,9 @@ template <typename XprType_> struct BoolMatrixExpr {
     {
         return BoolMatrixBlock<XprType::Rows, BlockCols, const XprType>(static_cast<const XprType&>(*this), 0, 0);
     }
-    /// @brief returns the requested left cols view
+    /// @brief rejects borrowing a left-column view from a temporary owner
     template <int BlockCols> constexpr void left_cols() && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief returns the requested left cols view
+    /// @brief rejects borrowing a left-column view from a temporary owner
     template <int BlockCols>
     constexpr void left_cols() const&&
         requires(XprType::NestAsRef != 0)
@@ -1559,9 +1561,9 @@ template <typename XprType_> struct BoolMatrixExpr {
         const auto& xpr = static_cast<const XprType&>(*this);
         return BoolMatrixBlock<Dynamic, Dynamic, const XprType>(xpr, 0, 0, xpr.rows(), cols);
     }
-    /// @brief returns the requested left cols view
+    /// @brief rejects borrowing a left-column view from a temporary owner
     constexpr void left_cols(int) && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief returns the requested left cols view
+    /// @brief rejects borrowing a left-column view from a temporary owner
     constexpr void left_cols(int) const&&
         requires(XprType::NestAsRef != 0)
     = delete;
@@ -1589,9 +1591,9 @@ template <typename XprType_> struct BoolMatrixExpr {
         const auto& xpr = static_cast<const XprType&>(*this);
         return BoolMatrixBlock<XprType::Rows, BlockCols, const XprType>(xpr, 0, xpr.cols() - BlockCols);
     }
-    /// @brief returns the requested right cols view
+    /// @brief rejects borrowing a right-column view from a temporary owner
     template <int BlockCols> constexpr void right_cols() && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief returns the requested right cols view
+    /// @brief rejects borrowing a right-column view from a temporary owner
     template <int BlockCols>
     constexpr void right_cols() const&&
         requires(XprType::NestAsRef != 0)
@@ -1629,9 +1631,9 @@ template <typename XprType_> struct BoolMatrixExpr {
         fdapde_assert(!(cols > xpr_cols), std::out_of_range, "right columns exceed Boolean expression bounds");
         return BoolMatrixBlock<Dynamic, Dynamic, const XprType>(xpr, 0, xpr_cols - cols, xpr.rows(), cols);
     }
-    /// @brief returns the requested right cols view
+    /// @brief rejects borrowing a right-column view from a temporary owner
     constexpr void right_cols(int) && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief returns the requested right cols view
+    /// @brief rejects borrowing a right-column view from a temporary owner
     constexpr void right_cols(int) const&&
         requires(XprType::NestAsRef != 0)
     = delete;
@@ -1673,7 +1675,7 @@ template <typename XprType_> struct BoolMatrixExpr {
           static_cast<const XprType&>(*this), std::forward<TrueXprType>(true_xpr),
           std::forward<FalseXprType>(false_xpr));
     }
-    /// @brief selects coefficients from two expressions using this Boolean mask
+    /// @brief rejects borrowing a selection expression from a temporary owner
     template <typename TrueXprType, typename FalseXprType>
     constexpr void select(TrueXprType&&, FalseXprType&&) const&&
         requires(XprType::NestAsRef != 0)
@@ -1689,7 +1691,7 @@ template <typename XprType_> struct BoolMatrixExpr {
     {
         return BoolMatrixRepeatOp<XprType>(static_cast<const XprType&>(*this), repeat_rows, repeat_cols);
     }
-    /// @brief returns a tiled Boolean expression
+    /// @brief rejects borrowing a repeated expression from a temporary owner
     constexpr void repeat(int, int) const&&
         requires(XprType::NestAsRef != 0)
     = delete;
@@ -1716,10 +1718,10 @@ template <typename XprType_> struct BoolMatrixExpr {
     {
         return BoolReshapeOp<ReshapedRows_, ReshapedCols_, const XprType>(static_cast<const XprType&>(*this));
     }
-    /// @brief reinterprets the expression with the requested dimensions
+    /// @brief rejects borrowing a reshape from a temporary owner
     template <int ReshapedRows_, int ReshapedCols_>
       constexpr void reshape() && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief reinterprets the expression with the requested dimensions
+    /// @brief rejects borrowing a reshape from a temporary owner
     template <int ReshapedRows_, int ReshapedCols_>
     constexpr void reshape() const&&
         requires(XprType::NestAsRef != 0)
@@ -1745,9 +1747,9 @@ template <typename XprType_> struct BoolMatrixExpr {
     {
         return BoolReshapeOp<ReshapedRows_, 1, const XprType>(static_cast<const XprType&>(*this));
     }
-    /// @brief reinterprets the expression with the requested dimensions
+    /// @brief rejects borrowing a reshape from a temporary owner
     template <int ReshapedRows_> constexpr void reshape() && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief reinterprets the expression with the requested dimensions
+    /// @brief rejects borrowing a reshape from a temporary owner
     template <int ReshapedRows_>
     constexpr void reshape() const&&
         requires(XprType::NestAsRef != 0)
@@ -1772,9 +1774,9 @@ template <typename XprType_> struct BoolMatrixExpr {
     {
         return BoolReshapeOp<Dynamic, Dynamic, const XprType>(static_cast<const XprType&>(*this), rows, cols);
     }
-    /// @brief reinterprets the expression with the requested dimensions
+    /// @brief rejects borrowing a reshape from a temporary owner
     constexpr void reshape(int, int) && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief reinterprets the expression with the requested dimensions
+    /// @brief rejects borrowing a reshape from a temporary owner
     constexpr void reshape(int, int) const&&
         requires(XprType::NestAsRef != 0)
     = delete;
@@ -1793,16 +1795,16 @@ template <typename XprType_> struct BoolMatrixExpr {
     {
         return BoolReshapeOp<Dynamic, 1, const XprType>(static_cast<const XprType&>(*this), rows);
     }
-    /// @brief reinterprets the expression with the requested dimensions
+    /// @brief rejects borrowing a reshape from a temporary owner
     constexpr void reshape(int) && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief reinterprets the expression with the requested dimensions
+    /// @brief rejects borrowing a reshape from a temporary owner
     constexpr void reshape(int) const&&
         requires(XprType::NestAsRef != 0)
     = delete;
 };
 
 // comparison operator
-/// @brief implements the operator== expression operation
+/// @brief tests equality of every logical coefficient after validating matching shapes, ignoring unused packed bits
 template <typename LhsXprType, typename RhsXprType>
 constexpr bool operator==(const BoolMatrixExpr<LhsXprType>& lhs, const BoolMatrixExpr<RhsXprType>& rhs) {
     fdapde_static_assert(
@@ -1837,20 +1839,20 @@ constexpr bool operator==(const BoolMatrixExpr<LhsXprType>& lhs, const BoolMatri
     result &= ((mask & d1.bitpack(n)) == (mask & d2.bitpack(n)));
     return result;
 }
-/// @brief implements the operator!= expression operation
+/// @brief tests whether equally shaped matrices differ at any logical coefficient
 template <typename LhsXprType, typename RhsXprType>
 constexpr bool operator!=(const BoolMatrixExpr<LhsXprType>& op1, const BoolMatrixExpr<RhsXprType>& op2) {
     return !(op1 == op2);
 }
 
 // detection trait
-/// @brief detects is boolean matrix
+/// @brief identifies boolean matrix expressions after removing cv and reference qualifiers
 template <typename XprType> struct is_boolean_matrix {
     using CleanXprType = std::remove_cvref_t<XprType>;
     static constexpr bool value = std::is_base_of_v<BoolMatrixExpr<CleanXprType>, CleanXprType>;
 };
 template <typename XprType> static constexpr bool is_boolean_matrix_v = is_boolean_matrix<XprType>::value;
-/// @brief detects is boolean vector
+/// @brief identifies boolean vector expressions after removing cv and reference qualifiers
 template <typename XprType> struct is_boolean_vector {
     using CleanXprType = std::remove_cvref_t<XprType>;
     static constexpr bool value = [] {
@@ -1887,13 +1889,13 @@ Vector<bool, Dynamic> value_indicator(const Iterator& first, const Iterator& las
 
 namespace internals {
 
-/// @brief represents nan indicator input
+/// @brief classifies supported matrix and vector inputs for missing-value masks
 template <typename DataType, bool IsMatrix = internals::is_matrix_like_v<DataType>> struct nan_indicator_input {
     static constexpr bool valid = true;
     static constexpr bool is_vector = false;
 };
 
-/// @brief represents nan indicator input
+/// @brief classifies supported matrix and vector inputs for missing-value masks
 template <typename DataType> struct nan_indicator_input<DataType, false> {
     static constexpr bool valid = internals::is_vector_like_v<DataType>;
     static constexpr bool is_vector = true;
@@ -1958,30 +1960,30 @@ class MatrixView<Scalar_, Rows_, Cols_, StorageOrder_> :
     using assignment_executor = internals::generic_assignment_executor;
 
     // constructors
-    /// @brief constructs matrix view from the supplied state
+    /// @brief copies packed-word binding and dimensions without copying bits
     constexpr MatrixView(const MatrixView&) = default;
-    /// @brief constructs matrix view from the supplied state
+    /// @brief creates an empty dynamic packed view without a buffer
     constexpr MatrixView()
         requires(Rows_ == Dynamic || Cols_ == Dynamic)
         : Base(), data_(nullptr), bitpacks_(0), last_bitpack_mask_(0) { }
-    /// @brief constructs matrix view from the supplied state
+    /// @brief rejects a fixed packed view without explicit external storage
     constexpr MatrixView()
         requires(Rows_ != Dynamic && Cols_ != Dynamic)
     = delete;
-    /// @brief constructs matrix view from the supplied state
+    /// @brief binds fixed dimensions to packed words and computes the final-word bit mask
     constexpr explicit MatrixView(StorageType data) : Base(), data_(data), bitpacks_(0), last_bitpack_mask_(0) {
         fdapde_static_assert(Rows_ != Dynamic && Cols_ != Dynamic, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
         bitpacks_ = internals::bitpack_count(Rows * Cols, PackSize);
         set_last_bitpack_mask_();
     }
-    /// @brief constructs matrix view from the supplied state
+    /// @brief validates a vector length and binds its packed words
     constexpr MatrixView(StorageType data, int size) :
         Base(checked_vector_size_(size)), data_(data), bitpacks_(0), last_bitpack_mask_(0) {
         fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
         bitpacks_ = internals::bitpack_count(this->size(), PackSize);
         set_last_bitpack_mask_();
     }
-    /// @brief constructs matrix view from the supplied state
+    /// @brief validates matrix dimensions and binds their packed words
     constexpr MatrixView(StorageType data, int rows, int cols) :
         Base(checked_rows_(rows, cols), cols), data_(data), bitpacks_(0), last_bitpack_mask_(0) {
         bitpacks_ = internals::bitpack_count(this->size(), PackSize);
@@ -1989,27 +1991,27 @@ class MatrixView<Scalar_, Rows_, Cols_, StorageOrder_> :
     }
     // inherit expression assignment without the owner-style MatrixBase copy assignment
     using BoolBase::operator=;
-    /// @brief assigns the supplied coefficients
+    /// @brief copies logical bits into bound storage while preserving the binding and unused tail bits
     constexpr MatrixView& operator=(const MatrixView& other) &
         requires(ReadOnly == 0)
     {
         static_cast<BoolBase&>(*this).template operator= <This>(other);
         return *this;
     }
-    /// @brief assigns the supplied coefficients
+    /// @brief copies into a temporary Boolean view and returns its binding by value
     constexpr MatrixView operator=(const MatrixView& other) &&
       requires(ReadOnly == 0) {
           static_cast<BoolBase&>(*this).template operator= <This>(other);
           return *this;
       }
-      /// @brief assigns the supplied coefficients
+      /// @brief rejects assignment through a read-only Boolean view
       constexpr MatrixView& operator=(const MatrixView&) &
           requires(ReadOnly != 0)
       = delete;
-    /// @brief assigns the supplied coefficients
+    /// @brief rejects assignment through a temporary read-only Boolean view
     constexpr MatrixView operator=(const MatrixView&) && requires(ReadOnly != 0) = delete;
     // access
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief returns a writable bit proxy into the bound packed storage
     constexpr reference operator()(int i, int j)
         requires(ReadOnly == 0)
     {
@@ -2024,7 +2026,7 @@ class MatrixView<Scalar_, Rows_, Cols_, StorageOrder_> :
         fdapde_assert(!(i < 0 || i >= this->size()), std::out_of_range, "matrix view index out of range");
         return Base::operator[](i);
     }
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief returns a read-only bit proxy into the bound packed storage
     constexpr const_reference operator()(int i, int j) const {
         internals::validate_matrix_index(i, j, this->rows(), this->cols());
         return Base::operator()(i, j);

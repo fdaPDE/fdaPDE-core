@@ -22,7 +22,11 @@ storage order. Scalar division divides each coefficient by the scalar;
 `double` coefficients divided by an integer retain floating-point arithmetic.
 Assignments materialize their source before overwriting aliased storage.
 Dynamic owner assignment can resize; fixed-shape assignments must match.
-Resizing an owner discards its old coefficients, including packed Boolean bits.
+Numeric `Matrix::resize` preserves the retained prefix of physical storage; it does not preserve
+logical coordinates when strides change. Boolean matrices with a compile-time row or column
+extent of one also preserve their retained vector prefix and clear newly exposed bits.
+Other Boolean matrix shapes clear all logical bits when either dimension changes, even when
+the total size is unchanged. Resizing to the same shape preserves existing coefficients.
 
 `MatrixExpr` supplies the expression API. `MatrixBase` supplies shared storage
 shape and coefficient access to owners and external-storage views; its template

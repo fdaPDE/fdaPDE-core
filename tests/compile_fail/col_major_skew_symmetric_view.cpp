@@ -17,7 +17,7 @@
 #include <fdaPDE/linear_algebra.h>
 
 double col_major_skew_symmetric_storage[3] {};
-fdapde::SkewSymmetricMatrixView<double, 3, 3, fdapde::ColMajor> col_major_skew_symmetric_view(
-  col_major_skew_symmetric_storage);
+fdapde::SkewSymmetricMatrixView<double, 3, 3, fdapde::ColMajor>
+  col_major_skew_symmetric_view(col_major_skew_symmetric_storage);
 
 int main() { return col_major_skew_symmetric_view.rows(); }

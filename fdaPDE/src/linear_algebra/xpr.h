@@ -27,7 +27,7 @@ template <typename XprType_> struct MatrixExpr {
     using XprType = XprType_;
 
     // assignment
-    /// @brief assigns the supplied coefficients
+    /// @brief materializes the source before assignment, resizing dynamic owners and preserving aliases
     template <typename RhsXprType_>
         requires(XprType::ReadOnly == 0 || internals::is_mutable_matrix_view_v<XprType>)
     constexpr XprType& operator=(const MatrixExpr<RhsXprType_>& rhs) & {
@@ -47,17 +47,17 @@ template <typename XprType_> struct MatrixExpr {
         executor::run(derived(), tmp, [](auto& l, const auto& r) { l = r; });
         return derived();
     }
-    /// @brief assigns the supplied coefficients
+    /// @brief assigns a source snapshot and returns the temporary view or expression by value
     template <typename RhsXprType_>
       constexpr XprType operator=(const MatrixExpr<RhsXprType_>& rhs) &&
       requires((XprType::NestAsRef == 0 && XprType::ReadOnly == 0) || internals::is_mutable_matrix_view_v<XprType>) {
           static_cast<MatrixExpr&>(*this).operator=(rhs);
           return derived();
       }
-      /// @brief assigns the supplied coefficients
+      /// @brief rejects assignment to a temporary owner
       template <typename RhsXprType_>
       constexpr void operator=(const MatrixExpr<RhsXprType_>&) && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief assigns the supplied coefficients
+    /// @brief evaluates coefficientwise values with snapshot-based matrix assignment
     template <typename RhsXprType_>
     constexpr XprType& operator=(const MatrixCoeffWiseExpr<RhsXprType_>& rhs) &
         requires(XprType::ReadOnly == 0 || internals::is_mutable_matrix_view_v<XprType>)
@@ -65,18 +65,18 @@ template <typename XprType_> struct MatrixExpr {
         operator=(rhs.mwise());
         return derived();
     }
-    /// @brief assigns the supplied coefficients
+    /// @brief assigns coefficientwise values and returns the temporary view or expression by value
     template <typename RhsXprType_>
       constexpr XprType operator=(const MatrixCoeffWiseExpr<RhsXprType_>& rhs) &&
       requires((XprType::NestAsRef == 0 && XprType::ReadOnly == 0) || internals::is_mutable_matrix_view_v<XprType>) {
           static_cast<MatrixExpr&>(*this).operator=(rhs);
           return derived();
       }
-      /// @brief assigns the supplied coefficients
+      /// @brief rejects coefficientwise assignment to a temporary owner
       template <typename RhsXprType_>
       constexpr void operator=(const MatrixCoeffWiseExpr<RhsXprType_>&) && requires(XprType::NestAsRef != 0) = delete;
     // compound algebra
-    /// @brief adds the supplied coefficients in place
+    /// @brief adds a source snapshot to corresponding destination coefficients
     template <typename RhsXprType_>
         requires(XprType::ReadOnly == 0 || internals::is_mutable_matrix_view_v<XprType>)
     constexpr XprType& operator+=(const MatrixExpr<RhsXprType_>& rhs) & {
@@ -87,17 +87,18 @@ template <typename XprType_> struct MatrixExpr {
         executor::run(derived(), tmp, [](auto& l, const auto& r) { l += r; });
         return derived();
     }
-    /// @brief adds the supplied coefficients in place
+    /// @brief adds a source snapshot to corresponding destination coefficients and returns the temporary adaptor by
+    /// value
     template <typename RhsXprType_>
       constexpr XprType operator+=(const MatrixExpr<RhsXprType_>& rhs) &&
       requires((XprType::NestAsRef == 0 && XprType::ReadOnly == 0) || internals::is_mutable_matrix_view_v<XprType>) {
           static_cast<MatrixExpr&>(*this).operator+=(rhs);
           return derived();
       }
-      /// @brief adds the supplied coefficients in place
+      /// @brief rejects compound assignment to a temporary owner
       template <typename RhsXprType_>
       constexpr void operator+=(const MatrixExpr<RhsXprType_>&) && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief subtracts the supplied coefficients in place
+    /// @brief subtracts a source snapshot from corresponding destination coefficients
     template <typename RhsXprType_>
         requires(XprType::ReadOnly == 0 || internals::is_mutable_matrix_view_v<XprType>)
     constexpr XprType& operator-=(const MatrixExpr<RhsXprType_>& rhs) & {
@@ -108,17 +109,18 @@ template <typename XprType_> struct MatrixExpr {
         executor::run(derived(), tmp, [](auto& l, const auto& r) { l -= r; });
         return derived();
     }
-    /// @brief subtracts the supplied coefficients in place
+    /// @brief subtracts a source snapshot from corresponding destination coefficients and returns the temporary adaptor
+    /// by value
     template <typename RhsXprType_>
       constexpr XprType operator-=(const MatrixExpr<RhsXprType_>& rhs) &&
       requires((XprType::NestAsRef == 0 && XprType::ReadOnly == 0) || internals::is_mutable_matrix_view_v<XprType>) {
           static_cast<MatrixExpr&>(*this).operator-=(rhs);
           return derived();
       }
-      /// @brief subtracts the supplied coefficients in place
+      /// @brief rejects compound assignment to a temporary owner
       template <typename RhsXprType_>
       constexpr void operator-=(const MatrixExpr<RhsXprType_>&) && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief multiplies in place by the supplied operand
+    /// @brief multiplies every writable coefficient by the scalar
     template <typename Scalar_>
         requires(
           std::is_arithmetic_v<Scalar_> && (XprType::ReadOnly == 0 || internals::is_mutable_matrix_view_v<XprType>))
@@ -127,7 +129,7 @@ template <typename XprType_> struct MatrixExpr {
         executor::run(derived(), derived(), [rhs](auto& l, const auto& r) { l = rhs * r; });
         return derived();
     }
-    /// @brief multiplies in place by the supplied operand
+    /// @brief multiplies every writable coefficient by the scalar and returns the temporary adaptor by value
     template <typename Scalar_>
         requires(
           std::is_arithmetic_v<Scalar_> &&
@@ -136,11 +138,11 @@ template <typename XprType_> struct MatrixExpr {
         static_cast<MatrixExpr&>(*this).operator*=(rhs);
         return derived();
     }
-    /// @brief multiplies in place by the supplied operand
+    /// @brief rejects compound assignment to a temporary owner
     template <typename Scalar_>
         requires(std::is_arithmetic_v<Scalar_> && XprType::NestAsRef != 0)
     constexpr void operator*=(Scalar_) && = delete;
-    /// @brief divides in place by the supplied scalar
+    /// @brief divides every writable coefficient by the scalar
     template <typename Scalar_>
         requires(
           std::is_arithmetic_v<Scalar_> && (XprType::ReadOnly == 0 || internals::is_mutable_matrix_view_v<XprType>))
@@ -149,7 +151,7 @@ template <typename XprType_> struct MatrixExpr {
         executor::run(derived(), derived(), [rhs](auto& l, const auto& r) { l = r / rhs; });
         return derived();
     }
-    /// @brief divides in place by the supplied scalar
+    /// @brief divides every writable coefficient by the scalar and returns the temporary adaptor by value
     template <typename Scalar_>
         requires(
           std::is_arithmetic_v<Scalar_> &&
@@ -158,12 +160,12 @@ template <typename XprType_> struct MatrixExpr {
         static_cast<MatrixExpr&>(*this).operator/=(rhs);
         return derived();
     }
-    /// @brief divides in place by the supplied scalar
+    /// @brief rejects compound assignment to a temporary owner
     template <typename Scalar_>
         requires(std::is_arithmetic_v<Scalar_> && XprType::NestAsRef != 0)
     constexpr void operator/=(Scalar_) && = delete;
     // compound matrix multiplication
-    /// @brief multiplies in place by the supplied operand
+    /// @brief replaces the destination with its matrix product after materializing aliased operands
     template <typename RhsXprType_>
         requires(XprType::ReadOnly == 0 || internals::is_mutable_matrix_view_v<XprType>)
     constexpr XprType& operator*=(const MatrixExpr<RhsXprType_>& rhs) & {
@@ -177,14 +179,15 @@ template <typename XprType_> struct MatrixExpr {
         executor::run(derived(), tmp, [](auto& l, const auto& r) { l = r; });
         return derived();
     }
-    /// @brief multiplies in place by the supplied operand
+    /// @brief replaces the destination with its matrix product after materializing aliased operands and returns the
+    /// temporary adaptor by value
     template <typename RhsXprType_>
       constexpr XprType operator*=(const MatrixExpr<RhsXprType_>& rhs) &&
       requires((XprType::NestAsRef == 0 && XprType::ReadOnly == 0) || internals::is_mutable_matrix_view_v<XprType>) {
           static_cast<MatrixExpr&>(*this).operator*=(rhs);
           return derived();
       }
-      /// @brief multiplies in place by the supplied operand
+      /// @brief rejects compound assignment to a temporary owner
       template <typename RhsXprType_>
       constexpr void operator*=(const MatrixExpr<RhsXprType_>&) && requires(XprType::NestAsRef != 0) = delete;
 
@@ -203,12 +206,12 @@ template <typename XprType_> struct MatrixExpr {
     constexpr const XprType& derived() const& { return static_cast<const XprType&>(*this); }
     /// @brief returns the concrete expression
     constexpr XprType& derived() & { return static_cast<XprType&>(*this); }
-    /// @brief returns the concrete expression
+    /// @brief rejects returning a reference to state held by a temporary expression
     constexpr void derived() const&& = delete;
-    /// @brief returns the concrete expression
+    /// @brief rejects returning a reference to state held by a temporary expression
     constexpr void derived() && = delete;
     // ostream
-    /// @brief implements the operator<< expression operation
+    /// @brief writes logical matrix rows separated by newlines without a trailing newline
     friend std::ostream& operator<<(std::ostream& os, const MatrixExpr& m) {
         const int rows = m.derived().rows();
         const int cols = m.derived().cols();
@@ -251,11 +254,11 @@ template <typename XprType_> struct MatrixExpr {
           return MatrixCoeffWiseOp<XprType, internals::identity_op>(
             static_cast<XprType &&>(*this), internals::identity_op());
       }
-      /// @brief returns the coefficient-wise algebra adaptor
+      /// @brief rejects borrowing a coefficientwise adaptor from a temporary owner
       constexpr void cwise() const&&
           requires(XprType::NestAsRef != 0)
       = delete;
-    /// @brief returns the coefficient-wise algebra adaptor
+    /// @brief rejects borrowing a coefficientwise adaptor from a temporary owner
     constexpr void cwise() && requires(XprType::NestAsRef != 0) = delete;
 
     // redux operators
@@ -365,9 +368,9 @@ template <typename XprType_> struct MatrixExpr {
     {
         return MatrixRowWiseOp<const XprType>(static_cast<const XprType&&>(*this));
     }
-    /// @brief returns the row-wise reduction adaptor
+    /// @brief rejects borrowing a rowwise adaptor from a temporary owner
     constexpr void rowwise() && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief returns the row-wise reduction adaptor
+    /// @brief rejects borrowing a rowwise adaptor from a temporary owner
     constexpr void rowwise() const&&
         requires(XprType::NestAsRef != 0)
     = delete;
@@ -384,9 +387,9 @@ template <typename XprType_> struct MatrixExpr {
     {
         return MatrixColWiseOp<const XprType>(static_cast<const XprType&&>(*this));
     }
-    /// @brief returns the column-wise reduction adaptor
+    /// @brief rejects borrowing a columnwise adaptor from a temporary owner
     constexpr void colwise() && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief returns the column-wise reduction adaptor
+    /// @brief rejects borrowing a columnwise adaptor from a temporary owner
     constexpr void colwise() const&&
         requires(XprType::NestAsRef != 0)
     = delete;
@@ -400,7 +403,7 @@ template <typename XprType_> struct MatrixExpr {
     {
         return TransposeOp<XprType>(derived());
     }
-    /// @brief returns the transposed expression
+    /// @brief rejects borrowing a transpose from a temporary owner
     constexpr void transpose() const&&
         requires(XprType::NestAsRef != 0)
     = delete;
@@ -417,9 +420,9 @@ template <typename XprType_> struct MatrixExpr {
     {
         return Diagonal<const XprType>(std::move(derived()));
     }
-    /// @brief returns the main diagonal representation
+    /// @brief rejects borrowing a diagonal view from a temporary owner
     constexpr void diagonal() && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief returns the main diagonal representation
+    /// @brief rejects borrowing a diagonal view from a temporary owner
     constexpr void diagonal() const&&
         requires(XprType::NestAsRef != 0)
     = delete;
@@ -447,10 +450,10 @@ template <typename XprType_> struct MatrixExpr {
     {
         return MatrixBlock<BlockRows, BlockCols, const XprType>(static_cast<const XprType&>(*this), i, j);
     }
-    /// @brief returns a view of the requested rectangular region
+    /// @brief rejects borrowing a block from a temporary owner
     template <int BlockRows, int BlockCols>
       constexpr void block(int, int) && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief returns a view of the requested rectangular region
+    /// @brief rejects borrowing a block from a temporary owner
     template <int BlockRows, int BlockCols>
     constexpr void block(int, int) const&&
         requires(XprType::NestAsRef != 0)
@@ -475,9 +478,9 @@ template <typename XprType_> struct MatrixExpr {
     {
         return MatrixBlock<Dynamic, Dynamic, const XprType>(static_cast<const XprType&>(*this), i, j, rows, cols);
     }
-    /// @brief returns a view of the requested rectangular region
+    /// @brief rejects borrowing a block from a temporary owner
     constexpr void block(int, int, int, int) && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief returns a view of the requested rectangular region
+    /// @brief rejects borrowing a block from a temporary owner
     constexpr void block(int, int, int, int) const&&
         requires(XprType::NestAsRef != 0)
     = delete;
@@ -497,9 +500,9 @@ template <typename XprType_> struct MatrixExpr {
     {
         return MatrixBlock<XprType::Rows, 1, const XprType>(static_cast<const XprType&>(*this), i);
     }
-    /// @brief returns a view of the requested column
+    /// @brief rejects borrowing a column view from a temporary owner
     constexpr void col(int) && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief returns a view of the requested column
+    /// @brief rejects borrowing a column view from a temporary owner
     constexpr void col(int) const&&
         requires(XprType::NestAsRef != 0)
     = delete;
@@ -518,9 +521,9 @@ template <typename XprType_> struct MatrixExpr {
     {
         return MatrixBlock<1, XprType::Cols, const XprType>(static_cast<const XprType&>(*this), i);
     }
-    /// @brief returns a view of the requested row
+    /// @brief rejects borrowing a row view from a temporary owner
     constexpr void row(int) && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief returns a view of the requested row
+    /// @brief rejects borrowing a row view from a temporary owner
     constexpr void row(int) const&&
         requires(XprType::NestAsRef != 0)
     = delete;
@@ -542,9 +545,9 @@ template <typename XprType_> struct MatrixExpr {
     {
         return MatrixBlock<BlockRows, XprType::Cols, const XprType>(static_cast<const XprType&>(*this), 0, 0);
     }
-    /// @brief returns the requested top rows view
+    /// @brief rejects borrowing a top-row view from a temporary owner
     template <int BlockRows> constexpr void top_rows() && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief returns the requested top rows view
+    /// @brief rejects borrowing a top-row view from a temporary owner
     template <int BlockRows>
     constexpr void top_rows() const&&
         requires(XprType::NestAsRef != 0)
@@ -566,9 +569,9 @@ template <typename XprType_> struct MatrixExpr {
         const auto& xpr = static_cast<const XprType&>(*this);
         return MatrixBlock<Dynamic, Dynamic, const XprType>(xpr, 0, 0, rows, xpr.cols());
     }
-    /// @brief returns the requested top rows view
+    /// @brief rejects borrowing a top-row view from a temporary owner
     constexpr void top_rows(int) && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief returns the requested top rows view
+    /// @brief rejects borrowing a top-row view from a temporary owner
     constexpr void top_rows(int) const&&
         requires(XprType::NestAsRef != 0)
     = delete;
@@ -596,9 +599,9 @@ template <typename XprType_> struct MatrixExpr {
         const auto& xpr = static_cast<const XprType&>(*this);
         return MatrixBlock<BlockRows, XprType::Cols, const XprType>(xpr, xpr.rows() - BlockRows, 0);
     }
-    /// @brief returns the requested bottom rows view
+    /// @brief rejects borrowing a bottom-row view from a temporary owner
     template <int BlockRows> constexpr void bottom_rows() && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief returns the requested bottom rows view
+    /// @brief rejects borrowing a bottom-row view from a temporary owner
     template <int BlockRows>
     constexpr void bottom_rows() const&&
         requires(XprType::NestAsRef != 0)
@@ -636,9 +639,9 @@ template <typename XprType_> struct MatrixExpr {
         fdapde_assert(!(rows > xpr_rows), std::out_of_range, "bottom rows exceed expression bounds");
         return MatrixBlock<Dynamic, Dynamic, const XprType>(xpr, xpr_rows - rows, 0, rows, xpr.cols());
     }
-    /// @brief returns the requested bottom rows view
+    /// @brief rejects borrowing a bottom-row view from a temporary owner
     constexpr void bottom_rows(int) && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief returns the requested bottom rows view
+    /// @brief rejects borrowing a bottom-row view from a temporary owner
     constexpr void bottom_rows(int) const&&
         requires(XprType::NestAsRef != 0)
     = delete;
@@ -660,9 +663,9 @@ template <typename XprType_> struct MatrixExpr {
     {
         return MatrixBlock<XprType::Rows, BlockCols, const XprType>(static_cast<const XprType&>(*this), 0, 0);
     }
-    /// @brief returns the requested left cols view
+    /// @brief rejects borrowing a left-column view from a temporary owner
     template <int BlockCols> constexpr void left_cols() && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief returns the requested left cols view
+    /// @brief rejects borrowing a left-column view from a temporary owner
     template <int BlockCols>
     constexpr void left_cols() const&&
         requires(XprType::NestAsRef != 0)
@@ -684,9 +687,9 @@ template <typename XprType_> struct MatrixExpr {
         const auto& xpr = static_cast<const XprType&>(*this);
         return MatrixBlock<Dynamic, Dynamic, const XprType>(xpr, 0, 0, xpr.rows(), cols);
     }
-    /// @brief returns the requested left cols view
+    /// @brief rejects borrowing a left-column view from a temporary owner
     constexpr void left_cols(int) && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief returns the requested left cols view
+    /// @brief rejects borrowing a left-column view from a temporary owner
     constexpr void left_cols(int) const&&
         requires(XprType::NestAsRef != 0)
     = delete;
@@ -714,9 +717,9 @@ template <typename XprType_> struct MatrixExpr {
         const auto& xpr = static_cast<const XprType&>(*this);
         return MatrixBlock<XprType::Rows, BlockCols, const XprType>(xpr, 0, xpr.cols() - BlockCols);
     }
-    /// @brief returns the requested right cols view
+    /// @brief rejects borrowing a right-column view from a temporary owner
     template <int BlockCols> constexpr void right_cols() && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief returns the requested right cols view
+    /// @brief rejects borrowing a right-column view from a temporary owner
     template <int BlockCols>
     constexpr void right_cols() const&&
         requires(XprType::NestAsRef != 0)
@@ -754,9 +757,9 @@ template <typename XprType_> struct MatrixExpr {
         fdapde_assert(!(cols > xpr_cols), std::out_of_range, "right columns exceed expression bounds");
         return MatrixBlock<Dynamic, Dynamic, const XprType>(xpr, 0, xpr_cols - cols, xpr.rows(), cols);
     }
-    /// @brief returns the requested right cols view
+    /// @brief rejects borrowing a right-column view from a temporary owner
     constexpr void right_cols(int) && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief returns the requested right cols view
+    /// @brief rejects borrowing a right-column view from a temporary owner
     constexpr void right_cols(int) const&&
         requires(XprType::NestAsRef != 0)
     = delete;
@@ -782,7 +785,7 @@ template <typename XprType_> struct MatrixExpr {
     template <typename RhsXprType> constexpr auto cross(const MatrixExpr<RhsXprType>& rhs) const& {
         return MatrixCrossProductOp<XprType, RhsXprType>(derived(), rhs.derived());
     }
-    /// @brief returns the three-dimensional vector cross product
+    /// @brief rejects a cross product that would borrow a temporary right operand
     template <internals::matrix_expression RhsXprType>
         requires(internals::is_owning_rvalue_expression_v<RhsXprType &&>)
     constexpr void cross(RhsXprType&&) const& = delete;
@@ -793,11 +796,11 @@ template <typename XprType_> struct MatrixExpr {
     {
         return MatrixCrossProductOp<XprType, RhsXprType>(derived(), rhs.derived());
     }
-    /// @brief returns the three-dimensional vector cross product
+    /// @brief rejects a cross product that would borrow a temporary right operand
     template <internals::matrix_expression RhsXprType>
         requires(internals::is_owning_rvalue_expression_v<RhsXprType &&>)
     constexpr void cross(RhsXprType&&) const&& = delete;
-    /// @brief returns the three-dimensional vector cross product
+    /// @brief rejects a cross product that would borrow a temporary left owner
     template <typename RhsXprType>
     constexpr void cross(const MatrixExpr<RhsXprType>&) const&&
         requires(XprType::NestAsRef != 0)
@@ -826,10 +829,10 @@ template <typename XprType_> struct MatrixExpr {
     {
         return ReshapeOp<ReshapedRows_, ReshapedCols_, const XprType>(static_cast<const XprType&>(*this));
     }
-    /// @brief reinterprets the expression with the requested dimensions
+    /// @brief rejects borrowing a reshape from a temporary owner
     template <int ReshapedRows_, int ReshapedCols_>
       constexpr void reshape() && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief reinterprets the expression with the requested dimensions
+    /// @brief rejects borrowing a reshape from a temporary owner
     template <int ReshapedRows_, int ReshapedCols_>
     constexpr void reshape() const&&
         requires(XprType::NestAsRef != 0)
@@ -851,9 +854,9 @@ template <typename XprType_> struct MatrixExpr {
     {
         return ReshapeOp<ReshapedRows_, 1, const XprType>(static_cast<const XprType&>(*this));
     }
-    /// @brief reinterprets the expression with the requested dimensions
+    /// @brief rejects borrowing a reshape from a temporary owner
     template <int ReshapedRows_> constexpr void reshape() && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief reinterprets the expression with the requested dimensions
+    /// @brief rejects borrowing a reshape from a temporary owner
     template <int ReshapedRows_>
     constexpr void reshape() const&&
         requires(XprType::NestAsRef != 0)
@@ -876,9 +879,9 @@ template <typename XprType_> struct MatrixExpr {
     {
         return ReshapeOp<Dynamic, Dynamic, const XprType>(static_cast<const XprType&>(*this), rows, cols);
     }
-    /// @brief reinterprets the expression with the requested dimensions
+    /// @brief rejects borrowing a reshape from a temporary owner
     constexpr void reshape(int, int) && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief reinterprets the expression with the requested dimensions
+    /// @brief rejects borrowing a reshape from a temporary owner
     constexpr void reshape(int, int) const&&
         requires(XprType::NestAsRef != 0)
     = delete;
@@ -895,9 +898,9 @@ template <typename XprType_> struct MatrixExpr {
     {
         return ReshapeOp<Dynamic, 1, const XprType>(static_cast<const XprType&>(*this), rows);
     }
-    /// @brief reinterprets the expression with the requested dimensions
+    /// @brief rejects borrowing a reshape from a temporary owner
     constexpr void reshape(int) && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief reinterprets the expression with the requested dimensions
+    /// @brief rejects borrowing a reshape from a temporary owner
     constexpr void reshape(int) const&&
         requires(XprType::NestAsRef != 0)
     = delete;
@@ -939,11 +942,11 @@ template <typename XprType_> struct MatrixExpr {
     {
         return static_cast<const MatrixExpr&>(*this).skew_part();
     }
-    /// @brief returns the symmetric part of the matrix
+    /// @brief rejects borrowing a symmetric-part expression from a temporary owner
     constexpr void symm_part() const&&
         requires(XprType::NestAsRef != 0)
     = delete;
-    /// @brief returns the skew-symmetric part of the matrix
+    /// @brief rejects borrowing a skew-part expression from a temporary owner
     constexpr void skew_part() const&&
         requires(XprType::NestAsRef != 0)
     = delete;
@@ -1015,9 +1018,9 @@ template <typename XprType_> struct MatrixExpr {
     {
         return Triangular<BlockMode, const XprType>(std::move(derived()));
     }
-    /// @brief returns a view of the selected triangular region
+    /// @brief rejects borrowing a triangular block from a temporary owner
     template <int BlockMode> constexpr void triangular_block() && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief returns a view of the selected triangular region
+    /// @brief rejects borrowing a triangular block from a temporary owner
     template <int BlockMode>
     constexpr void triangular_block() const&&
         requires(XprType::NestAsRef != 0)
@@ -1040,9 +1043,9 @@ template <typename XprType_> struct MatrixExpr {
     {
         return internals::symmetric_cast<ViewMode>(std::move(derived()));
     }
-    /// @brief returns a symmetric matrix adaptor
+    /// @brief rejects borrowing a symmetric wrapper from a temporary owner
     template <int ViewMode> constexpr void as_symmetric() && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief returns a symmetric matrix adaptor
+    /// @brief rejects borrowing a symmetric wrapper from a temporary owner
     template <int ViewMode>
     constexpr void as_symmetric() const&&
         requires(XprType::NestAsRef != 0)
@@ -1066,9 +1069,9 @@ template <typename XprType_> struct MatrixExpr {
     {
         return internals::skew_symmetric_cast<ViewMode>(std::move(derived()));
     }
-    /// @brief returns a skew-symmetric matrix adaptor
+    /// @brief rejects borrowing a skew-symmetric wrapper from a temporary owner
     template <int ViewMode> constexpr void as_skew_symmetric() && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief returns a skew-symmetric matrix adaptor
+    /// @brief rejects borrowing a skew-symmetric wrapper from a temporary owner
     template <int ViewMode>
     constexpr void as_skew_symmetric() const&&
         requires(XprType::NestAsRef != 0)
@@ -1096,16 +1099,16 @@ template <typename XprType_> struct MatrixExpr {
         fdapde_static_assert(XprType::Rows == 1 || XprType::Cols == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
         return internals::diagonal_cast(std::move(derived()));
     }
-    /// @brief returns a diagonal matrix adaptor
+    /// @brief rejects borrowing a diagonal wrapper from a temporary owner
     constexpr void as_diagonal() && requires(XprType::NestAsRef != 0) = delete;
-    /// @brief returns a diagonal matrix adaptor
+    /// @brief rejects borrowing a diagonal wrapper from a temporary owner
     constexpr void as_diagonal() const&&
         requires(XprType::NestAsRef != 0)
     = delete;
 };
 
 // comparison operators
-/// @brief implements the operator== expression operation
+/// @brief tests equality of every logical coefficient after validating matching shapes
 template <typename LhsXprType, typename RhsXprType>
 constexpr bool operator==(const MatrixExpr<LhsXprType>& lhs, const MatrixExpr<RhsXprType>& rhs) {
     fdapde_static_assert(
@@ -1126,7 +1129,7 @@ constexpr bool operator==(const MatrixExpr<LhsXprType>& lhs, const MatrixExpr<Rh
     }
     return true;
 }
-/// @brief implements the operator!= expression operation
+/// @brief tests whether equally shaped matrices differ at any logical coefficient
 template <typename LhsXprType, typename RhsXprType>
 constexpr bool operator!=(const MatrixExpr<LhsXprType>& op1, const MatrixExpr<RhsXprType>& op2) {
     return !(op1 == op2);
@@ -1162,12 +1165,12 @@ almost_equal(const MatrixExpr<LhsXprType>& lhs, const MatrixExpr<RhsXprType>& rh
 }
 
 // detection trait
-/// @brief detects is matrix
+/// @brief identifies matrix expressions after removing cv and reference qualifiers
 template <typename XprType> struct is_matrix {
     static constexpr bool value = std::is_base_of_v<MatrixExpr<std::decay_t<XprType>>, XprType>;
 };
 template <typename XprType> static constexpr bool is_matrix_v = is_matrix<XprType>::value;
-/// @brief detects is vector
+/// @brief identifies vector expressions after removing cv and reference qualifiers
 template <typename XprType> struct is_vector {
     static constexpr bool value =
       is_matrix_v<XprType> && (std::decay_t<XprType>::Cols == 1 || std::decay_t<XprType>::Rows == 1);

@@ -20,20 +20,20 @@ using fdapde::Dynamic;
 template <int Rows, int Cols = Rows> using BinaryMatrix = fdapde::Matrix<bool, Rows, Cols>;
 template <int Rows> using BinaryVector = fdapde::Vector<bool, Rows>;
 
-// verifies static sized matrix through the public algebra API
+// exercise fixed Boolean dimensions, zero initialization and isolated bit writes
 TEST(HistoricalBoolean, static_sized_matrix) {
     // build a static-sized binary matrix
     BinaryMatrix<5, 3> m;
     // check dimensionalities
-    // checks m.rows() == 5
+    // a fixed Boolean matrix retains its five rows
     EXPECT_TRUE(m.rows() == 5);
-    // checks m.cols() == 3
+    // a fixed Boolean matrix retains its three columns
     EXPECT_TRUE(m.cols() == 3);
-    // checks m.size() == 15
+    // the fixed shape contains fifteen logical bits
     EXPECT_TRUE(m.size() == 15);
     // check all is set to zero
     for (int i = 0; i < m.rows(); ++i) {
-        // checks m(i, j) == false
+        // default construction clears every logical coefficient
         for (int j = 0; j < m.cols(); ++j) { EXPECT_TRUE(m(i, j) == false); }
     }
     // set a coefficient to true and check that it is the only one set to true
@@ -41,10 +41,10 @@ TEST(HistoricalBoolean, static_sized_matrix) {
     for (int i = 0; i < m.rows(); ++i) {
         for (int j = 0; j < m.cols(); ++j) {
             if (i == 3 && j == 1) {
-                // checks m(i, j) == true
+                // setting one coordinate makes that coordinate true
                 EXPECT_TRUE(m(i, j) == true);
             } else {
-                // checks m(i, j) == false
+                // setting one coordinate leaves every other coordinate false
                 EXPECT_TRUE(m(i, j) == false);
             }
         }
@@ -52,25 +52,25 @@ TEST(HistoricalBoolean, static_sized_matrix) {
     // set back to false, and check all is false
     m.clear(3, 1);
     for (int i = 0; i < m.rows(); ++i) {
-        // checks m(i, j) == false
+        // clearing the only set coordinate restores an all-false matrix
         for (int j = 0; j < m.cols(); ++j) { EXPECT_TRUE(m(i, j) == false); }
     }
 }
 
-// verifies dynamic sized matrix through the public algebra API
+// exercise dynamic Boolean allocation, bit writes across words and clearing on resize
 TEST(HistoricalBoolean, dynamic_sized_matrix) {
     // build a dynamic-sized binary matrix, large enought to span multiple bitpacks
     BinaryMatrix<Dynamic> m(5, 100);
     // check dimensionalities
-    // checks m.rows() == 5
+    // a dynamic Boolean matrix adopts the requested five rows
     EXPECT_TRUE(m.rows() == 5);
-    // checks m.cols() == 100
+    // a dynamic Boolean matrix adopts the requested hundred columns
     EXPECT_TRUE(m.cols() == 100);
-    // checks m.size() == 500
+    // the dynamic shape contains five hundred logical bits
     EXPECT_TRUE(m.size() == 500);
     // check all is set to zero
     for (int i = 0; i < m.rows(); ++i) {
-        // checks m(i, j) == false
+        // allocation clears every logical bit across all storage words
         for (int j = 0; j < m.cols(); ++j) { EXPECT_TRUE(m(i, j) == false); }
     }
     // set a coefficient to true and check that it is the only one set to true
@@ -78,10 +78,10 @@ TEST(HistoricalBoolean, dynamic_sized_matrix) {
     for (int i = 0; i < m.rows(); ++i) {
         for (int j = 0; j < m.cols(); ++j) {
             if (i == 3 && j == 47) {
-                // checks m(i, j) == true
+                // the addressed coordinate becomes true after set
                 EXPECT_TRUE(m(i, j) == true);
             } else {
-                // checks m(i, j) == false
+                // setting a coordinate in a later storage word leaves all other bits false
                 EXPECT_TRUE(m(i, j) == false);
             }
         }
@@ -89,71 +89,71 @@ TEST(HistoricalBoolean, dynamic_sized_matrix) {
     // set back to false, and check all is false
     m.clear(3, 47);
     for (int i = 0; i < m.rows(); ++i) {
-        // checks m(i, j) == false
+        // clearing the addressed coordinate restores every bit to false
         for (int j = 0; j < m.cols(); ++j) { EXPECT_TRUE(m(i, j) == false); }
     }
     // resize matrix and check dimensionalities
     m.set(0, 0);
     m.resize(20, 20);
-    // checks m.rows() == 20
+    // resize adopts the requested twenty rows
     EXPECT_TRUE(m.rows() == 20);
-    // checks m.cols() == 20
+    // resize adopts the requested twenty columns
     EXPECT_TRUE(m.cols() == 20);
-    // checks m.size() == 400
+    // the resized shape contains four hundred logical bits
     EXPECT_TRUE(m.size() == 400);
     // resizing a matrix should destruct previous memory and set all to 0
     for (int i = 0; i < m.rows(); ++i) {
-        // checks m(i, j) == false
+        // shape-changing resize clears the previously set bit and all new coefficients
         for (int j = 0; j < m.cols(); ++j) { EXPECT_TRUE(m(i, j) == false); }
     }
 }
 
-// verifies binary vector through the public algebra API
+// exercise fixed and dynamic Boolean vectors through vector and matrix indexing
 TEST(HistoricalBoolean, binary_vector) {
     // build a static sized binary vector
     BinaryVector<5> v;
     // check dimensionalities
-    // checks v.rows() == 5
+    // a fixed column vector retains its five rows
     EXPECT_TRUE(v.rows() == 5);
-    // checks v.cols() == 1
+    // a Boolean column vector has one column
     EXPECT_TRUE(v.cols() == 1);
-    // checks v.size() == 5
+    // the fixed vector exposes five logical bits
     EXPECT_TRUE(v.size() == 5);
     // test vector interface
     v.set(1);
-    // checks v[1] == true
+    // vector indexing observes the bit set at index one
     EXPECT_TRUE(v[1] == true);
-    // checks v[1] == v(1, 0)
+    // vector and matrix indexing address the same logical bit
     EXPECT_TRUE(v[1] == v(1, 0));   // matrix-like interface still works
     v.clear(1);
-    // checks v[i] == false
+    // clearing the only set bit restores every vector coefficient to false
     for (int i = 0; i < v.size(); ++i) { EXPECT_TRUE(v[i] == false); }
 
     // dynamic-sized vector
     BinaryVector<Dynamic> s;
     s.resize(100);
     // check dimensionalities
-    // checks s.rows() == 100
+    // resizing a dynamic vector adopts the requested length as its row count
     EXPECT_TRUE(s.rows() == 100);
-    // checks s.cols() == 1
+    // resizing a dynamic vector preserves its single column
     EXPECT_TRUE(s.cols() == 1);
-    // checks s.size() == 100
+    // the resized vector contains one hundred logical bits
     EXPECT_TRUE(s.size() == 100);
 
     s.set(10);
     s.set(70);
     for (int i = 0; i < s.size(); ++i) {
         if (i == 10 || i == 70) {
-            // checks s[i] == true
+            // both explicitly set indices remain true across the storage-word boundary
             EXPECT_TRUE(s[i] == true);
         } else {
-            // checks s[i] == false
+            // all indices other than the two explicitly set positions remain false
             EXPECT_TRUE(s[i] == false);
         }
     }
 }
 
-// verifies block operations through the public algebra API
+// exercise Boolean rows, columns and blocks with owner copies of the selected coefficients
 TEST(HistoricalBoolean, block_operations) {
     // build a dynamic-sized binary matrix, large enought to span multiple bitpacks
     BinaryMatrix<Dynamic> m(5, 100);
@@ -163,43 +163,43 @@ TEST(HistoricalBoolean, block_operations) {
     // extract a row
     auto r = m.row(3);
     // check dimensionalities
-    // checks r.rows() == 1
+    // a row view has one row
     EXPECT_TRUE(r.rows() == 1);
-    // checks r.cols() == 100
+    // a row view spans all hundred columns
     EXPECT_TRUE(r.cols() == 100);
     for (int i = 0; i < r.size(); ++i) {
         if (i == 40) {
-            // checks r(0, i) == true
+            // the extracted row retains the source bit at column forty
             EXPECT_TRUE(r(0, i) == true);
         } else {
-            // checks r(0, i) == false
+            // the extracted row has no other set bits
             EXPECT_TRUE(r(0, i) == false);
         }
     }
     // assign row to vector
     BinaryVector<Dynamic> v1 = r.reshape(r.size(), 1);
-    // checks v1[40] == true
+    // reshaping the row into an owning vector preserves its set bit
     EXPECT_TRUE(v1[40] == true);
 
     // extract a column
     auto c = m.col(60);
     // check dimensionalities
-    // checks c.rows() == 5
+    // a column view spans all five rows
     EXPECT_TRUE(c.rows() == 5);
-    // checks c.cols() == 1
+    // a column view has one column
     EXPECT_TRUE(c.cols() == 1);
     for (int i = 0; i < c.size(); ++i) {
         if (i == 4) {
-            // checks c(i, 0) == true
+            // the extracted column retains the source bit in the final row
             EXPECT_TRUE(c(i, 0) == true);
         } else {
-            // checks c(i, 0) == false
+            // the extracted column has no other set bits
             EXPECT_TRUE(c(i, 0) == false);
         }
     }
     // assign column to vector
     BinaryVector<Dynamic> v2 = c;
-    // checks v2[4] == true
+    // copying the column into a vector preserves the final set bit
     EXPECT_TRUE(v2[4] == true);
 
     // extract a generic block
@@ -207,22 +207,22 @@ TEST(HistoricalBoolean, block_operations) {
     // assign to binarymatrix
     BinaryMatrix<Dynamic> bm = block;
     // check dimensionalities
-    // checks bm.rows() == 3
+    // copying a block adopts its three rows
     EXPECT_TRUE(bm.rows() == 3);
-    // checks bm.cols() == 30
+    // copying a block adopts its thirty columns
     EXPECT_TRUE(bm.cols() == 30);
-    // checks bm.size() == 90
+    // the copied block contains ninety logical bits
     EXPECT_TRUE(bm.size() == 90);
-    // checks bm(1, 0) == true && bm(2, 20) == true
+    // the two source bits move to the expected block-relative coordinates
     EXPECT_TRUE(bm(1, 0) == true && bm(2, 20) == true);
 
     // static sized block
     auto static_block = m.block<3, 30>(2, 40);
-    // checks block == static_block
+    // static and runtime block extents select the same coefficients
     EXPECT_TRUE(block == static_block);
 }
 
-// verifies binary expresssions through the public algebra API
+// exercise Boolean identities, lazy bitwise expressions and operations on expression blocks
 TEST(HistoricalBoolean, binary_expresssions) {
     // define two binary matrices (dynamic-sized)
     BinaryMatrix<Dynamic> m1(4, 5);
@@ -231,119 +231,119 @@ TEST(HistoricalBoolean, binary_expresssions) {
     m2.set(2, 2);
     m2.set(3, 3);
     // test some expressions
-    // checks (m1 | ~m1) == BinaryMatrix<Dynamic>(BinaryMatrix<Dynamic>::Ones(4, 5))
+    // a mask OR its complement produces an all-true matrix
     EXPECT_TRUE((m1 | ~m1) == BinaryMatrix<Dynamic>(BinaryMatrix<Dynamic>::Ones(4, 5)));
-    // checks (m1 & ~m1) == BinaryMatrix<Dynamic>(4, 5)
+    // a mask AND its complement produces an all-false matrix
     EXPECT_TRUE((m1 & ~m1) == BinaryMatrix<Dynamic>(4, 5));
     auto e1 = m1 | m2;
-    // checks e1(3, 3) && e1(2, 2)
+    // union retains both the shared bit and the bit present only in the second mask
     EXPECT_TRUE(e1(3, 3) && e1(2, 2));
     auto e2 = m1 & m2;
-    // checks e2(3, 3)
+    // intersection retains the bit shared by both masks
     EXPECT_TRUE(e2(3, 3));
     auto e3 = m1 ^ m2;
-    // checks e3(2, 2)
+    // exclusive OR retains the bit present only in the second mask
     EXPECT_TRUE(e3(2, 2));
     auto e4 = ((m1 ^ m2) | e2);
-    // checks e4 == m2
+    // combining exclusive and shared bits reconstructs the second mask
     EXPECT_TRUE(e4 == m2);
 
     // block expressions
-    // checks e1.row(0) == e2.row(0)
+    // union and intersection have the same empty first row
     EXPECT_TRUE(e1.row(0) == e2.row(0));
 
     BinaryMatrix<Dynamic> I = BinaryMatrix<Dynamic>::Ones(2, 2);
-    // checks (m1.block(2, 3, 2, 2) & I) == m1.block(2, 3, 2, 2)
+    // boolean AND with an all-true block leaves the selected source block unchanged
     EXPECT_TRUE((m1.block(2, 3, 2, 2) & I) == m1.block(2, 3, 2, 2));
 }
 
-// verifies visitors through the public algebra API
+// exercise all, any and count at the first, middle and last storage-word positions
 TEST(HistoricalBoolean, visitors) {
     // define a matrix of all ones
     BinaryMatrix<Dynamic> m1 = BinaryMatrix<Dynamic>::Ones(150, 4);
     // all() must return true
-    // checks m1.all()
+    // all recognizes a matrix filled with true bits
     EXPECT_TRUE(m1.all());
-    // checks m1.count() == m1.size()
+    // count includes every logical bit of the all-true matrix
     EXPECT_TRUE(m1.count() == m1.size());
     // test for zero in different bitpack positions (first, middle, last)
     m1.clear(0, 0);
-    // checks m1.all()
+    // all detects a cleared bit at the first coordinate
     EXPECT_FALSE(m1.all());
-    // checks m1.count() == (m1.size() - 1)
+    // count decreases by one after clearing the first coordinate
     EXPECT_TRUE(m1.count() == (m1.size() - 1));
     m1.set(0, 0);
     m1.clear(100, 2);
-    // checks m1.all()
+    // all detects a cleared bit in the middle of the matrix
     EXPECT_FALSE(m1.all());
     m1.set(100, 2);
     m1.clear(149, 3);
-    // checks m1.all()
+    // all detects a cleared bit at the final coordinate
     EXPECT_FALSE(m1.all());
     // test with a vector
     BinaryVector<Dynamic> v1 = BinaryVector<Dynamic>::Ones(500);
-    // checks v1.all()
+    // all recognizes an all-true multiword vector
     EXPECT_TRUE(v1.all());
-    // checks v1.count() == v1.size()
+    // count includes every logical bit of the all-true vector
     EXPECT_TRUE(v1.count() == v1.size());
     v1.clear(0, 0);
-    // checks v1.all()
+    // all detects the cleared first vector bit
     EXPECT_FALSE(v1.all());
-    // checks v1.count() == (v1.size() - 1)
+    // count decreases by one after clearing the first vector bit
     EXPECT_TRUE(v1.count() == (v1.size() - 1));
     v1.clear(200, 0);
-    // checks v1.count() == (v1.size() - 2)
+    // count decreases by two after clearing a second vector bit
     EXPECT_TRUE(v1.count() == (v1.size() - 2));
 
     BinaryVector<Dynamic> v2(500);
     // v2 is a vector of 0, any() must return false
-    // checks v2.any()
+    // any is false for a zero-initialized multiword vector
     EXPECT_FALSE(v2.any());
-    // checks v2.count() == 0
+    // count is zero for a zero-initialized multiword vector
     EXPECT_TRUE(v2.count() == 0);
     // test for one in different bitpack posistions (first, middle, last)
     v2.set(0);
-    // checks v2.any()
+    // any detects a set bit at the beginning of the vector
     EXPECT_TRUE(v2.any());
     v2.clear(0);
     v2.set(300);
-    // checks v2.any()
+    // any detects a set bit in the middle of the vector
     EXPECT_TRUE(v2.any());
     v2.clear(300);
     v2.set(499);
-    // checks v2.any()
+    // any detects a set bit at the end of the vector
     EXPECT_TRUE(v2.any());
 
     // static sized
     BinaryVector<3> v3;
     for (int i = 0; i < 3; ++i) v3.set(i);
-    // checks v3.all()
+    // all ignores unused padding bits in a three-bit fixed vector
     EXPECT_TRUE(v3.all());
     v3.clear(1);
-    // checks v3.all()
+    // all detects a cleared bit in the three-bit fixed vector
     EXPECT_FALSE(v3.all());
     for (int i = 0; i < 3; ++i) v3.clear(i);
-    // checks v3.any()
+    // any is false after every fixed-vector bit is cleared
     EXPECT_FALSE(v3.any());
     // dynamic sized (one bitpack only)
     BinaryVector<Dynamic> v4(3);
     for (int i = 0; i < 3; ++i) v4.set(i);
-    // checks v4.all()
+    // all ignores unused padding bits in a three-bit dynamic vector
     EXPECT_TRUE(v4.all());
     for (int i = 0; i < 3; ++i) v4.clear(i);
-    // checks v4.any()
+    // any is false after every dynamic-vector bit is cleared
     EXPECT_FALSE(v4.any());
 }
 
-// verifies block repeat through the public algebra API
+// exercise two-dimensional tiling and repeated columns of a Boolean vector
 TEST(HistoricalBoolean, block_repeat) {
     BinaryMatrix<Dynamic> m1 = BinaryMatrix<Dynamic>::Ones(3, 4);
     m1.row(1).clear();
     m1.set(1, 1);
     BinaryMatrix<Dynamic> m2 = m1.repeat(2, 4);
-    // checks m2.rows() == 6
+    // repeating three rows twice produces six rows
     EXPECT_TRUE(m2.rows() == 6);
-    // checks m2.cols() == 16
+    // repeating four columns four times produces sixteen columns
     EXPECT_TRUE(m2.cols() == 16);
     // check equality
     BinaryMatrix<Dynamic> res = BinaryMatrix<Dynamic>::Ones(6, 16);
@@ -357,37 +357,37 @@ TEST(HistoricalBoolean, block_repeat) {
     res.set(4, 5);
     res.set(4, 9);
     res.set(4, 13);
-    // checks m2 == res
+    // the repeated matrix matches the explicitly tiled pattern
     EXPECT_TRUE(m2 == res);
 
     BinaryVector<Dynamic> v1(10);
     v1.set(4);
     BinaryMatrix<Dynamic> res2(10, 10);
     res2.row(4).set();
-    // checks v1.repeat(1, 10) == res2
+    // repeating the vector into ten columns creates a full row at its set index
     EXPECT_TRUE(v1.repeat(1, 10) == res2);
 }
 
-// verifies reshaped through the public algebra API
+// exercise Boolean reshape order and composition of reshape with repeat
 TEST(HistoricalBoolean, reshaped) {
     BinaryMatrix<Dynamic> m1(5, 20);
     m1.set(3, 15);
     m1.set(4, 19);
     BinaryMatrix<Dynamic> m2 = m1.reshape(4, 25);
-    // checks m2.rows() == 4
+    // reshape adopts the requested four rows
     EXPECT_TRUE(m2.rows() == 4);
-    // checks m2.cols() == 25
+    // reshape adopts the requested twenty-five columns
     EXPECT_TRUE(m2.cols() == 25);
-    // checks m2.count() == 2
+    // reshape preserves the two set bits
     EXPECT_TRUE(m2.count() == 2);
-    // checks m2.size() == m1.size()
+    // reshape preserves the total number of logical coefficients
     EXPECT_TRUE(m2.size() == m1.size());
     // check correctly reshaped
     for (int i = 0; i < m2.rows(); ++i) {
         for (int j = 0; j < m2.cols(); ++j) {
-            // checks m2(i, j) == true
+            // the source bit at linear index seventy-five maps to row three, column zero
             if (i == 3 && j == 0) { EXPECT_TRUE(m2(i, j) == true); }
-            // checks m2(i, j) == true
+            // the final source bit maps to the final reshaped coordinate
             if (i == 3 && j == 24) { EXPECT_TRUE(m2(i, j) == true); }
         }
     }
@@ -396,6 +396,6 @@ TEST(HistoricalBoolean, reshaped) {
     BinaryMatrix<Dynamic> m4(100, 10);
     m4.row(75).set();
     m4.row(99).set();
-    // checks m3 == m4
+    // reshaping to a vector and repeating it reproduces the two explicit set rows
     EXPECT_TRUE(m3 == m4);
 }

@@ -41,9 +41,9 @@ template <typename XprType_> class PartialPivLU {
     static constexpr int Cols = XprType::Cols;
     fdapde_static_assert(std::is_floating_point_v<Scalar>, LU_DECOMPOSITION_REQUIRES_FLOATING_POINT_SCALARS);
 
-    /// @brief constructs partial piv lu from the supplied state
+    /// @brief creates an uncomputed decomposition with no available factors
     constexpr PartialPivLU() = default;
-    /// @brief constructs partial piv lu from the supplied state
+    /// @brief computes pivoted LU factors from a finite, nonempty square matrix
     template <typename MatrixType> constexpr explicit PartialPivLU(const MatrixExpr<MatrixType>& matrix) {
         compute(matrix);
     }
@@ -143,24 +143,24 @@ template <typename XprType_> class PartialPivLU {
 
     /// @brief returns the row permutation factor
     constexpr const PermutationMatrix<Rows, Cols>& P() const& { return P_; }
-    /// @brief returns the row permutation factor
+    /// @brief rejects access through a temporary decomposition to prevent dangling factor references
     constexpr void P() const&& = delete;
     /// @brief returns the unit lower triangular factor
     constexpr const LowerTriangularMatrix<Scalar, Rows, Cols>& L() const& { return L_; }
-    /// @brief returns the unit lower triangular factor
+    /// @brief rejects access through a temporary decomposition to prevent dangling factor references
     constexpr void L() const&& = delete;
     // u is reported in the input scale. It can overflow even when the normalized solve remains usable
-    /// @brief returns the upper triangular factor
+    /// @brief returns U in the input scale, which may overflow even if the normalized solve remains usable
     constexpr const UpperTriangularMatrix<Scalar, Rows, Cols>& U() const& { return U_; }
-    /// @brief returns the upper triangular factor
+    /// @brief rejects access through a temporary decomposition to prevent dangling factor references
     constexpr void U() const&& = delete;
     // -1: factors unavailable, 0: success, >0: first unusable pivot (one based).
-    /// @brief returns the factorization status
+    /// @brief returns -1 when factors are unavailable, zero on success, or the first unusable pivot index plus one
     constexpr int info() const { return info_; }
     /// @brief returns the numerical rank
     constexpr int rank() const { return rank_; }
 
-    /// @brief returns the matrix determinant
+    /// @brief returns the algebraic determinant even when the numerical-rank threshold rejects a pivot
     constexpr Scalar determinant() const {
         fdapde_assert(!(!determinant_computed_), std::domain_error, "PartialPivLU determinant is unavailable");
         return determinant_;
@@ -198,13 +198,13 @@ template <typename XprType_> class PartialPivLU {
         return solution;
     }
    private:
-    /// @brief represents scaled value
+    /// @brief stores a significand and binary exponent for scale-safe determinant arithmetic
     struct ScaledValue {
         Scalar significand = Scalar(0);
         long long exponent = 0;
     };
 
-    /// @brief reports is finite
+    /// @brief returns whether the scalar is finite and not NaN
     static constexpr bool is_finite_(Scalar value) {
         const Scalar infinity = std::numeric_limits<Scalar>::infinity();
         return value == value && value != infinity && value != -infinity;

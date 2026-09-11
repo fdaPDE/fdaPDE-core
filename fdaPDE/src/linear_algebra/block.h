@@ -26,12 +26,12 @@ namespace fdapde {
 // expression representing a dense sub-block (static or dynamic) of a MatrixExpr operand.
 // supports general blocks as well as row/column vector views
 
-/// @brief represents matrix block
+/// @brief borrows a rectangular region and maps its coordinates into a parent expression
 template <int BlockRows_, int BlockCols_, typename XprType_> class MatrixBlock;
 
 namespace internals {
 
-/// @brief detects is mutable matrix view
+/// @brief identifies a view whose scalar type permits writes
 template <int BlockRows, int BlockCols, typename XprType_>
 struct is_mutable_matrix_view<MatrixBlock<BlockRows, BlockCols, XprType_>> {
     using XprType = std::remove_reference_t<XprType_>;
@@ -41,7 +41,7 @@ struct is_mutable_matrix_view<MatrixBlock<BlockRows, BlockCols, XprType_>> {
 
 }   // namespace internals
 
-/// @brief represents matrix block
+/// @brief borrows a rectangular region and maps its coordinates into a parent expression
 template <int BlockRows_, int BlockCols_, typename XprType_>
 class MatrixBlock : public MatrixExpr<MatrixBlock<BlockRows_, BlockCols_, XprType_>> {
    private:
@@ -69,7 +69,7 @@ class MatrixBlock : public MatrixExpr<MatrixBlock<BlockRows_, BlockCols_, XprTyp
     static constexpr int ReadOnly = std::is_const_v<XprType> || XprTypeClean::ReadOnly;
     using assignment_executor = internals::generic_assignment_executor;
     // iterator support (only for vector blocks)
-    /// @brief represents block iterator
+    /// @brief traverses a vector-shaped block without requiring contiguous parent storage
     template <bool IsConst> struct block_iterator {
         using BlockType = std::conditional_t<IsConst, const MatrixBlock, MatrixBlock>;
        public:
@@ -82,9 +82,9 @@ class MatrixBlock : public MatrixExpr<MatrixBlock<BlockRows_, BlockCols_, XprTyp
         using iterator_concept = std::bidirectional_iterator_tag;
         using iterator_category = std::bidirectional_iterator_tag;
 
-        /// @brief constructs block iterator from the supplied state
+        /// @brief creates a singular block iterator without a parent
         constexpr block_iterator() : blk_(nullptr), i_(0) { }
-        /// @brief constructs block iterator from the supplied state
+        /// @brief binds a vector-shaped block and its current coefficient index
         constexpr block_iterator(BlockType* blk, int i) : blk_(blk), i_(i) { }
         /// @brief dereferences the current iterator position
         constexpr decltype(auto) operator*() const { return blk_->operator[](i_); }
@@ -128,9 +128,9 @@ class MatrixBlock : public MatrixExpr<MatrixBlock<BlockRows_, BlockCols_, XprTyp
     using const_iterator = block_iterator<true>;
 
     // row/column constructor
-    /// @brief constructs matrix block from the supplied state
+    /// @brief copies block coordinates while sharing the nested parent expression
     constexpr MatrixBlock(const MatrixBlock&) = default;
-    /// @brief constructs matrix block from the supplied state
+    /// @brief borrows a complete row or column after checking its index
     template <typename XprType__>
         requires(internals::safely_nestable<XprTypeNested, XprType__>)
     constexpr MatrixBlock(XprType__&& xpr, int i) :
@@ -144,7 +144,7 @@ class MatrixBlock : public MatrixExpr<MatrixBlock<BlockRows_, BlockCols_, XprTyp
           !(i < 0 || !((BlockRows_ == 1 && i < xpr_.rows()) || (BlockCols_ == 1 && i < xpr_.cols()))),
           std::out_of_range, "matrix block row or column index out of range");
     }
-    /// @brief constructs matrix block from the supplied state
+    /// @brief borrows a fixed-size rectangle after checking that it fits the parent
     template <typename XprType__>
         requires(internals::safely_nestable<XprTypeNested, XprType__>)
     constexpr MatrixBlock(XprType__&& xpr, int start_row, int start_col) :
@@ -160,7 +160,7 @@ class MatrixBlock : public MatrixExpr<MatrixBlock<BlockRows_, BlockCols_, XprTyp
             start_row > xpr_.rows() - block_rows_ || start_col > xpr_.cols() - block_cols_),
           std::out_of_range, "matrix block is outside expression bounds");
     }
-    /// @brief constructs matrix block from the supplied state
+    /// @brief borrows a positive-size runtime rectangle contained in the parent
     template <typename XprType__>
         requires(internals::safely_nestable<XprTypeNested, XprType__>)
     constexpr MatrixBlock(XprType__&& xpr, int start_row, int start_col, int block_rows, int block_cols) :
@@ -186,7 +186,7 @@ class MatrixBlock : public MatrixExpr<MatrixBlock<BlockRows_, BlockCols_, XprTyp
     constexpr int cols() const { return Cols != Dynamic ? Cols : block_cols_; }
     /// @brief returns the coefficient count
     constexpr int size() const { return rows() * cols(); }
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief reads a block-local coordinate through the const parent expression
     constexpr decltype(auto) operator()(int i, int j) const {
         fdapde_assert(
           !(i < 0 || i >= rows() || j < 0 || j >= cols()), std::out_of_range, "matrix block index out of range");
@@ -199,7 +199,7 @@ class MatrixBlock : public MatrixExpr<MatrixBlock<BlockRows_, BlockCols_, XprTyp
         if constexpr (Rows == 1) return std::as_const(xpr_)(start_row_, start_col_ + i);
         if constexpr (Cols == 1) return std::as_const(xpr_)(start_row_ + i, start_col_);
     }
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief returns writable access at the translated parent coordinate
     constexpr decltype(auto) operator()(int i, int j)
         requires(ReadOnly == 0)
     {
@@ -218,20 +218,20 @@ class MatrixBlock : public MatrixExpr<MatrixBlock<BlockRows_, BlockCols_, XprTyp
     }
     // inherit standard assignment operator
     using Base::operator=;
-    /// @brief assigns the supplied coefficients
+    /// @brief copies a source snapshot into the selected block without rebinding its parent
     constexpr MatrixBlock& operator=(const MatrixBlock& rhs) &
         requires(ReadOnly == 0)
     {
         static_cast<Base&>(*this).template operator= <MatrixBlock>(rhs);
         return *this;
     }
-    /// @brief assigns the supplied coefficients
+    /// @brief copies into the selected block and returns a temporary wrapper by value
     constexpr MatrixBlock operator=(const MatrixBlock& rhs) &&
       requires(ReadOnly == 0) {
           static_cast<Base&>(*this).template operator= <MatrixBlock>(rhs);
           return *this;
       }
-      /// @brief assigns the supplied coefficients
+      /// @brief writes a size-matched initializer into a row or column block
       template <typename Scalar_>
           requires(ReadOnly == 0 && std::is_constructible_v<Scalar, Scalar_>)
       constexpr MatrixBlock& operator=(const std::initializer_list<Scalar_>& data) & {
@@ -243,7 +243,7 @@ class MatrixBlock : public MatrixExpr<MatrixBlock<BlockRows_, BlockCols_, XprTyp
         for (const auto& v : data) { operator[](i++) = v; }
         return *this;
     }
-    /// @brief assigns the supplied coefficients
+    /// @brief writes a size-matched initializer and returns the temporary block by value
     template <typename Scalar_>
         requires(ReadOnly == 0 && std::is_constructible_v<Scalar, Scalar_>)
     constexpr MatrixBlock operator=(const std::initializer_list<Scalar_>& data) && {
@@ -275,13 +275,13 @@ class MatrixBlock : public MatrixExpr<MatrixBlock<BlockRows_, BlockCols_, XprTyp
     {
         return const_iterator(this, size());
     }
-    /// @brief returns an iterator to the first coefficient
+    /// @brief rejects iterators whose parent wrapper would be destroyed at the end of the expression
     constexpr void begin() && = delete;
-    /// @brief returns the past-the-end iterator
+    /// @brief rejects iterators whose parent wrapper would be destroyed at the end of the expression
     constexpr void end() && = delete;
-    /// @brief returns an iterator to the first coefficient
+    /// @brief rejects iterators whose parent wrapper would be destroyed at the end of the expression
     constexpr void begin() const&& = delete;
-    /// @brief returns the past-the-end iterator
+    /// @brief rejects iterators whose parent wrapper would be destroyed at the end of the expression
     constexpr void end() const&& = delete;
    private:
     int start_row_ = 0, start_col_ = 0;

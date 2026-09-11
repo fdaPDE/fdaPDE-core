@@ -17,7 +17,7 @@
 #include <fdaPDE/linear_algebra.h>
 
 double col_major_triangular_storage[6] {};
-fdapde::LowerTriangularMatrixView<double, 3, 3, fdapde::ColMajor> col_major_triangular_view(
-  col_major_triangular_storage);
+fdapde::LowerTriangularMatrixView<double, 3, 3, fdapde::ColMajor>
+  col_major_triangular_view(col_major_triangular_storage);
 
 int main() { return col_major_triangular_view.rows(); }

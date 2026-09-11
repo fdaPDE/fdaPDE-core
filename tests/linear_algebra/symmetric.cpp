@@ -50,36 +50,36 @@ using lifetime_matrix = Matrix<double, 3, 3>;
 using owning_symmetric = SymmetricMatrix<double, 3, 3>;
 using const_symmetric_view = SymmetricMatrixView<const double, 3, 3>;
 
-// checks at compile time: !permits_temporary_symmetric<lifetime_matrix>
+// a temporary dense owner cannot lend a symmetric wrapper
 static_assert(!permits_temporary_symmetric<lifetime_matrix>);
-// checks at compile time: !permits_const_temporary_symmetric<lifetime_matrix>
+// a const temporary dense owner cannot lend a symmetric wrapper
 static_assert(!permits_const_temporary_symmetric<lifetime_matrix>);
-// checks at compile time: permits_expression_symmetric<lifetime_matrix>
+// a stored expression can safely retain a symmetric wrapper
 static_assert(permits_expression_symmetric<lifetime_matrix>);
-// checks at compile time: !exposes_owning_rvalue_derived<owning_symmetric>
+// a temporary symmetric owner cannot expose a dangling derived reference
 static_assert(!exposes_owning_rvalue_derived<owning_symmetric>);
-// checks at compile time: !permits_owning_rvalue_copy_assignment<owning_symmetric>
+// a temporary symmetric owner cannot return a borrow through copy assignment
 static_assert(!permits_owning_rvalue_copy_assignment<owning_symmetric>);
-// checks at compile time: !std::is_default_constructible_v<SymmetricMatrixView<double, 3, 3>>
+// a fixed nonempty symmetric view requires an explicit storage binding
 static_assert(!std::is_default_constructible_v<SymmetricMatrixView<double, 3, 3>>);
-// checks at compile time: std::is_default_constructible_v<SymmetricMatrixView<double, Dynamic, Dynamic>>
+// a dynamic symmetric view permits an initially empty binding
 static_assert(std::is_default_constructible_v<SymmetricMatrixView<double, Dynamic, Dynamic>>);
-// checks at compile time: const_symmetric_view::ReadOnly == 1
+// a const-storage symmetric view advertises read-only access
 static_assert(const_symmetric_view::ReadOnly == 1);
-// checks at compile time: !permits_coefficient_write<const_symmetric_view>
+// a const-storage symmetric view rejects coefficient writes
 static_assert(!permits_coefficient_write<const_symmetric_view>);
-// checks at compile time: is_symmetric_matrix_v<const owning_symmetric&>
+// the symmetric trait recognizes a const reference to an owner
 static_assert(is_symmetric_matrix_v<const owning_symmetric&>);
 
 template <typename Actual, typename Expected>
 void expect_matrix_near(const Actual& actual, const Expected& expected, double tolerance = 1.0e-12) {
-    // compares actual.rows(), expected.rows() using eq semantics
+    // coefficient comparison requires matching row counts
     ASSERT_EQ(actual.rows(), expected.rows());
-    // compares actual.cols(), expected.cols() using eq semantics
+    // coefficient comparison requires matching column counts
     ASSERT_EQ(actual.cols(), expected.cols());
     for (int i = 0; i < actual.rows(); ++i) {
         for (int j = 0; j < actual.cols(); ++j) {
-            // compares the computed and expected values within the stated absolute tolerance
+            // each coefficient agrees with the reference within the supplied absolute tolerance
             EXPECT_NEAR(static_cast<double>(actual(i, j)), static_cast<double>(expected(i, j)), tolerance);
         }
     }
@@ -90,9 +90,9 @@ template <int StorageOrder> void check_dense_symmetric_views() {
     matrix_type dense({1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0});
     const auto lower = dense.template as_symmetric<Lower>();
     const auto upper = dense.template as_symmetric<Upper>();
-    // checks at compile time: decltype(lower)::ReadOnly == 1
+    // a symmetric wrapper borrowed from a const matrix is read-only
     static_assert(decltype(lower)::ReadOnly == 1);
-    // checks at compile time: !permits_coefficient_write<decltype(lower)>
+    // a const dense-backed symmetric wrapper rejects coefficient writes
     static_assert(!permits_coefficient_write<decltype(lower)>);
     expect_matrix_near(lower, matrix_type({1.0, 4.0, 7.0, 4.0, 5.0, 8.0, 7.0, 8.0, 9.0}));
     expect_matrix_near(upper, matrix_type({1.0, 2.0, 3.0, 2.0, 5.0, 6.0, 3.0, 6.0, 9.0}));
@@ -109,12 +109,12 @@ template <int StorageOrder> void check_dense_symmetric_views() {
     expect_matrix_near(lower + packed, mixed_expected);
     expect_matrix_near(packed + lower, mixed_expected);
 
-    // checks the exception category for the supplied invalid operation
+    // const symmetric-wrapper access rejects a negative row
     EXPECT_THROW(static_cast<void>(lower(-1, 0)), std::out_of_range);
-    // checks the exception category for the supplied invalid operation
+    // symmetric-wrapper access rejects a row equal to its dimension
     EXPECT_THROW(static_cast<void>(upper(3, 0)), std::out_of_range);
     Matrix<double, Dynamic, Dynamic, StorageOrder> rectangular(2, 3);
-    // checks the exception category for the supplied invalid operation
+    // symmetric wrapping rejects a rectangular dense matrix
     EXPECT_THROW(static_cast<void>(rectangular.template as_symmetric<Lower>()), std::invalid_argument);
 }
 
@@ -129,15 +129,15 @@ void check_packed_symmetric_contracts() {
     const auto left_scaled = 3.0 * matrix;
     const auto right_scaled = matrix * 3.0;
     const auto divided = matrix / 2.0;
-    // checks at compile time: is_symmetric_matrix_v<decltype(sum)>
+    // addition of symmetric matrices retains the symmetric expression tag
     static_assert(is_symmetric_matrix_v<decltype(sum)>);
-    // checks at compile time: is_symmetric_matrix_v<decltype(difference)>
+    // subtraction of symmetric matrices retains the symmetric expression tag
     static_assert(is_symmetric_matrix_v<decltype(difference)>);
-    // checks at compile time: is_symmetric_matrix_v<decltype(left_scaled)>
+    // left scalar multiplication retains the symmetric expression tag
     static_assert(is_symmetric_matrix_v<decltype(left_scaled)>);
-    // checks at compile time: is_symmetric_matrix_v<decltype(right_scaled)>
+    // right scalar multiplication retains the symmetric expression tag
     static_assert(is_symmetric_matrix_v<decltype(right_scaled)>);
-    // checks at compile time: is_symmetric_matrix_v<decltype(divided)>
+    // scalar division retains the symmetric expression tag
     static_assert(is_symmetric_matrix_v<decltype(divided)>);
     expect_matrix_near(sum, Matrix<double, 3, 3>(expected + expected));
     expect_matrix_near(difference, Matrix<double, 3, 3>::Zero());
@@ -146,15 +146,15 @@ void check_packed_symmetric_contracts() {
     expect_matrix_near(divided, Matrix<double, 3, 3>(expected / 2.0));
 
     const auto product = matrix * matrix;
-    // checks at compile time: !is_symmetric_matrix_v<decltype(product)>
+    // a general product of symmetric matrices does not claim symmetry
     static_assert(!is_symmetric_matrix_v<decltype(product)>);
     expect_matrix_near(product, Matrix<double, 3, 3>(expected * expected));
 
     matrix(2, 0) = 8.0;
-    // compares static_cast<double>(matrix(0, 2)), 8.0 using double_eq semantics
+    // writing the reflected lower entry updates the corresponding upper entry
     EXPECT_DOUBLE_EQ(static_cast<double>(matrix(0, 2)), 8.0);
     const auto& const_matrix = matrix;
-    // compares static_cast<double>(const_matrix(2, 0)), 8.0 using double_eq semantics
+    // const access reads the same reflected coefficient after the write
     EXPECT_DOUBLE_EQ(static_cast<double>(const_matrix(2, 0)), 8.0);
 
     SymmetricMatrix<double, 3, 3> coefficientwise(matrix);
@@ -164,48 +164,48 @@ void check_packed_symmetric_contracts() {
     SymmetricMatrix<double, Dynamic, Dynamic> dynamic_source(std::vector<double> {1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
     SymmetricMatrix<double, Dynamic, Dynamic> dynamic_target(2, 2);
     dynamic_target = dynamic_source;
-    // compares dynamic_target.rows(), 3 using eq semantics
+    // assignment adopts the source's three-row shape
     EXPECT_EQ(dynamic_target.rows(), 3);
-    // compares dynamic_target.cols(), 3 using eq semantics
+    // assignment preserves the source's square three-column shape
     EXPECT_EQ(dynamic_target.cols(), 3);
     expect_matrix_near(dynamic_target, expected);
     dynamic_target.resize(2, 2);
-    // compares dynamic_target.rows(), 2 using eq semantics
+    // resizing a dynamic symmetric owner changes its row count to two
     EXPECT_EQ(dynamic_target.rows(), 2);
     dynamic_target = matrix;
-    // compares dynamic_target.rows(), 3 using eq semantics
+    // subsequent assignment restores the source's three-row shape
     EXPECT_EQ(dynamic_target.rows(), 3);
-    // compares static_cast<double>(dynamic_target(0, 2)), 8.0 using double_eq semantics
+    // subsequent assignment restores the source's reflected coefficient
     EXPECT_DOUBLE_EQ(static_cast<double>(dynamic_target(0, 2)), 8.0);
     const SymmetricMatrix<double, 3, Dynamic> partial_default;
-    // compares partial_default.rows(), 3 using eq semantics
+    // fixed columns determine the default partially dynamic owner's row count
     EXPECT_EQ(partial_default.rows(), 3);
-    // compares partial_default.cols(), 3 using eq semantics
+    // fixed columns retain their declared extent in the default owner
     EXPECT_EQ(partial_default.cols(), 3);
 
     std::array<double, 6> first_storage {};
     SymmetricMatrixView<double, 3, 3> first_view(first_storage.data());
-    // checks at compile time: decltype(first_view)::NestAsRef == 0
+    // symmetric views are stored by value in expression nodes
     static_assert(decltype(first_view)::NestAsRef == 0);
     const double* const first_address = first_view.data();
     first_view = matrix;
-    // compares first_view.data(), first_address using eq semantics
+    // assignment into the first view preserves its external storage binding
     EXPECT_EQ(first_view.data(), first_address);
     expect_matrix_near(first_view, matrix);
     first_view(0, 2) = 11.0;
-    // compares static_cast<double>(first_view(2, 0)), 11.0 using double_eq semantics
+    // the first view exposes the assigned reflected coefficient
     EXPECT_DOUBLE_EQ(static_cast<double>(first_view(2, 0)), 11.0);
 
     std::array<double, 6> second_storage {};
     SymmetricMatrixView<double, 3, 3> second_view(second_storage.data());
     second_view = first_view;
-    // compares second_view.data(), second_storage.data() using eq semantics
+    // assignment into the second view preserves its external storage binding
     EXPECT_EQ(second_view.data(), second_storage.data());
     expect_matrix_near(second_view, first_view);
 
     std::array<double, 6> temporary_storage {};
     const auto temporary_view = SymmetricMatrixView<double, 3, 3>(temporary_storage.data()) = first_view;
-    // compares temporary_view.data(), temporary_storage.data() using eq semantics
+    // assignment from a temporary view preserves the destination storage binding
     EXPECT_EQ(temporary_view.data(), temporary_storage.data());
     expect_matrix_near(temporary_view, first_view);
 
@@ -216,61 +216,61 @@ void check_packed_symmetric_contracts() {
     expect_matrix_near(overlap_destination, Matrix<double, 3, 3>({1.0, 2.0, 4.0, 2.0, 3.0, 5.0, 4.0, 5.0, 6.0}));
 
     const SymmetricMatrixView<const double, 3, 3> const_view(first_storage.data());
-    // checks at compile time: decltype(const_view)::ReadOnly == 1
+    // a view of const packed storage advertises read-only access
     static_assert(decltype(const_view)::ReadOnly == 1);
-    // checks at compile time: !permits_coefficient_write<decltype(const_view)>
+    // a view of const packed storage rejects coefficient writes
     static_assert(!permits_coefficient_write<decltype(const_view)>);
-    // compares static_cast<double>(const_view(0, 2)), 11.0 using double_eq semantics
+    // the const view reads the assigned coefficient at its reflected coordinate
     EXPECT_DOUBLE_EQ(static_cast<double>(const_view(0, 2)), 11.0);
     SymmetricMatrixView<double, Dynamic, Dynamic> dynamic_view(first_storage.data(), 3, 3);
     expect_matrix_near(dynamic_view + dynamic_view, Matrix<double, 3, 3>(first_view + first_view));
     SymmetricMatrixView<double, Dynamic, Dynamic> empty_view;
-    // compares empty_view.rows(), 0 using eq semantics
+    // an empty symmetric view has zero rows
     EXPECT_EQ(empty_view.rows(), 0);
-    // compares empty_view.cols(), 0 using eq semantics
+    // an empty symmetric view has zero columns
     EXPECT_EQ(empty_view.cols(), 0);
-    // compares empty_view.data(), nullptr using eq semantics
+    // an empty symmetric view permits a null storage binding
     EXPECT_EQ(empty_view.data(), nullptr);
 
-    // checks the exception category for the supplied invalid operation
+    // construction rejects a packed length that is not a triangular number
     EXPECT_THROW(
       static_cast<void>(SymmetricMatrix<double, Dynamic, Dynamic>(std::vector<double> {1.0, 2.0})),
       std::invalid_argument);
-    // checks the exception category for the supplied invalid operation
+    // construction rejects a nonsquare runtime shape
     EXPECT_THROW(static_cast<void>(SymmetricMatrix<double, Dynamic, Dynamic>(2, 3)), std::invalid_argument);
-    // checks the exception category for the supplied invalid operation
+    // construction rejects runtime dimensions inconsistent with a static axis
     EXPECT_THROW(static_cast<void>(SymmetricMatrix<double, Dynamic, 3>(2, 2)), std::invalid_argument);
-    // checks the exception category for the supplied invalid operation
+    // a nonempty dynamic symmetric view rejects a null storage pointer
     EXPECT_THROW(
       static_cast<void>(SymmetricMatrixView<double, Dynamic, Dynamic>(static_cast<double*>(nullptr), 2, 2)),
       std::invalid_argument);
-    // checks the exception category for the supplied invalid operation
+    // mutable symmetric access rejects a negative row
     EXPECT_THROW(static_cast<void>(matrix(-1, 0)), std::out_of_range);
-    // checks the exception category for the supplied invalid operation
+    // const symmetric access rejects a row equal to its dimension
     EXPECT_THROW(static_cast<void>(std::as_const(matrix)(3, 0)), std::out_of_range);
 
     SymmetricMatrix<double, Dynamic, Dynamic> resize_target(3, 3);
     resize_target(2, 0) = 7.0;
-    // checks the exception category for the supplied invalid operation
+    // resize rejects a nonsquare target shape
     EXPECT_THROW(resize_target.resize(2, 3), std::invalid_argument);
-    // compares resize_target.rows(), 3 using eq semantics
+    // failed resize preserves the original row count
     EXPECT_EQ(resize_target.rows(), 3);
-    // compares static_cast<double>(resize_target(2, 0)), 7.0 using double_eq semantics
+    // failed resize preserves the original reflected coefficient
     EXPECT_DOUBLE_EQ(static_cast<double>(resize_target(2, 0)), 7.0);
 
     std::array<double, 3> assignment_storage {1.0, 2.0, 3.0};
     SymmetricMatrixView<double, Dynamic, Dynamic> assignment_target(assignment_storage.data(), 2, 2);
-    // checks the exception category for the supplied invalid operation
+    // view assignment rejects a source with incompatible dimensions
     EXPECT_THROW(assignment_target = matrix, std::invalid_argument);
-    // compares assignment_target.rows(), 2 using eq semantics
+    // failed view assignment preserves the destination's row count
     EXPECT_EQ(assignment_target.rows(), 2);
-    // compares assignment_storage[2], 3.0 using double_eq semantics
+    // failed view assignment preserves the destination's packed storage
     EXPECT_DOUBLE_EQ(assignment_storage[2], 3.0);
 }
 
 }   // namespace
 
-// verifies symmetric through the public algebra API
+// exercise symmetric reflection, packed storage, structure-preserving arithmetic and view contracts
 TEST(linear_algebra, symmetric) {
     check_dense_symmetric_views<RowMajor>();
     check_dense_symmetric_views<ColMajor>();

@@ -44,16 +44,16 @@ template <typename XprType_> class EVD {
     static constexpr int Cols = XprType::Cols;
     fdapde_static_assert(std::is_floating_point_v<Scalar>, EVD_REQUIRES_FLOATING_POINT_SCALARS);
 
-    /// @brief constructs evd from the supplied state
+    /// @brief creates an uncomputed decomposition with no available factors
     constexpr EVD() = default;
-    /// @brief constructs evd from the supplied state
+    /// @brief computes Jacobi eigenpairs from a finite, nonempty symmetric matrix
     template <typename MatrixType> constexpr explicit EVD(const SymmetricMatrixExpr<MatrixType>& matrix) {
         compute(matrix);
     }
 
     // maximum-pivot Jacobi rotations with scale normalization; see Golub and
     // van Loan, Matrix Computations, Section 8.5
-    /// @brief computes the factorization of the supplied matrix
+    /// @brief computes symmetric eigenpairs with scaled Jacobi rotations and throws if iteration does not converge
     template <typename MatrixType> constexpr void compute(const SymmetricMatrixExpr<MatrixType>& matrix) {
         computed_ = false;
         fdapde_static_assert(
@@ -144,19 +144,19 @@ template <typename XprType_> class EVD {
         computed_ = true;
     }
 
-    /// @brief returns the computed eigenvalues
+    /// @brief returns unsorted eigenvalues in the same order as the eigenvector columns
     constexpr const Vector<Scalar, Rows>& eigenvalues() const& {
         fdapde_assert(computed_, std::logic_error, "eigendecomposition has not been computed");
         return eigenvalues_;
     }
-    /// @brief returns the computed eigenvalues
+    /// @brief rejects access through a temporary decomposition to prevent dangling factor references
     constexpr void eigenvalues() const&& = delete;
-    /// @brief returns the computed eigenvectors
+    /// @brief returns a borrowed orthogonal adaptor whose columns match the computed eigenvalues
     constexpr auto eigenvectors() const& {
         fdapde_assert(computed_, std::logic_error, "eigendecomposition has not been computed");
         return internals::orthogonal_cast(eigenvectors_);
     }
-    /// @brief returns the computed eigenvectors
+    /// @brief rejects access through a temporary decomposition to prevent dangling factor references
     constexpr void eigenvectors() const&& = delete;
     /// @brief reports whether a factorization has been computed
     constexpr bool computed() const { return computed_; }

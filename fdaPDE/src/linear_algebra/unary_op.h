@@ -24,7 +24,7 @@ namespace fdapde {
 // this file contains all the expression nodes involving an operation applied on a single MatrixExpr operand
 
 // expression of the transpose of a MatrixExpr operand
-/// @brief represents transpose op
+/// @brief swaps the row and column coordinates of a borrowed expression
 template <typename XprType> struct TransposeOp : public MatrixExpr<TransposeOp<XprType>> {
     using Base = MatrixExpr<TransposeOp<XprType>>;
     using XprTypeNested = internals::ref_select_t<const XprType>;
@@ -35,13 +35,13 @@ template <typename XprType> struct TransposeOp : public MatrixExpr<TransposeOp<X
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
 
-    /// @brief constructs transpose op from the supplied state
+    /// @brief nests an expression whose coefficients will be accessed with swapped coordinates
     template <typename XprType_>
         requires(
           !std::same_as<std::remove_cvref_t<XprType_>, TransposeOp> &&
           internals::safely_nestable<XprTypeNested, XprType_>)
     explicit constexpr TransposeOp(XprType_&& xpr) : xpr_(std::forward<XprType_>(xpr)) { }
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief reads the source coefficient at exchanged row and column indices
     constexpr Scalar operator()(int i, int j) const { return xpr_(j, i); }
     /// @brief accesses the requested vector coefficient
     constexpr Scalar operator[](int i) const {
@@ -57,7 +57,7 @@ template <typename XprType> struct TransposeOp : public MatrixExpr<TransposeOp<X
 };
 
 // expression of a reshaped MatrixExpr operand. Reshaping modifes the expression dimensions without reallocating memory
-/// @brief represents reshape op
+/// @brief reinterprets coefficient positions using a different shape without allocating storage
 template <int Rows_, int Cols_, typename XprType_>
 struct ReshapeOp : public MatrixExpr<ReshapeOp<Rows_, Cols_, XprType_>> {
    private:
@@ -88,9 +88,9 @@ struct ReshapeOp : public MatrixExpr<ReshapeOp<Rows_, Cols_, XprType_>> {
       (Rows_ == 1 || Cols_ == 1) && !(Rows_ == 1 && Cols_ == 1), internals::vector_assignment_executor,
       internals::generic_assignment_executor>;
 
-    /// @brief constructs reshape op from the supplied state
+    /// @brief copies the reshape metadata while sharing the same nested expression
     constexpr ReshapeOp(const ReshapeOp&) = default;
-    /// @brief constructs reshape op from the supplied state
+    /// @brief borrows an expression with a compile-time target shape of equal coefficient count
     template <typename XprType__>
         requires(!std::same_as<std::remove_cvref_t<XprType__>, ReshapeOp> &&
                  internals::safely_nestable<XprTypeNested, XprType__>)
@@ -98,14 +98,14 @@ struct ReshapeOp : public MatrixExpr<ReshapeOp<Rows_, Cols_, XprType_>> {
         fdapde_static_assert(Rows_ != Dynamic && Cols_ != Dynamic, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
         validate_();
     }
-    /// @brief constructs reshape op from the supplied state
+    /// @brief borrows an expression after validating the requested target dimensions and coefficient count
     template <typename XprType__>
         requires(internals::safely_nestable<XprTypeNested, XprType__>)
     constexpr ReshapeOp(XprType__&& xpr, int rows, int cols) :
         rows_(Rows == Dynamic ? rows : Rows), cols_(Cols == Dynamic ? cols : Cols), xpr_(std::forward<XprType__>(xpr)) {
         validate_((Rows == Dynamic || rows == Rows) && (Cols == Dynamic || cols == Cols));
     }
-    /// @brief constructs reshape op from the supplied state
+    /// @brief borrows an expression as a row or column vector of matching length
     template <typename XprType__>
         requires(internals::safely_nestable<XprTypeNested, XprType__>)
     constexpr ReshapeOp(XprType__&& xpr, int rows) :
@@ -114,27 +114,27 @@ struct ReshapeOp : public MatrixExpr<ReshapeOp<Rows_, Cols_, XprType_>> {
         fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_ONLY_FOR_ROW_OR_COLUMN_VECTORS);
     }
     using Base::operator=;
-    /// @brief assigns the supplied coefficients
+    /// @brief copies a source snapshot through the reshape without changing its binding
     constexpr ReshapeOp& operator=(const ReshapeOp& rhs) &
         requires(ReadOnly == 0)
     {
         static_cast<Base&>(*this).template operator= <ReshapeOp>(rhs);
         return *this;
     }
-    /// @brief assigns the supplied coefficients
+    /// @brief copies through a temporary reshape and returns its binding by value
     constexpr ReshapeOp operator=(const ReshapeOp& rhs) &&
       requires(ReadOnly == 0) {
           static_cast<Base&>(*this).template operator= <ReshapeOp>(rhs);
           return *this;
       }
-      /// @brief assigns the supplied coefficients
+      /// @brief rejects assignment through a read-only reshape
       constexpr ReshapeOp& operator=(const ReshapeOp&) &
           requires(ReadOnly != 0)
       = delete;
-    /// @brief assigns the supplied coefficients
+    /// @brief rejects assignment through a temporary read-only reshape
     constexpr ReshapeOp operator=(const ReshapeOp&) && requires(ReadOnly != 0) = delete;
     // access
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief reads the source coordinate with the same physical-order linear index
     constexpr decltype(auto) operator()(int i, int j) const {
         fdapde_assert(!(i < 0 || i >= rows_ || j < 0 || j >= cols_), std::out_of_range, "reshape index out of range");
         const auto [row, col] = reshaped_(i, j);
@@ -146,7 +146,7 @@ struct ReshapeOp : public MatrixExpr<ReshapeOp<Rows_, Cols_, XprType_>> {
         fdapde_assert(!(i < 0 || i >= rows_ * cols_), std::out_of_range, "reshape index out of range");
         return Rows == 1 ? operator()(0, i) : operator()(i, 0);
     }
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief returns writable access to the source coordinate with the same physical-order linear index
     constexpr decltype(auto) operator()(int i, int j)
         requires(ReadOnly == 0)
     {
@@ -205,9 +205,9 @@ struct ReshapeOp : public MatrixExpr<ReshapeOp<Rows_, Cols_, XprType_>> {
 namespace internals {
 
 // linear reduction loop on matrix expressions
-/// @brief represents matrix redux linear executor
+/// @brief folds matrix coefficients in their declared storage order
 struct matrix_redux_linear_executor {
-    /// @brief executes the coefficient operation over the supplied expressions
+    /// @brief folds nonempty matrix coefficients with an initial value in the expression storage order
     template <typename XprType_, typename Scalar, typename Functor>
     static constexpr auto run(XprType_&& xpr, Scalar init, Functor f) {
         using XprType = std::decay_t<XprType_>;
@@ -230,10 +230,10 @@ struct matrix_redux_linear_executor {
 };
 
 // boolean linear reduction loop on matrix expression
-/// @brief represents boolean redux linear executor
+/// @brief short-circuits a predicate reduction at its first matching coefficient
 struct boolean_redux_linear_executor {
     // returns b at the first true occurence of f, otherwise returns !b
-    /// @brief executes the coefficient operation over the supplied expressions
+    /// @brief returns the requested Boolean result on the first predicate match, or its complement when none match
     template <typename XprType_, typename Functor> static constexpr auto run(XprType_&& xpr, bool b, Functor f) {
         using XprType = std::decay_t<XprType_>;
         fdapde_assert(xpr.size() > 0, std::invalid_argument, "reshape requires a nonempty expression");

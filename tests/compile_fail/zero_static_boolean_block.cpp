@@ -16,9 +16,7 @@
 
 #include <fdaPDE/linear_algebra.h>
 
-using dynamic_boolean_matrix =
-  fdapde::Matrix<bool, fdapde::Dynamic, fdapde::Dynamic>;
-using zero_static_boolean_block =
-  fdapde::BoolMatrixBlock<0, 1, dynamic_boolean_matrix>;
+using dynamic_boolean_matrix = fdapde::Matrix<bool, fdapde::Dynamic, fdapde::Dynamic>;
+using zero_static_boolean_block = fdapde::BoolMatrixBlock<0, 1, dynamic_boolean_matrix>;
 
 int main() { return sizeof(zero_static_boolean_block); }

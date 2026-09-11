@@ -24,9 +24,7 @@ struct zero_functor {
 
 using long_column = fdapde::ProceduralMatrix<zero_functor, 50000, 1>;
 using long_row = fdapde::ProceduralMatrix<zero_functor, 1, 50000>;
-using oversized_outer_product =
-  decltype(std::declval<long_column&>() * std::declval<long_row&>());
-using oversized_block =
-  fdapde::MatrixBlock<50000, 50000, oversized_outer_product>;
+using oversized_outer_product = decltype(std::declval<long_column&>() * std::declval<long_row&>());
+using oversized_block = fdapde::MatrixBlock<50000, 50000, oversized_outer_product>;
 
 int main() { return sizeof(oversized_block); }

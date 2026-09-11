@@ -16,6 +16,7 @@
 
 #include <fdaPDE/linear_algebra.h>
 
+/// @brief supplies static dimensions whose squared workspace size exceeds the supported integer range
 struct oversized_evd_expression {
     using Scalar = double;
     static constexpr int Rows = 46341;

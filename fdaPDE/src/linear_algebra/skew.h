@@ -21,14 +21,14 @@
 
 namespace fdapde {
 
-/// @brief represents skew symmetric matrix expr
+/// @brief provides expression operations that preserve skew symmetry
 template <typename XprType> struct SkewSymmetricMatrixExpr;
-/// @brief represents skew symmetric matrix view
+/// @brief views external strict-upper storage as a skew-symmetric matrix
 template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_> class SkewSymmetricMatrixView;
 
 namespace internals {
 
-/// @brief detects is mutable matrix view
+/// @brief identifies a view whose scalar type permits writes
 template <typename Scalar, int Rows, int Cols, int StorageOrder>
 struct is_mutable_matrix_view<SkewSymmetricMatrixView<Scalar, Rows, Cols, StorageOrder>> :
     std::bool_constant<!std::is_const_v<Scalar>> { };
@@ -59,9 +59,10 @@ constexpr int checked_skew_symmetric_storage_size(int rows) {
     return static_cast<int>(static_cast<long long>(rows) * (rows - 1) / 2);
 }
 
-/// @brief represents skew symmetric assignment executor
+/// @brief assigns the independent strict-upper coefficients of a skew-symmetric matrix
 struct skew_symmetric_assignment_executor {
-    /// @brief executes the coefficient operation over the supplied expressions
+    /// @brief applies the assignment functor only to strict-upper entries, preserving the implicit diagonal and
+    /// reflection
     template <typename DstXprType, typename SrcXprType, typename AssignmentOp>
     static constexpr void run(DstXprType& dst, const SrcXprType& src, AssignmentOp&& op) {
         fdapde_static_assert(DstXprType::ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_LOCATION);
@@ -90,7 +91,7 @@ struct skew_symmetric_assignment_executor {
     }
 };
 
-/// @brief represents skew symmetric wrapper
+/// @brief reflects one selected triangle with a sign change and supplies a zero diagonal
 template <int ViewMode_, typename SkewXprType_>
 class skew_symmetric_wrapper : public SkewSymmetricMatrixExpr<skew_symmetric_wrapper<ViewMode_, SkewXprType_>> {
    private:
@@ -108,9 +109,9 @@ class skew_symmetric_wrapper : public SkewSymmetricMatrixExpr<skew_symmetric_wra
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
 
-    /// @brief constructs skew symmetric wrapper from the supplied state
+    /// @brief copies the skew-symmetric adaptor while retaining its nested expression
     constexpr skew_symmetric_wrapper(const skew_symmetric_wrapper&) = default;
-    /// @brief constructs skew symmetric wrapper from the supplied state
+    /// @brief borrows one triangle, negates its reflection and supplies a zero diagonal
     template <typename XprType__>
         requires(!std::same_as<std::remove_cvref_t<XprType__>, skew_symmetric_wrapper> &&
                  internals::safely_nestable<XprTypeNested, XprType__>)
@@ -122,7 +123,7 @@ class skew_symmetric_wrapper : public SkewSymmetricMatrixExpr<skew_symmetric_wra
           !(xpr_.rows() < 0 || xpr_.rows() != xpr_.cols()), std::invalid_argument,
           "skew-symmetric view requires square dimensions");
     }
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief reflects the selected triangle with a sign change and returns zero on the diagonal
     constexpr Scalar operator()(int i, int j) const {
         internals::validate_matrix_index(i, j, size_, size_);
         if (i == j) return Scalar(0);
@@ -145,7 +146,7 @@ template <int ViewMode_, typename XprType_> constexpr auto skew_symmetric_cast(X
 
 }   // namespace internals
 
-/// @brief represents skew symmetric matrix expr
+/// @brief provides expression operations that preserve skew symmetry
 template <typename XprType_> struct SkewSymmetricMatrixExpr : public MatrixExpr<XprType_> {
     using XprType = std::decay_t<XprType_>;
     using Base = MatrixExpr<XprType_>;
@@ -153,11 +154,11 @@ template <typename XprType_> struct SkewSymmetricMatrixExpr : public MatrixExpr<
     using Base::operator=;
     using Base::operator*=;
 
-    /// @brief multiplies in place by the supplied operand
+    /// @brief rejects matrix compound multiplication because a general product need not be skew-symmetric
     template <internals::matrix_expression RhsXprType> constexpr void operator*=(const RhsXprType&) = delete;
 };
 
-/// @brief represents skew symmetric matrix base
+/// @brief maps square coordinates to packed strict-upper storage and reflection signs
 template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_, typename SkewMatrixType>
 class SkewSymmetricMatrixBase : public SkewSymmetricMatrixExpr<SkewMatrixType> {
    protected:
@@ -171,20 +172,20 @@ class SkewSymmetricMatrixBase : public SkewSymmetricMatrixExpr<SkewMatrixType> {
     static constexpr int ReadOnly = std::is_const_v<Scalar_>;
     using Base::operator=;
 
-    /// @brief represents skew symmetric proxy
+    /// @brief reads signed reflected values and prevents nonzero writes to the implicit diagonal
     template <typename Scalar__>
         requires(std::is_same_v<std::remove_cv_t<Scalar>, std::remove_cv_t<Scalar__>>)
     class skew_symmetric_proxy {
        private:
         using Value = std::remove_const_t<Scalar__>;
        public:
-        /// @brief constructs skew symmetric proxy from the supplied state
+        /// @brief records the packed upper-triangle index, reflection sign and structural diagonal flag
         constexpr skew_symmetric_proxy(Scalar__* data, int i, int j, int size) :
             data_(data),
             index_(compute_linear_index_(i < j ? i : j, i < j ? j : i, size)),
             sign_flip_(i > j),
             diagonal_(i == j) { }
-        /// @brief assigns the supplied coefficients
+        /// @brief stores the sign-adjusted coefficient, rejecting nonzero writes to the implicit diagonal
         template <typename T>
             requires(std::is_convertible_v<T, Value> && !std::is_const_v<Scalar__>)
         constexpr skew_symmetric_proxy& operator=(T value) {
@@ -197,6 +198,7 @@ class SkewSymmetricMatrixBase : public SkewSymmetricMatrixExpr<SkewMatrixType> {
             data_[index_] = sign_flip_ ? -converted : converted;
             return *this;
         }
+        /// @brief reads zero on the diagonal and applies the reflected sign elsewhere
         constexpr operator Value() const {
             if (diagonal_) return Value(0);
             const Value value = data_[index_];
@@ -215,20 +217,20 @@ class SkewSymmetricMatrixBase : public SkewSymmetricMatrixExpr<SkewMatrixType> {
     using reference = skew_symmetric_proxy<Scalar>;
     using const_reference = skew_symmetric_proxy<const std::remove_const_t<Scalar>>;
 
-    /// @brief constructs skew symmetric matrix base from the supplied state
+    /// @brief initializes fixed square dimensions or an empty dynamic shape
     constexpr SkewSymmetricMatrixBase() : rows_(default_shape_()), cols_(default_shape_()) { }
-    /// @brief constructs skew symmetric matrix base from the supplied state
+    /// @brief validates square dimensions and their agreement with static extents
     constexpr SkewSymmetricMatrixBase(int rows, int cols) : rows_(rows), cols_(cols) {
         internals::validate_matrix_shape<Rows, Cols>(rows, cols);
         (void)internals::checked_matrix_size(rows, cols);
         fdapde_assert(!(rows != cols), std::invalid_argument, "skew-symmetric matrix requires square dimensions");
     }
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief returns a read-only proxy applying the reflected sign and implicit zero diagonal
     constexpr const_reference operator()(int i, int j) const {
         internals::validate_matrix_index(i, j, rows_, cols_);
         return const_reference(derived().data(), i, j, rows_);
     }
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief returns a writable proxy preserving reflected signs and the zero diagonal
     constexpr reference operator()(int i, int j)
         requires(ReadOnly == 0)
     {
@@ -252,33 +254,33 @@ class SkewSymmetricMatrixBase : public SkewSymmetricMatrixExpr<SkewMatrixType> {
 };
 
 // skew-symmetric matrices form a vector space. Products generally do not preserve the structure
-/// @brief implements the operator+ expression operation
+/// @brief adds equally shaped operands while preserving skew symmetry
 template <typename LhsXprType, typename RhsXprType>
 constexpr auto
 operator+(const SkewSymmetricMatrixExpr<LhsXprType>& lhs, const SkewSymmetricMatrixExpr<RhsXprType>& rhs) {
     return internals::skew_symmetric_cast<Upper>(
       MatrixBinOp<LhsXprType, RhsXprType, std::plus<>>(lhs.derived(), rhs.derived(), std::plus<>()));
 }
-/// @brief implements the operator- expression operation
+/// @brief subtracts equally shaped operands while preserving skew symmetry
 template <typename LhsXprType, typename RhsXprType>
 constexpr auto
 operator-(const SkewSymmetricMatrixExpr<LhsXprType>& lhs, const SkewSymmetricMatrixExpr<RhsXprType>& rhs) {
     return internals::skew_symmetric_cast<Upper>(
       MatrixBinOp<LhsXprType, RhsXprType, std::minus<>>(lhs.derived(), rhs.derived(), std::minus<>()));
 }
-/// @brief implements the operator* expression operation
+/// @brief scales by the right scalar while preserving skew symmetry
 template <typename XprType, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
 constexpr auto operator*(const SkewSymmetricMatrixExpr<XprType>& lhs, ScalarType rhs) {
     return internals::skew_symmetric_cast<Upper>(MatrixScalarMultiplicationOp<XprType, ScalarType>(lhs.derived(), rhs));
 }
-/// @brief implements the operator* expression operation
+/// @brief scales by the left scalar while preserving skew symmetry
 template <typename XprType, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
 constexpr auto operator*(ScalarType lhs, const SkewSymmetricMatrixExpr<XprType>& rhs) {
     return rhs * lhs;
 }
-/// @brief implements the operator/ expression operation
+/// @brief divides each coefficient by the scalar while preserving skew symmetry
 template <typename XprType, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
 constexpr auto operator/(const SkewSymmetricMatrixExpr<XprType>& lhs, ScalarType rhs) {
@@ -315,11 +317,11 @@ class SkewSymmetricMatrix :
     using StorageType = std::conditional_t < StorageSize == Dynamic, std::vector<Scalar_>,
           std::array<Scalar_, StorageSize<0 ? 0 : static_cast<std::size_t>(StorageSize)>>;
 
-    /// @brief constructs skew symmetric matrix from the supplied state
+    /// @brief value-initializes fixed packed storage and leaves dynamic storage empty
     constexpr SkewSymmetricMatrix() : Base(), data_() { }
-    /// @brief constructs skew symmetric matrix from the supplied state
+    /// @brief copies the shape and strict upper triangle into independent storage
     constexpr SkewSymmetricMatrix(const SkewSymmetricMatrix& rhs) : Base(rhs.rows(), rhs.cols()), data_(rhs.data_) { }
-    /// @brief assigns the supplied coefficients
+    /// @brief copies the source shape and independent packed upper coefficients
     constexpr SkewSymmetricMatrix& operator=(const SkewSymmetricMatrix& rhs) & {
         if (this == std::addressof(rhs)) return *this;
         data_ = rhs.data_;
@@ -329,19 +331,19 @@ class SkewSymmetricMatrix :
         }
         return *this;
     }
-    /// @brief assigns the supplied coefficients
+    /// @brief rejects assignment to a temporary skew-symmetric owner
     constexpr void operator=(const SkewSymmetricMatrix&) && = delete;
     using Base::operator=;
 
-    /// @brief constructs skew symmetric matrix from the supplied state
+    /// @brief allocates a square matrix of the requested dynamic dimension
     constexpr explicit SkewSymmetricMatrix(int size) : SkewSymmetricMatrix(size, size) { }
-    /// @brief constructs skew symmetric matrix from the supplied state
+    /// @brief validates square dimensions and allocates the strict upper triangle
     constexpr SkewSymmetricMatrix(int rows, int cols) : Base(rows, cols), data_() {
         fdapde_static_assert(Rows == Dynamic || Cols == Dynamic, THIS_METHOD_IS_FOR_DYNAMIC_SIZED_MATRICES_ONLY);
         const int storage_size = internals::checked_skew_symmetric_storage_size(this->rows_);
         if constexpr (StorageSize == Dynamic) { data_.resize(static_cast<std::size_t>(storage_size)); }
     }
-    /// @brief constructs skew symmetric matrix from the supplied state
+    /// @brief evaluates the strict upper triangle of a skew-symmetric expression into owned storage
     template <typename RhsXprType_>
     constexpr SkewSymmetricMatrix(const SkewSymmetricMatrixExpr<RhsXprType_>& rhs) :
         Base(rhs.rows(), rhs.cols()), data_() {
@@ -350,13 +352,13 @@ class SkewSymmetricMatrix :
         }
         assignment_executor::run(*this, rhs.derived(), [](auto& l, const auto& r) { l = r; });
     }
-    /// @brief assigns the supplied coefficients
+    /// @brief snapshots a skew expression before assigning its independent coefficients
     template <typename RhsXprType_>
     constexpr SkewSymmetricMatrix& operator=(const SkewSymmetricMatrixExpr<RhsXprType_>& rhs) & {
         static_cast<MatrixExpr<SkewSymmetricMatrix>&>(*this).template operator= <RhsXprType_>(rhs);
         return *this;
     }
-    /// @brief constructs skew symmetric matrix from the supplied state
+    /// @brief copies packed strict-upper coefficients and infers the square dimension from their count
     template <typename Scalar__>
         requires(std::is_constructible_v<Scalar_, Scalar__>)
     constexpr explicit SkewSymmetricMatrix(const std::vector<Scalar__>& data) :
@@ -370,7 +372,7 @@ class SkewSymmetricMatrix :
           "packed skew-symmetric input does not match its static size");
         for (int i = 0; i < input_size; ++i) data_[static_cast<std::size_t>(i)] = data[static_cast<std::size_t>(i)];
     }
-    /// @brief constructs skew symmetric matrix from the supplied state
+    /// @brief copies a C array matching the fixed strict-upper storage size
     template <typename Scalar__, std::size_t Size>
         requires(std::is_constructible_v<Scalar_, Scalar__>)
     constexpr explicit SkewSymmetricMatrix(const Scalar__ (&data)[Size]) : Base(), data_() {
@@ -408,7 +410,7 @@ class SkewSymmetricMatrix :
     StorageType data_;
 };
 
-/// @brief represents skew symmetric matrix view
+/// @brief views external strict-upper storage as a skew-symmetric matrix
 template <typename Scalar_, int Rows_, int Cols_ = Rows_, int StorageOrder_ = RowMajor>
 class SkewSymmetricMatrixView :
     public SkewSymmetricMatrixBase<
@@ -436,17 +438,18 @@ class SkewSymmetricMatrixView :
     static constexpr int ReadOnly = std::is_const_v<Scalar_>;
     using assignment_executor = internals::skew_symmetric_assignment_executor;
 
-    /// @brief constructs skew symmetric matrix view from the supplied state
+    /// @brief copies the binding to external packed strict-upper storage
     constexpr SkewSymmetricMatrixView(const SkewSymmetricMatrixView&) = default;
-    /// @brief constructs skew symmetric matrix view from the supplied state
+    /// @brief creates an empty dynamic skew-symmetric view without a buffer
     constexpr SkewSymmetricMatrixView()
         requires(Rows_ == Dynamic && Cols_ == Dynamic)
         : Base(), data_(nullptr) { }
-    /// @brief constructs skew symmetric matrix view from the supplied state
+    /// @brief rejects default construction when either dimension is fixed
     constexpr SkewSymmetricMatrixView()
         requires(Rows_ != Dynamic || Cols_ != Dynamic)
     = delete;
-    /// @brief constructs skew symmetric matrix view from the supplied state
+    /// @brief binds fixed dimensions to external strict-upper storage, permitting null only when no coefficients are
+    /// stored
     template <typename Scalar__>
         requires(std::is_convertible_v<Scalar__*, Scalar_*>)
     constexpr explicit SkewSymmetricMatrixView(Scalar__* data) : Base(), data_(data) {
@@ -455,11 +458,11 @@ class SkewSymmetricMatrixView :
           !(StorageSize > 0 && data == nullptr), std::invalid_argument,
           "nonempty skew-symmetric view requires storage");
     }
-    /// @brief constructs skew symmetric matrix view from the supplied state
+    /// @brief binds external strict-upper storage using a single square dimension
     template <typename Scalar__>
         requires(std::is_convertible_v<Scalar__*, Scalar_*>)
     constexpr SkewSymmetricMatrixView(Scalar__* data, int size) : SkewSymmetricMatrixView(data, size, size) { }
-    /// @brief constructs skew symmetric matrix view from the supplied state
+    /// @brief validates square dimensions and binds sufficient external strict-upper storage
     template <typename Scalar__>
         requires(std::is_convertible_v<Scalar__*, Scalar_*>)
     constexpr SkewSymmetricMatrixView(Scalar__* data, int rows, int cols) : Base(rows, cols), data_(data) {
@@ -468,14 +471,14 @@ class SkewSymmetricMatrixView :
           "nonempty skew-symmetric view requires storage");
     }
     using Base::operator=;
-    /// @brief assigns the supplied coefficients
+    /// @brief copies a skew source snapshot into bound storage without rebinding the view
     constexpr SkewSymmetricMatrixView& operator=(const SkewSymmetricMatrixView& other) &
         requires(ReadOnly == 0)
     {
         static_cast<Base&>(*this).template operator= <SkewSymmetricMatrixView>(other);
         return *this;
     }
-    /// @brief assigns the supplied coefficients
+    /// @brief copies into a temporary skew view and returns its binding by value
     constexpr SkewSymmetricMatrixView operator=(const SkewSymmetricMatrixView& other) &&
       requires(ReadOnly == 0) {
           static_cast<Base&>(*this).template operator= <SkewSymmetricMatrixView>(other);
@@ -495,7 +498,7 @@ class SkewSymmetricMatrixView :
     Scalar_* data_;
 };
 
-/// @brief detects is skew symmetric matrix
+/// @brief identifies skew symmetric matrix expressions after removing cv and reference qualifiers
 template <typename XprType> struct is_skew_symmetric_matrix {
     using Type = std::remove_cvref_t<XprType>;
     static constexpr bool value = std::is_base_of_v<SkewSymmetricMatrixExpr<Type>, Type>;

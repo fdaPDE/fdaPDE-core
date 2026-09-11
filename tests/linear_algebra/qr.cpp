@@ -32,72 +32,72 @@ template <typename Decomposition>
 concept permits_rvalue_r_factor = requires(Decomposition decomposition) { std::move(decomposition).R(); };
 
 using fixed_qr = HouseholderQR<double, 3, 2>;
-// checks at compile time: std::is_default_constructible_v<fixed_qr>
+// a QR object may exist before any matrix has been factorized
 static_assert(std::is_default_constructible_v<fixed_qr>);
-// checks at compile time: !permits_rvalue_q_factor<fixed_qr>
+// the orthogonal factor cannot be borrowed from a temporary decomposition
 static_assert(!permits_rvalue_q_factor<fixed_qr>);
-// checks at compile time: !permits_rvalue_r_factor<fixed_qr>
+// the triangular factor cannot be borrowed from a temporary decomposition
 static_assert(!permits_rvalue_r_factor<fixed_qr>);
 
 template <typename MatrixType, typename Decomposition>
 void expect_qr_reconstruction(
   const MatrixType& source, const Decomposition& decomposition, double tolerance = 1.0e-12) {
-    // checks decomposition.computed()
+    // successful factorization must publish completed factors before they are inspected
     ASSERT_TRUE(decomposition.computed());
-    // compares decomposition.Q().rows(), source.rows() using eq semantics
+    // q has one row for each input row
     ASSERT_EQ(decomposition.Q().rows(), source.rows());
-    // compares decomposition.Q().cols(), source.rows() using eq semantics
+    // full QR produces a square Q, including the orthogonal complement
     ASSERT_EQ(decomposition.Q().cols(), source.rows());
-    // compares decomposition.R().rows(), source.rows() using eq semantics
+    // r preserves the input row count
     ASSERT_EQ(decomposition.R().rows(), source.rows());
-    // compares decomposition.R().cols(), source.cols() using eq semantics
+    // r preserves the input column count
     ASSERT_EQ(decomposition.R().cols(), source.cols());
 
     const Matrix<double, Dynamic, Dynamic> dense_source(source);
     const Matrix<double, Dynamic, Dynamic> reconstructed(decomposition.Q() * decomposition.R());
     const double scale = dense_source.norm();
     const double denominator = scale > 0.0 ? scale : 1.0;
-    // compares (reconstructed - dense_source).norm() / denominator, tolerance using lt semantics
+    // the product Q * R reconstructs the input within the scaled residual tolerance
     EXPECT_LT((reconstructed - dense_source).norm() / denominator, tolerance);
 
     const Matrix<double, Dynamic, Dynamic> q(decomposition.Q());
     Matrix<double, Dynamic, Dynamic> identity(q.rows(), q.rows());
     identity.set_zero();
     for (int i = 0; i < identity.rows(); ++i) identity(i, i) = 1.0;
-    // compares (q.transpose() * q - identity).norm(), tolerance using lt semantics
+    // the product Q.transpose() * Q matches identity within the orthogonality tolerance
     EXPECT_LT((q.transpose() * q - identity).norm(), tolerance);
 }
 
 template <int StorageOrder> void check_qr_shapes_lifetime_and_reconstruction() {
     const Matrix<double, 4, 3, StorageOrder> tall({1.0, 2.0, -1.0, 2.0, 0.0, 3.0, -1.0, 4.0, 2.0, 3.0, -2.0, 1.0});
     const HouseholderQR tall_qr(tall);
-    // checks at compile time: decltype(tall_qr)::Rows == 4 && decltype(tall_qr)::Cols == 3
+    // deduction retains the fixed four-by-three input shape
     static_assert(decltype(tall_qr)::Rows == 4 && decltype(tall_qr)::Cols == 3);
-    // compares tall_qr.rank(), 3 using eq semantics
+    // the tall full-column-rank matrix has rank three
     EXPECT_EQ(tall_qr.rank(), 3);
     expect_qr_reconstruction(tall, tall_qr);
 
     const Matrix<double, 2, 3, StorageOrder> wide_source({1.0, -2.0, 3.0, 4.0, 1.0, -1.0});
     const Matrix<double, Dynamic, Dynamic, StorageOrder> wide(wide_source);
     const HouseholderQR wide_qr(wide);
-    // checks at compile time: decltype(wide_qr)::Rows == Dynamic && decltype(wide_qr)::Cols == Dynamic
+    // a fully dynamic input produces a fully dynamic QR type
     static_assert(decltype(wide_qr)::Rows == Dynamic && decltype(wide_qr)::Cols == Dynamic);
-    // compares wide_qr.rank(), 2 using eq semantics
+    // the wide matrix has two independent rows
     EXPECT_EQ(wide_qr.rank(), 2);
     expect_qr_reconstruction(wide, wide_qr);
 
     const Matrix<double, 3, 2, StorageOrder> partial_source({1.0, 2.0, 3.0, -1.0, 2.0, 4.0});
     const Matrix<double, Dynamic, 2, StorageOrder> partial(partial_source);
     const HouseholderQR partial_qr(partial);
-    // checks at compile time: decltype(partial_qr)::Rows == Dynamic && decltype(partial_qr)::Cols == 2
+    // a partially dynamic input retains its fixed two columns
     static_assert(decltype(partial_qr)::Rows == Dynamic && decltype(partial_qr)::Cols == 2);
-    // compares partial_qr.rank(), 2 using eq semantics
+    // the partially dynamic example has two independent columns
     EXPECT_EQ(partial_qr.rank(), 2);
     expect_qr_reconstruction(partial, partial_qr);
 
     const MatrixView<const double, 3, 2, StorageOrder> const_view(partial_source.data());
     const HouseholderQR const_view_qr(const_view);
-    // checks at compile time: std::is_same_v<typename decltype(const_view_qr)::Scalar, double>
+    // factorization of a const view owns mutable double coefficients
     static_assert(std::is_same_v<typename decltype(const_view_qr)::Scalar, double>);
     expect_qr_reconstruction(const_view, const_view_qr);
 
@@ -112,88 +112,88 @@ template <int StorageOrder> void check_qr_shapes_lifetime_and_reconstruction() {
 template <int StorageOrder> void check_qr_rank_and_scale_contracts() {
     const Matrix<double, 3, 2, StorageOrder> zero = Matrix<double, 3, 2, StorageOrder>::Zero();
     const HouseholderQR zero_qr(zero);
-    // compares zero_qr.rank(), 0 using eq semantics
+    // the zero matrix has rank zero
     EXPECT_EQ(zero_qr.rank(), 0);
     expect_qr_reconstruction(zero, zero_qr);
 
     const Matrix<double, 4, 3, StorageOrder> rank_deficient(
       {1.0, 2.0, 3.0, 2.0, 4.0, 1.0, 3.0, 6.0, -1.0, 4.0, 8.0, 2.0});
     const HouseholderQR rank_deficient_qr(rank_deficient);
-    // compares rank_deficient_qr.rank(), 2 using eq semantics
+    // the dependent-column example has only two independent directions
     EXPECT_EQ(rank_deficient_qr.rank(), 2);
     expect_qr_reconstruction(rank_deficient, rank_deficient_qr);
 
     const Matrix<double, 3, 3, StorageOrder> leading_zero_column({0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0});
     const HouseholderQR shifted_qr(leading_zero_column);
-    // compares shifted_qr.rank(), 2 using eq semantics
+    // rank detection finds pivots beyond an initially zero column
     EXPECT_EQ(shifted_qr.rank(), 2);
     expect_qr_reconstruction(leading_zero_column, shifted_qr);
 
     for (const double scale : {1.0e-150, 1.0e150}) {
         const Matrix<double, 3, 2, StorageOrder> matrix({scale, 2.0 * scale, -3.0 * scale, scale, 2.0 * scale, -scale});
         const HouseholderQR qr(matrix);
-        // compares qr.rank(), 2 using eq semantics
+        // uniform scaling preserves rank two over the tested magnitudes
         EXPECT_EQ(qr.rank(), 2);
         expect_qr_reconstruction(matrix, qr);
     }
 
     const Matrix<double, 2, 2, StorageOrder> mixed_scale({1.0, 0.0, 0.0, 1.0e-160});
     const HouseholderQR mixed_scale_qr(mixed_scale);
-    // compares mixed_scale_qr.rank(), 1 using eq semantics
+    // a pivot below the relative threshold yields numerical rank one
     EXPECT_EQ(mixed_scale_qr.rank(), 1);
     expect_qr_reconstruction(mixed_scale, mixed_scale_qr);
 }
 
 template <int StorageOrder> void check_qr_invalid_input_contracts() {
     HouseholderQR<double, Dynamic, Dynamic> reusable;
-    // checks reusable.computed()
+    // a default QR object reports no completed factorization
     EXPECT_FALSE(reusable.computed());
-    // compares reusable.rank(), 0 using eq semantics
+    // an uncomputed QR object reports rank zero
     EXPECT_EQ(reusable.rank(), 0);
 
     const Matrix<double, 2, 2, StorageOrder> valid({1.0, 2.0, 3.0, 4.0});
     reusable.compute(valid);
-    // checks reusable.computed()
+    // recomputing with valid data publishes a completed factorization
     EXPECT_TRUE(reusable.computed());
-    // compares reusable.rank(), 2 using eq semantics
+    // recomputing with full-rank data updates the rank to two
     EXPECT_EQ(reusable.rank(), 2);
 
     Matrix<double, Dynamic, Dynamic, StorageOrder> nonfinite(valid);
     nonfinite(0, 0) = std::numeric_limits<double>::quiet_NaN();
-    // checks the exception category for the supplied invalid operation
+    // a NaN coefficient is rejected as invalid QR input
     EXPECT_THROW(reusable.compute(nonfinite), std::invalid_argument);
-    // checks reusable.computed()
+    // rejected NaN input clears the completed state
     EXPECT_FALSE(reusable.computed());
-    // compares reusable.rank(), 0 using eq semantics
+    // rejected NaN input clears the previous rank
     EXPECT_EQ(reusable.rank(), 0);
 
     nonfinite(0, 0) = std::numeric_limits<double>::infinity();
-    // checks the exception category for the supplied invalid operation
+    // an infinite coefficient is rejected as invalid QR input
     EXPECT_THROW(reusable.compute(nonfinite), std::invalid_argument);
-    // checks reusable.computed()
+    // rejected infinite input leaves no completed factorization
     EXPECT_FALSE(reusable.computed());
-    // compares reusable.rank(), 0 using eq semantics
+    // rejected infinite input leaves rank zero
     EXPECT_EQ(reusable.rank(), 0);
 
     const Matrix<double, Dynamic, Dynamic, StorageOrder> empty;
-    // checks the exception category for the supplied invalid operation
+    // an empty matrix cannot be factorized
     EXPECT_THROW(reusable.compute(empty), std::invalid_argument);
-    // checks reusable.computed()
+    // rejected empty input clears the completed state
     EXPECT_FALSE(reusable.computed());
-    // compares reusable.rank(), 0 using eq semantics
+    // rejected empty input clears the previous rank
     EXPECT_EQ(reusable.rank(), 0);
 
     HouseholderQR<double, 3, 2> fixed_shape;
     Matrix<double, Dynamic, Dynamic, StorageOrder> wrong_shape(2, 3);
-    // checks the exception category for the supplied invalid operation
+    // runtime dimensions must agree with the QR type's fixed dimensions
     EXPECT_THROW(fixed_shape.compute(wrong_shape), std::invalid_argument);
-    // checks fixed_shape.computed()
+    // a fixed-shape mismatch leaves the factorization unavailable
     EXPECT_FALSE(fixed_shape.computed());
-    // compares fixed_shape.rank(), 0 using eq semantics
+    // a fixed-shape mismatch leaves rank zero
     EXPECT_EQ(fixed_shape.rank(), 0);
 }
 
-// verifies householder qr through the public algebra API
+// checks full QR reconstruction, orthogonality, rank thresholds and state reset after rejected input
 TEST(linear_algebra, householder_qr) {
     check_qr_shapes_lifetime_and_reconstruction<RowMajor>();
     check_qr_shapes_lifetime_and_reconstruction<ColMajor>();

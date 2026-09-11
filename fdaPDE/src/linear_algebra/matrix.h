@@ -61,15 +61,15 @@ constexpr void validate_matrix_index(int i, int j, int rows, int cols) {
 }
 
 // named callables keep procedural-matrix alias specializations stable across compilers
-/// @brief represents constant matrix functor
+/// @brief returns the same compile-time scalar at every matrix coordinate
 template <typename Scalar, int Value> struct constant_matrix_functor {
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief returns the configured scalar independently of the coordinate
     constexpr Scalar operator()(int, int) const { return Scalar(Value); }
 };
 
-/// @brief represents identity matrix functor
+/// @brief generates one on the main diagonal and zero elsewhere
 template <typename Scalar> struct identity_matrix_functor {
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief returns one on the diagonal and zero off the diagonal
     constexpr Scalar operator()(int i, int j) const { return i == j ? Scalar(1) : Scalar(0); }
 };
 
@@ -81,7 +81,7 @@ template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_> class Matri
 namespace internals {
 
 // cRTP writable constraints can form before MatrixView's inherited ReadOnly member is visible
-/// @brief detects is mutable matrix view
+/// @brief identifies a view whose scalar type permits writes
 template <typename Scalar, int Rows, int Cols, int StorageOrder>
 struct is_mutable_matrix_view<MatrixView<Scalar, Rows, Cols, StorageOrder>> :
     std::bool_constant<!std::is_const_v<Scalar>> { };
@@ -89,7 +89,7 @@ struct is_mutable_matrix_view<MatrixView<Scalar, Rows, Cols, StorageOrder>> :
 }   // namespace internals
 
 // procedural matrices generates matrices whose entries exhibit a fixed pattern, without allocating memory
-/// @brief represents procedural matrix
+/// @brief evaluates coefficients from a callable without storing a dense array
 template <typename Functor_, int Rows_, int Cols_>
 struct ProceduralMatrix : public MatrixExpr<ProceduralMatrix<Functor_, Rows_, Cols_>> {
     fdapde_static_assert((Rows_ == Dynamic || Rows_ > 0) && (Cols_ == Dynamic || Cols_ > 0), INVALID_MATRIX_DIMENSIONS);
@@ -108,30 +108,30 @@ struct ProceduralMatrix : public MatrixExpr<ProceduralMatrix<Functor_, Rows_, Co
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
 
-    /// @brief constructs procedural matrix from the supplied state
+    /// @brief initializes static dimensions and leaves dynamic axes empty with a default coefficient functor
     constexpr ProceduralMatrix() : rows_(Rows_ == Dynamic ? 0 : Rows), cols_(Cols_ == Dynamic ? 0 : Cols) { }
-    /// @brief constructs procedural matrix from the supplied state
+    /// @brief stores a coefficient functor using static dimensions or empty dynamic axes
     constexpr explicit ProceduralMatrix(Functor_ f) :
         rows_(Rows_ == Dynamic ? 0 : Rows), cols_(Cols_ == Dynamic ? 0 : Cols), f_(f) { }
-    /// @brief constructs procedural matrix from the supplied state
+    /// @brief validates the matrix dimensions and stores the coefficient functor
     constexpr ProceduralMatrix(int rows, int cols, Functor_ f) :
         rows_(Rows == Dynamic ? rows : Rows), cols_(Cols == Dynamic ? cols : Cols), f_(f) {
         internals::validate_matrix_shape<Rows, Cols>(rows, cols);
         (void)internals::checked_matrix_size(rows_, cols_);
     }
-    /// @brief constructs procedural matrix from the supplied state
+    /// @brief validates the matrix dimensions and default-constructs the coefficient functor
     constexpr ProceduralMatrix(int rows, int cols) : ProceduralMatrix(rows, cols, Functor_()) { }
-    /// @brief constructs procedural matrix from the supplied state
+    /// @brief validates the vector length and stores the coefficient functor
     constexpr explicit ProceduralMatrix(int size, Functor_ f) :
         rows_(Rows_ == Dynamic ? size : Rows), cols_(Cols_ == Dynamic ? size : Cols), f_(f) {
         fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
         internals::validate_matrix_vector_size<Rows, Cols>(size);
         (void)internals::checked_matrix_size(rows_, cols_);
     }
-    /// @brief constructs procedural matrix from the supplied state
+    /// @brief validates the vector length and default-constructs the coefficient functor
     constexpr explicit ProceduralMatrix(int size) : ProceduralMatrix(size, Functor_()) { }
 
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief validates the coordinate and evaluates the stored coefficient functor
     constexpr Scalar operator()(int i, int j) const {
         internals::validate_matrix_index(i, j, rows_, cols_);
         return f_(i, j);
@@ -146,7 +146,7 @@ struct ProceduralMatrix : public MatrixExpr<ProceduralMatrix<Functor_, Rows_, Co
     constexpr int rows() const { return rows_; }
     /// @brief returns the column count
     constexpr int cols() const { return cols_; }
-    /// @brief resizes the owned storage to the requested dimensions
+    /// @brief updates the procedural shape without allocating coefficient storage
     constexpr void resize(int rows, int cols) {
         fdapde_static_assert(Rows == Dynamic || Cols == Dynamic, THIS_METHOD_IS_FOR_DYNAMIC_SIZED_MATRICES_ONLY);
         internals::validate_matrix_shape<Rows, Cols>(rows, cols);
@@ -168,9 +168,9 @@ using IdentityMatrix = ProceduralMatrix<internals::identity_matrix_functor<Scala
 
 namespace internals {
 
-/// @brief represents generic assignment executor
+/// @brief assigns matrix coefficients using loops matched to destination storage order
 struct generic_assignment_executor {
-    /// @brief executes the coefficient operation over the supplied expressions
+    /// @brief applies an assignment functor in destination storage order after checking operand shapes
     template <typename DstMatrixType, typename SrcXprType, typename AssignmentOp>
     static constexpr void run(DstMatrixType& dst, const SrcXprType& src, AssignmentOp&& op) {
         fdapde_static_assert(DstMatrixType::ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_LOCATION);
@@ -208,14 +208,14 @@ struct generic_assignment_executor {
     }
 };
 // assignment executor specialized for vector expressions
-/// @brief represents vector assignment executor
+/// @brief assigns vector coefficients independently of row or column orientation
 struct vector_assignment_executor {
-    /// @brief executes the coefficient operation over the supplied expressions
+    /// @brief applies an assignment functor by vector index, allowing row-to-column assignment
     template <typename DstMatrixType, typename SrcXprType, typename AssignmentOp>
     static constexpr void run(DstMatrixType& dst, const SrcXprType& src, AssignmentOp&& op) {
         fdapde_static_assert(DstMatrixType::ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_LOCATION);
         if constexpr (!std::is_arithmetic_v<SrcXprType>) {
-            // nB: a row-shaped rhs can be assigned to a col-shaped lhs
+            // vector assignment preserves coefficient order when row and column orientations differ
             fdapde_static_assert(
               internals::is_vector_shaped_v<DstMatrixType>, INVALID_ASSIGNMENT__NOT_VECTOR_SHAPED_LVALUE);
             fdapde_static_assert(
@@ -274,13 +274,13 @@ class MatrixBase : public MatrixExpr<MatrixType> {
       internals::generic_assignment_executor>;
 
     // constructors
-    /// @brief constructs matrix base from the supplied state
+    /// @brief initializes dimensions and strides, using zero for each dynamic axis
     constexpr MatrixBase() :
         rows_(Rows == Dynamic ? 0 : Rows),
         cols_(Cols == Dynamic ? 0 : Cols),
         row_stride_(StorageOrder == RowMajor ? cols_ : 1),
         col_stride_(StorageOrder == RowMajor ? 1 : rows_) { }
-    /// @brief constructs matrix base from the supplied state
+    /// @brief validates matrix dimensions and derives contiguous-storage strides
     constexpr MatrixBase(int rows, int cols) :
         rows_(Rows == Dynamic ? rows : Rows),
         cols_(Cols == Dynamic ? cols : Cols),
@@ -289,7 +289,7 @@ class MatrixBase : public MatrixExpr<MatrixType> {
         internals::validate_matrix_shape<Rows, Cols>(rows, cols);
         (void)internals::checked_matrix_size(rows_, cols_);
     }
-    /// @brief constructs matrix base from the supplied state
+    /// @brief validates a vector length and derives strides for its row or column orientation
     constexpr MatrixBase(int size) :
         rows_(Rows == Dynamic ? size : Rows),
         cols_(Cols == Dynamic ? size : Cols),
@@ -300,7 +300,7 @@ class MatrixBase : public MatrixExpr<MatrixType> {
         (void)internals::checked_matrix_size(rows_, cols_);
     }
     // copy assignment
-    /// @brief assigns the supplied coefficients
+    /// @brief copies a same-type matrix, resizing dynamic dimensions when necessary
     constexpr MatrixType& operator=(const MatrixType& other) {
         fdapde_static_assert(ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_LOCATION);
         if (this == std::addressof(other)) { return derived(); }
@@ -313,7 +313,7 @@ class MatrixBase : public MatrixExpr<MatrixType> {
     // inherit assignment from base
     using Base::operator=;
     // access
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief reads a coefficient through the const storage pointer and layout strides
     constexpr decltype(auto) operator()(int i, int j) const {
         internals::validate_matrix_index(i, j, rows_, cols_);
         return derived().data()[i * row_stride_ + j * col_stride_];
@@ -326,7 +326,7 @@ class MatrixBase : public MatrixExpr<MatrixType> {
         fdapde_assert(!(i < 0 || i >= rows_ * cols_), std::out_of_range, "matrix index out of range");
         return derived().data()[i];
     }
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief accesses a coefficient through the storage pointer and layout strides
     constexpr decltype(auto) operator()(int i, int j) {
         internals::validate_matrix_index(i, j, rows_, cols_);
         return derived().data()[i * row_stride_ + j * col_stride_];
@@ -351,7 +351,6 @@ class MatrixBase : public MatrixExpr<MatrixType> {
 
 /// @brief owns a dense matrix with static or runtime dimensions
 template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_ = RowMajor>
-// requires(std::is_arithmetic_v<Scalar_>)
 class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Scalar_, Rows_, Cols_, StorageOrder_>> {
    private:
     using Base = MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Scalar_, Rows_, Cols_, StorageOrder_>>;
@@ -369,28 +368,28 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
     using const_iterator = typename StorageType::const_iterator;
     static constexpr int NestAsRef = 1;
 
-    /// @brief constructs matrix from the supplied state
+    /// @brief value-initializes fixed storage and leaves dynamic storage empty
     constexpr Matrix() : data_() { }
     // copy semantic
-    /// @brief constructs matrix from the supplied state
+    /// @brief copies the source shape and coefficients into independent storage
     constexpr Matrix(const Matrix& other) : Base() { clone_(other); }
-    /// @brief assigns the supplied coefficients
+    /// @brief copies shape and coefficients into this owner's independent storage
     constexpr Matrix& operator=(const Matrix& other) & {
         clone_(other);
         return *this;
     }
-    /// @brief constructs matrix from the supplied state
+    /// @brief evaluates a matrix expression into independent storage
     template <typename RhsXprType_>   // construct from plain MatrixExpr
     constexpr Matrix(const MatrixExpr<RhsXprType_>& rhs) : Base(), data_() {
         clone_(rhs.derived());
     }
-    /// @brief constructs matrix from the supplied state
+    /// @brief evaluates a coefficient-wise expression into independent matrix storage
     template <typename RhsXprType_>
     constexpr Matrix(const MatrixCoeffWiseExpr<RhsXprType_>& rhs) : Matrix(rhs.mwise()) { }
 
     // matrix API
     // value-initialized static-sized matrix, avoid 1D vectors
-    /// @brief constructs matrix from the supplied state
+    /// @brief fills a fixed-size matrix with the supplied scalar
     constexpr explicit Matrix(Scalar v)
         requires(Rows_ > 1 && Cols_ >= 1)
         : data_() {
@@ -405,7 +404,7 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
         }
     }
     // value-initialized dynamic-sized matrix, avoid vectors
-    /// @brief constructs matrix from the supplied state
+    /// @brief allocates a dynamic matrix and fills its coefficients with the supplied scalar
     constexpr Matrix(int rows, int cols, Scalar v)
         requires(Rows_ == Dynamic && Cols_ == Dynamic)
         : Matrix(rows, cols) {
@@ -414,7 +413,7 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
 
     // vector API
     // zero-initialized dynamic-sized vector
-    /// @brief constructs matrix from the supplied state
+    /// @brief allocates a dynamic vector with value-initialized coefficients
     constexpr explicit Matrix(int size)
         requires(Rows_ == Dynamic || Cols_ == Dynamic)
         : Base(size) {
@@ -424,7 +423,7 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
         }
     }
     // value-initialized dynamic-sized vector
-    /// @brief constructs matrix from the supplied state
+    /// @brief allocates a dynamic vector and fills it with the supplied scalar
     constexpr Matrix(int size, Scalar v)
         requires((Rows_ == Dynamic && Cols_ == 1) || (Rows_ == 1 && Cols_ == Dynamic))
         : Matrix(size) {
@@ -434,7 +433,7 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
         for (int i = 0; i < size; ++i) { data_[i] = v; }
     }
     // 1D static-sized vector
-    /// @brief constructs matrix from the supplied state
+    /// @brief initializes the sole coefficient of a one-dimensional vector
     constexpr explicit Matrix(Scalar x)
         requires(!internals::is_dynamic_sized_v<Base> && (Cols_ == 1 && Rows_ == 1))
         : Base() {
@@ -442,7 +441,7 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
         data_[0] = x;
     }
     // 2D static-sized vector
-    /// @brief constructs matrix from the supplied state
+    /// @brief initializes a fixed two-dimensional vector from its coordinates
     constexpr Matrix(Scalar x, Scalar y)
         requires(!internals::is_dynamic_sized_v<Base> && (Cols_ == 1 || Rows_ == 1))
         : Base() {
@@ -452,7 +451,7 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
         data_[1] = y;
     }
     // 3D static-sized vector
-    /// @brief constructs matrix from the supplied state
+    /// @brief initializes a fixed three-dimensional vector from its coordinates
     constexpr Matrix(Scalar x, Scalar y, Scalar z)
         requires(!internals::is_dynamic_sized_v<Base> && (Cols_ == 1 || Rows_ == 1))
         : Base() {
@@ -464,7 +463,7 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
     }
 
     // constructors taking external data
-    /// @brief constructs matrix from the supplied state
+    /// @brief copies row-ordered input, inferring the length only for dynamic vectors
     constexpr explicit Matrix(const std::vector<Scalar>& data) :
         Base(
           Rows_ == Dynamic ? internals::checked_matrix_data_size(data.size()) : Rows_,
@@ -485,7 +484,7 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
             for (int j = 0, m = cols; j < m; ++j) { this->operator()(i, j) = data[i * cols + j]; }
         }
     }
-    /// @brief constructs matrix from the supplied state
+    /// @brief copies a fixed-size C array into matrix coordinates in logical row order
     template <std::size_t Size> constexpr explicit Matrix(const Scalar (&data)[Size]) : Base() {
         fdapde_static_assert(
           Rows_ != Dynamic && Cols_ != Dynamic && StorageSize == Size, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
@@ -493,7 +492,7 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
             for (int j = 0; j < Cols_; ++j) { this->operator()(i, j) = data[i * Cols_ + j]; }
         }
     }
-    /// @brief assigns the supplied coefficients
+    /// @brief copies initializer values into a vector, resizing only a dynamic length
     constexpr Matrix& operator=(const std::initializer_list<Scalar>& data) & {
         fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
         const int size = internals::checked_matrix_data_size(data.size());
@@ -551,7 +550,7 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
     }
 
     // modifiers
-    /// @brief resizes the owned storage to the requested dimensions
+    /// @brief updates dimensions and strides while retaining the common prefix of physical storage
     void resize(int rows, int cols) {
         fdapde_static_assert(Rows_ == Dynamic || Cols_ == Dynamic, THIS_METHOD_IS_FOR_DYNAMIC_SIZED_MATRICES_ONLY);
         internals::validate_matrix_shape<Rows_, Cols_>(rows, cols);
@@ -567,7 +566,7 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
         this->col_stride_ = StorageOrder_ == RowMajor ? 1 : rows_;
         return;
     }
-    /// @brief resizes the owned storage to the requested dimensions
+    /// @brief changes a dynamic vector length while retaining its existing coefficient prefix
     void resize(int size) {
         fdapde_static_assert(
           (Rows_ == 1 && Cols_ == Dynamic) || (Cols_ == 1 && Rows_ == Dynamic),
@@ -595,7 +594,7 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
     /// @brief returns the past-the-end iterator
     constexpr const_iterator end() const { return data_.end(); }
    private:
-    /// @brief returns an owning copy of the coefficients
+    /// @brief resizes dynamic storage if needed and copies source coefficients in logical coordinates
     template <typename RhsXprType> constexpr void clone_(const RhsXprType& rhs) {
         if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) {
             if constexpr (Rows_ == 1 || Cols_ == 1) {
@@ -626,39 +625,39 @@ class MatrixView :
     static constexpr int ReadOnly = Base::ReadOnly;
 
     // constructors
-    /// @brief constructs matrix view from the supplied state
+    /// @brief copies the pointer and dimensions while sharing the same external storage
     constexpr MatrixView(const MatrixView&) = default;
-    /// @brief constructs matrix view from the supplied state
+    /// @brief creates an empty dynamic view without binding external storage
     constexpr MatrixView()
         requires(Rows_ == Dynamic || Cols_ == Dynamic)
         : Base(), data_(nullptr) { }
-    /// @brief constructs matrix view from the supplied state
+    /// @brief rejects a fixed-size view without an explicit storage pointer
     constexpr MatrixView()
         requires(Rows_ != Dynamic && Cols_ != Dynamic)
     = delete;
-    /// @brief constructs matrix view from the supplied state
+    /// @brief binds external storage using the compile-time matrix dimensions
     constexpr explicit MatrixView(Scalar* data) : Base(), data_(data) {
         fdapde_static_assert(Rows_ != Dynamic && Cols_ != Dynamic, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
     }
-    /// @brief constructs matrix view from the supplied state
+    /// @brief binds external storage as a vector of the requested positive length
     constexpr MatrixView(Scalar* data, int size) : Base(size), data_(data) {
         fdapde_static_assert(Rows_ == 1 || Cols_ == 1, THIS_METHOD_IS_FOR_ROW_OR_COLUMN_VECTORS_ONLY);
         fdapde_assert(!(size <= 0), std::invalid_argument, "matrix view size must be positive");
     }
-    /// @brief constructs matrix view from the supplied state
+    /// @brief binds external storage with positive dimensions and the selected storage order
     constexpr MatrixView(Scalar* data, int rows, int cols) : Base(rows, cols), data_(data) {
         fdapde_assert(!(rows <= 0 || cols <= 0), std::invalid_argument, "matrix view dimensions must be positive");
     }
     // inherit expression assignment without the owner-style MatrixBase copy assignment
     using XprBase::operator=;
-    /// @brief assigns the supplied coefficients
+    /// @brief copies logical coefficients into the bound storage without rebinding the view
     constexpr MatrixView& operator=(const MatrixView& other) &
         requires(ReadOnly == 0)
     {
         static_cast<XprBase&>(*this).template operator= <MatrixView>(other);
         return *this;
     }
-    /// @brief assigns the supplied coefficients
+    /// @brief copies into a temporary view's bound storage and returns the view by value
     constexpr MatrixView operator=(const MatrixView& other) &&
       requires(ReadOnly == 0) {
           static_cast<XprBase&>(*this).template operator= <MatrixView>(other);

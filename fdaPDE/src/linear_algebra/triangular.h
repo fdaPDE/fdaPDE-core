@@ -22,16 +22,16 @@
 namespace fdapde {
 
 // triangular matrix type system
-/// @brief represents triangular matrix expr
+/// @brief provides triangular expression arithmetic, determinant and substitution solves
 template <typename XprType> struct TriangularMatrixExpr;
 /// @brief owns a triangular matrix
 template <typename Scalar_, int Rows_, int Cols_, int ViewMode_, int StorageOrder_ = RowMajor> struct TriangularMatrix;
-/// @brief represents triangular matrix view
+/// @brief views external packed storage as an upper or lower triangular matrix
 template <typename Scalar_, int Rows_, int Cols_, int ViewMode_, int StorageOrder_> class TriangularMatrixView;
 
 namespace internals {
 
-/// @brief detects is mutable matrix view
+/// @brief identifies a view whose scalar type permits writes
 template <typename Scalar, int Rows, int Cols, int ViewMode, int StorageOrder>
 struct is_mutable_matrix_view<TriangularMatrixView<Scalar, Rows, Cols, ViewMode, StorageOrder>> :
     std::bool_constant<!std::is_const_v<Scalar>> { };
@@ -91,9 +91,9 @@ constexpr decltype(auto) triangular_access(XprType& xpr, int i, int j, [[maybe_u
     }
 }
 
-/// @brief represents triangular assignment executor
+/// @brief updates stored triangular coefficients while leaving structural zeros implicit
 struct triangular_assignment_executor {
-    /// @brief executes the coefficient operation over the supplied expressions
+    /// @brief applies an assignment functor to the selected triangle after validating matrix or packed-vector input
     template <typename DstMatrixType, typename SrcXprType, typename AssignmentOp>
     static constexpr void run(DstMatrixType& dst, const SrcXprType& src, AssignmentOp&& op) {
         fdapde_static_assert(DstMatrixType::ReadOnly == 0, ASSIGNMENT_TO_A_READ_ONLY_EXPRESSION);
@@ -135,7 +135,7 @@ struct triangular_assignment_executor {
 };
 
 // class wrapping a matrix expression to the expression of a triangular matrix. internal usage only
-/// @brief represents triangular wrapper
+/// @brief interprets a square matrix or packed vector as a triangular expression
 template <int ViewMode_, typename TriangularXprType_>
 struct triangular_wrapper : TriangularMatrixExpr<triangular_wrapper<ViewMode_, TriangularXprType_>> {
    private:
@@ -155,9 +155,9 @@ struct triangular_wrapper : TriangularMatrixExpr<triangular_wrapper<ViewMode_, T
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
 
-    /// @brief constructs triangular wrapper from the supplied state
+    /// @brief copies the triangular adaptor while retaining its nested representation
     constexpr triangular_wrapper(const triangular_wrapper&) = default;
-    /// @brief constructs triangular wrapper from the supplied state
+    /// @brief adapts a square expression or packed vector to the selected triangular structure
     template <typename XprType__>
         requires(!std::same_as<std::remove_cvref_t<XprType__>, triangular_wrapper> &&
                  internals::safely_nestable<XprTypeNested, XprType__>)
@@ -169,7 +169,7 @@ struct triangular_wrapper : TriangularMatrixExpr<triangular_wrapper<ViewMode_, T
           !(rows_ < 0 || cols_ < 0 || (!is_vector_shaped_v<XprTypeClean> && rows_ != cols_)), std::invalid_argument,
           "triangular expression requires square dimensions or a valid packed length");
     }
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief reads the selected triangular region and returns zero outside it
     constexpr Scalar operator()(int i, int j) const {
         fdapde_assert(
           !(i < 0 || i >= rows_ || j < 0 || j >= cols_), std::out_of_range, "triangular matrix index out of range");
@@ -200,7 +200,7 @@ template <int ViewMode_, typename XprType_> auto triangular_cast(XprType_&& xpr)
 
 }   // namespace internals
 
-/// @brief represents triangular matrix expr
+/// @brief provides triangular expression arithmetic, determinant and substitution solves
 template <typename XprType_> struct TriangularMatrixExpr : public MatrixExpr<XprType_> {
     using XprType = std::decay_t<XprType_>;
     using Base = MatrixExpr<XprType_>;
@@ -268,7 +268,7 @@ template <typename XprType_> struct TriangularMatrixExpr : public MatrixExpr<Xpr
         return inverse_;
     }
     // linear system solver Ax = b
-    /// @brief solves the factored linear system for the supplied right-hand side
+    /// @brief solves a triangular system with vector or matrix right-hand sides by forward or backward substitution
     template <typename RhsXprType> constexpr auto solve(const RhsXprType& b) const {
         constexpr int ViewMode = XprType::ViewMode;
         if constexpr (ViewMode == Lower) { return fwd_sub_(b); }
@@ -390,7 +390,7 @@ template <typename XprType_> struct TriangularMatrixExpr : public MatrixExpr<Xpr
 };
 
 // expression of the triangular part of a matrix
-/// @brief represents triangular
+/// @brief borrows the selected triangle of a square matrix expression
 template <int ViewMode_, typename XprType_>
 struct Triangular : public TriangularMatrixExpr<Triangular<ViewMode_, XprType_>> {
    private:
@@ -408,48 +408,49 @@ struct Triangular : public TriangularMatrixExpr<Triangular<ViewMode_, XprType_>>
     static constexpr int ReadOnly = std::is_const_v<XprType> || XprTypeClean::ReadOnly;
     using assignment_executor = internals::triangular_assignment_executor;
 
-    /// @brief represents triangular proxy
+    /// @brief reads structural zeros and restricts writes to the selected triangle
     template <int ViewMode__, typename XprType__> struct triangular_proxy {
         using Scalar = typename XprType__::Scalar;
 
-        /// @brief constructs triangular proxy from the supplied state
+        /// @brief binds a parent coefficient and records whether it belongs to the selected triangle
         constexpr triangular_proxy(XprType__& xpr, int i, int j) :
             xpr_(xpr), i_(i), j_(j), b_(ViewMode__ == Upper ? (i <= j) : (i >= j)) { }
-        /// @brief assigns the supplied coefficients
+        /// @brief writes the dense source coefficient only when it lies in the selected triangle
         template <typename T>
             requires(std::is_convertible_v<T, Scalar> && !std::is_const_v<XprType__>)
         constexpr triangular_proxy& operator=(T value) {
             if (b_) xpr_(i_, j_) = value;   // do nothing otherwise
             return *this;
         }
-        /// @brief adds the supplied coefficients in place
+        /// @brief adds to the bound coefficient only inside the selected triangle
         template <typename T>
             requires(std::is_convertible_v<T, Scalar> && !std::is_const_v<XprType__>)
         constexpr triangular_proxy& operator+=(T value) {
             if (b_) xpr_(i_, j_) += value;
             return *this;
         }
-        /// @brief subtracts the supplied coefficients in place
+        /// @brief subtracts from the bound coefficient only inside the selected triangle
         template <typename T>
             requires(std::is_convertible_v<T, Scalar> && !std::is_const_v<XprType__>)
         constexpr triangular_proxy& operator-=(T value) {
             if (b_) xpr_(i_, j_) -= value;
             return *this;
         }
-        /// @brief multiplies in place by the supplied operand
+        /// @brief scales the bound coefficient only inside the selected triangle
         template <typename T>
             requires(std::is_convertible_v<T, Scalar> && !std::is_const_v<XprType__>)
         constexpr triangular_proxy& operator*=(T value) {
             if (b_) xpr_(i_, j_) *= value;
             return *this;
         }
-        /// @brief divides in place by the supplied scalar
+        /// @brief divides the bound coefficient only inside the selected triangle
         template <typename T>
             requires(std::is_convertible_v<T, Scalar> && !std::is_const_v<XprType__>)
         constexpr triangular_proxy& operator/=(T value) {
             if (b_) xpr_(i_, j_) /= value;
             return *this;
         }
+        /// @brief reads the bound dense coefficient or the implicit zero outside the triangle
         constexpr operator Scalar() const { return b_ ? xpr_(i_, j_) : Scalar(0); }
        private:
         XprType__& xpr_;
@@ -460,9 +461,9 @@ struct Triangular : public TriangularMatrixExpr<Triangular<ViewMode_, XprType_>>
     using const_reference = triangular_proxy<ViewMode, const XprTypeClean>;
 
     // constructor
-    /// @brief constructs triangular from the supplied state
+    /// @brief copies the triangular view while sharing its nested expression
     constexpr Triangular(const Triangular&) = default;
-    /// @brief constructs triangular from the supplied state
+    /// @brief borrows one triangle of a square expression and supplies zeros outside it
     template <typename XprType__>
         requires(
           !std::same_as<std::remove_cvref_t<XprType__>, Triangular> &&
@@ -473,12 +474,12 @@ struct Triangular : public TriangularMatrixExpr<Triangular<ViewMode_, XprType_>>
         fdapde_assert(!(xpr_.rows() != xpr_.cols()), std::invalid_argument, "triangular view requires a square matrix");
     }
     // access
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief returns a read-only dense-backed proxy that masks the opposite triangle
     constexpr const_reference operator()(int i, int j) const {
         internals::validate_matrix_index(i, j, xpr_.rows(), xpr_.cols());
         return const_reference(std::as_const(xpr_), i, j);
     }
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief returns a writable dense-backed proxy that ignores writes outside the triangle
     constexpr reference operator()(int i, int j)
         requires(ReadOnly == 0)
     {
@@ -503,7 +504,7 @@ struct Triangular : public TriangularMatrixExpr<Triangular<ViewMode_, XprType_>>
 };
 
 // base class for triangular matrices
-/// @brief represents triangular matrix base
+/// @brief maps upper or lower triangular coordinates to packed storage
 template <typename Scalar_, int Rows_, int Cols_, int ViewMode_, int StorageOrder_, typename TriangularMatrixType>
 class TriangularMatrixBase : public TriangularMatrixExpr<TriangularMatrixType> {
    protected:
@@ -518,7 +519,7 @@ class TriangularMatrixBase : public TriangularMatrixExpr<TriangularMatrixType> {
     static constexpr int ReadOnly = std::is_const_v<Scalar_>;
     using Base::operator=;
 
-    /// @brief represents triangular proxy
+    /// @brief reads structural zeros and restricts writes to the selected triangle
     template <int ViewMode__, typename Scalar__>
         requires(
           std::is_same_v<std::remove_cv_t<Scalar>, std::remove_cv_t<Scalar__>> &&
@@ -526,44 +527,45 @@ class TriangularMatrixBase : public TriangularMatrixExpr<TriangularMatrixType> {
     struct triangular_proxy {
         using Scalar = Scalar__;
 
-        /// @brief constructs triangular proxy from the supplied state
+        /// @brief maps a coordinate to packed storage and records whether it lies inside the stored triangle
         constexpr triangular_proxy(Scalar__* data, int i, int j, int size) :
             data_(data), index_(triangular_access_(i, j, size)), b_(ViewMode__ == Upper ? (i <= j) : (i >= j)) { }
-        /// @brief assigns the supplied coefficients
+        /// @brief writes the packed coefficient only when it lies in the selected triangle
         template <typename T>
             requires(std::is_convertible_v<T, std::remove_cv_t<Scalar__>> && !std::is_const_v<Scalar__>)
         constexpr triangular_proxy& operator=(T value) {
             if (b_) data_[index_] = value;   // do nothing otherwise
             return *this;
         }
-        /// @brief adds the supplied coefficients in place
+        /// @brief adds to the bound coefficient only inside the selected triangle
         template <typename T>
             requires(std::is_convertible_v<T, std::remove_cv_t<Scalar__>> && !std::is_const_v<Scalar__>)
         constexpr triangular_proxy& operator+=(T value) {
             if (b_) data_[index_] += value;
             return *this;
         }
-        /// @brief subtracts the supplied coefficients in place
+        /// @brief subtracts from the bound coefficient only inside the selected triangle
         template <typename T>
             requires(std::is_convertible_v<T, std::remove_cv_t<Scalar__>> && !std::is_const_v<Scalar__>)
         constexpr triangular_proxy& operator-=(T value) {
             if (b_) data_[index_] -= value;
             return *this;
         }
-        /// @brief multiplies in place by the supplied operand
+        /// @brief scales the bound coefficient only inside the selected triangle
         template <typename T>
             requires(std::is_convertible_v<T, std::remove_cv_t<Scalar__>> && !std::is_const_v<Scalar__>)
         constexpr triangular_proxy& operator*=(T value) {
             if (b_) data_[index_] *= value;
             return *this;
         }
-        /// @brief divides in place by the supplied scalar
+        /// @brief divides the bound coefficient only inside the selected triangle
         template <typename T>
             requires(std::is_convertible_v<T, std::remove_cv_t<Scalar__>> && !std::is_const_v<Scalar__>)
         constexpr triangular_proxy& operator/=(T value) {
             if (b_) data_[index_] /= value;
             return *this;
         }
+        /// @brief reads the packed coefficient or the implicit zero outside the triangle
         constexpr operator std::remove_cv_t<Scalar__>() const {
             return b_ ? data_[index_] : std::remove_cv_t<Scalar__>(0);
         }
@@ -580,9 +582,9 @@ class TriangularMatrixBase : public TriangularMatrixExpr<TriangularMatrixType> {
     using reference = triangular_proxy<ViewMode, Scalar>;
     using const_reference = triangular_proxy<ViewMode, const std::remove_const_t<Scalar>>;
 
-    /// @brief constructs triangular matrix base from the supplied state
+    /// @brief initializes fixed square dimensions or an empty dynamic shape
     constexpr TriangularMatrixBase() : rows_(default_shape_()), cols_(default_shape_()) { }
-    /// @brief constructs triangular matrix base from the supplied state
+    /// @brief validates square dimensions and their agreement with compile-time extents
     constexpr TriangularMatrixBase(int rows, int cols) :
         rows_(Rows == Dynamic ? rows : Rows), cols_(Cols == Dynamic ? cols : Cols) {
         internals::validate_matrix_shape<Rows, Cols>(rows, cols);
@@ -590,12 +592,12 @@ class TriangularMatrixBase : public TriangularMatrixExpr<TriangularMatrixType> {
         fdapde_assert(!(rows_ != cols_), std::invalid_argument, "triangular matrix requires square dimensions");
     }
     // access
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief returns a read-only packed proxy that masks the opposite triangle
     constexpr const_reference operator()(int i, int j) const {
         internals::validate_matrix_index(i, j, rows_, cols_);
         return const_reference(derived().data(), i, j, rows_);
     }
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief returns a writable packed proxy that ignores writes outside the triangle
     constexpr reference operator()(int i, int j)
         requires(ReadOnly == 0)
     {
@@ -618,33 +620,33 @@ class TriangularMatrixBase : public TriangularMatrixExpr<TriangularMatrixType> {
 };
 
 // triangular matrix subalgebra of the associative algebra of square matrices
-/// @brief implements the operator+ expression operation
+/// @brief adds equally shaped operands while preserving the selected triangle
 template <typename LhsXprType, typename RhsXprType>
     requires(LhsXprType::ViewMode == RhsXprType::ViewMode)   // if summing different ViewMode, exit from triangular TS
 constexpr auto operator+(const TriangularMatrixExpr<LhsXprType>& lhs, const TriangularMatrixExpr<RhsXprType>& rhs) {
     return internals::triangular_cast<LhsXprType::ViewMode>(
       MatrixBinOp<LhsXprType, RhsXprType, std::plus<>>(lhs.derived(), rhs.derived(), std::plus<>()));
 }
-/// @brief implements the operator- expression operation
+/// @brief subtracts equally shaped operands while preserving the selected triangle
 template <typename LhsXprType, typename RhsXprType>
     requires(LhsXprType::ViewMode == RhsXprType::ViewMode)   // if summing different ViewMode, exit from triangular TS
 constexpr auto operator-(const TriangularMatrixExpr<LhsXprType>& lhs, const TriangularMatrixExpr<RhsXprType>& rhs) {
     return internals::triangular_cast<LhsXprType::ViewMode>(
       MatrixBinOp<LhsXprType, RhsXprType, std::minus<>>(lhs.derived(), rhs.derived(), std::minus<>()));
 }
-/// @brief implements the operator* expression operation
+/// @brief scales by the right scalar while preserving the selected triangle
 template <typename XprType, typename CoeffType>
     requires(std::is_arithmetic_v<CoeffType>)
 constexpr auto operator*(const TriangularMatrixExpr<XprType>& lhs, CoeffType rhs) {
     return internals::triangular_cast<XprType::ViewMode>(lhs.rep() * rhs);
 }
-/// @brief implements the operator* expression operation
+/// @brief scales by the left scalar while preserving the selected triangle
 template <typename XprType, typename CoeffType>
     requires(std::is_arithmetic_v<CoeffType>)
 constexpr auto operator*(CoeffType lhs, const TriangularMatrixExpr<XprType>& rhs) {
     return internals::triangular_cast<XprType::ViewMode>(lhs * rhs.rep());
 }
-/// @brief implements the operator/ expression operation
+/// @brief divides each coefficient by the scalar while preserving the selected triangle
 template <typename XprType, typename CoeffType>
     requires(std::is_arithmetic_v<CoeffType>)
 constexpr auto operator/(const TriangularMatrixExpr<XprType>& lhs, CoeffType rhs) {
@@ -655,9 +657,9 @@ constexpr auto operator/(const TriangularMatrixExpr<XprType>& lhs, CoeffType rhs
 namespace internals {
 
 // expressions of the (i,j)-th entry of the product between a triangular and a dense matrix expression
-/// @brief represents triangular matrix product executor
+/// @brief limits product summation to the nonzero part of a triangular operand
 template <int ProductMode> struct triangular_matrix_product_executor {
-    /// @brief executes the coefficient operation over the supplied expressions
+    /// @brief evaluates a product entry using only the nonzero range of the triangular operand
     template <typename LhsXprType_, typename RhsXprType_>
     static constexpr auto run(int i, int j, const LhsXprType_& lhs, const RhsXprType_& rhs) {
         using TriXprType = std::decay_t<std::conditional_t<ProductMode == LhsMode, LhsXprType_, RhsXprType_>>;
@@ -675,9 +677,9 @@ template <int ProductMode> struct triangular_matrix_product_executor {
 };
 
 // expressions of the (i,j)-th entry of the product between triangular expressions
-/// @brief represents triangular triangular product executor
+/// @brief evaluates structured product entries using both operand triangle modes
 struct triangular_triangular_product_executor {
-    /// @brief executes the coefficient operation over the supplied expressions
+    /// @brief evaluates a structured product entry according to the two operand triangle modes
     template <typename LhsXprType_, typename RhsXprType_>
     static constexpr auto run(int i, int j, const LhsXprType_& lhs, const RhsXprType_& rhs) {
         using LhsXprType = std::decay_t<LhsXprType_>;
@@ -702,14 +704,14 @@ struct triangular_triangular_product_executor {
 }   // namespace internals
 
 // diagonal scaling preserves triangular structure
-/// @brief implements the operator* expression operation
+/// @brief scales triangular rows by the left diagonal while preserving the triangle
 template <typename LhsXprType, typename RhsXprType>
 constexpr auto operator*(const DiagonalMatrixExpr<LhsXprType>& lhs, const TriangularMatrixExpr<RhsXprType>& rhs) {
     return MatrixMultiplicationOp<LhsXprType, RhsXprType, internals::diagonal_matrix_product_executor<LhsMode>> {
       lhs.derived(), rhs.derived()}
       .template triangular_block<RhsXprType::ViewMode>();
 }
-/// @brief implements the operator* expression operation
+/// @brief scales triangular columns by the right diagonal while preserving the triangle
 template <typename LhsXprType, typename RhsXprType>
 constexpr auto operator*(const TriangularMatrixExpr<LhsXprType>& lhs, const DiagonalMatrixExpr<RhsXprType>& rhs) {
     return MatrixMultiplicationOp<LhsXprType, RhsXprType, internals::diagonal_matrix_product_executor<RhsMode>> {
@@ -718,21 +720,21 @@ constexpr auto operator*(const TriangularMatrixExpr<LhsXprType>& lhs, const Diag
 }
 
 // triangular * M
-/// @brief implements the operator* expression operation
+/// @brief multiplies a triangular left operand using only its nonzero region
 template <typename LhsXprType, typename RhsXprType>
 constexpr auto operator*(const TriangularMatrixExpr<LhsXprType>& lhs, const MatrixExpr<RhsXprType>& rhs) {
     return MatrixMultiplicationOp<LhsXprType, RhsXprType, internals::triangular_matrix_product_executor<LhsMode>> {
       lhs.derived(), rhs.derived()};
 }
 // m * Triangular
-/// @brief implements the operator* expression operation
+/// @brief multiplies a triangular right operand using only its nonzero region
 template <typename LhsXprType, typename RhsXprType>
 constexpr auto operator*(const MatrixExpr<LhsXprType>& lhs, const TriangularMatrixExpr<RhsXprType>& rhs) {
     return MatrixMultiplicationOp<LhsXprType, RhsXprType, internals::triangular_matrix_product_executor<RhsMode>> {
       lhs.derived(), rhs.derived()};
 }
 // triangular * Triangular
-/// @brief implements the operator* expression operation
+/// @brief multiplies triangular operands, retaining structure only when their triangles agree
 template <typename LhsXprType, typename RhsXprType>
 constexpr auto operator*(const TriangularMatrixExpr<LhsXprType>& lhs, const TriangularMatrixExpr<RhsXprType>& rhs) {
     if constexpr (LhsXprType::ViewMode == RhsXprType::ViewMode) {
@@ -776,32 +778,32 @@ struct TriangularMatrix :
     static constexpr int StorageOrder = StorageOrder_;
     using assignment_executor = internals::triangular_assignment_executor;
 
-    /// @brief constructs triangular matrix from the supplied state
+    /// @brief value-initializes fixed packed storage and leaves dynamic storage empty
     constexpr TriangularMatrix() : Base(), data_() { }
-    /// @brief constructs triangular matrix from the supplied state
+    /// @brief copies the selected triangle into independent packed storage
     constexpr TriangularMatrix(const TriangularMatrix& rhs) : Base(rhs.rows(), rhs.cols()), data_() { clone_(rhs); }
-    /// @brief assigns the supplied coefficients
+    /// @brief copies the source shape and packed coefficients into independent storage
     constexpr TriangularMatrix& operator=(const TriangularMatrix& rhs) & {
         if (this != &rhs) clone_(rhs);
         return *this;
     }
-    /// @brief assigns the supplied coefficients
+    /// @brief rejects assignment to a temporary triangular owner
     constexpr void operator=(const TriangularMatrix&) && = delete;
     using Base::operator=;
 
-    /// @brief constructs triangular matrix from the supplied state
+    /// @brief validates square dimensions and allocates dynamic packed triangular storage
     constexpr explicit TriangularMatrix(int rows, int cols) : Base(rows, cols), data_() {
         fdapde_static_assert(Rows == Dynamic || Cols == Dynamic, THIS_METHOD_IS_FOR_DYNAMIC_SIZED_MATRICES_ONLY);
         const int storage_size = internals::checked_triangular_storage_size(this->rows_);
         if constexpr (StorageSize == Dynamic) { data_.resize(storage_size); }
     }
-    /// @brief constructs triangular matrix from the supplied state
+    /// @brief copies the selected triangle of a matrix expression into packed storage
     template <typename RhsXprType_>
     constexpr TriangularMatrix(const MatrixExpr<RhsXprType_>& rhs) : Base(rhs.rows(), rhs.cols()), data_() {
         if constexpr (StorageSize == Dynamic) { data_.resize(internals::checked_triangular_storage_size(this->rows_)); }
         assignment_executor::run(*this, rhs.derived(), [](auto&& l, const auto& r) { l = r; });
     }
-    /// @brief constructs triangular matrix from the supplied state
+    /// @brief copies packed coefficients and infers dynamic dimensions from their triangular count
     template <typename Scalar__>
         requires(std::is_constructible_v<Scalar_, Scalar__>)
     constexpr explicit TriangularMatrix(const std::vector<Scalar__>& data) :
@@ -814,7 +816,7 @@ struct TriangularMatrix :
           "packed triangular input does not match its static size");
         for (int i = 0; i < input_size; ++i) data_[i] = data[static_cast<std::size_t>(i)];
     }
-    /// @brief constructs triangular matrix from the supplied state
+    /// @brief copies a C array matching the fixed packed triangular size
     template <typename Scalar__, std::size_t Size>
         requires(std::is_constructible_v<Scalar_, Scalar__>)
     constexpr explicit TriangularMatrix(const Scalar__ (&data)[Size]) : Base(), data_() {
@@ -847,7 +849,7 @@ struct TriangularMatrix :
     /// @brief returns the underlying storage pointer
     constexpr Scalar_* data() { return data_.data(); }
    private:
-    /// @brief returns an owning copy of the coefficients
+    /// @brief resizes dynamic packed storage if needed and copies the source triangle
     template <typename RhsXprType> constexpr void clone_(const RhsXprType& rhs) {
         if constexpr (Rows == Dynamic || Cols == Dynamic) { resize(rhs.rows(), rhs.cols()); }
         assignment_executor::run(*this, rhs, [](auto&& l, const auto& r) { l = r; });
@@ -856,7 +858,7 @@ struct TriangularMatrix :
 };
 
 // non-owning view of packed triangular storage
-/// @brief represents triangular matrix view
+/// @brief views external packed storage as an upper or lower triangular matrix
 template <typename Scalar_, int Rows_, int Cols_, int ViewMode_, int StorageOrder_>
 class TriangularMatrixView :
     public TriangularMatrixBase<
@@ -887,24 +889,24 @@ class TriangularMatrixView :
     fdapde_static_assert(HasSupportedStaticStorage, MATRIX_SIZE_EXCEEDS_SUPPORTED_RANGE);
     using assignment_executor = internals::triangular_assignment_executor;
 
-    /// @brief constructs triangular matrix view from the supplied state
+    /// @brief copies the binding to external packed triangular storage
     constexpr TriangularMatrixView(const TriangularMatrixView&) = default;
-    /// @brief constructs triangular matrix view from the supplied state
+    /// @brief creates an empty fully dynamic triangular view without a buffer
     constexpr TriangularMatrixView()
         requires(Rows_ == Dynamic && Cols_ == Dynamic)
         : Base(), data_(nullptr) { }
-    /// @brief constructs triangular matrix view from the supplied state
+    /// @brief rejects default construction when either dimension is fixed
     constexpr TriangularMatrixView()
         requires(Rows_ != Dynamic || Cols_ != Dynamic)
     = delete;
-    /// @brief constructs triangular matrix view from the supplied state
+    /// @brief binds fixed dimensions to nonnull packed triangular storage
     template <typename Scalar__>
         requires(std::is_convertible_v<Scalar__*, Scalar_*>)
     constexpr explicit TriangularMatrixView(Scalar__* data) : Base(), data_(data) {
         fdapde_static_assert(Rows != Dynamic && Cols != Dynamic, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
         fdapde_assert(!(data == nullptr), std::invalid_argument, "nonempty triangular view requires storage");
     }
-    /// @brief constructs triangular matrix view from the supplied state
+    /// @brief validates square dimensions and binds external storage, permitting null only for an empty shape
     template <typename Scalar__>
         requires(std::is_convertible_v<Scalar__*, Scalar_*>)
     constexpr TriangularMatrixView(Scalar__* data, int rows, int cols) : Base(rows, cols), data_(data) {
@@ -912,14 +914,14 @@ class TriangularMatrixView :
           !(this->rows_ > 0 && data == nullptr), std::invalid_argument, "nonempty triangular view requires storage");
     }
     using Base::operator=;
-    /// @brief assigns the supplied coefficients
+    /// @brief copies a triangular source snapshot into bound storage without rebinding the view
     constexpr TriangularMatrixView& operator=(const TriangularMatrixView& other) &
         requires(ReadOnly == 0)
     {
         static_cast<Base&>(*this).template operator= <TriangularMatrixView>(other);
         return *this;
     }
-    /// @brief assigns the supplied coefficients
+    /// @brief copies into a temporary triangular view and returns its binding by value
     constexpr TriangularMatrixView operator=(const TriangularMatrixView& other) &&
       requires(ReadOnly == 0) {
           static_cast<Base&>(*this).template operator= <TriangularMatrixView>(other);
@@ -966,7 +968,7 @@ template <typename Scalar, int Rows, int Cols, int StorageOrder = RowMajor>
 using LowerTriangularMatrixView = TriangularMatrixView<Scalar, Rows, Cols, Lower, StorageOrder>;
 
 // detection trait
-/// @brief detects is triangular matrix
+/// @brief identifies triangular matrix expressions after removing cv and reference qualifiers
 template <typename XprType> struct is_triangular_matrix {
     using Type = std::remove_cvref_t<XprType>;
     static constexpr bool value = std::is_base_of_v<TriangularMatrixExpr<Type>, Type>;

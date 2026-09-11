@@ -67,50 +67,49 @@ using const_dense_diagonal = decltype(std::declval<const lifetime_matrix&>().dia
 using mutable_diagonal_view = DiagonalMatrixView<double, 3>;
 using const_diagonal_view = DiagonalMatrixView<const double, 3>;
 
-// checks at compile time: !permits_temporary_diagonal<lifetime_matrix>
+// a temporary dense owner cannot lend its diagonal
 static_assert(!permits_temporary_diagonal<lifetime_matrix>);
-// checks at compile time: !permits_const_temporary_diagonal<lifetime_matrix>
+// a const temporary dense owner cannot lend its diagonal
 static_assert(!permits_const_temporary_diagonal<lifetime_matrix>);
-// checks at compile time: !permits_temporary_as_diagonal<lifetime_vector>
+// a temporary vector owner cannot lend a diagonal-matrix wrapper
 static_assert(!permits_temporary_as_diagonal<lifetime_vector>);
-// checks at compile time: !permits_const_temporary_as_diagonal<lifetime_vector>
+// a const temporary vector owner cannot lend a diagonal-matrix wrapper
 static_assert(!permits_const_temporary_as_diagonal<lifetime_vector>);
-// checks at compile time: permits_expression_diagonal<lifetime_matrix>
+// a temporary expression can retain its diagonal while borrowing live operands
 static_assert(permits_expression_diagonal<lifetime_matrix>);
-// checks at compile time: permits_expression_as_diagonal<lifetime_vector>
+// a vector expression can be stored safely in a diagonal-matrix wrapper
 static_assert(permits_expression_as_diagonal<lifetime_vector>);
-// checks at compile time: mutable_dense_diagonal::ReadOnly == 0
+// a mutable dense owner's diagonal permits writes
 static_assert(mutable_dense_diagonal::ReadOnly == 0);
-// checks at compile time: const_dense_diagonal::ReadOnly == 1
+// a const dense owner's diagonal advertises read-only access
 static_assert(const_dense_diagonal::ReadOnly == 1);
-// checks at compile time: !permits_coefficient_write<const_dense_diagonal>
+// a const dense owner's diagonal rejects coefficient writes
 static_assert(!permits_coefficient_write<const_dense_diagonal>);
-// checks at compile time: !std::is_default_constructible_v<DiagonalMatrixView<double, 3>>
+// a fixed diagonal view requires a storage binding
 static_assert(!std::is_default_constructible_v<DiagonalMatrixView<double, 3>>);
-// checks at compile time: std::is_default_constructible_v<DiagonalMatrixView<double, Dynamic>>
+// a dynamic diagonal view permits an initially empty binding
 static_assert(std::is_default_constructible_v<DiagonalMatrixView<double, Dynamic>>);
-// checks at compile time: !std::is_constructible_v<DiagonalMatrixView<double, 3>, double*, int>
+// a fixed diagonal view does not accept a redundant runtime dimension
 static_assert(!std::is_constructible_v<DiagonalMatrixView<double, 3>, double*, int>);
-// checks at compile time: !exposes_owning_rvalue_derived<owning_diagonal>
+// a temporary diagonal owner cannot expose a dangling derived reference
 static_assert(!exposes_owning_rvalue_derived<owning_diagonal>);
-// checks at compile time: !permits_owning_rvalue_inverse<owning_diagonal>
+// a temporary diagonal owner cannot lend an inverse expression
 static_assert(!permits_owning_rvalue_inverse<owning_diagonal>);
-// checks at compile time: !permits_owning_rvalue_copy_assignment<owning_diagonal>
+// a temporary diagonal owner cannot return a borrow through copy assignment
 static_assert(!permits_owning_rvalue_copy_assignment<owning_diagonal>);
-// checks at compile time: permits_diagonal_assignment<mutable_diagonal_view, owning_diagonal>
+// a mutable diagonal view accepts assignment from an owner
 static_assert(permits_diagonal_assignment<mutable_diagonal_view, owning_diagonal>);
-// checks at compile time: !permits_diagonal_assignment<const_diagonal_view, owning_diagonal>
+// a const-storage diagonal view rejects assignment from an owner
 static_assert(!permits_diagonal_assignment<const_diagonal_view, owning_diagonal>);
-// checks at compile time: permits_diagonal_assignment<mutable_diagonal_view, mutable_diagonal_view>
+// a mutable diagonal view accepts assignment from another view
 static_assert(permits_diagonal_assignment<mutable_diagonal_view, mutable_diagonal_view>);
-// checks at compile time: !permits_diagonal_assignment<const_diagonal_view, mutable_diagonal_view>
+// a const-storage diagonal view rejects assignment from another view
 static_assert(!permits_diagonal_assignment<const_diagonal_view, mutable_diagonal_view>);
-// checks at compile time: is_diagonal_matrix_v<const owning_diagonal&>
+// the diagonal type trait recognizes a const reference to an owner
 static_assert(is_diagonal_matrix_v<const owning_diagonal&>);
-// checks at compile time: std::is_same_v<decltype(std::declval<const DiagonalMatrix<float,
-// 2>&>().determinant()), float>
+// a float diagonal determinant preserves the scalar return type
 static_assert(std::is_same_v<decltype(std::declval<const DiagonalMatrix<float, 2>&>().determinant()), float>);
-// checks at compile time: !std::is_constructible_v<owning_diagonal, lifetime_matrix&>
+// a diagonal owner rejects construction from an arbitrary dense matrix
 static_assert(!std::is_constructible_v<owning_diagonal, lifetime_matrix&>);
 
 template <int StorageOrder> void check_diagonal_contracts() {
@@ -118,40 +117,40 @@ template <int StorageOrder> void check_diagonal_contracts() {
     matrix_type dense({1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0});
     const Vector<double, 3> diagonal({2.0, 3.0, 4.0});
     dense.diagonal() = diagonal;
-    // compares dense, (matrix_type({2.0, 2.0, 3.0, 4.0, 3.0, 6.0, 7.0, 8.0, 4.0})) using eq semantics
+    // writing the diagonal updates only the dense matrix's three diagonal entries
     EXPECT_EQ(dense, (matrix_type({2.0, 2.0, 3.0, 4.0, 3.0, 6.0, 7.0, 8.0, 4.0})));
 
     const auto& const_dense = dense;
     auto const_diagonal = const_dense.diagonal();
-    // checks at compile time: decltype(const_diagonal)::ReadOnly == 1
+    // the diagonal of a const dense matrix remains read-only
     static_assert(decltype(const_diagonal)::ReadOnly == 1);
-    // checks at compile time: !permits_coefficient_write<decltype(const_diagonal)>
+    // the const dense diagonal does not expose writable coefficients
     static_assert(!permits_coefficient_write<decltype(const_diagonal)>);
-    // compares const_diagonal[2], 4.0 using double_eq semantics
+    // the const dense diagonal reads the updated final diagonal value
     EXPECT_DOUBLE_EQ(const_diagonal[2], 4.0);
 
     DiagonalMatrix<double, 3> matrix({2.0, 3.0, 4.0});
-    // compares matrix.determinant(), 24.0 using double_eq semantics
+    // the determinant equals the product 2 times 3 times 4
     EXPECT_DOUBLE_EQ(matrix.determinant(), 24.0);
-    // compares the expression result with the explicitly specified fixture
+    // dense conversion places the stored diagonal values among implicit zeros
     EXPECT_EQ(matrix, (matrix_type({2.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 4.0})));
     const DiagonalMatrix<double, 3> inverse(matrix.inverse());
-    // checks almost_equal(
+    // inverse reciprocates each diagonal entry within the numeric comparison tolerance
     EXPECT_TRUE(almost_equal(inverse, matrix_type({0.5, 0.0, 0.0, 0.0, 1.0 / 3.0, 0.0, 0.0, 0.0, 0.25})));
     const auto sum = matrix + matrix;
     const DiagonalMatrix<double, 3> sum_inverse(std::move(sum).inverse());
-    // checks almost_equal(
+    // inverse of a stored sum reciprocates the doubled diagonal
     EXPECT_TRUE(almost_equal(sum_inverse, matrix_type({0.25, 0.0, 0.0, 0.0, 1.0 / 6.0, 0.0, 0.0, 0.0, 0.125})));
-    // compares the expression result with the explicitly specified fixture
+    // chained diagonal addition evaluates to three times each original entry
     EXPECT_EQ((matrix_type((matrix + matrix) + matrix)), (matrix_type({6.0, 0.0, 0.0, 0.0, 9.0, 0.0, 0.0, 0.0, 12.0})));
 
     const Vector<double, 3> rhs({4.0, 9.0, 16.0});
-    // compares matrix.solve(rhs), (Vector<double, 3>({2.0, 3.0, 4.0})) using eq semantics
+    // solving a diagonal system divides each right-hand-side entry by its diagonal entry
     EXPECT_EQ(matrix.solve(rhs), (Vector<double, 3>({2.0, 3.0, 4.0})));
     const matrix_type operand({1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0});
-    // compares the expression result with the explicitly specified fixture
+    // left multiplication by a diagonal matrix scales the operand's rows
     EXPECT_EQ((matrix_type(matrix * operand)), (matrix_type({2.0, 4.0, 6.0, 12.0, 15.0, 18.0, 28.0, 32.0, 36.0})));
-    // compares the expression result with the explicitly specified fixture
+    // right multiplication by a diagonal matrix scales the operand's columns
     EXPECT_EQ((matrix_type(operand * matrix)), (matrix_type({2.0, 6.0, 12.0, 8.0, 15.0, 24.0, 14.0, 24.0, 36.0})));
 
     matrix_type compound = operand;
@@ -161,161 +160,160 @@ template <int StorageOrder> void check_diagonal_contracts() {
     compound.diagonal() *= 10.0;
     compound.diagonal() /= 10.0;
     compound.diagonal() -= threes;
-    // compares compound.diagonal(), (Vector<double, 3>::Ones()) using eq semantics
+    // compound diagonal operations reduce the diagonal to ones
     EXPECT_EQ(compound.diagonal(), (Vector<double, 3>::Ones()));
 
     const auto stored_dense_diagonal = (operand + operand).diagonal();
-    // compares (Vector<double, 3>(stored_dense_diagonal)), (Vector<double, 3>({2.0, 10.0, 18.0})) using eq
-    // semantics
+    // extracting the diagonal of a stored dense expression preserves its three sums
     EXPECT_EQ((Vector<double, 3>(stored_dense_diagonal)), (Vector<double, 3>({2.0, 10.0, 18.0})));
 
     std::array<double, 13> overlap_storage {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0};
     MatrixView<double, 3, 3, StorageOrder> overlap_source(overlap_storage.data());
     MatrixView<double, 3, 3, StorageOrder> overlap_destination(overlap_storage.data() + 4);
     overlap_destination.diagonal() = overlap_source.diagonal();
-    // compares the expression result with the explicitly specified fixture
+    // overlapping diagonal assignment reads all source values before overwriting storage
     EXPECT_EQ((Vector<double, 3>(overlap_destination.diagonal())), (Vector<double, 3>({1.0, 5.0, 9.0})));
 
     const Vector<double, 3> vector({2.0, 3.0, 4.0});
     const auto stored_diagonal_matrix = (vector + vector).as_diagonal();
-    // compares the expression result with the explicitly specified fixture
+    // wrapping a stored vector expression places its doubled entries on the diagonal
     EXPECT_EQ((matrix_type(stored_diagonal_matrix)), (matrix_type({4.0, 0.0, 0.0, 0.0, 6.0, 0.0, 0.0, 0.0, 8.0})));
 
     Matrix<double, Dynamic, Dynamic, StorageOrder> dynamic_dense(3, 3);
     dynamic_dense.diagonal() = diagonal;
-    // compares dynamic_dense.diagonal(), diagonal using eq semantics
+    // assigning through a dynamic dense diagonal updates the owner's diagonal
     EXPECT_EQ(dynamic_dense.diagonal(), diagonal);
     Matrix<double, Dynamic, Dynamic, StorageOrder> rectangular(2, 3);
-    // checks the exception category for the supplied invalid operation
+    // extracting a diagonal rejects a rectangular dense matrix
     EXPECT_THROW(static_cast<void>(rectangular.diagonal()), std::invalid_argument);
 
     Vector<double, Dynamic> dynamic_vector(std::vector<double> {1.0, 2.0, 3.0});
     const auto dynamic_wrapper = dynamic_vector.as_diagonal();
-    // compares dynamic_wrapper.rows(), 3 using eq semantics
+    // a dynamic vector wrapper uses vector length as its row count
     EXPECT_EQ(dynamic_wrapper.rows(), 3);
-    // compares dynamic_wrapper.cols(), 3 using eq semantics
+    // a dynamic vector wrapper uses vector length as its column count
     EXPECT_EQ(dynamic_wrapper.cols(), 3);
-    // compares dynamic_wrapper(2, 2), 3.0 using eq semantics
+    // the wrapper exposes the final vector entry at the final diagonal coordinate
     EXPECT_EQ(dynamic_wrapper(2, 2), 3.0);
 
     DiagonalMatrix<double, Dynamic> dynamic(std::vector<double> {1.0, 2.0, 3.0});
-    // compares dynamic.rows(), 3 using eq semantics
+    // a dynamic diagonal owner starts with the supplied dimension
     EXPECT_EQ(dynamic.rows(), 3);
     dynamic.resize(4);
-    // compares dynamic.rows(), 4 using eq semantics
+    // resizing a dynamic diagonal owner updates its row count
     EXPECT_EQ(dynamic.rows(), 4);
-    // compares dynamic.cols(), 4 using eq semantics
+    // resizing a dynamic diagonal owner keeps the shape square
     EXPECT_EQ(dynamic.cols(), 4);
 
     std::array<double, 3> view_storage {5.0, 6.0, 7.0};
     DiagonalMatrixView<double, 3> view(view_storage.data());
     auto fixed_view_diagonal = view.diagonal();
     fixed_view_diagonal[0] = 11.0;
-    // compares view_storage[0], 11.0 using double_eq semantics
+    // writing a diagonal view updates its bound external storage
     EXPECT_DOUBLE_EQ(view_storage[0], 11.0);
     const double* const view_address = view.data();
     view = matrix;
-    // compares view.data(), view_address using eq semantics
+    // assignment from an owner preserves the diagonal view's storage address
     EXPECT_EQ(view.data(), view_address);
-    // compares view, matrix using eq semantics
+    // assignment from an owner copies the complete logical diagonal matrix
     EXPECT_EQ(view, matrix);
     std::array<double, 3> second_view_storage {};
     DiagonalMatrixView<double, 3> second_view(second_view_storage.data());
     second_view = view;
-    // compares second_view.data(), second_view_storage.data() using eq semantics
+    // view-to-view assignment keeps the destination's original storage pointer
     EXPECT_EQ(second_view.data(), second_view_storage.data());
-    // compares second_view, view using eq semantics
+    // view-to-view assignment copies the source's logical coefficients
     EXPECT_EQ(second_view, view);
     DiagonalMatrixView<const double, 3> const_view(view_storage.data());
-    // checks at compile time: decltype(const_view)::ReadOnly == 1
+    // a const-storage diagonal view advertises read-only access
     static_assert(decltype(const_view)::ReadOnly == 1);
-    // checks at compile time: !permits_coefficient_write<decltype(const_view)>
+    // a const-storage diagonal view rejects coefficient writes
     static_assert(!permits_coefficient_write<decltype(const_view)>);
-    // compares const_view(1, 1), 3.0 using double_eq semantics
+    // a const-storage diagonal view reads its second stored diagonal entry
     EXPECT_DOUBLE_EQ(const_view(1, 1), 3.0);
     auto fixed_const_view_diagonal = const_view.diagonal();
-    // checks at compile time: decltype(fixed_const_view_diagonal)::ReadOnly == 1
+    // a diagonal extracted from a const view object remains read-only
     static_assert(decltype(fixed_const_view_diagonal)::ReadOnly == 1);
-    // checks at compile time: !permits_coefficient_write<decltype(fixed_const_view_diagonal)>
+    // a diagonal extracted from a const view object rejects coefficient writes
     static_assert(!permits_coefficient_write<decltype(fixed_const_view_diagonal)>);
-    // compares fixed_const_view_diagonal[1], 3.0 using double_eq semantics
+    // the const view's diagonal reads the same second stored entry
     EXPECT_DOUBLE_EQ(fixed_const_view_diagonal[1], 3.0);
 
     std::array<double, 3> dynamic_view_storage {8.0, 9.0, 10.0};
     DiagonalMatrixView<double, Dynamic> dynamic_view(dynamic_view_storage.data(), 3);
     auto dynamic_view_diagonal = dynamic_view.diagonal();
-    // compares dynamic_view_diagonal.size(), 3 using eq semantics
+    // a dynamic diagonal extraction spans the three stored diagonal entries
     EXPECT_EQ(dynamic_view_diagonal.size(), 3);
     dynamic_view_diagonal[1] = 12.0;
-    // compares dynamic_view_storage[1], 12.0 using double_eq semantics
+    // writing through the extracted dynamic diagonal updates external storage
     EXPECT_DOUBLE_EQ(dynamic_view_storage[1], 12.0);
     const auto& const_dynamic_view = dynamic_view;
     auto const_dynamic_view_diagonal = const_dynamic_view.diagonal();
-    // checks at compile time: decltype(const_dynamic_view_diagonal)::ReadOnly == 1
+    // a diagonal extracted from a const dynamic view remains read-only
     static_assert(decltype(const_dynamic_view_diagonal)::ReadOnly == 1);
-    // checks at compile time: !permits_coefficient_write<decltype(const_dynamic_view_diagonal)>
+    // a const dynamic view's diagonal rejects coefficient writes
     static_assert(!permits_coefficient_write<decltype(const_dynamic_view_diagonal)>);
-    // compares const_dynamic_view_diagonal[1], 12.0 using double_eq semantics
+    // the const dynamic diagonal observes the value written through the mutable diagonal
     EXPECT_DOUBLE_EQ(const_dynamic_view_diagonal[1], 12.0);
 
     DiagonalMatrixView<double, Dynamic> empty_view;
-    // compares empty_view.rows(), 0 using eq semantics
+    // a default dynamic diagonal view has no rows
     EXPECT_EQ(empty_view.rows(), 0);
-    // compares empty_view.cols(), 0 using eq semantics
+    // a default dynamic diagonal view has no columns
     EXPECT_EQ(empty_view.cols(), 0);
-    // compares empty_view.data(), nullptr using eq semantics
+    // a default dynamic diagonal view has no storage binding
     EXPECT_EQ(empty_view.data(), nullptr);
     DiagonalMatrixView<double, Dynamic> explicit_empty_view(nullptr, 0);
-    // compares explicit_empty_view.rows(), 0 using eq semantics
+    // an explicitly empty diagonal view has no rows
     EXPECT_EQ(explicit_empty_view.rows(), 0);
-    // compares explicit_empty_view.cols(), 0 using eq semantics
+    // an explicitly empty diagonal view has no columns
     EXPECT_EQ(explicit_empty_view.cols(), 0);
-    // compares explicit_empty_view.data(), nullptr using eq semantics
+    // an explicitly empty diagonal view permits a null storage pointer
     EXPECT_EQ(explicit_empty_view.data(), nullptr);
     auto explicit_empty_diagonal = explicit_empty_view.diagonal();
-    // compares explicit_empty_diagonal.size(), 0 using eq semantics
+    // extracting a diagonal from an empty view yields zero coefficients
     EXPECT_EQ(explicit_empty_diagonal.size(), 0);
-    // compares explicit_empty_diagonal.data(), nullptr using eq semantics
+    // an empty extracted diagonal retains the null binding
     EXPECT_EQ(explicit_empty_diagonal.data(), nullptr);
     const auto& const_explicit_empty_view = explicit_empty_view;
     auto const_explicit_empty_diagonal = const_explicit_empty_view.diagonal();
-    // compares const_explicit_empty_diagonal.size(), 0 using eq semantics
+    // const extraction from an empty view yields zero coefficients
     EXPECT_EQ(const_explicit_empty_diagonal.size(), 0);
-    // compares const_explicit_empty_diagonal.data(), nullptr using eq semantics
+    // const extraction from an empty view retains the null binding
     EXPECT_EQ(const_explicit_empty_diagonal.data(), nullptr);
 }
 
 void check_diagonal_failure_contracts() {
     using dynamic_diagonal = DiagonalMatrix<double, Dynamic>;
-    // checks the exception category for the supplied invalid operation
+    // construction rejects a negative diagonal dimension
     EXPECT_THROW(static_cast<void>(dynamic_diagonal(-1)), std::invalid_argument);
 
     dynamic_diagonal dynamic(std::vector<double> {1.0, 2.0});
     const dynamic_diagonal original = dynamic;
-    // checks the exception category for the supplied invalid operation
+    // resize rejects a negative diagonal dimension
     EXPECT_THROW(dynamic.resize(-1), std::invalid_argument);
-    // compares dynamic, original using eq semantics
+    // failed resize preserves the original diagonal matrix
     EXPECT_EQ(dynamic, original);
 
     using fixed_diagonal = DiagonalMatrix<double, 3>;
-    // checks the exception category for the supplied invalid operation
+    // a fixed three-entry diagonal rejects a two-entry initializer
     EXPECT_THROW(static_cast<void>(fixed_diagonal(std::vector<double> {1.0, 2.0})), std::invalid_argument);
-    // checks the exception category for the supplied invalid operation
+    // a fixed nonempty diagonal view rejects a null pointer
     EXPECT_THROW(static_cast<void>(DiagonalMatrixView<double, 3>(nullptr)), std::invalid_argument);
-    // checks the exception category for the supplied invalid operation
+    // a dynamic nonempty diagonal view rejects a null pointer
     EXPECT_THROW(static_cast<void>(DiagonalMatrixView<double, Dynamic>(nullptr, 1)), std::invalid_argument);
     std::array<double, 1> one_value {1.0};
-    // checks the exception category for the supplied invalid operation
+    // a diagonal view rejects a negative runtime dimension
     EXPECT_THROW(static_cast<void>(DiagonalMatrixView<double, Dynamic>(one_value.data(), -1)), std::invalid_argument);
 
     const Vector<double, Dynamic> short_rhs(std::vector<double> {1.0});
-    // checks the exception category for the supplied invalid operation
+    // solve rejects a right-hand side with the wrong number of rows
     EXPECT_THROW(static_cast<void>(dynamic.solve(short_rhs)), std::invalid_argument);
 
     dynamic_diagonal other(std::vector<double> {1.0, 2.0, 3.0});
-    // checks the exception category for the supplied invalid operation
+    // addition rejects diagonal operands of different sizes
     EXPECT_THROW(static_cast<void>(dynamic + other), std::invalid_argument);
-    // checks the exception category for the supplied invalid operation
+    // subtraction rejects diagonal operands of different sizes
     EXPECT_THROW(static_cast<void>(dynamic - other), std::invalid_argument);
 
     std::array<double, 2> destination_storage {7.0, 8.0};
@@ -323,56 +321,56 @@ void check_diagonal_failure_contracts() {
     DiagonalMatrixView<double, Dynamic> destination(destination_storage.data(), 2);
     DiagonalMatrixView<double, Dynamic> source(source_storage.data(), 3);
     const double* const destination_address = destination.data();
-    // checks the exception category for the supplied invalid operation
+    // view assignment rejects a source diagonal of different size
     EXPECT_THROW(destination = source, std::invalid_argument);
-    // compares destination.data(), destination_address using eq semantics
+    // failed view assignment preserves the destination binding
     EXPECT_EQ(destination.data(), destination_address);
-    // compares destination[0], 7.0 using double_eq semantics
+    // failed view assignment preserves the first stored diagonal entry
     EXPECT_DOUBLE_EQ(destination[0], 7.0);
-    // compares destination[1], 8.0 using double_eq semantics
+    // failed view assignment preserves the second stored diagonal entry
     EXPECT_DOUBLE_EQ(destination[1], 8.0);
 
     const auto& const_dynamic = dynamic;
-    // checks the exception category for the supplied invalid operation
+    // mutable matrix access rejects a negative row
     EXPECT_THROW(static_cast<void>(dynamic(-1, 0)), std::out_of_range);
-    // checks the exception category for the supplied invalid operation
+    // mutable matrix access rejects a column equal to the dimension
     EXPECT_THROW(static_cast<void>(dynamic(0, 2)), std::out_of_range);
-    // checks the exception category for the supplied invalid operation
+    // mutable diagonal indexing rejects a negative index
     EXPECT_THROW(static_cast<void>(dynamic[-1]), std::out_of_range);
-    // checks the exception category for the supplied invalid operation
+    // mutable diagonal indexing rejects an index equal to the dimension
     EXPECT_THROW(static_cast<void>(dynamic[2]), std::out_of_range);
-    // checks the exception category for the supplied invalid operation
+    // const matrix access rejects a negative row
     EXPECT_THROW(static_cast<void>(const_dynamic(-1, 0)), std::out_of_range);
-    // checks the exception category for the supplied invalid operation
+    // const matrix access rejects a column equal to the dimension
     EXPECT_THROW(static_cast<void>(const_dynamic(0, 2)), std::out_of_range);
-    // checks the exception category for the supplied invalid operation
+    // const diagonal indexing rejects a negative index
     EXPECT_THROW(static_cast<void>(const_dynamic[-1]), std::out_of_range);
-    // checks the exception category for the supplied invalid operation
+    // const diagonal indexing rejects an index equal to the dimension
     EXPECT_THROW(static_cast<void>(const_dynamic[2]), std::out_of_range);
 
     Vector<double, Dynamic> vector(std::vector<double> {1.0, 2.0});
     auto wrapper = vector.as_diagonal();
-    // checks the exception category for the supplied invalid operation
+    // a vector-backed diagonal wrapper rejects a negative row
     EXPECT_THROW(static_cast<void>(wrapper(-1, 0)), std::out_of_range);
-    // checks the exception category for the supplied invalid operation
+    // a vector-backed diagonal wrapper rejects a column equal to the dimension
     EXPECT_THROW(static_cast<void>(wrapper(0, 2)), std::out_of_range);
 }
 
 }   // namespace
 
-// verifies diagonal through the public algebra API
+// exercise diagonal extraction, arithmetic, owning storage, borrowed views and lifetime constraints
 TEST(linear_algebra, diagonal) {
     static constexpr Matrix<double, 2, 2> matrix({1.0, 2.0, 3.0, 4.0});
     static constexpr Vector<double, 2> one({1.0, 1.0});
-    // checks at compile time: matrix.diagonal().rows() == 2
+    // a fixed 2-by-2 matrix exposes its diagonal as a two-row vector
     static_assert(matrix.diagonal().rows() == 2);
-    // checks at compile time: matrix.diagonal().cols() == 1
+    // the extracted diagonal is a column vector
     static_assert(matrix.diagonal().cols() == 1);
-    // checks at compile time: matrix.diagonal().size() == 2
+    // the extracted diagonal contains exactly two coefficients
     static_assert(matrix.diagonal().size() == 2);
-    // checks at compile time: matrix.diagonal() == Vector<double, 2>({1.0, 4.0})
+    // constant evaluation extracts the original diagonal entries one and four
     static_assert(matrix.diagonal() == Vector<double, 2>({1.0, 4.0}));
-    // checks at compile time: (matrix.diagonal() + one) == Vector<double, 2>({2.0, 5.0})
+    // constant evaluation adds one to each extracted diagonal entry
     static_assert((matrix.diagonal() + one) == Vector<double, 2>({2.0, 5.0}));
 
     check_diagonal_contracts<RowMajor>();

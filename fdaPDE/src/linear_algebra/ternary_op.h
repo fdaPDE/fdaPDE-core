@@ -22,7 +22,7 @@
 namespace fdapde {
 
 // expression of a matrix ternary operator, i.e., A(i, j) ? B(i, j) : C(i, j)
-/// @brief represents ternary op
+/// @brief selects each result coefficient from one of two expressions using a Boolean mask
 template <typename ConditionXprType, typename LhsXprType, typename RhsXprType>
 class TernaryOp : public MatrixExpr<TernaryOp<ConditionXprType, LhsXprType, RhsXprType>> {
     fdapde_static_assert(
@@ -48,7 +48,7 @@ class TernaryOp : public MatrixExpr<TernaryOp<ConditionXprType, LhsXprType, RhsX
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
 
-    /// @brief constructs ternary op from the supplied state
+    /// @brief nests a Boolean condition and two result expressions after checking all three shapes
     template <typename ConditionXprType_, typename LhsXprType_, typename RhsXprType_>
         requires(internals::safely_nestable<ConditionXprTypeNested, ConditionXprType_> &&
                  internals::safely_nestable<LhsXprTypeNested, LhsXprType_> &&
@@ -66,7 +66,7 @@ class TernaryOp : public MatrixExpr<TernaryOp<ConditionXprType, LhsXprType, RhsX
               std::invalid_argument, "matrix ternary operation requires matching dimensions");
         }
     }
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief evaluates the condition and returns the coefficient from the selected value branch
     constexpr Scalar operator()(int i, int j) const { return cond_(i, j) ? lhs_(i, j) : rhs_(i, j); }
     /// @brief accesses the requested vector coefficient
     constexpr Scalar operator[](int i) const {

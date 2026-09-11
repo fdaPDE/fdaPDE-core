@@ -26,7 +26,7 @@ namespace fdapde {
 namespace internals {
 
 // lazy expression representing a row-wise or column-wise reduction with a custom operator
-/// @brief represents partial matrix redux op
+/// @brief evaluates independent reductions of matrix rows or columns
 template <typename XprType_, typename ReductionOp, int ByRow>
 struct partial_matrix_redux_op : public MatrixExpr<partial_matrix_redux_op<XprType_, ReductionOp, ByRow>> {
    private:
@@ -41,14 +41,14 @@ struct partial_matrix_redux_op : public MatrixExpr<partial_matrix_redux_op<XprTy
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
 
-    /// @brief constructs partial matrix redux op from the supplied state
+    /// @brief nests the source expression and stores the initial value and row-or-column reduction functor
     template <typename XprType__>
         requires(!std::same_as<std::remove_cvref_t<XprType__>, partial_matrix_redux_op> &&
                  internals::safely_nestable<XprTypeNested, XprType__>)
     constexpr partial_matrix_redux_op(XprType__&& xpr, Scalar init, ReductionOp op) :
         xpr_(std::forward<XprType__>(xpr)), init_(init), op_(std::move(op)) { }
 
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief folds the selected row or column from the stored initial value with the stored operation
     constexpr Scalar operator()(int i, int j) const {
         fdapde_assert(
           !(i < 0 || i >= rows() || j < 0 || j >= cols()), std::out_of_range,
@@ -76,7 +76,7 @@ struct partial_matrix_redux_op : public MatrixExpr<partial_matrix_redux_op<XprTy
 
 }   // namespace internals
 
-/// @brief represents matrix vector wise op
+/// @brief provides row-or-column reductions and vector broadcasting
 template <typename XprType_, int ByRow>
 struct MatrixVectorWiseOp : public MatrixExpr<MatrixVectorWiseOp<XprType_, ByRow>> {
    private:
@@ -107,7 +107,7 @@ struct MatrixVectorWiseOp : public MatrixExpr<MatrixVectorWiseOp<XprType_, ByRow
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = std::is_const_v<std::remove_reference_t<XprType_>> || XprType::ReadOnly;
 
-    /// @brief constructs matrix vector wise op from the supplied state
+    /// @brief nests a matrix for reductions and broadcasting along the selected axis
     template <typename XprType__>
         requires(
           !std::same_as<std::remove_cvref_t<XprType__>, MatrixVectorWiseOp> &&
@@ -178,7 +178,7 @@ struct MatrixVectorWiseOp : public MatrixExpr<MatrixVectorWiseOp<XprType_, ByRow
     }
 
     // vector-wise assignment
-    /// @brief assigns the supplied coefficients
+    /// @brief snapshots the source vector and broadcasts its values into the selected rows or columns
     template <typename RhsXprType_>
         requires(ReadOnly == 0 && statically_compatible_rhs_<RhsXprType_>)
     constexpr MatrixVectorWiseOp& operator=(const MatrixExpr<RhsXprType_>& rhs) & {
@@ -189,14 +189,14 @@ struct MatrixVectorWiseOp : public MatrixExpr<MatrixVectorWiseOp<XprType_, ByRow
         partial_redux_inplace_loop_(tmp, [](Scalar& a, Scalar b) { a = b; });
         return *this;
     }
-    /// @brief assigns the supplied coefficients
+    /// @brief broadcasts a source snapshot and returns the temporary adaptor by value
     template <typename RhsXprType_>
         requires(ReadOnly == 0 && statically_compatible_rhs_<RhsXprType_>)
     constexpr MatrixVectorWiseOp operator=(const MatrixExpr<RhsXprType_>& rhs) && {
         static_cast<MatrixVectorWiseOp&>(*this).operator=(rhs);
         return *this;
     }
-    /// @brief adds the supplied coefficients in place
+    /// @brief adds a snapshotted source vector to corresponding rows or columns in place
     template <typename RhsXprType_>
         requires(ReadOnly == 0 && statically_compatible_rhs_<RhsXprType_>)
     constexpr MatrixVectorWiseOp& operator+=(const MatrixExpr<RhsXprType_>& rhs) & {
@@ -207,14 +207,15 @@ struct MatrixVectorWiseOp : public MatrixExpr<MatrixVectorWiseOp<XprType_, ByRow
         partial_redux_inplace_loop_(tmp, [](Scalar& a, Scalar b) { a += b; });
         return *this;
     }
-    /// @brief adds the supplied coefficients in place
+    /// @brief adds a snapshotted source vector to corresponding rows or columns in place and returns the temporary
+    /// adaptor by value
     template <typename RhsXprType_>
         requires(ReadOnly == 0 && statically_compatible_rhs_<RhsXprType_>)
     constexpr MatrixVectorWiseOp operator+=(const MatrixExpr<RhsXprType_>& rhs) && {
         static_cast<MatrixVectorWiseOp&>(*this).operator+=(rhs);
         return *this;
     }
-    /// @brief subtracts the supplied coefficients in place
+    /// @brief subtracts a snapshotted source vector from corresponding rows or columns in place
     template <typename RhsXprType_>
         requires(ReadOnly == 0 && statically_compatible_rhs_<RhsXprType_>)
     constexpr MatrixVectorWiseOp& operator-=(const MatrixExpr<RhsXprType_>& rhs) & {
@@ -225,7 +226,8 @@ struct MatrixVectorWiseOp : public MatrixExpr<MatrixVectorWiseOp<XprType_, ByRow
         partial_redux_inplace_loop_(tmp, [](Scalar& a, Scalar b) { a -= b; });
         return *this;
     }
-    /// @brief subtracts the supplied coefficients in place
+    /// @brief subtracts a snapshotted source vector from corresponding rows or columns in place and returns the
+    /// temporary adaptor by value
     template <typename RhsXprType_>
         requires(ReadOnly == 0 && statically_compatible_rhs_<RhsXprType_>)
     constexpr MatrixVectorWiseOp operator-=(const MatrixExpr<RhsXprType_>& rhs) && {
@@ -234,7 +236,7 @@ struct MatrixVectorWiseOp : public MatrixExpr<MatrixVectorWiseOp<XprType_, ByRow
     }
 
     // vectorwise comparison
-    /// @brief implements the operator== expression operation
+    /// @brief tests whether every coefficient equals the corresponding broadcast vector entry
     template <typename RhsXprType_>
         requires(statically_compatible_rhs_<RhsXprType_>)
     friend constexpr bool operator==(const MatrixVectorWiseOp& lhs, const MatrixExpr<RhsXprType_>& rhs) {
@@ -248,37 +250,37 @@ struct MatrixVectorWiseOp : public MatrixExpr<MatrixVectorWiseOp<XprType_, ByRow
         }
         return true;
     }
-    /// @brief implements the operator== expression operation
+    /// @brief compares a vector against every corresponding row or column coefficient
     template <typename LhsXprType_>
         requires(statically_compatible_rhs_<LhsXprType_>)
     friend constexpr bool operator==(const MatrixExpr<LhsXprType_>& lhs, const MatrixVectorWiseOp& rhs) {
         return rhs == lhs;
     }
-    /// @brief implements the operator!= expression operation
+    /// @brief tests whether any coefficient differs from its broadcast vector entry
     template <typename RhsXprType_>
         requires(statically_compatible_rhs_<RhsXprType_>)
     friend constexpr bool operator!=(const MatrixVectorWiseOp& lhs, const MatrixExpr<RhsXprType_>& rhs) {
         return !(lhs == rhs);
     }
-    /// @brief implements the operator!= expression operation
+    /// @brief tests whether the broadcast vector differs from any corresponding coefficient
     template <typename LhsXprType_>
         requires(statically_compatible_rhs_<LhsXprType_>)
     friend constexpr bool operator!=(const MatrixExpr<LhsXprType_>& lhs, const MatrixVectorWiseOp& rhs) {
         return !(rhs == lhs);
     }
-    /// @brief implements the operator== expression operation
+    /// @brief rejects a broadcast comparison with statically incompatible extents
     template <typename RhsXprType_>
         requires(!statically_compatible_rhs_<RhsXprType_>)
     friend constexpr bool operator==(const MatrixVectorWiseOp&, const MatrixExpr<RhsXprType_>&) = delete;
-    /// @brief implements the operator== expression operation
+    /// @brief rejects a reversed broadcast comparison with statically incompatible extents
     template <typename LhsXprType_>
         requires(!statically_compatible_rhs_<LhsXprType_>)
     friend constexpr bool operator==(const MatrixExpr<LhsXprType_>&, const MatrixVectorWiseOp&) = delete;
-    /// @brief implements the operator!= expression operation
+    /// @brief rejects a broadcast comparison with statically incompatible extents
     template <typename RhsXprType_>
         requires(!statically_compatible_rhs_<RhsXprType_>)
     friend constexpr bool operator!=(const MatrixVectorWiseOp&, const MatrixExpr<RhsXprType_>&) = delete;
-    /// @brief implements the operator!= expression operation
+    /// @brief rejects a reversed broadcast comparison with statically incompatible extents
     template <typename LhsXprType_>
         requires(!statically_compatible_rhs_<LhsXprType_>)
     friend constexpr bool operator!=(const MatrixExpr<LhsXprType_>&, const MatrixVectorWiseOp&) = delete;
@@ -325,14 +327,14 @@ struct MatrixVectorWiseOp : public MatrixExpr<MatrixVectorWiseOp<XprType_, ByRow
 };
 
 // row-wise matrix reduction expression
-/// @brief represents matrix row wise op
+/// @brief reduces rows or broadcasts one row vector across a matrix
 template <typename XprType> struct MatrixRowWiseOp : public MatrixVectorWiseOp<XprType, 0> {
     using Base = MatrixVectorWiseOp<XprType, 0>;
     using Base::Base;
     using Base::operator=;
 };
 // col-wise matrix reduction expression
-/// @brief represents matrix col wise op
+/// @brief reduces columns or broadcasts one column vector across a matrix
 template <typename XprType> struct MatrixColWiseOp : public MatrixVectorWiseOp<XprType, 1> {
     using Base = MatrixVectorWiseOp<XprType, 1>;
     using Base::Base;

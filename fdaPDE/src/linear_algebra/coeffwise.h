@@ -24,24 +24,24 @@
 namespace fdapde {
 
 // coefficient-wise type system
-/// @brief represents matrix coeff wise expr
+/// @brief provides coefficient-wise arithmetic, comparisons and scalar broadcasting
 template <typename XprType_> struct MatrixCoeffWiseExpr;
 
 namespace internals {
 
 // coeffOp used by MatrixExpr::cwise() to enter the coeffwise type system
-/// @brief represents identity op
+/// @brief forwards a coefficient unchanged when entering coefficient-wise algebra
 struct identity_op {
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief returns the supplied value or reference unchanged
     template <typename ValueType> constexpr ValueType operator()(ValueType&& v) const noexcept { return v; }
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief returns the supplied lvalue reference unchanged
     template <typename ValueType> constexpr ValueType& operator()(ValueType& v) noexcept { return v; }   // lvalue
 };
 
-/// @brief represents cwise operand traits
+/// @brief extracts operand scalar and shape metadata, treating scalars as broadcast values
 template <typename Operand, bool IsScalar = std::is_arithmetic_v<std::decay_t<Operand>>> struct cwise_operand_traits;
 
-/// @brief represents cwise operand traits
+/// @brief extracts operand scalar and shape metadata, treating scalars as broadcast values
 template <typename Operand> struct cwise_operand_traits<Operand, false> {
     using Type = std::decay_t<Operand>;
     using Scalar = typename Type::Scalar;
@@ -50,7 +50,7 @@ template <typename Operand> struct cwise_operand_traits<Operand, false> {
     static constexpr int StorageOrder = Type::StorageOrder;
 };
 
-/// @brief represents cwise operand traits
+/// @brief extracts operand scalar and shape metadata, treating scalars as broadcast values
 template <typename Operand> struct cwise_operand_traits<Operand, true> {
     using Scalar = std::decay_t<Operand>;
     static constexpr int Rows = Dynamic;
@@ -58,13 +58,13 @@ template <typename Operand> struct cwise_operand_traits<Operand, true> {
     static constexpr int StorageOrder = RowMajor;
 };
 
-/// @brief represents cwise shape compatible
+/// @brief accepts matching matrix shapes or a broadcast scalar operand
 template <
   typename Lhs, typename Rhs,
   bool HasScalar = std::is_arithmetic_v<std::decay_t<Lhs>> || std::is_arithmetic_v<std::decay_t<Rhs>>>
 struct cwise_shape_compatible : std::bool_constant<same_static_shape_weak_v<Lhs, Rhs>> { };
 
-/// @brief represents cwise shape compatible
+/// @brief accepts matching matrix shapes or a broadcast scalar operand
 template <typename Lhs, typename Rhs> struct cwise_shape_compatible<Lhs, Rhs, true> : std::true_type { };
 
 /// @brief accesses a scalar or expression coefficient for coefficient-wise evaluation
@@ -86,9 +86,9 @@ template <typename Operand> constexpr decltype(auto) cwise_access(const Operand&
 }
 
 // assignment executor having one trivial scalar operand
-/// @brief represents scalar cwise assignment executor
+/// @brief broadcasts scalar assignment through a writable coefficient-wise adaptor
 struct scalar_cwise_assignment_executor {
-    /// @brief executes the coefficient operation over the supplied expressions
+    /// @brief broadcasts a scalar through the wrapped expression assignment executor
     template <typename DstMatrixType, typename ScalarType, typename AssignmentOp>
     static constexpr void run(DstMatrixType& dst, const ScalarType& src, AssignmentOp&& op) {
         fdapde_static_assert(DstMatrixType::ReadOnly == 0, ASSIGNMENT_TO_READ_ONLY_LOCATION);
@@ -99,7 +99,7 @@ struct scalar_cwise_assignment_executor {
 };
 
 // internal type for reinterpreting a coefficient-wise expression as a matrix expression
-/// @brief represents mwise wrapper
+/// @brief exposes a coefficient-wise expression through the matrix-algebra interface
 template <typename XprType_> struct mwise_wrapper : public MatrixExpr<mwise_wrapper<XprType_>> {
    private:
     using XprType = std::decay_t<XprType_>;
@@ -112,23 +112,23 @@ template <typename XprType_> struct mwise_wrapper : public MatrixExpr<mwise_wrap
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = std::is_const_v<std::remove_reference_t<XprType_>> || XprType::ReadOnly;
 
-    /// @brief constructs mwise wrapper from the supplied state
+    /// @brief copies the matrix-algebra adaptor while retaining its coefficient-wise expression
     constexpr mwise_wrapper(const mwise_wrapper&) = default;
-    /// @brief constructs mwise wrapper from the supplied state
+    /// @brief nests a coefficient-wise expression for use in matrix algebra
     template <typename XprType__>
         requires(
           !std::same_as<std::remove_cvref_t<XprType__>, mwise_wrapper> &&
           internals::safely_nestable<XprTypeNested, XprType__>)
     constexpr explicit mwise_wrapper(XprType__&& xpr) : xpr_(std::forward<XprType__>(xpr)) { }
     // access
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief reads the wrapped coefficient through const access
     constexpr decltype(auto) operator()(int i, int j) const {
         fdapde_assert(
           !(i < 0 || i >= rows() || j < 0 || j >= cols()), std::out_of_range,
           "coefficient-wise matrix index out of range");
         return std::as_const(xpr_)(i, j);
     }
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief returns writable access to the wrapped coefficient
     constexpr decltype(auto) operator()(int i, int j)
         requires(ReadOnly == 0)
     {
@@ -165,7 +165,7 @@ template <typename XprType_> struct mwise_wrapper : public MatrixExpr<mwise_wrap
 }   // namespace internals
 
 // expression node for the coefficient wise application of CoeffOp on a matrix expression
-/// @brief represents matrix coeff wise op
+/// @brief applies a unary coefficient functor, retaining writable references only when safe
 template <typename XprType_, typename CoeffOp = internals::identity_op>
 struct MatrixCoeffWiseOp : public MatrixCoeffWiseExpr<MatrixCoeffWiseOp<XprType_, CoeffOp>> {
    private:
@@ -187,23 +187,23 @@ struct MatrixCoeffWiseOp : public MatrixCoeffWiseExpr<MatrixCoeffWiseOp<XprType_
     using assignment_executor = std::conditional_t<
       ReadOnly, internals::deleted_assignment_executor, internals::assignment_executor_of_t<XprType>>;
 
-    /// @brief constructs matrix coeff wise op from the supplied state
+    /// @brief copies the coefficient functor and its nested expression
     constexpr MatrixCoeffWiseOp(const MatrixCoeffWiseOp&) = default;
-    /// @brief constructs matrix coeff wise op from the supplied state
+    /// @brief nests an expression and stores the callable applied to each coefficient
     template <typename XprType__>
         requires(!std::same_as<std::remove_cvref_t<XprType__>, MatrixCoeffWiseOp> &&
                  internals::safely_nestable<XprTypeNested, XprType__>)
     constexpr MatrixCoeffWiseOp(XprType__&& xpr, CoeffOp op) :
         xpr_(std::forward<XprType__>(xpr)), op_(std::move(op)) { }
     // scalar assignment
-    /// @brief assigns the supplied coefficients
+    /// @brief fills every writable coefficient with the supplied scalar
     template <typename Scalar_>
         requires(BulkWritable && std::is_convertible_v<Scalar_, Scalar>)
     constexpr MatrixCoeffWiseOp& operator=(Scalar_ rhs) & {
         internals::scalar_cwise_assignment_executor::run(*this, rhs, [](auto& l, const Scalar_& r) { l = r; });
         return *this;
     }
-    /// @brief assigns the supplied coefficients
+    /// @brief fills every writable coefficient and returns the temporary adaptor by value
     template <typename Scalar_>
         requires(BulkWritable && std::is_convertible_v<Scalar_, Scalar>)
     constexpr MatrixCoeffWiseOp operator=(Scalar_ rhs) && {
@@ -211,14 +211,14 @@ struct MatrixCoeffWiseOp : public MatrixCoeffWiseExpr<MatrixCoeffWiseOp<XprType_
         return *this;
     }
     // access
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief applies the stored unary operation to a const source coefficient
     constexpr Scalar operator()(int i, int j) const {
         fdapde_assert(
           !(i < 0 || i >= rows() || j < 0 || j >= cols()), std::out_of_range,
           "coefficient-wise matrix index out of range");
         return op_(std::as_const(xpr_)(i, j));
     }
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief returns the writable reference or proxy produced by the stored unary operation
     constexpr decltype(auto) operator()(int i, int j)
         requires(ReadOnly == 0)
     {   // write-access
@@ -256,9 +256,9 @@ struct MatrixCoeffWiseOp : public MatrixCoeffWiseExpr<MatrixCoeffWiseOp<XprType_
     {
         return xpr_;
     }
-    /// @brief returns the underlying expression
+    /// @brief rejects returning a reference to state held by a temporary expression
     constexpr void xpr() const&& = delete;
-    /// @brief returns the underlying expression
+    /// @brief rejects returning a reference to state held by a temporary expression
     constexpr void xpr() && = delete;
    private:
     XprTypeNested xpr_;
@@ -266,7 +266,7 @@ struct MatrixCoeffWiseOp : public MatrixCoeffWiseExpr<MatrixCoeffWiseOp<XprType_
 };
 
 // expression node for a binary coefficient wise operation
-/// @brief represents matrix coeff wise bin op
+/// @brief applies a binary functor to matching coefficients or broadcast scalar operands
 template <typename LhsXprType_, typename RhsXprType_, typename BinaryOp>
 struct MatrixCoeffWiseBinOp : public MatrixCoeffWiseExpr<MatrixCoeffWiseBinOp<LhsXprType_, RhsXprType_, BinaryOp>> {
    private:
@@ -304,7 +304,7 @@ struct MatrixCoeffWiseBinOp : public MatrixCoeffWiseExpr<MatrixCoeffWiseBinOp<Lh
     static constexpr int ReadOnly = 1;
     static constexpr bool BulkWritable = false;
 
-    /// @brief constructs matrix coeff wise bin op from the supplied state
+    /// @brief nests two operands, checking equal shapes unless one operand is a broadcast scalar
     template <typename LhsXprType__, typename RhsXprType__>
         requires(internals::safely_nestable<LhsXprTypeNested, LhsXprType__> &&
                  internals::safely_nestable<RhsXprTypeNested, RhsXprType__>)
@@ -318,7 +318,7 @@ struct MatrixCoeffWiseBinOp : public MatrixCoeffWiseExpr<MatrixCoeffWiseBinOp<Lh
             }
         }
     }
-    /// @brief accesses or evaluates the requested coefficient
+    /// @brief applies the binary operation to matching coordinates, broadcasting any scalar operand
     constexpr Scalar operator()(int i, int j) const {
         fdapde_assert(
           !(i < 0 || i >= rows() || j < 0 || j >= cols()), std::out_of_range,
@@ -385,7 +385,7 @@ constexpr auto make_cwise_op(const Scalar_& lhs, const MatrixCoeffWiseExpr<XprTy
 }   // namespace internals
 
 // base class for coefficient wise arithmetic
-/// @brief represents matrix coeff wise expr
+/// @brief provides coefficient-wise arithmetic, comparisons and scalar broadcasting
 template <typename XprType_> struct MatrixCoeffWiseExpr {
    private:
     using XprType = std::decay_t<XprType_>;
@@ -394,9 +394,9 @@ template <typename XprType_> struct MatrixCoeffWiseExpr {
     constexpr const XprType& derived() const& { return static_cast<const XprType&>(*this); }
     /// @brief returns the concrete expression
     constexpr XprType& derived() & { return static_cast<XprType&>(*this); }
-    /// @brief returns the concrete expression
+    /// @brief rejects returning a reference to state held by a temporary expression
     constexpr void derived() const&& = delete;
-    /// @brief returns the concrete expression
+    /// @brief rejects returning a reference to state held by a temporary expression
     constexpr void derived() && = delete;
     // generic coeffwise executor
     /// @brief applies the callable to each coefficient
@@ -452,12 +452,12 @@ template <typename XprType_> struct MatrixCoeffWiseExpr {
         return internals::make_cwise_op(derived(), [](const auto& x) { return fdapde::log(x); });
     }
     // unary negation
-    /// @brief implements the operator- expression operation
+    /// @brief negates each coefficient lazily
     constexpr auto operator-() const {
         return internals::make_cwise_op(derived(), [](const auto& x) { return -x; });
     }
     // compound coeffwise arithmetic
-    /// @brief adds the supplied coefficients in place
+    /// @brief adds the scalar to every writable coefficient
     template <typename Scalar_>
         requires(
           XprType::BulkWritable && std::is_arithmetic_v<Scalar_> &&
@@ -466,7 +466,7 @@ template <typename XprType_> struct MatrixCoeffWiseExpr {
         internals::scalar_cwise_assignment_executor::run(derived(), rhs, [](auto& l, const Scalar_& r) { l += r; });
         return derived();
     }
-    /// @brief adds the supplied coefficients in place
+    /// @brief adds the scalar to every writable coefficient and returns the temporary adaptor by value
     template <typename Scalar_>
         requires(
           XprType::BulkWritable && std::is_arithmetic_v<Scalar_> &&
@@ -475,7 +475,7 @@ template <typename XprType_> struct MatrixCoeffWiseExpr {
         static_cast<MatrixCoeffWiseExpr&>(*this).operator+=(rhs);
         return static_cast<XprType&>(*this);
     }
-    /// @brief adds the supplied coefficients in place
+    /// @brief adds corresponding source coefficients to the destination, snapshotting aliases first
     template <typename RhsXprType_>
         requires(XprType::ReadOnly == 0)
     constexpr XprType& operator+=(const MatrixCoeffWiseExpr<RhsXprType_>& rhs) & {
@@ -486,14 +486,15 @@ template <typename XprType_> struct MatrixCoeffWiseExpr {
         executor::run(derived(), tmp, [](auto& l, const auto& r) { l += r; });
         return derived();
     }
-    /// @brief adds the supplied coefficients in place
+    /// @brief adds corresponding source coefficients to the destination, snapshotting aliases first and returns the
+    /// temporary adaptor by value
     template <typename RhsXprType_>
         requires(XprType::ReadOnly == 0)
     constexpr XprType operator+=(const MatrixCoeffWiseExpr<RhsXprType_>& rhs) && {
         static_cast<MatrixCoeffWiseExpr&>(*this).operator+=(rhs);
         return static_cast<XprType&>(*this);
     }
-    /// @brief subtracts the supplied coefficients in place
+    /// @brief subtracts the scalar from every writable coefficient
     template <typename Scalar_>
         requires(
           XprType::BulkWritable && std::is_arithmetic_v<Scalar_> &&
@@ -502,7 +503,7 @@ template <typename XprType_> struct MatrixCoeffWiseExpr {
         internals::scalar_cwise_assignment_executor::run(derived(), rhs, [](auto& l, const Scalar_& r) { l -= r; });
         return derived();
     }
-    /// @brief subtracts the supplied coefficients in place
+    /// @brief subtracts the scalar from every writable coefficient and returns the temporary adaptor by value
     template <typename Scalar_>
         requires(
           XprType::BulkWritable && std::is_arithmetic_v<Scalar_> &&
@@ -511,7 +512,7 @@ template <typename XprType_> struct MatrixCoeffWiseExpr {
         static_cast<MatrixCoeffWiseExpr&>(*this).operator-=(rhs);
         return static_cast<XprType&>(*this);
     }
-    /// @brief subtracts the supplied coefficients in place
+    /// @brief subtracts corresponding source coefficients from the destination, snapshotting aliases first
     template <typename RhsXprType_>
         requires(XprType::ReadOnly == 0)
     constexpr XprType& operator-=(const MatrixCoeffWiseExpr<RhsXprType_>& rhs) & {
@@ -522,14 +523,15 @@ template <typename XprType_> struct MatrixCoeffWiseExpr {
         executor::run(derived(), tmp, [](auto& l, const auto& r) { l -= r; });
         return derived();
     }
-    /// @brief subtracts the supplied coefficients in place
+    /// @brief subtracts corresponding source coefficients from the destination, snapshotting aliases first and returns
+    /// the temporary adaptor by value
     template <typename RhsXprType_>
         requires(XprType::ReadOnly == 0)
     constexpr XprType operator-=(const MatrixCoeffWiseExpr<RhsXprType_>& rhs) && {
         static_cast<MatrixCoeffWiseExpr&>(*this).operator-=(rhs);
         return static_cast<XprType&>(*this);
     }
-    /// @brief multiplies in place by the supplied operand
+    /// @brief multiplies every writable coefficient by the scalar
     template <typename Scalar_>
         requires(
           XprType::BulkWritable && std::is_arithmetic_v<Scalar_> &&
@@ -538,7 +540,7 @@ template <typename XprType_> struct MatrixCoeffWiseExpr {
         internals::scalar_cwise_assignment_executor::run(derived(), rhs, [](auto& l, const Scalar_& r) { l *= r; });
         return derived();
     }
-    /// @brief multiplies in place by the supplied operand
+    /// @brief multiplies every writable coefficient by the scalar and returns the temporary adaptor by value
     template <typename Scalar_>
         requires(
           XprType::BulkWritable && std::is_arithmetic_v<Scalar_> &&
@@ -547,7 +549,7 @@ template <typename XprType_> struct MatrixCoeffWiseExpr {
         static_cast<MatrixCoeffWiseExpr&>(*this).operator*=(rhs);
         return static_cast<XprType&>(*this);
     }
-    /// @brief multiplies in place by the supplied operand
+    /// @brief multiplies corresponding coefficients in place, snapshotting aliases first
     template <typename RhsXprType_>
         requires(XprType::ReadOnly == 0)
     constexpr XprType& operator*=(const MatrixCoeffWiseExpr<RhsXprType_>& rhs) & {
@@ -558,14 +560,15 @@ template <typename XprType_> struct MatrixCoeffWiseExpr {
         executor::run(derived(), tmp, [](auto& l, const auto& r) { l *= r; });
         return derived();
     }
-    /// @brief multiplies in place by the supplied operand
+    /// @brief multiplies corresponding coefficients in place, snapshotting aliases first and returns the temporary
+    /// adaptor by value
     template <typename RhsXprType_>
         requires(XprType::ReadOnly == 0)
     constexpr XprType operator*=(const MatrixCoeffWiseExpr<RhsXprType_>& rhs) && {
         static_cast<MatrixCoeffWiseExpr&>(*this).operator*=(rhs);
         return static_cast<XprType&>(*this);
     }
-    /// @brief divides in place by the supplied scalar
+    /// @brief divides every writable coefficient by the scalar
     template <typename Scalar_>
         requires(
           XprType::BulkWritable && std::is_arithmetic_v<Scalar_> &&
@@ -574,7 +577,7 @@ template <typename XprType_> struct MatrixCoeffWiseExpr {
         internals::scalar_cwise_assignment_executor::run(derived(), rhs, [](auto& l, const Scalar_& r) { l /= r; });
         return derived();
     }
-    /// @brief divides in place by the supplied scalar
+    /// @brief divides every writable coefficient by the scalar and returns the temporary adaptor by value
     template <typename Scalar_>
         requires(
           XprType::BulkWritable && std::is_arithmetic_v<Scalar_> &&
@@ -583,7 +586,7 @@ template <typename XprType_> struct MatrixCoeffWiseExpr {
         static_cast<MatrixCoeffWiseExpr&>(*this).operator/=(rhs);
         return static_cast<XprType&>(*this);
     }
-    /// @brief divides in place by the supplied scalar
+    /// @brief divides corresponding coefficients in place, snapshotting aliases first
     template <typename RhsXprType_>
         requires(XprType::ReadOnly == 0)
     constexpr XprType& operator/=(const MatrixCoeffWiseExpr<RhsXprType_>& rhs) & {
@@ -594,7 +597,8 @@ template <typename XprType_> struct MatrixCoeffWiseExpr {
         executor::run(derived(), tmp, [](auto& l, const auto& r) { l /= r; });
         return derived();
     }
-    /// @brief divides in place by the supplied scalar
+    /// @brief divides corresponding coefficients in place, snapshotting aliases first and returns the temporary adaptor
+    /// by value
     template <typename RhsXprType_>
         requires(XprType::ReadOnly == 0)
     constexpr XprType operator/=(const MatrixCoeffWiseExpr<RhsXprType_>& rhs) && {
@@ -613,7 +617,7 @@ template <typename XprType_> struct MatrixCoeffWiseExpr {
         return internals::mwise_wrapper<const XprType>(static_cast<const XprType&&>(*this));
     }
     // ostream
-    /// @brief implements the operator<< expression operation
+    /// @brief writes logical matrix rows separated by newlines without a trailing newline
     friend std::ostream& operator<<(std::ostream& os, const MatrixCoeffWiseExpr& m) {
         os << m.mwise();
         return os;
@@ -630,72 +634,72 @@ template <typename XprType_> struct MatrixCoeffWiseExpr {
 // coeffwise arithmetic
 // operations are always interpreted on the single scalar coefficients
 // coeffwise addition
-/// @brief implements the operator+ expression operation
+/// @brief adds corresponding coefficients of two expressions
 template <typename LhsXprType_, typename RhsXprType_>
 constexpr auto operator+(const MatrixCoeffWiseExpr<LhsXprType_>& lhs, const MatrixCoeffWiseExpr<RhsXprType_>& rhs) {
     return internals::make_cwise_op<std::plus<>>(lhs, rhs);
 }
-/// @brief implements the operator+ expression operation
+/// @brief adds the right scalar to each coefficient
 template <typename XprType_, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
 constexpr auto operator+(const MatrixCoeffWiseExpr<XprType_>& lhs, const ScalarType& rhs) {
     return internals::make_cwise_op<std::plus<>>(lhs, rhs);
 }
-/// @brief implements the operator+ expression operation
+/// @brief adds the left scalar to each coefficient
 template <typename XprType_, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
 constexpr auto operator+(const ScalarType& lhs, const MatrixCoeffWiseExpr<XprType_>& rhs) {
     return internals::make_cwise_op<std::plus<>>(lhs, rhs);
 }
 // coeffwise difference
-/// @brief implements the operator- expression operation
+/// @brief subtracts corresponding right coefficients from left coefficients
 template <typename LhsXprType_, typename RhsXprType_>
 constexpr auto operator-(const MatrixCoeffWiseExpr<LhsXprType_>& lhs, const MatrixCoeffWiseExpr<RhsXprType_>& rhs) {
     return internals::make_cwise_op<std::minus<>>(lhs, rhs);
 }
-/// @brief implements the operator- expression operation
+/// @brief subtracts the right scalar from each coefficient
 template <typename XprType_, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
 constexpr auto operator-(const MatrixCoeffWiseExpr<XprType_>& lhs, const ScalarType& rhs) {
     return internals::make_cwise_op<std::minus<>>(lhs, rhs);
 }
-/// @brief implements the operator- expression operation
+/// @brief subtracts each right coefficient from the left scalar
 template <typename XprType_, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
 constexpr auto operator-(const ScalarType& lhs, const MatrixCoeffWiseExpr<XprType_>& rhs) {
     return internals::make_cwise_op<std::minus<>>(lhs, rhs);
 }
 // coeffwise multiplication (hadamard product)
-/// @brief implements the operator* expression operation
+/// @brief returns the Hadamard product of corresponding coefficients
 template <typename LhsXprType_, typename RhsXprType_>
 constexpr auto operator*(const MatrixCoeffWiseExpr<LhsXprType_>& lhs, const MatrixCoeffWiseExpr<RhsXprType_>& rhs) {
     return internals::make_cwise_op<std::multiplies<>>(lhs, rhs);
 }
-/// @brief implements the operator* expression operation
+/// @brief multiplies each coefficient by the right scalar
 template <typename XprType_, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
 constexpr auto operator*(const MatrixCoeffWiseExpr<XprType_>& lhs, const ScalarType& rhs) {
     return internals::make_cwise_op<std::multiplies<>>(lhs, rhs);
 }
-/// @brief implements the operator* expression operation
+/// @brief multiplies each coefficient by the left scalar
 template <typename XprType_, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
 constexpr auto operator*(const ScalarType& lhs, const MatrixCoeffWiseExpr<XprType_>& rhs) {
     return internals::make_cwise_op<std::multiplies<>>(lhs, rhs);
 }
 // coeffwise division (hadamard division)
-/// @brief implements the operator/ expression operation
+/// @brief divides corresponding left coefficients by right coefficients
 template <typename LhsXprType_, typename RhsXprType_>
 constexpr auto operator/(const MatrixCoeffWiseExpr<LhsXprType_>& lhs, const MatrixCoeffWiseExpr<RhsXprType_>& rhs) {
     return internals::make_cwise_op<std::divides<>>(lhs, rhs);
 }
-/// @brief implements the operator/ expression operation
+/// @brief divides each coefficient by the right scalar
 template <typename XprType_, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
 constexpr auto operator/(const MatrixCoeffWiseExpr<XprType_>& lhs, const ScalarType& rhs) {
     return internals::make_cwise_op<std::divides<>>(lhs, rhs);
 }
-/// @brief implements the operator/ expression operation
+/// @brief divides the left scalar by each right coefficient
 template <typename XprType_, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
 constexpr auto operator/(const ScalarType& lhs, const MatrixCoeffWiseExpr<XprType_>& rhs) {
@@ -705,105 +709,105 @@ constexpr auto operator/(const ScalarType& lhs, const MatrixCoeffWiseExpr<XprTyp
 // coeffwise comparisons
 // differently from the matrix-domain, coeffwise comparisons produce a boolean matrix of elementwise comparisons
 // strict comparison
-/// @brief implements the operator< expression operation
+/// @brief returns a Boolean mask where each left coefficient is less than its right counterpart
 template <typename LhsXprType_, typename RhsXprType_>
 constexpr auto operator<(const MatrixCoeffWiseExpr<LhsXprType_>& lhs, const MatrixCoeffWiseExpr<RhsXprType_>& rhs) {
     return internals::make_cwise_op<std::less<>>(lhs, rhs);
 }
-/// @brief implements the operator< expression operation
+/// @brief returns a Boolean mask where each coefficient is less than the right scalar
 template <typename XprType_, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
 constexpr auto operator<(const MatrixCoeffWiseExpr<XprType_>& lhs, const ScalarType& rhs) {
     return internals::make_cwise_op<std::less<>>(lhs, rhs);
 }
-/// @brief implements the operator< expression operation
+/// @brief returns a Boolean mask where the left scalar is less than each right coefficient
 template <typename XprType_, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
 constexpr auto operator<(const ScalarType& lhs, const MatrixCoeffWiseExpr<XprType_>& rhs) {
     return internals::make_cwise_op<std::less<>>(lhs, rhs);
 }
-/// @brief implements the operator> expression operation
+/// @brief returns a Boolean mask where each left coefficient is greater than its right counterpart
 template <typename LhsXprType_, typename RhsXprType_>
 constexpr auto operator>(const MatrixCoeffWiseExpr<LhsXprType_>& lhs, const MatrixCoeffWiseExpr<RhsXprType_>& rhs) {
     return internals::make_cwise_op<std::greater<>>(lhs, rhs);
 }
-/// @brief implements the operator> expression operation
+/// @brief returns a Boolean mask where each coefficient is greater than the right scalar
 template <typename XprType_, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
 constexpr auto operator>(const MatrixCoeffWiseExpr<XprType_>& lhs, const ScalarType& rhs) {
     return internals::make_cwise_op<std::greater<>>(lhs, rhs);
 }
-/// @brief implements the operator> expression operation
+/// @brief returns a Boolean mask where the left scalar is greater than each right coefficient
 template <typename XprType_, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
 constexpr auto operator>(const ScalarType& lhs, const MatrixCoeffWiseExpr<XprType_>& rhs) {
     return internals::make_cwise_op<std::greater<>>(lhs, rhs);
 }
 // weak comparison
-/// @brief implements the operator<= expression operation
+/// @brief returns a Boolean mask where each left coefficient is less than or equal to its right counterpart
 template <typename LhsXprType_, typename RhsXprType_>
 constexpr auto operator<=(const MatrixCoeffWiseExpr<LhsXprType_>& lhs, const MatrixCoeffWiseExpr<RhsXprType_>& rhs) {
     return internals::make_cwise_op<std::less_equal<>>(lhs, rhs);
 }
-/// @brief implements the operator<= expression operation
+/// @brief returns a Boolean mask where each coefficient is less than or equal to the right scalar
 template <typename XprType_, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
 constexpr auto operator<=(const MatrixCoeffWiseExpr<XprType_>& lhs, const ScalarType& rhs) {
     return internals::make_cwise_op<std::less_equal<>>(lhs, rhs);
 }
-/// @brief implements the operator<= expression operation
+/// @brief returns a Boolean mask where the left scalar is less than or equal to each right coefficient
 template <typename XprType_, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
 constexpr auto operator<=(const ScalarType& lhs, const MatrixCoeffWiseExpr<XprType_>& rhs) {
     return internals::make_cwise_op<std::less_equal<>>(lhs, rhs);
 }
-/// @brief implements the operator>= expression operation
+/// @brief returns a Boolean mask where each left coefficient is greater than or equal to its right counterpart
 template <typename LhsXprType_, typename RhsXprType_>
 constexpr auto operator>=(const MatrixCoeffWiseExpr<LhsXprType_>& lhs, const MatrixCoeffWiseExpr<RhsXprType_>& rhs) {
     return internals::make_cwise_op<std::greater_equal<>>(lhs, rhs);
 }
-/// @brief implements the operator>= expression operation
+/// @brief returns a Boolean mask where each coefficient is greater than or equal to the right scalar
 template <typename XprType_, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
 constexpr auto operator>=(const MatrixCoeffWiseExpr<XprType_>& lhs, const ScalarType& rhs) {
     return internals::make_cwise_op<std::greater_equal<>>(lhs, rhs);
 }
-/// @brief implements the operator>= expression operation
+/// @brief returns a Boolean mask where the left scalar is greater than or equal to each right coefficient
 template <typename XprType_, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
 constexpr auto operator>=(const ScalarType& lhs, const MatrixCoeffWiseExpr<XprType_>& rhs) {
     return internals::make_cwise_op<std::greater_equal<>>(lhs, rhs);
 }
 // equality comparison
-/// @brief implements the operator== expression operation
+/// @brief returns a Boolean mask where each left coefficient is equal to its right counterpart
 template <typename LhsXprType_, typename RhsXprType_>
 constexpr auto operator==(const MatrixCoeffWiseExpr<LhsXprType_>& lhs, const MatrixCoeffWiseExpr<RhsXprType_>& rhs) {
     return internals::make_cwise_op<std::equal_to<>>(lhs, rhs);
 }
-/// @brief implements the operator== expression operation
+/// @brief returns a Boolean mask where each coefficient is equal to the right scalar
 template <typename XprType_, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
 constexpr auto operator==(const MatrixCoeffWiseExpr<XprType_>& lhs, const ScalarType& rhs) {
     return internals::make_cwise_op<std::equal_to<>>(lhs, rhs);
 }
-/// @brief implements the operator== expression operation
+/// @brief returns a Boolean mask where the left scalar is equal to each right coefficient
 template <typename XprType_, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
 constexpr auto operator==(const ScalarType& lhs, const MatrixCoeffWiseExpr<XprType_>& rhs) {
     return internals::make_cwise_op<std::equal_to<>>(lhs, rhs);
 }
-/// @brief implements the operator!= expression operation
+/// @brief returns a Boolean mask where each left coefficient is different from its right counterpart
 template <typename LhsXprType_, typename RhsXprType_>
 constexpr auto operator!=(const MatrixCoeffWiseExpr<LhsXprType_>& lhs, const MatrixCoeffWiseExpr<RhsXprType_>& rhs) {
     return internals::make_cwise_op<std::not_equal_to<>>(lhs, rhs);
 }
-/// @brief implements the operator!= expression operation
+/// @brief returns a Boolean mask where each coefficient is different from the right scalar
 template <typename XprType_, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
 constexpr auto operator!=(const MatrixCoeffWiseExpr<XprType_>& lhs, const ScalarType& rhs) {
     return internals::make_cwise_op<std::not_equal_to<>>(lhs, rhs);
 }
-/// @brief implements the operator!= expression operation
+/// @brief returns a Boolean mask where the left scalar is different from each right coefficient
 template <typename XprType_, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType>)
 constexpr auto operator!=(const ScalarType& lhs, const MatrixCoeffWiseExpr<XprType_>& rhs) {
