@@ -21,7 +21,7 @@
 
 namespace fdapde {
 namespace internals {
-  
+
 template <int Rows, typename Scalar = double> struct static_dynamic_eigen_vector_selector {
     using type = std::conditional_t<Rows == Dynamic, Eigen::Matrix<Scalar, Dynamic, 1>, Eigen::Matrix<Scalar, Rows, 1>>;
 };
@@ -78,10 +78,10 @@ template <typename SolverType_> class eigen_sparse_solver_movable_wrap {
     operator bool() const { return computed_; }
     bool has_value() const { return computed_; }
 };
-  
+
 // ordering relation for eigen vectors
 struct eigen_vector_compare {
-  template <typename Scalar, int Rows>
+    template <typename Scalar, int Rows>
     bool operator()(const Eigen::Matrix<Scalar, Rows, 1>& lhs, const Eigen::Matrix<Scalar, Rows, 1>& rhs) const {
         return std::lexicographical_compare(lhs.data(), lhs.data() + lhs.size(), rhs.data(), rhs.data() + rhs.size());
     }
@@ -101,23 +101,6 @@ struct eigen_matrix_hash {
 };
 
 }   // namespace internals
-  
-// A Triplet type (almost identical to Eigen::Triplet<T>) but allowing for non-const access of stored values.
-template <typename Scalar_> class Triplet {
-   public:
-    using Index = int;
-    using Scalar = std::decay_t<Scalar_>;
-
-    Triplet() : row_(0), col_(0), value_() { }
-    Triplet(int row, int col, const Scalar_& value) : row_(row), col_(col), value_(value) { }
-    int row() const { return row_; }
-    int col() const { return col_; }
-    const Scalar& value() const { return value_; }
-    Scalar& value() { return value_; }
-   private:
-    Index row_, col_;
-    Scalar value_;
-};
 
 // test if Eigen matrix is empty (a zero-sized matrix is considered empty)
 template <typename Derived> inline bool is_empty(const Eigen::EigenBase<Derived>& matrix) { return matrix.size() == 0; }

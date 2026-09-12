@@ -14,13 +14,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// clang-format off
-#include <fdaPDE/linear_algebra.h>
-#include <Eigen/SparseCore>
-#include <fdaPDE/src/linear_algebra/eigen/eigen_helper.h>
+#include <fdaPDE/sparse_linear_algebra.h>
 #include <gtest/gtest.h>
-// clang-format on
 
+#include <Eigen/SparseCore>
 #include <vector>
 
 namespace {
@@ -28,6 +25,7 @@ namespace {
 using native_triplet = fdapde::Triplet<double>;
 using eigen_sparse = Eigen::SparseMatrix<double, Eigen::RowMajor, int>;
 
+// emits overlapping triangle contributions with exactly representable duplicate values
 std::vector<native_triplet> make_grid_triplets(int subdivisions) {
     const int nodes_per_side = subdivisions + 1;
     std::vector<native_triplet> triplets;
@@ -53,6 +51,7 @@ std::vector<native_triplet> make_grid_triplets(int subdivisions) {
     return triplets;
 }
 
+// compares canonical CSR rows and values against Eigen triplet compression
 void expect_same_compression(int rows, int cols, const std::vector<native_triplet>& triplets) {
     const fdapde::SparseMatrix<double> native(rows, cols, triplets);
 
@@ -64,23 +63,32 @@ void expect_same_compression(int rows, int cols, const std::vector<native_triple
     oracle.prune(0.0);
     oracle.makeCompressed();
 
+    // native and Eigen compression retain the same row count
     ASSERT_EQ(native.rows(), oracle.rows());
+    // native and Eigen compression retain the same column count
     ASSERT_EQ(native.cols(), oracle.cols());
+    // both implementations store the same number of entries after zero pruning
     ASSERT_EQ(native.non_zeros(), oracle.nonZeros());
     for (int row = 0; row < rows; ++row) {
         auto native_it = native.row(row).begin();
         const auto native_end = native.row(row).end();
         for (eigen_sparse::InnerIterator oracle_it(oracle, row); oracle_it; ++oracle_it) {
+            // each Eigen row entry has a corresponding native entry
             ASSERT_NE(native_it, native_end);
+            // native row iteration matches the Eigen column order
             EXPECT_EQ((*native_it).column(), oracle_it.col());
+            // native duplicate sums match the independent Eigen coefficients
             EXPECT_DOUBLE_EQ((*native_it).value(), oracle_it.value());
             ++native_it;
         }
+        // native iteration has no extra entries after the Eigen row ends
         EXPECT_EQ(native_it, native_end);
     }
 }
 
+// checks rectangular and assembly-shaped duplicate compression against Eigen
 TEST(NativeSparseOracle, MatchesEigenTripletCompression) {
+    // compare a small rectangular matrix with duplicates and explicit zeros
     expect_same_compression(
       3, 4,
       std::vector<native_triplet> {
@@ -94,7 +102,26 @@ TEST(NativeSparseOracle, MatchesEigenTripletCompression) {
 
     const int subdivisions = 32;
     const int nodes = (subdivisions + 1) * (subdivisions + 1);
+    // compare all shared-node contributions from a structured triangle grid
     expect_same_compression(nodes, nodes, make_grid_triplets(subdivisions));
+}
+
+// exercises empty, rectangular, sparse and duplicate-heavy layouts in both compression paths
+TEST(NativeSparseOracle, MatchesEigenAcrossShapesAndDensities) {
+    for (int rows : {0, 1, 4, 11}) {
+        for (int cols : {0, 1, 7, 101}) {
+            for (int count : {0, 3, 150}) {
+                std::vector<native_triplet> triplets;
+                if (rows > 0 && cols > 0) {
+                    for (int k = 0; k < count; ++k) {
+                        triplets.emplace_back((7 * k + 3) % rows, (13 * k + 1) % cols, (k % 5) - 2.0);
+                    }
+                }
+                // compare every row, sorted coordinate and combined coefficient with Eigen
+                expect_same_compression(rows, cols, triplets);
+            }
+        }
+    }
 }
 
 }   // namespace
