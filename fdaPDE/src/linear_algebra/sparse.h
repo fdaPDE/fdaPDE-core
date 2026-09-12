@@ -18,6 +18,7 @@
 #define __FDAPDE_LINALG_SPARSE_H__
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <initializer_list>
 #include <iterator>
@@ -235,8 +236,7 @@ template <typename Scalar_> class SparseMatrix {
     /// @brief rebuilds the current shape from an initializer list
     void rebuild(std::initializer_list<triplet_type> triplets) { rebuild(std::vector<triplet_type>(triplets)); }
 
-    // Fresh sparse results restore the canonical no-explicit-zero pattern even
-    // when value_ref left an exact zero in the source structure.
+    /// @brief returns an owning transpose with sorted rows and explicit zeros removed
     SparseMatrix transpose() const {
         SparseMatrix result(cols_, rows_);
         for (Index row = 0; row < rows_; ++row) {
@@ -260,26 +260,25 @@ template <typename Scalar_> class SparseMatrix {
         return result;
     }
 
-    // Expand one authoritative triangle into an owning symmetric CSR matrix.
-    // Entries in the opposite triangle are rejected rather than discarded.
+    /// @brief mirrors a checked stored triangle into a full symmetric owner, omitting exact zeros
     SparseMatrix symmetric_expanded(int triangle) const {
-        if (triangle != Upper && triangle != Lower) {
-            throw std::invalid_argument("symmetric expansion requires an upper or lower triangle");
-        }
-        if (rows_ != cols_) { throw std::invalid_argument("symmetric expansion requires a square matrix"); }
+        fdapde_strong_assert(
+          triangle == Upper || triangle == Lower, std::invalid_argument,
+          "symmetric expansion requires an upper or lower triangle");
+        fdapde_strong_assert(rows_ == cols_, std::invalid_argument, "symmetric expansion requires a square matrix");
 
         std::size_t output_size = 0;
         for (Index row = 0; row < rows_; ++row) {
             for (Index current = row_offsets_[row]; current < row_offsets_[row + 1]; ++current) {
                 const Index col = column_indices_[current];
-                if ((triangle == Upper && row > col) || (triangle == Lower && row < col)) {
-                    throw std::invalid_argument("stored coefficient lies outside the declared triangle");
-                }
+                fdapde_strong_assert(
+                  triangle == Upper ? row <= col : row >= col, std::invalid_argument,
+                  "stored coefficient lies outside the declared triangle");
                 if (values_[current] != Scalar {}) {
                     const std::size_t increment = row == col ? 1 : 2;
-                    if (output_size > static_cast<std::size_t>(std::numeric_limits<Index>::max()) - increment) {
-                        throw std::length_error("symmetric expansion exceeds the supported int range");
-                    }
+                    fdapde_strong_assert(
+                      output_size <= static_cast<std::size_t>(std::numeric_limits<Index>::max()) - increment,
+                      std::length_error, "symmetric expansion exceeds the supported int range");
                     output_size += increment;
                 }
             }
@@ -299,25 +298,29 @@ template <typename Scalar_> class SparseMatrix {
         return SparseMatrix(rows_, cols_, triplets);
     }
 
+    /// @brief multiplies a matching column-vector expression into an independent dense vector
     template <internals::matrix_expression RhsXprType>
         requires(std::remove_cvref_t<RhsXprType>::Cols == 1)
     auto operator*(const RhsXprType& rhs) const {
         using RhsScalar = std::remove_cv_t<typename std::remove_cvref_t<RhsXprType>::Scalar>;
         using ResultScalar = std::common_type_t<Scalar, RhsScalar>;
-        if (rhs.size() != cols_) {
-            throw std::invalid_argument("sparse-vector product requires matching inner dimensions");
-        }
+        fdapde_strong_assert(
+          rhs.size() == cols_, std::invalid_argument, "sparse-vector product requires matching inner dimensions");
         Vector<ResultScalar, Dynamic> result(rows_);
         ResultScalar* result_data = result.data();
         for (Index row = 0; row < rows_; ++row) {
             ResultScalar value {};
             for (Index current = row_offsets_[row]; current < row_offsets_[row + 1]; ++current) {
                 if constexpr (has_plain_dense_storage_<RhsXprType>) {
-                    value += static_cast<ResultScalar>(values_[current]) *
-                             static_cast<ResultScalar>(rhs.data()[column_indices_[current]]);
+                    value = add_(
+                      value, multiply_(
+                               static_cast<ResultScalar>(values_[current]),
+                               static_cast<ResultScalar>(rhs.data()[column_indices_[current]])));
                 } else {
-                    value += static_cast<ResultScalar>(values_[current]) *
-                             static_cast<ResultScalar>(rhs[column_indices_[current]]);
+                    value = add_(
+                      value, multiply_(
+                               static_cast<ResultScalar>(values_[current]),
+                               static_cast<ResultScalar>(rhs[column_indices_[current]])));
                 }
             }
             result_data[row] = value;
@@ -325,14 +328,14 @@ template <typename Scalar_> class SparseMatrix {
         return result;
     }
 
+    /// @brief multiplies matching dense expressions into an independent row-major matrix
     template <internals::matrix_expression RhsXprType>
         requires(std::remove_cvref_t<RhsXprType>::Cols != 1)
     auto operator*(const RhsXprType& rhs) const {
         using RhsScalar = std::remove_cv_t<typename std::remove_cvref_t<RhsXprType>::Scalar>;
         using ResultScalar = std::common_type_t<Scalar, RhsScalar>;
-        if (rhs.rows() != cols_) {
-            throw std::invalid_argument("sparse-dense product requires matching inner dimensions");
-        }
+        fdapde_strong_assert(
+          rhs.rows() == cols_, std::invalid_argument, "sparse-dense product requires matching inner dimensions");
         const Index result_cols = rhs.cols();
         Matrix<ResultScalar, Dynamic, Dynamic> result(rows_, result_cols);
         ResultScalar* result_data = result.data();
@@ -345,9 +348,11 @@ template <typename Scalar_> class SparseMatrix {
                         constexpr int RhsStorageOrder = std::remove_cvref_t<RhsXprType>::StorageOrder;
                         const Index rhs_index =
                           RhsStorageOrder == RowMajor ? inner * result_cols + col : col * rhs.rows() + inner;
-                        result_data[row * result_cols + col] += lhs * static_cast<ResultScalar>(rhs.data()[rhs_index]);
+                        auto& value = result_data[row * result_cols + col];
+                        value = add_(value, multiply_(lhs, static_cast<ResultScalar>(rhs.data()[rhs_index])));
                     } else {
-                        result_data[row * result_cols + col] += lhs * static_cast<ResultScalar>(rhs(inner, col));
+                        auto& value = result_data[row * result_cols + col];
+                        value = add_(value, multiply_(lhs, static_cast<ResultScalar>(rhs(inner, col))));
                     }
                 }
             }
@@ -355,21 +360,22 @@ template <typename Scalar_> class SparseMatrix {
         return result;
     }
 
+    /// @brief sums each stored row into a dense vector, rejecting integral overflow
     Vector<Scalar, Dynamic> row_sums() const {
         Vector<Scalar, Dynamic> result(rows_);
         for (Index row = 0; row < rows_; ++row) {
             Scalar value {};
             for (Index current = row_offsets_[row]; current < row_offsets_[row + 1]; ++current) {
-                value += values_[current];
+                value = add_(value, values_[current]);
             }
             result[row] = value;
         }
         return result;
     }
 
-    // Match the root dense diagonal adaptor: extraction is square-only.
+    /// @brief extracts the diagonal of a square matrix, using zero for absent entries
     Vector<Scalar, Dynamic> diagonal() const {
-        if (rows_ != cols_) { throw std::invalid_argument("sparse diagonal requires a square matrix"); }
+        fdapde_strong_assert(rows_ == cols_, std::invalid_argument, "sparse diagonal requires a square matrix");
         Vector<Scalar, Dynamic> result(rows_);
         for (Index row = 0; row < rows_; ++row) {
             const Index position = find_position_(row, row);
@@ -378,31 +384,37 @@ template <typename Scalar_> class SparseMatrix {
         return result;
     }
 
+    /// @brief builds a square diagonal owner from a vector expression with checked integral conversion
     template <internals::matrix_expression DiagonalXprType>
         requires(std::remove_cvref_t<DiagonalXprType>::Rows == 1 || std::remove_cvref_t<DiagonalXprType>::Cols == 1)
     static SparseMatrix from_diagonal(const DiagonalXprType& diagonal) {
+        validate_shape_(diagonal.size(), diagonal.size());
         std::vector<triplet_type> triplets;
         triplets.reserve(static_cast<std::size_t>(diagonal.size()));
         for (Index i = 0; i < diagonal.size(); ++i) {
-            const Scalar value = static_cast<Scalar>(diagonal[i]);
+            const Scalar value = diagonal_cast_(diagonal[i]);
             if (value != Scalar {}) triplets.emplace_back(i, i, value);
         }
         return SparseMatrix(diagonal.size(), diagonal.size(), triplets);
     }
 
+    /// @brief evaluates the bilinear form x-transpose A x for a matching row or column vector
     template <internals::matrix_expression VectorXprType>
         requires(std::remove_cvref_t<VectorXprType>::Rows == 1 || std::remove_cvref_t<VectorXprType>::Cols == 1)
     auto quadratic_form(const VectorXprType& vector) const {
         using VectorScalar = std::remove_cv_t<typename std::remove_cvref_t<VectorXprType>::Scalar>;
         using ResultScalar = std::common_type_t<Scalar, VectorScalar>;
-        if (rows_ != cols_) { throw std::invalid_argument("sparse quadratic form requires a square matrix"); }
-        if (vector.size() != cols_) { throw std::invalid_argument("sparse quadratic form requires a matching vector"); }
+        fdapde_strong_assert(rows_ == cols_, std::invalid_argument, "sparse quadratic form requires a square matrix");
+        fdapde_strong_assert(
+          vector.size() == cols_, std::invalid_argument, "sparse quadratic form requires a matching vector");
         ResultScalar result {};
         for (Index row = 0; row < rows_; ++row) {
             const ResultScalar lhs = static_cast<ResultScalar>(vector[row]);
             for (Index current = row_offsets_[row]; current < row_offsets_[row + 1]; ++current) {
-                result += lhs * static_cast<ResultScalar>(values_[current]) *
-                          static_cast<ResultScalar>(vector[column_indices_[current]]);
+                result = add_(
+                  result, multiply_(
+                            multiply_(lhs, static_cast<ResultScalar>(values_[current])),
+                            static_cast<ResultScalar>(vector[column_indices_[current]])));
             }
         }
         return result;
@@ -431,21 +443,58 @@ template <typename Scalar_> class SparseMatrix {
                  XprType, MatrixView<typename XprType::Scalar, XprType::Rows, XprType::Cols, XprType::StorageOrder>>;
     }();
 
-    /// @brief adds duplicate coefficients and rejects integral overflow before evaluating the sum
-    static Scalar add_(const Scalar& lhs, const Scalar& rhs) {
-        if constexpr (std::is_integral_v<Scalar>) {
-            if constexpr (std::is_signed_v<Scalar>) {
+    /// @brief adds coefficients and rejects integral overflow before evaluating the sum
+    template <typename Value> static Value add_(const Value& lhs, const Value& rhs) {
+        if constexpr (std::is_integral_v<Value>) {
+            if constexpr (std::is_signed_v<Value>) {
                 fdapde_strong_assert(
-                  (rhs <= 0 || lhs <= std::numeric_limits<Scalar>::max() - rhs) &&
-                    (rhs >= 0 || lhs >= std::numeric_limits<Scalar>::min() - rhs),
-                  std::overflow_error, "SparseMatrix duplicate sum exceeds the scalar range");
+                  (rhs <= 0 || lhs <= std::numeric_limits<Value>::max() - rhs) &&
+                    (rhs >= 0 || lhs >= std::numeric_limits<Value>::min() - rhs),
+                  std::overflow_error, "SparseMatrix sum exceeds the scalar range");
             } else {
                 fdapde_strong_assert(
-                  lhs <= std::numeric_limits<Scalar>::max() - rhs, std::overflow_error,
-                  "SparseMatrix duplicate sum exceeds the scalar range");
+                  lhs <= std::numeric_limits<Value>::max() - rhs, std::overflow_error,
+                  "SparseMatrix sum exceeds the scalar range");
             }
         }
         return lhs + rhs;
+    }
+
+    /// @brief multiplies coefficients after checking the integral result range
+    template <typename Value> static Value multiply_(Value lhs, Value rhs) {
+        if constexpr (std::is_integral_v<Value>) {
+            if (lhs == 0 || rhs == 0) return 0;
+            constexpr Value max = std::numeric_limits<Value>::max();
+            if constexpr (std::is_signed_v<Value>) {
+                constexpr Value min = std::numeric_limits<Value>::min();
+                const bool fits = lhs > 0 ? (rhs > 0 ? lhs <= max / rhs : rhs >= min / lhs) :
+                                            (rhs > 0 ? lhs >= min / rhs : rhs >= max / lhs);
+                fdapde_strong_assert(fits, std::overflow_error, "SparseMatrix product exceeds the scalar range");
+            } else {
+                fdapde_strong_assert(
+                  lhs <= max / rhs, std::overflow_error, "SparseMatrix product exceeds the scalar range");
+            }
+        }
+        return lhs * rhs;
+    }
+
+    /// @brief converts a diagonal coefficient without out-of-range integral narrowing
+    template <typename Value> static Scalar diagonal_cast_(Value value) {
+        if constexpr (std::is_integral_v<Scalar>) {
+            if constexpr (std::is_integral_v<Value>) {
+                fdapde_strong_assert(
+                  std::cmp_greater_equal(+value, +std::numeric_limits<Scalar>::min()) &&
+                    std::cmp_less_equal(+value, +std::numeric_limits<Scalar>::max()),
+                  std::overflow_error, "SparseMatrix diagonal coefficient exceeds the scalar range");
+            } else if constexpr (std::is_floating_point_v<Value>) {
+                const long double truncated = std::trunc(static_cast<long double>(value));
+                const long double limit = std::ldexp(1.0L, std::numeric_limits<Scalar>::digits);
+                fdapde_strong_assert(
+                  truncated >= (std::is_signed_v<Scalar> ? -limit : 0.0L) && truncated < limit, std::overflow_error,
+                  "SparseMatrix diagonal coefficient exceeds the scalar range");
+            }
+        }
+        return static_cast<Scalar>(value);
     }
 
     /// @brief checks nonnegative dimensions and room for the terminal CSR row offset

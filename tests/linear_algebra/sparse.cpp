@@ -461,6 +461,7 @@ TEST(linear_algebra, sparse_moved_from_recovery) {
     EXPECT_EQ(source.coeff(0, 1), 5);
 }
 
+// constructs an asymmetric rectangular fixture with five known nonzero coefficients
 sparse_double make_rectangular_fixture() {
     return sparse_double(
       3, 4,
@@ -473,33 +474,44 @@ sparse_double make_rectangular_fixture() {
     });
 }
 
-void check_sparse_transforms() {
+// checks sparse transforms against explicit patterns, values and invalid inputs
+TEST(linear_algebra, sparse_matrix_transforms) {
     const sparse_double matrix = make_rectangular_fixture();
     const auto transposed = matrix.transpose();
+    // the transpose has one row per original column
     EXPECT_EQ(transposed.rows(), 4);
+    // original rows become the three transpose columns
     EXPECT_EQ(transposed.cols(), 3);
+    // transposition preserves all five nonzero coefficients
     EXPECT_EQ(transposed.non_zeros(), 5);
+    // the first transpose row contains the original first-column entries in sorted order
     EXPECT_EQ(
       collect_row(transposed, 0), (std::vector<std::pair<int, double>> {
                                     {0, 2.0},
                                     {2, 5.0}
     }));
+    // the second transpose row contains only the original coefficient at row one
     EXPECT_EQ(
       collect_row(transposed, 1), (std::vector<std::pair<int, double>> {
                                     {1, 3.0}
     }));
+    // the negative coefficient moves from column two into transpose row two
     EXPECT_EQ(
       collect_row(transposed, 2), (std::vector<std::pair<int, double>> {
                                     {0, -1.0}
     }));
+    // the fourth transpose row contains the last-column coefficient
     EXPECT_EQ(
       collect_row(transposed, 3), (std::vector<std::pair<int, double>> {
                                     {1, 4.0}
     }));
+    // creating a transpose leaves the source pattern intact
     EXPECT_EQ(matrix.non_zeros(), 5);
+    // creating a transpose preserves the negative source coefficient
     EXPECT_DOUBLE_EQ(matrix.coeff(0, 2), -1.0);
     const auto repeated_transpose = matrix.transpose();
     for (int row = 0; row < transposed.rows(); ++row) {
+        // repeating the transpose yields identical ordered rows
         EXPECT_EQ(collect_row(repeated_transpose, row), collect_row(transposed, row));
     }
 
@@ -509,16 +521,24 @@ void check_sparse_transforms() {
         {0, 1, 1.0}
     });
     retained_zero.value_ref(0, 1) = 0.0;
+    // assigning zero through a reference retains the source entry
     EXPECT_EQ(retained_zero.non_zeros(), 1);
+    // transposition removes the explicitly stored zero
     EXPECT_EQ(retained_zero.transpose().non_zeros(), 0);
 
     const auto zero_rows_transposed = sparse_double(0, 4).transpose();
     const auto zero_cols_transposed = sparse_double(3, 0).transpose();
+    // a zero-row matrix becomes a transpose with four rows
     EXPECT_EQ(zero_rows_transposed.rows(), 4);
+    // the transpose retains the original empty axis as zero columns
     EXPECT_EQ(zero_rows_transposed.cols(), 0);
+    // transposing a zero-row shape creates no entries
     EXPECT_EQ(zero_rows_transposed.non_zeros(), 0);
+    // a zero-column matrix becomes a transpose with zero rows
     EXPECT_EQ(zero_cols_transposed.rows(), 0);
+    // the original three rows become three columns
     EXPECT_EQ(zero_cols_transposed.cols(), 3);
+    // transposing a zero-column shape creates no entries
     EXPECT_EQ(zero_cols_transposed.non_zeros(), 0);
 
     const sparse_double lower(
@@ -541,23 +561,37 @@ void check_sparse_transforms() {
     });
     const auto expanded_lower = lower.symmetric_expanded(fdapde::Lower);
     const auto expanded_upper = upper.symmetric_expanded(fdapde::Upper);
+    // mirroring two lower off-diagonal entries adds exactly two entries
     EXPECT_EQ(expanded_lower.non_zeros(), 7);
+    // mirroring the upper representation gives the same seven-entry pattern
     EXPECT_EQ(expanded_upper.non_zeros(), 7);
     for (int i = 0; i < 3; ++i) {
-        for (int j = 0; j < 3; ++j) { EXPECT_DOUBLE_EQ(expanded_lower.coeff(i, j), expanded_upper.coeff(i, j)); }
+        for (int j = 0; j < 3; ++j) {
+            // both authoritative triangles expand to identical full coefficients
+            EXPECT_DOUBLE_EQ(expanded_lower.coeff(i, j), expanded_upper.coeff(i, j));
+        }
     }
+    // the lower coefficient at one-zero is mirrored into zero-one
     EXPECT_DOUBLE_EQ(expanded_lower.coeff(0, 1), -1.0);
+    // the lower coefficient remains unchanged at its original position
     EXPECT_DOUBLE_EQ(expanded_lower.coeff(1, 0), -1.0);
+    // the lower coefficient at two-zero is mirrored into zero-two
     EXPECT_DOUBLE_EQ(expanded_lower.coeff(0, 2), 4.0);
+    // expansion preserves the original coefficient at two-zero
     EXPECT_DOUBLE_EQ(expanded_lower.coeff(2, 0), 4.0);
     const auto repeated_expansion = lower.symmetric_expanded(fdapde::Lower);
     for (int row = 0; row < expanded_lower.rows(); ++row) {
+        // repeated expansion yields identical ordered rows
         EXPECT_EQ(collect_row(repeated_expansion, row), collect_row(expanded_lower, row));
     }
 
+    // expansion rejects the rectangular fixture
     EXPECT_THROW(static_cast<void>(matrix.symmetric_expanded(fdapde::Lower)), std::invalid_argument);
+    // upper-only entries are rejected when the declared triangle is lower
     EXPECT_THROW(static_cast<void>(upper.symmetric_expanded(fdapde::Lower)), std::invalid_argument);
+    // lower-only entries are rejected when the declared triangle is upper
     EXPECT_THROW(static_cast<void>(lower.symmetric_expanded(fdapde::Upper)), std::invalid_argument);
+    // an unknown triangle selector raises the public argument error
     EXPECT_THROW(static_cast<void>(lower.symmetric_expanded(17)), std::invalid_argument);
     sparse_double retained_opposite_zero(
       2, 2,
@@ -565,81 +599,125 @@ void check_sparse_transforms() {
         {0, 1, 1.0}
     });
     retained_opposite_zero.value_ref(0, 1) = 0.0;
+    // a stored opposite-triangle entry is rejected even after assigning zero
     EXPECT_THROW(static_cast<void>(retained_opposite_zero.symmetric_expanded(fdapde::Lower)), std::invalid_argument);
 
     const auto sums = matrix.row_sums();
+    // row sums have one entry per sparse row
     EXPECT_EQ(sums.rows(), 3);
+    // row sums are returned as a column vector
     EXPECT_EQ(sums.cols(), 1);
+    // the first row sum combines two and minus one
     EXPECT_DOUBLE_EQ(sums[0], 1.0);
+    // the second row sum combines three and four
     EXPECT_DOUBLE_EQ(sums[1], 7.0);
+    // the last row sum preserves its single coefficient
     EXPECT_DOUBLE_EQ(sums[2], 5.0);
+    // diagonal extraction rejects the rectangular fixture
     EXPECT_THROW(static_cast<void>(matrix.diagonal()), std::invalid_argument);
 
     const auto diagonal = lower.diagonal();
+    // the square fixture yields three diagonal entries
     EXPECT_EQ(diagonal.size(), 3);
+    // the first diagonal entry matches the lower fixture
     EXPECT_DOUBLE_EQ(diagonal[0], 2.0);
+    // the middle diagonal entry matches the lower fixture
     EXPECT_DOUBLE_EQ(diagonal[1], 3.0);
+    // the final diagonal entry matches the lower fixture
     EXPECT_DOUBLE_EQ(diagonal[2], 5.0);
 
     const fdapde::Vector<double, 4> diagonal_values({2.0, 0.0, -1.0, 4.0});
     const auto diagonal_matrix = sparse_double::from_diagonal(diagonal_values);
+    // diagonal construction uses the vector length as its row count
     EXPECT_EQ(diagonal_matrix.rows(), 4);
+    // diagonal construction produces the matching square column count
     EXPECT_EQ(diagonal_matrix.cols(), 4);
+    // the zero diagonal coefficient is omitted from storage
     EXPECT_EQ(diagonal_matrix.non_zeros(), 3);
+    // the first supplied value occupies the first diagonal position
     EXPECT_DOUBLE_EQ(diagonal_matrix.coeff(0, 0), 2.0);
+    // the omitted diagonal entry reads back as implicit zero
     EXPECT_DOUBLE_EQ(diagonal_matrix.coeff(1, 1), 0.0);
+    // the negative supplied value is retained on the diagonal
     EXPECT_DOUBLE_EQ(diagonal_matrix.coeff(2, 2), -1.0);
+    // the last supplied value occupies the last diagonal position
     EXPECT_DOUBLE_EQ(diagonal_matrix.coeff(3, 3), 4.0);
 
     const sparse_double empty;
+    // expanding the empty square matrix produces no entries
     EXPECT_EQ(empty.symmetric_expanded(fdapde::Lower).non_zeros(), 0);
+    // summing zero rows yields an empty vector
     EXPECT_EQ(empty.row_sums().size(), 0);
+    // extracting a zero-length diagonal yields an empty vector
     EXPECT_EQ(empty.diagonal().size(), 0);
+    // an empty diagonal vector creates a sparse matrix without entries
     EXPECT_EQ(sparse_double::from_diagonal(fdapde::Vector<double, fdapde::Dynamic>()).non_zeros(), 0);
 }
 
-void check_sparse_products() {
+// checks eager sparse products across layouts, views, expressions and empty dimensions
+TEST(linear_algebra, sparse_matrix_products) {
     const sparse_double matrix = make_rectangular_fixture();
     const fdapde::Vector<int, 4> vector({1, 2, 3, 4});
     const auto product = matrix * vector;
+    // the vector product has one output per sparse row
     EXPECT_EQ(product.rows(), 3);
+    // the vector product remains a column vector
     EXPECT_EQ(product.cols(), 1);
+    // the first sparse dot product evaluates to two minus three
     EXPECT_DOUBLE_EQ(product[0], -1.0);
+    // the second sparse dot product evaluates to six plus sixteen
     EXPECT_DOUBLE_EQ(product[1], 22.0);
+    // the last sparse dot product evaluates to five times one
     EXPECT_DOUBLE_EQ(product[2], 5.0);
 
     const auto expression_product = matrix * (vector + vector);
+    // doubling the vector expression doubles the first dot product
     EXPECT_DOUBLE_EQ(expression_product[0], -2.0);
+    // doubling the vector expression doubles the second dot product
     EXPECT_DOUBLE_EQ(expression_product[1], 44.0);
+    // doubling the vector expression doubles the final dot product
     EXPECT_DOUBLE_EQ(expression_product[2], 10.0);
 
     const int rhs_values[8] {1, 2, 3, 4, 5, 6, 7, 8};
     const fdapde::Matrix<int, 4, 2, fdapde::ColMajor> col_major_rhs(rhs_values);
     const auto dense_product = matrix * col_major_rhs;
+    // the dense product retains the three sparse rows
     EXPECT_EQ(dense_product.rows(), 3);
+    // the dense product retains both right-hand-side columns
     EXPECT_EQ(dense_product.cols(), 2);
+    // the first column-major dot product evaluates to two minus five
     EXPECT_DOUBLE_EQ(dense_product(0, 0), -3.0);
+    // the second column-major dot product evaluates to four minus six
     EXPECT_DOUBLE_EQ(dense_product(0, 1), -2.0);
+    // the middle-row first dot product evaluates to nine plus twenty-eight
     EXPECT_DOUBLE_EQ(dense_product(1, 0), 37.0);
+    // the middle-row second dot product evaluates to twelve plus thirty-two
     EXPECT_DOUBLE_EQ(dense_product(1, 1), 44.0);
+    // the last-row first dot product evaluates to five times one
     EXPECT_DOUBLE_EQ(dense_product(2, 0), 5.0);
+    // the last-row second dot product evaluates to five times two
     EXPECT_DOUBLE_EQ(dense_product(2, 1), 10.0);
 
     const fdapde::Matrix<int, 4, 2> row_major_rhs(rhs_values);
     const auto row_major_product = matrix * row_major_rhs;
     for (int i = 0; i < dense_product.rows(); ++i) {
         for (int j = 0; j < dense_product.cols(); ++j) {
+            // row-major storage produces the same coefficients as column-major storage
             EXPECT_DOUBLE_EQ(row_major_product(i, j), dense_product(i, j));
         }
     }
 
     const fdapde::MatrixView<const int, 4, 2, fdapde::ColMajor> rhs_view(col_major_rhs.data());
     const auto view_product = matrix * rhs_view;
+    // a const column-major view reproduces the first owning-matrix dot product
     EXPECT_DOUBLE_EQ(view_product(0, 0), -3.0);
+    // a const column-major view reproduces the middle-row second dot product
     EXPECT_DOUBLE_EQ(view_product(1, 1), 44.0);
 
     const auto dense_expression_product = matrix * (col_major_rhs + col_major_rhs);
+    // a doubled matrix expression doubles the first dense result
     EXPECT_DOUBLE_EQ(dense_expression_product(0, 0), -6.0);
+    // a doubled matrix expression doubles the middle-row second result
     EXPECT_DOUBLE_EQ(dense_expression_product(1, 1), 88.0);
 
     const sparse_double single_column(
@@ -651,39 +729,60 @@ void check_sparse_products() {
     const int one_row_values[2] {3, 4};
     const fdapde::Matrix<int, 1, 2> one_row_rhs(one_row_values);
     const auto one_row_product = single_column * one_row_rhs;
+    // a row-vector right-hand side produces one output row per sparse row
     EXPECT_EQ(one_row_product.rows(), 3);
+    // a row-vector right-hand side preserves its two columns
     EXPECT_EQ(one_row_product.cols(), 2);
+    // the first outer-product entry multiplies two by three
     EXPECT_DOUBLE_EQ(one_row_product(0, 0), 6.0);
+    // the second outer-product entry multiplies two by four
     EXPECT_DOUBLE_EQ(one_row_product(0, 1), 8.0);
+    // the empty sparse middle row yields zero in the first output column
     EXPECT_DOUBLE_EQ(one_row_product(1, 0), 0.0);
+    // the empty sparse middle row yields zero in the second output column
     EXPECT_DOUBLE_EQ(one_row_product(1, 1), 0.0);
+    // the last outer-product row multiplies minus one by three
     EXPECT_DOUBLE_EQ(one_row_product(2, 0), -3.0);
+    // the last outer-product row multiplies minus one by four
     EXPECT_DOUBLE_EQ(one_row_product(2, 1), -4.0);
 
     const fdapde::Vector<double, fdapde::Dynamic> empty_vector;
     const auto zero_row_product = sparse_double(0, 4) * vector;
     const auto zero_col_product = sparse_double(3, 0) * empty_vector;
+    // a product with zero output rows returns an empty vector
     EXPECT_EQ(zero_row_product.size(), 0);
+    // a zero inner dimension still preserves the three output rows
     EXPECT_EQ(zero_col_product.size(), 3);
+    // the first empty dot product is zero
     EXPECT_DOUBLE_EQ(zero_col_product[0], 0.0);
+    // the middle empty dot product is zero
     EXPECT_DOUBLE_EQ(zero_col_product[1], 0.0);
+    // the final empty dot product is zero
     EXPECT_DOUBLE_EQ(zero_col_product[2], 0.0);
 
     const fdapde::Matrix<double, fdapde::Dynamic, fdapde::Dynamic> empty_rhs(0, 2);
     const auto zero_col_dense_product = sparse_double(3, 0) * empty_rhs;
+    // a zero inner dimension preserves the dense output row count
     EXPECT_EQ(zero_col_dense_product.rows(), 3);
+    // a zero inner dimension preserves the dense output column count
     EXPECT_EQ(zero_col_dense_product.cols(), 2);
+    // an empty dense dot product initializes its output to zero
     EXPECT_DOUBLE_EQ(zero_col_dense_product(2, 1), 0.0);
 
     const fdapde::Vector<double, 3> short_vector({1.0, 2.0, 3.0});
     const fdapde::Matrix<double, fdapde::Dynamic, fdapde::Dynamic> short_matrix(3, 2);
+    // a vector with too few entries raises a dimension error
     EXPECT_THROW(static_cast<void>(matrix * short_vector), std::invalid_argument);
+    // a dense right-hand side with too few rows raises a dimension error
     EXPECT_THROW(static_cast<void>(matrix * short_matrix), std::invalid_argument);
+    // failed products leave the source pattern unchanged
     EXPECT_EQ(matrix.non_zeros(), 5);
+    // failed products leave the last-column coefficient unchanged
     EXPECT_DOUBLE_EQ(matrix.coeff(1, 3), 4.0);
 }
 
-void check_sparse_quadratic_form() {
+// checks quadratic forms against a hand calculation and dimension failures
+TEST(linear_algebra, sparse_matrix_quadratic_form) {
     const sparse_double lower(
       3, 3,
       {
@@ -695,18 +794,203 @@ void check_sparse_quadratic_form() {
     });
     const auto matrix = lower.symmetric_expanded(fdapde::Lower);
     const fdapde::Vector<int, 3> vector({1, 2, 3});
+    // the expanded symmetric fixture gives the hand-computed quadratic value seventy-nine
     EXPECT_DOUBLE_EQ(matrix.quadratic_form(vector), 79.0);
+    // the empty quadratic form returns the additive identity
     EXPECT_DOUBLE_EQ(sparse_double().quadratic_form(fdapde::Vector<double, fdapde::Dynamic>()), 0.0);
 
     const fdapde::Vector<double, 2> short_vector({1.0, 2.0});
+    // a short quadratic vector raises a dimension error
     EXPECT_THROW(static_cast<void>(matrix.quadratic_form(short_vector)), std::invalid_argument);
+    // a rectangular matrix cannot define the square quadratic form
     EXPECT_THROW(static_cast<void>(make_rectangular_fixture().quadratic_form(vector)), std::invalid_argument);
 }
 
-TEST(linear_algebra, sparse_matrix_transforms) { check_sparse_transforms(); }
+// checks eager result types, ownership and boundary shapes through public sparse operations
+TEST(linear_algebra, sparse_operation_boundaries) {
+    using vector_product = decltype(std::declval<const sparse_double&>() * std::declval<fdapde::Vector<int, 4>>());
+    // mixed-scalar vector multiplication returns an owning dynamic double vector
+    static_assert(std::is_same_v<vector_product, fdapde::Vector<double, fdapde::Dynamic>>);
+    using matrix_product = decltype(std::declval<const sparse_double&>() * std::declval<fdapde::Matrix<int, 4, 2>>());
+    // mixed-scalar matrix multiplication returns an owning dynamic double matrix
+    static_assert(std::is_same_v<matrix_product, fdapde::Matrix<double, fdapde::Dynamic, fdapde::Dynamic>>);
+    const sparse_double wide(0, std::numeric_limits<int>::max());
+    // the transpose rejects a row count that cannot accommodate its terminal CSR offset
+    EXPECT_THROW(static_cast<void>(wide.transpose()), std::length_error);
+    sparse_double source(
+      2, 2,
+      {
+        {0, 1, 3.0}
+    });
+    const auto transposed = source.transpose();
+    const auto product = source * fdapde::Vector<double, 2>({2.0, 4.0});
+    source.value_ref(0, 1) = 9.0;
+    // a source mutation cannot change the independent transpose coefficient
+    EXPECT_DOUBLE_EQ(transposed.coeff(1, 0), 3.0);
+    // a source mutation cannot change the already evaluated dense product
+    EXPECT_DOUBLE_EQ(product[0], 12.0);
+    const auto diagonal = source.diagonal();
+    // a missing first diagonal entry is initialized to zero
+    EXPECT_DOUBLE_EQ(diagonal[0], 0.0);
+    // a missing final diagonal entry is initialized to zero
+    EXPECT_DOUBLE_EQ(diagonal[1], 0.0);
+    const double row_values[2] {2.0, 4.0};
+    const fdapde::Matrix<double, 1, 2> row_vector(row_values);
+    // the row-vector form evaluates two times nine times four without requiring a column view
+    EXPECT_DOUBLE_EQ(source.quadratic_form(row_vector), 72.0);
+    const auto row_diagonal = sparse_double::from_diagonal(row_vector + row_vector);
+    // diagonal construction evaluates the doubled row expression at its second entry
+    EXPECT_DOUBLE_EQ(row_diagonal.coeff(1, 1), 8.0);
+    const fdapde::Vector<double, 2> vector({2.0, 4.0});
+    const fdapde::MatrixView<const double, 2, 1> view(vector.data());
+    // a const vector view uses the same coefficient ordering as its owning vector
+    EXPECT_DOUBLE_EQ((source * view)[0], 36.0);
+    const fdapde::Matrix<double, fdapde::Dynamic, fdapde::Dynamic> no_columns(2, 0);
+    const auto empty_product = source * no_columns;
+    // a right-hand side with no columns retains the two output rows
+    EXPECT_EQ(empty_product.rows(), 2);
+    // a right-hand side with no columns produces no output coefficients
+    EXPECT_EQ(empty_product.size(), 0);
+}
 
-TEST(linear_algebra, sparse_matrix_products) { check_sparse_products(); }
+// checks signed and unsigned arithmetic boundaries before overflowing products or reductions are evaluated
+TEST(linear_algebra, sparse_integral_operation_overflow) {
+    using sparse_int = fdapde::SparseMatrix<int>;
+    constexpr int max = std::numeric_limits<int>::max();
+    constexpr int min = std::numeric_limits<int>::min();
+    const fdapde::Vector<int, 1> two(2);
+    const fdapde::Vector<int, 1> minus_one(-1);
+    // doubling the largest signed coefficient is rejected before signed multiplication
+    EXPECT_THROW(
+      static_cast<void>(
+        sparse_int(
+          1, 1,
+          {
+            {0, 0, max}
+    }) *
+        two),
+      std::overflow_error);
+    // negating the smallest signed coefficient is rejected before signed multiplication
+    EXPECT_THROW(
+      static_cast<void>(
+        sparse_int(
+          1, 1,
+          {
+            {0, 0, min}
+    }) *
+        minus_one),
+      std::overflow_error);
+    const sparse_int sum(
+      1, 2,
+      {
+        {0, 0, max},
+        {0, 1, 1  }
+    });
+    // individually valid coefficients cannot overflow while being summed into a row total
+    EXPECT_THROW(static_cast<void>(sum.row_sums()), std::overflow_error);
+    const fdapde::Vector<int, 2> ones({1, 1});
+    // individually valid products cannot overflow their dot-product accumulator
+    EXPECT_THROW(static_cast<void>(sum * ones), std::overflow_error);
+    const fdapde::Matrix<int, 2, 2> dense_ones(1);
+    // the dense matrix kernel checks the same accumulator overflow as the vector kernel
+    EXPECT_THROW(static_cast<void>(sum * dense_ones), std::overflow_error);
+    const fdapde::Vector<int, 2> zeros({0, 0});
+    // the expression path retains the integral accumulator check
+    EXPECT_THROW(static_cast<void>(sum * (ones + zeros)), std::overflow_error);
+    // quadratic multiplication checks intermediate products before the final reduction
+    EXPECT_THROW(
+      static_cast<void>(sparse_int(
+                          1, 1,
+                          {
+                            {0, 0, max}
+    })
+                          .quadratic_form(two)),
+      std::overflow_error);
+    const sparse_int quadratic_sum(
+      2, 2,
+      {
+        {0, 0, max},
+        {1, 1, 1  }
+    });
+    // quadratic accumulation rejects a sum overflow even when all products fit
+    EXPECT_THROW(static_cast<void>(quadratic_sum.quadratic_form(ones)), std::overflow_error);
+    const sparse_int negative(
+      1, 1,
+      {
+        {0, 0, min}
+    });
+    // multiplying the minimum by one reaches the exact lower boundary without throwing
+    EXPECT_EQ((negative * fdapde::Vector<int, 1>(1))[0], min);
+    // multiplying the minimum by zero returns zero without dividing by zero in validation
+    EXPECT_EQ((negative * fdapde::Vector<int, 1>(0))[0], 0);
+    // two negative operands with a representable product are accepted
+    EXPECT_EQ(
+      (sparse_int(
+         1, 1,
+         {
+           {0, 0, -3}
+    }) *
+       minus_one)[0],
+      3);
+    const fdapde::Vector<double, 1> floating_two(2.0);
+    // promotion to double occurs before multiplication and avoids a false int overflow
+    EXPECT_DOUBLE_EQ(
+      (sparse_int(
+         1, 1,
+         {
+           {0, 0, max}
+    }) *
+       floating_two)[0],
+      2.0 * max);
+    using sparse_unsigned = fdapde::SparseMatrix<unsigned>;
+    const sparse_unsigned unsigned_max(
+      1, 1,
+      {
+        {0, 0, std::numeric_limits<unsigned>::max()}
+    });
+    // unsigned multiplication rejects wraparound at the maximum coefficient
+    EXPECT_THROW(static_cast<void>(unsigned_max * fdapde::Vector<unsigned, 1>(2)), std::overflow_error);
+    const sparse_unsigned unsigned_sum(
+      1, 2,
+      {
+        {0, 0, std::numeric_limits<unsigned>::max()},
+        {0, 1, 1                                   }
+    });
+    // unsigned row summation rejects wraparound in the reduction
+    EXPECT_THROW(static_cast<void>(unsigned_sum.row_sums()), std::overflow_error);
+    // a failed reduction leaves the original maximum coefficient intact
+    EXPECT_EQ(sum.coeff(0, 0), max);
+}
 
-TEST(linear_algebra, sparse_matrix_quadratic_form) { check_sparse_quadratic_form(); }
+// checks diagonal conversion at integer boundaries, with fractional, nonfinite and narrow input values
+TEST(linear_algebra, sparse_diagonal_conversion) {
+    using sparse_int = fdapde::SparseMatrix<int>;
+    const fdapde::Vector<double, 3> fractions({2.9, -3.9, 0.9});
+    const auto truncated = sparse_int::from_diagonal(fractions);
+    // a positive fractional coefficient truncates toward zero
+    EXPECT_EQ(truncated.coeff(0, 0), 2);
+    // a negative fractional coefficient truncates toward zero
+    EXPECT_EQ(truncated.coeff(1, 1), -3);
+    // a fraction that truncates to zero is omitted from the canonical pattern
+    EXPECT_EQ(truncated.non_zeros(), 2);
+    const fdapde::Vector<double, 1> out_of_range(std::ldexp(1.0, std::numeric_limits<int>::digits));
+    // the first value above the signed range is rejected before floating-to-integer conversion
+    EXPECT_THROW(static_cast<void>(sparse_int::from_diagonal(out_of_range)), std::overflow_error);
+    const fdapde::Vector<double, 1> nan(std::numeric_limits<double>::quiet_NaN());
+    // a NaN cannot be converted into an integral diagonal coefficient
+    EXPECT_THROW(static_cast<void>(sparse_int::from_diagonal(nan)), std::overflow_error);
+    const fdapde::Vector<double, 1> infinity(std::numeric_limits<double>::infinity());
+    // infinity cannot be converted into an integral diagonal coefficient
+    EXPECT_THROW(static_cast<void>(sparse_int::from_diagonal(infinity)), std::overflow_error);
+    const fdapde::Vector<unsigned long long, 1> large(std::numeric_limits<unsigned long long>::max());
+    // integral narrowing rejects a coefficient above the signed destination range
+    EXPECT_THROW(static_cast<void>(sparse_int::from_diagonal(large)), std::overflow_error);
+    const fdapde::Vector<int, 1> negative(-1);
+    // integral conversion into an unsigned diagonal rejects negative values
+    EXPECT_THROW(static_cast<void>(fdapde::SparseMatrix<unsigned>::from_diagonal(negative)), std::overflow_error);
+    const auto narrow = fdapde::SparseMatrix<char>::from_diagonal(fdapde::Vector<int, 1>(7));
+    // a representable plain-char destination supports checked integral conversion
+    EXPECT_EQ(narrow.coeff(0, 0), 7);
+}
 
 }   // namespace
