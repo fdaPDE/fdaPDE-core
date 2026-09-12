@@ -29,10 +29,7 @@
 
 namespace fdapde {
 
-// Left-preconditioned restarted GMRES using Arnoldi iteration and Givens
-// rotations as in Golub and Van Loan, Matrix Computations, Section 10.5.
-// The coefficient matrix is materialized so the solver never retains a
-// dangling or subsequently mutated expression.
+/// @brief solves dense systems by left-preconditioned restarted GMRES with an owned operator
 template <typename XprType_, typename Preconditioner_> class GMRES {
     using XprType = std::decay_t<XprType_>;
     fdapde_static_assert(
@@ -44,6 +41,7 @@ template <typename XprType_, typename Preconditioner_> class GMRES {
     static constexpr int Cols = XprType::Cols;
     fdapde_static_assert(std::is_floating_point_v<Scalar>, GMRES_REQUIRES_FLOATING_POINT_SCALARS);
 
+    /// @brief constructs solver settings with positive iteration limits and finite positive tolerance
     template <typename Preconditioner>
         requires(std::is_constructible_v<Preconditioner_, Preconditioner>)
     constexpr GMRES(Preconditioner&& preconditioner, int max_iterations, int restart, Scalar tolerance) :
@@ -51,16 +49,18 @@ template <typename XprType_, typename Preconditioner_> class GMRES {
         restart_(restart),
         tolerance_(tolerance),
         preconditioner_(std::forward<Preconditioner>(preconditioner)) {
-        if (max_iterations_ <= 0 || restart_ <= 0 || !(tolerance_ > Scalar(0)) || !std::isfinite(tolerance_)) {
-            throw std::invalid_argument("GMRES requires positive iteration limits and a finite positive tolerance");
-        }
+        fdapde_strong_assert(
+          max_iterations_ > 0 && restart_ > 0 && tolerance_ > Scalar(0) && std::isfinite(tolerance_),
+          std::invalid_argument, "GMRES requires positive iteration limits and a finite positive tolerance");
     }
 
+    /// @brief uses defaults of 500 iterations, restart 50 and relative tolerance 1e-6
     template <typename Preconditioner>
         requires(std::is_constructible_v<Preconditioner_, Preconditioner>)
     constexpr explicit GMRES(Preconditioner&& preconditioner) :
         GMRES(std::forward<Preconditioner>(preconditioner), 500, 50, Scalar(1e-6)) { }
 
+    /// @brief copies the matrix and initializes preconditioning with explicit solver settings
     template <typename MatrixType, typename Preconditioner>
         requires(
           std::is_same_v<XprType, std::decay_t<MatrixType>> && std::is_constructible_v<Preconditioner_, Preconditioner>)
@@ -71,32 +71,34 @@ template <typename XprType_, typename Preconditioner_> class GMRES {
         compute(matrix);
     }
 
+    /// @brief copies the matrix and initializes preconditioning with default settings
     template <typename MatrixType, typename Preconditioner>
         requires(
           std::is_same_v<XprType, std::decay_t<MatrixType>> && std::is_constructible_v<Preconditioner_, Preconditioner>)
     constexpr GMRES(const MatrixExpr<MatrixType>& matrix, Preconditioner&& preconditioner) :
         GMRES(matrix, std::forward<Preconditioner>(preconditioner), 500, 50, Scalar(1e-6)) { }
 
+    /// @brief replaces the owned matrix and workspaces, invalidating the solver on failure
     template <typename MatrixType>
         requires(std::is_same_v<XprType, std::decay_t<MatrixType>>)
     constexpr void compute(const MatrixExpr<MatrixType>& matrix) {
         initialized_ = false;
         reset_observers_();
         const int n = matrix.rows();
-        if (n <= 0 || n != matrix.cols() || (Rows != Dynamic && n != Rows) || (Cols != Dynamic && n != Cols)) {
-            throw std::invalid_argument("GMRES requires a nonempty square matrix matching its static shape");
-        }
+        fdapde_strong_assert(
+          n > 0 && n == matrix.cols() && (Rows == Dynamic || n == Rows) && (Cols == Dynamic || n == Cols),
+          std::invalid_argument, "GMRES requires a nonempty square matrix matching its static shape");
         for (int row = 0; row < n; ++row) {
             for (int col = 0; col < n; ++col) {
-                if (!std::isfinite(static_cast<Scalar>(matrix.derived()(row, col)))) {
-                    throw std::invalid_argument("GMRES requires finite matrix coefficients");
-                }
+                fdapde_strong_assert(
+                  std::isfinite(static_cast<Scalar>(matrix.derived()(row, col))), std::invalid_argument,
+                  "GMRES requires finite matrix coefficients");
             }
         }
 
         matrix_ = matrix;
         preconditioner_.compute(matrix_);
-        if (!preconditioner_valid_()) { throw std::domain_error("GMRES requires a valid preconditioner"); }
+        fdapde_strong_assert(preconditioner_valid_(), std::domain_error, "GMRES requires a valid preconditioner");
 
         krylov_dimension_ = fdapde::min(restart_, n);
         H_.resize(krylov_dimension_ + 1, krylov_dimension_);
@@ -107,6 +109,7 @@ template <typename XprType_, typename Preconditioner_> class GMRES {
         initialized_ = true;
     }
 
+    /// @brief returns an owning iterate from a finite initial guess and resets solve diagnostics
     template <typename RhsType, typename InitialType>
     constexpr auto solve(const MatrixExpr<RhsType>& rhs, const MatrixExpr<InitialType>& initial) {
         fdapde_static_assert(
@@ -118,17 +121,15 @@ template <typename XprType_, typename Preconditioner_> class GMRES {
           INVALID_GMRES_INITIAL_GUESS_STATIC_SHAPE);
 
         reset_observers_();
-        if (!initialized_) { throw std::domain_error("GMRES solve requires a successfully computed solver"); }
-        if (
-          rhs.cols() != 1 || initial.cols() != 1 || rhs.rows() != matrix_.rows() || initial.rows() != matrix_.rows()) {
-            throw std::invalid_argument("GMRES requires matching column-vector right-hand side and initial guess");
-        }
+        fdapde_strong_assert(initialized_, std::domain_error, "GMRES solve requires a successfully computed solver");
+        fdapde_strong_assert(
+          rhs.cols() == 1 && initial.cols() == 1 && rhs.rows() == matrix_.rows() && initial.rows() == matrix_.rows(),
+          std::invalid_argument, "GMRES requires matching column-vector right-hand side and initial guess");
         for (int row = 0; row < matrix_.rows(); ++row) {
-            if (
-              !std::isfinite(static_cast<Scalar>(rhs.derived()(row, 0))) ||
-              !std::isfinite(static_cast<Scalar>(initial.derived()(row, 0)))) {
-                throw std::invalid_argument("GMRES requires finite right-hand side and initial-guess coefficients");
-            }
+            fdapde_strong_assert(
+              std::isfinite(static_cast<Scalar>(rhs.derived()(row, 0))) &&
+                std::isfinite(static_cast<Scalar>(initial.derived()(row, 0))),
+              std::invalid_argument, "GMRES requires finite right-hand side and initial-guess coefficients");
         }
 
         Vector<Scalar, Rows> solution(initial);
@@ -148,6 +149,7 @@ template <typename XprType_, typename Preconditioner_> class GMRES {
             const Scalar residual_scale = residual_norm.scale;
             const Scalar beta = residual_norm.magnitude;
 
+            // normalize the residual before Arnoldi so its norm need not fit in Scalar
             H_.set_zero();
             V_.set_zero();
             c_.set_zero();
@@ -167,6 +169,7 @@ template <typename XprType_, typename Preconditioner_> class GMRES {
                 Vector<Scalar, Rows> product(matrix_ * basis_vector);
                 Vector<Scalar, Rows> arnoldi(preconditioner_.solve(product));
                 const Scalar arnoldi_scale = arnoldi.norm();
+                // modified Gram-Schmidt builds the next Hessenberg column
                 for (int i = 0; i <= j; ++i) {
                     Scalar projection = Scalar(0);
                     for (int row = 0; row < matrix_.rows(); ++row) projection += V_(row, i) * arnoldi[row];
@@ -181,6 +184,7 @@ template <typename XprType_, typename Preconditioner_> class GMRES {
                     for (int row = 0; row < matrix_.rows(); ++row) V_(row, j + 1) = arnoldi[row] / H_(j + 1, j);
                 }
 
+                // apply prior Givens rotations before eliminating the new subdiagonal
                 for (int i = 0; i < j; ++i) {
                     const Scalar upper = c_[i] * H_(i, j) + s_[i] * H_(i + 1, j);
                     H_(i + 1, j) = -s_[i] * H_(i, j) + c_[i] * H_(i + 1, j);
@@ -213,6 +217,7 @@ template <typename XprType_, typename Preconditioner_> class GMRES {
                         breakdown = true;
                         break;
                     }
+                    // confirm estimated convergence with a freshly computed residual
                     residual = preconditioned_residual_(rhs, solution);
                     residual_norm = norm_components_(residual);
                     last_residual_ = materialized_norm_(residual_norm);
@@ -242,6 +247,7 @@ template <typename XprType_, typename Preconditioner_> class GMRES {
         return solution;
     }
 
+    /// @brief solves from a zero initial guess and returns the last valid iterate
     template <typename RhsType> constexpr auto solve(const MatrixExpr<RhsType>& rhs) {
         Vector<Scalar, Rows> initial;
         if constexpr (Rows == Dynamic) initial.resize(rhs.rows());
@@ -249,18 +255,23 @@ template <typename XprType_, typename Preconditioner_> class GMRES {
         return solve(rhs, initial);
     }
 
+    /// @brief reports whether the last solve satisfied the preconditioned residual tolerance
     constexpr bool converged() const { return converged_; }
+    /// @brief returns the number of completed Arnoldi steps in the last solve
     constexpr int iterations() const { return last_iterations_; }
-    // Norm of the left-preconditioned residual P^-1 (b - A x).
+    /// @brief returns the absolute norm of P^-1 (b - A x), or infinity if unavailable or unrepresentable
     constexpr Scalar residual() const { return last_residual_; }
+    /// @brief reports whether compute completed successfully
     constexpr bool initialized() const { return initialized_; }
    private:
+    /// @brief stores a norm as a scale and normalized magnitude to avoid overflow
     struct NormComponents {
         Scalar scale;
         Scalar magnitude;
         bool finite;
     };
 
+    /// @brief separates a finite vector norm into its maximum coefficient scale and normalized magnitude
     template <typename VectorType> static constexpr NormComponents norm_components_(const VectorType& vector) {
         Scalar scale = Scalar(0);
         for (int row = 0; row < vector.rows(); ++row) {
@@ -277,6 +288,7 @@ template <typename XprType_, typename Preconditioner_> class GMRES {
         return {scale, std::sqrt(squared_magnitude), true};
     }
 
+    /// @brief materializes a scaled norm or returns infinity when it exceeds the scalar range
     static constexpr Scalar materialized_norm_(const NormComponents& norm) {
         if (!norm.finite) return std::numeric_limits<Scalar>::infinity();
         if (norm.scale == Scalar(0) || norm.magnitude == Scalar(0)) return Scalar(0);
@@ -285,6 +297,7 @@ template <typename XprType_, typename Preconditioner_> class GMRES {
         return norm.scale * norm.magnitude;
     }
 
+    /// @brief compares scaled norms relatively, using absolute tolerance for a zero reference
     constexpr bool within_tolerance_(const NormComponents& residual, const NormComponents& reference) const {
         if (!residual.finite || !reference.finite) return false;
         if (residual.scale == Scalar(0) || residual.magnitude == Scalar(0)) return true;
@@ -296,6 +309,7 @@ template <typename XprType_, typename Preconditioner_> class GMRES {
         return residual.magnitude / reference.magnitude <= tolerance_ * (reference.scale / residual.scale);
     }
 
+    /// @brief consults the optional validity observer of a supplied preconditioner
     constexpr bool preconditioner_valid_() const {
         if constexpr (requires(const Preconditioner_& preconditioner) {
                           { preconditioner.valid() } -> std::convertible_to<bool>;
@@ -305,6 +319,7 @@ template <typename XprType_, typename Preconditioner_> class GMRES {
         return true;
     }
 
+    /// @brief recomputes the left-preconditioned residual using the owned operator
     template <typename RhsType>
     constexpr Vector<Scalar, Rows>
     preconditioned_residual_(const MatrixExpr<RhsType>& rhs, const Vector<Scalar, Rows>& solution) const {
@@ -312,6 +327,7 @@ template <typename XprType_, typename Preconditioner_> class GMRES {
         return Vector<Scalar, Rows>(preconditioner_.solve(raw));
     }
 
+    /// @brief applies a finite triangular-solve correction atomically to the iterate
     constexpr bool update_solution_(Vector<Scalar, Rows>& solution, int used, Scalar correction_scale) {
         Scalar scale = Scalar(0);
         for (int i = 0; i < used; ++i) {
@@ -340,6 +356,7 @@ template <typename XprType_, typename Preconditioner_> class GMRES {
         return true;
     }
 
+    /// @brief clears convergence and iteration data before compute or solve
     constexpr void reset_observers_() {
         converged_ = false;
         last_iterations_ = 0;
