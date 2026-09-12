@@ -77,7 +77,6 @@ class is_vector_like<T> {
 #include "src/linear_algebra/eigen_helper.h"
 #include "src/linear_algebra/fspai.h"
 #include "src/linear_algebra/kronecker.h"
-#include "src/linear_algebra/lumping.h"
 #include "src/linear_algebra/sparse_block_matrix.h"
 #include "src/linear_algebra/woodbury.h"
 // randomized linear algebra

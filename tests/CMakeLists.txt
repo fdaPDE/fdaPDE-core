@@ -219,3 +219,5 @@ if(NOT FDAPDE_NATIVE_ONLY)
 endif()
 
 fdapde_reject_program(sparse_boolean "SparseMatrix<bool> is not supported")
+
+fdapde_reject_program(lump_rectangular "THIS_METHODS_IS_FOR_SQUARE_MATRICES_ONLY")
