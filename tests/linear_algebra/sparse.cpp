@@ -993,15 +993,23 @@ TEST(linear_algebra, sparse_diagonal_conversion) {
     EXPECT_EQ(narrow.coeff(0, 0), 7);
 }
 
+// compares dimensions and complete ordered row contents against a sparse snapshot
 template <typename Scalar>
 void expect_same_sparse(const fdapde::SparseMatrix<Scalar>& lhs, const fdapde::SparseMatrix<Scalar>& rhs) {
+    // the snapshot comparison requires identical row counts
     ASSERT_EQ(lhs.rows(), rhs.rows());
+    // the snapshot comparison requires identical column counts
     ASSERT_EQ(lhs.cols(), rhs.cols());
+    // the snapshot comparison checks stored zeros through the stored-entry count
     ASSERT_EQ(lhs.non_zeros(), rhs.non_zeros());
-    for (int row = 0; row < lhs.rows(); ++row) { EXPECT_EQ(collect_row(lhs, row), collect_row(rhs, row)); }
+    for (int row = 0; row < lhs.rows(); ++row) {
+        // every ordered row must preserve the same column indices and coefficients
+        EXPECT_EQ(collect_row(lhs, row), collect_row(rhs, row));
+    }
 }
 
-void check_sparse_constraint_rebuilding() {
+// checks unit constraints, symmetry, duplicate indices, zero pruning and validation before mutation
+TEST(linear_algebra, sparse_matrix_constraint_rebuilding) {
     const sparse_double source(
       4, 4,
       {
@@ -1020,33 +1028,40 @@ void check_sparse_constraint_rebuilding() {
 
     sparse_double constrained(source);
     constrained.rebuild_with_constraints(std::vector<int> {1});
+    // clearing column one removes only its entry from the first row
     EXPECT_EQ(
       collect_row(constrained, 0), (std::vector<std::pair<int, double>> {
                                      {0, 2.0},
                                      {3, 4.0}
     }));
+    // the constrained row becomes a single unit diagonal even when that diagonal was missing
     EXPECT_EQ(
       collect_row(constrained, 1), (std::vector<std::pair<int, double>> {
                                      {1, 1.0}
     }));
+    // clearing column one preserves the remaining sorted entries in row two
     EXPECT_EQ(
       collect_row(constrained, 2), (std::vector<std::pair<int, double>> {
                                      {2, 8.0},
                                      {3, 9.0}
     }));
+    // an unrelated row retains every original coefficient
     EXPECT_EQ(
       collect_row(constrained, 3), (std::vector<std::pair<int, double>> {
                                      {0, 10.0},
                                      {2, 11.0},
                                      {3, 12.0}
     }));
+    // constraining a copy leaves the source column coefficient unchanged
     EXPECT_DOUBLE_EQ(source.coeff(0, 1), 3.0);
+    // constraining a copy leaves the source row coefficient unchanged
     EXPECT_DOUBLE_EQ(source.coeff(1, 2), 6.0);
 
     sparse_double duplicated(source);
     duplicated.rebuild_with_constraints(std::vector<int> {3, 1, 3});
     sparse_double permuted(source);
     permuted.rebuild_with_constraints(std::vector<int> {1, 3});
+    // duplicate and permuted constraint indices yield identical compressed matrices
     expect_same_sparse(duplicated, permuted);
 
     const sparse_double symmetric = sparse_double(
@@ -1068,17 +1083,22 @@ void check_sparse_constraint_rebuilding() {
     symmetric_constrained.rebuild_with_constraints(std::vector<int> {1, 3});
     for (int row = 0; row < symmetric_constrained.rows(); ++row) {
         for (int col = 0; col < symmetric_constrained.cols(); ++col) {
+            // simultaneous row and column removal preserves coefficient symmetry
             EXPECT_DOUBLE_EQ(symmetric_constrained.coeff(row, col), symmetric_constrained.coeff(col, row));
         }
     }
+    // the first selected diagonal is replaced by one
     EXPECT_DOUBLE_EQ(symmetric_constrained.coeff(1, 1), 1.0);
+    // the second selected diagonal is replaced by one
     EXPECT_DOUBLE_EQ(symmetric_constrained.coeff(3, 3), 1.0);
 
     sparse_double no_op(source);
     no_op.value_ref(0, 1) = 0.0;
     const sparse_double no_op_snapshot(no_op);
     no_op.rebuild_with_constraints(std::vector<int> {});
+    // an empty constraint list preserves the exact original pattern and values
     expect_same_sparse(no_op, no_op_snapshot);
+    // an empty constraint list retains an explicitly stored zero
     EXPECT_TRUE(no_op.contains(0, 1));
 
     sparse_double retained_zero(
@@ -1093,27 +1113,135 @@ void check_sparse_constraint_rebuilding() {
     retained_zero.value_ref(0, 1) = 0.0;
     retained_zero.value_ref(1, 1) = 0.0;
     retained_zero.rebuild_with_constraints(std::vector<int> {1});
+    // the rebuilt constrained row contains its diagonal entry
     EXPECT_TRUE(retained_zero.contains(1, 1));
+    // a stored zero on the selected diagonal is replaced by one
     EXPECT_DOUBLE_EQ(retained_zero.coeff(1, 1), 1.0);
+    // an explicitly zero entry in the constrained column is removed
     EXPECT_FALSE(retained_zero.contains(0, 1));
+    // a nonzero entry in the constrained column is removed
     EXPECT_FALSE(retained_zero.contains(2, 1));
+    // the unconstrained final row retains only its unaffected diagonal
     EXPECT_EQ(
       collect_row(retained_zero, 2), (std::vector<std::pair<int, double>> {
                                        {2, 8.0}
     }));
 
     sparse_double failed(source);
+    // a negative index after a valid index raises the bounds error
     EXPECT_THROW(failed.rebuild_with_constraints(std::vector<int> {1, -1}), std::out_of_range);
+    // negative-index rejection leaves every original row unchanged
     expect_same_sparse(failed, source);
+    // an index equal to the row count raises the bounds error
     EXPECT_THROW(failed.rebuild_with_constraints(std::vector<int> {1, 4}), std::out_of_range);
+    // upper-bound rejection leaves every original row unchanged
     expect_same_sparse(failed, source);
 
     sparse_double rectangular = make_rectangular_fixture();
     const sparse_double rectangular_snapshot(rectangular);
+    // a nonempty constraint list rejects a rectangular matrix
     EXPECT_THROW(rectangular.rebuild_with_constraints(std::vector<int> {1}), std::invalid_argument);
+    // shape rejection preserves the rectangular matrix exactly
     expect_same_sparse(rectangular, rectangular_snapshot);
 }
 
-TEST(linear_algebra, sparse_matrix_constraint_rebuilding) { check_sparse_constraint_rebuilding(); }
+// checks empty lists, complete constraints, repeated rebuilding and zero pruning outside selected rows
+TEST(linear_algebra, sparse_constraint_boundaries) {
+    sparse_double rectangular = make_rectangular_fixture();
+    const auto rectangular_snapshot = rectangular;
+    const double* borrowed = &rectangular.value_ref(0, 0);
+    rectangular.rebuild_with_constraints({});
+    // an empty list accepts rectangular shapes without changing any row contents
+    expect_same_sparse(rectangular, rectangular_snapshot);
+    // a no-op preserves the address of a previously borrowed coefficient
+    EXPECT_EQ(&rectangular.value_ref(0, 0), borrowed);
+    sparse_double empty;
+    // a zero-by-zero matrix accepts the empty constraint list
+    EXPECT_NO_THROW(empty.rebuild_with_constraints({}));
+    // a zero-by-zero matrix rejects its first nonexistent row
+    EXPECT_THROW(empty.rebuild_with_constraints({0}), std::out_of_range);
+    fdapde::SparseMatrix<int> all(
+      3, 3,
+      {
+        {0, 2, 5 },
+        {2, 1, -7}
+    });
+    all.rebuild_with_constraints({2, 0, 1, 0});
+    // constraining every row creates exactly three unit diagonals, including previously empty rows
+    EXPECT_EQ(all.non_zeros(), 3);
+    for (int row = 0; row < 3; ++row) {
+        // each fully constrained integer row contains only its unit diagonal
+        EXPECT_EQ(
+          collect_row(all, row), (std::vector<std::pair<int, int>> {
+                                   {row, 1}
+        }));
+    }
+    const auto all_snapshot = all;
+    all.rebuild_with_constraints({0, 1, 2});
+    // rebuilding an already constrained matrix is structurally and numerically idempotent
+    expect_same_sparse(all, all_snapshot);
+    sparse_double zeros(
+      3, 3,
+      {
+        {0, 0, 2.0},
+        {2, 1, 3.0}
+    });
+    zeros.value_ref(2, 1) = 0.0;
+    zeros.rebuild_with_constraints({0});
+    // a nonempty rebuild prunes stored zeros even outside the selected row and column
+    EXPECT_FALSE(zeros.contains(2, 1));
+    // the rebuilt pattern contains only the selected unit diagonal
+    EXPECT_EQ(zeros.non_zeros(), 1);
+    sparse_double nonfinite(
+      2, 2,
+      {
+        {0, 1, std::numeric_limits<double>::infinity() },
+        {1, 0, std::numeric_limits<double>::quiet_NaN()}
+    });
+    nonfinite.rebuild_with_constraints({0});
+    // structural elimination removes constrained nonfinite entries without multiplying them by zero
+    EXPECT_EQ(nonfinite.non_zeros(), 1);
+    // nonfinite source couplings do not contaminate the restored unit diagonal
+    EXPECT_DOUBLE_EQ(nonfinite.coeff(0, 0), 1.0);
+}
+
+/// @brief injects a copy failure after a controlled number of successful coefficient copies
+struct constraint_copy_probe {
+    int value = 0;
+    static inline int copies_left = -1;
+    /// @brief constructs a coefficient without consuming the copy budget
+    constraint_copy_probe(int coefficient = 0) : value(coefficient) { }
+    /// @brief copies a coefficient or throws when the enabled budget is exhausted
+    constraint_copy_probe(const constraint_copy_probe& other) : value(other.value) {
+        fdapde_strong_assert(copies_left != 0, std::runtime_error, "injected coefficient copy failure");
+        if (copies_left > 0) --copies_left;
+    }
+    /// @brief assigns a coefficient without affecting the copy-construction probe
+    constraint_copy_probe& operator=(const constraint_copy_probe&) = default;
+    /// @brief compares coefficient values during sparse zero pruning
+    friend bool operator==(const constraint_copy_probe&, const constraint_copy_probe&) = default;
+    /// @brief adds duplicate input coefficients during fixture construction
+    friend constraint_copy_probe operator+(const constraint_copy_probe& lhs, const constraint_copy_probe& rhs) {
+        return constraint_copy_probe(lhs.value + rhs.value);
+    }
+};
+
+// checks that a coefficient-copy exception cannot publish a partially rebuilt matrix
+TEST(linear_algebra, sparse_constraint_copy_failure) {
+    fdapde::SparseMatrix<constraint_copy_probe> matrix(
+      3, 3,
+      {
+        {0, 2, 4},
+        {1, 1, 5},
+        {2, 2, 6}
+    });
+    const auto snapshot = matrix;
+    constraint_copy_probe::copies_left = 1;
+    // copying the retained second row fails after the replacement already contains its first unit diagonal
+    EXPECT_THROW(matrix.rebuild_with_constraints({0}), std::runtime_error);
+    constraint_copy_probe::copies_left = -1;
+    // the exception leaves the complete source pattern and coefficients equal to the saved snapshot
+    expect_same_sparse(matrix, snapshot);
+}
 
 }   // namespace

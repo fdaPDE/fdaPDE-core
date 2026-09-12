@@ -321,6 +321,7 @@ TEST(NativeSparseOracle, MatchesEigenOperationsAcrossShapes) {
     }
 }
 
+// applies row and column elimination through Eigen before pruning the resulting zeros
 void rebuild_eigen_constraints(eigen_sparse& matrix, const std::vector<int>& dofs) {
     for (const int dof : dofs) {
         matrix.row(dof) *= 0.0;
@@ -331,6 +332,7 @@ void rebuild_eigen_constraints(eigen_sparse& matrix, const std::vector<int>& dof
     matrix.makeCompressed();
 }
 
+// compares constraint rebuilding with Eigen on nonsymmetric and symmetric systems
 TEST(NativeSparseOracle, MatchesEigenConstraintRebuilding) {
     const std::vector<native_triplet> nonsymmetric_triplets {
       {0, 0, 2.0 },
@@ -350,6 +352,7 @@ TEST(NativeSparseOracle, MatchesEigenConstraintRebuilding) {
     const std::vector<int> nonsymmetric_dofs {3, 1, 3};
     native_nonsymmetric.rebuild_with_constraints(nonsymmetric_dofs);
     rebuild_eigen_constraints(eigen_nonsymmetric, nonsymmetric_dofs);
+    // repeated constraints match the full compressed Eigen result on a nonsymmetric matrix
     expect_same_sparse(native_nonsymmetric, eigen_nonsymmetric);
 
     const std::vector<native_triplet> lower_triplets {
@@ -371,6 +374,7 @@ TEST(NativeSparseOracle, MatchesEigenConstraintRebuilding) {
     const std::vector<int> symmetric_dofs {1, 3};
     native_symmetric.rebuild_with_constraints(symmetric_dofs);
     rebuild_eigen_constraints(eigen_symmetric, symmetric_dofs);
+    // symmetric constraint elimination matches Eigen dimensions, pattern and coefficients
     expect_same_sparse(native_symmetric, eigen_symmetric);
 }
 
