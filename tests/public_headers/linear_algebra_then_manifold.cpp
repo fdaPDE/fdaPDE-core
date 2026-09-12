@@ -16,6 +16,7 @@
 
 #include <fdaPDE/linear_algebra.h>
 #include <fdaPDE/manifold_optimization.h>
+#include <fdaPDE/sparse_linear_algebra.h>
 
 // the Eigen dynamic vectors retain their vector classification with this inclusion order
 static_assert(fdapde::internals::is_vector_like_v<Eigen::VectorXd>);

@@ -31,17 +31,24 @@
 
 namespace fdapde {
 
+/// @brief stores a row, column and mutable coefficient for sparse construction
 template <typename Scalar_> class Triplet {
    public:
     using Index = int;
     using Scalar = std::remove_cvref_t<Scalar_>;
 
+    /// @brief constructs a zero coefficient at position zero, zero
     constexpr Triplet() = default;
+    /// @brief records the supplied indices and coefficient without matrix-specific validation
     constexpr Triplet(Index row, Index col, const Scalar& value) : row_(row), col_(col), value_(value) { }
 
+    /// @brief returns the recorded row index
     constexpr Index row() const { return row_; }
+    /// @brief returns the recorded column index
     constexpr Index col() const { return col_; }
+    /// @brief borrows the recorded coefficient for read access
     constexpr const Scalar& value() const { return value_; }
+    /// @brief borrows the recorded coefficient for mutation
     constexpr Scalar& value() { return value_; }
    private:
     Index row_ = 0;
@@ -49,9 +56,7 @@ template <typename Scalar_> class Triplet {
     Scalar value_ {};
 };
 
-// Owning dynamic rectangular sparse matrix in compressed-row form. Construction
-// and rebuild canonicalize the pattern: columns are sorted within each row,
-// duplicates are summed in input order, and exact zero sums are omitted.
+/// @brief owns rectangular CSR storage with sorted columns, input-ordered duplicate sums and zero elision
 template <typename Scalar_> class SparseMatrix {
    public:
     using Index = int;
@@ -60,20 +65,26 @@ template <typename Scalar_> class SparseMatrix {
 
     static_assert(!std::is_same_v<Scalar, bool>, "SparseMatrix<bool> is not supported");
 
+    /// @brief provides read-only access to one stored row coefficient
     class ConstEntry {
        public:
+        /// @brief returns the column index of this stored coefficient
         constexpr Index column() const { return column_; }
+        /// @brief borrows the coefficient from its matrix owner
         constexpr const Scalar& value() const { return *value_; }
        private:
         friend class SparseMatrix;
+        /// @brief binds a stored column index to its coefficient address
         constexpr ConstEntry(Index column, const Scalar* value) : column_(column), value_(value) { }
 
         Index column_ = 0;
         const Scalar* value_ = nullptr;
     };
 
+    /// @brief borrows the stored entries of a matrix row in increasing column order
     class ConstRowView {
        public:
+        /// @brief traverses stored row entries as read-only proxy values
         class const_iterator {
            public:
             using iterator_category = std::forward_iterator_tag;
@@ -81,19 +92,27 @@ template <typename Scalar_> class SparseMatrix {
             using value_type = ConstEntry;
             using reference = ConstEntry;
 
+            /// @brief constructs a singular iterator that can be assigned before use
+            constexpr const_iterator() = default;
+
+            /// @brief returns the current stored entry without copying its coefficient
             constexpr reference operator*() const { return ConstEntry(columns_[index_], values_ + index_); }
+            /// @brief advances to the next stored coefficient
             constexpr const_iterator& operator++() {
                 ++index_;
                 return *this;
             }
+            /// @brief advances while returning the previous iterator position
             constexpr const_iterator operator++(int) {
                 const_iterator result(*this);
                 ++(*this);
                 return result;
             }
+            /// @brief compares the storage identity and position of two iterators
             friend constexpr bool operator==(const const_iterator&, const const_iterator&) = default;
            private:
             friend class ConstRowView;
+            /// @brief binds an iterator to matrix storage at the given position
             constexpr const_iterator(const Index* columns, const Scalar* values, Index index) :
                 columns_(columns), values_(values), index_(index) { }
 
@@ -102,12 +121,17 @@ template <typename Scalar_> class SparseMatrix {
             Index index_ = 0;
         };
 
+        /// @brief returns an iterator to the first stored row entry
         constexpr const_iterator begin() const { return const_iterator(columns_, values_, begin_); }
+        /// @brief returns the iterator immediately after the stored row entries
         constexpr const_iterator end() const { return const_iterator(columns_, values_, end_); }
+        /// @brief returns the number of stored coefficients in this row
         constexpr Index size() const { return end_ - begin_; }
+        /// @brief reports whether the row contains no stored coefficients
         constexpr bool empty() const { return begin_ == end_; }
        private:
         friend class SparseMatrix;
+        /// @brief borrows the half-open storage interval of one row
         constexpr ConstRowView(const Index* columns, const Scalar* values, Index begin, Index end) :
             columns_(columns), values_(values), begin_(begin), end_(end) { }
 
@@ -117,33 +141,40 @@ template <typename Scalar_> class SparseMatrix {
         Index end_ = 0;
     };
 
-    // Row views and their iterators follow vector-style invalidation: any
-    // resize, rebuild, assignment, move, or swap of the matrix invalidates them.
+    // resize, rebuild, assignment, move and swap invalidate borrowed rows and iterators
 
+    /// @brief constructs an empty zero-by-zero matrix
     SparseMatrix() : row_offsets_(1, 0) { }
+    /// @brief constructs a checked rectangular shape without stored coefficients
     SparseMatrix(Index rows, Index cols) { reset_shape_(rows, cols); }
+    /// @brief compresses checked triplets with stable duplicate summation and exact-zero removal
     SparseMatrix(Index rows, Index cols, const std::vector<triplet_type>& triplets) {
         validate_shape_(rows, cols);
         rows_ = rows;
         cols_ = cols;
         build_(triplets);
     }
+    /// @brief compresses an initializer list using the same triplet construction rules
     SparseMatrix(Index rows, Index cols, std::initializer_list<triplet_type> triplets) :
         SparseMatrix(rows, cols, std::vector<triplet_type>(triplets)) { }
 
+    /// @brief copies dimensions, pattern and coefficients into independent storage
     SparseMatrix(const SparseMatrix&) = default;
+    /// @brief replaces the matrix with an independent copy, preserving it if copying fails
     SparseMatrix& operator=(const SparseMatrix& other) {
         if (this == &other) return *this;
         SparseMatrix replacement(other);
         swap(replacement);
         return *this;
     }
+    /// @brief takes ownership of the source storage and clears its dimensions
     SparseMatrix(SparseMatrix&& other) noexcept :
         rows_(std::exchange(other.rows_, 0)),
         cols_(std::exchange(other.cols_, 0)),
         row_offsets_(std::move(other.row_offsets_)),
         column_indices_(std::move(other.column_indices_)),
         values_(std::move(other.values_)) { }
+    /// @brief transfers storage and dimensions while tolerating self-move
     SparseMatrix& operator=(SparseMatrix&& other) noexcept {
         if (this == &other) return *this;
         rows_ = std::exchange(other.rows_, 0);
@@ -154,46 +185,57 @@ template <typename Scalar_> class SparseMatrix {
         return *this;
     }
 
+    /// @brief returns the matrix row count
     constexpr Index rows() const { return rows_; }
+    /// @brief returns the matrix column count
     constexpr Index cols() const { return cols_; }
+    /// @brief returns the stored entry count, including zeros introduced through value_ref
     Index non_zeros() const { return static_cast<Index>(values_.size()); }
 
+    /// @brief returns a checked coefficient by value, or zero if absent from the pattern
     Scalar coeff(Index row, Index col) const {
         validate_index_(row, col);
         const Index position = find_position_(row, col);
         return position == missing_ ? Scalar {} : values_[position];
     }
+    /// @brief reports whether a checked position belongs to the stored pattern
     bool contains(Index row, Index col) const {
         validate_index_(row, col);
         return find_position_(row, col) != missing_;
     }
-    Scalar& value_ref(Index row, Index col) {
+    /// @brief borrows an existing coefficient from an lvalue owner without inserting a new entry
+    Scalar& value_ref(Index row, Index col) & {
         validate_index_(row, col);
         const Index position = find_position_(row, col);
-        if (position == missing_) {
-            throw std::out_of_range("SparseMatrix value_ref requires an existing stored coefficient");
-        }
+        fdapde_strong_assert(
+          position != missing_, std::out_of_range, "SparseMatrix value_ref requires an existing stored coefficient");
         return values_[position];
     }
-    ConstRowView row(Index row_index) const {
+    /// @brief borrows a checked row from an lvalue matrix
+    ConstRowView row(Index row_index) const& {
         validate_row_(row_index);
         return ConstRowView(
           column_indices_.data(), values_.data(), row_offsets_[row_index], row_offsets_[row_index + 1]);
     }
 
-    // Structural changes are explicit and failure-atomic. value_ref preserves
-    // the existing pattern even when a stored value becomes zero; resize
-    // discards the pattern, while rebuild replaces it and elides exact zeros.
+    /// @brief rejects a borrowed row whose temporary owner would immediately expire
+    ConstRowView row(Index) const&& = delete;
+
+    // value_ref preserves stored zeros; resize clears the pattern and rebuild elides exact zeros
+    /// @brief replaces the shape and clears all stored entries, preserving the matrix on failure
     void resize(Index rows, Index cols) {
         SparseMatrix replacement(rows, cols);
         swap(replacement);
     }
+    /// @brief replaces the pattern at the current shape, preserving the matrix on failure
     void rebuild(const std::vector<triplet_type>& triplets) {
         SparseMatrix replacement(rows_, cols_, triplets);
         swap(replacement);
     }
+    /// @brief rebuilds the current shape from an initializer list
     void rebuild(std::initializer_list<triplet_type> triplets) { rebuild(std::vector<triplet_type>(triplets)); }
 
+    /// @brief exchanges dimensions and storage without allocating
     void swap(SparseMatrix& other) noexcept {
         using std::swap;
         swap(rows_, other.rows_);
@@ -202,39 +244,47 @@ template <typename Scalar_> class SparseMatrix {
         column_indices_.swap(other.column_indices_);
         values_.swap(other.values_);
     }
+    /// @brief exchanges two matrices through their storage swap
     friend void swap(SparseMatrix& lhs, SparseMatrix& rhs) noexcept { lhs.swap(rhs); }
    private:
     static constexpr Index missing_ = -1;
 
+    /// @brief adds duplicate coefficients and rejects integral overflow before evaluating the sum
     static Scalar add_(const Scalar& lhs, const Scalar& rhs) {
         if constexpr (std::is_integral_v<Scalar>) {
             if constexpr (std::is_signed_v<Scalar>) {
-                if (
-                  (rhs > 0 && lhs > std::numeric_limits<Scalar>::max() - rhs) ||
-                  (rhs < 0 && lhs < std::numeric_limits<Scalar>::min() - rhs)) {
-                    throw std::overflow_error("SparseMatrix duplicate sum exceeds the scalar range");
-                }
-            } else if (lhs > std::numeric_limits<Scalar>::max() - rhs) {
-                throw std::overflow_error("SparseMatrix duplicate sum exceeds the scalar range");
+                fdapde_strong_assert(
+                  (rhs <= 0 || lhs <= std::numeric_limits<Scalar>::max() - rhs) &&
+                    (rhs >= 0 || lhs >= std::numeric_limits<Scalar>::min() - rhs),
+                  std::overflow_error, "SparseMatrix duplicate sum exceeds the scalar range");
+            } else {
+                fdapde_strong_assert(
+                  lhs <= std::numeric_limits<Scalar>::max() - rhs, std::overflow_error,
+                  "SparseMatrix duplicate sum exceeds the scalar range");
             }
         }
         return lhs + rhs;
     }
 
+    /// @brief checks nonnegative dimensions and room for the terminal CSR row offset
     static void validate_shape_(Index rows, Index cols) {
-        if (rows < 0 || cols < 0) { throw std::invalid_argument("SparseMatrix dimensions must be nonnegative"); }
-        if (rows == std::numeric_limits<Index>::max()) {
-            throw std::length_error("SparseMatrix row-offset storage exceeds the supported int range");
-        }
+        fdapde_strong_assert(
+          rows >= 0 && cols >= 0, std::invalid_argument, "SparseMatrix dimensions must be nonnegative");
+        fdapde_strong_assert(
+          rows < std::numeric_limits<Index>::max(), std::length_error,
+          "SparseMatrix row-offset storage exceeds the supported int range");
     }
+    /// @brief checks a public row index against the current shape
     void validate_row_(Index row) const {
-        if (row < 0 || row >= rows_) { throw std::out_of_range("SparseMatrix row index is out of range"); }
+        fdapde_strong_assert(row >= 0 && row < rows_, std::out_of_range, "SparseMatrix row index is out of range");
     }
+    /// @brief checks coefficient and incoming-triplet indices against the current shape
     void validate_index_(Index row, Index col) const {
-        if (row < 0 || row >= rows_ || col < 0 || col >= cols_) {
-            throw std::out_of_range("SparseMatrix coefficient index is out of range");
-        }
+        fdapde_strong_assert(
+          row >= 0 && row < rows_ && col >= 0 && col < cols_, std::out_of_range,
+          "SparseMatrix coefficient index is out of range");
     }
+    /// @brief allocates empty row offsets before replacing the shape and clearing entries
     void reset_shape_(Index rows, Index cols) {
         validate_shape_(rows, cols);
         std::vector<Index> offsets(static_cast<std::size_t>(rows) + 1, 0);
@@ -244,18 +294,18 @@ template <typename Scalar_> class SparseMatrix {
         column_indices_.clear();
         values_.clear();
     }
+    /// @brief compresses checked triplets into local buffers before publishing CSR storage
     void build_(const std::vector<triplet_type>& triplets) {
-        if (triplets.size() > static_cast<std::size_t>(std::numeric_limits<Index>::max())) {
-            throw std::length_error("SparseMatrix triplet count exceeds the supported int range");
-        }
+        fdapde_strong_assert(
+          triplets.size() <= static_cast<std::size_t>(std::numeric_limits<Index>::max()), std::length_error,
+          "SparseMatrix triplet count exceeds the supported int range");
         for (const auto& triplet : triplets) validate_index_(triplet.row(), triplet.col());
 
         std::vector<Index> offsets(static_cast<std::size_t>(rows_) + 1, 0);
         std::vector<Index> columns;
         std::vector<Scalar> values;
         if (static_cast<std::size_t>(cols_) <= triplets.size()) {
-            // Linear-time construction through a column-grouped temporary.
-            // Traversing its columns in order yields sorted CSR rows directly.
+            // group by column to combine duplicates and emit each CSR row in sorted column order
             std::vector<Index> column_offsets(static_cast<std::size_t>(cols_) + 1, 0);
             for (const auto& triplet : triplets) ++column_offsets[triplet.col() + 1];
             for (Index col = 0; col < cols_; ++col) column_offsets[col + 1] += column_offsets[col];
@@ -308,7 +358,7 @@ template <typename Scalar_> class SparseMatrix {
                 }
             }
         } else {
-            // Avoid a column-sized workspace for extremely wide sparse shapes.
+            // sort within rows when a column-sized workspace would exceed the number of triplets
             std::vector<Index> input_offsets(static_cast<std::size_t>(rows_) + 1, 0);
             for (const auto& triplet : triplets) ++input_offsets[triplet.row() + 1];
             for (Index row = 0; row < rows_; ++row) input_offsets[row + 1] += input_offsets[row];
@@ -346,6 +396,7 @@ template <typename Scalar_> class SparseMatrix {
         column_indices_.swap(columns);
         values_.swap(values);
     }
+    /// @brief binary-searches a previously validated row for its column or the missing sentinel
     Index find_position_(Index row, Index col) const {
         const Index begin = row_offsets_[row];
         const Index end = row_offsets_[row + 1];

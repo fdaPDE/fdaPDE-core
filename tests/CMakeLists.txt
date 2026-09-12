@@ -198,3 +198,24 @@ if(NOT FDAPDE_NATIVE_ONLY)
   target_link_libraries(fdapde_gmres_eigen_test PRIVATE GTest::gtest_main Eigen3::Eigen)
   gtest_discover_tests(fdapde_gmres_eigen_test PROPERTIES TIMEOUT 60)
 endif()
+
+add_executable(fdapde_sparse_test linear_algebra/sparse.cpp)
+fdapde_configure_target(fdapde_sparse_test)
+target_link_libraries(fdapde_sparse_test PRIVATE GTest::gtest_main)
+gtest_discover_tests(fdapde_sparse_test PROPERTIES TIMEOUT 60)
+
+add_library(fdapde_sparse_header_check OBJECT public_headers/sparse_linear_algebra.cpp)
+fdapde_configure_target(fdapde_sparse_header_check)
+
+if(NOT FDAPDE_NATIVE_ONLY)
+  add_executable(fdapde_sparse_oracle_test linear_algebra/sparse_oracle.cpp)
+  fdapde_configure_target(fdapde_sparse_oracle_test)
+  target_link_libraries(fdapde_sparse_oracle_test PRIVATE GTest::gtest_main Eigen3::Eigen)
+  gtest_discover_tests(fdapde_sparse_oracle_test PROPERTIES TIMEOUT 60)
+
+  add_executable(fdapde_sparse_benchmark EXCLUDE_FROM_ALL benchmarks/sparse.cpp)
+  fdapde_configure_target(fdapde_sparse_benchmark)
+  target_link_libraries(fdapde_sparse_benchmark PRIVATE Eigen3::Eigen)
+endif()
+
+fdapde_reject_program(sparse_boolean "SparseMatrix<bool> is not supported")
