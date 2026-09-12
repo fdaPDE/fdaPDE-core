@@ -124,23 +124,32 @@ TEST(NativeSparseOracle, MatchesEigenAcrossShapesAndDensities) {
     }
 }
 
+// compares compressed dimensions, sorted row patterns and coefficient values against Eigen
 void expect_same_sparse(const fdapde::SparseMatrix<double>& native, const eigen_sparse& oracle) {
+    // the native sparse row count must match Eigen before row traversal
     ASSERT_EQ(native.rows(), oracle.rows());
+    // the native sparse column count must match Eigen before coefficient comparison
     ASSERT_EQ(native.cols(), oracle.cols());
+    // the native stored count must match the compressed Eigen pattern
     ASSERT_EQ(native.non_zeros(), oracle.nonZeros());
     for (int row = 0; row < native.rows(); ++row) {
         auto native_it = native.row(row).begin();
         const auto native_end = native.row(row).end();
         for (eigen_sparse::InnerIterator oracle_it(oracle, row); oracle_it; ++oracle_it) {
+            // each Eigen entry must have a corresponding native row entry
             ASSERT_NE(native_it, native_end);
+            // native columns must follow the same sorted order as Eigen
             EXPECT_EQ((*native_it).column(), oracle_it.col());
+            // native stored values must equal Eigen at the corresponding position
             EXPECT_DOUBLE_EQ((*native_it).value(), oracle_it.value());
             ++native_it;
         }
+        // native rows must contain no entries beyond the Eigen pattern
         EXPECT_EQ(native_it, native_end);
     }
 }
 
+// constructs and prunes an independent Eigen oracle from the shared triplets
 eigen_sparse make_eigen_sparse(int rows, int cols, const std::vector<native_triplet>& triplets) {
     std::vector<Eigen::Triplet<double, int>> eigen_triplets;
     eigen_triplets.reserve(triplets.size());
@@ -152,6 +161,7 @@ eigen_sparse make_eigen_sparse(int rows, int cols, const std::vector<native_trip
     return result;
 }
 
+// compares transforms, mixed dense products, reductions and quadratic forms with Eigen
 TEST(NativeSparseOracle, MatchesEigenRequiredOperations) {
     const std::vector<native_triplet> triplets {
       {0, 0, 2.0 },
@@ -165,6 +175,7 @@ TEST(NativeSparseOracle, MatchesEigenRequiredOperations) {
 
     eigen_sparse eigen_transpose = oracle.transpose();
     eigen_transpose.makeCompressed();
+    // the owning transpose matches the complete compressed Eigen transpose
     expect_same_sparse(native.transpose(), eigen_transpose);
 
     const std::vector<native_triplet> lower_triplets {
@@ -179,6 +190,7 @@ TEST(NativeSparseOracle, MatchesEigenRequiredOperations) {
     eigen_sparse eigen_symmetric = eigen_lower.selfadjointView<Eigen::Lower>();
     eigen_symmetric.makeCompressed();
     const auto native_symmetric = native_lower.symmetric_expanded(fdapde::Lower);
+    // lower-triangle expansion matches the complete Eigen self-adjoint pattern
     expect_same_sparse(native_symmetric, eigen_symmetric);
 
     const std::vector<native_triplet> upper_triplets {
@@ -192,14 +204,17 @@ TEST(NativeSparseOracle, MatchesEigenRequiredOperations) {
     const eigen_sparse eigen_upper = make_eigen_sparse(3, 3, upper_triplets);
     eigen_sparse eigen_upper_symmetric = eigen_upper.selfadjointView<Eigen::Upper>();
     eigen_upper_symmetric.makeCompressed();
+    // upper-triangle expansion matches the complete Eigen self-adjoint pattern
     expect_same_sparse(native_upper.symmetric_expanded(fdapde::Upper), eigen_upper_symmetric);
 
     const fdapde::Vector<double, 4> native_vector({1.0, 2.0, 3.0, 4.0});
     const Eigen::Vector4d eigen_vector(1.0, 2.0, 3.0, 4.0);
     const auto native_vector_product = native * native_vector;
     const Eigen::VectorXd eigen_vector_product = oracle * eigen_vector;
+    // the sparse-vector result must have the same length as Eigen
     ASSERT_EQ(native_vector_product.size(), eigen_vector_product.size());
     for (int i = 0; i < native_vector_product.size(); ++i) {
+        // each sparse-vector coefficient matches the independently evaluated Eigen product
         EXPECT_DOUBLE_EQ(native_vector_product[i], eigen_vector_product[i]);
     }
 
@@ -209,10 +224,13 @@ TEST(NativeSparseOracle, MatchesEigenRequiredOperations) {
     eigen_dense << 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0;
     const auto native_dense_product = native * native_dense;
     const Eigen::MatrixXd eigen_dense_product = oracle * eigen_dense;
+    // the sparse-dense result must have the same row count as Eigen
     ASSERT_EQ(native_dense_product.rows(), eigen_dense_product.rows());
+    // the sparse-dense result must have the same column count as Eigen
     ASSERT_EQ(native_dense_product.cols(), eigen_dense_product.cols());
     for (int i = 0; i < native_dense_product.rows(); ++i) {
         for (int j = 0; j < native_dense_product.cols(); ++j) {
+            // column-major right-hand-side products match Eigen coefficient by coefficient
             EXPECT_DOUBLE_EQ(native_dense_product(i, j), eigen_dense_product(i, j));
         }
     }
@@ -224,26 +242,83 @@ TEST(NativeSparseOracle, MatchesEigenRequiredOperations) {
     const Eigen::Matrix<double, 3, 2, Eigen::RowMajor> eigen_row_major_product = oracle * eigen_row_major_dense;
     for (int i = 0; i < native_row_major_product.rows(); ++i) {
         for (int j = 0; j < native_row_major_product.cols(); ++j) {
+            // row-major right-hand-side products match Eigen coefficient by coefficient
             EXPECT_DOUBLE_EQ(native_row_major_product(i, j), eigen_row_major_product(i, j));
         }
     }
 
     const auto native_sums = native.row_sums();
     const Eigen::VectorXd eigen_sums = oracle * Eigen::VectorXd::Ones(oracle.cols());
-    for (int i = 0; i < native_sums.size(); ++i) { EXPECT_DOUBLE_EQ(native_sums[i], eigen_sums[i]); }
+    for (int i = 0; i < native_sums.size(); ++i) {
+        // each row sum matches multiplication by an Eigen vector of ones
+        EXPECT_DOUBLE_EQ(native_sums[i], eigen_sums[i]);
+    }
 
     const auto native_diagonal = native_symmetric.diagonal();
     const Eigen::VectorXd eigen_diagonal = eigen_symmetric.diagonal();
-    for (int i = 0; i < native_diagonal.size(); ++i) { EXPECT_DOUBLE_EQ(native_diagonal[i], eigen_diagonal[i]); }
+    for (int i = 0; i < native_diagonal.size(); ++i) {
+        // each extracted diagonal coefficient matches Eigen extraction
+        EXPECT_DOUBLE_EQ(native_diagonal[i], eigen_diagonal[i]);
+    }
+    // rebuilding the extracted diagonal matches the independent Eigen diagonal matrix
     expect_same_sparse(
       fdapde::SparseMatrix<double>::from_diagonal(native_diagonal),
       eigen_diagonal.asDiagonal().toDenseMatrix().sparseView());
 
     const fdapde::Vector<double, 3> native_quadratic_vector({1.0, 2.0, 3.0});
     const Eigen::Vector3d eigen_quadratic_vector(1.0, 2.0, 3.0);
+    // the direct quadratic form matches Eigen matrix multiplication followed by a dot product
     EXPECT_DOUBLE_EQ(
       native_symmetric.quadratic_form(native_quadratic_vector),
       eigen_quadratic_vector.dot(eigen_symmetric * eigen_quadratic_vector));
+}
+
+// compares sparse products and transposes with Eigen across empty, tall, wide and square inputs
+TEST(NativeSparseOracle, MatchesEigenOperationsAcrossShapes) {
+    for (const int rows : {0, 1, 3, 9}) {
+        for (const int cols : {0, 1, 4, 9}) {
+            std::vector<native_triplet> triplets;
+            for (int row = 0; row < rows; ++row) {
+                for (int col = 0; col < cols; ++col) {
+                    if ((row + 3 * col) % 4 != 0) triplets.emplace_back(row, col, (row - col + 2) * 0.125);
+                }
+            }
+            const fdapde::SparseMatrix<double> native(rows, cols, triplets);
+            const eigen_sparse oracle = make_eigen_sparse(rows, cols, triplets);
+            eigen_sparse eigen_transpose = oracle.transpose();
+            eigen_transpose.makeCompressed();
+            // every rectangular transpose matches Eigen dimensions, sorted pattern and coefficients
+            expect_same_sparse(native.transpose(), eigen_transpose);
+            fdapde::Vector<double, fdapde::Dynamic> vector(cols);
+            Eigen::VectorXd eigen_vector(cols);
+            fdapde::Matrix<double, fdapde::Dynamic, fdapde::Dynamic, fdapde::ColMajor> dense(cols, 3);
+            Eigen::MatrixXd eigen_dense(cols, 3);
+            for (int row = 0; row < cols; ++row) {
+                vector[row] = eigen_vector[row] = (row - 3) * 0.25;
+                for (int col = 0; col < 3; ++col) dense(row, col) = eigen_dense(row, col) = (row + col - 2) * 0.5;
+            }
+            const auto vector_product = native * vector;
+            const Eigen::VectorXd eigen_vector_product = oracle * eigen_vector;
+            const auto dense_product = native * dense;
+            const Eigen::MatrixXd eigen_dense_product = oracle * eigen_dense;
+            const auto sums = native.row_sums();
+            const Eigen::VectorXd eigen_sums = oracle * Eigen::VectorXd::Ones(cols);
+            for (int row = 0; row < rows; ++row) {
+                // each rectangular sparse-vector dot product matches the independent Eigen result
+                EXPECT_DOUBLE_EQ(vector_product[row], eigen_vector_product[row]);
+                // row summation matches Eigen multiplication by a vector of ones
+                EXPECT_DOUBLE_EQ(sums[row], eigen_sums[row]);
+                for (int col = 0; col < 3; ++col) {
+                    // dynamic column-major right-hand sides match Eigen for all three output columns
+                    EXPECT_DOUBLE_EQ(dense_product(row, col), eigen_dense_product(row, col));
+                }
+            }
+            if (rows == cols) {
+                // the bilinear form also matches Eigen on nonsymmetric square fixtures
+                EXPECT_DOUBLE_EQ(native.quadratic_form(vector), eigen_vector.dot(oracle * eigen_vector));
+            }
+        }
+    }
 }
 
 }   // namespace

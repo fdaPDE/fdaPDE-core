@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <fdaPDE/linear_algebra.h>
+#include <fdaPDE/sparse_linear_algebra.h>
 
 #include <Eigen/SparseCore>
 #include <algorithm>
@@ -34,6 +34,7 @@ using native_triplet = fdapde::Triplet<double>;
 using eigen_sparse = Eigen::SparseMatrix<double, Eigen::RowMajor, int>;
 using eigen_dense = Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
 
+// constructs asymmetric overlapping triangle contributions for repeatable workloads
 std::vector<native_triplet> make_grid_triplets(int subdivisions) {
     const int nodes_per_side = subdivisions + 1;
     std::vector<native_triplet> triplets;
@@ -59,18 +60,22 @@ std::vector<native_triplet> make_grid_triplets(int subdivisions) {
     return triplets;
 }
 
+// returns the central sample after sorting the odd-sized timing set
 double median(std::vector<double>& samples) {
     std::sort(samples.begin(), samples.end());
     return samples[samples.size() / 2];
 }
 
+/// @brief records the coefficient count and ordered checksum
 struct observation {
     int nonzeros = 0;
     std::uint64_t checksum = 0;
 
+    /// @brief compares both the coefficient count and checksum
     friend bool operator==(const observation&, const observation&) = default;
 };
 
+// combines an entry position and exact coefficient bits into the observation hash
 std::uint64_t mix(std::uint64_t hash, int row, int col, double value) {
     hash ^= static_cast<std::uint64_t>(row) + 0x9e3779b97f4a7c15ULL + (hash << 6) + (hash >> 2);
     hash ^= static_cast<std::uint64_t>(col) + 0x9e3779b97f4a7c15ULL + (hash << 6) + (hash >> 2);
@@ -78,6 +83,7 @@ std::uint64_t mix(std::uint64_t hash, int row, int col, double value) {
     return hash;
 }
 
+// times a batch including result allocation, checksum traversal and destruction
 template <typename Function> double measure_batch(Function& function, int batches, observation& observed) {
     const auto start = clock_type::now();
     for (int batch = 0; batch < batches; ++batch) observed = function();
@@ -85,6 +91,7 @@ template <typename Function> double measure_batch(Function& function, int batche
     return std::chrono::duration<double, std::milli>(stop - start).count() / static_cast<double>(batches);
 }
 
+// compares alternating native and Eigen timings after warmups
 template <typename NativeFunction, typename EigenFunction>
 bool benchmark_operation(
   std::string_view operation, int subdivisions, int repetitions, int batches, NativeFunction& native,
@@ -110,6 +117,7 @@ bool benchmark_operation(
     }
     const double native_ms = median(native_samples);
     const double eigen_ms = median(eigen_samples);
+    // every result must match the coefficient count and ordered Eigen checksum
     if (native_observation != eigen_observation) {
         std::cerr << "sparse benchmark result mismatch: operation=" << operation
                   << " native_count=" << native_observation.nonzeros << " eigen_count=" << eigen_observation.nonzeros
@@ -121,9 +129,11 @@ bool benchmark_operation(
     std::cout << std::fixed << std::setprecision(3) << "operation=" << operation << " subdivisions=" << subdivisions
               << " batches=" << batches << " native_median_ms=" << native_ms << " eigen_median_ms=" << eigen_ms
               << " ratio=" << ratio << " verdict=" << verdict << '\n';
+    // a median slowdown beyond 25 percent fails the local performance gate
     return verdict != "block";
 }
 
+// hashes the ordered native sparse pattern and coefficients
 observation observe_native_sparse(const fdapde::SparseMatrix<double>& matrix) {
     observation result {matrix.non_zeros(), 0};
     for (int row = 0; row < matrix.rows(); ++row) {
@@ -134,6 +144,7 @@ observation observe_native_sparse(const fdapde::SparseMatrix<double>& matrix) {
     return result;
 }
 
+// hashes the ordered Eigen sparse pattern and coefficients
 observation observe_eigen_sparse(const eigen_sparse& matrix) {
     observation result {static_cast<int>(matrix.nonZeros()), 0};
     for (int outer = 0; outer < matrix.outerSize(); ++outer) {
@@ -144,6 +155,7 @@ observation observe_eigen_sparse(const eigen_sparse& matrix) {
     return result;
 }
 
+// hashes native dense results in logical row order
 template <typename MatrixType> observation observe_native_dense(const MatrixType& matrix) {
     observation result {matrix.rows() * matrix.cols(), 0};
     for (int row = 0; row < matrix.rows(); ++row) {
@@ -154,6 +166,7 @@ template <typename MatrixType> observation observe_native_dense(const MatrixType
     return result;
 }
 
+// hashes Eigen dense results in logical row order
 template <typename MatrixType> observation observe_eigen_dense(const MatrixType& matrix) {
     observation result {static_cast<int>(matrix.rows() * matrix.cols()), 0};
     for (int row = 0; row < matrix.rows(); ++row) {
@@ -164,6 +177,7 @@ template <typename MatrixType> observation observe_eigen_dense(const MatrixType&
     return result;
 }
 
+// compares construction, transpose and dense products on identical triangle-assembly inputs
 bool benchmark_case(int subdivisions, int repetitions) {
     const int nodes = (subdivisions + 1) * (subdivisions + 1);
     const auto native_triplets = make_grid_triplets(subdivisions);
@@ -243,6 +257,7 @@ bool benchmark_case(int subdivisions, int repetitions) {
 
 }   // namespace
 
+// runs both assembly sizes and fails if any numerical or performance check fails
 int main() {
     const bool small_green = benchmark_case(32, 9);
     const bool large_green = benchmark_case(128, 5);

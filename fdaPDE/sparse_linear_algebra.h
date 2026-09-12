@@ -17,9 +17,9 @@
 #ifndef __FDAPDE_SPARSE_LINEAR_ALGEBRA_MODULE_H__
 #define __FDAPDE_SPARSE_LINEAR_ALGEBRA_MODULE_H__
 
-// load assertion definitions before their sparse consumers
+// load native dense expressions before the sparse product kernels
 // clang-format off
-#include "utility.h"
+#include "dense_linear_algebra.h"
 #include "src/linear_algebra/sparse.h"
 // clang-format on
 
