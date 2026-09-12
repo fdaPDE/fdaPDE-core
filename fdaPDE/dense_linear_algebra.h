@@ -74,6 +74,8 @@ struct unchecked_t { };
 #include "src/linear_algebra/permutation.h"
 #include "src/linear_algebra/partial_piv_lu.h"
 #include "src/linear_algebra/qr.h"
+#include "src/linear_algebra/preconditioners.h"
+#include "src/linear_algebra/gmres.h"
 #include "src/linear_algebra/evd.h"
 #include "src/linear_algebra/xpr.h"
 #include "src/linear_algebra/spd.h"
