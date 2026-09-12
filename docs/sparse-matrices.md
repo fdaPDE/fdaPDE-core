@@ -102,7 +102,8 @@ The native tests cover both compression paths, duplicate order, cancellation,
 integer overflow, bounds, empty/wide shapes, mutation, ownership and failure
 preservation. An integration-only Eigen oracle compares complete compressed
 patterns and coefficients. The optional `fdapde_sparse_benchmark` target measures
-construction, constraint rebuilding, transpose and sparse-vector/dense products, including result
+construction, constraint rebuilding, lumping, transpose and sparse-vector/dense
+products, including result
 allocation, checksum traversal and destruction on identical triangle-assembly
 inputs with alternating execution order and warmups. Run it from a Release build without competing workloads; it rejects mismatched observations or a
 median native/Eigen time ratio above 1.25.
@@ -110,3 +111,6 @@ median native/Eigen time ratio above 1.25.
 The constraint benchmark includes an input copy for both implementations. Its
 Eigen reference uses the existing row/column elimination idiom, followed by zero
 pruning; it is not a comparison against every possible Eigen rebuilding algorithm.
+
+For checked dense and sparse row-sum diagonal construction, see
+[native matrix lumping](matrix-lumping.md).

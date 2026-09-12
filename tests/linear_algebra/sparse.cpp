@@ -17,6 +17,7 @@
 #include <fdaPDE/sparse_linear_algebra.h>
 #include <gtest/gtest.h>
 
+#include <complex>
 #include <limits>
 #include <type_traits>
 #include <utility>
@@ -1242,6 +1243,335 @@ TEST(linear_algebra, sparse_constraint_copy_failure) {
     constraint_copy_probe::copies_left = -1;
     // the exception leaves the complete source pattern and coefficients equal to the saved snapshot
     expect_same_sparse(matrix, snapshot);
+}
+
+using dense_lump_result = decltype(fdapde::lump(std::declval<const fdapde::Matrix<double, 2, 2>&>()));
+using dense_float_lump_result =
+  decltype(fdapde::lump(std::declval<const fdapde::Matrix<float, 2, 2, fdapde::ColMajor>&>()));
+using dense_int_lump_result = decltype(fdapde::lump(std::declval<const fdapde::Matrix<int, 2, 2>&>()));
+using partial_float_lump_result =
+  decltype(fdapde::lump(std::declval<const fdapde::Matrix<float, fdapde::Dynamic, 2>&>()));
+using dynamic_float_lump_result =
+  decltype(fdapde::lump(std::declval<const fdapde::Matrix<float, fdapde::Dynamic, fdapde::Dynamic>&>()));
+using dense_float_container = fdapde::Matrix<float, 3, 3, fdapde::ColMajor>;
+using dense_float_view = decltype(std::declval<dense_float_container&>().template block<2, 2>(0, 0));
+using dense_float_view_lump_result = decltype(fdapde::lump(std::declval<const dense_float_view&>()));
+using sparse_lump_result = decltype(fdapde::lump(std::declval<const sparse_double&>()));
+using sparse_float_lump_result = decltype(fdapde::lump(std::declval<const fdapde::SparseMatrix<float>&>()));
+using dense_complex_lump_result =
+  decltype(fdapde::lump(std::declval<const fdapde::Matrix<std::complex<double>, 2, 2>&>()));
+using sparse_complex_lump_result =
+  decltype(fdapde::lump(std::declval<const fdapde::SparseMatrix<std::complex<double>>&>()));
+
+// dense double input returns an owning dynamic diagonal of doubles
+static_assert(std::is_same_v<dense_lump_result, fdapde::DiagonalMatrix<double, fdapde::Dynamic>>);
+// column-major float input retains its coefficient type in the diagonal result
+static_assert(std::is_same_v<dense_float_lump_result, fdapde::DiagonalMatrix<float, fdapde::Dynamic>>);
+// integral dense input retains integer coefficients in the diagonal result
+static_assert(std::is_same_v<dense_int_lump_result, fdapde::DiagonalMatrix<int, fdapde::Dynamic>>);
+// partially dynamic input still yields an owning dynamic float diagonal
+static_assert(std::is_same_v<partial_float_lump_result, fdapde::DiagonalMatrix<float, fdapde::Dynamic>>);
+// fully dynamic input preserves float coefficients in the diagonal result
+static_assert(std::is_same_v<dynamic_float_lump_result, fdapde::DiagonalMatrix<float, fdapde::Dynamic>>);
+// block views evaluate into an owning diagonal rather than borrowing storage
+static_assert(std::is_same_v<dense_float_view_lump_result, fdapde::DiagonalMatrix<float, fdapde::Dynamic>>);
+// sparse double input returns a sparse double owner
+static_assert(std::is_same_v<sparse_lump_result, sparse_double>);
+// sparse float input preserves its coefficient type
+static_assert(std::is_same_v<sparse_float_lump_result, fdapde::SparseMatrix<float>>);
+// complex dense input preserves complex coefficients in the diagonal owner
+static_assert(std::is_same_v<dense_complex_lump_result, fdapde::DiagonalMatrix<std::complex<double>, fdapde::Dynamic>>);
+// complex sparse input preserves complex coefficients in the sparse owner
+static_assert(std::is_same_v<sparse_complex_lump_result, fdapde::SparseMatrix<std::complex<double>>>);
+// the dynamic integer diagonal accepts an integer size without a scalar-constructor conflict
+static_assert(std::is_constructible_v<fdapde::DiagonalMatrix<int, fdapde::Dynamic>, int>);
+// a fixed one-element integer diagonal accepts its scalar value
+static_assert(std::is_constructible_v<fdapde::DiagonalMatrix<int, 1>, int>);
+// a dynamic diagonal cannot accidentally interpret a floating coefficient as its size
+static_assert(!std::is_constructible_v<fdapde::DiagonalMatrix<double, fdapde::Dynamic>, double>);
+
+/// @brief exercises row summation for a scalar exposing addition only through assignment
+struct add_assign_only_scalar {
+    int value = 0;
+
+    /// @brief constructs the additive identity
+    add_assign_only_scalar() = default;
+    /// @brief constructs a coefficient from the fixture integer
+    add_assign_only_scalar(int value_) : value(value_) { }
+    /// @brief adds the supplied coefficient into the current value
+    add_assign_only_scalar& operator+=(const add_assign_only_scalar& other) {
+        value += other.value;
+        return *this;
+    }
+    /// @brief compares the accumulated scalar values
+    friend bool operator==(const add_assign_only_scalar&, const add_assign_only_scalar&) = default;
+};
+
+// compares dense owners, expressions and temporaries with explicit row-sum values
+template <int StorageOrder> void check_dense_lumping() {
+    const fdapde::Matrix<double, 3, 3, StorageOrder> matrix({1.0, 2.0, -3.0, 4.0, -1.0, 2.0, 0.5, 1.5, 2.0});
+    const auto lumped = fdapde::lump(matrix);
+    // the lumped dense result has one row per input row
+    EXPECT_EQ(lumped.rows(), 3);
+    // the dense diagonal result retains the square column count
+    EXPECT_EQ(lumped.cols(), 3);
+    // the first row cancels exactly to zero
+    EXPECT_DOUBLE_EQ(lumped[0], 0.0);
+    // the second row sums to four minus one plus two
+    EXPECT_DOUBLE_EQ(lumped[1], 5.0);
+    // the final row sums to one-half plus one-and-a-half plus two
+    EXPECT_DOUBLE_EQ(lumped[2], 4.0);
+    // off-diagonal entries of the lumped result are implicit zeros
+    EXPECT_DOUBLE_EQ(lumped(0, 1), 0.0);
+
+    const auto expression = fdapde::lump(matrix + matrix);
+    // doubling the expression preserves the zero first row sum
+    EXPECT_DOUBLE_EQ(expression[0], 0.0);
+    // doubling the expression doubles the second row sum
+    EXPECT_DOUBLE_EQ(expression[1], 10.0);
+    // doubling the expression doubles the final row sum
+    EXPECT_DOUBLE_EQ(expression[2], 8.0);
+
+    const auto temporary = fdapde::lump(fdapde::Matrix<double, 2, 2, StorageOrder>({1.0, 2.0, 3.0, 4.0}));
+    // a temporary input leaves an owning result with first row sum three
+    EXPECT_DOUBLE_EQ(temporary[0], 3.0);
+    // a temporary input leaves an owning result with final row sum seven
+    EXPECT_DOUBLE_EQ(temporary[1], 7.0);
+}
+
+// checks dense layouts and sparse diagonal patterns against explicit row sums
+TEST(linear_algebra, matrix_lumping) {
+    // row-major owners and expressions match the hand-computed row sums
+    check_dense_lumping<fdapde::RowMajor>();
+    // column-major owners and expressions match the same logical row sums
+    check_dense_lumping<fdapde::ColMajor>();
+
+    const sparse_double source(
+      3, 3,
+      {
+        {0, 0, 2.0 },
+        {0, 2, -2.0},
+        {1, 1, 3.0 },
+        {2, 0, -1.0},
+        {2, 2, 4.0 }
+    });
+    const auto sparse_lumped = fdapde::lump(source);
+    // the sparse result retains the three input rows
+    EXPECT_EQ(sparse_lumped.rows(), 3);
+    // the sparse result retains the three input columns
+    EXPECT_EQ(sparse_lumped.cols(), 3);
+    // all diagonal positions are stored even when a row sum is zero
+    EXPECT_EQ(sparse_lumped.non_zeros(), 3);
+    // the cancelled first row has a stored diagonal position
+    EXPECT_TRUE(sparse_lumped.contains(0, 0));
+    // the cancelled first row contains exactly one stored zero on its diagonal
+    EXPECT_EQ(
+      collect_row(sparse_lumped, 0), (std::vector<std::pair<int, double>> {
+                                       {0, 0.0}
+    }));
+    // the single-entry middle row retains its coefficient as the row sum
+    EXPECT_DOUBLE_EQ(sparse_lumped.coeff(1, 1), 3.0);
+    // the final sparse row sums to minus one plus four
+    EXPECT_DOUBLE_EQ(sparse_lumped.coeff(2, 2), 3.0);
+    // lumping leaves the original five-entry pattern unchanged
+    EXPECT_EQ(source.non_zeros(), 5);
+    // lumping preserves the original negative coupling
+    EXPECT_DOUBLE_EQ(source.coeff(0, 2), -2.0);
+
+    const sparse_double structurally_empty(2, 2);
+    const auto zero_lumped = fdapde::lump(structurally_empty);
+    // an empty two-row pattern yields two stored diagonal zeros
+    EXPECT_EQ(zero_lumped.non_zeros(), 2);
+    // the first empty row receives a stored diagonal position
+    EXPECT_TRUE(zero_lumped.contains(0, 0));
+    // the second empty row receives a stored diagonal position
+    EXPECT_TRUE(zero_lumped.contains(1, 1));
+}
+
+// checks scalar preservation and result ownership for views and custom coefficients
+TEST(linear_algebra, matrix_lumping_scalar_types) {
+    const fdapde::Matrix<float, 2, 2, fdapde::ColMajor> dense_float({1.0f, 2.0f, 3.0f, 4.0f});
+    const auto dense_float_lumped = fdapde::lump(dense_float);
+    // the first float row sums to one plus two
+    EXPECT_FLOAT_EQ(dense_float_lumped[0], 3.0f);
+    // the second float row sums to three plus four
+    EXPECT_FLOAT_EQ(dense_float_lumped[1], 7.0f);
+    const fdapde::Matrix<float, fdapde::Dynamic, 2> partial_float(dense_float);
+    // partially dynamic dimensions give the same diagonal as the fixed float owner
+    EXPECT_EQ(fdapde::lump(partial_float), dense_float_lumped);
+    dense_float_container container({1.0f, 2.0f, 99.0f, 3.0f, 4.0f, 99.0f, 99.0f, 99.0f, 99.0f});
+    const auto view_lumped = fdapde::lump(container.block<2, 2>(0, 0));
+    container = dense_float_container();
+    // a block-view result remains unchanged after its source is overwritten
+    EXPECT_EQ(view_lumped, dense_float_lumped);
+
+    const fdapde::Matrix<int, 2, 2> dense_int({1, 2, 3, 4});
+    const auto dense_int_lumped = fdapde::lump(dense_int);
+    // the first integer row sums exactly to three
+    EXPECT_EQ(dense_int_lumped[0], 3);
+    // the second integer row sums exactly to seven
+    EXPECT_EQ(dense_int_lumped[1], 7);
+    const fdapde::DiagonalMatrix<int, 1> single_int_diagonal(9);
+    // the fixed one-element diagonal interprets its argument as a coefficient
+    EXPECT_EQ(single_int_diagonal[0], 9);
+    const fdapde::SparseMatrix<float> sparse_float(
+      2, 2,
+      {
+        {0, 0, 1.5f },
+        {0, 1, -1.5f},
+        {1, 1, 2.0f }
+    });
+    const auto sparse_float_lumped = fdapde::lump(sparse_float);
+    // float cancellation still yields one stored diagonal entry per row
+    EXPECT_EQ(sparse_float_lumped.non_zeros(), 2);
+    // the float zero sum retains its diagonal position
+    EXPECT_TRUE(sparse_float_lumped.contains(0, 0));
+    // the cancelling float row evaluates to zero
+    EXPECT_FLOAT_EQ(sparse_float_lumped.coeff(0, 0), 0.0f);
+    // the noncancelling float row retains its value
+    EXPECT_FLOAT_EQ(sparse_float_lumped.coeff(1, 1), 2.0f);
+
+    using complex_scalar = std::complex<double>;
+    const fdapde::Matrix<complex_scalar, 2, 2> dense_complex(
+      {complex_scalar(1.0, 2.0), complex_scalar(2.0, -1.0), complex_scalar(3.0, 0.0), complex_scalar(4.0, 1.0)});
+    const auto dense_complex_lumped = fdapde::lump(dense_complex);
+    // the first complex row sums real and imaginary parts independently
+    EXPECT_EQ(dense_complex_lumped[0], complex_scalar(3.0, 1.0));
+    // the second complex row preserves the summed imaginary component
+    EXPECT_EQ(dense_complex_lumped[1], complex_scalar(7.0, 1.0));
+    const fdapde::SparseMatrix<complex_scalar> sparse_complex(
+      2, 2,
+      {
+        {0, 0, complex_scalar(1.0,  2.0) },
+        {0, 1, complex_scalar(-1.0, -2.0)},
+        {1, 1, complex_scalar(3.0,  1.0) }
+    });
+    const auto sparse_complex_lumped = fdapde::lump(sparse_complex);
+    // complex sparse cancellation preserves a full diagonal pattern
+    EXPECT_EQ(sparse_complex_lumped.non_zeros(), 2);
+    // the cancelling complex row retains its diagonal position
+    EXPECT_TRUE(sparse_complex_lumped.contains(0, 0));
+    // opposite complex coefficients sum to complex zero
+    EXPECT_EQ(sparse_complex_lumped.coeff(0, 0), complex_scalar {});
+    // the noncancelling complex row preserves both components
+    EXPECT_EQ(sparse_complex_lumped.coeff(1, 1), complex_scalar(3.0, 1.0));
+
+    fdapde::Matrix<add_assign_only_scalar, 2, 2> add_assign_only;
+    add_assign_only(0, 0) = 1;
+    add_assign_only(0, 1) = 2;
+    add_assign_only(1, 0) = 3;
+    add_assign_only(1, 1) = 4;
+    const auto add_assign_only_lumped = fdapde::lump(add_assign_only);
+    // a scalar supporting only add-assignment accumulates the first row correctly
+    EXPECT_EQ(add_assign_only_lumped[0], add_assign_only_scalar(3));
+    // a scalar supporting only add-assignment accumulates the second row correctly
+    EXPECT_EQ(add_assign_only_lumped[1], add_assign_only_scalar(7));
+}
+
+// checks empty shapes and typed failures for incompatible dimensions and invalid row sums
+TEST(linear_algebra, matrix_lumping_failure_contracts) {
+    using complex_scalar = std::complex<double>;
+    const auto sparse_empty = fdapde::lump(sparse_double());
+    // lumping an empty sparse owner preserves its zero row count
+    EXPECT_EQ(sparse_empty.rows(), 0);
+    // lumping an empty sparse owner preserves its zero column count
+    EXPECT_EQ(sparse_empty.cols(), 0);
+    // lumping zero sparse rows creates no diagonal entries
+    EXPECT_EQ(sparse_empty.non_zeros(), 0);
+    const auto dense_empty = fdapde::lump(fdapde::Matrix<double, fdapde::Dynamic, fdapde::Dynamic>(0, 0));
+    // lumping an empty dense matrix creates a zero-row diagonal
+    EXPECT_EQ(dense_empty.rows(), 0);
+    // lumping an empty dense matrix creates a zero-column diagonal
+    EXPECT_EQ(dense_empty.cols(), 0);
+
+    // rectangular sparse input raises the public shape error
+    EXPECT_THROW(static_cast<void>(fdapde::lump(make_rectangular_fixture())), std::invalid_argument);
+    const fdapde::Matrix<double, fdapde::Dynamic, fdapde::Dynamic> rectangular(2, 3);
+    // runtime rectangular dense input raises the public shape error
+    EXPECT_THROW(static_cast<void>(fdapde::lump(rectangular)), std::invalid_argument);
+
+    const fdapde::Matrix<int, 2, 2> dense_int_overflow({std::numeric_limits<int>::max(), 1, 0, 0});
+    // signed integer overflow is rejected before evaluating the overflowing sum
+    EXPECT_THROW(static_cast<void>(fdapde::lump(dense_int_overflow)), std::overflow_error);
+    const fdapde::Matrix<unsigned int, 2, 2> dense_unsigned_overflow(
+      {std::numeric_limits<unsigned int>::max(), 1U, 0U, 0U});
+    // unsigned integer row sums cannot silently wrap around
+    EXPECT_THROW(static_cast<void>(fdapde::lump(dense_unsigned_overflow)), std::overflow_error);
+    const fdapde::SparseMatrix<int> sparse_int_overflow(
+      2, 2,
+      {
+        {0, 0, std::numeric_limits<int>::max()},
+        {0, 1, 1                              }
+    });
+    const fdapde::SparseMatrix<int> sparse_int_snapshot(sparse_int_overflow);
+    // sparse integer row sums receive the same overflow protection
+    EXPECT_THROW(static_cast<void>(fdapde::lump(sparse_int_overflow)), std::overflow_error);
+    // failed sparse summation preserves the complete source snapshot
+    expect_same_sparse(sparse_int_overflow, sparse_int_snapshot);
+
+    const double infinity = std::numeric_limits<double>::infinity();
+    const fdapde::Matrix<double, 2, 2> dense_nonfinite({infinity, 0.0, 0.0, 0.0});
+    // infinite dense coefficients raise the input-value error
+    EXPECT_THROW(static_cast<void>(fdapde::lump(dense_nonfinite)), std::invalid_argument);
+    const fdapde::Matrix<double, 2, 2> dense_sum_overflow(
+      {std::numeric_limits<double>::max(), std::numeric_limits<double>::max(), 0.0, 0.0});
+    // finite dense coefficients whose sum overflows raise the arithmetic error
+    EXPECT_THROW(static_cast<void>(fdapde::lump(dense_sum_overflow)), std::overflow_error);
+    const sparse_double sparse_nonfinite(
+      2, 2,
+      {
+        {0, 0, infinity}
+    });
+    // infinite sparse coefficients raise the input-value error
+    EXPECT_THROW(static_cast<void>(fdapde::lump(sparse_nonfinite)), std::invalid_argument);
+    const sparse_double sparse_sum_overflow(
+      2, 2,
+      {
+        {0, 0, std::numeric_limits<double>::max()},
+        {0, 1, std::numeric_limits<double>::max()}
+    });
+    // finite sparse coefficients whose sum overflows raise the arithmetic error
+    EXPECT_THROW(static_cast<void>(fdapde::lump(sparse_sum_overflow)), std::overflow_error);
+    const fdapde::Matrix<complex_scalar, 1, 1> complex_nonfinite(complex_scalar(infinity, 0.0));
+    // complex coefficients with an infinite component are rejected
+    EXPECT_THROW(static_cast<void>(fdapde::lump(complex_nonfinite)), std::invalid_argument);
+    const fdapde::Matrix<complex_scalar, 2, 2> complex_sum_overflow(
+      {complex_scalar(std::numeric_limits<double>::max(), 0.0), complex_scalar(std::numeric_limits<double>::max(), 0.0),
+       complex_scalar {}, complex_scalar {}});
+    // complex row sums with overflowing real components raise the arithmetic error
+    EXPECT_THROW(static_cast<void>(fdapde::lump(complex_sum_overflow)), std::overflow_error);
+}
+
+// checks normalized sparse scalar types and the remaining finite-value and signed-boundary branches
+TEST(linear_algebra, matrix_lumping_scalar_boundaries) {
+    const fdapde::SparseMatrix<const double> qualified(
+      2, 2,
+      {
+        {0, 0, 2.0 },
+        {0, 1, -2.0}
+    });
+    const auto qualified_lumped = fdapde::lump(qualified);
+    // the CSR owner's normalized coefficient type remains writable during accumulation
+    EXPECT_DOUBLE_EQ(qualified_lumped.coeff(0, 0), 0.0);
+    // qualified sparse input still creates a full two-entry diagonal pattern
+    EXPECT_EQ(qualified_lumped.non_zeros(), 2);
+    const fdapde::Matrix<int, 2, 2> underflow({std::numeric_limits<int>::min(), -1, 0, 0});
+    // a signed sum below the minimum is rejected before subtraction can overflow
+    EXPECT_THROW(static_cast<void>(fdapde::lump(underflow)), std::overflow_error);
+    const fdapde::Matrix<int, 2, 2> boundary({std::numeric_limits<int>::min(), 0, 0, 0});
+    // a sum exactly at the signed lower boundary is accepted without overflow
+    EXPECT_EQ(fdapde::lump(boundary)[0], std::numeric_limits<int>::min());
+    const fdapde::Matrix<double, 1, 1> nan(std::numeric_limits<double>::quiet_NaN());
+    // a NaN coefficient raises the input-value error before a diagonal result is returned
+    EXPECT_THROW(static_cast<void>(fdapde::lump(nan)), std::invalid_argument);
+    using complex_scalar = std::complex<double>;
+    const fdapde::SparseMatrix<complex_scalar> imaginary_infinity(
+      1, 1,
+      {
+        {0, 0, complex_scalar(1.0, std::numeric_limits<double>::infinity())}
+    });
+    // a nonfinite imaginary component is rejected even when the real component is finite
+    EXPECT_THROW(static_cast<void>(fdapde::lump(imaginary_infinity)), std::invalid_argument);
 }
 
 }   // namespace

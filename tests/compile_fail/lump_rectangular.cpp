@@ -14,14 +14,10 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_SPARSE_LINEAR_ALGEBRA_MODULE_H__
-#define __FDAPDE_SPARSE_LINEAR_ALGEBRA_MODULE_H__
+#include <fdaPDE/sparse_linear_algebra.h>
 
-// load native dense expressions before the sparse product kernels
-// clang-format off
-#include "dense_linear_algebra.h"
-#include "src/linear_algebra/sparse.h"
-#include "src/linear_algebra/lumping.h"
-// clang-format on
-
-#endif   // __FDAPDE_SPARSE_LINEAR_ALGEBRA_MODULE_H__
+// a statically rectangular dense matrix must be rejected at the public lumping boundary
+int main() {
+    fdapde::Matrix<double, 2, 3> matrix;
+    static_cast<void>(fdapde::lump(matrix));
+}
