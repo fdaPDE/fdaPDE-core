@@ -33,6 +33,7 @@ namespace internals {
 template <typename Scalar> inline constexpr bool is_std_complex_v = false;
 template <typename Scalar> inline constexpr bool is_std_complex_v<std::complex<Scalar>> = true;
 
+/// @brief checks real and complex floating coefficients for nonfinite components
 template <typename Scalar> bool finite_lumping_scalar(const Scalar& value) {
     if constexpr (std::is_floating_point_v<Scalar>) {
         return std::isfinite(value);
@@ -43,23 +44,26 @@ template <typename Scalar> bool finite_lumping_scalar(const Scalar& value) {
     }
 }
 
+/// @brief accumulates a row sum while rejecting nonfinite inputs and unrepresentable sums
 template <typename Scalar> Scalar checked_lumping_add(const Scalar& lhs, const Scalar& rhs) {
     if constexpr (std::is_floating_point_v<Scalar> || is_std_complex_v<Scalar>) {
-        if (!finite_lumping_scalar(lhs) || !finite_lumping_scalar(rhs)) {
-            throw std::invalid_argument("matrix lumping requires finite coefficients");
-        }
+        fdapde_strong_assert(
+          finite_lumping_scalar(lhs) && finite_lumping_scalar(rhs), std::invalid_argument,
+          "matrix lumping requires finite coefficients");
         const Scalar result = lhs + rhs;
-        if (!finite_lumping_scalar(result)) { throw std::overflow_error("matrix lumping row sum is not finite"); }
+        fdapde_strong_assert(
+          finite_lumping_scalar(result), std::overflow_error, "matrix lumping row sum is not finite");
         return result;
     } else if constexpr (std::is_integral_v<Scalar>) {
         if constexpr (std::is_signed_v<Scalar>) {
-            if (
-              (rhs > 0 && lhs > std::numeric_limits<Scalar>::max() - rhs) ||
-              (rhs < 0 && lhs < std::numeric_limits<Scalar>::lowest() - rhs)) {
-                throw std::overflow_error("matrix lumping row sum exceeds the scalar range");
-            }
-        } else if (lhs > std::numeric_limits<Scalar>::max() - rhs) {
-            throw std::overflow_error("matrix lumping row sum exceeds the scalar range");
+            fdapde_strong_assert(
+              (rhs <= 0 || lhs <= std::numeric_limits<Scalar>::max() - rhs) &&
+                (rhs >= 0 || lhs >= std::numeric_limits<Scalar>::lowest() - rhs),
+              std::overflow_error, "matrix lumping row sum exceeds the scalar range");
+        } else {
+            fdapde_strong_assert(
+              lhs <= std::numeric_limits<Scalar>::max() - rhs, std::overflow_error,
+              "matrix lumping row sum exceeds the scalar range");
         }
         return lhs + rhs;
     } else {
@@ -71,10 +75,12 @@ template <typename Scalar> Scalar checked_lumping_add(const Scalar& lhs, const S
 
 }   // namespace internals
 
-// Row-sum lumping of a sparse matrix.
-template <typename Scalar> SparseMatrix<Scalar> lump(const SparseMatrix<Scalar>& matrix) {
-    if (matrix.rows() != matrix.cols()) { throw std::invalid_argument("matrix lumping requires a square matrix"); }
-    SparseMatrix<Scalar> result(matrix.rows(), matrix.cols());
+/// @brief returns a sparse row-sum diagonal with one stored entry per row, including zero sums
+template <typename Scalar_> SparseMatrix<Scalar_> lump(const SparseMatrix<Scalar_>& matrix) {
+    using Scalar = typename SparseMatrix<Scalar_>::Scalar;
+    fdapde_strong_assert(
+      matrix.rows() == matrix.cols(), std::invalid_argument, "matrix lumping requires a square matrix");
+    SparseMatrix<Scalar_> result(matrix.rows(), matrix.cols());
     result.column_indices_.reserve(static_cast<std::size_t>(matrix.rows()));
     result.values_.reserve(static_cast<std::size_t>(matrix.rows()));
     for (int row = 0; row < matrix.rows(); ++row) {
@@ -87,13 +93,14 @@ template <typename Scalar> SparseMatrix<Scalar> lump(const SparseMatrix<Scalar>&
     return result;
 }
 
-// Row-sum lumping of a dense matrix expression.
+/// @brief evaluates row sums into an independent diagonal owner with the expression scalar type
 template <internals::matrix_expression XprType> auto lump(const XprType& matrix) {
     using Xpr = std::remove_cvref_t<XprType>;
     using Scalar = std::remove_cv_t<typename Xpr::Scalar>;
     fdapde_static_assert(
       Xpr::Rows == Dynamic || Xpr::Cols == Dynamic || Xpr::Rows == Xpr::Cols, THIS_METHODS_IS_FOR_SQUARE_MATRICES_ONLY);
-    if (matrix.rows() != matrix.cols()) { throw std::invalid_argument("matrix lumping requires a square matrix"); }
+    fdapde_strong_assert(
+      matrix.rows() == matrix.cols(), std::invalid_argument, "matrix lumping requires a square matrix");
     DiagonalMatrix<Scalar, Dynamic> result(matrix.rows());
     for (int i = 0; i < matrix.rows(); ++i) {
         Scalar row_sum {};

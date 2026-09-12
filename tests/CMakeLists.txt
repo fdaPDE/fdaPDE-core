@@ -176,6 +176,8 @@ endif()
 
 fdapde_reject_program(sparse_boolean "SparseMatrix<bool> is not supported")
 
+fdapde_reject_program(lump_rectangular "THIS_METHODS_IS_FOR_SQUARE_MATRICES_ONLY")
+
 if(NOT FDAPDE_NATIVE_ONLY)
   add_executable(fdapde_sparse_header_order_test
     public_headers/sparse_then_linear_algebra.cpp public_headers/linear_algebra_then_sparse.cpp)
