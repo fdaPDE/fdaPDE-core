@@ -60,6 +60,7 @@ std::vector<native_triplet> make_grid_triplets(int subdivisions) {
     return triplets;
 }
 
+// selects each node on the square grid boundary exactly once
 std::vector<int> make_boundary_dofs(int subdivisions) {
     const int nodes_per_side = subdivisions + 1;
     std::vector<int> dofs;
@@ -192,7 +193,7 @@ template <typename MatrixType> observation observe_eigen_dense(const MatrixType&
     return result;
 }
 
-// compares construction, transpose and dense products on identical triangle-assembly inputs
+// compares construction, constraints, transpose and products on identical triangle-assembly inputs
 bool benchmark_case(int subdivisions, int repetitions) {
     const int nodes = (subdivisions + 1) * (subdivisions + 1);
     const auto native_triplets = make_grid_triplets(subdivisions);

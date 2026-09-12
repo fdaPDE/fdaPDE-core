@@ -36,7 +36,7 @@ forward-iterator requirements and yield proxies containing a column and a
 reference to the owner's coefficient. Row ranges and mutable coefficient
 references can only be obtained from lvalue matrices. The owner must outlive
 all borrowed ranges, entries, iterators and references. Structural mutation,
-assignment, move and swap invalidate these borrows.
+assignment, move, swap and nonempty constraint rebuilding invalidate these borrows.
 
 `resize(rows, cols)` replaces the shape and clears its pattern. `rebuild`
 replaces the pattern at the current shape. Both construct replacement storage
@@ -77,13 +77,36 @@ column vector. It uses the stored matrix as supplied, without implicit symmetry
 expansion or complex conjugation. Integral products and partial sums must each
 fit their result scalar type, even if later cancellation could make the final
 result representable. Dimension, triangle and integral range checks remain active
-in all builds. Constraint rebuilding is not exposed yet.
+in all builds.
+
+`rebuild_with_constraints(dofs)` transforms a square matrix in place: it removes
+all entries in the selected rows and columns and stores one on each selected
+diagonal. Unselected entries retain their values and sorted column order; exact
+stored zeros are removed. Duplicate indices and their order do not affect the
+result. Missing diagonals are inserted, and selecting every row yields the identity.
+
+An empty list is a true no-op, including for rectangular and empty matrices:
+it preserves stored zeros and borrowed references. A nonempty list requires a
+square matrix and valid indices. Validation and replacement construction finish
+before the new storage is published, so exceptions leave the original unchanged.
+A successful nonempty rebuild invalidates existing borrows. The operation takes
+O(rows + stored entries + supplied indices) time, with O(rows + stored entries)
+temporary storage.
+
+This method changes only the matrix. It neither accepts prescribed values nor
+updates a right-hand side. For nonzero Dirichlet data, the caller must use the
+original columns to adjust the unconstrained right-hand side before elimination,
+then set the constrained right-hand-side entries to the prescribed values.
 
 The native tests cover both compression paths, duplicate order, cancellation,
 integer overflow, bounds, empty/wide shapes, mutation, ownership and failure
 preservation. An integration-only Eigen oracle compares complete compressed
 patterns and coefficients. The optional `fdapde_sparse_benchmark` target measures
-construction, transpose and sparse-vector/dense products, including result
+construction, constraint rebuilding, transpose and sparse-vector/dense products, including result
 allocation, checksum traversal and destruction on identical triangle-assembly
 inputs with alternating execution order and warmups. Run it from a Release build without competing workloads; it rejects mismatched observations or a
 median native/Eigen time ratio above 1.25.
+
+The constraint benchmark includes an input copy for both implementations. Its
+Eigen reference uses the existing row/column elimination idiom, followed by zero
+pruning; it is not a comparison against every possible Eigen rebuilding algorithm.

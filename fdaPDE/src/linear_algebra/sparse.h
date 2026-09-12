@@ -236,13 +236,10 @@ template <typename Scalar_> class SparseMatrix {
     /// @brief rebuilds the current shape from an initializer list
     void rebuild(std::initializer_list<triplet_type> triplets) { rebuild(std::vector<triplet_type>(triplets)); }
 
-    // Rebuild a square system matrix after imposing unit constraints. Every
-    // selected row and column is cleared and replaced by one unit diagonal.
-    // The empty list is a true no-op; nonempty rebuilds are canonical and
-    // failure-atomic.
+    /// @brief clears selected rows and columns to unit diagonals, preserving the matrix on failure
     void rebuild_with_constraints(const std::vector<Index>& dofs) {
         if (dofs.empty()) return;
-        if (rows_ != cols_) { throw std::invalid_argument("sparse constraints require a square matrix"); }
+        fdapde_strong_assert(rows_ == cols_, std::invalid_argument, "sparse constraints require a square matrix");
         for (const Index dof : dofs) validate_row_(dof);
 
         std::vector<unsigned char> constrained(static_cast<std::size_t>(rows_), 0);
@@ -257,13 +254,14 @@ template <typename Scalar_> class SparseMatrix {
             if (constrained[row] != 0) continue;
             for (Index current = row_offsets_[row]; current < row_offsets_[row + 1]; ++current) {
                 if (constrained[column_indices_[current]] != 0 || values_[current] == Scalar {}) continue;
-                if (output_size == static_cast<std::size_t>(std::numeric_limits<Index>::max())) {
-                    throw std::length_error("constrained sparse matrix exceeds the supported int range");
-                }
+                fdapde_strong_assert(
+                  output_size < static_cast<std::size_t>(std::numeric_limits<Index>::max()), std::length_error,
+                  "constrained sparse matrix exceeds the supported int range");
                 ++output_size;
             }
         }
 
+        // build sorted replacement rows before publishing any structural change
         SparseMatrix replacement(rows_, cols_);
         replacement.column_indices_.reserve(output_size);
         replacement.values_.reserve(output_size);
