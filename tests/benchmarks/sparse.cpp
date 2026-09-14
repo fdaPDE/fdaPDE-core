@@ -193,7 +193,7 @@ template <typename MatrixType> observation observe_eigen_dense(const MatrixType&
     return result;
 }
 
-// compares construction, constraints, transpose and products on identical triangle-assembly inputs
+// compares sparse operations on identical triangle-assembly inputs
 bool benchmark_case(int subdivisions, int repetitions) {
     const int nodes = (subdivisions + 1) * (subdivisions + 1);
     const auto native_triplets = make_grid_triplets(subdivisions);
@@ -239,6 +239,19 @@ bool benchmark_case(int subdivisions, int repetitions) {
         return observe_eigen_sparse(result);
     };
 
+    auto native_lumping = [&] { return observe_native_sparse(fdapde::lump(native_matrix)); };
+    auto eigen_lumping = [&] {
+        const Eigen::VectorXd sums = eigen_matrix * Eigen::VectorXd::Ones(nodes);
+        eigen_sparse result(nodes, nodes);
+        result.reserve(nodes);
+        for (int row = 0; row < nodes; ++row) {
+            result.startVec(row);
+            result.insertBack(row, row) = sums[row];
+        }
+        result.finalize();
+        return observe_eigen_sparse(result);
+    };
+
     auto native_transpose = [&] { return observe_native_sparse(native_matrix.transpose()); };
     auto eigen_transpose = [&] {
         eigen_sparse result = eigen_matrix.transpose();
@@ -279,6 +292,8 @@ bool benchmark_case(int subdivisions, int repetitions) {
       benchmark_operation("construction", subdivisions, repetitions, 16, native_construction, eigen_construction);
     const bool constraints_green =
       benchmark_operation("constraints", subdivisions, repetitions, 16, native_constraints, eigen_constraints);
+    const bool lumping_green =
+      benchmark_operation("lumping", subdivisions, repetitions, 64, native_lumping, eigen_lumping);
     const bool transpose_green =
       benchmark_operation("transpose", subdivisions, repetitions, 32, native_transpose, eigen_transpose);
     const bool matvec_green =
@@ -288,7 +303,8 @@ bool benchmark_case(int subdivisions, int repetitions) {
 
     std::cout << "nodes=" << nodes << " raw_triplets=" << native_triplets.size()
               << " nonzeros=" << native_matrix.non_zeros() << '\n';
-    return construction_green && constraints_green && transpose_green && matvec_green && sparse_dense_green;
+    return construction_green && constraints_green && lumping_green && transpose_green && matvec_green &&
+           sparse_dense_green;
 }
 
 }   // namespace

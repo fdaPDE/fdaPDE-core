@@ -378,4 +378,43 @@ TEST(NativeSparseOracle, MatchesEigenConstraintRebuilding) {
     expect_same_sparse(native_symmetric, eigen_symmetric);
 }
 
+// compares lumping with Eigen row sums across dense layouts and sparse patterns, including zero sums
+TEST(NativeSparseOracle, MatchesEigenLumping) {
+    for (const int size : {0, 1, 7, 31}) {
+        std::vector<native_triplet> triplets;
+        fdapde::Matrix<double, fdapde::Dynamic, fdapde::Dynamic> dense(size, size);
+        for (int row = 0; row < size; ++row) {
+            for (int col = 0; col < size; ++col) {
+                if ((row + col) % 3 != 0) {
+                    const double value = (row - col) * 0.125;
+                    triplets.emplace_back(row, col, value);
+                    dense(row, col) = value;
+                }
+            }
+        }
+        const fdapde::SparseMatrix<double> native(size, size, triplets);
+        const eigen_sparse oracle = make_eigen_sparse(size, size, triplets);
+        const Eigen::VectorXd sums = oracle * Eigen::VectorXd::Ones(size);
+        std::vector<Eigen::Triplet<double>> diagonal_triplets;
+        for (int row = 0; row < size; ++row) diagonal_triplets.emplace_back(row, row, sums[row]);
+        eigen_sparse expected(size, size);
+        expected.setFromTriplets(diagonal_triplets.begin(), diagonal_triplets.end());
+        // the sparse result matches Eigen row sums with an explicitly stored entry at every diagonal position
+        expect_same_sparse(fdapde::lump(native), expected);
+        const auto row_major_lumped = fdapde::lump(dense);
+        const fdapde::Matrix<double, fdapde::Dynamic, fdapde::Dynamic, fdapde::ColMajor> column_major(dense);
+        const auto column_major_lumped = fdapde::lump(column_major);
+        const Eigen::MatrixXd eigen_dense(oracle);
+        const Eigen::VectorXd dense_sums = eigen_dense.rowwise().sum();
+        // the dense result preserves Eigen's row count even for the empty fixture
+        ASSERT_EQ(row_major_lumped.rows(), dense_sums.size());
+        for (int row = 0; row < size; ++row) {
+            // row-major dense accumulation matches the independent Eigen row reduction
+            EXPECT_DOUBLE_EQ(row_major_lumped[row], dense_sums[row]);
+            // column-major storage yields the same logical row sum as Eigen
+            EXPECT_DOUBLE_EQ(column_major_lumped[row], dense_sums[row]);
+        }
+    }
+}
+
 }   // namespace
