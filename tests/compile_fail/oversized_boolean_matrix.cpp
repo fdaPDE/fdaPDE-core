@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <fdaPDE/linear_algebra.h>
+#include <fdaPDE/dense_linear_algebra.h>
 
 fdapde::Matrix<bool, 50000, 50000> oversized_boolean_matrix;
 

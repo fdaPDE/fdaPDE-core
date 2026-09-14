@@ -14,8 +14,19 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+// preserve the aggregate inclusion order exercised by this translation unit
+// clang-format off
+#include <fdaPDE/linear_algebra.h>
 #include <fdaPDE/dense_linear_algebra.h>
+// clang-format on
 
-fdapde::LowerTriangularMatrix<double, 3, 3, fdapde::ColMajor> col_major_triangular_matrix;
+// the Eigen dynamic vectors retain their vector classification after both aggregates are loaded
+static_assert(fdapde::internals::is_vector_like_v<Eigen::VectorXd>);
+// the Eigen dynamic matrices remain distinct from vectors after both aggregates are loaded
+static_assert(!fdapde::internals::is_vector_like_v<Eigen::MatrixXd>);
 
-int main() { return col_major_triangular_matrix.rows(); }
+// returns an owned dense coefficient from a separate translation unit for the link check
+int dense_header_order() {
+    const fdapde::Matrix<double, 2, 2> matrix({1.0, 2.0, 3.0, 4.0});
+    return static_cast<int>(matrix(1, 1));
+}

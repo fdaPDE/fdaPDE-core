@@ -59,3 +59,18 @@ Eight cases from `test/src/binary_matrix_test.cpp` are executed in
 `linear_algebra/historical_boolean.cpp`. Their original locations retain precise
 replacement pointers. The historical Eigen conversion case remains in place,
 as do historical FEM and other cases whose complete coverage is not replaced.
+
+## Native algebra
+
+The dense tests include `dense_linear_algebra.h` directly without an Eigen target
+dependency. Run the native lane with Eigen unavailable to the compiler:
+
+```sh
+cmake -S tests -B build/native -DFDAPDE_NATIVE_ONLY=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build/native --parallel 4
+ctest --test-dir build/native --output-on-failure
+```
+
+The default integration lane retains Eigen-dependent core callers and verifies
+both dense/full aggregate inclusion orders in linked translation units. Native
+and integration lanes both keep debug assertions enabled in ordinary tests.

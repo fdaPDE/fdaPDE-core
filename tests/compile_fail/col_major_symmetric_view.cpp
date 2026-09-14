@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <fdaPDE/linear_algebra.h>
+#include <fdaPDE/dense_linear_algebra.h>
 
 double col_major_symmetric_storage[6] {};
 fdapde::SymmetricMatrixView<double, 3, 3, fdapde::ColMajor> col_major_symmetric_view(col_major_symmetric_storage);
