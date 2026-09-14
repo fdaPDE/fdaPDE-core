@@ -397,6 +397,8 @@ class DiagonalMatrix : public DiagonalMatrixExpr<DiagonalMatrix<Scalar_, Rows_>>
     using Base = DiagonalMatrixExpr<DiagonalMatrix<Scalar_, Rows_>>;
    public:
     using Scalar = Scalar_;
+    using View = DiagonalMatrixView<Scalar_, Rows_>;
+    using ConstView = DiagonalMatrixView<const Scalar_, Rows_>;
     using StorageType = Vector<Scalar, Rows_>;
     static constexpr int Rows = Rows_;
     static constexpr int Cols = Rows_;

@@ -227,6 +227,8 @@ class SymmetricMatrix :
       Rows_ == Dynamic || Cols_ == Dynamic || Rows_ == Cols_, THIS_CLASS_IS_FOR_SQUARE_MATRICES_ONLY);
     fdapde_static_assert(StorageOrder_ == RowMajor, PACKED_COL_MAJOR_STRUCTURED_STORAGE_IS_NOT_SUPPORTED);
     using Scalar = Scalar_;
+    using View = SymmetricMatrixView<Scalar_, Rows_, Cols_, StorageOrder_>;
+    using ConstView = SymmetricMatrixView<const Scalar_, Rows_, Cols_, StorageOrder_>;
     static constexpr int Rows = Rows_;
     static constexpr int Cols = Cols_;
     static constexpr int NestAsRef = 1;
