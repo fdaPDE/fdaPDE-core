@@ -17,6 +17,7 @@
 #ifndef __FDAPDE_MANIFOLD_LOG_EUCLIDEAN_SPD_H__
 #define __FDAPDE_MANIFOLD_LOG_EUCLIDEAN_SPD_H__
 
+#include "geometry_expr.h"
 #include "header_check.h"
 #include "spd_geometry_common.h"
 
@@ -24,7 +25,7 @@ namespace fdapde {
 namespace manifold {
 
 /// @brief defines the log-Euclidean metric on checked SPD owners with ambient symmetric tangents
-template <typename Scalar_, int Order_> class LogEuclideanSPDGeometry {
+template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class LogEuclideanSPDGeometry {
     fdapde_static_assert(
       std::is_floating_point_v<Scalar_> && !std::is_const_v<Scalar_> && !std::is_volatile_v<Scalar_>,
       SPD_GEOMETRIES_REQUIRE_AN_UNQUALIFIED_FLOATING_POINT_SCALAR);
@@ -34,7 +35,8 @@ template <typename Scalar_, int Order_> class LogEuclideanSPDGeometry {
       SPD_GEOMETRY_DENSE_WORKSPACE_SIZE_EXCEEDS_SUPPORTED_RANGE);
    public:
     using Scalar = Scalar_;
-    using Point = fdapde::SPDMatrix<Scalar, Order_, Order_>;
+    using CachePolicy = Cache::Policy<internals::log_euclidean_cache_flags(Uses_)>;
+    using Point = fdapde::SPDMatrix<Scalar, Order_, Order_, CachePolicy>;
     using Tangent = fdapde::SymmetricMatrix<Scalar, Order_, Order_>;
 
     /// @brief constructs the fixed-order geometry using its positive compile-time matrix order
@@ -55,7 +57,8 @@ template <typename Scalar_, int Order_> class LogEuclideanSPDGeometry {
     std::size_t dimension() const { return internals::spd_geometry_dimension(order_); }
 
     /// @brief pairs ambient tangents in the metric at point
-    double inner_product(const Point& point, const Tangent& u, const Tangent& v) const {
+    template <SPDLike PointPoint>
+    double inner_product(const PointPoint& point, const Tangent& u, const Tangent& v) const {
         check_point_(point);
         check_tangent_(u);
         check_tangent_(v);
@@ -65,21 +68,21 @@ template <typename Scalar_, int Order_> class LogEuclideanSPDGeometry {
     }
 
     /// @brief returns the metric norm of an ambient tangent
-    double norm(const Point& point, const Tangent& tangent) const {
+    template <SPDLike PointPoint> double norm(const PointPoint& point, const Tangent& tangent) const {
         check_point_(point);
         check_tangent_(tangent);
         return internals::frobenius_norm(fdapde::matrix_log_frechet(point, tangent), order_);
     }
 
     /// @brief copies an already symmetric ambient tangent into independent storage
-    Tangent project(const Point& point, const Tangent& ambient) const {
+    template <SPDLike PointPoint> Tangent project(const PointPoint& point, const Tangent& ambient) const {
         check_point_(point);
         check_tangent_(ambient);
         return ambient;
     }
 
     /// @brief returns an owning zero tangent of the point order
-    Tangent zero_tangent(const Point& point) const {
+    template <SPDLike PointPoint> Tangent zero_tangent(const PointPoint& point) const {
         check_point_(point);
         auto result = internals::make_symmetric<Scalar, Order_>(order_);
         for (int i = 0; i < order_; ++i) {
@@ -89,8 +92,9 @@ template <typename Scalar_, int Order_> class LogEuclideanSPDGeometry {
     }
 
     /// @brief combines ambient tangents with finite coefficients
+    template <SPDLike PointPoint>
     Tangent
-    linear_combination(const Point& point, double alpha, const Tangent& u, double beta, const Tangent& v) const {
+    linear_combination(const PointPoint& point, double alpha, const Tangent& u, double beta, const Tangent& v) const {
         check_point_(point);
         check_tangent_(u);
         check_tangent_(v);
@@ -99,34 +103,34 @@ template <typename Scalar_, int Order_> class LogEuclideanSPDGeometry {
     }
 
     /// @brief uses the exact exponential as a retraction
-    Point retract(const Point& point, const Tangent& tangent, double step) const {
+    template <SPDLike PointPoint> Point retract(const PointPoint& point, const Tangent& tangent, double step) const {
         return exponential(point, tangent, step);
     }
 
     /// @brief follows the geodesic with the supplied initial ambient tangent and finite step
-    Point exponential(const Point& point, const Tangent& tangent, double step = 1.0) const {
+    template <SPDLike PointPoint>
+    Point exponential(const PointPoint& point, const Tangent& tangent, double step = 1.0) const {
         check_point_(point);
         check_tangent_(tangent);
         const auto chart = fdapde::matrix_log(point);
         const auto chart_tangent = fdapde::matrix_log_frechet(point, tangent);
-        return fdapde::matrix_exp(
-          internals::combine_symmetric<Scalar, Order_>(
-            chart, Scalar(1), chart_tangent, internals::geometry_coefficient<Scalar>(step), order_));
+        return fdapde::matrix_exp<CachePolicy>(internals::combine_symmetric<Scalar, Order_>(
+          chart, Scalar(1), chart_tangent, internals::geometry_coefficient<Scalar>(step), order_));
     }
 
     /// @brief returns the initial ambient tangent of the geodesic from source to target
-    Tangent logarithm(const Point& from, const Point& to) const {
+    template <SPDLike PointFrom, SPDLike PointTo> Tangent logarithm(const PointFrom& from, const PointTo& to) const {
         check_point_(from);
         check_point_(to);
         const auto from_chart = fdapde::matrix_log(from);
         const auto to_chart = fdapde::matrix_log(to);
         const auto chart_difference =
           internals::combine_symmetric<Scalar, Order_>(to_chart, Scalar(1), from_chart, Scalar(-1), order_);
-        return fdapde::matrix_exp_frechet(from_chart, chart_difference);
+        return internals::spd_exp_log_frechet(from, chart_difference);
     }
 
     /// @brief returns the geodesic distance between checked points
-    double distance(const Point& from, const Point& to) const {
+    template <SPDLike PointFrom, SPDLike PointTo> double distance(const PointFrom& from, const PointTo& to) const {
         check_point_(from);
         check_point_(to);
         const auto from_chart = fdapde::matrix_log(from);
@@ -137,24 +141,48 @@ template <typename Scalar_, int Order_> class LogEuclideanSPDGeometry {
     }
 
     /// @brief parallel-transports an ambient tangent along the source-to-target geodesic
-    Tangent transport(const Point& from, const Point& to, const Tangent& tangent) const {
+    template <SPDLike PointFrom, SPDLike PointTo>
+    Tangent transport(const PointFrom& from, const PointTo& to, const Tangent& tangent) const {
         check_point_(from);
         check_point_(to);
         check_tangent_(tangent);
         const auto chart_tangent = fdapde::matrix_log_frechet(from, tangent);
-        return fdapde::matrix_exp_frechet(fdapde::matrix_log(to), chart_tangent);
+        return internals::spd_exp_log_frechet(to, chart_tangent);
     }
 
     /// @brief converts a symmetric Frobenius gradient to its Riemannian metric dual
-    Tangent euclidean_to_riemannian_gradient(const Point& point, const Tangent& euclidean_gradient) const {
+    template <SPDLike PointPoint>
+    Tangent euclidean_to_riemannian_gradient(const PointPoint& point, const Tangent& euclidean_gradient) const {
         check_point_(point);
         check_tangent_(euclidean_gradient);
-        const auto chart = fdapde::matrix_log(point);
-        return fdapde::matrix_exp_frechet(chart, fdapde::matrix_exp_frechet(chart, euclidean_gradient));
+        if constexpr (fdapde::internals::spd_cache_has_v<typename PointPoint::CachePolicy, Cache::Spectral>) {
+            const auto first = internals::spd_exp_log_frechet(point, euclidean_gradient);
+            return internals::spd_exp_log_frechet(point, first);
+        } else {
+            const auto chart = fdapde::matrix_log(point);
+            return fdapde::matrix_exp_frechet(chart, fdapde::matrix_exp_frechet(chart, euclidean_gradient));
+        }
     }
+    /// @brief defers exp(sum_i weights[i] * log(points[i])) without normalizing finite real weights
+    /// @details borrows persistent operands and retains temporary selection nodes; owning temporaries are rejected
+    template <typename Points, typename Weights>
+        requires(
+          !fdapde::internals::is_owning_rvalue_expression_v<Points &&> &&
+          !fdapde::internals::is_owning_rvalue_expression_v<Weights &&> &&
+          SPDLike<typename std::remove_cvref_t<Points>::MatrixType>)
+    auto weighted_mean(Points&& points, Weights&& weights) const& {
+        return fdapde::internals::log_euclidean_mean_expr<
+          LogEuclideanSPDGeometry, fdapde::internals::batch_nested_t<Points&&>,
+          fdapde::internals::batch_nested_t<Weights&&>>(
+          *this, std::forward<Points>(points), std::forward<Weights>(weights));
+    }
+    /// @brief prevents a deferred mean from borrowing a temporary geometry
+    template <typename Points, typename Weights> void weighted_mean(Points&&, Weights&&) const&& = delete;
    private:
     /// @brief checks the point order and finite packed coefficients against this geometry
-    void check_point_(const Point& point) const { internals::check_spd_geometry_shape(point, order_); }
+    template <SPDLike PointPoint> void check_point_(const PointPoint& point) const {
+        internals::check_spd_geometry_shape(point, order_);
+    }
     /// @brief checks the tangent order and finite packed coefficients against this geometry
     void check_tangent_(const Tangent& tangent) const { internals::check_spd_geometry_shape(tangent, order_); }
 

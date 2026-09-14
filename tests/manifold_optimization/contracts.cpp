@@ -14,18 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// the inherited dense debug guards erase their operands in this focused NoDebug probe
-// suppress only their resulting unused diagnostics; geometry diagnostics remain enabled
-#if defined(__GNUC__) || defined(__clang__)
-#    pragma GCC diagnostic push
-#    pragma GCC diagnostic ignored "-Wunused-parameter"
-#    pragma GCC diagnostic ignored "-Wunused-variable"
-#endif
 #include <fdaPDE/dense_linear_algebra.h>
-#if defined(__GNUC__) || defined(__clang__)
-#    pragma GCC diagnostic pop
-#endif
-
 #include <fdaPDE/manifold_optimization.h>
 #include <gtest/gtest.h>
 
@@ -33,7 +22,7 @@ namespace {
 using namespace fdapde;
 using namespace fdapde::manifold;
 
-// this target disables debug macros; these public contracts must still throw
+// public geometry contracts reject invalid inputs and preserve valid owned values
 template <typename Geometry> void runtime_contracts() {
     const Geometry geometry(2);
     Matrix<double, 2, 2> dense;
@@ -46,7 +35,7 @@ template <typename Geometry> void runtime_contracts() {
     auto bad = u;
     for (const double invalid : {std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity()}) {
         bad(1, 0) = invalid;
-        // projection rejects a nonfinite off-diagonal tangent coefficient with debug assertions disabled
+        // projection rejects a nonfinite off-diagonal tangent coefficient
         EXPECT_THROW(geometry.project(point, bad), std::invalid_argument);
         // norm rejects the same nonfinite tangent before metric evaluation
         EXPECT_THROW(geometry.norm(point, bad), std::invalid_argument);
@@ -125,12 +114,12 @@ template <typename Geometry> void runtime_contracts() {
 }
 }   // namespace
 
-// log-Euclidean public checks and result ownership hold with debug assertions disabled
+// log-Euclidean public checks and result ownership hold with default debug assertions
 TEST(SPDGeometryContracts, LogEuclideanChecksAndValueOwnership) {
     // exercise the shared invalid-input, failure and ownership cases with the log-Euclidean metric
     runtime_contracts<LogEuclideanSPDGeometry<double, Dynamic>>();
 }
-// affine-invariant public checks and result ownership hold with debug assertions disabled
+// affine-invariant public checks and result ownership hold with default debug assertions
 TEST(SPDGeometryContracts, AffineInvariantChecksAndValueOwnership) {
     // exercise the same contracts with the affine-invariant metric
     runtime_contracts<AffineInvariantSPDGeometry<double, Dynamic>>();

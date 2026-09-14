@@ -24,7 +24,7 @@ namespace fdapde {
 namespace manifold {
 
 /// @brief defines the affine-invariant metric on checked SPD owners with ambient symmetric tangents
-template <typename Scalar_, int Order_> class AffineInvariantSPDGeometry {
+template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class AffineInvariantSPDGeometry {
     fdapde_static_assert(
       std::is_floating_point_v<Scalar_> && !std::is_const_v<Scalar_> && !std::is_volatile_v<Scalar_>,
       SPD_GEOMETRIES_REQUIRE_AN_UNQUALIFIED_FLOATING_POINT_SCALAR);
@@ -34,7 +34,8 @@ template <typename Scalar_, int Order_> class AffineInvariantSPDGeometry {
       SPD_GEOMETRY_DENSE_WORKSPACE_SIZE_EXCEEDS_SUPPORTED_RANGE);
    public:
     using Scalar = Scalar_;
-    using Point = fdapde::SPDMatrix<Scalar, Order_, Order_>;
+    using CachePolicy = Cache::Policy<internals::affine_invariant_cache_flags(Uses_)>;
+    using Point = fdapde::SPDMatrix<Scalar, Order_, Order_, CachePolicy>;
     using Tangent = fdapde::SymmetricMatrix<Scalar, Order_, Order_>;
 
     /// @brief constructs the fixed-order geometry using its positive compile-time matrix order
@@ -55,34 +56,35 @@ template <typename Scalar_, int Order_> class AffineInvariantSPDGeometry {
     std::size_t dimension() const { return internals::spd_geometry_dimension(order_); }
 
     /// @brief pairs ambient tangents in the metric at point
-    double inner_product(const Point& point, const Tangent& u, const Tangent& v) const {
+    template <SPDLike PointPoint>
+    double inner_product(const PointPoint& point, const Tangent& u, const Tangent& v) const {
         check_point_(point);
         check_tangent_(u);
         check_tangent_(v);
-        const auto inverse_sqrt = fdapde::matrix_inverse_sqrt(point);
+        const auto inverse_sqrt = internals::spd_inverse_sqrt_factor(point);
         const auto whitened_u = internals::symmetric_congruence<Scalar, Order_>(inverse_sqrt, u, order_);
         const auto whitened_v = internals::symmetric_congruence<Scalar, Order_>(inverse_sqrt, v, order_);
         return static_cast<double>(internals::frobenius_inner(whitened_u, whitened_v, order_));
     }
 
     /// @brief returns the metric norm of an ambient tangent
-    double norm(const Point& point, const Tangent& tangent) const {
+    template <SPDLike PointPoint> double norm(const PointPoint& point, const Tangent& tangent) const {
         check_point_(point);
         check_tangent_(tangent);
-        const auto inverse_sqrt = fdapde::matrix_inverse_sqrt(point);
+        const auto inverse_sqrt = internals::spd_inverse_sqrt_factor(point);
         const auto whitened = internals::symmetric_congruence<Scalar, Order_>(inverse_sqrt, tangent, order_);
         return internals::frobenius_norm(whitened, order_);
     }
 
     /// @brief copies an already symmetric ambient tangent into independent storage
-    Tangent project(const Point& point, const Tangent& ambient) const {
+    template <SPDLike PointPoint> Tangent project(const PointPoint& point, const Tangent& ambient) const {
         check_point_(point);
         check_tangent_(ambient);
         return ambient;
     }
 
     /// @brief returns an owning zero tangent of the point order
-    Tangent zero_tangent(const Point& point) const {
+    template <SPDLike PointPoint> Tangent zero_tangent(const PointPoint& point) const {
         check_point_(point);
         auto result = internals::make_symmetric<Scalar, Order_>(order_);
         for (int i = 0; i < order_; ++i) {
@@ -92,8 +94,9 @@ template <typename Scalar_, int Order_> class AffineInvariantSPDGeometry {
     }
 
     /// @brief combines ambient tangents with finite coefficients
+    template <SPDLike PointPoint>
     Tangent
-    linear_combination(const Point& point, double alpha, const Tangent& u, double beta, const Tangent& v) const {
+    linear_combination(const PointPoint& point, double alpha, const Tangent& u, double beta, const Tangent& v) const {
         check_point_(point);
         check_tangent_(u);
         check_tangent_(v);
@@ -102,11 +105,11 @@ template <typename Scalar_, int Order_> class AffineInvariantSPDGeometry {
     }
 
     /// @brief uses P^(1/2) * (I + W + W^2 / 2) * P^(1/2), W = step * P^(-1/2) * U * P^(-1/2)
-    Point retract(const Point& point, const Tangent& tangent, double step) const {
+    template <SPDLike PointPoint> Point retract(const PointPoint& point, const Tangent& tangent, double step) const {
         check_point_(point);
         check_tangent_(tangent);
-        const auto point_sqrt = fdapde::matrix_sqrt(point);
-        const auto point_inverse_sqrt = fdapde::matrix_inverse_sqrt(point);
+        const auto point_sqrt = internals::spd_sqrt_factor(point);
+        const auto point_inverse_sqrt = internals::spd_inverse_sqrt_factor(point);
         const auto whitened = internals::symmetric_congruence<Scalar, Order_>(point_inverse_sqrt, tangent, order_);
         const auto scaled = internals::combine_symmetric<Scalar, Order_>(
           whitened, internals::geometry_coefficient<Scalar>(step), whitened, Scalar(0), order_);
@@ -122,11 +125,12 @@ template <typename Scalar_, int Order_> class AffineInvariantSPDGeometry {
     }
 
     /// @brief follows the geodesic with the supplied initial ambient tangent and finite step
-    Point exponential(const Point& point, const Tangent& tangent, double step = 1.0) const {
+    template <SPDLike PointPoint>
+    Point exponential(const PointPoint& point, const Tangent& tangent, double step = 1.0) const {
         check_point_(point);
         check_tangent_(tangent);
-        const auto point_sqrt = fdapde::matrix_sqrt(point);
-        const auto point_inverse_sqrt = fdapde::matrix_inverse_sqrt(point);
+        const auto point_sqrt = internals::spd_sqrt_factor(point);
+        const auto point_inverse_sqrt = internals::spd_inverse_sqrt_factor(point);
         const auto whitened = internals::symmetric_congruence<Scalar, Order_>(point_inverse_sqrt, tangent, order_);
         const auto scaled = internals::combine_symmetric<Scalar, Order_>(
           whitened, internals::geometry_coefficient<Scalar>(step), whitened, Scalar(0), order_);
@@ -135,33 +139,37 @@ template <typename Scalar_, int Order_> class AffineInvariantSPDGeometry {
     }
 
     /// @brief returns the initial ambient tangent of the geodesic from source to target
-    Tangent logarithm(const Point& from, const Point& to) const {
+    template <SPDLike PointFrom, SPDLike PointTo> Tangent logarithm(const PointFrom& from, const PointTo& to) const {
         check_point_(from);
         check_point_(to);
-        const auto from_sqrt = fdapde::matrix_sqrt(from);
-        const auto from_inverse_sqrt = fdapde::matrix_inverse_sqrt(from);
-        const Point relative(internals::symmetric_congruence<Scalar, Order_>(from_inverse_sqrt, to, order_));
+        const auto from_sqrt = internals::spd_sqrt_factor(from);
+        const auto from_inverse_sqrt = internals::spd_inverse_sqrt_factor(from);
+        const fdapde::SPDMatrix<Scalar, Order_, Order_> relative(
+          internals::symmetric_congruence<Scalar, Order_>(from_inverse_sqrt, to, order_));
         return internals::symmetric_congruence<Scalar, Order_>(from_sqrt, fdapde::matrix_log(relative), order_);
     }
 
     /// @brief returns the geodesic distance between checked points
-    double distance(const Point& from, const Point& to) const {
+    template <SPDLike PointFrom, SPDLike PointTo> double distance(const PointFrom& from, const PointTo& to) const {
         check_point_(from);
         check_point_(to);
-        const auto from_inverse_sqrt = fdapde::matrix_inverse_sqrt(from);
-        const Point relative(internals::symmetric_congruence<Scalar, Order_>(from_inverse_sqrt, to, order_));
+        const auto from_inverse_sqrt = internals::spd_inverse_sqrt_factor(from);
+        const fdapde::SPDMatrix<Scalar, Order_, Order_> relative(
+          internals::symmetric_congruence<Scalar, Order_>(from_inverse_sqrt, to, order_));
         return internals::frobenius_norm(fdapde::matrix_log(relative), order_);
     }
 
     /// @brief parallel-transports an ambient tangent along the source-to-target geodesic
-    Tangent transport(const Point& from, const Point& to, const Tangent& tangent) const {
+    template <SPDLike PointFrom, SPDLike PointTo>
+    Tangent transport(const PointFrom& from, const PointTo& to, const Tangent& tangent) const {
         check_point_(from);
         check_point_(to);
         check_tangent_(tangent);
-        const auto from_sqrt = fdapde::matrix_sqrt(from);
-        const auto from_inverse_sqrt = fdapde::matrix_inverse_sqrt(from);
-        const Point relative(internals::symmetric_congruence<Scalar, Order_>(from_inverse_sqrt, to, order_));
-        const auto relative_sqrt = fdapde::matrix_sqrt(relative);
+        const auto from_sqrt = internals::spd_sqrt_factor(from);
+        const auto from_inverse_sqrt = internals::spd_inverse_sqrt_factor(from);
+        const fdapde::SPDMatrix<Scalar, Order_, Order_> relative(
+          internals::symmetric_congruence<Scalar, Order_>(from_inverse_sqrt, to, order_));
+        const auto relative_sqrt = internals::spd_sqrt_factor(relative);
         const auto whitened = internals::symmetric_congruence<Scalar, Order_>(from_inverse_sqrt, tangent, order_);
         const auto transported_whitened =
           internals::symmetric_congruence<Scalar, Order_>(relative_sqrt, whitened, order_);
@@ -169,14 +177,17 @@ template <typename Scalar_, int Order_> class AffineInvariantSPDGeometry {
     }
 
     /// @brief converts a symmetric Frobenius gradient to its Riemannian metric dual
-    Tangent euclidean_to_riemannian_gradient(const Point& point, const Tangent& euclidean_gradient) const {
+    template <SPDLike PointPoint>
+    Tangent euclidean_to_riemannian_gradient(const PointPoint& point, const Tangent& euclidean_gradient) const {
         check_point_(point);
         check_tangent_(euclidean_gradient);
         return internals::symmetric_congruence<Scalar, Order_>(point, euclidean_gradient, order_);
     }
    private:
     /// @brief checks the point order and finite packed coefficients against this geometry
-    void check_point_(const Point& point) const { internals::check_spd_geometry_shape(point, order_); }
+    template <SPDLike PointPoint> void check_point_(const PointPoint& point) const {
+        internals::check_spd_geometry_shape(point, order_);
+    }
     /// @brief checks the tangent order and finite packed coefficients against this geometry
     void check_tangent_(const Tangent& tangent) const { internals::check_spd_geometry_shape(tangent, order_); }
 

@@ -167,7 +167,7 @@ fdapde_reject_program(partial_dynamic_spd_matrix SPD_MATRICES_MUST_BE_SQUARE_AND
 fdapde_reject_program(qualified_scalar_spd_matrix SPD_MATRICES_REQUIRE_AN_UNQUALIFIED_FLOATING_POINT_SCALAR)
 add_executable(fdapde_spd_geometry_test
   manifold_optimization/log_euclidean_spd.cpp manifold_optimization/affine_invariant_spd.cpp
-  manifold_optimization/spd_geometry.cpp)
+  manifold_optimization/spd_geometry.cpp manifold_optimization/spd_batch_geometry.cpp)
 fdapde_configure_target(fdapde_spd_geometry_test)
 target_link_libraries(fdapde_spd_geometry_test PRIVATE GTest::gtest_main)
 gtest_discover_tests(fdapde_spd_geometry_test PROPERTIES TIMEOUT 60)
@@ -175,7 +175,6 @@ gtest_discover_tests(fdapde_spd_geometry_test PROPERTIES TIMEOUT 60)
 # Focused public error/ownership contracts remain checked when debug assertions are disabled.
 add_executable(fdapde_spd_geometry_contract_test manifold_optimization/contracts.cpp)
 fdapde_configure_target(fdapde_spd_geometry_contract_test)
-target_compile_definitions(fdapde_spd_geometry_contract_test PRIVATE FDAPDE_NO_DEBUG)
 target_link_libraries(fdapde_spd_geometry_contract_test PRIVATE GTest::gtest_main)
 gtest_discover_tests(fdapde_spd_geometry_contract_test PROPERTIES TIMEOUT 60)
 
