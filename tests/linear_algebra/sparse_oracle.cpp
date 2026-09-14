@@ -321,4 +321,61 @@ TEST(NativeSparseOracle, MatchesEigenOperationsAcrossShapes) {
     }
 }
 
+// applies row and column elimination through Eigen before pruning the resulting zeros
+void rebuild_eigen_constraints(eigen_sparse& matrix, const std::vector<int>& dofs) {
+    for (const int dof : dofs) {
+        matrix.row(dof) *= 0.0;
+        matrix.col(dof) *= 0.0;
+        matrix.coeffRef(dof, dof) = 1.0;
+    }
+    matrix.prune(0.0);
+    matrix.makeCompressed();
+}
+
+// compares constraint rebuilding with Eigen on nonsymmetric and symmetric systems
+TEST(NativeSparseOracle, MatchesEigenConstraintRebuilding) {
+    const std::vector<native_triplet> nonsymmetric_triplets {
+      {0, 0, 2.0 },
+      {0, 1, 3.0 },
+      {0, 3, 4.0 },
+      {1, 0, 5.0 },
+      {1, 2, 6.0 },
+      {2, 1, 7.0 },
+      {2, 2, 8.0 },
+      {2, 3, 9.0 },
+      {3, 0, 10.0},
+      {3, 2, 11.0},
+      {3, 3, 12.0}
+    };
+    fdapde::SparseMatrix<double> native_nonsymmetric(4, 4, nonsymmetric_triplets);
+    eigen_sparse eigen_nonsymmetric = make_eigen_sparse(4, 4, nonsymmetric_triplets);
+    const std::vector<int> nonsymmetric_dofs {3, 1, 3};
+    native_nonsymmetric.rebuild_with_constraints(nonsymmetric_dofs);
+    rebuild_eigen_constraints(eigen_nonsymmetric, nonsymmetric_dofs);
+    // repeated constraints match the full compressed Eigen result on a nonsymmetric matrix
+    expect_same_sparse(native_nonsymmetric, eigen_nonsymmetric);
+
+    const std::vector<native_triplet> lower_triplets {
+      {0, 0, 4.0 },
+      {1, 0, 1.0 },
+      {1, 1, 5.0 },
+      {2, 0, 2.0 },
+      {2, 1, 3.0 },
+      {2, 2, 6.0 },
+      {3, 0, 7.0 },
+      {3, 1, 8.0 },
+      {3, 2, 9.0 },
+      {3, 3, 10.0}
+    };
+    fdapde::SparseMatrix<double> native_symmetric =
+      fdapde::SparseMatrix<double>(4, 4, lower_triplets).symmetric_expanded(fdapde::Lower);
+    eigen_sparse eigen_lower = make_eigen_sparse(4, 4, lower_triplets);
+    eigen_sparse eigen_symmetric = eigen_lower.selfadjointView<Eigen::Lower>();
+    const std::vector<int> symmetric_dofs {1, 3};
+    native_symmetric.rebuild_with_constraints(symmetric_dofs);
+    rebuild_eigen_constraints(eigen_symmetric, symmetric_dofs);
+    // symmetric constraint elimination matches Eigen dimensions, pattern and coefficients
+    expect_same_sparse(native_symmetric, eigen_symmetric);
+}
+
 }   // namespace
