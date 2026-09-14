@@ -124,7 +124,7 @@ TEST(MatrixBatch, InitializesContiguousCachedSPDIdentitySlots) {
     const auto pointers = points.cache_pointers();
     const auto stride = cached_point::CacheSlot::scalar_count(2);
 
-    // SPD rows retain their three native packed coefficients
+    // packed SPD rows retain their three native coefficients
     EXPECT_EQ(points.coefficient_stride(), std::size_t {3});
     // one cache slot pointer is exposed for each SPD point
     ASSERT_EQ(pointers.size(), points.size());

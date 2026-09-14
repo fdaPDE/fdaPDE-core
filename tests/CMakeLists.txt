@@ -172,7 +172,7 @@ fdapde_configure_target(fdapde_spd_geometry_test)
 target_link_libraries(fdapde_spd_geometry_test PRIVATE GTest::gtest_main)
 gtest_discover_tests(fdapde_spd_geometry_test PROPERTIES TIMEOUT 60)
 
-# Focused public error/ownership contracts remain checked when debug assertions are disabled.
+# focused public error and ownership contracts run with default debug assertions
 add_executable(fdapde_spd_geometry_contract_test manifold_optimization/contracts.cpp)
 fdapde_configure_target(fdapde_spd_geometry_contract_test)
 target_link_libraries(fdapde_spd_geometry_contract_test PRIVATE GTest::gtest_main)
@@ -205,3 +205,12 @@ target_link_libraries(fdapde_matrix_batch_test PRIVATE GTest::gtest_main)
 gtest_discover_tests(fdapde_matrix_batch_test PROPERTIES TIMEOUT 60)
 fdapde_reject_program(col_major_matrix_batch "MatrixBatch supports row-major storage only")
 fdapde_reject_program(view_matrix_batch "MatrixBatch requires owning matrix elements")
+
+option(FDAPDE_BUILD_SPD_BENCHMARK "Build the standalone SPD allocation and timing probe" OFF)
+if(FDAPDE_BUILD_SPD_BENCHMARK)
+  add_executable(fdapde_spd_cache_batch_benchmark benchmarks/spd_cache_batch.cpp)
+  fdapde_configure_target(fdapde_spd_cache_batch_benchmark)
+endif()
+
+fdapde_reject_program(invalid_le_usage SPD_GEOMETRY_USAGE_CONTAINS_UNKNOWN_FLAGS)
+fdapde_reject_program(invalid_airm_usage SPD_GEOMETRY_USAGE_CONTAINS_UNKNOWN_FLAGS)

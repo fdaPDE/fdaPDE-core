@@ -25,6 +25,7 @@ namespace manifold {
 
 /// @brief defines the affine-invariant metric on checked SPD owners with ambient symmetric tangents
 template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class AffineInvariantSPDGeometry {
+    fdapde_static_assert((static_cast<unsigned>(Uses_) & ~31u) == 0, SPD_GEOMETRY_USAGE_CONTAINS_UNKNOWN_FLAGS);
     fdapde_static_assert(
       std::is_floating_point_v<Scalar_> && !std::is_const_v<Scalar_> && !std::is_volatile_v<Scalar_>,
       SPD_GEOMETRIES_REQUIRE_AN_UNQUALIFIED_FLOATING_POINT_SCALAR);

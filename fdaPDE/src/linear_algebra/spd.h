@@ -241,13 +241,13 @@ class spd_matrix_impl : public SPDMatrixExpr<spd_matrix_impl<Scalar_, Rows_, Col
     template <typename Policy, typename XprType_>
     friend auto fdapde::matrix_inverse_sqrt(const SPDMatrixExpr<XprType_>& matrix);
 
-    /// @brief permits storage adoption only after a spectral primitive has established the SPD postconditions
+    /// @brief marks internal storage adoption whose result is published only after certification
     struct trusted_t { };
 
-    /// @brief copies validated symmetric storage without repeating validation or creating a spectral cache
+    /// @brief copies symmetric storage for internal identity initialization or spectral result certification
     spd_matrix_impl(const StorageType& storage, trusted_t) : Base(), data_(storage) { }
 
-    /// @brief certifies the rounded finite reconstruction before invoking the private trusted constructor
+    /// @brief certifies the rounded finite reconstruction before publishing the internally constructed owner
     /// @details only spectral friends may call this after reconstruct_symmetric has checked every coefficient
     static spd_matrix_impl from_spectral_(const StorageType& storage) {
         // positive transformed eigenvalues alone do not certify the rounded reconstructed matrix

@@ -50,7 +50,7 @@ multidimensional arrays, structured types, and LU/QR/EVD. The caller target chec
 P1/P2 cardinality in 1D/2D/3D, exact P1 and P2 triangle assembly, mixed extent types
 GeoFrame column storage and grid-search storage order. Header checks compile each public aggregate alone.
 
-Configuration also compiles fifteen negative programs and requires each to emit
+Configuration also compiles negative programs for each registered rejection contract and requires each to emit
 its specific static-assert diagnostic. Logs are written beneath
 `compile_fail/` in the build directory. Debug assertions remain enabled in these
 programs; none duplicates the suite in NoDebug mode.
@@ -80,3 +80,40 @@ and integration lanes both keep debug assertions enabled in ordinary tests.
 The geometry targets exercise log-Euclidean and affine-invariant SPD operations,
 public error contracts and owning results. The integration lane additionally
 checks both manifold/full aggregate include orders in linked translation units.
+
+
+## SPD caches and matrix batches
+
+The cache and batch targets cover selective static/dynamic storage, identity,
+policy conversion, checked view assignment, deferred map/redux/select and
+lifetime rejection. Geometry tests cover mixed policies, canonical result types,
+non-normalized LE means, global materialization counts and cached metric/map
+agreement on noncommuting inputs. All use default debug assertions. The only
+NoDebug target is the focused assertion-argument-erasure test.
+
+For a standalone allocation probe and sequential microbenchmark:
+
+```sh
+cmake -S tests -B build/native-bench -DFDAPDE_NATIVE_ONLY=ON \
+  -DCMAKE_BUILD_TYPE=Release -DFDAPDE_BUILD_SPD_BENCHMARK=ON
+cmake --build build/native-bench --target fdapde_spd_cache_batch_benchmark --parallel 4
+build/native-bench/fdapde_spd_cache_batch_benchmark
+```
+
+The probe also compiles directly on macOS/Linux without GoogleTest or Eigen:
+
+```sh
+c++ -std=c++20 -O2 -I. tests/benchmarks/spd_cache_batch.cpp -o /tmp/spd-cache-bench
+/tmp/spd-cache-bench
+```
+
+Allocation instrumentation lives only in this executable and is disabled during
+timing. Persistent allocations are live immediately after construction;
+temporary allocations are the total allocation count minus that live increase.
+The probe checks NoCache layout and allocations against the native storage
+control, and checks constant aggregate allocation counts for 1, 64 and 1024
+static/dynamic SPD elements. It separately measures construction from supplied
+values, including transient validation/cache preparation work. Timing reports
+medians of seven sequential runs and consumes results through a checksum.
+Results are workload/toolchain dependent; the discarded-candidate measurement
+includes cache preparation whose benefit is never used.

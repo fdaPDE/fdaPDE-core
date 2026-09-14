@@ -78,7 +78,7 @@ void expect_matrix_near(const Actual& actual, const Expected& expected, double t
     }
 }
 
-// counts the weight reads performed by one full geometry-expression materialization
+/// @brief counts the weight reads performed by one full geometry-expression materialization
 struct CountingWeights {
     using Scalar = double;
     static constexpr int Rows = 2;
@@ -86,13 +86,13 @@ struct CountingWeights {
     std::array<double, 2> values;
     mutable int reads = 0;
 
-    // weights form a two-by-one vector compatible with a two-point batch
+    /// @brief weights form a two-by-one vector compatible with a two-point batch
     int rows() const { return Rows; }
-    // weights form a single-column vector compatible with a two-point batch
+    /// @brief weights form a single-column vector compatible with a two-point batch
     int cols() const { return Cols; }
-    // weights expose exactly one coefficient per batch point
+    /// @brief weights expose exactly one coefficient per batch point
     int size() const { return Rows; }
-    // each indexed retrieval records one reduction operand read
+    /// @brief each indexed retrieval records one reduction operand read
     double operator[](int index) const {
         ++reads;
         return values[static_cast<std::size_t>(index)];
