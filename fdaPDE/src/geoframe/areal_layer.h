@@ -22,12 +22,12 @@
 namespace fdapde {
 namespace internals {
 
-  // TODO: count number of points in a region
-  
+// TODO: count number of points in a region
+
 template <typename Triangulation_> struct areal_layer {
     using Triangulation = typename std::remove_pointer_t<std::decay_t<Triangulation_>>;
     using layer_category = areal_layer_tag;
-    using binary_t = BinaryMatrix<Dynamic, Dynamic>;
+    using binary_t = Matrix<bool, Dynamic, Dynamic>;
     static constexpr int local_dim = Triangulation::local_dim;
     static constexpr int embed_dim = Triangulation::embed_dim;
 
@@ -73,9 +73,9 @@ template <typename Triangulation_> struct areal_layer {
             for (int i = 0; i < n_regions_; ++i) {
                 if (regions[i].contains(it->barycenter())) { incidence_matrix_[it->id()] = i; }
             }
-	}
+        }
     }
-    areal_layer(Triangulation_* triangulation, const std::vector<BinaryMatrix<Dynamic, 1>>& regions) :
+    areal_layer(Triangulation_* triangulation, const std::vector<Matrix<bool, Dynamic, 1>>& regions) :
         triangulation_(triangulation), incidence_matrix_(), n_regions_(regions.size()) {
         incidence_matrix_.resize(n_regions_, triangulation_->n_cells());
         for (int i = 0; i < n_regions_; ++i) {
@@ -91,7 +91,7 @@ template <typename Triangulation_> struct areal_layer {
     // observers
     int rows() const { return n_regions_; }
     // geometry
-    BinaryVector<Dynamic> operator[](int i) const {
+    Vector<bool, Dynamic> operator[](int i) const {
         fdapde_assert(i < n_regions_, std::out_of_range, "region index out of range");
         return incidence_matrix_.row(i);
     }
@@ -107,7 +107,7 @@ template <typename Triangulation_> struct areal_layer {
         }
         return m_;
     }
-    const BinaryMatrix<Dynamic, Dynamic>& incidence_matrix() const { return incidence_matrix_; }
+    const Matrix<bool, Dynamic, Dynamic>& incidence_matrix() const { return incidence_matrix_; }
    private:
     Triangulation* triangulation_;
     binary_t incidence_matrix_;   // [M]_{ij} : [M]_{ij} == 1 \iff cell j is inside region i, 0 otherwise
@@ -117,4 +117,4 @@ template <typename Triangulation_> struct areal_layer {
 }   // namespace internals
 }   // namespace fdapde
 
-#endif // __FDAPDE_AREAL_LAYER_H__
+#endif   // __FDAPDE_AREAL_LAYER_H__

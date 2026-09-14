@@ -29,7 +29,7 @@ struct point_layer_descriptor {
 };
 struct polygon_layer_descriptor {
     using layer_tag = areal_layer_tag;
-    template <int LocalDim, int EmbedDim> using value_type = BinaryMatrix<Dynamic, 1>;
+    template <int LocalDim, int EmbedDim> using value_type = Matrix<bool, Dynamic, 1>;
 };
 
 template <typename LayerTag, typename Triangulation>
@@ -202,7 +202,7 @@ struct random_access_geo_row_view :
 
 // available geometric features
 using POLYGON = internals::polygon_layer_descriptor;
-using POINT   = internals::point_layer_descriptor;
+using POINT = internals::point_layer_descriptor;
 
 // geometrical layer, a plain_data_layer coupled with geometrical indexing
 template <typename Triangulation_, typename GeoInfo_>
@@ -245,7 +245,6 @@ struct GeoLayer {
         });
         return value_;
     }();
-
    public:
     // constructor
     GeoLayer(triangulation_t triangulation) :
@@ -292,7 +291,7 @@ struct GeoLayer {
         extents_(),
         structured_(false) {
         std::fill(strides_.begin(), strides_.end(), 1);   // unstructured layer by construction
-	// collect geometry from filtering predicate
+                                                          // collect geometry from filtering predicate
         using mem_t = decltype(internals::apply_index_pack<Order>([]<int... Ns>() {
             return std::tuple<std::vector<
               typename std::tuple_element_t<Ns, GeoInfo>::template value_type<local_dim[Ns], embed_dim[Ns]>>...> {};
@@ -309,7 +308,7 @@ struct GeoLayer {
                 if constexpr (is_geo_v<Ns_, POLYGON>) { std::get<Ns_>(geo_data).push_back(std::get<Ns_>(geometry)); }
             });
         }
-	// initialize geo indexes
+        // initialize geo indexes
         internals::for_each_index_in_pack<Order>([&, this]<int Ns_>() {
             std::get<Ns_>(geo_data_) =
               std::tuple_element_t<Ns_, geo_storage_t>(std::get<Ns_>(triangulation_), std::get<Ns_>(geo_data));
@@ -341,7 +340,7 @@ struct GeoLayer {
               "geometry must be initialized before making the layer structured");
         });
 
-        constexpr int full_embed_dim = std::accumulate(embed_dim.begin(), embed_dim.end(), 0);	
+        constexpr int full_embed_dim = std::accumulate(embed_dim.begin(), embed_dim.end(), 0);
         using point_t = std::array<double, full_embed_dim>;
         // compute full point set for each layer direction
         geo_storage_t grid_geo_data_;
@@ -399,7 +398,7 @@ struct GeoLayer {
                         multi_index_[++k]++;
                     }
                 }
-		// directly copy in memory storage, or place NA if coordinate was not in data
+                // directly copy in memory storage, or place NA if coordinate was not in data
                 for (const auto& field : data_.header()) {
                     internals::dispatch_to_dtype(
                       field.type_id(),
@@ -425,8 +424,8 @@ struct GeoLayer {
             data_ = grid_data;
         }
         geo_data_ = grid_geo_data_;
-	// set strides
-	strides_[0] = 1;
+        // set strides
+        strides_[0] = 1;
         for (int i = 1; i < Order; ++i) {
             for (int j = 0; j < i; ++j) { strides_[i] *= extents_[j]; }
         }
@@ -495,8 +494,8 @@ struct GeoLayer {
             if (field_type == 'N' || field_type == 'F') { load_vec(name, shp.get<double>(name)); }
             if (field_type == 'C') { load_vec(name, shp.get<std::string>(name)); }
         }
-	crs_ = shp.gcs();
-	return;
+        crs_ = shp.gcs();
+        return;
     }
     template <typename... Ts>
         requires(internals::is_vector_like_v<Ts> && ...)
@@ -520,7 +519,7 @@ struct GeoLayer {
         load_vec(std::vector<std::string> {colname}, data);
         return;
     }
-  
+
     template <typename T> void load_blk(const std::string& colname, const T& data) {
         fdapde_assert(
           std::cmp_equal(data.rows() FDAPDE_COMMA n_rows_), std::invalid_argument,
@@ -588,7 +587,7 @@ struct GeoLayer {
     // row access
     internals::geo_row_view<This> row(size_t row) { return internals::geo_row_view<This>(this, row); }
     internals::geo_row_view<const This> row(size_t row) const { return internals::geo_row_view<const This>(this, row); }
-  
+
     // row filtering operations (const access)
     template <typename Iterator>
         requires(internals::is_integer_v<typename Iterator::value_type>)
@@ -602,8 +601,12 @@ struct GeoLayer {
     }
     template <typename LogicalPred>
         requires(
-	  requires(LogicalPred pred, index_t i) { { pred(i) } -> std::convertible_to<bool>; } ||
-          requires(LogicalPred pred, index_t i) { { pred[i] } -> std::convertible_to<bool>; })
+          requires(LogicalPred pred, index_t i) {
+              { pred(i) } -> std::convertible_to<bool>;
+          } ||
+          requires(LogicalPred pred, index_t i) {
+              { pred[i] } -> std::convertible_to<bool>;
+          })
     internals::random_access_geo_row_view<const This> select(const LogicalPred& pred) const {
         return internals::random_access_geo_row_view<const This>(this, pred);
     }
@@ -620,15 +623,19 @@ struct GeoLayer {
     }
     template <typename LogicalPred>
         requires(
-	  requires(LogicalPred pred, index_t i) { { pred(i) } -> std::convertible_to<bool>; } ||
-          requires(LogicalPred pred, index_t i) { { pred[i] } -> std::convertible_to<bool>; })
+          requires(LogicalPred pred, index_t i) {
+              { pred(i) } -> std::convertible_to<bool>;
+          } ||
+          requires(LogicalPred pred, index_t i) {
+              { pred[i] } -> std::convertible_to<bool>;
+          })
     internals::random_access_geo_row_view<This> select(const LogicalPred& pred) {
         return internals::random_access_geo_row_view<This>(this, pred);
     }
-  
+
     // output stream
     friend std::ostream& operator<<(std::ostream& os, const GeoLayer& data) {
-      	int n_rows = std::min(size_t(8), data.rows());
+        int n_rows = std::min(size_t(8), data.rows());
         int n_cols = Order + data.cols();
         std::vector<std::vector<std::string>> out;
         out.resize(n_cols);
@@ -649,7 +656,7 @@ struct GeoLayer {
             // print actual data
             auto col = internals::plain_col_view<T, const storage_t>(data.data(), 0, n_rows, desc);
             auto nan = col.nan();   // extract column nan pattern
-		
+
             for (int i = 0; i < n_rows; ++i) {
                 std::string datastr;
                 datastr += stringify(col(i, 0), nan(i, 0));
@@ -698,44 +705,44 @@ struct GeoLayer {
                 }
             }
         });
-	
+
         using internals::dtype;
         for (int i = Order, n = n_cols; i < n; ++i) {
             const auto& desc = data.header()[i - Order];
             dtype coltype = desc.type_id();
-            if (coltype == dtype::flt64) { print.template operator()<double      >(out[i], "flt64", desc); }
-            if (coltype == dtype::flt32) { print.template operator()<float       >(out[i], "flt32", desc); }
+            if (coltype == dtype::flt64) { print.template operator()<double>(out[i], "flt64", desc); }
+            if (coltype == dtype::flt32) { print.template operator()<float>(out[i], "flt32", desc); }
             if (coltype == dtype::int64) { print.template operator()<std::int64_t>(out[i], "int64", desc); }
             if (coltype == dtype::int32) { print.template operator()<std::int32_t>(out[i], "int32", desc); }
-            if (coltype == dtype::bin)   { print.template operator()<bool        >(out[i], "bin"  , desc); }
-            if (coltype == dtype::str)   { print.template operator()<std::string >(out[i], "str"  , desc); }
+            if (coltype == dtype::bin) { print.template operator()<bool>(out[i], "bin", desc); }
+            if (coltype == dtype::str) { print.template operator()<std::string>(out[i], "str", desc); }
         }
         // pretty format
         for (int i = 0, n = n_cols; i < n; ++i) {
             for (int j = 0, m = n_rows + 2; j < m; ++j) { max_size[i] = std::max(max_size[i], out[i][j].size()); }
         }
-	// pad with spaces
+        // pad with spaces
         for (int i = 0, n = n_cols; i < n; ++i) {
             for (int j = 0, m = out[i].size(); j < m; ++j) {
                 out[i][j].insert(0, max_size[i] - out[i][j].size() + (i == 0 ? 0 : 1), ' ');   // first pad with spaces
-		if (i < Order && j < 2) { out[i][j].insert(0, 1, ' '); }
+                if (i < Order && j < 2) { out[i][j].insert(0, 1, ' '); }
                 if (i < Order && j > 1) { out[i][j].insert(0 + (i > 0 ? 1 : 0), 1, '('); }
             }
-	    if (i >= Order && data.header()[i - Order].size() > 1) {   // block columns formatting
+            if (i >= Order && data.header()[i - Order].size() > 1) {   // block columns formatting
                 std::vector<std::size_t> posmin;
                 std::size_t posmax = std::numeric_limits<std::size_t>::min();
                 for (int j = 2, m = out[i].size(); j < m; ++j) {
                     posmax = std::max(posmax, out[i][j].size() - out[i][j].find(" ... ") - 5);
                     posmin.push_back(out[i][j].size() - out[i][j].find(" ... ") - 5);
                 }
-		// align " ... " pattern
+                // align " ... " pattern
                 for (int j = 2, m = out[i].size(); j < m; ++j) {
                     out[i][j].insert(out[i][j].size() - posmin[j - 2], std::string(posmax - posmin[j - 2], ' '));
                     out[i][j].erase(0, posmax - posmin[j - 2]);   // remove eventual extra chars
                 }
             }
         }
-	// send to output stream
+        // send to output stream
         for (int j = 0, m = out[0].size(); j < m - 1; ++j) {
             for (int i = 0, n = n_cols; i < n; ++i) { os << out[i][j]; }
             os << std::endl;
@@ -765,7 +772,7 @@ struct GeoLayer {
     parse_file_(const std::string& filename, bool header, bool index_col) const {
         std::filesystem::path filepath(filename);
         if (!std::filesystem::exists(filepath)) { throw std::runtime_error("file " + filename + " not found."); }
-	// check if able to parse
+        // check if able to parse
         std::set<std::string> supported_extensions({".csv", ".txt"});
         if (!supported_extensions.contains(filepath.extension().string())) {
             throw std::runtime_error("not supported format.");
@@ -803,7 +810,7 @@ struct GeoLayer {
             load_geometry_(parse_file_<double>(filename, header, index_col));
         } else {
             if constexpr (is_geo_v<0, POLYGON>) {
-                using binary_t = BinaryMatrix<Dynamic, Dynamic>;
+                using binary_t = Matrix<bool, Dynamic, Dynamic>;
                 load_geometry_(binary_t(parse_file_<int>(filename, header, index_col)));
             }
             if constexpr (is_geo_v<0, POINT>) { load_geometry_(parse_file_<double>(filename, header, index_col)); }
@@ -838,19 +845,18 @@ struct GeoLayer {
         if (n_rows_ == 0) { n_rows_ = std::get<N>(triangulation_)->nodes().rows(); }
         return;
     }
-    template <int N>
-    void load_geometry_index_(const std::string& filename, bool header = true, bool index_col = true) {
+    template <int N> void load_geometry_index_(const std::string& filename, bool header = true, bool index_col = true) {
         if constexpr (is_geo_v<N, POINT>) {
             load_geometry_index_<N>(parse_file_<double>(filename, header, index_col));
         } else {
-            using binary_t = BinaryMatrix<Dynamic, Dynamic>;
+            using binary_t = Matrix<bool, Dynamic, Dynamic>;
             load_geometry_index_<N>(binary_t(parse_file_<double>(filename, header, index_col)));
         }
         return;
     }
     template <int N, typename GeoDescriptor>
         requires(
-          std::is_same_v<GeoDescriptor, BinaryMatrix<Dynamic, Dynamic>> ||
+          std::is_same_v<GeoDescriptor, Matrix<bool, Dynamic, Dynamic>> ||
           (internals::is_vector_like_v<GeoDescriptor> &&
            std::is_convertible_v<internals::subscript_result_of_t<GeoDescriptor, int>, int>))
     void load_geometry_index_(const GeoDescriptor& regions) {
@@ -876,11 +882,10 @@ template <typename GeoLayer>
 std::ostream& operator<<(std::ostream& os, const internals::random_access_geo_row_view<GeoLayer>& data) {
     return operator<<(os, GeoLayer(data));
 }
-template <typename GeoLayer>
-std::ostream& operator<<(std::ostream& os, const internals::geo_row_view<GeoLayer>& data) {
+template <typename GeoLayer> std::ostream& operator<<(std::ostream& os, const internals::geo_row_view<GeoLayer>& data) {
     return operator<<(os, data.geo_data().select({data.id()}));
 }
 
 }   // namespace fdapde
 
-#endif // __FDAPDE_GEO_LAYER_H__
+#endif   // __FDAPDE_GEO_LAYER_H__

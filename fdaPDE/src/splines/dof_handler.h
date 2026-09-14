@@ -44,11 +44,11 @@ template <> class DofHandler<1, 1, spline_tag> {
             std::vector<int> dofs_ = dofs();
             std::vector<int> dofs_markers_(dofs_.size());
             for (int i = 0, n = dofs_.size(); i < n; ++i) { dofs_markers_[i] = dof_handler_->dof_marker(dofs_[i]); }
-	    return dofs_markers_;
+            return dofs_markers_;
         }
-        BinaryVector<Dynamic> boundary_dofs() const {
+        Vector<bool, Dynamic> boundary_dofs() const {
             std::vector<int> dofs_ = dofs();
-            BinaryVector<Dynamic> boundary(dofs_.size());
+            Vector<bool, Dynamic> boundary(dofs_.size());
             int i = 0;
             for (int dof : dofs_) {
                 if (dof_handler_->is_dof_on_boundary(dof)) boundary.set(i);
@@ -109,8 +109,7 @@ template <> class DofHandler<1, 1, spline_tag> {
         }
        public:
         cell_iterator() = default;
-        cell_iterator(
-          int index, const DofHandler* dof_handler, const BinaryVector<Dynamic>& filter, int marker) :
+        cell_iterator(int index, const DofHandler* dof_handler, const Vector<bool, Dynamic>& filter, int marker) :
             Base(index, 0, dof_handler->triangulation()->n_cells(), filter),
             dof_handler_(dof_handler),
             marker_(marker) {
@@ -121,13 +120,11 @@ template <> class DofHandler<1, 1, spline_tag> {
             cell_iterator(
               index, dof_handler,
               marker == TriangulationAll ?
-                BinaryVector<Dynamic>::Ones(dof_handler->triangulation()->n_cells()) :   // apply no filter
-                make_binary_vector(
-                  dof_handler->triangulation()->cells_markers().begin(),
-                  dof_handler->triangulation()->cells_markers().end(), marker),
+                Vector<bool, Dynamic>::Ones(dof_handler->triangulation()->n_cells()) :   // apply no filter
+                internals::marker_mask(dof_handler->triangulation()->cells_markers(), marker),
               marker) { }
         int marker() const { return marker_; }
-    };  
+    };
     cell_iterator cells_begin(int marker = TriangulationAll) const {
         const std::vector<int>& cells_markers = triangulation_->cells_markers();
         fdapde_assert(
@@ -172,7 +169,7 @@ template <> class DofHandler<1, 1, spline_tag> {
         }
        public:
         boundary_dofs_iterator(
-          int index, const DofHandler* dof_handler, const BinaryVector<Dynamic>& filter, int marker) :
+          int index, const DofHandler* dof_handler, const Vector<bool, Dynamic>& filter, int marker) :
             Base(index, 0, dof_handler->n_dofs(), filter), dof_handler_(dof_handler), marker_(marker) {
             for (; index_ < Base::end_ && !filter[index_]; ++index_);
             if (index_ != Base::end_) { operator()(index_); }
@@ -181,10 +178,9 @@ template <> class DofHandler<1, 1, spline_tag> {
         boundary_dofs_iterator(int index, const DofHandler* dof_handler, int marker) :
             boundary_dofs_iterator(
               index, dof_handler,
-              marker == BoundaryAll ? dof_handler->boundary_dofs_ :
-                                      dof_handler->boundary_dofs_ &
-                                        make_binary_vector(
-                                          dof_handler->dofs_markers_.begin(), dof_handler->dofs_markers_.end(), marker),
+              marker == BoundaryAll ?
+                dof_handler->boundary_dofs_ :
+                internals::marked_boundary(dof_handler->boundary_dofs_, dof_handler->dofs_markers_, marker),
               marker) { }
         int marker() const { return marker_; }
     };
@@ -204,20 +200,20 @@ template <> class DofHandler<1, 1, spline_tag> {
         int n_cells = triangulation()->n_cells();
         for (int j = 0; j < n_cells; ++j) {
             dofs_.push_back(j);
-	    dofs_.push_back(j + order_);
-        }	
+            dofs_.push_back(j + order_);
+        }
         // Regardless of the number of physical dofs at the interval boundary, only the basis functions associated with
         // the first and last dofs are non-zero at the boundary nodes. Hence, we treat only these dofs as boundary dofs
-	boundary_dofs_.resize(n_dofs_);
+        boundary_dofs_.resize(n_dofs_);
         boundary_dofs_.set(0);
         boundary_dofs_.set(dofs_.back());
-	// inherit markers from geometry
+        // inherit markers from geometry
         dofs_markers_ = triangulation_->nodes_markers();
         return;
     }
    private:
     std::vector<double> dofs_coords_;       // physical knots vector
-    BinaryVector<Dynamic> boundary_dofs_;   // whether the i-th dof is on boundary or not
+    Vector<bool, Dynamic> boundary_dofs_;   // whether the i-th dof is on boundary or not
     std::vector<int> dofs_;
     int n_dofs_per_cell_ = 0, n_dofs_ = 0;
     std::vector<int> dofs_markers_;

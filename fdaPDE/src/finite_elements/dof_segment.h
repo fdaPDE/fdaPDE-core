@@ -22,8 +22,7 @@
 namespace fdapde {
 
 // definition of dof-informed triangle, i.e. a triangle with attached dofs
-template <typename DofHandler>
-class DofSegment : public Segment<typename DofHandler::TriangulationType> {
+template <typename DofHandler> class DofSegment : public Segment<typename DofHandler::TriangulationType> {
     fdapde_static_assert(
       DofHandler::TriangulationType::local_dim == 1, THIS_CLASS_IS_FOR_INTERVAL_AND_LINEAR_NETWORK_MESHES_ONLY);
     using Base = Segment<typename DofHandler::TriangulationType>;
@@ -38,9 +37,9 @@ class DofSegment : public Segment<typename DofHandler::TriangulationType> {
         Base(cell_id, dof_handler->triangulation()), dof_handler_(dof_handler) { }
     Eigen::Matrix<int, Dynamic, 1> dofs() const { return dof_handler_->active_dofs(Base::id()); }
     Eigen::Matrix<int, Dynamic, 1> dofs_markers() const { return dof_handler_->dof_markers()(dofs()); }
-    BinaryVector<Dynamic> boundary_dofs() const {
+    Vector<bool, Dynamic> boundary_dofs() const {
         Eigen::Matrix<int, Dynamic, 1> tmp = dofs();
-        BinaryVector<Dynamic> boundary(tmp.size());
+        Vector<bool, Dynamic> boundary(tmp.size());
         int i = 0;
         for (int dof : tmp) {
             if (dof_handler_->is_dof_on_boundary(dof)) boundary.set(i);
@@ -52,4 +51,4 @@ class DofSegment : public Segment<typename DofHandler::TriangulationType> {
 
 }   // namespace fdapde
 
-#endif // __FDAPDE_DOF_SEGMENT_H__
+#endif   // __FDAPDE_DOF_SEGMENT_H__

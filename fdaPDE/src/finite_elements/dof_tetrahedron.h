@@ -52,8 +52,8 @@ template <typename DofHandler> class DofTetrahedron : public Tetrahedron<typenam
         }
         const Eigen::Matrix<int, Dynamic, 1>& dofs() const { return dofs_; }
         Eigen::Matrix<int, Dynamic, 1> dofs_markers() const { return dof_handler_->dof_markers()(dofs()); }
-        BinaryVector<Dynamic> boundary_dofs() const {
-            BinaryVector<Dynamic> boundary(dofs_.size());
+        Vector<bool, Dynamic> boundary_dofs() const {
+            Vector<bool, Dynamic> boundary(dofs_.size());
             int i = 0;
             for (int dof : dofs_) {
                 if (dof_handler_->is_dof_on_boundary(dof)) boundary.set(i);
@@ -88,8 +88,8 @@ template <typename DofHandler> class DofTetrahedron : public Tetrahedron<typenam
         }
         const Eigen::Matrix<int, Dynamic, 1>& dofs() const { return dofs_; }
         Eigen::Matrix<int, Dynamic, 1> dofs_markers() const { return dof_handler_->dof_markers()(dofs()); }
-        BinaryVector<Dynamic> boundary_dofs() const {
-            BinaryVector<Dynamic> boundary(dofs_.size());
+        Vector<bool, Dynamic> boundary_dofs() const {
+            Vector<bool, Dynamic> boundary(dofs_.size());
             int i = 0;
             for (int dof : dofs_) {
                 if (dof_handler_->is_dof_on_boundary(dof)) boundary.set(i);
@@ -104,9 +104,9 @@ template <typename DofHandler> class DofTetrahedron : public Tetrahedron<typenam
         Base(cell_id, dof_handler->triangulation()), dof_handler_(dof_handler) { }
     Eigen::Matrix<int, Dynamic, 1> dofs() const { return dof_handler_->active_dofs(Base::id()); }
     Eigen::Matrix<int, Dynamic, 1> dofs_markers() const { return dof_handler_->dof_markers()(dofs()); }
-    BinaryVector<Dynamic> boundary_dofs() const {
+    Vector<bool, Dynamic> boundary_dofs() const {
         Eigen::Matrix<int, Dynamic, 1> tmp = dofs();
-        BinaryVector<Dynamic> boundary(tmp.size());
+        Vector<bool, Dynamic> boundary(tmp.size());
         int i = 0;
         for (int dof : tmp) {
             if (dof_handler_->is_dof_on_boundary(dof)) boundary.set(i);
@@ -163,4 +163,4 @@ template <typename DofHandler> class DofTetrahedron : public Tetrahedron<typenam
 
 }   // namespace fdapde
 
-#endif // __FDAPDE_DOF_TETRAHEDRON_H__
+#endif   // __FDAPDE_DOF_TETRAHEDRON_H__

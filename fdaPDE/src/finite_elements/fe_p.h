@@ -61,8 +61,7 @@ template <int LocalDim, int Order, int NComponents> struct vector_fe_p_basis_typ
         constexpr PolynomialType() = default;
         template <int n_nodes>
             requires(n_nodes == LagrangeBasis<LocalDim, Order>::n_basis)
-        constexpr PolynomialType(const Matrix<double, n_nodes, LocalDim>& nodes, int i) :
-            basis_(nodes), i_(i) { }
+        constexpr PolynomialType(const Matrix<double, n_nodes, LocalDim>& nodes, int i) : basis_(nodes), i_(i) { }
         constexpr Component operator[](int i) const { return Component(this, i); }
         constexpr Scalar eval(int i, [[maybe_unused]] int j, const InputType& p) const {
             constexpr int n_basis_ = LagrangeBasis<LocalDim, Order>::n_basis;
@@ -95,7 +94,7 @@ template <int LocalDim, int Order, int NComponents> struct vector_fe_p_basis_typ
 }   // namespace internals
 
 // representation of the finite element space P_h^K = { v \in H^1(D) : v_{e} \in P^K \forall e \in T_h }
-template <int Order, int NComponents> struct FeP {  
+template <int Order, int NComponents> struct FeP {
     static constexpr int order = Order;
     static constexpr int n_components = NComponents;
     static constexpr bool is_vector_fe = (n_components != 1);
@@ -133,9 +132,8 @@ template <int Order, int NComponents> struct FeP {
             // compute dofs physical coordinates on reference cell
             constexpr int n_nodes = local_dim + 1;
             Matrix<double, local_dim, n_nodes> reference_simplex;
-            reference_simplex.setZero();
             for (int i = 0; i < local_dim; ++i) { reference_simplex(i, i + 1) = 1; }
-            dofs_phys_coords_.template topRows<n_nodes>() = reference_simplex.transpose();
+            dofs_phys_coords_.template top_rows<n_nodes>() = reference_simplex.transpose();
             int j = n_nodes;
             // constexpr enumeration of reference simplex edges
             auto edge_enumerate = [&, this]() {
@@ -144,7 +142,7 @@ template <int Order, int NComponents> struct FeP {
                 Matrix<double, local_dim, 2> edge_coords;
                 for (int i = 0; i < ReferenceCell::n_edges; ++i) {
                     for (int k = 0, h = 0; k < n_nodes; ++k) {
-		      if (bitmask[k]) { edge_coords.col(h++) = reference_simplex.col(k); }
+                        if (bitmask[k]) { edge_coords.col(h++) = reference_simplex.col(k); }
                     }
                     for (int k = 0; k < n_dofs_per_edge; ++k) {
                         dofs_phys_coords_.row(j++) =
@@ -154,7 +152,7 @@ template <int Order, int NComponents> struct FeP {
                     std::prev_permutation(bitmask.begin(), bitmask.end());
                 }
             };
-	    // enumerate dofs on reference cell
+            // enumerate dofs on reference cell
             if constexpr (local_dim == 1) {
                 if constexpr (n_dofs_internal > 0) {
                     for (int i = 0; i < n_dofs_internal; ++i) { dofs_phys_coords_[j++] = (i + 1) * 1. / Order; }
@@ -177,7 +175,7 @@ template <int Order, int NComponents> struct FeP {
                 if constexpr (n_dofs_per_face > 0) {
                     // add triangle of equidistant nodes having Order - 2 nodes per side
                     double step = 1.0 / Order;
-		    // compute barycentric coordinates of nodes to insert on faces
+                    // compute barycentric coordinates of nodes to insert on faces
                     Matrix<double, n_dofs_per_face, 2> bary_coords;
                     for (int k = 0, r = 0; k < Order - 2; ++k) {
                         for (int h = 0; h < Order - 2 - k; ++h) {
@@ -214,7 +212,7 @@ template <int Order, int NComponents> struct FeP {
                 }
             }
             // compute barycentric coordinates
-            dofs_bary_coords_.template rightCols<local_dim>() = dofs_phys_coords_;
+            dofs_bary_coords_.template right_cols<local_dim>() = dofs_phys_coords_;
             if constexpr (local_dim == 1) {
                 for (int i = 0; i < dofs_bary_coords_.rows(); ++i) {
                     dofs_bary_coords_(i, 0) = 1 - dofs_bary_coords_(i, 1);
@@ -249,12 +247,12 @@ template <int Order, int NComponents> struct FeP {
         using BasisType = std::conditional_t<
           NComponents == 1, LagrangeBasis<0, Order>, internals::vector_fe_p_basis_type<0, Order, NComponents>>;
     };
-  
+
     // select quadrature which optimally integrates (Order + 1) polynomials
     template <int LocalDim> class select_cell_quadrature {
         static constexpr int select_quadrature_() {
-            if (LocalDim == 1) return Order == 1 ? 2 : (Order == 2 ? 3  : 4 );
-            if (LocalDim == 2) return Order == 1 ? 3 : (Order == 2 ? 6  : 12);
+            if (LocalDim == 1) return Order == 1 ? 2 : (Order == 2 ? 3 : 4);
+            if (LocalDim == 2) return Order == 1 ? 3 : (Order == 2 ? 6 : 12);
             if (LocalDim == 3) return Order == 1 ? 4 : (Order == 2 ? 11 : 24);
         }
        public:
@@ -272,7 +270,7 @@ template <int NComponents> struct FeP<0, NComponents> {
     static constexpr int n_components = NComponents;
     static constexpr bool is_vector_fe = (n_components != 1);
     fdapde_static_assert(n_components > 0, DEFINITION_OF_FINITE_ELEMENT_WITH_ZERO_OR_LESS_COMPONENTS_IS_ILL_FORMED);
-  
+
     template <int LocalDim> struct dof_descriptor {
         static constexpr int local_dim = LocalDim;
         using ReferenceCell = Simplex<local_dim, local_dim>;   // reference unit simplex
@@ -291,9 +289,8 @@ template <int NComponents> struct FeP<0, NComponents> {
             // compute dofs physical coordinates on reference cell
             constexpr int n_nodes = local_dim + 1;
             Matrix<double, local_dim, n_nodes> reference_simplex;
-            reference_simplex.setZero();
             for (int i = 0; i < local_dim; ++i) { reference_simplex(i, i + 1) = 1; }
-	    // the unique dof is the simplex barycenter
+            // the unique dof is the simplex barycenter
             if constexpr (local_dim == 1) { dofs_phys_coords_.row(0) = Vector<double, 1>(0.5); }
             if constexpr (local_dim == 2) {
                 dofs_phys_coords_.row(0) =
@@ -305,7 +302,7 @@ template <int NComponents> struct FeP<0, NComponents> {
                   (local_dim + 1);
             }
             // compute barycentric coordinates
-            dofs_bary_coords_.template rightCols<local_dim>(1) = dofs_phys_coords_;
+            dofs_bary_coords_.template right_cols<local_dim>() = dofs_phys_coords_;
             if constexpr (local_dim == 1) {
                 dofs_bary_coords_(0, 0) = 0.5;
             } else {
@@ -336,7 +333,7 @@ template <int N> constexpr FeP<2, N> P2 = FeP<2, N> {};
 template <int N> constexpr FeP<3, N> P3 = FeP<3, N> {};
 template <int N> constexpr FeP<4, N> P4 = FeP<4, N> {};
 template <int N> constexpr FeP<5, N> P5 = FeP<5, N> {};
-  
+
 }   // namespace fdapde
 
 #endif   // __FDAPDE_FE_P_H__

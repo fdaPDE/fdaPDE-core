@@ -52,7 +52,7 @@ template <typename Triangulation_, typename FeType_> class FeSpace {
     using FaceShapeFunctionType = subscript_t<FaceBasisType>;
     using DofHandlerType = DofHandler<local_dim, embed_dim, finite_element_tag>;
     // vector finite element descriptors
-    static constexpr int n_components  = FeType::n_components;
+    static constexpr int n_components = FeType::n_components;
     static constexpr bool is_vector_fe = (n_components > 1);
     // definition of assembly loops
     using discretization_category = finite_element_tag;
@@ -62,10 +62,10 @@ template <typename Triangulation_, typename FeType_> class FeSpace {
       internals::fe_bilinear_form_assembly_loop<Triangulation__, Form__, Options__, Quadrature__...>;
     template <typename Triangulation__, typename Form__, int Options__, typename... Quadrature__>
     using linear_form_assembly_loop =
-      internals::fe_linear_form_assembly_loop  <Triangulation__, Form__, Options__, Quadrature__...>;
+      internals::fe_linear_form_assembly_loop<Triangulation__, Form__, Options__, Quadrature__...>;
     using vector_t = Matrix<double, embed_dim, 1>;
     using matrix_t = Matrix<double, embed_dim, embed_dim>;
-  
+
     FeSpace() = default;
     FeSpace(const Triangulation_& triangulation, FeType_ fe) :
         triangulation_(std::addressof(triangulation)), dof_handler_(triangulation) {
@@ -137,32 +137,44 @@ template <typename Triangulation_, typename FeType_> class FeSpace {
         int cell_id = triangulation_->locate(p);   // localize p in physical domain
         if (cell_id == -1) return std::numeric_limits<double>::quiet_NaN();
         typename DofHandlerType::CellType cell = dof_handler_.cell(cell_id);
-        vector_t ref_p = cell.invJ() * (p - cell.node(0));
+        const Eigen::Matrix<double, embed_dim, 1> mapped = cell.invJ() * (p - cell.node(0));
+        vector_t ref_p;
+        for (int d = 0; d < embed_dim; ++d) { ref_p[d] = mapped[d]; }
         return eval_shape_value(i, ref_p);
     }
     // shape function gradient evaluation, skip point location
     template <typename InputType> vector_t eval_cell_grad(int i, int cell_id, const InputType& ref_p) const {
-        return dof_handler_.cell(cell_id).invJ().transpose() * eval_shape_grad(i, ref_p);
+        auto cell = dof_handler_.cell(cell_id);
+        const MatrixView<const double, local_dim, embed_dim, ColMajor> inverse_jacobian(cell.invJ().data());
+        const auto shape = eval_shape_grad(i, ref_p);
+        return inverse_jacobian.transpose() * shape;
     }
     // evaluate value of the i-th shape function gradient at physical cell containing point p
     template <typename InputType> vector_t eval_cell_grad(int i, const InputType& p) const {
         int cell_id = triangulation_->locate(p);   // localize p in physical domain
-        if (cell_id == -1) { return vector_t::NaN(); }
+        if (cell_id == -1) { return vector_t::Constant(std::numeric_limits<double>::quiet_NaN()); }
         typename DofHandlerType::CellType cell = dof_handler_.cell(cell_id);
-        vector_t ref_p = cell.invJ() * (p - cell.node(0));
-        return cell.invJ().transpose() * eval_shape_grad(i, ref_p);
+        const Eigen::Matrix<double, embed_dim, 1> mapped = cell.invJ() * (p - cell.node(0));
+        vector_t ref_p;
+        for (int d = 0; d < embed_dim; ++d) { ref_p[d] = mapped[d]; }
+        return eval_cell_grad(i, cell_id, ref_p);
     }
     // shape function hessian evaluation, skip point location
     template <typename InputType> matrix_t eval_cell_hess(int i, int cell_id, const InputType& ref_p) const {
-        return dof_handler_.cell(cell_id).invJ().transpose() * eval_shape_hess(i, ref_p);
+        auto cell = dof_handler_.cell(cell_id);
+        const MatrixView<const double, local_dim, embed_dim, ColMajor> inverse_jacobian(cell.invJ().data());
+        const auto shape = eval_shape_hess(i, ref_p);
+        return inverse_jacobian.transpose() * shape;
     }
     // evaluate value of the i-th shape function hessian at physical cell containing point p
     template <typename InputType> matrix_t eval_cell_hess(int i, const InputType& p) const {
         int cell_id = triangulation_->locate(p);   // localize p in physical domain
-        if (cell_id == -1) { return matrix_t::NaN(); }
+        if (cell_id == -1) { return matrix_t::Constant(std::numeric_limits<double>::quiet_NaN()); }
         typename DofHandlerType::CellType cell = dof_handler_.cell(cell_id);
-        vector_t ref_p = cell.invJ() * (p - cell.node(0));
-        return cell.invJ().transpose() * eval_shape_hess(i, ref_p);
+        const Eigen::Matrix<double, embed_dim, 1> mapped = cell.invJ() * (p - cell.node(0));
+        vector_t ref_p;
+        for (int d = 0; d < embed_dim; ++d) { ref_p[d] = mapped[d]; }
+        return eval_cell_hess(i, cell_id, ref_p);
     }
 
     // access i-th basis function on physical domain

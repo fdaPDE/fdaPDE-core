@@ -25,21 +25,18 @@ namespace internals {
 // computes boolean nan pattern from a contiguous block of data
 template <typename MdArray_> auto compute_na_mask(MdArray_&& data) {
     using MdArrayClean = std::decay_t<MdArray_>;
-    using logical_t = MdArray<bool, typename MdArrayClean::extents_t, typename MdArrayClean::layout_t>;
+    using logical_t = MdArray<bool, full_dynamic_extent_t<MdArrayClean::Order>, ColMajor>;
     using Scalar = typename MdArrayClean::Scalar;
-
-    logical_t na_mask(data.extents());
-    if constexpr (std::is_same_v<Scalar, double> || std::is_same_v<Scalar, float>) {
-        for (auto it = data.begin(); it != data.end(); ++it) {
-            if (std::isnan(*it)) { na_mask(it.index()).set(); }
+    logical_t na_mask =
+      internals::apply_index_pack<MdArrayClean::Order>([&]<int... Axes>() { return logical_t(data.extent(Axes)...); });
+    auto dst = na_mask.begin();
+    for (const auto& value : data) {
+        if constexpr (std::is_floating_point_v<Scalar>) {
+            *dst = std::isnan(value);
+        } else if constexpr (std::is_same_v<Scalar, std::string>) {
+            *dst = value == "NaN" || value == "nan" || value == "NA";
         }
-    } else if constexpr (std::is_same_v<Scalar, std::string>) {
-        for (auto it = data.begin(); it != data.end(); ++it) {
-            const std::string& str = *it;
-            if (str == "NaN" || str == "nan" || str == "NA") { na_mask(it.index()).set(); }
-        }
-    } else {
-        // for other integer types, there is no nan encoding, do nothing.
+        ++dst;
     }
     return na_mask;
 }
@@ -51,15 +48,14 @@ template <typename Scalar_, typename DataObj> struct plain_col_view {
     using size_t = typename DataObj::size_t;
     static constexpr int Order = DataObj::Order;
    private:
-    using data_table = MdArray<Scalar_, full_dynamic_extent_t<Order>, internals::layout_left>;
+    using data_table = MdArray<Scalar_, full_dynamic_extent_t<Order>, ColMajor>;
     using extents_t = typename data_table::extents_t;
    public:
     using storage_t = std::conditional_t<
-      std::is_const_v<DataObj>, MdArrayBlock<std::add_const_t<data_table>, extents_t>,
-      MdArrayBlock<data_table, extents_t>>;
+      std::is_const_v<DataObj>, MdView<std::add_const_t<data_table>, Order>, MdView<data_table, Order>>;
     using reference = typename DataObj::template reference<Scalar>;
     using const_reference = typename DataObj::template const_reference<Scalar>;
-    using logical_t = MdArray<bool, extents_t, internals::layout_left>;
+    using logical_t = MdArray<bool, extents_t, ColMajor>;
 
     plain_col_view() noexcept = default;
     template <typename FieldDescriptor>
@@ -79,14 +75,13 @@ template <typename Scalar_, typename DataObj> struct plain_col_view {
         row_end_(row_end),
         colname_(desc.colname()),
         type_id_(desc.type_id()) { }
-  
+
     template <typename FieldDescriptor>   // column row constructor
     plain_col_view(DataObj& data, index_t row, const FieldDescriptor& desc) noexcept :
         plain_col_view(data, row, row + 1, desc) { }
     // full column constructor
     template <typename FieldDescriptor>   // column row constructor
-    plain_col_view(DataObj& data, const FieldDescriptor& desc) noexcept :
-        plain_col_view(data, 0, data.rows(), desc) { }
+    plain_col_view(DataObj& data, const FieldDescriptor& desc) noexcept : plain_col_view(data, 0, data.rows(), desc) { }
 
     // observers
     size_t rows() const { return rows_; }
@@ -113,7 +108,8 @@ template <typename Scalar_, typename DataObj> struct plain_col_view {
     template <typename Dst>   // direct copy column content in suscriptable destination
         requires(is_subscriptable<Dst, int>)
     void assign_to(Dst&& dst) const {
-        block_.assign_to(dst);
+        int i = 0;
+        for (const auto& value : block_) { dst[i++] = value; }
     }
     // accessors
     template <typename... Idxs>
@@ -140,22 +136,24 @@ template <typename Scalar_, typename DataObj> struct plain_col_view {
     auto begin() const { return block_.begin(); }
     auto end() const { return block_.end(); }
     // logical comparison
-    logical_t operator==(const Scalar& rhs) const { return logical_apply_(rhs, std::equal_to<Scalar>      {}); }
-    logical_t operator!=(const Scalar& rhs) const { return logical_apply_(rhs, std::not_equal_to<Scalar>  {}); }
-    logical_t operator< (const Scalar& rhs) const { return logical_apply_(rhs, std::less<Scalar>          {}); }
-    logical_t operator> (const Scalar& rhs) const { return logical_apply_(rhs, std::greater<Scalar>       {}); }
-    logical_t operator<=(const Scalar& rhs) const { return logical_apply_(rhs, std::less_equal<Scalar>    {}); }
+    logical_t operator==(const Scalar& rhs) const { return logical_apply_(rhs, std::equal_to<Scalar> {}); }
+    logical_t operator!=(const Scalar& rhs) const { return logical_apply_(rhs, std::not_equal_to<Scalar> {}); }
+    logical_t operator<(const Scalar& rhs) const { return logical_apply_(rhs, std::less<Scalar> {}); }
+    logical_t operator>(const Scalar& rhs) const { return logical_apply_(rhs, std::greater<Scalar> {}); }
+    logical_t operator<=(const Scalar& rhs) const { return logical_apply_(rhs, std::less_equal<Scalar> {}); }
     logical_t operator>=(const Scalar& rhs) const { return logical_apply_(rhs, std::greater_equal<Scalar> {}); }
 #ifdef __FDAPDE_HAS_EIGEN__
     Eigen::Map<Eigen::Matrix<Scalar, Dynamic, Dynamic, Eigen::ColMajor>> as_matrix()
-        requires(!std::is_const_v<DataObj>) {
+        requires(!std::is_const_v<DataObj>)
+    {
         fdapde_static_assert(Order == 2, THIS_METHOD_IS_FOR_ORDER_TWO_MDARRAYS_ONLY);
-        return Eigen::Map<Eigen::Matrix<Scalar, Dynamic, Dynamic, Eigen::ColMajor>>(block_.data(), rows(), blk_sz_);
+        return Eigen::Map<Eigen::Matrix<Scalar, Dynamic, Dynamic, Eigen::ColMajor>>(
+          (size() == 0 ? nullptr : std::addressof(block_(0, 0))), rows(), blk_sz_);
     }
     Eigen::Map<const Eigen::Matrix<Scalar, Dynamic, Dynamic, Eigen::ColMajor>> as_matrix() const {
         fdapde_static_assert(Order == 2, THIS_METHOD_IS_FOR_ORDER_TWO_MDARRAYS_ONLY);
         return Eigen::Map<const Eigen::Matrix<Scalar, Dynamic, Dynamic, Eigen::ColMajor>>(
-          block_.data(), rows(), blk_sz_);
+          (size() == 0 ? nullptr : std::addressof(block_(0, 0))), rows(), blk_sz_);
     }
 #endif
     // assignment
@@ -167,38 +165,51 @@ template <typename Scalar_, typename DataObj> struct plain_col_view {
             fdapde_assert(
               src.size() == rows_, std::invalid_argument, "source row count must match the destination column");
             if (blk_sz_ == 1) {   // vector - vector assign
-                block_.assign_inplace_from(src);
+                std::vector<Scalar> values(src.size());
+                for (int i = 0; i < static_cast<int>(src.size()); ++i) { values[i] = src[i]; }
+                for (int i = 0; i < static_cast<int>(src.size()); ++i) { block_(i, 0) = values[i]; }
                 return *this;
             }
         } else {
             fdapde_assert(
               src.rows() == rows_, std::invalid_argument, "source row count must match the destination column");
             if (blk_sz_ == src.cols()) {   // block - block asssign
-                block_.assign_inplace_from(src);
+                Matrix<Scalar, Dynamic, Dynamic> values(src.rows(), src.cols());
+                for (int r = 0; r < src.rows(); ++r) {
+                    for (int c = 0; c < src.cols(); ++c) { values(r, c) = src(r, c); }
+                }
+                for (int r = 0; r < src.rows(); ++r) {
+                    for (int c = 0; c < src.cols(); ++c) { block_(r, c) = values(r, c); }
+                }
                 return *this;
             }
         }
         // reallocation required
-	index_t col_id = data_->col_id(colname_);
-	data_->erase (colname_);
+        index_t col_id = data_->col_id(colname_);
+        data_->erase(colname_);
         data_->insert(colname_, col_id, src);
         // update block-view
         const auto& desc = data_->field_descriptor(colname_);
         blk_sz_ = desc.size();
-        block_ = internals::apply_index_pack<Order>([&]<int... Ns_>() {
+        auto replacement = internals::apply_index_pack<Order>([&]<int... Ns_>() {
             return data_->template data<Scalar>().block(
               ((void)Ns_, Ns_ == 0 ?
                             std::pair {row_begin_, row_end_ - 1} :
                             (Ns_ == 1 ? std::pair {desc.offset(), desc.offset() + desc.size() - 1} :
                                         std::pair {0, index_t(data_->template data<Scalar>().extent(Ns_)) - 1}))...);
         });
+        std::destroy_at(std::addressof(block_));
+        std::construct_at(std::addressof(block_), replacement);
         return *this;
     }
    protected:
-    template <typename Functor> std::vector<bool> logical_apply_(const Scalar& rhs, Functor&& f) const {
-        logical_t mask(block_.extents());
-        for (auto it = block_.begin(); it != block_.end(); ++it) {
-            if (f(*it, rhs)) { mask(it.index()).set(); }
+    template <typename Functor> logical_t logical_apply_(const Scalar& rhs, Functor&& f) const {
+        logical_t mask =
+          internals::apply_index_pack<Order>([&]<int... Axes>() { return logical_t(block_.extent(Axes)...); });
+        auto dst = mask.begin();
+        for (const auto& value : block_) {
+            *dst = f(value, rhs);
+            ++dst;
         }
         return mask;
     }
@@ -219,15 +230,14 @@ template <typename Scalar_, typename DataObj> struct random_access_col_view {
     using size_t = typename DataObj::size_t;
     static constexpr int Order = DataObj::Order;
    private:
-    using data_table = MdArray<Scalar_, full_dynamic_extent_t<Order>, internals::layout_left>;
+    using data_table = MdArray<Scalar_, full_dynamic_extent_t<Order>, ColMajor>;
     using extents_t = typename data_table::extents_t;
    public:
     using storage_t = std::conditional_t<
-      std::is_const_v<DataObj>, MdArrayBlock<std::add_const_t<data_table>, extents_t>,
-      MdArrayBlock<data_table, extents_t>>;
+      std::is_const_v<DataObj>, MdView<std::add_const_t<data_table>, Order>, MdView<data_table, Order>>;
     using reference = typename DataObj::template reference<Scalar>;
     using const_reference = typename DataObj::template const_reference<Scalar>;
-    using logical_t = MdArray<bool, extents_t, internals::layout_left>;
+    using logical_t = MdArray<bool, extents_t, ColMajor>;
 
     random_access_col_view() noexcept = default;
     template <typename FieldDescriptor>
@@ -253,10 +263,17 @@ template <typename Scalar_, typename DataObj> struct random_access_col_view {
     size_t size() const { return rows_ * blk_sz_; }
     // access to data requires copying in contiguous memory
     data_table data() const {
-        data_table data_blk(extents_);
-        for (auto it = data_blk.begin(); it != data_blk.end(); ++it) {
-            *it = internals::apply_index_pack<Order>(
-              [&]<int... Ns_>() { return data_((Ns_ == 0 ? idxs_[it.index()[0]] : it.index()[Ns_])...); });
+        data_table data_blk =
+          internals::apply_index_pack<Order>([&]<int... Axes>() { return data_table(extents_.extent(Axes)...); });
+        std::array<int, Order> indices {};
+        for (auto&& value : data_blk) {
+            auto source = indices;
+            source[0] = idxs_[indices[0]];
+            value = data_(source);
+            for (int axis = Order - 1; axis >= 0; --axis) {
+                if (++indices[axis] < data_blk.extent(axis)) break;
+                indices[axis] = 0;
+            }
         }
         return data_blk;
     }
@@ -289,11 +306,11 @@ template <typename Scalar_, typename DataObj> struct random_access_col_view {
         return block_(index_pack);
     }
     // logical comparison
-    logical_t operator==(const Scalar& rhs) const { return logical_apply_(rhs, std::equal_to<Scalar>      {}); }
-    logical_t operator!=(const Scalar& rhs) const { return logical_apply_(rhs, std::not_equal_to<Scalar>  {}); }
-    logical_t operator< (const Scalar& rhs) const { return logical_apply_(rhs, std::less<Scalar>          {}); }
-    logical_t operator> (const Scalar& rhs) const { return logical_apply_(rhs, std::greater<Scalar>       {}); }
-    logical_t operator<=(const Scalar& rhs) const { return logical_apply_(rhs, std::less_equal<Scalar>    {}); }
+    logical_t operator==(const Scalar& rhs) const { return logical_apply_(rhs, std::equal_to<Scalar> {}); }
+    logical_t operator!=(const Scalar& rhs) const { return logical_apply_(rhs, std::not_equal_to<Scalar> {}); }
+    logical_t operator<(const Scalar& rhs) const { return logical_apply_(rhs, std::less<Scalar> {}); }
+    logical_t operator>(const Scalar& rhs) const { return logical_apply_(rhs, std::greater<Scalar> {}); }
+    logical_t operator<=(const Scalar& rhs) const { return logical_apply_(rhs, std::less_equal<Scalar> {}); }
     logical_t operator>=(const Scalar& rhs) const { return logical_apply_(rhs, std::greater_equal<Scalar> {}); }
 #ifdef __FDAPDE_HAS_EIGEN__
     // requesting a matrix requires to copy data, no view is possible for random access
@@ -307,14 +324,14 @@ template <typename Scalar_, typename DataObj> struct random_access_col_view {
     }
 #endif
    protected:
-    template <typename Functor> std::vector<bool> logical_apply_(const Scalar& rhs, Functor&& f) const {
-        logical_t mask(extents_);
-        for (auto it = mask.begin(); it != mask.end(); ++it) {
-            if (internals::apply_index_pack([&]<int... Ns_>() -> bool {
-                    return f(data_((Ns_ == 0 ? idxs_[it.index()[0]] : it.index()[Ns_])...), rhs);
-                })) {
-                it.set();
-            }
+    template <typename Functor> logical_t logical_apply_(const Scalar& rhs, Functor&& f) const {
+        const auto values = data();
+        logical_t mask =
+          internals::apply_index_pack<Order>([&]<int... Axes>() { return logical_t(extents_.extent(Axes)...); });
+        auto dst = mask.begin();
+        for (const auto& value : values) {
+            *dst = f(value, rhs);
+            ++dst;
         }
         return mask;
     }
@@ -335,8 +352,8 @@ template <typename DataLayer> struct plain_row_view {
     using storage_t = std::conditional_t<
       std::is_const_v<DataLayer>, std::add_const_t<typename DataLayer::storage_t>, typename DataLayer::storage_t>;
     static constexpr int Order = DataLayer::Order;
-    using logical_t = MdArray<bool, full_dynamic_extent_t<Order>, internals::layout_left>;
-  
+    using logical_t = MdArray<bool, full_dynamic_extent_t<Order>, ColMajor>;
+
     plain_row_view() noexcept = default;
     plain_row_view(DataLayer* data, index_t row) noexcept : data_(data), row_(row) { }
     // observers
@@ -483,7 +500,7 @@ template <typename DataLayer> struct random_access_row_view {
     DataLayer* data_;
     std::vector<index_t> idxs_;
 };
-  
+
 // heterogeneous container
 class scalar_data_layer {
     using types = std::tuple<
@@ -517,10 +534,10 @@ class scalar_data_layer {
     }
    public:
     static constexpr int Order = 2;   // MdArray order
-    template <typename T> static constexpr bool is_type_supported_v  = has_type<T, types>::value;
+    template <typename T> static constexpr bool is_type_supported_v = has_type<T, types>::value;
     template <typename T> static constexpr bool is_dtype_supported_v = is_type_supported_v<typename T::type>;
    private:
-    template <typename T> using data_table = MdArray<T, full_dynamic_extent_t<Order>, internals::layout_left>;
+    template <typename T> using data_table = MdArray<T, full_dynamic_extent_t<Order>, ColMajor>;
     template <typename... Ts> using data_map_ = std::tuple<data_table<Ts>...>;
     using This = scalar_data_layer;
     template <typename T, typename U>
@@ -545,7 +562,6 @@ class scalar_data_layer {
         std::string colname_;
         int size_, offset_;   // block size and first indexed MdArray column
         dtype type_id_;
-      
        public:
         field() noexcept = default;
         field(const std::string& colname, int offset, int size, dtype type_id) noexcept :
@@ -560,27 +576,26 @@ class scalar_data_layer {
         // modifiers
         void set_colname(const std::string& colname) { colname_ = colname; }
     };
-    template <typename T>
-    struct is_valid_pair {
-      using colname_t = std::tuple_element_t<0, std::decay_t<T>>;
-      using value_t   = mapped_type_t<std::tuple_element_t<1, std::decay_t<T>>>;
-      static constexpr bool value =
-	// first  element: column name
-        (std::is_same_v<colname_t, std::string> || std::is_same_v<colname_t, const char*>) &&
-	// second element: something subscriptable returning an accepted type
-        (internals::is_subscriptable<value_t, int> &&
-         is_type_supported_v<mapped_type_t<std::decay_t<decltype(std::declval<value_t>()[int()])>>>);
+    template <typename T> struct is_valid_pair {
+        using colname_t = std::tuple_element_t<0, std::decay_t<T>>;
+        using value_t = mapped_type_t<std::tuple_element_t<1, std::decay_t<T>>>;
+        static constexpr bool value =
+          // first  element: column name
+          (std::is_same_v<colname_t, std::string> || std::is_same_v<colname_t, const char*>) &&
+          // second element: something subscriptable returning an accepted type
+          (internals::is_subscriptable<value_t, int> &&
+           is_type_supported_v<mapped_type_t<std::decay_t<decltype(std::declval<value_t>()[int()])>>>);
     };
-    template <typename T> static constexpr bool is_valid_pair_v = is_valid_pair<T>::value;  
+    template <typename T> static constexpr bool is_valid_pair_v = is_valid_pair<T>::value;
     // moves std::tuple<Ts...> to T<Ts...>
     template <template <typename...> typename T, typename U> struct strip_tuple_into;
     template <template <typename...> typename T, typename... Us>
     struct strip_tuple_into<T, std::tuple<Us...>> : std::type_identity<T<Us...>> { };
    public:
-    template <typename T> using reference = typename data_table<T>::reference;
-    template <typename T> using const_reference = typename data_table<T>::const_reference;
+    template <typename T> using reference = decltype(std::declval<data_table<T>&>()[0]);
+    template <typename T> using const_reference = decltype(std::declval<const data_table<T>&>()[0]);
     using storage_t = typename strip_tuple_into<data_map_, types>::type;
-    using logical_t = MdArray<bool, full_dynamic_extent_t<Order>, internals::layout_left>;
+    using logical_t = MdArray<bool, full_dynamic_extent_t<Order>, ColMajor>;
     using index_t = int;
     using size_t = std::size_t;
     using field_t = field;
@@ -670,7 +685,7 @@ class scalar_data_layer {
           [&]<int Ns_, typename T>(T t) {
               if constexpr (internals::is_pair_v<T>) {
                   push_column_descriptor(std::get<0>(t), std::get<1>(t));
-		  cols_++;
+                  cols_++;
               } else {   // vector of pairs
                   for (const auto& pair : t) {
                       push_column_descriptor(std::get<0>(pair), std::get<1>(pair));
@@ -682,24 +697,28 @@ class scalar_data_layer {
         // reserve space for all types in pack, copy data in internal storage
         internals::for_each_index_and_args<sizeof...(DataT)>(
           [&]<int Ns_, typename T>(T t) {
-              using MappedT = mapped_type_t<std::decay_t<decltype([t]() {
+              using MappedT = mapped_type_t<std::decay_t<decltype([](const auto& value) -> decltype(auto) {
                   if constexpr (internals::is_pair_v<T>) {
-                      return std::get<1>(t);
+                      return std::get<1>(value)[0];
                   } else {
-                      return std::get<1>(t[0]);
+                      return std::get<1>(value[0])[0];
                   }
-              }().operator[](std::declval<index_t>()))>>;
+              }(t))>>;
               dtype type_id = internals::dtype_from_static_type<MappedT>().type_id;
               fetch_<MappedT>(data_).resize(rows_, type_id_map[type_id]);
               if constexpr (internals::is_pair_v<T>) {
-                  fetch_<MappedT>(data_).template slice<1>(type_id_col[type_id]).assign_inplace_from(std::get<1>(t));
+                  for (int row = 0; row < static_cast<int>(rows_); ++row) {
+                      fetch_<MappedT>(data_)(row, type_id_col[type_id]) = std::get<1>(t)[row];
+                  }
                   type_id_col[type_id]++;
-		  freemem_[type_id].push_back(false);
+                  freemem_[type_id].push_back(false);
               } else {   // map-like object
                   for (const auto& [colname, data] : t) {
-                      fetch_<MappedT>(data_).template slice<1>(type_id_col[type_id]).assign_inplace_from(data);
-                      type_id_col[type_id]++; // ------------------------------------ change in type_id_col_cnt
-		      freemem_[type_id].push_back(false);
+                      for (int row = 0; row < static_cast<int>(rows_); ++row) {
+                          fetch_<MappedT>(data_)(row, type_id_col[type_id]) = data[row];
+                      }
+                      type_id_col[type_id]++;   // ------------------------------------ change in type_id_col_cnt
+                      freemem_[type_id].push_back(false);
                   }
               }
           },
@@ -743,9 +762,11 @@ class scalar_data_layer {
               using MappedT = mapped_type_t<std::decay_t<decltype(std::declval<T>()[std::declval<index_t>()])>>;
               dtype type_id = internals::dtype_from_static_type<MappedT>().type_id;
               fetch_<MappedT>(data_).resize(rows_, type_id_map[type_id]);
-              fetch_<MappedT>(data_).template slice<1>(type_id_col[type_id]).assign_inplace_from(t);
+              for (int row = 0; row < static_cast<int>(rows_); ++row) {
+                  fetch_<MappedT>(data_)(row, type_id_col[type_id]) = t[row];
+              }
               type_id_col[type_id]++;
-	      freemem_[type_id].push_back(false);
+              freemem_[type_id].push_back(false);
           },
           data...);
     }
@@ -758,7 +779,7 @@ class scalar_data_layer {
         std::unordered_map<dtype, int> offset = make_dtyped_map<int>();
         // push column descriptors
         rows_ = row_filter.rows();
-	cols_ = cols.size();
+        cols_ = cols.size();
         for (size_t i = 0; i < cols_; ++i) {
             auto field = row_filter.field_descriptor(cols[i]);
             dtype type_id = field.type_id();
@@ -768,16 +789,16 @@ class scalar_data_layer {
             col_idx_[field.colname()] = header_.size() - 1;
         }
         // reserve space, copy data in internal storage
-	std::unordered_map<dtype, int> tmp = make_dtyped_map<int>();
+        std::unordered_map<dtype, int> tmp = make_dtyped_map<int>();
         std::apply(
           [&](const auto&... ts) {
               (
                 [&]() {
                     using T = std::decay_t<decltype(ts)>;
-		    dtype type_id = internals::dtype_from_static_type<T>().type_id;
+                    dtype type_id = internals::dtype_from_static_type<T>().type_id;
                     if (type_id_map[type_id] != 0) {
                         fetch_<T>(data_).resize(rows_, offset[type_id]);
-			// take typed data from filter
+                        // take typed data from filter
                         for (const auto& colname : cols) {
                             auto desc = row_filter.field_descriptor(colname);
                             if (desc.type_id() == type_id) {
@@ -785,7 +806,7 @@ class scalar_data_layer {
                                   .block(full_extent, std::pair {tmp[type_id], tmp[type_id] + desc.size() - 1})
                                   .assign_inplace_from(row_filter.template col<T>(colname).data());
                                 for (int i = 0; i < desc.size(); ++i) { freemem_[type_id].push_back(false); }
-				tmp[type_id] += desc.size();
+                                tmp[type_id] += desc.size();
                             }
                         }
                     }
@@ -813,8 +834,8 @@ class scalar_data_layer {
     logical_t nan(const std::vector<std::string>& colnames) const {
         fdapde_assert(colnames.size() > 0, std::invalid_argument, "column selection must not be empty");
         size_t n_rows = rows_, n_cols = 0;
-	std::vector<std::size_t> offset;
-	offset.push_back(0);
+        std::vector<std::size_t> offset;
+        offset.push_back(0);
         for (const std::string& col : colnames) {
             fdapde_assert(has_column_(col), std::out_of_range, "column name not found");
             offset.push_back(offset.back() + header_.at(col_idx_.at(col)).size());
@@ -832,7 +853,7 @@ class scalar_data_layer {
     }
     size_t rows() const { return rows_; }
     size_t cols() const { return cols_; }
-    size_t size() const { return rows_* cols_; }
+    size_t size() const { return rows_ * cols_; }
     // maximum number of elements of type T which can currently be holded
     template <typename T> size_t capacity() const { return fetch_<mapped_type_t<T>>(data_).size(); }
 
@@ -876,12 +897,16 @@ class scalar_data_layer {
     }
     template <typename LogicalPred>
         requires(
-	  requires(LogicalPred pred, index_t i) { { pred(i) } -> std::convertible_to<bool>; } ||
-          requires(LogicalPred pred, index_t i) { { pred[i] } -> std::convertible_to<bool>; })
+          requires(LogicalPred pred, index_t i) {
+              { pred(i) } -> std::convertible_to<bool>;
+          } ||
+          requires(LogicalPred pred, index_t i) {
+              { pred[i] } -> std::convertible_to<bool>;
+          })
     random_access_row_view<const scalar_data_layer> select(LogicalPred&& pred) const {
         return random_access_row_view<const scalar_data_layer>(this, std::forward<LogicalPred>(pred));
     }
-  
+
     template <typename T> const data_table<T>& data() const { return fetch_<mapped_type_t<T>>(data_); }
     template <typename T> data_table<T>& data() { return fetch_<mapped_type_t<T>>(data_); }
     // modifiers
@@ -903,18 +928,18 @@ class scalar_data_layer {
         }
         data.resize(static_cast<index_t>(exts)...);   // resize storage discarding old values
         fdapde_assert(
-          rows_ == 0 || rows_ == data.extent(0), std::invalid_argument,
+          rows_ == 0 || std::cmp_equal(rows_, data.extent(0)), std::invalid_argument,
           "resized row count must match existing columns");
         rows_ = data.extent(0);
         dtype type_id = internals::dtype_from_static_type<Scalar>().type_id;
         freemem_[type_id].resize(data.extent(1));
-	// invalidate memory
+        // invalidate memory
         for (typename std::vector<bool>::reference b : freemem_[type_id]) { b = true; }
         for (auto it = header_.begin(); it != header_.end();) {
             if (it->type_id() == type_id) {
                 col_idx_.erase(it->colname());
                 it = header_.erase(it);
-		cols_--;
+                cols_--;
             } else {
                 ++it;
             }
@@ -926,7 +951,7 @@ class scalar_data_layer {
         requires(std::is_convertible_v<Extents_, index_t> && ...) &&
                 (sizeof...(Extents_) == Order && is_type_supported_v<Scalar>)
     void conservative_resize(Extents_... exts) {
-        using mem_t = MdArray<Scalar, full_dynamic_extent_t<Order>, internals::layout_left>;
+        using mem_t = MdArray<Scalar, full_dynamic_extent_t<Order>, ColMajor>;
         auto& data = fetch_<Scalar>(data_);
         if (internals::apply_index_pack<Order>([&]<int... Ns_>() { return ((exts == data.extent(Ns_)) && ...); })) {
             return;   // exts coincide with current size, skip resizing
@@ -939,25 +964,26 @@ class scalar_data_layer {
                   exts_[Ns] = std::min(ts, fetch_<Scalar>(data_).extent(Ns)) - 1;
               },
               exts...);
-            mem_t tmp = internals::apply_index_pack<Order>(   // copy old values
-              [&, this]<int... Ns>() { return fetch_<Scalar>(data_).block(std::make_pair(0, exts_[Ns])...); });
+            mem_t tmp(
+              internals::apply_index_pack<Order>(   // copy old values
+                [&, this]<int... Ns>() { return fetch_<Scalar>(data_).block(std::make_pair(0, exts_[Ns])...); }));
             int old_size = tmp.extent(1);
             // allocate memory
             data.resize(static_cast<index_t>(exts)...);
-	    int new_size = data.extent(1);
-        fdapde_assert(
-          rows_ == 0 || rows_ == data.extent(0), std::invalid_argument,
-          "resized row count must match existing columns");
-        rows_ = data.extent(0);
-	    // flag new memory as free
+            int new_size = data.extent(1);
+            fdapde_assert(
+              rows_ == 0 || std::cmp_equal(rows_, data.extent(0)), std::invalid_argument,
+              "resized row count must match existing columns");
+            rows_ = data.extent(0);
+            // flag new memory as free
             for (int i = 0; i < new_size - old_size; ++i) { freemem_[type_id].push_back(true); }
             fetch_<Scalar>(data_)
               .block(std::make_pair(0, exts_[0]), std::make_pair(0, exts_[1]))
-              .assign_inplace_from(tmp);	    
-        } else {   // nothing to copy
+              .assign_inplace_from(tmp);
+        } else {                                          // nothing to copy
             data.resize(static_cast<index_t>(exts)...);   // resize storage discarding old values
             fdapde_assert(
-              rows_ == 0 || rows_ == data.extent(0), std::invalid_argument,
+              rows_ == 0 || std::cmp_equal(rows_, data.extent(0)), std::invalid_argument,
               "resized row count must match existing columns");
             rows_ = data.extent(0);
             freemem_[type_id].resize(data.extent(1));
@@ -974,7 +1000,7 @@ class scalar_data_layer {
         using SrcType_ = mapped_type_t<SrcType>;
         if constexpr (!std::is_pointer_v<Src>) {
             fdapde_assert(
-              fetch_<SrcType_>(data_).extent(0) == 0 || src.size() == fetch_<SrcType_>(data_).extent(0),
+              fetch_<SrcType_>(data_).extent(0) == 0 || std::cmp_equal(src.size(), fetch_<SrcType_>(data_).extent(0)),
               std::invalid_argument, "appended data row count must match existing columns");
         }
         fdapde_assert(!has_column_(colname), std::invalid_argument, "column name already exists");
@@ -1001,7 +1027,9 @@ class scalar_data_layer {
         col_idx_[colname] = header_.size() - 1;
         freemem_[type_id][offset] = false;
         // copy src into data_
-        fetch_<SrcType_>(data_).template slice<1>(offset).assign_inplace_from(src);
+        for (int row = 0; row < static_cast<int>(src.size()); ++row) {
+            fetch_<SrcType_>(data_)(row, offset) = src[row];
+        }
         cols_++;
         if (rows_ == 0) { rows_ = src.size(); }
         return;
@@ -1039,7 +1067,9 @@ class scalar_data_layer {
         col_idx_[colname] = header_.size() - 1;
         for (int i = 0; i < src.cols(); ++i) { freemem_[type_id][offset + i] = false; }
         // copy src into data_
-        fetch_<SrcType_>(data_).block(full_extent, std::pair{offset, offset + src.cols() - 1}).assign_inplace_from(src);
+        for (int r = 0; r < src.rows(); ++r) {
+            for (int c = 0; c < src.cols(); ++c) { fetch_<SrcType_>(data_)(r, offset + c) = src(r, c); }
+        }
         cols_++;
         if (rows_ == 0) { rows_ = src.rows(); }
         return;
@@ -1056,13 +1086,13 @@ class scalar_data_layer {
         // adjust header to put colname at index
         field tmp = header_[index];
         header_[index] = header_[col_idx_[colname]];
-	col_idx_[colname] = index;
+        col_idx_[colname] = index;
         for (size_t i = index + 1; i < cols_; ++i) {
             field cur = header_[i];
             header_[i] = tmp;
-	    col_idx_[tmp.colname()] = i;
+            col_idx_[tmp.colname()] = i;
             tmp = cur;
-	}
+        }
     }
     // do not perform any memory reallocation, sets the corresponding freemem_ bits to 1 and update header
     void erase(const std::string& colname) {
@@ -1079,15 +1109,16 @@ class scalar_data_layer {
     template <typename T> void merge(const std::string& colname) {
         using MappedT = mapped_type_t<T>;
         dtype type_id = internals::dtype_from_static_type<MappedT>().type_id;
-	int size = 0, index = -1;;
+        int size = 0, index = -1;
+        ;
         // erase all columns of type T from header
         for (auto it = header_.begin(); it != header_.end();) {
             if (it->type_id() == type_id) {
                 if (index == -1) { index = col_idx_.at(it->colname()); }
                 col_idx_.erase(it->colname());
                 it = header_.erase(it);
-		cols_--;
-		size++;
+                cols_--;
+                size++;
             } else {
                 ++it;
             }
@@ -1095,16 +1126,16 @@ class scalar_data_layer {
         if (index == -1) { return; }   // nothing to merge
         // update header
         header_.emplace_back(colname, 0, size, type_id);
-	cols_++;
-	col_idx_[colname] = index;
-	return;
+        cols_++;
+        col_idx_[colname] = index;
+        return;
     }
 
     // output stream
     friend std::ostream& operator<<(std::ostream& os, const scalar_data_layer& data) {
         std::vector<std::vector<std::string>> out;
         std::vector<std::size_t> max_size(data.header().size(), 0);
-	int n_rows = std::min(size_t(8), data.rows());
+        int n_rows = std::min(size_t(8), data.rows());
         int n_cols = data.cols();
         if (n_cols == 0) { return os; }   // empty frame, nothing to print
         out.resize(n_cols);
@@ -1136,18 +1167,18 @@ class scalar_data_layer {
         for (int i = 0, n = n_cols; i < n; ++i) {
             const auto& desc = data.header()[i];
             dtype coltype = desc.type_id();
-            if (coltype == dtype::flt64) { print.template operator()<double      >(out[i], "flt64", desc); }
-            if (coltype == dtype::flt32) { print.template operator()<float       >(out[i], "flt32", desc); }
+            if (coltype == dtype::flt64) { print.template operator()<double>(out[i], "flt64", desc); }
+            if (coltype == dtype::flt32) { print.template operator()<float>(out[i], "flt32", desc); }
             if (coltype == dtype::int64) { print.template operator()<std::int64_t>(out[i], "int64", desc); }
             if (coltype == dtype::int32) { print.template operator()<std::int32_t>(out[i], "int32", desc); }
-            if (coltype == dtype::bin)   { print.template operator()<bool        >(out[i], "bin"  , desc); }
-            if (coltype == dtype::str)   { print.template operator()<std::string >(out[i], "str"  , desc); }
+            if (coltype == dtype::bin) { print.template operator()<bool>(out[i], "bin", desc); }
+            if (coltype == dtype::str) { print.template operator()<std::string>(out[i], "str", desc); }
         }
         // pretty format (compute maximum number of chars to print)
         for (int i = 0, n = n_cols; i < n; ++i) {
             for (int j = 0, m = n_rows + 2; j < m; ++j) { max_size[i] = std::max(max_size[i], out[i][j].size()); }
         }
-	// pad with spaces
+        // pad with spaces
         for (int i = 0, n = n_cols; i < n; ++i) {
             for (int j = 0, m = out[i].size(); j < m; ++j) {
                 out[i][j].insert(0, max_size[i] - out[i][j].size() + (i == 0 ? 0 : 1), ' ');
@@ -1159,14 +1190,14 @@ class scalar_data_layer {
                     posmax = std::max(posmax, out[i][j].size() - out[i][j].find(" ... ") - 5);
                     posmin.push_back(out[i][j].size() - out[i][j].find(" ... ") - 5);
                 }
-		// align " ... " pattern
+                // align " ... " pattern
                 for (int j = 2, m = out[i].size(); j < m; ++j) {
                     out[i][j].insert(out[i][j].size() - posmin[j - 2], std::string(posmax - posmin[j - 2], ' '));
                     out[i][j].erase(0, posmax - posmin[j - 2]);   // remove eventual extra chars
                 }
             }
         }
-	// send to output stream
+        // send to output stream
         for (int j = 0, m = out[0].size(); j < m - 1; ++j) {
             for (int i = 0, n = n_cols; i < n; ++i) { os << out[i][j]; }
             os << std::endl;
@@ -1229,8 +1260,8 @@ template <typename DataLayer>
 std::ostream& operator<<(std::ostream& os, const internals::plain_row_view<DataLayer>& row) {
     return operator<<(os, row.data().select({row.id()}));
 }
-  
+
 }   // namespace internals
 }   // namespace fdapde
 
-#endif // __FDAPDE_DATA_LAYER_H__
+#endif   // __FDAPDE_DATA_LAYER_H__

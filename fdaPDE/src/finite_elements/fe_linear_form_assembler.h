@@ -21,7 +21,7 @@
 
 namespace fdapde {
 namespace internals {
-  
+
 // assembly loop for the discretization of integrals \int_D \langle f, \psi_i \rangle, with \psi_i \in test space
 template <typename Triangulation_, typename Form_, int Options_, typename... Quadrature_>
 class fe_linear_form_assembly_loop :
@@ -38,11 +38,12 @@ class fe_linear_form_assembly_loop :
     static constexpr int n_components = Base::n_components;
     using Base::dof_handler_;
     using Base::form_;
-  
+
     fe_linear_form_assembly_loop() = default;
     fe_linear_form_assembly_loop(
       const Form_& form, typename Base::fe_traits::geo_iterator begin, typename Base::fe_traits::geo_iterator end,
-      const Quadrature_&... quadrature) requires(sizeof...(quadrature) <= 1)
+      const Quadrature_&... quadrature)
+        requires(sizeof...(quadrature) <= 1)
         : Base(form, begin, end, quadrature...) { }
 
     Eigen::Matrix<double, Dynamic, 1> assemble() const {
@@ -54,7 +55,7 @@ class fe_linear_form_assembly_loop :
     void assemble(Eigen::Matrix<double, Dynamic, 1>& assembled_vec) const {
         using iterator = typename Base::fe_traits::dof_iterator;
         iterator begin(Base::begin_.index(), dof_handler_, Base::begin_.marker());
-        iterator end  (Base::end_.index(),   dof_handler_, Base::end_.marker()  );
+        iterator end(Base::end_.index(), dof_handler_, Base::end_.marker());
         // prepare assembly loop
         Eigen::Matrix<int, Dynamic, 1> active_dofs;
         MdArray<double, MdExtents<n_basis, n_quadrature_nodes, embed_dim, n_components>> test_grads;
@@ -64,7 +65,7 @@ class fe_linear_form_assembly_loop :
         }
         // start assembly loop
         internals::fe_assembler_packet<embed_dim> fe_packet(Base::n_components);
-	int local_cell_id = 0;
+        int local_cell_id = 0;
         for (iterator it = begin; it != end; ++it) {
             fe_packet.measure = it->measure();
             if constexpr (Form::XprBits & int(geo_assembler_flags::compute_geo_id)) { fe_packet.geo_id = it->id(); }
@@ -82,9 +83,9 @@ class fe_linear_form_assembly_loop :
                 double value = 0;
                 for (int q_k = 0; q_k < n_quadrature_nodes; ++q_k) {
                     // update fe_packet
-                    fe_packet.test_value.assign_inplace_from(Base::test_shape_values_.template slice<0, 1>(i, q_k));
+                    fe_packet.test_value = Base::test_shape_values_.template slice<0, 1>(i, q_k);
                     if constexpr (Form::XprBits & int(fe_assembler_flags::compute_shape_grad)) {
-                        fe_packet.test_grad.assign_inplace_from(test_grads.template slice<0, 1>(i, q_k));
+                        fe_packet.test_grad = test_grads.template slice<0, 1>(i, q_k);
                     }
                     if constexpr (Form::XprBits & int(fe_assembler_flags::compute_physical_quad_nodes)) {
                         fe_packet.quad_node_id = local_cell_id * n_quadrature_nodes + q_k;
@@ -93,7 +94,7 @@ class fe_linear_form_assembly_loop :
                 }
                 assembled_vec[active_dofs[i]] += value * fe_packet.measure;
             }
-	    local_cell_id++;
+            local_cell_id++;
         }
         return;
     }
@@ -101,7 +102,7 @@ class fe_linear_form_assembly_loop :
     constexpr int rows() const { return n_dofs(); }
     constexpr int cols() const { return 1; }
 };
-  
+
 }   // namespace internals
 }   // namespace fdapde
 

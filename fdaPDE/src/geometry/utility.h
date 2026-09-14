@@ -31,6 +31,21 @@ namespace fdapde {
 
 namespace internals {
 
+/// @brief constructs a mask for entries carrying the requested marker
+inline Vector<bool, Dynamic> marker_mask(const std::vector<int>& markers, int marker) {
+    Vector<bool, Dynamic> result(markers.size());
+    for (int i = 0; i < result.size(); ++i) { result[i] = markers[i] == marker; }
+    return result;
+}
+
+/// @brief selects boundary entries carrying the requested marker
+inline Vector<bool, Dynamic>
+marked_boundary(const Vector<bool, Dynamic>& boundary, const std::vector<int>& markers, int marker) {
+    Vector<bool, Dynamic> result(boundary.rows());
+    for (int i = 0; i < boundary.rows(); ++i) { result[i] = boundary[i] && markers[i] == marker; }
+    return result;
+}
+
 // sorts a range of points in clockwise order around their geometrical center
 template <typename T> struct clockwise_order {
    private:
@@ -66,7 +81,13 @@ template <typename IteratorType, typename ValueType> class index_iterator {
 
     index_iterator() = default;
     index_iterator(int index, int begin, int end) : index_(index), begin_(begin), end_(end) { }
-    reference operator*() { if constexpr(std::is_pointer_v<ValueType>) { return *val_; } else { return val_; } }
+    reference operator*() {
+        if constexpr (std::is_pointer_v<ValueType>) {
+            return *val_;
+        } else {
+            return val_;
+        }
+    }
     const reference operator*() const {
         if constexpr (std::is_pointer_v<ValueType>) {
             return *val_;
@@ -74,7 +95,13 @@ template <typename IteratorType, typename ValueType> class index_iterator {
             return val_;
         }
     }
-    pointer operator->() { if constexpr(std::is_pointer_v<ValueType>) { return val_; } else { return &val_; } }
+    pointer operator->() {
+        if constexpr (std::is_pointer_v<ValueType>) {
+            return val_;
+        } else {
+            return &val_;
+        }
+    }
     const pointer operator->() const {
         if constexpr (std::is_pointer_v<ValueType>) {
             return val_;
@@ -123,11 +150,11 @@ class filtering_iterator : public index_iterator<IteratorType, ValueType> {
     using Base = index_iterator<IteratorType, ValueType>;
    protected:
     using Base::index_;
-    BinaryVector<Dynamic> filter_;
+    Vector<bool, Dynamic> filter_;
    public:
     filtering_iterator() = default;
     filtering_iterator(int index, int begin, int end) : Base(index, begin, end) { }
-    filtering_iterator(int index, int begin, int end, const BinaryVector<Dynamic>& filter) :
+    filtering_iterator(int index, int begin, int end, const Vector<bool, Dynamic>& filter) :
         Base(index, begin, end), filter_(filter) { /* initialization is responsibility of IteratorType */ }
     IteratorType& operator++() {
         index_++;

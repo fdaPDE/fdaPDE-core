@@ -19,6 +19,8 @@
 
 // clang-format off
 
+#include "linear_algebra.h"
+
 #include <charconv>
 #include <filesystem>
 #include <fstream>
@@ -28,10 +30,6 @@
 #include "src/io/parsing.h"
 #include "src/io/csv.h"
 #include "src/io/txt.h"
-
-// geometry dependent parsing
-#include "geometry.h"    // pull geometry module first
-#include "src/io/shp.h"
 
 // clang-format on
 
@@ -50,5 +48,9 @@ internals::table_reader<T> read_table(const std::string& filename, bool header =
 }
 
 }   // namespace fdapde
+
+// geometry dependent parsing
+#include "geometry.h"   // pull geometry module first
+#include "src/io/shp.h"
 
 #endif   // __FDAPDE_IO_MODULE_H__

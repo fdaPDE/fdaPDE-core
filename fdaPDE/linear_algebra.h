@@ -55,8 +55,22 @@ template <typename XprType> constexpr bool is_eigen_sparse_xpr_v = is_eigen_spar
 }   // namespace internals
 }   // namespace fdapde
 
-// include required modules
-#include "utility.h"
+#include "dense_linear_algebra.h"
+
+namespace fdapde {
+namespace internals {
+
+/// @brief classifies Eigen vectors independently of public-header inclusion order
+template <typename T>
+    requires(is_eigen_dense_xpr_v<T>)
+class is_vector_like<T> {
+   public:
+    static constexpr bool value = is_eigen_dense_vec_v<T>;
+};
+
+}   // namespace internals
+}   // namespace fdapde
+
 #include "src/linear_algebra/utility.h"
 
 #include "src/linear_algebra/eigen_helper.h"
