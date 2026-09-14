@@ -14,8 +14,17 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#if !defined(__FDAPDE_LINEAR_ALGEBRA_MODULE_H__) && !defined(__FDAPDE_DENSE_LINEAR_ALGEBRA_MODULE_H__) &&              \
-  !defined(__FDAPDE_SPARSE_LINEAR_ALGEBRA_MODULE_H__)
-#    error                                                                                                             \
-      "Include fdaPDE/dense_linear_algebra.h, fdaPDE/sparse_linear_algebra.h or fdaPDE/linear_algebra.h instead of including internal headers directly."
-#endif
+// preserve the aggregate inclusion order exercised by this translation unit
+// clang-format off
+#include <fdaPDE/sparse_linear_algebra.h>
+#include <fdaPDE/linear_algebra.h>
+// clang-format on
+
+// the Eigen dynamic vectors retain their vector classification after both aggregates are loaded
+static_assert(fdapde::internals::is_vector_like_v<Eigen::VectorXd>);
+// the Eigen dynamic matrices remain distinct from vectors after both aggregates are loaded
+static_assert(!fdapde::internals::is_vector_like_v<Eigen::MatrixXd>);
+
+int sparse_header_order();
+// the separate translation unit must preserve the sparse coefficient across the two include orders
+int main() { return sparse_header_order() == 4 ? 0 : 1; }
