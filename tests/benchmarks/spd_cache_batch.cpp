@@ -295,6 +295,31 @@ void measure_batch_from_values() {
     print_allocation("batch_dynamic_full_from_unverified_dense", dense_source.size(), dense_full);
 }
 
+/// @brief verifies that policy expansion reuses a retained logarithm with or without a retained spectral basis
+void measure_policy_expansion() {
+    const Matrix<double, 2, 2> coefficients({3, 1, 1, 2});
+    const dynamic_none_owner none(coefficients);
+    const SPDMatrix<double, Dynamic, Dynamic, Cache::Log> logarithm(coefficients);
+    const SPDMatrix<double, Dynamic, Dynamic, Cache::Spectral> spectral(coefficients);
+    const SPDMatrix<double, Dynamic, Dynamic, Cache::Union<Cache::Spectral, Cache::Log>> spectral_log(coefficients);
+    const auto from_none = measure_construction([&] { return dynamic_full_owner(none); });
+    const auto from_log = measure_construction([&] { return dynamic_full_owner(logarithm); });
+    const auto from_spectral = measure_construction([&] { return dynamic_full_owner(spectral); });
+    const auto from_spectral_log = measure_construction([&] { return dynamic_full_owner(spectral_log); });
+    // reusing a logarithm avoids its dynamic reconstruction workspace even when the eigensystem is missing
+    fdapde_strong_assert(
+      from_log.temporary_allocations < from_none.temporary_allocations, std::logic_error,
+      "benchmark: policy expansion recomputed the retained logarithm");
+    // reusing both spectrum and logarithm also avoids the logarithm reconstruction workspace
+    fdapde_strong_assert(
+      from_spectral_log.temporary_allocations < from_spectral.temporary_allocations, std::logic_error,
+      "benchmark: spectral policy expansion recomputed the retained logarithm");
+    print_allocation("owner_dynamic_full_from_none", 1, from_none);
+    print_allocation("owner_dynamic_full_from_log", 1, from_log);
+    print_allocation("owner_dynamic_full_from_spectral", 1, from_spectral);
+    print_allocation("owner_dynamic_full_from_spectral_log", 1, from_spectral_log);
+}
+
 /// @brief measures distance, deferred weighted mean and discarded candidates for one cache policy
 template <typename Geometry> void measure_geometry(const char* suffix) {
     using Point = typename Geometry::Point;
@@ -359,6 +384,7 @@ int main() {
 
     for (const std::size_t count : {std::size_t {1}, std::size_t {64}, std::size_t {1024}}) measure_batches(count);
     measure_batch_from_values();
+    measure_policy_expansion();
     measure_geometry<no_cache_geometry>("none");
     measure_geometry<cached_geometry>("distance_base_maps");
 

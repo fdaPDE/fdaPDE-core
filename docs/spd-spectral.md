@@ -131,8 +131,11 @@ only native verified owners and views; `is_spd_matrix_v` retains its broader
 historical expression-contract meaning and does not authorize trusted bypasses.
 
 Assignment prepares coefficients and cache before commit. Copies own independent
-cache data. Same-shape assignment reuses the destination cache buffer; shape
-changes invalidate views and borrowed cache references. Owner move operations
+cache data. Policy expansion copies common quantities and computes only missing
+ones. When expansion newly pairs spectral factors with divided differences,
+the latter are rebuilt in the new basis. Same-shape assignment reuses the
+destination cache buffer; shape changes invalidate views and borrowed cache
+references. Owner move operations
 currently preserve both values by independent copying. Batch moves transfer
 aggregate buffers, as described in [MatrixBatch](matrix-batch.md).
 

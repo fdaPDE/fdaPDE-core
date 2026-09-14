@@ -160,6 +160,8 @@ TEST(SPDCache, CopiesAndMixedPoliciesPreserveIndependentQuantities) {
     cached_fixed assigned(diagonal(16, 25));
     assigned.assign(source);
     const cached_fixed copy(complete);
+    const SPDMatrix<double, 2, 2, Cache::Union<Cache::Spectral, Cache::Log>> spectral_log(complete);
+    const cached_fixed expanded(spectral_log);
 
     // a broader policy reconstructs the missing spectral quantities from the verified value
     EXPECT_NEAR(complete.cache().eigenvalues()[0] * complete.cache().eigenvalues()[1], 36, 1.0e-12);
@@ -171,6 +173,10 @@ TEST(SPDCache, CopiesAndMixedPoliciesPreserveIndependentQuantities) {
     expect_symmetric_near(assigned.cache().template matrix<Cache::Log>(), source.cache().template matrix<Cache::Log>());
     // copied owners do not share their cache buffers
     EXPECT_NE(copy.cache().data(), complete.cache().data());
+    for (std::size_t i = 0; i < cached_fixed::CacheSlot::scalar_count(2); ++i) {
+        // policy expansion preserves copied factors and reconstructs missing quantities from the same spectrum
+        EXPECT_NEAR(expanded.cache().data()[i], complete.cache().data()[i], 1e-12);
+    }
 
     const auto copy_logarithm = matrix_log(copy);
     complete.assign(diagonal(16, 25));
@@ -180,7 +186,7 @@ TEST(SPDCache, CopiesAndMixedPoliciesPreserveIndependentQuantities) {
     expect_symmetric_near(complete.cache().template matrix<Cache::Log>(), matrix_log(uncached_fixed(diagonal(16, 25))));
 }
 
-// removing and restoring a spectral basis recomputes divided differences in the restored basis
+// policy expansion skips reusable quantities and rebuilds divided differences only when pairing a new spectral basis
 TEST(SPDCache, CrossPolicyCopyKeepsSpectralAndDividedDifferenceBasesCoherent) {
     using spectral_and_differences = Cache::Union<Cache::Spectral, Cache::LogDividedDifferences>;
     using spectral_point = SPDMatrix<double, 2, 2, spectral_and_differences>;
@@ -198,6 +204,23 @@ TEST(SPDCache, CrossPolicyCopyKeepsSpectralAndDividedDifferenceBasesCoherent) {
 
     // the restored cache evaluates the noncommuting derivative in the same basis as an independent decomposition
     expect_symmetric_near(matrix_log_frechet(restored, direction), matrix_log_frechet(uncached, direction));
+
+    using differences_and_log = Cache::Union<Cache::LogDividedDifferences, Cache::Log>;
+    using slot_type = internals::spd_cache_slot<double, 2, differences_and_log>;
+    std::vector<double> storage(slot_type::scalar_count(2), -7.0);
+    slot_type slot(storage.data(), 2);
+    const EVD<SymmetricMatrix<double, 2, 2>> spectral(uncached.rep());
+    slot.prepare<Cache::LogDividedDifferences>(spectral);
+    for (int i = 0; i < 2; ++i)
+        for (int j = 0; j < 2; ++j) {
+            // missing-only preparation leaves each retained divided-difference sentinel untouched
+            EXPECT_EQ(slot.log_divided_differences()(i, j), -7.0);
+        }
+    // the missing logarithm is still reconstructed from the supplied decomposition
+    expect_symmetric_near(slot.template matrix<Cache::Log>(), matrix_log(uncached));
+    const SPDMatrix<double, 2, 2, differences_and_log> expanded(without_basis);
+    // expansion without a retained spectral basis preserves the source divided-difference table
+    expect_symmetric_near(expanded.cache().log_divided_differences(), without_basis.cache().log_divided_differences());
 }
 
 // cache-backed spectral primitives agree with uncached paths at a repeated spectrum
@@ -250,9 +273,22 @@ TEST(SPDCache, ViewsPreserveReadOnlyAccessAndValueAssignment) {
     EXPECT_NEAR(view.cache().template matrix<Cache::Log>()(1, 1), std::log(25), 1.0e-12);
 }
 
-// rejected replacement leaves both coefficients and selected cache quantities unchanged
+// ordinary matrix combinations remain unchecked expressions and failed replacements preserve coefficients and cache
 TEST(SPDCache, FailedAssignmentProvidesOwnerAndViewStrongGuarantees) {
     cached_fixed owner(diagonal(4, 9));
+    const uncached_fixed other(diagonal(16, 25));
+    const auto combination = 2.0 * owner + (-1.0) * other;
+    // scalar products and sums stay in the native matrix-expression family
+    static_assert(std::derived_from<decltype(combination), MatrixExpr<std::remove_cvref_t<decltype(combination)>>>);
+    // an arbitrary weighted sum of SPD owners is not itself a verified SPD value
+    static_assert(!SPDLike<decltype(combination)>);
+    // ordinary arithmetic does not acquire the broader SPD expression tag either
+    static_assert(!is_spd_matrix_v<decltype(combination)>);
+    const Matrix<double, 2, 2> dense_combination(combination);
+    // ordinary dense materialization preserves negative diagonal entries without imposing positivity
+    expect_symmetric_near(dense_combination, diagonal(-8, -7));
+    // SPD materialization checks and rejects the same nonpositive matrix expression
+    EXPECT_THROW((cached_fixed(combination)), std::domain_error);
     auto view = owner.view();
     const auto saved_owner = owner;
     const std::vector<double> saved_cache(

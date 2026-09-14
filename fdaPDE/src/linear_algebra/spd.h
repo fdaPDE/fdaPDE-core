@@ -336,13 +336,18 @@ class spd_matrix_impl : public SPDMatrixExpr<spd_matrix_impl<Scalar_, Rows_, Col
             if constexpr ((SourcePolicy::Flags & CachePolicy::Flags) == CachePolicy::Flags) {
                 cache_->slot.copy_common(rhs.cache());
             } else if constexpr (spd_cache_has_v<SourcePolicy, Cache::Spectral>) {
-                cache_->slot.prepare(rhs.cache());
+                cache_->slot.template prepare<SourcePolicy>(rhs.cache());
                 cache_->slot.copy_common(rhs.cache());
             } else {
                 const EVD<StorageType> evd(data_);
                 fdapde_strong_assert(evd.computed(), std::domain_error, "SPDMatrix: eigendecomposition failed");
-                cache_->slot.prepare(evd);
-                if constexpr (SourcePolicy::Flags != 0) cache_->slot.template copy_common<false>(rhs.cache());
+                // a newly retained basis requires its own divided differences instead of an unpaired source table
+                constexpr bool pairs_e_l = spd_cache_has_v<CachePolicy, Cache::Spectral> &&
+                                           spd_cache_has_v<CachePolicy, Cache::LogDividedDifferences>;
+                using ReusablePolicy =
+                  Cache::Policy<SourcePolicy::Flags & ~(pairs_e_l ? Cache::LogDividedDifferences::Flags : 0u)>;
+                cache_->slot.template prepare<ReusablePolicy>(evd);
+                if constexpr (SourcePolicy::Flags != 0) cache_->slot.template copy_common<!pairs_e_l>(rhs.cache());
             }
         }
     }

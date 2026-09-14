@@ -159,21 +159,24 @@ template <typename Scalar_, int Order_, typename Policy_> class spd_cache_slot {
             std::fill_n(data_ + offset_<Cache::LogDividedDifferences>(), std::size_t(order_) * order_, Scalar(1));
         }
     }
-    /// @brief prepares only selected quantities from a single certified eigendecomposition
-    template <typename Spectral> void prepare(const Spectral& spectral) {
+    /// @brief prepares selected quantities absent from the reusable policy using one certified eigendecomposition
+    template <typename ReusablePolicy = Cache::None, typename Spectral> void prepare(const Spectral& spectral) {
+        using Missing = Cache::Policy<CachePolicy::Flags & ~ReusablePolicy::Flags>;
         const auto vectors = spectral.eigenvectors();
         const auto& values = spectral.eigenvalues();
-        if constexpr (Has<Cache::Spectral>) {
+        if constexpr (spd_cache_has_v<Missing, Cache::Spectral>) {
             for (int i = 0; i < order_; ++i) {
                 for (int j = 0; j < order_; ++j) data_[std::size_t(i) * order_ + j] = vectors(i, j);
                 data_[std::size_t(order_) * order_ + i] = values[i];
             }
         }
-        if constexpr (Has<Cache::Log>) prepare_matrix_<Cache::Log>(spectral, [](Scalar x) { return std::log(x); });
-        if constexpr (Has<Cache::Sqrt>) prepare_matrix_<Cache::Sqrt>(spectral, [](Scalar x) { return std::sqrt(x); });
-        if constexpr (Has<Cache::InverseSqrt>)
+        if constexpr (spd_cache_has_v<Missing, Cache::Log>)
+            prepare_matrix_<Cache::Log>(spectral, [](Scalar x) { return std::log(x); });
+        if constexpr (spd_cache_has_v<Missing, Cache::Sqrt>)
+            prepare_matrix_<Cache::Sqrt>(spectral, [](Scalar x) { return std::sqrt(x); });
+        if constexpr (spd_cache_has_v<Missing, Cache::InverseSqrt>)
             prepare_matrix_<Cache::InverseSqrt>(spectral, [](Scalar x) { return Scalar(1) / std::sqrt(x); });
-        if constexpr (Has<Cache::LogDividedDifferences>) {
+        if constexpr (spd_cache_has_v<Missing, Cache::LogDividedDifferences>) {
             for (int i = 0; i < order_; ++i) {
                 for (int j = 0; j < order_; ++j) {
                     const Scalar x = values[i], y = values[j];

@@ -115,5 +115,7 @@ control, and checks constant aggregate allocation counts for 1, 64 and 1024
 static/dynamic SPD elements. It separately measures construction from supplied
 values, including transient validation/cache preparation work. Timing reports
 medians of seven sequential runs and consumes results through a checksum.
+Policy-expansion probes compare sources with and without a retained logarithm,
+both with and without spectral factors, to detect repeated reconstruction work.
 Results are workload/toolchain dependent; the discarded-candidate measurement
 includes cache preparation whose benefit is never used.

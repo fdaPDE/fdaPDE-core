@@ -18,6 +18,7 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <cmath>
 #include <limits>
 #include <type_traits>
 #include <utility>
@@ -145,7 +146,7 @@ TEST(MatrixBatch, InitializesContiguousCachedSPDIdentitySlots) {
     }
 }
 
-// copies and moves retain independent cache storage while preserving coefficient values
+// copies, moves and swaps preserve coefficient values and their independent aggregate cache bindings
 TEST(MatrixBatch, CopiesAndMovesRebuildCachedSlotBindings) {
     MatrixBatch<cached_point> source(2);
     const Matrix<double, 2, 2> replacement({4, 0, 0, 9});
@@ -174,6 +175,44 @@ TEST(MatrixBatch, CopiesAndMovesRebuildCachedSlotBindings) {
     EXPECT_TRUE(source.coefficients().empty());
     // moved-from batches expose no cache pointers into the moved-to owner
     EXPECT_TRUE(source.cache_pointers().empty());
+
+    using dynamic_cached_point = SPDMatrix<double, Dynamic, Dynamic, full_cache>;
+    MatrixBatch<dynamic_cached_point> dynamic_source(2, 2, 2);
+    dynamic_source[0].assign(Matrix<double, 2, 2>({4, 0, 0, 9}));
+    dynamic_source[1].assign(Matrix<double, 2, 2>({16, 0, 0, 25}));
+    const MatrixBatch<dynamic_cached_point> dynamic_copy(dynamic_source);
+    // dynamic copies bind their first cache slot to an independent aggregate buffer
+    EXPECT_NE(dynamic_copy.cache_pointers()[0]->data(), dynamic_source.cache_pointers()[0]->data());
+    // dynamic copies retain the first coefficient row with its matching cache slot
+    EXPECT_EQ(dynamic_copy[0].cache().data(), dynamic_copy.cache_pointers()[0]->data());
+    // the copied first cache logarithm matches the retained coefficient nine
+    EXPECT_DOUBLE_EQ(dynamic_copy[0].cache().template matrix<Cache::Log>()(1, 1), std::log(9));
+    // dynamic copies retain the second coefficient row with its matching cache slot
+    EXPECT_EQ(dynamic_copy[1].cache().data(), dynamic_copy.cache_pointers()[1]->data());
+    // dynamic copies preserve their two-row runtime shape
+    EXPECT_EQ(dynamic_copy[1].rows(), 2);
+
+    MatrixBatch<dynamic_cached_point> dynamic_moved(std::move(dynamic_source));
+    // dynamic moves preserve the first coefficient and cache association
+    EXPECT_EQ(dynamic_moved[0].cache().data(), dynamic_moved.cache_pointers()[0]->data());
+    // the moved first cache logarithm remains associated with coefficient nine
+    EXPECT_DOUBLE_EQ(dynamic_moved[0].cache().template matrix<Cache::Log>()(1, 1), std::log(9));
+    // dynamic moves preserve the second coefficient and cache association
+    EXPECT_EQ(dynamic_moved[1].cache().data(), dynamic_moved.cache_pointers()[1]->data());
+    MatrixBatch<dynamic_cached_point> dynamic_other(1, 3, 3);
+    dynamic_moved.swap(dynamic_other);
+    // swapping dynamic batches transfers the three-row identity shape metadata
+    EXPECT_EQ(dynamic_moved[0].rows(), 3);
+    // swapped three-row identities keep the known zero logarithm in their transferred cache slot
+    EXPECT_DOUBLE_EQ(dynamic_moved[0].cache().template matrix<Cache::Log>()(2, 2), 0);
+    // swapped dynamic batches rebind the transferred three-row cache slot to its new owner
+    EXPECT_EQ(dynamic_moved[0].cache().data(), dynamic_moved.cache_pointers()[0]->data());
+    // swapped-from dynamic batches retain the original two-row first coefficient row
+    EXPECT_EQ(dynamic_other[0](0, 0), 4);
+    // swapped-from dynamic batches retain the logarithm associated with coefficient nine
+    EXPECT_DOUBLE_EQ(dynamic_other[0].cache().template matrix<Cache::Log>()(1, 1), std::log(9));
+    // swapped-from dynamic batches rebind the original first cache slot to their new owner
+    EXPECT_EQ(dynamic_other[0].cache().data(), dynamic_other.cache_pointers()[0]->data());
 }
 
 // cache-free batches have no cache-bearing layout state and ordinary entries remain writable
@@ -190,7 +229,7 @@ TEST(MatrixBatch, UsesNoCachePolicyForOrdinaryMatrices) {
     EXPECT_EQ(values[0](0, 0), 7);
 }
 
-// deferred maps evaluate only requested elements and normalize scalar results to one-by-one matrices
+// deferred maps preserve result structure and laziness, including known and unknown empty-result shapes
 TEST(MatrixBatch, MapsLazilyAndPreservesResultStructure) {
     MatrixBatch<Matrix<double, 2, 2>> values(3);
     for (std::size_t i = 0; i < values.size(); ++i) values.coefficients()[i * 4] = static_cast<double>(i + 1);
@@ -235,9 +274,30 @@ TEST(MatrixBatch, MapsLazilyAndPreservesResultStructure) {
     EXPECT_EQ(stateful[0](0, 0), 1);
     // later evaluations observe the mutable callable state retained by the map expression
     EXPECT_EQ(stateful[1](0, 0), 3);
+
+    const MatrixBatch<Matrix<double, 2, 2>> empty;
+    int empty_calls = 0;
+    const auto empty_map = empty.map([&empty_calls](const auto&) {
+        ++empty_calls;
+        return Matrix<double, 1, 1>(0);
+    });
+    MatrixBatch<Matrix<double, 1, 1>> empty_result(empty_map);
+    // an empty fixed-shape map materializes an empty result without calling its callable
+    EXPECT_TRUE(empty_result.empty());
+    // fixed scalar map results preserve their one-row shape when no source value exists
+    EXPECT_EQ(empty_result.rows(), 1);
+    // fixed scalar map results preserve their one-column shape when no source value exists
+    EXPECT_EQ(empty_result.cols(), 1);
+    // empty materialization does not evaluate the deferred callable
+    EXPECT_EQ(empty_calls, 0);
+
+    const MatrixBatch<Matrix<double, Dynamic, Dynamic>> dynamic_empty(0, 2, 2);
+    const auto dynamic_map = dynamic_empty.map([](const auto&) { return Matrix<double, Dynamic, Dynamic>(1, 1); });
+    // empty dynamic map materialization rejects the result shape that no source value can establish
+    EXPECT_THROW((MatrixBatch<Matrix<double, Dynamic, Dynamic>>(dynamic_map)), std::invalid_argument);
 }
 
-// reductions run in index order and preserve the supplied initializer for empty batches
+// reductions preserve index order and empty initializers while fused maps observe current values without memoization
 TEST(MatrixBatch, ReducesInOrderAndHandlesEmptyBatches) {
     MatrixBatch<Matrix<int, 1, 1>> values(3);
     values.coefficients()[0] = 1;
@@ -252,6 +312,22 @@ TEST(MatrixBatch, ReducesInOrderAndHandlesEmptyBatches) {
     EXPECT_EQ(ordered, 123);
     // redux returns init when no source elements exist
     EXPECT_EQ(untouched, 17);
+
+    int calls = 0;
+    const auto fused = values.map([&calls](const auto& value) {
+        ++calls;
+        return value(0, 0);
+    });
+    values.coefficients()[1] = 20;
+    const auto observed = fused.redux(0, [](int accumulator, const auto& value) { return accumulator + value(0, 0); });
+    // fused redux invokes the mapped callable once for each source element
+    EXPECT_EQ(calls, 3);
+    // fused redux observes source coefficients changed after map creation and before evaluation
+    EXPECT_EQ(observed, 24);
+    // a later indexed map evaluation invokes the callable once more without memoization
+    EXPECT_EQ(fused[1](0, 0), 20);
+    // the indexed reevaluation increments the same callable visit counter
+    EXPECT_EQ(calls, 4);
 }
 
 // selections copy index values while borrowing original coefficient and cache storage in the requested order
@@ -284,8 +360,8 @@ TEST(MatrixBatch, SelectsSharedEntriesWithCopiedIndices) {
 TEST(MatrixBatch, PreservesAssignedSPDValueAfterFailure) {
     MatrixBatch<cached_point> points(1);
     points[0].assign(Matrix<double, 2, 2>({4, 0, 0, 9}));
-    const auto before = points[0];
-    const auto cache_before = before.cache().template matrix<Cache::Log>();
+    const cached_point before(points[0]);
+    const SymmetricMatrix<double, 2, 2> cache_before(points[0].cache().template matrix<Cache::Log>());
     const Matrix<double, 2, 2> indefinite({-1, 0, 0, 1});
 
     // checked element assignment rejects a nonpositive-definite candidate
@@ -294,6 +370,26 @@ TEST(MatrixBatch, PreservesAssignedSPDValueAfterFailure) {
     expect_matrix_eq(points[0], before);
     // failed assignment retains the previous prepared logarithm
     expect_matrix_eq(points[0].cache().template matrix<Cache::Log>(), cache_before);
+}
+
+// assignment between batch SPD views transfers a verified value without rebinding destination storage
+TEST(MatrixBatch, AssignsAliasedSPDViewsByValue) {
+    MatrixBatch<cached_point> points(2);
+    points[0].assign(Matrix<double, 2, 2>({4, 0, 0, 9}));
+    points[1].assign(Matrix<double, 2, 2>({16, 0, 0, 25}));
+    const auto* const destination_coefficients = points[0].data();
+    const auto* const destination_cache = points[0].cache().data();
+    const cached_point source_value(points[1]);
+
+    points[0] = points[1];
+    // view-to-view assignment retains the destination coefficient row binding
+    EXPECT_EQ(points[0].data(), destination_coefficients);
+    // view-to-view assignment retains the destination cache slot binding
+    EXPECT_EQ(points[0].cache().data(), destination_cache);
+    // view-to-view assignment copies all verified source coefficients by value
+    expect_matrix_eq(points[0], source_value);
+    // view-to-view assignment refreshes logarithms in the destination cache slot
+    EXPECT_DOUBLE_EQ(points[0].cache().template matrix<Cache::Log>()(1, 1), std::log(25));
 }
 
 // public boundaries reject invalid indices and dimension or coefficient allocation overflows

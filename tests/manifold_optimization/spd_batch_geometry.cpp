@@ -19,6 +19,7 @@
 
 #include <array>
 #include <cmath>
+#include <limits>
 #include <type_traits>
 #include <utility>
 
@@ -30,8 +31,17 @@ using namespace fdapde::manifold;
 using log_geometry = LogEuclideanSPDGeometry<double, 2>;
 using log_distance_geometry = LogEuclideanSPDGeometry<double, 2, Usage::Distance>;
 using log_tangent_geometry = LogEuclideanSPDGeometry<double, 2, Usage::TangentMetric>;
+using log_interpolation_geometry = LogEuclideanSPDGeometry<double, 2, Usage::InterpolationNodes>;
+using log_differential_geometry = LogEuclideanSPDGeometry<double, 2, Usage::LogExpDifferentials>;
+using log_base_point_geometry = LogEuclideanSPDGeometry<double, 2, Usage::BasePointMaps>;
+using log_distance_tangent_geometry = LogEuclideanSPDGeometry<double, 2, Usage::Distance | Usage::TangentMetric>;
 using airm_distance_geometry = AffineInvariantSPDGeometry<double, 2, Usage::Distance>;
+using airm_tangent_geometry = AffineInvariantSPDGeometry<double, 2, Usage::TangentMetric>;
+using airm_interpolation_geometry = AffineInvariantSPDGeometry<double, 2, Usage::InterpolationNodes>;
+using airm_differential_geometry = AffineInvariantSPDGeometry<double, 2, Usage::LogExpDifferentials>;
 using airm_base_geometry = AffineInvariantSPDGeometry<double, 2, Usage::BasePointMaps>;
+using airm_distance_differential_geometry =
+  AffineInvariantSPDGeometry<double, 2, Usage::Distance | Usage::LogExpDifferentials>;
 using point_batch = MatrixBatch<log_geometry::Point>;
 using weights_type = Matrix<double, 2, 1>;
 using complete_cache =
@@ -49,10 +59,36 @@ static_assert(log_distance_geometry::CachePolicy::Flags == Cache::Log::Flags);
 // tangent metric reuse retains one coherent spectral basis and logarithmic divided differences
 static_assert(
   log_tangent_geometry::CachePolicy::Flags == (Cache::Spectral::Flags | Cache::LogDividedDifferences::Flags));
+// interpolation-node reuse retains its logarithmic chart without unrelated spectral data
+static_assert(log_interpolation_geometry::CachePolicy::Flags == Cache::Log::Flags);
+// differential reuse retains the spectral basis and logarithmic divided differences needed by Frechet actions
+static_assert(
+  log_differential_geometry::CachePolicy::Flags == (Cache::Spectral::Flags | Cache::LogDividedDifferences::Flags));
+// base-point maps combine the chart and Frechet cache requirements
+static_assert(
+  log_base_point_geometry::CachePolicy::Flags ==
+  (Cache::Log::Flags | Cache::Spectral::Flags | Cache::LogDividedDifferences::Flags));
+// independent log-Euclidean distance and tangent uses form the union of their retained quantities
+static_assert(
+  log_distance_tangent_geometry::CachePolicy::Flags ==
+  (Cache::Log::Flags | Cache::Spectral::Flags | Cache::LogDividedDifferences::Flags));
+// affine-invariant default geometry points retain no local factors
+static_assert(AffineInvariantSPDGeometry<double, 2>::CachePolicy::Flags == Cache::None::Flags);
 // affine-invariant distance reuse retains the inverse square-root factor
 static_assert(airm_distance_geometry::CachePolicy::Flags == Cache::InverseSqrt::Flags);
+// affine-invariant tangent metrics use the same inverse square-root factor as distance
+static_assert(airm_tangent_geometry::CachePolicy::Flags == Cache::InverseSqrt::Flags);
+// interpolation nodes need no affine-invariant base-point cache
+static_assert(airm_interpolation_geometry::CachePolicy::Flags == Cache::None::Flags);
+// affine-invariant differentials retain the shared spectral divided-difference representation
+static_assert(
+  airm_differential_geometry::CachePolicy::Flags == (Cache::Spectral::Flags | Cache::LogDividedDifferences::Flags));
 // affine-invariant base-point maps retain both square-root factors
 static_assert(airm_base_geometry::CachePolicy::Flags == (Cache::Sqrt::Flags | Cache::InverseSqrt::Flags));
+// independent affine-invariant distance and differential uses retain the complete required union
+static_assert(
+  airm_distance_differential_geometry::CachePolicy::Flags ==
+  (Cache::InverseSqrt::Flags | Cache::Spectral::Flags | Cache::LogDividedDifferences::Flags));
 // a persistent geometry, batch and weights form a valid deferred operation
 static_assert(permits_weighted_mean<log_geometry&, point_batch&, weights_type&>);
 // an expiring owning batch cannot be borrowed by a deferred operation
@@ -157,24 +193,32 @@ void expect_cached_geometry_operations(
       tolerance);
 }
 
-// finite negative and unnormalized weights implement the literal log-Euclidean linear combination
+// finite negative weights retain a nonunit sum and implement the literal noncommuting log-Euclidean combination
 TEST(SPDBatchGeometry, WeightedMeanAcceptsNegativeAndUnnormalizedWeights) {
     const log_geometry geometry;
     point_batch points(2);
-    points[0].assign(diagonal(2, 2));
-    points[1].assign(diagonal(8, 8));
-    weights_type weights({2, -1});
+    const SPDMatrix<double, 2, 2> left(noncommuting_left());
+    const SPDMatrix<double, 2, 2> right(noncommuting_right());
+    points[0].assign(left);
+    points[1].assign(right);
+    weights_type weights({1.5, -0.25});
     const auto expression = geometry.weighted_mean(points, weights);
     const log_geometry::Point result(expression);
+    const auto left_chart = matrix_log(left);
+    const auto right_chart = matrix_log(right);
+    SymmetricMatrix<double, 2, 2> expected_chart;
+    for (int i = 0; i < expected_chart.rows(); ++i)
+        for (int j = 0; j <= i; ++j) expected_chart(i, j) = 1.5 * left_chart(i, j) - 0.25 * right_chart(i, j);
+    const auto expected = matrix_exp(expected_chart);
 
-    // two logarithms of two minus one logarithm of eight yields logarithm one half
-    expect_matrix_near(result, diagonal(0.5, 0.5));
-    // weights are not normalized before the logarithmic reduction
-    EXPECT_NEAR(result(0, 0), 0.5, 1.0e-12);
+    // the supplied weights have a deliberately nonunit sum before reduction
+    EXPECT_NEAR(weights[0] + weights[1], 1.25, 1.0e-12);
+    // materialization equals the independent exp of the explicitly weighted noncommuting log charts
+    expect_matrix_near(result, expected, 2.0e-12);
 }
 
 // empty and all-zero reductions preserve the explicit matrix order and return the exponential identity
-TEST(SPDBatchGeometry, WeightedMeanHandlesZeroWeightsAndEmptyFixedShapeBatches) {
+TEST(SPDBatchGeometry, WeightedMeanHandlesZeroWeightsAndEmptyShapedBatches) {
     const log_geometry geometry;
     point_batch points(2);
     points[0].assign(diagonal(2, 2));
@@ -184,6 +228,11 @@ TEST(SPDBatchGeometry, WeightedMeanHandlesZeroWeightsAndEmptyFixedShapeBatches) 
     point_batch empty(0);
     Matrix<double, Dynamic, 1> empty_weights(0);
     const log_geometry::Point empty_mean(geometry.weighted_mean(empty, empty_weights));
+    using dynamic_geometry = LogEuclideanSPDGeometry<double, Dynamic>;
+    dynamic_geometry dynamic(2);
+    MatrixBatch<dynamic_geometry::Point> dynamic_empty(0, 2, 2);
+    Matrix<double, Dynamic, 1> dynamic_empty_weights(0);
+    const dynamic_geometry::Point dynamic_empty_mean(dynamic.weighted_mean(dynamic_empty, dynamic_empty_weights));
 
     // all-zero weights reduce to the zero logarithmic chart and therefore identity
     expect_matrix_near(zero_mean, diagonal(1, 1));
@@ -191,6 +240,10 @@ TEST(SPDBatchGeometry, WeightedMeanHandlesZeroWeightsAndEmptyFixedShapeBatches) 
     EXPECT_EQ(empty_mean.rows(), geometry.order());
     // an empty fixed-shape reduction also exponentiates the zero chart to identity
     expect_matrix_near(empty_mean, diagonal(1, 1));
+    // an empty dynamic batch preserves its explicit runtime matrix order
+    EXPECT_EQ(dynamic_empty_mean.rows(), dynamic.order());
+    // an empty dynamic reduction also materializes the identity at that retained shape
+    expect_matrix_near(dynamic_empty_mean, diagonal(1, 1));
 }
 
 // deferred expressions observe later source updates and each conversion evaluates the complete reduction once
@@ -277,6 +330,10 @@ TEST(SPDBatchGeometry, WeightedMeanRejectsInvalidInputsWithStrongGuarantee) {
     const auto snapshot = destination;
     weights_type underflowing_weights({-2000, 0});
     const auto underflow = geometry.weighted_mean(points, underflowing_weights);
+    weights_type nonfinite_weights({std::numeric_limits<double>::infinity(), 0});
+    const auto nonfinite = geometry.weighted_mean(points, nonfinite_weights);
+    weights_type nan_weights({std::numeric_limits<double>::quiet_NaN(), 0});
+    const auto nan = geometry.weighted_mean(points, nan_weights);
 
     // a missing weight is rejected before the logarithmic reduction begins
     EXPECT_THROW(destination.assign(wrong_shape), std::invalid_argument);
@@ -284,6 +341,10 @@ TEST(SPDBatchGeometry, WeightedMeanRejectsInvalidInputsWithStrongGuarantee) {
     expect_matrix_near(destination, snapshot);
     // an underflowing exponential cannot publish a singular SPD result
     EXPECT_THROW({ const log_geometry::Point rejected {underflow}; }, std::domain_error);
+    // a nonfinite public weight is rejected before it can contaminate the logarithmic chart
+    EXPECT_THROW({ const log_geometry::Point rejected {nonfinite}; }, std::invalid_argument);
+    // a nan public weight follows the same finite-input contract before chart materialization
+    EXPECT_THROW({ const log_geometry::Point rejected {nan}; }, std::invalid_argument);
 }
 
 // dynamic geometries and dynamic cached batches retain runtime order through weighted materialization
@@ -336,6 +397,8 @@ TEST(SPDBatchGeometry, LogEuclideanCachePoliciesMatchUncachedOperationsAndFreche
     const spectral_point spectral_from(noncommuting_left());
     const logarithm_point logarithm_from(noncommuting_left());
     const logarithm_point logarithm_to(noncommuting_right());
+    const auto spectral_from_view = spectral_from.view();
+    const auto logarithm_to_view = logarithm_to.view();
     const auto first_tangent = off_diagonal_tangent(0.25, -0.4);
     const auto second_tangent = off_diagonal_tangent(-0.35, 0.3);
 
@@ -343,9 +406,19 @@ TEST(SPDBatchGeometry, LogEuclideanCachePoliciesMatchUncachedOperationsAndFreche
     static_assert(std::same_as<decltype(geometry.exponential(cached_from, first_tangent)), cached_geometry::Point>);
     // log-Euclidean retraction returns the same geometry point policy as exponential
     static_assert(std::same_as<decltype(geometry.retract(cached_from, first_tangent, 0.35)), cached_geometry::Point>);
+    // log-Euclidean exponential canonicalizes a spectral input view to the geometry point policy
+    static_assert(
+      std::same_as<decltype(geometry.exponential(spectral_from_view, first_tangent)), cached_geometry::Point>);
+    // log-Euclidean retraction canonicalizes a logarithm-only input view to the geometry point policy
+    static_assert(
+      std::same_as<decltype(geometry.retract(logarithm_to_view, first_tangent, 0.35)), cached_geometry::Point>);
     // cache and fallback paths agree for every geometry operation on the same values
     expect_cached_geometry_operations(
       geometry, cached_from, cached_to, uncached_from, uncached_to, first_tangent, second_tangent, 2.0e-10);
+    // distinct spectral and logarithm cache views use the same generic geometry operations as uncached owners
+    expect_cached_geometry_operations(
+      geometry, spectral_from_view, logarithm_to_view, uncached_from, uncached_to, first_tangent, second_tangent,
+      2.0e-10);
     // a logarithm-only point reuses its retained chart for the point logarithm
     expect_matrix_near(matrix_log(logarithm_from), matrix_log(uncached_from), 2.0e-12);
     // logarithm-only endpoints still produce the same cached geometry logarithm
@@ -379,22 +452,33 @@ TEST(SPDBatchGeometry, LogEuclideanNearRepeatedCacheMatchesUncachedFrechetAction
 
 // affine-invariant square-root caches preserve all operations on noncommuting SPD inputs
 TEST(SPDBatchGeometry, AffineInvariantCachePoliciesMatchUncachedOperations) {
+    using sqrt_point = SPDMatrix<double, 2, 2, Cache::Sqrt>;
+    using inverse_sqrt_point = SPDMatrix<double, 2, 2, Cache::InverseSqrt>;
     const airm_base_geometry geometry;
     const airm_base_geometry::Point cached_from(noncommuting_left());
     const airm_base_geometry::Point cached_to(noncommuting_right());
+    const sqrt_point sqrt_from(noncommuting_left());
+    const inverse_sqrt_point inverse_sqrt_to(noncommuting_right());
+    const auto sqrt_from_view = sqrt_from.view();
+    const auto inverse_sqrt_to_view = inverse_sqrt_to.view();
     const SPDMatrix<double, 2, 2> uncached_from(noncommuting_left());
     const SPDMatrix<double, 2, 2> uncached_to(noncommuting_right());
     const auto first_tangent = off_diagonal_tangent(0.25, -0.4);
     const auto second_tangent = off_diagonal_tangent(-0.35, 0.3);
 
     // affine-invariant exponential returns the geometry's square-root cache policy
-    static_assert(std::same_as<decltype(geometry.exponential(cached_from, first_tangent)), airm_base_geometry::Point>);
+    static_assert(
+      std::same_as<decltype(geometry.exponential(sqrt_from_view, first_tangent)), airm_base_geometry::Point>);
     // affine-invariant polynomial retraction returns the same geometry point policy
     static_assert(
-      std::same_as<decltype(geometry.retract(cached_from, first_tangent, 0.35)), airm_base_geometry::Point>);
-    // cached square-root and inverse-square-root factors agree with uncached local factors everywhere
+      std::same_as<decltype(geometry.retract(inverse_sqrt_to_view, first_tangent, 0.35)), airm_base_geometry::Point>);
+    // a full base-point cache retains both factors while matching the uncached operation results
     expect_cached_geometry_operations(
       geometry, cached_from, cached_to, uncached_from, uncached_to, first_tangent, second_tangent, 3.0e-10);
+    // cached square-root and inverse-square-root factors agree with uncached local factors everywhere
+    expect_cached_geometry_operations(
+      geometry, sqrt_from_view, inverse_sqrt_to_view, uncached_from, uncached_to, first_tangent, second_tangent,
+      3.0e-10);
 }
 
 }   // namespace
