@@ -155,3 +155,8 @@ if(NOT FDAPDE_NATIVE_ONLY)
   target_link_libraries(fdapde_dense_header_order_test PRIVATE Eigen3::Eigen)
   add_test(NAME DenseHeaderOrder COMMAND fdapde_dense_header_order_test)
 endif()
+
+add_executable(fdapde_woodbury_test linear_algebra/woodbury.cpp)
+fdapde_configure_target(fdapde_woodbury_test)
+target_link_libraries(fdapde_woodbury_test PRIVATE GTest::gtest_main)
+gtest_discover_tests(fdapde_woodbury_test PROPERTIES TIMEOUT 60)

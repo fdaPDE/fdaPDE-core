@@ -77,6 +77,7 @@ struct unchecked_t { };
 #include "src/linear_algebra/evd.h"
 #include "src/linear_algebra/xpr.h"
 
+#include "src/linear_algebra/woodbury.h"
 // clang-format on
 
 #endif   // __FDAPDE_DENSE_LINEAR_ALGEBRA_MODULE_H__
