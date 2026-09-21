@@ -52,15 +52,16 @@ template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class LogEucl
         internals::validate_spd_geometry_order(order_);
     }
 
-    /// @brief prepares spatial P1 evaluation on an owning simplex with borrowed immutable batch data
-    /// @details include geometric_finite_elements.h for the definition; local data follow vertex order
+    /// @brief prepares spatial P1 evaluation on a copied simplex or borrowed mesh with immutable batch data
+    /// @details include geometric_finite_elements.h for the definition; simplex data follow local vertex order and mesh
+    /// data follow global node ids
     template <typename Element, typename Nodes>
-        requires(std::is_lvalue_reference_v<Nodes &&> || std::remove_cvref_t<Nodes>::NestAsRef == 0)
-    auto interpolant(const Element& element, Nodes&& nodes) const;
+        requires gfe::P1InterpolationBinding<Element, Nodes>
+    auto interpolant(Element&& element, Nodes&& nodes) const;
     /// @brief prepares the same interpolant with explicit mean and linear-solve tolerances
     template <typename Element, typename Nodes>
-        requires(std::is_lvalue_reference_v<Nodes &&> || std::remove_cvref_t<Nodes>::NestAsRef == 0)
-    auto interpolant(const Element& element, Nodes&& nodes, const gfe::P1GeodesicLinearizationOptions& options) const;
+        requires gfe::P1InterpolationBinding<Element, Nodes>
+    auto interpolant(Element&& element, Nodes&& nodes, const gfe::P1GeodesicLinearizationOptions& options) const;
 
     /// @brief returns the matrix order
     int order() const { return order_; }

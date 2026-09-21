@@ -21,9 +21,15 @@
 
 namespace fdapde {
 template <int, int> class Simplex;
+template <typename> class TreeSearch;
 namespace gfe {
 struct P1GeodesicLinearizationOptions;
-}
+/// @brief permits owned simplex temporaries but requires persistent meshes and batch owners
+template <typename Element, typename Nodes>
+concept P1InterpolationBinding =
+  (std::is_lvalue_reference_v<Nodes&&> || std::remove_cvref_t<Nodes>::NestAsRef == 0) &&
+  (std::is_lvalue_reference_v<Element&&> || !requires { typename std::remove_cvref_t<Element>::CellType; });
+}   // namespace gfe
 namespace manifold {
 
 template <typename Geometry> using point_t = typename std::remove_cvref_t<Geometry>::Point;

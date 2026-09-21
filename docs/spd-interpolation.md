@@ -38,9 +38,9 @@ interpolant, a borrowed linearization, or their expressions. Temporary batch
 owners are rejected. Temporary selections are retained by value; their source
 batch is still borrowed. A selection built from an lvalue expression can itself
 borrow that expression, according to `MatrixBatch::select` nesting rules.
-An expression from an lvalue interpolant borrows it; an expression from a
-temporary interpolant owns it. Rebuild the interpolant after replacing nodal
-data. Concurrent evaluations of an immutable interpolant have separate solver
+For a single simplex, an expression from an lvalue interpolant borrows it; an
+expression from a temporary interpolant owns it. Rebuild the interpolant after
+replacing nodal data. Concurrent evaluations of an immutable interpolant have separate solver
 workspaces and can share the ready node caches through `parallel_async`.
 
 Vertices return their certified nodal value. Each simplex edge has a prepared
@@ -86,3 +86,47 @@ accept explicit barycentric weights. Legacy contiguous spans remain supported;
 a span-based linearization owns a `MatrixBatch` snapshot, while a batch-based
 linearization borrows the batch. Solver diagnostics remain available through
 `manifold::weighted_karcher_mean` and the bounded optimization solvers.
+
+## Interpolation over a mesh
+
+```cpp
+auto interpolant = geometry.interpolant(mesh, nodal_values, options);
+auto expression = interpolant(x);
+SPDMatrix<double, 3, 3> value(expression);
+```
+
+The same member dispatches LE and AIRM to `gfe::P1FieldInterpolant`. The batch
+contains one value per global mesh vertex. For each query, an independent
+`TreeSearch` finds a containing cell; its connectivity supplies the indices for
+`MatrixBatch::select` in local vertex order. The selected data feed the same
+prepared P1 simplex interpolant used by the cell API. Intervals, planar and
+embedded triangular meshes, linear networks and tetrahedral meshes use this
+path. No interpolation algorithm is duplicated.
+
+Construction builds the spatial index but prepares no local interpolation data.
+The first visit to a cell prepares its edge curves; subsequent visits reuse the
+same cell object. `prepared_cells()` reports this count. Storage grows with the
+number of visited cells and is retained until field destruction; the spatial
+index covers the full mesh. In particular, intervals currently use this common
+tree index rather than a specialized interval locator.
+
+The mesh, nodal batch and any borrowed source expressions must remain alive and
+unchanged. The field is not copyable or movable, keeping its cached references
+stable. Expressions and linearizations must not outlive the field; deferred
+calls on a temporary field and construction from a temporary mesh are rejected.
+Temporary batch selections are retained by value with their usual source
+lifetime contract. Rebuild the field after modifying mesh or nodal data.
+
+Queries on one field or independent fields sharing an immutable mesh can run
+concurrently. Their spatial indices read mesh data without using the mesh's
+mutable cell scratch or lazy locator. A mutex protects cache lookup and first
+cell preparation; interpolation and derivative solves run outside that lock
+with separate workspaces. Destruction and mutation require external exclusion.
+This does not change the concurrency contract of other mesh methods.
+
+`result(x)` and `linearization(x)` expose the existing local diagnostics and
+derivatives. Derivative arrays follow the located cell's local vertex order;
+they are not assembled into a global nodal vector. On shared faces, any
+containing cell may be chosen: P1 values agree, while derivatives are those of
+the chosen cell. Points outside the mesh, including off-surface points, and
+nonfinite coordinates are rejected.

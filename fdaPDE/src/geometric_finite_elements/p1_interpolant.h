@@ -16,6 +16,9 @@
 
 #ifndef __FDAPDE_GFE_P1_INTERPOLANT_H__
 #define __FDAPDE_GFE_P1_INTERPOLANT_H__
+#include <mutex>
+#include <unordered_map>
+
 #include "header_check.h"
 
 namespace fdapde::gfe {
@@ -175,46 +178,122 @@ template <typename Geometry, typename Element, typename Nodes> class P1Interpola
     P1GeodesicLinearizationOptions options_;
     std::vector<Curve> edges_;
 };
+/// @brief borrows an immutable mesh and batch, preparing and retaining only visited P1 cells
+/// @details expressions and linearizations borrow this immovable field; all bindings must outlive their use
+template <typename Geometry, typename Mesh, typename Values> class P1FieldInterpolant {
+   public:
+    using Element = Simplex<Mesh::local_dim, Mesh::embed_dim>;
+    using NodeType = typename Element::NodeType;
+    using Selection = decltype(std::declval<const std::remove_cvref_t<Values>&>().select(
+      std::declval<std::array<int, Element::n_nodes>>()));
+    using Local = P1Interpolant<Geometry, Element, Selection>;
+    /// @brief builds an independent spatial index without preparing any nodal interpolation data
+    P1FieldInterpolant(Geometry geometry, const Mesh& mesh, Values values, P1GeodesicLinearizationOptions options) :
+        geometry_(std::move(geometry)),
+        mesh_(checked_mesh_(mesh, values)),
+        values_(std::forward<Values>(values)),
+        options_(options),
+        locator_(mesh_) { }
+    /// @brief locates a cell and returns its deferred expression with a stable borrowed cache binding
+    auto operator()(const NodeType& x) const& { return cell_(x)(x); }
+    /// @brief rejects expressions that would borrow an expiring field cache
+    void operator()(const NodeType&) const&& = delete;
+    /// @brief returns the local mean and convergence diagnostics at a spatial point
+    auto result(const NodeType& x) const { return cell_(x).result(x); }
+    /// @brief prepares derivatives in the located cell's local vertex order
+    auto linearization(const NodeType& x) const& { return cell_(x).linearization(x); }
+    /// @brief rejects derivative workspaces that could borrow an expiring field cache
+    void linearization(const NodeType&) const&& = delete;
+    /// @brief returns the number of visited cells whose edge curves have been prepared
+    std::size_t prepared_cells() const {
+        const std::lock_guard lock(mutex_);
+        return cells_.size();
+    }
+   private:
+    /// @brief validates the mesh and global nodal count before constructing the spatial index
+    static const Mesh* checked_mesh_(const Mesh& mesh, const std::remove_cvref_t<Values>& values) {
+        fdapde_strong_assert(mesh.n_cells() > 0, std::invalid_argument, "P1 field requires a nonempty mesh");
+        fdapde_strong_assert(
+          std::cmp_equal(values.size(), mesh.n_nodes()), std::invalid_argument,
+          "P1 field requires one value per mesh vertex");
+        return &mesh;
+    }
+    /// @brief selects global DOFs in local vertex order and prepares each visited cell at most once
+    const Local& cell_(const NodeType& x) const {
+        fdapde_strong_assert(x.allFinite(), std::invalid_argument, "P1 field spatial point must be finite");
+        const int id = locator_.locate(x);
+        fdapde_strong_assert(id >= 0, std::invalid_argument, "P1 field spatial point must belong to the mesh");
+        // ponytail: one lock protects cell preparation, shard only if concurrent cache misses dominate
+        const std::lock_guard lock(mutex_);
+        if (const auto it = cells_.find(id); it != cells_.end()) return it->second;
+        std::array<int, Element::n_nodes> ids;
+        for (int i = 0; i < Element::n_nodes; ++i) ids[i] = mesh_->cells()(id, i);
+        const typename Mesh::CellType cell(id, mesh_);
+        return cells_.try_emplace(id, geometry_, Element(cell.nodes()), values_.select(ids), options_).first->second;
+    }
+    Geometry geometry_;
+    const Mesh* mesh_;
+    Values values_;
+    P1GeodesicLinearizationOptions options_;
+    TreeSearch<Mesh> locator_;
+    mutable std::mutex mutex_;
+    mutable std::unordered_map<int, Local> cells_;
+};
+
+namespace internals {
+/// @brief dispatches both SPD geometries to the same simplex or mesh preparation path
+template <typename Geometry, typename Element, typename Nodes>
+auto make_p1_interpolant(
+  Geometry geometry, Element&& element, Nodes&& nodes, const P1GeodesicLinearizationOptions& options) {
+    using Spatial = std::remove_cvref_t<Element>;
+    using Stored = std::conditional_t<
+      std::remove_cvref_t<Nodes>::NestAsRef == 0, std::remove_cvref_t<Nodes>, const std::remove_cvref_t<Nodes>&>;
+    if constexpr (requires { typename Spatial::CellType; })
+        return P1FieldInterpolant<Geometry, Spatial, Stored>(
+          std::move(geometry), element, std::forward<Nodes>(nodes), options);
+    else {
+        using Cell = Simplex<Spatial::local_dim, Spatial::embed_dim>;
+        return P1Interpolant<Geometry, Cell, Stored>(
+          std::move(geometry), Cell(element.nodes()), std::forward<Nodes>(nodes), options);
+    }
+}
+}   // namespace internals
 }   // namespace fdapde::gfe
 
 namespace fdapde::manifold {
-/// @brief prepares native SPD interpolation with an owning copy of the spatial simplex
+/// @brief delegates native SPD interpolation to the shared simplex or mesh preparation path
 template <typename Scalar_, int Order_, Usage Uses_>
 template <typename Element, typename Nodes>
-    requires(std::is_lvalue_reference_v<Nodes &&> || std::remove_cvref_t<Nodes>::NestAsRef == 0)
-auto LogEuclideanSPDGeometry<Scalar_, Order_, Uses_>::interpolant(const Element& element, Nodes&& nodes) const {
-    return interpolant(element, std::forward<Nodes>(nodes), gfe::P1GeodesicLinearizationOptions {});
+    requires gfe::P1InterpolationBinding<Element, Nodes>
+auto LogEuclideanSPDGeometry<Scalar_, Order_, Uses_>::interpolant(Element&& element, Nodes&& nodes) const {
+    return interpolant(
+      std::forward<Element>(element), std::forward<Nodes>(nodes), gfe::P1GeodesicLinearizationOptions {});
 }
-/// @brief prepares native SPD interpolation with an owning copy of the spatial simplex
+/// @brief delegates native SPD interpolation to the shared simplex or mesh preparation path
 template <typename Scalar_, int Order_, Usage Uses_>
 template <typename Element, typename Nodes>
-    requires(std::is_lvalue_reference_v<Nodes &&> || std::remove_cvref_t<Nodes>::NestAsRef == 0)
+    requires gfe::P1InterpolationBinding<Element, Nodes>
 auto LogEuclideanSPDGeometry<Scalar_, Order_, Uses_>::interpolant(
-  const Element& element, Nodes&& nodes, const gfe::P1GeodesicLinearizationOptions& options) const {
-    using Stored = std::conditional_t<
-      std::remove_cvref_t<Nodes>::NestAsRef == 0, std::remove_cvref_t<Nodes>, const std::remove_cvref_t<Nodes>&>;
-    using Cell = Simplex<Element::local_dim, Element::embed_dim>;
-    return gfe::P1Interpolant<LogEuclideanSPDGeometry, Cell, Stored>(
-      *this, Cell(element.nodes()), std::forward<Nodes>(nodes), options);
+  Element&& element, Nodes&& nodes, const gfe::P1GeodesicLinearizationOptions& options) const {
+    return gfe::internals::make_p1_interpolant(
+      *this, std::forward<Element>(element), std::forward<Nodes>(nodes), options);
 }
-/// @brief prepares native SPD interpolation with an owning copy of the spatial simplex
+/// @brief delegates native SPD interpolation to the shared simplex or mesh preparation path
 template <typename Scalar_, int Order_, Usage Uses_>
 template <typename Element, typename Nodes>
-    requires(std::is_lvalue_reference_v<Nodes &&> || std::remove_cvref_t<Nodes>::NestAsRef == 0)
-auto AffineInvariantSPDGeometry<Scalar_, Order_, Uses_>::interpolant(const Element& element, Nodes&& nodes) const {
-    return interpolant(element, std::forward<Nodes>(nodes), gfe::P1GeodesicLinearizationOptions {});
+    requires gfe::P1InterpolationBinding<Element, Nodes>
+auto AffineInvariantSPDGeometry<Scalar_, Order_, Uses_>::interpolant(Element&& element, Nodes&& nodes) const {
+    return interpolant(
+      std::forward<Element>(element), std::forward<Nodes>(nodes), gfe::P1GeodesicLinearizationOptions {});
 }
-/// @brief prepares native SPD interpolation with an owning copy of the spatial simplex
+/// @brief delegates native SPD interpolation to the shared simplex or mesh preparation path
 template <typename Scalar_, int Order_, Usage Uses_>
 template <typename Element, typename Nodes>
-    requires(std::is_lvalue_reference_v<Nodes &&> || std::remove_cvref_t<Nodes>::NestAsRef == 0)
+    requires gfe::P1InterpolationBinding<Element, Nodes>
 auto AffineInvariantSPDGeometry<Scalar_, Order_, Uses_>::interpolant(
-  const Element& element, Nodes&& nodes, const gfe::P1GeodesicLinearizationOptions& options) const {
-    using Stored = std::conditional_t<
-      std::remove_cvref_t<Nodes>::NestAsRef == 0, std::remove_cvref_t<Nodes>, const std::remove_cvref_t<Nodes>&>;
-    using Cell = Simplex<Element::local_dim, Element::embed_dim>;
-    return gfe::P1Interpolant<AffineInvariantSPDGeometry, Cell, Stored>(
-      *this, Cell(element.nodes()), std::forward<Nodes>(nodes), options);
+  Element&& element, Nodes&& nodes, const gfe::P1GeodesicLinearizationOptions& options) const {
+    return gfe::internals::make_p1_interpolant(
+      *this, std::forward<Element>(element), std::forward<Nodes>(nodes), options);
 }
 }   // namespace fdapde::manifold
 #endif
