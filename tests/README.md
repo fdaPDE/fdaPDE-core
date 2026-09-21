@@ -137,3 +137,14 @@ Policy-expansion probes compare sources with and without a retained logarithm,
 both with and without spectral factors, to detect repeated reconstruction work.
 Results are workload/toolchain dependent; the discarded-candidate measurement
 includes cache preparation whose benefit is never used.
+
+## SPD P1 interpolation
+
+`fdapde_interpolation_test` runs without Eigen and covers LE/AIRM weight,
+nodal and covariant mixed derivatives against centered geometric differences
+and metric adjoints, relative-cache generation/promotion, fixed/dynamic
+agreement, commuting means, invalid inputs and convergence failures.
+`fdapde_spatial_interpolation_test` adds the existing simplex adapter, embedded
+cells, vertex ordering, prepared edge values, deferred lifetimes, diagnostic
+exceptions and concurrent evaluation through `parallel_async`.
+See `docs/spd-interpolation.md` for cache and borrowing contracts.

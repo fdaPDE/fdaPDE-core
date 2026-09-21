@@ -40,6 +40,15 @@ template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class AffineI
     using Point = fdapde::SPDMatrix<Scalar, Order_, Order_, CachePolicy>;
     using Tangent = fdapde::SymmetricMatrix<Scalar, Order_, Order_>;
 
+    /// @brief retains certified base factors and the spectral data of one scaled relative SPD point
+    struct RelativeFrame {
+        SPDMatrix<Scalar, Order_, Order_> from_sqrt;
+        SPDMatrix<Scalar, Order_, Order_> from_inverse_sqrt;
+        SPDMatrix<Scalar, Order_, Order_, Cache::Union<Cache::Spectral, Cache::Log, Cache::LogDividedDifferences>>
+          scaled_relative;
+        Scalar relative_scale;
+    };
+
     /// @brief constructs the fixed-order geometry using its positive compile-time matrix order
     AffineInvariantSPDGeometry()
         requires(Order_ != fdapde::Dynamic)
@@ -51,6 +60,16 @@ template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class AffineI
         : order_(order) {
         internals::validate_spd_geometry_order(order_);
     }
+
+    /// @brief prepares spatial P1 evaluation on an owning simplex with borrowed immutable batch data
+    /// @details include geometric_finite_elements.h for the definition; local data follow vertex order
+    template <typename Element, typename Nodes>
+        requires(std::is_lvalue_reference_v<Nodes &&> || std::remove_cvref_t<Nodes>::NestAsRef == 0)
+    auto interpolant(const Element& element, Nodes&& nodes) const;
+    /// @brief prepares the same interpolant with explicit mean and linear-solve tolerances
+    template <typename Element, typename Nodes>
+        requires(std::is_lvalue_reference_v<Nodes &&> || std::remove_cvref_t<Nodes>::NestAsRef == 0)
+    auto interpolant(const Element& element, Nodes&& nodes, const gfe::P1GeodesicLinearizationOptions& options) const;
 
     /// @brief returns the matrix order
     int order() const { return order_; }
@@ -167,6 +186,167 @@ template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class AffineI
         return fdapde::internals::spd_geodesic<Scalar, Order_, true>(std::move(factors), std::move(logarithms));
     }
 
+    /// @brief applies the target differential of the affine-invariant logarithm
+    /// @details exact target differential of Log_from(to)
+    /// @details with R = c S, L_log(c S, V) = L_log(S, V) / c. The JVP absorbs
+    /// @details 1/c into its whitening congruence, the metric VJP absorbs c into
+    /// @details its unwhitening congruence, and c cancels from the Hessian action
+    template <SPDLike From, SPDLike To>
+    Tangent logarithm_target_jvp(const From& from, const To& to, const Tangent& to_direction) const {
+        return logarithm_target_jvp(relative_frame(from, to), to_direction);
+    }
+
+    /// @brief evaluates the differential using a retained relative spectral frame
+    Tangent logarithm_target_jvp(const RelativeFrame& frame, const Tangent& to_direction) const {
+        check_tangent_(to_direction);
+
+        const Scalar inverse_sqrt_scale = Scalar(1) / std::sqrt(frame.relative_scale);
+        const auto scaled_inverse_sqrt = internals::combine_symmetric<Scalar, Order_>(
+          frame.from_inverse_sqrt, inverse_sqrt_scale, frame.from_inverse_sqrt, Scalar(0), order_);
+        const auto scaled_direction =
+          internals::symmetric_congruence<Scalar, Order_>(scaled_inverse_sqrt, to_direction, order_);
+        const auto chart_direction = logarithm_frechet_(frame.scaled_relative, scaled_direction);
+        return checked_tangent_result_(
+          internals::symmetric_congruence<Scalar, Order_>(frame.from_sqrt, chart_direction, order_));
+    }
+
+    /// @brief applies the target differential adjoint in the affine-invariant metric
+    /// @details affine-invariant metric adjoint of logarithm_target_jvp. The argument and result
+    /// @details are metric-dual tangent representations at from and to, respectively
+    template <SPDLike From, SPDLike To>
+    Tangent logarithm_target_vjp(const From& from, const To& to, const Tangent& from_metric_dual) const {
+        return logarithm_target_vjp(relative_frame(from, to), from_metric_dual);
+    }
+
+    /// @brief evaluates the differential using a retained relative spectral frame
+    Tangent logarithm_target_vjp(const RelativeFrame& frame, const Tangent& from_metric_dual) const {
+        check_tangent_(from_metric_dual);
+
+        const auto whitened_dual =
+          internals::symmetric_congruence<Scalar, Order_>(frame.from_inverse_sqrt, from_metric_dual, order_);
+        const auto chart_dual = logarithm_frechet_(frame.scaled_relative, whitened_dual);
+        const auto relative_dual =
+          internals::symmetric_congruence<Scalar, Order_>(frame.scaled_relative, chart_dual, order_);
+        const Scalar sqrt_scale = std::sqrt(frame.relative_scale);
+        const auto scaled_from_sqrt =
+          internals::combine_symmetric<Scalar, Order_>(frame.from_sqrt, sqrt_scale, frame.from_sqrt, Scalar(0), order_);
+        return checked_tangent_result_(
+          internals::symmetric_congruence<Scalar, Order_>(scaled_from_sqrt, relative_dual, order_));
+    }
+
+    /// @brief applies the covariant base Hessian of half the squared distance
+    /// @details covariant Hessian action at base of one half the squared distance to
+    /// @details target. This is the negative covariant base differential of Log_base(target)
+    template <SPDLike From, SPDLike To>
+    Tangent
+    half_squared_distance_hessian_vector(const From& base, const To& target, const Tangent& base_direction) const {
+        return half_squared_distance_hessian_vector(relative_frame(base, target), base_direction);
+    }
+
+    /// @brief evaluates the differential using a retained relative spectral frame
+    Tangent half_squared_distance_hessian_vector(const RelativeFrame& frame, const Tangent& base_direction) const {
+        check_tangent_(base_direction);
+
+        const auto whitened_direction =
+          internals::symmetric_congruence<Scalar, Order_>(frame.from_inverse_sqrt, base_direction, order_);
+        const auto log_direction = logarithm_frechet_(frame.scaled_relative, whitened_direction);
+        // jordan_S and L_log(S, .) commute because they share S's spectral basis
+        const auto chart_result = jordan_product_(frame.scaled_relative, log_direction);
+        return checked_tangent_result_(
+          internals::symmetric_congruence<Scalar, Order_>(frame.from_sqrt, chart_result, order_));
+    }
+
+    /// @brief differentiates the distance Hessian along simultaneous base and target variation
+    /// @details covariant derivative of half_squared_distance_hessian_vector along
+    /// @details simultaneous base/target variation. The action direction is continued
+    /// @details parallelly along the base variation
+    template <SPDLike From, SPDLike To>
+    Tangent half_squared_distance_hessian_covariant_jvp(
+      const From& base, const To& target, const Tangent& base_direction, const Tangent& target_direction,
+      const Tangent& action_direction) const {
+        return half_squared_distance_hessian_covariant_jvp(
+          relative_frame(base, target), base_direction, target_direction, action_direction);
+    }
+
+    /// @brief evaluates the differential using a retained relative spectral frame
+    Tangent half_squared_distance_hessian_covariant_jvp(
+      const RelativeFrame& frame, const Tangent& base_direction, const Tangent& target_direction,
+      const Tangent& action_direction) const {
+        check_tangent_(base_direction);
+        check_tangent_(target_direction);
+        check_tangent_(action_direction);
+
+        const auto whitened_base_direction =
+          internals::symmetric_congruence<Scalar, Order_>(frame.from_inverse_sqrt, base_direction, order_);
+        const auto whitened_action_direction =
+          internals::symmetric_congruence<Scalar, Order_>(frame.from_inverse_sqrt, action_direction, order_);
+
+        // scaling R = c S makes the relative variation E/c - Jordan(X, S)
+        // this cancels both powers of c in the second logarithm differential
+        const Scalar inverse_sqrt_scale = Scalar(1) / std::sqrt(frame.relative_scale);
+        const auto scaled_inverse_sqrt = internals::combine_symmetric<Scalar, Order_>(
+          frame.from_inverse_sqrt, inverse_sqrt_scale, frame.from_inverse_sqrt, Scalar(0), order_);
+        const auto scaled_target_direction =
+          internals::symmetric_congruence<Scalar, Order_>(scaled_inverse_sqrt, target_direction, order_);
+        const auto base_relative_change = jordan_product_(whitened_base_direction, frame.scaled_relative);
+        const auto relative_direction = internals::combine_symmetric<Scalar, Order_>(
+          scaled_target_direction, Scalar(1), base_relative_change, Scalar(-1), order_);
+
+        const auto log_action = logarithm_frechet_(frame.scaled_relative, whitened_action_direction);
+        const auto log_second =
+          fdapde::matrix_log_second_frechet(frame.scaled_relative, relative_direction, whitened_action_direction);
+        const auto chart_result = internals::combine_symmetric<Scalar, Order_>(
+          jordan_product_(relative_direction, log_action), Scalar(1),
+          jordan_product_(frame.scaled_relative, log_second), Scalar(1), order_);
+        return checked_tangent_result_(
+          internals::symmetric_congruence<Scalar, Order_>(frame.from_sqrt, chart_result, order_));
+    }
+
+    /// @brief returns base and target metric adjoints of the Hessian variation
+    /// @details metric adjoint of the simultaneous base/target variation in
+    /// @details half_squared_distance_hessian_covariant_jvp, for a fixed parallel
+    /// @details action direction. The pair contains base and target metric-dual tangents
+    template <SPDLike From, SPDLike To>
+    std::pair<Tangent, Tangent> half_squared_distance_hessian_covariant_vjp(
+      const From& base, const To& target, const Tangent& action_direction, const Tangent& output_metric_dual) const {
+        return half_squared_distance_hessian_covariant_vjp(
+          relative_frame(base, target), action_direction, output_metric_dual);
+    }
+
+    /// @brief evaluates the differential using a retained relative spectral frame
+    std::pair<Tangent, Tangent> half_squared_distance_hessian_covariant_vjp(
+      const RelativeFrame& frame, const Tangent& action_direction, const Tangent& output_metric_dual) const {
+        check_tangent_(action_direction);
+        check_tangent_(output_metric_dual);
+
+        const auto whitened_action =
+          internals::symmetric_congruence<Scalar, Order_>(frame.from_inverse_sqrt, action_direction, order_);
+        const auto whitened_output =
+          internals::symmetric_congruence<Scalar, Order_>(frame.from_inverse_sqrt, output_metric_dual, order_);
+        const auto log_action = logarithm_frechet_(frame.scaled_relative, whitened_action);
+        const auto relative_output = jordan_product_(frame.scaled_relative, whitened_output);
+        const auto log_second =
+          fdapde::matrix_log_second_frechet(frame.scaled_relative, relative_output, whitened_action);
+        const auto variation_dual = internals::combine_symmetric<Scalar, Order_>(
+          jordan_product_(whitened_output, log_action), Scalar(1), log_second, Scalar(1), order_);
+
+        auto base_chart_dual = jordan_product_(frame.scaled_relative, variation_dual);
+        for (int i = 0; i < order_; ++i) {
+            for (int j = 0; j <= i; ++j) { base_chart_dual(i, j) = -base_chart_dual(i, j); }
+        }
+        Tangent base_dual = checked_tangent_result_(
+          internals::symmetric_congruence<Scalar, Order_>(frame.from_sqrt, base_chart_dual, order_));
+
+        const auto target_chart_dual =
+          internals::symmetric_congruence<Scalar, Order_>(frame.scaled_relative, variation_dual, order_);
+        const Scalar sqrt_scale = std::sqrt(frame.relative_scale);
+        const auto scaled_from_sqrt =
+          internals::combine_symmetric<Scalar, Order_>(frame.from_sqrt, sqrt_scale, frame.from_sqrt, Scalar(0), order_);
+        Tangent target_dual = checked_tangent_result_(
+          internals::symmetric_congruence<Scalar, Order_>(scaled_from_sqrt, target_chart_dual, order_));
+        return {std::move(base_dual), std::move(target_dual)};
+    }
+
     /// @brief returns the geodesic distance between checked points
     template <SPDLike PointFrom, SPDLike PointTo> double distance(const PointFrom& from, const PointTo& to) const {
         check_point_(from);
@@ -201,7 +381,91 @@ template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class AffineI
         check_tangent_(euclidean_gradient);
         return internals::symmetric_congruence<Scalar, Order_>(point, euclidean_gradient, order_);
     }
+    /// @brief prepares certified base roots and the cached scaled relative SPD spectrum
+    template <SPDLike From, SPDLike To> RelativeFrame relative_frame(const From& from, const To& to) const {
+        check_point_(from);
+        check_point_(to);
+        for (int i = 0; i < order_; ++i) {
+            for (int j = 0; j <= i; ++j) {
+                fdapde_strong_assert(
+                  std::isfinite(static_cast<Scalar>(to(i, j))), std::invalid_argument,
+                  "Affine-invariant SPD differential point coefficients must be finite");
+            }
+        }
+        auto from_sqrt = fdapde::matrix_sqrt(from);
+        auto from_inverse_sqrt = fdapde::matrix_inverse_sqrt(from);
+        const auto relative = internals::symmetric_congruence<Scalar, Order_>(from_inverse_sqrt, to, order_);
+
+        Scalar scale = 0;
+        for (int i = 0; i < order_; ++i) {
+            for (int j = 0; j <= i; ++j) {
+                const Scalar coefficient = static_cast<Scalar>(relative(i, j));
+                fdapde_strong_assert(
+                  std::isfinite(coefficient), std::domain_error,
+                  "Affine-invariant SPD differential produced a nonfinite relative point");
+                scale = std::max(scale, std::abs(coefficient));
+            }
+        }
+        fdapde_strong_assert(
+          (scale > Scalar(0)) && std::isfinite(scale), std::domain_error,
+          "Affine-invariant SPD differential has an invalid relative scale");
+
+        auto scaled_relative = internals::make_symmetric<Scalar, Order_>(order_);
+        for (int i = 0; i < order_; ++i) {
+            for (int j = 0; j <= i; ++j) { scaled_relative(i, j) = static_cast<Scalar>(relative(i, j)) / scale; }
+        }
+        return {
+          decltype(RelativeFrame::from_sqrt)(from_sqrt), decltype(RelativeFrame::from_inverse_sqrt)(from_inverse_sqrt),
+          decltype(RelativeFrame::scaled_relative)(scaled_relative), scale};
+    }
+
+    /// @brief reconstructs the logarithm at the base from the cached scaled relative chart
+    Tangent logarithm(const RelativeFrame& frame) const {
+        Tangent chart(fdapde::matrix_log(frame.scaled_relative));
+        for (int i = 0; i < order_; ++i) chart(i, i) = Scalar(chart(i, i)) + std::log(frame.relative_scale);
+        return internals::symmetric_congruence<Scalar, Order_>(frame.from_sqrt, chart, order_);
+    }
+    /// @brief computes distance using the retained relative chart and scale
+    double distance(const RelativeFrame& frame) const {
+        Tangent chart(fdapde::matrix_log(frame.scaled_relative));
+        for (int i = 0; i < order_; ++i) chart(i, i) = Scalar(chart(i, i)) + std::log(frame.relative_scale);
+        return internals::frobenius_norm(chart, order_);
+    }
    private:
+    /// @brief reuses the relative spectrum and logarithm divided differences
+    template <SPDLike Relative> Tangent logarithm_frechet_(const Relative& point, const Tangent& direction) const {
+        return fdapde::matrix_log_frechet(point, direction);
+    }
+
+    /// @brief forms the symmetric Jordan product without a dense temporary
+    template <typename LhsType_, typename RhsType_>
+    Tangent jordan_product_(const LhsType_& lhs, const RhsType_& rhs) const {
+        auto result = internals::make_symmetric<Scalar, Order_>(order_);
+        for (int i = 0; i < order_; ++i) {
+            for (int j = 0; j <= i; ++j) {
+                Scalar value = 0;
+                for (int k = 0; k < order_; ++k) {
+                    value += Scalar(0.5) * (static_cast<Scalar>(lhs(i, k)) * static_cast<Scalar>(rhs(k, j)) +
+                                            static_cast<Scalar>(rhs(i, k)) * static_cast<Scalar>(lhs(k, j)));
+                }
+                result(i, j) = value;
+            }
+        }
+        return result;
+    }
+
+    /// @brief rejects nonfinite differential coefficients before returning a tangent
+    Tangent checked_tangent_result_(Tangent result) const {
+        for (int i = 0; i < order_; ++i) {
+            for (int j = 0; j <= i; ++j) {
+                fdapde_strong_assert(
+                  std::isfinite(static_cast<Scalar>(result(i, j))), std::domain_error,
+                  "Affine-invariant SPD differential produced a nonfinite tangent");
+            }
+        }
+        return result;
+    }
+
     /// @brief checks the point order and finite packed coefficients against this geometry
     template <SPDLike PointPoint> void check_point_(const PointPoint& point) const {
         internals::check_spd_geometry_shape(point, order_);
@@ -211,6 +475,76 @@ template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class AffineI
 
     int order_ = Order_ == fdapde::Dynamic ? 0 : Order_;
 };
+
+/// @brief computes the weighted mean with explicit convergence diagnostics
+template <typename Scalar_, int Order_, Usage Uses_, typename Samples>
+WeightedKarcherMeanResult<typename AffineInvariantSPDGeometry<Scalar_, Order_, Uses_>::Point> weighted_karcher_mean(
+  const AffineInvariantSPDGeometry<Scalar_, Order_, Uses_>& geometry, const Samples& samples,
+  std::span<const double> weights, const typename AffineInvariantSPDGeometry<Scalar_, Order_, Uses_>::Point& initial,
+  const WeightedKarcherMeanOptions& options = {},
+  internals::KarcherWorkspace<AffineInvariantSPDGeometry<Scalar_, Order_, Uses_>>* retained = nullptr) {
+    using Geometry = AffineInvariantSPDGeometry<Scalar_, Order_, Uses_>;
+    internals::KarcherWorkspace<Geometry> workspace;
+    auto result = weighted_karcher_mean<Geometry>(geometry, samples, weights, initial, options, &workspace);
+    // polish local stationarity when strict Armijo decrease reaches the cost roundoff floor
+    using Tangent = typename Geometry::Tangent;
+    internals::WeightedKarcherMeanProblem<Geometry, Samples> problem(geometry, samples, result.normalized_weights);
+    for (int iteration = 0; iteration < 6 && result.stationarity_norm > options.solver.gradient_tolerance &&
+                            result.stationarity_norm < 1e-5 && std::isfinite(result.cost);
+         ++iteration) {
+        const auto gradient = problem.gradient(result.point, workspace);
+        auto hessian = [&](const Tangent& u) {
+            Tangent h = geometry.zero_tangent(result.point);
+            for (std::size_t i = 0; i < samples.size(); ++i)
+                if (result.normalized_weights[i] > 0)
+                    h = geometry.linear_combination(
+                      result.point, 1, h, result.normalized_weights[i],
+                      geometry.half_squared_distance_hessian_vector(*workspace.frames[i], u));
+            return h;
+        };
+        const auto rhs = geometry.linear_combination(result.point, -1, gradient, 0, gradient);
+        const auto step = PositiveDefiniteConjugateGradient().solve(hessian, geometry, result.point, rhs);
+        if (!step.converged() || geometry.norm(result.point, step.solution) > .01) break;
+        const auto next = geometry.exponential(result.point, step.solution);
+        internals::KarcherWorkspace<Geometry> trial;
+        const double cost = problem.cost(next, trial), norm = geometry.norm(next, problem.gradient(next, trial));
+        // near stationarity the cost decrease is below roundoff; require residual contraction instead
+        if (!std::isfinite(cost) || !(norm <= .5 * result.stationarity_norm)) break;
+        workspace = std::move(trial);
+        result.point = next;
+        result.cost = cost;
+        result.stationarity_norm = norm;
+        ++result.iterations;
+        ++result.cost_evaluations;
+        result.gradient_evaluations += 2;
+    }
+    if (result.stationarity_norm <= options.solver.gradient_tolerance)
+        result.stop_reason = BarycenterStopReason::stationarity_tolerance;
+    if (retained) *retained = std::move(workspace);
+    result.uniqueness = BarycenterUniqueness::globally_unique;
+    return result;
+}
+
+/// @brief computes the weighted mean with explicit convergence diagnostics
+template <typename Scalar_, int Order_, Usage Uses_, typename Samples>
+WeightedKarcherMeanResult<typename AffineInvariantSPDGeometry<Scalar_, Order_, Uses_>::Point> weighted_karcher_mean(
+  const AffineInvariantSPDGeometry<Scalar_, Order_, Uses_>& geometry, const Samples& samples,
+  std::span<const double> weights, const WeightedKarcherMeanOptions& options = {},
+  internals::KarcherWorkspace<AffineInvariantSPDGeometry<Scalar_, Order_, Uses_>>* retained = nullptr) {
+    auto log_geometry = [&]() {
+        if constexpr (Order_ == fdapde::Dynamic) {
+            return LogEuclideanSPDGeometry<Scalar_, Order_>(geometry.order());
+        } else {
+            return LogEuclideanSPDGeometry<Scalar_, Order_>();
+        }
+    }();
+    /// @details use the exact log-Euclidean mean formula as a deterministic, sample-symmetric positive-definite
+    /// initializer
+    const auto initial = weighted_karcher_mean(log_geometry, samples, weights);
+    return weighted_karcher_mean(
+      geometry, samples, weights, typename AffineInvariantSPDGeometry<Scalar_, Order_, Uses_>::Point(initial.point),
+      options, retained);
+}
 
 }   // namespace manifold
 }   // namespace fdapde

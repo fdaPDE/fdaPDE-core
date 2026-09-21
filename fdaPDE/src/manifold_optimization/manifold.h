@@ -20,6 +20,10 @@
 #include "header_check.h"
 
 namespace fdapde {
+template <int, int> class Simplex;
+namespace gfe {
+struct P1GeodesicLinearizationOptions;
+}
 namespace manifold {
 
 template <typename Geometry> using point_t = typename std::remove_cvref_t<Geometry>::Point;

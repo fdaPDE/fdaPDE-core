@@ -22,8 +22,16 @@
 #include "dense_linear_algebra.h"
 #include <concepts>
 #include <cstddef>
+#include <optional>
+#include <span>
 
 #include "src/manifold_optimization/manifold.h"
+#include "src/manifold_optimization/evaluation_context.h"
+#include "src/manifold_optimization/problem.h"
+#include "src/manifold_optimization/armijo.h"
+#include "src/manifold_optimization/steepest_descent.h"
+#include "src/manifold_optimization/positive_definite_conjugate_gradient.h"
+#include "src/manifold_optimization/weighted_karcher_mean.h"
 #include "src/manifold_optimization/log_euclidean_spd.h"
 #include "src/manifold_optimization/affine_invariant_spd.h"
 #include "src/manifold_optimization/so.h"
