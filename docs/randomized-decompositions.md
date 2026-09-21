@@ -1,0 +1,13 @@
+# Native randomized decompositions
+
+`RSI` and `RBKI` approximate the leading singular triplets of a finite, nonempty native floating-point matrix. `NysRSI` and `NysRBKI` approximate leading eigenpairs of a symmetric positive-semidefinite matrix using a stabilized Nyström projection. All four are supplied by the Eigen-free dense aggregate; their shared kernels use the native symmetric eigensolver from the dense foundation.
+
+Construct with `(matrix, rank, tolerance, max_iterations, seed)`, or configure `(tolerance, max_iterations, seed)` and call `compute(matrix, rank, block_size)`. `RSI` and `NysRSI` require a block at least as wide as the requested rank and default to `min(2 * rank, min(rows, cols))`. Krylov methods allow a smaller initial block, defaulting to one column up to order 100 and ten columns above that size.
+
+`left_vectors()`, `right_vectors()` and `singular_values()` expose the SVD result; `eigenvectors()` and `eigenvalues()` expose the Nyström result. These accessors borrow immutable native storage from lvalues and reject temporary owners. Factors retain the input coefficient type and storage order. `rank()` reports the number actually returned, which can be below the requested rank when a Krylov method stops before growing a sufficiently wide basis.
+
+Tolerance is absolute: SVD stopping uses the largest norm of `A*v - sigma*u`; Nyström stopping uses the largest norm of `A*u - lambda*u` multiplied by `sqrt(2)`. Iteration limits return the last computed approximation and do not guarantee the requested tolerance. RSI permits that many power updates after the initial projection; RBKI permits that many basis expansions. NysRSI permits that many projected evaluations, while NysRBKI includes an initial Gaussian basis before its expansions.
+
+Inputs are materialized and normalized for numerical range. Invalid dimensions, sampling parameters, nonfinite coefficients and nonsymmetric Nyström inputs are rejected. PSD is a caller precondition: inexpensive necessary checks and projected-factorization checks detect some violations but do not certify global PSD. Detected numerical breakdown throws `std::domain_error`. A fixed seed reproduces results on a fixed standard-library implementation. Copies share immutable completed state; successful recomputation replaces only the receiving object, and failures preserve its prior state.
+
+Active native tests use analytic spectra, explicit low-rank reconstruction, independently accumulated residuals, capped-iteration behavior and failed-recompute checks. Integration tests preserve the historical random-matrix dimensions and Eigen spectral-error oracles using deterministic samples; the historical file remains while its separate Cholesky cases belong to another PR.

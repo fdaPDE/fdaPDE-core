@@ -29,9 +29,7 @@
 
 namespace fdapde {
 
-// Randomized block Krylov iteration for a compact rank-revealing SVD.
-// The stopping tolerance is absolute, matching the direct API introduced in
-// b4b43f8 and officially exposed by 53b5e92.
+/// @brief approximates leading singular triplets with randomized block Krylov iteration
 template <typename MatrixType_>
     requires(internals::matrix_expression<MatrixType_>)
 class RBKI {
@@ -42,47 +40,57 @@ class RBKI {
     using SingularValuesType = Vector<Scalar, Dynamic>;
     fdapde_static_assert(std::is_floating_point_v<Scalar>, RBKI_REQUIRES_FLOATING_POINT_SCALARS);
 
+    /// @brief constructs an empty approximation with default parameters and a resolved seed
     RBKI() : seed_(resolve_seed_(random_seed)) { }
+    /// @brief copies the immutable published result and sampling configuration
     RBKI(const RBKI&) = default;
+    /// @brief copies the immutable published result and sampling configuration
     RBKI& operator=(const RBKI&) = default;
+    /// @brief constructs and computes the requested approximation
     RBKI(const MatrixType& matrix, int rank) : RBKI() { compute(matrix, rank); }
+    /// @brief constructs and computes the requested approximation
     RBKI(const MatrixType& matrix, int rank, Scalar tolerance, int max_iterations, int seed = random_seed) :
         RBKI(tolerance, max_iterations, seed) {
         compute(matrix, rank);
     }
+    /// @brief validates the stopping parameters and resolves the sampling seed
     RBKI(Scalar tolerance, int max_iterations, int seed = random_seed) :
         tolerance_(tolerance), max_iterations_(max_iterations), seed_(resolve_seed_(seed)) {
         validate_configuration_();
     }
 
+    /// @brief computes a replacement approximation without changing published results on failure
     void compute(const MatrixType& matrix, int rank) {
         const int minimum_dimension = fdapde::min(matrix.rows(), matrix.cols());
         compute(matrix, rank, minimum_dimension <= 100 ? 1 : 10);
     }
 
+    /// @brief computes a replacement approximation without changing published results on failure
     void compute(const MatrixType& matrix, int rank, int block_size) {
         validate_configuration_();
         const int rows = matrix.rows();
         const int cols = matrix.cols();
         const int minimum_dimension = fdapde::min(rows, cols);
-        if (rows <= 0 || cols <= 0) { throw std::invalid_argument("RBKI requires a nonempty matrix"); }
+        fdapde_strong_assert(!(rows <= 0 || cols <= 0), std::invalid_argument, "RBKI requires a nonempty matrix");
         (void)internals::checked_matrix_size(rows, cols);
-        if (rank <= 0 || rank > minimum_dimension) {
-            throw std::invalid_argument("RBKI rank must be positive and no larger than either matrix dimension");
-        }
-        if (block_size <= 0 || block_size > minimum_dimension) {
-            throw std::invalid_argument("RBKI block size must be positive and fit both matrix dimensions");
-        }
+        fdapde_strong_assert(
+          !(rank <= 0 || rank > minimum_dimension), std::invalid_argument,
+          "RBKI rank must be positive and no larger than either matrix dimension");
+        fdapde_strong_assert(
+          !(block_size <= 0 || block_size > minimum_dimension), std::invalid_argument,
+          "RBKI block size must be positive and fit both matrix dimensions");
 
         Scalar scale = Scalar(0);
         for (int row = 0; row < rows; ++row) {
             for (int col = 0; col < cols; ++col) {
                 const Scalar value = static_cast<Scalar>(matrix(row, col));
-                if (!std::isfinite(value)) { throw std::invalid_argument("RBKI requires finite matrix coefficients"); }
+                fdapde_strong_assert(
+                  std::isfinite(value), std::invalid_argument, "RBKI requires finite matrix coefficients");
                 scale = fdapde::max(scale, fdapde::abs(value));
             }
         }
 
+        // normalize before projection so products remain in the input scalar range
         const Scalar normalization = scale == Scalar(0) ? Scalar(1) : scale;
         const bool transposed = rows > cols;
         FactorType source(transposed ? cols : rows, transposed ? rows : cols);
@@ -97,15 +105,16 @@ class RBKI {
             }
         }
 
+        // restart the resolved seed so repeated computations use the same sampled range
         std::mt19937 engine(seed_);
         std::normal_distribution<Scalar> normal(Scalar(0), Scalar(1));
         FactorType omega(source.cols(), block_size);
         for (int row = 0; row < omega.rows(); ++row) {
             for (int col = 0; col < omega.cols(); ++col) {
                 omega(row, col) = normal(engine);
-                if (!std::isfinite(omega(row, col))) {
-                    throw std::domain_error("RBKI Gaussian sampling produced a nonfinite coefficient");
-                }
+                fdapde_strong_assert(
+                  std::isfinite(omega(row, col)), std::domain_error,
+                  "RBKI Gaussian sampling produced a nonfinite coefficient");
             }
         }
 
@@ -115,6 +124,7 @@ class RBKI {
         Scalar residual = Ops::residual(source, candidate);
         const Scalar normalized_tolerance = tolerance_ / normalization;
 
+        // enlarge the orthogonal basis until the absolute residual or the iteration cap stops expansion
         for (int expansion = 0;
              residual > normalized_tolerance && expansion < max_iterations_ && range.cols() < minimum_dimension;
              ++expansion) {
@@ -131,11 +141,12 @@ class RBKI {
             residual = Ops::residual(source, candidate);
         }
 
+        // restore spectral values to the original scale before publishing all factors atomically
         for (int i = 0; i < candidate.values.rows(); ++i) {
             candidate.values[i] *= normalization;
-            if (!std::isfinite(candidate.values[i])) {
-                throw std::domain_error("RBKI singular values exceed the supported scalar range");
-            }
+            fdapde_strong_assert(
+              std::isfinite(candidate.values[i]), std::domain_error,
+              "RBKI singular values exceed the supported scalar range");
         }
         if (transposed) {
             publish_(std::move(candidate.right), std::move(candidate.left), std::move(candidate.values));
@@ -144,38 +155,52 @@ class RBKI {
         }
     }
 
-    const FactorType& matrixU() const& { return state_->left; }
-    void matrixU() const&& = delete;
-    const FactorType& matrixV() const& { return state_->right; }
-    void matrixV() const&& = delete;
-    const SingularValuesType& singularValues() const& { return state_->values; }
-    void singularValues() const&& = delete;
+    /// @brief borrows the left singular vectors from a live approximation
+    const FactorType& left_vectors() const& { return state_->left; }
+    /// @brief rejects borrowing result storage from a temporary approximation
+    void left_vectors() const&& = delete;
+    /// @brief borrows the right singular vectors from a live approximation
+    const FactorType& right_vectors() const& { return state_->right; }
+    /// @brief rejects borrowing result storage from a temporary approximation
+    void right_vectors() const&& = delete;
+    /// @brief borrows descending singular values from a live approximation
+    const SingularValuesType& singular_values() const& { return state_->values; }
+    /// @brief rejects borrowing result storage from a temporary approximation
+    void singular_values() const&& = delete;
+    /// @brief returns the number of published spectral components
     int rank() const { return state_->values.rows(); }
    private:
     using Ops = internals::randomized_svd_ops<FactorType>;
 
+    /// @brief owns a complete set of factors and associated spectral values
     struct State {
         FactorType left;
         FactorType right;
         SingularValuesType values;
 
+        /// @brief constructs empty factor storage
         State() = default;
+        /// @brief takes ownership of completed factors and spectral values
         State(FactorType&& left_, FactorType&& right_, SingularValuesType&& values_) :
             left(std::move(left_)), right(std::move(right_)), values(std::move(values_)) { }
     };
 
+    /// @brief publishes completed factors together after all numerical checks succeed
     void publish_(FactorType&& left, FactorType&& right, SingularValuesType&& values) {
         auto replacement = std::make_shared<const State>(std::move(left), std::move(right), std::move(values));
         state_.swap(replacement);
     }
 
+    /// @brief checks finite nonnegative tolerance and a positive iteration cap
     void validate_configuration_() const {
-        if (!std::isfinite(tolerance_) || tolerance_ < Scalar(0)) {
-            throw std::invalid_argument("RBKI tolerance must be finite and nonnegative");
-        }
-        if (max_iterations_ <= 0) { throw std::invalid_argument("RBKI maximum iterations must be positive"); }
+        fdapde_strong_assert(
+          !(!std::isfinite(tolerance_) || tolerance_ < Scalar(0)), std::invalid_argument,
+          "RBKI tolerance must be finite and nonnegative");
+        fdapde_strong_assert(
+          !(max_iterations_ <= 0), std::invalid_argument, "RBKI maximum iterations must be positive");
     }
 
+    /// @brief resolves one nondeterministic seed or preserves the supplied fixed seed
     static unsigned int resolve_seed_(int seed) {
         return seed == random_seed ? std::random_device {}() : static_cast<unsigned int>(seed);
     }
@@ -186,9 +211,7 @@ class RBKI {
     unsigned int seed_;
 };
 
-// Randomized block Krylov iteration with a Nyström approximation for a
-// symmetric positive-semidefinite matrix; Tropp and Webber (2023), Algorithm
-// 5.8. The initial Gaussian block is part of the Krylov basis.
+/// @brief approximates leading PSD eigenpairs with a stabilized randomized Nyström range
 template <typename MatrixType_>
     requires(internals::matrix_expression<MatrixType_>)
 class NysRBKI {
@@ -202,46 +225,55 @@ class NysRBKI {
       MatrixType::Rows == Dynamic || MatrixType::Cols == Dynamic || MatrixType::Rows == MatrixType::Cols,
       NYS_RBKI_REQUIRES_A_SQUARE_MATRIX);
 
+    /// @brief constructs an empty approximation with default parameters and a resolved seed
     NysRBKI() : seed_(resolve_seed_(random_seed)) { }
+    /// @brief copies the immutable published result and sampling configuration
     NysRBKI(const NysRBKI&) = default;
+    /// @brief copies the immutable published result and sampling configuration
     NysRBKI& operator=(const NysRBKI&) = default;
+    /// @brief constructs and computes the requested approximation
     NysRBKI(const MatrixType& matrix, int rank) : NysRBKI() { compute(matrix, rank); }
+    /// @brief constructs and computes the requested approximation
     NysRBKI(const MatrixType& matrix, int rank, Scalar tolerance, int max_iterations, int seed = random_seed) :
         NysRBKI(tolerance, max_iterations, seed) {
         compute(matrix, rank);
     }
+    /// @brief validates the stopping parameters and resolves the sampling seed
     NysRBKI(Scalar tolerance, int max_iterations, int seed = random_seed) :
         tolerance_(tolerance), max_iterations_(max_iterations), seed_(resolve_seed_(seed)) {
         validate_configuration_();
     }
 
+    /// @brief computes a replacement approximation without changing published results on failure
     void compute(const MatrixType& matrix, int rank) { compute(matrix, rank, matrix.rows() <= 100 ? 1 : 10); }
 
+    /// @brief computes a replacement approximation without changing published results on failure
     void compute(const MatrixType& matrix, int rank, int block_size) {
         validate_configuration_();
         const int rows = matrix.rows();
         const int cols = matrix.cols();
-        if (rows <= 0 || rows != cols) { throw std::invalid_argument("NysRBKI requires a nonempty square matrix"); }
+        fdapde_strong_assert(
+          !(rows <= 0 || rows != cols), std::invalid_argument, "NysRBKI requires a nonempty square matrix");
         (void)internals::checked_matrix_size(rows, cols);
-        if (rank <= 0 || rank > rows) {
-            throw std::invalid_argument("NysRBKI rank must be positive and no larger than the matrix dimension");
-        }
-        if (block_size <= 0 || block_size > rows) {
-            throw std::invalid_argument("NysRBKI block size must be positive and fit the matrix dimension");
-        }
+        fdapde_strong_assert(
+          !(rank <= 0 || rank > rows), std::invalid_argument,
+          "NysRBKI rank must be positive and no larger than the matrix dimension");
+        fdapde_strong_assert(
+          !(block_size <= 0 || block_size > rows), std::invalid_argument,
+          "NysRBKI block size must be positive and fit the matrix dimension");
 
         FactorType source(rows, cols);
         Scalar scale = Scalar(0);
         for (int row = 0; row < rows; ++row) {
             for (int col = 0; col < cols; ++col) {
                 const Scalar value = static_cast<Scalar>(matrix(row, col));
-                if (!std::isfinite(value)) {
-                    throw std::invalid_argument("NysRBKI requires finite matrix coefficients");
-                }
+                fdapde_strong_assert(
+                  std::isfinite(value), std::invalid_argument, "NysRBKI requires finite matrix coefficients");
                 source(row, col) = value;
                 scale = fdapde::max(scale, fdapde::abs(value));
             }
         }
+        // normalize before projection so products remain in the input scalar range
         const Scalar normalization = scale == Scalar(0) ? Scalar(1) : scale;
         if (scale != Scalar(0)) {
             for (int row = 0; row < rows; ++row) {
@@ -250,21 +282,19 @@ class NysRBKI {
         }
 
         const Scalar roundoff = Scalar(64) * std::numeric_limits<Scalar>::epsilon() * static_cast<Scalar>(rows);
-        // ponytail: exact PSD certification is cubic and defeats this low-rank routine. Match RpChol's cheap
-        // necessary-condition screen and reject any projected-factorization breakdown below.
+        // ponytail: necessary PSD checks are not a certificate; use full factorization when certification is needed
         for (int row = 0; row < rows; ++row) {
-            if (source(row, row) < -roundoff) {
-                throw std::domain_error("NysRBKI requires a positive-semidefinite matrix");
-            }
+            fdapde_strong_assert(
+              !(source(row, row) < -roundoff), std::domain_error, "NysRBKI requires a positive-semidefinite matrix");
             for (int col = row + 1; col < cols; ++col) {
-                if (fdapde::abs(source(row, col) - source(col, row)) > roundoff) {
-                    throw std::invalid_argument("NysRBKI requires a symmetric matrix");
-                }
+                fdapde_strong_assert(
+                  !(fdapde::abs(source(row, col) - source(col, row)) > roundoff), std::invalid_argument,
+                  "NysRBKI requires a symmetric matrix");
                 const Scalar diagonal_product = source(row, row) * source(col, col);
                 const Scalar coefficient_square = source(row, col) * source(row, col);
-                if (coefficient_square > diagonal_product + roundoff) {
-                    throw std::domain_error("NysRBKI requires a positive-semidefinite matrix");
-                }
+                fdapde_strong_assert(
+                  !(coefficient_square > diagonal_product + roundoff), std::domain_error,
+                  "NysRBKI requires a positive-semidefinite matrix");
             }
         }
 
@@ -282,19 +312,20 @@ class NysRBKI {
         Scalar trace = Scalar(0);
         for (int i = 0; i < rows; ++i) trace += fdapde::max(Scalar(0), source(i, i));
         const Scalar shift = trace * std::numeric_limits<Scalar>::epsilon();
-        if (!(shift > Scalar(0)) || !std::isfinite(shift)) {
-            throw std::domain_error("NysRBKI could not construct a finite stabilization shift");
-        }
+        fdapde_strong_assert(
+          shift > Scalar(0) && std::isfinite(shift), std::domain_error,
+          "NysRBKI could not construct a finite stabilization shift");
 
+        // restart the resolved seed so repeated computations use the same sampled range
         std::mt19937 engine(seed_);
         std::normal_distribution<Scalar> normal(Scalar(0), Scalar(1));
         FactorType omega(rows, block_size);
         for (int row = 0; row < omega.rows(); ++row) {
             for (int col = 0; col < omega.cols(); ++col) {
                 omega(row, col) = normal(engine);
-                if (!std::isfinite(omega(row, col))) {
-                    throw std::domain_error("NysRBKI Gaussian sampling produced a nonfinite coefficient");
-                }
+                fdapde_strong_assert(
+                  std::isfinite(omega(row, col)), std::domain_error,
+                  "NysRBKI Gaussian sampling produced a nonfinite coefficient");
             }
         }
 
@@ -306,6 +337,7 @@ class NysRBKI {
         Scalar residual = Ops::eigen_residual(source, candidate);
         const Scalar normalized_tolerance = tolerance_ / normalization;
 
+        // enlarge the orthogonal basis until the absolute residual or the iteration cap stops expansion
         for (int expansion = 0; residual > normalized_tolerance && expansion < max_iterations_ && basis.cols() < rows;
              ++expansion) {
             const int added_columns = fdapde::min(block_size, rows - basis.cols());
@@ -313,9 +345,9 @@ class NysRBKI {
             for (int row = 0; row < raw.rows(); ++row) {
                 for (int col = 0; col < raw.cols(); ++col) {
                     raw(row, col) = last_product(row, col) + shift * last_basis(row, col);
-                    if (!std::isfinite(raw(row, col))) {
-                        throw std::domain_error("NysRBKI shifted Krylov block contains a nonfinite coefficient");
-                    }
+                    fdapde_strong_assert(
+                      std::isfinite(raw(row, col)), std::domain_error,
+                      "NysRBKI shifted Krylov block contains a nonfinite coefficient");
                 }
             }
             FactorType next = Ops::orthonormalize(raw, basis);
@@ -327,36 +359,46 @@ class NysRBKI {
             residual = Ops::eigen_residual(source, candidate);
         }
 
+        // restore spectral values to the original scale before publishing all factors atomically
         for (int i = 0; i < candidate.values.rows(); ++i) {
             candidate.values[i] *= normalization;
-            if (!std::isfinite(candidate.values[i])) {
-                throw std::domain_error("NysRBKI eigenvalues exceed the supported scalar range");
-            }
+            fdapde_strong_assert(
+              std::isfinite(candidate.values[i]), std::domain_error,
+              "NysRBKI eigenvalues exceed the supported scalar range");
         }
         publish_(std::move(candidate.vectors), std::move(candidate.values));
     }
 
-    const FactorType& matrixU() const& { return state_->vectors; }
-    void matrixU() const&& = delete;
-    const EigenValuesType& eigenValues() const& { return state_->values; }
-    void eigenValues() const&& = delete;
+    /// @brief borrows the leading Nyström eigenvectors from a live approximation
+    const FactorType& eigenvectors() const& { return state_->vectors; }
+    /// @brief rejects borrowing result storage from a temporary approximation
+    void eigenvectors() const&& = delete;
+    /// @brief borrows descending nonnegative Nyström eigenvalues from a live approximation
+    const EigenValuesType& eigenvalues() const& { return state_->values; }
+    /// @brief rejects borrowing result storage from a temporary approximation
+    void eigenvalues() const&& = delete;
+    /// @brief returns the number of published spectral components
     int rank() const { return state_->values.rows(); }
    private:
     using Ops = internals::randomized_svd_ops<FactorType>;
     using State = typename Ops::NystromResult;
 
+    /// @brief publishes completed factors together after all numerical checks succeed
     void publish_(FactorType&& vectors, EigenValuesType&& values) {
         auto replacement = std::make_shared<const State>(std::move(vectors), std::move(values));
         state_.swap(replacement);
     }
 
+    /// @brief checks finite nonnegative tolerance and a positive iteration cap
     void validate_configuration_() const {
-        if (!std::isfinite(tolerance_) || tolerance_ < Scalar(0)) {
-            throw std::invalid_argument("NysRBKI tolerance must be finite and nonnegative");
-        }
-        if (max_iterations_ <= 0) { throw std::invalid_argument("NysRBKI maximum iterations must be positive"); }
+        fdapde_strong_assert(
+          !(!std::isfinite(tolerance_) || tolerance_ < Scalar(0)), std::invalid_argument,
+          "NysRBKI tolerance must be finite and nonnegative");
+        fdapde_strong_assert(
+          !(max_iterations_ <= 0), std::invalid_argument, "NysRBKI maximum iterations must be positive");
     }
 
+    /// @brief resolves one nondeterministic seed or preserves the supplied fixed seed
     static unsigned int resolve_seed_(int seed) {
         return seed == random_seed ? std::random_device {}() : static_cast<unsigned int>(seed);
     }
@@ -368,24 +410,30 @@ class NysRBKI {
 };
 
 template <internals::matrix_expression MatrixType>
+/// @brief constructs and computes the requested approximation
 RBKI(const MatrixType&, int) -> RBKI<std::remove_cvref_t<MatrixType>>;
 
 template <internals::matrix_expression MatrixType>
+/// @brief constructs and computes the requested approximation
 RBKI(const MatrixType&, int, typename std::remove_cvref_t<MatrixType>::Scalar, int)
   -> RBKI<std::remove_cvref_t<MatrixType>>;
 
 template <internals::matrix_expression MatrixType>
+/// @brief constructs and computes the requested approximation
 RBKI(const MatrixType&, int, typename std::remove_cvref_t<MatrixType>::Scalar, int, int)
   -> RBKI<std::remove_cvref_t<MatrixType>>;
 
 template <internals::matrix_expression MatrixType>
+/// @brief constructs and computes the requested approximation
 NysRBKI(const MatrixType&, int) -> NysRBKI<std::remove_cvref_t<MatrixType>>;
 
 template <internals::matrix_expression MatrixType>
+/// @brief constructs and computes the requested approximation
 NysRBKI(const MatrixType&, int, typename std::remove_cvref_t<MatrixType>::Scalar, int)
   -> NysRBKI<std::remove_cvref_t<MatrixType>>;
 
 template <internals::matrix_expression MatrixType>
+/// @brief constructs and computes the requested approximation
 NysRBKI(const MatrixType&, int, typename std::remove_cvref_t<MatrixType>::Scalar, int, int)
   -> NysRBKI<std::remove_cvref_t<MatrixType>>;
 
