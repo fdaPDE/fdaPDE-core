@@ -14,23 +14,21 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_CORE_MODULE_H__
-#define __FDAPDE_CORE_MODULE_H__
+#include <gtest/gtest.h>
 
-// clang-format off
+void configure_execution();
+int execution_configuration();
+const void* core_executor_address();
+const void* execution_executor_address();
+int execute_answer();
 
-// include modules
-#include "linear_algebra.h"    // pull Eigen first
-#include "utility.h"
-#include "execution.h"
-#include "fields.h"
-#include "geometry.h"
-#include "io.h"
-#include "finite_elements.h"
-#include "splines.h"
-#include "optimization.h"
-#include "geoframe.h"
-
-// clang-format on
-
-#endif   // __FDAPDE_CORE_MODULE_H__
+// verifies inline configuration, singleton identity and runtime calls across two include orders
+TEST(PublicHeaders, CoreExecutionODR) {
+    configure_execution();
+    // observes a setting written by the other translation unit
+    EXPECT_EQ(execution_configuration(), 2);
+    // compares singleton addresses obtained through both public include orders
+    EXPECT_EQ(core_executor_address(), execution_executor_address());
+    // checks the shared runtime executes and joins a task returning a known result
+    EXPECT_EQ(execute_answer(), 42);
+}

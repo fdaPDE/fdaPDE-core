@@ -80,3 +80,17 @@ and integration lanes both keep debug assertions enabled in ordinary tests.
 The geometry targets exercise log-Euclidean and affine-invariant SPD operations,
 public error contracts and owning results. The integration lane additionally
 checks both manifold/full aggregate include orders in linked translation units.
+
+## Execution
+
+The execution tests run in both native-only and integration builds. Configuration
+and one-worker saturation use separate processes so singleton configuration is
+never changed after initialization. All ordinary tests use debug assertions.
+
+The suite checks ownership, accounting, bounded queues, dependency ordering,
+nested parallel execution, reduction order/identity and configuration validation.
+Standalone execution and utility include-order checks need no Eigen. The full
+integration lane additionally checks composition with legacy core modules and
+multi-TU shared configuration, singleton identity and real execution.
+
+See [the execution contract](../docs/execution.md) for API requirements and limits.

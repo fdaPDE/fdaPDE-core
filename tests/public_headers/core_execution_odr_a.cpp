@@ -14,23 +14,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_CORE_MODULE_H__
-#define __FDAPDE_CORE_MODULE_H__
-
 // clang-format off
-
-// include modules
-#include "linear_algebra.h"    // pull Eigen first
-#include "utility.h"
-#include "execution.h"
-#include "fields.h"
-#include "geometry.h"
-#include "io.h"
-#include "finite_elements.h"
-#include "splines.h"
-#include "optimization.h"
-#include "geoframe.h"
-
+#include <fdaPDE/core.h>
+#include <fdaPDE/execution.h>
 // clang-format on
 
-#endif   // __FDAPDE_CORE_MODULE_H__
+/// @brief changes shared configuration through the core-first translation unit
+void configure_execution() { fdapde::parallel_set_num_threads(2); }
+/// @brief exposes the singleton address to check identity across translation units
+const void* core_executor_address() { return &fdapde::internals::threaded_executor::instance(); }
