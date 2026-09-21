@@ -35,27 +35,20 @@
 namespace fdapde {
 namespace internals {
 
+/// @brief identifies types that are not native CSR owners
 template <typename T> struct is_native_sparse_matrix : std::false_type { };
+/// @brief identifies native CSR owners for eager block materialization
 template <typename Scalar> struct is_native_sparse_matrix<SparseMatrix<Scalar>> : std::true_type { };
 template <typename T>
 inline constexpr bool is_native_sparse_matrix_v = is_native_sparse_matrix<std::remove_cvref_t<T>>::value;
 
 }   // namespace internals
 
-// Owning fixed-grid composition of native CSR blocks. The grid dimensions are
-// static; block and global extents are runtime values. Supplied matrix blocks
-// are materialized immediately, so temporaries and copies are independent.
-//
-// The public storage contract is column-major traversal over owning CSR
-// blocks. Generic sparse expressions are materialized explicitly.
-template <typename Scalar_, int BlockRows_, int BlockCols_, int Options_ = ColMajor, typename StorageIndex_ = int>
-    requires(Options_ == ColMajor && std::signed_integral<StorageIndex_>)
-class SparseBlockMatrix {
+/// @brief owns a fixed grid of native CSR blocks with checked runtime row and column partitions
+template <typename Scalar_, int BlockRows_, int BlockCols_> class SparseBlockMatrix {
    public:
     using Index = int;
     using Scalar = std::remove_cvref_t<Scalar_>;
-    using StorageIndex = StorageIndex_;
-    using Nested = const SparseBlockMatrix&;
     using block_type = SparseMatrix<Scalar>;
     using triplet_type = Triplet<Scalar>;
 
@@ -92,103 +85,18 @@ class SparseBlockMatrix {
    public:
     static constexpr Index BlockRows = BlockRows_;
     static constexpr Index BlockCols = BlockCols_;
-    static constexpr int StorageOrder = Options_;
 
-    // Iterators borrow an lvalue matrix and follow its blocks' vector-style
-    // invalidation rules. Insert-on-miss, rebuild, mutable-block structural
-    // edits, assignment, move, or swap invalidate them.
-    class InnerIterator {
-       public:
-        InnerIterator() = default;
-        InnerIterator(SparseBlockMatrix& matrix, Index outer) : matrix_(&matrix), mutable_matrix_(&matrix) {
-            initialize_(outer);
-        }
-        InnerIterator(const SparseBlockMatrix& matrix, Index outer) : matrix_(&matrix) { initialize_(outer); }
-        InnerIterator(SparseBlockMatrix&&, Index) = delete;
-        InnerIterator(const SparseBlockMatrix&&, Index) = delete;
-
-        InnerIterator& operator++() {
-            validate_current_();
-            ++row_;
-            seek_();
-            return *this;
-        }
-        operator bool() const { return value_ != nullptr; }
-        const Scalar& value() const {
-            validate_current_();
-            return *value_;
-        }
-        Scalar& valueRef() {
-            validate_current_();
-            if (mutable_matrix_ == nullptr) {
-                throw std::logic_error("SparseBlockMatrix const iterator has no mutable coefficient");
-            }
-            return mutable_matrix_->value_ref(row_, outer_);
-        }
-        Index row() const {
-            validate_current_();
-            return row_;
-        }
-        Index col() const {
-            validate_current_();
-            return outer_;
-        }
-        Index outer() const {
-            validate_current_();
-            return outer_;
-        }
-        StorageIndex index() const {
-            validate_current_();
-            return static_cast<StorageIndex>(row_);
-        }
-       private:
-        void initialize_(Index outer) {
-            matrix_->validate_block_shapes_();
-            matrix_->validate_global_col_(outer);
-            outer_ = outer;
-            block_col_ = matrix_->outerBlockIndex(outer);
-            local_col_ = outer - matrix_->col_offsets_[block_col_];
-            seek_();
-        }
-        void seek_() {
-            value_ = nullptr;
-            while (row_ < matrix_->rows_) {
-                const Index block_row = matrix_->innerBlockIndex(row_);
-                const Index local_row = row_ - matrix_->row_offsets_[block_row];
-                const auto& current = matrix_->blocks_[flat_index_(block_row, block_col_)];
-                for (const auto entry : current.row(local_row)) {
-                    if (entry.column() == local_col_) {
-                        value_ = std::addressof(entry.value());
-                        return;
-                    }
-                    if (entry.column() > local_col_) break;
-                }
-                ++row_;
-            }
-        }
-        void validate_current_() const {
-            if (value_ == nullptr) { throw std::logic_error("SparseBlockMatrix iterator is not dereferenceable"); }
-        }
-
-        const SparseBlockMatrix* matrix_ = nullptr;
-        SparseBlockMatrix* mutable_matrix_ = nullptr;
-        const Scalar* value_ = nullptr;
-        Index outer_ = 0;
-        Index row_ = 0;
-        Index block_col_ = 0;
-        Index local_col_ = 0;
-    };
-
+    /// @brief constructs an empty partition with zero global dimensions
     SparseBlockMatrix() = default;
 
+    /// @brief constructs an empty block grid from checked per-row and per-column extents
     template <typename RowExtents, typename ColExtents>
         requires(is_extent_container_<RowExtents> && is_extent_container_<ColExtents>)
     SparseBlockMatrix(const RowExtents& row_extents, const ColExtents& col_extents) {
-        if (
-          static_cast<std::size_t>(row_extents.size()) != static_cast<std::size_t>(BlockRows_) ||
-          static_cast<std::size_t>(col_extents.size()) != static_cast<std::size_t>(BlockCols_)) {
-            throw std::invalid_argument("SparseBlockMatrix extent counts must match the block grid");
-        }
+        fdapde_strong_assert(
+          !(static_cast<std::size_t>(row_extents.size()) != static_cast<std::size_t>(BlockRows_) ||
+            static_cast<std::size_t>(col_extents.size()) != static_cast<std::size_t>(BlockCols_)),
+          std::invalid_argument, "SparseBlockMatrix extent counts must match the block grid");
         std::array<Index, BlockRows_> rows {};
         std::array<Index, BlockCols_> cols {};
         for (Index i = 0; i < BlockRows_; ++i) rows[i] = checked_extent_(row_extents[i]);
@@ -196,10 +104,11 @@ class SparseBlockMatrix {
         configure_(rows, cols);
     }
 
+    /// @brief constructs an empty grid with uniform block extents
     SparseBlockMatrix(Index block_rows, Index block_cols) {
-        if (block_rows < 0 || block_cols < 0) {
-            throw std::invalid_argument("SparseBlockMatrix block dimensions must be nonnegative");
-        }
+        fdapde_strong_assert(
+          !(block_rows < 0 || block_cols < 0), std::invalid_argument,
+          "SparseBlockMatrix block dimensions must be nonnegative");
         std::array<Index, BlockRows_> rows {};
         std::array<Index, BlockCols_> cols {};
         rows.fill(block_rows);
@@ -207,6 +116,7 @@ class SparseBlockMatrix {
         configure_(rows, cols);
     }
 
+    /// @brief materializes row-major block arguments, inferring zero-placeholder extents from neighboring blocks
     template <typename... Blocks>
         requires(
           sizeof...(Blocks) == block_count_ &&
@@ -220,11 +130,12 @@ class SparseBlockMatrix {
         internals::for_each_index_and_args<static_cast<int>(block_count_)>(
           [&]<int I, typename Block>(Block&& block) {
               if constexpr (is_matrix_block_<Block>) {
-                  row_dimensions[I] = checked_block_dimension_(block.rows());
-                  col_dimensions[I] = checked_block_dimension_(block.cols());
-              } else if (static_cast<Scalar>(block) != Scalar {}) {
-                  throw std::invalid_argument("SparseBlockMatrix scalar placeholders must be zero");
-              }
+                  row_dimensions[I] = checked_extent_(block.rows());
+                  col_dimensions[I] = checked_extent_(block.cols());
+              } else
+                  fdapde_strong_assert(
+                    !(block_type::checked_scalar_cast_(block) != Scalar {}), std::invalid_argument,
+                    "SparseBlockMatrix scalar placeholders must be zero");
           },
           std::forward<Blocks>(blocks)...);
 
@@ -235,9 +146,9 @@ class SparseBlockMatrix {
             for (Index block_col = 0; block_col < BlockCols_; ++block_col) {
                 const Index value = row_dimensions[flat_index_(block_row, block_col)];
                 if (value < 0) continue;
-                if (extent >= 0 && value != extent) {
-                    throw std::invalid_argument("SparseBlockMatrix blocks in a block row must have equal rows");
-                }
+                fdapde_strong_assert(
+                  !(extent >= 0 && value != extent), std::invalid_argument,
+                  "SparseBlockMatrix blocks in a block row must have equal rows");
                 extent = value;
             }
             rows[block_row] = extent < 0 ? 1 : extent;
@@ -247,9 +158,9 @@ class SparseBlockMatrix {
             for (Index block_row = 0; block_row < BlockRows_; ++block_row) {
                 const Index value = col_dimensions[flat_index_(block_row, block_col)];
                 if (value < 0) continue;
-                if (extent >= 0 && value != extent) {
-                    throw std::invalid_argument("SparseBlockMatrix blocks in a block column must have equal columns");
-                }
+                fdapde_strong_assert(
+                  !(extent >= 0 && value != extent), std::invalid_argument,
+                  "SparseBlockMatrix blocks in a block column must have equal columns");
                 extent = value;
             }
             cols[block_col] = extent < 0 ? 1 : extent;
@@ -263,14 +174,18 @@ class SparseBlockMatrix {
           std::forward<Blocks>(blocks)...);
     }
 
+    /// @brief copies the partition and coefficients into independent storage
     SparseBlockMatrix(const SparseBlockMatrix&) = default;
+    /// @brief replaces the grid with an independent copy only after copying succeeds
     SparseBlockMatrix& operator=(const SparseBlockMatrix& other) {
         if (this == &other) return *this;
         SparseBlockMatrix replacement(other);
         swap(replacement);
         return *this;
     }
+    /// @brief takes the partition and coefficients, leaving an empty source
     SparseBlockMatrix(SparseBlockMatrix&& other) noexcept { swap(other); }
+    /// @brief takes the partition and coefficients while tolerating self-move
     SparseBlockMatrix& operator=(SparseBlockMatrix&& other) noexcept {
         if (this == &other) return *this;
         SparseBlockMatrix replacement(std::move(other));
@@ -278,121 +193,122 @@ class SparseBlockMatrix {
         return *this;
     }
 
+    /// @brief returns the global row count
     constexpr Index rows() const { return rows_; }
+    /// @brief returns the global column count
     constexpr Index cols() const { return cols_; }
+    /// @brief returns the compile-time block-row count
     static constexpr Index block_rows() { return BlockRows_; }
+    /// @brief returns the compile-time block-column count
     static constexpr Index block_cols() { return BlockCols_; }
-    static constexpr Index blockRows() { return BlockRows_; }
-    static constexpr Index blockCols() { return BlockCols_; }
-    constexpr Index innerSize() const { return rows_; }
-    constexpr Index outerSize() const { return cols_; }
 
-    const block_type& block(Index row, Index col) const {
+    /// @brief borrows a const block from a checked position of an lvalue grid
+    const block_type& block(Index row, Index col) const& {
         validate_block_index_(row, col);
         return blocks_[flat_index_(row, col)];
     }
-    block_type& block(Index row, Index col) {
+    /// @brief borrows a mutable block whose shape must continue matching the partition
+    block_type& block(Index row, Index col) & {
         validate_block_index_(row, col);
         return blocks_[flat_index_(row, col)];
     }
 
+    /// @brief rejects borrowing a block from a temporary owner
+    void block(Index, Index) const&& = delete;
+
+    /// @brief counts all stored block entries, including explicitly stored zeros
     std::size_t non_zeros() const {
         validate_block_shapes_();
         std::size_t result = 0;
         for (const auto& current : blocks_) {
             const std::size_t increment = static_cast<std::size_t>(current.non_zeros());
-            if (result > std::numeric_limits<std::size_t>::max() - increment) {
-                throw std::length_error("SparseBlockMatrix nonzero count exceeds the supported range");
-            }
+            fdapde_strong_assert(
+              !(result > std::numeric_limits<std::size_t>::max() - increment), std::length_error,
+              "SparseBlockMatrix nonzero count exceeds the supported range");
             result += increment;
         }
         return result;
     }
-    Index nonZerosEstimate() const {
-        const std::size_t result = non_zeros();
-        if (result > static_cast<std::size_t>(std::numeric_limits<Index>::max())) {
-            throw std::length_error("SparseBlockMatrix nonzero estimate exceeds the supported int range");
-        }
-        return static_cast<Index>(result);
-    }
-    bool isCompressed() const {
-        validate_block_shapes_();
-        return true;
-    }
-    void makeCompressed() const { validate_block_shapes_(); }
-
-    Index innerBlockIndex(Index row) const {
+    /// @brief maps a checked global row to its block row, skipping empty extents
+    Index row_block(Index row) const {
         validate_global_row_(row);
         return block_index_(row_offsets_, row);
     }
-    Index outerBlockIndex(Index col) const {
+    /// @brief maps a checked global column to its block column, skipping empty extents
+    Index col_block(Index col) const {
         validate_global_col_(col);
         return block_index_(col_offsets_, col);
     }
-    Index indexToBlockInner(Index row) const {
-        const Index block_row = innerBlockIndex(row);
+    /// @brief maps a checked global row to its local coordinate within a block
+    Index local_row(Index row) const {
+        const Index block_row = row_block(row);
         return row - row_offsets_[block_row];
     }
-    Index indexToBlockOuter(Index col) const {
-        const Index block_col = outerBlockIndex(col);
+    /// @brief maps a checked global column to its local coordinate within a block
+    Index local_col(Index col) const {
+        const Index block_col = col_block(col);
         return col - col_offsets_[block_col];
     }
 
+    /// @brief returns a checked global coefficient by value, using zero for absent entries
     Scalar coeff(Index row, Index col) const {
         validate_block_shapes_();
-        const Index block_row = innerBlockIndex(row);
-        const Index block_col = outerBlockIndex(col);
+        const Index block_row = row_block(row);
+        const Index block_col = col_block(col);
         return blocks_[flat_index_(block_row, block_col)].coeff(
           row - row_offsets_[block_row], col - col_offsets_[block_col]);
     }
+    /// @brief reports whether a checked global position has a stored coefficient
     bool contains(Index row, Index col) const {
         validate_block_shapes_();
-        const Index block_row = innerBlockIndex(row);
-        const Index block_col = outerBlockIndex(col);
+        const Index block_row = row_block(row);
+        const Index block_col = col_block(col);
         return blocks_[flat_index_(block_row, block_col)].contains(
           row - row_offsets_[block_row], col - col_offsets_[block_col]);
     }
-    Scalar& value_ref(Index row, Index col) {
+    /// @brief borrows an existing global coefficient without changing the stored pattern
+    Scalar& value_ref(Index row, Index col) & {
         validate_block_shapes_();
-        const Index block_row = innerBlockIndex(row);
-        const Index block_col = outerBlockIndex(col);
+        const Index block_row = row_block(row);
+        const Index block_col = col_block(col);
         return blocks_[flat_index_(block_row, block_col)].value_ref(
           row - row_offsets_[block_row], col - col_offsets_[block_col]);
     }
-    Scalar& coeffRef(Index row, Index col) {
+    /// @brief borrows a global coefficient, atomically inserting a stored zero if absent
+    Scalar& coeff_ref(Index row, Index col) & {
         validate_block_shapes_();
-        const Index block_row = innerBlockIndex(row);
-        const Index block_col = outerBlockIndex(col);
-        return blocks_[flat_index_(block_row, block_col)].coeffRef(
+        const Index block_row = row_block(row);
+        const Index block_col = col_block(col);
+        return blocks_[flat_index_(block_row, block_col)].coeff_ref(
           row - row_offsets_[block_row], col - col_offsets_[block_col]);
     }
 
+    /// @brief copies the partition into sorted owning CSR storage, preserving stored zeros
     SparseMatrix<Scalar> to_sparse() const {
         validate_block_shapes_();
-        std::vector<triplet_type> triplets;
-        std::vector<std::pair<Index, Index>> stored_zeros;
-        triplets.reserve(non_zeros());
+        const std::size_t count = non_zeros();
+        fdapde_strong_assert(
+          count <= static_cast<std::size_t>(std::numeric_limits<Index>::max()), std::length_error,
+          "SparseBlockMatrix CSR storage exceeds the supported int range");
+        block_type result(rows_, cols_);
+        result.column_indices_.reserve(count);
+        result.values_.reserve(count);
+        // visit local rows across increasing block columns to emit already sorted CSR storage
         for (Index block_row = 0; block_row < BlockRows_; ++block_row) {
-            for (Index block_col = 0; block_col < BlockCols_; ++block_col) {
-                const auto& current = blocks_[flat_index_(block_row, block_col)];
-                for (Index row = 0; row < current.rows(); ++row) {
-                    for (const auto entry : current.row(row)) {
-                        const Index global_row = row_offsets_[block_row] + row;
-                        const Index global_col = col_offsets_[block_col] + entry.column();
-                        if (entry.value() == Scalar {}) {
-                            stored_zeros.emplace_back(global_row, global_col);
-                        } else {
-                            triplets.emplace_back(global_row, global_col, entry.value());
-                        }
+            for (Index row = 0; row < row_extents_[block_row]; ++row) {
+                for (Index block_col = 0; block_col < BlockCols_; ++block_col) {
+                    for (const auto entry : blocks_[flat_index_(block_row, block_col)].row(row)) {
+                        result.column_indices_.push_back(col_offsets_[block_col] + entry.column());
+                        result.values_.push_back(entry.value());
                     }
                 }
+                result.row_offsets_[row_offsets_[block_row] + row + 1] = static_cast<Index>(result.values_.size());
             }
         }
-        SparseMatrix<Scalar> result(rows_, cols_, triplets);
-        for (const auto& [row, col] : stored_zeros) result.coeffRef(row, col);
         return result;
     }
 
+    /// @brief materializes all block coefficients into an independent dense matrix
     Matrix<Scalar, Dynamic, Dynamic> to_dense() const {
         validate_block_shapes_();
         Matrix<Scalar, Dynamic, Dynamic> result(rows_, cols_);
@@ -410,9 +326,11 @@ class SparseBlockMatrix {
         return result;
     }
 
+    /// @brief atomically replaces selected global rows and columns with unit diagonals
     void rebuild_with_constraints(const std::vector<Index>& dofs) {
         if (dofs.empty()) return;
-        if (rows_ != cols_) { throw std::invalid_argument("SparseBlockMatrix constraints require a square matrix"); }
+        fdapde_strong_assert(
+          !(rows_ != cols_), std::invalid_argument, "SparseBlockMatrix constraints require a square matrix");
         SparseMatrix<Scalar> constrained = to_sparse();
         constrained.rebuild_with_constraints(dofs);
 
@@ -426,6 +344,7 @@ class SparseBlockMatrix {
         swap(replacement);
     }
 
+    /// @brief atomically rebuilds every block from checked global-coordinate triplets
     template <typename TripletList> void rebuild(const TripletList& triplets) {
         std::vector<std::vector<triplet_type>> block_triplets(block_count_);
         for (const auto& triplet : triplets) {
@@ -433,42 +352,35 @@ class SparseBlockMatrix {
             const Index block_col = checked_triplet_block_col_(triplet.col());
             block_triplets[flat_index_(block_row, block_col)].emplace_back(
               triplet.row() - row_offsets_[block_row], triplet.col() - col_offsets_[block_col],
-              static_cast<Scalar>(triplet.value()));
+              block_type::checked_scalar_cast_(triplet.value()));
         }
 
         SparseBlockMatrix replacement(row_extents_, col_extents_);
         for (std::size_t i = 0; i < block_count_; ++i) replacement.blocks_[i].rebuild(block_triplets[i]);
         swap(replacement);
     }
+    /// @brief rebuilds the grid from a global-coordinate triplet initializer list
     void rebuild(std::initializer_list<triplet_type> triplets) {
         rebuild<std::initializer_list<triplet_type>>(triplets);
     }
 
+    /// @brief atomically replaces one block from checked local-coordinate triplets
     template <typename TripletList> void rebuild_block(Index row, Index col, const TripletList& triplets) {
         validate_block_index_(row, col);
         std::vector<triplet_type> local_triplets;
         for (const auto& triplet : triplets) {
-            local_triplets.emplace_back(triplet.row(), triplet.col(), static_cast<Scalar>(triplet.value()));
+            local_triplets.emplace_back(
+              triplet.row(), triplet.col(), block_type::checked_scalar_cast_(triplet.value()));
         }
         block_type replacement(row_extents_[row], col_extents_[col], local_triplets);
         blocks_[flat_index_(row, col)].swap(replacement);
     }
+    /// @brief replaces one block from a local-coordinate triplet initializer list
     void rebuild_block(Index row, Index col, std::initializer_list<triplet_type> triplets) {
         rebuild_block<std::initializer_list<triplet_type>>(row, col, triplets);
     }
 
-    template <typename TripletList> void setFromTriplets(const TripletList& triplets) { rebuild(triplets); }
-    void setFromTriplets(std::initializer_list<triplet_type> triplets) { rebuild(triplets); }
-
-    template <Index Row, Index Col, typename TripletList>
-        requires(Row >= 0 && Row < BlockRows_ && Col >= 0 && Col < BlockCols_)
-    void setBlockFromTriplets(const TripletList& triplets) {
-        rebuild_block(Row, Col, triplets);
-    }
-    template <typename TripletList> void setBlockFromTriplets(Index row, Index col, const TripletList& triplets) {
-        rebuild_block(row, col, triplets);
-    }
-
+    /// @brief exchanges partitions and block storage without allocation
     void swap(SparseBlockMatrix& other) noexcept {
         using std::swap;
         for (std::size_t i = 0; i < block_count_; ++i) blocks_[i].swap(other.blocks_[i]);
@@ -479,51 +391,45 @@ class SparseBlockMatrix {
         swap(rows_, other.rows_);
         swap(cols_, other.cols_);
     }
+    /// @brief exchanges two grids through their storage swap
     friend void swap(SparseBlockMatrix& lhs, SparseBlockMatrix& rhs) noexcept { lhs.swap(rhs); }
    private:
+    /// @brief converts a public extent to a nonnegative supported int value
     template <std::integral Extent> static Index checked_extent_(Extent value) {
-        if (!std::in_range<Index>(value)) {
-            throw std::length_error("SparseBlockMatrix extent exceeds the supported int range");
-        }
+        fdapde_strong_assert(
+          std::in_range<Index>(value), std::length_error, "SparseBlockMatrix extent exceeds the supported int range");
         const Index result = static_cast<Index>(value);
-        if (result < 0) { throw std::invalid_argument("SparseBlockMatrix extents must be nonnegative"); }
+        fdapde_strong_assert(!(result < 0), std::invalid_argument, "SparseBlockMatrix extents must be nonnegative");
         return result;
     }
 
-    template <typename Dimension> static Index checked_block_dimension_(Dimension value) {
-        if (!std::in_range<Index>(value)) {
-            throw std::length_error("SparseBlockMatrix block dimension exceeds the supported int range");
-        }
-        const Index result = static_cast<Index>(value);
-        if (result < 0) { throw std::invalid_argument("SparseBlockMatrix block dimensions must be nonnegative"); }
-        return result;
-    }
-
+    /// @brief maps validated block coordinates to the row-major storage array
     static constexpr std::size_t flat_index_(Index row, Index col) {
         return static_cast<std::size_t>(row) * static_cast<std::size_t>(BlockCols_) + static_cast<std::size_t>(col);
     }
 
+    /// @brief builds partition prefix sums while rejecting global dimension overflow
     template <std::size_t N>
     static Index fill_offsets_(const std::array<Index, N>& extents, std::array<Index, N + 1>& offsets) {
         Index total = 0;
         offsets[0] = 0;
         for (std::size_t i = 0; i < N; ++i) {
-            if (extents[i] > std::numeric_limits<Index>::max() - total) {
-                throw std::length_error("SparseBlockMatrix dimensions exceed the supported int range");
-            }
+            fdapde_strong_assert(
+              !(extents[i] > std::numeric_limits<Index>::max() - total), std::length_error,
+              "SparseBlockMatrix dimensions exceed the supported int range");
             total += extents[i];
             offsets[i + 1] = total;
         }
         return total;
     }
 
+    /// @brief allocates empty blocks before publishing a validated partition
     void
     configure_(const std::array<Index, BlockRows_>& row_extents, const std::array<Index, BlockCols_>& col_extents) {
         std::array<Index, BlockRows_ + 1> row_offsets {};
         std::array<Index, BlockCols_ + 1> col_offsets {};
         const Index rows = fill_offsets_(row_extents, row_offsets);
         const Index cols = fill_offsets_(col_extents, col_offsets);
-        if (rows > 0) checked_storage_index_(rows - 1);
 
         std::array<block_type, block_count_> blocks {};
         for (Index row = 0; row < BlockRows_; ++row) {
@@ -540,27 +446,18 @@ class SparseBlockMatrix {
         blocks_.swap(blocks);
     }
 
+    /// @brief copies native CSR storage with checked scalar conversion and preserves its pattern
     template <typename SparseBlock> block_type materialize_sparse_(const SparseBlock& block) const {
-        const Index rows = checked_block_dimension_(block.rows());
-        const Index cols = checked_block_dimension_(block.cols());
-        std::vector<triplet_type> triplets;
-        std::vector<std::pair<Index, Index>> stored_zeros;
-        triplets.reserve(static_cast<std::size_t>(block.non_zeros()));
-        for (Index row = 0; row < rows; ++row) {
-            for (const auto entry : block.row(row)) {
-                const Scalar value = static_cast<Scalar>(entry.value());
-                if (value == Scalar {}) {
-                    stored_zeros.emplace_back(row, entry.column());
-                } else {
-                    triplets.emplace_back(row, entry.column(), value);
-                }
-            }
-        }
-        block_type result(rows, cols, triplets);
-        for (const auto& [row, col] : stored_zeros) result.coeffRef(row, col);
+        if constexpr (std::is_same_v<typename SparseBlock::Scalar, Scalar>) return block;
+        block_type result(block.rows(), block.cols());
+        result.row_offsets_ = block.row_offsets_;
+        result.column_indices_ = block.column_indices_;
+        result.values_.reserve(static_cast<std::size_t>(block.non_zeros()));
+        for (const auto& value : block.values_) result.values_.push_back(block_type::checked_scalar_cast_(value));
         return result;
     }
 
+    /// @brief materializes native sparse, nested block or dense expressions into owning CSR coefficients
     template <typename Block> block_type materialize_(const Block& block) const {
         if constexpr (internals::is_native_sparse_matrix_v<Block>) {
             return materialize_sparse_(block);
@@ -570,12 +467,12 @@ class SparseBlockMatrix {
             const auto sparse = block.to_sparse();
             return materialize_sparse_(sparse);
         } else {
-            const Index rows = checked_block_dimension_(block.rows());
-            const Index cols = checked_block_dimension_(block.cols());
+            const Index rows = checked_extent_(block.rows());
+            const Index cols = checked_extent_(block.cols());
             std::vector<triplet_type> triplets;
             for (Index row = 0; row < rows; ++row) {
                 for (Index col = 0; col < cols; ++col) {
-                    const Scalar value = static_cast<Scalar>(block(row, col));
+                    const Scalar value = block_type::checked_scalar_cast_(block(row, col));
                     if (value != Scalar {}) triplets.emplace_back(row, col, value);
                 }
             }
@@ -583,42 +480,44 @@ class SparseBlockMatrix {
         }
     }
 
-    static StorageIndex checked_storage_index_(Index value) {
-        if (!std::in_range<StorageIndex>(value)) {
-            throw std::length_error("SparseBlockMatrix dimension exceeds the storage-index range");
-        }
-        return static_cast<StorageIndex>(value);
-    }
-
+    /// @brief checks a public block coordinate against the fixed grid
     void validate_block_index_(Index row, Index col) const {
-        if (row < 0 || row >= BlockRows_ || col < 0 || col >= BlockCols_) {
-            throw std::out_of_range("SparseBlockMatrix block index is out of range");
-        }
+        fdapde_strong_assert(
+          !(row < 0 || row >= BlockRows_ || col < 0 || col >= BlockCols_), std::out_of_range,
+          "SparseBlockMatrix block index is out of range");
     }
+    /// @brief checks a public row coordinate against the global shape
     void validate_global_row_(Index row) const {
-        if (row < 0 || row >= rows_) { throw std::out_of_range("SparseBlockMatrix row index is out of range"); }
+        fdapde_strong_assert(
+          !(row < 0 || row >= rows_), std::out_of_range, "SparseBlockMatrix row index is out of range");
     }
+    /// @brief checks a public column coordinate against the global shape
     void validate_global_col_(Index col) const {
-        if (col < 0 || col >= cols_) { throw std::out_of_range("SparseBlockMatrix column index is out of range"); }
+        fdapde_strong_assert(
+          !(col < 0 || col >= cols_), std::out_of_range, "SparseBlockMatrix column index is out of range");
     }
+    /// @brief rejects borrowed blocks whose structural mutation violates the partition
     void validate_block_shapes_() const {
         for (Index row = 0; row < BlockRows_; ++row) {
             for (Index col = 0; col < BlockCols_; ++col) {
                 const auto& current = blocks_[flat_index_(row, col)];
-                if (current.rows() != row_extents_[row] || current.cols() != col_extents_[col]) {
-                    throw std::invalid_argument("SparseBlockMatrix mutable block no longer matches its partition");
-                }
+                fdapde_strong_assert(
+                  !(current.rows() != row_extents_[row] || current.cols() != col_extents_[col]), std::invalid_argument,
+                  "SparseBlockMatrix mutable block no longer matches its partition");
             }
         }
     }
 
+    /// @brief finds the nonempty partition interval containing a validated global coordinate
     template <std::size_t N> static Index block_index_(const std::array<Index, N>& offsets, Index index) {
         return static_cast<Index>(std::upper_bound(offsets.begin(), offsets.end(), index) - offsets.begin() - 1);
     }
+    /// @brief validates an incoming triplet row and locates its block row
     Index checked_triplet_block_row_(Index row) const {
         validate_global_row_(row);
         return block_index_(row_offsets_, row);
     }
+    /// @brief validates an incoming triplet column and locates its block column
     Index checked_triplet_block_col_(Index col) const {
         validate_global_col_(col);
         return block_index_(col_offsets_, col);

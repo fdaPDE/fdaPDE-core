@@ -275,6 +275,35 @@ bool benchmark_case(int subdivisions, int repetitions) {
         return observe_eigen_dense(result);
     };
 
+    auto native_blocks = [&] {
+        const fdapde::SparseBlockMatrix<double, 2, 2> blocks(native_matrix, native_matrix, 0, native_matrix);
+        return observe_native_sparse(blocks.to_sparse());
+    };
+    auto eigen_blocks = [&] {
+        // both paths own three copied blocks before producing one flattened sparse owner
+        const eigen_sparse blocks[] = {eigen_matrix, eigen_matrix, eigen_matrix};
+        eigen_sparse result(2 * nodes, 2 * nodes);
+        result.reserve(3 * eigen_matrix.nonZeros());
+        for (int row = 0; row < 2 * nodes; ++row) {
+            result.startVec(row);
+            if (row < nodes) {
+                for (int block = 0; block < 2; ++block) {
+                    for (eigen_sparse::InnerIterator entry(blocks[block], row); entry; ++entry) {
+                        result.insertBack(row, block * nodes + entry.col()) = entry.value();
+                    }
+                }
+            } else {
+                for (eigen_sparse::InnerIterator entry(blocks[2], row - nodes); entry; ++entry) {
+                    result.insertBack(row, nodes + entry.col()) = entry.value();
+                }
+            }
+        }
+        result.finalize();
+        return observe_eigen_sparse(result);
+    };
+    const bool added_green =
+      benchmark_operation("sparse_blocks", subdivisions, repetitions, 16, native_blocks, eigen_blocks);
+
     const bool construction_green =
       benchmark_operation("construction", subdivisions, repetitions, 16, native_construction, eigen_construction);
     const bool constraints_green =
@@ -288,7 +317,8 @@ bool benchmark_case(int subdivisions, int repetitions) {
 
     std::cout << "nodes=" << nodes << " raw_triplets=" << native_triplets.size()
               << " nonzeros=" << native_matrix.non_zeros() << '\n';
-    return construction_green && constraints_green && transpose_green && matvec_green && sparse_dense_green;
+    return added_green && construction_green && constraints_green && transpose_green && matvec_green &&
+           sparse_dense_green;
 }
 
 }   // namespace
