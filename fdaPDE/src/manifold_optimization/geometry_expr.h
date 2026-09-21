@@ -31,6 +31,89 @@ template <typename Derived> struct GeometryExpr : public MatrixExpr<Derived> {
 
 namespace internals {
 
+/// @brief binds a parameter by value to borrowed or owned prepared geodesic data
+template <typename Curve> class spd_geodesic_expr : public GeometryExpr<spd_geodesic_expr<Curve>> {
+   public:
+    using CurveType = std::remove_cvref_t<Curve>;
+    using Scalar = typename CurveType::Scalar;
+    static constexpr int Rows = CurveType::Rows;
+    static constexpr int Cols = Rows;
+    static constexpr int StorageOrder = RowMajor;
+    static constexpr int NestAsRef = 0;
+    static constexpr int ReadOnly = 1;
+    using assignment_executor = deleted_assignment_executor;
+    /// @brief retains the prepared curve and parameter without evaluating a matrix
+    spd_geodesic_expr(Curve curve, double parameter) : curve_(std::forward<Curve>(curve)), parameter_(parameter) { }
+    /// @brief returns the prepared matrix order
+    int rows() const { return curve_.rows(); }
+    /// @brief returns the prepared matrix order
+    int cols() const { return rows(); }
+    /// @brief reconstructs symmetric coefficients without certifying numerical positive definiteness
+    auto eval_matrix() const { return curve_.eval(parameter_); }
+    /// @brief certifies the same reconstructed coefficients using the SPD destination cache policy
+    template <typename Policy> auto eval() const { return SPDMatrix<Scalar, Rows, Cols, Policy>(eval_matrix()); }
+   private:
+    Curve curve_;
+    double parameter_;
+};
+
+/// @brief owns a snapshot of the factors or logarithmic charts defining an SPD geodesic
+/// @details affine-invariant curves store F and log(lambda); log-Euclidean curves store log(A) and log(B)-log(A)
+template <typename Scalar_, int Order_, bool AffineInvariant> class spd_geodesic {
+   public:
+    using Scalar = Scalar_;
+    static constexpr int Rows = Order_;
+    using Symmetric = SymmetricMatrix<Scalar, Rows, Rows>;
+    using First = std::conditional_t<AffineInvariant, Matrix<Scalar, Rows, Rows>, Symmetric>;
+    using Second = std::conditional_t<AffineInvariant, Vector<Scalar, Rows>, Symmetric>;
+    /// @brief owns prepared data independently of endpoint and geometry lifetimes
+    spd_geodesic(First first, Second second) : first_(std::move(first)), second_(std::move(second)) { }
+    /// @brief returns the fixed or runtime order of the prepared data
+    int rows() const { return first_.rows(); }
+    /// @brief borrows a persistent curve and stores the parameter in a deferred matrix expression
+    auto operator()(double parameter) const& { return spd_geodesic_expr<const spd_geodesic&>(*this, parameter); }
+    /// @brief keeps a temporary prepared curve alive inside its deferred matrix expression
+    auto operator()(double parameter) && { return spd_geodesic_expr<spd_geodesic>(std::move(*this), parameter); }
+    /// @brief prevents borrowing a const temporary prepared curve
+    void operator()(double) const&& = delete;
+    /// @brief reconstructs finite symmetric coefficients once without an SPD certification
+    auto eval(double parameter) const {
+        const Scalar t = static_cast<Scalar>(parameter);
+        fdapde_strong_assert(std::isfinite(t), std::invalid_argument, "geodesic: parameter must be finite");
+        Symmetric value;
+        if constexpr (Rows == Dynamic) value.resize(rows(), rows());
+        if constexpr (AffineInvariant) {
+            Vector<Scalar, Rows> powers;
+            if constexpr (Rows == Dynamic) powers.resize(rows());
+            for (int k = 0; k < rows(); ++k) {
+                powers[k] = std::exp(t * second_[k]);
+                fdapde_strong_assert(
+                  std::isfinite(powers[k]), std::domain_error, "geodesic: unrepresentable spectral power");
+            }
+            for (int i = 0; i < rows(); ++i)
+                for (int j = 0; j <= i; ++j) {
+                    Scalar coefficient = 0;
+                    for (int k = 0; k < rows(); ++k) coefficient += first_(i, k) * powers[k] * first_(j, k);
+                    fdapde_strong_assert(
+                      std::isfinite(coefficient), std::domain_error, "geodesic: nonfinite reconstruction");
+                    value(i, j) = coefficient;
+                }
+            return value;
+        } else {
+            for (int i = 0; i < rows(); ++i)
+                for (int j = 0; j <= i; ++j) value(i, j) = first_(i, j) + t * second_(i, j);
+            validate_finite_symmetric(value);
+            const EVD<Symmetric> evd(value);
+            require_computed(evd);
+            const auto powers = transform_eigenvalues(evd, rows(), [](auto x) { return std::exp(x); });
+            return reconstruct_symmetric(evd, rows(), powers);
+        }
+    }
+   private:
+    First first_;
+    Second second_;
+};
+
 /// @brief stores an unevaluated log-Euclidean combination with borrowed geometry and safely nested operands
 template <typename Geometry, typename Points, typename Weights>
 class log_euclidean_mean_expr : public GeometryExpr<log_euclidean_mean_expr<Geometry, Points, Weights>> {

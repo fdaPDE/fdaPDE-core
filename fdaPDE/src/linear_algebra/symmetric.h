@@ -258,6 +258,10 @@ class SymmetricMatrix :
     /// @brief evaluates the lower triangle of a symmetric expression into owned storage
     template <typename RhsXprType_>
     constexpr SymmetricMatrix(const SymmetricMatrixExpr<RhsXprType_>& rhs) : Base(), data_(rhs) { }
+    /// @brief materializes a whole-matrix operation once before copying its symmetric result
+    template <typename RhsXprType_>
+        requires requires(const RhsXprType_& expression) { expression.eval_matrix(); }
+    explicit SymmetricMatrix(const MatrixExpr<RhsXprType_>& rhs) : SymmetricMatrix(rhs.derived().eval_matrix()) { }
     /// @brief evaluates a symmetric expression into this owner's packed triangle
     template <typename RhsXprType_>
     constexpr SymmetricMatrix& operator=(const SymmetricMatrixExpr<RhsXprType_>& rhs) & {

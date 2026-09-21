@@ -164,6 +164,18 @@ template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class LogEucl
             return fdapde::matrix_exp_frechet(chart, fdapde::matrix_exp_frechet(chart, euclidean_gradient));
         }
     }
+
+    /// @brief prepares an owning log-Euclidean geodesic snapshot from independently cached endpoints
+    /// @details defers exp(log(from) + t * (log(to) - log(from))); SPD destinations certify evaluated coefficients
+    template <SPDLike PointFrom, SPDLike PointTo> auto geodesic(const PointFrom& from, const PointTo& to) const {
+        check_point_(from);
+        check_point_(to);
+        const Tangent first(fdapde::matrix_log(from));
+        const Tangent last(fdapde::matrix_log(to));
+        Tangent difference(last - first);
+        return fdapde::internals::spd_geodesic<Scalar, Order_, false>(first, std::move(difference));
+    }
+
     /// @brief defers exp(sum_i weights[i] * log(points[i])) without normalizing finite real weights
     /// @details borrows persistent operands and retains temporary selection nodes; owning temporaries are rejected
     template <typename Points, typename Weights>

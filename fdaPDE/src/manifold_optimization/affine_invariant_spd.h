@@ -17,6 +17,7 @@
 #ifndef __FDAPDE_MANIFOLD_AFFINE_INVARIANT_SPD_H__
 #define __FDAPDE_MANIFOLD_AFFINE_INVARIANT_SPD_H__
 
+#include "geometry_expr.h"
 #include "header_check.h"
 #include "spd_geometry_common.h"
 
@@ -148,6 +149,22 @@ template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class AffineI
         const fdapde::SPDMatrix<Scalar, Order_, Order_> relative(
           internals::symmetric_congruence<Scalar, Order_>(from_inverse_sqrt, to, order_));
         return internals::symmetric_congruence<Scalar, Order_>(from_sqrt, fdapde::matrix_log(relative), order_);
+    }
+
+    /// @brief prepares an owning geodesic snapshot from two verified endpoints with independent cache policies
+    /// @details the returned curve produces deferred expressions; SPD destinations certify their evaluated coefficients
+    template <SPDLike PointFrom, SPDLike PointTo> auto geodesic(const PointFrom& from, const PointTo& to) const {
+        check_point_(from);
+        check_point_(to);
+        const auto root = internals::spd_sqrt_factor(from);
+        const auto inverse_root = internals::spd_inverse_sqrt_factor(from);
+        const fdapde::SPDMatrix<Scalar, Order_, Order_, Cache::Spectral> relative(
+          internals::symmetric_congruence<Scalar, Order_>(inverse_root, to, order_));
+        fdapde::Matrix<Scalar, Order_, Order_> factors(root * relative.cache().eigenvectors());
+        fdapde::Vector<Scalar, Order_> logarithms;
+        if constexpr (Order_ == fdapde::Dynamic) logarithms.resize(order_);
+        for (int k = 0; k < order_; ++k) logarithms[k] = std::log(relative.cache().eigenvalues()[k]);
+        return fdapde::internals::spd_geodesic<Scalar, Order_, true>(std::move(factors), std::move(logarithms));
     }
 
     /// @brief returns the geodesic distance between checked points

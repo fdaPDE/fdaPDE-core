@@ -148,3 +148,48 @@ expression. Sources must not be modified concurrently with evaluation.
 See [MatrixBatch](matrix-batch.md) for element views, selections and map/redux.
 AIRM iterative means, C-LE, interpolation derivatives/adjoints, optimizer
 integration, FEM assembly and parallel execution are not provided by this API.
+
+## Prepared two-point geodesics
+
+Both geometries provide `geodesic(from, to)`. Preparation accepts verified owners
+or views with independent cache policies and owns a snapshot of the data needed
+for the entire curve. Endpoint or geometry destruction, and subsequent endpoint
+updates, do not change that snapshot.
+
+```cpp
+auto curve = geometry.geodesic(first, last);
+Point midpoint(curve(0.5)); // certifies SPD and prepares the destination cache
+SymmetricMatrix<double, 2, 2> value(curve(0.5)); // reconstructs without SPD certification
+Point checked(value); // certifies the stored coefficients later
+points[i] = curve(t); // follows the destination type, including batch views
+```
+
+For AIRM, preparation computes `A^(-1/2) B A^(-1/2) = U Lambda U^T` and retains
+`F = A^(1/2) U` and `ell = log(diag(Lambda))`. Evaluation reconstructs
+`F diag(exp(t * ell)) F^T`. Only scalar exponentials and reconstruction are needed
+to evaluate the expression; storage is quadratic in matrix order.
+
+For LE, preparation retains `X = log(A)` and `D = log(B) - X`. Evaluation computes
+`exp(X + t D)`. Noncommuting endpoints generally require a new decomposition of
+that chart at each parameter; the endpoint logarithms are reused.
+
+`curve(t)` is a `GeometryExpr`, evaluated globally once per materialization.
+It copies the parameter, borrows a persistent curve, and owns a temporary curve.
+A const temporary curve is rejected. A borrowed curve must outlive its expressions
+and must not be replaced or moved while they are being used. Curve copies own
+independent data. Any finite real parameter is permitted, including extrapolation
+outside `[0,1]`; nonfinite parameters and nonfinite results are rejected
+at materialization. Dense and symmetric destinations receive the reconstructed
+coefficients without SPD certification. This includes finite results that have
+become singular or numerically ill-conditioned. Only an SPD destination certifies
+positive definiteness and selects its cache policy; the certification EVD also
+prepares the requested cache.
+
+The standalone examples `examples/spd_batch_interpolation.cpp` (AIRM) and
+`examples/spd_batch_interpolation_le.cpp` (LE) compare cached inputs, output cache
+costs, and prepared curves in a single `main` with separate scopes. Cases 4 and 5
+use identical preparation and `points[i] = curve(t)` evaluation. Only the batch
+element type changes: SPD in case 4, symmetric in case 5. Case 5 defers SPD
+certification until after timing. Setup and allocation are timed, and every sample
+is checked after timing. The ratio includes destination storage and assignment
+costs as well as certification work.
