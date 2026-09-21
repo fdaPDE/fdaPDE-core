@@ -59,7 +59,9 @@ class MatrixFieldProduct : public MatrixFieldBase<Lhs::StaticInputSize, MatrixFi
     }
     MatrixFieldProduct(const Lhs& lhs, const Rhs& rhs) requires(Rows == Dynamic || Cols == Dynamic)
         : Base(), lhs_(lhs), rhs_(rhs) {
-        fdapde_assert(lhs_.cols() == rhs_.rows() && lhs_.input_size() == rhs_.input_size());
+        fdapde_assert(lhs_.cols() == rhs_.rows(), std::invalid_argument, "matrix product inner dimensions must match");
+        fdapde_assert(
+          lhs_.input_size() == rhs_.input_size(), std::invalid_argument, "operand input dimensions must match");
     }
     constexpr int rows() const { return lhs_.rows(); }
     constexpr int cols() const { return rhs_.cols(); }
@@ -176,26 +178,30 @@ class MatrixFieldBlock :
         block_rows_(BlockRows_ == 1 ? 1 : xpr.rows()),
         block_cols_(BlockCols_ == 1 ? 1 : xpr.cols()) {
         fdapde_static_assert(BlockRows_ == 1 || BlockCols_ == 1, THIS_METHOD_IS_ONLY_FOR_ROW_AND_COLUMN_BLOCKS);
-        fdapde_constexpr_assert(
-          i >= 0 && ((BlockRows_ == 1 && i < xpr_.rows()) || (BlockCols_ == 1 && i < xpr_.cols())));
+        fdapde_assert(i >= 0, std::out_of_range, "block index must be nonnegative");
+        fdapde_assert(
+          ((BlockRows_ == 1 && i < xpr_.rows()) || (BlockCols_ == 1 && i < xpr_.cols())), std::out_of_range,
+          "block index out of range");
     }
     constexpr MatrixFieldBlock(const Derived& xpr, int start_row, int start_col) :
         Base(), xpr_(xpr), start_row_(start_row), start_col_(start_col), block_rows_(BlockRows_),
         block_cols_(BlockCols_) {
         fdapde_static_assert(
           BlockRows_ != Dynamic && BlockCols_ != Dynamic, THIS_METHOD_IS_ONLY_FOR_STATIC_SIZED_BLOCKS);
-        fdapde_constexpr_assert(
-          start_row_ >= 0 && start_row_ + BlockRows_ <= xpr_.rows() && start_col_ >= 0 &&
-          start_col_ + BlockCols_ <= xpr_.cols());
+        fdapde_assert(start_row_ >= 0, std::out_of_range, "block starting row must be nonnegative");
+        fdapde_assert(start_row_ + BlockRows_ <= xpr_.rows(), std::out_of_range, "block exceeds the available rows");
+        fdapde_assert(start_col_ >= 0, std::out_of_range, "block starting column must be nonnegative");
+        fdapde_assert(start_col_ + BlockCols_ <= xpr_.cols(), std::out_of_range, "block exceeds the available columns");
     }
     MatrixFieldBlock(const Derived& xpr, int start_row, int start_col, int block_rows, int block_cols) :
         Base(), xpr_(xpr), start_row_(start_row), start_col_(start_col), block_rows_(block_rows),
         block_cols_(block_cols) {
         fdapde_static_assert(
           BlockRows_ == Dynamic || BlockCols_ == Dynamic, THIS_METHOD_IS_ONLY_FOR_DYNAMIC_SIZED_BLOCKS);
-        fdapde_assert(
-          start_row_ >= 0 && start_row_ + block_rows <= xpr_.rows() && start_col_ >= 0 &&
-          start_col_ + block_cols <= xpr_.cols());
+        fdapde_assert(start_row_ >= 0, std::out_of_range, "block starting row must be nonnegative");
+        fdapde_assert(start_row_ + block_rows <= xpr_.rows(), std::out_of_range, "block exceeds the available rows");
+        fdapde_assert(start_col_ >= 0, std::out_of_range, "block starting column must be nonnegative");
+        fdapde_assert(start_col_ + block_cols <= xpr_.cols(), std::out_of_range, "block exceeds the available columns");
     }
 
     constexpr int rows() const { return block_rows_; }
@@ -239,7 +245,8 @@ class MatrixFieldBlock :
         fdapde_static_assert(
           std::is_convertible_v<typename RhsDerived::FunctorType FDAPDE_COMMA typename Derived::FunctorType>,
           YOU_ARE_TRYING_TO_ASSIGN_A_BLOCK_WITH_NON_CONVERTIBLE_COEFFICIENT_TYPE);
-        fdapde_assert(rhs.rows() == xpr_.rows() && rhs.cols() == xpr_.cols());
+        fdapde_assert(rhs.rows() == xpr_.rows(), std::invalid_argument, "operand row counts must match");
+        fdapde_assert(rhs.cols() == xpr_.cols(), std::invalid_argument, "operand column counts must match");
         for (int i = 0; i < xpr_.rows(); ++i) {
             for (int j = 0; j < xpr_.cols(); ++j) { xpr_(start_row_ + i, start_col_ + j) = rhs(i, j); }
         }
@@ -291,8 +298,11 @@ class MatrixFieldBinOp : public MatrixFieldBase<Lhs::StaticInputSize, MatrixFiel
         requires(StaticInputSize == Dynamic || Rows == Dynamic || Cols == Dynamic)
         : lhs_(lhs), rhs_(rhs), op_(op) {
         fdapde_assert(
-          (lhs.input_size() == rhs.input_size()) && (Rows != Dynamic || lhs.rows() == rhs.rows()) &&
-          (Cols != Dynamic || lhs.cols() == rhs.cols()));
+          lhs.input_size() == rhs.input_size(), std::invalid_argument, "operand input dimensions must match");
+        fdapde_assert(
+          Rows != Dynamic || lhs.rows() == rhs.rows(), std::invalid_argument, "operand row counts must match");
+        fdapde_assert(
+          Cols != Dynamic || lhs.cols() == rhs.cols(), std::invalid_argument, "operand column counts must match");
     }
     MatrixFieldBinOp(const Lhs& lhs, const Rhs& rhs) : MatrixFieldBinOp(lhs, rhs, BinaryOperation {}) { }
 
@@ -534,7 +544,8 @@ class MatrixField :
         : Base(), data_(), inner_size_(0), n_rows_(0), n_cols_(0) { }
     MatrixField(int inner_size, int rows, int cols) requires(is_dynamic_sized<This>::value)
         : Base(), inner_size_(inner_size), n_rows_(rows), n_cols_(cols) {
-        fdapde_assert(rows > 0 && cols > 0);
+        fdapde_assert(rows > 0, std::invalid_argument, "row count must be positive");
+        fdapde_assert(cols > 0, std::invalid_argument, "column count must be positive");
         data_.resize(rows * cols);
     }
     // vector constructor
@@ -560,7 +571,8 @@ class MatrixField :
         fdapde_static_assert(
           StaticInputSize == Size_ && std::is_convertible_v<typename RhsDerived::FunctorType FDAPDE_COMMA FunctorType>,
           INVALID_INPUT_SIZE_OR_NON_CONVERTIBLE_FUNCTOR_TYPE);
-	fdapde_assert(rows() == other.rows() && cols() == other.cols());
+        fdapde_assert(rows() == other.rows(), std::invalid_argument, "operand row counts must match");
+        fdapde_assert(cols() == other.cols(), std::invalid_argument, "operand column counts must match");
         for (int i = 0; i < n_rows_; ++i) {
             for (int j = 0; j < n_cols_; ++j) { operator()(i, j) = other(i, j); }
         }
@@ -601,7 +613,9 @@ class MatrixField :
 
     void resize(int inner_size, int rows, int cols) {
         fdapde_static_assert(Rows == Dynamic || Cols == Dynamic, THIS_METHOD_IS_ONLY_FOR_DYNAMIC_SIZED_MATRICES);
-        fdapde_assert(inner_size > 0 && rows > 0 && cols > 0);
+        fdapde_assert(inner_size > 0, std::invalid_argument, "input dimension must be positive");
+        fdapde_assert(rows > 0, std::invalid_argument, "row count must be positive");
+        fdapde_assert(cols > 0, std::invalid_argument, "column count must be positive");
         if constexpr (Rows == Dynamic) n_rows_ = rows;
         if constexpr (Cols == Dynamic) n_cols_ = cols;
         data_ = std::vector<FunctorType>(n_rows_ * n_cols_);
@@ -612,7 +626,8 @@ class MatrixField :
         fdapde_static_assert(
           (Rows == Dynamic && Cols == 1) || (Cols == Dynamic && Rows == 1),
           THIS_METHOD_IS_ONLY_FOR_DYNAMIC_SIZED_VECTORS);
-        fdapde_assert(inner_size > 0 && size > 0);
+        fdapde_assert(inner_size > 0, std::invalid_argument, "input dimension must be positive");
+        fdapde_assert(size > 0, std::invalid_argument, "vector size must be positive");
         if constexpr (Rows == Dynamic) n_rows_ = size;
         n_cols_ = 1;
         data_ = std::vector<FunctorType>(n_rows_ * n_cols_);
@@ -621,12 +636,20 @@ class MatrixField :
     }
     // getters
     constexpr Scalar eval(int i, int j, const InputType& p) const {
-        if constexpr (is_dynamic_sized<This>::value) { fdapde_assert(p.size() == inner_size_); }
+        if constexpr (is_dynamic_sized<This>::value) {
+            fdapde_assert(
+              p.size() == inner_size_, std::invalid_argument,
+              "evaluation point dimension must match the field input dimension");
+        }
         return data_[i * cols() + j](p);
     }
     constexpr Scalar eval(int i, const InputType& p) const {
         fdapde_static_assert(Rows == 1 || Cols == 1, THIS_METHOD_IS_ONLY_FOR_VECTORS);
-        if constexpr (is_dynamic_sized<This>::value) { fdapde_assert(p.size() == inner_size_); }
+        if constexpr (is_dynamic_sized<This>::value) {
+            fdapde_assert(
+              p.size() == inner_size_, std::invalid_argument,
+              "evaluation point dimension must match the field input dimension");
+        }
         return data_[i](p);
     }
     constexpr const FunctorType& operator()(int i, int j) const { return data_[i * cols() + j]; }
@@ -727,7 +750,9 @@ struct MatrixFieldDiagonalBlock :
         fdapde_static_assert(
           std::is_convertible_v<typename RhsDerived::FunctorType FDAPDE_COMMA typename Derived::FunctorType>,
           YOU_ARE_TRYING_TO_ASSIGN_A_BLOCK_WITH_NON_CONVERTIBLE_COEFFICIENT_TYPE);
-        fdapde_assert(rhs.rows() == xpr_.rows() && rhs.cols() == 1);
+        fdapde_assert(
+          rhs.rows() == xpr_.rows(), std::invalid_argument, "diagonal length must match the matrix row count");
+        fdapde_assert(rhs.cols() == 1, std::invalid_argument, "diagonal coefficients must form a column vector");
         for (int i = 0; i < xpr_.rows(); ++i) { xpr_(i, i) = rhs[i]; }
         return *this;
     }
@@ -761,7 +786,7 @@ struct MatrixFieldSymmetricView :
     constexpr MatrixFieldSymmetricView(const Derived& xpr) requires(Rows != Dynamic && Cols != Dynamic)
         : Base(), xpr_(xpr) { }
     MatrixFieldSymmetricView(const Derived& xpr) requires(Rows == Dynamic || Cols == Dynamic) : Base(), xpr_(xpr) {
-        fdapde_assert(xpr_.rows() == xpr_.cols());
+        fdapde_assert(xpr_.rows() == xpr_.cols(), std::invalid_argument, "symmetric view requires a square matrix");
     }
 
     template <typename Dest> constexpr void eval_at(const InputType& p, Dest& dest) const {
@@ -826,7 +851,11 @@ template <int StaticInputSize, typename Derived> struct MatrixFieldBase {
             Derived::Cols == Dynamic ? Dynamic : InputType_::ColsAtCompileTime>,
           Matrix<typename Derived::Scalar, Derived::Rows, Derived::Cols>>;
         OutputType out;
-        if constexpr (Derived::StaticInputSize == Dynamic) { fdapde_assert(p.size() == derived().input_size()); }
+        if constexpr (Derived::StaticInputSize == Dynamic) {
+            fdapde_assert(
+              p.size() == derived().input_size(), std::invalid_argument,
+              "evaluation point dimension must match the field input dimension");
+        }
         if constexpr (
           Derived::Rows == Dynamic || Derived::Cols == Dynamic || InputType_::RowsAtCompileTime == Dynamic ||
           InputType_::ColsAtCompileTime == Dynamic) {
@@ -951,7 +980,8 @@ class matrix_field_eigen_product_impl :
         if constexpr (
           FieldType::Rows == Dynamic || FieldType::Cols == Dynamic || EigenType::RowsAtCompileTime == Dynamic ||
           EigenType::ColsAtCompileTime == Dynamic) {
-            fdapde_assert(lhs.cols() == rhs.rows());
+            fdapde_assert(
+              lhs.cols() == rhs.rows(), std::invalid_argument, "matrix product inner dimensions must match");
         }
     }
     int rows() const { return lhs_.rows(); }
@@ -1070,7 +1100,8 @@ class matrix_field_eigen_binary_op_impl :
         if constexpr (
           FieldType::Rows == Dynamic || FieldType::Cols == Dynamic || EigenType::RowsAtCompileTime == Dynamic ||
           EigenType::ColsAtCompileTime == Dynamic) {
-            fdapde_assert(lhs.rows() == rhs.rows() && lhs.cols() == rhs.cols());
+            fdapde_assert(lhs.rows() == rhs.rows(), std::invalid_argument, "operand row counts must match");
+            fdapde_assert(lhs.cols() == rhs.cols(), std::invalid_argument, "operand column counts must match");
         }
     }
     int rows() const { return lhs_.rows(); }

@@ -164,13 +164,15 @@ template <typename Scalar_, typename DataObj> struct plain_col_view {
     plain_col_view& operator=(Src&& src) {
         // inplace assignment
         if constexpr (is_vector_like_v<Src> && !is_indexable_v<Src, Order, index_t>) {
-            fdapde_assert(src.size() == rows_);
+            fdapde_assert(
+              src.size() == rows_, std::invalid_argument, "source row count must match the destination column");
             if (blk_sz_ == 1) {   // vector - vector assign
                 block_.assign_inplace_from(src);
                 return *this;
             }
         } else {
-            fdapde_assert(src.rows() == rows_);
+            fdapde_assert(
+              src.rows() == rows_, std::invalid_argument, "source row count must match the destination column");
             if (blk_sz_ == src.cols()) {   // block - block asssign
                 block_.assign_inplace_from(src);
                 return *this;
@@ -388,9 +390,12 @@ template <typename DataLayer> struct random_access_row_view {
     random_access_row_view() noexcept = default;
     template <typename Iterator>
     random_access_row_view(DataLayer* data, Iterator begin, Iterator end) : data_(data), idxs_(begin, end) {
+        fdapde_assert(*begin >= 0, std::out_of_range, "first row index must be nonnegative");
         fdapde_assert(
-          *begin >= 0 && std::cmp_less(*begin FDAPDE_COMMA data->rows()) && *(end - 1) >= *begin &&
-          std::cmp_less(*(end - 1) FDAPDE_COMMA data->rows()));
+          std::cmp_less(*begin FDAPDE_COMMA data->rows()), std::out_of_range, "first row index out of range");
+        fdapde_assert(*(end - 1) >= *begin, std::out_of_range, "last row index must not precede the first");
+        fdapde_assert(
+          std::cmp_less(*(end - 1) FDAPDE_COMMA data->rows()), std::out_of_range, "last row index out of range");
     }
     template <typename Filter>
         requires(requires(Filter f, index_t i) {
@@ -407,7 +412,8 @@ template <typename DataLayer> struct random_access_row_view {
             { vec[i] } -> std::convertible_to<bool>;
         })
     random_access_row_view(DataLayer* data, const LogicalVec& vec) : data_(data) {
-        fdapde_assert(vec.size() == data_->rows());
+        fdapde_assert(
+          vec.size() == data_->rows(), std::invalid_argument, "row filter size must match the data row count");
         for (size_t i = 0, n = vec.size(); i < n; ++i) {
             if (vec[i]) { idxs_.push_back(i); }
         }
@@ -421,11 +427,11 @@ template <typename DataLayer> struct random_access_row_view {
     std::vector<std::string> colnames() const { return data_->colnames(); }
     // accessors
     plain_row_view<DataLayer> operator[](index_t i) {
-        fdapde_assert(i < idxs_.size());
+        fdapde_assert(i < idxs_.size(), std::out_of_range, "selected row index out of range");
         return data_->row(idxs_[i]);
     }
     plain_row_view<const DataLayer> operator[](index_t i) const {
-        fdapde_assert(i < idxs_.size());
+        fdapde_assert(i < idxs_.size(), std::out_of_range, "selected row index out of range");
         return data_->row(idxs_[i]);
     }
     template <typename T> random_access_col_view<T, DataLayer> col(const std::string& colname) {
@@ -644,11 +650,13 @@ class scalar_data_layer {
         std::unordered_map<dtype, int> type_id_map = make_dtyped_map<int>();
         std::unordered_map<dtype, int> type_id_col = make_dtyped_map<int>();
         auto push_column_descriptor = [&, this]<typename T>(const std::string& colname, const T& t) mutable {
-            fdapde_assert(!has_column_(colname) && colname.size() != 0);
+            fdapde_assert(!has_column_(colname), std::invalid_argument, "column name already exists");
+            fdapde_assert(colname.size() != 0, std::invalid_argument, "column name must not be empty");
             if (rows_ == 0) {
                 rows_ = t.size();
             } else {
-                fdapde_assert(rows_ != 0 && rows_ == t.size());
+                fdapde_assert(rows_ != 0, std::logic_error, "existing columns must have a nonzero row count");
+                fdapde_assert(rows_ == t.size(), std::invalid_argument, "column lengths must match");
             }
             using MappedT = mapped_type_t<std::decay_t<decltype(std::declval<T>()[std::declval<index_t>()])>>;
             // add field descriptor
@@ -703,18 +711,22 @@ class scalar_data_layer {
           ...)
     scalar_data_layer(const std::vector<std::string>& colnames, const DataT&... data) :
         freemem_(make_dtyped_map<std::vector<bool>>()) {
-        fdapde_assert(colnames.size() == sizeof...(data));
+        fdapde_assert(
+          colnames.size() == sizeof...(data), std::invalid_argument,
+          "column name count must match the number of data vectors");
         // for each type id, the number of columns of that type
         std::unordered_map<dtype, int> type_id_map = make_dtyped_map<int>();
         std::unordered_map<dtype, int> type_id_col = make_dtyped_map<int>();
         // push column descriptors
         internals::for_each_index_and_args<sizeof...(DataT)>(
           [&]<int Ns_, typename T>(T t) {
-              fdapde_assert(!has_column_(colnames[Ns_]) && colnames[Ns_].size() != 0);
+              fdapde_assert(!has_column_(colnames[Ns_]), std::invalid_argument, "column name already exists");
+              fdapde_assert(colnames[Ns_].size() != 0, std::invalid_argument, "column name must not be empty");
               if (rows_ == 0) {
                   rows_ = t.size();
               } else {
-                  fdapde_assert(rows_ != 0 && rows_ == t.size());
+                  fdapde_assert(rows_ != 0, std::logic_error, "existing columns must have a nonzero row count");
+                  fdapde_assert(rows_ == t.size(), std::invalid_argument, "column lengths must match");
               }
               using MappedT = mapped_type_t<std::decay_t<decltype(std::declval<T>()[std::declval<index_t>()])>>;
               // add field descriptor
@@ -799,12 +811,12 @@ class scalar_data_layer {
         return has_column_(column);
     }
     logical_t nan(const std::vector<std::string>& colnames) const {
-        fdapde_assert(colnames.size() > 0);
+        fdapde_assert(colnames.size() > 0, std::invalid_argument, "column selection must not be empty");
         size_t n_rows = rows_, n_cols = 0;
 	std::vector<std::size_t> offset;
 	offset.push_back(0);
         for (const std::string& col : colnames) {
-            fdapde_assert(has_column_(col));
+            fdapde_assert(has_column_(col), std::out_of_range, "column name not found");
             offset.push_back(offset.back() + header_.at(col_idx_.at(col)).size());
         }
         logical_t nan(n_rows, n_cols);
@@ -812,7 +824,7 @@ class scalar_data_layer {
         return nan;
     }
     logical_t nan(const std::string& colname) const {
-        fdapde_assert(has_column_(colname));
+        fdapde_assert(has_column_(colname), std::out_of_range, "column name not found");
         field f = header_.at(col_idx_.at(colname));
         logical_t nan(rows_, f.size());
         extract_nan_pattern_(colname, nan, 0);
@@ -827,28 +839,28 @@ class scalar_data_layer {
     // accessors
     // column access
     template <typename T> plain_col_view<T, scalar_data_layer> col(size_t col) {
-        fdapde_assert(col < cols_);
+        fdapde_assert(col < cols_, std::out_of_range, "column index out of range");
         return plain_col_view<T, scalar_data_layer>(*this, header_[col]);
     }
     template <typename T> plain_col_view<T, const scalar_data_layer> col(size_t col) const {
-        fdapde_assert(col < cols_);
+        fdapde_assert(col < cols_, std::out_of_range, "column index out of range");
         return plain_col_view<T, const scalar_data_layer>(*this, header_[col]);
     }
     template <typename T> plain_col_view<T, scalar_data_layer> col(const std::string& colname) {
-        fdapde_assert(has_column_(colname));
+        fdapde_assert(has_column_(colname), std::out_of_range, "column name not found");
         return col<T>(col_idx_.at(colname));
     }
     template <typename T> plain_col_view<T, const scalar_data_layer> col(const std::string& colname) const {
-        fdapde_assert(has_column_(colname));
+        fdapde_assert(has_column_(colname), std::out_of_range, "column name not found");
         return col<T>(col_idx_.at(colname));
     }
     // row access
     plain_row_view<scalar_data_layer> row(size_t row) {
-        fdapde_assert(row < rows_);
+        fdapde_assert(row < rows_, std::out_of_range, "row index out of range");
         return plain_row_view<scalar_data_layer>(this, row);
     }
     plain_row_view<const scalar_data_layer> row(size_t row) const {
-        fdapde_assert(row < rows_);
+        fdapde_assert(row < rows_, std::out_of_range, "row index out of range");
         return plain_row_view<const scalar_data_layer>(this, row);
     }
     // row filtering operations
@@ -874,7 +886,9 @@ class scalar_data_layer {
     template <typename T> data_table<T>& data() { return fetch_<mapped_type_t<T>>(data_); }
     // modifiers
     void set_colnames(const std::vector<std::string>& colnames) {
-        fdapde_assert(colnames.size() == header_.size());
+        fdapde_assert(
+          colnames.size() == header_.size(), std::invalid_argument,
+          "column name count must match the number of fields");
         for (size_t i = 0; i < colnames.size(); ++i) { header_[i].set_colname(colnames[i]); }
         return;
     }
@@ -888,7 +902,9 @@ class scalar_data_layer {
             return;   // exts coincide with current size, skip resizing
         }
         data.resize(static_cast<index_t>(exts)...);   // resize storage discarding old values
-	fdapde_assert(rows_ == 0 || rows_ == data.extent(0));
+        fdapde_assert(
+          rows_ == 0 || rows_ == data.extent(0), std::invalid_argument,
+          "resized row count must match existing columns");
         rows_ = data.extent(0);
         dtype type_id = internals::dtype_from_static_type<Scalar>().type_id;
         freemem_[type_id].resize(data.extent(1));
@@ -929,8 +945,10 @@ class scalar_data_layer {
             // allocate memory
             data.resize(static_cast<index_t>(exts)...);
 	    int new_size = data.extent(1);
-            fdapde_assert(rows_ == 0 || rows_ == data.extent(0));
-            rows_ = data.extent(0);
+        fdapde_assert(
+          rows_ == 0 || rows_ == data.extent(0), std::invalid_argument,
+          "resized row count must match existing columns");
+        rows_ = data.extent(0);
 	    // flag new memory as free
             for (int i = 0; i < new_size - old_size; ++i) { freemem_[type_id].push_back(true); }
             fetch_<Scalar>(data_)
@@ -938,7 +956,9 @@ class scalar_data_layer {
               .assign_inplace_from(tmp);	    
         } else {   // nothing to copy
             data.resize(static_cast<index_t>(exts)...);   // resize storage discarding old values
-            fdapde_assert(rows_ == 0 || rows_ == data.extent(0));
+            fdapde_assert(
+              rows_ == 0 || rows_ == data.extent(0), std::invalid_argument,
+              "resized row count must match existing columns");
             rows_ = data.extent(0);
             freemem_[type_id].resize(data.extent(1));
             for (typename std::vector<bool>::reference b : freemem_[type_id]) { b = true; }
@@ -953,9 +973,11 @@ class scalar_data_layer {
           std::is_pointer_v<Src>, std::remove_pointer_t<Src>, std::decay_t<decltype(std::declval<Src>()[index_t()])>>;
         using SrcType_ = mapped_type_t<SrcType>;
         if constexpr (!std::is_pointer_v<Src>) {
-            fdapde_assert(fetch_<SrcType_>(data_).extent(0) == 0 || src.size() == fetch_<SrcType_>(data_).extent(0));
+            fdapde_assert(
+              fetch_<SrcType_>(data_).extent(0) == 0 || src.size() == fetch_<SrcType_>(data_).extent(0),
+              std::invalid_argument, "appended data row count must match existing columns");
         }
-	fdapde_assert(!has_column_(colname));
+        fdapde_assert(!has_column_(colname), std::invalid_argument, "column name already exists");
         dtype type_id = internals::dtype_from_static_type<SrcType_>().type_id;
         // check if there is already allocated free memory to hold src
         index_t offset = find_free_blk_idx_<SrcType_>(1);
@@ -990,8 +1012,10 @@ class scalar_data_layer {
         using ValueType_ =
           decltype(internals::apply_index_pack<Order>([&]<int... Ns_>() { return src(((void)Ns_, index_t())...); }));
         using SrcType_ = mapped_type_t<std::decay_t<ValueType_>>;
-        fdapde_assert(fetch_<SrcType_>(data_).extent(0) == 0 || src.rows() == fetch_<SrcType_>(data_).extent(0));
-        fdapde_assert(!has_column_(colname));
+        fdapde_assert(
+          fetch_<SrcType_>(data_).extent(0) == 0 || src.rows() == fetch_<SrcType_>(data_).extent(0),
+          std::invalid_argument, "appended data row count must match existing columns");
+        fdapde_assert(!has_column_(colname), std::invalid_argument, "column name already exists");
         dtype type_id = internals::dtype_from_static_type<SrcType_>().type_id;
         // check if there is already allocated free memory to hold src
         index_t offset = find_free_blk_idx_<SrcType_>(src.cols());
@@ -1042,7 +1066,7 @@ class scalar_data_layer {
     }
     // do not perform any memory reallocation, sets the corresponding freemem_ bits to 1 and update header
     void erase(const std::string& colname) {
-        fdapde_assert(has_column_(colname));
+        fdapde_assert(has_column_(colname), std::out_of_range, "column name not found");
         auto it = std::find_if(header_.begin(), header_.end(), [&](const field& f) { return f.colname() == colname; });
         for (int i = it->offset(); i < it->offset() + it->size(); ++i) { freemem_[it->type_id()][i] = true; }
         col_idx_.erase(colname);
@@ -1166,7 +1190,7 @@ class scalar_data_layer {
     // returns the index of the first typed memory column which can hold a **contiguous** block of blk_sz columns, or -1
     // if there is no such available (already allocated) memory
     template <typename Scalar> index_t find_free_blk_idx_(size_t blk_sz) {
-        fdapde_assert(blk_sz > 0);
+        fdapde_assert(blk_sz > 0, std::invalid_argument, "requested column block size must be positive");
         dtype type_id = dtype_from_static_type<Scalar>().type_id;
         const std::vector<bool>& freemem = freemem_[type_id];
         int j = 0;

@@ -130,11 +130,21 @@ template <> class DofHandler<1, 1, spline_tag> {
     };  
     cell_iterator cells_begin(int marker = TriangulationAll) const {
         const std::vector<int>& cells_markers = triangulation_->cells_markers();
-        fdapde_assert(marker == TriangulationAll || (marker >= 0 && cells_markers.size() != 0));
+        fdapde_assert(
+          marker == TriangulationAll || marker >= 0, std::invalid_argument,
+          "cell marker must be nonnegative or TriangulationAll");
+        fdapde_assert(
+          marker == TriangulationAll || cells_markers.size() != 0, std::logic_error,
+          "cell markers must be initialized before filtering");
         return cell_iterator(0, this, marker);
     }
     cell_iterator cells_end(int marker = TriangulationAll) const {
-        fdapde_assert(marker == TriangulationAll || (marker >= 0 && triangulation_->cells_markers().size() != 0));
+        fdapde_assert(
+          marker == TriangulationAll || marker >= 0, std::invalid_argument,
+          "cell marker must be nonnegative or TriangulationAll");
+        fdapde_assert(
+          marker == TriangulationAll || triangulation_->cells_markers().size() != 0, std::logic_error,
+          "cell markers must be initialized before filtering");
         return cell_iterator(triangulation_->n_cells(), this, marker);
     }
 

@@ -50,24 +50,25 @@ template <typename Index_, int Options_> struct sparsity_pattern {
         typename std::vector<Index>::const_iterator begin() const { return nnzeros_.begin(); }
         typename std::vector<Index>::const_iterator end() const { return nnzeros_.end(); }
         Index operator[](Index i) const {   // access the i-th nonzero of the line
-            fdapde_assert(static_cast<std::size_t>(i) < nnzeros_.size());
+            fdapde_assert(
+              static_cast<std::size_t>(i) < nnzeros_.size(), std::out_of_range, "nonzero index out of range");
             return nnzeros_[i];
         }
         Index size() const { return size_; }
         bool has_nnzero_at(Index pos) const { return std::find(nnzeros_.begin(), nnzeros_.end(), pos); }
         bool empty() const { return nnzeros_.size() == 0; }
         typename std::vector<Index>::const_iterator find(Index pos) const {
-            fdapde_assert(pos < size_);
+            fdapde_assert(pos < size_, std::out_of_range, "sparsity position out of range");
             return std::find(nnzeros_.begin(), nnzeros_.end(), pos);
         }
         // modifiers
         void nnzero_insert_unique(Index pos) {   // ammortized O(log(n)) insertion with uniqueness guarantees
-            fdapde_assert(pos < size_);
+            fdapde_assert(pos < size_, std::out_of_range, "sparsity position out of range");
             if (std::upper_bound(nnzeros_.begin(), nnzeros_.end(), pos) == nnzeros_.end()) { nnzeros_.push_back(pos); }
             return;
         }
         void nnzero_insert(Index pos) {
-            fdapde_assert(pos < size_);
+            fdapde_assert(pos < size_, std::out_of_range, "sparsity position out of range");
             nnzeros_.push_back(pos);
         }
         void resize(Index size) { size_ = size; }
@@ -104,11 +105,11 @@ template <typename Index_, int Options_> struct sparsity_pattern {
     }
     // accessors
     const value_type& operator[](Index i) const {
-        fdapde_assert(i < outer_size_);
+        fdapde_assert(i < outer_size_, std::out_of_range, "sparsity line index out of range");
         return sparsity_[i];
     }
     value_type& operator[](Index i) {
-        fdapde_assert(i < outer_size_);
+        fdapde_assert(i < outer_size_, std::out_of_range, "sparsity line index out of range");
         return sparsity_[i];
     }
     const value_type& operator()(Index i, Index j) const { return sparsity_[i][j]; }
@@ -262,19 +263,21 @@ struct FSPAI {
     FSPAI(const FSPAI&) noexcept = default;
     FSPAI(FSPAI&&) noexcept = default;
 
-    FSPAI(const MatrixType& matrix) noexcept : L_() { compute(matrix); }
-    FSPAI(const MatrixType& matrix, int alpha, int beta, double epsilon) noexcept :
+    FSPAI(const MatrixType& matrix) : L_() { compute(matrix); }
+    FSPAI(const MatrixType& matrix, int alpha, int beta, double epsilon) :
         L_(), alpha_(alpha), beta_(beta), epsilon_(epsilon) {
         compute(matrix, alpha_, beta_, epsilon_);
     }
 
     // computes an approximation of the Cholesky factor of matrix
     void compute(const MatrixType& matrix) {
-        fdapde_assert(matrix.rows() == matrix.cols() && matrix.rows() > 0 && matrix.cols() > 0);
+        fdapde_assert(matrix.rows() == matrix.cols(), std::invalid_argument, "FSPAI requires a square matrix");
+        fdapde_assert(matrix.rows() > 0, std::invalid_argument, "FSPAI requires a nonempty matrix");
         compute_impl_(matrix, alpha_, beta_, epsilon_);   // use defaults      
     }
     void compute(const MatrixType& matrix, int alpha, int beta, double epsilon) {
-        fdapde_assert(matrix.rows() == matrix.cols() && matrix.rows() > 0 && matrix.cols() > 0);
+        fdapde_assert(matrix.rows() == matrix.cols(), std::invalid_argument, "FSPAI requires a square matrix");
+        fdapde_assert(matrix.rows() > 0, std::invalid_argument, "FSPAI requires a nonempty matrix");
         compute_impl_(matrix, alpha, beta, epsilon);
     }
     // accessors
@@ -286,21 +289,25 @@ struct FSPAI {
 
     // linear system solve
     template <typename Other> void solveInPlace(Eigen::MatrixBase<Other>& other) const {
-        fdapde_assert(L_.rows() == other.rows());
-	other = inverse() * other;
+        fdapde_assert(
+          L_.rows() == other.rows(), std::invalid_argument, "right-hand side row count must match the factorization");
+        other = inverse() * other;
     }
     template <typename Other> void solveInPlace(Eigen::SparseMatrixBase<Other>& other) const {
-        fdapde_assert(L_.rows() == other.rows());
-	other = inverse() * other;
+        fdapde_assert(
+          L_.rows() == other.rows(), std::invalid_argument, "right-hand side row count must match the factorization");
+        other = inverse() * other;
     }  
     template <typename Other>
     Eigen::Matrix<double, Dynamic, Dynamic> solve(const Eigen::MatrixBase<Other>& other) const {
-        fdapde_assert(L_.rows() == other.rows());
+        fdapde_assert(
+          L_.rows() == other.rows(), std::invalid_argument, "right-hand side row count must match the factorization");
         return inverse() * other;
     }
     template <typename Other>
     Eigen::SparseMatrix<double> solve(const Eigen::SparseMatrixBase<Other>& other) const {
-        fdapde_assert(L_.rows() == other.rows());
+        fdapde_assert(
+          L_.rows() == other.rows(), std::invalid_argument, "right-hand side row count must match the factorization");
         return inverse() * other;
     }  
 };

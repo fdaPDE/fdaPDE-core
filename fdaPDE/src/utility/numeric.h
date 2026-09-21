@@ -23,7 +23,7 @@ namespace fdapde {
 
 // factorial of n
 constexpr int factorial(const int n) {
-    fdapde_constexpr_assert(n >= 0);
+    fdapde_assert(n >= 0, std::domain_error, "factorial is undefined for negative integers");
     int factorial_ = 1;
     if (n == 0) return factorial_;
     int m = n;

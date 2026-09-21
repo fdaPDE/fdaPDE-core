@@ -319,7 +319,10 @@ class TpFunction :
     }
     TpFunction(TpSpace_& tp_space, const Eigen::Matrix<double, Dynamic, 1>& coeff) :
         tp_space_(&tp_space), coeff_(coeff) {
-        fdapde_assert(coeff.size() > 0 && coeff.size() == tp_space_->n_dofs());
+        fdapde_assert(coeff.size() > 0, std::invalid_argument, "coefficient vector must not be empty");
+        fdapde_assert(
+          coeff.size() == tp_space_->n_dofs(), std::invalid_argument,
+          "coefficient count must match the number of degrees of freedom");
     }
     template <typename... InputType_>
         requires(sizeof...(InputType_) == tp_order)
@@ -355,7 +358,10 @@ class TpFunction :
         internals::for_each_index_and_args<tp_order>(
           [&]<int Ns_, typename InputType__>(const InputType__& grid) {
               using function_space_t = std::tuple_element_t<Ns_, FunctionSpaces>;
-              fdapde_assert(grid.rows() > 0 && grid.cols() == function_space_t::embed_dim);
+              fdapde_assert(grid.rows() > 0, std::invalid_argument, "evaluation grid must not be empty");
+              fdapde_assert(
+                grid.cols() == function_space_t::embed_dim, std::invalid_argument,
+                "evaluation grid dimension must match the function space");
               const auto& function_space = std::get<Ns_>(tp_space_->function_spaces());
               index_t n_shape_functions = function_space.n_shape_functions();
               index_t n_points = grid.rows();
@@ -422,7 +428,10 @@ class TpFunction :
     }
     // assignment from expansion coeff vector
     TpFunction& operator=(const Eigen::Matrix<double, Dynamic, 1>& coeff) {
-        fdapde_assert(coeff.size() > 0 && coeff.size() == tp_space_->n_dofs());
+        fdapde_assert(coeff.size() > 0, std::invalid_argument, "coefficient vector must not be empty");
+        fdapde_assert(
+          coeff.size() == tp_space_->n_dofs(), std::invalid_argument,
+          "coefficient count must match the number of degrees of freedom");
         coeff_ = coeff;
         return *this;
     }

@@ -82,7 +82,7 @@ class DofTriangle : public Triangle<typename DofHandler::TriangulationType> {
     }
     // overload geometric edge getter to return dof-informed edge structure
     EdgeType edge(int n) const {
-        fdapde_assert(n < Base::n_edges);
+        fdapde_assert(n < Base::n_edges, std::out_of_range, "edge index out of range");
         return EdgeType(dof_handler_->triangulation()->cell_to_edges()(Base::id(), n), dof_handler_);
     }
     class edge_iterator : public internals::index_iterator<edge_iterator, EdgeType> {

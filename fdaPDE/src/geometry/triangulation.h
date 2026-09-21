@@ -59,12 +59,22 @@ template <int LocalDim, int EmbedDim, typename Derived> class TriangulationBase 
 
     TriangulationBase() = default;
     TriangulationBase(const dbl_matrix_t& nodes, const int_matrix_t& cells, const int_matrix_t& boundary, int flags) :
-        nodes_(nodes), cells_(cells), boundary_markers_(boundary), flags_(flags) {
+        nodes_(nodes), cells_(cells), boundary_markers_(), flags_(flags) {
+        fdapde_assert(nodes.rows() > 0, std::invalid_argument, "triangulation nodes must not be empty");
         fdapde_assert(
-          nodes.rows() > 0 && nodes.cols() == embed_dim && cells.rows() > 0 && cells.cols() == n_nodes_per_cell &&
-          boundary.rows() == nodes.rows() && boundary.cols() == 1);
-        fdapde_assert(cells.minCoeff() >= 0);
-	int min = cells.minCoeff();
+          nodes.cols() == embed_dim, std::invalid_argument,
+          "node coordinate dimension must match the embedding dimension");
+        fdapde_assert(cells.rows() > 0, std::invalid_argument, "triangulation cells must not be empty");
+        fdapde_assert(
+          cells.cols() == n_nodes_per_cell, std::invalid_argument,
+          "cell width must match the number of nodes per cell");
+        fdapde_assert(
+          boundary.rows() == nodes.rows(), std::invalid_argument,
+          "boundary marker count must match the number of nodes");
+        fdapde_assert(boundary.cols() == 1, std::invalid_argument, "boundary markers must form a column vector");
+        fdapde_assert(cells.minCoeff() >= 0, std::invalid_argument, "cell node identifiers must be nonnegative");
+        boundary_markers_ = boundary;
+        int min = cells.minCoeff();
         if (min != 0) { cells_ = cells_.array() - min; }   // scale cell numbering to start from zero
         // store number of nodes and number of cells
         n_nodes_ = nodes_.rows();
@@ -131,11 +141,21 @@ template <int LocalDim, int EmbedDim, typename Derived> class TriangulationBase 
         int marker() const { return marker_; }
     };
     CellIterator<Derived> cells_begin(int marker = TriangulationAll) const {
-        fdapde_assert(marker == TriangulationAll || (marker >= 0 && cells_markers_.size() != 0));
+        fdapde_assert(
+          marker == TriangulationAll || marker >= 0, std::invalid_argument,
+          "cell marker must be nonnegative or TriangulationAll");
+        fdapde_assert(
+          marker == TriangulationAll || cells_markers_.size() != 0, std::logic_error,
+          "cell markers must be initialized before filtering");
         return CellIterator<Derived>(0, static_cast<const Derived*>(this), marker);
     }
     CellIterator<Derived> cells_end(int marker = TriangulationAll) const {
-        fdapde_assert(marker == TriangulationAll || (marker >= 0 && cells_markers_.size() != 0));
+        fdapde_assert(
+          marker == TriangulationAll || marker >= 0, std::invalid_argument,
+          "cell marker must be nonnegative or TriangulationAll");
+        fdapde_assert(
+          marker == TriangulationAll || cells_markers_.size() != 0, std::logic_error,
+          "cell markers must be initialized before filtering");
         return CellIterator<Derived>(n_cells_, static_cast<const Derived*>(this), marker);
     }
     // set cells markers
@@ -144,14 +164,14 @@ template <int LocalDim, int EmbedDim, typename Derived> class TriangulationBase 
         requires(requires(Lambda lambda, CellType c) {
             { lambda(c) } -> std::same_as<bool>;
         }) {
-        fdapde_assert(marker >= 0);
+        fdapde_assert(marker >= 0, std::invalid_argument, "marker must be nonnegative");
         cells_markers_.resize(n_cells_, Unmarked);
         for (cell_iterator it = cells_begin(); it != cells_end(); ++it) {
             cells_markers_[it->id()] = lambda(*it) ? marker : Unmarked;
         }
     }
     template <int Rows, typename XprType> void mark_cells(const BinMtxBase<Rows, 1, XprType>& mask) {
-        fdapde_assert(mask.rows() == n_cells_);
+        fdapde_assert(mask.rows() == n_cells_, std::invalid_argument, "cell mask size must match the number of cells");
         cells_markers_.resize(n_cells_, Unmarked);
         for (cell_iterator it = cells_begin(); it != cells_end(); ++it) {
             cells_markers_[it->id()] = mask[it->id()] ? 1 : 0;
@@ -162,12 +182,13 @@ template <int LocalDim, int EmbedDim, typename Derived> class TriangulationBase 
           std::is_convertible_v<typename Iterator::value_type FDAPDE_COMMA int>, INVALID_ITERATOR_RANGE);
         int n_markers = std::distance(first, last);
         bool all_markers_positive = std::all_of(first, last, [](auto marker) { return marker >= 0; });
-        fdapde_assert(n_markers == n_cells_ && all_markers_positive);
+        fdapde_assert(n_markers == n_cells_, std::invalid_argument, "cell marker count must match the number of cells");
+        fdapde_assert(all_markers_positive, std::invalid_argument, "cell markers must be nonnegative");
         cells_markers_.resize(n_cells_, Unmarked);
         for (int i = 0; i < n_cells_; ++i) { cells_markers_[i] = *(first + i); }
     }
     void mark_cells(int marker) {   // marks all cells with m
-        fdapde_assert(marker >= 0);
+        fdapde_assert(marker >= 0, std::invalid_argument, "marker must be nonnegative");
         cells_markers_.resize(n_cells_);
 	std::for_each(cells_markers_.begin(), cells_markers_.end(), [marker](int& marker_) { marker_ = marker; });
     }
@@ -382,7 +403,8 @@ template <int N> class Triangulation<2, N> : public TriangulationBase<2, N, Tria
     // icoshpere surface generation
     static Triangulation<2, N> Sphere(double radius, int n_refinments, int flags = 0) {
         fdapde_static_assert(N == 3, THIS_METHOD_IS_FOR_THREE_DIMENSIONAL_SURFACE_TRIANGULATIONS_ONLY);
-        fdapde_assert(radius > 0 && n_refinments > 0);
+        fdapde_assert(radius > 0, std::invalid_argument, "sphere radius must be positive");
+        fdapde_assert(n_refinments > 0, std::invalid_argument, "sphere refinement count must be positive");
         // unit icosahedron construction
         constexpr double a = 1.0;
         constexpr double b = 1.0 / std::numbers::phi;   // inverse golden ratio
@@ -545,7 +567,7 @@ template <int N> class Triangulation<2, N> : public TriangulationBase<2, N, Tria
         requires(requires(Lambda lambda, EdgeType e) {
             { lambda(e) } -> std::same_as<bool>;
         }) {
-        fdapde_assert(marker >= 0);
+        fdapde_assert(marker >= 0, std::invalid_argument, "marker must be nonnegative");
         edges_markers_.resize(n_edges_);
         for (boundary_edge_iterator it = boundary_edges_begin(); it != boundary_edges_end(); ++it) {
             if (lambda(*it)) {
@@ -554,7 +576,8 @@ template <int N> class Triangulation<2, N> : public TriangulationBase<2, N, Tria
         }
     }
     template <int Rows, typename XprType> void mark_boundary(const BinMtxBase<Rows, 1, XprType>& mask) {
-        fdapde_assert(mask.rows() == n_edges_);
+        fdapde_assert(
+          mask.rows() == n_edges_, std::invalid_argument, "boundary mask size must match the number of edges");
         edges_markers_.resize(n_edges_, 0);
         for (boundary_edge_iterator it = boundary_edges_begin(); it != boundary_edges_end(); ++it) {
             if(mask[it->id()]){
@@ -567,14 +590,16 @@ template <int N> class Triangulation<2, N> : public TriangulationBase<2, N, Tria
           std::is_convertible_v<typename Iterator::value_type FDAPDE_COMMA int>, INVALID_ITERATOR_RANGE);
         int n_markers = std::distance(first, last);
 	bool all_markers_positive = std::all_of(first, last, [](auto marker) { return marker >= 0; });
-        fdapde_assert(n_markers == n_edges() && all_markers_positive);
-        edges_markers_.resize(n_edges_, Unmarked);
-        for (int i = 0; i < n_edges_; ++i) { edges_markers_[i] = *(first + i); }
-        return;
+    fdapde_assert(
+      n_markers == n_edges(), std::invalid_argument, "boundary marker count must match the number of edges");
+    fdapde_assert(all_markers_positive, std::invalid_argument, "boundary markers must be nonnegative");
+    edges_markers_.resize(n_edges_, Unmarked);
+    for (int i = 0; i < n_edges_; ++i) { edges_markers_[i] = *(first + i); }
+    return;
     }
     // marks all boundary edges
     void mark_boundary(int marker) {
-        fdapde_assert(marker >= 0);
+        fdapde_assert(marker >= 0, std::invalid_argument, "marker must be nonnegative");
         edges_markers_.resize(n_edges_, Unmarked);
         std::for_each(edges_markers_.begin(), edges_markers_.end(), [marker](int& marker_) { marker_ = marker; });
     }
@@ -902,7 +927,7 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
         requires(requires(Lambda lambda, FaceType e) {
             { lambda(e) } -> std::same_as<bool>;
         }) {
-        fdapde_assert(marker >= 0);
+        fdapde_assert(marker >= 0, std::invalid_argument, "marker must be nonnegative");
         faces_markers_.resize(n_faces_, Unmarked);
 	edges_markers_.resize(n_edges_, Unmarked);
         for (boundary_face_iterator it = boundary_faces_begin(); it != boundary_faces_end(); ++it) {
@@ -914,7 +939,8 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
         return;
     }
     template <int Rows, typename XprType> void mark_boundary(const BinMtxBase<Rows, 1, XprType>& mask) {
-        fdapde_assert(mask.rows() == n_edges_);
+        fdapde_assert(
+          mask.rows() == n_edges_, std::invalid_argument, "boundary mask size must match the number of edges");
         faces_markers_.resize(n_faces_, 0);
 	edges_markers_.resize(n_edges_, 0);
         for (boundary_face_iterator it = boundary_faces_begin(); it != boundary_faces_end(); ++it) {
@@ -929,19 +955,21 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
           std::is_convertible_v<typename Iterator::value_type FDAPDE_COMMA int>, INVALID_ITERATOR_RANGE);
         int n_markers = std::distance(first, last);
 	bool all_markers_positive = std::all_of(first, last, [](auto marker) { return marker >= 0; });
-        fdapde_assert(n_markers == n_faces() && all_markers_positive);
-        faces_markers_.resize(n_faces_, Unmarked);
-        edges_markers_.resize(n_edges_, Unmarked);
-        for (int i = 0; i < n_faces_; ++i) {
-            int marker = *(first + i);
-            faces_markers_[i] = marker;
-            for (int edge_id : face_to_edges().row(i)) { edges_markers_[edge_id] = marker; }
-        }
+    fdapde_assert(
+      n_markers == n_faces(), std::invalid_argument, "boundary marker count must match the number of faces");
+    fdapde_assert(all_markers_positive, std::invalid_argument, "boundary markers must be nonnegative");
+    faces_markers_.resize(n_faces_, Unmarked);
+    edges_markers_.resize(n_edges_, Unmarked);
+    for (int i = 0; i < n_faces_; ++i) {
+        int marker = *(first + i);
+        faces_markers_[i] = marker;
+        for (int edge_id : face_to_edges().row(i)) { edges_markers_[edge_id] = marker; }
+    }
         return;
     }
     // marks all boundary faces
     void mark_boundary(int marker) {
-        fdapde_assert(marker >= 0);
+        fdapde_assert(marker >= 0, std::invalid_argument, "marker must be nonnegative");
         faces_markers_.resize(n_faces_, Unmarked);
         edges_markers_.resize(n_edges_, Unmarked);
         for (auto it = boundary_begin(); it != boundary_end(); ++it) {

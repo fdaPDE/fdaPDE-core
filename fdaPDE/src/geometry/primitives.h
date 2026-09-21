@@ -53,7 +53,8 @@ template <typename PointList>
 constexpr double signed_measure_2d_polygon(const PointList& points) {
     double area = 0;
     if constexpr (internals::is_eigen_dense_xpr_v<PointList>) {
-        fdapde_assert(points.rows() > 0 && points.cols() == 2);
+        fdapde_assert(points.rows() > 0, std::invalid_argument, "polygon points must not be empty");
+        fdapde_assert(points.cols() == 2, std::invalid_argument, "polygon points must have two coordinates");
         int n_points = points.rows();
         for (int i = 0; i < n_points - 1; ++i) {
             area += (points(i, 0) + points(i + 1, 0)) * (points(i + 1, 1) - points(i, 1));
@@ -61,7 +62,8 @@ constexpr double signed_measure_2d_polygon(const PointList& points) {
         area += (points(n_points - 1, 0) + points(0, 0)) * (points(0, 1) - points(n_points - 1, 1));
     } else if (internals::is_subscriptable<PointList, int>) {
         // assume points to be a RowMajor expansion of the polygon nodes' coordinates
-        fdapde_assert(points.size() % 2 == 0);
+        fdapde_assert(
+          points.size() % 2 == 0, std::invalid_argument, "polygon coordinate count must be divisible by two");
         int n_points = points.size() / 2;
         for (int i = 0; i < n_points - 1; ++i) {
             area += (points[i] + points[i + 2]) * (points[i + 3] - points[i + 1]);

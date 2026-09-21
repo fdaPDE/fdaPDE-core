@@ -91,12 +91,15 @@ struct sp_assembler_base {
         test_space_(std::addressof(internals::test_space(form_))),
         begin_(begin),
         end_(end) {
-        fdapde_assert(dof_handler_->n_dofs() > 0);
+        fdapde_assert(
+          dof_handler_->n_dofs() > 0, std::logic_error, "degrees of freedom must be initialized before assembly");
         // copy quadrature rule
 	Eigen::Matrix<double, Dynamic, Dynamic> quad_nodes__;
         if constexpr (sizeof...(quadrature) == 1) {
             auto quad_rule = std::get<0>(std::make_tuple(quadrature...));
-            fdapde_assert(local_dim == quad_rule.local_dim);
+            fdapde_assert(
+              local_dim == quad_rule.local_dim, std::invalid_argument,
+              "quadrature dimension must match the spline dimension");
             quad_nodes__ .resize(quad_rule.order, quad_rule.local_dim);
             quad_weights_.resize(quad_rule.order, 1);
             for (int i = 0; i < quad_rule.order; ++i) {

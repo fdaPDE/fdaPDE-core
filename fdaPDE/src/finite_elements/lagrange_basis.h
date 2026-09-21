@@ -84,7 +84,7 @@ template <int Order_> struct LagrangeBasis<0, Order_> {
     }
     // getters
     constexpr PolynomialType operator[](int i) const {
-        fdapde_assert(i < size());
+        fdapde_assert(i < size(), std::out_of_range, "polynomial basis index out of range");
         return PolynomialType {};
     }
     constexpr int size() const { return 1; }

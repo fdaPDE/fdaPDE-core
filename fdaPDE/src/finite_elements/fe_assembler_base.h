@@ -165,7 +165,8 @@ struct fe_assembler_base {
         test_space_(&internals::test_space(form_)),
         begin_(begin),
         end_(end) {
-        fdapde_assert(dof_handler_->n_dofs() > 0);
+        fdapde_assert(
+          dof_handler_->n_dofs() > 0, std::logic_error, "degrees of freedom must be initialized before assembly");
     }
     const TestSpace& test_space() const { return *test_space_; }
    protected:
@@ -322,7 +323,9 @@ struct fe_assembler_base {
         constexpr int n_basis_ = GradMdArray::static_extents[0];
         constexpr int n_quadrature_nodes_ = GradMdArray::static_extents[1];
         constexpr int n_components_ = GradMdArray::static_extents[2];
-        fdapde_constexpr_assert(n_components_ == 1 || n_components_ == local_dim);
+        fdapde_assert(
+          n_components_ == 1 || n_components_ == local_dim, std::invalid_argument,
+          "gradient component count must be one or match the local dimension");
         for (int i = 0; i < n_basis_; ++i) {
             for (int j = 0; j < n_quadrature_nodes_; ++j) {
                 // get i-th reference basis gradient evaluted at j-th quadrature node

@@ -43,7 +43,11 @@ struct ScalarFieldUnaryOp :
         Base(), derived_(derived), op_(op) { }
     constexpr ScalarFieldUnaryOp(const Derived_& derived) : ScalarFieldUnaryOp(derived, UnaryFunctor {}) { }
     constexpr Scalar operator()(const InputType& p) const {
-        if constexpr (StaticInputSize == Dynamic) { fdapde_assert(p.rows() == Base::input_size()); }
+        if constexpr (StaticInputSize == Dynamic) {
+            fdapde_assert(
+              p.rows() == Base::input_size(), std::invalid_argument,
+              "evaluation point dimension must match the field input dimension");
+        }
         return op_(derived_(p));
     }
     constexpr int input_size() const { return derived_.input_size(); }
@@ -107,7 +111,8 @@ class ScalarFieldBinOp : public ScalarFieldBase<Lhs::StaticInputSize, ScalarFiel
 
     ScalarFieldBinOp(const Lhs& lhs, const Rhs& rhs, BinaryOperation op) requires(StaticInputSize == Dynamic) :
         Base(), lhs_(lhs), rhs_(rhs), op_(op) {
-        fdapde_assert(lhs.input_size() == rhs.input_size());
+        fdapde_assert(
+          lhs.input_size() == rhs.input_size(), std::invalid_argument, "operand input dimensions must match");
     }
     constexpr ScalarFieldBinOp(const Lhs& lhs, const Rhs& rhs, BinaryOperation op)
         requires(StaticInputSize != Dynamic)
@@ -118,7 +123,11 @@ class ScalarFieldBinOp : public ScalarFieldBase<Lhs::StaticInputSize, ScalarFiel
           std::is_same_v<LhsInputType FDAPDE_COMMA RhsInputType> ||
             internals::are_related_by_inheritance_v<LhsInputType FDAPDE_COMMA RhsInputType>,
           YOU_MIXED_SCALAR_FIELDS_WITH_INCOMPATIBLE_INPUT_TYPES);
-        if constexpr (StaticInputSize == Dynamic) { fdapde_assert(p.rows() == Base::input_size()); }
+        if constexpr (StaticInputSize == Dynamic) {
+            fdapde_assert(
+              p.rows() == Base::input_size(), std::invalid_argument,
+              "evaluation point dimension must match the field input dimension");
+        }
         return op_(lhs_(p), rhs_(p));
     }
     constexpr int input_size() const { return lhs_.input_size(); }
@@ -181,7 +190,11 @@ struct ScalarFieldCoeffOp :
     constexpr ScalarFieldCoeffOp(const Lhs_& lhs, const Rhs_& rhs) :
         ScalarFieldCoeffOp(lhs, rhs, BinaryOperation {}) { }
     constexpr Scalar operator()(const InputType& p) const {
-        if constexpr (StaticInputSize == Dynamic) { fdapde_assert(p.rows() == Base::input_size()); }
+        if constexpr (StaticInputSize == Dynamic) {
+            fdapde_assert(
+              p.rows() == Base::input_size(), std::invalid_argument,
+              "evaluation point dimension must match the field input dimension");
+        }
         if constexpr (is_coeff_lhs) {
             return op_(Scalar(lhs_), rhs_(p));
         } else {
@@ -288,8 +301,11 @@ class ScalarField : public ScalarFieldBase<Size, ScalarField<Size, FunctorType_>
         fdapde_static_assert(
           std::is_invocable_v<FunctorType FDAPDE_COMMA decltype(points.row(std::declval<int>()))>,
           INVALID_SCALAR_FIELD_INVOCATION);
-        fdapde_assert(points.rows() > 0 && points.cols() == input_size());
-	Eigen::Matrix<Scalar, Dynamic, 1> evals(points.rows());
+        fdapde_assert(points.rows() > 0, std::invalid_argument, "evaluation points must not be empty");
+        fdapde_assert(
+          points.cols() == input_size(), std::invalid_argument,
+          "evaluation point dimension must match the field input dimension");
+        Eigen::Matrix<Scalar, Dynamic, 1> evals(points.rows());
         for (int i = 0; i < points.rows(); ++i) { evals[i] = f_(points.row(i)); }
         return evals;
     }

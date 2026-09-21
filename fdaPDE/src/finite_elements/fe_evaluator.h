@@ -50,7 +50,12 @@ template <typename Form_> struct fe_pointwise_evaluator_loop {
         dof_handler_(&internals::test_space(form_).dof_handler()),
         fe_space_(&internals::test_space(form_)),
         locs_(locs) {
-        fdapde_assert(dof_handler_->n_dofs() > 0 && locs.rows() > 0 && locs.cols() == embed_dim);
+        fdapde_assert(
+          dof_handler_->n_dofs() > 0, std::logic_error, "degrees of freedom must be initialized before evaluation");
+        fdapde_assert(locs.rows() > 0, std::invalid_argument, "evaluation points must not be empty");
+        fdapde_assert(
+          locs.cols() == embed_dim, std::invalid_argument,
+          "evaluation point dimension must match the embedding dimension");
         cell_ids_ = fe_space_->triangulation().locate(locs_);
     }
 

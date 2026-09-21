@@ -36,7 +36,10 @@ template <int N> class GridSearch {
     double obj_curr;
     // constructor
     GridSearch() : size_(N) { fdapde_static_assert(N != Dynamic, THIS_METHOD_IS_FOR_STATIC_SIZED_GRID_SEARCH_ONLY); }
-    GridSearch(int size) : size_(N == Dynamic ? size : N) { fdapde_assert(N == Dynamic || size == N); }
+    GridSearch(int size) : size_(N == Dynamic ? size : N) {
+        fdapde_assert(
+          N == Dynamic || size == N, std::invalid_argument, "grid search dimension must match the static dimension");
+    }
     GridSearch(const GridSearch& other) : size_(other.size_) { }
     GridSearch& operator=(const GridSearch& other) {
         size_ = other.size_;
@@ -56,16 +59,18 @@ template <int N> class GridSearch {
             }
         }());
         using grid_t = MdMap<const double, MdExtents<Dynamic, Dynamic>, layout_policy>;
-        constexpr double NaN = std::numeric_limits<double>::quiet_NaN();
 	
         std::tuple<Callbacks...> callbacks_ {callbacks...};
         grid_t grid_;
         value_ = std::numeric_limits<double>::max();
         if constexpr (internals::is_vector_like_v<GridT>) {
-            fdapde_assert(grid.size() % size_ == 0);
+            fdapde_assert(
+              grid.size() % size_ == 0, std::invalid_argument,
+              "grid coordinate count must be divisible by the search dimension");
             grid_ = grid_t(grid.data(), grid.size() / size_, size_);
         } else {
-            fdapde_assert(grid.cols() == size_);
+            fdapde_assert(
+              grid.cols() == size_, std::invalid_argument, "grid column count must match the search dimension");
             grid_ = grid_t(grid.data(), grid.rows(), size_);
         }
         bool stop = false;   // asserted true in case of forced stop

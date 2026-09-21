@@ -31,17 +31,15 @@ class RpChol {
    public:
   
     RpChol() noexcept = default;
-    RpChol(const MatrixType& A, double tol, int block_sz, int max_iter, int seed = random_seed) noexcept :
-        block_sz_(block_sz),
-        max_iter_(max_iter),
-        seed_(seed == random_seed ? std::random_device()() : seed) {
+    RpChol(const MatrixType& A, double tol, int block_sz, int max_iter, int seed = random_seed) :
+        block_sz_(block_sz), max_iter_(max_iter), seed_(seed == random_seed ? std::random_device()() : seed) {
         compute(A, tol);
     }
     RpChol(int block_sz, int max_iter, int seed = random_seed) noexcept :
         block_sz_(block_sz), max_iter_(max_iter), seed_(seed == random_seed ? std::random_device()() : seed) { }
   
     void compute(const MatrixType& A, double tol) {
-        fdapde_assert(tol < 1);
+        fdapde_assert(tol < 1, std::invalid_argument, "Cholesky tolerance must be less than one");
         int rows = A.rows();
         int cols = A.cols();
 
