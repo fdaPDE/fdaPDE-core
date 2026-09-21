@@ -21,7 +21,7 @@
 
 namespace fdapde {
 namespace internals {
-    
+
 // builds gaussian matrix
 inline Eigen::Matrix<double, Dynamic, Dynamic>
 gaussian_matrix(std::size_t rows, std::size_t cols, double std = 1.0, int seed = fdapde::random_seed) {
@@ -37,38 +37,7 @@ gaussian_matrix(std::size_t rows, std::size_t cols, double std = 1.0, int seed =
     return m;
 }
 
-// apply functor f to a symmetric matrix M by computing f(M) = S * f(\Sigma) * S^\top, where:
-// S eigenvector matrix, \Sigma eigenvalue matrix
-template <typename Derived, typename Functor>
-Eigen::Matrix<double, Derived::RowsAtCompileTime, Derived::ColsAtCompileTime>
-symm_matrix_apply(const Eigen::MatrixBase<Derived>& m, Functor&& f) {
-    using matrix_t = Eigen::Matrix<double, Derived::RowsAtCompileTime, Derived::ColsAtCompileTime>;
-    using vector_t = Eigen::Matrix<double, Derived::RowsAtCompileTime, 1>;
-
-    Eigen::SelfAdjointEigenSolver<Derived> eigen(m);
-    vector_t eig_val = eigen.eigenvalues();
-    matrix_t eig_vec = eigen.eigenvectors();
-    // logaritm of eigenvalues
-    for (int i = 0; i < m.derived().rows(); ++i) { eig_val[i] = f(eig_val[i]); }
-    return eig_vec * eig_val.asDiagonal() * eig_vec.transpose();
-}
-
 }   // namespace internals
-
-// matrix logarithm
-template <typename Derived> auto logm(const Eigen::MatrixBase<Derived>& m) {
-    return internals::symm_matrix_apply(m, [](double x) { return std::log(x); });
-}
-// matrix exponential
-template <typename Derived> auto expm(const Eigen::MatrixBase<Derived>& m) {
-    return internals::symm_matrix_apply(m, [](double x) { return std::exp(x); });
-}
-// matrix power
-template <typename Derived> auto powm(const Eigen::MatrixBase<Derived>& m, int i) {
-    return internals::symm_matrix_apply(m, [&](double x) { return std::pow(x, i); });
-}
-template <typename Derived> auto sqrtm(const Eigen::MatrixBase<Derived>& m) { return powm(m, 0.5); }
-
 }   // namespace fdapde
 
-#endif // __FDAPDE_LINEAR_ALGEBRA_UTILITY__
+#endif   // __FDAPDE_LINEAR_ALGEBRA_UTILITY_H__
