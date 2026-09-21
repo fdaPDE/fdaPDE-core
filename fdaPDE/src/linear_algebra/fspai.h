@@ -301,6 +301,7 @@ template <typename Scalar_> class FSPAI {
             }
         }
 
+        // grow each lower-factor column independently from its diagonal seed
         std::vector<Triplet<Scalar>> factor_triplets;
         std::vector<Scalar> column(static_cast<std::size_t>(n), Scalar(0));
         std::vector<unsigned char> candidate_mask(static_cast<std::size_t>(n), 0);
@@ -318,6 +319,7 @@ template <typename Scalar_> class FSPAI {
             for (int step = 0; step < alpha && !added.empty(); ++step) {
                 if (step != 0) update_column_(source, diagonal, k, pattern, column);
 
+                // new pattern entries expose neighboring candidates for the next local principal solve
                 for (const int row : added) {
                     for (const auto entry : source.row(row)) {
                         const int candidate = entry.column();
@@ -329,6 +331,7 @@ template <typename Scalar_> class FSPAI {
                 }
                 added.clear();
 
+                // rank candidate gradient contributions relative to their diagonal curvature
                 std::vector<std::pair<int, Scalar>> scores;
                 scores.reserve(candidates.size());
                 Scalar score_sum = Scalar(0);
@@ -350,6 +353,7 @@ template <typename Scalar_> class FSPAI {
                   std::isfinite(score_sum), std::domain_error, "FSPAI sparsity update produced a nonfinite score");
                 if (scores.empty() || !(maximum_score > epsilon)) continue;
 
+                // retain at most beta candidates above the mean score, with deterministic index tie-breaking
                 const Scalar mean = score_sum / static_cast<Scalar>(scores.size());
                 std::sort(scores.begin(), scores.end(), [](const auto& lhs, const auto& rhs) {
                     return lhs.second != rhs.second ? lhs.second > rhs.second : lhs.first < rhs.first;
@@ -372,6 +376,7 @@ template <typename Scalar_> class FSPAI {
             }
         }
 
+        // publish the completed factor and its settings only after every column succeeds
         SparseMatrixType replacement(n, n, factor_triplets);
         factor_.swap(replacement);
         alpha_ = alpha;
