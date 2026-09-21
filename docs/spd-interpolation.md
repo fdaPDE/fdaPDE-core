@@ -5,6 +5,60 @@ and prepared spatial interpolants. This header and its algebra/solver paths do
 not require Eigen. The existing `Simplex` and mesh APIs still use Eigen spatial
 coordinates; include `fdaPDE/geometry.h` when using them.
 
+The finite element interface pairs a scalar reference basis with the target
+matrix geometry. Include `fdaPDE/finite_elements.h` as well for `FeSpace`, mesh
+types and the `P1` descriptor; either include order is supported.
+
+```cpp
+using namespace fdapde;
+using Node = SPDMatrix<double, 3, 3, Cache::Log>;
+MatrixBatch<Node> values_batch(source_values);
+manifold::AffineInvariantSPDGeometry<double, 3, Usage::BasePointMaps> geometry;
+GeometricFeSpace W(mesh, P1<1>, geometry);
+GeometricFeFunction U(W, values_batch);  // copies the batch
+// use GeometricFeFunction U(W, std::move(values_batch)) to transfer its storage
+auto expression = U(x);
+SPDMatrix<double, 3, 3> value(expression);
+```
+
+`GeometricFeSpace` owns an existing scalar `FeSpace` and a copy of the target
+geometry. `triangulation()`, `dof_handler()`, `n_dofs()`,
+`eval_shape_value(i, reference_point)` and `geometry()` expose its immutable
+bindings. Each scalar DOF weights a complete matrix: the SPD order is set by
+`geometry`, not by scalar vector components. Only `P1<1>` is accepted;
+`P2<1>`, other degrees and vector descriptors such as `P1<3>` fail compilation.
+
+`GeometricFeFunction` owns its `MatrixBatch`, preserving the batch's element
+cache policy. An lvalue is copied; an rvalue transfers its buffers.
+`function_space()` returns the borrowed space and `coeff()` returns a const
+batch reference. It uses the `DofHandler` table in local DOF order and evaluates
+weights through the scalar reference basis, reusing the prepared P1 engine.
+Optional solver tolerances are the third constructor argument, as in
+`GeometricFeFunction U(W, values_batch, options)`.
+
+`U.set_coeff(new_values)` validates the count and matrix shape, discards
+coefficient-dependent prepared cells, and copies or transfers the replacement
+batch. It retains the spatial index. A failed validation preserves the previous
+coefficients, cache and expressions. A successful replacement invalidates all
+previously obtained expressions, linearizations and coefficient views: recreate
+them before evaluation. External changes to the original lvalue batch have no
+effect on `U`.
+
+The immutable mesh must outlive `W`, and `W` must outlive `U`. Spaces and
+functions are not copyable or movable, preserving internal and borrowed
+bindings. Expressions and linearizations must not outlive `U`; temporary mesh
+and space bindings and deferred evaluation on temporary functions are rejected.
+Concurrent evaluations are supported; `set_coeff` and destruction require
+exclusive access, including exclusion of evaluations through existing borrowed
+expressions or linearizations.
+
+`U.result(x)`, `U.linearization(x)` and `U.prepared_cells()` have the local
+solver diagnostics, derivative ordering and lazy cell preparation contracts
+described below. No global derivative assembly or higher-order interpolation is
+provided.
+
+## Prepared interpolation on one simplex
+
 ```cpp
 using namespace fdapde;
 using Node = SPDMatrix<double, 3, 3, Cache::Log>;

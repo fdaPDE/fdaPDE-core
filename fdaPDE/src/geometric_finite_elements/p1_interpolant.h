@@ -119,15 +119,17 @@ template <typename Geometry, typename Element, typename Nodes> class P1Interpola
     /// @brief exposes the mean result and convergence diagnostics at a spatial point
     P1ValueResult<Point> result(const NodeType& x) const { return result_(weights_(x)); }
     /// @brief prepares weight, nodal and mixed derivatives using the converged relative workspace
-    auto linearization(const NodeType& x) const {
-        const auto weights = weights_(x);
+    auto linearization(const NodeType& x) const { return linearization_(weights_(x)); }
+   private:
+    template <typename> friend class internals::p1_interpolant_expr;
+    template <typename, typename, typename> friend class P1FieldInterpolant;
+    /// @brief shares derivative preparation between simplex coordinates and finite element shape values
+    auto linearization_(const Weights& weights) const {
         if constexpr (internals::is_log_euclidean_spd_geometry<Geometry>)
             return p1_geodesic_linearization(geometry_, nodes_, weights);
         else
             return p1_geodesic_linearization(geometry_, nodes_, weights, options_);
     }
-   private:
-    template <typename> friend class internals::p1_interpolant_expr;
     /// @brief evaluates certified coefficients from stored barycentric coordinates
     Point evaluate(const Weights& weights) const {
         auto result = result_(weights);
@@ -178,30 +180,51 @@ template <typename Geometry, typename Element, typename Nodes> class P1Interpola
     P1GeodesicLinearizationOptions options_;
     std::vector<Curve> edges_;
 };
-/// @brief borrows an immutable mesh and batch, preparing and retaining only visited P1 cells
+namespace internals {
+/// @brief obtains the triangulation from a finite element space or a directly supplied mesh
+template <typename Domain> const auto& p1_mesh(const Domain& domain) {
+    if constexpr (requires { domain.triangulation(); })
+        return domain.triangulation();
+    else
+        return domain;
+}
+}   // namespace internals
+
+/// @brief borrows an immutable mesh or finite element space and batch, retaining only visited P1 cells
 /// @details expressions and linearizations borrow this immovable field; all bindings must outlive their use
-template <typename Geometry, typename Mesh, typename Values> class P1FieldInterpolant {
+template <typename Geometry, typename Domain, typename Values> class P1FieldInterpolant {
    public:
+    using Mesh = std::remove_cvref_t<decltype(internals::p1_mesh(std::declval<const Domain&>()))>;
     using Element = Simplex<Mesh::local_dim, Mesh::embed_dim>;
     using NodeType = typename Element::NodeType;
     using Selection = decltype(std::declval<const std::remove_cvref_t<Values>&>().select(
       std::declval<std::array<int, Element::n_nodes>>()));
     using Local = P1Interpolant<Geometry, Element, Selection>;
     /// @brief builds an independent spatial index without preparing any nodal interpolation data
-    P1FieldInterpolant(Geometry geometry, const Mesh& mesh, Values values, P1GeodesicLinearizationOptions options) :
+    P1FieldInterpolant(Geometry geometry, const Domain& domain, Values values, P1GeodesicLinearizationOptions options) :
         geometry_(std::move(geometry)),
-        mesh_(checked_mesh_(mesh, values)),
+        domain_(&domain),
+        mesh_(checked_mesh_(domain, values)),
         values_(std::forward<Values>(values)),
         options_(options),
         locator_(mesh_) { }
     /// @brief locates a cell and returns its deferred expression with a stable borrowed cache binding
-    auto operator()(const NodeType& x) const& { return cell_(x)(x); }
+    auto operator()(const NodeType& x) const& {
+        const auto& cell = cell_(x);
+        return internals::p1_interpolant_expr<const Local&>(cell, weights_(cell, x));
+    }
     /// @brief rejects expressions that would borrow an expiring field cache
     void operator()(const NodeType&) const&& = delete;
     /// @brief returns the local mean and convergence diagnostics at a spatial point
-    auto result(const NodeType& x) const { return cell_(x).result(x); }
+    auto result(const NodeType& x) const {
+        const auto& cell = cell_(x);
+        return cell.result_(weights_(cell, x));
+    }
     /// @brief prepares derivatives in the located cell's local vertex order
-    auto linearization(const NodeType& x) const& { return cell_(x).linearization(x); }
+    auto linearization(const NodeType& x) const& {
+        const auto& cell = cell_(x);
+        return cell.linearization_(weights_(cell, x));
+    }
     /// @brief rejects derivative workspaces that could borrow an expiring field cache
     void linearization(const NodeType&) const&& = delete;
     /// @brief returns the number of visited cells whose edge curves have been prepared
@@ -209,14 +232,41 @@ template <typename Geometry, typename Mesh, typename Values> class P1FieldInterp
         const std::lock_guard lock(mutex_);
         return cells_.size();
     }
+    /// @brief discards coefficient-dependent cell data while retaining the spatial index
+    /// @details invalidates existing expressions and linearizations; updates require exclusive access
+    void clear_cache() {
+        const std::lock_guard lock(mutex_);
+        cells_.clear();
+    }
    private:
-    /// @brief validates the mesh and global nodal count before constructing the spatial index
-    static const Mesh* checked_mesh_(const Mesh& mesh, const std::remove_cvref_t<Values>& values) {
+    /// @brief validates the mesh and nodal DOF count before constructing the spatial index
+    static const Mesh* checked_mesh_(const Domain& domain, const std::remove_cvref_t<Values>& values) {
+        const auto& mesh = internals::p1_mesh(domain);
         fdapde_strong_assert(mesh.n_cells() > 0, std::invalid_argument, "P1 field requires a nonempty mesh");
+        const int count = [&]() {
+            if constexpr (requires { domain.n_dofs(); })
+                return domain.n_dofs();
+            else
+                return mesh.n_nodes();
+        }();
         fdapde_strong_assert(
-          std::cmp_equal(values.size(), mesh.n_nodes()), std::invalid_argument,
-          "P1 field requires one value per mesh vertex");
+          std::cmp_equal(values.size(), count), std::invalid_argument,
+          "P1 field requires one value per nodal degree of freedom");
         return &mesh;
+    }
+    /// @brief evaluates finite element shape weights or the simplex barycentric map on a located cell
+    typename Local::Weights weights_(const Local& cell, const NodeType& x) const {
+        if constexpr (requires { domain_->dof_handler(); }) {
+            const auto& element = cell.element_;
+            const auto mapped = (element.invJ() * (x - element.node(0))).eval();
+            Matrix<double, Mesh::local_dim, 1> reference;
+            for (int i = 0; i < Mesh::local_dim; ++i) reference[i] = mapped[i];
+            typename Local::Weights weights;
+            for (int i = 0; i < Element::n_nodes; ++i) weights[i] = domain_->eval_shape_value(i, reference);
+            internals::validate_p1_data(Element::n_nodes, weights);
+            return weights;
+        } else
+            return cell.weights_(x);
     }
     /// @brief selects global DOFs in local vertex order and prepares each visited cell at most once
     const Local& cell_(const NodeType& x) const {
@@ -227,11 +277,17 @@ template <typename Geometry, typename Mesh, typename Values> class P1FieldInterp
         const std::lock_guard lock(mutex_);
         if (const auto it = cells_.find(id); it != cells_.end()) return it->second;
         std::array<int, Element::n_nodes> ids;
-        for (int i = 0; i < Element::n_nodes; ++i) ids[i] = mesh_->cells()(id, i);
+        for (int i = 0; i < Element::n_nodes; ++i) {
+            if constexpr (requires { domain_->dof_handler(); })
+                ids[i] = domain_->dof_handler().dofs()(id, i);
+            else
+                ids[i] = mesh_->cells()(id, i);
+        }
         const typename Mesh::CellType cell(id, mesh_);
         return cells_.try_emplace(id, geometry_, Element(cell.nodes()), values_.select(ids), options_).first->second;
     }
     Geometry geometry_;
+    const Domain* domain_;
     const Mesh* mesh_;
     Values values_;
     P1GeodesicLinearizationOptions options_;
