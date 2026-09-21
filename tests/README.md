@@ -74,3 +74,9 @@ ctest --test-dir build/native --output-on-failure
 The default integration lane retains Eigen-dependent core callers and verifies
 both dense/full aggregate inclusion orders in linked translation units. Native
 and integration lanes both keep debug assertions enabled in ordinary tests.
+
+## SPD geometry
+
+The geometry targets exercise log-Euclidean and affine-invariant SPD operations,
+public error contracts and owning results. The integration lane additionally
+checks both manifold/full aggregate include orders in linked translation units.
