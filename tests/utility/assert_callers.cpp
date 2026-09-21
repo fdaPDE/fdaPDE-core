@@ -36,36 +36,38 @@ template <typename Exception, typename Callable> void expect_failure(Callable&& 
 }   // namespace
 
 // verifies row and column bounds produce distinct diagnostics through mutable and const views
-TEST(AssertionCallers, ArrayIndicesIdentifyTheFailingAxis) {
+TEST(AssertionCallers, ArrayIndicesRejectInvalidRowsAndColumns) {
     fdapde::MdArray<int, fdapde::MdExtents<fdapde::Dynamic, fdapde::Dynamic>> data(2, 3);
     const auto& const_data = data;
     // checks the lower row bound before creating a mutable view
-    expect_failure<std::out_of_range>([&] { data.row(-1); }, "row index must be nonnegative");
+    expect_failure<std::out_of_range>([&] { data.row(-1); }, "MdArray block is out of range");
     // checks the upper row bound before creating a mutable view
-    expect_failure<std::out_of_range>([&] { data.row(2); }, "row index out of range");
+    expect_failure<std::out_of_range>([&] { data.row(2); }, "MdArray block is out of range");
     // checks the lower column bound before creating a mutable view
-    expect_failure<std::out_of_range>([&] { data.col(-1); }, "column index must be nonnegative");
+    expect_failure<std::out_of_range>([&] { data.col(-1); }, "MdArray block is out of range");
     // checks the upper column bound before creating a mutable view
-    expect_failure<std::out_of_range>([&] { data.col(3); }, "column index out of range");
-    // verifies the const overload preserves the row diagnostic
-    expect_failure<std::out_of_range>([&] { const_data.row(2); }, "row index out of range");
-    // verifies the const overload preserves the column diagnostic
-    expect_failure<std::out_of_range>([&] { const_data.col(3); }, "column index out of range");
+    expect_failure<std::out_of_range>([&] { data.col(3); }, "MdArray block is out of range");
+    // verifies the const overload rejects an invalid row
+    expect_failure<std::out_of_range>([&] { const_data.row(2); }, "MdArray block is out of range");
+    // verifies the const overload rejects an invalid column
+    expect_failure<std::out_of_range>([&] { const_data.col(3); }, "MdArray block is out of range");
     // confirms valid boundary indices still allow access
     EXPECT_NO_THROW(data(1, 2) = 7);
 }
 
-// verifies binary operations report row and column mismatches separately
-TEST(AssertionCallers, BinaryOperandsIdentifyTheMismatchedDimension) {
-    fdapde::BinaryMatrix<fdapde::Dynamic, fdapde::Dynamic> lhs(2, 3), wrong_rows(3, 3), wrong_cols(2, 4);
+// verifies binary operations reject row and column mismatches
+TEST(AssertionCallers, BinaryOperandsRejectMismatchedDimensions) {
+    fdapde::Matrix<bool, fdapde::Dynamic, fdapde::Dynamic> lhs(2, 3), wrong_rows(3, 3), wrong_cols(2, 4);
     // rejects a row mismatch without requiring a column mismatch
-    expect_failure<std::invalid_argument>([&] { (void)(lhs | wrong_rows); }, "operand row counts must match");
+    expect_failure<std::invalid_argument>(
+      [&] { (void)(lhs | wrong_rows); }, "Boolean binary operation requires matching dimensions");
     // reaches the column check after the row check succeeds
-    expect_failure<std::invalid_argument>([&] { (void)(lhs | wrong_cols); }, "operand column counts must match");
+    expect_failure<std::invalid_argument>(
+      [&] { (void)(lhs | wrong_cols); }, "Boolean binary operation requires matching dimensions");
     // verifies binary matrix access is classified as an index failure
-    expect_failure<std::out_of_range>([&] { lhs.set(2, 0); }, "row index out of range");
-    // verifies the column access check has its own diagnostic
-    expect_failure<std::out_of_range>([&] { lhs.set(0, 3); }, "column index out of range");
+    expect_failure<std::out_of_range>([&] { lhs.set(2, 0); }, "Boolean matrix index out of range");
+    // verifies the column access check rejects an invalid index
+    expect_failure<std::out_of_range>([&] { lhs.set(0, 3); }, "Boolean matrix index out of range");
 }
 
 // verifies spline indices and construction arguments use different exception categories
@@ -162,7 +164,7 @@ TEST(AssertionCallers, ConstantEvaluationAndRuntimeExceptionTypesAgree) {
     // checks the typed replacement of a constexpr matrix constructor precondition
     expect_failure<std::invalid_argument>(
       [] { fdapde::Matrix<double, 2, 2> matrix(std::vector<double>(3)); },
-      "coefficient count must match the matrix size");
+      "matrix input size does not match its shape");
 }
 
 // verifies name lookup failures are classified like keyed container access

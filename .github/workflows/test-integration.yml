@@ -17,3 +17,19 @@ jobs:
       - run: cmake -S tests -B build/integration -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=${{ matrix.compiler }}
       - run: cmake --build build/integration --parallel 2
       - run: ctest --test-dir build/integration --output-on-failure
+
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [g++-14, clang++]
+        build_type: [Debug, Release]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y g++-14
+      - run: sudo apt-get purge -y libeigen3-dev
+      - run: test ! -e /usr/include/eigen3/Eigen/Core
+      - run: cmake -S tests -B build/native -DFDAPDE_NATIVE_ONLY=ON -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_CXX_COMPILER=${{ matrix.compiler }}
+      - run: cmake --build build/native --parallel 2
+      - run: ctest --test-dir build/native --output-on-failure

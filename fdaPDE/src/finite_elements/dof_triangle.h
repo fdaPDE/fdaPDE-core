@@ -22,8 +22,7 @@
 namespace fdapde {
 
 // definition of dof-informed triangle, i.e. a triangle with attached dofs
-template <typename DofHandler>
-class DofTriangle : public Triangle<typename DofHandler::TriangulationType> {
+template <typename DofHandler> class DofTriangle : public Triangle<typename DofHandler::TriangulationType> {
     fdapde_static_assert(DofHandler::TriangulationType::local_dim == 2, THIS_CLASS_IS_FOR_TRIANGULAR_MESHES_ONLY);
     using Base = Triangle<typename DofHandler::TriangulationType>;
     const DofHandler* dof_handler_;
@@ -31,7 +30,7 @@ class DofTriangle : public Triangle<typename DofHandler::TriangulationType> {
     using TriangulationType = typename DofHandler::TriangulationType;
     static constexpr int local_dim = TriangulationType::local_dim;
     static constexpr int embed_dim = TriangulationType::embed_dim;
-  
+
     class EdgeType : public Base::EdgeType {
         Eigen::Matrix<int, Dynamic, 1> dofs_;
         const DofHandler* dof_handler_;
@@ -44,7 +43,7 @@ class DofTriangle : public Triangle<typename DofHandler::TriangulationType> {
               (TriangulationType::n_nodes_per_edge + dof_handler_->n_dofs_per_edge()) *
               dof_handler_->dof_multiplicity());
             int j = 0;
-	    int n_unique_dofs_ = dof_handler_->n_unique_dofs();
+            int n_unique_dofs_ = dof_handler_->n_unique_dofs();
             for (int n_comp = 0; n_comp < dof_handler_->dof_multiplicity(); ++n_comp) {
                 for (int d : this->node_ids()) dofs_[j++] = d + n_comp * n_unique_dofs_;
                 for (int k = 0; k < dof_handler_->n_dofs_per_edge(); ++k) {
@@ -54,8 +53,8 @@ class DofTriangle : public Triangle<typename DofHandler::TriangulationType> {
         }
         const Eigen::Matrix<int, Dynamic, 1>& dofs() const { return dofs_; }
         Eigen::Matrix<int, Dynamic, 1> dofs_markers() const { return dof_handler_->dof_markers()(dofs()); }
-        BinaryVector<Dynamic> boundary_dofs() const {
-            BinaryVector<Dynamic> boundary(dofs_.size());
+        Vector<bool, Dynamic> boundary_dofs() const {
+            Vector<bool, Dynamic> boundary(dofs_.size());
             int i = 0;
             for (int dof : dofs_) {
                 if (dof_handler_->is_dof_on_boundary(dof)) boundary.set(i);
@@ -70,9 +69,9 @@ class DofTriangle : public Triangle<typename DofHandler::TriangulationType> {
         Base(cell_id, dof_handler->triangulation()), dof_handler_(dof_handler) { }
     Eigen::Matrix<int, Dynamic, 1> dofs() const { return dof_handler_->active_dofs(Base::id()); }
     Eigen::Matrix<int, Dynamic, 1> dofs_markers() const { return dof_handler_->dof_markers()(dofs()); }
-    BinaryVector<Dynamic> boundary_dofs() const {
+    Vector<bool, Dynamic> boundary_dofs() const {
         Eigen::Matrix<int, Dynamic, 1> tmp = dofs();
-        BinaryVector<Dynamic> boundary(tmp.size());
+        Vector<bool, Dynamic> boundary(tmp.size());
         int i = 0;
         for (int dof : tmp) {
             if (dof_handler_->is_dof_on_boundary(dof)) boundary.set(i);
@@ -106,4 +105,4 @@ class DofTriangle : public Triangle<typename DofHandler::TriangulationType> {
 
 }   // namespace fdapde
 
-#endif // __FDAPDE_DOF_TRIANGLE_H__
+#endif   // __FDAPDE_DOF_TRIANGLE_H__

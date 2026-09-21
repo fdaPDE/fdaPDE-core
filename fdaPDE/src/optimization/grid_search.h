@@ -51,30 +51,32 @@ template <int N> class GridSearch {
         fdapde_static_assert(
           std::is_same<decltype(std::declval<ObjectiveT>().operator()(vector_t())) FDAPDE_COMMA double>::value,
           INVALID_CALL_TO_OPTIMIZE__OBJECTIVE_FUNCTOR_NOT_CALLABLE_AT_VECTOR_TYPE);
-        using layout_policy = decltype([]() {
+        constexpr int storage_order = []() {
             if constexpr (internals::is_eigen_dense_xpr_v<GridT>) {
-                return std::conditional_t<GridT::IsRowMajor, internals::layout_right, internals::layout_left> {};
+                return GridT::IsRowMajor ? RowMajor : ColMajor;
             } else {
-                return internals::layout_right {};
+                return RowMajor;
             }
-        }());
-        using grid_t = MdMap<const double, MdExtents<Dynamic, Dynamic>, layout_policy>;
-	
+        }();
+        using grid_t = MatrixView<const double, Dynamic, Dynamic, storage_order>;
+
         std::tuple<Callbacks...> callbacks_ {callbacks...};
-        grid_t grid_;
+
         value_ = std::numeric_limits<double>::max();
-        if constexpr (internals::is_vector_like_v<GridT>) {
-            fdapde_assert(
-              grid.size() % size_ == 0, std::invalid_argument,
-              "grid coordinate count must be divisible by the search dimension");
-            grid_ = grid_t(grid.data(), grid.size() / size_, size_);
-        } else {
-            fdapde_assert(
-              grid.cols() == size_, std::invalid_argument, "grid column count must match the search dimension");
-            grid_ = grid_t(grid.data(), grid.rows(), size_);
-        }
+        grid_t grid_ = [&]() {
+            if constexpr (internals::is_vector_like_v<GridT>) {
+                fdapde_assert(
+                  grid.size() % size_ == 0, std::invalid_argument,
+                  "grid coordinate count must be divisible by the search dimension");
+                return grid_t(grid.data(), grid.size() / size_, size_);
+            } else {
+                fdapde_assert(
+                  grid.cols() == size_, std::invalid_argument, "grid column count must match the search dimension");
+                return grid_t(grid.data(), grid.rows(), size_);
+            }
+        }();
         bool stop = false;   // asserted true in case of forced stop
-        grid_.row(0).assign_to(x_curr.transpose());
+        for (int j = 0; j < size_; ++j) { x_curr[j] = grid_(0, j); }
         obj_curr = objective(x_curr);
         stop |= internals::exec_eval_hooks(*this, objective, callbacks_);
         values_.clear();
@@ -84,8 +86,8 @@ template <int N> class GridSearch {
             optimum_ = x_curr;
         }
         // optimize field over supplied grid
-        for (std::size_t i = 1; i < grid_.rows() && !stop; ++i) {
-            grid_.row(i).assign_to(x_curr.transpose());
+        for (int i = 1; i < grid_.rows() && !stop; ++i) {
+            for (int j = 0; j < size_; ++j) { x_curr[j] = grid_(i, j); }
             obj_curr = objective(x_curr);
             stop |= internals::exec_eval_hooks(*this, objective, callbacks_);
             values_.push_back(obj_curr);

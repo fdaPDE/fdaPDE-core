@@ -56,6 +56,7 @@
 namespace fdapde {
 
 [[maybe_unused]] constexpr int Dynamic     = -1;
+[[maybe_unused]] constexpr int Adapted     = -2;
 [[maybe_unused]] constexpr int random_seed = -1;
 
 // algorithm computation policies
@@ -65,9 +66,6 @@ namespace fdapde {
 }   // namespace fdapde
 
 #include "src/utility/numeric.h"
-#include "src/utility/matrix.h"
-#include "src/utility/binary.h"
-#include "src/utility/mdarray.h"
 #include "src/utility/binary_tree.h"
 #include "src/utility/type_erasure.h"
 

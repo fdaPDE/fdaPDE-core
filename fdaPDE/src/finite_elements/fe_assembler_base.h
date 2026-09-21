@@ -24,10 +24,10 @@ namespace fdapde {
 template <typename Derived_> struct FeMap;
 
 enum class fe_assembler_flags {
-    compute_shape_values        = 0x0001,
-    compute_shape_grad          = 0x0002,
-    compute_shape_hess          = 0x0004,
-    compute_shape_div           = 0x0008,
+    compute_shape_values = 0x0001,
+    compute_shape_grad = 0x0002,
+    compute_shape_hess = 0x0004,
+    compute_shape_div = 0x0008,
     compute_physical_quad_nodes = 0x0010
 };
 
@@ -38,11 +38,11 @@ template <int EmbedDim> struct fe_assembler_packet : geo_assembler_packet<EmbedD
     static constexpr int embed_dim = EmbedDim;
     fe_assembler_packet(int n_trial_components, int n_test_components) :
         trial_value(n_trial_components),
-        test_value (n_test_components ),
-        trial_grad (n_trial_components),
-        test_grad  (n_test_components ),
-        trial_hess (n_trial_components),
-        test_hess  (n_test_components ) { }
+        test_value(n_test_components),
+        trial_grad(n_trial_components),
+        test_grad(n_test_components),
+        trial_hess(n_trial_components),
+        test_hess(n_test_components) { }
     fe_assembler_packet(int n_components) : fe_assembler_packet(n_components, n_components) { }
     fe_assembler_packet() : fe_assembler_packet(1, 1) { }
     fe_assembler_packet(fe_assembler_packet&&) noexcept = default;
@@ -51,7 +51,7 @@ template <int EmbedDim> struct fe_assembler_packet : geo_assembler_packet<EmbedD
     int quad_node_id;
     // functional informations (Dynamic stands for number of components)
     MdArray<double, MdExtents<Dynamic>> trial_value, test_value;            // \psi_i(q_k), \psi_j(q_k)
-    MdArray<double, MdExtents<Dynamic, embed_dim>> trial_grad, test_grad;   // \nabla{\psi_i}(q_k), \nabla{\psi_j}(q_k)
+    MdArray<double, MdExtents<embed_dim, Dynamic>> trial_grad, test_grad;   // \nabla{\psi_i}(q_k), \nabla{\psi_j}(q_k)
     MdArray<double, MdExtents<Dynamic, embed_dim, embed_dim>> trial_hess, test_hess;
     double trial_div = 0, test_div = 0;
 };
@@ -65,15 +65,14 @@ template <typename FeSpace_, typename... Quadrature_> struct fe_face_assembler_t
 
     using dof_descriptor = FeType::template face_dof_descriptor<FeSpace_::local_dim>;
     using BasisType = typename dof_descriptor::BasisType;
-    static constexpr int n_basis = BasisType::n_basis;  
+    static constexpr int n_basis = BasisType::n_basis;
     using Quadrature = decltype([]() {
         if constexpr (sizeof...(Quadrature_) == 0) {
             return typename FeType::template face_quadrature_t<FeSpace_::local_dim> {};
         } else {
             using UserQuadrature = std::tuple_element_t<0, std::tuple<Quadrature_...>>;
             fdapde_static_assert(
-              UserQuadrature::local_dim == local_dim,
-              SUPPLIED_QUADRATURE_DIMENSION_DOES_NOT_MATCH_FACE_DIMENSION);
+              UserQuadrature::local_dim == local_dim, SUPPLIED_QUADRATURE_DIMENSION_DOES_NOT_MATCH_FACE_DIMENSION);
             return std::get<0>(std::tuple<Quadrature_...>());
         }
     }());
@@ -93,7 +92,7 @@ template <typename FeSpace_, typename... Quadrature_> struct fe_cell_assembler_t
 
     using dof_descriptor = FeType::template cell_dof_descriptor<local_dim>;
     using BasisType = typename dof_descriptor::BasisType;
-    static constexpr int n_basis = BasisType::n_basis;  
+    static constexpr int n_basis = BasisType::n_basis;
     using Quadrature = decltype([]() {
         if constexpr (sizeof...(Quadrature_) == 0) {
             return typename FeType::template cell_quadrature_t<local_dim> {};
@@ -110,10 +109,9 @@ template <typename FeSpace_, typename... Quadrature_> struct fe_cell_assembler_t
     using geo_iterator = typename Triangulation<local_dim, embed_dim>::cell_iterator;
     using dof_iterator = typename DofHandler<local_dim, embed_dim, finite_element_tag>::cell_iterator;
 };
-  
+
 // base class for vector finite element assembly loops
-template <typename Triangulation_, typename Form_, int Options_, typename... Quadrature_>
-struct fe_assembler_base {
+template <typename Triangulation_, typename Form_, int Options_, typename... Quadrature_> struct fe_assembler_base {
     // detect test space (since a test function is always present in a weak form)
     using TestSpace = test_space_t<Form_>;
     using Triangulation = typename std::decay_t<Triangulation_>;
@@ -181,12 +179,12 @@ struct fe_assembler_base {
           YOU_SUPPLIED_A_QUADRATURE_OF_INVALID_DIMENSION);
 
         using BasisType = typename fe_traits__::BasisType;
-	using dof_descriptor = typename fe_traits__::dof_descriptor;
+        using dof_descriptor = typename fe_traits__::dof_descriptor;
         constexpr int n_basis = BasisType::n_basis;
         constexpr int n_quadrature_nodes = Quadrature__::order;
         constexpr int n_components = fe_traits__::n_components;
         // evaluate basis at quadrature nodes
-        MdArray<double, MdExtents<n_basis, n_quadrature_nodes, n_components>> shape_values_ {};	
+        MdArray<double, MdExtents<n_basis, n_quadrature_nodes, n_components>> shape_values_ {};
         BasisType basis {dof_descriptor().dofs_phys_coords()};
         for (int i = 0; i < n_basis; ++i) {
             // evaluation of \psi_i at q_j, j = 1, ..., n_quadrature_nodes
@@ -211,7 +209,7 @@ struct fe_assembler_base {
           YOU_SUPPLIED_A_QUADRATURE_OF_INVALID_DIMENSION);
 
         using BasisType = typename fe_traits__::BasisType;
-	using dof_descriptor = typename fe_traits__::dof_descriptor;
+        using dof_descriptor = typename fe_traits__::dof_descriptor;
         constexpr int n_basis = BasisType::n_basis;
         constexpr int n_quadrature_nodes = Quadrature__::order;
         constexpr int n_components = fe_traits__::n_components;
@@ -244,12 +242,12 @@ struct fe_assembler_base {
           YOU_SUPPLIED_A_QUADRATURE_OF_INVALID_DIMENSION);
 
         using BasisType = typename fe_traits__::BasisType;
-	using dof_descriptor = typename fe_traits__::dof_descriptor;
+        using dof_descriptor = typename fe_traits__::dof_descriptor;
         constexpr int n_basis = BasisType::n_basis;
         constexpr int n_quadrature_nodes = Quadrature__::order;
         constexpr int n_components = fe_traits__::n_components;
-	constexpr int local_dim = fe_traits__::local_dim;
-	// evaluate basis hessian at quadrature nodes
+        constexpr int local_dim = fe_traits__::local_dim;
+        // evaluate basis hessian at quadrature nodes
         MdArray<double, MdExtents<n_basis, n_quadrature_nodes, n_components, local_dim, local_dim>> shape_hess_ {};
         BasisType basis {dof_descriptor().dofs_phys_coords()};
         for (int i = 0; i < n_basis; ++i) {
@@ -257,7 +255,9 @@ struct fe_assembler_base {
             for (int j = 0; j < n_quadrature_nodes; ++j) {
                 const auto hess = basis[i].hessian()(Quadrature__::nodes.row(j).transpose());
                 for (int k = 0; k < n_components; ++k) {
-                    shape_hess_.template slice<0, 1, 2>(i, j, k).assign_inplace_from(hess.data());
+                    for (int r = 0; r < local_dim; ++r) {
+                        for (int c = 0; c < local_dim; ++c) { shape_hess_(i, j, k, r, c) = hess(r, c); }
+                    }
                 }
             }
         }
@@ -266,8 +266,8 @@ struct fe_assembler_base {
 
     // test functions evaluations
     static constexpr auto test_shape_values_ = eval_shape_values<Quadrature, fe_traits>();
-    static constexpr auto test_shape_grads_  = eval_shape_grads <Quadrature, fe_traits>();
-    static constexpr auto test_shape_hess_   = eval_shape_hess  <Quadrature, fe_traits>();
+    static constexpr auto test_shape_grads_ = eval_shape_grads<Quadrature, fe_traits>();
+    static constexpr auto test_shape_hess_ = eval_shape_hess<Quadrature, fe_traits>();
 
     void
     distribute_quadrature_nodes(typename fe_traits::dof_iterator begin, typename fe_traits::dof_iterator end) const {
@@ -301,18 +301,23 @@ struct fe_assembler_base {
         constexpr int n_basis_ = SrcMdArray::static_extents[0];
         constexpr int n_quadrature_nodes_ = SrcMdArray::static_extents[1];
         constexpr int n_components_ = SrcMdArray::static_extents[2];
-	
+
         for (int i = 0; i < n_basis_; ++i) {
             for (int j = 0; j < n_quadrature_nodes_; ++j) {
                 // get i-th reference basis gradient evaluted at j-th quadrature node
-                auto ref_grad = ref_grads.template slice<0, 1>(i, j).as_matrix();
+                Matrix<double, n_components_, local_dim> ref_grad;
+                for (int r = 0; r < n_components_; ++r) {
+                    for (int c = 0; c < local_dim; ++c) { ref_grad(r, c) = ref_grads(i, j, r, c); }
+                }
                 Matrix<double, embed_dim, n_components_> mapped_grad;
                 for (int k = 0; k < n_components_; ++k) {
                     mapped_grad.col(k) =
-                      (ref_grad.row(k) * Map<const double, local_dim, embed_dim>(it->invJ().data()))
+                      (ref_grad.row(k) * MatrixView<const double, local_dim, embed_dim, ColMajor>(it->invJ().data()))
                         .transpose();
                 }
-                dst.template slice<0, 1>(i, j).assign_inplace_from(mapped_grad.data());
+                for (int r = 0; r < n_components_; ++r) {
+                    for (int c = 0; c < embed_dim; ++c) { dst(i, j, c, r) = mapped_grad(c, r); }
+                }
             }
         }
         return;
@@ -329,12 +334,15 @@ struct fe_assembler_base {
         for (int i = 0; i < n_basis_; ++i) {
             for (int j = 0; j < n_quadrature_nodes_; ++j) {
                 // get i-th reference basis gradient evaluted at j-th quadrature node
-                auto ref_grad = ref_grads.template slice<0, 1>(i, j).as_matrix();
-		// compute divergence as trace of jacobian matrix
-		double div_ = 0;
+                Matrix<double, n_components_, local_dim> ref_grad;
+                for (int r = 0; r < n_components_; ++r) {
+                    for (int c = 0; c < local_dim; ++c) { ref_grad(r, c) = ref_grads(i, j, r, c); }
+                }
+                // compute divergence as trace of jacobian matrix
+                double div_ = 0;
                 for (int k = 0; k < n_components_; ++k) {
-                    div_ +=
-                      ref_grad.row(k).dot(Map<const double, local_dim, embed_dim>(it->invJ().data()).col(k));
+                    div_ += ref_grad.row(k).dot(
+                      MatrixView<const double, local_dim, embed_dim, ColMajor>(it->invJ().data()).col(k));
                 }
                 dst(i, j) = div_;
             }
@@ -352,9 +360,16 @@ struct fe_assembler_base {
                 Matrix<double, embed_dim, embed_dim> mapped_hess;
                 for (int k = 0; k < n_components_; ++k) {
                     // move i-th reference basis hessian evaluted at j-th quadrature node on physical cell
-                    mapped_hess = Map<const double, local_dim, embed_dim>(it->invJ().data()).transpose() *
-                                  ref_hess.template slice<0, 1, 2>(i, j, k).as_matrix();
-                    dst.template slice<0, 1, 2>(i, j, k).assign_inplace_from(mapped_hess.data());
+                    Matrix<double, local_dim, local_dim> ref_hess_matrix;
+                    for (int r = 0; r < local_dim; ++r) {
+                        for (int c = 0; c < local_dim; ++c) { ref_hess_matrix(r, c) = ref_hess(i, j, k, r, c); }
+                    }
+                    mapped_hess =
+                      MatrixView<const double, local_dim, embed_dim, ColMajor>(it->invJ().data()).transpose() *
+                      ref_hess_matrix;
+                    for (int r = 0; r < embed_dim; ++r) {
+                        for (int c = 0; c < embed_dim; ++c) { dst(i, j, k, r, c) = mapped_hess(r, c); }
+                    }
                 }
             }
         }
@@ -366,7 +381,7 @@ struct fe_assembler_base {
     const TestSpace* test_space_;
     typename fe_traits::geo_iterator begin_, end_;
 };
-    
+
 }   // namespace internals
 }   // namespace fdapde
 
