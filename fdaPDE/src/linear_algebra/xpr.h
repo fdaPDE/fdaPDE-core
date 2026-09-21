@@ -265,9 +265,13 @@ template <typename XprType_> struct MatrixExpr {
     // frobenius norm (squared L^2 norm)
     /// @brief returns the sum of squared coefficients
     constexpr auto squared_norm() const {
-        typename XprType::Scalar norm_ = 0;
+        using Scalar = std::remove_cv_t<typename XprType::Scalar>;
+        Scalar norm_ = 0;
         for (int i = 0; i < derived().rows(); ++i) {
-            for (int j = 0; j < derived().cols(); ++j) { norm_ += fdapde::pow(derived()(i, j), 2); }
+            for (int j = 0; j < derived().cols(); ++j) {
+                const Scalar value = derived()(i, j);
+                norm_ += value * value;
+            }
         }
         return norm_;
     }

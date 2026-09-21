@@ -276,3 +276,18 @@ TEST(linear_algebra, symmetric) {
     check_dense_symmetric_views<ColMajor>();
     check_packed_symmetric_contracts();
 }
+
+// verifies Frobenius reduction converts packed proxies and counts both reflected off-diagonal entries
+TEST(linear_algebra, symmetric_squared_norm) {
+    SymmetricMatrix<double, 2, 2> matrix;
+    matrix(0, 0) = 2;
+    matrix(1, 0) = -3;
+    matrix(1, 1) = 4;
+    // the full matrix has squared norm 2^2 + 2 * (-3)^2 + 4^2, not the packed-storage sum
+    EXPECT_DOUBLE_EQ(matrix.squared_norm(), 38);
+
+    const std::array<double, 3> storage {2, -3, 4};
+    const SymmetricMatrixView<const double, 2, 2> view(storage.data());
+    // a read-only packed view must reproduce the same full-matrix reduction as the owner
+    EXPECT_DOUBLE_EQ(view.squared_norm(), 38);
+}
