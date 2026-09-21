@@ -33,25 +33,35 @@ using batch_nested_t =
   std::conditional_t<std::is_lvalue_reference_v<Arg>, const std::remove_reference_t<Arg>&, std::remove_cvref_t<Arg>>;
 
 /// @brief assigns cache-free state to ordinary matrices
-template <typename Matrix, bool = SPDLike<Matrix>> struct batch_cache_policy {
+template <typename Matrix, bool = requires { typename Matrix::CachePolicy; }> struct batch_cache_policy {
     using type = Cache::None;
 };
-/// @brief preserves the selected cache policy of an SPD element
+/// @brief preserves the selected cache policy of a structured element
 template <typename Matrix> struct batch_cache_policy<Matrix, true> {
     using type = typename Matrix::CachePolicy;
 };
 
+/// @brief supplies an unused slot type for ordinary matrices without cache metadata
+template <typename Matrix, typename = void> struct batch_cache_slot {
+    using type = spd_cache_slot<typename Matrix::Scalar, Matrix::Rows, Cache::None>;
+};
+/// @brief preserves the cache slot representation chosen by a structured owner
+template <typename Matrix> struct batch_cache_slot<Matrix, std::void_t<typename Matrix::CacheSlot>> {
+    using type = typename Matrix::CacheSlot;
+};
+
 /// @brief owns all cache data and slot bindings for a uniformly shaped batch
-template <typename Scalar, int Order, typename Policy> struct batch_cache_storage {
-    using Slot = spd_cache_slot<Scalar, Order, Policy>;
+template <typename Slot> struct batch_cache_storage {
+    using Scalar = typename Slot::Scalar;
     std::vector<Scalar> values;
     std::vector<Slot> slots;
     std::vector<const Slot*> pointers;
     /// @brief creates empty aggregate cache storage
     batch_cache_storage() = default;
-    /// @brief deep-copies the scalar buffer and rebuilds all slot pointers
-    batch_cache_storage(const batch_cache_storage& other) : values(other.values) {
+    /// @brief deep-copies cached quantities and readiness states while rebuilding all slot pointers
+    batch_cache_storage(const batch_cache_storage& other) : values(other.values.size()) {
         bind_(other.slots.size(), other.slots.empty() ? 0 : other.slots.front().rows());
+        for (std::size_t i = 0; i < slots.size(); ++i) slots[i].copy_from(other.slots[i]);
     }
     /// @brief transfers buffers together so their existing pointers remain associated
     batch_cache_storage(batch_cache_storage&&) = default;
@@ -86,6 +96,11 @@ template <typename Result, bool Numeric = std::is_arithmetic_v<std::remove_cvref
     static auto owner_type_() {
         if constexpr (SPDLike<Xpr>)
             return std::type_identity<SPDMatrix<Scalar, Xpr::Rows, Xpr::Cols, typename Xpr::CachePolicy>> {};
+        else if constexpr (RotationLike<Xpr>)
+            return std::type_identity<RotationMatrix<Scalar, Xpr::Rows, Xpr::Cols, typename Xpr::CachePolicy>> {};
+        else if constexpr (CachedSymmetricLike<Xpr>)
+            return std::type_identity<
+              CachedSymmetricMatrix<Scalar, Xpr::Rows, Xpr::Cols, typename Xpr::CachePolicy>> {};
         else if constexpr (is_diagonal_matrix_v<Xpr>)
             return std::type_identity<DiagonalMatrix<Scalar, Xpr::Rows>> {};
         else if constexpr (is_symmetric_matrix_v<Xpr>)
@@ -106,7 +121,7 @@ template <typename Value> auto batch_const_view(const Value& value) {
         return value;
     else {
         using View = typename Value::ConstView;
-        if constexpr (SPDLike<Value>)
+        if constexpr (SPDLike<Value> || RotationLike<Value> || CachedSymmetricLike<Value>)
             return value.view();
         else if constexpr (is_diagonal_matrix_v<Value>) {
             if constexpr (Value::Rows == Dynamic)
@@ -257,16 +272,20 @@ class MatrixBatch : public MatrixBatchExpr<MatrixBatch<MatrixType_, StorageOrder
       !std::is_const_v<Scalar> && std::is_arithmetic_v<Scalar>,
       "MatrixBatch requires owning arithmetic matrix elements");
 
-    /// @brief constructs fixed-shape elements as identities for SPD or zeros for ordinary matrices
+    /// @brief constructs fixed-shape elements as identities for SPD and rotations or zeros for ordinary matrices
     explicit MatrixBatch(std::size_t count = 0)
         requires(MatrixType::Rows != Dynamic && MatrixType::Cols != Dynamic)
         : MatrixBatch(count, MatrixType::Rows, MatrixType::Cols) { }
-    /// @brief allocates uniformly shaped elements and initializes known SPD identity caches without EVD
+    /// @brief allocates uniformly shaped elements and initializes known identity caches without decompositions
     MatrixBatch(std::size_t count, int rows, int cols) {
         allocate_(count, rows, cols);
-        if constexpr (SPDLike<MatrixType>) {
+        if constexpr (SPDLike<MatrixType> || RotationLike<MatrixType>) {
             for (std::size_t i = 0; i < count_; ++i) {
-                for (int j = 0; j < rows_; ++j) data_[i * stride_ + std::size_t(j) * (j + 1) / 2 + j] = Scalar(1);
+                for (int j = 0; j < rows_; ++j) {
+                    const auto index =
+                      SPDLike<MatrixType> ? std::size_t(j) * (j + 1) / 2 + j : std::size_t(j) * cols_ + j;
+                    data_[i * stride_ + index] = Scalar(1);
+                }
                 if constexpr (CachePolicy::Flags != 0) cache_.slots[i].set_identity();
             }
         }
@@ -365,7 +384,7 @@ class MatrixBatch : public MatrixBatchExpr<MatrixBatch<MatrixType_, StorageOrder
     std::span<const Scalar> coefficients() const& { return data_; }
     /// @brief exposes writable coefficient rows only for ordinary matrices
     std::span<Scalar> coefficients() &
-        requires(!SPDLike<MatrixType>)
+        requires(!SPDLike<MatrixType> && !RotationLike<MatrixType> && !CachedSymmetricLike<MatrixType>)
     {
         return data_;
     }
@@ -375,7 +394,7 @@ class MatrixBatch : public MatrixBatchExpr<MatrixBatch<MatrixType_, StorageOrder
     auto cache_pointers() const&
         requires(CachePolicy::Flags != 0)
     {
-        using Slot = internals::spd_cache_slot<Scalar, MatrixType::Rows, CachePolicy>;
+        using Slot = typename MatrixType::CacheSlot;
         return std::span<const Slot* const>(cache_.pointers);
     }
     /// @brief prevents cache pointers from escaping an expiring owner
@@ -397,7 +416,7 @@ class MatrixBatch : public MatrixBatchExpr<MatrixBatch<MatrixType_, StorageOrder
    private:
     using CacheStorage = std::conditional_t<
       CachePolicy::Flags == 0, internals::empty_spd_cache<2>,
-      internals::batch_cache_storage<Scalar, MatrixType::Rows, CachePolicy>>;
+      internals::batch_cache_storage<typename internals::batch_cache_slot<MatrixType>::type>>;
     /// @brief validates dimensions and bounded allocation sizes before allocating aggregate storage
     void allocate_(std::size_t count, int rows, int cols) {
         fdapde_strong_assert(
@@ -407,7 +426,7 @@ class MatrixBatch : public MatrixBatchExpr<MatrixBatch<MatrixType_, StorageOrder
         fdapde_strong_assert(
           std::int64_t(rows) * cols <= std::numeric_limits<int>::max(), std::length_error,
           "MatrixBatch: element size exceeds supported range");
-        if constexpr (is_symmetric_matrix_v<MatrixType> || is_diagonal_matrix_v<MatrixType>)
+        if constexpr (is_symmetric_matrix_v<MatrixType> || is_diagonal_matrix_v<MatrixType> || RotationLike<MatrixType>)
             fdapde_strong_assert(
               rows == cols, std::invalid_argument, "MatrixBatch: structured elements must be square");
         rows_ = rows;
@@ -432,13 +451,11 @@ class MatrixBatch : public MatrixBatchExpr<MatrixBatch<MatrixType_, StorageOrder
     template <typename Target> Target view_(std::size_t i) const {
         using Pointer = std::conditional_t<std::same_as<Target, ConstView>, const Scalar*, Scalar*>;
         Pointer data = const_cast<Pointer>(data_.data()) + i * stride_;
-        if constexpr (SPDLike<MatrixType>) {
+        if constexpr (SPDLike<MatrixType> || RotationLike<MatrixType> || CachedSymmetricLike<MatrixType>) {
             if constexpr (CachePolicy::Flags == 0)
                 return Target(data, rows_, {});
             else
-                return Target(
-                  data, rows_,
-                  const_cast<internals::spd_cache_slot<Scalar, MatrixType::Rows, CachePolicy>*>(cache_.pointers[i]));
+                return Target(data, rows_, const_cast<typename MatrixType::CacheSlot*>(cache_.pointers[i]));
         } else if constexpr (is_diagonal_matrix_v<MatrixType>) {
             if constexpr (MatrixType::Rows == Dynamic)
                 return Target(data, rows_);
@@ -452,7 +469,7 @@ class MatrixBatch : public MatrixBatchExpr<MatrixBatch<MatrixType_, StorageOrder
         fdapde_strong_assert(
           value.rows() == rows_ && value.cols() == cols_, std::invalid_argument,
           "MatrixBatch: nonuniform element shape");
-        if constexpr (SPDLike<MatrixType>) {
+        if constexpr (SPDLike<MatrixType> || RotationLike<MatrixType> || CachedSymmetricLike<MatrixType>) {
             const MatrixType candidate(value);
             std::copy_n(candidate.data(), stride_, data_.data() + i * stride_);
             if constexpr (CachePolicy::Flags != 0) cache_.slots[i].copy_from(candidate.cache());

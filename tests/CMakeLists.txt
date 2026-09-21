@@ -215,3 +215,12 @@ endif()
 
 fdapde_reject_program(invalid_le_usage SPD_GEOMETRY_USAGE_CONTAINS_UNKNOWN_FLAGS)
 fdapde_reject_program(invalid_airm_usage SPD_GEOMETRY_USAGE_CONTAINS_UNKNOWN_FLAGS)
+
+add_executable(fdapde_so_test manifold_optimization/so.cpp linear_algebra/symmetric_cache.cpp)
+fdapde_configure_target(fdapde_so_test)
+target_link_libraries(fdapde_so_test PRIVATE GTest::gtest_main)
+gtest_discover_tests(fdapde_so_test PROPERTIES TIMEOUT 60)
+fdapde_reject_program(invalid_rotation_cache_policy "rotation cache supports Schur and Log only")
+fdapde_reject_program(invalid_symmetric_cache_policy "symmetric cache supports None and Spectral only")
+fdapde_reject_program(partial_dynamic_rotation "rotation shape must be square")
+fdapde_reject_program(invalid_so_usage "invalid SO geometry usage")

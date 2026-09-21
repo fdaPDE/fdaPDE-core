@@ -27,6 +27,10 @@
 #include "header_check.h"
 
 namespace fdapde {
+namespace internals {
+/// @brief permits cached eigenpairs only from native owners and views with a coherent spectral contract
+template <typename T> struct is_spectral_cache_source : std::false_type { };
+}   // namespace internals
 
 /// @brief computes the eigendecomposition of a symmetric matrix
 template <typename XprType_> class EVD {
@@ -70,6 +74,24 @@ template <typename XprType_> class EVD {
         fdapde_strong_assert(
           !(dense_dimension * dense_dimension > std::numeric_limits<int>::max()), std::length_error,
           "EVD: dense workspace size exceeds supported range");
+
+        if constexpr (
+          internals::is_spectral_cache_source<std::remove_cvref_t<MatrixType>>::value &&
+          std::same_as<Scalar, std::remove_cv_t<typename MatrixType::Scalar>>) {
+            const auto& cached = matrix.derived().cache();
+            if constexpr (Rows == Dynamic) {
+                eigenvectors_.resize(n, n);
+                eigenvalues_.resize(n);
+            }
+            const auto vectors = cached.eigenvectors();
+            const auto values = cached.eigenvalues();
+            for (int i = 0; i < n; ++i) {
+                eigenvalues_[i] = values[i];
+                for (int j = 0; j < n; ++j) eigenvectors_(i, j) = vectors(i, j);
+            }
+            computed_ = true;
+            return;
+        }
 
         Matrix<Scalar, Rows, Cols> diagonalized(matrix);
         Scalar matrix_scale = Scalar(0);

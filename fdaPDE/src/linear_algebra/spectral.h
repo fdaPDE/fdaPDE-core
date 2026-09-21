@@ -72,7 +72,13 @@ auto apply_spectral_function(const MatrixExpr<XprType_>& matrix, UnaryOp_&& oper
     } else {
         auto dense = spectral_matrix(matrix);
         const int dimension = dense.rows();
-        const EVD decomposition(dense.template as_symmetric<Lower>());
+        const auto decomposition = [&] {
+            using Symmetric = SymmetricMatrix<double, Rows, Cols>;
+            if constexpr (is_spectral_cache_source<XprType>::value)
+                return EVD<Symmetric>(matrix.derived());
+            else
+                return EVD<Symmetric>(dense.template as_symmetric<Lower>());
+        }();
         fdapde_strong_assert(decomposition.computed(), std::domain_error, "spectral eigendecomposition failed");
 
         double spectrum_scale = 0.0;

@@ -78,6 +78,8 @@ struct unchecked_t { };
 #include "src/linear_algebra/xpr.h"
 
 #include "src/linear_algebra/spd.h"
+#include "src/linear_algebra/symmetric_cache.h"
+#include "src/linear_algebra/rotation.h"
 #include "src/linear_algebra/matrix_batch.h"
 
 #include "src/linear_algebra/spectral.h"

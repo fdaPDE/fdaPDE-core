@@ -48,6 +48,14 @@ struct is_verified_spd<spd_matrix_impl<S, R, C, P, O>> : std::true_type { };
 /// @brief recognizes views whose bindings are created exclusively from checked native storage
 template <typename S, int R, int C, typename P, int O>
 struct is_verified_spd<SPDMatrixView<S, R, C, P, O>> : std::true_type { };
+/// @brief permits reuse of certified owner eigenpairs when spectral storage was selected
+template <typename S, int R, int C, typename P, int O>
+struct is_spectral_cache_source<spd_matrix_impl<S, R, C, P, O>> :
+    std::bool_constant<(P::Flags & Cache::Spectral::Flags) != 0> { };
+/// @brief permits reuse of certified view eigenpairs when spectral storage was selected
+template <typename S, int R, int C, typename P, int O>
+struct is_spectral_cache_source<SPDMatrixView<S, R, C, P, O>> :
+    std::bool_constant<(P::Flags & Cache::Spectral::Flags) != 0> { };
 }   // namespace internals
 
 template <typename T>
