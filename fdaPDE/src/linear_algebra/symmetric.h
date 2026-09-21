@@ -227,6 +227,8 @@ class SymmetricMatrix :
       Rows_ == Dynamic || Cols_ == Dynamic || Rows_ == Cols_, THIS_CLASS_IS_FOR_SQUARE_MATRICES_ONLY);
     fdapde_static_assert(StorageOrder_ == RowMajor, PACKED_COL_MAJOR_STRUCTURED_STORAGE_IS_NOT_SUPPORTED);
     using Scalar = Scalar_;
+    using View = SymmetricMatrixView<Scalar_, Rows_, Cols_, StorageOrder_>;
+    using ConstView = SymmetricMatrixView<const Scalar_, Rows_, Cols_, StorageOrder_>;
     static constexpr int Rows = Rows_;
     static constexpr int Cols = Cols_;
     static constexpr int NestAsRef = 1;
@@ -256,6 +258,10 @@ class SymmetricMatrix :
     /// @brief evaluates the lower triangle of a symmetric expression into owned storage
     template <typename RhsXprType_>
     constexpr SymmetricMatrix(const SymmetricMatrixExpr<RhsXprType_>& rhs) : Base(), data_(rhs) { }
+    /// @brief materializes a whole-matrix operation once before copying its symmetric result
+    template <typename RhsXprType_>
+        requires requires(const RhsXprType_& expression) { expression.eval_matrix(); }
+    explicit SymmetricMatrix(const MatrixExpr<RhsXprType_>& rhs) : SymmetricMatrix(rhs.derived().eval_matrix()) { }
     /// @brief evaluates a symmetric expression into this owner's packed triangle
     template <typename RhsXprType_>
     constexpr SymmetricMatrix& operator=(const SymmetricMatrixExpr<RhsXprType_>& rhs) & {

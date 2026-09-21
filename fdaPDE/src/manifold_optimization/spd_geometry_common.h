@@ -23,6 +23,64 @@ namespace fdapde {
 namespace manifold {
 namespace internals {
 
+/// @brief applies the exponential differential at log(point), reusing its spectral basis when retained
+template <SPDLike Point, typename Direction> auto spd_exp_log_frechet(const Point& point, const Direction& direction) {
+    using Policy = typename Point::CachePolicy;
+    if constexpr (fdapde::internals::spd_cache_has_v<Policy, Cache::Spectral>) {
+        if constexpr (fdapde::internals::spd_cache_has_v<Policy, Cache::LogDividedDifferences>) {
+            const auto differences = point.cache().log_divided_differences();
+            return fdapde::internals::frechet_symmetric(
+              point.cache(), point.rows(), direction,
+              [&](auto, auto, int i, int j) { return typename Point::Scalar(1) / differences(i, j); });
+        } else
+            return fdapde::internals::frechet_symmetric(point.cache(), point.rows(), direction, [](auto x, auto y) {
+                return decltype(x)(1) / fdapde::internals::log_divided_difference(x, y);
+            });
+    } else {
+        const auto chart = fdapde::matrix_log(point);
+        return fdapde::matrix_exp_frechet(chart, direction);
+    }
+}
+
+/// @brief tests whether a compile-time geometry usage requests any of the given operations
+constexpr bool has_spd_usage(Usage uses, Usage requested) {
+    return (static_cast<unsigned>(uses) & static_cast<unsigned>(requested)) != 0;
+}
+/// @brief maps log-Euclidean operations to the union of reusable algebraic quantities
+constexpr unsigned log_euclidean_cache_flags(Usage uses) {
+    return (has_spd_usage(uses, Usage::Distance | Usage::InterpolationNodes | Usage::BasePointMaps) ?
+              Cache::Log::Flags :
+              0u) |
+           (has_spd_usage(uses, Usage::TangentMetric | Usage::LogExpDifferentials | Usage::BasePointMaps) ?
+              Cache::Spectral::Flags | Cache::LogDividedDifferences::Flags :
+              0u);
+}
+/// @brief maps affine-invariant operations to factors on the base point rather than interpolation-node caches
+constexpr unsigned affine_invariant_cache_flags(Usage uses) {
+    return (has_spd_usage(uses, Usage::Distance | Usage::TangentMetric | Usage::BasePointMaps) ?
+              Cache::InverseSqrt::Flags :
+              0u) |
+           (has_spd_usage(uses, Usage::BasePointMaps) ? Cache::Sqrt::Flags : 0u) |
+           (has_spd_usage(uses, Usage::LogExpDifferentials) ?
+              Cache::Spectral::Flags | Cache::LogDividedDifferences::Flags :
+              0u);
+}
+/// @brief borrows a retained square-root factor or computes an independent local factor
+/// @details the cached symmetric factor is an internal intermediate; public SPD results remain certified
+template <SPDLike Point> auto spd_sqrt_factor(const Point& point) {
+    if constexpr (fdapde::internals::spd_cache_has_v<typename Point::CachePolicy, Cache::Sqrt>)
+        return point.cache().template matrix<Cache::Sqrt>();
+    else
+        return fdapde::matrix_sqrt(point);
+}
+/// @brief borrows a retained inverse-square-root factor or computes an independent local factor
+template <SPDLike Point> auto spd_inverse_sqrt_factor(const Point& point) {
+    if constexpr (fdapde::internals::spd_cache_has_v<typename Point::CachePolicy, Cache::InverseSqrt>)
+        return point.cache().template matrix<Cache::InverseSqrt>();
+    else
+        return fdapde::matrix_inverse_sqrt(point);
+}
+
 /// @brief checks positive order and the dense workspace bound
 inline void validate_spd_geometry_order(int order) {
     if (order <= 0) { throw std::invalid_argument("SPD geometry order must be positive."); }

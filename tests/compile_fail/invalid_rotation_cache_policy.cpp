@@ -14,20 +14,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_MANIFOLD_OPTIMIZATION_MODULE_H__
-#define __FDAPDE_MANIFOLD_OPTIMIZATION_MODULE_H__
-
-// clang-format off
-
-#include "dense_linear_algebra.h"
-#include <concepts>
-#include <cstddef>
-
-#include "src/manifold_optimization/manifold.h"
-#include "src/manifold_optimization/log_euclidean_spd.h"
-#include "src/manifold_optimization/affine_invariant_spd.h"
-#include "src/manifold_optimization/so.h"
-
-// clang-format on
-
-#endif   // __FDAPDE_MANIFOLD_OPTIMIZATION_MODULE_H__
+// rotation cache bit four is unsupported and must trigger its policy diagnostic
+#include <fdaPDE/dense_linear_algebra.h>
+int main() {
+    auto q = fdapde::RotationMatrix<double, 2, 2, fdapde::RotationCache::Policy<4>>::Identity();
+    (void)q;
+}

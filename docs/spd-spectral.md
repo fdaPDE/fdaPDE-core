@@ -1,12 +1,13 @@
 # SPD matrices and symmetric spectral functions
 
-Include `<fdaPDE/linear_algebra.h>`. These operations use the native dense matrix
+Include `<fdaPDE/dense_linear_algebra.h>` (or the Eigen-integrating `<fdaPDE/linear_algebra.h>`). These operations use the native dense matrix
 and symmetric eigendecomposition APIs.
 
 ## Checked SPD ownership
 
 `SPDMatrix<Scalar, Rows, Cols>` stores the matrix coefficients in packed symmetric
-storage. It does not store a logarithm or select a geometric metric. `Scalar`
+storage. Its default `Cache::None` retains no intermediates; an optional fourth
+type parameter selects algebraic cache quantities without selecting a geometric metric. `Scalar`
 must be an unqualified floating-point type. Dimensions must be either positive,
 fixed and equal, or both `Dynamic`; packed storage supports `RowMajor` only.
 
@@ -33,8 +34,9 @@ Coefficients are read-only. `rep()` borrows a const symmetric representation and
 `data()` borrows a const pointer to lower-triangular coefficients packed row by
 row. These borrows require a living owner and may be invalidated by replacement;
 borrowing from a temporary is disabled. Copying a validated owner is permitted.
-Construction from a matrix is explicit and always validates, without a public
-validation tag. Default construction, unchecked construction and individual
+Construction from arbitrary matrix data is explicit and always validates, without a public
+validation tag. Native verified owners and views reuse their checked coefficients
+and compatible retained quantities. Copies with a different scalar type are revalidated. Default construction, unchecked construction and individual
 coefficient writes are unavailable. Failed validation during checked assignment leaves the existing
 coefficients and dimensions unchanged.
 
@@ -58,10 +60,10 @@ The inputs must remain valid throughout the call.
 
 Typed exponential, square-root and inverse-square-root results must satisfy the
 same checked SPD invariant as direct construction. After checking finite
-reconstructed coefficients, the three primitives use a private factory to validate the rounded
-result's shape and actual eigenspectrum, then invoke a private trusted constructor.
-The trusted constructor only stores symmetric coefficients; it maintains no EVD or
-logarithm cache. Neither its tag nor the factory is accessible to callers. This
+reconstructed coefficients, the three primitives use a private factory to certify
+the rounded result's shape and actual eigenspectrum before returning an owner.
+The certification decomposition also prepares the selected result cache. Neither
+the trusted tag nor the factory is accessible to callers. This
 avoids repeating coefficient validation in the public constructor, while retaining
 the final numerical positivity check on the reconstructed matrix. Exponentiation
 can therefore report a domain error after underflow or loss of numerical positive definiteness,
@@ -103,3 +105,51 @@ invalid spectra, eigensolver failure and nonfinite numerical results produce
 `std::domain_error`. Invalid static SPD template parameters fail at compilation.
 Usual native matrix coefficient bounds remain subject to their existing debug
 assertion contracts.
+
+## Selective cache and views
+
+`SPDMatrix<Scalar, Rows, Cols, Policy = Cache::None, StorageOrder = RowMajor>`
+replaces the former integer fourth argument with a policy type. An explicitly
+specified storage order moves to the fifth position; `ColMajor` remains rejected.
+`Cache::Union<...>` combines `Spectral`, `Log`, `Sqrt`, `InverseSqrt` and
+`LogDividedDifferences`. Unknown policy bits are rejected. Cache fields retain
+only the selected scalar data, separately from packed coefficients. The owner
+uses a conditional empty member for `None`, with `[[no_unique_address]]`.
+
+`Point::Identity()` (fixed size) and `Point::Identity(order)` initialize checked
+coefficients and known cache values without EVD. The logarithm is zero, root
+factors and spectral eigenvectors are identity, eigenvalues are one, and every
+logarithmic divided difference is one. Successful construction leaves the cache
+ready; readers do not initialize or mutate it. Nonrepresentable selected
+intermediates raise a numerical error during preparation.
+
+`point.view()` returns `Point::View` or `Point::ConstView`. Copy construction of a
+view preserves its binding; assignment changes the verified value in the bound
+storage, with destination policy preserved. Raw SPD coefficients remain
+read-only, including through generic expression assignment. `SPDLike` recognizes
+only native verified owners and views; `is_spd_matrix_v` retains its broader
+historical expression-contract meaning and does not authorize trusted bypasses.
+
+Assignment prepares coefficients and cache before commit. Copies own independent
+cache data. Policy expansion copies common quantities and computes only missing
+ones. When expansion newly pairs spectral factors with divided differences,
+the latter are rebuilt in the new basis. Same-shape assignment reuses the
+destination cache buffer; shape changes invalidate views and borrowed cache
+references. Owner move operations
+currently preserve both values by independent copying. Batch moves transfer
+aggregate buffers, as described in [MatrixBatch](matrix-batch.md).
+
+`matrix_log` and logarithmic differentials consume compatible retained data.
+`matrix_sqrt<Policy>`, `matrix_inverse_sqrt<Policy>` and `matrix_exp<Policy>` return
+owners with the requested destination policy (`None` by default), retaining
+certification of rounded result coefficients. Input EVD and result certification
+are decompositions of different matrices. A cached determinant multiplies stored
+eigenvalues only when spectral factors already exist; otherwise it uses native LU.
+
+A `LogDividedDifferences`-only policy stores L without silently retaining E.
+Differential evaluation reuses L only when the same cache also retains its
+spectral basis; otherwise a local EVD and its own divided differences are used
+together. Cross-policy copies preserve this association, including repeated
+eigenspaces. Cache inspection is read-only via `cache().eigenvalues()`,
+`eigenvectors()`, `matrix<Cache::Log>()` (likewise root factors), and
+`log_divided_differences()` when the corresponding quantity is selected.

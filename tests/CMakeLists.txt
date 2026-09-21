@@ -167,15 +167,15 @@ fdapde_reject_program(partial_dynamic_spd_matrix SPD_MATRICES_MUST_BE_SQUARE_AND
 fdapde_reject_program(qualified_scalar_spd_matrix SPD_MATRICES_REQUIRE_AN_UNQUALIFIED_FLOATING_POINT_SCALAR)
 add_executable(fdapde_spd_geometry_test
   manifold_optimization/log_euclidean_spd.cpp manifold_optimization/affine_invariant_spd.cpp
-  manifold_optimization/spd_geometry.cpp)
+  manifold_optimization/spd_geometry.cpp manifold_optimization/spd_batch_geometry.cpp
+  manifold_optimization/spd_geodesic.cpp)
 fdapde_configure_target(fdapde_spd_geometry_test)
 target_link_libraries(fdapde_spd_geometry_test PRIVATE GTest::gtest_main)
 gtest_discover_tests(fdapde_spd_geometry_test PROPERTIES TIMEOUT 60)
 
-# Focused public error/ownership contracts remain checked when debug assertions are disabled.
+# focused public error and ownership contracts run with default debug assertions
 add_executable(fdapde_spd_geometry_contract_test manifold_optimization/contracts.cpp)
 fdapde_configure_target(fdapde_spd_geometry_contract_test)
-target_compile_definitions(fdapde_spd_geometry_contract_test PRIVATE FDAPDE_NO_DEBUG)
 target_link_libraries(fdapde_spd_geometry_contract_test PRIVATE GTest::gtest_main)
 gtest_discover_tests(fdapde_spd_geometry_contract_test PROPERTIES TIMEOUT 60)
 
@@ -231,3 +231,33 @@ if(NOT FDAPDE_NATIVE_ONLY)
   target_link_libraries(fdapde_core_execution_odr PRIVATE GTest::gtest_main Eigen3::Eigen Threads::Threads)
   gtest_discover_tests(fdapde_core_execution_odr PROPERTIES TIMEOUT 30)
 endif()
+add_executable(fdapde_spd_cache_test linear_algebra/spd_cache.cpp)
+fdapde_configure_target(fdapde_spd_cache_test)
+target_link_libraries(fdapde_spd_cache_test PRIVATE GTest::gtest_main)
+gtest_discover_tests(fdapde_spd_cache_test PROPERTIES TIMEOUT 60)
+fdapde_reject_program(invalid_spd_cache_policy SPD_CACHE_POLICY_CONTAINS_UNKNOWN_FLAGS)
+
+add_executable(fdapde_matrix_batch_test linear_algebra/matrix_batch.cpp)
+fdapde_configure_target(fdapde_matrix_batch_test)
+target_link_libraries(fdapde_matrix_batch_test PRIVATE GTest::gtest_main)
+gtest_discover_tests(fdapde_matrix_batch_test PROPERTIES TIMEOUT 60)
+fdapde_reject_program(col_major_matrix_batch "MatrixBatch supports row-major storage only")
+fdapde_reject_program(view_matrix_batch "MatrixBatch requires owning matrix elements")
+
+option(FDAPDE_BUILD_SPD_BENCHMARK "Build the standalone SPD allocation and timing probe" OFF)
+if(FDAPDE_BUILD_SPD_BENCHMARK)
+  add_executable(fdapde_spd_cache_batch_benchmark benchmarks/spd_cache_batch.cpp)
+  fdapde_configure_target(fdapde_spd_cache_batch_benchmark)
+endif()
+
+fdapde_reject_program(invalid_le_usage SPD_GEOMETRY_USAGE_CONTAINS_UNKNOWN_FLAGS)
+fdapde_reject_program(invalid_airm_usage SPD_GEOMETRY_USAGE_CONTAINS_UNKNOWN_FLAGS)
+
+add_executable(fdapde_so_test manifold_optimization/so.cpp linear_algebra/symmetric_cache.cpp)
+fdapde_configure_target(fdapde_so_test)
+target_link_libraries(fdapde_so_test PRIVATE GTest::gtest_main)
+gtest_discover_tests(fdapde_so_test PROPERTIES TIMEOUT 60)
+fdapde_reject_program(invalid_rotation_cache_policy "rotation cache supports Schur and Log only")
+fdapde_reject_program(invalid_symmetric_cache_policy "symmetric cache supports None and Spectral only")
+fdapde_reject_program(partial_dynamic_rotation "rotation shape must be square")
+fdapde_reject_program(invalid_so_usage "invalid SO geometry usage")

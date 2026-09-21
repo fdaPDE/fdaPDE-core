@@ -364,6 +364,8 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
       std::conditional_t<Rows_ == Dynamic || Cols_ == Dynamic, std::vector<Scalar_>, std::array<Scalar_, StorageSize>>;
    public:
     using Scalar = Scalar_;
+    using View = MatrixView<Scalar_, Rows_, Cols_, StorageOrder_>;
+    using ConstView = MatrixView<const Scalar_, Rows_, Cols_, StorageOrder_>;
     using iterator = typename StorageType::iterator;
     using const_iterator = typename StorageType::const_iterator;
     static constexpr int NestAsRef = 1;
@@ -596,16 +598,21 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
    private:
     /// @brief resizes dynamic storage if needed and copies source coefficients in logical coordinates
     template <typename RhsXprType> constexpr void clone_(const RhsXprType& rhs) {
-        if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) {
-            if constexpr (Rows_ == 1 || Cols_ == 1) {
-                resize(rhs.size());
-            } else {
-                resize(rhs.rows(), rhs.cols());
+        if constexpr (requires { rhs.eval_matrix(); }) {
+            const auto evaluated = rhs.eval_matrix();
+            clone_(evaluated);
+        } else {
+            if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) {
+                if constexpr (Rows_ == 1 || Cols_ == 1) {
+                    resize(rhs.size());
+                } else {
+                    resize(rhs.rows(), rhs.cols());
+                }
             }
+            using assignment_executor = typename Base::assignment_executor;
+            assignment_executor::run(*this, rhs, [](auto&& l, const auto& r) { l = r; });
+            return;
         }
-        using assignment_executor = typename Base::assignment_executor;
-        assignment_executor::run(*this, rhs, [](auto&& l, const auto& r) { l = r; });
-        return;
     }
     StorageType data_;
 };
