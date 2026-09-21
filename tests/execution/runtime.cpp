@@ -15,11 +15,15 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <fdaPDE/execution.h>
+#include <fdaPDE/manifold_optimization.h>
 #include <gtest/gtest.h>
 
 #include <array>
+#include <cmath>
+#include <future>
 #include <memory>
 #include <stdexcept>
+#include <vector>
 
 namespace {
 
@@ -58,6 +62,24 @@ TEST(ExecutionRuntime, AsyncReturnsValuesAndTransportsExceptions) {
     auto failure = fdapde::parallel_async([]() -> int { throw std::runtime_error("expected"); });
     // checks that the future rethrows the callable exception on the caller thread
     EXPECT_THROW(static_cast<void>(failure.get()), std::runtime_error);
+    fdapde::parallel_join();
+}
+
+// verifies executor tasks can read prepared SPD batch caches while their shared owner remains alive
+TEST(ExecutionRuntime, ReadsPreparedSPDBatchCaches) {
+    using Point = fdapde::SPDMatrix<double, 2, 2, fdapde::Cache::Log>;
+    const Point point(fdapde::Matrix<double, 2, 2>({2, 0, 0, 3}));
+    const fdapde::MatrixBatch<Point> points(std::vector<Point>(16, point));
+    std::vector<std::future<double>> results;
+    for (std::size_t i = 0; i < points.size(); ++i) {
+        results.push_back(
+          fdapde::parallel_async([&points, i] { return fdapde::matrix_log(points[i]).squared_norm(); }));
+    }
+    const double expected = std::log(2.) * std::log(2.) + std::log(3.) * std::log(3.);
+    for (auto& result : results) {
+        // the diagonal logarithm gives an analytic Frobenius oracle for every independently scheduled read
+        EXPECT_NEAR(result.get(), expected, 1e-12);
+    }
     fdapde::parallel_join();
 }
 

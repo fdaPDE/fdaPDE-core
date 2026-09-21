@@ -93,6 +93,11 @@ Standalone execution and utility include-order checks need no Eigen. The full
 integration lane additionally checks composition with legacy core modules and
 multi-TU shared configuration, singleton identity and real execution.
 
+The runtime suite also reads prepared SPD batch caches from asynchronous tasks
+and checks their logarithmic Frobenius norms against a diagonal analytic oracle.
+The shared batch stays alive until all tasks finish. Batch operations themselves
+remain sequential; execution is selected explicitly by the caller.
+
 See [the execution contract](../docs/execution.md) for API requirements and limits.
 
 ## SPD caches and matrix batches
