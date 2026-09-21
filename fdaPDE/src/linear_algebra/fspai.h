@@ -14,304 +14,434 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_FSPAI_H__
-#define __FDAPDE_FSPAI_H__
+#ifndef __FDAPDE_LINALG_FSPAI_H__
+#define __FDAPDE_LINALG_FSPAI_H__
+
+#include <algorithm>
+#include <cmath>
+#include <concepts>
+#include <limits>
+#include <stdexcept>
+#include <type_traits>
+#include <utility>
+#include <vector>
 
 #include "header_check.h"
 
-namespace fdapde {  
+namespace fdapde {
 namespace internals {
-  
-// a class to represent the sparsity pattern of a matrix
-template <typename Index_, int Options_> struct sparsity_pattern {
-    using Index = Index_;
-    static constexpr int StorageOrder = Options_;   // either RowMajor or ColMajor
 
-    class sparsity_line {
-        std::vector<Index> nnzeros_;   // indexes of non-zero entries on this line
-        Index size_ = 0;               // the size of the matrix to which this sparsity_line belongs to
-       public:
-        sparsity_line() noexcept : nnzeros_(), size_(0) { }
-        sparsity_line(const sparsity_line&) noexcept = default;
-        sparsity_line(sparsity_line&&) noexcept = default;
+/// @brief solves an internal positive-definite principal system using scaled Cholesky and triangular substitution
+template <std::floating_point Scalar>
+Vector<Scalar, Dynamic>
+fspai_spd_solve(const Matrix<Scalar, Dynamic, Dynamic>& matrix, const Vector<Scalar, Dynamic>& rhs) {
+    const int n = matrix.rows();
+    fdapde_assert(
+      !(n <= 0 || matrix.cols() != n || rhs.size() != n), std::invalid_argument,
+      "FSPAI local solve requires a nonempty square system and matching right-hand side");
 
-        sparsity_line(Index size) : nnzeros_(), size_(size) { }
-        sparsity_line(Index size, const std::vector<Index>& nnzeros) noexcept : nnzeros_(nnzeros), size_(size) { }
-        template <typename Iterator>
-            requires(std::is_convertible_v<typename std::iterator_traits<Iterator>::value_type, Index>)
-        sparsity_line(Index size, Iterator begin, Iterator end) : nnzeros_(begin, end), size_(size) { }
-        template <typename... Args>
-            requires((std::is_convertible_v<Args, Index>) && ...)
-        sparsity_line(Index size, const Args&... args) : nnzeros_(), size_(size) {
-            ([&]() { nnzeros_.push_back(static_cast<Index>(args)); }(), ...);
-        }
-        // accessors
-        Index nnzeros() const { return nnzeros_.size(); }
-        typename std::vector<Index>::const_iterator begin() const { return nnzeros_.begin(); }
-        typename std::vector<Index>::const_iterator end() const { return nnzeros_.end(); }
-        Index operator[](Index i) const {   // access the i-th nonzero of the line
+    Scalar scale = Scalar(0);
+    for (int row = 0; row < n; ++row) {
+        fdapde_assert(std::isfinite(rhs[row]), std::invalid_argument, "FSPAI local solve requires finite coefficients");
+        for (int col = 0; col < n; ++col) {
+            const Scalar value = matrix(row, col);
             fdapde_assert(
-              static_cast<std::size_t>(i) < nnzeros_.size(), std::out_of_range, "nonzero index out of range");
-            return nnzeros_[i];
+              std::isfinite(value), std::invalid_argument, "FSPAI local solve requires finite coefficients");
+            scale = std::max(scale, fdapde::abs(value));
         }
-        Index size() const { return size_; }
-        bool has_nnzero_at(Index pos) const { return std::find(nnzeros_.begin(), nnzeros_.end(), pos); }
-        bool empty() const { return nnzeros_.size() == 0; }
-        typename std::vector<Index>::const_iterator find(Index pos) const {
-            fdapde_assert(pos < size_, std::out_of_range, "sparsity position out of range");
-            return std::find(nnzeros_.begin(), nnzeros_.end(), pos);
-        }
-        // modifiers
-        void nnzero_insert_unique(Index pos) {   // ammortized O(log(n)) insertion with uniqueness guarantees
-            fdapde_assert(pos < size_, std::out_of_range, "sparsity position out of range");
-            if (std::upper_bound(nnzeros_.begin(), nnzeros_.end(), pos) == nnzeros_.end()) { nnzeros_.push_back(pos); }
-            return;
-        }
-        void nnzero_insert(Index pos) {
-            fdapde_assert(pos < size_, std::out_of_range, "sparsity position out of range");
-            nnzeros_.push_back(pos);
-        }
-        void resize(Index size) { size_ = size; }
-        void erase(Index idx) {
-            auto it = std::find(nnzeros_.begin(), nnzeros_.end(), idx);
-            if (it != nnzeros_.end()) { nnzeros_.erase(it); }
-        }
-    };  
-    using iterator = typename std::vector<sparsity_line>::iterator;
-    using value_type = sparsity_line;
+    }
+    fdapde_strong_assert(
+      scale > Scalar(0), std::domain_error, "FSPAI local Cholesky factorization requires positive pivots");
 
-    sparsity_pattern() noexcept : inner_size_(0), outer_size_(0), sparsity_() { }
-    sparsity_pattern(const sparsity_pattern&) noexcept = default;
-    sparsity_pattern(sparsity_pattern&&) noexcept = default;
-
-    sparsity_pattern(int rows, int cols) noexcept :
-        inner_size_(StorageOrder == RowMajor ? cols : rows),
-        outer_size_(StorageOrder == RowMajor ? rows : cols),
-        sparsity_(outer_size_) {
-        for (auto& line : sparsity_) line.resize(inner_size_);
-    }
-    template <typename MatrixType>
-        requires(internals::is_eigen_sparse_xpr_v<MatrixType> &&
-                 requires(MatrixType m) { typename MatrixType::InnerIterator; } &&
-                 ((MatrixType::IsRowMajor == RowMajor && StorageOrder == RowMajor) || StorageOrder == ColMajor))
-    sparsity_pattern(const MatrixType& m) :
-        inner_size_(StorageOrder == RowMajor ? m.cols() : m.rows()),
-        outer_size_(StorageOrder == RowMajor ? m.rows() : m.cols()),
-        sparsity_(outer_size_) {
-        for (auto& line : sparsity_) line.resize(inner_size_);
-        for (int k = 0; k < m.outerSize(); ++k) {
-            for (typename MatrixType::InnerIterator it(m, k); it; ++it) { sparsity_[it.row()].nnzero_insert(it.col()); }
+    Matrix<Scalar, Dynamic, Dynamic> lower(n, n);
+    lower.set_zero();
+    for (int row = 0; row < n; ++row) {
+        for (int col = 0; col <= row; ++col) {
+            Scalar value = matrix(row, col) / scale;
+            for (int k = 0; k < col; ++k) value -= lower(row, k) * lower(col, k);
+            if (row == col) {
+                fdapde_strong_assert(
+                  value > Scalar(0) && std::isfinite(value), std::domain_error,
+                  "FSPAI local Cholesky factorization requires positive finite pivots");
+                lower(row, col) = std::sqrt(value);
+            } else {
+                value /= lower(col, col);
+                fdapde_strong_assert(
+                  std::isfinite(value), std::domain_error,
+                  "FSPAI local Cholesky factorization produced a nonfinite coefficient");
+                lower(row, col) = value;
+            }
         }
     }
-    // accessors
-    const value_type& operator[](Index i) const {
-        fdapde_assert(i < outer_size_, std::out_of_range, "sparsity line index out of range");
-        return sparsity_[i];
+
+    Vector<Scalar, Dynamic> solution(n);
+    for (int row = 0; row < n; ++row) {
+        Scalar value = rhs[row] / scale;
+        for (int col = 0; col < row; ++col) value -= lower(row, col) * solution[col];
+        solution[row] = value / lower(row, row);
     }
-    value_type& operator[](Index i) {
-        fdapde_assert(i < outer_size_, std::out_of_range, "sparsity line index out of range");
-        return sparsity_[i];
+    for (int row = n - 1; row >= 0; --row) {
+        Scalar value = solution[row];
+        for (int col = row + 1; col < n; ++col) value -= lower(col, row) * solution[col];
+        solution[row] = value / lower(row, row);
+        fdapde_strong_assert(
+          std::isfinite(solution[row]), std::domain_error,
+          "FSPAI local Cholesky solve produced a nonfinite coefficient");
     }
-    const value_type& operator()(Index i, Index j) const { return sparsity_[i][j]; }
-    value_type& operator()(Index i, Index j) { return sparsity_[i][j]; }
-    Index rows() const { return StorageOrder == RowMajor ? outer_size_ : inner_size_; }
-    Index cols() const { return StorageOrder == RowMajor ? inner_size_ : outer_size_; }
-    Index inner_size() const { return inner_size_; }
-    Index outer_size() const { return outer_size_; }
-    // modifiers
-    void resize(Index rows, Index cols) {
-        inner_size_ = StorageOrder == RowMajor ? cols : rows;
-        outer_size_ = StorageOrder == RowMajor ? rows : cols;
-        sparsity_.resize(outer_size_);
-        for (auto& line : sparsity_) line.resize(inner_size_);
-        return;
-    }
-    void resize(Index size) { resize(size, size); }
-   private:
-    Index inner_size_ = 0, outer_size_ = 0;
-    std::vector<sparsity_line> sparsity_;   // guarantees O(1) line access
-};
+    return solution;
+}
 
 }   // namespace internals
 
-// implementation of the Factorized Sparse Approximate Inverse algorithm with sparsity pattern update, for the sparse
-// SPD square approximation of the inverse of a sparse SPD square matrix
-template <typename MatrixType_>
-struct FSPAI {
-    fdapde_static_assert(
-      internals::is_eigen_sparse_xpr_v<std::decay_t<MatrixType_>>, THIS_CLASS_IS_FOR_SPARSE_EIGEN_MATRICES_ONLY);
-    using MatrixType = MatrixType_;
-    using Index = Eigen::Index;
-    using StorageIndex = typename MatrixType::StorageIndex;
-    using Scalar = typename MatrixType::Scalar;
-    using SparseMatrixType = Eigen::SparseMatrix<Scalar, Eigen::ColMajor, StorageIndex>;
-    using DenseMatrixType  = Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic>;
-    using DenseVectorType  = Eigen::Matrix<Scalar, Eigen::Dynamic, 1>;
-    using CholeskySolver   = Eigen::LLT<DenseMatrixType>;
-    using MatrixL = Eigen::TriangularView<const SparseMatrixType, Eigen::Lower>;
-    using MatrixU = Eigen::TriangularView<const typename SparseMatrixType::ConstTransposeReturnType, Eigen::Upper>;
-   private:
-    SparseMatrixType L_;       // the sparse approximate inverse of the Cholesky factor of A_
-
-    // parameters
-    int alpha_ = 10;           // number of sparsity pattern updates for each column of matrix
-    int beta_ = 10;            // maximum number of inserted indices to the sparsity pattern
-    double epsilon_ = 0.005;   // K-condition number tolerance treshold for sparsity pattern update
-
-    void compute_impl_(const MatrixType& matrix, int alpha, int beta, double epsilon) {
-        std::vector<Eigen::Triplet<double>> tripet_list;
-        int n_cols = matrix.cols();
-        internals::sparsity_pattern<Index, ColMajor> matrix_sparsity_(matrix);   // compute input sparsity pattern
-        L_.resize(n_cols, n_cols);
-        CholeskySolver solver;
-        DenseMatrixType Ak;            // memory buffer for incremental build of matrix A(Jk_, Jk_)
-        DenseVectorType bk;            // memory buffer for incremental build of rhs vector A(Jk_, k)
-        DenseVectorType Lk_(n_cols);   // the k-th column of the approximate inverse of L_
-
-        // cycle over each column of the sparse matrix A_
-        for (Index k = 0; k < n_cols; ++k) {
-            std::vector<Index> Ck_ {};         // indexes eligible to enter in the sparsity pattern of column k
-            std::vector<Index> Jk_ {};         // sparsity patterns of column k
-            std::vector<Index> delta_Jk_ {};   // indexes added to the sparsity pattern of column k at iteration s - 1
-
-            Lk_.fill(0);
-            Lk_[k] = 1.0 / (std::sqrt(matrix.coeff(k, k)));
-            Jk_.push_back(k);
-            delta_Jk_.push_back(k);
-
-            int Jk_offset = 1;
-            // perform alpha_ steps of approximate inverse update along column k
-            for (Index s = 0; s < alpha && !delta_Jk_.empty(); ++s) {
-                if (s != 0) {
-                    // build SPD linear system A(Jk_, Jk_)*yk = A(Jk_, k), being k fixed. Jk_ is incremental, query the
-                    // input matrix only for those entries which have entered the sparsity pattern at iteration s - 1
-                    Index nnzeros_ = Jk_.size();
-                    Ak.conservativeResize(nnzeros_ - 1, nnzeros_ - 1);
-                    bk.conservativeResize(nnzeros_ - 1);
-                    for (int i = Jk_offset; i < nnzeros_; ++i) {
-                        for (int j = 1; j < i + 1; ++j) {   // build only lower-triangular part, then symmetrize
-                            Ak(i - 1, j - 1) = matrix.coeff(Jk_[i], Jk_[j]);
-                        }
-                        bk[i - 1] = matrix.coeff(Jk_[i], k);
-                    }
-                    Jk_offset = nnzeros_;
-                    solver.compute(Ak.template selfadjointView<Eigen::Lower>());
-                    DenseVectorType yk = solver.solve(bk);
-                    // update approximate inverse
-                    Scalar l_kk = 1.0 / (std::sqrt(matrix.coeff(k, k) - bk.dot(yk)));
-                    Lk_[k] = l_kk;                                                            // diagonal entry
-                    for (int i = 1; i < nnzeros_; ++i) { Lk_[Jk_[i]] = -l_kk * yk[i - 1]; }   // off-diagonal entries
-                }
-
-                // sparsity pattern update (select entry which improves the K condition number better than average)
-                for (auto row = delta_Jk_.begin(); row != delta_Jk_.end(); ++row) {
-                    for (auto j : matrix_sparsity_[*row]) {
-                        // Cholesky factor is upper triangular
-                        if (j > k && std::find(Ck_.begin(), Ck_.end(), j) == Ck_.end()) { Ck_.push_back(j); }
-                    }
-                }
-                delta_Jk_.clear();
-                std::unordered_map<Index, double> hatJk_ {};
-                for (Index j : Ck_) {
-                    if (std::find(Jk_.begin(), Jk_.end(), j) == Jk_.end()) {   // nonzero entry not found at (j, k)
-                        Scalar v = 0;
-                        // Compute A(j, Jk) * Lk(Jk) (considering symmetry)
-                        for (Index l : Jk_) {
-                            v += (k != j) ? 2 * matrix.coeff(j, l) * Lk_[l] : matrix.coeff(j, l) * Lk_[l];
-                        }
-                        hatJk_.emplace(j, v);
-                    }
-                }
-                Scalar tau_k = 0;     // average improvement to the K-condition number
-                Scalar max_tau = 0;   // best improvement to the K-condition number
-                for (auto& [j, v] : hatJk_) {
-                    Scalar tau_jk = v * v / matrix.coeff(j, j);
-                    hatJk_[j] = tau_jk;
-                    // update average and maximum value
-                    tau_k += tau_jk;
-                    if (tau_jk > max_tau) max_tau = tau_jk;
-                }
-                if (max_tau > epsilon) {
-                    tau_k /= hatJk_.size();
-                    // select most promising first beta_ entries according to average heuristic
-                    for (Index idx = 0; idx < beta && !hatJk_.empty(); ++idx) {
-                        auto it = std::max_element(hatJk_.begin(), hatJk_.end(), [](const auto& p1, const auto& p2) {
-                            return p1.second < p2.second;
-                        });
-                        // sparsity pattern update
-                        if (it->second >= tau_k) {
-                            Jk_.push_back(it->first);
-                            delta_Jk_.push_back(it->first);
-                            hatJk_.erase(it);
-                        } else {   // if optimal element is not best than tau_k, no hope to find a better one
-                            break;
-                        }
-                    }
-                }
-            }
-            // store column k-th result
-            for (Index i : Jk_) { tripet_list.emplace_back(i, k, Lk_[i]); }
-        }
-        // build final result
-        L_.setFromTriplets(tripet_list.begin(), tripet_list.end());
-        return;
-    }
-  
+/// @brief computes an owning lower factor L whose product L L-transpose approximates an SPD inverse
+template <typename Scalar_> class FSPAI {
    public:
-    // constructor
-    FSPAI() noexcept = default;
-    FSPAI(const FSPAI&) noexcept = default;
-    FSPAI(FSPAI&&) noexcept = default;
+    using Scalar = std::remove_cvref_t<Scalar_>;
+    using Index = int;
+    using SparseMatrixType = SparseMatrix<Scalar>;
+    using DenseMatrixType = Matrix<Scalar, Dynamic, Dynamic>;
+    using DenseVectorType = Vector<Scalar, Dynamic>;
 
-    FSPAI(const MatrixType& matrix) : L_() { compute(matrix); }
-    FSPAI(const MatrixType& matrix, int alpha, int beta, double epsilon) :
-        L_(), alpha_(alpha), beta_(beta), epsilon_(epsilon) {
-        compute(matrix, alpha_, beta_, epsilon_);
+    fdapde_static_assert(
+      (std::is_same_v<Scalar_, Scalar> && std::is_floating_point_v<Scalar>),
+      FSPAI_REQUIRES_AN_UNQUALIFIED_FLOATING_POINT_SCALAR);
+
+    /// @brief constructs an unavailable factorization with default update parameters
+    FSPAI() = default;
+    /// @brief copies the sparse factor and update parameters into independent storage
+    FSPAI(const FSPAI&) = default;
+    /// @brief transfers the factor and marks its source unavailable
+    FSPAI(FSPAI&& other) noexcept :
+        factor_(std::move(other.factor_)),
+        alpha_(other.alpha_),
+        beta_(other.beta_),
+        epsilon_(other.epsilon_),
+        ready_(std::exchange(other.ready_, false)) { }
+    /// @brief copies the factor and update parameters with sparse-owner assignment semantics
+    FSPAI& operator=(const FSPAI&) = default;
+    /// @brief transfers the factor and parameters, tolerating self-move
+    FSPAI& operator=(FSPAI&& other) noexcept {
+        if (this == &other) return *this;
+        factor_ = std::move(other.factor_);
+        alpha_ = other.alpha_;
+        beta_ = other.beta_;
+        epsilon_ = other.epsilon_;
+        ready_ = std::exchange(other.ready_, false);
+        return *this;
     }
 
-    // computes an approximation of the Cholesky factor of matrix
-    void compute(const MatrixType& matrix) {
-        fdapde_assert(matrix.rows() == matrix.cols(), std::invalid_argument, "FSPAI requires a square matrix");
-        fdapde_assert(matrix.rows() > 0, std::invalid_argument, "FSPAI requires a nonempty matrix");
-        compute_impl_(matrix, alpha_, beta_, epsilon_);   // use defaults      
+    /// @brief computes a factor using the supplied pattern-update limits and score tolerance
+    explicit FSPAI(const SparseMatrixType& matrix, int alpha = 10, int beta = 10, Scalar epsilon = Scalar(0.005)) :
+        alpha_(alpha), beta_(beta), epsilon_(epsilon) {
+        compute(matrix);
     }
-    void compute(const MatrixType& matrix, int alpha, int beta, double epsilon) {
-        fdapde_assert(matrix.rows() == matrix.cols(), std::invalid_argument, "FSPAI requires a square matrix");
-        fdapde_assert(matrix.rows() > 0, std::invalid_argument, "FSPAI requires a nonempty matrix");
+
+    /// @brief recomputes using the parameters from the last successful computation
+    void compute(const SparseMatrixType& matrix) { compute_impl_(matrix, alpha_, beta_, epsilon_); }
+    /// @brief computes and commits a new factor and parameters only after all checks succeed
+    void compute(const SparseMatrixType& matrix, int alpha, int beta, Scalar epsilon) {
         compute_impl_(matrix, alpha, beta, epsilon);
     }
-    // accessors
-    Index rows() const { return L_.rows(); }
-    Index cols() const { return L_.cols(); }
-    MatrixL getL() const { return MatrixL(L_); }   // the Cholesky factor of the approximate inverse of matrix
-    MatrixU getU() const { return MatrixU(L_.transpose()); }
-    SparseMatrixType inverse() const { return L_ * L_.transpose(); }   // the factorized sparse approximate inverse
 
-    // linear system solve
-    template <typename Other> void solveInPlace(Eigen::MatrixBase<Other>& other) const {
-        fdapde_assert(
-          L_.rows() == other.rows(), std::invalid_argument, "right-hand side row count must match the factorization");
-        other = inverse() * other;
+    /// @brief returns the factor row count, or zero before computation and after a move
+    Index rows() const { return factor_.rows(); }
+    /// @brief returns the factor column count, or zero before computation and after a move
+    Index cols() const { return factor_.cols(); }
+    /// @brief borrows the lower factor from a successfully computed lvalue owner
+    const SparseMatrixType& lower_factor() const& {
+        require_ready_();
+        return factor_;
     }
-    template <typename Other> void solveInPlace(Eigen::SparseMatrixBase<Other>& other) const {
-        fdapde_assert(
-          L_.rows() == other.rows(), std::invalid_argument, "right-hand side row count must match the factorization");
-        other = inverse() * other;
-    }  
-    template <typename Other>
-    Eigen::Matrix<double, Dynamic, Dynamic> solve(const Eigen::MatrixBase<Other>& other) const {
-        fdapde_assert(
-          L_.rows() == other.rows(), std::invalid_argument, "right-hand side row count must match the factorization");
-        return inverse() * other;
+    /// @brief rejects borrowing a factor from a temporary owner
+    void lower_factor() const&& = delete;
+    /// @brief returns an independent transpose of the computed lower factor
+    SparseMatrixType upper_factor() const {
+        require_ready_();
+        return factor_.transpose();
     }
-    template <typename Other>
-    Eigen::SparseMatrix<double> solve(const Eigen::SparseMatrixBase<Other>& other) const {
-        fdapde_assert(
-          L_.rows() == other.rows(), std::invalid_argument, "right-hand side row count must match the factorization");
-        return inverse() * other;
-    }  
+    /// @brief materializes the complete approximate inverse L L-transpose
+    SparseMatrixType inverse() const {
+        require_ready_();
+        return factor_ * factor_.transpose();
+    }
+
+    /// @brief applies the complete approximate inverse to a matching dense right-hand side
+    template <internals::matrix_expression RhsXprType>
+        requires(std::convertible_to<typename RhsXprType::Scalar, Scalar>)
+    Matrix<Scalar, Dynamic, Dynamic> solve(const MatrixExpr<RhsXprType>& rhs) const {
+        require_ready_();
+        const RhsXprType& rhs_derived = rhs.derived();
+        validate_dense_rhs_(rhs_derived);
+        const Matrix<Scalar, Dynamic, Dynamic> rhs_owned(rhs_derived);
+        const Matrix<Scalar, Dynamic, Dynamic> result(inverse() * rhs_owned);
+        validate_finite_dense_result_(result);
+        return result;
+    }
+
+    /// @brief applies the complete approximate inverse to a matching sparse right-hand side
+    SparseMatrixType solve(const SparseMatrixType& rhs) const {
+        require_ready_();
+        validate_sparse_rhs_(rhs);
+        const SparseMatrixType result = inverse() * rhs;
+        validate_finite_sparse_result_(result);
+        return result;
+    }
+
+    /// @brief replaces a dense right-hand side only after its complete solution is available
+    template <int Rows, int Cols, int StorageOrder>
+    void solve_in_place(Matrix<Scalar, Rows, Cols, StorageOrder>& rhs) const {
+        const Matrix<Scalar, Dynamic, Dynamic> result = solve(rhs);
+        Matrix<Scalar, Rows, Cols, StorageOrder> replacement(result);
+        rhs = replacement;
+    }
+
+    /// @brief replaces sparse right-hand-side storage only after its complete solution is available
+    void solve_in_place(SparseMatrixType& rhs) const {
+        SparseMatrixType replacement = solve(rhs);
+        rhs.swap(replacement);
+    }
+   private:
+    /// @brief checks public dense right-hand-side shape and finite converted coefficients
+    template <internals::matrix_expression RhsXprType> void validate_dense_rhs_(const RhsXprType& rhs) const {
+        fdapde_strong_assert(
+          !(rhs.rows() != rows() || rhs.cols() <= 0), std::invalid_argument,
+          "FSPAI solve requires a matching nonempty dense right-hand side");
+        for (int row = 0; row < rhs.rows(); ++row) {
+            for (int col = 0; col < rhs.cols(); ++col) {
+                fdapde_strong_assert(
+                  std::isfinite(static_cast<Scalar>(rhs(row, col))), std::invalid_argument,
+                  "FSPAI solve requires finite right-hand-side coefficients");
+            }
+        }
+    }
+
+    /// @brief checks public sparse right-hand-side shape and finite stored coefficients
+    void validate_sparse_rhs_(const SparseMatrixType& rhs) const {
+        fdapde_strong_assert(
+          !(rhs.rows() != rows() || rhs.cols() <= 0), std::invalid_argument,
+          "FSPAI solve requires a matching nonempty sparse right-hand side");
+        for (int row = 0; row < rhs.rows(); ++row) {
+            for (const auto entry : rhs.row(row)) {
+                fdapde_strong_assert(
+                  std::isfinite(entry.value()), std::invalid_argument,
+                  "FSPAI solve requires finite right-hand-side coefficients");
+            }
+        }
+    }
+
+    /// @brief rejects nonfinite dense coefficients produced by the approximate inverse
+    static void validate_finite_dense_result_(const Matrix<Scalar, Dynamic, Dynamic>& result) {
+        for (int row = 0; row < result.rows(); ++row) {
+            for (int col = 0; col < result.cols(); ++col) {
+                fdapde_strong_assert(
+                  std::isfinite(result(row, col)), std::domain_error, "FSPAI solve produced a nonfinite coefficient");
+            }
+        }
+    }
+
+    /// @brief rejects nonfinite sparse coefficients produced by the approximate inverse
+    static void validate_finite_sparse_result_(const SparseMatrixType& result) {
+        for (int row = 0; row < result.rows(); ++row) {
+            for (const auto entry : result.row(row)) {
+                fdapde_strong_assert(
+                  std::isfinite(entry.value()), std::domain_error, "FSPAI solve produced a nonfinite coefficient");
+            }
+        }
+    }
+
+    /// @brief validates the SPD preconditions and constructs replacement factor storage before publishing it
+    void compute_impl_(const SparseMatrixType& matrix, int alpha, int beta, Scalar epsilon) {
+        fdapde_strong_assert(
+          !(alpha < 0 || beta < 0 || !std::isfinite(epsilon) || epsilon < Scalar(0)), std::invalid_argument,
+          "FSPAI requires nonnegative update parameters and a finite nonnegative tolerance");
+        const int n = matrix.rows();
+        fdapde_strong_assert(
+          !(n <= 0 || matrix.cols() != n), std::invalid_argument, "FSPAI requires a nonempty square matrix");
+
+        Scalar scale = Scalar(0);
+        std::vector<Triplet<Scalar>> normalized_triplets;
+        normalized_triplets.reserve(static_cast<std::size_t>(matrix.non_zeros()));
+        for (int row = 0; row < n; ++row) {
+            for (const auto entry : matrix.row(row)) {
+                fdapde_strong_assert(
+                  std::isfinite(entry.value()), std::invalid_argument, "FSPAI requires finite matrix coefficients");
+                scale = std::max(scale, fdapde::abs(entry.value()));
+            }
+        }
+        fdapde_strong_assert(scale > Scalar(0), std::domain_error, "FSPAI requires a positive-definite matrix");
+        for (int row = 0; row < n; ++row) {
+            for (const auto entry : matrix.row(row)) {
+                const Scalar value = entry.value() / scale;
+                if (value != Scalar {}) normalized_triplets.emplace_back(row, entry.column(), value);
+            }
+        }
+        const SparseMatrixType source(n, n, normalized_triplets);
+
+        const Scalar roundoff = Scalar(64) * std::numeric_limits<Scalar>::epsilon();
+        // ponytail: these sparse checks cannot certify global SPD; add a sparse factorization if certification is
+        // needed
+        std::vector<Scalar> diagonal(static_cast<std::size_t>(n));
+        for (int row = 0; row < n; ++row) {
+            const Scalar value = source.coeff(row, row);
+            fdapde_strong_assert(
+              value > Scalar(0) && std::isfinite(value), std::domain_error,
+              "FSPAI requires positive finite diagonal coefficients");
+            diagonal[static_cast<std::size_t>(row)] = value;
+            for (const auto entry : source.row(row)) {
+                const int col = entry.column();
+                if (col == row) continue;
+                fdapde_strong_assert(
+                  !(fdapde::abs(entry.value() - source.coeff(col, row)) > roundoff), std::invalid_argument,
+                  "FSPAI requires a symmetric matrix");
+                if (col < row) continue;
+                const Scalar limit = std::sqrt(value) * std::sqrt(diagonal_value_(source, diagonal, col));
+                fdapde_strong_assert(
+                  !(fdapde::abs(entry.value()) >= limit), std::domain_error,
+                  "FSPAI requires a positive-definite matrix");
+            }
+        }
+
+        // grow each lower-factor column independently from its diagonal seed
+        std::vector<Triplet<Scalar>> factor_triplets;
+        std::vector<Scalar> column(static_cast<std::size_t>(n), Scalar(0));
+        std::vector<unsigned char> candidate_mask(static_cast<std::size_t>(n), 0);
+        std::vector<unsigned char> pattern_mask(static_cast<std::size_t>(n), 0);
+        for (int k = 0; k < n; ++k) {
+            std::fill(column.begin(), column.end(), Scalar(0));
+            std::fill(candidate_mask.begin(), candidate_mask.end(), 0);
+            std::fill(pattern_mask.begin(), pattern_mask.end(), 0);
+            std::vector<int> candidates;
+            std::vector<int> pattern {k};
+            std::vector<int> added {k};
+            pattern_mask[static_cast<std::size_t>(k)] = 1;
+            column[static_cast<std::size_t>(k)] = Scalar(1) / std::sqrt(diagonal[static_cast<std::size_t>(k)]);
+
+            for (int step = 0; step < alpha && !added.empty(); ++step) {
+                if (step != 0) update_column_(source, diagonal, k, pattern, column);
+
+                // new pattern entries expose neighboring candidates for the next local principal solve
+                for (const int row : added) {
+                    for (const auto entry : source.row(row)) {
+                        const int candidate = entry.column();
+                        if (candidate > k && candidate_mask[static_cast<std::size_t>(candidate)] == 0) {
+                            candidate_mask[static_cast<std::size_t>(candidate)] = 1;
+                            candidates.push_back(candidate);
+                        }
+                    }
+                }
+                added.clear();
+
+                // rank candidate gradient contributions relative to their diagonal curvature
+                std::vector<std::pair<int, Scalar>> scores;
+                scores.reserve(candidates.size());
+                Scalar score_sum = Scalar(0);
+                Scalar maximum_score = Scalar(0);
+                for (const int candidate : candidates) {
+                    if (pattern_mask[static_cast<std::size_t>(candidate)] != 0) continue;
+                    Scalar value = Scalar(0);
+                    for (const int index : pattern) {
+                        value += Scalar(2) * source.coeff(candidate, index) * column[static_cast<std::size_t>(index)];
+                    }
+                    const Scalar score = value * value / diagonal[static_cast<std::size_t>(candidate)];
+                    fdapde_strong_assert(
+                      std::isfinite(score), std::domain_error, "FSPAI sparsity update produced a nonfinite score");
+                    scores.emplace_back(candidate, score);
+                    score_sum += score;
+                    maximum_score = std::max(maximum_score, score);
+                }
+                fdapde_strong_assert(
+                  std::isfinite(score_sum), std::domain_error, "FSPAI sparsity update produced a nonfinite score");
+                if (scores.empty() || !(maximum_score > epsilon)) continue;
+
+                // retain at most beta candidates above the mean score, with deterministic index tie-breaking
+                const Scalar mean = score_sum / static_cast<Scalar>(scores.size());
+                std::sort(scores.begin(), scores.end(), [](const auto& lhs, const auto& rhs) {
+                    return lhs.second != rhs.second ? lhs.second > rhs.second : lhs.first < rhs.first;
+                });
+                int selected = 0;
+                for (const auto& [index, score] : scores) {
+                    if (selected == beta || score < mean) break;
+                    pattern.push_back(index);
+                    added.push_back(index);
+                    pattern_mask[static_cast<std::size_t>(index)] = 1;
+                    ++selected;
+                }
+            }
+
+            for (const int row : pattern) {
+                const Scalar value = column[static_cast<std::size_t>(row)] / std::sqrt(scale);
+                fdapde_strong_assert(
+                  std::isfinite(value), std::domain_error, "FSPAI factor coefficients are not representable");
+                if (value != Scalar {}) factor_triplets.emplace_back(row, k, value);
+            }
+        }
+
+        // publish the completed factor and its settings only after every column succeeds
+        SparseMatrixType replacement(n, n, factor_triplets);
+        factor_.swap(replacement);
+        alpha_ = alpha;
+        beta_ = beta;
+        epsilon_ = epsilon;
+        ready_ = true;
+    }
+
+    /// @brief loads a diagonal coefficient into the local cache on first access
+    static Scalar diagonal_value_(const SparseMatrixType& matrix, std::vector<Scalar>& cached_diagonal, int index) {
+        Scalar& value = cached_diagonal[static_cast<std::size_t>(index)];
+        if (value == Scalar(0)) value = matrix.coeff(index, index);
+        return value;
+    }
+
+    /// @brief solves the selected principal system and normalizes its inverse-factor column
+    static void update_column_(
+      const SparseMatrixType& matrix, const std::vector<Scalar>& diagonal, int k, const std::vector<int>& pattern,
+      std::vector<Scalar>& column) {
+        const int size = static_cast<int>(pattern.size()) - 1;
+        Matrix<Scalar, Dynamic, Dynamic> system(size, size);
+        Vector<Scalar, Dynamic> rhs(size);
+        for (int row = 0; row < size; ++row) {
+            const int source_row = pattern[static_cast<std::size_t>(row + 1)];
+            rhs[row] = matrix.coeff(source_row, k);
+            for (int col = 0; col < size; ++col) {
+                system(row, col) = matrix.coeff(source_row, pattern[static_cast<std::size_t>(col + 1)]);
+            }
+        }
+        const Vector<Scalar, Dynamic> solution = internals::fspai_spd_solve(system, rhs);
+        Scalar correction = Scalar(0);
+        for (int i = 0; i < size; ++i) correction += rhs[i] * solution[i];
+        const Scalar schur = diagonal[static_cast<std::size_t>(k)] - correction;
+        fdapde_strong_assert(
+          schur > Scalar(0) && std::isfinite(schur), std::domain_error,
+          "FSPAI update requires a positive finite Schur complement");
+        const Scalar diagonal_factor = Scalar(1) / std::sqrt(schur);
+        fdapde_strong_assert(
+          std::isfinite(diagonal_factor), std::domain_error, "FSPAI factor coefficients are not representable");
+        column[static_cast<std::size_t>(k)] = diagonal_factor;
+        for (int i = 0; i < size; ++i) {
+            const Scalar value = -diagonal_factor * solution[i];
+            fdapde_strong_assert(
+              std::isfinite(value), std::domain_error, "FSPAI factor coefficients are not representable");
+            column[static_cast<std::size_t>(pattern[static_cast<std::size_t>(i + 1)])] = value;
+        }
+    }
+
+    /// @brief rejects factor access and solves before a successful computation
+    void require_ready_() const {
+        fdapde_strong_assert(!(!ready_), std::domain_error, "FSPAI factor access requires a successful computation");
+    }
+
+    SparseMatrixType factor_;
+    int alpha_ = 10;
+    int beta_ = 10;
+    Scalar epsilon_ = Scalar(0.005);
+    bool ready_ = false;
 };
+
+template <typename Scalar> FSPAI(const SparseMatrix<Scalar>&) -> FSPAI<Scalar>;
+template <typename Scalar, typename Epsilon>
+    requires std::convertible_to<Epsilon, Scalar>
+FSPAI(const SparseMatrix<Scalar>&, int, int, Epsilon) -> FSPAI<Scalar>;
 
 }   // namespace fdapde
 
-#endif   // __FDAPDE_FSPAI_H__
+#endif   // __FDAPDE_LINALG_FSPAI_H__

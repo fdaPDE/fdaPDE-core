@@ -138,13 +138,13 @@ TEST(AssertionCallers, CellFilteringSeparatesArgumentsFromObjectState) {
 
 // verifies argument exceptions propagate through constructors instead of terminating in noexcept
 TEST(AssertionCallers, CheckedConstructorsPropagateExceptions) {
-    Eigen::SparseMatrix<double> rectangular(2, 3), empty(0, 0);
+    fdapde::SparseMatrix<double> rectangular(2, 3), empty(0, 0);
     // checks that the factorization constructor propagates its shape diagnostic
     expect_failure<std::invalid_argument>(
-      [&] { fdapde::FSPAI<Eigen::SparseMatrix<double>> factor(rectangular); }, "FSPAI requires a square matrix");
-    // reaches the nonempty check after the square-matrix check succeeds
+      [&] { fdapde::FSPAI<double> factor(rectangular); }, "FSPAI requires a nonempty square matrix");
+    // rejects an empty native matrix before attempting inverse approximation
     expect_failure<std::invalid_argument>(
-      [&] { fdapde::FSPAI<Eigen::SparseMatrix<double>> factor(empty); }, "FSPAI requires a nonempty matrix");
+      [&] { fdapde::FSPAI<double> factor(empty); }, "FSPAI requires a nonempty square matrix");
     // verifies polygon construction propagates an invalid argument to its caller
     expect_failure<std::invalid_argument>(
       [] { fdapde::Polygon<2, 2> polygon(Eigen::MatrixXd(0, 2)); }, "polygon nodes must not be empty");
