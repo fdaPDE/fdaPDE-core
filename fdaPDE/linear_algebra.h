@@ -82,7 +82,6 @@ class is_vector_like<T> {
 // randomized linear algebra
 #include "src/linear_algebra/rsi.h"
 #include "src/linear_algebra/rbki.h"
-#include "src/linear_algebra/rp_chol.h"
 
 // clang-format on
 
