@@ -268,7 +268,8 @@ target_link_libraries(fdapde_interpolation_test PRIVATE GTest::gtest_main)
 gtest_discover_tests(fdapde_interpolation_test PROPERTIES TIMEOUT 60)
 if(NOT FDAPDE_NATIVE_ONLY)
   add_executable(fdapde_spatial_interpolation_test
-    geometric_finite_elements/spatial.cpp geometric_finite_elements/geometric_function.cpp)
+    geometric_finite_elements/spatial.cpp geometric_finite_elements/geometric_function.cpp
+    geometric_finite_elements/multipoint.cpp)
   fdapde_configure_target(fdapde_spatial_interpolation_test)
   target_link_libraries(fdapde_spatial_interpolation_test PRIVATE GTest::gtest_main Eigen3::Eigen Threads::Threads)
   gtest_discover_tests(fdapde_spatial_interpolation_test PROPERTIES TIMEOUT 60)

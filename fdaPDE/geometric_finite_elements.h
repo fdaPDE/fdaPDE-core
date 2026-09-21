@@ -18,6 +18,7 @@
 #define __FDAPDE_GEOMETRIC_FINITE_ELEMENTS_MODULE_H__
 // clang-format off
 #include "manifold_optimization.h"
+#include "execution.h"
 #include "src/geometric_finite_elements/p1_geodesic_value.h"
 #include "src/geometric_finite_elements/p1_geodesic_linearization.h"
 #include "src/geometric_finite_elements/p1_interpolant.h"

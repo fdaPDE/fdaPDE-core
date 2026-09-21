@@ -57,6 +57,69 @@ solver diagnostics, derivative ordering and lazy cell preparation contracts
 described below. No global derivative assembly or higher-order interpolation is
 provided.
 
+## Reusable multipoint evaluation
+
+Locations are native vectors stored in `MatrixBatch`. Preparation and evaluation
+have independent execution policies; both default to sequential execution.
+
+```cpp
+MatrixBatch<Vector<double, 2>> locations(source_locations);
+auto evaluation = W.prepare_evaluation(locations);          // sequential preparation
+auto values = evaluation(U);                               // sequential evaluation
+
+auto parallel_preparation = W.prepare_evaluation(locations, execution_par);
+auto parallel_values = parallel_preparation(U, execution_par);
+auto sequential_values = parallel_preparation(U, execution_seq);
+auto once = U.eval_at(locations);                           // both phases sequential
+```
+
+These are the existing `execution_seq` and `execution_par` policies from
+`fdaPDE/execution.h`, included by the geometric finite element aggregate. Either
+phase may be parallel independently of the other. Scalar FEM APIs are unchanged.
+
+`GeometricFeEvaluation` copies an lvalue location batch or takes an rvalue's
+buffers. It retains each point's cell id and scalar shape weights, with spatial
+cell geometry and local DOF indices shared by points in the same cell.
+`locations()` exposes the retained batch as const; `size()` and
+`prepared_cells()` report point and visited-cell counts. Copies and moves of the
+preparation retain the same borrowed space binding. The immutable space and its
+mesh must outlive every preparation using them.
+
+Preparation does not access coefficients, nodal caches or prepared geodesics.
+It remains valid after `U.set_coeff(...)` and can evaluate other functions of
+the **same space instance**. A different space is rejected even if its mesh and
+geometry happen to match. Returned values own their storage and appear in the
+original location order, including repeated points. Empty locations produce an
+empty SPD batch with the geometry's matrix order. The output element type is
+`Geometry::Point`, including its cache policy.
+
+LE reuses the existing compensated logarithmic mean: cached nodal logarithms,
+weighted chart sum and matrix exponential, with the existing mean diagnostics.
+It does not prepare cell edge curves just for multipoint evaluation. AIRM reuses
+`U`'s coefficient-dependent P1 cache, including exact vertex and prepared edge
+paths; each interior solve has independent workspace. No global sparse sampling
+matrix, global product backend or new numerical interpolation algorithm is used.
+Use `Cache::Log` on the nodal batch to retain logarithms across evaluations.
+
+Before dispatch, preparation constructs an independent spatial index and sizes
+its point output; evaluation sizes the SPD batch. Synchronized first cell
+preparation avoids shared scratch access. Each worker writes only its assigned
+point or output matrix. The prepared object can be reused concurrently while
+its space and the functions being evaluated remain immutable. Coefficient
+updates, destruction, or assignment of a preparation require external exclusion.
+
+Both modes reject invalid coordinate shapes, nonfinite/outside points and wrong
+space bindings. Point-count validation follows the execution module's integer
+index range. Worker exceptions are collected until all dispatched point work
+finishes, then the failure at the lowest location index is rethrown with its
+original type and message, matching sequential failure selection. AIRM failure
+messages retain stop reason, iterations and residual. No partial batch is
+returned; successfully prepared function cells may remain cached after an error.
+
+`U.eval_at(locations)` constructs a temporary preparation and executes it using
+the same engine. For repeated evaluations or explicit policy selection, retain
+`W.prepare_evaluation(...)` instead.
+
 ## Prepared interpolation on one simplex
 
 ```cpp

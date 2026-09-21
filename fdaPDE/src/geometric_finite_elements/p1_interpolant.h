@@ -21,6 +21,10 @@
 
 #include "header_check.h"
 
+namespace fdapde {
+template <typename, typename> class GeometricFeEvaluation;
+}
+
 namespace fdapde::gfe {
 namespace internals {
 /// @brief attaches mean diagnostics to a failed matrix materialization
@@ -188,6 +192,17 @@ template <typename Domain> const auto& p1_mesh(const Domain& domain) {
     else
         return domain;
 }
+/// @brief evaluates the existing scalar reference basis on an independently stored spatial cell
+template <typename Space, typename Element, typename Point>
+auto p1_shape_weights(const Space& space, const Element& element, const Point& x) {
+    const auto mapped = (element.invJ() * (x - element.node(0))).eval();
+    Matrix<double, Space::local_dim, 1> reference;
+    for (int i = 0; i < Space::local_dim; ++i) reference[i] = mapped[i];
+    std::array<double, Element::n_nodes> weights;
+    for (int i = 0; i < Element::n_nodes; ++i) weights[i] = space.eval_shape_value(i, reference);
+    validate_p1_data(Element::n_nodes, weights);
+    return weights;
+}
 }   // namespace internals
 
 /// @brief borrows an immutable mesh or finite element space and batch, retaining only visited P1 cells
@@ -256,16 +271,9 @@ template <typename Geometry, typename Domain, typename Values> class P1FieldInte
     }
     /// @brief evaluates finite element shape weights or the simplex barycentric map on a located cell
     typename Local::Weights weights_(const Local& cell, const NodeType& x) const {
-        if constexpr (requires { domain_->dof_handler(); }) {
-            const auto& element = cell.element_;
-            const auto mapped = (element.invJ() * (x - element.node(0))).eval();
-            Matrix<double, Mesh::local_dim, 1> reference;
-            for (int i = 0; i < Mesh::local_dim; ++i) reference[i] = mapped[i];
-            typename Local::Weights weights;
-            for (int i = 0; i < Element::n_nodes; ++i) weights[i] = domain_->eval_shape_value(i, reference);
-            internals::validate_p1_data(Element::n_nodes, weights);
-            return weights;
-        } else
+        if constexpr (requires { domain_->dof_handler(); })
+            return internals::p1_shape_weights(*domain_, cell.element_, x);
+        else
             return cell.weights_(x);
     }
     /// @brief selects global DOFs in local vertex order and prepares each visited cell at most once
@@ -273,18 +281,32 @@ template <typename Geometry, typename Domain, typename Values> class P1FieldInte
         fdapde_strong_assert(x.allFinite(), std::invalid_argument, "P1 field spatial point must be finite");
         const int id = locator_.locate(x);
         fdapde_strong_assert(id >= 0, std::invalid_argument, "P1 field spatial point must belong to the mesh");
+        return cached_cell_(id, [&] {
+            std::array<int, Element::n_nodes> ids;
+            for (int i = 0; i < Element::n_nodes; ++i) {
+                if constexpr (requires { domain_->dof_handler(); })
+                    ids[i] = domain_->dof_handler().dofs()(id, i);
+                else
+                    ids[i] = mesh_->cells()(id, i);
+            }
+            const typename Mesh::CellType cell(id, mesh_);
+            return Local(geometry_, Element(cell.nodes()), values_.select(ids), options_);
+        });
+    }
+    template <typename, typename> friend class fdapde::GeometricFeEvaluation;
+    /// @brief evaluates prepared spatial data using the current coefficient-dependent local cache
+    typename Geometry::Point evaluate_prepared_(
+      int id, const Element& element, const std::array<int, Element::n_nodes>& dofs,
+      const typename Local::Weights& weights) const {
+        const auto& cell = cached_cell_(id, [&] { return Local(geometry_, element, values_.select(dofs), options_); });
+        return cell.evaluate(weights);
+    }
+    /// @brief synchronizes first cell preparation while leaving numerical evaluation outside the lock
+    template <typename Prepare> const Local& cached_cell_(int id, Prepare prepare) const {
         // ponytail: one lock protects cell preparation, shard only if concurrent cache misses dominate
         const std::lock_guard lock(mutex_);
         if (const auto it = cells_.find(id); it != cells_.end()) return it->second;
-        std::array<int, Element::n_nodes> ids;
-        for (int i = 0; i < Element::n_nodes; ++i) {
-            if constexpr (requires { domain_->dof_handler(); })
-                ids[i] = domain_->dof_handler().dofs()(id, i);
-            else
-                ids[i] = mesh_->cells()(id, i);
-        }
-        const typename Mesh::CellType cell(id, mesh_);
-        return cells_.try_emplace(id, geometry_, Element(cell.nodes()), values_.select(ids), options_).first->second;
+        return cells_.emplace(id, prepare()).first->second;
     }
     Geometry geometry_;
     const Domain* domain_;
