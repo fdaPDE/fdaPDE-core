@@ -21,11 +21,11 @@
 
 namespace fdapde {
 
-// Eager sparse Kronecker product. The owning result is canonical CSR,
-// so exact-zero products are not retained in its pattern.
+/// @brief builds an owning CSR Kronecker product with checked dimensions and integral arithmetic
 template <typename LhsScalar, typename RhsScalar>
 auto kron(const SparseMatrix<LhsScalar>& lhs, const SparseMatrix<RhsScalar>& rhs) {
-    using ResultScalar = promote_type_t<LhsScalar, RhsScalar>;
+    using ResultScalar =
+      std::common_type_t<typename SparseMatrix<LhsScalar>::Scalar, typename SparseMatrix<RhsScalar>::Scalar>;
     using Result = SparseMatrix<ResultScalar>;
 
     const int result_rows = internals::checked_matrix_size(lhs.rows(), rhs.rows());
@@ -41,9 +41,9 @@ auto kron(const SparseMatrix<LhsScalar>& lhs, const SparseMatrix<RhsScalar>& rhs
     };
     const std::size_t lhs_entries = count_nonzero_entries(lhs);
     const std::size_t rhs_entries = count_nonzero_entries(rhs);
-    if (lhs_entries != 0 && rhs_entries > static_cast<std::size_t>(std::numeric_limits<int>::max()) / lhs_entries) {
-        throw std::length_error("sparse Kronecker product exceeds the supported int range");
-    }
+    fdapde_strong_assert(
+      lhs_entries == 0 || rhs_entries <= static_cast<std::size_t>(std::numeric_limits<int>::max()) / lhs_entries,
+      std::length_error, "sparse Kronecker product exceeds the supported int range");
 
     std::vector<typename Result::triplet_type> triplets;
     triplets.reserve(lhs_entries * rhs_entries);
@@ -52,8 +52,25 @@ auto kron(const SparseMatrix<LhsScalar>& lhs, const SparseMatrix<RhsScalar>& rhs
             if (lhs_entry.value() == typename SparseMatrix<LhsScalar>::Scalar {}) continue;
             for (int rhs_row = 0; rhs_row < rhs.rows(); ++rhs_row) {
                 for (const auto rhs_entry : rhs.row(rhs_row)) {
-                    const ResultScalar value =
-                      static_cast<ResultScalar>(lhs_entry.value()) * static_cast<ResultScalar>(rhs_entry.value());
+                    const ResultScalar a = static_cast<ResultScalar>(lhs_entry.value());
+                    const ResultScalar b = static_cast<ResultScalar>(rhs_entry.value());
+                    if constexpr (std::is_integral_v<ResultScalar>) {
+                        // test the product range before multiplication can overflow
+                        constexpr ResultScalar max = std::numeric_limits<ResultScalar>::max();
+                        bool fits = true;
+                        if (a != 0 && b != 0) {
+                            if constexpr (std::is_signed_v<ResultScalar>) {
+                                constexpr ResultScalar min = std::numeric_limits<ResultScalar>::min();
+                                fits =
+                                  a > 0 ? (b > 0 ? a <= max / b : b >= min / a) : (b > 0 ? a >= min / b : b >= max / a);
+                            } else {
+                                fits = a <= max / b;
+                            }
+                        }
+                        fdapde_strong_assert(
+                          fits, std::overflow_error, "sparse Kronecker coefficient exceeds the scalar range");
+                    }
+                    const ResultScalar value = a * b;
                     if (value == ResultScalar {}) continue;
                     triplets.emplace_back(
                       lhs_row * rhs.rows() + rhs_row, lhs_entry.column() * rhs.cols() + rhs_entry.column(), value);
@@ -62,22 +79,6 @@ auto kron(const SparseMatrix<LhsScalar>& lhs, const SparseMatrix<RhsScalar>& rhs
         }
     }
     return Result(result_rows, result_cols, triplets);
-}
-
-// TODO(P4-M): keep the historical spelling until downstream callers have
-// migrated to the canonical native kron API.
-template <typename LhsXprType, typename RhsXprType>
-constexpr auto kronecker(const MatrixExpr<LhsXprType>& lhs, const MatrixExpr<RhsXprType>& rhs) {
-    return kron(lhs, rhs);
-}
-
-template <internals::matrix_expression Lhs, internals::matrix_expression Rhs>
-    requires(internals::is_owning_rvalue_expression_v<Lhs &&> || internals::is_owning_rvalue_expression_v<Rhs &&>)
-constexpr void kronecker(Lhs&&, Rhs&&) = delete;
-
-template <typename LhsScalar, typename RhsScalar>
-auto kronecker(const SparseMatrix<LhsScalar>& lhs, const SparseMatrix<RhsScalar>& rhs) {
-    return kron(lhs, rhs);
 }
 
 }   // namespace fdapde

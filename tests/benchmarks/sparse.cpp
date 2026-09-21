@@ -24,6 +24,7 @@
 #include <iomanip>
 #include <iostream>
 #include <string_view>
+#include <unsupported/Eigen/KroneckerProduct>
 #include <utility>
 #include <vector>
 
@@ -162,7 +163,100 @@ bool benchmark_case(int subdivisions, int repetitions) {
     return verdict != "block";
 }
 
+// compares tensor-product construction, checksum traversal and destruction on prebuilt identical inputs
+bool benchmark_kronecker(int subdivisions, int repetitions) {
+    const int nodes = (subdivisions + 1) * (subdivisions + 1);
+    const auto native_triplets = make_grid_triplets(subdivisions);
+    std::vector<Eigen::Triplet<double, int>> eigen_triplets;
+    eigen_triplets.reserve(native_triplets.size());
+    for (const auto& triplet : native_triplets) {
+        eigen_triplets.emplace_back(triplet.row(), triplet.col(), triplet.value());
+    }
+
+    const fdapde::SparseMatrix<double> native_input(nodes, nodes, native_triplets);
+    const fdapde::SparseMatrix<double> native_small(
+      2, 3,
+      {
+        {0, 1, -2.},
+        {1, 0, 3. },
+        {1, 2, 1. }
+    });
+    eigen_sparse eigen_input(nodes, nodes), eigen_small(2, 3);
+    eigen_input.setFromTriplets(eigen_triplets.begin(), eigen_triplets.end());
+    eigen_input.prune(0.);
+    eigen_input.makeCompressed();
+    eigen_small.insert(0, 1) = -2.;
+    eigen_small.insert(1, 0) = 3.;
+    eigen_small.insert(1, 2) = 1.;
+    eigen_small.makeCompressed();
+
+    auto native = [&] {
+        const auto matrix = fdapde::kron(native_input, native_small);
+        observation result {matrix.non_zeros(), 0};
+        for (int row = 0; row < matrix.rows(); ++row) {
+            for (const auto entry : matrix.row(row)) {
+                result.checksum = mix(result.checksum, row, entry.column(), entry.value());
+            }
+        }
+        return result;
+    };
+    auto eigen = [&] {
+        eigen_sparse matrix = Eigen::kroneckerProduct(eigen_input, eigen_small);
+        matrix.prune(0.0);
+        matrix.makeCompressed();
+        observation result {static_cast<int>(matrix.nonZeros()), 0};
+        for (int outer = 0; outer < matrix.outerSize(); ++outer) {
+            for (eigen_sparse::InnerIterator entry(matrix, outer); entry; ++entry) {
+                result.checksum = mix(result.checksum, entry.row(), entry.col(), entry.value());
+            }
+        }
+        return result;
+    };
+
+    observation native_observation;
+    observation eigen_observation;
+    for (int warmup = 0; warmup < 3; ++warmup) {
+        static_cast<void>(native());
+        static_cast<void>(eigen());
+    }
+    std::vector<double> native_samples;
+    std::vector<double> eigen_samples;
+    native_samples.reserve(static_cast<std::size_t>(repetitions));
+    eigen_samples.reserve(static_cast<std::size_t>(repetitions));
+    for (int repetition = 0; repetition < repetitions; ++repetition) {
+        if (repetition % 2 == 0) {
+            native_samples.push_back(measure_once(native, native_observation));
+            eigen_samples.push_back(measure_once(eigen, eigen_observation));
+        } else {
+            eigen_samples.push_back(measure_once(eigen, eigen_observation));
+            native_samples.push_back(measure_once(native, native_observation));
+        }
+    }
+    const double native_ms = median(native_samples);
+    const double eigen_ms = median(eigen_samples);
+
+    // equivalent compressed patterns must produce the same entry count and ordered checksum
+    if (native_observation != eigen_observation) {
+        std::cerr << "sparse benchmark structure mismatch: native=" << native_observation.nonzeros
+                  << " eigen=" << eigen_observation.nonzeros << '\n';
+        return false;
+    }
+    const double ratio = native_ms / eigen_ms;
+    const std::string_view verdict = ratio <= 1.10 ? "pass" : ratio <= 1.25 ? "profile" : "block";
+    std::cout << std::fixed << std::setprecision(3) << "operation=kronecker subdivisions=" << subdivisions
+              << " nodes=" << nodes << " raw_triplets=" << native_triplets.size()
+              << " nonzeros=" << native_observation.nonzeros << " native_median_ms=" << native_ms
+              << " eigen_median_ms=" << eigen_ms << " ratio=" << ratio << " verdict=" << verdict << '\n';
+    // a median slowdown beyond 25 percent fails the local performance gate
+    return verdict != "block";
+}
+
 }   // namespace
 
 // runs small and larger assembly-shaped compression workloads
-int main() { return benchmark_case(32, 9) && benchmark_case(128, 5) ? 0 : 1; }
+int main() {
+    return benchmark_case(32, 9) && benchmark_case(128, 5) && benchmark_kronecker(32, 9) &&
+               benchmark_kronecker(128, 5) ?
+             0 :
+             1;
+}
