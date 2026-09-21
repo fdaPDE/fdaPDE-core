@@ -299,8 +299,10 @@ template <typename Scalar_> class SparseMatrix {
         return SparseMatrix(rows_, cols_, triplets);
     }
 
+    /// @brief multiplies matching CSR owners with zero pruning and checked integral accumulation
     SparseMatrix operator*(const SparseMatrix& rhs) const {
-        if (cols_ != rhs.rows_) { throw std::invalid_argument("sparse product requires matching inner dimensions"); }
+        fdapde_strong_assert(
+          !(cols_ != rhs.rows_), std::invalid_argument, "sparse product requires matching inner dimensions");
 
         SparseMatrix result(rows_, rhs.cols_);
         std::vector<Index> columns;
@@ -336,17 +338,16 @@ template <typename Scalar_> class SparseMatrix {
                 for (const Index col : columns) {
                     const Scalar& value = accumulator[static_cast<std::size_t>(col)];
                     if (value == Scalar {}) continue;
-                    if (result.values_.size() == static_cast<std::size_t>(std::numeric_limits<Index>::max())) {
-                        throw std::length_error("sparse product exceeds the supported int range");
-                    }
+                    fdapde_strong_assert(
+                      !(result.values_.size() == static_cast<std::size_t>(std::numeric_limits<Index>::max())),
+                      std::length_error, "sparse product exceeds the supported int range");
                     result.column_indices_.push_back(col);
                     result.values_.push_back(value);
                 }
                 result.row_offsets_[row + 1] = static_cast<Index>(result.values_.size());
             }
         } else {
-            // Preserve very-wide sparse shapes without a workspace proportional
-            // to their mostly empty column domain.
+            // use a sparse accumulator when the column domain is much larger than the stored pattern
             std::unordered_map<Index, Scalar> accumulator;
             for (Index row = 0; row < rows_; ++row) {
                 accumulator.clear();
@@ -373,9 +374,9 @@ template <typename Scalar_> class SparseMatrix {
                 for (const Index col : columns) {
                     const Scalar& value = accumulator.find(col)->second;
                     if (value == Scalar {}) continue;
-                    if (result.values_.size() == static_cast<std::size_t>(std::numeric_limits<Index>::max())) {
-                        throw std::length_error("sparse product exceeds the supported int range");
-                    }
+                    fdapde_strong_assert(
+                      !(result.values_.size() == static_cast<std::size_t>(std::numeric_limits<Index>::max())),
+                      std::length_error, "sparse product exceeds the supported int range");
                     result.column_indices_.push_back(col);
                     result.values_.push_back(value);
                 }

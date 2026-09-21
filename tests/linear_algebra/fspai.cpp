@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <fdaPDE/linear_algebra.h>
+#include <fdaPDE/sparse_linear_algebra.h>
 #include <gtest/gtest.h>
 
 #include <cmath>
@@ -37,19 +37,26 @@ using sparse_matrix = fdapde::SparseMatrix<double>;
 using float_fspai = fdapde::FSPAI<float>;
 
 template <typename T>
-concept has_rvalue_lower_factor = requires(T&& value) { std::move(value).getL(); };
+concept has_rvalue_lower_factor = requires(T&& value) { std::move(value).lower_factor(); };
 
+// the public scalar is the requested floating-point type
 static_assert(std::is_same_v<typename fdapde::FSPAI<double>::Scalar, double>);
-static_assert(std::is_same_v<typename float_fspai::MatrixType, fdapde::SparseMatrix<float>>);
-static_assert(std::is_same_v<typename float_fspai::StorageIndex, int>);
+// float factorizations store native float CSR coefficients
+static_assert(std::is_same_v<typename float_fspai::SparseMatrixType, fdapde::SparseMatrix<float>>);
+// CSR factor indexing uses the same int domain as the sparse owner
+static_assert(std::is_same_v<typename float_fspai::Index, int>);
+// the local dense systems retain the factor scalar type
 static_assert(
   std::is_same_v<typename float_fspai::DenseMatrixType, fdapde::Matrix<float, fdapde::Dynamic, fdapde::Dynamic>>);
+// the local solve vector retains the factor scalar type
 static_assert(std::is_same_v<typename float_fspai::DenseVectorType, fdapde::Vector<float, fdapde::Dynamic>>);
-static_assert(std::is_same_v<typename float_fspai::MatrixL, fdapde::SparseMatrix<float>>);
-static_assert(std::is_same_v<typename float_fspai::MatrixU, fdapde::SparseMatrix<float>>);
+// lower-factor access borrows const storage from a live owner
 static_assert(
-  std::is_same_v<decltype(std::declval<const float_fspai&>().getL()), const float_fspai::MatrixL&>);
-static_assert(std::is_same_v<decltype(std::declval<const float_fspai&>().getU()), float_fspai::MatrixU>);
+  std::is_same_v<decltype(std::declval<const float_fspai&>().lower_factor()), const float_fspai::SparseMatrixType&>);
+// upper-factor access returns an owning transpose
+static_assert(
+  std::is_same_v<decltype(std::declval<const float_fspai&>().upper_factor()), float_fspai::SparseMatrixType>);
+// borrowing from a temporary factorization is rejected at compilation
 static_assert(!has_rvalue_lower_factor<fdapde::FSPAI<double>>);
 
 std::string next_market_line(std::ifstream& input) {
@@ -148,8 +155,11 @@ double factor_product_max_abs_difference(const sparse_matrix& actual, const spar
 }
 
 void expect_same_sparse(const sparse_matrix& lhs, const sparse_matrix& rhs) {
+    // sparse results have the same row count as the retained oracle
     ASSERT_EQ(lhs.rows(), rhs.rows());
+    // sparse results have the same column count as the retained oracle
     ASSERT_EQ(lhs.cols(), rhs.cols());
+    // the exact stored-entry count agrees with the retained pattern
     ASSERT_EQ(lhs.non_zeros(), rhs.non_zeros());
     for (int row = 0; row < lhs.rows(); ++row) {
         auto lhs_entry = lhs.row(row).begin();
@@ -157,26 +167,34 @@ void expect_same_sparse(const sparse_matrix& lhs, const sparse_matrix& rhs) {
         const auto lhs_end = lhs.row(row).end();
         const auto rhs_end = rhs.row(row).end();
         while (lhs_entry != lhs_end && rhs_entry != rhs_end) {
+            // ordered row traversal visits the same stored column indices
             EXPECT_EQ((*lhs_entry).column(), (*rhs_entry).column());
+            // each stored coefficient equals the retained oracle coefficient
             EXPECT_DOUBLE_EQ((*lhs_entry).value(), (*rhs_entry).value());
             ++lhs_entry;
             ++rhs_entry;
         }
+        // the actual row has no unexamined trailing coefficients
         EXPECT_EQ(lhs_entry, lhs_end);
+        // the oracle row has no unexamined trailing coefficients
         EXPECT_EQ(rhs_entry, rhs_end);
     }
 }
 
 template <typename Lhs, typename Rhs> void expect_same_dense(const Lhs& lhs, const Rhs& rhs) {
+    // dense results have the same row count as the reference
     ASSERT_EQ(lhs.rows(), rhs.rows());
+    // dense results have the same number of right-hand-side columns
     ASSERT_EQ(lhs.cols(), rhs.cols());
     for (int row = 0; row < lhs.rows(); ++row) {
+        // every dense coefficient equals its reference at the same coordinates
         for (int col = 0; col < lhs.cols(); ++col) { EXPECT_DOUBLE_EQ(lhs(row, col), rhs(row, col)); }
     }
 }
 
-TEST(FspaiTestSuite, NativeAliasesSupportFloatScalars) {
-    const float_fspai::MatrixType source(
+// float diagonal systems retain their scalar type and reproduce analytic inverse factors
+TEST(FspaiTestSuite, FloatScalarsAndDeduction) {
+    const float_fspai::SparseMatrixType source(
       2, 2,
       {
         {0, 0, 4.0f},
@@ -184,29 +202,37 @@ TEST(FspaiTestSuite, NativeAliasesSupportFloatScalars) {
     });
     const fdapde::FSPAI default_parameters(source);
     const fdapde::FSPAI fspai(source, 0, 0, 0.0);
+    // default-parameter deduction selects a float factorization from a float CSR input
     static_assert(std::is_same_v<std::remove_cvref_t<decltype(default_parameters)>, float_fspai>);
+    // an explicitly supplied tolerance does not change the deduced factor scalar
     static_assert(std::is_same_v<std::remove_cvref_t<decltype(fspai)>, float_fspai>);
+    // default-parameter computation retains the two-row input shape
     EXPECT_EQ(default_parameters.rows(), 2);
 
-    const float_fspai::MatrixL lower = fspai.getL();
-    const float_fspai::MatrixU upper = fspai.getU();
+    const float_fspai::SparseMatrixType lower = fspai.lower_factor();
+    const float_fspai::SparseMatrixType upper = fspai.upper_factor();
+    // the inverse factor of the first diagonal coefficient is one over sqrt(4)
     EXPECT_FLOAT_EQ(lower.coeff(0, 0), 0.5f);
+    // the inverse factor of the second diagonal coefficient is one over sqrt(9)
     EXPECT_FLOAT_EQ(lower.coeff(1, 1), 1.0f / 3.0f);
+    // transposing a diagonal factor preserves its first coefficient
     EXPECT_FLOAT_EQ(upper.coeff(0, 0), 0.5f);
+    // transposing a diagonal factor preserves its second coefficient
     EXPECT_FLOAT_EQ(upper.coeff(1, 1), 1.0f / 3.0f);
 
     float_fspai::DenseVectorType rhs(2);
     rhs[0] = 4.0f;
     rhs[1] = 9.0f;
     const float_fspai::DenseMatrixType solved = fspai.solve(rhs);
+    // the complete inverse maps a first-component right-hand side of four to one
     EXPECT_FLOAT_EQ(solved(0, 0), 1.0f);
+    // the complete inverse maps a second-component right-hand side of nine to one
     EXPECT_FLOAT_EQ(solved(1, 0), 1.0f);
 }
 
-// Adapted from a2a9c88:test/src/fspai_test.cpp. The archived loader ignored
-// the symmetric banner, so this fixture is the stored lower factor.
-// The approved inverse oracle compares the native result with an independent
-// test-local dense factor product.
+// the expected fixture stores a lower factor despite its symmetric banner
+// compare the approximate inverse with an independent dense product of that factor
+// the historical dataset reproduces its lower factor and an independent dense inverse-product oracle
 TEST(FspaiTestSuite, FspaiTest) {
     const sparse_matrix source = read_matrix_market("matrix_to_be_inverted.mtx");
     const sparse_matrix expected_factor = read_matrix_market("expected_inverted_matrix.mtx", false);
@@ -215,12 +241,17 @@ TEST(FspaiTestSuite, FspaiTest) {
     fspai.compute(source, 10, 10, 0.005);
     const sparse_matrix actual = fspai.inverse();
 
+    // the factor retains all 264 fixture rows
     EXPECT_EQ(fspai.rows(), 264);
+    // the factor retains all 264 fixture columns
     EXPECT_EQ(fspai.cols(), 264);
-    EXPECT_LT(max_abs_difference(fspai.getL(), expected_factor), 1.0e-7);
+    // stored and absent factor coefficients match the historical fixture within its numerical tolerance
+    EXPECT_LT(max_abs_difference(fspai.lower_factor(), expected_factor), 1.0e-7);
+    // the materialized inverse matches an independently accumulated dense factor product
     EXPECT_LT(factor_product_max_abs_difference(actual, expected_factor), 1.0e-7);
 }
 
+// factor orientation, independent copies and moved-from states obey the owning-storage contract
 TEST(FspaiTestSuite, FactorsAreOwningOrientedAndCopySafe) {
     const sparse_matrix source(
       3, 3,
@@ -236,15 +267,19 @@ TEST(FspaiTestSuite, FactorsAreOwningOrientedAndCopySafe) {
         {2, 2, 2.0 }
     });
     fdapde::FSPAI<double> fspai(source, 2, 2, 0.0);
-    const sparse_matrix lower = fspai.getL();
-    const sparse_matrix upper = fspai.getU();
+    const sparse_matrix lower = fspai.lower_factor();
+    const sparse_matrix upper = fspai.upper_factor();
     const sparse_matrix inverse = fspai.inverse();
 
     for (int row = 0; row < lower.rows(); ++row) {
+        // every lower-factor entry lies on or below its diagonal
         for (const auto entry : lower.row(row)) EXPECT_GE(row, entry.column());
+        // every upper-factor entry lies on or above its diagonal
         for (const auto entry : upper.row(row)) EXPECT_LE(row, entry.column());
+        // transposing exchanges row and column coefficients exactly
         for (int col = 0; col < lower.cols(); ++col) { EXPECT_DOUBLE_EQ(upper.coeff(row, col), lower.coeff(col, row)); }
     }
+    // the materialized approximate inverse equals the product of both factor orientations
     expect_same_sparse(inverse, lower * upper);
 
     fdapde::FSPAI<double> copy(fspai);
@@ -256,31 +291,46 @@ TEST(FspaiTestSuite, FactorsAreOwningOrientedAndCopySafe) {
           {1, 1, 16.0}
     }),
       0, 0, 0.0);
+    // recomputing a copy adopts the new two-row input
     EXPECT_EQ(copy.rows(), 2);
+    // recomputing a copy leaves the original three-row factor intact
     EXPECT_EQ(fspai.rows(), 3);
-    expect_same_sparse(fspai.getL(), lower);
+    // the original lower factor retains its complete pattern and coefficients
+    expect_same_sparse(fspai.lower_factor(), lower);
 
     fdapde::FSPAI<double> moved(std::move(copy));
+    // move construction transfers the recomputed two-row factor
     EXPECT_EQ(moved.rows(), 2);
+    // the move source reports no remaining rows
     EXPECT_EQ(copy.rows(), 0);
+    // the move source reports no remaining columns
     EXPECT_EQ(copy.cols(), 0);
-    EXPECT_THROW(static_cast<void>(copy.getL()), std::domain_error);
+    // factor borrowing rejects the moved-from state
+    EXPECT_THROW(static_cast<void>(copy.lower_factor()), std::domain_error);
     fdapde::FSPAI<double> move_assigned;
     move_assigned = std::move(moved);
+    // move assignment transfers the two-row factor
     EXPECT_EQ(move_assigned.rows(), 2);
+    // the move-assignment source reports no remaining rows
     EXPECT_EQ(moved.rows(), 0);
+    // the move-assignment source reports no remaining columns
     EXPECT_EQ(moved.cols(), 0);
+    // inverse construction rejects the moved-from state
     EXPECT_THROW(static_cast<void>(moved.inverse()), std::domain_error);
 
     fdapde::FSPAI<double> diagonal_only(source, 0, 0, 0.0);
-    EXPECT_EQ(diagonal_only.getL().non_zeros(), 3);
-    EXPECT_DOUBLE_EQ(diagonal_only.getL().coeff(0, 0), 0.5);
-    EXPECT_DOUBLE_EQ(diagonal_only.getL().coeff(1, 1), 1.0 / std::sqrt(3.0));
-    EXPECT_DOUBLE_EQ(diagonal_only.getL().coeff(2, 2), 1.0 / std::sqrt(2.0));
+    // zero update steps retain exactly the three diagonal entries
+    EXPECT_EQ(diagonal_only.lower_factor().non_zeros(), 3);
+    // the first diagonal-only factor is the analytic inverse square root of four
+    EXPECT_DOUBLE_EQ(diagonal_only.lower_factor().coeff(0, 0), 0.5);
+    // the second diagonal-only factor is the analytic inverse square root of three
+    EXPECT_DOUBLE_EQ(diagonal_only.lower_factor().coeff(1, 1), 1.0 / std::sqrt(3.0));
+    // the third diagonal-only factor is the analytic inverse square root of two
+    EXPECT_DOUBLE_EQ(diagonal_only.lower_factor().coeff(2, 2), 1.0 / std::sqrt(2.0));
 }
 
-// Native adaptation of the archived FSPAI implementation at 86ff6d12; final behavior introduced by da0b274:
-// all solve overloads apply L * L.transpose().
+// dense and sparse solves apply the complete approximate inverse, preserving independent right-hand-side storage
+// dense and sparse right-hand sides use both inverse factors and support atomic in-place replacement
 TEST(FspaiTestSuite, SolvesDenseAndSparseRightHandSidesByTheCompleteApproximateInverse) {
     const sparse_matrix system(
       2, 2,
@@ -300,7 +350,9 @@ TEST(FspaiTestSuite, SolvesDenseAndSparseRightHandSidesByTheCompleteApproximateI
     const auto retained_dense_rhs = dense_rhs;
     const auto dense_expected = fspai.inverse() * dense_rhs;
     const auto dense_result = fspai.solve(dense_rhs);
+    // all dense solution columns equal the complete inverse applied to the saved right-hand side
     expect_same_dense(dense_result, dense_expected);
+    // an ordinary dense solve leaves its input coefficients unchanged
     expect_same_dense(dense_rhs, retained_dense_rhs);
 
     fdapde::Vector<double, fdapde::Dynamic> vector_rhs(2);
@@ -308,6 +360,7 @@ TEST(FspaiTestSuite, SolvesDenseAndSparseRightHandSidesByTheCompleteApproximateI
     vector_rhs[1] = 27.0;
     const auto vector_expected = fspai.inverse() * vector_rhs;
     const auto vector_result = fspai.solve(vector_rhs);
+    // a vector solution equals the complete inverse applied to that vector
     expect_same_dense(vector_result, vector_expected);
 
     const sparse_matrix sparse_rhs(
@@ -319,24 +372,31 @@ TEST(FspaiTestSuite, SolvesDenseAndSparseRightHandSidesByTheCompleteApproximateI
     });
     const sparse_matrix sparse_expected = fspai.inverse() * sparse_rhs;
     const sparse_matrix sparse_result = fspai.solve(sparse_rhs);
+    // the sparse solution has the same pattern and values as explicit inverse multiplication
     expect_same_sparse(sparse_result, sparse_expected);
 
     auto dense_in_place = dense_rhs;
-    fspai.solveInPlace(dense_in_place);
+    fspai.solve_in_place(dense_in_place);
+    // dense in-place solving reproduces the independently retained expected solution
     expect_same_dense(dense_in_place, dense_expected);
     auto sparse_in_place = sparse_rhs;
-    fspai.solveInPlace(sparse_in_place);
+    fspai.solve_in_place(sparse_in_place);
+    // sparse in-place solving reproduces the independently retained expected solution
     expect_same_sparse(sparse_in_place, sparse_expected);
 }
 
+// unavailable state and invalid right-hand sides fail before in-place storage replacement
 TEST(FspaiTestSuite, SolveFailuresRemainCheckedAndInPlaceUpdatesAreAtomic) {
     fdapde::FSPAI<double> unready;
     fdapde::Matrix<double, fdapde::Dynamic, fdapde::Dynamic> dense_rhs(2, 1);
     dense_rhs(0, 0) = 4.0;
     dense_rhs(1, 0) = 9.0;
     const auto retained_dense = dense_rhs;
+    // an uncomputed factorization rejects a dense solve
     EXPECT_THROW(static_cast<void>(unready.solve(dense_rhs)), std::domain_error);
-    EXPECT_THROW(unready.solveInPlace(dense_rhs), std::domain_error);
+    // an uncomputed factorization rejects in-place solving
+    EXPECT_THROW(unready.solve_in_place(dense_rhs), std::domain_error);
+    // a rejected in-place solve leaves all dense coefficients unchanged
     expect_same_dense(dense_rhs, retained_dense);
 
     const fdapde::FSPAI<double> fspai(
@@ -349,13 +409,19 @@ TEST(FspaiTestSuite, SolveFailuresRemainCheckedAndInPlaceUpdatesAreAtomic) {
       0, 0, 0.0);
     fdapde::Matrix<double, fdapde::Dynamic, fdapde::Dynamic> wrong_dense(3, 1);
     const auto retained_wrong_dense = wrong_dense;
+    // a dense right-hand side with too many rows is rejected
     EXPECT_THROW(static_cast<void>(fspai.solve(wrong_dense)), std::invalid_argument);
-    EXPECT_THROW(fspai.solveInPlace(wrong_dense), std::invalid_argument);
+    // the in-place overload applies the same row-count validation
+    EXPECT_THROW(fspai.solve_in_place(wrong_dense), std::invalid_argument);
+    // invalid dense dimensions leave the original input unchanged
     expect_same_dense(wrong_dense, retained_wrong_dense);
 
     dense_rhs(0, 0) = std::numeric_limits<double>::infinity();
+    // an infinite dense coefficient is rejected before multiplication
     EXPECT_THROW(static_cast<void>(fspai.solve(dense_rhs)), std::invalid_argument);
-    EXPECT_THROW(fspai.solveInPlace(dense_rhs), std::invalid_argument);
+    // in-place solving also rejects an infinite dense coefficient
+    EXPECT_THROW(fspai.solve_in_place(dense_rhs), std::invalid_argument);
+    // the rejected dense input retains its infinite sentinel
     EXPECT_TRUE(std::isinf(dense_rhs(0, 0)));
 
     sparse_matrix sparse_rhs(
@@ -371,13 +437,20 @@ TEST(FspaiTestSuite, SolveFailuresRemainCheckedAndInPlaceUpdatesAreAtomic) {
         {0, 0, 4.0}
     });
     const sparse_matrix retained_wrong_sparse = wrong_sparse;
+    // a sparse right-hand side with too many rows is rejected
     EXPECT_THROW(static_cast<void>(fspai.solve(wrong_sparse)), std::invalid_argument);
-    EXPECT_THROW(fspai.solveInPlace(wrong_sparse), std::invalid_argument);
+    // the sparse in-place overload applies the same row-count validation
+    EXPECT_THROW(fspai.solve_in_place(wrong_sparse), std::invalid_argument);
+    // invalid sparse dimensions leave the original pattern and values unchanged
     expect_same_sparse(wrong_sparse, retained_wrong_sparse);
     sparse_rhs.value_ref(0, 0) = std::numeric_limits<double>::quiet_NaN();
+    // a stored NaN sparse coefficient is rejected before multiplication
     EXPECT_THROW(static_cast<void>(fspai.solve(sparse_rhs)), std::invalid_argument);
-    EXPECT_THROW(fspai.solveInPlace(sparse_rhs), std::invalid_argument);
+    // in-place sparse solving also rejects a stored NaN coefficient
+    EXPECT_THROW(fspai.solve_in_place(sparse_rhs), std::invalid_argument);
+    // the rejected sparse input retains its NaN sentinel
     EXPECT_TRUE(std::isnan(sparse_rhs.coeff(0, 0)));
+    // the independent saved sparse input retains its original two coefficients
     expect_same_sparse(
       retained_sparse, sparse_matrix(
                          2, 1,
@@ -387,12 +460,18 @@ TEST(FspaiTestSuite, SolveFailuresRemainCheckedAndInPlaceUpdatesAreAtomic) {
     }));
 }
 
-TEST(FspaiTestSuite, ContractsRemainActiveWithoutDebugAssertions) {
+// malformed or non-SPD inputs preserve the previous successful factor
+TEST(FspaiTestSuite, InvalidInputsPreserveThePreviousFactor) {
     fdapde::FSPAI<double> fspai;
+    // a default factorization has zero rows
     EXPECT_EQ(fspai.rows(), 0);
+    // a default factorization has zero columns
     EXPECT_EQ(fspai.cols(), 0);
-    EXPECT_THROW(static_cast<void>(fspai.getL()), std::domain_error);
-    EXPECT_THROW(static_cast<void>(fspai.getU()), std::domain_error);
+    // a default factorization cannot lend a lower factor
+    EXPECT_THROW(static_cast<void>(fspai.lower_factor()), std::domain_error);
+    // a default factorization cannot construct an upper factor
+    EXPECT_THROW(static_cast<void>(fspai.upper_factor()), std::domain_error);
+    // a default factorization cannot construct an inverse
     EXPECT_THROW(static_cast<void>(fspai.inverse()), std::domain_error);
 
     const sparse_matrix valid(
@@ -404,7 +483,7 @@ TEST(FspaiTestSuite, ContractsRemainActiveWithoutDebugAssertions) {
         {1, 1, 3.0 }
     });
     fspai.compute(valid, 2, 2, 0.0);
-    const sparse_matrix retained = fspai.getL();
+    const sparse_matrix retained = fspai.lower_factor();
 
     const sparse_matrix scale_separated_spd(
       3, 3,
@@ -415,14 +494,22 @@ TEST(FspaiTestSuite, ContractsRemainActiveWithoutDebugAssertions) {
         {2, 1, 1.0e-25},
         {2, 2, 1.0e-20}
     });
+    // a scale-separated SPD system remains valid despite tiny positive local pivots
     EXPECT_NO_THROW((fdapde::FSPAI<double>(scale_separated_spd, 2, 2, 0.0)));
 
+    // an empty matrix cannot define an inverse approximation
     EXPECT_THROW(fspai.compute(sparse_matrix()), std::invalid_argument);
+    // a rectangular matrix cannot define an SPD inverse approximation
     EXPECT_THROW(fspai.compute(sparse_matrix(2, 3)), std::invalid_argument);
+    // a negative pattern-update limit is rejected
     EXPECT_THROW(fspai.compute(valid, -1, 1, 0.0), std::invalid_argument);
+    // a negative per-step selection limit is rejected
     EXPECT_THROW(fspai.compute(valid, 1, -1, 0.0), std::invalid_argument);
+    // a negative score tolerance is rejected
     EXPECT_THROW(fspai.compute(valid, 1, 1, -0.1), std::invalid_argument);
+    // a NaN score tolerance is rejected
     EXPECT_THROW(fspai.compute(valid, 1, 1, std::numeric_limits<double>::quiet_NaN()), std::invalid_argument);
+    // an unmatched off-diagonal coefficient violates the symmetry contract
     EXPECT_THROW(
       fspai.compute(sparse_matrix(
         2, 2,
@@ -432,6 +519,7 @@ TEST(FspaiTestSuite, ContractsRemainActiveWithoutDebugAssertions) {
           {1, 1, 1.0}
     })),
       std::invalid_argument);
+    // an off-diagonal coefficient exceeding the positive 2-by-2 minor bound is rejected
     EXPECT_THROW(
       fspai.compute(sparse_matrix(
         2, 2,
@@ -442,6 +530,7 @@ TEST(FspaiTestSuite, ContractsRemainActiveWithoutDebugAssertions) {
           {1, 1, 1.0}
     })),
       std::domain_error);
+    // a singular all-ones matrix violates strict positive definiteness even with no pattern updates
     EXPECT_THROW(
       fspai.compute(
         sparse_matrix(
@@ -454,6 +543,7 @@ TEST(FspaiTestSuite, ContractsRemainActiveWithoutDebugAssertions) {
     }),
         0, 0, 0.0),
       std::domain_error);
+    // an infinite matrix coefficient is rejected before normalization
     EXPECT_THROW(
       fspai.compute(sparse_matrix(
         2, 2,
@@ -462,7 +552,98 @@ TEST(FspaiTestSuite, ContractsRemainActiveWithoutDebugAssertions) {
           {1, 1, std::numeric_limits<double>::infinity()}
     })),
       std::invalid_argument);
-    expect_same_sparse(fspai.getL(), retained);
+    // all failed computations leave the last successful factor unchanged
+    expect_same_sparse(fspai.lower_factor(), retained);
+}
+
+// successful explicit parameters become the defaults and failed computations do not replace them
+TEST(FspaiTestSuite, SuccessfulParametersAreReused) {
+    const sparse_matrix source(
+      2, 2,
+      {
+        {0, 0, 4.},
+        {0, 1, 1.},
+        {1, 0, 1.},
+        {1, 1, 3.}
+    });
+    fdapde::FSPAI<double> approximation;
+    approximation.compute(source, 0, 0, 0.);
+    const auto diagonal = approximation.lower_factor();
+    approximation.compute(source);
+    // zero pattern updates remain in effect when compute omits explicit parameters
+    expect_same_sparse(approximation.lower_factor(), diagonal);
+    // invalid parameters fail without replacing the retained defaults
+    EXPECT_THROW(approximation.compute(source, -1, 10, 0.), std::invalid_argument);
+    approximation.compute(source);
+    // the failed update cannot restore the original nonzero pattern-update limit
+    expect_same_sparse(approximation.lower_factor(), diagonal);
+}
+
+// sparse products preserve rectangular shapes, exact cancellation and the very-wide accumulator path
+TEST(FspaiTestSuite, SparseProductsAreCheckedAndCanonical) {
+    const fdapde::SparseMatrix<int> left(
+      1, 2,
+      {
+        {0, 0, 2 },
+        {0, 1, -2}
+    });
+    const fdapde::SparseMatrix<int> right(
+      2, 3,
+      {
+        {0, 0, 3},
+        {1, 0, 3},
+        {1, 2, 4}
+    });
+    const auto product = left * right;
+    // the cancelled first column is removed while the last product remains
+    EXPECT_EQ(product.non_zeros(), 1);
+    // the independent scalar sum is (-2) times four
+    EXPECT_EQ(product.coeff(0, 2), -8);
+    const fdapde::SparseMatrix<int> wide(
+      2, 100000,
+      {
+        {0, 99999, 3},
+        {1, 99999, 1}
+    });
+    const auto wide_product = left * wide;
+    // sparse accumulation keeps a distant column without a dense-sized output allocation
+    EXPECT_EQ(wide_product.cols(), 100000);
+    // the sparse-accumulator coefficient equals 2*3 - 2*1
+    EXPECT_EQ(wide_product.coeff(0, 99999), 4);
+    const fdapde::SparseMatrix<int> maximum(
+      1, 1,
+      {
+        {0, 0, std::numeric_limits<int>::max()}
+    });
+    // multiplication overflow is rejected before evaluating an out-of-range signed product
+    EXPECT_THROW(
+      maximum * fdapde::SparseMatrix<int>(
+                  1, 1,
+                  {
+                    {0, 0, 2}
+    }),
+      std::overflow_error);
+    const fdapde::SparseMatrix<int> ones(
+      2, 1,
+      {
+        {0, 0, 1},
+        {1, 0, 1}
+    });
+    const fdapde::SparseMatrix<int> large_row(
+      1, 2,
+      {
+        {0, 0, std::numeric_limits<int>::max()},
+        {0, 1, 1                              }
+    });
+    // individually representable products must still reject an overflowing accumulated sum
+    EXPECT_THROW(large_row * ones, std::overflow_error);
+    // incompatible inner dimensions fail before sparse output construction
+    EXPECT_THROW(left * maximum, std::invalid_argument);
+    const auto empty = fdapde::SparseMatrix<double>(0, 2) * fdapde::SparseMatrix<double>(2, 4);
+    // a zero-row product retains the independent output column count
+    EXPECT_EQ(empty.cols(), 4);
+    // the zero-row product contains no stored coefficients
+    EXPECT_EQ(empty.non_zeros(), 0);
 }
 
 }   // namespace

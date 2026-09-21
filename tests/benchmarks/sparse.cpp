@@ -241,6 +241,16 @@ bool benchmark_case(int subdivisions, int repetitions) {
         return observe_eigen_dense(result);
     };
 
+    auto native_product = [&] { return observe_native_sparse(native_matrix * native_matrix); };
+    auto eigen_product = [&] {
+        eigen_sparse result = eigen_matrix * eigen_matrix;
+        result.prune(0.0);
+        result.makeCompressed();
+        return observe_eigen_sparse(result);
+    };
+    const bool added_green =
+      benchmark_operation("sparse_product", subdivisions, repetitions, 16, native_product, eigen_product);
+
     const bool construction_green =
       benchmark_operation("construction", subdivisions, repetitions, 16, native_construction, eigen_construction);
     const bool transpose_green =
@@ -252,7 +262,7 @@ bool benchmark_case(int subdivisions, int repetitions) {
 
     std::cout << "nodes=" << nodes << " raw_triplets=" << native_triplets.size()
               << " nonzeros=" << native_matrix.non_zeros() << '\n';
-    return construction_green && transpose_green && matvec_green && sparse_dense_green;
+    return added_green && construction_green && transpose_green && matvec_green && sparse_dense_green;
 }
 
 }   // namespace
