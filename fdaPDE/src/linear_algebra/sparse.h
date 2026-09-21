@@ -212,6 +212,28 @@ template <typename Scalar_> class SparseMatrix {
           position != missing_, std::out_of_range, "SparseMatrix value_ref requires an existing stored coefficient");
         return values_[position];
     }
+    /// @brief borrows an existing coefficient or atomically inserts one stored zero in an lvalue owner
+    Scalar& coeff_ref(Index row, Index col) & {
+        validate_index_(row, col);
+        const Index position = find_position_(row, col);
+        if (position != missing_) return values_[position];
+        fdapde_strong_assert(
+          !(values_.size() == static_cast<std::size_t>(std::numeric_limits<Index>::max())), std::length_error,
+          "sparse coefficient insertion exceeds the supported int range");
+
+        // ponytail: insertion copies O(nnz) for atomic replacement; use rebuild for bulk assembly
+        SparseMatrix replacement(*this);
+        const Index insertion = static_cast<Index>(
+          std::lower_bound(
+            replacement.column_indices_.begin() + replacement.row_offsets_[row],
+            replacement.column_indices_.begin() + replacement.row_offsets_[row + 1], col) -
+          replacement.column_indices_.begin());
+        replacement.column_indices_.insert(replacement.column_indices_.begin() + insertion, col);
+        replacement.values_.insert(replacement.values_.begin() + insertion, Scalar {});
+        for (Index i = row + 1; i <= rows_; ++i) ++replacement.row_offsets_[i];
+        swap(replacement);
+        return values_[insertion];
+    }
     /// @brief borrows a checked row from an lvalue matrix
     ConstRowView row(Index row_index) const& {
         validate_row_(row_index);
@@ -437,7 +459,7 @@ template <typename Scalar_> class SparseMatrix {
         std::vector<triplet_type> triplets;
         triplets.reserve(static_cast<std::size_t>(diagonal.size()));
         for (Index i = 0; i < diagonal.size(); ++i) {
-            const Scalar value = diagonal_cast_(diagonal[i]);
+            const Scalar value = checked_scalar_cast_(diagonal[i]);
             if (value != Scalar {}) triplets.emplace_back(i, i, value);
         }
         return SparseMatrix(diagonal.size(), diagonal.size(), triplets);
@@ -477,6 +499,9 @@ template <typename Scalar_> class SparseMatrix {
     /// @brief exchanges two matrices through their storage swap
     friend void swap(SparseMatrix& lhs, SparseMatrix& rhs) noexcept { lhs.swap(rhs); }
    private:
+    /// @brief grants native block composition direct CSR copying without repeated insertions
+    template <typename, int, int> friend class SparseBlockMatrix;
+
     static constexpr Index missing_ = -1;
 
     template <typename XprType_>
@@ -523,8 +548,8 @@ template <typename Scalar_> class SparseMatrix {
         return lhs * rhs;
     }
 
-    /// @brief converts a diagonal coefficient without out-of-range integral narrowing
-    template <typename Value> static Scalar diagonal_cast_(Value value) {
+    /// @brief converts a coefficient without out-of-range integral narrowing
+    template <typename Value> static Scalar checked_scalar_cast_(Value value) {
         if constexpr (std::is_integral_v<Scalar>) {
             if constexpr (std::is_integral_v<Value>) {
                 fdapde_strong_assert(

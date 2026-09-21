@@ -21,6 +21,7 @@
 // clang-format off
 #include "dense_linear_algebra.h"
 #include "src/linear_algebra/sparse.h"
+#include "src/linear_algebra/sparse_block_matrix.h"
 // clang-format on
 
 #endif   // __FDAPDE_SPARSE_LINEAR_ALGEBRA_MODULE_H__
