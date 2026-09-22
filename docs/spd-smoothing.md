@@ -103,6 +103,9 @@ remains a change of optimizer coordinates and is independent of that correction.
 The probe converged for LE and AIRM with observations inside cells and passed a
 finite-difference check of the assembled objective gradient.
 
-A unified library fit API, the whitening wrapper, model selection and CV remain
-in the application layer for now. This import supplies the reusable core pieces;
-it does not introduce a new smoothing model facade or C-LE/rho optimization.
+Smoothing models and their fit API belong in **fdaPDE-cpp**. That layer composes
+the objective, model-specific whitening, fitting workflow, model selection and
+CV using the reusable core tools. The core supplies native matrix storage and
+caches, geometries, FEM operators, objective contributions, derivatives and
+generic optimizers; it does not own smoothing model classes or a model fit API.
+The fdaPDE-cpp model integration and C-LE/rho optimization are separate work.
