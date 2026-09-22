@@ -29,6 +29,8 @@ namespace fdapde::gfe {
 namespace internals {
 /// @brief attaches mean diagnostics to a failed matrix materialization
 inline void require_converged(const auto& result) {
+    if constexpr (requires { result.detected_ambiguity; })
+        fdapde_strong_assert(!result.detected_ambiguity, std::domain_error, "ambiguous Cheeger P1 mean");
     if (result.converged()) return;
     const char* reason = "unknown";
     switch (result.stop_reason) {
@@ -96,12 +98,15 @@ template <typename Geometry, typename Element, typename Nodes> class P1Interpola
     static constexpr int NodeCount = Element::n_nodes;
     using Weights = std::array<double, NodeCount>;
     using Curve = decltype(std::declval<Geometry>().geodesic(std::declval<Point>(), std::declval<Point>()));
-    /// @brief snapshots the cell geometry, retains the batch binding and prepares each edge once
-    P1Interpolant(Geometry geometry, Element element, Nodes nodes, P1GeodesicLinearizationOptions options) :
+    /// @brief snapshots the cell and batch binding, preparing reusable edges when the metric is constant
+    P1Interpolant(
+      Geometry geometry, Element element, Nodes nodes, P1GeodesicLinearizationOptions options,
+      std::vector<double> rho = {}) :
         geometry_(std::move(geometry)),
         element_(std::move(element)),
         nodes_(std::forward<Nodes>(nodes)),
-        options_(options) {
+        options_(options),
+        rho_(std::move(rho)) {
         fdapde_strong_assert(
           nodes_.size() == NodeCount, std::invalid_argument,
           "P1 interpolant requires one nodal value per simplex vertex");
@@ -110,18 +115,39 @@ template <typename Geometry, typename Element, typename Nodes> class P1Interpola
               nodes_[i].rows() == geometry_.order() && nodes_[i].cols() == geometry_.order(), std::invalid_argument,
               "P1 interpolant nodal shape must match the target geometry");
         if constexpr (Element::local_dim != Element::embed_dim) element_.supporting_plane();
-        edges_.reserve(NodeCount * (NodeCount - 1) / 2);
-        for (int j = 1; j < NodeCount; ++j)
-            for (int i = 0; i < j; ++i) {
-                if constexpr (RotationLike<Point>) {
-                    const auto branch = geometry_.minimum_logarithm(nodes_[i], nodes_[j]);
-                    if (branch.diagnostics.unique())
-                        edges_.emplace_back(geometry_.geodesic(nodes_[i], nodes_[j], branch));
-                    else
-                        edges_.emplace_back(std::nullopt);
-                } else
-                    edges_.emplace_back(geometry_.geodesic(nodes_[i], nodes_[j]));
+        if constexpr (internals::is_cheeger_geometry<Geometry>) {
+            fdapde_strong_assert(
+              rho_.empty() || rho_.size() == NodeCount, std::invalid_argument,
+              "P1 rho requires one coefficient per vertex");
+            for (double value : rho_) Geometry::from_rho(value);
+            if (rho_.empty() || std::all_of(rho_.begin(), rho_.end(), [&](double r) { return r == rho_.front(); })) {
+                const auto metric = rho_.empty() ? geometry_ : Geometry::from_rho(rho_.front());
+                for (int j = 1; j < NodeCount; ++j)
+                    for (int i = 0; i < j; ++i) {
+                        const auto pair = metric.pair(nodes_[i], nodes_[j]);
+                        if (pair.rotations.size() == 1)
+                            edges_.emplace_back(
+                              typename Geometry::Curve(
+                                Geometry::chart(nodes_[i]), Geometry::chart(nodes_[j]), pair.rotations.front(),
+                                pair.squared_distance));
+                        else
+                            edges_.emplace_back(std::nullopt);
+                    }
             }
+        } else {
+            edges_.reserve(NodeCount * (NodeCount - 1) / 2);
+            for (int j = 1; j < NodeCount; ++j)
+                for (int i = 0; i < j; ++i) {
+                    if constexpr (RotationLike<Point>) {
+                        const auto branch = geometry_.minimum_logarithm(nodes_[i], nodes_[j]);
+                        if (branch.diagnostics.unique())
+                            edges_.emplace_back(geometry_.geodesic(nodes_[i], nodes_[j], branch));
+                        else
+                            edges_.emplace_back(std::nullopt);
+                    } else
+                        edges_.emplace_back(geometry_.geodesic(nodes_[i], nodes_[j]));
+                }
+        }
     }
     /// @brief returns the matrix order of the prepared geometry
     int order() const { return geometry_.order(); }
@@ -137,15 +163,17 @@ template <typename Geometry, typename Element, typename Nodes> class P1Interpola
     /// @brief prevents expressions from borrowing a const temporary interpolant
     void operator()(const NodeType&) const&& = delete;
     /// @brief exposes the mean result and convergence diagnostics at a spatial point
-    P1ValueResult<Point> result(const NodeType& x) const { return result_(weights_(x)); }
-    /// @brief prepares weight, nodal and mixed derivatives using the converged relative workspace
+    auto result(const NodeType& x) const { return result_(weights_(x)); }
+    /// @brief prepares the geometry-specific derivative workspace at the evaluation point
     auto linearization(const NodeType& x) const { return linearization_(weights_(x)); }
    private:
     template <typename> friend class internals::p1_interpolant_expr;
     template <typename, typename, typename> friend class P1FieldInterpolant;
     /// @brief shares derivative preparation between simplex coordinates and finite element shape values
     auto linearization_(const Weights& weights) const {
-        if constexpr (internals::is_log_euclidean_spd_geometry<Geometry>)
+        if constexpr (internals::is_cheeger_geometry<Geometry>)
+            return p1_geodesic_linearization(geometry_, nodes_, weights, options_, std::span<const double>(rho_));
+        else if constexpr (internals::is_log_euclidean_spd_geometry<Geometry>)
             return p1_geodesic_linearization(geometry_, nodes_, weights);
         else
             return p1_geodesic_linearization(geometry_, nodes_, weights, options_);
@@ -167,40 +195,74 @@ template <typename Geometry, typename Element, typename Nodes> class P1Interpola
         internals::validate_p1_data(NodeCount, weights);
         return weights;
     }
-    /// @brief evaluates vertices and edges directly, using the Karcher solver for larger nonlinear supports
-    P1ValueResult<Point> result_(const Weights& weights) const {
-        const auto vertex = internals::validate_p1_data(NodeCount, weights);
-        if (vertex) return internals::p1_vertex_result(geometry_, nodes_, *vertex);
-        int first = -1, second = -1, active = 0;
-        for (int i = 0; i < NodeCount; ++i)
-            if (weights[i] > 0) {
-                if (active == 0) first = i;
-                if (active == 1) second = i;
-                ++active;
+    /// @brief evaluates vertices and reusable edges directly, delegating other supports to the geometry-specific solver
+    auto result_(const Weights& weights) const {
+        if constexpr (internals::is_cheeger_geometry<Geometry>) {
+            auto geometry = geometry_;
+            if (!rho_.empty()) {
+                double rho = 0, total = 0;
+                for (int i = 0; i < NodeCount; ++i) {
+                    rho += weights[i] * rho_[i];
+                    total += weights[i];
+                }
+                geometry = Geometry::from_rho(rho / total);
             }
-        if (active == 2) {
-            const auto& curve = edges_[second * (second - 1) / 2 + first];
-            fdapde_strong_assert(
-              curve.has_value(), std::domain_error, "P1 rotation edge requires a unique resolved logarithm branch");
-            const double parameter = weights[second] / (weights[first] + weights[second]);
-            return {
-              Point((*curve)(parameter)),
-              manifold::internals::normalize_karcher_weights(weights),
-              0,
-              manifold::BarycenterStopReason::closed_form,
-              manifold::BarycenterUniqueness::globally_unique,
-              0};
+            internals::validate_p1_data(NodeCount, weights);
+            int first = -1, second = -1, active = 0;
+            for (int i = 0; i < NodeCount; ++i)
+                if (weights[i] > 0) {
+                    if (active == 0) first = i;
+                    if (active == 1) second = i;
+                    ++active;
+                }
+            if (active == 2 && !edges_.empty()) {
+                const auto& curve = edges_[second * (second - 1) / 2 + first];
+                if (curve) {
+                    const double t = weights[second] / (weights[first] + weights[second]);
+                    return CheegerP1ValueResult<Point> {
+                      {(*curve)(t), manifold::internals::normalize_karcher_weights(weights), 0,
+                       manifold::BarycenterStopReason::closed_form},
+                      false,
+                      t * (1 - t) * curve->squared_distance()
+                    };
+                }
+            }
+            return p1_geodesic_value(geometry, nodes_, weights, options_.mean);
+        } else {
+            const auto vertex = internals::validate_p1_data(NodeCount, weights);
+            if (vertex) return internals::p1_vertex_result(geometry_, nodes_, *vertex);
+            int first = -1, second = -1, active = 0;
+            for (int i = 0; i < NodeCount; ++i)
+                if (weights[i] > 0) {
+                    if (active == 0) first = i;
+                    if (active == 1) second = i;
+                    ++active;
+                }
+            if (active == 2) {
+                const auto& curve = edges_[second * (second - 1) / 2 + first];
+                fdapde_strong_assert(
+                  curve.has_value(), std::domain_error, "P1 rotation edge requires a unique resolved logarithm branch");
+                const double parameter = weights[second] / (weights[first] + weights[second]);
+                return P1ValueResult<Point> {
+                  Point((*curve)(parameter)),
+                  manifold::internals::normalize_karcher_weights(weights),
+                  0,
+                  manifold::BarycenterStopReason::closed_form,
+                  manifold::BarycenterUniqueness::globally_unique,
+                  0};
+            }
+            if constexpr (internals::is_log_euclidean_spd_geometry<Geometry>)
+                return p1_geodesic_value(geometry_, nodes_, weights);
+            else
+                return p1_geodesic_value(geometry_, nodes_, weights, options_.mean);
         }
-        if constexpr (internals::is_log_euclidean_spd_geometry<Geometry>)
-            return p1_geodesic_value(geometry_, nodes_, weights);
-        else
-            return p1_geodesic_value(geometry_, nodes_, weights, options_.mean);
     }
     Geometry geometry_;
     Element element_;
     Nodes nodes_;
     P1GeodesicLinearizationOptions options_;
     std::vector<std::optional<Curve>> edges_;
+    std::vector<double> rho_;
 };
 namespace internals {
 /// @brief obtains the triangulation from a finite element space or a directly supplied mesh
@@ -260,7 +322,7 @@ template <typename Geometry, typename Domain, typename Values> class P1FieldInte
     }
     /// @brief rejects derivative workspaces that could borrow an expiring field cache
     void linearization(const NodeType&) const&& = delete;
-    /// @brief returns the number of visited cells whose edge curves have been prepared
+    /// @brief returns the number of visited cells retained with their reusable local data
     std::size_t prepared_cells() const {
         const std::lock_guard lock(mutex_);
         return cells_.size();
@@ -308,7 +370,7 @@ template <typename Geometry, typename Domain, typename Values> class P1FieldInte
                     ids[i] = mesh_->cells()(id, i);
             }
             const typename Mesh::CellType cell(id, mesh_);
-            return Local(geometry_, Element(cell.nodes()), values_.select(ids), options_);
+            return Local(geometry_, Element(cell.nodes()), values_.select(ids), options_, rho_(ids));
         });
     }
     template <typename, typename> friend class fdapde::GeometricFeEvaluation;
@@ -316,8 +378,21 @@ template <typename Geometry, typename Domain, typename Values> class P1FieldInte
     typename Geometry::Point evaluate_prepared_(
       int id, const Element& element, const std::array<int, Element::n_nodes>& dofs,
       const typename Local::Weights& weights) const {
-        const auto& cell = cached_cell_(id, [&] { return Local(geometry_, element, values_.select(dofs), options_); });
+        const auto& cell =
+          cached_cell_(id, [&] { return Local(geometry_, element, values_.select(dofs), options_, rho_(dofs)); });
         return cell.evaluate(weights);
+    }
+    /// @brief snapshots the space-owned scalar field in exactly the same local DOF order as the matrices
+    std::vector<double> rho_(const std::array<int, Element::n_nodes>& ids) const {
+        std::vector<double> rho;
+        if constexpr (internals::is_cheeger_geometry<Geometry> && requires { domain_->rho_coefficients(); }) {
+            const auto& coefficients = domain_->rho_coefficients();
+            if (!coefficients.empty()) {
+                rho.reserve(Element::n_nodes);
+                for (int id : ids) rho.push_back(coefficients[id]);
+            }
+        }
+        return rho;
     }
     /// @brief synchronizes first cell preparation while leaving numerical evaluation outside the lock
     template <typename Prepare> const Local& cached_cell_(int id, Prepare prepare) const {
@@ -357,6 +432,23 @@ auto make_p1_interpolant(
 }   // namespace fdapde::gfe
 
 namespace fdapde::manifold {
+/// @brief delegates native C-LE interpolation to the shared simplex or mesh preparation path
+template <typename Scalar_, int Order_, Usage Uses_>
+template <typename Element, typename Nodes>
+    requires gfe::P1InterpolationBinding<Element, Nodes>
+auto CheegerLogEuclideanSPDGeometry<Scalar_, Order_, Uses_>::interpolant(Element&& element, Nodes&& nodes) const {
+    return interpolant(
+      std::forward<Element>(element), std::forward<Nodes>(nodes), gfe::P1GeodesicLinearizationOptions {});
+}
+/// @brief delegates native C-LE interpolation to the shared simplex or mesh preparation path
+template <typename Scalar_, int Order_, Usage Uses_>
+template <typename Element, typename Nodes>
+    requires gfe::P1InterpolationBinding<Element, Nodes>
+auto CheegerLogEuclideanSPDGeometry<Scalar_, Order_, Uses_>::interpolant(
+  Element&& element, Nodes&& nodes, const gfe::P1GeodesicLinearizationOptions& options) const {
+    return gfe::internals::make_p1_interpolant(
+      *this, std::forward<Element>(element), std::forward<Nodes>(nodes), options);
+}
 /// @brief delegates native SPD interpolation to the shared simplex or mesh preparation path
 template <typename Scalar_, int Order_, Usage Uses_>
 template <typename Element, typename Nodes>

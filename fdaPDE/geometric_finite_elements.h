@@ -21,6 +21,7 @@
 #include "execution.h"
 #include "src/geometric_finite_elements/p1_geodesic_value.h"
 #include "src/geometric_finite_elements/p1_geodesic_linearization.h"
+#include "src/geometric_finite_elements/cheeger_p1.h"
 #include "src/geometric_finite_elements/p1_interpolant.h"
 #include "src/geometric_finite_elements/geometric_fe.h"
 // clang-format on

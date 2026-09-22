@@ -70,6 +70,21 @@ class GeometricFeSpace {
     /// @brief enumerates scalar nodal DOFs and owns a copy of the target geometry
     GeometricFeSpace(Triangulation_& mesh, FeType_ element, Geometry_ geometry) :
         space_(mesh, element), geometry_(std::move(geometry)) { }
+    /// @brief owns positive continuous P1 rho coefficients in the scalar nodal DOF ordering
+    GeometricFeSpace(Triangulation_& mesh, FeType_ element, Geometry_ geometry, std::span<const double> rho)
+        requires gfe::internals::is_cheeger_geometry<Geometry>
+        : space_(mesh, element), geometry_(std::move(geometry)), rho_(rho.begin(), rho.end()) {
+        fdapde_strong_assert(
+          std::cmp_equal(rho_.size(), n_dofs()), std::invalid_argument,
+          "rho coefficient count must match the scalar space DOFs");
+        for (double value : rho_) Geometry::from_rho(value);
+    }
+    /// @brief rejects a rho field whose space would borrow an expiring mesh
+    GeometricFeSpace(const Triangulation&&, FeType_, Geometry_, std::span<const double>) = delete;
+    /// @brief exposes immutable nodal rho coefficients, with empty storage denoting the constant geometry value
+    std::span<const double> rho_coefficients() const& { return rho_; }
+    /// @brief prevents coefficient views from escaping an expiring space
+    void rho_coefficients() const&& = delete;
     /// @brief rejects temporary meshes even when the space template explicitly names a const triangulation
     GeometricFeSpace(const Triangulation&&, FeType_, Geometry_) = delete;
     /// @brief preserves the address of the space borrowed by geometric functions
@@ -103,6 +118,7 @@ class GeometricFeSpace {
    private:
     ScalarSpace space_;
     Geometry geometry_;
+    std::vector<double> rho_;
 };
 
 /// @brief owns matrix coefficients and their prepared P1 cells while borrowing an immutable geometric space
