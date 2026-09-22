@@ -1,5 +1,8 @@
 # Native SPD P1 interpolation
 
+For data losses, discrete tension, FEM assembly and trust-region optimization,
+see [LE/AIRM smoothing](spd-smoothing.md).
+
 Rotation-valued P1 fields use the same spatial API; see
 [rotation interpolation and derivatives](rotation-interpolation.md).
 

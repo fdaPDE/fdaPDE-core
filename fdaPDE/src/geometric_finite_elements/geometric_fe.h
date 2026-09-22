@@ -65,6 +65,8 @@ class GeometricFeSpace {
     using Geometry = std::remove_cvref_t<Geometry_>;
     using ScalarSpace = FeSpace<Triangulation, FeType>;
     using DofHandlerType = typename ScalarSpace::DofHandlerType;
+    using cell_dof_descriptor = typename ScalarSpace::cell_dof_descriptor;
+    static constexpr int n_components = 1;
     static constexpr int local_dim = Triangulation::local_dim;
     static constexpr int embed_dim = Triangulation::embed_dim;
     /// @brief enumerates scalar nodal DOFs and owns a copy of the target geometry

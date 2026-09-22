@@ -24,5 +24,10 @@
 #include "src/geometric_finite_elements/cheeger_p1.h"
 #include "src/geometric_finite_elements/p1_interpolant.h"
 #include "src/geometric_finite_elements/geometric_fe.h"
+#include "src/geometric_finite_elements/p1_fem_cell_quadrature.h"
+#include "src/geometric_finite_elements/p1_lumped_laplacian_stencil.h"
+#include "src/geometric_finite_elements/p1_objective_contributions.h"
+#include "src/geometric_finite_elements/p1_discrete_tension.h"
+#include "src/geometric_finite_elements/p1_squared_distance_edge_dirichlet.h"
 // clang-format on
 #endif

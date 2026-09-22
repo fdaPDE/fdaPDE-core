@@ -275,3 +275,16 @@ if(NOT FDAPDE_NATIVE_ONLY)
   target_link_libraries(fdapde_spatial_interpolation_test PRIVATE GTest::gtest_main Eigen3::Eigen Threads::Threads)
   gtest_discover_tests(fdapde_spatial_interpolation_test PROPERTIES TIMEOUT 60)
 endif()
+
+add_executable(fdapde_smoothing_test geometric_finite_elements/smoothing.cpp
+  manifold_optimization/trust_region.cpp)
+fdapde_configure_target(fdapde_smoothing_test)
+target_link_libraries(fdapde_smoothing_test PRIVATE GTest::gtest_main)
+gtest_discover_tests(fdapde_smoothing_test PROPERTIES TIMEOUT 60)
+
+if(NOT FDAPDE_NATIVE_ONLY)
+  add_executable(fdapde_smoothing_fem_test geometric_finite_elements/smoothing_fem.cpp)
+  fdapde_configure_target(fdapde_smoothing_fem_test)
+  target_link_libraries(fdapde_smoothing_fem_test PRIVATE GTest::gtest_main Eigen3::Eigen Threads::Threads)
+  gtest_discover_tests(fdapde_smoothing_fem_test PROPERTIES TIMEOUT 60)
+endif()
