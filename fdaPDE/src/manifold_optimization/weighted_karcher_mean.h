@@ -99,7 +99,7 @@ inline BarycenterStopReason barycenter_stop_reason(SteepestDescentStopReason rea
     throw std::logic_error("Unknown steepest-descent stop reason");
 }
 
-/// @brief supplies no storage to geometries without relative SPD frames
+/// @brief supplies no storage to geometries without reusable relative frames
 template <typename Geometry> struct KarcherWorkspace { };
 /// @brief retains candidate-relative frames only within one evaluation generation
 template <typename Geometry>
@@ -107,6 +107,16 @@ template <typename Geometry>
 struct KarcherWorkspace<Geometry> {
     std::vector<std::optional<typename Geometry::RelativeFrame>> frames;
 };
+
+/// @brief shares SPD base factors while keeping rotation bases in their native representation
+template <typename Geometry> auto karcher_base(const point_t<Geometry>& point) {
+    if constexpr (RotationLike<point_t<Geometry>>)
+        return point;
+    else
+        return SPDMatrix<
+          typename Geometry::Scalar, point_t<Geometry>::Rows, point_t<Geometry>::Cols,
+          Cache::Union<Cache::Sqrt, Cache::InverseSqrt>>(point);
+}
 
 /// @brief evaluates a normalized squared-distance objective using indexed sample storage
 template <GeodesicGeometry Geometry, typename Samples> class WeightedKarcherMeanProblem {
@@ -165,9 +175,7 @@ template <GeodesicGeometry Geometry, typename Samples> class WeightedKarcherMean
     void prepare(const Point& point, Workspace& workspace) const {
         if constexpr (requires { workspace.frames; }) {
             if (!workspace.frames.empty()) return;
-            const SPDMatrix<
-              typename Geometry::Scalar, Point::Rows, Point::Cols, Cache::Union<Cache::Sqrt, Cache::InverseSqrt>>
-              base(point);
+            const auto base = karcher_base<Geometry>(point);
             workspace.frames.resize(samples_.size());
             for (std::size_t i = 0; i < samples_.size(); ++i)
                 if (normalized_weights_[i] != 0)
@@ -179,6 +187,52 @@ template <GeodesicGeometry Geometry, typename Samples> class WeightedKarcherMean
     const Samples& samples_;
     std::span<const double> normalized_weights_;
 };
+
+/// @brief refines an already local mean when strict cost decrease is hidden by floating-point roundoff
+template <typename Geometry, typename Samples>
+void polish_karcher_mean(
+  const Geometry& geometry, const Samples& samples, const WeightedKarcherMeanOptions& options,
+  WeightedKarcherMeanResult<point_t<Geometry>>& result, KarcherWorkspace<Geometry>& workspace) {
+    // polish local stationarity when strict Armijo decrease reaches the cost roundoff floor
+    using Tangent = typename Geometry::Tangent;
+    WeightedKarcherMeanProblem<Geometry, Samples> problem(geometry, samples, result.normalized_weights);
+    for (int iteration = 0; iteration < 6 && result.stationarity_norm > options.solver.gradient_tolerance &&
+                            result.stationarity_norm < 1e-5 && std::isfinite(result.cost);
+         ++iteration) {
+        if constexpr (requires { geometry.prepare_linearization(workspace.frames, result.normalized_weights); }) {
+            try {
+                geometry.prepare_linearization(workspace.frames, result.normalized_weights);
+            } catch (const std::domain_error&) { break; }
+        }
+        const auto gradient = problem.gradient(result.point, workspace);
+        auto hessian = [&](const Tangent& u) {
+            Tangent h = geometry.zero_tangent(result.point);
+            for (std::size_t i = 0; i < samples.size(); ++i)
+                if (result.normalized_weights[i] > 0)
+                    h = geometry.linear_combination(
+                      result.point, 1, h, result.normalized_weights[i],
+                      geometry.half_squared_distance_hessian_vector(*workspace.frames[i], u));
+            return h;
+        };
+        const auto rhs = geometry.linear_combination(result.point, -1, gradient, 0, gradient);
+        const auto step = PositiveDefiniteConjugateGradient().solve(hessian, geometry, result.point, rhs);
+        if (!step.converged() || geometry.norm(result.point, step.solution) > .01) break;
+        const auto next = geometry.exponential(result.point, step.solution);
+        KarcherWorkspace<Geometry> trial;
+        const double cost = problem.cost(next, trial), norm = geometry.norm(next, problem.gradient(next, trial));
+        // near stationarity the cost decrease is below roundoff; require residual contraction instead
+        if (!std::isfinite(cost) || !(norm <= .5 * result.stationarity_norm)) break;
+        workspace = std::move(trial);
+        result.point = next;
+        result.cost = cost;
+        result.stationarity_norm = norm;
+        ++result.iterations;
+        ++result.cost_evaluations;
+        result.gradient_evaluations += 2;
+    }
+    if (result.stationarity_norm <= options.solver.gradient_tolerance)
+        result.stop_reason = BarycenterStopReason::stationarity_tolerance;
+}
 
 }   // namespace internals
 

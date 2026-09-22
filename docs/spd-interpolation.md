@@ -1,5 +1,8 @@
 # Native SPD P1 interpolation
 
+Rotation-valued P1 fields use the same spatial API; see
+[rotation interpolation and derivatives](rotation-interpolation.md).
+
 Include `fdaPDE/geometric_finite_elements.h` for LE/AIRM P1 values, linearizations
 and prepared spatial interpolants. This header and its algebra/solver paths do
 not require Eigen. The existing `Simplex` and mesh APIs still use Eigen spatial

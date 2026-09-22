@@ -70,10 +70,15 @@ template <typename Interpolant> class p1_interpolant_expr : public GeometryExpr<
     int rows() const { return interpolant_.order(); }
     /// @brief returns the prepared matrix order
     int cols() const { return rows(); }
-    /// @brief evaluates a certified SPD point, throwing with diagnostics if its mean does not converge
+    /// @brief evaluates a certified geometric point, throwing if its mean does not converge
     template <typename Policy> auto eval() const {
-        return SPDMatrix<Scalar, Rows, Cols, Policy>(interpolant_.evaluate(weights_));
+        if constexpr (RotationLike<typename Prepared::Point>)
+            return RotationMatrix<Scalar, Rows, Cols, Policy>(interpolant_.evaluate(weights_));
+        else
+            return SPDMatrix<Scalar, Rows, Cols, Policy>(interpolant_.evaluate(weights_));
     }
+    /// @brief materializes the native point type for ordinary dense destinations
+    auto eval_matrix() const { return interpolant_.evaluate(weights_); }
    private:
     Interpolant interpolant_;
     typename Prepared::Weights weights_;
@@ -101,11 +106,22 @@ template <typename Geometry, typename Element, typename Nodes> class P1Interpola
           nodes_.size() == NodeCount, std::invalid_argument,
           "P1 interpolant requires one nodal value per simplex vertex");
         for (std::size_t i = 0; i < nodes_.size(); ++i)
-            manifold::internals::check_spd_geometry_shape(nodes_[i], geometry_.order());
+            fdapde_strong_assert(
+              nodes_[i].rows() == geometry_.order() && nodes_[i].cols() == geometry_.order(), std::invalid_argument,
+              "P1 interpolant nodal shape must match the target geometry");
         if constexpr (Element::local_dim != Element::embed_dim) element_.supporting_plane();
         edges_.reserve(NodeCount * (NodeCount - 1) / 2);
         for (int j = 1; j < NodeCount; ++j)
-            for (int i = 0; i < j; ++i) edges_.push_back(geometry_.geodesic(nodes_[i], nodes_[j]));
+            for (int i = 0; i < j; ++i) {
+                if constexpr (RotationLike<Point>) {
+                    const auto branch = geometry_.minimum_logarithm(nodes_[i], nodes_[j]);
+                    if (branch.diagnostics.unique())
+                        edges_.emplace_back(geometry_.geodesic(nodes_[i], nodes_[j], branch));
+                    else
+                        edges_.emplace_back(std::nullopt);
+                } else
+                    edges_.emplace_back(geometry_.geodesic(nodes_[i], nodes_[j]));
+            }
     }
     /// @brief returns the matrix order of the prepared geometry
     int order() const { return geometry_.order(); }
@@ -151,7 +167,7 @@ template <typename Geometry, typename Element, typename Nodes> class P1Interpola
         internals::validate_p1_data(NodeCount, weights);
         return weights;
     }
-    /// @brief evaluates vertices and edges directly, using the Karcher solver for larger AIRM supports
+    /// @brief evaluates vertices and edges directly, using the Karcher solver for larger nonlinear supports
     P1ValueResult<Point> result_(const Weights& weights) const {
         const auto vertex = internals::validate_p1_data(NodeCount, weights);
         if (vertex) return internals::p1_vertex_result(geometry_, nodes_, *vertex);
@@ -164,9 +180,11 @@ template <typename Geometry, typename Element, typename Nodes> class P1Interpola
             }
         if (active == 2) {
             const auto& curve = edges_[second * (second - 1) / 2 + first];
+            fdapde_strong_assert(
+              curve.has_value(), std::domain_error, "P1 rotation edge requires a unique resolved logarithm branch");
             const double parameter = weights[second] / (weights[first] + weights[second]);
             return {
-              Point(curve(parameter)),
+              Point((*curve)(parameter)),
               manifold::internals::normalize_karcher_weights(weights),
               0,
               manifold::BarycenterStopReason::closed_form,
@@ -182,7 +200,7 @@ template <typename Geometry, typename Element, typename Nodes> class P1Interpola
     Element element_;
     Nodes nodes_;
     P1GeodesicLinearizationOptions options_;
-    std::vector<Curve> edges_;
+    std::vector<std::optional<Curve>> edges_;
 };
 namespace internals {
 /// @brief obtains the triangulation from a finite element space or a directly supplied mesh
@@ -319,7 +337,7 @@ template <typename Geometry, typename Domain, typename Values> class P1FieldInte
 };
 
 namespace internals {
-/// @brief dispatches both SPD geometries to the same simplex or mesh preparation path
+/// @brief dispatches native matrix geometries to the same simplex or mesh preparation path
 template <typename Geometry, typename Element, typename Nodes>
 auto make_p1_interpolant(
   Geometry geometry, Element&& element, Nodes&& nodes, const P1GeodesicLinearizationOptions& options) {
@@ -369,6 +387,23 @@ template <typename Scalar_, int Order_, Usage Uses_>
 template <typename Element, typename Nodes>
     requires gfe::P1InterpolationBinding<Element, Nodes>
 auto AffineInvariantSPDGeometry<Scalar_, Order_, Uses_>::interpolant(
+  Element&& element, Nodes&& nodes, const gfe::P1GeodesicLinearizationOptions& options) const {
+    return gfe::internals::make_p1_interpolant(
+      *this, std::forward<Element>(element), std::forward<Nodes>(nodes), options);
+}
+/// @brief delegates rotation interpolation to the shared simplex or mesh preparation path
+template <typename S, int N, RotationUsage Uses>
+template <typename Element, typename Nodes>
+    requires gfe::P1InterpolationBinding<Element, Nodes>
+auto SOGeometry<S, N, Uses>::interpolant(Element&& element, Nodes&& nodes) const {
+    return interpolant(
+      std::forward<Element>(element), std::forward<Nodes>(nodes), gfe::P1GeodesicLinearizationOptions {});
+}
+/// @brief delegates rotation interpolation with explicit mean and differential tolerances
+template <typename S, int N, RotationUsage Uses>
+template <typename Element, typename Nodes>
+    requires gfe::P1InterpolationBinding<Element, Nodes>
+auto SOGeometry<S, N, Uses>::interpolant(
   Element&& element, Nodes&& nodes, const gfe::P1GeodesicLinearizationOptions& options) const {
     return gfe::internals::make_p1_interpolant(
       *this, std::forward<Element>(element), std::forward<Nodes>(nodes), options);

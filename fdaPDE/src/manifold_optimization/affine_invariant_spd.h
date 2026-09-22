@@ -487,40 +487,7 @@ WeightedKarcherMeanResult<typename AffineInvariantSPDGeometry<Scalar_, Order_, U
     using Geometry = AffineInvariantSPDGeometry<Scalar_, Order_, Uses_>;
     internals::KarcherWorkspace<Geometry> workspace;
     auto result = weighted_karcher_mean<Geometry>(geometry, samples, weights, initial, options, &workspace);
-    // polish local stationarity when strict Armijo decrease reaches the cost roundoff floor
-    using Tangent = typename Geometry::Tangent;
-    internals::WeightedKarcherMeanProblem<Geometry, Samples> problem(geometry, samples, result.normalized_weights);
-    for (int iteration = 0; iteration < 6 && result.stationarity_norm > options.solver.gradient_tolerance &&
-                            result.stationarity_norm < 1e-5 && std::isfinite(result.cost);
-         ++iteration) {
-        const auto gradient = problem.gradient(result.point, workspace);
-        auto hessian = [&](const Tangent& u) {
-            Tangent h = geometry.zero_tangent(result.point);
-            for (std::size_t i = 0; i < samples.size(); ++i)
-                if (result.normalized_weights[i] > 0)
-                    h = geometry.linear_combination(
-                      result.point, 1, h, result.normalized_weights[i],
-                      geometry.half_squared_distance_hessian_vector(*workspace.frames[i], u));
-            return h;
-        };
-        const auto rhs = geometry.linear_combination(result.point, -1, gradient, 0, gradient);
-        const auto step = PositiveDefiniteConjugateGradient().solve(hessian, geometry, result.point, rhs);
-        if (!step.converged() || geometry.norm(result.point, step.solution) > .01) break;
-        const auto next = geometry.exponential(result.point, step.solution);
-        internals::KarcherWorkspace<Geometry> trial;
-        const double cost = problem.cost(next, trial), norm = geometry.norm(next, problem.gradient(next, trial));
-        // near stationarity the cost decrease is below roundoff; require residual contraction instead
-        if (!std::isfinite(cost) || !(norm <= .5 * result.stationarity_norm)) break;
-        workspace = std::move(trial);
-        result.point = next;
-        result.cost = cost;
-        result.stationarity_norm = norm;
-        ++result.iterations;
-        ++result.cost_evaluations;
-        result.gradient_evaluations += 2;
-    }
-    if (result.stationarity_norm <= options.solver.gradient_tolerance)
-        result.stop_reason = BarycenterStopReason::stationarity_tolerance;
+    internals::polish_karcher_mean(geometry, samples, options, result, workspace);
     if (retained) *retained = std::move(workspace);
     result.uniqueness = BarycenterUniqueness::globally_unique;
     return result;

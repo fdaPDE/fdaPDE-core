@@ -18,6 +18,7 @@
 #define __FDAPDE_MANIFOLD_SO_H__
 #include "geometry_expr.h"
 #include "header_check.h"
+#include "so_differential.h"
 #include "spd_geometry_common.h"
 
 namespace fdapde {
@@ -120,6 +121,19 @@ template <typename S, int N, RotationUsage Uses = RotationUsage::None> class SOG
     using CachePolicy = std::conditional_t<Uses == RotationUsage::None, RotationCache::None, RotationCache::Log>;
     using Point = RotationMatrix<S, N, N, CachePolicy>;
     using Tangent = SkewSymmetricMatrix<S, N, N>;
+    /// @brief retains one relative logarithm and optional immutable differential preparation
+    struct RelativeFrame {
+        RotationMatrix<S, N, N, RotationCache::Log> relative;
+        std::optional<internals::SOLogDifferential<S, N>> differential;
+    };
+    /// @brief prepares spatial rotation interpolation over a simplex or an immutable mesh
+    template <typename Element, typename Nodes>
+        requires gfe::P1InterpolationBinding<Element, Nodes>
+    auto interpolant(Element&& element, Nodes&& nodes) const;
+    /// @brief prepares rotation interpolation with explicit mean and differential tolerances
+    template <typename Element, typename Nodes>
+        requires gfe::P1InterpolationBinding<Element, Nodes>
+    auto interpolant(Element&& element, Nodes&& nodes, const gfe::P1GeodesicLinearizationOptions& options) const;
     /// @brief constructs a fixed positive-order rotation geometry
     SOGeometry()
         requires(N != Dynamic)
@@ -225,6 +239,71 @@ template <typename S, int N, RotationUsage Uses = RotationUsage::None> class SOG
     template <RotationLike Q, RotationLike R> Tangent logarithm(const Q& from, const R& to) const {
         return rotation_log(relative_(from, to));
     }
+    /// @brief prepares a candidate-relative logarithm cache shared by the mean cost and gradient
+    template <RotationLike Q, RotationLike R> RelativeFrame relative_frame(const Q& from, const R& to) const {
+        check_point_(from);
+        check_point_(to);
+        return {RotationMatrix<S, N, N, RotationCache::Log>(from.transpose() * to), std::nullopt};
+    }
+    /// @brief reuses the retained minimum body logarithm without repeating the relative decomposition
+    Tangent logarithm(const RelativeFrame& frame) const {
+        check_point_(frame.relative);
+        return rotation_log(frame.relative);
+    }
+    /// @brief reuses the retained distance even when the logarithm branch is ambiguous
+    double distance(const RelativeFrame& frame) const {
+        check_point_(frame.relative);
+        return frame.relative.cache().distance();
+    }
+    /// @brief applies the target logarithm differential in body coordinates
+    Tangent logarithm_target_jvp(const RelativeFrame& frame, const Tangent& v) const {
+        return with_differential_(frame, [&](const auto& d) { return d.target_action(v); });
+    }
+    /// @brief applies the full-Frobenius metric adjoint of the target logarithm differential
+    Tangent logarithm_target_vjp(const RelativeFrame& frame, const Tangent& z) const {
+        return with_differential_(frame, [&](const auto& d) { return d.target_action(z, true); });
+    }
+    /// @brief applies the covariant base Hessian of one half the squared distance
+    Tangent half_squared_distance_hessian_vector(const RelativeFrame& frame, const Tangent& u) const {
+        return with_differential_(frame, [&](const auto& d) { return d.hessian_action(u); });
+    }
+    /// @brief differentiates the Hessian in both endpoints while parallel-transporting its input
+    Tangent half_squared_distance_hessian_covariant_jvp(
+      const RelativeFrame& frame, const Tangent& u, const Tangent& v, const Tangent& w) const {
+        return with_differential_(frame, [&](const auto& d) { return d.mixed_action(u, v, w); });
+    }
+    /// @brief returns both endpoint metric adjoints of the covariant Hessian differential
+    auto
+    half_squared_distance_hessian_covariant_vjp(const RelativeFrame& frame, const Tangent& w, const Tangent& z) const {
+        return with_differential_(frame, [&](const auto& d) { return d.mixed_adjoint(w, z); });
+    }
+    /// @brief retains differential spectra and rejects a singular or nonpositive local mean Hessian
+    void
+    prepare_linearization(std::vector<std::optional<RelativeFrame>>& frames, std::span<const double> weights) const {
+        fdapde_strong_assert(
+          frames.size() == weights.size(), std::invalid_argument, "SO derivative frame and weight counts must match");
+        const auto m = dimension();
+        fdapde_strong_assert(
+          m <= std::size_t(std::sqrt(double(std::numeric_limits<int>::max()))), std::length_error,
+          "SO differential workspace exceeds the native matrix index range");
+        Matrix<S, Dynamic, Dynamic> h(static_cast<int>(m), static_cast<int>(m));
+        h.set_zero();
+        for (std::size_t i = 0; i < frames.size(); ++i) {
+            if (!frames[i]) continue;
+            auto& frame = *frames[i];
+            require_regular_(frame);
+            if (!frame.differential) frame.differential.emplace(logarithm(frame));
+            if (weights[i] != 0) h += S(weights[i]) * frame.differential->hessian();
+        }
+        if (m == 0) return;
+        const EVD evd(h.template as_symmetric<Lower>());
+        S scale = 1;
+        for (int i = 0; i < static_cast<int>(m); ++i) scale = std::max(scale, std::abs(S(evd.eigenvalues()[i])));
+        for (int i = 0; i < static_cast<int>(m); ++i)
+            fdapde_strong_assert(
+              evd.eigenvalues()[i] > 64 * m * std::numeric_limits<S>::epsilon() * scale, std::domain_error,
+              "SO interpolation derivatives require a positive definite mean Hessian");
+    }
     /// @brief explicitly chooses a minimum body logarithm and reports ambiguity or numerical branch limitations
     template <RotationLike Q, RotationLike R> auto minimum_logarithm(const Q& from, const R& to) const {
         return minimum_rotation_log(relative_(from, to));
@@ -292,6 +371,19 @@ template <typename S, int N, RotationUsage Uses = RotationUsage::None> class SOG
         return Tangent(value.template as_skew_symmetric<Upper>());
     }
    private:
+    /// @brief rejects branch-sensitive derivatives at ambiguous or numerically near-cut relative rotations
+    void require_regular_(const RelativeFrame& frame) const {
+        check_point_(frame.relative);
+        fdapde_strong_assert(
+          frame.relative.cache().diagnostics().regular(), std::domain_error,
+          "SO derivatives require a regular relative logarithm branch");
+    }
+    /// @brief reuses immutable derivative preparation or constructs a private one for an isolated geometry call
+    template <typename Apply> auto with_differential_(const RelativeFrame& frame, Apply apply) const {
+        require_regular_(frame);
+        if (frame.differential) return apply(*frame.differential);
+        return apply(internals::SOLogDifferential<S, N>(logarithm(frame)));
+    }
     /// @brief checks matrix dimensions before any geometry loop accesses coefficients
     template <typename Xpr> void check_shape_(const Xpr& q) const {
         fdapde_strong_assert(
@@ -317,6 +409,19 @@ template <typename S, int N, RotationUsage Uses = RotationUsage::None> class SOG
     }
     int n_ = N;
 };
+/// @brief solves a local rotation mean and reuses the local stationarity refinement when necessary
+template <typename S, int N, RotationUsage Uses, typename Samples>
+WeightedKarcherMeanResult<typename SOGeometry<S, N, Uses>::Point> weighted_karcher_mean(
+  const SOGeometry<S, N, Uses>& geometry, const Samples& samples, std::span<const double> weights,
+  const typename SOGeometry<S, N, Uses>::Point& initial, const WeightedKarcherMeanOptions& options = {},
+  internals::KarcherWorkspace<SOGeometry<S, N, Uses>>* retained = nullptr) {
+    using Geometry = SOGeometry<S, N, Uses>;
+    internals::KarcherWorkspace<Geometry> workspace;
+    auto result = weighted_karcher_mean<Geometry>(geometry, samples, weights, initial, options, &workspace);
+    internals::polish_karcher_mean(geometry, samples, options, result, workspace);
+    if (retained) *retained = std::move(workspace);
+    return result;
+}
 }   // namespace manifold
 }   // namespace fdapde
 #endif

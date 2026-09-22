@@ -116,7 +116,7 @@ class P1GeodesicLinearization<manifold::LogEuclideanSPDGeometry<Scalar_, Order_,
         return Tangent(fdapde::matrix_exp_frechet(*mean_chart_, to_tangent_(chart_direction)));
     }
 
-    /// @brief differentiates active nodal values along ambient symmetric tangent directions
+    /// @brief differentiates active nodal values in the geometry tangent representation
     /// @details directions at nodes with zero effective weight are not inspected,
     /// @details because their contribution is identically zero
     Tangent nodal_jvp(std::span<const Tangent> directions) const {
@@ -401,10 +401,11 @@ class P1GeodesicLinearization<manifold::LogEuclideanSPDGeometry<Scalar_, Order_,
 };
 
 /// @brief retains a mean and its differential data, borrowing immutable batches or owning span snapshots
-template <typename Scalar_, int Order_, Usage Uses_, typename Nodes>
-class P1GeodesicLinearization<manifold::AffineInvariantSPDGeometry<Scalar_, Order_, Uses_>, Nodes> {
+template <typename Geometry_, typename Nodes>
+    requires requires { typename Geometry_::RelativeFrame; }
+class P1GeodesicLinearization<Geometry_, Nodes> {
    public:
-    using Geometry = manifold::AffineInvariantSPDGeometry<Scalar_, Order_, Uses_>;
+    using Geometry = Geometry_;
     using Point = typename Geometry::Point;
     using Tangent = typename Geometry::Tangent;
 
@@ -422,7 +423,7 @@ class P1GeodesicLinearization<manifold::AffineInvariantSPDGeometry<Scalar_, Orde
         return solve_(weight_right_hand_side_(direction));
     }
 
-    /// @brief differentiates active nodal values along ambient symmetric tangent directions
+    /// @brief differentiates active nodal values in the geometry tangent representation
     /// @details directions at nodes with zero effective weight are not inspected,
     /// @details because their contribution is identically zero
     P1DerivativeResult<Tangent> nodal_jvp(std::span<const Tangent> directions) const {
@@ -451,7 +452,7 @@ class P1GeodesicLinearization<manifold::AffineInvariantSPDGeometry<Scalar_, Orde
 
     /// @brief returns the Riemannian metric adjoint of the nodal differential
     /// @details this is the Riemannian adjoint of nodal_jvp. The argument and
-    /// @details returned covectors are represented by AIRM metric-dual tangent vectors,
+    /// @details returned covectors are represented by the geometry metric-dual tangent vectors,
     /// @details not by ambient Frobenius gradients
     P1DerivativeResult<std::vector<Tangent>> nodal_vjp(const Tangent& value_gradient) const {
         require_ready_();
@@ -648,7 +649,7 @@ class P1GeodesicLinearization<manifold::AffineInvariantSPDGeometry<Scalar_, Orde
         if (positive_count != 1) vertex_index_.reset();
 
         workspace_.frames.resize(nodes_.size());
-        const SPDMatrix<Scalar_, Order_, Order_, Cache::Union<Cache::Sqrt, Cache::InverseSqrt>> base(result_.value);
+        const auto base = manifold::internals::karcher_base<Geometry>(result_.value);
         node_logs_.reserve(nodes_.size());
         for (std::size_t k = 0; k < nodes_.size(); ++k) {
             const auto node = nodes_[k];
@@ -656,6 +657,9 @@ class P1GeodesicLinearization<manifold::AffineInvariantSPDGeometry<Scalar_, Orde
             node_logs_.push_back(geometry_.logarithm(*workspace_.frames[k]));
             require_finite_tangent_(result_.value, node_logs_.back(), "P1 geodesic nodal logarithms must be finite");
         }
+
+        if constexpr (requires { geometry_.prepare_linearization(workspace_.frames, effective_weights_); })
+            geometry_.prepare_linearization(workspace_.frames, effective_weights_);
 
         mean_residual_.emplace(geometry_.zero_tangent(result_.value));
         for (std::size_t node_index = 0; node_index < nodes_.size(); ++node_index) {
@@ -757,7 +761,7 @@ class P1GeodesicLinearization<manifold::AffineInvariantSPDGeometry<Scalar_, Orde
     }
 
     /// @brief rejects tangent data with a nonfinite metric norm
-    template <SPDLike Node>
+    template <typename Node>
     void require_finite_tangent_(const Node& point, const Tangent& tangent, const char* description) const {
         fdapde_strong_assert(std::isfinite(geometry_.norm(point, tangent)), std::invalid_argument, description);
     }
@@ -793,7 +797,8 @@ auto p1_geodesic_linearization(
 }
 
 /// @brief adapts contiguous legacy nodal values to an owning native batch snapshot
-template <typename Geometry, SPDLike Point, typename... Args>
+template <typename Geometry, typename Point, typename... Args>
+    requires(SPDLike<Point> || RotationLike<Point>)
 auto p1_geodesic_linearization(
   const Geometry& geometry, std::span<const Point> nodes, std::span<const double> weights, Args&&... args) {
     using Batch = MatrixBatch<Point>;

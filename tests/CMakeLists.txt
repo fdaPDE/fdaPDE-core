@@ -262,14 +262,15 @@ fdapde_reject_program(invalid_symmetric_cache_policy "symmetric cache supports N
 fdapde_reject_program(partial_dynamic_rotation "rotation shape must be square")
 fdapde_reject_program(invalid_so_usage "invalid SO geometry usage")
 
-add_executable(fdapde_interpolation_test geometric_finite_elements/interpolation.cpp)
+add_executable(fdapde_interpolation_test geometric_finite_elements/interpolation.cpp
+  geometric_finite_elements/rotations.cpp)
 fdapde_configure_target(fdapde_interpolation_test)
 target_link_libraries(fdapde_interpolation_test PRIVATE GTest::gtest_main)
 gtest_discover_tests(fdapde_interpolation_test PROPERTIES TIMEOUT 60)
 if(NOT FDAPDE_NATIVE_ONLY)
   add_executable(fdapde_spatial_interpolation_test
     geometric_finite_elements/spatial.cpp geometric_finite_elements/geometric_function.cpp
-    geometric_finite_elements/multipoint.cpp)
+    geometric_finite_elements/multipoint.cpp geometric_finite_elements/rotation_spatial.cpp)
   fdapde_configure_target(fdapde_spatial_interpolation_test)
   target_link_libraries(fdapde_spatial_interpolation_test PRIVATE GTest::gtest_main Eigen3::Eigen Threads::Threads)
   gtest_discover_tests(fdapde_spatial_interpolation_test PROPERTIES TIMEOUT 60)

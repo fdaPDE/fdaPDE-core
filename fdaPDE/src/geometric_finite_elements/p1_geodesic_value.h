@@ -148,6 +148,19 @@ P1ValueResult<typename manifold::AffineInvariantSPDGeometry<Scalar_, Order_, Use
       manifold::weighted_karcher_mean(geometry, nodal_values, barycentric_weights, options, retained));
 }
 
+/// @brief initializes the rotation mean at the first node with maximal barycentric weight
+template <typename S, int N, RotationUsage Uses, typename Nodes>
+P1ValueResult<typename manifold::SOGeometry<S, N, Uses>::Point> p1_geodesic_value(
+  const manifold::SOGeometry<S, N, Uses>& geometry, const Nodes& nodes, std::span<const double> weights,
+  const manifold::WeightedKarcherMeanOptions& options = {},
+  manifold::internals::KarcherWorkspace<manifold::SOGeometry<S, N, Uses>>* retained = nullptr) {
+    const auto vertex = internals::validate_p1_data(nodes.size(), weights);
+    if (vertex) return internals::p1_vertex_result(geometry, nodes, *vertex);
+    const auto index = std::distance(weights.begin(), std::max_element(weights.begin(), weights.end()));
+    const typename manifold::SOGeometry<S, N, Uses>::Point initial(nodes[index]);
+    return p1_geodesic_value(geometry, nodes, weights, initial, options, retained);
+}
+
 }   // namespace gfe
 }   // namespace fdapde
 

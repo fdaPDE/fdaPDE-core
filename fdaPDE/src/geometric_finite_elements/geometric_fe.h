@@ -232,7 +232,7 @@ template <typename Space, typename Location> class GeometricFeEvaluation {
     const Locations& locations() const& { return locations_; }
     /// @brief prevents location views from escaping an expiring preparation object
     void locations() const&& = delete;
-    /// @brief evaluates current coefficients into independent SPD batch slots in location order
+    /// @brief evaluates current coefficients into independent native matrix batch slots in location order
     template <
       typename FunctionSpace, typename MatrixType, gfe::internals::PointExecutionPolicy Policy = execution_seq_t>
         requires std::same_as<std::remove_cvref_t<FunctionSpace>, Space>
