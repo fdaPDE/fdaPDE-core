@@ -277,6 +277,7 @@ if(NOT FDAPDE_NATIVE_ONLY)
 endif()
 
 add_executable(fdapde_smoothing_test geometric_finite_elements/smoothing.cpp
+  geometric_finite_elements/cheeger_smoothing.cpp
   manifold_optimization/trust_region.cpp)
 fdapde_configure_target(fdapde_smoothing_test)
 target_link_libraries(fdapde_smoothing_test PRIVATE GTest::gtest_main)

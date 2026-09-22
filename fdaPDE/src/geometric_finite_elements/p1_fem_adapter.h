@@ -40,6 +40,20 @@ inline bool approximately_zero(double sum, double absolute_sum, std::size_t coun
 
 }   // namespace internals
 
+/// @brief obtains physical-point P1 weights using the same boundary support as native field evaluation
+template <typename Space, typename Point>
+    requires(Space::local_dim == Space::embed_dim && Space::FeType::order == 1 && Space::n_components == 1)
+auto p1_fem_barycentric_weights(const Space& space, std::size_t cell_id, const Point& point) {
+    fdapde_strong_assert(space.dof_handler(), std::logic_error, "P1 weights require an initialized space");
+    fdapde_strong_assert(
+      cell_id < static_cast<std::size_t>(space.triangulation().n_cells()), std::out_of_range,
+      "P1 weights cell index is out of range");
+    fdapde_strong_assert(
+      point.rows() == Space::embed_dim && point.cols() == 1, std::invalid_argument,
+      "P1 weights require a physical column vector");
+    return internals::p1_shape_weights(space, space.dof_handler().cell(static_cast<int>(cell_id)), point);
+}
+
 /// @brief extracts physical quadrature and local dofs from a continuous scalar P1 space
 template <typename Space, typename Quadrature = typename Space::FeType::template cell_quadrature_t<Space::local_dim>>
     requires(internals::p1_fem_adapter_source<Space, Quadrature>)

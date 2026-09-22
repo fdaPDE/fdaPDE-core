@@ -32,6 +32,8 @@ inline double cheeger_dot(CheegerChart a, CheegerChart b) { return 2 * (a.s * b.
 struct CheegerPair {
     double squared_distance;
     std::vector<double> rotations;
+    /// @brief reports whether the planar search found exactly one minimizing angle
+    bool unique() const { return rotations.size() == 1; }
 };
 /// @brief enumerates stationary points of the SPD2 pair rotation objective at fixed rho
 inline CheegerPair cheeger_pair(CheegerChart a, CheegerChart b, double rho) {
@@ -80,11 +82,13 @@ inline CheegerPair cheeger_pair(CheegerChart a, CheegerChart b, double rho) {
 }
 }   // namespace internals
 
-/// @brief defines the SPD2 Cheeger log-Euclidean metric with ambient symmetric tangents
+/// @brief declares the Cheeger log-Euclidean metric with ambient symmetric tangents
 /// @details pair diagnostics retain detected ties without claiming a global uniqueness certificate
-template <typename Scalar_, int Order_ = 2, Usage Uses_ = Usage::None> class CheegerLogEuclideanSPDGeometry {
-    // the lifted alignment formula uses the two traceless coordinates of SPD2
-    static_assert(Order_ == 2, "Cheeger-LE currently implements SPD(2) only");
+template <typename Scalar_, int Order_ = 2, Usage Uses_ = Usage::None> class CheegerLogEuclideanSPDGeometry;
+
+/// @brief specializes the C-LE metric and exact pair search for planar tensors
+template <typename Scalar_, Usage Uses_> class CheegerLogEuclideanSPDGeometry<Scalar_, 2, Uses_> {
+    static constexpr int Order_ = 2;
     using Base = LogEuclideanSPDGeometry<Scalar_, Order_, Uses_>;
     using Chart = internals::CheegerChart;
     Base ambient_;
@@ -107,6 +111,8 @@ template <typename Scalar_, int Order_ = 2, Usage Uses_ = Usage::None> class Che
         result.rho_ = rho;
         return result;
     }
+    /// @brief replaces only the local metric parameter
+    CheegerLogEuclideanSPDGeometry with_rho(double rho) const { return from_rho(rho); }
     /// @brief returns the local squared rotation penalty
     double rho() const { return rho_; }
     /// @brief prepares spatial C-LE interpolation on a persistent batch and simplex or mesh

@@ -18,8 +18,9 @@ inline constexpr bool is_cheeger_geometry<manifold::CheegerLogEuclideanSPDGeomet
 /// @brief prepares native SPD2 C-LE interpolation and implicit first derivatives at fixed nodal rho
 /// @details derivatives require interior weights and a resolved branch with positive lifted Hessian
 /// @details chart data are snapshots; all matrix coefficients remain in the native input batch
-template <typename S, int N, Usage U, typename Nodes>
-class P1GeodesicLinearization<manifold::CheegerLogEuclideanSPDGeometry<S, N, U>, Nodes> {
+template <typename S, Usage U, typename Nodes>
+class P1GeodesicLinearization<manifold::CheegerLogEuclideanSPDGeometry<S, 2, U>, Nodes> {
+    static constexpr int N = 2;
    public:
     using Geometry = manifold::CheegerLogEuclideanSPDGeometry<S, N, U>;
     using Point = typename Geometry::Point;
@@ -184,18 +185,26 @@ class P1GeodesicLinearization<manifold::CheegerLogEuclideanSPDGeometry<S, N, U>,
     /// @brief reuses the lifted Hessian for weight, nodal chart and local metric perturbations
     P1DerivativeResult<Tangent>
     differentiate_(std::span<const double> dw, std::span<const Chart> dx, double drho) const {
+        for (const auto& d : dx)
+            fdapde_strong_assert(
+              std::isfinite(d.s) && std::isfinite(d.x) && std::isfinite(d.y), std::invalid_argument,
+              "nonfinite nodal direction");
+        if (dw.empty())
+            for (std::size_t i = 0; i < w_.size(); ++i)
+                if (w_[i] == 1.) {
+                    const auto log = manifold::internals::cheeger_matrix<S>(nodes_[i]);
+                    const auto delta = manifold::internals::cheeger_matrix<S>(dx.empty() ? Chart {} : dx[i]);
+                    return {
+                      Tangent(matrix_exp_frechet(log, delta)), 0, 0,
+                      manifold::PositiveDefiniteCGStopReason::residual_tolerance};
+                }
         fdapde_strong_assert(
           lu_.has_value() && lu_->info() == 0, std::domain_error,
           "Cheeger derivatives require interior weights and a resolved positive Hessian");
         Chart delta;
         std::vector<Chart> dz(w_.size());
         for (std::size_t i = 0; i < w_.size(); ++i) {
-            if (!dx.empty()) {
-                fdapde_strong_assert(
-                  std::isfinite(dx[i].s) && std::isfinite(dx[i].x) && std::isfinite(dx[i].y), std::invalid_argument,
-                  "nonfinite nodal direction");
-                dz[i] = manifold::internals::cheeger_rotate(dx[i], -fit_.phi[i]);
-            }
+            if (!dx.empty()) { dz[i] = manifold::internals::cheeger_rotate(dx[i], -fit_.phi[i]); }
             const double d = dw.empty() ? 0 : dw[i];
             delta.s += d * fit_.z[i].s + w_[i] * dz[i].s;
             delta.x += d * fit_.z[i].x + w_[i] * dz[i].x;

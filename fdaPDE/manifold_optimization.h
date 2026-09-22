@@ -38,6 +38,8 @@
 #include "src/manifold_optimization/affine_invariant_spd.h"
 #include "src/manifold_optimization/so.h"
 #include "src/manifold_optimization/cheeger_log_euclidean_spd.h"
+#include "src/manifold_optimization/cheeger_lift.h"
+#include "src/manifold_optimization/cheeger_spd_general.h"
 
 // clang-format on
 

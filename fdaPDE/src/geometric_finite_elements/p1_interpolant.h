@@ -119,13 +119,13 @@ template <typename Geometry, typename Element, typename Nodes> class P1Interpola
             fdapde_strong_assert(
               rho_.empty() || rho_.size() == NodeCount, std::invalid_argument,
               "P1 rho requires one coefficient per vertex");
-            for (double value : rho_) Geometry::from_rho(value);
+            for (double value : rho_) geometry_.with_rho(value);
             if (rho_.empty() || std::all_of(rho_.begin(), rho_.end(), [&](double r) { return r == rho_.front(); })) {
-                const auto metric = rho_.empty() ? geometry_ : Geometry::from_rho(rho_.front());
+                const auto metric = rho_.empty() ? geometry_ : geometry_.with_rho(rho_.front());
                 for (int j = 1; j < NodeCount; ++j)
                     for (int i = 0; i < j; ++i) {
                         const auto pair = metric.pair(nodes_[i], nodes_[j]);
-                        if (pair.rotations.size() == 1)
+                        if (pair.unique())
                             edges_.emplace_back(
                               typename Geometry::Curve(
                                 Geometry::chart(nodes_[i]), Geometry::chart(nodes_[j]), pair.rotations.front(),
@@ -205,7 +205,7 @@ template <typename Geometry, typename Element, typename Nodes> class P1Interpola
                     rho += weights[i] * rho_[i];
                     total += weights[i];
                 }
-                geometry = Geometry::from_rho(rho / total);
+                geometry = geometry_.with_rho(rho / total);
             }
             internals::validate_p1_data(NodeCount, weights);
             int first = -1, second = -1, active = 0;
@@ -272,15 +272,26 @@ template <typename Domain> const auto& p1_mesh(const Domain& domain) {
     else
         return domain;
 }
-/// @brief evaluates the existing scalar reference basis on an independently stored spatial cell
+/// @brief evaluates normalized scalar P1 weights while preserving roundoff-sized boundary support
 template <typename Space, typename Element, typename Point>
 auto p1_shape_weights(const Space& space, const Element& element, const Point& x) {
     const auto mapped = (element.invJ() * (x - element.node(0))).eval();
     Matrix<double, Space::local_dim, 1> reference;
     for (int i = 0; i < Space::local_dim; ++i) reference[i] = mapped[i];
-    std::array<double, Element::n_nodes> weights;
-    for (int i = 0; i < Element::n_nodes; ++i) weights[i] = space.eval_shape_value(i, reference);
-    validate_p1_data(Element::n_nodes, weights);
+    std::array<double, Space::local_dim + 1> weights;
+    const double tolerance = 8 * std::numeric_limits<double>::epsilon() * std::max(1., element.invJ().norm());
+    double total = 0;
+    for (std::size_t i = 0; i < weights.size(); ++i) {
+        weights[i] = space.eval_shape_value(static_cast<int>(i), reference);
+        fdapde_strong_assert(
+          std::isfinite(weights[i]) && weights[i] >= -tolerance && weights[i] <= 1 + tolerance, std::domain_error,
+          "physical point lies outside the P1 cell");
+        weights[i] = weights[i] <= tolerance ? 0. : weights[i];
+        total += weights[i];
+    }
+    fdapde_strong_assert(total > 0 && std::isfinite(total), std::domain_error, "invalid P1 weight normalization");
+    for (double& weight : weights) weight /= total;
+    validate_p1_data(weights.size(), weights);
     return weights;
 }
 }   // namespace internals
@@ -333,6 +344,28 @@ template <typename Geometry, typename Domain, typename Values> class P1FieldInte
         const std::lock_guard lock(mutex_);
         cells_.clear();
     }
+    /// @brief replaces the function-local rho snapshot and discards only metric-dependent prepared cells
+    /// @details replacement requires exclusive access and invalidates outstanding expressions and linearizations
+    void set_rho(std::vector<double> rho)
+        requires internals::is_cheeger_geometry<Geometry>
+    {
+        fdapde_strong_assert(
+          rho.empty() || rho.size() == values_.size(), std::invalid_argument, "rho count must match nodal DOFs");
+        for (double value : rho) geometry_.with_rho(value);
+        const std::lock_guard lock(mutex_);
+        cells_.clear();
+        rho_override_.emplace(std::move(rho));
+    }
+    /// @brief borrows the active scalar coefficients, falling back to the immutable space defaults
+    std::span<const double> rho_coefficients() const&
+        requires internals::is_cheeger_geometry<Geometry>
+    {
+        if (rho_override_) return *rho_override_;
+        if constexpr (requires { domain_->rho_coefficients(); }) return domain_->rho_coefficients();
+        return {};
+    }
+    /// @brief rejects scalar spans escaping temporary interpolants
+    void rho_coefficients() const&& = delete;
    private:
     /// @brief validates the mesh and nodal DOF count before constructing the spatial index
     static const Mesh* checked_mesh_(const Domain& domain, const std::remove_cvref_t<Values>& values) {
@@ -382,11 +415,11 @@ template <typename Geometry, typename Domain, typename Values> class P1FieldInte
           cached_cell_(id, [&] { return Local(geometry_, element, values_.select(dofs), options_, rho_(dofs)); });
         return cell.evaluate(weights);
     }
-    /// @brief snapshots the space-owned scalar field in exactly the same local DOF order as the matrices
+    /// @brief gathers the active scalar field in exactly the same local DOF order as the matrices
     std::vector<double> rho_(const std::array<int, Element::n_nodes>& ids) const {
         std::vector<double> rho;
-        if constexpr (internals::is_cheeger_geometry<Geometry> && requires { domain_->rho_coefficients(); }) {
-            const auto& coefficients = domain_->rho_coefficients();
+        if constexpr (internals::is_cheeger_geometry<Geometry>) {
+            const auto coefficients = rho_coefficients();
             if (!coefficients.empty()) {
                 rho.reserve(Element::n_nodes);
                 for (int id : ids) rho.push_back(coefficients[id]);
@@ -403,6 +436,7 @@ template <typename Geometry, typename Domain, typename Values> class P1FieldInte
     }
     Geometry geometry_;
     const Domain* domain_;
+    std::optional<std::vector<double>> rho_override_;
     const Mesh* mesh_;
     Values values_;
     P1GeodesicLinearizationOptions options_;
@@ -445,6 +479,23 @@ template <typename Scalar_, int Order_, Usage Uses_>
 template <typename Element, typename Nodes>
     requires gfe::P1InterpolationBinding<Element, Nodes>
 auto CheegerLogEuclideanSPDGeometry<Scalar_, Order_, Uses_>::interpolant(
+  Element&& element, Nodes&& nodes, const gfe::P1GeodesicLinearizationOptions& options) const {
+    return gfe::internals::make_p1_interpolant(
+      *this, std::forward<Element>(element), std::forward<Nodes>(nodes), options);
+}
+/// @brief delegates native C-LE interpolation to the shared simplex or mesh preparation path
+template <typename Scalar_, Usage Uses_>
+template <typename Element, typename Nodes>
+    requires gfe::P1InterpolationBinding<Element, Nodes>
+auto CheegerLogEuclideanSPDGeometry<Scalar_, 2, Uses_>::interpolant(Element&& element, Nodes&& nodes) const {
+    return interpolant(
+      std::forward<Element>(element), std::forward<Nodes>(nodes), gfe::P1GeodesicLinearizationOptions {});
+}
+/// @brief delegates native C-LE interpolation to the shared simplex or mesh preparation path
+template <typename Scalar_, Usage Uses_>
+template <typename Element, typename Nodes>
+    requires gfe::P1InterpolationBinding<Element, Nodes>
+auto CheegerLogEuclideanSPDGeometry<Scalar_, 2, Uses_>::interpolant(
   Element&& element, Nodes&& nodes, const gfe::P1GeodesicLinearizationOptions& options) const {
     return gfe::internals::make_p1_interpolant(
       *this, std::forward<Element>(element), std::forward<Nodes>(nodes), options);

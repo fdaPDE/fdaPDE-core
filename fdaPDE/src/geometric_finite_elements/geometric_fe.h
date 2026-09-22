@@ -79,7 +79,7 @@ class GeometricFeSpace {
         fdapde_strong_assert(
           std::cmp_equal(rho_.size(), n_dofs()), std::invalid_argument,
           "rho coefficient count must match the scalar space DOFs");
-        for (double value : rho_) Geometry::from_rho(value);
+        for (double value : rho_) geometry_.with_rho(value);
     }
     /// @brief rejects a rho field whose space would borrow an expiring mesh
     GeometricFeSpace(const Triangulation&&, FeType_, Geometry_, std::span<const double>) = delete;
@@ -153,6 +153,21 @@ template <typename Space_, typename MatrixType_> class GeometricFeFunction {
         interpolant_.clear_cache();
         coefficients_.swap(coefficients);
     }
+    /// @brief replaces this field's rho coefficients while preserving nodal matrix caches and spatial plans
+    /// @details an empty vector restores the geometry's constant rho; updates require exclusive access
+    void set_rho(std::vector<double> rho)
+        requires gfe::internals::is_cheeger_geometry<Geometry>
+    {
+        interpolant_.set_rho(std::move(rho));
+    }
+    /// @brief borrows this field's active rho coefficients in scalar DOF order
+    std::span<const double> rho_coefficients() const&
+        requires gfe::internals::is_cheeger_geometry<Geometry>
+    {
+        return interpolant_.rho_coefficients();
+    }
+    /// @brief rejects scalar references escaping a temporary field
+    void rho_coefficients() const&& = delete;
     /// @brief locates a cell and defers its native geometric interpolation using scalar shape weights
     auto operator()(const InputType& x) const& { return interpolant_(x); }
     /// @brief rejects expressions that would borrow an expiring coefficient owner

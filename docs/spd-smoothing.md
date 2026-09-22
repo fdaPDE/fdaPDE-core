@@ -1,4 +1,4 @@
-# Native LE/AIRM smoothing kernels
+# Native LE/AIRM/C-LE smoothing kernels
 
 Include `fdaPDE/geometric_finite_elements.h` for the Eigen-free objective kernels
 and trust-region solver. Include `fdaPDE/geometric_finite_elements_fem.h` to
@@ -108,4 +108,77 @@ the objective, model-specific whitening, fitting workflow, model selection and
 CV using the reusable core tools. The core supplies native matrix storage and
 caches, geometries, FEM operators, objective contributions, derivatives and
 generic optimizers; it does not own smoothing model classes or a model fit API.
-The fdaPDE-cpp model integration and C-LE/rho optimization are separate work.
+The fdaPDE-cpp model integration and rho optimization for uniqueness are separate work.
+
+
+## C-LE with variable rho
+
+`manifold::CheegerLogEuclideanSPDGeometry<Scalar, n, Usage>` supports fixed
+orders `n >= 2` and dynamic order. Matrix data and selections use `MatrixBatch`;
+node logarithms, rotation logarithms and derivative factorizations are reused
+within each objective evaluation. SPD(2) retains its scalar pair search and
+SO(2)/SO(3) use specialized rotation differentials. Higher orders use the native
+general rotation machinery. See [interpolation](cheeger-interpolation.md) for
+the local multistart solver's convergence and uniqueness limitations.
+
+```cpp
+using Geometry = manifold::CheegerLogEuclideanSPDGeometry<
+  double, 3, Usage::InterpolationNodes>;
+Geometry geometry;
+// rho_global follows global scalar DOFs; rho_local follows local_nodes
+const auto data = gfe::p1_cheeger_frobenius_data_site_log_contribution(
+  geometry, local_nodes, barycentric_weights, observation, {}, rho_local);
+const auto penalty = gfe::p1_cheeger_discrete_tension_log_contribution(
+  geometry, nodes, stencil, rho_global);
+```
+
+The data loss remains `0.5 * ||I(P,w,rho) - D||_F^2`. Interpolation uses
+`rho(x) = sum_j w_j rho_j`. Vertices and open edges use only active support,
+while inputs are validated for every supplied node. The FEM bridge exposes
+`gfe::p1_fem_barycentric_weights(space, cell_id, point)` to obtain normalized
+weights with stable roundoff-sized boundary support. Native field evaluation
+uses the same inverse-cell map and support handling.
+
+The discrete tension uses **rho at the base node**, in both logarithm and norm:
+
+\[
+ r_i=\sum_{j\ne i}K_{ij}\operatorname{Log}^{\rho_i}_{P_i}(P_j),
+ \qquad E(P,\rho)=\frac12\sum_i\frac{\|r_i\|_{P_i,\rho_i}^2}{m_i}.
+\]
+
+This recovers the previous constant-rho penalty when all coefficients agree.
+It is the specified discrete nodal objective; it does not add spatial
+`grad(rho)` terms from a different continuum variational model.
+
+Both kernels return `P1CheegerLogContributionResult`:
+
+- `value` and inherited convergence diagnostics
+- `nodal_gradient`: **Frobenius covectors in matrix-log coordinates**, not the
+  ambient Riemannian gradients returned by the LE/AIRM APIs
+- `rho_gradient`: ordinary scalar partial derivatives with respect to each
+  supplied nodal rho coefficient, in the same node order
+
+For `X_i = log(P_i)`, the variation is
+`dE = sum_i <nodal_gradient[i], dX_i>_F + rho_gradient[i] * drho_i`.
+A packed symmetric gradient therefore uses twice the stored off-diagonal
+coefficient. Gradients are analytic implicit/adjoint derivatives; the core
+kernels do not finite-difference the objective. For a tied or singular branch,
+derivatives throw `domain_error`; a nonconverged data mean sets `first_failure`.
+Callers must reject either outcome, never use a partial objective.
+
+An omitted rho span uses constant `geometry.rho()`, but `rho_gradient` still
+contains the derivatives of independent nodal coefficients at those equal
+values. Their sum gives the derivative of a single shared rho parameter.
+All rho values must be positive and finite. Passing a new span changes rho on
+the next evaluation. `GeometricFeFunction::set_rho()` updates prediction fields
+without rebuilding spatial plans or matrix caches; retained metric-dependent
+linearizations must be rebuilt. A function override does not mutate the space
+or automatically change spans passed separately to objective kernels. The
+fdaPDE-cpp fit owns and coordinates that state. No optimizer selecting rho for
+uniqueness is implemented.
+
+The copied TSPDE fit probe was checked with C-LE and variable nodal rho: its
+assembled analytic gradient agreed with central differences, the initial fit
+converged, and a second fit converged after replacing rho while retaining the
+previous fitted tensors. This is verification of the reusable kernels, not a
+core smoothing model or a performance benchmark against the previous driver.
