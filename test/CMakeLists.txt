@@ -35,3 +35,9 @@ add_test(NAME fdapde_test
 
 include(GoogleTest)
 gtest_discover_tests(fdapde_test)
+
+# verify dependent extent types and column views with the configured compiler
+add_executable(mdarray_type_check mdarray_type_check.cpp)
+target_link_libraries(mdarray_type_check Eigen3::Eigen)
+target_compile_options(mdarray_type_check PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-UNDEBUG>)
+add_test(NAME mdarray_type_check COMMAND mdarray_type_check)

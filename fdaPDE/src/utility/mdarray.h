@@ -200,9 +200,19 @@ template <int... Extents> class MdExtents {
     std::array<index_t, Order> extents_ {(Extents == Dynamic ? 0 : Extents)...};
 };
 
+namespace internals {
+
+/** @brief builds all-dynamic extents from the indices of each dimension */
+template <typename Sequence> struct full_dynamic_extent;
+/** @brief maps one sequence index to one dynamic dimension */
+template <int... Ns> struct full_dynamic_extent<std::integer_sequence<int, Ns...>> {
+    using type = MdExtents<((void)Ns, Dynamic)...>;
+};
+
+}   // namespace internals
+
 template <int N>
-using full_dynamic_extent_t = std::decay_t<decltype(internals::apply_index_pack<N>(
-  []<int... Ns_> { return MdExtents<((void)Ns_, Dynamic)...> {Ns_...}; }))>;
+using full_dynamic_extent_t = typename internals::full_dynamic_extent<std::make_integer_sequence<int, N>>::type;
 
 namespace internals {
 
