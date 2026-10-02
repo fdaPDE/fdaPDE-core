@@ -435,13 +435,7 @@ template <typename Scalar_> class SparseMatrix {
     static constexpr Index missing_ = -1;
 
     template <typename XprType_>
-    static constexpr bool has_plain_dense_storage_ = [] {
-        using XprType = std::remove_cvref_t<XprType_>;
-        return std::same_as<
-                 XprType, Matrix<typename XprType::Scalar, XprType::Rows, XprType::Cols, XprType::StorageOrder>> ||
-               std::same_as<
-                 XprType, MatrixView<typename XprType::Scalar, XprType::Rows, XprType::Cols, XprType::StorageOrder>>;
-    }();
+    static constexpr bool has_plain_dense_storage_ = internals::has_plain_dense_storage_v<XprType_>;
 
     /// @brief adds coefficients and rejects integral overflow before evaluating the sum
     template <typename Value> static Value add_(const Value& lhs, const Value& rhs) {

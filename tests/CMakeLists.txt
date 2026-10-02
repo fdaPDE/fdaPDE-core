@@ -78,6 +78,7 @@ endif()
 set(dense_sources
   linear_algebra/block.cpp
   linear_algebra/bool.cpp
+  linear_algebra/contiguous_assignment.cpp
   linear_algebra/diagonal.cpp
   linear_algebra/evd.cpp
   linear_algebra/historical_boolean.cpp
@@ -182,4 +183,13 @@ if(NOT FDAPDE_NATIVE_ONLY)
   fdapde_configure_target(fdapde_sparse_header_order_test)
   target_link_libraries(fdapde_sparse_header_order_test PRIVATE Eigen3::Eigen)
   add_test(NAME SparseHeaderOrder COMMAND fdapde_sparse_header_order_test)
+endif()
+
+# time optimized public calls with active correctness checks in the benchmark driver
+add_executable(fdapde_simd_benchmark EXCLUDE_FROM_ALL benchmarks/simd.cpp)
+fdapde_configure_target(fdapde_simd_benchmark)
+target_include_directories(fdapde_simd_benchmark SYSTEM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_compile_definitions(fdapde_simd_benchmark PRIVATE FDAPDE_NO_DEBUG)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(fdapde_simd_benchmark PRIVATE -ffp-contract=off)
 endif()

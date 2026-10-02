@@ -75,10 +75,32 @@ template <typename Scalar> struct identity_matrix_functor {
 
 }   // namespace internals
 
+/// @brief owns contiguous dense coefficient storage
+template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_> class Matrix;
+
 /// @brief views externally owned dense storage
 template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_> class MatrixView;
 
 namespace internals {
+
+/// @brief identifies ordinary dense owners and views whose coefficients occupy contiguous storage
+template <typename XprType_>
+inline constexpr bool has_plain_dense_storage_v = [] {
+    using XprType = std::remove_cvref_t<XprType_>;
+    if constexpr (matrix_expression<XprType> && requires {
+                      typename XprType::Scalar;
+                      XprType::Rows;
+                      XprType::Cols;
+                      XprType::StorageOrder;
+                  }) {
+        return std::same_as<
+                 XprType, Matrix<typename XprType::Scalar, XprType::Rows, XprType::Cols, XprType::StorageOrder>> ||
+               std::same_as<
+                 XprType, MatrixView<typename XprType::Scalar, XprType::Rows, XprType::Cols, XprType::StorageOrder>>;
+    } else {
+        return false;
+    }
+}();
 
 // cRTP writable constraints can form before MatrixView's inherited ReadOnly member is visible
 /// @brief identifies a view whose scalar type permits writes
@@ -185,6 +207,21 @@ struct generic_assignment_executor {
                   "matrix assignment requires matching shapes");
             }
         }
+        // a flat loop exposes contiguous coefficients independently of short matrix axes
+        if constexpr (has_plain_dense_storage_v<DstMatrixType>) {
+            if constexpr (std::is_arithmetic_v<SrcXprType>) {
+                auto* dst_data = dst.data();
+                for (int i = 0, size = dst.size(); i < size; ++i) { op(dst_data[i], src); }
+                return;
+            } else if constexpr (has_plain_dense_storage_v<SrcXprType>) {
+                if constexpr (DstMatrixType::StorageOrder == SrcXprType::StorageOrder) {
+                    auto* dst_data = dst.data();
+                    const auto* src_data = src.data();
+                    for (int i = 0, size = dst.size(); i < size; ++i) { op(dst_data[i], src_data[i]); }
+                    return;
+                }
+            }
+        }
         const int rows_ = dst.rows();
         const int cols_ = dst.cols();
         auto fetch = [](const SrcXprType& src, [[maybe_unused]] int i, [[maybe_unused]] int j) -> decltype(auto) {
@@ -235,14 +272,35 @@ struct vector_assignment_executor {
             }
         }
         const int size_ = dst.size();
+        if constexpr (has_plain_dense_storage_v<DstMatrixType>) {
+            if constexpr (std::is_arithmetic_v<SrcXprType>) {
+                auto* dst_data = dst.data();
+                for (int i = 0; i < size_; ++i) { op(dst_data[i], src); }
+                return;
+            } else if constexpr (has_plain_dense_storage_v<SrcXprType>) {
+                auto* dst_data = dst.data();
+                const auto* src_data = src.data();
+                for (int i = 0; i < size_; ++i) { op(dst_data[i], src_data[i]); }
+                return;
+            }
+        }
         auto fetch = [](const SrcXprType& src, [[maybe_unused]] int i) -> decltype(auto) {
             if constexpr (std::is_arithmetic_v<SrcXprType>) {
                 return src;
+            } else if constexpr (SrcXprType::Rows == 1) {
+                return src(0, i);
+            } else if constexpr (SrcXprType::Cols == 1) {
+                return src(i, 0);
             } else {
                 return src.rows() == 1 ? src(0, i) : src(i, 0);
             }
         };
-        for (int i = 0; i < size_; ++i) { op(dst[i], fetch(src, i)); }
+        if constexpr (has_plain_dense_storage_v<DstMatrixType>) {
+            auto* dst_data = dst.data();
+            for (int i = 0; i < size_; ++i) { op(dst_data[i], fetch(src, i)); }
+        } else {
+            for (int i = 0; i < size_; ++i) { op(dst[i], fetch(src, i)); }
+        }
         return;
     }
 };

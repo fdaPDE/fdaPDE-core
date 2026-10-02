@@ -1,0 +1,92 @@
+# SIMD in native dense assignment
+
+Native assignment uses the compiler's loop vectorizer within the C++20 API.
+Ordinary `Matrix` and `MatrixView` storage can use a flat coefficient loop:
+
+- scalar broadcasting uses contiguous destination storage;
+- same-layout dense matrix copies and updates use contiguous source and destination storage;
+- vector copies use physical coefficient order independently of row/column orientation.
+
+The executor captures storage pointers before the loop, avoiding repeated stride
+loads and making short matrix axes independent of SIMD lane width. Fixed storage
+still supports constant evaluation. External storage requires only the scalar's
+normal alignment. Compiler-generated remainder loops handle odd coefficient counts.
+
+Shape checks retain their existing assertion policy. Expression assignments still
+materialize a source snapshot before writing the destination, preserving overlapping
+views and self assignment. Blocks, mixed matrix layouts, structured storage and
+arbitrary expressions retain coordinate evaluation where contiguous access does not
+apply. Dense and sparse kernels share the exact owner/view storage classification;
+packed Boolean and structured storage do not qualify for the flat path.
+
+## Reproduce the pilot
+
+The benchmark times public scaling for owning vectors, row-major matrices with
+three columns, column-major matrices with three rows, and external views. Affine
+assignments cover vectors, row-major matrices and external views. It reports the
+median of five rounds in nanoseconds per call.
+Every output coefficient is checked against scalar arithmetic, including in builds
+with `NDEBUG`. Affine inputs occupy distinct allocations and public source snapshots
+remain part of the measured time.
+
+From the repository root, build the opt-in CMake target in Release:
+
+```sh
+cmake -S tests -B build/simd -DCMAKE_BUILD_TYPE=Release -DFDAPDE_NATIVE_ONLY=ON
+cmake --build build/simd --target fdapde_simd_benchmark
+./build/simd/fdapde_simd_benchmark
+```
+
+The target disables internal debug assertions for timing and keeps its own driver
+checks active. System-header treatment avoids warnings about assertion-erased
+parameters while keeping warnings enabled for the benchmark source. Floating-point
+contraction is disabled for GCC/Clang to make scalar reference comparisons exact.
+
+A standalone build requires only a C++20 compiler and the native headers:
+
+```sh
+c++ -std=c++20 -O3 -DNDEBUG -DFDAPDE_NO_DEBUG -ffp-contract=off \
+  -I. tests/benchmarks/simd.cpp -o /tmp/fdapde-simd-benchmark
+/tmp/fdapde-simd-benchmark
+```
+
+Inspect generated vector loops using Clang's `-Rpass=loop-vectorize` and
+`-Rpass-missed=loop-vectorize`, or GCC's `-fopt-info-vec-optimized` and
+`-fopt-info-vec-missed`. Clang's `-fno-vectorize -fno-slp-vectorize` or GCC's
+`-fno-tree-vectorize` can help distinguish compiler vectorization from other
+changes. Compare the same benchmark source and flags against the merged dependency
+baseline; public snapshot costs make raw-pointer loops a different workload.
+
+## Pilot observations
+
+Measured on an Apple M3 Max (ARM64) against dependency baseline `9f83f60`,
+using the same benchmark source and `-O3 -DNDEBUG -DFDAPDE_NO_DEBUG
+-ffp-contract=off`. Two sequential comparison batches used opposite execution
+orders after compiler jobs finished. Ranges span the two paired median ratios,
+not a statistical confidence interval. A ratio above one is faster.
+
+| Compiler | Public workload | Coefficients | Baseline / contiguous path |
+| --- | --- | ---: | ---: |
+| Clang 17.0.6 | vector scaling | 12,288 | 2.26–3.04× |
+| Clang 17.0.6 | three-column matrix scaling | 12,288 | 4.66–6.08× |
+| Clang 17.0.6 | matrix affine assignment | 393,216 | 1.41–1.43× |
+| AppleClang 21.0.0 | three-column matrix scaling | 12,288 | 1.97–2.05× |
+| AppleClang 21.0.0 | matrix affine assignment | 393,216 | 1.38–1.40× |
+| AppleClang 21.0.0 | vector scaling | 393,216 | 0.84–0.97× |
+
+Clang 17 emits packed double arithmetic for vector-reference scaling with the
+contiguous path; the baseline missed that vectorization. AppleClang 21 already
+vectorizes baseline vectors. Its large-vector scaling timings were slower in
+these runs, while the main SIMD load/multiply/store loop is unchanged. The
+results establish a benefit for short-axis matrices on this machine and do not
+establish a universal improvement across workloads or CPUs.
+
+Both Clang and GCC 15 passed 108 registered tests, all public-header targets,
+and 16 expected compile failures. Tests keep debug assertions enabled; the
+benchmark verifies every coefficient with explicit release checks. GCC's macOS
+GoogleTest build used the temporary SDK compatibility flag
+`-D_Static_assert=static_assert` without changing library sources.
+
+Timing logs, compiler remarks, LLVM IR and validation logs are retained locally
+under `output/simd/`. The same benchmark can be compiled against headers from
+`9f83f60` to reproduce the comparison with the merged PR dependencies.
