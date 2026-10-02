@@ -42,6 +42,9 @@ fi
 require_tool() {
     if ! command -v "$1" >/dev/null; then
         export FDAPDE_SIMD_PREFLIGHT_ERROR="required program missing from PATH: $1"
+        if [[ "$1" == */* ]]; then
+            export FDAPDE_SIMD_PREFLIGHT_ERROR="required executable missing or not executable: $1"
+        fi
         echo "$FDAPDE_SIMD_PREFLIGHT_ERROR" >&2
         exit 127
     fi
@@ -89,6 +92,7 @@ require_tool "$CXX"
 CXX=$(command -v "$CXX")
 CXX=$(python3 -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$CXX")
 export CXX FDAPDE_GTEST_SOURCE="$gtest_source" FDAPDE_GTEST_REVISION="$revision"
+export SIMD_CMAKE=${SIMD_CMAKE:-cmake} SIMD_CTEST=${SIMD_CTEST:-ctest}
 export SIMD_CPUS=${SIMD_CPUS:-4} SIMD_QUEUE=${SIMD_QUEUE:-test}
 export SIMD_MEM=${SIMD_MEM:-32gb} SIMD_WALLTIME=${SIMD_WALLTIME:-72:00:00}
 export SIMD_PAIRS=${SIMD_PAIRS:-3} SIMD_ROUNDS=${SIMD_ROUNDS:-5} SIMD_LARGE_ROUNDS=${SIMD_LARGE_ROUNDS:-1}
@@ -99,7 +103,10 @@ export SIMD_PRODUCT_SIZES=${SIMD_PRODUCT_SIZES:-3,8,16,32,64,128,256,384,512,768
 
 if [[ "$action" == submit ]]; then
     require_tool qsub
-    for tool in cmake ctest taskset git; do require_tool "$tool"; done
+    for tool in "$SIMD_CMAKE" "$SIMD_CTEST" taskset git; do require_tool "$tool"; done
+    # keep the selected build tools when the compute-node profiles change PATH
+    SIMD_CMAKE=$(python3 -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$(command -v "$SIMD_CMAKE")")
+    SIMD_CTEST=$(python3 -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$(command -v "$SIMD_CTEST")")
     [[ -f "$gtest_source/CMakeLists.txt" ]] || { echo "run prepare first, or set FDAPDE_GTEST_SOURCE" >&2; exit 2; }
     run_dir=${1:-"$root/output/simd/kami/$(date -u +%Y%m%dT%H%M%SZ)-$(git -C "$root" rev-parse --short HEAD)"}
     run_dir=$(python3 -c 'import pathlib,sys; print(pathlib.Path(sys.argv[1]).resolve())' "$run_dir")
@@ -165,6 +172,8 @@ metadata=json.loads(path.read_text()) if path.exists() else {}
 metadata.setdefault('job_id',os.environ.get('PBS_JOBID'))
 metadata.setdefault('hostname',platform.node())
 metadata.setdefault('compiler',os.environ.get('CXX'))
+metadata.setdefault('cmake',os.environ.get('SIMD_CMAKE'))
+metadata.setdefault('ctest',os.environ.get('SIMD_CTEST'))
 if os.environ.get('FDAPDE_SIMD_PREFLIGHT_ERROR'):
     metadata['error']=os.environ['FDAPDE_SIMD_PREFLIGHT_ERROR']
 metadata.update(stage=sys.argv[2],exit_code=int(sys.argv[3]),status='complete' if sys.argv[3]=='0' else 'failed',finished_utc=datetime.datetime.now(datetime.timezone.utc).isoformat())
@@ -192,7 +201,7 @@ trap finish EXIT
 trap 'exit 143' TERM
 trap 'exit 130' INT
 
-for tool in cmake ctest taskset git; do require_tool "$tool"; done
+for tool in "$SIMD_CMAKE" "$SIMD_CTEST" taskset git; do require_tool "$tool"; done
 [[ -f "$gtest_source/CMakeLists.txt" ]] || { echo "cached GoogleTest source is missing" >&2; exit 2; }
 cd -- "$root"
 [[ -z "${FDAPDE_SIMD_EXPECTED_COMMIT:-}" || "$(git rev-parse HEAD)" == "$FDAPDE_SIMD_EXPECTED_COMMIT" ]] || {
@@ -225,7 +234,7 @@ hardware={'platform':platform.platform(),'hostname':platform.node(),'allowed_cpu
 import shutil
 if shutil.which('lscpu'): hardware['lscpu']=output(['lscpu'])
 (run/'hardware.json').write_text(json.dumps(hardware,indent=2)+'\n')
-metadata={'git_commit':output(['git','rev-parse','HEAD']),'git_branch':output(['git','branch','--show-current']),'git_dirty':bool(output(['git','status','--porcelain','--untracked-files=no'])),'job_id':os.environ['PBS_JOBID'],'hostname':platform.node(),'compiler':os.environ['CXX'],'compiler_version':output([os.environ['CXX'],'--version']),'googletest_source':os.environ['FDAPDE_GTEST_SOURCE'],'googletest_declared_revision':os.environ['FDAPDE_GTEST_REVISION'],'started_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'status':'running','stage':'preflight','affinity_cpu':cpu,'cache_bytes':threshold,'parameters':{k:v for k,v in os.environ.items() if k.startswith('SIMD_')},'tests':[],'plots':'unavailable'}
+metadata={'git_commit':output(['git','rev-parse','HEAD']),'git_branch':output(['git','branch','--show-current']),'git_dirty':bool(output(['git','status','--porcelain','--untracked-files=no'])),'job_id':os.environ['PBS_JOBID'],'hostname':platform.node(),'compiler':os.environ['CXX'],'compiler_version':output([os.environ['CXX'],'--version']),'cmake':os.environ['SIMD_CMAKE'],'cmake_version':output([os.environ['SIMD_CMAKE'],'--version']),'ctest':os.environ['SIMD_CTEST'],'ctest_version':output([os.environ['SIMD_CTEST'],'--version']),'googletest_source':os.environ['FDAPDE_GTEST_SOURCE'],'googletest_declared_revision':os.environ['FDAPDE_GTEST_REVISION'],'started_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'status':'running','stage':'preflight','affinity_cpu':cpu,'cache_bytes':threshold,'parameters':{k:v for k,v in os.environ.items() if k.startswith('SIMD_')},'tests':[],'plots':'unavailable'}
 (run/'job-metadata.json').write_text(json.dumps(metadata,indent=2)+'\n')
 (run/'affinity-cpu.txt').write_text(str(cpu)+'\n'); (run/'cache-bytes.txt').write_text(str(threshold)+'\n')
 PY
@@ -243,24 +252,24 @@ for mode in off assignment product all; do
     [[ "$mode" == product || "$mode" == all ]] && product=1
     set_stage "tests-$mode"
     build_dir="$run_dir/tests-$mode"
-    cmake -S "$root/tests" -B "$build_dir" -DCMAKE_CXX_COMPILER="$CXX" -DCMAKE_BUILD_TYPE=Release \
+    "$SIMD_CMAKE" -S "$root/tests" -B "$build_dir" -DCMAKE_CXX_COMPILER="$CXX" -DCMAKE_BUILD_TYPE=Release \
         -DFDAPDE_NATIVE_ONLY=ON -DFETCHCONTENT_SOURCE_DIR_GOOGLETEST="$gtest_source" -DFETCHCONTENT_FULLY_DISCONNECTED=ON \
         "-DCMAKE_CXX_FLAGS=-DFDAPDE_ENABLE_SIMD_ASSIGNMENT=$assignment -DFDAPDE_ENABLE_SIMD_PRODUCT=$product" > "$run_dir/$stage-configure.log" 2>&1
-    cmake --build "$build_dir" --parallel "$SIMD_CPUS" > "$run_dir/$stage-build.log" 2>&1
+    "$SIMD_CMAKE" --build "$build_dir" --parallel "$SIMD_CPUS" > "$run_dir/$stage-build.log" 2>&1
     test_status=0
-    ctest --test-dir "$build_dir" --output-on-failure --no-tests=error -j "$SIMD_CPUS" > "$run_dir/$stage.log" 2>&1 || test_status=$?
+    "$SIMD_CTEST" --test-dir "$build_dir" --output-on-failure --no-tests=error -j "$SIMD_CPUS" > "$run_dir/$stage.log" 2>&1 || test_status=$?
     record_tests "$mode" "$test_status"
     (( test_status == 0 )) || exit "$test_status"
 done
 
 set_stage sanitizers
-cmake -S "$root/tests" -B "$run_dir/tests-sanitizers" -DCMAKE_CXX_COMPILER="$CXX" -DCMAKE_BUILD_TYPE=Debug \
+"$SIMD_CMAKE" -S "$root/tests" -B "$run_dir/tests-sanitizers" -DCMAKE_CXX_COMPILER="$CXX" -DCMAKE_BUILD_TYPE=Debug \
     -DFDAPDE_NATIVE_ONLY=ON -DFETCHCONTENT_SOURCE_DIR_GOOGLETEST="$gtest_source" -DFETCHCONTENT_FULLY_DISCONNECTED=ON \
     '-DCMAKE_CXX_FLAGS=-DFDAPDE_ENABLE_SIMD=1 -fsanitize=address,undefined -fno-omit-frame-pointer' > "$run_dir/sanitizers-configure.log" 2>&1
-cmake --build "$run_dir/tests-sanitizers" --target fdapde_dense_test --parallel "$SIMD_CPUS" > "$run_dir/sanitizers-build.log" 2>&1
+"$SIMD_CMAKE" --build "$run_dir/tests-sanitizers" --target fdapde_dense_test --parallel "$SIMD_CPUS" > "$run_dir/sanitizers-build.log" 2>&1
 test_status=0
 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 ASAN_OPTIONS=detect_leaks=1 \
-    ctest --test-dir "$run_dir/tests-sanitizers" --output-on-failure --no-tests=error -R '^Contiguous(Assignment|Product)\.' \
+    "$SIMD_CTEST" --test-dir "$run_dir/tests-sanitizers" --output-on-failure --no-tests=error -R '^Contiguous(Assignment|Product)\.' \
     > "$run_dir/sanitizers.log" 2>&1 || test_status=$?
 record_tests 'asan+ubsan' "$test_status"
 (( test_status == 0 )) || exit "$test_status"

@@ -25,7 +25,10 @@ receive no launcher arguments; optional unset variables are permitted while they
 load. `SIMD_KAMI_ENV_DIR` can select another directory containing these two files.
 The script then resolves and records the compiler path and version. Submission
 checks `cmake`, `ctest`, `taskset` and `git` before calling `qsub`; a missing program
-is named explicitly both on the login and in the compute-node log.
+is named explicitly both on the login and in the compute-node log. The selected
+CMake and CTest executables are resolved to absolute paths before `qsub` and used
+unchanged in the worker. A compute node must have access to those paths; a
+missing executable is recorded explicitly in the partial report.
 
 The native lane does not require BLAS or Eigen. It builds every test registered
 by `tests/CMakeLists.txt` with `FDAPDE_NATIVE_ONLY=ON`; Eigen-dependent caller and
@@ -92,6 +95,19 @@ is already available, set `FDAPDE_GTEST_SOURCE` to its absolute source directory
 before preparing and submitting. Use the same pinned revision. The compute job
 passes it to CMake through `FETCHCONTENT_SOURCE_DIR_GOOGLETEST` and builds offline.
 
+If the login has CMake in `/usr/bin` but the compute node does not, select an
+already installed CMake/CTest pair in a shared directory before submission. For
+an installed Spack package, use its unique hash from `spack find -p cmake`:
+
+```sh
+kami_cmake_dir=$(spack location -i /YOUR_INSTALLED_CMAKE_HASH)
+export SIMD_CMAKE="$kami_cmake_dir/bin/cmake"
+export SIMD_CTEST="$kami_cmake_dir/bin/ctest"
+bash tests/benchmarks/kami_simd.sh submit
+```
+
+This uses an existing installation without installing or downloading build tools.
+
 `submit` creates a unique output directory named with UTC time and the short Git
 revision below `output/simd/kami/`, generates the PBS job, and prints the submitted
 job identifier and output path. Keep those values for monitoring and retrieval.
@@ -115,6 +131,8 @@ Resource and sweep settings can be exported before submission:
 | Variable | Default / role |
 | --- | --- |
 | `CXX` | compiler executable selected after loading the profiles; `g++` if unset |
+| `SIMD_CMAKE` | CMake executable name or path; `cmake` if unset, pinned at submission |
+| `SIMD_CTEST` | matching CTest executable name or path; `ctest` if unset, pinned at submission |
 | `SIMD_KAMI_ENV_DIR` | directory containing `kami-vars.sh` and `kami-load.sh`; user home by default |
 | `FDAPDE_GTEST_SOURCE` | optional existing source directory for the pinned GoogleTest revision |
 | `SIMD_QUEUE` | `test` |
@@ -175,6 +193,8 @@ python3 tests/benchmarks/check_kami_environment.py
 
 This checks the profile order, argument isolation, tool resolution and explicit
 missing-tool diagnostics using a temporary source cache and scheduler stubs.
+It also checks that the worker uses the selected build tools when its `PATH`
+contains neither `cmake` nor `ctest`.
 
 The worker builds and runs the complete native CTest lane in four configurations:
 `A0P0`, `A1P0`, `A0P1`, and `A1P1`. Debug assertions remain enabled for these tests.

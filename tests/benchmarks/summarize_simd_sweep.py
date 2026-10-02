@@ -232,6 +232,7 @@ def render(datasets, job, hardware, provenance_errors):
              "I risultati descrivono questi dati e le condizioni registrate; non stabiliscono prestazioni universali.", "",
              "## Job, Git e verifiche", ""]
     job_keys = ("git_commit", "git_branch", "git_dirty", "job_id", "hostname", "compiler", "compiler_version",
+                "cmake", "cmake_version", "ctest", "ctest_version",
                 "started_utc", "finished_utc", "status", "stage", "exit_code", "error", "affinity_cpu", "cache_bytes", "plots",
                 "googletest_source", "googletest_declared_revision")
     lines += table((key, job.get(key)) for key in job_keys)

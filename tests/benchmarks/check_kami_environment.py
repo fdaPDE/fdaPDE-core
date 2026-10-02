@@ -47,7 +47,8 @@ def main():
 from pathlib import Path
 Path(os.environ['MOCK_QSUB_RECORD']).write_text(json.dumps({
     'arguments':sys.argv[1:], 'compiler':os.environ['CXX'], 'path':os.environ['PATH'],
-    'profiles':os.environ['SIMD_KAMI_ENV_DIR'], 'commit':os.environ['FDAPDE_SIMD_EXPECTED_COMMIT']}))
+    'profiles':os.environ['SIMD_KAMI_ENV_DIR'], 'commit':os.environ['FDAPDE_SIMD_EXPECTED_COMMIT'],
+    'cmake':os.environ['SIMD_CMAKE'], 'ctest':os.environ['SIMD_CTEST']}))
 print('1234.mock')
 """)
         for path in tools.iterdir():
@@ -60,7 +61,7 @@ export MOCK_PROFILE_ORDER=vars CXX=mock-cxx FDAPDE_GTEST_SOURCE="$MOCK_CACHE"
 export PATH="$MOCK_TOOLS:$PATH"
 """)
         trace, record = work / "trace", work / "qsub.json"
-        env = os.environ | {"PATH": str(utilities), "SIMD_KAMI_ENV_DIR": str(profiles),
+        env = {key: value for key, value in os.environ.items() if not key.startswith("SIMD_")} | {"PATH": str(utilities), "SIMD_KAMI_ENV_DIR": str(profiles),
                             "MOCK_CACHE": str(cache), "MOCK_TOOLS": str(tools),
                             "MOCK_TRACE": str(trace), "MOCK_QSUB_RECORD": str(record)}
         for name in ("MOCK_UNDEFINED", "PBS_JOBID", "FDAPDE_SIMD_EXPECTED_COMMIT"):
@@ -91,6 +92,8 @@ export PATH="$MOCK_TOOLS:$PATH"
         assert received["profiles"] == str(profiles) and received["compiler"] == str(tools / "mock-cxx"), received
         # scheduler arguments must export the environment and retain the pinned checkout identity
         assert "-V" in received["arguments"] and received["commit"] == commit, received
+        # submission must preserve absolute executable paths for both build tools
+        assert received["cmake"] == str(tools / "cmake") and received["ctest"] == str(tools / "ctest"), received
         checks.append("submit_mock_scheduler_exported_environment")
 
         for name in ("cmake", "ctest", "taskset", "git"):
@@ -102,6 +105,52 @@ export PATH="$MOCK_TOOLS:$PATH"
             assert rejected.returncode == 127 and name in rejected.stderr and not record.exists(), rejected
             checks.append("submit_missing_" + name + "_before_qsub")
             (tools / (name + ".hidden")).rename(tool)
+
+        worker_tools, python_site = work / "worker-tools", work / "python-site"
+        worker_tools.mkdir(); python_site.mkdir()
+        for name in ("python3", "git", "taskset", "mock-cxx", "qsub"):
+            (worker_tools / name).symlink_to(tools / name)
+        # the fixture permits preflight hardware collection on systems without Linux affinity
+        (python_site / "sitecustomize.py").write_text("import os\nif not hasattr(os, 'sched_getaffinity'): os.sched_getaffinity = lambda pid: {0}\n")
+        (tools / "mock-cxx").write_text("#!/bin/bash\necho 'mock compiler version'\n")
+        (tools / "cmake").write_text("""#!/bin/bash
+if [[ "$1" == --version ]]; then echo 'cmake version 3.30.5'; exit; fi
+printf '%s\\n' "$*" >> "$MOCK_CMAKE_CALLS"
+""")
+        (tools / "ctest").write_text("""#!/bin/bash
+if [[ "$1" == --version ]]; then echo 'ctest version 3.30.5'; exit; fi
+printf '%s\\n' "$*" >> "$MOCK_CTEST_CALLS"
+echo '0% tests passed, 1 tests failed out of 1'
+exit 98
+""")
+        worker_env = {"MOCK_TOOLS": str(worker_tools), "SIMD_CMAKE": received["cmake"], "SIMD_CTEST": received["ctest"],
+                      "PYTHONPATH": str(python_site), "MOCK_CMAKE_CALLS": str(work / "cmake-calls"),
+                      "MOCK_CTEST_CALLS": str(work / "ctest-calls")}
+        absent = subprocess.run(["/bin/bash", "-c", "command -v cmake ctest"],
+                                env={"PATH": str(worker_tools) + os.pathsep + str(utilities)}, capture_output=True)
+        # neither build tool may be discoverable through the simulated compute-node PATH
+        assert absent.returncode != 0 and not absent.stdout, absent
+        explicit = invoke("submit", work / "shared-tools", overrides=worker_env)
+        # a shared installation selected explicitly must permit submission without PATH entries
+        assert explicit.returncode == 0 and json.loads(record.read_text())["cmake"] == received["cmake"], explicit
+        checks.append("submit_explicit_build_tools_without_path_entries")
+        pinned_dir = work / "pinned-worker"; pinned_dir.mkdir()
+        pinned = invoke("run", pinned_dir, overrides=worker_env | {"PBS_JOBID": "1234.mock"})
+        metadata = json.loads((pinned_dir / "job-metadata.json").read_text())
+        # the worker must reach CTest through the pinned paths and retain its simulated failure
+        assert pinned.returncode == 98 and metadata["stage"] == "tests-off" and metadata["tests"][0]["failed"] == 1, pinned
+        # both selected executables and their observed versions must survive report finalization
+        assert metadata["cmake"] == received["cmake"] and metadata["ctest"] == received["ctest"] and "3.30.5" in metadata["cmake_version"], metadata
+        # two CMake calls and one CTest call prove configuration, build and tests bypassed PATH lookup
+        assert len((work / "cmake-calls").read_text().splitlines()) == 2 and len((work / "ctest-calls").read_text().splitlines()) == 1, pinned
+        checks.append("worker_uses_pinned_build_tools_with_changed_path")
+        unavailable_dir = work / "unavailable-worker"; unavailable_dir.mkdir()
+        unavailable_path = str(work / "unavailable-cmake")
+        unavailable = invoke("run", unavailable_dir, overrides={"PBS_JOBID": "1234.mock", "SIMD_CMAKE": unavailable_path})
+        metadata = json.loads((unavailable_dir / "job-metadata.json").read_text())
+        # an inaccessible pinned executable must fail preflight and name the exact path in the partial summary
+        assert unavailable.returncode == 127 and metadata["cmake"] == unavailable_path and metadata["stage"] == "preflight" and unavailable_path in (unavailable_dir / "summary.md").read_text(), unavailable
+        checks.append("worker_missing_pinned_executable_reports_exact_path")
 
         (tools / "cmake").unlink()
         run_dir = work / "worker"
