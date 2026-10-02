@@ -652,7 +652,7 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
     /// @brief returns the past-the-end iterator
     constexpr const_iterator end() const { return data_.end(); }
    private:
-    /// @brief resizes dynamic storage if needed and copies source coefficients in logical coordinates
+    /// @brief resizes dynamic storage and materializes source coefficients into owned storage
     template <typename RhsXprType> constexpr void clone_(const RhsXprType& rhs) {
         if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) {
             if constexpr (Rows_ == 1 || Cols_ == 1) {
@@ -660,6 +660,10 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
             } else {
                 resize(rhs.rows(), rhs.cols());
             }
+        }
+        // product materialization writes independent storage before any public aliasing assignment
+        if constexpr (requires { rhs.try_eval_to_(*this); }) {
+            if (rhs.try_eval_to_(*this)) return;
         }
         using assignment_executor = typename Base::assignment_executor;
         assignment_executor::run(*this, rhs, [](auto&& l, const auto& r) { l = r; });

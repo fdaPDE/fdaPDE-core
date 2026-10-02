@@ -1,4 +1,4 @@
-# SIMD in native dense assignment
+# SIMD in native dense algebra
 
 Native assignment uses the compiler's loop vectorizer within the C++20 API.
 Ordinary `Matrix` and `MatrixView` storage can use a flat coefficient loop:
@@ -90,3 +90,88 @@ GoogleTest build used the temporary SDK compatibility flag
 Timing logs, compiler remarks, LLVM IR and validation logs are retained locally
 under `output/simd/`. The same benchmark can be compiled against headers from
 `9f83f60` to reproduce the comparison with the merged PR dependencies.
+
+## Native product materialization
+
+Runtime construction of an ordinary dense owner from a direct product can evaluate
+its complete output with a contiguous inner loop. The generic product executor
+uses `i-k-j` accumulation for row-major output with row-major right operands, or
+`j-k-i` accumulation for column-major output with column-major left operands.
+Each output coefficient still accumulates in increasing `k` order. There is no
+horizontal reduction, fast-math requirement, explicit ISA code or external backend.
+
+The private product hook is available only to `Matrix` materialization. Public
+assignment continues to evaluate into an independent snapshot before writing the
+destination, including overlapping views, self products and compound assignments.
+The output is explicitly initialized to zero, and empty products avoid pointer
+offsets on absent input storage.
+
+This path requires ordinary `Matrix` or `MatrixView` operands, homogeneous `float`
+or `double`, and matching output scalar/layout eligibility. Constant evaluation,
+volatile input, other scalar types, mixed precision, unfavorable layouts, nested
+expressions, blocks and structured executors retain coefficient evaluation.
+Vector orientation changes also retain their existing physical coefficient order.
+The loops are currently unblocked; cache tiling needs separate measurements on
+larger products before adding another kernel.
+
+The sparse multi-RHS inner loop already vectorizes on both tested Clang compilers.
+Reductions and solver algorithms are unchanged.
+
+Build the public product benchmark without an external algebra library:
+
+```sh
+cmake -S tests -B build/simd -DCMAKE_BUILD_TYPE=Release -DFDAPDE_NATIVE_ONLY=ON
+cmake --build build/simd --target fdapde_native_product_benchmark
+./build/simd/fdapde_native_product_benchmark
+```
+
+The benchmark includes static FEM-sized products, odd rectangular shapes, both
+storage orders, mixed layouts, `float`, `double` and unaligned external views.
+Every result is checked against an ordered scalar oracle even with `NDEBUG`;
+public assignment snapshots and allocation costs are included in the timings.
+Compare against `91be5d5` with the same benchmark source and flags. Timing logs,
+compiler remarks, sanitizer checks and review notes are retained locally under
+`output/simd/native-product/`.
+
+The same driver also builds directly against the native headers:
+
+```sh
+c++ -std=c++20 -O3 -DNDEBUG -DFDAPDE_NO_DEBUG -ffp-contract=off \
+  -isystem . tests/benchmarks/native_product.cpp -o /tmp/fdapde-native-product-benchmark
+/tmp/fdapde-native-product-benchmark
+```
+
+## Product observations
+
+Measured on the same Apple M3 Max (ARM64), against `91be5d5`, with
+`-O3 -DNDEBUG -DFDAPDE_NO_DEBUG -ffp-contract=off` and no ISA-specific options.
+The same benchmark source was used for both revisions. Each compiler ran three
+sequential baseline/current pairs in alternating process order after all build
+jobs completed. Entries are ratios of the median of three five-round process
+medians, not confidence intervals. A ratio above one is faster.
+
+| Public workload | Clang 17.0.6 | AppleClang 21.0.0 |
+| --- | ---: | ---: |
+| static double 3 × 3 | 1.090× | 1.034× |
+| static double 4 × 4 | 1.110× | 0.996× |
+| static double 10 × 10 | 1.179× | 1.119× |
+| double 128 × 128, row-major | 4.117× | 4.091× |
+| double 128 × 128, column-major | 4.113× | 4.078× |
+| float 128 × 128, row-major | 8.503× | 8.520× |
+| double 65 × 97 times 97 × 33 | 2.713× | 2.797× |
+| double 96 × 257 times 257 × 17 | 2.248× | 2.212× |
+| double 128 × 128, RCR fallback | 0.995× | 0.984× |
+| double 128 × 128, CRC assignment | 3.556× | 3.531× |
+| unaligned double views 65 × 97 times 97 × 33 | 2.674× | 2.778× |
+
+RCR and CRC list left/right/destination layouts. Public assignment materializes
+in the product layout before copying to the destination. The RCR case retains
+coefficient evaluation; no speedup is claimed for that fallback. Static FEM
+products show no material regression in these runs, including the AppleClang
+4 × 4 ratio of 0.996. These results characterize this machine and these warm
+workloads, not all platforms or cache regimes.
+
+Both AppleClang 21 and GCC 15 passed 114 registered tests and public-header
+checks; 16 intended compile failures remain verified. The six new product tests
+also passed ASan and UBSan with debug assertions enabled. GCC used the same
+temporary macOS SDK compatibility flag as the assignment pilot.

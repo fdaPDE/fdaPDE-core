@@ -174,6 +174,13 @@ template <internals::matrix_expression XprType, typename ScalarType>
     requires(std::is_arithmetic_v<ScalarType> && internals::is_owning_rvalue_expression_v<XprType &&>)
 constexpr void operator/(XprType&&, ScalarType) = delete;
 
+namespace internals {
+
+/// @brief computes dense products by coefficient or contiguous output axis
+struct generic_matrix_product_executor;
+
+}   // namespace internals
+
 // expression of the matrix-product of two MatrixExpr operands
 /// @brief evaluates a lazy matrix product through a selectable coefficient executor
 template <typename LhsXprType_, typename RhsXprType_, typename Executor>
@@ -220,6 +227,26 @@ struct MatrixMultiplicationOp : public MatrixExpr<MatrixMultiplicationOp<LhsXprT
     constexpr int rows() const { return Rows != Dynamic ? Rows : lhs_.rows(); }
     /// @brief returns the column count
     constexpr int cols() const { return Cols != Dynamic ? Cols : rhs_.cols(); }
+   private:
+    template <typename, int, int, int> friend class Matrix;
+
+    /// @brief evaluates a plain floating-point product into independent storage when its contiguous axis matches
+    template <typename DstMatrixType>
+        requires(
+          std::same_as<Executor, internals::generic_matrix_product_executor> &&
+          internals::has_plain_dense_storage_v<LhsXprType> && internals::has_plain_dense_storage_v<RhsXprType> &&
+          std::same_as<std::remove_const_t<typename LhsXprType::Scalar>, Scalar> &&
+          std::same_as<std::remove_const_t<typename RhsXprType::Scalar>, Scalar> &&
+          std::same_as<typename DstMatrixType::Scalar, Scalar> &&
+          (std::same_as<Scalar, float> || std::same_as<Scalar, double>) &&
+          ((DstMatrixType::StorageOrder == RowMajor && RhsXprType::StorageOrder == RowMajor) ||
+           (DstMatrixType::StorageOrder == ColMajor && LhsXprType::StorageOrder == ColMajor)))
+    constexpr bool try_eval_to_(DstMatrixType& dst) const {
+        // retain coordinate evaluation for constant expressions and vector orientation changes
+        if (std::is_constant_evaluated() || dst.rows() != rows() || dst.cols() != cols()) return false;
+        Executor::run(dst, lhs_, rhs_);
+        return true;
+    }
    protected:
     LhsXprTypeNested lhs_;
     RhsXprTypeNested rhs_;
@@ -230,7 +257,7 @@ namespace internals {
 
 // general dense matrix-matrix product loop
 // specialization of this template induce matrix-specific product loops
-/// @brief computes matrix product entries by row-column dot products
+/// @brief evaluates dense products by scalar dot products or contiguous output accumulation
 struct generic_matrix_product_executor {
     /// @brief computes one product entry as a dot product of a left row and a right column
     template <typename LhsXprType_, typename RhsXprType_>
@@ -241,6 +268,40 @@ struct generic_matrix_product_executor {
         Scalar prod = 0;
         for (int k = 0, size = lhs.cols(); k < size; ++k) { prod += lhs(i, k) * rhs(k, j); }
         return prod;
+    }
+
+    /// @brief accumulates a complete product across contiguous output coefficients in ascending inner-index order
+    template <typename DstMatrixType, typename LhsXprType, typename RhsXprType>
+    static constexpr void run(DstMatrixType& dst, const LhsXprType& lhs, const RhsXprType& rhs) {
+        using Scalar = typename DstMatrixType::Scalar;
+        const int rows = dst.rows();
+        const int cols = dst.cols();
+        const int inner = lhs.cols();
+        auto* dst_data = dst.data();
+        for (int i = 0, size = dst.size(); i < size; ++i) { dst_data[i] = Scalar(0); }
+        if (rows == 0 || cols == 0 || inner == 0) return;
+        const auto* lhs_data = lhs.data();
+        const auto* rhs_data = rhs.data();
+        // ponytail: keep accumulation unblocked; tile operands when larger products show a cache bottleneck
+        if constexpr (DstMatrixType::StorageOrder == RowMajor) {
+            for (int i = 0; i < rows; ++i) {
+                auto* dst_row = dst_data + i * cols;
+                for (int k = 0; k < inner; ++k) {
+                    const Scalar value = lhs_data[LhsXprType::StorageOrder == RowMajor ? i * inner + k : k * rows + i];
+                    const auto* rhs_row = rhs_data + k * cols;
+                    for (int j = 0; j < cols; ++j) { dst_row[j] += value * rhs_row[j]; }
+                }
+            }
+        } else {
+            for (int j = 0; j < cols; ++j) {
+                auto* dst_col = dst_data + j * rows;
+                for (int k = 0; k < inner; ++k) {
+                    const Scalar value = rhs_data[RhsXprType::StorageOrder == ColMajor ? j * inner + k : k * cols + j];
+                    const auto* lhs_col = lhs_data + k * rows;
+                    for (int i = 0; i < rows; ++i) { dst_col[i] += lhs_col[i] * value; }
+                }
+            }
+        }
     }
 };
 

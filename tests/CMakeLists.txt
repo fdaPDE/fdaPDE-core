@@ -79,6 +79,7 @@ set(dense_sources
   linear_algebra/block.cpp
   linear_algebra/bool.cpp
   linear_algebra/contiguous_assignment.cpp
+  linear_algebra/contiguous_product.cpp
   linear_algebra/diagonal.cpp
   linear_algebra/evd.cpp
   linear_algebra/historical_boolean.cpp
@@ -192,4 +193,13 @@ target_include_directories(fdapde_simd_benchmark SYSTEM PRIVATE "${CMAKE_CURRENT
 target_compile_definitions(fdapde_simd_benchmark PRIVATE FDAPDE_NO_DEBUG)
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(fdapde_simd_benchmark PRIVATE -ffp-contract=off)
+endif()
+
+# compare complete native products without linking an external algebra backend
+add_executable(fdapde_native_product_benchmark EXCLUDE_FROM_ALL benchmarks/native_product.cpp)
+fdapde_configure_target(fdapde_native_product_benchmark)
+target_include_directories(fdapde_native_product_benchmark SYSTEM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_compile_definitions(fdapde_native_product_benchmark PRIVATE FDAPDE_NO_DEBUG)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(fdapde_native_product_benchmark PRIVATE -ffp-contract=off)
 endif()
