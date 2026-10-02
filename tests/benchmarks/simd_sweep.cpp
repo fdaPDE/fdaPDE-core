@@ -17,6 +17,7 @@
 #include <fdaPDE/dense_linear_algebra.h>
 
 #include <algorithm>
+#include <array>
 #include <charconv>
 #include <chrono>
 #include <cstdint>
@@ -348,6 +349,42 @@ FDAPDE_BENCH_NOINLINE void construct_product(std::optional<Result>& output, cons
     output.emplace(lhs * rhs);
 }
 
+/// @brief builds the complete product oracle from periodic phases verified against increasing-k accumulation
+template <typename Scalar> std::vector<Scalar> product_reference(int rows, int inner, int cols) {
+    // guard the binary precision and accumulation range that make complete-cycle grouping exact
+    fdapde_strong_assert(
+      std::numeric_limits<Scalar>::radix == 2 && std::numeric_limits<Scalar>::digits >= 24 && inner >= 0 &&
+        inner <= (1 << 18),
+      std::invalid_argument, "product reference requires exact binary partial sums");
+    std::vector<Scalar> expected(coefficient_count(rows, cols), Scalar(0));
+    constexpr int period = 17;
+    const int cycles = inner / period, remainder = inner % period;
+    std::array<Scalar, period * period> phases {};
+    // products are p/16 with |p| <= 64, so every guarded partial sum is exactly representable
+    // complete periods can therefore be grouped without changing the ordered scalar result
+    for (int i = 0; i < period; ++i) {
+        for (int j = 0; j < period; ++j) {
+            Scalar sum17 = 0, sum_rest = 0;
+            for (int k = 0; k < period; ++k) {
+                const Scalar term = Scalar(input_value(i, k, 0)) * Scalar(input_value(k, j, 1));
+                sum17 += term;
+                if (k < remainder) sum_rest += term;
+            }
+            phases[i * period + j] = Scalar(cycles) * sum17 + sum_rest;
+            Scalar ordered = 0;
+            for (int k = 0; k < inner; ++k) { ordered += Scalar(input_value(i, k, 0)) * Scalar(input_value(k, j, 1)); }
+            // verify all 289 input phases against the full ordered accumulation even in release builds
+            fdapde_strong_assert(
+              phases[i * period + j] == ordered, std::runtime_error,
+              "periodic product reference differs from ordered scalar oracle");
+        }
+    }
+    for (int i = 0; i < rows; ++i) {
+        for (int j = 0; j < cols; ++j) expected[i * cols + j] = phases[(i % period) * period + j % period];
+    }
+    return expected;
+}
+
 /// @brief verifies every product coefficient using increasing-k scalar accumulation outside the timed calls
 template <bool Construct = false, typename Result, typename Lhs, typename Rhs>
 void product_case(const Options& options, Result output, Lhs lhs, Rhs rhs) {
@@ -355,12 +392,7 @@ void product_case(const Options& options, Result output, Lhs lhs, Rhs rhs) {
     initialize(lhs, 0);
     initialize(rhs, 1);
     const int rows = lhs.rows(), inner = lhs.cols(), cols = rhs.cols();
-    std::vector<Scalar> expected(coefficient_count(rows, cols), Scalar(0));
-    for (int i = 0; i < rows; ++i) {
-        for (int j = 0; j < cols; ++j) {
-            for (int k = 0; k < inner; ++k) expected[i * cols + j] += lhs(i, k) * rhs(k, j);
-        }
-    }
+    const auto expected = product_reference<Scalar>(rows, inner, cols);
     std::optional<Result> constructed;
     const auto samples = measure(options, [&](std::uint64_t) {
         if constexpr (Construct)

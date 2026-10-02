@@ -102,18 +102,20 @@ def calibrate(binaries, modes, suite, case, size, args):
     return repetitions, probes
 
 
-def measure(binaries, before, after, suite, case, size, index, args, raw, repetitions=None):
+def measure(binaries, before, after, suite, case, size, index, args, raw, repetitions=None, rounds=None):
     """Alternate process order and retain each verified process output verbatim."""
     if repetitions is None:
         repetitions, probes = calibrate(binaries, (before, after), suite, case, size, args)
     else:
         probes = []
+    if rounds is None:
+        rounds = args.large_rounds if probes and max(probe["median_ns"] for probe in probes) > args.max_round_ms * 1e6 else args.rounds
     pairs = []
     for pair in range(args.pairs):
         modes = (before, after) if (index + pair) % 2 == 0 else (after, before)
         pair_rows = {}
         for mode in modes:
-            result = run_json(command(binaries[mode], suite, case, size, repetitions, args.rounds), args.timeout)
+            result = run_json(command(binaries[mode], suite, case, size, repetitions, rounds), args.timeout)
             expected = MODES[mode]
             if (result["assignment"], result["product"]) != expected:
                 raise RuntimeError("binary reported unexpected loop-selection flags")
@@ -131,7 +133,7 @@ def measure(binaries, before, after, suite, case, size, index, args, raw, repeti
                     "rows": sample["rows"], "inner": sample["inner"], "cols": sample["cols"],
                     "coefficients": sample["coefficients"], "buffer_bytes": sample["buffer_bytes"],
                     "working_set_bytes": sample["working_set_bytes"], "scalar": sample["scalar"],
-                    "repetitions": repetitions, "rounds": args.rounds, "calibration": probes,
+                    "repetitions": repetitions, "rounds": rounds, "calibration": probes,
                     "lhs_order": sample["lhs_order"], "rhs_order": sample["rhs_order"],
                     "output_order": sample["output_order"], "pair_count": args.pairs,
                     "short_round": any(min(result["timings_ns"]) * repetitions < 1e6
@@ -181,6 +183,7 @@ def main():
     parser.add_argument("--sizes", help="comma-separated sizes; otherwise use the geometric suite schedule")
     parser.add_argument("--pairs", type=int, default=3)
     parser.add_argument("--rounds", type=int, default=5)
+    parser.add_argument("--large-rounds", type=int, default=1)
     parser.add_argument("--round-ms", type=float, default=25)
     parser.add_argument("--max-round-ms", type=float, default=250)
     parser.add_argument("--max-repetitions", type=int, default=5000000)
@@ -198,10 +201,10 @@ def main():
         self_test()
         return
     if args.output is None or any(value <= 0 for value in
-            (args.pairs, args.rounds, args.round_ms, args.max_round_ms, args.max_repetitions,
+            (args.pairs, args.rounds, args.large_rounds, args.round_ms, args.max_round_ms, args.max_repetitions,
              args.max_call_seconds, args.timeout, args.cache_bytes)):
         parser.error("output and positive timing/count/cache parameters are required")
-    if args.max_repetitions > 10000000 or args.rounds > 101:
+    if args.max_repetitions > 10000000 or max(args.rounds, args.large_rounds) > 101:
         parser.error("the C++ driver supports at most 10000000 repetitions and 101 rounds")
     selected_cases = args.cases.split(",") if args.cases else None
     known_cases = ASSIGNMENT_CASES + ASSIGNMENT_CONTROLS + PRODUCT_CASES + STATIC_CASES
@@ -220,6 +223,11 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     if (output / "summary.json").exists() and not args.resume and not (args.build_only and args.reuse_binaries):
         parser.error("measurement output already exists; use resume or a new output directory")
+    if args.resume and (output / "metadata.json").exists():
+        previous_arguments = json.loads((output / "metadata.json").read_text())["arguments"]
+        ignored = {"output", "resume", "reuse_binaries", "build_only", "self_test"}
+        if any(previous_arguments.get(key) != value for key, value in vars(args).items() if key not in ignored):
+            parser.error("resume requires the original case selection, size schedule and timing protocol")
     version = subprocess.run([args.compiler, "--version"], text=True, capture_output=True, check=True).stdout
     source_files = sorted((repo / "fdaPDE").rglob("*.h")) + [repo / "tests/benchmarks/simd_sweep.cpp"]
     hashes = {str(path.relative_to(repo)): hashlib.sha256(path.read_bytes()).hexdigest() for path in source_files}
@@ -307,7 +315,7 @@ def main():
                                    and item["comparison"] == f"{b}:{a}" for item in summaries):
                                 continue
                             try:
-                                extra = measure(binaries, b, a, suite, case, row["size"], sizes.index(row["size"]), args, raw, row["repetitions"])
+                                extra = measure(binaries, b, a, suite, case, row["size"], sizes.index(row["size"]), args, raw, row["repetitions"], row["rounds"])
                             except subprocess.TimeoutExpired:
                                 factorial_incomplete = True
                                 print(f"{case}: factorial process timeout at size={row['size']}", flush=True)

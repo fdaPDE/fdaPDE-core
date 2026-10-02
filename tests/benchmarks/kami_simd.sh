@@ -1,0 +1,296 @@
+#!/usr/bin/env bash
+# This file is part of fdaPDE, a C++ library for physics-informed
+# spatial and functional data analysis.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <http://www.gnu.org/licenses/>.
+
+set -euo pipefail
+root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)
+action=${1:-submit}
+if (( $# > 0 )); then shift; fi
+if (( $# > 1 )) || [[ ! "$action" =~ ^(prepare|submit|run)$ ]]; then
+    echo "usage: bash tests/benchmarks/kami_simd.sh prepare | submit [OUTPUT_DIR] | run OUTPUT_DIR" >&2
+    exit 2
+fi
+command -v python3 >/dev/null
+python3 -c 'import sys; assert sys.version_info >= (3, 9), "Python 3.9+ is required"'
+revision=$(python3 - "$root/tests/CMakeLists.txt" <<'PY'
+import re,sys
+from pathlib import Path
+text=Path(sys.argv[1]).read_text()
+print(re.search(r'FetchContent_Declare\(googletest\s+URL\s+[^\s)]+/archive/([0-9a-f]{40})\.zip',text).group(1))
+PY
+)
+gtest_source=${FDAPDE_GTEST_SOURCE:-"$root/output/simd/kami/deps/googletest-$revision"}
+gtest_source=$(python3 -c 'import pathlib,sys; print(pathlib.Path(sys.argv[1]).expanduser().resolve())' "$gtest_source")
+
+if [[ "$action" == prepare ]]; then
+    if (( $# != 0 )); then echo "prepare takes no output directory" >&2; exit 2; fi
+    python3 - "$gtest_source" "$revision" <<'PY'
+import shutil,sys,tempfile,urllib.request,zipfile
+from pathlib import Path
+source=Path(sys.argv[1]).expanduser().resolve()
+if not (source/'CMakeLists.txt').is_file():
+    if source.exists(): raise SystemExit('GoogleTest destination exists without CMakeLists.txt; choose FDAPDE_GTEST_SOURCE')
+    source.parent.mkdir(parents=True,exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='.gtest-',dir=source.parent) as work:
+        work=Path(work)
+        url='https://github.com/google/googletest/archive/'+sys.argv[2]+'.zip'
+        with urllib.request.urlopen(url,timeout=180) as response, (work/'source.zip').open('wb') as archive:
+            shutil.copyfileobj(response,archive)
+        with zipfile.ZipFile(work/'source.zip') as archive:
+            for name in archive.namelist():
+                if not (work/name).resolve().is_relative_to(work): raise SystemExit('invalid archive member')
+            archive.extractall(work)
+        unpacked=work/('googletest-'+sys.argv[2])
+        if not (unpacked/'CMakeLists.txt').is_file(): raise SystemExit('unexpected GoogleTest archive')
+        unpacked.rename(source)
+print('GoogleTest source ready: '+str(source))
+PY
+    exit
+fi
+
+export CXX=${CXX:-g++}
+CXX=$(command -v "$CXX")
+CXX=$(python3 -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$CXX")
+export CXX FDAPDE_GTEST_SOURCE="$gtest_source" FDAPDE_GTEST_REVISION="$revision"
+export SIMD_CPUS=${SIMD_CPUS:-4} SIMD_QUEUE=${SIMD_QUEUE:-test}
+export SIMD_MEM=${SIMD_MEM:-32gb} SIMD_WALLTIME=${SIMD_WALLTIME:-72:00:00}
+export SIMD_PAIRS=${SIMD_PAIRS:-3} SIMD_ROUNDS=${SIMD_ROUNDS:-5} SIMD_LARGE_ROUNDS=${SIMD_LARGE_ROUNDS:-1}
+export SIMD_MAX_CALL_SECONDS=${SIMD_MAX_CALL_SECONDS:-60} SIMD_TIMEOUT=${SIMD_TIMEOUT:-900}
+export SIMD_ASSIGNMENT_SIZES=${SIMD_ASSIGNMENT_SIZES:-9,27,99,387,1539,6147,24579,98307,393219,1572867,6291459,12582915,25165827,50331651,100663299,201326595}
+export SIMD_PRODUCT_SIZES=${SIMD_PRODUCT_SIZES:-3,8,16,32,64,128,256,384,512,768,1024,1280,1537,1793,2049,2305,2561,3073,3585,4097,5121,6145,7169,8193}
+[[ "$SIMD_CPUS" =~ ^[1-9][0-9]*$ ]] || { echo "SIMD_CPUS must be a positive integer" >&2; exit 2; }
+
+if [[ "$action" == submit ]]; then
+    command -v qsub >/dev/null
+    [[ -f "$gtest_source/CMakeLists.txt" ]] || { echo "run prepare first, or set FDAPDE_GTEST_SOURCE" >&2; exit 2; }
+    run_dir=${1:-"$root/output/simd/kami/$(date -u +%Y%m%dT%H%M%SZ)-$(git -C "$root" rev-parse --short HEAD)"}
+    run_dir=$(python3 -c 'import pathlib,sys; print(pathlib.Path(sys.argv[1]).resolve())' "$run_dir")
+    mkdir -p -- "$(dirname -- "$run_dir")"
+    mkdir -- "$run_dir"
+    python3 - "$root" "$run_dir" <<'PY'
+import shlex,sys
+from pathlib import Path
+root,run=map(Path,sys.argv[1:])
+script='#!/usr/bin/env bash\nset -euo pipefail\ncd '+shlex.quote(str(root))+'\nexec bash '+shlex.quote(str(root/'tests/benchmarks/kami_simd.sh'))+' run '+shlex.quote(str(run))+'\n'
+(run/'job.pbs').write_text(script)
+PY
+    export FDAPDE_SIMD_EXPECTED_COMMIT=$(git -C "$root" rev-parse HEAD)
+    qsub -V -N fdapde-simd -q "$SIMD_QUEUE" -l "select=1:ncpus=$SIMD_CPUS:mem=$SIMD_MEM" \
+        -l place=excl -l "walltime=$SIMD_WALLTIME" -j oe -o "$run_dir/pbs.log" "$run_dir/job.pbs" | tee "$run_dir/job-id.txt"
+    echo "results: $run_dir"
+    exit
+fi
+
+[[ -n "${PBS_JOBID:-}" ]] || { echo "run must execute inside the submitted PBS job, not on the login node" >&2; exit 2; }
+(( $# == 1 )) || { echo "run requires OUTPUT_DIR" >&2; exit 2; }
+run_dir=$(python3 -c 'import pathlib,sys; print(pathlib.Path(sys.argv[1]).resolve())' "$1")
+[[ -d "$run_dir" && ! -e "$run_dir/job-metadata.json" ]] || { echo "run directory missing or already used" >&2; exit 2; }
+exec > >(tee -a "$run_dir/job.log") 2>&1
+stage=preflight
+
+# update the live job state so logs and partial reports identify the current operation
+set_stage() {
+    stage=$1
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $stage"
+    if [[ -f "$run_dir/job-metadata.json" ]]; then
+        python3 - "$run_dir" "$stage" <<'PY_STAGE'
+import json,sys
+from pathlib import Path
+path=Path(sys.argv[1])/'job-metadata.json'; metadata=json.loads(path.read_text()); metadata['stage']=sys.argv[2]
+path.write_text(json.dumps(metadata,indent=2)+'\n')
+PY_STAGE
+    fi
+}
+
+# retain CTest's exit status and reported counts even when a test fails
+record_tests() {
+    python3 - "$run_dir" "$1" "$stage" "$2" <<'PY_TESTS'
+import json,re,sys
+from pathlib import Path
+run=Path(sys.argv[1]); match=re.search(r'(\d+)% tests passed, (\d+) tests failed out of (\d+)',(run/(sys.argv[3]+'.log')).read_text())
+path=run/'job-metadata.json'; metadata=json.loads(path.read_text())
+metadata['tests'].append({'mode':sys.argv[2],'status':'passed' if sys.argv[4]=='0' else 'failed','passed':int(match[3])-int(match[2]) if match else None,'failed':int(match[2]) if match else None,'exit_code':int(sys.argv[4]),'log':sys.argv[3]+'.log'})
+path.write_text(json.dumps(metadata,indent=2)+'\n')
+PY_TESTS
+}
+
+# preserve failed or partial runs and generate their report before leaving the PBS job
+finish() {
+    result=$?
+    trap - EXIT
+    set +e
+    python3 - "$run_dir" "$stage" "$result" <<'PY'
+import datetime,json,os,platform,sys
+from pathlib import Path
+run=Path(sys.argv[1]); path=run/'job-metadata.json'
+metadata=json.loads(path.read_text()) if path.exists() else {}
+metadata.setdefault('job_id',os.environ.get('PBS_JOBID'))
+metadata.setdefault('hostname',platform.node())
+metadata.setdefault('compiler',os.environ.get('CXX'))
+metadata.update(stage=sys.argv[2],exit_code=int(sys.argv[3]),status='complete' if sys.argv[3]=='0' else 'failed',finished_utc=datetime.datetime.now(datetime.timezone.utc).isoformat())
+path.write_text(json.dumps(metadata,indent=2)+'\n')
+PY
+    metadata_result=$?
+    if (( result == 0 && metadata_result != 0 )); then result=$metadata_result; fi
+    python3 "$root/tests/benchmarks/summarize_simd_sweep.py" "$run_dir/assignment" "$run_dir/product" \
+        --output "$run_dir/summary.md" --job-metadata "$run_dir/job-metadata.json"
+    report_result=$?
+    if (( report_result != 0 )); then
+        if (( result == 0 )); then result=$report_result; fi
+        python3 - "$run_dir" "$result" "$report_result" <<'PY_REPORT'
+import json,sys
+from pathlib import Path
+path=Path(sys.argv[1])/'job-metadata.json'; metadata=json.loads(path.read_text())
+metadata.update(status='failed',failed_stage=metadata.get('stage'),stage='summary',exit_code=int(sys.argv[2]),summary_exit_code=int(sys.argv[3]))
+path.write_text(json.dumps(metadata,indent=2)+'\n')
+PY_REPORT
+    fi
+    echo "finished: exit=$result stage=$stage results=$run_dir"
+    exit "$result"
+}
+trap finish EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
+
+for tool in cmake ctest taskset git; do command -v "$tool" >/dev/null; done
+[[ -f "$gtest_source/CMakeLists.txt" ]] || { echo "cached GoogleTest source is missing" >&2; exit 2; }
+cd -- "$root"
+[[ -z "${FDAPDE_SIMD_EXPECTED_COMMIT:-}" || "$(git rev-parse HEAD)" == "$FDAPDE_SIMD_EXPECTED_COMMIT" ]] || {
+    echo "checkout changed since submission; fetch the intended commit and submit a new run" >&2; exit 2;
+}
+python3 - "$run_dir" <<'PY'
+import datetime,json,math,os,platform,subprocess,sys
+from pathlib import Path
+for key in ('SIMD_PAIRS','SIMD_ROUNDS','SIMD_LARGE_ROUNDS'):
+    value=int(os.environ[key])
+    if value<=0 or (key!='SIMD_PAIRS' and value>101): raise SystemExit(key+' has an invalid count')
+for key in ('SIMD_MAX_CALL_SECONDS','SIMD_TIMEOUT'):
+    value=float(os.environ[key])
+    if not math.isfinite(value) or value<=0: raise SystemExit(key+' must be finite and positive')
+for key in ('SIMD_ASSIGNMENT_SIZES','SIMD_PRODUCT_SIZES'):
+    sizes=[int(v) for v in os.environ[key].split(',')]
+    if not sizes or sizes!=sorted(set(sizes)) or sizes[0]<=0: raise SystemExit(key+' must be positive, unique and increasing')
+    if key=='SIMD_ASSIGNMENT_SIZES' and any(v%3 for v in sizes): raise SystemExit(key+' requires multiples of three')
+run=Path(sys.argv[1]); allowed=sorted(os.sched_getaffinity(0)); cpu=allowed[0]
+cache=[]
+for entry in sorted(Path('/sys/devices/system/cpu/cpu'+str(cpu)+'/cache').glob('index*')):
+    cache.append({name:(entry/name).read_text().strip() for name in ('level','type','size','shared_cpu_list')})
+def cache_bytes(value):
+    units={'K':1024,'M':1024**2,'G':1024**3}
+    return int(value[:-1])*units[value[-1]] if value[-1] in units else int(value)
+threshold=int(os.environ.get('SIMD_CACHE_BYTES',max([cache_bytes(c['size']) for c in cache] or [16*1024**2])))
+if threshold<=0: raise SystemExit('SIMD_CACHE_BYTES must be positive')
+def output(args): return subprocess.check_output(args,text=True).strip()
+hardware={'platform':platform.platform(),'hostname':platform.node(),'allowed_cpus':allowed,'affinity_cpu':cpu,'cache':cache,'load_average':os.getloadavg()}
+import shutil
+if shutil.which('lscpu'): hardware['lscpu']=output(['lscpu'])
+(run/'hardware.json').write_text(json.dumps(hardware,indent=2)+'\n')
+metadata={'git_commit':output(['git','rev-parse','HEAD']),'git_branch':output(['git','branch','--show-current']),'git_dirty':bool(output(['git','status','--porcelain','--untracked-files=no'])),'job_id':os.environ['PBS_JOBID'],'hostname':platform.node(),'compiler':os.environ['CXX'],'compiler_version':output([os.environ['CXX'],'--version']),'googletest_source':os.environ['FDAPDE_GTEST_SOURCE'],'googletest_declared_revision':os.environ['FDAPDE_GTEST_REVISION'],'started_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'status':'running','stage':'preflight','affinity_cpu':cpu,'cache_bytes':threshold,'parameters':{k:v for k,v in os.environ.items() if k.startswith('SIMD_')},'tests':[],'plots':'unavailable'}
+(run/'job-metadata.json').write_text(json.dumps(metadata,indent=2)+'\n')
+(run/'affinity-cpu.txt').write_text(str(cpu)+'\n'); (run/'cache-bytes.txt').write_text(str(threshold)+'\n')
+PY
+cpu=$(cat "$run_dir/affinity-cpu.txt")
+cache_bytes=$(cat "$run_dir/cache-bytes.txt")
+export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 BLIS_NUM_THREADS=1
+export LC_ALL=C
+python3 "$root/tests/benchmarks/run_simd_sweep.py" --self-test
+python3 "$root/tests/benchmarks/summarize_simd_sweep.py" --self-test
+
+# assertions stay enabled in the native suite for every independent flag combination
+for mode in off assignment product all; do
+    assignment=0; product=0
+    [[ "$mode" == assignment || "$mode" == all ]] && assignment=1
+    [[ "$mode" == product || "$mode" == all ]] && product=1
+    set_stage "tests-$mode"
+    build_dir="$run_dir/tests-$mode"
+    cmake -S "$root/tests" -B "$build_dir" -DCMAKE_CXX_COMPILER="$CXX" -DCMAKE_BUILD_TYPE=Release \
+        -DFDAPDE_NATIVE_ONLY=ON -DFETCHCONTENT_SOURCE_DIR_GOOGLETEST="$gtest_source" -DFETCHCONTENT_FULLY_DISCONNECTED=ON \
+        "-DCMAKE_CXX_FLAGS=-DFDAPDE_ENABLE_SIMD_ASSIGNMENT=$assignment -DFDAPDE_ENABLE_SIMD_PRODUCT=$product" > "$run_dir/$stage-configure.log" 2>&1
+    cmake --build "$build_dir" --parallel "$SIMD_CPUS" > "$run_dir/$stage-build.log" 2>&1
+    test_status=0
+    ctest --test-dir "$build_dir" --output-on-failure --no-tests=error -j "$SIMD_CPUS" > "$run_dir/$stage.log" 2>&1 || test_status=$?
+    record_tests "$mode" "$test_status"
+    (( test_status == 0 )) || exit "$test_status"
+done
+
+set_stage sanitizers
+cmake -S "$root/tests" -B "$run_dir/tests-sanitizers" -DCMAKE_CXX_COMPILER="$CXX" -DCMAKE_BUILD_TYPE=Debug \
+    -DFDAPDE_NATIVE_ONLY=ON -DFETCHCONTENT_SOURCE_DIR_GOOGLETEST="$gtest_source" -DFETCHCONTENT_FULLY_DISCONNECTED=ON \
+    '-DCMAKE_CXX_FLAGS=-DFDAPDE_ENABLE_SIMD=1 -fsanitize=address,undefined -fno-omit-frame-pointer' > "$run_dir/sanitizers-configure.log" 2>&1
+cmake --build "$run_dir/tests-sanitizers" --target fdapde_dense_test --parallel "$SIMD_CPUS" > "$run_dir/sanitizers-build.log" 2>&1
+test_status=0
+UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 ASAN_OPTIONS=detect_leaks=1 \
+    ctest --test-dir "$run_dir/tests-sanitizers" --output-on-failure --no-tests=error -R '^Contiguous(Assignment|Product)\.' \
+    > "$run_dir/sanitizers.log" 2>&1 || test_status=$?
+record_tests 'asan+ubsan' "$test_status"
+(( test_status == 0 )) || exit "$test_status"
+
+set_stage benchmark-build
+for suite in assignment product; do
+    python3 "$root/tests/benchmarks/run_simd_sweep.py" --compiler "$CXX" --label kami --suite "$suite" \
+        --output "$run_dir/$suite" --build-only > "$run_dir/$suite-build.log" 2>&1
+done
+
+set_stage public-smoke
+python3 - "$root" "$run_dir" <<'PY'
+import json,sys
+from pathlib import Path
+root,run=map(Path,sys.argv[1:]); sys.path.insert(0,str(root/'tests/benchmarks'))
+import run_simd_sweep as sweep
+rows=[]
+for suite,cases in [('assignment',sweep.ASSIGNMENT_CASES+sweep.ASSIGNMENT_CONTROLS),('product',sweep.PRODUCT_CASES+sweep.STATIC_CASES)]:
+    for case in cases:
+        checksums=[]
+        for mode,flags in sweep.MODES.items():
+            size=9 if suite=='assignment' else int(case[3:]) if case in sweep.STATIC_CASES else 3
+            result=sweep.run_json(sweep.command(run/suite/('sweep-'+mode),suite,case,size,100,3),60)
+            assert (result['assignment'],result['product'])==flags, 'binary flags must match the selected mode'
+            checksums.append(result['checksum']); rows.append({'mode':mode,'result':result})
+        assert len(set(checksums))==1, 'all four flag combinations must produce the same public output'
+(run/'public-smoke.json').write_text(json.dumps({'runs':len(rows),'verified':True,'results':rows},indent=2)+'\n')
+path=run/'job-metadata.json'; metadata=json.loads(path.read_text())
+metadata['public_smoke']={'cases':len(sweep.ASSIGNMENT_CASES+sweep.ASSIGNMENT_CONTROLS+sweep.PRODUCT_CASES+sweep.STATIC_CASES),'runs':len(rows),'verified':True,'file':'public-smoke.json'}
+path.write_text(json.dumps(metadata,indent=2)+'\n')
+PY
+
+# keep all timed processes serial and on the same allowed CPU after every build has finished
+for suite in assignment product; do
+    set_stage "timing-$suite"
+    sizes=$SIMD_ASSIGNMENT_SIZES
+    [[ "$suite" == product ]] && sizes=$SIMD_PRODUCT_SIZES
+    extra=()
+    [[ "$suite" == product ]] && extra=(--factorial)
+    taskset -c "$cpu" python3 "$root/tests/benchmarks/run_simd_sweep.py" --compiler "$CXX" --label kami \
+        --suite "$suite" --sizes "$sizes" --pairs "$SIMD_PAIRS" --rounds "$SIMD_ROUNDS" --large-rounds "$SIMD_LARGE_ROUNDS" \
+        --max-call-seconds "$SIMD_MAX_CALL_SECONDS" --timeout "$SIMD_TIMEOUT" --cache-bytes "$cache_bytes" \
+        --output "$run_dir/$suite" --reuse-binaries "${extra[@]}" > "$run_dir/$suite-run.log" 2>&1
+done
+
+set_stage plots
+if command -v Rscript >/dev/null; then
+    plot_status=generated
+    for suite in assignment product; do
+        if ! Rscript "$root/tests/benchmarks/plot_simd_sweep.R" "$run_dir/$suite/summary.csv" "$run_dir/$suite/plots" \
+                > "$run_dir/$suite-plots.log" 2>&1; then plot_status=failed; fi
+    done
+    python3 - "$run_dir" "$plot_status" <<'PY'
+import json,sys
+from pathlib import Path
+path=Path(sys.argv[1])/'job-metadata.json'; metadata=json.loads(path.read_text()); metadata['plots']=sys.argv[2]
+path.write_text(json.dumps(metadata,indent=2)+'\n')
+PY
+fi
+set_stage complete

@@ -67,8 +67,13 @@ stop_caption <- function(d) {
     if (nrow(found) == 0) return("sweep in progress; no recorded plateau claim")
     found <- found[nrow(found), , drop = FALSE]
     plateau <- tolower(as.character(found$plateau_observed)) == "true"
-    paste("stop:", gsub("_", " ", found$reason), "|",
-          if (plateau) "local plateau confirmed" else "local plateau not observed")
+    note <- paste("stop:", gsub("_", " ", found$reason), "|",
+                  if (plateau) "local plateau confirmed" else "local plateau not observed")
+    if ("factorial_incomplete" %in% names(found) &&
+        isTRUE(tolower(as.character(found$factorial_incomplete)) == "true")) {
+        note <- paste(note, "| factorial anchors incomplete")
+    }
+    note
 }
 
 # show exact endpoint shapes because input size N need not equal every product dimension
@@ -83,6 +88,13 @@ shape_caption <- function(d) {
     paste(unique(shapes), collapse = "; ")
 }
 
+# place color keys in the panel margin to avoid logarithmic legend clipping
+panel_legend <- function(labels, colors) {
+    positions <- if (length(labels) == 1) 0.5 else seq(0.25, 0.75, length.out = length(labels))
+    mtext(labels, side = 3, line = 0.3, at = grconvertX(positions, from = "npc", to = "user"),
+          col = colors, cex = 0.8)
+}
+
 # log axes retain small-size overhead and memory-regime behavior on the same page
 metric_panel <- function(x, off, on, x_label, y_label, legend_labels) {
     plot(x, off, type = "n", log = "xy", ylim = range(c(off, on)) * c(0.9, 1.1),
@@ -90,8 +102,7 @@ metric_panel <- function(x, off, on, x_label, y_label, legend_labels) {
     grid(col = "#e4e4e4")
     lines(x, off, type = "o", pch = 16, col = "#444444", lwd = 1.5)
     lines(x, on, type = "o", pch = 17, col = "#0072B2", lwd = 1.5)
-    legend("top", legend_labels, inset = c(0, -0.15), xpd = NA, horiz = TRUE, col = c("#444444", "#0072B2"), pch = c(16, 17), lty = 1,
-           bty = "n", cex = 0.8)
+    panel_legend(legend_labels, c("#444444", "#0072B2"))
 }
 
 # ratios use process-pair min/max segments; secondary factorial comparisons remain discrete anchors
@@ -119,8 +130,7 @@ draw_page <- function(d) {
         if (comparison == primary_name) lines(at, curve$ratio, col = color, lwd = 1.5)
         points(at, curve$ratio, col = color, pch = ifelse(curve$short_round, 1, 16))
     }
-    legend("top", unname(comparisons[present]), inset = c(0, -0.15), xpd = NA, horiz = TRUE, col = unname(colors[present]), pch = 16,
-           lty = ifelse(present == primary_name, 1, NA), bty = "n", cex = 0.8)
+    panel_legend(unname(comparisons[present]), unname(colors[present]))
     labels <- unname(mode_labels[strsplit(primary_name, ":", fixed = TRUE)[[1]]])
     metric_panel(x, primary$off_ns, primary$on_ns, x_label, "Nanoseconds / public call", labels)
     if (assignment) {
@@ -136,7 +146,9 @@ draw_page <- function(d) {
     if (!assignment) caption <- paste("lhs/rhs/output:", d$layout[1], "|", caption)
     mtext(paste(strwrap(caption, width = 100), collapse = "\n"), outer = TRUE, side = 3, line = 0.5, cex = 0.75)
     pairs <- if ("pair_count" %in% names(d)) paste(unique(d$pair_count), collapse = "/") else "reported"
-    note <- paste("median paired ratios; segments: min-max across", pairs, "process pairs; no confidence interval")
+    rounds <- if ("rounds" %in% names(d)) paste(sort(unique(d$rounds)), collapse = "/") else "reported"
+    note <- paste("median paired ratios; segments: min-max across", pairs, "process pairs;", rounds,
+                  "timed rounds/process; no confidence interval")
     if (any(d$short_round)) note <- paste(note, "| open markers: round below 1 ms")
     if (!assignment) note <- paste(note, "| logical FLOPs=2mnk; times retain public-call overhead")
     mtext(paste(strwrap(note, width = 110), collapse = "\n"), outer = TRUE, side = 1, line = 1.4, cex = 0.7)

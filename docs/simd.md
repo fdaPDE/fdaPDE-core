@@ -207,6 +207,8 @@ temporary macOS SDK compatibility flag as the assignment pilot.
 
 ## Controlled size sweep
 
+For the exclusive PBS job workflow on Kami, see [the Kami guide](simd-kami.md).
+
 `tests/benchmarks/simd_sweep.cpp` measures public operations and verifies every
 coefficient outside the timed region, including release builds. The standard-library
 runner builds the **same source** four ways: neither optimization, assignments only,
@@ -240,13 +242,16 @@ three anchor sizes. Inputs are nonconstant binary fractions; scaling alternates
 powers of two to avoid drift. Public snapshots, copies and allocation are timed.
 
 Each point has three process pairs with alternating order; each process reports
-five timed rounds after warmup. One shared calibrated repetition count targets
+five timed rounds after warmup. When the slower calibration call already exceeds
+250 ms, `--large-rounds` selects one timed round per process instead; both sides
+use the same count and each CSV row reports it. One shared calibrated repetition count targets
 25 ms for the faster variant, caps the slower variant at 250 ms and caps repetitions
 at five million. A single large call can exceed that target. The reported ratio
 is the median of the **three paired ratios**. The minimum/maximum range is observed
 process dispersion, not a confidence interval. Raw rounds and exact build flags,
 source hashes and binary hashes are retained. `--reuse-binaries` verifies the
-manifest; `--resume` preserves completed cases and points after interruption.
+manifest; `--resume` preserves completed cases and points after interruption and requires
+the same case selection, size schedule and timing parameters.
 
 A confirmed local plateau requires four increasing sizes: three points plus a
 larger confirmation, all output buffers at least `--cache-bytes` (default 16 MiB),
@@ -257,3 +262,12 @@ per-call limit or process timeout is reached without confirmation. Cache regimes
 short rounds and regressions must remain visible in the report. Only operand
 storage is included in `working_set_bytes`; internal temporaries and the untimed
 oracle can consume additional memory.
+
+The product reference uses the benchmark input period of 17, while still checking
+all 289 phases against the complete increasing-`k` scalar sum in every process.
+Each product is an integer numerator divided by 16; `|numerator| <= 64`, and the
+reference guards `inner <= 2^18` and at least 24 binary precision bits. All partial
+sums and grouped periods are therefore exact even for `float`. Every output
+coefficient is checked against the complete allocated reference vector; its
+footprint is unchanged. This optimization only reduces **untimed verification**,
+without changing the measured public calls or the native product kernels.
