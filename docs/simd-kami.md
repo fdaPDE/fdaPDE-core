@@ -18,7 +18,14 @@ C++20 code, CMake 3.20 or later, Python 3.9 or later, Git, and Linux `taskset`.
 PBS commands `qsub`, `qstat`, and `qdel` are needed for submission and monitoring. Choose the compiler through `CXX`;
 use the compiler setup already available on Kami rather than assuming a module
 name. `CXX` must identify an executable, not a compiler command containing flags.
-The script resolves and records its path and version.
+The launcher first sources `~/kami-vars.sh`, then `~/kami-load.sh`, when readable,
+for preparation, submission and execution inside PBS. This initializes the site
+toolchain before Python, `CXX`, CMake or other programs are resolved. The profiles
+receive no launcher arguments; optional unset variables are permitted while they
+load. `SIMD_KAMI_ENV_DIR` can select another directory containing these two files.
+The script then resolves and records the compiler path and version. Submission
+checks `cmake`, `ctest`, `taskset` and `git` before calling `qsub`; a missing program
+is named explicitly both on the login and in the compute-node log.
 
 The native lane does not require BLAS or Eigen. It builds every test registered
 by `tests/CMakeLists.txt` with `FDAPDE_NATIVE_ONLY=ON`; Eigen-dependent caller and
@@ -59,14 +66,16 @@ git status --short
 
 If the local branch does not exist yet, use
 `git switch --track origin/develop-SIMD` instead of the `git switch` command above.
-Select the installed compiler before preparing the run:
+The default compiler is `g++`, resolved after loading the Kami profiles. To select
+another installed compiler, set its executable name or absolute path before
+submission:
 
 ```sh
-export CXX=/absolute/path/to/cxx
-"$CXX" --version
-cmake --version
-python3 --version
+export CXX=g++
 ```
+
+For interactive version checks, first source `~/kami-vars.sh` and `~/kami-load.sh`
+in the same order. The launcher performs this loading automatically.
 
 ## Prepare and submit
 
@@ -105,7 +114,8 @@ Resource and sweep settings can be exported before submission:
 
 | Variable | Default / role |
 | --- | --- |
-| `CXX` | compiler executable selected from the environment; `g++` if unset |
+| `CXX` | compiler executable selected after loading the profiles; `g++` if unset |
+| `SIMD_KAMI_ENV_DIR` | directory containing `kami-vars.sh` and `kami-load.sh`; user home by default |
 | `FDAPDE_GTEST_SOURCE` | optional existing source directory for the pinned GoogleTest revision |
 | `SIMD_QUEUE` | `test` |
 | `SIMD_CPUS` | `4` allocated CPUs |
@@ -155,6 +165,16 @@ shapes. Do not combine timings from different jobs or machines into one paired
 ratio.
 
 ## Validation before measurement
+
+The launcher bootstrap can be checked locally without downloads, compilation or
+PBS submission:
+
+```sh
+python3 tests/benchmarks/check_kami_environment.py
+```
+
+This checks the profile order, argument isolation, tool resolution and explicit
+missing-tool diagnostics using a temporary source cache and scheduler stubs.
 
 The worker builds and runs the complete native CTest lane in four configurations:
 `A0P0`, `A1P0`, `A0P1`, and `A1P1`. Debug assertions remain enabled for these tests.

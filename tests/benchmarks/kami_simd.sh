@@ -15,6 +15,21 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+set -eo pipefail
+set +u
+
+# source the site profiles with no launcher arguments and before enabling nounset
+load_kami_environment() {
+    local fdapde_env_file
+    export SIMD_KAMI_ENV_DIR="${SIMD_KAMI_ENV_DIR:-$HOME}"
+    for fdapde_env_file in "$SIMD_KAMI_ENV_DIR/kami-vars.sh" "$SIMD_KAMI_ENV_DIR/kami-load.sh"; do
+        if [[ -r "$fdapde_env_file" ]]; then
+            echo "loading Kami environment: $fdapde_env_file"
+            source "$fdapde_env_file"
+        fi
+    done
+}
+load_kami_environment
 set -euo pipefail
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)
 action=${1:-submit}
@@ -23,7 +38,15 @@ if (( $# > 1 )) || [[ ! "$action" =~ ^(prepare|submit|run)$ ]]; then
     echo "usage: bash tests/benchmarks/kami_simd.sh prepare | submit [OUTPUT_DIR] | run OUTPUT_DIR" >&2
     exit 2
 fi
-command -v python3 >/dev/null
+# identify unavailable programs before reserving a node and in the compute-node log
+require_tool() {
+    if ! command -v "$1" >/dev/null; then
+        export FDAPDE_SIMD_PREFLIGHT_ERROR="required program missing from PATH: $1"
+        echo "$FDAPDE_SIMD_PREFLIGHT_ERROR" >&2
+        exit 127
+    fi
+}
+require_tool python3
 python3 -c 'import sys; assert sys.version_info >= (3, 9), "Python 3.9+ is required"'
 revision=$(python3 - "$root/tests/CMakeLists.txt" <<'PY'
 import re,sys
@@ -62,6 +85,7 @@ PY
 fi
 
 export CXX=${CXX:-g++}
+require_tool "$CXX"
 CXX=$(command -v "$CXX")
 CXX=$(python3 -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$CXX")
 export CXX FDAPDE_GTEST_SOURCE="$gtest_source" FDAPDE_GTEST_REVISION="$revision"
@@ -74,7 +98,8 @@ export SIMD_PRODUCT_SIZES=${SIMD_PRODUCT_SIZES:-3,8,16,32,64,128,256,384,512,768
 [[ "$SIMD_CPUS" =~ ^[1-9][0-9]*$ ]] || { echo "SIMD_CPUS must be a positive integer" >&2; exit 2; }
 
 if [[ "$action" == submit ]]; then
-    command -v qsub >/dev/null
+    require_tool qsub
+    for tool in cmake ctest taskset git; do require_tool "$tool"; done
     [[ -f "$gtest_source/CMakeLists.txt" ]] || { echo "run prepare first, or set FDAPDE_GTEST_SOURCE" >&2; exit 2; }
     run_dir=${1:-"$root/output/simd/kami/$(date -u +%Y%m%dT%H%M%SZ)-$(git -C "$root" rev-parse --short HEAD)"}
     run_dir=$(python3 -c 'import pathlib,sys; print(pathlib.Path(sys.argv[1]).resolve())' "$run_dir")
@@ -140,6 +165,8 @@ metadata=json.loads(path.read_text()) if path.exists() else {}
 metadata.setdefault('job_id',os.environ.get('PBS_JOBID'))
 metadata.setdefault('hostname',platform.node())
 metadata.setdefault('compiler',os.environ.get('CXX'))
+if os.environ.get('FDAPDE_SIMD_PREFLIGHT_ERROR'):
+    metadata['error']=os.environ['FDAPDE_SIMD_PREFLIGHT_ERROR']
 metadata.update(stage=sys.argv[2],exit_code=int(sys.argv[3]),status='complete' if sys.argv[3]=='0' else 'failed',finished_utc=datetime.datetime.now(datetime.timezone.utc).isoformat())
 path.write_text(json.dumps(metadata,indent=2)+'\n')
 PY
@@ -165,7 +192,7 @@ trap finish EXIT
 trap 'exit 143' TERM
 trap 'exit 130' INT
 
-for tool in cmake ctest taskset git; do command -v "$tool" >/dev/null; done
+for tool in cmake ctest taskset git; do require_tool "$tool"; done
 [[ -f "$gtest_source/CMakeLists.txt" ]] || { echo "cached GoogleTest source is missing" >&2; exit 2; }
 cd -- "$root"
 [[ -z "${FDAPDE_SIMD_EXPECTED_COMMIT:-}" || "$(git rev-parse HEAD)" == "$FDAPDE_SIMD_EXPECTED_COMMIT" ]] || {
