@@ -1,6 +1,35 @@
 # SIMD in native dense algebra
 
-Native assignment uses the compiler's loop vectorizer within the C++20 API.
+## Compile-time selection
+
+The native loop optimizations are **off by default**. Enable both before including
+any fdaPDE header, or pass the compiler definition:
+
+```sh
+-DFDAPDE_ENABLE_SIMD=1
+```
+
+The two paths can also be selected independently:
+
+```sh
+-DFDAPDE_ENABLE_SIMD_ASSIGNMENT=1  # contiguous assignments, broadcasts and updates
+-DFDAPDE_ENABLE_SIMD_PRODUCT=1     # contiguous dense product materialization
+```
+
+Each individual switch defaults to the umbrella switch. An explicit individual
+`=0` overrides an enabled umbrella switch. Keep these definitions consistent across
+all translation units using fdaPDE: they change inline/template definitions.
+For CMake consumers use `target_compile_definitions(your_target PRIVATE
+FDAPDE_ENABLE_SIMD=1)`. The core requires no library, architecture option or new
+dependency. These switches select C++ loops; actual SIMD generation remains the
+compiler's decision. Disabled loops can still be auto-vectorized at `-O3`.
+
+The existing pilot benchmark targets explicitly enable both paths. The four sweep
+targets explicitly select their own assignment/product combination.
+
+## Contiguous assignment
+
+With the assignment switch enabled, native assignment uses the compiler's loop vectorizer within the C++20 API.
 Ordinary `Matrix` and `MatrixView` storage can use a flat coefficient loop:
 
 - scalar broadcasting uses contiguous destination storage;
@@ -45,7 +74,7 @@ contraction is disabled for GCC/Clang to make scalar reference comparisons exact
 A standalone build requires only a C++20 compiler and the native headers:
 
 ```sh
-c++ -std=c++20 -O3 -DNDEBUG -DFDAPDE_NO_DEBUG -ffp-contract=off \
+c++ -std=c++20 -O3 -DNDEBUG -DFDAPDE_NO_DEBUG -DFDAPDE_ENABLE_SIMD=1 -ffp-contract=off \
   -I. tests/benchmarks/simd.cpp -o /tmp/fdapde-simd-benchmark
 /tmp/fdapde-simd-benchmark
 ```
@@ -136,7 +165,7 @@ compiler remarks, sanitizer checks and review notes are retained locally under
 The same driver also builds directly against the native headers:
 
 ```sh
-c++ -std=c++20 -O3 -DNDEBUG -DFDAPDE_NO_DEBUG -ffp-contract=off \
+c++ -std=c++20 -O3 -DNDEBUG -DFDAPDE_NO_DEBUG -DFDAPDE_ENABLE_SIMD=1 -ffp-contract=off \
   -isystem . tests/benchmarks/native_product.cpp -o /tmp/fdapde-native-product-benchmark
 /tmp/fdapde-native-product-benchmark
 ```
@@ -175,3 +204,56 @@ Both AppleClang 21 and GCC 15 passed 114 registered tests and public-header
 checks; 16 intended compile failures remain verified. The six new product tests
 also passed ASan and UBSan with debug assertions enabled. GCC used the same
 temporary macOS SDK compatibility flag as the assignment pilot.
+
+## Controlled size sweep
+
+`tests/benchmarks/simd_sweep.cpp` measures public operations and verifies every
+coefficient outside the timed region, including release builds. The standard-library
+runner builds the **same source** four ways: neither optimization, assignments only,
+products only, and both. Compilation finishes before timing starts. No external
+BLAS or benchmarking package is used.
+
+```sh
+python3 tests/benchmarks/run_simd_sweep.py --self-test
+python3 tests/benchmarks/run_simd_sweep.py \
+  --compiler /usr/bin/clang++ --label appleclang --output output/simd/sweep/appleclang \
+  --build-only
+python3 tests/benchmarks/run_simd_sweep.py \
+  --compiler /usr/bin/clang++ --label appleclang --output output/simd/sweep/appleclang \
+  --reuse-binaries --factorial
+Rscript tests/benchmarks/plot_simd_sweep.R \
+  output/simd/sweep/appleclang/summary.csv output/simd/sweep/appleclang/plots
+```
+
+Assignment cases isolate `off:assignment`. Product cases isolate `assignment:all`,
+keeping the final copy path enabled on both sides. `--factorial` also compares
+`off:product` and `off:all` at the smallest, nearest-to-128 and largest actually
+measured product sizes. These extra ratios include the corresponding copy costs
+and must not be pooled with the isolated product ratios.
+
+Assignment `--size` means total output coefficients, with odd tails and equal
+volumes for vectors, three-column row-major matrices, three-row column-major
+matrices and unaligned external views. Product `--size` is the shape parameter;
+use reported `rows`, `inner` and `cols` for rectangular cases. Static FEM cases
+retain sizes 3, 4 and 10. Orientation and cross-layout assignment controls use
+three anchor sizes. Inputs are nonconstant binary fractions; scaling alternates
+powers of two to avoid drift. Public snapshots, copies and allocation are timed.
+
+Each point has three process pairs with alternating order; each process reports
+five timed rounds after warmup. One shared calibrated repetition count targets
+25 ms for the faster variant, caps the slower variant at 250 ms and caps repetitions
+at five million. A single large call can exceed that target. The reported ratio
+is the median of the **three paired ratios**. The minimum/maximum range is observed
+process dispersion, not a confidence interval. Raw rounds and exact build flags,
+source hashes and binary hashes are retained. `--reuse-binaries` verifies the
+manifest; `--resume` preserves completed cases and points after interruption.
+
+A confirmed local plateau requires four increasing sizes: three points plus a
+larger confirmation, all output buffers at least `--cache-bytes` (default 16 MiB),
+central ratios within 5% and pair spreads within 10%. This is a reproducible local
+criterion, not an assertion of asymptotic or hardware-independent performance.
+The runner records an explicit stop reason when the schedule, predicted/measured
+per-call limit or process timeout is reached without confirmation. Cache regimes,
+short rounds and regressions must remain visible in the report. Only operand
+storage is included in `working_set_bytes`; internal temporaries and the untimed
+oracle can consume additional memory.

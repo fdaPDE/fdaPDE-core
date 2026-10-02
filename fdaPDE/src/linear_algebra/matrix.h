@@ -208,7 +208,7 @@ struct generic_assignment_executor {
             }
         }
         // a flat loop exposes contiguous coefficients independently of short matrix axes
-        if constexpr (has_plain_dense_storage_v<DstMatrixType>) {
+        if constexpr (FDAPDE_ENABLE_SIMD_ASSIGNMENT && has_plain_dense_storage_v<DstMatrixType>) {
             if constexpr (std::is_arithmetic_v<SrcXprType>) {
                 auto* dst_data = dst.data();
                 for (int i = 0, size = dst.size(); i < size; ++i) { op(dst_data[i], src); }
@@ -272,7 +272,7 @@ struct vector_assignment_executor {
             }
         }
         const int size_ = dst.size();
-        if constexpr (has_plain_dense_storage_v<DstMatrixType>) {
+        if constexpr (FDAPDE_ENABLE_SIMD_ASSIGNMENT && has_plain_dense_storage_v<DstMatrixType>) {
             if constexpr (std::is_arithmetic_v<SrcXprType>) {
                 auto* dst_data = dst.data();
                 for (int i = 0; i < size_; ++i) { op(dst_data[i], src); }
@@ -287,15 +287,15 @@ struct vector_assignment_executor {
         auto fetch = [](const SrcXprType& src, [[maybe_unused]] int i) -> decltype(auto) {
             if constexpr (std::is_arithmetic_v<SrcXprType>) {
                 return src;
-            } else if constexpr (SrcXprType::Rows == 1) {
+            } else if constexpr (FDAPDE_ENABLE_SIMD_ASSIGNMENT && SrcXprType::Rows == 1) {
                 return src(0, i);
-            } else if constexpr (SrcXprType::Cols == 1) {
+            } else if constexpr (FDAPDE_ENABLE_SIMD_ASSIGNMENT && SrcXprType::Cols == 1) {
                 return src(i, 0);
             } else {
                 return src.rows() == 1 ? src(0, i) : src(i, 0);
             }
         };
-        if constexpr (has_plain_dense_storage_v<DstMatrixType>) {
+        if constexpr (FDAPDE_ENABLE_SIMD_ASSIGNMENT && has_plain_dense_storage_v<DstMatrixType>) {
             auto* dst_data = dst.data();
             for (int i = 0; i < size_; ++i) { op(dst_data[i], fetch(src, i)); }
         } else {
@@ -662,7 +662,7 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
             }
         }
         // product materialization writes independent storage before any public aliasing assignment
-        if constexpr (requires { rhs.try_eval_to_(*this); }) {
+        if constexpr (FDAPDE_ENABLE_SIMD_PRODUCT && requires { rhs.try_eval_to_(*this); }) {
             if (rhs.try_eval_to_(*this)) return;
         }
         using assignment_executor = typename Base::assignment_executor;

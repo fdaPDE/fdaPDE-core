@@ -230,6 +230,7 @@ struct MatrixMultiplicationOp : public MatrixExpr<MatrixMultiplicationOp<LhsXprT
    private:
     template <typename, int, int, int> friend class Matrix;
 
+#if FDAPDE_ENABLE_SIMD_PRODUCT
     /// @brief evaluates a plain floating-point product into independent storage when its contiguous axis matches
     template <typename DstMatrixType>
         requires(
@@ -247,6 +248,7 @@ struct MatrixMultiplicationOp : public MatrixExpr<MatrixMultiplicationOp<LhsXprT
         Executor::run(dst, lhs_, rhs_);
         return true;
     }
+#endif
    protected:
     LhsXprTypeNested lhs_;
     RhsXprTypeNested rhs_;
@@ -270,6 +272,7 @@ struct generic_matrix_product_executor {
         return prod;
     }
 
+#if FDAPDE_ENABLE_SIMD_PRODUCT
     /// @brief accumulates a complete product across contiguous output coefficients in ascending inner-index order
     template <typename DstMatrixType, typename LhsXprType, typename RhsXprType>
     static constexpr void run(DstMatrixType& dst, const LhsXprType& lhs, const RhsXprType& rhs) {
@@ -303,6 +306,7 @@ struct generic_matrix_product_executor {
             }
         }
     }
+#endif
 };
 
 // outer product v * v^\top executor

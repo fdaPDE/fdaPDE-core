@@ -17,6 +17,17 @@
 #ifndef __FDAPDE_DENSE_LINEAR_ALGEBRA_MODULE_H__
 #define __FDAPDE_DENSE_LINEAR_ALGEBRA_MODULE_H__
 
+// opt into native SIMD paths with compiler flags and keep the values consistent across translation units
+#ifndef FDAPDE_ENABLE_SIMD
+#    define FDAPDE_ENABLE_SIMD 0
+#endif
+#ifndef FDAPDE_ENABLE_SIMD_ASSIGNMENT
+#    define FDAPDE_ENABLE_SIMD_ASSIGNMENT FDAPDE_ENABLE_SIMD
+#endif
+#ifndef FDAPDE_ENABLE_SIMD_PRODUCT
+#    define FDAPDE_ENABLE_SIMD_PRODUCT FDAPDE_ENABLE_SIMD
+#endif
+
 // clang-format off
 
 #include "utility.h"
