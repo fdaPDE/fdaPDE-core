@@ -155,3 +155,31 @@ if(NOT FDAPDE_NATIVE_ONLY)
   target_link_libraries(fdapde_dense_header_order_test PRIVATE Eigen3::Eigen)
   add_test(NAME DenseHeaderOrder COMMAND fdapde_dense_header_order_test)
 endif()
+add_executable(fdapde_sparse_test linear_algebra/sparse.cpp)
+fdapde_configure_target(fdapde_sparse_test)
+target_link_libraries(fdapde_sparse_test PRIVATE GTest::gtest_main)
+gtest_discover_tests(fdapde_sparse_test PROPERTIES TIMEOUT 60)
+
+add_library(fdapde_sparse_header_check OBJECT public_headers/sparse_linear_algebra.cpp)
+fdapde_configure_target(fdapde_sparse_header_check)
+
+if(NOT FDAPDE_NATIVE_ONLY)
+  add_executable(fdapde_sparse_oracle_test linear_algebra/sparse_oracle.cpp)
+  fdapde_configure_target(fdapde_sparse_oracle_test)
+  target_link_libraries(fdapde_sparse_oracle_test PRIVATE GTest::gtest_main Eigen3::Eigen)
+  gtest_discover_tests(fdapde_sparse_oracle_test PROPERTIES TIMEOUT 60)
+
+  add_executable(fdapde_sparse_benchmark EXCLUDE_FROM_ALL benchmarks/sparse.cpp)
+  fdapde_configure_target(fdapde_sparse_benchmark)
+  target_link_libraries(fdapde_sparse_benchmark PRIVATE Eigen3::Eigen)
+endif()
+
+fdapde_reject_program(sparse_boolean "SparseMatrix<bool> is not supported")
+
+if(NOT FDAPDE_NATIVE_ONLY)
+  add_executable(fdapde_sparse_header_order_test
+    public_headers/sparse_then_linear_algebra.cpp public_headers/linear_algebra_then_sparse.cpp)
+  fdapde_configure_target(fdapde_sparse_header_order_test)
+  target_link_libraries(fdapde_sparse_header_order_test PRIVATE Eigen3::Eigen)
+  add_test(NAME SparseHeaderOrder COMMAND fdapde_sparse_header_order_test)
+endif()

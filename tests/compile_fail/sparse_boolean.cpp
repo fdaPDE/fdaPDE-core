@@ -14,8 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#if !defined(__FDAPDE_LINEAR_ALGEBRA_MODULE_H__) && !defined(__FDAPDE_DENSE_LINEAR_ALGEBRA_MODULE_H__) &&              \
-  !defined(__FDAPDE_SPARSE_LINEAR_ALGEBRA_MODULE_H__)
-#    error                                                                                                             \
-      "Include fdaPDE/dense_linear_algebra.h, fdaPDE/sparse_linear_algebra.h or fdaPDE/linear_algebra.h instead of including internal headers directly."
-#endif
+#include <fdaPDE/sparse_linear_algebra.h>
+
+// instantiation rejects vector<bool>-style coefficient storage without addressable scalar values
+static_assert(sizeof(fdapde::SparseMatrix<bool>) > 0);
+int main() { }

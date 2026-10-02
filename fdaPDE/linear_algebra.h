@@ -56,6 +56,7 @@ template <typename XprType> constexpr bool is_eigen_sparse_xpr_v = is_eigen_spar
 }   // namespace fdapde
 
 #include "dense_linear_algebra.h"
+#include "sparse_linear_algebra.h"
 
 namespace fdapde {
 namespace internals {
