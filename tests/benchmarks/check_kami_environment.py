@@ -55,7 +55,8 @@ Path(os.environ['MOCK_QSUB_RECORD']).write_text(json.dumps({
     'arguments':sys.argv[1:], 'compiler':os.environ['CXX'], 'path':os.environ['PATH'],
     'profiles':os.environ['SIMD_KAMI_ENV_DIR'], 'commit':os.environ['FDAPDE_SIMD_EXPECTED_COMMIT'],
     'cmake':os.environ['SIMD_CMAKE'], 'ctest':os.environ['SIMD_CTEST'],
-    'eigen':os.environ['SIMD_EIGEN_INCLUDE']}))
+    'eigen':os.environ['SIMD_EIGEN_INCLUDE'],
+    'replay_manifest_sha256':os.environ['FDAPDE_SIMD_EXPECTED_REPLAY_MANIFEST_SHA']}))
 print('1234.mock')
 """)
         for path in tools.iterdir():
@@ -105,6 +106,13 @@ export PATH="$MOCK_TOOLS:$PATH"
         assert "place=excl" in received["arguments"] and any(v.startswith("select=1:ncpus=") for v in received["arguments"]), received
         # Eigen resolves to the shared include directory before the job is submitted
         assert received["eigen"] == str(eigen.resolve()), received
+        # a default submission must pin the four versioned capsules available after git pull
+        default_manifest = launcher.parent / "fixtures/rgcca_replay/manifest.json"
+        default_cases = json.loads(default_manifest.read_text())["cases"]
+        assert len(default_cases) == 4 and sum(len(case["files"]) for case in default_cases) == 20, default_cases
+        # the scheduler must receive the SHA256 of that default manifest
+        assert received["replay_manifest_sha256"] == hashlib.sha256(default_manifest.read_bytes()).hexdigest(), received
+        checks.append("submit_default_versioned_four_capsules_pinned_hash")
         checks.append("submit_mock_scheduler_exported_environment_exclusive_node_eigen")
         for version in ("missing", "wrong"):
             record.unlink(missing_ok=True)

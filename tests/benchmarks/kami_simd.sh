@@ -136,7 +136,7 @@ preflight_replay_inputs() {
 import hashlib,json,os,re,sys
 from pathlib import Path
 requested=os.environ.get('SIMD_REPLAY_MANIFEST')
-path=Path(requested or Path(sys.argv[1])/'output/simd/replay-inputs/manifest.json').expanduser().resolve()
+path=Path(requested or Path(sys.argv[1])/'tests/benchmarks/fixtures/rgcca_replay/manifest.json').expanduser().resolve()
 if not path.exists():
     if requested: raise SystemExit('requested replay manifest is missing: '+str(path))
     result={'status':'absent','manifest':str(path),'manifest_sha256':None,'cases':[]}

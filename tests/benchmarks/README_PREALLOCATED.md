@@ -39,13 +39,13 @@ Le forme sintetiche sono dispari, con offset di un double e densita sparse diver
 
 ## Capsule reali e replay
 
-Le copie offline in `output/simd/replay-inputs/manifest.json` sono quattro side della **componente 1**, lambda 1 o 1000, con 426/581/666/1418 righe e 7362/10043/11584/25242 nnz. Non rappresentano la componente 2 a lambda 10. Sorgenti e copie hanno SHA256 uguali; non si riesegue il bootstrap. Aggiungere uno o piu prefissi:
+Le copie offline in `tests/benchmarks/fixtures/rgcca_replay/manifest.json` sono quattro side della **componente 1**, lambda 1 o 1000, con 426/581/666/1418 righe e 7362/10043/11584/25242 nnz. Non rappresentano la componente 2 a lambda 10. Sorgenti e copie hanno SHA256 uguali; non si riesegue il bootstrap. Aggiungere uno o piu prefissi:
 
 ```bash
---input output/simd/replay-inputs/lambda1_initial/side-3 \
---input output/simd/replay-inputs/lambda1_restart/side-50 \
---input output/simd/replay-inputs/lambda1000_slow/side-0 \
---input output/simd/replay-inputs/lambda1_large/side-18
+--input tests/benchmarks/fixtures/rgcca_replay/lambda1_initial/side-3 \
+--input tests/benchmarks/fixtures/rgcca_replay/lambda1_restart/side-50 \
+--input tests/benchmarks/fixtures/rgcca_replay/lambda1000_slow/side-0 \
+--input tests/benchmarks/fixtures/rgcca_replay/lambda1_large/side-18
 ```
 
 I dati canonici sono scalati fuori timing: `inv[i]=1/sqrt(Omega[i,i])`, `A[i,j]=(Omega[i,j]*inv[i])*inv[j]`, `c_scaled[i]=inv[i]*c[i]`. I buffer nativi e quelli Eigen sono preparati separatamente da questi input; nessuna conversione Eigen-nativo e misurata o richiesta dal core. Eigen ColMajor riproduce il formato applicativo; Eigen RowMajor e il controllo con formato CSR analogo al nativo. Le differenze tra formati non sono attribuite a SIMD. Costruzione densa e assemblaggio sparso sono misurati separatamente e includono allocazione/distruzione del risultato. Il puntatore al risultato viene esposto a una barriera standard `atomic_signal_fence` prima della distruzione, uguale per tutti i backend, per conservare il lavoro di materializzazione.
@@ -64,7 +64,7 @@ Il job conserva i test nativi nelle quattro combinazioni dei flag, amplia i sani
 
 `~/kami-vars.sh` e `~/kami-load.sh` vengono caricati in quest'ordine sul login e sul worker. Eigen **3.4.0** e i cinque file per ogni capsula sono verificati prima di qsub e nuovamente sul worker, senza installazioni. La sorgente GoogleTest viene predisposta una sola volta con `prepare` e riusata offline nel job. `prepare` resta indipendente da Eigen.
 
-Dal checkout su Kami, dopo aver trasferito anche gli snapshot offline:
+Dal checkout aggiornato su Kami:
 
 ```bash
 source ~/kami-vars.sh
@@ -72,7 +72,7 @@ source ~/kami-load.sh
 export SIMD_CMAKE=/opt/mox/spack_v1/opt/spack/linux-rocky9-zen3/gcc-12.1.0/cmake-3.30.5-b7aplioxqel2hr44kp5zdsuzlo7ic23z/bin/cmake
 export SIMD_CTEST="${SIMD_CMAKE%/*}/ctest"
 export SIMD_EIGEN_INCLUDE="${PATH_EIGEN_INCLUDE:?caricare il profilo Eigen}"
-export SIMD_REPLAY_MANIFEST="$PWD/output/simd/replay-inputs/manifest.json"
+export SIMD_REPLAY_MANIFEST="$PWD/tests/benchmarks/fixtures/rgcca_replay/manifest.json"
 bash tests/benchmarks/kami_simd.sh prepare
 bash tests/benchmarks/kami_simd.sh submit
 ```
@@ -85,14 +85,14 @@ Il riepilogo unico e `<run>/summary.md`: include stato globale, test, sweep prec
 
 ### Aggiornare il codice con Git
 
-Codice, test e script sono disponibili nel branch `develop-SIMD`:
+Codice, test, script e quattro snapshot offline sono disponibili nel branch `develop-SIMD`:
 
 ```bash
 cd /u/donelli/Documents/fdaPDE-core-SIMD
 git pull --ff-only origin develop-SIMD
 ```
 
-Poi usare `prepare` e `submit` come sopra. I quattro snapshot offline non sono inclusi nel repository: il manifest predefinito resta `output/simd/replay-inputs/manifest.json`, oppure se ne puo scegliere uno con `SIMD_REPLAY_MANIFEST`. Il launcher usa soltanto `prefix_relative` e `copy_relative` sotto la directory del manifest, senza accedere al checkout RGCCA, e verifica SHA256 e dimensioni.
+Poi usare `prepare` e `submit` come sopra. Il pull include tutti i file dei quattro snapshot; il manifest predefinito e `tests/benchmarks/fixtures/rgcca_replay/manifest.json`. `SIMD_REPLAY_MANIFEST` permette di sceglierne un altro; se era impostato sul vecchio percorso, aggiornarlo come nel comando sopra. Il launcher usa soltanto `prefix_relative` e `copy_relative` sotto la directory del manifest, senza accedere al checkout RGCCA, e verifica SHA256 e dimensioni.
 
 Un manifest esplicitamente richiesto ma assente o modificato fa fallire il preflight. Se il manifest predefinito e assente, il report dichiara un confronto soltanto sintetico; nessun replay reale viene dedotto. Le quattro capsule originali coprono componente 1, lambda 1/1000.
 

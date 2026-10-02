@@ -34,3 +34,6 @@ experiments/test_RSVD/performances.csv
 
 #some test directories
 experiments/
+
+# versioned offline replay provenance
+!tests/benchmarks/fixtures/rgcca_replay/manifest.json
