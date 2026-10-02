@@ -46,7 +46,7 @@ template <int N> class LBFGS {
     LBFGS() : max_iter_(500), tol_(1e-5), step_(1e-2) { }
     LBFGS(int max_iter, double tol, double step, int mem_size) :
         max_iter_(max_iter), tol_(tol), step_(step), mem_size_(mem_size) {
-        fdapde_assert(mem_size_ >= 0);
+        fdapde_assert(mem_size_ >= 0, std::invalid_argument, "LBFGS history size must be nonnegative");
     }
     LBFGS(const LBFGS& other) :
         max_iter_(other.max_iter_), tol_(other.tol_), step_(other.step_), mem_size_(other.mem_size_) { }

@@ -52,13 +52,12 @@ class DotProduct : public ScalarFieldBase<Lhs::StaticInputSize, DotProduct<Lhs, 
 
     constexpr DotProduct(const Lhs& lhs, const Rhs& rhs) : lhs_(lhs), rhs_(rhs) {
         if constexpr (LhsDerived::Cols == Dynamic || RhsDerived::Cols == Dynamic) {
-            fdapde_assert(
-              lhs.cols() == rhs.cols() &&
-              (rhs.rows() == rhs.rows() || (lhs.cols() == 1 && rhs.rows() == 1 && lhs.rows() == rhs.cols()) ||
-               (lhs.rows() == 1 && rhs.cols() == 1 && lhs.cols() == rhs.rows())));
+            fdapde_assert(lhs.cols() == rhs.cols(), std::invalid_argument, "dot product column counts must match");
+            fdapde_assert(lhs.rows() == rhs.rows(), std::invalid_argument, "dot product row counts must match");
         }
         if constexpr (LhsDerived::StaticInputSize == Dynamic || RhsDerived::StaticInputSize == Dynamic) {
-            fdapde_assert(lhs.input_size() == rhs.input_size());
+            fdapde_assert(
+              lhs.input_size() == rhs.input_size(), std::invalid_argument, "operand input dimensions must match");
         }
     }
     constexpr Scalar operator()(const InputType& p) const {
@@ -143,10 +142,12 @@ class dot_product_eigen_impl : public ScalarFieldBase<FieldType_::StaticInputSiz
           FieldType::Cols == Dynamic || EigenType::ColsAtCompileTime == Dynamic || FieldType::Rows == Dynamic ||
           EigenType::RowsAtCompileTime == Dynamic) {
             fdapde_assert(
-              (lhs.cols() == 1 &&
-               ((rhs.cols() == 1 && lhs.rows() == rhs.rows()) || (rhs.rows() == 1 && lhs.rows() == rhs.cols()))) ||
-              (lhs.rows() == 1 &&
-               ((rhs.rows() == 1 && lhs.cols() == rhs.cols()) || (rhs.cols() == 1 && lhs.cols() == rhs.rows()))));
+              lhs.cols() == 1 || lhs.rows() == 1, std::invalid_argument, "left dot product operand must be a vector");
+            fdapde_assert(
+              rhs.cols() == 1 || rhs.rows() == 1, std::invalid_argument, "right dot product operand must be a vector");
+            fdapde_assert(
+              (lhs.cols() == 1 ? lhs.rows() : lhs.cols()) == (rhs.cols() == 1 ? rhs.rows() : rhs.cols()),
+              std::invalid_argument, "dot product vector lengths must match");
         }
     }
     Scalar operator()(const InputType& p) const {

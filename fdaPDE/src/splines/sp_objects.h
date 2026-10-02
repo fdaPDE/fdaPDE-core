@@ -263,7 +263,10 @@ template <typename SpSpace_> class BsFunction : public ScalarFieldBase<SpSpace_:
     }
     BsFunction(SpSpace_& sp_space, const Eigen::Matrix<double, Dynamic, 1>& coeff) :
         sp_space_(std::addressof(sp_space)), coeff_(coeff) {
-        fdapde_assert(coeff.size() > 0 && coeff.size() == sp_space_->n_dofs());
+        fdapde_assert(coeff.size() > 0, std::invalid_argument, "coefficient vector must not be empty");
+        fdapde_assert(
+          coeff.size() == sp_space_->n_dofs(), std::invalid_argument,
+          "coefficient count must match the number of degrees of freedom");
     }
     Scalar operator()(const InputType& p) const { 
         int e_id = sp_space_->triangulation().locate(p);
@@ -312,7 +315,10 @@ template <typename SpSpace_> class BsFunction : public ScalarFieldBase<SpSpace_:
     }
     // assignment from expansion coefficient vector
     BsFunction& operator=(const Eigen::Matrix<double, Dynamic, 1>& coeff) {
-        fdapde_assert(coeff.size() > 0 && coeff.size() == sp_space_->n_dofs());
+        fdapde_assert(coeff.size() > 0, std::invalid_argument, "coefficient vector must not be empty");
+        fdapde_assert(
+          coeff.size() == sp_space_->n_dofs(), std::invalid_argument,
+          "coefficient count must match the number of degrees of freedom");
         coeff_ = coeff;
         return *this;
     }

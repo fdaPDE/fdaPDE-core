@@ -305,24 +305,27 @@ class shp_reader {
     int n_points() const { return points_.size(); }
     const sf_point_t& point(int index) const {
         fdapde_assert(
-          shape_type() == shape_t::Point || shape_type() == shape_t::PointZ || shape_type() == shape_t::PointM);
+          shape_type() == shape_t::Point || shape_type() == shape_t::PointZ || shape_type() == shape_t::PointM,
+          std::logic_error, "shapefile does not contain point records");
         return points_[index];
     }
     const sf_polyline_t& polyline(int index) const {
         fdapde_assert(
-          shape_type() == shape_t::PolyLine || shape_type() == shape_t::PolyLineZ ||
-          shape_type() == shape_t::PolyLineM);
+          shape_type() == shape_t::PolyLine || shape_type() == shape_t::PolyLineZ || shape_type() == shape_t::PolyLineM,
+          std::logic_error, "shapefile does not contain polyline records");
         return polylines_[index];
     }
     const sf_polygon_t& polygon(int index) const {
         fdapde_assert(
-          shape_type() == shape_t::Polygon || shape_type() == shape_t::PolygonZ || shape_type() == shape_t::PolygonM);
+          shape_type() == shape_t::Polygon || shape_type() == shape_t::PolygonZ || shape_type() == shape_t::PolygonM,
+          std::logic_error, "shapefile does not contain polygon records");
         return polygons_[index];
     }
     const sf_multipoint_t& multipoint(int index) const {
         fdapde_assert(
           shape_type() == shape_t::MultiPoint || shape_type() == shape_t::MultiPointZ ||
-          shape_type() == shape_t::MultiPointM);
+            shape_type() == shape_t::MultiPointM,
+          std::logic_error, "shapefile does not contain multipoint records");
         return multipoints_[index];
     }
 };
@@ -401,7 +404,7 @@ class dbf_reader {
         }
     }
     template <typename T> std::vector<T> get_as(std::string colname) const {
-        fdapde_assert(data_.count(colname) == 1);
+        fdapde_assert(data_.count(colname) == 1, std::out_of_range, "column name not found");
         if constexpr (std::is_same_v<T, std::string>) {
             std::vector<std::string> values;
             values.reserve(data_.at(colname).size());

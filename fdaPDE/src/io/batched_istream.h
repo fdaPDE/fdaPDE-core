@@ -59,7 +59,7 @@ struct batched_istream_impl {
     const char* data() const { return buff_; }
     size_t tellg() const { return pos_; }
     batched_istream_impl& seekg(size_t pos) {
-        fdapde_assert(pos < n_blk_);
+        fdapde_assert(pos < n_blk_, std::out_of_range, "stream position exceeds the buffered block");
         pos_ = pos;
         return *this;
     }

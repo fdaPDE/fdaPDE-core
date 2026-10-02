@@ -554,7 +554,10 @@ class FeFunction :
         } else {
             fe_space_ = std::addressof(fe_space);
         }
-        fdapde_assert(coeff.size() > 0 && coeff.size() == fe_space_->n_dofs());
+        fdapde_assert(coeff.size() > 0, std::invalid_argument, "coefficient vector must not be empty");
+        fdapde_assert(
+          coeff.size() == fe_space_->n_dofs(), std::invalid_argument,
+          "coefficient count must match the number of degrees of freedom");
     }
     OutputType operator()(const InputType& p) const {
         int e_id = fe_space_->triangulation().locate(p);
@@ -671,7 +674,10 @@ class FeFunction :
     }
     // assignment from expansion coefficient vector
     FeFunction& operator=(const Eigen::Matrix<double, Dynamic, 1>& coeff) {
-        fdapde_assert(coeff.size() > 0 && coeff.size() == fe_space_->n_dofs());
+        fdapde_assert(coeff.size() > 0, std::invalid_argument, "coefficient vector must not be empty");
+        fdapde_assert(
+          coeff.size() == fe_space_->n_dofs(), std::invalid_argument,
+          "coefficient count must match the number of degrees of freedom");
         coeff_ = coeff;
         return *this;
     }

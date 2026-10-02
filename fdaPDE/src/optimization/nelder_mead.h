@@ -56,7 +56,7 @@ template <int N> class NelderMead {
         fdapde_static_assert(
           std::is_same<decltype(std::declval<ObjectiveT>().operator()(vector_t())) FDAPDE_COMMA double>::value,
           INVALID_CALL_TO_OPTIMIZE__OBJECTIVE_FUNCTOR_NOT_ACCEPTING_VECTORTYPE);
-        fdapde_assert(x0.rows() > 0);
+        fdapde_assert(x0.rows() > 0, std::invalid_argument, "initial optimization point must not be empty");
         std::tuple<Callbacks...> callbacks_ {callbacks...};
         double dims = x0.rows();
         bool stop = false;

@@ -51,8 +51,9 @@ template <typename Scalar, int Size> struct std_array_hash {
 template <typename V, typename W> constexpr std::unordered_map<V, W> map_reverse(const std::unordered_map<W, V>& in) {
     std::unordered_map<V, W> out;
     for (const auto& [key, value] : in) {
-        fdapde_constexpr_assert(
-          out.find(value) == out.end());   // if this is not passed, in is not a bijection, cannot be inverted
+        fdapde_assert(
+          out.find(value) == out.end(), std::invalid_argument,
+          "map inversion requires unique values");   // if this is not passed, in is not a bijection, cannot be inverted
         out[value] = key;
     }
     return out;

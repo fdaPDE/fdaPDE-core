@@ -265,7 +265,8 @@ template <typename T> class table_reader {
         {
             std::string cmp = "";
             for (; i < n_cols_ && cmp != colname; ++i) { cmp = colnames_[i]; }
-	    fdapde_assert(i < n_cols_ && cmp == colname);
+            fdapde_assert(i < n_cols_, std::out_of_range, "column index out of range");
+            fdapde_assert(cmp == colname, std::out_of_range, "column name not found");
         }
         for (int j = 0; j < n_rows_; ++j) { col_[i] = data_[i + j * n_cols_]; }
 	return col_;

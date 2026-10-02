@@ -52,7 +52,7 @@ struct SparseBlockMatrix :
     SparseBlockMatrix() noexcept = default;
     // initialize from list of matrices
     template <typename... Block>
-    SparseBlockMatrix(Block&&... m) noexcept
+    SparseBlockMatrix(Block&&... m)
         requires(sizeof...(Block) > 1 && sizeof...(Block) == Rows_ * Cols_)
     {
         fdapde_static_assert(
@@ -64,7 +64,9 @@ struct SparseBlockMatrix :
                 row_dims[Ns_] = arg.rows();
                 col_dims[Ns_] = arg.cols();
             } else {
-                fdapde_assert(arg == 0);   // allows only 0 placeholder
+                fdapde_assert(
+                  arg == 0, std::invalid_argument,
+                  "scalar block placeholders must be zero");   // allows only 0 placeholder
                 row_dims[Ns_] = -1;
                 col_dims[Ns_] = -1;
             }
@@ -76,8 +78,10 @@ struct SparseBlockMatrix :
             while (k < Cols_ && row_dims[i * Cols_ + k] == -1) { k++; }
             int row = (k == Cols_) ? 1 : row_dims[i * Cols_ + k];
             for (int j = 0; j < Cols_; ++j) {
-                fdapde_assert(row_dims[i * Cols_ + j] == row || row_dims[i * Cols_ + j] == -1);
-		// normalize row dimensions, if still considered dynamic
+                fdapde_assert(
+                  row_dims[i * Cols_ + j] == row || row_dims[i * Cols_ + j] == -1, std::invalid_argument,
+                  "block row dimensions must match");
+                // normalize row dimensions, if still considered dynamic
                 if (row_dims[i * Cols_ + j] == -1) { row_dims[i * Cols_ + j] = row; }
             }
         }
@@ -88,7 +92,9 @@ struct SparseBlockMatrix :
             while (k < Rows_ && col_dims[i + k * Cols_] == -1) { k++; }
             int col = (k == Rows_) ? 1 : col_dims[i + k * Cols_];
             for (int j = 0; j < Rows_; ++j) {
-                fdapde_assert(col_dims[i + k * Cols_] == col || col_dims[i + k * Cols_] == -1);
+                fdapde_assert(
+                  col_dims[i + k * Cols_] == col || col_dims[i + k * Cols_] == -1, std::invalid_argument,
+                  "block column dimensions must match");
                 // normalize col dimensions, if still considered dynamic
                 if (col_dims[i + k * Cols_] == -1) { col_dims[i + k * Cols_] = col; }
             }
@@ -138,7 +144,10 @@ struct SparseBlockMatrix :
                      { e.size() } -> std::convertible_to<std::size_t>;
                  })
     SparseBlockMatrix(const Extents& blk_rows, const Extents& blk_cols) : inner_size_(blk_rows), outer_size_(blk_cols) {
-        fdapde_assert(blk_rows.size() == Rows_ && blk_cols.size() == Cols_);
+        fdapde_assert(
+          blk_rows.size() == Rows_, std::invalid_argument, "block row extent count must match the block layout");
+        fdapde_assert(
+          blk_cols.size() == Cols_, std::invalid_argument, "block column extent count must match the block layout");
         outer_offset_[0] = 0;
         inner_offset_[0] = 0;
         for (Eigen::Index i = 0; i < Rows_; ++i) {
@@ -167,11 +176,17 @@ struct SparseBlockMatrix :
     }
     // read/write access to individual blocks
     const Eigen::SparseMatrix<double>& block(Eigen::Index row, Eigen::Index col) const {
-        fdapde_assert(row >= 0 && row < Rows_ && col >= 0 && col < Cols_);
+        fdapde_assert(row >= 0, std::out_of_range, "row index must be nonnegative");
+        fdapde_assert(row < Rows_, std::out_of_range, "row index out of range");
+        fdapde_assert(col >= 0, std::out_of_range, "column index must be nonnegative");
+        fdapde_assert(col < Cols_, std::out_of_range, "column index out of range");
         return blocks_[row * Cols_ + col];
     }
     Eigen::SparseMatrix<double>& block(Eigen::Index row, Eigen::Index col) {
-        fdapde_assert(row >= 0 && row < Rows_ && col >= 0 && col < Cols_);
+        fdapde_assert(row >= 0, std::out_of_range, "row index must be nonnegative");
+        fdapde_assert(row < Rows_, std::out_of_range, "row index out of range");
+        fdapde_assert(col >= 0, std::out_of_range, "column index must be nonnegative");
+        fdapde_assert(col < Cols_, std::out_of_range, "column index out of range");
         return blocks_[row * Cols_ + col];
     }
     // provides an estimate of the nonzero elements of the matrix
@@ -214,12 +229,18 @@ struct SparseBlockMatrix :
     }
     // accessors
     Scalar& coeffRef(Eigen::Index row, Eigen::Index col) {
-        fdapde_assert(row >= 0 && row < rows_ && col >= 0 && col < cols_);
+        fdapde_assert(row >= 0, std::out_of_range, "row index must be nonnegative");
+        fdapde_assert(row < rows_, std::out_of_range, "row index out of range");
+        fdapde_assert(col >= 0, std::out_of_range, "column index must be nonnegative");
+        fdapde_assert(col < cols_, std::out_of_range, "column index out of range");
         return blocks_[innerBlockIndex(row) * Cols_ + outerBlockIndex(col)].coeffRef(
           indexToBlockInner(row), indexToBlockOuter(col));
     }
     Scalar coeff(Eigen::Index row, Eigen::Index col) const {
-        fdapde_assert(row >= 0 && row < rows_ && col >= 0 && col < cols_);
+        fdapde_assert(row >= 0, std::out_of_range, "row index must be nonnegative");
+        fdapde_assert(row < rows_, std::out_of_range, "row index out of range");
+        fdapde_assert(col >= 0, std::out_of_range, "column index must be nonnegative");
+        fdapde_assert(col < cols_, std::out_of_range, "column index out of range");
         return blocks_[innerBlockIndex(row) * Cols_ + outerBlockIndex(col)].coeffRef(
           indexToBlockInner(row), indexToBlockOuter(col));
     }
@@ -250,7 +271,8 @@ struct SparseBlockMatrix :
     }
     template <typename TripletList>
     inline void setBlockFromTriplets(Eigen::Index row, Eigen::Index col, const TripletList& triplet_list) {
-        fdapde_assert(row < Rows_ && col < Cols_);
+        fdapde_assert(row < Rows_, std::out_of_range, "block row index out of range");
+        fdapde_assert(col < Cols_, std::out_of_range, "block column index out of range");
         block(row, col).setFromTriplets(triplet_list.begin(), triplet_list.end());
     }
    protected:

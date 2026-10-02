@@ -34,7 +34,10 @@ internals::table_reader<T> read_csv(const std::string& filename, bool header = t
 template <typename DataT>
     requires(internals::is_eigen_dense_xpr_v<DataT>)
 void write_csv(const std::string& filename, const DataT& data, const std::vector<std::string>& colnames) {
-    fdapde_assert(data.cols() > 0 && std::cmp_equal(data.cols() FDAPDE_COMMA colnames.size()));
+    fdapde_assert(data.cols() > 0, std::invalid_argument, "CSV data must contain columns");
+    fdapde_assert(
+      std::cmp_equal(data.cols() FDAPDE_COMMA colnames.size()), std::invalid_argument,
+      "column name count must match the CSV column count");
     const static Eigen::IOFormat CSVFormat(Eigen::FullPrecision, Eigen::DontAlignCols, ", ", "\n");
     std::ofstream file(filename);
     for (std::size_t i = 0; i < colnames.size() - 1; ++i) { file << colnames[i] << ", "; }
@@ -59,7 +62,12 @@ template <typename DataT>
 void write_csv(
   const std::string& filename, const DataT& data, int rows, int cols, const std::vector<std::string>& colnames,
   bool by_rows = true) {
-    fdapde_assert(data.size() % (rows * cols) == 0 && std::cmp_equal(cols FDAPDE_COMMA colnames.size()));
+    fdapde_assert(
+      data.size() % (rows * cols) == 0, std::invalid_argument,
+      "CSV data size must be divisible by the requested matrix size");
+    fdapde_assert(
+      std::cmp_equal(cols FDAPDE_COMMA colnames.size()), std::invalid_argument,
+      "column name count must match the CSV column count");
     std::ofstream file(filename);
     for (std::size_t i = 0; i < colnames.size() - 1; ++i) { file << colnames[i] << ", "; }
     file << colnames.back() << "\n";

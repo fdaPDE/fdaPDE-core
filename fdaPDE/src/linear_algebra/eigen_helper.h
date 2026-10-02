@@ -63,12 +63,12 @@ template <typename SolverType_> class eigen_sparse_solver_movable_wrap {
     void factorize(const MatrixType& matrix) { solver_->factorize(matrix); }
     template <typename XprType>   // solve method, dense  rhs operand
     const Eigen::Solve<SolverType, XprType> solve(const Eigen::MatrixBase<XprType>& b) const {
-        fdapde_assert(bool(solver_) == true);
+        fdapde_assert(bool(solver_) == true, std::logic_error, "solver is not initialized");
         return solver_->solve(b);
     }
     template <typename XprType>   // solve method, sparse rhs operand
     const Eigen::Solve<SolverType, XprType> solve(const Eigen::SparseMatrixBase<XprType>& b) const {
-        fdapde_assert(bool(solver_) == true);
+        fdapde_assert(bool(solver_) == true, std::logic_error, "solver is not initialized");
         return solver_->solve(b);
     }
     // observers

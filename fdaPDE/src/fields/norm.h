@@ -35,7 +35,10 @@ class MatrixFieldNorm : public ScalarFieldBase<Derived_::StaticInputSize, Matrix
 
     explicit constexpr MatrixFieldNorm(const Derived& xpr) : Base(), xpr_(xpr) { }
     constexpr Scalar operator()(const InputType& p) const {
-        if constexpr (StaticInputSize == Dynamic) fdapde_assert(p.size() == xpr_.input_size());
+        if constexpr (StaticInputSize == Dynamic)
+            fdapde_assert(
+              p.size() == xpr_.input_size(), std::invalid_argument,
+              "evaluation point dimension must match the field input dimension");
         Scalar norm_ = 0;
         for (int i = 0; i < xpr_.rows(); ++i) {
             for (int j = 0; j < xpr_.cols(); ++j) {
