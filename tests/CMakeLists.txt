@@ -80,6 +80,7 @@ set(dense_sources
   linear_algebra/bool.cpp
   linear_algebra/contiguous_assignment.cpp
   linear_algebra/contiguous_product.cpp
+  linear_algebra/preallocated_product.cpp
   linear_algebra/diagonal.cpp
   linear_algebra/evd.cpp
   linear_algebra/historical_boolean.cpp
@@ -157,7 +158,7 @@ if(NOT FDAPDE_NATIVE_ONLY)
   target_link_libraries(fdapde_dense_header_order_test PRIVATE Eigen3::Eigen)
   add_test(NAME DenseHeaderOrder COMMAND fdapde_dense_header_order_test)
 endif()
-add_executable(fdapde_sparse_test linear_algebra/sparse.cpp)
+add_executable(fdapde_sparse_test linear_algebra/sparse.cpp linear_algebra/sparse_multiply_into.cpp linear_algebra/preallocated_replay.cpp)
 fdapde_configure_target(fdapde_sparse_test)
 target_link_libraries(fdapde_sparse_test PRIVATE GTest::gtest_main)
 gtest_discover_tests(fdapde_sparse_test PROPERTIES TIMEOUT 60)

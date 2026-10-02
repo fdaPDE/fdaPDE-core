@@ -75,6 +75,30 @@ template <typename XprType_> struct MatrixExpr {
       /// @brief rejects coefficientwise assignment to a temporary owner
       template <typename RhsXprType_>
       constexpr void operator=(const MatrixCoeffWiseExpr<RhsXprType_>&) && requires(XprType::NestAsRef != 0) = delete;
+    /// @brief assigns coefficients without resizing or snapshotting when all source storage is disjoint
+    /// @param rhs source whose read storage must not overlap the destination
+    template <typename RhsXprType>
+        requires(
+          internals::has_plain_dense_storage_v<XprType> && !std::is_const_v<typename XprType::Scalar> &&
+          !std::is_volatile_v<typename XprType::Scalar>)
+    constexpr XprType& assign_disjoint(const MatrixExpr<RhsXprType>& rhs) & {
+        const auto& source = rhs.derived();
+        fdapde_strong_assert(
+          derived().rows() == source.rows() && derived().cols() == source.cols(), std::invalid_argument,
+          "assign_disjoint requires matching shapes and does not resize the destination");
+        using executor = typename XprType::assignment_executor;
+        executor::run(derived(), source, [](auto& l, const auto& r) { l = r; });
+        return derived();
+    }
+    /// @brief assigns coefficientwise values without a snapshot when all source storage is disjoint
+    /// @param rhs source whose read storage must not overlap the destination
+    template <typename RhsXprType>
+        requires(
+          internals::has_plain_dense_storage_v<XprType> && !std::is_const_v<typename XprType::Scalar> &&
+          !std::is_volatile_v<typename XprType::Scalar>)
+    constexpr XprType& assign_disjoint(const MatrixCoeffWiseExpr<RhsXprType>& rhs) & {
+        return assign_disjoint(rhs.mwise());
+    }
     // compound algebra
     /// @brief adds a source snapshot to corresponding destination coefficients
     template <typename RhsXprType_>
@@ -190,6 +214,94 @@ template <typename XprType_> struct MatrixExpr {
       /// @brief rejects compound assignment to a temporary owner
       template <typename RhsXprType_>
       constexpr void operator*=(const MatrixExpr<RhsXprType_>&) && requires(XprType::NestAsRef != 0) = delete;
+
+    /// @brief writes a matrix-vector product into correctly sized storage without allocating for disjoint plain
+    /// operands
+    template <typename RhsXprType, typename DstXprType>
+        requires(
+          internals::has_plain_dense_storage_v<RhsXprType> && internals::has_plain_dense_storage_v<DstXprType> &&
+          std::same_as<
+            typename DstXprType::Scalar, promote_type_t<typename XprType::Scalar, typename RhsXprType::Scalar>> &&
+          std::is_arithmetic_v<typename DstXprType::Scalar> && !std::same_as<typename DstXprType::Scalar, bool> &&
+          !std::is_volatile_v<typename XprType::Scalar> && !std::is_volatile_v<typename RhsXprType::Scalar>)
+    constexpr DstXprType& multiply_into(const MatrixExpr<RhsXprType>& rhs, MatrixExpr<DstXprType>& destination) const {
+        const auto& input = rhs.derived();
+        auto& output = destination.derived();
+        const int rows = derived().rows(), inner = derived().cols();
+        fdapde_strong_assert(
+          input.cols() == 1 && input.rows() == inner && output.cols() == 1 && output.rows() == rows,
+          std::invalid_argument, "multiply_into requires compatible column vectors and a correctly sized output");
+        if (rows == 0) return output;
+        using Scalar = typename DstXprType::Scalar;
+        auto* output_data = output.data();
+        const auto* input_data = input.data();
+        const auto snapshot = [&] {
+            Vector<Scalar, Dynamic> temporary(rows);
+            for (int i = 0; i < rows; ++i) {
+                Scalar value = 0;
+                for (int k = 0; k < inner; ++k) value += derived()(i, k) * input_data[k];
+                temporary.data()[i] = value;
+            }
+            for (int i = 0; i < rows; ++i) output_data[i] = temporary.data()[i];
+        };
+        // unknown expression storage and constant evaluation retain conservative snapshot semantics
+        if constexpr (
+          !internals::has_plain_dense_storage_v<XprType> && !internals::is_plain_dense_transpose_v<XprType>) {
+            snapshot();
+        } else {
+            if (std::is_constant_evaluated()) {
+                snapshot();
+                return output;
+            }
+            const auto& matrix = [&]() -> const auto& {
+                if constexpr (internals::is_plain_dense_transpose_v<XprType>)
+                    return derived().operand();
+                else
+                    return derived();
+            }();
+            using MatrixType = std::remove_cvref_t<decltype(matrix)>;
+            const auto* matrix_data = matrix.data();
+            const auto overlaps = [&](const auto* data, int count) {
+                if (rows == 0 || count == 0) return false;
+                const std::less<const void*> before;
+                return before(output_data, data + count) && before(data, output_data + rows);
+            };
+            // overlapping vectors or matrix storage are read completely before any output coefficient changes
+            if (overlaps(input_data, inner) || overlaps(matrix_data, matrix.size())) {
+                snapshot();
+                return output;
+            }
+            const int original_row_stride = MatrixType::StorageOrder == RowMajor ? matrix.cols() : 1;
+            const int original_col_stride = MatrixType::StorageOrder == RowMajor ? 1 : matrix.rows();
+            const int row_stride =
+              internals::is_plain_dense_transpose_v<XprType> ? original_col_stride : original_row_stride;
+            const int col_stride =
+              internals::is_plain_dense_transpose_v<XprType> ? original_row_stride : original_col_stride;
+#if FDAPDE_ENABLE_SIMD_PRODUCT
+            if constexpr (
+              (std::same_as<Scalar, float> || std::same_as<Scalar, double>) &&
+              std::same_as<std::remove_const_t<typename MatrixType::Scalar>, Scalar> &&
+              std::same_as<std::remove_const_t<typename RhsXprType::Scalar>, Scalar>) {
+                if (row_stride == 1) {
+                    for (int i = 0; i < rows; ++i) output_data[i] = Scalar(0);
+                    for (int k = 0; k < inner; ++k) {
+                        const auto* column = matrix_data + k * col_stride;
+                        const Scalar value = input_data[k];
+                        for (int i = 0; i < rows; ++i) output_data[i] += column[i] * value;
+                    }
+                    return output;
+                }
+            }
+#endif
+            // contiguous transposed columns use ordered dot products without materializing the transpose
+            for (int i = 0; i < rows; ++i) {
+                Scalar value = 0;
+                for (int k = 0; k < inner; ++k) value += matrix_data[i * row_stride + k * col_stride] * input_data[k];
+                output_data[i] = value;
+            }
+        }
+        return output;
+    }
 
     // observers
     /// @brief returns the row count

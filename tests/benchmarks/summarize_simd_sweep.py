@@ -209,7 +209,81 @@ def table(items):
         f"| {escape(key)} | {escape(value)} |" for key, value in items]
 
 
-def render(datasets, job, hardware, provenance_errors):
+def load_preallocated(path):
+    """reuse the comparison report and verify recorded coverage without recomputing ratios"""
+    errors = []
+    manifest = read_json(path / "manifest.json", errors)
+    rows = read_json(path / "summary.json", errors)
+    if not isinstance(manifest, dict):
+        errors.append("manifest.json: absent or not a JSON object")
+        manifest = {}
+    if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+        errors.append("summary.json: absent or not a list of records")
+        rows = None
+    recorded = len(rows) if rows is not None else None
+    verified = sum(row.get("status") == "verified" for row in rows) if rows is not None else None
+    mismatches = sum(row.get("status") == "MISMATCH" for row in rows) if rows is not None else None
+    expected = manifest.get("expected_comparisons")
+    if not isinstance(expected, int) or isinstance(expected, bool) or expected <= 0:
+        errors.append("manifest.json: expected comparison count is absent or invalid")
+    if rows is not None and verified + mismatches != recorded:
+        errors.append("summary.json: unexpected comparison status")
+    if manifest.get("status") == "complete" and recorded != expected:
+        errors.append("summary.json: completed coverage differs from expected comparisons")
+    try:
+        content = (path / "summary.md").read_text(encoding="utf-8")
+        if not content.strip():
+            errors.append("summary.md: empty runner report")
+    except (OSError, UnicodeError) as error:
+        content = ""
+        errors.append(f"summary.md: {error}")
+    state = manifest.get("status")
+    if state == "failed" or manifest.get("error"):
+        status = "fallito"
+    elif state in ("partial", "running"):
+        status = "parziale" if state == "partial" else "in corso: parziale"
+    elif errors:
+        status = "non verificato: dati mancanti o incoerenti"
+    elif state == "complete" and (mismatches or manifest.get("comparison_agreement") == "mismatch"):
+        status = "non verificato: MISMATCH"
+    elif (state == "complete" and manifest.get("comparison_agreement") == "verified" and
+          manifest.get("final_hash_match") is True and verified == expected):
+        status = "completo: verificato"
+    else:
+        status = "non verificato: stato o provenienza incompleti"
+    return {"path": path, "manifest": manifest, "content": content, "status": status,
+            "recorded": recorded, "verified": verified, "mismatches": mismatches, "errors": errors}
+
+
+def render_preallocated(dataset, job):
+    """append the original runner summary after explicit status, provenance and coverage"""
+    manifest = dataset["manifest"]
+    lines = ["", "## Confronto preallocated/Eigen", "", f"Percorso: `{escape(dataset['path'])}`.",
+             f"Stato del confronto: **{escape(dataset['status'])}**.", ""]
+    lines += table([("status", manifest.get("status")), ("stage", manifest.get("stage")),
+                    ("error", manifest.get("error")), ("recorded_comparisons", dataset["recorded"]),
+                    ("expected_comparisons", manifest.get("expected_comparisons")),
+                    ("verified_comparisons", dataset["verified"]), ("mismatches", dataset["mismatches"]),
+                    ("comparison_agreement", manifest.get("comparison_agreement")),
+                    ("final_hash_match", manifest.get("final_hash_match")),
+                    ("policy", manifest.get("policy")), ("arguments", manifest.get("arguments"))])
+    inputs = job.get("preallocated_inputs", {})
+    if isinstance(inputs, dict) and inputs.get("status") == "absent":
+        lines += ["", "Capsule reali assenti: il confronto preallocated usa soltanto i dati sintetici."]
+    if dataset["errors"]:
+        lines += ["", "**Risultati mancanti o incoerenti:**"] + ["- " + escape(error) for error in dataset["errors"]]
+    lines += ["", "Il rapporto before/after sopra 1 indica meno tempo nel backend dopo i due punti;",
+              "min–max descrive la dispersione osservata, non un intervallo di confidenza.",
+              "MISMATCH non dimostra un vantaggio su input/output equivalenti; un output parziale non completa lo schedule.",
+              "Le tabelle e i rapporti seguenti sono quelli del runner; il riepilogo non li ricalcola."]
+    if dataset["content"]:
+        lines += ["", "### Report originale del runner", "", dataset["content"]]
+    else:
+        lines += ["", "Report del runner non disponibile; nessun risultato prestazionale viene dedotto."]
+    return lines
+
+
+def render(datasets, job, hardware, provenance_errors, preallocated=None):
     """assemble all recorded points and the coverage of the 37 published cases"""
     measured = {case for dataset in datasets for case in CASES
                 if primary_rows(dataset, case) and case not in dataset["invalid"]}
@@ -234,7 +308,8 @@ def render(datasets, job, hardware, provenance_errors):
     job_keys = ("git_commit", "git_branch", "git_dirty", "job_id", "hostname", "compiler", "compiler_version",
                 "cmake", "cmake_version", "ctest", "ctest_version",
                 "started_utc", "finished_utc", "status", "stage", "exit_code", "error", "affinity_cpu", "cache_bytes", "plots",
-                "googletest_source", "googletest_declared_revision")
+                "googletest_source", "googletest_declared_revision", "eigen_include", "eigen_version",
+                "preallocated_inputs", "preallocated_comparison")
     lines += table((key, job.get(key)) for key in job_keys)
     if job.get("parameters"):
         lines += ["", "Parametri del job:", "```json", json.dumps(job["parameters"], indent=2, ensure_ascii=False), "```"]
@@ -312,6 +387,9 @@ def render(datasets, job, hardware, provenance_errors):
                     lines.append("| " + " | ".join(values) + " |")
             if not case_rows:
                 lines.append("Nessun punto salvato per questo caso.")
+    if preallocated is not None:
+        lines.insert(3, f"Stato confronto preallocated/Eigen: **{escape(preallocated['status'])}**.")
+        lines += render_preallocated(preallocated, job)
     return "\n".join(lines) + "\n"
 
 
@@ -379,6 +457,41 @@ def self_test():
         failed_job = render([missing], job, {}, [])
         # verify global failure, unavailable configurations and explicit smoke counts survive rendering
         assert "**failed**" in failed_job and "nessun risultato dei test mancanti" in failed_job and "| runs | 148 |" in failed_job
+        preallocated_path = Path(temporary) / "preallocated"
+        preallocated_path.mkdir()
+        manifest = {"status": "complete", "expected_comparisons": 1, "comparison_agreement": "verified",
+                    "final_hash_match": True, "arguments": {"input": []}}
+        (preallocated_path / "manifest.json").write_text(json.dumps(manifest))
+        (preallocated_path / "summary.json").write_text(json.dumps([{"status": "verified"}]))
+        original = "# Native OFF/ON vs Eigen 3.4\n\n| saved paired ratio | 1.25 |\n"
+        (preallocated_path / "summary.md").write_text(original)
+        complete = render([missing], {"preallocated_inputs": {"status": "absent", "cases": []}},
+                          {}, [], load_preallocated(preallocated_path))
+        # verify complete coverage and hashes allow verified status while the runner's ratio table is preserved
+        assert ("**completo: verificato**" in complete and original in complete and "after sopra 1" in complete
+                and "Capsule reali assenti" in complete)
+        manifest.update(status="failed", error="worker timed out", expected_comparisons=2)
+        (preallocated_path / "manifest.json").write_text(json.dumps(manifest))
+        partial = render([missing], {}, {}, [], load_preallocated(preallocated_path))
+        # verify a failed partial campaign keeps its error and recorded count despite earlier verified points
+        assert "**fallito**" in partial and "worker timed out" in partial and "| recorded_comparisons | 1 |" in partial
+        absent = render([missing], {}, {}, [], load_preallocated(Path(temporary) / "absent"))
+        # verify a missing directory remains reportable without fabricating verified counts or a runner table
+        assert "dati mancanti" in absent and "| verified_comparisons | non disponibile |" in absent
+        manifest.update(status="partial", error=None)
+        (preallocated_path / "manifest.json").write_text(json.dumps(manifest))
+        # verify an interrupted campaign remains partial despite individually verified earlier points
+        assert load_preallocated(preallocated_path)["status"] == "parziale"
+        manifest.update(status="complete")
+        (preallocated_path / "manifest.json").write_text(json.dumps(manifest))
+        inconsistent = load_preallocated(preallocated_path)
+        # verify a complete manifest with a missing expected record cannot claim fully verified coverage
+        assert inconsistent["status"] != "completo: verificato" and inconsistent["errors"]
+        manifest.update(expected_comparisons=1, comparison_agreement="mismatch")
+        (preallocated_path / "manifest.json").write_text(json.dumps(manifest))
+        (preallocated_path / "summary.json").write_text(json.dumps([{"status": "MISMATCH"}]))
+        # verify a completed comparison with differing inputs or outputs remains explicitly unverified
+        assert load_preallocated(preallocated_path)["status"] == "non verificato: MISMATCH"
     print("summary self-test passed")
 
 
@@ -388,6 +501,7 @@ def main():
     parser.add_argument("results", nargs="*", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--job-metadata", type=Path)
+    parser.add_argument("--preallocated", type=Path, help="saved preallocated/Eigen comparison directory")
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
     if args.self_test:
@@ -402,7 +516,8 @@ def main():
     if not isinstance(job, dict) or not isinstance(hardware, dict):
         errors.append("job metadata and hardware must be JSON objects")
         job, hardware = {}, {}
-    report = render([load_dataset(path.resolve()) for path in args.results], job, hardware, errors)
+    preallocated = load_preallocated(args.preallocated.resolve()) if args.preallocated else None
+    report = render([load_dataset(path.resolve()) for path in args.results], job, hardware, errors, preallocated)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(report, encoding="utf-8")
     print(f"saved summary to {args.output}")

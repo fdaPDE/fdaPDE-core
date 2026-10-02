@@ -52,9 +52,22 @@ template <typename XprType> struct TransposeOp : public MatrixExpr<TransposeOp<X
     constexpr int rows() const { return Rows != Dynamic ? Rows : xpr_.cols(); }
     /// @brief returns the column count
     constexpr int cols() const { return Cols != Dynamic ? Cols : xpr_.rows(); }
+    /// @brief exposes the borrowed operand while the transpose expression remains alive
+    constexpr const auto& operand() const& { return xpr_; }
+    /// @brief rejects borrowing an operand from a temporary transpose expression
+    constexpr void operand() const&& = delete;
    private:
     XprTypeNested xpr_;
 };
+
+namespace internals {
+
+/// @brief identifies transpose adaptors whose original dense operand occupies contiguous storage
+template <typename XprType> inline constexpr bool is_plain_dense_transpose_v = false;
+template <typename XprType>
+inline constexpr bool is_plain_dense_transpose_v<TransposeOp<XprType>> = has_plain_dense_storage_v<XprType>;
+
+}   // namespace internals
 
 // expression of a reshaped MatrixExpr operand. Reshaping modifes the expression dimensions without reallocating memory
 /// @brief reinterprets coefficient positions using a different shape without allocating storage

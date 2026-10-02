@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <functional>
 #include <initializer_list>
 #include <iterator>
 #include <limits>
@@ -307,25 +308,41 @@ template <typename Scalar_> class SparseMatrix {
         fdapde_strong_assert(
           rhs.size() == cols_, std::invalid_argument, "sparse-vector product requires matching inner dimensions");
         Vector<ResultScalar, Dynamic> result(rows_);
-        ResultScalar* result_data = result.data();
-        for (Index row = 0; row < rows_; ++row) {
-            ResultScalar value {};
-            for (Index current = row_offsets_[row]; current < row_offsets_[row + 1]; ++current) {
-                if constexpr (has_plain_dense_storage_<RhsXprType>) {
-                    value = add_(
-                      value, multiply_(
-                               static_cast<ResultScalar>(values_[current]),
-                               static_cast<ResultScalar>(rhs.data()[column_indices_[current]])));
-                } else {
-                    value = add_(
-                      value, multiply_(
-                               static_cast<ResultScalar>(values_[current]),
-                               static_cast<ResultScalar>(rhs[column_indices_[current]])));
-                }
-            }
-            result_data[row] = value;
-        }
+        multiply_vector_into_(rhs, result.data());
         return result;
+    }
+
+    /// @brief overwrites a preallocated native column vector and snapshots overlapping operands
+    /// @details output uses the promoted scalar; disjoint arithmetic buffers require no allocation
+    template <internals::matrix_expression RhsXprType, internals::matrix_expression DstXprType>
+        requires(
+          internals::has_plain_dense_storage_v<RhsXprType> && internals::has_plain_dense_storage_v<DstXprType> &&
+          !std::is_const_v<DstXprType> && !std::is_volatile_v<RhsXprType> && !std::is_volatile_v<DstXprType> &&
+          !std::is_volatile_v<typename RhsXprType::Scalar> && (RhsXprType::Cols == 1 || RhsXprType::Cols == Dynamic) &&
+          (DstXprType::Cols == 1 || DstXprType::Cols == Dynamic) &&
+          std::same_as<
+            typename DstXprType::Scalar, std::common_type_t<Scalar, std::remove_cv_t<typename RhsXprType::Scalar>>>)
+    void multiply_into(const RhsXprType& rhs, DstXprType& output) const {
+        using ResultScalar = typename DstXprType::Scalar;
+        fdapde_strong_assert(
+          rhs.rows() == cols_ && rhs.cols() == 1, std::invalid_argument,
+          "sparse-vector product requires a matching column-vector input");
+        fdapde_strong_assert(
+          output.rows() == rows_ && output.cols() == 1, std::invalid_argument,
+          "sparse-vector product requires a matching preallocated column-vector output");
+        auto* output_data = output.data();
+        const auto precedes = std::less<const void*> {};
+        const auto overlaps = [&](const auto* data, std::size_t size) {
+            return size != 0 && rows_ != 0 && precedes(data, output_data + rows_) && precedes(output_data, data + size);
+        };
+        // defer writes when output aliases input coefficients or the stored CSR values
+        if (overlaps(rhs.data(), rhs.size()) || overlaps(values_.data(), values_.size())) {
+            Vector<ResultScalar, Dynamic> result(rows_);
+            multiply_vector_into_(rhs, result.data());
+            std::copy_n(result.data(), rows_, output_data);
+        } else {
+            multiply_vector_into_(rhs, output_data);
+        }
     }
 
     /// @brief multiplies matching dense expressions into an independent row-major matrix
@@ -436,6 +453,28 @@ template <typename Scalar_> class SparseMatrix {
 
     template <typename XprType_>
     static constexpr bool has_plain_dense_storage_ = internals::has_plain_dense_storage_v<XprType_>;
+
+    /// @brief evaluates CSR row dot products in stored-column order into independent output storage
+    template <internals::matrix_expression RhsXprType, typename ResultScalar>
+    void multiply_vector_into_(const RhsXprType& rhs, ResultScalar* result_data) const {
+        for (Index row = 0; row < rows_; ++row) {
+            ResultScalar value {};
+            for (Index current = row_offsets_[row]; current < row_offsets_[row + 1]; ++current) {
+                if constexpr (has_plain_dense_storage_<RhsXprType>) {
+                    value = add_(
+                      value, multiply_(
+                               static_cast<ResultScalar>(values_[current]),
+                               static_cast<ResultScalar>(rhs.data()[column_indices_[current]])));
+                } else {
+                    value = add_(
+                      value, multiply_(
+                               static_cast<ResultScalar>(values_[current]),
+                               static_cast<ResultScalar>(rhs[column_indices_[current]])));
+                }
+            }
+            result_data[row] = value;
+        }
+    }
 
     /// @brief adds coefficients and rejects integral overflow before evaluating the sum
     template <typename Value> static Value add_(const Value& lhs, const Value& rhs) {
