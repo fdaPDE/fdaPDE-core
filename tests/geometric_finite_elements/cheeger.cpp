@@ -169,8 +169,17 @@ TEST(CheegerInterpolation, ParameterAndBranchContracts) {
     EXPECT_THROW(gfe::internals::require_converged(fit.result()), std::domain_error);
     const auto data = nodes();
     const auto edge = gfe::p1_geodesic_linearization(geometry, data, std::array {.5, .5, 0.});
-    // the recovered implicit derivative supports interior weights only
-    EXPECT_THROW(edge.rho_jvp(), std::domain_error);
+    const auto edge_derivative = edge.rho_jvp();
+    // the active two-node Hessian certifies the rho derivative despite the inactive coordinate
+    ASSERT_TRUE(edge_derivative.converged());
+    constexpr double step = 1e-5;
+    const auto edge_plus =
+      gfe::p1_geodesic_value(Geometry::from_rho(geometry.rho() + step), data, std::array {.5, .5, 0.});
+    const auto edge_minus =
+      gfe::p1_geodesic_value(Geometry::from_rho(geometry.rho() - step), data, std::array {.5, .5, 0.});
+    const Tangent edge_difference((edge_plus.value - edge_minus.value) / (2 * step));
+    // centered refits independently check the edge rho derivative with a zero-weight node
+    EXPECT_LT(error(edge_derivative.derivative, edge_difference), 1e-6);
     const auto interior = gfe::p1_geodesic_linearization(geometry, data, std::array {.2, .3, .5}, accurate());
     // non-tangent directions to the normalized P1 simplex are rejected
     EXPECT_THROW(interior.weight_jvp(std::array {1., 0., 0.}), std::invalid_argument);
