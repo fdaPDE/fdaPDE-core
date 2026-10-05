@@ -43,6 +43,7 @@ class P1GeodesicLinearization<manifold::CheegerLogEuclideanSPDGeometry<S, 2, U>,
           options.mean.solver.gradient_tolerance > 0 && std::isfinite(options.mean.solver.gradient_tolerance) &&
             options.linear_solve.residual_tolerance > 0 && std::isfinite(options.linear_solve.residual_tolerance),
           std::invalid_argument, "Cheeger P1 requires positive finite tolerances");
+        nodes_.reserve(binding_.size());
         for (std::size_t i = 0; i < binding_.size(); ++i) nodes_.push_back(Geometry::chart(binding_[i]));
         if (!rho_nodes_.empty()) {
             fdapde_strong_assert(
@@ -316,6 +317,8 @@ class P1GeodesicLinearization<manifold::CheegerLogEuclideanSPDGeometry<S, 2, U>,
     Fit evaluate_(const std::vector<double>& phi) const {
         Fit f;
         f.phi = phi;
+        f.z.reserve(w_.size());
+        f.gradient.reserve(w_.size());
         for (std::size_t i = 0; i < w_.size(); ++i) {
             const auto z = manifold::internals::cheeger_rotate(nodes_[i], -phi[i]);
             f.z.push_back(z);
