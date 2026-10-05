@@ -148,6 +148,19 @@ P1ValueResult<typename manifold::AffineInvariantSPDGeometry<Scalar_, Order_, Use
       manifold::weighted_karcher_mean(geometry, nodal_values, barycentric_weights, options, retained));
 }
 
+/// @brief evaluates a BW P1 mean while preserving its convergence diagnostics and cached frames
+template <typename Scalar, int Order, Usage Uses, typename Nodes>
+P1ValueResult<typename manifold::BuresWassersteinSPDGeometry<Scalar, Order, Uses>::Point> p1_geodesic_value(
+  const manifold::BuresWassersteinSPDGeometry<Scalar, Order, Uses>& geometry, const Nodes& nodal_values,
+  std::span<const double> barycentric_weights, const manifold::WeightedKarcherMeanOptions& options = {},
+  manifold::internals::KarcherWorkspace<manifold::BuresWassersteinSPDGeometry<Scalar, Order, Uses>>* retained =
+    nullptr) {
+    const auto vertex_index = internals::validate_p1_data(nodal_values.size(), barycentric_weights);
+    if (vertex_index) return internals::p1_vertex_result(geometry, nodal_values, *vertex_index);
+    return internals::p1_value_result(
+      manifold::weighted_karcher_mean(geometry, nodal_values, barycentric_weights, options, retained));
+}
+
 /// @brief initializes the rotation mean at the first node with maximal barycentric weight
 template <typename S, int N, RotationUsage Uses, typename Nodes>
 P1ValueResult<typename manifold::SOGeometry<S, N, Uses>::Point> p1_geodesic_value(

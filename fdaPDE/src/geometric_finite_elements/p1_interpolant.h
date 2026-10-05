@@ -534,6 +534,24 @@ auto AffineInvariantSPDGeometry<Scalar_, Order_, Uses_>::interpolant(
     return gfe::internals::make_p1_interpolant(
       *this, std::forward<Element>(element), std::forward<Nodes>(nodes), options);
 }
+/// @brief delegates BW interpolation to the shared simplex or mesh preparation path
+template <typename Scalar, int Order, Usage Uses>
+template <typename Element, typename Nodes>
+    requires gfe::P1InterpolationBinding<Element, Nodes>
+auto BuresWassersteinSPDGeometry<Scalar, Order, Uses>::interpolant(Element&& element, Nodes&& nodes) const {
+    return interpolant(
+      std::forward<Element>(element), std::forward<Nodes>(nodes), gfe::P1GeodesicLinearizationOptions {});
+}
+/// @brief delegates BW interpolation with explicit mean and differential tolerances
+template <typename Scalar, int Order, Usage Uses>
+template <typename Element, typename Nodes>
+    requires gfe::P1InterpolationBinding<Element, Nodes>
+auto BuresWassersteinSPDGeometry<Scalar, Order, Uses>::interpolant(
+  Element&& element, Nodes&& nodes, const gfe::P1GeodesicLinearizationOptions& options) const {
+    return gfe::internals::make_p1_interpolant(
+      *this, std::forward<Element>(element), std::forward<Nodes>(nodes), options);
+}
+
 /// @brief delegates rotation interpolation to the shared simplex or mesh preparation path
 template <typename S, int N, RotationUsage Uses>
 template <typename Element, typename Nodes>

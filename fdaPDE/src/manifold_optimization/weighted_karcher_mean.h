@@ -112,6 +112,10 @@ struct KarcherWorkspace<Geometry> {
 template <typename Geometry> auto karcher_base(const point_t<Geometry>& point) {
     if constexpr (RotationLike<point_t<Geometry>>)
         return point;
+    else if constexpr (requires { typename Geometry::MeanCachePolicy; })
+        return SPDMatrix<
+          typename Geometry::Scalar, point_t<Geometry>::Rows, point_t<Geometry>::Cols,
+          typename Geometry::MeanCachePolicy>(point);
     else
         return SPDMatrix<
           typename Geometry::Scalar, point_t<Geometry>::Rows, point_t<Geometry>::Cols,
