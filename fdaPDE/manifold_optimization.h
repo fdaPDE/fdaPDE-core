@@ -34,13 +34,13 @@
 #include "src/manifold_optimization/truncated_conjugate_gradient.h"
 #include "src/manifold_optimization/trust_region.h"
 #include "src/manifold_optimization/weighted_karcher_mean.h"
-#include "src/manifold_optimization/log_euclidean_spd.h"
-#include "src/manifold_optimization/affine_invariant_spd.h"
-#include "src/manifold_optimization/bures_wasserstein_spd.h"
+#include "src/manifold_optimization/spd/log_euclidean/log_euclidean_spd.h"
+#include "src/manifold_optimization/spd/affine_invariant/affine_invariant_spd.h"
+#include "src/manifold_optimization/spd/bures_wasserstein/bures_wasserstein_spd.h"
 #include "src/manifold_optimization/so.h"
-#include "src/manifold_optimization/cheeger_log_euclidean_spd.h"
-#include "src/manifold_optimization/cheeger_lift.h"
-#include "src/manifold_optimization/cheeger_spd_general.h"
+#include "src/manifold_optimization/spd/cheeger_log_euclidean/cheeger_log_euclidean_spd.h"
+#include "src/manifold_optimization/spd/cheeger_log_euclidean/cheeger_lift.h"
+#include "src/manifold_optimization/spd/cheeger_log_euclidean/cheeger_spd_general.h"
 
 // clang-format on
 

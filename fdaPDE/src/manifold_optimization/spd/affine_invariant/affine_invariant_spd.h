@@ -17,9 +17,9 @@
 #ifndef __FDAPDE_MANIFOLD_AFFINE_INVARIANT_SPD_H__
 #define __FDAPDE_MANIFOLD_AFFINE_INVARIANT_SPD_H__
 
-#include "geometry_expr.h"
-#include "header_check.h"
-#include "spd_geometry_common.h"
+#include "../../geometry_expr.h"
+#include "../../header_check.h"
+#include "../spd_geometry_common.h"
 
 namespace fdapde {
 namespace manifold {

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #ifndef __FDAPDE_CHEEGER_LIFT_H__
 #define __FDAPDE_CHEEGER_LIFT_H__
-#include "header_check.h"
+#include "../../header_check.h"
 
 namespace fdapde::manifold::internals {
 /// @brief pairs full matrix coefficients without assuming a storage layout

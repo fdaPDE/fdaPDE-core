@@ -17,7 +17,7 @@
 #ifndef __FDAPDE_MANIFOLD_SPD_GEOMETRY_COMMON_H__
 #define __FDAPDE_MANIFOLD_SPD_GEOMETRY_COMMON_H__
 
-#include "header_check.h"
+#include "../header_check.h"
 
 namespace fdapde {
 namespace manifold {

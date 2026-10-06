@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #ifndef __FDAPDE_CHEEGER_SPD_GENERAL_H__
 #define __FDAPDE_CHEEGER_SPD_GENERAL_H__
-#include "header_check.h"
+#include "../../header_check.h"
 namespace fdapde::manifold::internals {
 /// @brief retains one resolved pair lift and reuses its factorization for logarithm pullbacks
 template <typename S, int N> class CheegerPairFrame {

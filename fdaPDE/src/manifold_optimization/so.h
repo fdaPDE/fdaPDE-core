@@ -19,7 +19,7 @@
 #include "geometry_expr.h"
 #include "header_check.h"
 #include "so_differential.h"
-#include "spd_geometry_common.h"
+#include "spd/spd_geometry_common.h"
 
 namespace fdapde {
 /// @brief identifies per-point rotation operations that can reuse the logarithm at identity
