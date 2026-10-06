@@ -264,7 +264,8 @@ fdapde_reject_program(partial_dynamic_rotation "rotation shape must be square")
 fdapde_reject_program(invalid_so_usage "invalid SO geometry usage")
 
 add_executable(fdapde_interpolation_test geometric_finite_elements/interpolation.cpp
-  geometric_finite_elements/rotations.cpp geometric_finite_elements/cheeger.cpp)
+  geometric_finite_elements/rotations.cpp geometric_finite_elements/cheeger.cpp
+  manifold_optimization/cheeger_pair.cpp)
 fdapde_configure_target(fdapde_interpolation_test)
 target_link_libraries(fdapde_interpolation_test PRIVATE GTest::gtest_main)
 gtest_discover_tests(fdapde_interpolation_test PROPERTIES TIMEOUT 60)

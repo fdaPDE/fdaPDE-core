@@ -60,14 +60,47 @@ inline CheegerPair cheeger_pair(CheegerChart a, CheegerChart b, double rho) {
     for (std::size_t i = 1; i < bounds.size(); ++i) {
         double lo = bounds[i - 1], hi = bounds[i], gl = gradient(lo);
         if (gl * gradient(hi) >= 0) continue;
-        for (int k = 0; k < 60; ++k) {
-            const double mid = (lo + hi) / 2;
-            if ((gradient(mid) > 0) == (gl > 0))
-                lo = mid;
-            else
-                hi = mid;
+        double root = 0;
+        bool refined = false;
+        const double epsilon = std::numeric_limits<double>::epsilon();
+        // keep amplified cost scales and nearly degenerate curvature on the established bisection path
+        if (e <= 1 / epsilon && e > 4 * p && e - 4 * p > std::sqrt(epsilon) * (e + 4 * p)) {
+            // keep Newton inside the original convex bracket and avoid a residual-only stop near flat curvature
+            double left = lo, right = hi, phi = 0;
+            for (int iteration = 0; iteration < 16; ++iteration) {
+                const double g = gradient(phi), curvature = 16 * p * std::cos(2 * (delta - phi)) + 4 * e;
+                if (!std::isfinite(g) || !std::isfinite(curvature) || !(curvature > 0)) break;
+                const double radius = 8 * epsilon * std::max(1., std::abs(phi)),
+                             near_left = std::max(left, phi - radius), near_right = std::min(right, phi + radius),
+                             error =
+                               4 * epsilon * (8 * p + 4 * e * std::max(std::abs(near_left), std::abs(near_right)));
+                // require opposite signs beyond estimated evaluation roundoff across a machine-scale bracket
+                if (near_left < near_right && gradient(near_left) < -error && gradient(near_right) > error) {
+                    root = (near_left + near_right) / 2;
+                    refined = true;
+                    break;
+                }
+                if ((g > 0) == (gl > 0))
+                    left = phi;
+                else
+                    right = phi;
+                const double next = phi - g / curvature;
+                phi = std::isfinite(next) && next > left && next < right ? next : (left + right) / 2;
+                if (!(phi > left && phi < right)) break;
+            }
         }
-        candidates.push_back((lo + hi) / 2);
+        if (!refined) {
+            // unresolved or poorly conditioned refinements retain the original sixty-step bisection interval
+            for (int k = 0; k < 60; ++k) {
+                const double mid = (lo + hi) / 2;
+                if ((gradient(mid) > 0) == (gl > 0))
+                    lo = mid;
+                else
+                    hi = mid;
+            }
+            root = (lo + hi) / 2;
+        }
+        candidates.push_back(root);
     }
     double best = std::numeric_limits<double>::infinity();
     for (double phi : candidates) best = std::min(best, cost(phi));
