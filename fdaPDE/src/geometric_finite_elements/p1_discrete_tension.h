@@ -210,6 +210,175 @@ P1ObjectiveResult<WithGradient, typename Geometry::Tangent> p1_intrinsic_discret
     return result;
 }
 
+/// @brief lists each node's incident edges in the stencil's original accumulation order
+inline std::vector<std::vector<std::size_t>> p1_discrete_tension_incidence(const P1LumpedLaplacianStencil& stencil) {
+    std::vector<std::vector<std::size_t>> incident(stencil.node_count());
+    for (std::size_t e = 0; e < stencil.edges.size(); ++e) {
+        incident[stencil.edges[e].first].push_back(e);
+        incident[stencil.edges[e].second].push_back(e);
+    }
+    return incident;
+}
+
+/// @brief evaluates flat-coordinate tension with independent edge work and ordered nodal gathers
+template <bool WithGradient, typename Geometry, typename Nodes>
+    requires is_flat_spd_geometry<Geometry>
+P1ObjectiveResult<WithGradient, typename Geometry::Tangent> p1_flat_discrete_tension_parallel_impl(
+  const Geometry& geometry, const Nodes& nodes, const P1LumpedLaplacianStencil& stencil) {
+    using Scalar = typename Geometry::Scalar;
+    using Tangent = typename Geometry::Tangent;
+    using Frame = typename FlatSPDChartFrame<Geometry>::type;
+    p1_discrete_tension_validate(geometry, nodes, stencil);
+    const auto incident = p1_discrete_tension_incidence(stencil);
+    std::vector<std::optional<Frame>> frames(nodes.size());
+    for_each_point(nodes.size(), execution_par, [&](std::size_t i) {
+        frames[i].emplace(p1_flat_chart_frame(geometry, nodes[i]));
+        p1_objective_require_finite_shape<std::domain_error>(
+          p1_flat_frame_coordinates<Geometry>(*frames[i]), geometry.order(),
+          "P1 flat-coordinate discrete tension chart is nonfinite");
+    });
+    std::vector<Tangent> differences(stencil.edges.size());
+    for_each_point(stencil.edges.size(), execution_par, [&](std::size_t e) {
+        const auto& edge = stencil.edges[e];
+        differences[e] = geometry.linear_combination(
+          nodes[edge.first], 1, p1_flat_frame_coordinates<Geometry>(*frames[edge.second]), -1,
+          p1_flat_frame_coordinates<Geometry>(*frames[edge.first]));
+    });
+    auto residuals = p1_objective_zero_gradient(geometry, nodes);
+    std::vector<double> scaled_norms(nodes.size());
+    for_each_point(nodes.size(), execution_par, [&](std::size_t i) {
+        for (std::size_t e : incident[i]) {
+            const auto& edge = stencil.edges[e];
+            const double stiffness = edge.first == i ? edge.stiffness : -edge.stiffness;
+            residuals[i] = geometry.linear_combination(nodes[i], 1, residuals[i], stiffness, differences[e]);
+        }
+        p1_objective_require_finite_shape<std::domain_error>(
+          residuals[i], geometry.order(), "P1 flat-coordinate discrete tension residual is nonfinite");
+        scaled_norms[i] = static_cast<double>(residuals[i].norm()) / std::sqrt(stencil.lumped_masses[i]);
+    });
+    P1ObjectiveResult<WithGradient, Tangent> result;
+    for (double norm : scaled_norms) {
+        result.value = std::fma(0.5 * norm, norm, result.value);
+        fdapde_strong_assert(
+          std::isfinite(result.value), std::domain_error, "P1 flat-coordinate discrete tension value is nonfinite");
+    }
+    if constexpr (WithGradient) {
+        for_each_point(stencil.edges.size(), execution_par, [&](std::size_t e) {
+            const auto& edge = stencil.edges[e];
+            Tangent difference = geometry.zero_tangent(nodes[edge.first]);
+            for (int row = 0; row < geometry.order(); ++row) {
+                for (int col = 0; col <= row; ++col) {
+                    const double first = p1_discrete_tension_multiply_divide(
+                      edge.stiffness, static_cast<double>(residuals[edge.first](row, col)),
+                      stencil.lumped_masses[edge.first]);
+                    const double second = p1_discrete_tension_multiply_divide(
+                      edge.stiffness, static_cast<double>(residuals[edge.second](row, col)),
+                      stencil.lumped_masses[edge.second]);
+                    difference(row, col) = static_cast<Scalar>(second - first);
+                }
+            }
+            p1_objective_require_finite_shape<std::domain_error>(
+              difference, geometry.order(), "P1 flat-coordinate inverse-mass edge gradient is nonfinite");
+            differences[e] = std::move(difference);
+        });
+        result.nodal_gradient = p1_objective_zero_gradient(geometry, nodes);
+        for_each_point(nodes.size(), execution_par, [&](std::size_t i) {
+            Tangent gradient = geometry.zero_tangent(nodes[i]);
+            for (std::size_t e : incident[i]) {
+                const double sign = stencil.edges[e].first == i ? 1 : -1;
+                gradient = geometry.linear_combination(nodes[i], 1, gradient, sign, differences[e]);
+            }
+            p1_objective_require_finite_shape<std::domain_error>(
+              gradient, geometry.order(), "P1 flat-coordinate discrete tension chart gradient is nonfinite");
+            result.nodal_gradient[i] = p1_flat_frame_inverse_chart_jvp(geometry, *frames[i], gradient);
+            p1_objective_require_finite_shape<std::domain_error>(
+              result.nodal_gradient[i], geometry.order(), "P1 flat-coordinate discrete tension gradient is nonfinite");
+        });
+    }
+    return result;
+}
+
+/// @brief evaluates intrinsic tension with parallel relative frames and order-preserving nodal pullbacks
+template <bool WithGradient, typename Geometry, typename Nodes>
+P1ObjectiveResult<WithGradient, typename Geometry::Tangent> p1_intrinsic_discrete_tension_parallel_impl(
+  const Geometry& geometry, const Nodes& nodes, const P1LumpedLaplacianStencil& stencil) {
+    using Tangent = typename Geometry::Tangent;
+    using Frame = typename Geometry::RelativeFrame;
+    p1_discrete_tension_validate(geometry, nodes, stencil);
+    const auto incident = p1_discrete_tension_incidence(stencil);
+    std::vector<std::array<std::optional<Frame>, 2>> frames;
+    if constexpr (WithGradient) frames.resize(stencil.edges.size());
+    std::vector<std::array<Tangent, 2>> logarithms(stencil.edges.size());
+    for_each_point(stencil.edges.size(), execution_par, [&](std::size_t e) {
+        const auto& edge = stencil.edges[e];
+        auto first = geometry.relative_frame(nodes[edge.first], nodes[edge.second]);
+        auto second = geometry.relative_frame(nodes[edge.second], nodes[edge.first]);
+        logarithms[e][0] = geometry.logarithm(first);
+        logarithms[e][1] = geometry.logarithm(second);
+        if constexpr (WithGradient) {
+            frames[e][0].emplace(std::move(first));
+            frames[e][1].emplace(std::move(second));
+        }
+    });
+    auto residuals = p1_objective_zero_gradient(geometry, nodes);
+    std::vector<double> scaled_norms(nodes.size());
+    for_each_point(nodes.size(), execution_par, [&](std::size_t i) {
+        for (std::size_t e : incident[i]) {
+            const auto& edge = stencil.edges[e];
+            const int direction = edge.first == i ? 0 : 1;
+            residuals[i] =
+              geometry.linear_combination(nodes[i], 1, residuals[i], edge.stiffness, logarithms[e][direction]);
+        }
+        p1_objective_require_finite_shape<std::domain_error>(
+          residuals[i], geometry.order(), "P1 intrinsic discrete tension residual is nonfinite");
+        scaled_norms[i] = geometry.norm(nodes[i], residuals[i]) / std::sqrt(stencil.lumped_masses[i]);
+    });
+    P1ObjectiveResult<WithGradient, Tangent> result;
+    for (double norm : scaled_norms) {
+        result.value = std::fma(0.5 * norm, norm, result.value);
+        fdapde_strong_assert(
+          std::isfinite(result.value), std::domain_error, "P1 intrinsic discrete tension value is nonfinite");
+    }
+    if constexpr (WithGradient) {
+        std::vector<std::array<Tangent, 4>> actions(stencil.edges.size());
+        for_each_point(stencil.edges.size(), execution_par, [&](std::size_t e) {
+            const auto& edge = stencil.edges[e];
+            for (int reverse = 0; reverse < 2; ++reverse) {
+                const auto base = reverse ? edge.second : edge.first;
+                const auto target = reverse ? edge.first : edge.second;
+                const auto& frame = *frames[e][reverse];
+                const Tangent base_action = geometry.half_squared_distance_hessian_vector(frame, residuals[base]);
+                const Tangent target_action = geometry.logarithm_target_vjp(frame, residuals[base]);
+                actions[e][2 * reverse] = p1_discrete_tension_scale_divide(
+                  geometry, nodes[base], edge.stiffness, base_action, stencil.lumped_masses[base],
+                  "P1 intrinsic inverse-mass base gradient is nonfinite");
+                actions[e][2 * reverse + 1] = p1_discrete_tension_scale_divide(
+                  geometry, nodes[target], edge.stiffness, target_action, stencil.lumped_masses[base],
+                  "P1 intrinsic inverse-mass target gradient is nonfinite");
+            }
+        });
+        result.nodal_gradient = p1_objective_zero_gradient(geometry, nodes);
+        for_each_point(nodes.size(), execution_par, [&](std::size_t i) {
+            for (std::size_t e : incident[i]) {
+                if (stencil.edges[e].first == i) {
+                    result.nodal_gradient[i] =
+                      geometry.linear_combination(nodes[i], 1, result.nodal_gradient[i], -1, actions[e][0]);
+                    result.nodal_gradient[i] =
+                      geometry.linear_combination(nodes[i], 1, result.nodal_gradient[i], 1, actions[e][3]);
+                } else {
+                    result.nodal_gradient[i] =
+                      geometry.linear_combination(nodes[i], 1, result.nodal_gradient[i], 1, actions[e][1]);
+                    result.nodal_gradient[i] =
+                      geometry.linear_combination(nodes[i], 1, result.nodal_gradient[i], -1, actions[e][2]);
+                }
+            }
+            p1_objective_require_finite_shape<std::domain_error>(
+              result.nodal_gradient[i], geometry.order(), "P1 intrinsic discrete tension gradient is nonfinite");
+        });
+    }
+    return result;
+}
+
 }   // namespace internals
 
 /// @brief evaluates half the mass-weighted squared discrete tension
@@ -279,6 +448,46 @@ p1_discrete_tension_contribution(
   const manifold::BuresWassersteinSPDGeometry<Scalar, Order, Uses>& geometry, const Nodes& nodal_values,
   const P1LumpedLaplacianStencil& stencil) {
     return internals::p1_intrinsic_discrete_tension_impl<true>(geometry, nodal_values, stencil);
+}
+
+/// @brief evaluates squared tension using parallel edge work without changing nodal summation order
+/// @details fewer than 32 nodes or one configured worker use the unchanged serial implementation
+template <typename Geometry, typename Nodes, internals::PointExecutionPolicy Policy>
+    requires requires(const Geometry& geometry, const Nodes& nodes, const P1LumpedLaplacianStencil& stencil) {
+        p1_discrete_tension_value(geometry, nodes, stencil);
+    }
+P1ObjectiveValueResult p1_discrete_tension_value(
+  const Geometry& geometry, const Nodes& nodes, const P1LumpedLaplacianStencil& stencil, Policy) {
+    if constexpr (std::same_as<Policy, execution_seq_t>)
+        return p1_discrete_tension_value(geometry, nodes, stencil);
+    else {
+        if (nodes.size() < 32 || parallel_get_num_threads() == 1)
+            return p1_discrete_tension_value(geometry, nodes, stencil);
+        if constexpr (internals::is_flat_spd_geometry<Geometry>)
+            return internals::p1_flat_discrete_tension_parallel_impl<false>(geometry, nodes, stencil);
+        else
+            return internals::p1_intrinsic_discrete_tension_parallel_impl<false>(geometry, nodes, stencil);
+    }
+}
+
+/// @brief returns tension and metric gradients using deterministic parallel edge and nodal work
+/// @details fewer than 32 nodes or one configured worker use the unchanged serial implementation
+template <typename Geometry, typename Nodes, internals::PointExecutionPolicy Policy>
+    requires requires(const Geometry& geometry, const Nodes& nodes, const P1LumpedLaplacianStencil& stencil) {
+        p1_discrete_tension_contribution(geometry, nodes, stencil);
+    }
+P1ObjectiveContributionResult<typename Geometry::Tangent> p1_discrete_tension_contribution(
+  const Geometry& geometry, const Nodes& nodes, const P1LumpedLaplacianStencil& stencil, Policy) {
+    if constexpr (std::same_as<Policy, execution_seq_t>)
+        return p1_discrete_tension_contribution(geometry, nodes, stencil);
+    else {
+        if (nodes.size() < 32 || parallel_get_num_threads() == 1)
+            return p1_discrete_tension_contribution(geometry, nodes, stencil);
+        if constexpr (internals::is_flat_spd_geometry<Geometry>)
+            return internals::p1_flat_discrete_tension_parallel_impl<true>(geometry, nodes, stencil);
+        else
+            return internals::p1_intrinsic_discrete_tension_parallel_impl<true>(geometry, nodes, stencil);
+    }
 }
 
 }   // namespace gfe

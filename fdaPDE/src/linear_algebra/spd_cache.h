@@ -27,7 +27,7 @@ namespace Cache {
 
 /// @brief selects the algebraic quantities retained by an SPD value at compile time
 template <unsigned Flags_> struct Policy {
-    fdapde_static_assert((Flags_ & ~31u) == 0, SPD_CACHE_POLICY_CONTAINS_UNKNOWN_FLAGS);
+    fdapde_static_assert((Flags_ & ~127u) == 0, SPD_CACHE_POLICY_CONTAINS_UNKNOWN_FLAGS);
     static constexpr unsigned Flags = Flags_;
 };
 using None = Policy<0>;
@@ -36,6 +36,8 @@ using Log = Policy<2>;
 using Sqrt = Policy<4>;
 using InverseSqrt = Policy<8>;
 using LogDividedDifferences = Policy<16>;
+using Cholesky = Policy<32>;
+using LogCholesky = Policy<64>;
 template <typename... Policies> using Union = Policy<(Policies::Flags | ... | 0u)>;
 
 }   // namespace Cache
@@ -84,7 +86,8 @@ template <typename Scalar_, int Order_, typename Policy_> class spd_cache_slot {
         const auto order = static_cast<std::size_t>(n);
         return (Has<Cache::Spectral> ? order * (order + 1) : 0) +
                (Has<Cache::Log> + Has<Cache::Sqrt> + Has<Cache::InverseSqrt>)*order * (order + 1) / 2 +
-               (Has<Cache::LogDividedDifferences> ? order * order : 0);
+               (Has<Cache::LogDividedDifferences> + Has<Cache::Cholesky>)*order * order +
+               (Has<Cache::LogCholesky> ? order * (order + 1) / 2 : 0);
     }
     /// @brief returns read-only eigenvectors in the basis shared by the retained eigenvalues
     auto eigenvectors() const
@@ -104,8 +107,8 @@ template <typename Scalar_, int Order_, typename Policy_> class spd_cache_slot {
         requires(Has<Quantity>)
     {
         static_assert(
-          Quantity::Flags == 2 || Quantity::Flags == 4 || Quantity::Flags == 8,
-          "cache matrix access requires log, sqrt or inverse sqrt");
+          Quantity::Flags == 2 || Quantity::Flags == 4 || Quantity::Flags == 8 || Quantity::Flags == 64,
+          "cache matrix access requires log, sqrt, inverse sqrt or log-Cholesky");
         return SymmetricMatrixView<const Scalar, Rows, Cols>(data_ + offset_<Quantity>(), order_, order_);
     }
     /// @brief borrows the logarithmic divided differences in the cache's original spectral ordering
@@ -113,6 +116,12 @@ template <typename Scalar_, int Order_, typename Policy_> class spd_cache_slot {
         requires(Has<Cache::LogDividedDifferences>)
     {
         return MatrixView<const Scalar, Rows, Cols>(data_ + offset_<Cache::LogDividedDifferences>(), order_, order_);
+    }
+    /// @brief borrows the positive-diagonal lower factor with a zero upper triangle
+    auto cholesky() const
+        requires(Has<Cache::Cholesky>)
+    {
+        return MatrixView<const Scalar, Rows, Cols>(data_ + offset_<Cache::Cholesky>(), order_, order_);
     }
     /// @brief exposes the read-only scalar buffer for layout inspection
     const Scalar* data() const { return data_; }
@@ -135,6 +144,10 @@ template <typename Scalar_, int Order_, typename Policy_> class spd_cache_slot {
         }
         if constexpr (Has<Cache::Log> && spd_cache_has_v<OtherPolicy, Cache::Log>) copy_matrix_<Cache::Log>(source);
         if constexpr (Has<Cache::Sqrt> && spd_cache_has_v<OtherPolicy, Cache::Sqrt>) copy_matrix_<Cache::Sqrt>(source);
+        if constexpr (Has<Cache::LogCholesky> && spd_cache_has_v<OtherPolicy, Cache::LogCholesky>)
+            copy_matrix_<Cache::LogCholesky>(source);
+        if constexpr (Has<Cache::Cholesky> && spd_cache_has_v<OtherPolicy, Cache::Cholesky>)
+            std::copy_n(source.cholesky().data(), std::size_t(order_) * order_, data_ + offset_<Cache::Cholesky>());
         if constexpr (Has<Cache::InverseSqrt> && spd_cache_has_v<OtherPolicy, Cache::InverseSqrt>)
             copy_matrix_<Cache::InverseSqrt>(source);
         if constexpr (
@@ -155,6 +168,9 @@ template <typename Scalar_, int Order_, typename Policy_> class spd_cache_slot {
         }
         if constexpr (Has<Cache::Sqrt>) set_identity_matrix_<Cache::Sqrt>();
         if constexpr (Has<Cache::InverseSqrt>) set_identity_matrix_<Cache::InverseSqrt>();
+        if constexpr (Has<Cache::Cholesky>)
+            for (int i = 0; i < order_; ++i)
+                data_[offset_<Cache::Cholesky>() + std::size_t(i) * order_ + i] = Scalar(1);
         if constexpr (Has<Cache::LogDividedDifferences>) {
             std::fill_n(data_ + offset_<Cache::LogDividedDifferences>(), std::size_t(order_) * order_, Scalar(1));
         }
@@ -188,6 +204,46 @@ template <typename Scalar_, int Order_, typename Policy_> class spd_cache_slot {
             }
         }
     }
+    /// @brief prepares absent triangular quantities from the owner's certified coefficients
+    template <typename ReusablePolicy = Cache::None, typename Coefficients>
+    void prepare_triangular(const Coefficients& coefficients) {
+        using Missing = Cache::Policy<CachePolicy::Flags & ~ReusablePolicy::Flags>;
+        if constexpr (spd_cache_has_v<Missing, Cache::Cholesky> || spd_cache_has_v<Missing, Cache::LogCholesky>) {
+            Matrix<Scalar, Rows, Cols> temporary;
+            if constexpr (Rows == Dynamic && !Has<Cache::Cholesky>) temporary.resize(order_, order_);
+            auto factor = [&]() {
+                if constexpr (Has<Cache::Cholesky>)
+                    return MatrixView<Scalar, Rows, Cols>(data_ + offset_<Cache::Cholesky>(), order_, order_);
+                else
+                    return MatrixView<Scalar, Rows, Cols>(temporary.data(), order_, order_);
+            }();
+            if constexpr (!spd_cache_has_v<ReusablePolicy, Cache::Cholesky> || !Has<Cache::Cholesky>) {
+                for (int i = 0; i < order_; ++i) {
+                    for (int j = 0; j < order_; ++j) factor(i, j) = Scalar(0);
+                    for (int j = 0; j <= i; ++j) {
+                        long double value = static_cast<Scalar>(coefficients(i, j));
+                        for (int k = 0; k < j; ++k) value -= static_cast<long double>(factor(i, k)) * factor(j, k);
+                        fdapde_strong_assert(
+                          j != i || (value > 0 && std::isfinite(value)), std::domain_error,
+                          "SPD cache: Cholesky pivot must be positive and finite");
+                        factor(i, j) = static_cast<Scalar>(i == j ? std::sqrt(value) : value / factor(j, j));
+                        fdapde_strong_assert(
+                          std::isfinite(factor(i, j)), std::domain_error, "SPD cache: nonfinite Cholesky factor");
+                    }
+                }
+            }
+            if constexpr (spd_cache_has_v<Missing, Cache::LogCholesky>) {
+                const Scalar inverse_root_two = Scalar(1) / std::sqrt(Scalar(2));
+                for (int i = 0; i < order_; ++i)
+                    for (int j = 0; j <= i; ++j) {
+                        const Scalar value = i == j ? std::log(factor(i, i)) : factor(i, j) * inverse_root_two;
+                        fdapde_strong_assert(
+                          std::isfinite(value), std::domain_error, "SPD cache: nonfinite log-Cholesky coordinates");
+                        data_[offset_<Cache::LogCholesky>() + std::size_t(i) * (i + 1) / 2 + j] = value;
+                    }
+            }
+        }
+    }
    private:
     /// @brief copies one common packed quantity without recomputing its spectral reconstruction
     template <typename Quantity, typename Source> void copy_matrix_(const Source& source) {
@@ -200,7 +256,10 @@ template <typename Scalar_, int Order_, typename Policy_> class spd_cache_slot {
         return (Has<Cache::Spectral> ? n * (n + 1) : 0) +
                ((Quantity::Flags > 2 && Has<Cache::Log>)+(Quantity::Flags > 4 && Has<Cache::Sqrt>)+(
                  Quantity::Flags > 8 && Has<Cache::InverseSqrt>)) *
-                 n * (n + 1) / 2;
+                 n * (n + 1) / 2 +
+               ((Quantity::Flags > 16 &&
+                 Has<Cache::LogDividedDifferences>)+(Quantity::Flags > 32 && Has<Cache::Cholesky>)) *
+                 n * n;
     }
     /// @brief writes the unit diagonal into one already zeroed packed quantity
     template <typename Quantity> void set_identity_matrix_() {

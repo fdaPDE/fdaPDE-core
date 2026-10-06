@@ -17,6 +17,7 @@
 #include <fdaPDE/dense_linear_algebra.h>
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cmath>
 #include <type_traits>
 #include <utility>
@@ -75,6 +76,59 @@ void expect_symmetric_near(const Actual& actual, const Expected& expected) {
             // each cached coefficient agrees with the independently materialized spectral result
             EXPECT_NEAR(actual(i, j), expected(i, j), 1.0e-12);
         }
+    }
+}
+
+/// @brief checks selective float triangular caches against independently supplied lower factors
+template <int Order, typename Policy> void check_float_triangular_cache(int order) {
+    using Point = SPDMatrix<float, Order, Order, Policy>;
+    Matrix<float, Order, Order> factor;
+    if constexpr (Order == Dynamic) factor.resize(order, order);
+    for (int row = 0; row < order; ++row)
+        for (int col = 0; col < order; ++col)
+            factor(row, col) = row < col ? 0.f : (row == col ? 2.f + row : .1f * (1 + 2 * row - col));
+    const Matrix<float, Order, Order> coefficients(factor * factor.transpose());
+    Point point {SPDMatrix<float, Order, Order>(coefficients)};
+    const float tolerance = 8 * std::numeric_limits<float>::epsilon();
+    if constexpr (Point::CacheSlot::template Has<Cache::Cholesky>) {
+        const auto retained = point.cache().cholesky();
+        for (int row = 0; row < order; ++row)
+            for (int col = 0; col < order; ++col) {
+                // a known L L-transpose product recovers the unique positive-pivot lower factor at float precision
+                EXPECT_NEAR(
+                  retained(row, col), factor(row, col), tolerance * std::max(1.f, std::abs(factor(row, col))));
+            }
+    }
+    if constexpr (Point::CacheSlot::template Has<Cache::LogCholesky>) {
+        const auto chart = point.cache().template matrix<Cache::LogCholesky>();
+        for (int row = 0; row < order; ++row)
+            for (int col = 0; col <= row; ++col) {
+                const float expected = row == col ? std::log(factor(row, row)) : factor(row, col) / std::sqrt(2.f);
+                // chart coefficients follow scalar log pivots and the independent Lin lower-coordinate normalization
+                EXPECT_NEAR(chart(row, col), expected, tolerance * std::max(1.f, std::abs(expected)));
+            }
+    }
+    const Point saved_point(point);
+    const std::vector<float> saved_cache(
+      point.cache().data(), point.cache().data() + Point::CacheSlot::scalar_count(order));
+    Matrix<float, Order, Order> invalid;
+    if constexpr (Order == Dynamic) invalid.resize(order, order);
+    for (int row = 0; row < order; ++row)
+        for (int col = 0; col < order; ++col) invalid(row, col) = row == col ? 1.f : 0.f;
+    invalid(0, 0) = -1;
+    // failed checked replacement must reject an indefinite matrix before touching the point's triangular caches
+    EXPECT_THROW(point.assign(invalid), std::domain_error);
+    auto view = point.view();
+    // a bound view applies the same transactional replacement guarantee for selective triangular policies
+    EXPECT_THROW(view.assign(invalid), std::domain_error);
+    for (int row = 0; row < order; ++row)
+        for (int col = 0; col <= row; ++col) {
+            // exact pre-assignment coefficients establish that neither failed replacement reached the commit step
+            EXPECT_EQ(point(row, col), saved_point(row, col));
+        }
+    for (std::size_t i = 0; i < saved_cache.size(); ++i) {
+        // comparing the entire raw slot includes both triangular quantities and any selected spectral intermediates
+        EXPECT_EQ(point.cache().data()[i], saved_cache[i]);
     }
 }
 
@@ -329,6 +383,63 @@ TEST(SPDCache, MoveAndSwapPreserveCoefficientCacheAssociation) {
     EXPECT_NEAR(second.cache().template matrix<Cache::Log>()(0, 0), std::log(4.), 1e-12);
     // the exchanged owners do not share writable cache buffers
     EXPECT_NE(moved.cache().data(), second.cache().data());
+}
+
+// triangular caches match an independent supplied factor and remain coherent after owner and batch replacement
+TEST(SPDCache, CholeskyCoordinatesAndBatchReplacement) {
+    using Policy = Cache::Union<complete_cache, Cache::Cholesky, Cache::LogCholesky>;
+    using Point = SPDMatrix<double, 3, 3, Policy>;
+    const Matrix<double, 3, 3> factor({2, 0, 0, .3, 3, 0, -.4, .2, 4});
+    const Point point(Matrix<double, 3, 3>(factor * factor.transpose()));
+    const auto retained = point.cache().cholesky();
+    const auto chart = point.cache().template matrix<Cache::LogCholesky>();
+    for (int row = 0; row < 3; ++row) {
+        for (int col = 0; col < 3; ++col) {
+            // reconstruction of a known triangular product recovers its independently supplied factor
+            EXPECT_NEAR(retained(row, col), factor(row, col), 1e-14);
+        }
+        for (int col = 0; col <= row; ++col) {
+            // the flat symmetric chart uses log pivots and once-counted lower coefficients
+            EXPECT_NEAR(
+              chart(row, col), row == col ? std::log(factor(row, row)) : factor(row, col) / std::sqrt(2.), 1e-14);
+        }
+    }
+    MatrixBatch<Point> batch(2);
+    batch[0] = point;
+    const std::array<std::size_t, 2> indices {0, 0};
+    const auto selected = batch.select(indices);
+    // repeated selections borrow the same native cache buffer, without independent factor preparation
+    EXPECT_EQ(selected[0].cache().cholesky().data(), selected[1].cache().cholesky().data());
+    batch[0] = Point::Identity();
+    for (int row = 0; row < 3; ++row)
+        for (int col = 0; col < 3; ++col) {
+            // replacement refreshes the previously borrowed cache in place to the independent identity oracle
+            EXPECT_EQ(selected[0].cache().cholesky()(row, col), row == col ? 1 : 0);
+            // the original independent owner keeps the supplied factor after batch replacement
+            EXPECT_NEAR(point.cache().cholesky()(row, col), factor(row, col), 1e-14);
+        }
+    const SPDMatrix<double, Dynamic, Dynamic, Cache::LogCholesky> dynamic(point);
+    // a chart-only dynamic policy retains precisely one packed triangular chart
+    EXPECT_EQ(dynamic.cache().scalar_count(3), 6u);
+    // policy conversion preserves the common chart coefficients without a spectral or triangular recomputation
+    expect_symmetric_near(dynamic.cache().template matrix<Cache::LogCholesky>(), chart);
+    const SPDMatrix<double, 3, 3, Cache::Cholesky> lower_only {SPDMatrix<double, 3, 3>(point)};
+    // converting verified uncached coefficients prepares only the requested full lower factor
+    EXPECT_EQ(lower_only.cache().scalar_count(3), 9u);
+    for (int row = 0; row < 3; ++row)
+        for (int col = 0; col < 3; ++col) {
+            // the factor-only conversion has the same unique positive-diagonal Cholesky factor
+            EXPECT_NEAR(lower_only.cache().cholesky()(row, col), factor(row, col), 1e-14);
+        }
+}
+
+// float SPD2/SPD3 and selective dynamic triangular policies preserve independent factor and chart oracles
+TEST(SPDCache, FloatTriangularAndSelectiveDynamicPolicies) {
+    using both = Cache::Union<complete_cache, Cache::Cholesky, Cache::LogCholesky>;
+    check_float_triangular_cache<2, both>(2);
+    check_float_triangular_cache<3, both>(3);
+    check_float_triangular_cache<Dynamic, Cache::Cholesky>(3);
+    check_float_triangular_cache<Dynamic, Cache::LogCholesky>(3);
 }
 
 }   // namespace

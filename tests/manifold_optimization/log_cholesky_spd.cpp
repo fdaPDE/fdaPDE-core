@@ -126,6 +126,11 @@ template <int Order> void differential_oracles(int order) {
       geometry.inverse_chart_jvp(chart_minus, v));
     // differentiating the first inverse action validates the analytic mixed second derivative
     expect_matrix(geometry.inverse_chart_second_jvp(coordinates, u, v), finite_second, 2e-9);
+    const auto frame = geometry.chart_frame(point);
+    // retaining the factor yields the same second chart differential as reconstructing it from coordinates
+    expect_matrix(
+      geometry.inverse_chart_second_differential(frame, u, v),
+      geometry.inverse_chart_second_differential(coordinates, u, v), 3e-12);
     // the chart adjoint satisfies the full Frobenius duality independently of metric conversion
     EXPECT_NEAR(inner(geometry.chart_jvp(point, u), v), inner(u, geometry.chart_vjp(point, v)), 3e-13);
     // the inverse adjoint satisfies the corresponding Frobenius duality
@@ -310,4 +315,33 @@ TEST(LogCholeskySPDGeometry, RejectsInvalidOrdersCoordinatesAndWeights) {
     const std::array<double, 1> invalid {-1};
     // negative barycenter weights are rejected by the normalized positive-weight contract
     EXPECT_THROW(weighted_karcher_mean(fixed, points, std::span<const double>(invalid)), std::invalid_argument);
+}
+
+// cached LC frames reuse certified batch factors and agree exactly with independent plain-point preparation
+TEST(LogCholeskySPDGeometry, CachedFramesPreserveMapsAndMetrics) {
+    using CachedGeometry = LogCholeskySPDGeometry<double, 3, Usage::InterpolationNodes | Usage::LogExpDifferentials>;
+    const CachedGeometry cached_geometry;
+    const LogCholeskySPDGeometry<double, 3> plain_geometry;
+    const auto point = factor_point(plain_geometry);
+    const CachedGeometry::Point cached(point);
+    const auto plain_frame = plain_geometry.chart_frame(point);
+    const auto cached_frame = cached_geometry.chart_frame(cached);
+    // a geometry requesting interpolation retains the native triangular factor
+    static_assert(CachedGeometry::Point::CacheSlot::template Has<Cache::Cholesky>);
+    // its matching flat coordinates share the same point-owned cache lifetime
+    static_assert(CachedGeometry::Point::CacheSlot::template Has<Cache::LogCholesky>);
+    // cached and plain preparation use the same extended-accumulation factor algorithm
+    expect_matrix(cached_frame.factor, plain_frame.factor, 0);
+    // the cached flat chart preserves each original scalar logarithm and normalization
+    expect_matrix(cached_geometry.chart(cached), plain_frame.coordinates, 0);
+    const auto direction = direction_for(plain_geometry);
+    // borrowing a prepared frame leaves the analytic chart Jacobian unchanged
+    expect_matrix(cached_geometry.chart_jvp(cached, direction), plain_geometry.chart_jvp(point, direction), 0);
+    // both cached factors and coordinates preserve the complete metric-gradient pullback
+    expect_matrix(
+      cached_geometry.riemannian_to_euclidean_gradient(cached, direction),
+      plain_geometry.riemannian_to_euclidean_gradient(point, direction), 0);
+    const SPDMatrix<double, 3, 3, Cache::LogCholesky> chart_only(point);
+    // the chart-only policy computes the coordinates directly from certified coefficients
+    expect_matrix(cached_geometry.chart(chart_only), plain_frame.coordinates, 0);
 }

@@ -40,9 +40,10 @@ template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class LogChol
    public:
     using Scalar = Scalar_;
     using CachePolicy = Cache::Policy<
-      internals::has_spd_usage(Uses_, Usage::LogExpDifferentials) ?
-        Cache::Spectral::Flags | Cache::LogDividedDifferences::Flags :
-        0u>;
+      (Uses_ != Usage::None ? Cache::Cholesky::Flags | Cache::LogCholesky::Flags : 0u) |
+      (internals::has_spd_usage(Uses_, Usage::LogExpDifferentials) ?
+         Cache::Spectral::Flags | Cache::LogDividedDifferences::Flags :
+         0u)>;
     using Point = SPDMatrix<Scalar, Order_, Order_, CachePolicy>;
     using Tangent = SymmetricMatrix<Scalar, Order_, Order_>;
     using Factor = Matrix<Scalar, Order_, Order_>;
@@ -124,28 +125,44 @@ template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class LogChol
     template <SPDLike P> ChartFrame chart_frame(const P& point) const {
         check_point_(point);
         auto factor = make_factor_();
-        // positive pivots use extended accumulation before narrowing the verified factor
-        for (int i = 0; i < order_; ++i)
-            for (int j = 0; j <= i; ++j) {
-                long double value = static_cast<Scalar>(point(i, j));
-                for (int k = 0; k < j; ++k) value -= static_cast<long double>(factor(i, k)) * factor(j, k);
-                if (i == j) {
-                    fdapde_strong_assert(
-                      value > 0 && std::isfinite(value), std::domain_error,
-                      "log-Cholesky: Cholesky pivot must be positive and finite");
-                    factor(i, j) = internals::checked_geometry_result(static_cast<Scalar>(std::sqrt(value)));
-                } else
-                    factor(i, j) = internals::checked_geometry_result(static_cast<Scalar>(value / factor(j, j)));
-            }
+        if constexpr (fdapde::internals::spd_cache_has_v<typename P::CachePolicy, Cache::Cholesky>) {
+            const auto retained = point.cache().cholesky();
+            for (int i = 0; i < order_; ++i)
+                for (int j = 0; j < order_; ++j) factor(i, j) = retained(i, j);
+        } else {
+            // positive pivots use extended accumulation before narrowing the verified factor
+            for (int i = 0; i < order_; ++i)
+                for (int j = 0; j <= i; ++j) {
+                    long double value = static_cast<Scalar>(point(i, j));
+                    for (int k = 0; k < j; ++k) value -= static_cast<long double>(factor(i, k)) * factor(j, k);
+                    if (i == j) {
+                        fdapde_strong_assert(
+                          value > 0 && std::isfinite(value), std::domain_error,
+                          "log-Cholesky: Cholesky pivot must be positive and finite");
+                        factor(i, j) = internals::checked_geometry_result(static_cast<Scalar>(std::sqrt(value)));
+                    } else
+                        factor(i, j) = internals::checked_geometry_result(static_cast<Scalar>(value / factor(j, j)));
+                }
+        }
         auto coordinates = internals::make_symmetric<Scalar, Order_>(order_);
-        const Scalar inverse_root_two = Scalar(1) / std::sqrt(Scalar(2));
-        for (int i = 0; i < order_; ++i)
-            for (int j = 0; j <= i; ++j)
-                coordinates(i, j) = i == j ? std::log(factor(i, i)) : factor(i, j) * inverse_root_two;
+        if constexpr (fdapde::internals::spd_cache_has_v<typename P::CachePolicy, Cache::LogCholesky>) {
+            coordinates = point.cache().template matrix<Cache::LogCholesky>();
+        } else {
+            const Scalar inverse_root_two = Scalar(1) / std::sqrt(Scalar(2));
+            for (int i = 0; i < order_; ++i)
+                for (int j = 0; j <= i; ++j)
+                    coordinates(i, j) = i == j ? std::log(factor(i, i)) : factor(i, j) * inverse_root_two;
+        }
         return {std::move(factor), std::move(coordinates)};
     }
     /// @brief maps a verified SPD point to its global isometric coordinates
-    template <SPDLike P> Tangent chart(const P& point) const { return chart_frame(point).coordinates; }
+    template <SPDLike P> Tangent chart(const P& point) const {
+        if constexpr (fdapde::internals::spd_cache_has_v<typename P::CachePolicy, Cache::LogCholesky>) {
+            check_point_(point);
+            return Tangent(point.cache().template matrix<Cache::LogCholesky>());
+        } else
+            return chart_frame(point).coordinates;
+    }
     /// @brief reconstructs a verified SPD point from finite global chart coordinates
     Point from_chart(const Tangent& coordinates) const {
         check_tangent_(coordinates);
@@ -200,6 +217,13 @@ template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class LogChol
         check_tangent_(first);
         check_tangent_(second);
         return inverse_second_differential_(factor_from_chart_(coordinates), first, second);
+    }
+    /// @brief applies the inverse-chart second derivative with an already prepared Cholesky factor
+    Tangent
+    inverse_chart_second_differential(const ChartFrame& frame, const Tangent& first, const Tangent& second) const {
+        check_tangent_(first);
+        check_tangent_(second);
+        return inverse_second_differential_(frame.factor, first, second);
     }
     /// @brief applies the inverse-chart second derivative used by flat finite elements
     Tangent inverse_chart_second_jvp(const Tangent& coordinates, const Tangent& first, const Tangent& second) const {

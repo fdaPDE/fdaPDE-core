@@ -567,3 +567,65 @@ TEST(linear_algebra, spd_frechet_static_bounds_and_mixed_directions) {
     // a dynamic order-three base rejects a fixed order-two direction
     EXPECT_THROW(matrix_exp_frechet(wrong, direction), std::invalid_argument);
 }
+
+// the exact second exp differential retains its scalar-spectrum limit for noncommuting directions
+TEST(linear_algebra, spd_exp_second_frechet_repeated_spectrum) {
+    const fixed_symmetric identity({1., 0., 1., 0., 0., 1.});
+    const fixed_symmetric point(0.3 * identity);
+    const fixed_symmetric first = reference_direction();
+    fixed_symmetric second;
+    second(0, 0) = -0.7;
+    second(1, 0) = 0.4;
+    second(1, 1) = 0.2;
+    second(2, 0) = -0.1;
+    second(2, 1) = 0.6;
+    second(2, 2) = 0.5;
+    const auto actual = matrix_exp_second_frechet(point, first, second);
+    const fixed_matrix expected(0.5 * std::exp(0.3) * (first * second + second * first));
+    // D2 exp at a scalar identity equals the exponential times the symmetrized matrix product
+    EXPECT_LT(relative_error(actual, expected), 2e-13);
+    const auto reversed = matrix_exp_second_frechet(point, second, first);
+    // exchanging the two noncommuting directions preserves the bilinear Hessian action
+    EXPECT_LT(relative_error(reversed, actual), 2e-13);
+}
+
+// noncommuting, clustered and separated spectra agree with centered first-differential derivatives
+TEST(linear_algebra, spd_exp_second_frechet_directional_oracle) {
+    const fixed_symmetric first = reference_direction();
+    const fixed_symmetric second(fixed_spd(reference_spd(0.07)));
+    for (double gap : {1e-10, 0.4, 2.}) {
+        fixed_symmetric point;
+        point(0, 0) = -0.7;
+        point(1, 0) = 0.13;
+        point(1, 1) = -0.7 + gap;
+        point(2, 0) = -0.04;
+        point(2, 1) = 0.07;
+        point(2, 2) = 0.2;
+        const auto actual = matrix_exp_second_frechet(point, first, second);
+        constexpr double step = 1e-5;
+        const fixed_symmetric plus(point + step * first), minus(point - step * first);
+        const auto plus_action = matrix_exp_frechet(plus, second), minus_action = matrix_exp_frechet(minus, second);
+        const fixed_symmetric difference((plus_action - minus_action) / (2 * step));
+        // centered derivatives of the independently evaluated first exp action validate the spectral contraction
+        EXPECT_LT(relative_error(actual, difference), 2e-8);
+        const dynamic_symmetric dynamic_point(point), dynamic_first(first), dynamic_second(second);
+        const auto dynamic_actual = matrix_exp_second_frechet(dynamic_point, dynamic_first, dynamic_second);
+        // dynamic storage must reproduce the fixed order-three action on the same coefficients
+        EXPECT_LT(relative_error(dynamic_actual, actual), 2e-12);
+    }
+}
+
+// public second exp actions reject mismatched directions and nonfinite coefficients
+TEST(linear_algebra, spd_exp_second_frechet_input_validation) {
+    const fixed_symmetric point(fixed_spd(reference_spd(0.05))), direction = reference_direction();
+    dynamic_symmetric wrong(2, 2);
+    wrong(0, 0) = 1;
+    wrong(1, 0) = 0;
+    wrong(1, 1) = 1;
+    // a dynamic order-two direction cannot be contracted against an order-three spectrum
+    EXPECT_THROW(matrix_exp_second_frechet(point, direction, wrong), std::invalid_argument);
+    fixed_symmetric invalid(direction);
+    invalid(1, 0) = std::numeric_limits<double>::quiet_NaN();
+    // nonfinite entries are rejected before rotation or divided-difference evaluation
+    EXPECT_THROW(matrix_exp_second_frechet(point, invalid, direction), std::invalid_argument);
+}

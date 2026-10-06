@@ -326,6 +326,7 @@ class spd_matrix_impl : public SPDMatrixExpr<spd_matrix_impl<Scalar_, Rows_, Col
         if constexpr (CachePolicy::Flags != 0) {
             cache_ = std::make_unique<CacheOwner>(storage.rows());
             cache_->slot.prepare(evd);
+            cache_->slot.prepare_triangular(storage);
         }
     }
     /// @brief validates the explicit order used by the identity factory before allocating storage
@@ -337,13 +338,13 @@ class spd_matrix_impl : public SPDMatrixExpr<spd_matrix_impl<Scalar_, Rows_, Col
           std::int64_t(order) * order <= std::numeric_limits<int>::max(), std::length_error,
           "SPDMatrix: dense workspace size exceeds supported range");
     }
-    /// @brief reuses retained common quantities and computes missing quantities from one coherent spectrum
+    /// @brief preserves spectral associations and derives absent triangular quantities from certified coefficients
     template <SPDLike Rhs> void prepare_from_verified_(const Rhs& rhs) {
         if constexpr (CachePolicy::Flags != 0) {
             cache_ = std::make_unique<CacheOwner>(rows());
             using SourcePolicy = typename Rhs::CachePolicy;
-            if constexpr ((SourcePolicy::Flags & CachePolicy::Flags) == CachePolicy::Flags) {
-                cache_->slot.copy_common(rhs.cache());
+            if constexpr (((CachePolicy::Flags & ~SourcePolicy::Flags) & 31u) == 0) {
+                if constexpr (SourcePolicy::Flags != 0) cache_->slot.copy_common(rhs.cache());
             } else if constexpr (spd_cache_has_v<SourcePolicy, Cache::Spectral>) {
                 cache_->slot.template prepare<SourcePolicy>(rhs.cache());
                 cache_->slot.copy_common(rhs.cache());
@@ -358,6 +359,7 @@ class spd_matrix_impl : public SPDMatrixExpr<spd_matrix_impl<Scalar_, Rows_, Col
                 cache_->slot.template prepare<ReusablePolicy>(evd);
                 if constexpr (SourcePolicy::Flags != 0) cache_->slot.template copy_common<!pairs_e_l>(rhs.cache());
             }
+            cache_->slot.template prepare_triangular<SourcePolicy>(data_);
         }
     }
     /// @brief copies prepared numeric storage before publishing the replacement cache with a nonthrowing swap
@@ -498,11 +500,37 @@ template <typename Scalar_> Scalar_ log_second_divided_difference(Scalar_ x, Sca
     return (log_divided_difference(x, y) - log_divided_difference(y, z)) / (x - z);
 }
 
-/// @brief applies the scaled second logarithm differential using an existing orthogonal spectral basis
-template <typename Spectral, typename FirstDirectionXprType_, typename SecondDirectionXprType_>
-auto log_second_frechet_symmetric(
+/// @brief evaluates second exponential divided differences at close and repeated eigenvalues
+template <typename Scalar_> Scalar_ exp_second_divided_difference(Scalar_ x, Scalar_ y, Scalar_ z) {
+    std::array<Scalar_, 3> values {x, y, z};
+    std::sort(values.begin(), values.end());
+    x = values[0];
+    y = values[1];
+    z = values[2];
+    if (z - x <= Scalar_(1)) {
+        // centering bounds the complete-homogeneous series nodes by one half
+        const Scalar_ center = x + Scalar_(0.5) * (z - x);
+        const Scalar_ a = x - center, b = y - center, c = z - center;
+        const Scalar_ e1 = a + b + c, e2 = a * b + a * c + b * c, e3 = a * b * c;
+        Scalar_ h_minus_two = 0, h_minus_one = 0, h = 1, factorial = Scalar_(0.5), sum = factorial;
+        for (int order = 1; order < 32; ++order) {
+            const Scalar_ next = e1 * h - e2 * h_minus_one + e3 * h_minus_two;
+            factorial /= Scalar_(order + 2);
+            sum += next * factorial;
+            h_minus_two = h_minus_one;
+            h_minus_one = h;
+            h = next;
+        }
+        return std::exp(center) * sum;
+    }
+    return (exp_divided_difference(x, y) - exp_divided_difference(y, z)) / (x - z);
+}
+
+/// @brief applies a bilinear spectral differential using retained eigenvectors and optional scaling
+template <typename Spectral, typename FirstDirectionXprType_, typename SecondDirectionXprType_, typename Difference>
+auto second_frechet_symmetric(
   const Spectral& evd, int dimension, const FirstDirectionXprType_& first_direction,
-  const SecondDirectionXprType_& second_direction) {
+  const SecondDirectionXprType_& second_direction, Difference divided_difference, typename Spectral::Scalar scale) {
     using XprType = std::decay_t<Spectral>;
     using Scalar = std::remove_cv_t<typename XprType::Scalar>;
     constexpr int Rows = XprType::Rows;
@@ -529,10 +557,6 @@ auto log_second_frechet_symmetric(
         q_coefficients.resize(dimension, dimension);
     }
 
-    // scaling the spectrum and both directions together leaves D2 log
-    // unchanged and prevents overflow/underflow in the spectral products
-    Scalar scale = evd.eigenvalues()[0];
-    for (int i = 1; i < dimension; ++i) scale = std::max(scale, static_cast<Scalar>(evd.eigenvalues()[i]));
     const auto eigenvectors = evd.eigenvectors();
     for (int i = 0; i < dimension; ++i) {
         for (int j = 0; j < dimension; ++j) {
@@ -565,10 +589,10 @@ auto log_second_frechet_symmetric(
         for (int j = 0; j < dimension; ++j) {
             Scalar value = Scalar(0);
             for (int k = 0; k < dimension; ++k) {
-                const Scalar divided_difference = log_second_divided_difference(
+                const Scalar coefficient = divided_difference(
                   evd.eigenvalues()[i] / scale, evd.eigenvalues()[k] / scale, evd.eigenvalues()[j] / scale);
-                value += divided_difference * (first_coefficients(i, k) * second_coefficients(k, j) +
-                                               second_coefficients(i, k) * first_coefficients(k, j));
+                value += coefficient * (first_coefficients(i, k) * second_coefficients(k, j) +
+                                        second_coefficients(i, k) * first_coefficients(k, j));
             }
             fdapde_strong_assert(
               std::isfinite(value), std::domain_error, "SPD spectral operation: nonfinite second Frechet derivative");
@@ -595,6 +619,20 @@ auto log_second_frechet_symmetric(
         }
     }
     return result;
+}
+
+/// @brief applies the scale-invariant second logarithm differential using an existing spectral basis
+template <typename Spectral, typename FirstDirectionXprType_, typename SecondDirectionXprType_>
+auto log_second_frechet_symmetric(
+  const Spectral& evd, int dimension, const FirstDirectionXprType_& first_direction,
+  const SecondDirectionXprType_& second_direction) {
+    using Scalar = std::remove_cv_t<typename Spectral::Scalar>;
+    // scaling both directions with the spectrum preserves D2 log while bounding spectral products
+    Scalar scale = evd.eigenvalues()[0];
+    for (int i = 1; i < dimension; ++i) scale = std::max(scale, static_cast<Scalar>(evd.eigenvalues()[i]));
+    return second_frechet_symmetric(
+      evd, dimension, first_direction, second_direction,
+      [](Scalar x, Scalar y, Scalar z) { return log_second_divided_difference(x, y, z); }, scale);
 }
 
 /// @brief applies spectral divided differences to a symmetric direction in the eigenvector basis
@@ -942,6 +980,21 @@ auto matrix_exp_frechet(
     internals::require_computed(evd);
     return internals::frechet_symmetric(
       evd, value.rows(), direction.derived(), [](auto x, auto y) { return internals::exp_divided_difference(x, y); });
+}
+
+/// @brief returns the bilinear second exponential differential at a symmetric point
+template <typename XprType_, typename FirstDirectionXprType_, typename SecondDirectionXprType_>
+auto matrix_exp_second_frechet(
+  const SymmetricMatrixExpr<XprType_>& matrix, const SymmetricMatrixExpr<FirstDirectionXprType_>& first_direction,
+  const SymmetricMatrixExpr<SecondDirectionXprType_>& second_direction) {
+    const XprType_& value = matrix.derived();
+    internals::validate_finite_symmetric(value);
+    const EVD<XprType_> evd(value);
+    internals::require_computed(evd);
+    using Scalar = std::remove_cv_t<typename XprType_::Scalar>;
+    return internals::second_frechet_symmetric(
+      evd, value.rows(), first_direction.derived(), second_direction.derived(),
+      [](Scalar x, Scalar y, Scalar z) { return internals::exp_second_divided_difference(x, y, z); }, Scalar(1));
 }
 
 /// @brief detects the SPD expression contract after removing reference and cv qualifiers

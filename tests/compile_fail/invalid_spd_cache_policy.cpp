@@ -17,4 +17,4 @@
 #include <fdaPDE/dense_linear_algebra.h>
 
 // sizeof requires the policy to reject bits that do not identify a supported cache quantity
-int main() { return sizeof(fdapde::SPDMatrix<double, 2, 2, fdapde::Cache::Policy<32>>); }
+int main() { return sizeof(fdapde::SPDMatrix<double, 2, 2, fdapde::Cache::Policy<128>>); }
