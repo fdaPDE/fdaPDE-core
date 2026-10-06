@@ -26,6 +26,7 @@
 #include <type_traits>
 
 #include "header_check.h"
+#include "kernels/small_spectral.h"
 #include "spd_cache.h"
 
 namespace fdapde {
@@ -615,6 +616,11 @@ auto frechet_symmetric(
       StaticOrder == Dynamic || dimension == StaticOrder, std::invalid_argument,
       "SPD spectral operation: incompatible static dimensions");
     const int extent = StaticOrder == Dynamic ? dimension : StaticOrder;
+
+    if constexpr (
+      (Rows == 2 || Rows == 3) && Cols == Rows && (std::is_same_v<Scalar, float> || std::is_same_v<Scalar, double>)) {
+        return small_frechet_symmetric<Rows>(evd, direction, divided_difference);
+    }
 
     Matrix<Scalar, Rows, Cols> hq;
     Matrix<Scalar, Rows, Cols> coefficients;

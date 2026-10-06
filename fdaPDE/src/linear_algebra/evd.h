@@ -25,6 +25,7 @@
 #include <type_traits>
 
 #include "header_check.h"
+#include "kernels/small_evd.h"
 
 namespace fdapde {
 namespace internals {
@@ -89,6 +90,14 @@ template <typename XprType_> class EVD {
                 eigenvalues_[i] = values[i];
                 for (int j = 0; j < n; ++j) eigenvectors_(i, j) = vectors(i, j);
             }
+            computed_ = true;
+            return;
+        }
+
+        if constexpr (
+          (Rows == 2 || Rows == 3) && Cols == Rows &&
+          (std::is_same_v<Scalar, float> || std::is_same_v<Scalar, double>)) {
+            internals::small_symmetric_evd<Rows>(matrix.derived(), eigenvectors_.data(), eigenvalues_.data());
             computed_ = true;
             return;
         }

@@ -8,6 +8,95 @@ namespace fdapde::gfe {
 template <typename Tangent> struct P1CheegerLogContributionResult : P1ObjectiveContributionResult<Tangent> {
     std::vector<double> rho_gradient;
 };
+/// @brief evaluates planar discrete tension and its nodal log and rho covectors with scalar rotation branches
+/// @details cached nodal logarithms are shared with other contributions; no general rotation lift is constructed
+template <typename S, Usage U, typename Nodes>
+P1CheegerLogContributionResult<typename manifold::CheegerLogEuclideanSPDGeometry<S, 2, U>::Tangent>
+p1_cheeger_discrete_tension_log_contribution(
+  const manifold::CheegerLogEuclideanSPDGeometry<S, 2, U>& geometry, const Nodes& nodes,
+  const P1LumpedLaplacianStencil& stencil, std::span<const double> rho_nodes = {}) {
+    using G = manifold::CheegerLogEuclideanSPDGeometry<S, 2, U>;
+    using C = manifold::internals::CheegerChart;
+    using V = std::array<double, 3>;
+    internals::p1_discrete_tension_validate(geometry, nodes, stencil);
+    fdapde_strong_assert(
+      rho_nodes.empty() || rho_nodes.size() == nodes.size(), std::invalid_argument, "rho count must match nodes");
+    for (double rho : rho_nodes) geometry.with_rho(rho);
+    std::vector<C> q;
+    q.reserve(nodes.size());
+    for (std::size_t i = 0; i < nodes.size(); ++i) q.push_back(G::chart(nodes[i]));
+    std::vector<V> residual(nodes.size(), V {}), dual(nodes.size(), V {}), gradient(nodes.size(), V {});
+    const auto rho = [&](std::size_t i) { return rho_nodes.empty() ? geometry.rho() : rho_nodes[i]; };
+    /// @brief retains one directed edge's scalar minimizing angle and aligned target chart
+    struct Edge {
+        std::size_t i, j;
+        double weight, beta;
+        C z;
+    };
+    std::vector<Edge> edges;
+    edges.reserve(2 * stencil.edges.size());
+    for (const auto& edge : stencil.edges)
+        for (int reverse = 0; reverse < 2; ++reverse) {
+            const auto i = reverse ? edge.second : edge.first;
+            const auto j = reverse ? edge.first : edge.second;
+            const auto pair = manifold::internals::cheeger_pair(q[i], q[j], rho(i));
+            fdapde_strong_assert(pair.rotations.size() == 1, std::domain_error, "ambiguous Cheeger tension edge");
+            const double beta = pair.rotations.front();
+            const auto z = manifold::internals::cheeger_rotate(q[j], -beta);
+            residual[i][0] += edge.stiffness * (z.s - q[i].s);
+            residual[i][1] += edge.stiffness * (z.x - q[i].x - 2 * beta * q[i].y);
+            residual[i][2] += edge.stiffness * (z.y - q[i].y + 2 * beta * q[i].x);
+            edges.push_back({i, j, edge.stiffness, beta, z});
+        }
+    P1CheegerLogContributionResult<typename G::Tangent> out;
+    out.nodal_gradient.reserve(nodes.size());
+    out.rho_gradient.assign(nodes.size(), 0);
+    for (std::size_t i = 0; i < nodes.size(); ++i) {
+        const double d = rho(i) + 4 * (q[i].x * q[i].x + q[i].y * q[i].y);
+        const double c = q[i].x * residual[i][2] - q[i].y * residual[i][1], mass = stencil.lumped_masses[i];
+        out.value += (residual[i][0] * residual[i][0] + residual[i][1] * residual[i][1] +
+                      residual[i][2] * residual[i][2] - 4 * c * c / d) /
+                     mass;
+        dual[i] = {
+          2 * residual[i][0] / mass, (2 * residual[i][1] + 8 * c * q[i].y / d) / mass,
+          (2 * residual[i][2] - 8 * c * q[i].x / d) / mass};
+        gradient[i][1] = (-8 * c * residual[i][2] / d + 32 * c * c * q[i].x / (d * d)) / mass;
+        gradient[i][2] = (8 * c * residual[i][1] / d + 32 * c * c * q[i].y / (d * d)) / mass;
+        out.rho_gradient[i] = 4 * c * c / (d * d * mass);
+    }
+    for (const auto& edge : edges) {
+        const auto i = edge.i, j = edge.j;
+        const auto z = edge.z;
+        const double d = rho(i) + 4 * (q[i].x * z.x + q[i].y * z.y);
+        fdapde_strong_assert(d > 1e-12, std::domain_error, "singular Cheeger edge branch");
+        out.rho_gradient[i] -=
+          2 * edge.weight * edge.beta / d * (dual[i][1] * (z.y - q[i].y) + dual[i][2] * (q[i].x - z.x));
+        for (int endpoint = 0; endpoint < 2; ++endpoint)
+            for (int coord = 0; coord < 3; ++coord) {
+                C u {}, v {};
+                C& perturb = endpoint ? v : u;
+                if (coord == 0) perturb.s = 1;
+                if (coord == 1) perturb.x = 1;
+                if (coord == 2) perturb.y = 1;
+                const auto dz = manifold::internals::cheeger_rotate(v, -edge.beta);
+                const double db = -2 * (-u.x * z.y + u.y * z.x - q[i].x * dz.y + q[i].y * dz.x) / d;
+                const V dv {
+                  v.s - u.s, dz.x - u.x - 2 * edge.beta * u.y + 2 * (z.y - q[i].y) * db,
+                  dz.y - u.y + 2 * edge.beta * u.x + 2 * (q[i].x - z.x) * db};
+                for (int k = 0; k < 3; ++k) gradient[endpoint ? j : i][coord] += edge.weight * dual[i][k] * dv[k];
+            }
+    }
+    for (const auto& value : gradient)
+        out.nodal_gradient.push_back(
+          manifold::internals::cheeger_matrix<S>({value[0] / 2, value[1] / 2, value[2] / 2}));
+    fdapde_strong_assert(std::isfinite(out.value), std::domain_error, "nonfinite C-LE tension");
+    for (std::size_t i = 0; i < nodes.size(); ++i) {
+        internals::p1_objective_require_finite_shape<std::domain_error>(
+          out.nodal_gradient[i], geometry.order(), "nonfinite C-LE tension gradient");
+        fdapde_strong_assert(std::isfinite(out.rho_gradient[i]), std::domain_error, "nonfinite C-LE rho gradient");
+    }
+    return out;
+}
 /// @brief evaluates the existing squared discrete tension using rho_i at each residual's base node
 /// @details rho coefficients remain fixed during one call; an empty span uses the geometry's constant rho
 template <typename S, int N, Usage U, typename Nodes>

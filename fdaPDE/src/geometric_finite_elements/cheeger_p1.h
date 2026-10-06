@@ -4,7 +4,7 @@
 #include "header_check.h"
 
 namespace fdapde::gfe {
-/// @brief retains detected minimizing ties without claiming a global uniqueness certificate
+/// @brief records minimizing ties and optional global uniqueness certificates for a Cheeger P1 value
 template <typename Point> struct CheegerP1ValueResult : P1ValueResult<Point> {
     bool detected_ambiguity = false;   // multistart evidence, never a global uniqueness certificate
     double objective = 0;
@@ -16,7 +16,7 @@ template <typename S, int N, Usage U>
 inline constexpr bool is_cheeger_geometry<manifold::CheegerLogEuclideanSPDGeometry<S, N, U>> = true;
 }   // namespace internals
 /// @brief prepares native SPD2 C-LE interpolation and implicit first derivatives at fixed nodal rho
-/// @details derivatives require interior weights and a resolved branch with positive lifted Hessian
+/// @details weight derivatives require interior weights; nodal pullbacks retain inactive-coordinate support
 /// @details chart data are snapshots; all matrix coefficients remain in the native input batch
 template <typename S, Usage U, typename Nodes>
 class P1GeodesicLinearization<manifold::CheegerLogEuclideanSPDGeometry<S, 2, U>, Nodes> {
@@ -43,6 +43,7 @@ class P1GeodesicLinearization<manifold::CheegerLogEuclideanSPDGeometry<S, 2, U>,
           options.mean.solver.gradient_tolerance > 0 && std::isfinite(options.mean.solver.gradient_tolerance) &&
             options.linear_solve.residual_tolerance > 0 && std::isfinite(options.linear_solve.residual_tolerance),
           std::invalid_argument, "Cheeger P1 requires positive finite tolerances");
+        nodes_.reserve(binding_.size());
         for (std::size_t i = 0; i < binding_.size(); ++i) nodes_.push_back(Geometry::chart(binding_[i]));
         if (!rho_nodes_.empty()) {
             fdapde_strong_assert(
@@ -62,6 +63,14 @@ class P1GeodesicLinearization<manifold::CheegerLogEuclideanSPDGeometry<S, 2, U>,
         std::vector<std::size_t> active;
         for (std::size_t i = 0; i < w_.size(); ++i)
             if (w_[i] > 0) active.push_back(i);
+        double threshold = 0;
+        for (auto i : active) {
+            double maximum = 0;
+            for (auto j : active)
+                if (i != j) maximum = std::max(maximum, std::hypot(nodes_[j].x, nodes_[j].y));
+            threshold += 4 * w_[i] * std::hypot(nodes_[i].x, nodes_[i].y) * maximum;
+        }
+        const bool certified = geometry_.rho() > threshold;
         if (active.size() <= 2) {
             std::vector<double> phi(w_.size(), 0);
             if (active.size() == 2) {
@@ -77,6 +86,13 @@ class P1GeodesicLinearization<manifold::CheegerLogEuclideanSPDGeometry<S, 2, U>,
             result_.stationarity_norm = 0;
             result_.stop_reason = manifold::BarycenterStopReason::closed_form;
             if (vertex) result_.uniqueness = manifold::BarycenterUniqueness::globally_unique;
+        } else if (certified) {
+            fit_ = optimize_convex_();
+            result_.value = Geometry::from_chart(fit_.mean);
+            result_.stationarity_norm = norm_(fit_.gradient);
+            result_.stop_reason = result_.stationarity_norm <= options.mean.solver.gradient_tolerance ?
+                                    manifold::BarycenterStopReason::stationarity_tolerance :
+                                    manifold::BarycenterStopReason::max_iterations;
         } else {
             // ponytail: node-aligned multistart is local, add a certificate before optimizing rho for uniqueness
             std::vector<std::vector<double>> starts(1, std::vector<double>(w_.size(), 0));
@@ -102,11 +118,10 @@ class P1GeodesicLinearization<manifold::CheegerLogEuclideanSPDGeometry<S, 2, U>,
                   std::hypot(f.mean.x - fit_.mean.x, f.mean.y - fit_.mean.y) > 1e-5)
                     result_.detected_ambiguity = true;
         }
+        if (certified) result_.uniqueness = manifold::BarycenterUniqueness::globally_unique;
         result_.objective = fit_.cost;
         result_.iterations = fit_.iterations;
-        if (
-          derivatives && result_.converged() && !result_.detected_ambiguity &&
-          std::all_of(w_.begin(), w_.end(), [](double w) { return w > 0; })) {
+        if (derivatives && result_.converged() && !result_.detected_ambiguity) {
             hessian_.emplace(lifted_hessian_(fit_));
             try {
                 const SPDMatrix<double, Dynamic, Dynamic> positive(*hessian_);
@@ -130,6 +145,9 @@ class P1GeodesicLinearization<manifold::CheegerLogEuclideanSPDGeometry<S, 2, U>,
     /// @brief differentiates weights including the P1 rho variation when a nodal field is bound
     P1DerivativeResult<Tangent> weight_jvp(std::span<const double> direction) const {
         fdapde_strong_assert(direction.size() == w_.size(), std::invalid_argument, "weight direction size mismatch");
+        fdapde_strong_assert(
+          std::all_of(w_.begin(), w_.end(), [](double w) { return w > 0; }), std::domain_error,
+          "Cheeger weight derivatives require interior weights");
         double sum = 0, sumabs = 0;
         for (double d : direction) {
             fdapde_strong_assert(std::isfinite(d), std::invalid_argument, "nonfinite weight direction");
@@ -180,6 +198,46 @@ class P1GeodesicLinearization<manifold::CheegerLogEuclideanSPDGeometry<S, 2, U>,
         auto result = differentiate_({}, charts, 0);
         fdapde_strong_assert(result.converged(), std::domain_error, "Cheeger nodal derivative solve failed");
         return std::move(result.derivative);
+    }
+    /// @brief pulls an ambient Frobenius covector back to nodal logs and optionally to local rho with one adjoint solve
+    std::vector<Tangent> nodal_log_vjp(const Tangent& covector, double* rho_derivative = nullptr) const {
+        fdapde_strong_assert(
+          result_.converged() && !result_.detected_ambiguity, std::domain_error, "unresolved Cheeger mean branch");
+        for (std::size_t i = 0; i < w_.size(); ++i)
+            if (w_[i] == 1.) {
+                Tangent zero;
+                for (int row = 0; row < N; ++row)
+                    for (int col = 0; col <= row; ++col) zero(row, col) = 0;
+                std::vector<Tangent> result(w_.size(), zero);
+                result[i] = matrix_exp_frechet(manifold::internals::cheeger_matrix<S>(nodes_[i]), covector);
+                if (rho_derivative) *rho_derivative = 0;
+                return result;
+            }
+        fdapde_strong_assert(
+          lu_.has_value() && lu_->info() == 0 && mean_log_.has_value(), std::domain_error,
+          "singular Cheeger mean Hessian");
+        const auto b = manifold::internals::cheeger_chart(matrix_exp_frechet(*mean_log_, covector));
+        const int n = int(w_.size());
+        Vector rhs(n);
+        for (int i = 0; i < n; ++i) rhs[i] = 4 * w_[i] * (b.x * fit_.z[i].y - b.y * fit_.z[i].x);
+        const Vector adjoint(lu_->solve(rhs));
+        Chart v;
+        double drho = 0;
+        for (int i = 0; i < n; ++i) {
+            v.x += adjoint[i] * w_[i] * fit_.z[i].x;
+            v.y += adjoint[i] * w_[i] * fit_.z[i].y;
+            drho -= 4 * adjoint[i] * w_[i] * fit_.phi[i];
+        }
+        std::vector<Tangent> result;
+        result.reserve(w_.size());
+        for (int i = 0; i < n; ++i)
+            result.emplace_back(
+              manifold::internals::cheeger_matrix<S>(manifold::internals::cheeger_rotate(
+                {w_[i] * b.s, w_[i] * (b.x + 4 * v.y - 4 * adjoint[i] * fit_.mean.y),
+                 w_[i] * (b.y - 4 * v.x + 4 * adjoint[i] * fit_.mean.x)},
+                fit_.phi[i])));
+        if (rho_derivative) *rho_derivative = drho;
+        return result;
     }
    private:
     /// @brief reuses the lifted Hessian for weight, nodal chart and local metric perturbations
@@ -259,6 +317,8 @@ class P1GeodesicLinearization<manifold::CheegerLogEuclideanSPDGeometry<S, 2, U>,
     Fit evaluate_(const std::vector<double>& phi) const {
         Fit f;
         f.phi = phi;
+        f.z.reserve(w_.size());
+        f.gradient.reserve(w_.size());
         for (std::size_t i = 0; i < w_.size(); ++i) {
             const auto z = manifold::internals::cheeger_rotate(nodes_[i], -phi[i]);
             f.z.push_back(z);
@@ -276,7 +336,7 @@ class P1GeodesicLinearization<manifold::CheegerLogEuclideanSPDGeometry<S, 2, U>,
         }
         return f;
     }
-    /// @brief forms the analytic lifted angle Hessian
+    /// @brief forms the active rotation Hessian with unit diagonal on unused coordinates
     Dense lifted_hessian_(const Fit& f) const {
         const int n = int(w_.size());
         Dense h(n, n);
@@ -284,9 +344,45 @@ class P1GeodesicLinearization<manifold::CheegerLogEuclideanSPDGeometry<S, 2, U>,
             for (int j = 0; j < n; ++j) {
                 h(i, j) = -16 * w_[i] * w_[j] * (f.z[i].x * f.z[j].x + f.z[i].y * f.z[j].y);
                 if (i == j)
-                    h(i, j) += 16 * w_[i] * (f.mean.x * f.z[i].x + f.mean.y * f.z[i].y) + 4 * geometry_.rho() * w_[i];
+                    h(i, j) += w_[i] == 0 ?
+                                 1 :
+                                 16 * w_[i] * (f.mean.x * f.z[i].x + f.mean.y * f.z[i].y) + 4 * geometry_.rho() * w_[i];
             }
         return h;
+    }
+    /// @brief solves the globally strongly convex rotation problem by damped Newton
+    Fit optimize_convex_() const {
+        const int n = int(w_.size());
+        std::vector<double> phi(n, 0);
+        Fit f = evaluate_(phi);
+        for (std::size_t iteration = 0; iteration < options_.mean.solver.max_iterations; ++iteration) {
+            const double norm = norm_(f.gradient);
+            if (norm <= options_.mean.solver.gradient_tolerance * .1) break;
+            const fdapde::PartialPivLU lu(lifted_hessian_(f));
+            if (lu.info() != 0) break;
+            Vector rhs(n);
+            for (int i = 0; i < n; ++i) rhs[i] = -f.gradient[i];
+            const Vector direction(lu.solve(rhs));
+            double slope = 0;
+            for (int i = 0; i < n; ++i) slope += direction[i] * f.gradient[i];
+            bool accepted = false;
+            double step = 1;
+            for (int search = 0; search < 40; ++search) {
+                for (int i = 0; i < n; ++i) phi[i] = f.phi[i] + step * direction[i];
+                auto next = evaluate_(phi);
+                if (
+                  next.cost <= f.cost + 1e-4 * step * slope ||
+                  (next.cost <= f.cost + 1e-14 * std::max(1., f.cost) && norm_(next.gradient) < norm)) {
+                    next.iterations = f.iterations + 1;
+                    f = std::move(next);
+                    accepted = true;
+                    break;
+                }
+                step /= 2;
+            }
+            if (!accepted) break;
+        }
+        return f;
     }
     /// @brief refines one lifted branch by BFGS and local stationarity polishing
     Fit optimize_(std::vector<double> phi) const {
