@@ -36,6 +36,7 @@
 #include "src/manifold_optimization/weighted_karcher_mean.h"
 #include "src/manifold_optimization/log_euclidean_spd.h"
 #include "src/manifold_optimization/affine_invariant_spd.h"
+#include "src/manifold_optimization/bures_wasserstein_spd.h"
 #include "src/manifold_optimization/so.h"
 #include "src/manifold_optimization/cheeger_log_euclidean_spd.h"
 #include "src/manifold_optimization/cheeger_lift.h"

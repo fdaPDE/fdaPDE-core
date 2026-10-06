@@ -561,6 +561,30 @@ p1_frobenius_data_site_contribution(
       geometry, nodal_values, std::move(linearization), observation);
 }
 
+/// @brief evaluates the Frobenius loss of BW P1 interpolation
+template <typename Scalar, int Order, Usage Uses, typename Nodes>
+P1ObjectiveValueResult p1_frobenius_data_site_value(
+  const manifold::BuresWassersteinSPDGeometry<Scalar, Order, Uses>& geometry, const Nodes& nodal_values,
+  std::span<const double> barycentric_weights,
+  const typename manifold::BuresWassersteinSPDGeometry<Scalar, Order, Uses>::Tangent& observation,
+  const manifold::WeightedKarcherMeanOptions& options = {}) {
+    const auto value_result = p1_geodesic_value(geometry, nodal_values, barycentric_weights, options);
+    return internals::p1_frobenius_data_site_value_impl(geometry, value_result, observation);
+}
+
+/// @brief returns the BW P1 Frobenius loss and its metric gradients in nodal order
+template <typename Scalar, int Order, Usage Uses, typename Nodes>
+P1ObjectiveContributionResult<typename manifold::BuresWassersteinSPDGeometry<Scalar, Order, Uses>::Tangent>
+p1_frobenius_data_site_contribution(
+  const manifold::BuresWassersteinSPDGeometry<Scalar, Order, Uses>& geometry, const Nodes& nodal_values,
+  std::span<const double> barycentric_weights,
+  const typename manifold::BuresWassersteinSPDGeometry<Scalar, Order, Uses>::Tangent& observation,
+  const P1GeodesicLinearizationOptions& options = {}) {
+    auto linearization = p1_geodesic_linearization(geometry, nodal_values, barycentric_weights, options);
+    return internals::p1_frobenius_data_site_contribution_impl(
+      geometry, nodal_values, std::move(linearization), observation);
+}
+
 /// @brief integrates half the squared spatial metric derivative over one cell
 template <
   typename Scalar_, int Order_, std::size_t LocalDim, std::size_t EmbedDim, std::size_t QuadratureSize, Usage Uses,

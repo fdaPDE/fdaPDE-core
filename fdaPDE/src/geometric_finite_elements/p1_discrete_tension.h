@@ -145,13 +145,10 @@ p1_log_euclidean_discrete_tension_impl(
     return result;
 }
 
-/// @brief evaluates squared AIRM tension while reusing directed relative frames
-template <bool WithGradient, typename Scalar, int Order, Usage Uses, typename Nodes>
-P1ObjectiveResult<WithGradient, typename manifold::AffineInvariantSPDGeometry<Scalar, Order, Uses>::Tangent>
-p1_affine_invariant_discrete_tension_impl(
-  const manifold::AffineInvariantSPDGeometry<Scalar, Order, Uses>& geometry, const Nodes& nodal_values,
-  const P1LumpedLaplacianStencil& stencil) {
-    using Geometry = manifold::AffineInvariantSPDGeometry<Scalar, Order, Uses>;
+/// @brief evaluates intrinsic squared tension while reusing directed relative frames
+template <bool WithGradient, typename Geometry, typename Nodes>
+P1ObjectiveResult<WithGradient, typename Geometry::Tangent> p1_intrinsic_discrete_tension_impl(
+  const Geometry& geometry, const Nodes& nodal_values, const P1LumpedLaplacianStencil& stencil) {
     using Tangent = typename Geometry::Tangent;
     p1_discrete_tension_validate(geometry, nodal_values, stencil);
 
@@ -174,12 +171,12 @@ p1_affine_invariant_discrete_tension_impl(
     P1ObjectiveResult<WithGradient, Tangent> result;
     for (std::size_t node = 0; node < nodal_values.size(); ++node) {
         p1_objective_require_finite_shape<std::domain_error>(
-          residuals[node], geometry.order(), "P1 affine-invariant discrete tension residual is nonfinite");
+          residuals[node], geometry.order(), "P1 intrinsic discrete tension residual is nonfinite");
         const double scaled_norm =
           geometry.norm(nodal_values[node], residuals[node]) / std::sqrt(stencil.lumped_masses[node]);
         result.value = std::fma(0.5 * scaled_norm, scaled_norm, result.value);
         fdapde_strong_assert(
-          std::isfinite(result.value), std::domain_error, "P1 affine-invariant discrete tension value is nonfinite");
+          std::isfinite(result.value), std::domain_error, "P1 intrinsic discrete tension value is nonfinite");
     }
     if constexpr (WithGradient) {
         result.nodal_gradient = p1_objective_zero_gradient(geometry, nodal_values);
@@ -188,10 +185,10 @@ p1_affine_invariant_discrete_tension_impl(
             const Tangent target_action = geometry.logarithm_target_vjp(frame, residuals[base]);
             const Tangent scaled_base = p1_discrete_tension_scale_divide(
               geometry, nodal_values[base], stiffness, base_action, stencil.lumped_masses[base],
-              "P1 affine-invariant inverse-mass base gradient is nonfinite");
+              "P1 intrinsic inverse-mass base gradient is nonfinite");
             const Tangent scaled_target = p1_discrete_tension_scale_divide(
               geometry, nodal_values[target], stiffness, target_action, stencil.lumped_masses[base],
-              "P1 affine-invariant inverse-mass target gradient is nonfinite");
+              "P1 intrinsic inverse-mass target gradient is nonfinite");
             result.nodal_gradient[base] =
               geometry.linear_combination(nodal_values[base], 1, result.nodal_gradient[base], -1, scaled_base);
             result.nodal_gradient[target] =
@@ -204,7 +201,7 @@ p1_affine_invariant_discrete_tension_impl(
         }
         for (const Tangent& gradient : result.nodal_gradient) {
             p1_objective_require_finite_shape<std::domain_error>(
-              gradient, geometry.order(), "P1 affine-invariant discrete tension gradient is nonfinite");
+              gradient, geometry.order(), "P1 intrinsic discrete tension gradient is nonfinite");
         }
     }
     return result;
@@ -235,7 +232,7 @@ template <typename Scalar, int Order, Usage Uses, typename Nodes>
 P1ObjectiveValueResult p1_discrete_tension_value(
   const manifold::AffineInvariantSPDGeometry<Scalar, Order, Uses>& geometry, const Nodes& nodal_values,
   const P1LumpedLaplacianStencil& stencil) {
-    return internals::p1_affine_invariant_discrete_tension_impl<false>(geometry, nodal_values, stencil);
+    return internals::p1_intrinsic_discrete_tension_impl<false>(geometry, nodal_values, stencil);
 }
 
 // the returned gradient is global: entry i is based at nodal_values[i]
@@ -245,7 +242,24 @@ P1ObjectiveContributionResult<typename manifold::AffineInvariantSPDGeometry<Scal
 p1_discrete_tension_contribution(
   const manifold::AffineInvariantSPDGeometry<Scalar, Order, Uses>& geometry, const Nodes& nodal_values,
   const P1LumpedLaplacianStencil& stencil) {
-    return internals::p1_affine_invariant_discrete_tension_impl<true>(geometry, nodal_values, stencil);
+    return internals::p1_intrinsic_discrete_tension_impl<true>(geometry, nodal_values, stencil);
+}
+
+/// @brief evaluates half the mass-weighted squared BW discrete tension
+template <typename Scalar, int Order, Usage Uses, typename Nodes>
+P1ObjectiveValueResult p1_discrete_tension_value(
+  const manifold::BuresWassersteinSPDGeometry<Scalar, Order, Uses>& geometry, const Nodes& nodal_values,
+  const P1LumpedLaplacianStencil& stencil) {
+    return internals::p1_intrinsic_discrete_tension_impl<false>(geometry, nodal_values, stencil);
+}
+
+/// @brief returns BW squared tension and its global metric gradients based at each node
+template <typename Scalar, int Order, Usage Uses, typename Nodes>
+P1ObjectiveContributionResult<typename manifold::BuresWassersteinSPDGeometry<Scalar, Order, Uses>::Tangent>
+p1_discrete_tension_contribution(
+  const manifold::BuresWassersteinSPDGeometry<Scalar, Order, Uses>& geometry, const Nodes& nodal_values,
+  const P1LumpedLaplacianStencil& stencil) {
+    return internals::p1_intrinsic_discrete_tension_impl<true>(geometry, nodal_values, stencil);
 }
 
 }   // namespace gfe
