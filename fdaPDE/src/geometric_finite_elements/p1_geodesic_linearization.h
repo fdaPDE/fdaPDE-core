@@ -72,10 +72,13 @@ template <typename Derivative> struct P1MixedDerivativeResult {
 };
 
 /// @brief retains a mean and its differential data, borrowing immutable batches or owning span snapshots
-template <typename Scalar_, int Order_, Usage Uses_, typename Nodes>
-class P1GeodesicLinearization<manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses_>, Nodes> {
+template <typename Geometry_, typename Nodes>
+    requires internals::is_flat_spd_geometry<Geometry_>
+class P1GeodesicLinearization<Geometry_, Nodes> {
    public:
-    using Geometry = manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses_>;
+    using Geometry = Geometry_;
+    using Scalar_ = typename Geometry::Scalar;
+    static constexpr int Order_ = internals::flat_spd_order<Geometry>;
     using Point = typename Geometry::Point;
     using Tangent = typename Geometry::Tangent;
 
@@ -106,14 +109,15 @@ class P1GeodesicLinearization<manifold::LogEuclideanSPDGeometry<Scalar_, Order_,
                     const AccumulationScalar contribution =
                       (static_cast<AccumulationScalar>(coefficient) /
                        static_cast<AccumulationScalar>(normalized_total_)) *
-                      (static_cast<AccumulationScalar>((*node_logs_[node_index])(i, j)) -
+                      (static_cast<AccumulationScalar>(node_chart_(node_index)(i, j)) -
                        static_cast<AccumulationScalar>((*mean_chart_)(i, j)));
                     compensated_add_(chart_direction, correction, i, j, contribution);
                 }
             }
         }
         if (!has_nonzero_direction) return make_zero_tangent_();
-        return Tangent(fdapde::matrix_exp_frechet(*mean_chart_, to_tangent_(chart_direction)));
+        return internals::p1_flat_frame_inverse_chart_jvp(
+          geometry_, mean_frame_reference_(), to_tangent_(chart_direction));
     }
 
     /// @brief differentiates active nodal values in the geometry tangent representation
@@ -126,7 +130,8 @@ class P1GeodesicLinearization<manifold::LogEuclideanSPDGeometry<Scalar_, Order_,
           "P1 geodesic nodal-direction and nodal-value counts must match");
 
         if (vertex_index_) {
-            static_cast<void>(fdapde::matrix_log_frechet(nodes_[*vertex_index_], directions[*vertex_index_]));
+            static_cast<void>(internals::p1_flat_frame_chart_jvp(
+              geometry_, nodes_[*vertex_index_], *node_frames_[*vertex_index_], directions[*vertex_index_]));
             return directions[*vertex_index_];
         }
 
@@ -136,7 +141,8 @@ class P1GeodesicLinearization<manifold::LogEuclideanSPDGeometry<Scalar_, Order_,
             const double weight = result_.normalized_weights[node_index];
             if (weight == 0) continue;
 
-            const auto node_direction = fdapde::matrix_log_frechet(nodes_[node_index], directions[node_index]);
+            const auto node_direction = internals::p1_flat_frame_chart_jvp(
+              geometry_, nodes_[node_index], *node_frames_[node_index], directions[node_index]);
             const AccumulationScalar coefficient =
               static_cast<AccumulationScalar>(weight) / static_cast<AccumulationScalar>(normalized_total_);
             for (int i = 0; i < geometry_.order(); ++i) {
@@ -147,16 +153,18 @@ class P1GeodesicLinearization<manifold::LogEuclideanSPDGeometry<Scalar_, Order_,
                 }
             }
         }
-        return Tangent(fdapde::matrix_exp_frechet(*mean_chart_, to_tangent_(chart_direction)));
+        return internals::p1_flat_frame_inverse_chart_jvp(
+          geometry_, mean_frame_reference_(), to_tangent_(chart_direction));
     }
 
     /// @brief returns the Riemannian metric adjoint of the nodal differential
     /// @details this is the Riemannian adjoint of nodal_jvp. The argument and
     /// @details returned covectors are represented by metric-dual tangent vectors
-    /// @details for the log-Euclidean metric, not by ambient Frobenius gradients
+    /// @details for the flat chart metric, not by ambient Frobenius gradients
     std::vector<Tangent> nodal_vjp(const Tangent& value_gradient) const {
         require_ready_();
-        const Tangent value_chart_gradient(fdapde::matrix_log_frechet(result_.value, value_gradient));
+        const Tangent value_chart_gradient =
+          internals::p1_flat_frame_chart_jvp(geometry_, result_.value, mean_frame_reference_(), value_gradient);
         std::vector<Tangent> result(nodes_.size(), make_zero_tangent_());
         if (vertex_index_) {
             result[*vertex_index_] = value_gradient;
@@ -169,7 +177,8 @@ class P1GeodesicLinearization<manifold::LogEuclideanSPDGeometry<Scalar_, Order_,
             const Tangent scaled = scaled_tangent_(
               value_chart_gradient,
               static_cast<AccumulationScalar>(weight) / static_cast<AccumulationScalar>(normalized_total_));
-            result[node_index] = Tangent(fdapde::matrix_exp_frechet(*node_logs_[node_index], scaled));
+            result[node_index] =
+              internals::p1_flat_frame_inverse_chart_jvp(geometry_, *node_frames_[node_index], scaled);
         }
         return result;
     }
@@ -198,7 +207,8 @@ class P1GeodesicLinearization<manifold::LogEuclideanSPDGeometry<Scalar_, Order_,
             if (coefficient == 0) continue;
             has_nonzero_coefficient = true;
 
-            const auto node_direction = fdapde::matrix_log_frechet(nodes_[node_index], nodal_directions[node_index]);
+            const auto node_direction = internals::p1_flat_frame_chart_jvp(
+              geometry_, nodes_[node_index], *node_frames_[node_index], nodal_directions[node_index]);
             for (int i = 0; i < geometry_.order(); ++i) {
                 for (int j = 0; j <= i; ++j) {
                     const AccumulationScalar contribution =
@@ -208,18 +218,20 @@ class P1GeodesicLinearization<manifold::LogEuclideanSPDGeometry<Scalar_, Order_,
             }
         }
         if (!has_nonzero_coefficient) return make_zero_tangent_();
-        return Tangent(fdapde::matrix_exp_frechet(*mean_chart_, to_tangent_(chart_direction)));
+        return internals::p1_flat_frame_inverse_chart_jvp(
+          geometry_, mean_frame_reference_(), to_tangent_(chart_direction));
     }
 
     /// @details riemannian adjoint, in the nodal variable, of
     /// @details covariant_mixed_nodal_jvp for a fixed weight direction. The argument
-    /// @details and returned covectors are log-Euclidean metric-dual tangents
+    /// @details and returned covectors are flat-chart metric-dual tangents
     /// @brief returns the nodal metric adjoint of the covariant mixed differential
     std::vector<Tangent>
     covariant_mixed_nodal_vjp(std::span<const double> weight_direction, const Tangent& value_gradient) const {
         require_ready_();
         validate_weight_direction_(weight_direction);
-        const Tangent value_chart_gradient(fdapde::matrix_log_frechet(result_.value, value_gradient));
+        const Tangent value_chart_gradient =
+          internals::p1_flat_frame_chart_jvp(geometry_, result_.value, mean_frame_reference_(), value_gradient);
         std::vector<Tangent> result(nodes_.size(), make_zero_tangent_());
         const AccumulationScalar direction_total =
           static_cast<AccumulationScalar>(compensated_weight_total_(weight_direction));
@@ -228,24 +240,26 @@ class P1GeodesicLinearization<manifold::LogEuclideanSPDGeometry<Scalar_, Order_,
               mixed_nodal_coefficient_(weight_direction[node_index], direction_total, node_index);
             if (coefficient == 0) continue;
             const Tangent scaled = scaled_tangent_(value_chart_gradient, coefficient);
-            result[node_index] = Tangent(fdapde::matrix_exp_frechet(*node_logs_[node_index], scaled));
+            result[node_index] =
+              internals::p1_flat_frame_inverse_chart_jvp(geometry_, *node_frames_[node_index], scaled);
         }
         return result;
     }
    private:
     using AccumulationScalar = std::common_type_t<Scalar_, double>;
     using AccumulationTangent = fdapde::SymmetricMatrix<AccumulationScalar, Order_, Order_>;
+    using ChartFrame = typename internals::FlatSPDChartFrame<Geometry>::type;
    public:
     /// @brief retains the nodal binding and prepares derivatives at the requested barycentric point
     P1GeodesicLinearization(const Geometry& geometry, Nodes nodal_values, std::span<const double> barycentric_weights) :
         geometry_(geometry),
         nodes_(std::forward<Nodes>(nodal_values)),
         result_(p1_geodesic_value(geometry_, nodes_, barycentric_weights)),
-        node_logs_(nodes_.size()) {
+        node_frames_(nodes_.size()) {
         std::size_t positive_count = 0;
         for (std::size_t node_index = 0; node_index < nodes_.size(); ++node_index) {
             check_node_shape_(nodes_[node_index]);
-            node_logs_[node_index].emplace(fdapde::matrix_log(nodes_[node_index]));
+            node_frames_[node_index].emplace(internals::p1_flat_chart_frame(geometry_, nodes_[node_index]));
             if (result_.normalized_weights[node_index] > 0) {
                 ++positive_count;
                 vertex_index_ = node_index;
@@ -264,7 +278,7 @@ class P1GeodesicLinearization<manifold::LogEuclideanSPDGeometry<Scalar_, Order_,
                 for (int j = 0; j <= i; ++j) {
                     const AccumulationScalar contribution =
                       static_cast<AccumulationScalar>(weight) *
-                      static_cast<AccumulationScalar>((*node_logs_[node_index])(i, j));
+                      static_cast<AccumulationScalar>(node_chart_(node_index)(i, j));
                     compensated_add_(mean_chart, correction, i, j, contribution);
                 }
             }
@@ -276,9 +290,24 @@ class P1GeodesicLinearization<manifold::LogEuclideanSPDGeometry<Scalar_, Order_,
             }
         }
         mean_chart_.emplace(to_tangent_(mean_chart));
+        if constexpr (!internals::is_log_euclidean_spd_geometry<Geometry>)
+            mean_frame_.emplace(geometry_.chart_frame(result_.value));
         ready_ = true;
     }
    private:
+    /// @brief reuses the original log chart or the retained triangular factor at the mean
+    const ChartFrame& mean_frame_reference_() const {
+        if constexpr (internals::is_log_euclidean_spd_geometry<Geometry>)
+            return *mean_chart_;
+        else
+            return *mean_frame_;
+    }
+
+    /// @brief borrows one node's isometric coordinates without copying its retained factor
+    const Tangent& node_chart_(std::size_t index) const {
+        return internals::p1_flat_frame_coordinates<Geometry>(*node_frames_[index]);
+    }
+
     /// @brief accumulates one chart coefficient while retaining its rounding correction
     static void compensated_add_(
       AccumulationTangent& sum, AccumulationTangent& correction, int i, int j, AccumulationScalar contribution) {
@@ -393,7 +422,8 @@ class P1GeodesicLinearization<manifold::LogEuclideanSPDGeometry<Scalar_, Order_,
     Geometry geometry_;
     Nodes nodes_;
     P1ValueResult<Point> result_;
-    std::vector<std::optional<Tangent>> node_logs_;
+    std::vector<std::optional<ChartFrame>> node_frames_;
+    std::optional<ChartFrame> mean_frame_;
     double normalized_total_ = 0;
     std::optional<Tangent> mean_chart_;
     std::optional<std::size_t> vertex_index_;
@@ -402,7 +432,7 @@ class P1GeodesicLinearization<manifold::LogEuclideanSPDGeometry<Scalar_, Order_,
 
 /// @brief retains a mean and its differential data, borrowing immutable batches or owning span snapshots
 template <typename Geometry_, typename Nodes>
-    requires requires { typename Geometry_::RelativeFrame; }
+    requires(!internals::is_flat_spd_geometry<Geometry_>) && requires { typename Geometry_::RelativeFrame; }
 class P1GeodesicLinearization<Geometry_, Nodes> {
    public:
     using Geometry = Geometry_;

@@ -35,6 +35,7 @@
 #include "src/manifold_optimization/trust_region.h"
 #include "src/manifold_optimization/weighted_karcher_mean.h"
 #include "src/manifold_optimization/spd/log_euclidean/log_euclidean_spd.h"
+#include "src/manifold_optimization/spd/log_cholesky/log_cholesky_spd.h"
 #include "src/manifold_optimization/spd/affine_invariant/affine_invariant_spd.h"
 #include "src/manifold_optimization/spd/bures_wasserstein/bures_wasserstein_spd.h"
 #include "src/manifold_optimization/so.h"

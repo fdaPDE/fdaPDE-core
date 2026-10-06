@@ -95,6 +95,14 @@ P1ObjectiveValueResult p1_squared_distance_edge_dirichlet_value(
 }
 
 /// @brief evaluates squared-distance edge energy for a negative off-diagonal stencil
+template <typename Geometry, typename Nodes>
+    requires internals::is_flat_spd_geometry<Geometry> && (!internals::is_log_euclidean_spd_geometry<Geometry>)
+P1ObjectiveValueResult p1_squared_distance_edge_dirichlet_value(
+  const Geometry& geometry, const Nodes& nodal_values, const P1LumpedLaplacianStencil& stencil) {
+    return internals::p1_squared_distance_edge_dirichlet_impl<false>(geometry, nodal_values, stencil);
+}
+
+/// @brief evaluates squared-distance edge energy for a negative off-diagonal stencil
 template <typename Scalar, int Order, Usage Uses, typename Nodes>
 P1ObjectiveValueResult p1_squared_distance_edge_dirichlet_value(
   const manifold::AffineInvariantSPDGeometry<Scalar, Order, Uses>& geometry, const Nodes& nodal_values,
@@ -109,6 +117,14 @@ P1ObjectiveContributionResult<typename manifold::LogEuclideanSPDGeometry<Scalar,
 p1_squared_distance_edge_dirichlet_contribution(
   const manifold::LogEuclideanSPDGeometry<Scalar, Order, Uses>& geometry, const Nodes& nodal_values,
   const P1LumpedLaplacianStencil& stencil) {
+    return internals::p1_squared_distance_edge_dirichlet_impl<true>(geometry, nodal_values, stencil);
+}
+
+/// @brief returns squared-distance edge energy and global metric nodal gradients
+template <typename Geometry, typename Nodes>
+    requires internals::is_flat_spd_geometry<Geometry> && (!internals::is_log_euclidean_spd_geometry<Geometry>)
+P1ObjectiveContributionResult<typename Geometry::Tangent> p1_squared_distance_edge_dirichlet_contribution(
+  const Geometry& geometry, const Nodes& nodal_values, const P1LumpedLaplacianStencil& stencil) {
     return internals::p1_squared_distance_edge_dirichlet_impl<true>(geometry, nodal_values, stencil);
 }
 

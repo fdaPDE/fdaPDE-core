@@ -89,6 +89,93 @@ template <typename Geometry> inline constexpr bool is_log_euclidean_spd_geometry
 template <typename Scalar_, int Order_, Usage Uses_>
 inline constexpr bool is_log_euclidean_spd_geometry<manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses_>> = true;
 
+/// @brief identifies the SPD geometries with globally flat symmetric coordinates
+template <typename Geometry> inline constexpr bool is_flat_spd_geometry = is_log_euclidean_spd_geometry<Geometry>;
+template <typename Scalar, int Order, Usage Uses>
+inline constexpr bool is_flat_spd_geometry<manifold::LogCholeskySPDGeometry<Scalar, Order, Uses>> = true;
+
+/// @brief retains the compile-time order of a flat SPD coordinate chart
+template <typename Geometry> inline constexpr int flat_spd_order = fdapde::Dynamic;
+template <typename Scalar, int Order, Usage Uses>
+inline constexpr int flat_spd_order<manifold::LogEuclideanSPDGeometry<Scalar, Order, Uses>> = Order;
+template <typename Scalar, int Order, Usage Uses>
+inline constexpr int flat_spd_order<manifold::LogCholeskySPDGeometry<Scalar, Order, Uses>> = Order;
+
+/// @brief retains the chart representation required by one flat SPD geometry
+template <typename Geometry> struct FlatSPDChartFrame {
+    using type = typename Geometry::Tangent;
+};
+/// @brief retains the triangular factor alongside a log-Cholesky chart
+template <typename Scalar, int Order, Usage Uses>
+struct FlatSPDChartFrame<manifold::LogCholeskySPDGeometry<Scalar, Order, Uses>> {
+    using type = typename manifold::LogCholeskySPDGeometry<Scalar, Order, Uses>::ChartFrame;
+};
+
+/// @brief prepares one reusable coordinate frame while preserving native log-Euclidean owner caches
+template <typename Geometry, SPDLike Point>
+    requires is_flat_spd_geometry<Geometry>
+typename FlatSPDChartFrame<Geometry>::type p1_flat_chart_frame(const Geometry& geometry, const Point& point) {
+    if constexpr (is_log_euclidean_spd_geometry<Geometry>)
+        return typename Geometry::Tangent(fdapde::matrix_log(point));
+    else
+        return geometry.chart_frame(point);
+}
+
+/// @brief borrows symmetric coordinates from a retained flat geometry frame
+template <typename Geometry>
+    requires is_flat_spd_geometry<Geometry>
+const typename Geometry::Tangent& p1_flat_frame_coordinates(const typename FlatSPDChartFrame<Geometry>::type& frame) {
+    if constexpr (is_log_euclidean_spd_geometry<Geometry>)
+        return frame;
+    else
+        return frame.coordinates;
+}
+
+/// @brief differentiates a flat chart using a retained triangular frame or the owner's cached log differential
+template <typename Geometry, SPDLike Point>
+    requires is_flat_spd_geometry<Geometry>
+typename Geometry::Tangent p1_flat_frame_chart_jvp(
+  const Geometry& geometry, const Point& point, const typename FlatSPDChartFrame<Geometry>::type& frame,
+  const typename Geometry::Tangent& direction) {
+    if constexpr (is_log_euclidean_spd_geometry<Geometry>)
+        return typename Geometry::Tangent(fdapde::matrix_log_frechet(point, direction));
+    else
+        return geometry.chart_differential(frame, direction);
+}
+
+/// @brief maps a flat direction back to an ambient tangent while reusing the prepared factor
+template <typename Geometry>
+    requires is_flat_spd_geometry<Geometry>
+typename Geometry::Tangent p1_flat_frame_inverse_chart_jvp(
+  const Geometry& geometry, const typename FlatSPDChartFrame<Geometry>::type& frame,
+  const typename Geometry::Tangent& direction) {
+    if constexpr (is_log_euclidean_spd_geometry<Geometry>)
+        return typename Geometry::Tangent(fdapde::matrix_exp_frechet(frame, direction));
+    else
+        return geometry.inverse_chart_jvp(frame, direction);
+}
+
+/// @brief reads flat coordinates while retaining the matrix owner's geometry cache
+template <typename Geometry, SPDLike Point>
+    requires is_flat_spd_geometry<Geometry>
+typename Geometry::Tangent p1_flat_chart(const Geometry& geometry, const Point& point) {
+    if constexpr (is_log_euclidean_spd_geometry<Geometry>)
+        return typename Geometry::Tangent(fdapde::matrix_log(point));
+    else
+        return geometry.chart(point);
+}
+
+/// @brief converts a flat chart direction into the metric-dual ambient tangent
+template <typename Geometry>
+    requires is_flat_spd_geometry<Geometry>
+typename Geometry::Tangent p1_flat_inverse_chart_jvp(
+  const Geometry& geometry, const typename Geometry::Tangent& chart, const typename Geometry::Tangent& direction) {
+    if constexpr (is_log_euclidean_spd_geometry<Geometry>)
+        return typename Geometry::Tangent(fdapde::matrix_exp_frechet(chart, direction));
+    else
+        return geometry.inverse_chart_differential(chart, direction);
+}
+
 template <manifold::GeodesicGeometry Geometry, typename Nodes>
 P1ValueResult<manifold::point_t<Geometry>>
 p1_vertex_result(const Geometry& geometry, const Nodes& nodal_values, std::size_t vertex_index) {
@@ -114,7 +201,7 @@ p1_vertex_result(const Geometry& geometry, const Nodes& nodal_values, std::size_
 }   // namespace internals
 
 template <manifold::GeodesicGeometry Geometry, typename Nodes>
-    requires(!internals::is_log_euclidean_spd_geometry<Geometry>)
+    requires(!internals::is_flat_spd_geometry<Geometry>)
 P1ValueResult<manifold::point_t<Geometry>> p1_geodesic_value(
   const Geometry& geometry, const Nodes& nodal_values, std::span<const double> barycentric_weights,
   const manifold::point_t<Geometry>& initial, const manifold::WeightedKarcherMeanOptions& options = {},
@@ -127,10 +214,21 @@ P1ValueResult<manifold::point_t<Geometry>> p1_geodesic_value(
       manifold::weighted_karcher_mean(geometry, nodal_values, barycentric_weights, initial, options, retained));
 }
 
+/// @brief evaluates a closed-form P1 mean in the geometry's globally flat coordinates
 template <typename Scalar_, int Order_, Usage Uses_, typename Nodes>
 P1ValueResult<typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses_>::Point> p1_geodesic_value(
   const manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses_>& geometry, const Nodes& nodal_values,
   std::span<const double> barycentric_weights) {
+    const auto vertex_index = internals::validate_p1_data(nodal_values.size(), barycentric_weights);
+    if (vertex_index) return internals::p1_vertex_result(geometry, nodal_values, *vertex_index);
+    return internals::p1_value_result(manifold::weighted_karcher_mean(geometry, nodal_values, barycentric_weights));
+}
+
+/// @brief evaluates a closed-form P1 mean in the geometry's globally flat coordinates
+template <typename Geometry, typename Nodes>
+    requires internals::is_flat_spd_geometry<Geometry> && (!internals::is_log_euclidean_spd_geometry<Geometry>)
+P1ValueResult<typename Geometry::Point> p1_geodesic_value(
+  const Geometry& geometry, const Nodes& nodal_values, std::span<const double> barycentric_weights) {
     const auto vertex_index = internals::validate_p1_data(nodal_values.size(), barycentric_weights);
     if (vertex_index) return internals::p1_vertex_result(geometry, nodal_values, *vertex_index);
     return internals::p1_value_result(manifold::weighted_karcher_mean(geometry, nodal_values, barycentric_weights));

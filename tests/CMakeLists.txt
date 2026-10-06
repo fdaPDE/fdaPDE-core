@@ -169,7 +169,7 @@ fdapde_reject_program(qualified_scalar_spd_matrix SPD_MATRICES_REQUIRE_AN_UNQUAL
 add_executable(fdapde_spd_geometry_test
   manifold_optimization/log_euclidean_spd.cpp manifold_optimization/affine_invariant_spd.cpp
   manifold_optimization/spd_geometry.cpp manifold_optimization/spd_batch_geometry.cpp
-  manifold_optimization/spd_geodesic.cpp)
+  manifold_optimization/spd_geodesic.cpp manifold_optimization/log_cholesky_spd.cpp)
 fdapde_configure_target(fdapde_spd_geometry_test)
 target_link_libraries(fdapde_spd_geometry_test PRIVATE GTest::gtest_main)
 gtest_discover_tests(fdapde_spd_geometry_test PROPERTIES TIMEOUT 60)
@@ -271,6 +271,7 @@ target_link_libraries(fdapde_interpolation_test PRIVATE GTest::gtest_main)
 gtest_discover_tests(fdapde_interpolation_test PROPERTIES TIMEOUT 60)
 if(NOT FDAPDE_NATIVE_ONLY)
   add_executable(fdapde_spatial_interpolation_test
+    geometric_finite_elements/log_cholesky.cpp
     geometric_finite_elements/spatial.cpp geometric_finite_elements/geometric_function.cpp
     geometric_finite_elements/multipoint.cpp geometric_finite_elements/rotation_spatial.cpp geometric_finite_elements/cheeger_spatial.cpp)
   fdapde_configure_target(fdapde_spatial_interpolation_test)

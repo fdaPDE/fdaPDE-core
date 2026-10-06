@@ -69,30 +69,31 @@ void p1_discrete_tension_validate(
     }
 }
 
-/// @brief evaluates squared discrete tension in log coordinates with optional gradients
-template <bool WithGradient, typename Scalar, int Order, Usage Uses, typename Nodes>
-P1ObjectiveResult<WithGradient, typename manifold::LogEuclideanSPDGeometry<Scalar, Order, Uses>::Tangent>
-p1_log_euclidean_discrete_tension_impl(
-  const manifold::LogEuclideanSPDGeometry<Scalar, Order, Uses>& geometry, const Nodes& nodal_values,
-  const P1LumpedLaplacianStencil& stencil) {
-    using Geometry = manifold::LogEuclideanSPDGeometry<Scalar, Order, Uses>;
+/// @brief evaluates squared discrete tension in flat coordinates with optional gradients
+template <bool WithGradient, typename Geometry, typename Nodes>
+    requires is_flat_spd_geometry<Geometry>
+P1ObjectiveResult<WithGradient, typename Geometry::Tangent> p1_flat_discrete_tension_impl(
+  const Geometry& geometry, const Nodes& nodal_values, const P1LumpedLaplacianStencil& stencil) {
+    using Scalar = typename Geometry::Scalar;
     using Tangent = typename Geometry::Tangent;
     p1_discrete_tension_validate(geometry, nodal_values, stencil);
 
-    std::vector<Tangent> logarithms;
-    logarithms.reserve(nodal_values.size());
+    std::vector<typename FlatSPDChartFrame<Geometry>::type> frames;
+    frames.reserve(nodal_values.size());
     for (std::size_t i = 0; i < nodal_values.size(); ++i) {
         const auto& node = nodal_values[i];
-        logarithms.emplace_back(fdapde::matrix_log(node));
+        frames.emplace_back(p1_flat_chart_frame(geometry, node));
         p1_objective_require_finite_shape<std::domain_error>(
-          logarithms.back(), geometry.order(), "P1 log-Euclidean discrete tension logarithm is nonfinite");
+          p1_flat_frame_coordinates<Geometry>(frames.back()), geometry.order(),
+          "P1 flat-coordinate discrete tension chart is nonfinite");
     }
 
-    // q_i = sum_{j != i} K_ij (log(P_j) - log(P_i))
+    // q_i = sum_{j != i} K_ij (chart(P_j) - chart(P_i))
     std::vector<Tangent> chart_residuals = p1_objective_zero_gradient(geometry, nodal_values);
     for (const auto& edge : stencil.edges) {
-        const Tangent difference =
-          geometry.linear_combination(nodal_values[edge.first], 1, logarithms[edge.second], -1, logarithms[edge.first]);
+        const Tangent difference = geometry.linear_combination(
+          nodal_values[edge.first], 1, p1_flat_frame_coordinates<Geometry>(frames[edge.second]), -1,
+          p1_flat_frame_coordinates<Geometry>(frames[edge.first]));
         chart_residuals[edge.first] = geometry.linear_combination(
           nodal_values[edge.first], 1, chart_residuals[edge.first], edge.stiffness, difference);
         chart_residuals[edge.second] = geometry.linear_combination(
@@ -102,12 +103,12 @@ p1_log_euclidean_discrete_tension_impl(
     P1ObjectiveResult<WithGradient, Tangent> result;
     for (std::size_t node = 0; node < nodal_values.size(); ++node) {
         p1_objective_require_finite_shape<std::domain_error>(
-          chart_residuals[node], geometry.order(), "P1 log-Euclidean discrete tension residual is nonfinite");
+          chart_residuals[node], geometry.order(), "P1 flat-coordinate discrete tension residual is nonfinite");
         const double scaled_norm =
           static_cast<double>(chart_residuals[node].norm()) / std::sqrt(stencil.lumped_masses[node]);
         result.value = std::fma(0.5 * scaled_norm, scaled_norm, result.value);
         fdapde_strong_assert(
-          std::isfinite(result.value), std::domain_error, "P1 log-Euclidean discrete tension value is nonfinite");
+          std::isfinite(result.value), std::domain_error, "P1 flat-coordinate discrete tension value is nonfinite");
     }
     if constexpr (WithGradient) {
         std::vector<Tangent> chart_gradient = p1_objective_zero_gradient(geometry, nodal_values);
@@ -125,7 +126,7 @@ p1_log_euclidean_discrete_tension_impl(
                 }
             }
             p1_objective_require_finite_shape<std::domain_error>(
-              difference, geometry.order(), "P1 log-Euclidean inverse-mass edge gradient is nonfinite");
+              difference, geometry.order(), "P1 flat-coordinate inverse-mass edge gradient is nonfinite");
             chart_gradient[edge.first] =
               geometry.linear_combination(nodal_values[edge.first], 1, chart_gradient[edge.first], 1, difference);
             chart_gradient[edge.second] =
@@ -135,11 +136,13 @@ p1_log_euclidean_discrete_tension_impl(
         result.nodal_gradient.reserve(nodal_values.size());
         for (std::size_t node = 0; node < nodal_values.size(); ++node) {
             p1_objective_require_finite_shape<std::domain_error>(
-              chart_gradient[node], geometry.order(), "P1 log-Euclidean discrete tension chart gradient is nonfinite");
-            result.nodal_gradient.emplace_back(fdapde::matrix_exp_frechet(logarithms[node], chart_gradient[node]));
+              chart_gradient[node], geometry.order(),
+              "P1 flat-coordinate discrete tension chart gradient is nonfinite");
+            result.nodal_gradient.emplace_back(
+              p1_flat_frame_inverse_chart_jvp(geometry, frames[node], chart_gradient[node]));
             p1_objective_require_finite_shape<std::domain_error>(
               result.nodal_gradient.back(), geometry.order(),
-              "P1 log-Euclidean discrete tension gradient is nonfinite");
+              "P1 flat-coordinate discrete tension gradient is nonfinite");
         }
     }
     return result;
@@ -214,7 +217,15 @@ template <typename Scalar, int Order, Usage Uses, typename Nodes>
 P1ObjectiveValueResult p1_discrete_tension_value(
   const manifold::LogEuclideanSPDGeometry<Scalar, Order, Uses>& geometry, const Nodes& nodal_values,
   const P1LumpedLaplacianStencil& stencil) {
-    return internals::p1_log_euclidean_discrete_tension_impl<false>(geometry, nodal_values, stencil);
+    return internals::p1_flat_discrete_tension_impl<false>(geometry, nodal_values, stencil);
+}
+
+/// @brief evaluates half the mass-weighted squared discrete tension
+template <typename Geometry, typename Nodes>
+    requires internals::is_flat_spd_geometry<Geometry> && (!internals::is_log_euclidean_spd_geometry<Geometry>)
+P1ObjectiveValueResult p1_discrete_tension_value(
+  const Geometry& geometry, const Nodes& nodal_values, const P1LumpedLaplacianStencil& stencil) {
+    return internals::p1_flat_discrete_tension_impl<false>(geometry, nodal_values, stencil);
 }
 
 // the returned gradient is global: entry i is based at nodal_values[i]
@@ -224,7 +235,15 @@ P1ObjectiveContributionResult<typename manifold::LogEuclideanSPDGeometry<Scalar,
 p1_discrete_tension_contribution(
   const manifold::LogEuclideanSPDGeometry<Scalar, Order, Uses>& geometry, const Nodes& nodal_values,
   const P1LumpedLaplacianStencil& stencil) {
-    return internals::p1_log_euclidean_discrete_tension_impl<true>(geometry, nodal_values, stencil);
+    return internals::p1_flat_discrete_tension_impl<true>(geometry, nodal_values, stencil);
+}
+
+/// @brief returns squared tension and global metric gradients based at each node
+template <typename Geometry, typename Nodes>
+    requires internals::is_flat_spd_geometry<Geometry> && (!internals::is_log_euclidean_spd_geometry<Geometry>)
+P1ObjectiveContributionResult<typename Geometry::Tangent> p1_discrete_tension_contribution(
+  const Geometry& geometry, const Nodes& nodal_values, const P1LumpedLaplacianStencil& stencil) {
+    return internals::p1_flat_discrete_tension_impl<true>(geometry, nodal_values, stencil);
 }
 
 /// @brief evaluates half the mass-weighted squared discrete tension

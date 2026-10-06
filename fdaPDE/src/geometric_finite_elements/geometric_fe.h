@@ -278,7 +278,7 @@ template <typename Space, typename Location> class GeometricFeEvaluation {
         gfe::internals::for_each_point(size(), policy, [&](std::size_t i) {
             const auto& point = points_[i];
             const auto& cell = cells_.at(point.cell);
-            if constexpr (gfe::internals::is_log_euclidean_spd_geometry<Geometry>) {
+            if constexpr (gfe::internals::is_flat_spd_geometry<Geometry>) {
                 auto result =
                   gfe::p1_geodesic_value(space_->geometry(), function.coeff().select(cell.dofs), point.weights);
                 gfe::internals::require_converged(result);

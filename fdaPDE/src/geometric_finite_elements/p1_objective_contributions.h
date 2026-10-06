@@ -168,7 +168,7 @@ P1ObjectiveContributionResult<typename Geometry::Tangent> p1_frobenius_data_site
     p1_objective_require_finite_shape<std::domain_error>(
       value_gradient, geometry.order(), "P1 Frobenius metric gradient is nonfinite");
 
-    if constexpr (is_log_euclidean_spd_geometry<Geometry>) {
+    if constexpr (is_flat_spd_geometry<Geometry>) {
         result.nodal_gradient = linearization.nodal_vjp(value_gradient);
     } else {
         auto pullback = linearization.nodal_vjp(value_gradient);
@@ -187,14 +187,14 @@ P1ObjectiveContributionResult<typename Geometry::Tangent> p1_frobenius_data_site
     return result;
 }
 
-/// @brief evaluates a residual against an observation supplied in log coordinates
+/// @brief evaluates a residual against an observation supplied in flat coordinates
 template <typename Geometry, typename ValueResult>
-P1ObjectiveValueResult p1_log_coordinate_data_site_value_impl(
-  const Geometry& geometry, const ValueResult& value_result, const typename Geometry::Tangent& observation_log) {
+P1ObjectiveValueResult p1_flat_coordinate_data_site_value_impl(
+  const Geometry& geometry, const ValueResult& value_result, const typename Geometry::Tangent& observation_chart) {
     using Tangent = typename Geometry::Tangent;
     p1_objective_require_finite_shape(
-      observation_log, geometry.order(),
-      "P1 log-coordinate observation has incompatible dimensions or nonfinite coefficients");
+      observation_chart, geometry.order(),
+      "P1 flat-coordinate observation has incompatible dimensions or nonfinite coefficients");
 
     P1ObjectiveValueResult result;
     /// @brief reports whether the required mean and derivative solves succeeded
@@ -203,24 +203,24 @@ P1ObjectiveValueResult p1_log_coordinate_data_site_value_impl(
         return result;
     }
 
-    const Tangent value_log(fdapde::matrix_log(value_result.value));
-    const Tangent residual(value_log - observation_log);
+    const Tangent value_chart = p1_flat_chart(geometry, value_result.value);
+    const Tangent residual(value_chart - observation_chart);
     const double residual_norm = static_cast<double>(residual.norm());
     result.value = 0.5 * residual_norm * residual_norm;
     fdapde_strong_assert(
-      std::isfinite(result.value), std::domain_error, "P1 log-coordinate data contribution is nonfinite");
+      std::isfinite(result.value), std::domain_error, "P1 flat-coordinate data contribution is nonfinite");
 
     return result;
 }
 
-/// @brief pulls a log-coordinate residual back to metric nodal tangents
+/// @brief pulls a flat-coordinate residual back to metric nodal tangents
 template <typename Geometry, typename Linearization, typename Nodes>
-P1ObjectiveContributionResult<typename Geometry::Tangent> p1_log_coordinate_data_site_contribution_impl(
+P1ObjectiveContributionResult<typename Geometry::Tangent> p1_flat_coordinate_data_site_contribution_impl(
   const Geometry& geometry, const Nodes& nodes, Linearization linearization,
-  const typename Geometry::Tangent& observation_log) {
+  const typename Geometry::Tangent& observation_chart) {
     using Tangent = typename Geometry::Tangent;
     const auto& value_result = linearization.result();
-    const auto value = p1_log_coordinate_data_site_value_impl(geometry, value_result, observation_log);
+    const auto value = p1_flat_coordinate_data_site_value_impl(geometry, value_result, observation_chart);
 
     P1ObjectiveContributionResult<Tangent> result;
     result.value = value.value;
@@ -229,13 +229,13 @@ P1ObjectiveContributionResult<typename Geometry::Tangent> p1_log_coordinate_data
     /// @brief reports whether the required mean and derivative solves succeeded
     if (!result.converged()) return result;
 
-    const Tangent value_log(fdapde::matrix_log(value_result.value));
-    const Tangent residual(value_log - observation_log);
-    const Tangent value_gradient(fdapde::matrix_exp_frechet(value_log, residual));
+    const Tangent value_chart = p1_flat_chart(geometry, value_result.value);
+    const Tangent residual(value_chart - observation_chart);
+    const Tangent value_gradient = p1_flat_inverse_chart_jvp(geometry, value_chart, residual);
     result.nodal_gradient = linearization.nodal_vjp(value_gradient);
     for (const Tangent& gradient : result.nodal_gradient) {
         p1_objective_require_finite_shape<std::domain_error>(
-          gradient, geometry.order(), "P1 log-coordinate nodal gradient is nonfinite");
+          gradient, geometry.order(), "P1 flat-coordinate nodal gradient is nonfinite");
     }
     return result;
 }
@@ -374,7 +374,7 @@ P1ObjectiveResult<WithGradient, typename Geometry::Tangent> p1_dirichlet_cell_ob
         if constexpr (WithGradient) { site_gradient = p1_objective_zero_gradient(geometry, nodes); }
         for (std::size_t axis = 0; axis < packet.embed_dim; ++axis) {
             const std::span<const double> direction(packet.physical_weight_gradients[axis]);
-            if constexpr (is_log_euclidean_spd_geometry<Geometry>) {
+            if constexpr (is_flat_spd_geometry<Geometry>) {
                 const Tangent spatial = linearization.weight_jvp(direction);
                 const double squared_norm = geometry.inner_product(value_result.value, spatial, spatial);
                 fdapde_strong_assert(
@@ -454,7 +454,7 @@ P1ObjectiveValueResult p1_log_coordinate_data_site_value(
   std::span<const double> barycentric_weights,
   const typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses>::Tangent& observation_log) {
     const auto value_result = p1_geodesic_value(geometry, nodal_values, barycentric_weights);
-    return internals::p1_log_coordinate_data_site_value_impl(geometry, value_result, observation_log);
+    return internals::p1_flat_coordinate_data_site_value_impl(geometry, value_result, observation_log);
 }
 
 // the returned metric gradients follow nodal_values order. Observation
@@ -467,8 +467,29 @@ p1_log_coordinate_data_site_contribution(
   std::span<const double> barycentric_weights,
   const typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses>::Tangent& observation_log) {
     auto linearization = p1_geodesic_linearization(geometry, nodal_values, barycentric_weights);
-    return internals::p1_log_coordinate_data_site_contribution_impl(
+    return internals::p1_flat_coordinate_data_site_contribution_impl(
       geometry, nodal_values, std::move(linearization), observation_log);
+}
+
+/// @brief evaluates flat-coordinate loss against a precomputed metric chart observation
+template <typename Geometry, typename Nodes>
+    requires internals::is_flat_spd_geometry<Geometry>
+P1ObjectiveValueResult p1_flat_coordinate_data_site_value(
+  const Geometry& geometry, const Nodes& nodes, std::span<const double> weights,
+  const typename Geometry::Tangent& observation_chart) {
+    const auto mean = p1_geodesic_value(geometry, nodes, weights);
+    return internals::p1_flat_coordinate_data_site_value_impl(geometry, mean, observation_chart);
+}
+
+/// @brief returns flat-coordinate loss and its metric gradients in nodal order
+template <typename Geometry, typename Nodes>
+    requires internals::is_flat_spd_geometry<Geometry>
+P1ObjectiveContributionResult<typename Geometry::Tangent> p1_flat_coordinate_data_site_contribution(
+  const Geometry& geometry, const Nodes& nodes, std::span<const double> weights,
+  const typename Geometry::Tangent& observation_chart) {
+    auto linearization = p1_geodesic_linearization(geometry, nodes, weights);
+    return internals::p1_flat_coordinate_data_site_contribution_impl(
+      geometry, nodes, std::move(linearization), observation_chart);
 }
 
 /// @brief evaluates the Frobenius loss of arithmetic P1 interpolation
@@ -477,6 +498,16 @@ P1ObjectiveValueResult p1_ambient_frobenius_data_site_value(
   const manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses>& geometry, const Nodes& nodal_values,
   std::span<const double> barycentric_weights,
   const typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses>::Tangent& observation) {
+    return internals::p1_ambient_frobenius_data_site_impl<false>(
+      geometry, nodal_values, barycentric_weights, observation);
+}
+
+/// @brief evaluates the Frobenius loss of arithmetic P1 interpolation
+template <typename Geometry, typename Nodes>
+    requires internals::is_flat_spd_geometry<Geometry> && (!internals::is_log_euclidean_spd_geometry<Geometry>)
+P1ObjectiveValueResult p1_ambient_frobenius_data_site_value(
+  const Geometry& geometry, const Nodes& nodal_values, std::span<const double> barycentric_weights,
+  const typename Geometry::Tangent& observation) {
     return internals::p1_ambient_frobenius_data_site_impl<false>(
       geometry, nodal_values, barycentric_weights, observation);
 }
@@ -505,6 +536,16 @@ p1_ambient_frobenius_data_site_contribution(
 }
 
 /// @brief returns the arithmetic P1 Frobenius loss and metric gradients in nodal order
+template <typename Geometry, typename Nodes>
+    requires internals::is_flat_spd_geometry<Geometry> && (!internals::is_log_euclidean_spd_geometry<Geometry>)
+P1ObjectiveContributionResult<typename Geometry::Tangent> p1_ambient_frobenius_data_site_contribution(
+  const Geometry& geometry, const Nodes& nodal_values, std::span<const double> barycentric_weights,
+  const typename Geometry::Tangent& observation) {
+    return internals::p1_ambient_frobenius_data_site_impl<true>(
+      geometry, nodal_values, barycentric_weights, observation);
+}
+
+/// @brief returns the arithmetic P1 Frobenius loss and metric gradients in nodal order
 template <typename Scalar_, int Order_, Usage Uses, typename Nodes>
 P1ObjectiveContributionResult<typename manifold::AffineInvariantSPDGeometry<Scalar_, Order_, Uses>::Tangent>
 p1_ambient_frobenius_data_site_contribution(
@@ -521,6 +562,16 @@ P1ObjectiveValueResult p1_frobenius_data_site_value(
   const manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses>& geometry, const Nodes& nodal_values,
   std::span<const double> barycentric_weights,
   const typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses>::Tangent& observation) {
+    const auto value_result = p1_geodesic_value(geometry, nodal_values, barycentric_weights);
+    return internals::p1_frobenius_data_site_value_impl(geometry, value_result, observation);
+}
+
+/// @brief evaluates the Frobenius loss of geodesic P1 interpolation
+template <typename Geometry, typename Nodes>
+    requires internals::is_flat_spd_geometry<Geometry> && (!internals::is_log_euclidean_spd_geometry<Geometry>)
+P1ObjectiveValueResult p1_frobenius_data_site_value(
+  const Geometry& geometry, const Nodes& nodal_values, std::span<const double> barycentric_weights,
+  const typename Geometry::Tangent& observation) {
     const auto value_result = p1_geodesic_value(geometry, nodal_values, barycentric_weights);
     return internals::p1_frobenius_data_site_value_impl(geometry, value_result, observation);
 }
@@ -543,6 +594,17 @@ p1_frobenius_data_site_contribution(
   const manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses>& geometry, const Nodes& nodal_values,
   std::span<const double> barycentric_weights,
   const typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses>::Tangent& observation) {
+    auto linearization = p1_geodesic_linearization(geometry, nodal_values, barycentric_weights);
+    return internals::p1_frobenius_data_site_contribution_impl(
+      geometry, nodal_values, std::move(linearization), observation);
+}
+
+/// @brief returns the geodesic P1 Frobenius loss and metric gradients in nodal order
+template <typename Geometry, typename Nodes>
+    requires internals::is_flat_spd_geometry<Geometry> && (!internals::is_log_euclidean_spd_geometry<Geometry>)
+P1ObjectiveContributionResult<typename Geometry::Tangent> p1_frobenius_data_site_contribution(
+  const Geometry& geometry, const Nodes& nodal_values, std::span<const double> barycentric_weights,
+  const typename Geometry::Tangent& observation) {
     auto linearization = p1_geodesic_linearization(geometry, nodal_values, barycentric_weights);
     return internals::p1_frobenius_data_site_contribution_impl(
       geometry, nodal_values, std::move(linearization), observation);
@@ -599,6 +661,18 @@ P1ObjectiveValueResult p1_dirichlet_cell_value(
 }
 
 /// @brief integrates half the squared spatial metric derivative over one cell
+template <typename Geometry, std::size_t LocalDim, std::size_t EmbedDim, std::size_t QuadratureSize, typename Nodes>
+    requires internals::is_flat_spd_geometry<Geometry> && (!internals::is_log_euclidean_spd_geometry<Geometry>)
+P1ObjectiveValueResult p1_dirichlet_cell_value(
+  const Geometry& geometry, const Nodes& nodal_values,
+  const P1FEMCellQuadrature<LocalDim, EmbedDim, QuadratureSize>& packet) {
+    auto builder = [&geometry](const auto& nodes, auto weights) {
+        return p1_geodesic_linearization(geometry, nodes, weights);
+    };
+    return internals::p1_dirichlet_cell_objective_impl<false>(geometry, nodal_values, packet, builder);
+}
+
+/// @brief integrates half the squared spatial metric derivative over one cell
 template <
   typename Scalar_, int Order_, std::size_t LocalDim, std::size_t EmbedDim, std::size_t QuadratureSize, Usage Uses,
   typename Nodes>
@@ -621,6 +695,18 @@ template <
 P1ObjectiveContributionResult<typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses>::Tangent>
 p1_dirichlet_cell_contribution(
   const manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses>& geometry, const Nodes& nodal_values,
+  const P1FEMCellQuadrature<LocalDim, EmbedDim, QuadratureSize>& packet) {
+    auto builder = [&geometry](const auto& nodes, auto weights) {
+        return p1_geodesic_linearization(geometry, nodes, weights);
+    };
+    return internals::p1_dirichlet_cell_objective_impl<true>(geometry, nodal_values, packet, builder);
+}
+
+/// @brief returns cell Dirichlet energy and metric gradients in packet dof order
+template <typename Geometry, std::size_t LocalDim, std::size_t EmbedDim, std::size_t QuadratureSize, typename Nodes>
+    requires internals::is_flat_spd_geometry<Geometry> && (!internals::is_log_euclidean_spd_geometry<Geometry>)
+P1ObjectiveContributionResult<typename Geometry::Tangent> p1_dirichlet_cell_contribution(
+  const Geometry& geometry, const Nodes& nodal_values,
   const P1FEMCellQuadrature<LocalDim, EmbedDim, QuadratureSize>& packet) {
     auto builder = [&geometry](const auto& nodes, auto weights) {
         return p1_geodesic_linearization(geometry, nodes, weights);
