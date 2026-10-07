@@ -873,8 +873,9 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
             for (; index_ < Base::end_ && !filter[index_]; ++index_);
             if (index_ != Base::end_) { operator()(index_); }
         }
+        /// @brief visits every face with a filter sized to the face enumeration
         face_iterator(int index, const Triangulation* mesh) :   // apply no filter
-            face_iterator(index, mesh, Vector<bool, Dynamic>::Ones(mesh->n_edges_), Unmarked) { }
+            face_iterator(index, mesh, Vector<bool, Dynamic>::Ones(mesh->n_faces_), Unmarked) { }
         face_iterator(int index, const Triangulation* mesh, int marker) :   // fast construction for end iterators
             Base(index, 0, mesh->n_faces_), marker_(marker) { }
         int marker() const { return marker_; }
@@ -925,13 +926,15 @@ template <> class Triangulation<3, 3> : public TriangulationBase<3, 3, Triangula
         }
         return;
     }
+    /// @brief marks boundary faces selected by a face-sized boolean mask
     template <typename XprType> void mark_boundary(const BoolMatrixExpr<XprType>& mask) {
         fdapde_assert(
-          mask.rows() == n_edges_, std::invalid_argument, "boundary mask size must match the number of edges");
+          mask.rows() == n_faces_ && mask.cols() == 1, std::invalid_argument,
+          "boundary mask must be a column vector with one entry per face");
         faces_markers_.resize(n_faces_, 0);
         edges_markers_.resize(n_edges_, 0);
         for (boundary_face_iterator it = boundary_faces_begin(); it != boundary_faces_end(); ++it) {
-            if (mask[it->id()]) {
+            if (mask.derived()(it->id(), 0)) {
                 faces_markers_[it->id()] = 1;
                 for (int edge_id : it->edge_ids()) { edges_markers_[edge_id] = 1; }
             }

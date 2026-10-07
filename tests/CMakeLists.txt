@@ -294,7 +294,8 @@ if(NOT FDAPDE_NATIVE_ONLY)
   target_link_libraries(fdapde_io_test PRIVATE GTest::gtest_main Eigen3::Eigen)
   gtest_discover_tests(fdapde_io_test PROPERTIES TIMEOUT 60)
 
-  add_executable(fdapde_smoothing_fem_test geometric_finite_elements/smoothing_fem.cpp)
+  add_executable(fdapde_smoothing_fem_test
+    geometric_finite_elements/smoothing_fem.cpp geometric_finite_elements/volume.cpp)
   fdapde_configure_target(fdapde_smoothing_fem_test)
   target_link_libraries(fdapde_smoothing_fem_test PRIVATE GTest::gtest_main Eigen3::Eigen Threads::Threads)
   gtest_discover_tests(fdapde_smoothing_fem_test PROPERTIES TIMEOUT 60)
