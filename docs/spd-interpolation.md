@@ -17,14 +17,14 @@ types and the `P1` descriptor; either include order is supported.
 
 ```cpp
 using namespace fdapde;
-using Node = SPDMatrix<double, 3, 3, Cache::Log>;
+using Node = SPDMatrix<double, 3, Cache::Log>;
 MatrixBatch<Node> values_batch(source_values);
 manifold::AffineInvariantSPDGeometry<double, 3, Usage::BasePointMaps> geometry;
 GeometricFeSpace W(mesh, P1<1>, geometry);
 GeometricFeFunction U(W, values_batch);  // copies the batch
 // use GeometricFeFunction U(W, std::move(values_batch)) to transfer its storage
 auto expression = U(x);
-SPDMatrix<double, 3, 3> value(expression);
+SPDMatrix<double, 3> value(expression);
 ```
 
 `GeometricFeSpace` owns an existing scalar `FeSpace` and a copy of the target
@@ -130,7 +130,7 @@ the same engine. For repeated evaluations or explicit policy selection, retain
 
 ```cpp
 using namespace fdapde;
-using Node = SPDMatrix<double, 3, 3, Cache::Log>;
+using Node = SPDMatrix<double, 3, Cache::Log>;
 MatrixBatch<Node> nodal_values(source_values);
 auto local_values = nodal_values.select(vertex_ids);
 
@@ -139,7 +139,7 @@ gfe::P1GeodesicLinearizationOptions options;
 options.mean.solver.gradient_tolerance = 1e-10;
 auto interpolant = geometry.interpolant(element, local_values, options);
 auto expression = interpolant(x);
-SPDMatrix<double, 3, 3> value(expression);
+SPDMatrix<double, 3> value(expression);
 ```
 
 `element` is a simplex or simplex mesh cell; `x` has its `NodeType`. The
@@ -215,7 +215,7 @@ linearization borrows the batch. Solver diagnostics remain available through
 ```cpp
 auto interpolant = geometry.interpolant(mesh, nodal_values, options);
 auto expression = interpolant(x);
-SPDMatrix<double, 3, 3> value(expression);
+SPDMatrix<double, 3> value(expression);
 ```
 
 The same member dispatches LE and AIRM to `gfe::P1FieldInterpolant`. The batch

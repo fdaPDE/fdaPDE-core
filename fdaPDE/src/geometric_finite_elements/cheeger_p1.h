@@ -12,17 +12,17 @@ template <typename Point> struct CheegerP1ValueResult : P1ValueResult<Point> {
 
 namespace internals {
 template <typename Geometry> inline constexpr bool is_cheeger_geometry = false;
-template <typename S, int N, Usage U>
-inline constexpr bool is_cheeger_geometry<manifold::CheegerLogEuclideanSPDGeometry<S, N, U>> = true;
+template <typename S, int N, Usage U, typename Point_>
+inline constexpr bool is_cheeger_geometry<manifold::CheegerLogEuclideanSPDGeometry<S, N, U, Point_>> = true;
 }   // namespace internals
 /// @brief prepares native SPD2 C-LE interpolation and implicit first derivatives at fixed nodal rho
 /// @details weight derivatives require interior weights; nodal pullbacks retain inactive-coordinate support
 /// @details chart data are snapshots; all matrix coefficients remain in the native input batch
-template <typename S, Usage U, typename Nodes>
-class P1GeodesicLinearization<manifold::CheegerLogEuclideanSPDGeometry<S, 2, U>, Nodes> {
+template <typename S, Usage U, typename Point_, typename Nodes>
+class P1GeodesicLinearization<manifold::CheegerLogEuclideanSPDGeometry<S, 2, U, Point_>, Nodes> {
     static constexpr int N = 2;
    public:
-    using Geometry = manifold::CheegerLogEuclideanSPDGeometry<S, N, U>;
+    using Geometry = manifold::CheegerLogEuclideanSPDGeometry<S, N, U, Point_>;
     using Point = typename Geometry::Point;
     using Tangent = typename Geometry::Tangent;
     using Chart = manifold::internals::CheegerChart;
@@ -124,7 +124,7 @@ class P1GeodesicLinearization<manifold::CheegerLogEuclideanSPDGeometry<S, 2, U>,
         if (derivatives && result_.converged() && !result_.detected_ambiguity) {
             hessian_.emplace(lifted_hessian_(fit_));
             try {
-                const SPDMatrix<double, Dynamic, Dynamic> positive(*hessian_);
+                const SPDMatrix<double, Dynamic> positive(*hessian_);
                 static_cast<void>(positive);
                 lu_.emplace(*hessian_);
                 mean_log_.emplace(manifold::internals::cheeger_matrix<S>(fit_.mean));
@@ -465,7 +465,7 @@ class P1GeodesicLinearization<manifold::CheegerLogEuclideanSPDGeometry<S, 2, U>,
     double weight_total_ = 1;
     std::optional<Dense> hessian_;
     std::optional<PartialPivLU<Dense>> lu_;
-    std::optional<CachedSymmetricMatrix<S, N, N>> mean_log_;
+    std::optional<SymmetricMatrix<S, N, Cache::Spectral>> mean_log_;
     std::vector<Chart> nodes_;
     Fit fit_;
     CheegerP1ValueResult<Point> result_ {
@@ -474,13 +474,13 @@ class P1GeodesicLinearization<manifold::CheegerLogEuclideanSPDGeometry<S, 2, U>,
 };
 
 /// @brief evaluates a native batch at a fixed local rho without preparing derivative factorizations
-template <typename S, int N, Usage U, typename Nodes>
+template <typename S, int N, Usage U, typename Point_, typename Nodes>
 auto p1_geodesic_value(
-  const manifold::CheegerLogEuclideanSPDGeometry<S, N, U>& geometry, const Nodes& nodes,
+  const manifold::CheegerLogEuclideanSPDGeometry<S, N, U, Point_>& geometry, const Nodes& nodes,
   std::span<const double> weights, const manifold::WeightedKarcherMeanOptions& options = {}) {
     P1GeodesicLinearizationOptions combined;
     combined.mean = options;
-    P1GeodesicLinearization<manifold::CheegerLogEuclideanSPDGeometry<S, N, U>, const Nodes&> fit(
+    P1GeodesicLinearization<manifold::CheegerLogEuclideanSPDGeometry<S, N, U, Point_>, const Nodes&> fit(
       geometry, nodes, weights, combined, {}, false);
     return fit.result();
 }

@@ -29,9 +29,9 @@ using namespace fdapde;
 
 using complete_cache =
   Cache::Union<Cache::Spectral, Cache::Log, Cache::Sqrt, Cache::InverseSqrt, Cache::LogDividedDifferences>;
-using uncached_fixed = SPDMatrix<double, 2, 2>;
-using cached_fixed = SPDMatrix<double, 2, 2, complete_cache>;
-using cached_dynamic = SPDMatrix<double, Dynamic, Dynamic, complete_cache>;
+using uncached_fixed = SPDMatrix<double, 2>;
+using cached_fixed = SPDMatrix<double, 2, complete_cache>;
+using cached_dynamic = SPDMatrix<double, Dynamic, complete_cache>;
 
 template <typename T>
 concept permits_rvalue_view = requires(T value) { std::move(value).view(); };
@@ -39,25 +39,21 @@ template <typename T>
 concept permits_rvalue_cache = requires(T value) { std::move(value).cache(); };
 
 // the default cache policy stores no additional state for a fixed owner
-static_assert(sizeof(uncached_fixed) == sizeof(SymmetricMatrix<double, 2, 2>));
+static_assert(sizeof(uncached_fixed) == sizeof(SymmetricMatrix<double, 2>));
 // the default cache policy preserves fixed-owner alignment
-static_assert(alignof(uncached_fixed) == alignof(SymmetricMatrix<double, 2, 2>));
+static_assert(alignof(uncached_fixed) == alignof(SymmetricMatrix<double, 2>));
 // the empty cache also disappears from a dynamic owner layout
-static_assert(sizeof(SPDMatrix<double, Dynamic, Dynamic>) == sizeof(SymmetricMatrix<double, Dynamic, Dynamic>));
+static_assert(sizeof(SPDMatrix<double, Dynamic>) == sizeof(SymmetricMatrix<double, Dynamic>));
 // the empty cache preserves dynamic-owner alignment
-static_assert(alignof(SPDMatrix<double, Dynamic, Dynamic>) == alignof(SymmetricMatrix<double, Dynamic, Dynamic>));
+static_assert(alignof(SPDMatrix<double, Dynamic>) == alignof(SymmetricMatrix<double, Dynamic>));
 // no-cache fixed views match the native symmetric view's binding layout
-static_assert(sizeof(uncached_fixed::View) == sizeof(SymmetricMatrix<double, 2, 2>::View));
+static_assert(sizeof(uncached_fixed::View) == sizeof(SymmetricMatrix<double, 2>::View));
 // no-cache fixed views preserve the native symmetric view's alignment
-static_assert(alignof(uncached_fixed::View) == alignof(SymmetricMatrix<double, 2, 2>::View));
+static_assert(alignof(uncached_fixed::View) == alignof(SymmetricMatrix<double, 2>::View));
 // no-cache dynamic views carry no cache pointer beyond their native symmetric binding
-static_assert(
-  sizeof(SPDMatrix<double, Dynamic, Dynamic>::ConstView) ==
-  sizeof(SymmetricMatrix<double, Dynamic, Dynamic>::ConstView));
+static_assert(sizeof(SPDMatrix<double, Dynamic>::ConstView) == sizeof(SymmetricMatrix<double, Dynamic>::ConstView));
 // no-cache dynamic views preserve the native symmetric binding's alignment
-static_assert(
-  alignof(SPDMatrix<double, Dynamic, Dynamic>::ConstView) ==
-  alignof(SymmetricMatrix<double, Dynamic, Dynamic>::ConstView));
+static_assert(alignof(SPDMatrix<double, Dynamic>::ConstView) == alignof(SymmetricMatrix<double, Dynamic>::ConstView));
 // a temporary owner cannot leak a dangling mutable or const SPD view
 static_assert(!permits_rvalue_view<cached_fixed>);
 // a temporary owner cannot leak its cache slot
@@ -81,14 +77,14 @@ void expect_symmetric_near(const Actual& actual, const Expected& expected) {
 
 /// @brief checks selective float triangular caches against independently supplied lower factors
 template <int Order, typename Policy> void check_float_triangular_cache(int order) {
-    using Point = SPDMatrix<float, Order, Order, Policy>;
+    using Point = SPDMatrix<float, Order, Policy>;
     Matrix<float, Order, Order> factor;
     if constexpr (Order == Dynamic) factor.resize(order, order);
     for (int row = 0; row < order; ++row)
         for (int col = 0; col < order; ++col)
             factor(row, col) = row < col ? 0.f : (row == col ? 2.f + row : .1f * (1 + 2 * row - col));
     const Matrix<float, Order, Order> coefficients(factor * factor.transpose());
-    Point point {SPDMatrix<float, Order, Order>(coefficients)};
+    Point point {SPDMatrix<float, Order>(coefficients)};
     const float tolerance = 8 * std::numeric_limits<float>::epsilon();
     if constexpr (Point::CacheSlot::template Has<Cache::Cholesky>) {
         const auto retained = point.cache().cholesky();
@@ -134,7 +130,7 @@ template <int Order, typename Policy> void check_float_triangular_cache(int orde
 
 // default storage has no cache overhead while requested quantities remain selectable at compile time
 TEST(SPDCache, DefaultLayoutAndSelectivePolicyContracts) {
-    using log_only = SPDMatrix<double, 2, 2, Cache::Log>;
+    using log_only = SPDMatrix<double, 2, Cache::Log>;
     using log_slot = typename log_only::CacheSlot;
     // the log-only policy records the requested logarithm quantity
     static_assert(log_slot::template Has<Cache::Log>);
@@ -207,14 +203,14 @@ TEST(SPDCache, DynamicIdentityPreparesCompleteCache) {
 
 // copies and mixed-policy materializations own independent caches while preserving common quantities
 TEST(SPDCache, CopiesAndMixedPoliciesPreserveIndependentQuantities) {
-    using log_only = SPDMatrix<double, 2, 2, Cache::Log>;
+    using log_only = SPDMatrix<double, 2, Cache::Log>;
     const log_only source(diagonal(4, 9));
     cached_fixed complete(source);
     const log_only reduced(complete);
     cached_fixed assigned(diagonal(16, 25));
     assigned.assign(source);
     const cached_fixed copy(complete);
-    const SPDMatrix<double, 2, 2, Cache::Union<Cache::Spectral, Cache::Log>> spectral_log(complete);
+    const SPDMatrix<double, 2, Cache::Union<Cache::Spectral, Cache::Log>> spectral_log(complete);
     const cached_fixed expanded(spectral_log);
 
     // a broader policy reconstructs the missing spectral quantities from the verified value
@@ -243,15 +239,15 @@ TEST(SPDCache, CopiesAndMixedPoliciesPreserveIndependentQuantities) {
 // policy expansion skips reusable quantities and rebuilds divided differences only when pairing a new spectral basis
 TEST(SPDCache, CrossPolicyCopyKeepsSpectralAndDividedDifferenceBasesCoherent) {
     using spectral_and_differences = Cache::Union<Cache::Spectral, Cache::LogDividedDifferences>;
-    using spectral_point = SPDMatrix<double, 2, 2, spectral_and_differences>;
-    using differences_only_point = SPDMatrix<double, 2, 2, Cache::LogDividedDifferences>;
+    using spectral_point = SPDMatrix<double, 2, spectral_and_differences>;
+    using differences_only_point = SPDMatrix<double, 2, Cache::LogDividedDifferences>;
 
     const Matrix<double, 2, 2> coefficients({4.0, 1.0, 1.0, 3.0});
     const spectral_point source(coefficients);
     const differences_only_point without_basis(source);
     const spectral_point restored(without_basis);
     const uncached_fixed uncached(coefficients);
-    SymmetricMatrix<double, 2, 2> direction;
+    SymmetricMatrix<double, 2> direction;
     direction(0, 0) = 0.5;
     direction(1, 0) = -0.7;
     direction(1, 1) = 1.2;
@@ -263,7 +259,7 @@ TEST(SPDCache, CrossPolicyCopyKeepsSpectralAndDividedDifferenceBasesCoherent) {
     using slot_type = internals::spd_cache_slot<double, 2, differences_and_log>;
     std::vector<double> storage(slot_type::scalar_count(2), -7.0);
     slot_type slot(storage.data(), 2);
-    const EVD<SymmetricMatrix<double, 2, 2>> spectral(uncached.rep());
+    const EVD<SymmetricMatrix<double, 2>> spectral(uncached.rep());
     slot.prepare<Cache::LogDividedDifferences>(spectral);
     for (int i = 0; i < 2; ++i)
         for (int j = 0; j < 2; ++j) {
@@ -272,7 +268,7 @@ TEST(SPDCache, CrossPolicyCopyKeepsSpectralAndDividedDifferenceBasesCoherent) {
         }
     // the missing logarithm is still reconstructed from the supplied decomposition
     expect_symmetric_near(slot.template matrix<Cache::Log>(), matrix_log(uncached));
-    const SPDMatrix<double, 2, 2, differences_and_log> expanded(without_basis);
+    const SPDMatrix<double, 2, differences_and_log> expanded(without_basis);
     // expansion without a retained spectral basis preserves the source divided-difference table
     expect_symmetric_near(expanded.cache().log_divided_differences(), without_basis.cache().log_divided_differences());
 }
@@ -281,7 +277,7 @@ TEST(SPDCache, CrossPolicyCopyKeepsSpectralAndDividedDifferenceBasesCoherent) {
 TEST(SPDCache, CachedPrimitivesMatchUncachedRepeatedSpectrum) {
     const cached_fixed cached(diagonal(2, 2));
     const uncached_fixed uncached(diagonal(2, 2));
-    SymmetricMatrix<double, 2, 2> direction;
+    SymmetricMatrix<double, 2> direction;
     direction(0, 0) = 1;
     direction(1, 0) = -0.5;
     direction(1, 1) = 2;
@@ -388,7 +384,7 @@ TEST(SPDCache, MoveAndSwapPreserveCoefficientCacheAssociation) {
 // triangular caches match an independent supplied factor and remain coherent after owner and batch replacement
 TEST(SPDCache, CholeskyCoordinatesAndBatchReplacement) {
     using Policy = Cache::Union<complete_cache, Cache::Cholesky, Cache::LogCholesky>;
-    using Point = SPDMatrix<double, 3, 3, Policy>;
+    using Point = SPDMatrix<double, 3, Policy>;
     const Matrix<double, 3, 3> factor({2, 0, 0, .3, 3, 0, -.4, .2, 4});
     const Point point(Matrix<double, 3, 3>(factor * factor.transpose()));
     const auto retained = point.cache().cholesky();
@@ -418,12 +414,12 @@ TEST(SPDCache, CholeskyCoordinatesAndBatchReplacement) {
             // the original independent owner keeps the supplied factor after batch replacement
             EXPECT_NEAR(point.cache().cholesky()(row, col), factor(row, col), 1e-14);
         }
-    const SPDMatrix<double, Dynamic, Dynamic, Cache::LogCholesky> dynamic(point);
+    const SPDMatrix<double, Dynamic, Cache::LogCholesky> dynamic(point);
     // a chart-only dynamic policy retains precisely one packed triangular chart
     EXPECT_EQ(dynamic.cache().scalar_count(3), 6u);
     // policy conversion preserves the common chart coefficients without a spectral or triangular recomputation
     expect_symmetric_near(dynamic.cache().template matrix<Cache::LogCholesky>(), chart);
-    const SPDMatrix<double, 3, 3, Cache::Cholesky> lower_only {SPDMatrix<double, 3, 3>(point)};
+    const SPDMatrix<double, 3, Cache::Cholesky> lower_only {SPDMatrix<double, 3>(point)};
     // converting verified uncached coefficients prepares only the requested full lower factor
     EXPECT_EQ(lower_only.cache().scalar_count(3), 9u);
     for (int row = 0; row < 3; ++row)
@@ -440,6 +436,94 @@ TEST(SPDCache, FloatTriangularAndSelectiveDynamicPolicies) {
     check_float_triangular_cache<3, both>(3);
     check_float_triangular_cache<Dynamic, Cache::Cholesky>(3);
     check_float_triangular_cache<Dynamic, Cache::LogCholesky>(3);
+}
+
+// the direct logarithm exposes the existing cached kernel through independently owning symmetric results
+TEST(SPDCache, DirectLogarithmsPreserveRequestedPolicyAndOwnership) {
+    cached_fixed point(Matrix<double, 2, 2>({2., .3, .3, 1.}));
+    const auto expected = matrix_log(uncached_fixed(point));
+    const auto plain = point.log();
+    const auto spectral = point.log<Cache::Spectral>();
+    const auto viewed = std::as_const(point).view().log<Cache::Spectral>();
+    const SPDMatrixExpr<cached_fixed>& expression = point;
+    const auto expression_log = expression.log();
+    // the default direct result retains the ordinary fixed-order symmetric owner with no cache
+    static_assert(std::same_as<std::remove_cvref_t<decltype(plain)>, SymmetricMatrix<double, 2>>);
+    // the explicit output policy adds a symmetric spectral cache independently of the SPD input policy
+    static_assert(std::same_as<std::remove_cvref_t<decltype(spectral)>, SymmetricMatrix<double, 2, Cache::Spectral>>);
+    // const native views return mutable-value owners with an unqualified scalar type
+    static_assert(std::same_as<std::remove_cvref_t<decltype(viewed)>, SymmetricMatrix<double, 2, Cache::Spectral>>);
+    // the default method reproduces the independently computed uncached principal logarithm
+    expect_symmetric_near(plain, expected);
+    // requesting a spectral output cache does not change the logarithm coefficients
+    expect_symmetric_near(spectral, expected);
+    // the inherited SPD expression interface reaches the same logarithm kernel
+    expect_symmetric_near(expression_log, expected);
+    point = cached_fixed::Identity();
+    // replacing the source leaves the earlier view-derived logarithm's owned coefficients unchanged
+    expect_symmetric_near(viewed, expected);
+    const auto temporary_log = cached_fixed(diagonal(4, 9)).log<Cache::Spectral>();
+    // a destroyed temporary source leaves an owned spectral result with the known scalar log determinant
+    EXPECT_NEAR(temporary_log.eigenvalues().sum(), std::log(36.), 1e-12);
+}
+
+// the direct logarithm preserves runtime order and float precision for uncached inputs and temporary views
+TEST(SPDCache, DirectLogarithmsSupportDynamicFloatPoints) {
+    using Point = SPDMatrix<float, Dynamic>;
+    const Point point(Matrix<float, 3, 3>({4, 0, 0, 0, 9, 0, 0, 0, 16}));
+    const auto logarithm = point.view().log<Cache::Spectral>();
+    // runtime-order float inputs retain their scalar and dynamic order in the symmetric output owner
+    static_assert(
+      std::same_as<std::remove_cvref_t<decltype(logarithm)>, SymmetricMatrix<float, Dynamic, Cache::Spectral>>);
+    // the three diagonal input eigenvalues determine the runtime output order
+    ASSERT_EQ(logarithm.rows(), 3);
+    // the output remains square after materializing the dynamic view
+    ASSERT_EQ(logarithm.cols(), 3);
+    for (int i = 0; i < 3; ++i) {
+        // each diagonal principal logarithm equals the independent scalar logarithm at float precision
+        EXPECT_NEAR(logarithm(i, i), std::log(float((i + 2) * (i + 2))), 1e-6f);
+    }
+}
+
+/// @brief compares an SPD inverse and its selected cache with a closed-form two-by-two oracle
+template <typename InputPolicy> void check_cached_inverse() {
+    using Point = SPDMatrix<double, 2, InputPolicy>;
+    const Point point(Vector<double, 3> {4., 1., 3.});
+    const auto result = point.view().template inv<Cache::Log>();
+    const Matrix<double, 2, 2> expected({3. / 11., -1. / 11., -1. / 11., 4. / 11.});
+    const Matrix<double, 2, 2> identity({1., 0., 0., 1.});
+    // inversion retains verified SPD ownership and the explicitly requested output cache policy
+    static_assert(std::same_as<std::remove_cvref_t<decltype(result)>, SPDMatrix<double, 2, Cache::Log>>);
+    // every retained-factor path agrees with the independent analytic inverse of the noncommuting input
+    EXPECT_LT((result - expected).norm(), 1e-12);
+    // multiplying by the original point independently checks the defining inverse identity
+    EXPECT_LT((point * result - identity).norm(), 1e-12);
+    const auto expected_log = matrix_log(SPDMatrix<double, 2>(expected));
+    // the output logarithm cache is built for the inverse coefficients rather than copied from the input
+    EXPECT_LT((result.cache().template matrix<Cache::Log>() - expected_log).norm(), 1e-12);
+}
+
+// inversion reuses each supported factor policy and certifies independent SPD outputs
+TEST(SPDCache, InverseUsesRetainedFactorsAndPreservesOutputPolicy) {
+    // retained eigenpairs reconstruct the analytic inverse through reciprocal eigenvalues
+    check_cached_inverse<Cache::Spectral>();
+    // a retained Cholesky factor supplies triangular solves without a new input factorization
+    check_cached_inverse<Cache::Cholesky>();
+    // squaring a retained inverse root gives the same independent analytic inverse
+    check_cached_inverse<Cache::InverseSqrt>();
+    // uncached points still produce the same inverse through a local decomposition
+    check_cached_inverse<Cache::None>();
+    // an unrelated logarithm cache does not prevent computing the required local decomposition
+    check_cached_inverse<Cache::Log>();
+    using DynamicPoint = SPDMatrix<float, Dynamic, Cache::Cholesky>;
+    const auto inverse = DynamicPoint(Matrix<float, 3, 3>({2, 0, 0, 0, 4, 0, 0, 0, 8})).inv<Cache::Spectral>();
+    // dynamic float inversion keeps the scalar, runtime order and selected output cache in its type
+    static_assert(std::same_as<std::remove_cvref_t<decltype(inverse)>, SPDMatrix<float, Dynamic, Cache::Spectral>>);
+    // the result survives its temporary source and retains the exact reciprocal of eight
+    EXPECT_FLOAT_EQ(inverse(2, 2), .125f);
+    const SPDMatrix<double, 1, Cache::Spectral> tiny(Vector<double, 1> {1e-310});
+    // a finite SPD input whose reciprocal overflows cannot produce a certified nonfinite inverse
+    EXPECT_THROW(tiny.inv(), std::domain_error);
 }
 
 }   // namespace

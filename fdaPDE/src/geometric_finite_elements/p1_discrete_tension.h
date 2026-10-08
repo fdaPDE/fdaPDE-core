@@ -382,9 +382,9 @@ P1ObjectiveResult<WithGradient, typename Geometry::Tangent> p1_intrinsic_discret
 }   // namespace internals
 
 /// @brief evaluates half the mass-weighted squared discrete tension
-template <typename Scalar, int Order, Usage Uses, typename Nodes>
+template <typename Scalar, int Order, Usage Uses, typename Nodes, typename Point_>
 P1ObjectiveValueResult p1_discrete_tension_value(
-  const manifold::LogEuclideanSPDGeometry<Scalar, Order, Uses>& geometry, const Nodes& nodal_values,
+  const manifold::LogEuclideanSPDGeometry<Scalar, Order, Uses, Point_>& geometry, const Nodes& nodal_values,
   const P1LumpedLaplacianStencil& stencil) {
     return internals::p1_flat_discrete_tension_impl<false>(geometry, nodal_values, stencil);
 }
@@ -399,10 +399,10 @@ P1ObjectiveValueResult p1_discrete_tension_value(
 
 // the returned gradient is global: entry i is based at nodal_values[i]
 /// @brief returns squared tension and global metric gradients based at each node
-template <typename Scalar, int Order, Usage Uses, typename Nodes>
-P1ObjectiveContributionResult<typename manifold::LogEuclideanSPDGeometry<Scalar, Order, Uses>::Tangent>
+template <typename Scalar, int Order, Usage Uses, typename Nodes, typename Point_>
+P1ObjectiveContributionResult<typename manifold::LogEuclideanSPDGeometry<Scalar, Order, Uses, Point_>::Tangent>
 p1_discrete_tension_contribution(
-  const manifold::LogEuclideanSPDGeometry<Scalar, Order, Uses>& geometry, const Nodes& nodal_values,
+  const manifold::LogEuclideanSPDGeometry<Scalar, Order, Uses, Point_>& geometry, const Nodes& nodal_values,
   const P1LumpedLaplacianStencil& stencil) {
     return internals::p1_flat_discrete_tension_impl<true>(geometry, nodal_values, stencil);
 }
@@ -416,36 +416,36 @@ P1ObjectiveContributionResult<typename Geometry::Tangent> p1_discrete_tension_co
 }
 
 /// @brief evaluates half the mass-weighted squared discrete tension
-template <typename Scalar, int Order, Usage Uses, typename Nodes>
+template <typename Scalar, int Order, Usage Uses, typename Nodes, typename Point_>
 P1ObjectiveValueResult p1_discrete_tension_value(
-  const manifold::AffineInvariantSPDGeometry<Scalar, Order, Uses>& geometry, const Nodes& nodal_values,
+  const manifold::AffineInvariantSPDGeometry<Scalar, Order, Uses, Point_>& geometry, const Nodes& nodal_values,
   const P1LumpedLaplacianStencil& stencil) {
     return internals::p1_intrinsic_discrete_tension_impl<false>(geometry, nodal_values, stencil);
 }
 
 // the returned gradient is global: entry i is based at nodal_values[i]
 /// @brief returns squared tension and global metric gradients based at each node
-template <typename Scalar, int Order, Usage Uses, typename Nodes>
-P1ObjectiveContributionResult<typename manifold::AffineInvariantSPDGeometry<Scalar, Order, Uses>::Tangent>
+template <typename Scalar, int Order, Usage Uses, typename Nodes, typename Point_>
+P1ObjectiveContributionResult<typename manifold::AffineInvariantSPDGeometry<Scalar, Order, Uses, Point_>::Tangent>
 p1_discrete_tension_contribution(
-  const manifold::AffineInvariantSPDGeometry<Scalar, Order, Uses>& geometry, const Nodes& nodal_values,
+  const manifold::AffineInvariantSPDGeometry<Scalar, Order, Uses, Point_>& geometry, const Nodes& nodal_values,
   const P1LumpedLaplacianStencil& stencil) {
     return internals::p1_intrinsic_discrete_tension_impl<true>(geometry, nodal_values, stencil);
 }
 
 /// @brief evaluates half the mass-weighted squared BW discrete tension
-template <typename Scalar, int Order, Usage Uses, typename Nodes>
+template <typename Scalar, int Order, Usage Uses, typename Nodes, typename Point_>
 P1ObjectiveValueResult p1_discrete_tension_value(
-  const manifold::BuresWassersteinSPDGeometry<Scalar, Order, Uses>& geometry, const Nodes& nodal_values,
+  const manifold::BuresWassersteinSPDGeometry<Scalar, Order, Uses, Point_>& geometry, const Nodes& nodal_values,
   const P1LumpedLaplacianStencil& stencil) {
     return internals::p1_intrinsic_discrete_tension_impl<false>(geometry, nodal_values, stencil);
 }
 
 /// @brief returns BW squared tension and its global metric gradients based at each node
-template <typename Scalar, int Order, Usage Uses, typename Nodes>
-P1ObjectiveContributionResult<typename manifold::BuresWassersteinSPDGeometry<Scalar, Order, Uses>::Tangent>
+template <typename Scalar, int Order, Usage Uses, typename Nodes, typename Point_>
+P1ObjectiveContributionResult<typename manifold::BuresWassersteinSPDGeometry<Scalar, Order, Uses, Point_>::Tangent>
 p1_discrete_tension_contribution(
-  const manifold::BuresWassersteinSPDGeometry<Scalar, Order, Uses>& geometry, const Nodes& nodal_values,
+  const manifold::BuresWassersteinSPDGeometry<Scalar, Order, Uses, Point_>& geometry, const Nodes& nodal_values,
   const P1LumpedLaplacianStencil& stencil) {
     return internals::p1_intrinsic_discrete_tension_impl<true>(geometry, nodal_values, stencil);
 }

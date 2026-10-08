@@ -87,9 +87,9 @@ P1ObjectiveResult<WithGradient, typename Geometry::Tangent> p1_squared_distance_
 }   // namespace internals
 
 /// @brief evaluates squared-distance edge energy for a negative off-diagonal stencil
-template <typename Scalar, int Order, Usage Uses, typename Nodes>
+template <typename Scalar, int Order, Usage Uses, typename Nodes, typename Point_>
 P1ObjectiveValueResult p1_squared_distance_edge_dirichlet_value(
-  const manifold::LogEuclideanSPDGeometry<Scalar, Order, Uses>& geometry, const Nodes& nodal_values,
+  const manifold::LogEuclideanSPDGeometry<Scalar, Order, Uses, Point_>& geometry, const Nodes& nodal_values,
   const P1LumpedLaplacianStencil& stencil) {
     return internals::p1_squared_distance_edge_dirichlet_impl<false>(geometry, nodal_values, stencil);
 }
@@ -103,19 +103,19 @@ P1ObjectiveValueResult p1_squared_distance_edge_dirichlet_value(
 }
 
 /// @brief evaluates squared-distance edge energy for a negative off-diagonal stencil
-template <typename Scalar, int Order, Usage Uses, typename Nodes>
+template <typename Scalar, int Order, Usage Uses, typename Nodes, typename Point_>
 P1ObjectiveValueResult p1_squared_distance_edge_dirichlet_value(
-  const manifold::AffineInvariantSPDGeometry<Scalar, Order, Uses>& geometry, const Nodes& nodal_values,
+  const manifold::AffineInvariantSPDGeometry<Scalar, Order, Uses, Point_>& geometry, const Nodes& nodal_values,
   const P1LumpedLaplacianStencil& stencil) {
     return internals::p1_squared_distance_edge_dirichlet_impl<false>(geometry, nodal_values, stencil);
 }
 
 // the returned gradient is global: entry i is based at nodal_values[i]
 /// @brief returns squared-distance edge energy and global metric nodal gradients
-template <typename Scalar, int Order, Usage Uses, typename Nodes>
-P1ObjectiveContributionResult<typename manifold::LogEuclideanSPDGeometry<Scalar, Order, Uses>::Tangent>
+template <typename Scalar, int Order, Usage Uses, typename Nodes, typename Point_>
+P1ObjectiveContributionResult<typename manifold::LogEuclideanSPDGeometry<Scalar, Order, Uses, Point_>::Tangent>
 p1_squared_distance_edge_dirichlet_contribution(
-  const manifold::LogEuclideanSPDGeometry<Scalar, Order, Uses>& geometry, const Nodes& nodal_values,
+  const manifold::LogEuclideanSPDGeometry<Scalar, Order, Uses, Point_>& geometry, const Nodes& nodal_values,
   const P1LumpedLaplacianStencil& stencil) {
     return internals::p1_squared_distance_edge_dirichlet_impl<true>(geometry, nodal_values, stencil);
 }
@@ -129,10 +129,10 @@ P1ObjectiveContributionResult<typename Geometry::Tangent> p1_squared_distance_ed
 }
 
 /// @brief returns squared-distance edge energy and global metric nodal gradients
-template <typename Scalar, int Order, Usage Uses, typename Nodes>
-P1ObjectiveContributionResult<typename manifold::AffineInvariantSPDGeometry<Scalar, Order, Uses>::Tangent>
+template <typename Scalar, int Order, Usage Uses, typename Nodes, typename Point_>
+P1ObjectiveContributionResult<typename manifold::AffineInvariantSPDGeometry<Scalar, Order, Uses, Point_>::Tangent>
 p1_squared_distance_edge_dirichlet_contribution(
-  const manifold::AffineInvariantSPDGeometry<Scalar, Order, Uses>& geometry, const Nodes& nodal_values,
+  const manifold::AffineInvariantSPDGeometry<Scalar, Order, Uses, Point_>& geometry, const Nodes& nodal_values,
   const P1LumpedLaplacianStencil& stencil) {
     return internals::p1_squared_distance_edge_dirichlet_impl<true>(geometry, nodal_values, stencil);
 }

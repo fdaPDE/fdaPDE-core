@@ -6,7 +6,7 @@ Include `<fdaPDE/manifold_optimization.h>` to use
 opt-in and is not included by `core.h`.
 
 Both geometries expose a canonical `Point` owner with their `CachePolicy`, and
-`fdapde::SymmetricMatrix<Scalar, Order, Order>` tangents. Inputs accept `SPDLike`
+`fdapde::SymmetricMatrix<Scalar, Order>` tangents. Inputs accept `SPDLike`
 owners and views with different cache policies. `retract` and `exponential`
 always return the geometry's canonical `Point`. A tangent is an ambient
 symmetric matrix at its base point, not a vector of logarithmic coordinates.
@@ -25,13 +25,21 @@ fdapde::Matrix<double, 2, 2> coefficients;
 coefficients.set_zero();
 coefficients(0, 0) = 1;
 coefficients(1, 1) = 1;
-const fdapde::SPDMatrix<double, 2, 2> point(coefficients);
+const fdapde::SPDMatrix<double, 2> point(coefficients);
 const fdapde::manifold::LogEuclideanSPDGeometry<double, 2> geometry;
 auto tangent = geometry.zero_tangent(point);
 tangent(0, 0) = 0.2;
 const auto next = geometry.exponential(point, tangent, 0.5);
 // next = diag(exp(0.1), 1), independently owned
 ```
+
+## Matrix element types
+
+`LogEuclideanGeometry<SPD>`, `AffineInvariantGeometry<SPD>`,
+`BuresWassersteinGeometry<SPD>`, `LogCholeskyGeometry<SPD>` and
+`CheegerLogEuclideanGeometry<SPD>` retain the exact native SPD owner and cache
+policy. Dynamic geometries take the matrix order. The legacy
+`*SPDGeometry<Scalar, Order, Uses>` interfaces remain available.
 
 ## Metric and maps
 
@@ -125,7 +133,7 @@ Geometry geometry;
 fdapde::MatrixBatch<Geometry::Point> points(3);
 fdapde::Vector<double, 3> weights(1.0, -0.5, 2.0);
 auto expression = geometry.weighted_mean(points, weights);
-fdapde::SPDMatrix<double, 2, 2> result(expression);
+fdapde::SPDMatrix<double, 2> result(expression);
 ```
 
 The expression computes exactly `exp(sum_i weights[i] * log(points[i]))`, with
@@ -159,9 +167,42 @@ updates, do not change that snapshot.
 ```cpp
 auto curve = geometry.geodesic(first, last);
 Point midpoint(curve(0.5)); // certifies SPD and prepares the destination cache
-SymmetricMatrix<double, 2, 2> value(curve(0.5)); // reconstructs without SPD certification
+SymmetricMatrix<double, 2> value(curve(0.5)); // reconstructs without SPD certification
 Point checked(value); // certifies the stored coefficients later
 points[i] = curve(t); // follows the destination type, including batch views
+```
+
+For uniformly spaced samples on `[0,1]`, `geometry.geodesic(from, to, int count)`
+returns an owning `MatrixBatch<typename Geometry::Point>`. This overload is
+available for LE, AIRM, BW, LC and Cheeger LE geometries. The geometry's point
+type determines the output scalar and order. An optional leading template
+argument selects the output cache: `geometry.geodesic<OutputPolicy>(from, to, count)`.
+It defaults to `Geometry::Point::CachePolicy`, independently of the endpoint
+cache policies; explicit `Cache::None` requests uncached samples. A count below two throws `std::invalid_argument`.
+The overload prepares the two-point curve once, then evaluates each sample once
+at `t = i / (count - 1)` for `i = 0, ..., count - 1`. The first and last samples
+include the endpoints up to floating-point reconstruction.
+
+A fourth argument selects `execution_seq` (the default) or `execution_par`:
+`geometry.geodesic<OutputPolicy>(from, to, count, execution_par)`. Preparation
+runs once before sampling; parallel evaluation shares the immutable prepared
+curve and writes independent result slots directly, preserving index order and
+the requested output caches. Both policies return a complete owning batch.
+Worker exceptions reach the caller after all submitted work has joined.
+Endpoint coefficients and caches must not be modified concurrently with
+preparation. Configure workers with `parallel_set_num_threads(n)` before the
+executor's first use, as for the [batch operations](matrix-batch.md).
+
+
+```cpp
+using SPD = fdapde::SPDMatrix<double, 2, fdapde::Cache::Log>;
+const SPD A(fdapde::Vector<double, 3> {2., 0.3, 1.});
+const SPD B(fdapde::Vector<double, 3> {1., 0.2, 3.});
+const fdapde::manifold::LogEuclideanGeometry<SPD> geometry;
+// MatrixBatch<SPD>
+auto points = geometry.geodesic(A, B, 10);
+// MatrixBatch<SPDMatrix<double, 2, Cache::Spectral>>
+auto spectral_points = geometry.geodesic<fdapde::Cache::Spectral>(A, B, 10, fdapde::execution_par);
 ```
 
 For AIRM, preparation computes `A^(-1/2) B A^(-1/2) = U Lambda U^T` and retains

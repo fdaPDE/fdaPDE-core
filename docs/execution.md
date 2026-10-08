@@ -6,11 +6,18 @@ It supplies asynchronous callables/futures, synchronous parallel loops and reduc
 and copyable task graphs. Set the worker count before the first runtime operation.
 Call `parallel_join()` from outside executor workers to wait for all submitted work.
 
-`parallel_async` transports callable exceptions through its future. Ordinary
-fire-and-forget callables and synchronous loop/graph bodies must not throw: their
-exceptions escape worker execution and terminate the process. Captured references
-must remain alive until completion. Shared callbacks/reducers must be safe for
-concurrent invocation; graph topology must not be mutated while it executes.
+`parallel_async` transports callable exceptions through its future. `parallel_for`
+waits for every submitted chunk before rethrowing a body or custom-step exception;
+when several chunks fail, it reports the lowest failing iteration index. A failed
+chunk may skip its remaining iterations. If callable construction or submission
+fails partway through a loop, previously submitted chunks finish before that
+submission failure is rethrown, taking precedence over any body failure.
+
+Ordinary fire-and-forget callables, `parallel_for_each`, `parallel_reduce`, and graph
+bodies must not throw: their exceptions escape worker execution and terminate the
+process. Captured references must remain alive until completion. Shared
+callbacks/reducers must be safe for concurrent invocation; graph topology must not
+be mutated while it executes.
 Reductions preserve chunk order and apply the seed once; the reducer must support
 associative regrouping. They do not promise serial floating-point reproducibility.
 
@@ -21,8 +28,9 @@ automatically, and deque indices are not rebased.
 
 The process-lifetime singleton deliberately does not run its destructor. Local internal
 executors must finish work before destruction; `stop()` does not complete pending tasks.
-Partial group submission under allocation failure is not transactional, and worker
-creation failure has no coordinated partial-startup recovery. Complete tasks are
+`parallel_for` drains partial submissions but does not roll back completed writes.
+Other group APIs do not provide transactional recovery from partial submission,
+and worker creation failure has no coordinated partial-startup recovery. Complete tasks are
 accounted and destroyed before global join returns; graph-local waits cover graph
 callable completion, and global join can be used before observing pool reclamation.
 

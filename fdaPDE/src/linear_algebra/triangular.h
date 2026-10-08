@@ -208,8 +208,8 @@ template <typename XprType_> struct TriangularMatrixExpr : public MatrixExpr<Xpr
     // inherit assignment from base
     using MatrixExpr<XprType_>::operator=;
 
-    /// @brief returns the inverse matrix expression
-    constexpr auto inverse() const {
+    /// @brief returns an owning triangular inverse using small-order formulas or substitution
+    constexpr auto inv() const {
         using Scalar = std::remove_cv_t<typename XprType::Scalar>;
         constexpr int Rows = XprType::Rows;
         constexpr int Cols = XprType::Cols;

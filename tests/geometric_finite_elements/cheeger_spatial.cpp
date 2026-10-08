@@ -118,7 +118,7 @@ TEST(CheegerSpatial, CapturedUnfinishedCandidateRegression) {
       0.2149849639532032,  -0.6824846766799997};
     Batch data(9);
     for (int i = 0; i < 9; ++i) {
-        SymmetricMatrix<double, 2, 2> log;
+        SymmetricMatrix<double, 2> log;
         log(0, 0) = logs[3 * i];
         log(0, 1) = logs[3 * i + 1];
         log(1, 1) = logs[3 * i + 2];

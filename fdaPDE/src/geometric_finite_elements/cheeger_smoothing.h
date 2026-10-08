@@ -10,12 +10,12 @@ template <typename Tangent> struct P1CheegerLogContributionResult : P1ObjectiveC
 };
 /// @brief evaluates planar discrete tension and its nodal log and rho covectors with scalar rotation branches
 /// @details cached nodal logarithms are shared with other contributions; no general rotation lift is constructed
-template <typename S, Usage U, typename Nodes>
-P1CheegerLogContributionResult<typename manifold::CheegerLogEuclideanSPDGeometry<S, 2, U>::Tangent>
+template <typename S, Usage U, typename Point_, typename Nodes>
+P1CheegerLogContributionResult<typename manifold::CheegerLogEuclideanSPDGeometry<S, 2, U, Point_>::Tangent>
 p1_cheeger_discrete_tension_log_contribution(
-  const manifold::CheegerLogEuclideanSPDGeometry<S, 2, U>& geometry, const Nodes& nodes,
+  const manifold::CheegerLogEuclideanSPDGeometry<S, 2, U, Point_>& geometry, const Nodes& nodes,
   const P1LumpedLaplacianStencil& stencil, std::span<const double> rho_nodes = {}) {
-    using G = manifold::CheegerLogEuclideanSPDGeometry<S, 2, U>;
+    using G = manifold::CheegerLogEuclideanSPDGeometry<S, 2, U, Point_>;
     using C = manifold::internals::CheegerChart;
     using V = std::array<double, 3>;
     internals::p1_discrete_tension_validate(geometry, nodes, stencil);
@@ -99,12 +99,12 @@ p1_cheeger_discrete_tension_log_contribution(
 }
 /// @brief evaluates the existing squared discrete tension using rho_i at each residual's base node
 /// @details rho coefficients remain fixed during one call; an empty span uses the geometry's constant rho
-template <typename S, int N, Usage U, typename Nodes>
-P1CheegerLogContributionResult<typename manifold::CheegerLogEuclideanSPDGeometry<S, N, U>::Tangent>
+template <typename S, int N, Usage U, typename Point_, typename Nodes>
+P1CheegerLogContributionResult<typename manifold::CheegerLogEuclideanSPDGeometry<S, N, U, Point_>::Tangent>
 p1_cheeger_discrete_tension_log_contribution(
-  const manifold::CheegerLogEuclideanSPDGeometry<S, N, U>& geometry, const Nodes& nodes,
+  const manifold::CheegerLogEuclideanSPDGeometry<S, N, U, Point_>& geometry, const Nodes& nodes,
   const P1LumpedLaplacianStencil& stencil, std::span<const double> rho_nodes = {}) {
-    using Sym = typename manifold::CheegerLogEuclideanSPDGeometry<S, N, U>::Tangent;
+    using Sym = typename manifold::CheegerLogEuclideanSPDGeometry<S, N, U, Point_>::Tangent;
     using Frame = manifold::internals::CheegerPairFrame<S, N>;
     internals::p1_discrete_tension_validate(geometry, nodes, stencil);
     fdapde_strong_assert(
@@ -112,7 +112,7 @@ p1_cheeger_discrete_tension_log_contribution(
     std::vector<double> rho(nodes.size(), geometry.rho());
     if (!rho_nodes.empty()) rho.assign(rho_nodes.begin(), rho_nodes.end());
     for (double r : rho) geometry.with_rho(r);
-    MatrixBatch<CachedSymmetricMatrix<S, N, N>> charts(nodes.size(), geometry.order(), geometry.order());
+    MatrixBatch<SymmetricMatrix<S, N, Cache::Spectral>> charts(nodes.size(), geometry.order(), geometry.order());
     Sym zero;
     if constexpr (N == Dynamic) zero.resize(geometry.order(), geometry.order());
     for (int i = 0; i < geometry.order(); ++i)
@@ -164,12 +164,12 @@ p1_cheeger_discrete_tension_log_contribution(
 namespace internals {
 
 /// @brief evaluates planar C-LE tension with independent pair work and ordered nodal gathers
-template <typename S, Usage U, typename Nodes>
-P1CheegerLogContributionResult<typename manifold::CheegerLogEuclideanSPDGeometry<S, 2, U>::Tangent>
+template <typename S, Usage U, typename Point_, typename Nodes>
+P1CheegerLogContributionResult<typename manifold::CheegerLogEuclideanSPDGeometry<S, 2, U, Point_>::Tangent>
 p1_cheeger_discrete_tension_log_parallel_contribution(
-  const manifold::CheegerLogEuclideanSPDGeometry<S, 2, U>& geometry, const Nodes& nodes,
+  const manifold::CheegerLogEuclideanSPDGeometry<S, 2, U, Point_>& geometry, const Nodes& nodes,
   const P1LumpedLaplacianStencil& stencil, std::span<const double> rho_nodes) {
-    using G = manifold::CheegerLogEuclideanSPDGeometry<S, 2, U>;
+    using G = manifold::CheegerLogEuclideanSPDGeometry<S, 2, U, Point_>;
     using C = manifold::internals::CheegerChart;
     using V = std::array<double, 3>;
     internals::p1_discrete_tension_validate(geometry, nodes, stencil);
@@ -278,12 +278,12 @@ p1_cheeger_discrete_tension_log_parallel_contribution(
 }
 
 /// @brief evaluates general-order C-LE tension with parallel pair frames and ordered nodal pullbacks
-template <typename S, int N, Usage U, typename Nodes>
-P1CheegerLogContributionResult<typename manifold::CheegerLogEuclideanSPDGeometry<S, N, U>::Tangent>
+template <typename S, int N, Usage U, typename Point_, typename Nodes>
+P1CheegerLogContributionResult<typename manifold::CheegerLogEuclideanSPDGeometry<S, N, U, Point_>::Tangent>
 p1_cheeger_discrete_tension_log_parallel_contribution(
-  const manifold::CheegerLogEuclideanSPDGeometry<S, N, U>& geometry, const Nodes& nodes,
+  const manifold::CheegerLogEuclideanSPDGeometry<S, N, U, Point_>& geometry, const Nodes& nodes,
   const P1LumpedLaplacianStencil& stencil, std::span<const double> rho_nodes) {
-    using Sym = typename manifold::CheegerLogEuclideanSPDGeometry<S, N, U>::Tangent;
+    using Sym = typename manifold::CheegerLogEuclideanSPDGeometry<S, N, U, Point_>::Tangent;
     using Frame = manifold::internals::CheegerPairFrame<S, N>;
     internals::p1_discrete_tension_validate(geometry, nodes, stencil);
     fdapde_strong_assert(
@@ -292,7 +292,7 @@ p1_cheeger_discrete_tension_log_parallel_contribution(
     if (!rho_nodes.empty()) rho.assign(rho_nodes.begin(), rho_nodes.end());
     for (double r : rho) geometry.with_rho(r);
     const auto incident = internals::p1_discrete_tension_incidence(stencil);
-    MatrixBatch<CachedSymmetricMatrix<S, N, N>> charts(nodes.size(), geometry.order(), geometry.order());
+    MatrixBatch<SymmetricMatrix<S, N, Cache::Spectral>> charts(nodes.size(), geometry.order(), geometry.order());
     Sym zero;
     if constexpr (N == Dynamic) zero.resize(geometry.order(), geometry.order());
     for (int i = 0; i < geometry.order(); ++i)
@@ -360,10 +360,10 @@ p1_cheeger_discrete_tension_log_parallel_contribution(
 
 /// @brief returns C-LE log and rho gradients using deterministic parallel edge and nodal work
 /// @details fewer than 32 nodes or one configured worker use the unchanged serial implementation
-template <typename S, int N, Usage U, typename Nodes, internals::PointExecutionPolicy Policy>
-P1CheegerLogContributionResult<typename manifold::CheegerLogEuclideanSPDGeometry<S, N, U>::Tangent>
+template <typename S, int N, Usage U, typename Point_, typename Nodes, internals::PointExecutionPolicy Policy>
+P1CheegerLogContributionResult<typename manifold::CheegerLogEuclideanSPDGeometry<S, N, U, Point_>::Tangent>
 p1_cheeger_discrete_tension_log_contribution(
-  const manifold::CheegerLogEuclideanSPDGeometry<S, N, U>& geometry, const Nodes& nodes,
+  const manifold::CheegerLogEuclideanSPDGeometry<S, N, U, Point_>& geometry, const Nodes& nodes,
   const P1LumpedLaplacianStencil& stencil, std::span<const double> rho_nodes, Policy) {
     if constexpr (std::same_as<Policy, execution_seq_t>)
         return p1_cheeger_discrete_tension_log_contribution(geometry, nodes, stencil, rho_nodes);
@@ -375,24 +375,24 @@ p1_cheeger_discrete_tension_log_contribution(
 }
 
 /// @brief evaluates constant-rho C-LE tension under the requested execution policy
-template <typename S, int N, Usage U, typename Nodes, internals::PointExecutionPolicy Policy>
-P1CheegerLogContributionResult<typename manifold::CheegerLogEuclideanSPDGeometry<S, N, U>::Tangent>
+template <typename S, int N, Usage U, typename Point_, typename Nodes, internals::PointExecutionPolicy Policy>
+P1CheegerLogContributionResult<typename manifold::CheegerLogEuclideanSPDGeometry<S, N, U, Point_>::Tangent>
 p1_cheeger_discrete_tension_log_contribution(
-  const manifold::CheegerLogEuclideanSPDGeometry<S, N, U>& geometry, const Nodes& nodes,
+  const manifold::CheegerLogEuclideanSPDGeometry<S, N, U, Point_>& geometry, const Nodes& nodes,
   const P1LumpedLaplacianStencil& stencil, Policy policy) {
     return p1_cheeger_discrete_tension_log_contribution(geometry, nodes, stencil, {}, policy);
 }
 
 /// @brief pulls a Frobenius data residual back through C-LE interpolation to nodal logs and rho
 /// @details rho gradients are with respect to nodal scalar coefficients even when their values are constant
-template <typename S, int N, Usage U, typename Nodes>
-P1CheegerLogContributionResult<typename manifold::CheegerLogEuclideanSPDGeometry<S, N, U>::Tangent>
+template <typename S, int N, Usage U, typename Point_, typename Nodes>
+P1CheegerLogContributionResult<typename manifold::CheegerLogEuclideanSPDGeometry<S, N, U, Point_>::Tangent>
 p1_cheeger_frobenius_data_site_log_contribution(
-  const manifold::CheegerLogEuclideanSPDGeometry<S, N, U>& geometry, const Nodes& nodes,
+  const manifold::CheegerLogEuclideanSPDGeometry<S, N, U, Point_>& geometry, const Nodes& nodes,
   std::span<const double> weights,
-  const typename manifold::CheegerLogEuclideanSPDGeometry<S, N, U>::Tangent& observation,
+  const typename manifold::CheegerLogEuclideanSPDGeometry<S, N, U, Point_>::Tangent& observation,
   const P1GeodesicLinearizationOptions& options = {}, std::span<const double> rho_nodes = {}) {
-    using Sym = typename manifold::CheegerLogEuclideanSPDGeometry<S, N, U>::Tangent;
+    using Sym = typename manifold::CheegerLogEuclideanSPDGeometry<S, N, U, Point_>::Tangent;
     const auto vertex = internals::validate_p1_data(nodes.size(), weights);
     internals::p1_objective_require_finite_shape(observation, geometry.order(), "invalid C-LE observation");
     fdapde_strong_assert(
@@ -428,7 +428,7 @@ p1_cheeger_frobenius_data_site_log_contribution(
         if constexpr (requires { nodes.select(active); })
             return nodes.select(active);
         else {
-            MatrixBatch<typename manifold::CheegerLogEuclideanSPDGeometry<S, N, U>::Point> selected(
+            MatrixBatch<typename manifold::CheegerLogEuclideanSPDGeometry<S, N, U, Point_>::Point> selected(
               active.size(), geometry.order(), geometry.order());
             for (std::size_t i = 0; i < active.size(); ++i) selected[i] = nodes[active[i]];
             return selected;

@@ -84,15 +84,17 @@ template <typename S, int N> class CheegerPairFrame {
 namespace fdapde::manifold {
 /// @brief defines the C-LE quotient metric for fixed or dynamic SPD order
 /// @details general alignment uses local multistart and never certifies global uniqueness
-template <typename S, int N, Usage U> class CheegerLogEuclideanSPDGeometry {
+template <typename S, int N, Usage U, typename Point_> class CheegerLogEuclideanSPDGeometry {
     // the rotation lift applies to tensor orders at least two; scalar smoothing uses LE
     static_assert(N == Dynamic || N >= 2, "C-LE requires tensor order at least two");
-    using Base = LogEuclideanSPDGeometry<S, N, U>;
+    using Base = LogEuclideanSPDGeometry<S, N, U, Point_>;
     Base ambient_;
     double rho_;
    public:
+    using Self = CheegerLogEuclideanSPDGeometry<S, N, U, Point_>;
     using Scalar = S;
     using Point = typename Base::Point;
+    using CachePolicy = typename Point::CachePolicy;
     using Tangent = typename Base::Tangent;
     using Chart = Tangent;
     using Rotation = RotationMatrix<S, N, N, RotationCache::Log>;
@@ -142,7 +144,9 @@ template <typename S, int N, Usage U> class CheegerLogEuclideanSPDGeometry {
     /// @brief borrows a cached logarithm into an owning chart
     template <SPDLike P> static Chart chart(const P& p) { return Chart(matrix_log(p)); }
     /// @brief exponentiates a symmetric logarithmic chart
-    static Point from_chart(const Chart& x) { return Point(matrix_exp(x)); }
+    template <typename OutputPolicy = CachePolicy> static auto from_chart(const Chart& x) {
+        return matrix_exp<OutputPolicy>(x);
+    }
     /// @brief projects an ambient symmetric tangent
     template <SPDLike P> Tangent project(const P& p, const Tangent& v) const { return ambient_.project(p, v); }
     /// @brief constructs a zero tangent at the requested point
@@ -190,9 +194,10 @@ template <typename S, int N, Usage U> class CheegerLogEuclideanSPDGeometry {
             omega_(rotation_log(q)),
             distance_(distance) { }
         /// @brief evaluates the quotient of a straight symmetric path and a group geodesic
-        Point operator()(double t) const {
+        template <typename OutputPolicy = CachePolicy> auto operator()(double t) const {
             const auto q = rotation_exp(omega_, t);
-            return from_chart(Chart((q * (x_ + S(t) * v_) * q.transpose()).template as_symmetric<Lower>()));
+            return from_chart<OutputPolicy>(
+              Chart((q * (x_ + S(t) * v_) * q.transpose()).template as_symmetric<Lower>()));
         }
         /// @brief returns the prepared squared endpoint distance
         double squared_distance() const { return distance_; }
@@ -202,6 +207,15 @@ template <typename S, int N, Usage U> class CheegerLogEuclideanSPDGeometry {
         const auto fit = pair(p, q);
         fdapde_strong_assert(fit.unique(), std::domain_error, "ambiguous C-LE geodesic");
         return Curve(chart(p), chart(q), fit.rotations.front(), fit.squared_distance);
+    }
+    /// @brief returns uniformly spaced geodesic samples including both endpoints with the selected output cache policy
+    /// @details defaults to the geometry point policy; prepares one curve and requires count >= 2
+    /// sample i uses t = i / (count - 1); execution defaults to sequential and parallel calls join before returning
+    template <
+      typename OutputPolicy = CachePolicy, SPDLike From, SPDLike To,
+      fdapde::internals::BatchExecutionPolicy ExecutionPolicy = execution_seq_t>
+    auto geodesic(const From& from, const To& to, int count, ExecutionPolicy policy = {}) const {
+        return internals::sample_spd_geodesic<OutputPolicy>(*this, from, to, count, policy);
     }
     /// @brief returns the selected quotient distance
     template <SPDLike P, SPDLike Q> double distance(const P& p, const Q& q) const {

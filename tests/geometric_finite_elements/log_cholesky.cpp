@@ -9,11 +9,11 @@ using namespace fdapde;
 using LC = manifold::LogCholeskySPDGeometry<double, 2, Usage::InterpolationNodes>;
 
 /// @brief computes a symmetric coordinate chart with a scalar Cholesky recurrence independent of the core cache
-SymmetricMatrix<double, Dynamic, Dynamic> oracle_chart(const auto& point) {
+SymmetricMatrix<double, Dynamic> oracle_chart(const auto& point) {
     const int n = point.rows();
     Matrix<double, Dynamic, Dynamic> lower(n, n);
     lower.set_zero();
-    SymmetricMatrix<double, Dynamic, Dynamic> result(n, n);
+    SymmetricMatrix<double, Dynamic> result(n, n);
     for (int row = 0; row < n; ++row) {
         for (int col = 0; col <= row; ++col) {
             double entry = point(row, col);
@@ -61,8 +61,8 @@ Matrix<double, Dynamic, Dynamic> oracle_inverse_jvp(const auto& chart, const aut
 }
 
 /// @brief obtains a promoted zero symmetric matrix without depending on the geometry chart
-SymmetricMatrix<double, Dynamic, Dynamic> zero_chart(int n) {
-    SymmetricMatrix<double, Dynamic, Dynamic> result(n, n);
+SymmetricMatrix<double, Dynamic> zero_chart(int n) {
+    SymmetricMatrix<double, Dynamic> result(n, n);
     for (int row = 0; row < n; ++row)
         for (int col = 0; col <= row; ++col) result(row, col) = 0;
     return result;
@@ -85,7 +85,7 @@ template <typename Geometry> MatrixBatch<typename Geometry::Point> data(const Ge
 }
 
 /// @brief averages independently computed charts in the represented nodal order
-SymmetricMatrix<double, Dynamic, Dynamic> mean_chart(const auto& nodes, std::span<const double> weights) {
+SymmetricMatrix<double, Dynamic> mean_chart(const auto& nodes, std::span<const double> weights) {
     auto result = zero_chart(nodes[0].rows());
     double total = 0;
     for (std::size_t node = 0; node < nodes.size(); ++node) {
@@ -215,7 +215,7 @@ template <typename Geometry> void check_objectives(const Geometry& geometry) {
         // central ambient node perturbations check each complete metric gradient including global and cell-local order
         EXPECT_NEAR(derivative, finite, 3e-9 * std::max(1., std::abs(finite)));
     }
-    std::vector<SymmetricMatrix<double, Dynamic, Dynamic>> residuals(3, zero_chart(geometry.order()));
+    std::vector<SymmetricMatrix<double, Dynamic>> residuals(3, zero_chart(geometry.order()));
     for (const auto& edge : signed_stencil.edges) {
         const auto first = oracle_chart(nodes[edge.first]), second = oracle_chart(nodes[edge.second]);
         for (int row = 0; row < geometry.order(); ++row)

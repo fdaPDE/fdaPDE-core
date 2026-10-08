@@ -67,7 +67,7 @@ TEST(ExecutionRuntime, AsyncReturnsValuesAndTransportsExceptions) {
 
 // verifies executor tasks can read prepared SPD batch caches while their shared owner remains alive
 TEST(ExecutionRuntime, ReadsPreparedSPDBatchCaches) {
-    using Point = fdapde::SPDMatrix<double, 2, 2, fdapde::Cache::Log>;
+    using Point = fdapde::SPDMatrix<double, 2, fdapde::Cache::Log>;
     const Point point(fdapde::Matrix<double, 2, 2>({2, 0, 0, 3}));
     const fdapde::MatrixBatch<Point> points(std::vector<Point>(16, point));
     std::vector<std::future<double>> results;

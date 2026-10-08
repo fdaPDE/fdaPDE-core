@@ -27,6 +27,15 @@ namespace fdapde {
 template <typename Derived> class MatrixBatchExpr;
 namespace internals {
 
+/// @brief limits eager batch transforms to the native sequential and parallel execution policies
+template <typename Policy>
+concept BatchExecutionPolicy = std::same_as<Policy, execution_seq_t> || std::same_as<Policy, execution_par_t>;
+
+/// @brief fills an owning batch directly from independent indexed values with joined optional parallel execution
+template <typename Result, BatchExecutionPolicy ExecutionPolicy, typename Function>
+MatrixBatch<Result>
+generate_matrix_batch(std::size_t count, int rows, int cols, ExecutionPolicy policy, const Function& function);
+
 /// @brief borrows persistent batch operands and owns temporary expression nodes
 template <typename Arg>
 using batch_nested_t =
@@ -95,16 +104,17 @@ template <typename Result, bool Numeric = std::is_arithmetic_v<std::remove_cvref
     /// @brief chooses the narrowest native owner that preserves the returned matrix structure
     static auto owner_type_() {
         if constexpr (SPDLike<Xpr>)
-            return std::type_identity<SPDMatrix<Scalar, Xpr::Rows, Xpr::Cols, typename Xpr::CachePolicy>> {};
+            return std::type_identity<SPDMatrix<Scalar, Xpr::Rows, typename Xpr::CachePolicy>> {};
         else if constexpr (RotationLike<Xpr>)
             return std::type_identity<RotationMatrix<Scalar, Xpr::Rows, Xpr::Cols, typename Xpr::CachePolicy>> {};
-        else if constexpr (CachedSymmetricLike<Xpr>)
-            return std::type_identity<
-              CachedSymmetricMatrix<Scalar, Xpr::Rows, Xpr::Cols, typename Xpr::CachePolicy>> {};
+        else if constexpr (is_orthogonal_matrix_v<Xpr> && std::floating_point<Scalar>)
+            return std::type_identity<OrthogonalMatrix<Scalar, Xpr::Rows, Xpr::Cols>> {};
+        else if constexpr (NativeSymmetricLike<Xpr>)
+            return std::type_identity<SymmetricMatrix<Scalar, Xpr::Rows, typename Xpr::CachePolicy>> {};
         else if constexpr (is_diagonal_matrix_v<Xpr>)
             return std::type_identity<DiagonalMatrix<Scalar, Xpr::Rows>> {};
         else if constexpr (is_symmetric_matrix_v<Xpr>)
-            return std::type_identity<SymmetricMatrix<Scalar, Xpr::Rows, Xpr::Cols>> {};
+            return std::type_identity<SymmetricMatrix<Scalar, Xpr::Rows>> {};
         else
             return std::type_identity<Matrix<Scalar, Xpr::Rows, Xpr::Cols>> {};
     }
@@ -121,8 +131,10 @@ template <typename Value> auto batch_const_view(const Value& value) {
         return value;
     else {
         using View = typename Value::ConstView;
-        if constexpr (SPDLike<Value> || RotationLike<Value> || CachedSymmetricLike<Value>)
+        if constexpr (SPDLike<Value> || RotationLike<Value> || NativeSymmetricLike<Value>)
             return value.view();
+        else if constexpr (is_orthogonal_matrix_v<Value>)
+            return View(value.data().data(), value.rows(), value.cols(), unchecked);
         else if constexpr (is_diagonal_matrix_v<Value>) {
             if constexpr (Value::Rows == Dynamic)
                 return View(value.data(), value.rows());
@@ -272,14 +284,15 @@ class MatrixBatch : public MatrixBatchExpr<MatrixBatch<MatrixType_, StorageOrder
       !std::is_const_v<Scalar> && std::is_arithmetic_v<Scalar>,
       "MatrixBatch requires owning arithmetic matrix elements");
 
-    /// @brief constructs fixed-shape elements as identities for SPD and rotations or zeros for ordinary matrices
+    /// @brief constructs fixed-shape elements as identities for SPD and orthogonal matrices or zeros for ordinary
+    /// matrices
     explicit MatrixBatch(std::size_t count = 0)
         requires(MatrixType::Rows != Dynamic && MatrixType::Cols != Dynamic)
         : MatrixBatch(count, MatrixType::Rows, MatrixType::Cols) { }
     /// @brief allocates uniformly shaped elements and initializes known identity caches without decompositions
     MatrixBatch(std::size_t count, int rows, int cols) {
         allocate_(count, rows, cols);
-        if constexpr (SPDLike<MatrixType> || RotationLike<MatrixType>) {
+        if constexpr (SPDLike<MatrixType> || is_orthogonal_matrix_v<MatrixType>) {
             for (std::size_t i = 0; i < count_; ++i) {
                 for (int j = 0; j < rows_; ++j) {
                     const auto index =
@@ -374,6 +387,113 @@ class MatrixBatch : public MatrixBatchExpr<MatrixBatch<MatrixType_, StorageOrder
     std::size_t size() const { return count_; }
     /// @brief reports whether the collection contains no matrices
     bool empty() const { return count_ == 0; }
+    /// @brief materializes each element's Frobenius norm without preparing an input spectral cache
+    template <internals::BatchExecutionPolicy ExecutionPolicy = execution_seq_t>
+        requires std::floating_point<Scalar>
+    auto norm(ExecutionPolicy policy = {}) const {
+        using Result = Matrix<Scalar, 1, 1>;
+        return materialize_<Result>(1, 1, policy, [](const auto& point) { return Result(point.norm()); });
+    }
+    /// @brief sums squared logical coefficients per element, including both mirrored symmetric entries
+    template <internals::BatchExecutionPolicy ExecutionPolicy = execution_seq_t>
+    auto squared_norm(ExecutionPolicy policy = {}) const {
+        using Result = Matrix<Scalar, 1, 1>;
+        return materialize_<Result>(1, 1, policy, [](const auto& point) { return Result(point.squared_norm()); });
+    }
+    /// @brief materializes each square element's main diagonal as an independent column vector
+    template <internals::BatchExecutionPolicy ExecutionPolicy = execution_seq_t>
+        requires(MatrixType::Rows == Dynamic || MatrixType::Cols == Dynamic || MatrixType::Rows == MatrixType::Cols)
+    auto diagonal(ExecutionPolicy policy = {}) const {
+        fdapde_strong_assert(rows_ == cols_, std::invalid_argument, "MatrixBatch diagonal requires square elements");
+        using Result = Vector<Scalar, MatrixType::Rows>;
+        return materialize_<Result>(rows_, 1, policy, [](const auto& point) { return Result(point.diagonal()); });
+    }
+    /// @brief materializes one matrix logarithm per SPD element with the requested symmetric output cache
+    /// @details defaults to sequential evaluation; parallel evaluation joins all work before returning or rethrowing
+    template <typename OutputPolicy = Cache::None, internals::BatchExecutionPolicy ExecutionPolicy = execution_seq_t>
+        requires SPDLike<MatrixType>
+    auto log(ExecutionPolicy policy = {}) const {
+        using Result = SymmetricMatrix<Scalar, MatrixType::Rows, OutputPolicy>;
+        return materialize_<Result>(
+          rows_, cols_, policy, [](const auto& point) { return point.template log<OutputPolicy>(); });
+    }
+    /// @brief materializes independent eigenvalue vectors while reusing each symmetric or SPD element's cache
+    /// @details preserves element order and does not sort eigenvalues; input coefficients must remain unchanged
+    template <internals::BatchExecutionPolicy ExecutionPolicy = execution_seq_t>
+        requires(SPDLike<MatrixType> || NativeSymmetricLike<MatrixType>)
+    auto eigenvalues(ExecutionPolicy policy = {}) const {
+        using Result = Vector<Scalar, MatrixType::Rows>;
+        return materialize_<Result>(rows_, 1, policy, [](const auto& point) { return point.eigenvalues(); });
+    }
+    /// @brief materializes owning orthogonal bases while reusing each symmetric or SPD element's spectral cache
+    /// @details columns correspond to eigenvalues of the unchanged element; signs and repeated-eigenvalue bases may
+    /// vary
+    template <internals::BatchExecutionPolicy ExecutionPolicy = execution_seq_t>
+        requires(std::floating_point<Scalar> && (SPDLike<MatrixType> || NativeSymmetricLike<MatrixType>))
+    auto eigenvectors(ExecutionPolicy policy = {}) const {
+        using Result = OrthogonalMatrix<Scalar, MatrixType::Rows, MatrixType::Cols>;
+        return materialize_<Result>(rows_, cols_, policy, [](const auto& point) { return point.eigenvectors(); });
+    }
+    /// @brief materializes checked SPD exponentials from symmetric elements using available input spectral caches
+    template <typename OutputPolicy = Cache::None, internals::BatchExecutionPolicy ExecutionPolicy = execution_seq_t>
+        requires(std::floating_point<Scalar> && (SPDLike<MatrixType> || NativeSymmetricLike<MatrixType>))
+    auto exp(ExecutionPolicy policy = {}) const {
+        using Result = SPDMatrix<Scalar, MatrixType::Rows, OutputPolicy>;
+        return materialize_<Result>(
+          rows_, cols_, policy, [](const auto& point) { return point.template exp<OutputPolicy>(); });
+    }
+    /// @brief materializes checked SPD square roots using retained square-root factors or input eigenpairs
+    template <typename OutputPolicy = Cache::None, internals::BatchExecutionPolicy ExecutionPolicy = execution_seq_t>
+        requires SPDLike<MatrixType>
+    auto sqrt(ExecutionPolicy policy = {}) const {
+        using Result = SPDMatrix<Scalar, MatrixType::Rows, OutputPolicy>;
+        return materialize_<Result>(
+          rows_, cols_, policy, [](const auto& point) { return point.template sqrt<OutputPolicy>(); });
+    }
+    /// @brief materializes checked SPD inverse square roots using retained factors or input eigenpairs
+    template <typename OutputPolicy = Cache::None, internals::BatchExecutionPolicy ExecutionPolicy = execution_seq_t>
+        requires SPDLike<MatrixType>
+    auto inv_sqrt(ExecutionPolicy policy = {}) const {
+        using Result = SPDMatrix<Scalar, MatrixType::Rows, OutputPolicy>;
+        return materialize_<Result>(
+          rows_, cols_, policy, [](const auto& point) { return point.template inv_sqrt<OutputPolicy>(); });
+    }
+    /// @brief materializes structure-preserving inverses using each element's native algorithm and retained factors
+    /// @details symmetric and SPD outputs accept an independent cache policy; execution defaults to sequential
+    template <typename OutputPolicy = Cache::None, internals::BatchExecutionPolicy ExecutionPolicy = execution_seq_t>
+        requires(
+          std::floating_point<Scalar> &&
+          (MatrixType::Rows == Dynamic || MatrixType::Cols == Dynamic || MatrixType::Rows == MatrixType::Cols) &&
+          (SPDLike<MatrixType> || NativeSymmetricLike<MatrixType> || std::same_as<OutputPolicy, Cache::None>))
+    auto inv(ExecutionPolicy policy = {}) const {
+        fdapde_strong_assert(rows_ == cols_, std::invalid_argument, "MatrixBatch inv requires square elements");
+        const auto invert = [](const auto& point) {
+            if constexpr (SPDLike<MatrixType> || NativeSymmetricLike<MatrixType>)
+                return point.template inv<OutputPolicy>();
+            else
+                return point.inv();
+        };
+        using Result = typename internals::batch_result_owner<decltype(invert(std::declval<ConstView>()))>::type;
+        return materialize_<Result>(rows_, cols_, policy, [&](const auto& point) { return Result(invert(point)); });
+    }
+    /// @brief materializes each square element's diagonal sum as an independent one-by-one matrix
+    /// @details defaults to sequential evaluation and never prepares an input spectral cache
+    template <internals::BatchExecutionPolicy ExecutionPolicy = execution_seq_t>
+        requires(MatrixType::Rows == Dynamic || MatrixType::Cols == Dynamic || MatrixType::Rows == MatrixType::Cols)
+    auto trace(ExecutionPolicy policy = {}) const {
+        fdapde_strong_assert(rows_ == cols_, std::invalid_argument, "MatrixBatch trace requires square elements");
+        using Result = Matrix<Scalar, 1, 1>;
+        return materialize_<Result>(1, 1, policy, [](const auto& point) { return Result(point.trace()); });
+    }
+    /// @brief materializes each square element's determinant as an independent one-by-one matrix
+    /// @details uses the element's existing determinant kernel and defaults to sequential evaluation
+    template <internals::BatchExecutionPolicy ExecutionPolicy = execution_seq_t>
+        requires(MatrixType::Rows == Dynamic || MatrixType::Cols == Dynamic || MatrixType::Rows == MatrixType::Cols)
+    auto determinant(ExecutionPolicy policy = {}) const {
+        fdapde_strong_assert(rows_ == cols_, std::invalid_argument, "MatrixBatch determinant requires square elements");
+        using Result = Matrix<Scalar, 1, 1>;
+        return materialize_<Result>(1, 1, policy, [](const auto& point) { return Result(point.determinant()); });
+    }
     /// @brief returns the row count of each element including an empty batch
     int rows() const { return rows_; }
     /// @brief returns the column count of each element including an empty batch
@@ -382,9 +502,9 @@ class MatrixBatch : public MatrixBatchExpr<MatrixBatch<MatrixType_, StorageOrder
     std::size_t coefficient_stride() const { return stride_; }
     /// @brief borrows read-only contiguous coefficient rows, including an empty span for an empty batch
     std::span<const Scalar> coefficients() const& { return data_; }
-    /// @brief exposes writable coefficient rows only for ordinary matrices
+    /// @brief exposes writable coefficient rows when no structured validation or cache tracking is required
     std::span<Scalar> coefficients() &
-        requires(!SPDLike<MatrixType> && !RotationLike<MatrixType> && !CachedSymmetricLike<MatrixType>)
+        requires(!SPDLike<MatrixType> && !is_orthogonal_matrix_v<MatrixType> && CachePolicy::Flags == 0)
     {
         return data_;
     }
@@ -414,6 +534,20 @@ class MatrixBatch : public MatrixBatchExpr<MatrixBatch<MatrixType_, StorageOrder
     /// @brief prevents an element view from escaping a temporary owner
     void operator[](std::size_t) const&& = delete;
    private:
+    template <typename Result, internals::BatchExecutionPolicy ExecutionPolicy, typename Function>
+    friend MatrixBatch<Result> internals::generate_matrix_batch(
+      std::size_t count, int rows, int cols, ExecutionPolicy policy, const Function& function);
+
+    /// @brief allocates private result buffers for complete slot initialization without intermediate identities
+    MatrixBatch(std::size_t count, int rows, int cols, internals::unchecked_t) { allocate_(count, rows, cols); }
+
+    /// @brief fills disjoint result slots with the requested output shape, including empty batches
+    template <typename Result, internals::BatchExecutionPolicy ExecutionPolicy, typename Function>
+    auto materialize_(int rows, int cols, ExecutionPolicy policy, const Function& function) const {
+        return internals::generate_matrix_batch<Result>(
+          count_, rows, cols, policy, [&](std::size_t i) { return function((*this)[i]); });
+    }
+
     using CacheStorage = std::conditional_t<
       CachePolicy::Flags == 0, internals::empty_spd_cache<2>,
       internals::batch_cache_storage<typename internals::batch_cache_slot<MatrixType>::type>>;
@@ -426,7 +560,8 @@ class MatrixBatch : public MatrixBatchExpr<MatrixBatch<MatrixType_, StorageOrder
         fdapde_strong_assert(
           std::int64_t(rows) * cols <= std::numeric_limits<int>::max(), std::length_error,
           "MatrixBatch: element size exceeds supported range");
-        if constexpr (is_symmetric_matrix_v<MatrixType> || is_diagonal_matrix_v<MatrixType> || RotationLike<MatrixType>)
+        if constexpr (
+          is_symmetric_matrix_v<MatrixType> || is_diagonal_matrix_v<MatrixType> || is_orthogonal_matrix_v<MatrixType>)
             fdapde_strong_assert(
               rows == cols, std::invalid_argument, "MatrixBatch: structured elements must be square");
         rows_ = rows;
@@ -451,12 +586,17 @@ class MatrixBatch : public MatrixBatchExpr<MatrixBatch<MatrixType_, StorageOrder
     template <typename Target> Target view_(std::size_t i) const {
         using Pointer = std::conditional_t<std::same_as<Target, ConstView>, const Scalar*, Scalar*>;
         Pointer data = const_cast<Pointer>(data_.data()) + i * stride_;
-        if constexpr (SPDLike<MatrixType> || RotationLike<MatrixType> || CachedSymmetricLike<MatrixType>) {
-            if constexpr (CachePolicy::Flags == 0)
-                return Target(data, rows_, {});
-            else
+        if constexpr (SPDLike<MatrixType> || RotationLike<MatrixType> || NativeSymmetricLike<MatrixType>) {
+            if constexpr (CachePolicy::Flags == 0) {
+                if constexpr (NativeSymmetricLike<MatrixType>)
+                    return Target(data, rows_, static_cast<typename MatrixType::CacheSlot*>(nullptr));
+                else
+                    return Target(data, rows_, {});
+            } else
                 return Target(data, rows_, const_cast<typename MatrixType::CacheSlot*>(cache_.pointers[i]));
-        } else if constexpr (is_diagonal_matrix_v<MatrixType>) {
+        } else if constexpr (is_orthogonal_matrix_v<MatrixType>)
+            return Target(data, rows_, cols_, unchecked);
+        else if constexpr (is_diagonal_matrix_v<MatrixType>) {
             if constexpr (MatrixType::Rows == Dynamic)
                 return Target(data, rows_);
             else
@@ -469,7 +609,7 @@ class MatrixBatch : public MatrixBatchExpr<MatrixBatch<MatrixType_, StorageOrder
         fdapde_strong_assert(
           value.rows() == rows_ && value.cols() == cols_, std::invalid_argument,
           "MatrixBatch: nonuniform element shape");
-        if constexpr (SPDLike<MatrixType> || RotationLike<MatrixType> || CachedSymmetricLike<MatrixType>) {
+        if constexpr (SPDLike<MatrixType> || RotationLike<MatrixType> || NativeSymmetricLike<MatrixType>) {
             const MatrixType candidate(value);
             std::copy_n(candidate.data(), stride_, data_.data() + i * stride_);
             if constexpr (CachePolicy::Flags != 0) cache_.slots[i].copy_from(candidate.cache());
@@ -483,6 +623,28 @@ class MatrixBatch : public MatrixBatchExpr<MatrixBatch<MatrixType_, StorageOrder
     std::vector<Scalar> data_;
     [[no_unique_address]] CacheStorage cache_;
 };
+
+namespace internals {
+/// @brief allocates unexposed result slots and publishes them only after every successful evaluation has completed
+/// @details parallel callbacks must safely share their captures; exceptions are rethrown after submitted work joins
+template <typename Result, BatchExecutionPolicy ExecutionPolicy, typename Function>
+MatrixBatch<Result>
+generate_matrix_batch(std::size_t count, int rows, int cols, ExecutionPolicy, const Function& function) {
+    if constexpr (std::same_as<ExecutionPolicy, execution_par_t>) {
+        fdapde_strong_assert(
+          count <= static_cast<std::size_t>(std::numeric_limits<int>::max()), std::length_error,
+          "MatrixBatch: parallel element count exceeds the execution index range");
+    }
+    MatrixBatch<Result> result(count, rows, cols, unchecked);
+    if (count == 0) return result;
+    const auto evaluate = [&](std::size_t i) { result.store_(i, function(i)); };
+    if constexpr (std::same_as<ExecutionPolicy, execution_par_t>)
+        parallel_for(0, static_cast<int>(count), [&](int i) { evaluate(static_cast<std::size_t>(i)); });
+    else
+        for (std::size_t i = 0; i < count; ++i) evaluate(i);
+    return result;
+}
+}   // namespace internals
 
 }   // namespace fdapde
 #endif   // __FDAPDE_LINALG_MATRIX_BATCH_H__

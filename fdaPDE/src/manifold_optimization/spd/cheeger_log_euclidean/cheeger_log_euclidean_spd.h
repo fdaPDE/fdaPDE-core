@@ -15,7 +15,7 @@ template <typename M> CheegerChart cheeger_chart(const M& m) {
 }
 /// @brief reconstructs a native symmetric matrix from chart coordinates
 template <typename Scalar> auto cheeger_matrix(CheegerChart a) {
-    SymmetricMatrix<Scalar, 2, 2> m;
+    SymmetricMatrix<Scalar, 2> m;
     m(0, 0) = Scalar(a.s + a.x);
     m(0, 1) = Scalar(a.y);
     m(1, 1) = Scalar(a.s - a.x);
@@ -117,18 +117,37 @@ inline CheegerPair cheeger_pair(CheegerChart a, CheegerChart b, double rho) {
 
 /// @brief declares the Cheeger log-Euclidean metric with ambient symmetric tangents
 /// @details pair diagnostics retain detected ties without claiming a global uniqueness certificate
-template <typename Scalar_, int Order_ = 2, Usage Uses_ = Usage::None> class CheegerLogEuclideanSPDGeometry;
+template <
+  typename Scalar_, int Order_ = 2, Usage Uses_ = Usage::None,
+  typename Point_ = SPDMatrix<Scalar_, Order_, Cache::Policy<internals::log_euclidean_cache_flags(Uses_)>>>
+class CheegerLogEuclideanSPDGeometry;
+
+namespace internals {
+
+/// @brief selects the Cheeger log-Euclidean metric while preserving the complete native SPD owner type
+template <typename Point> struct cheeger_log_euclidean_geometry_type {
+    using type = CheegerLogEuclideanSPDGeometry<typename Point::Scalar, Point::Rows, Usage::None, Point>;
+};
+
+}   // namespace internals
+
+/// @brief supplies the Cheeger log-Euclidean metric for a native SPD owner with its exact cache policy
+template <typename Point>
+using CheegerLogEuclideanGeometry = typename internals::cheeger_log_euclidean_geometry_type<Point>::type;
 
 /// @brief specializes the C-LE metric and exact pair search for planar tensors
-template <typename Scalar_, Usage Uses_> class CheegerLogEuclideanSPDGeometry<Scalar_, 2, Uses_> {
+template <typename Scalar_, Usage Uses_, typename Point_>
+class CheegerLogEuclideanSPDGeometry<Scalar_, 2, Uses_, Point_> {
     static constexpr int Order_ = 2;
-    using Base = LogEuclideanSPDGeometry<Scalar_, Order_, Uses_>;
+    using Base = LogEuclideanSPDGeometry<Scalar_, Order_, Uses_, Point_>;
     using Chart = internals::CheegerChart;
     Base ambient_;
     double rho_;
    public:
+    using Self = CheegerLogEuclideanSPDGeometry<Scalar_, Order_, Uses_, Point_>;
     using Scalar = Scalar_;
     using Point = typename Base::Point;
+    using CachePolicy = typename Point::CachePolicy;
     using Tangent = typename Base::Tangent;
     /// @brief preserves the epsilon constructor while storing its positive finite square
     explicit CheegerLogEuclideanSPDGeometry(double epsilon = 0.5) : rho_(epsilon * epsilon) {
@@ -164,11 +183,10 @@ template <typename Scalar_, Usage Uses_> class CheegerLogEuclideanSPDGeometry<Sc
         Curve(Chart x, Chart y, double angle, double squared_distance) :
             x_(x), y_(internals::cheeger_rotate(y, -angle)), angle_(angle), squared_distance_(squared_distance) { }
         /// @brief evaluates the lifted straight segment and maps its rotation back to SPD2
-        Point operator()(double t) const {
+        template <typename OutputPolicy = CachePolicy> auto operator()(double t) const {
             fdapde_strong_assert(std::isfinite(t), std::invalid_argument, "nonfinite geodesic parameter");
-            return from_chart(
-              internals::cheeger_rotate(
-                {(1 - t) * x_.s + t * y_.s, (1 - t) * x_.x + t * y_.x, (1 - t) * x_.y + t * y_.y}, t * angle_));
+            return from_chart<OutputPolicy>(internals::cheeger_rotate(
+              {(1 - t) * x_.s + t * y_.s, (1 - t) * x_.x + t * y_.x, (1 - t) * x_.y + t * y_.y}, t * angle_));
         }
         /// @brief returns the prepared endpoint distance for exact two-node mean diagnostics
         double squared_distance() const { return squared_distance_; }
@@ -183,16 +201,26 @@ template <typename Scalar_, Usage Uses_> class CheegerLogEuclideanSPDGeometry<Sc
         fdapde_strong_assert(branch.rotations.size() == 1, std::domain_error, "ambiguous Cheeger geodesic");
         return Curve(x, y, branch.rotations.front(), branch.squared_distance);
     }
+    /// @brief returns uniformly spaced geodesic samples including both endpoints with the selected output cache policy
+    /// @details defaults to the geometry point policy; prepares one curve and requires count >= 2
+    /// sample i uses t = i / (count - 1); execution defaults to sequential and parallel calls join before returning
+    template <
+      typename OutputPolicy = CachePolicy, SPDLike From, SPDLike To,
+      fdapde::internals::BatchExecutionPolicy ExecutionPolicy = execution_seq_t>
+    auto geodesic(const From& from, const To& to, int count, ExecutionPolicy policy = {}) const {
+        return internals::sample_spd_geodesic<OutputPolicy>(*this, from, to, count, policy);
+    }
     /// @brief returns the supported tensor order
     int order() const { return ambient_.order(); }
     /// @brief returns the symmetric tangent dimension
     std::size_t dimension() const { return ambient_.dimension(); }
     /// @brief copies a metric-independent ambient symmetric tangent
-    Tangent project(const Point& p, const Tangent& u) const { return ambient_.project(p, u); }
+    template <SPDLike P> Tangent project(const P& p, const Tangent& u) const { return ambient_.project(p, u); }
     /// @brief creates a zero ambient tangent
-    Tangent zero_tangent(const Point& p) const { return ambient_.zero_tangent(p); }
+    template <SPDLike P> Tangent zero_tangent(const P& p) const { return ambient_.zero_tangent(p); }
     /// @brief combines ambient symmetric tangents with finite scalar coefficients
-    Tangent linear_combination(const Point& p, double a, const Tangent& u, double b, const Tangent& v) const {
+    template <SPDLike P>
+    Tangent linear_combination(const P& p, double a, const Tangent& u, double b, const Tangent& v) const {
         return ambient_.linear_combination(p, a, u, b, v);
     }
     /// @brief returns the legacy square-root parameter
@@ -207,20 +235,26 @@ template <typename Scalar_, Usage Uses_> class CheegerLogEuclideanSPDGeometry<Sc
         return internals::cheeger_chart(matrix_log(p));
     }
     /// @brief exponentiates a symmetric chart into a certified SPD point
-    static Point from_chart(Chart x) { return Point(matrix_exp(internals::cheeger_matrix<Scalar>(x))); }
+    template <typename OutputPolicy = CachePolicy> static auto from_chart(Chart x) {
+        return matrix_exp<OutputPolicy>(internals::cheeger_matrix<Scalar>(x));
+    }
     /// @brief returns the intrinsic pair distance including detected minimizing ties
-    double distance(const Point& a, const Point& b) const { return std::sqrt(pair(a, b).squared_distance); }
+    template <SPDLike A, SPDLike B> double distance(const A& a, const B& b) const {
+        return std::sqrt(pair(a, b).squared_distance);
+    }
     /// @brief pairs ambient tangents through the rho-dependent logarithmic metric
-    double inner_product(const Point& p, const Tangent& u, const Tangent& v) const {
+    template <SPDLike P> double inner_product(const P& p, const Tangent& u, const Tangent& v) const {
         const auto x = chart(p), h = internals::cheeger_chart(matrix_log_frechet(p, u)),
                    k = internals::cheeger_chart(matrix_log_frechet(p, v));
         return internals::cheeger_dot(h, k) -
                8 * (x.x * h.y - x.y * h.x) * (x.x * k.y - x.y * k.x) / (rho_ + 4 * (x.x * x.x + x.y * x.y));
     }
     /// @brief computes the norm induced by the local C-LE metric
-    double norm(const Point& p, const Tangent& u) const { return std::sqrt(std::max(0., inner_product(p, u, u))); }
+    template <SPDLike P> double norm(const P& p, const Tangent& u) const {
+        return std::sqrt(std::max(0., inner_product(p, u, u)));
+    }
     /// @brief follows the quotient geodesic defined by an ambient initial tangent
-    Point exponential(const Point& p, const Tangent& u, double step = 1) const {
+    template <SPDLike P> Point exponential(const P& p, const Tangent& u, double step = 1) const {
         fdapde_strong_assert(std::isfinite(step), std::invalid_argument, "nonfinite exponential step");
         const auto x = chart(p), h = internals::cheeger_chart(matrix_log_frechet(p, u));
         const double phi = 2 * (x.x * h.y - x.y * h.x) / (rho_ + 4 * (x.x * x.x + x.y * x.y));
@@ -229,9 +263,11 @@ template <typename Scalar_, Usage Uses_> class CheegerLogEuclideanSPDGeometry<Sc
             {x.s + step * h.s, x.x + step * (h.x + 2 * phi * x.y), x.y + step * (h.y - 2 * phi * x.x)}, step * phi));
     }
     /// @brief uses the exact local exponential as a retraction
-    Point retract(const Point& p, const Tangent& u, double step) const { return exponential(p, u, step); }
+    template <SPDLike P> Point retract(const P& p, const Tangent& u, double step) const {
+        return exponential(p, u, step);
+    }
     /// @brief returns the unique minimizing ambient logarithm or rejects a pair tie
-    Tangent logarithm(const Point& p, const Point& q) const {
+    template <SPDLike A, SPDLike B> Tangent logarithm(const A& p, const B& q) const {
         const auto x = chart(p);
         const auto branch = pair(p, q);
         fdapde_strong_assert(branch.rotations.size() == 1, std::domain_error, "ambiguous Cheeger logarithm");

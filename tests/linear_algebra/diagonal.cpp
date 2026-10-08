@@ -50,7 +50,7 @@ template <typename MatrixType>
 concept exposes_owning_rvalue_derived = requires(MatrixType& matrix) { std::move(matrix).derived(); };
 
 template <typename MatrixType>
-concept permits_owning_rvalue_inverse = requires(MatrixType& matrix) { std::move(matrix).inverse(); };
+concept permits_owning_rvalue_inverse = requires(MatrixType& matrix) { std::move(matrix).inv(); };
 
 template <typename MatrixType>
 concept permits_owning_rvalue_copy_assignment = requires(MatrixType& lhs, MatrixType& rhs) { std::move(lhs) = rhs; };
@@ -134,11 +134,11 @@ template <int StorageOrder> void check_diagonal_contracts() {
     EXPECT_DOUBLE_EQ(matrix.determinant(), 24.0);
     // dense conversion places the stored diagonal values among implicit zeros
     EXPECT_EQ(matrix, (matrix_type({2.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 4.0})));
-    const DiagonalMatrix<double, 3> inverse(matrix.inverse());
+    const DiagonalMatrix<double, 3> inverse(matrix.inv());
     // inverse reciprocates each diagonal entry within the numeric comparison tolerance
     EXPECT_TRUE(almost_equal(inverse, matrix_type({0.5, 0.0, 0.0, 0.0, 1.0 / 3.0, 0.0, 0.0, 0.0, 0.25})));
     const auto sum = matrix + matrix;
-    const DiagonalMatrix<double, 3> sum_inverse(std::move(sum).inverse());
+    const DiagonalMatrix<double, 3> sum_inverse(std::move(sum).inv());
     // inverse of a stored sum reciprocates the doubled diagonal
     EXPECT_TRUE(almost_equal(sum_inverse, matrix_type({0.25, 0.0, 0.0, 0.0, 1.0 / 6.0, 0.0, 0.0, 0.0, 0.125})));
     // chained diagonal addition evaluates to three times each original entry

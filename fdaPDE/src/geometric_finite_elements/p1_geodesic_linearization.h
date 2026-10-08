@@ -247,7 +247,7 @@ class P1GeodesicLinearization<Geometry_, Nodes> {
     }
    private:
     using AccumulationScalar = std::common_type_t<Scalar_, double>;
-    using AccumulationTangent = fdapde::SymmetricMatrix<AccumulationScalar, Order_, Order_>;
+    using AccumulationTangent = fdapde::SymmetricMatrix<AccumulationScalar, Order_>;
     using ChartFrame = typename internals::FlatSPDChartFrame<Geometry>::type;
    public:
     /// @brief retains the nodal binding and prepares derivatives at the requested barycentric point

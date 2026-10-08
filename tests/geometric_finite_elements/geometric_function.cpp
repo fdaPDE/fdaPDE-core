@@ -21,8 +21,8 @@
 
 namespace {
 using namespace fdapde;
-using Point = SPDMatrix<double, 2, 2>;
-using Batch = MatrixBatch<SPDMatrix<double, 2, 2, Cache::Log>>;
+using Point = SPDMatrix<double, 2>;
+using Batch = MatrixBatch<SPDMatrix<double, 2, Cache::Log>>;
 using LE = manifold::LogEuclideanSPDGeometry<double, 2, Usage::InterpolationNodes>;
 using AIRM = manifold::AffineInvariantSPDGeometry<double, 2, Usage::BasePointMaps>;
 /// @brief supplies noncommuting global coefficients for a square split into reordered cells
@@ -117,6 +117,44 @@ void check_function(const auto& geometry) {
 }
 // the LE finite element facade uses scalar bases and owns independently replaceable matrix coefficients
 TEST(GeometricFeFunction, LogEuclidean) { check_function(LE {}); }
+// the typed cached geometry retains flat dispatch and reproduces an affine logarithmic field at an interior site
+TEST(GeometricFeFunction, TypedCachedLogEuclideanAffineField) {
+    using CachedPoint = SPDMatrix<double, 2, Cache::Log>;
+    using Geometry = manifold::LogEuclideanGeometry<CachedPoint>;
+    // the point-typed alias retains the exact requested logarithm-cache owner
+    static_assert(std::is_same_v<Geometry::Point, CachedPoint>);
+    // the typed geometry selects closed-form logarithmic interpolation rather than the generic mean solver
+    static_assert(gfe::internals::is_log_euclidean_spd_geometry<Geometry>);
+    // the typed geometry retains the globally flat chart trait used by prepared spatial evaluation
+    static_assert(gfe::internals::is_flat_spd_geometry<Geometry>);
+
+    const auto domain = Triangulation<2, 2>::UnitSquare(3);
+    const GeometricFeSpace space(domain, P1<1>, Geometry {});
+    using Space = std::remove_cvref_t<decltype(space)>;
+    // the finite element space retains the same cached target Point through its geometry binding
+    static_assert(std::is_same_v<typename Space::Geometry::Point, CachedPoint>);
+    // affine symmetric log coefficients yield an exact P1 chart oracle on every mesh triangle
+    const auto chart = [](double x, double y) {
+        return SymmetricMatrix<double, 2>(Vector<double, 3> {.2 + x, .15 + .3 * y, -.1 + .4 * x - .2 * y});
+    };
+    MatrixBatch<CachedPoint> coefficients(space.n_dofs());
+    for (int i = 0; i < space.n_dofs(); ++i) {
+        coefficients[i] = matrix_exp<Cache::Log>(chart(domain.nodes()(i, 0), domain.nodes()(i, 1)));
+    }
+    const GeometricFeFunction function(space, coefficients);
+    MatrixBatch<Vector<double, 2>> locations(1);
+    locations[0] = Vector<double, 2> {.23, .37};
+    const auto prepared = space.prepare_evaluation(locations);
+    const auto evaluated = prepared(function);
+    using Values = std::remove_cvref_t<decltype(evaluated)>;
+    // prepared interpolation materializes the exact cached target matrix type in native batch storage
+    static_assert(std::is_same_v<typename Values::MatrixType, CachedPoint>);
+    const CachedPoint expected(matrix_exp<Cache::Log>(chart(.23, .37)));
+    // affine nodal logs interpolate to the analytic matrix exponential at the nonnodal interior location
+    EXPECT_LT(error(evaluated[0], expected), 2e-12);
+    // flat prepared dispatch reads cached nodal logs without preparing unused geodesic cell data
+    EXPECT_EQ(function.prepared_cells(), std::size_t {0});
+}
 // the AIRM facade shares the P1 solver and preserves derivative ordering across coefficient replacement
 TEST(GeometricFeFunction, AffineInvariant) { check_function(AIRM {}); }
 // move construction transfers storage and invalid replacements leave both coefficients and cache usable
@@ -144,7 +182,7 @@ TEST(GeometricFeFunction, OwnershipAndInvalidReplacement) {
     function.set_coeff(replacement);
     // an lvalue replacement is copied so subsequent caller mutation cannot affect the function
     EXPECT_NE(function.coeff().coefficients().data(), replacement.coefficients().data());
-    using DynamicBatch = MatrixBatch<SPDMatrix<double, Dynamic, Dynamic>>;
+    using DynamicBatch = MatrixBatch<SPDMatrix<double, Dynamic>>;
     DynamicBatch dynamic_values(4, 2, 2);
     GeometricFeFunction dynamic_function(space, std::move(dynamic_values));
     DynamicBatch wrong_shape(4, 3, 3);

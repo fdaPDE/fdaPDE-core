@@ -17,7 +17,7 @@
 #include <fdaPDE/dense_linear_algebra.h>
 
 // const-qualified coefficients must fail with the unqualified-floating-scalar SPD diagnostic
-using qualified_scalar_spd_matrix = fdapde::SPDMatrix<const double, 3, 3>;
+using qualified_scalar_spd_matrix = fdapde::SPDMatrix<const double, 3>;
 
 // sizeof instantiates the invalid type without also requiring a deleted default constructor
 int main() { return sizeof(qualified_scalar_spd_matrix); }

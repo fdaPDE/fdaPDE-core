@@ -17,4 +17,4 @@
 #include <fdaPDE/dense_linear_algebra.h>
 
 // sizeof rejects nonowning element types before constructor-specific failures can obscure the contract
-int main() { return sizeof(fdapde::MatrixBatch<fdapde::SPDMatrix<double, 2, 2>::View>); }
+int main() { return sizeof(fdapde::MatrixBatch<fdapde::SPDMatrix<double, 2>::View>); }

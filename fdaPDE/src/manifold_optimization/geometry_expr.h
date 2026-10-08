@@ -51,7 +51,7 @@ template <typename Curve> class spd_geodesic_expr : public GeometryExpr<spd_geod
     /// @brief reconstructs symmetric coefficients without certifying numerical positive definiteness
     auto eval_matrix() const { return curve_.eval(parameter_); }
     /// @brief certifies the same reconstructed coefficients using the SPD destination cache policy
-    template <typename Policy> auto eval() const { return SPDMatrix<Scalar, Rows, Cols, Policy>(eval_matrix()); }
+    template <typename Policy> auto eval() const { return SPDMatrix<Scalar, Rows, Policy>(eval_matrix()); }
    private:
     Curve curve_;
     double parameter_;
@@ -63,7 +63,7 @@ template <typename Scalar_, int Order_, bool AffineInvariant> class spd_geodesic
    public:
     using Scalar = Scalar_;
     static constexpr int Rows = Order_;
-    using Symmetric = SymmetricMatrix<Scalar, Rows, Rows>;
+    using Symmetric = SymmetricMatrix<Scalar, Rows>;
     using First = std::conditional_t<AffineInvariant, Matrix<Scalar, Rows, Rows>, Symmetric>;
     using Second = std::conditional_t<AffineInvariant, Vector<Scalar, Rows>, Symmetric>;
     /// @brief owns prepared data independently of endpoint and geometry lifetimes
@@ -140,7 +140,7 @@ class log_euclidean_mean_expr : public GeometryExpr<log_euclidean_mean_expr<Geom
         fdapde_strong_assert(
           (weights_.rows() == 1 || weights_.cols() == 1) && std::cmp_equal(weights_.size(), points_.size()),
           std::invalid_argument, "weighted_mean: expected one weight per point");
-        SymmetricMatrix<Scalar, Rows, Cols> sum;
+        SymmetricMatrix<Scalar, Rows> sum;
         if constexpr (Rows == Dynamic) sum.resize(rows(), cols());
         for (int i = 0; i < rows(); ++i)
             for (int j = 0; j <= i; ++j) sum(i, j) = Scalar(0);
@@ -166,7 +166,7 @@ class log_euclidean_mean_expr : public GeometryExpr<log_euclidean_mean_expr<Geom
                       std::isfinite(Scalar(sum(i, j))), std::domain_error, "weighted_mean: nonfinite log combination");
                 }
         }
-        if (!has_nonzero_weight) return SPDMatrix<Scalar, Rows, Cols, Policy>::Identity(rows());
+        if (!has_nonzero_weight) return SPDMatrix<Scalar, Rows, Policy>::Identity(rows());
         return matrix_exp<Policy>(sum);
     }
    private:

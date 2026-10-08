@@ -64,10 +64,10 @@ int main() {
     }
     // general symmetric exponentials reuse eigenpairs while retaining domain and finite-result checks
     {
-        SymmetricMatrix<double, 6, 6> value;
+        SymmetricMatrix<double, 6> value;
         for (int i = 0; i < 6; ++i)
             for (int j = 0; j <= i; ++j) value(i, j) = i == j ? 1. + .1 * i : .02;
-        CachedSymmetricMatrix<double, 6, 6> cached(value);
+        SymmetricMatrix<double, 6, Cache::Spectral> cached(value);
         const auto setup = Clock::now();
         (void)cached.cache();
         const double preparation = Milliseconds(Clock::now() - setup).count();

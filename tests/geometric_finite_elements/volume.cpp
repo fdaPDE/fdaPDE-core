@@ -6,8 +6,8 @@
 
 namespace {
 using namespace fdapde;
-using Sym = SymmetricMatrix<double, 3, 3>;
-using Point = SPDMatrix<double, 3, 3>;
+using Sym = SymmetricMatrix<double, 3>;
+using Point = SPDMatrix<double, 3>;
 using LE = manifold::LogEuclideanSPDGeometry<double, 3, Usage::InterpolationNodes>;
 using LC = manifold::LogCholeskySPDGeometry<double, 3, Usage::InterpolationNodes>;
 using AI = manifold::AffineInvariantSPDGeometry<double, 3, Usage::BasePointMaps>;
@@ -166,9 +166,7 @@ template <typename Geometry, bool Euclidean = false> struct VolumeProblem {
     /// @brief exposes the cached scalar objective to Armijo backtracking
     double cost(const Eigen::VectorXd& x, Workspace& workspace) { return cost_gradient(x, workspace).first; }
     /// @brief exposes the cached coefficient covector to the descent solver
-    Eigen::VectorXd gradient(const Eigen::VectorXd& x, Workspace& workspace) {
-        return cost_gradient(x, workspace).second;
-    }
+    Eigen::VectorXd gradient(const Eigen::VectorXd& x, Workspace& workspace) { return cost_gradient(x, workspace).second; }
 };
 
 /// @brief checks tetrahedral interpolation, independent objective derivatives and native smoothing descent

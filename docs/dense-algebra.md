@@ -99,3 +99,53 @@ The active tests exercise dense and structured contracts, static rejection
 programs, historical Boolean behavior, and P1/P2 interpolation and assembly.
 Historical cases are retained in `test/` until equivalent active tests have been
 verified; migrated cases carry precise replacement pointers.
+
+## Symmetric and SPD coordinates
+
+Square owners take one template order: `SymmetricMatrix<Scalar, Order, Policy = Cache::None, StorageOrder = RowMajor>`
+and `SPDMatrix<Scalar, Order, Policy = Cache::None, StorageOrder = RowMajor>`.
+Their views also take one order and the same cache policy. `Rows` and `Cols`
+remain equal compile-time properties for generic matrix algorithms.
+Use `Dynamic` for runtime order; a dynamic symmetric owner can be constructed
+and resized with one order. The two-dimension overloads remain for generic
+matrix code and reject unequal dimensions.
+
+`SymmetricMatrix` and `SPDMatrix` accept a native row or column vector (including a
+native vector expression) containing the independent matrix coefficients. The order
+is the row-wise lower triangle: `(s11, s21, s22)` for order two, and
+`(s11, s21, s22, s31, s32, s33)` for order three. Off-diagonal entries are unscaled.
+Dynamic matrix order is inferred from the triangular coordinate count; fixed order
+must agree with that count. The vector is copied into independently owned storage.
+
+```cpp
+const fdapde::Vector<double, 3> coordinates {2., .1, 1.};
+const fdapde::SymmetricMatrix<double, 2> symmetric(coordinates);
+const fdapde::SPDMatrix<double, 2> spd(coordinates);
+```
+
+Both types and their views expose `eigenvalues()`, which returns an independent
+native vector and automatically reuses a spectral cache when available. Use
+`evd()` when eigenvectors are also needed. See the [spectral access and cache
+contract](symmetric-cache.md#spectral-operations-and-batches), including the effect
+of mutable raw `data()` access.
+
+SPD owners, views and SPD expressions also provide
+`log<OutputCachePolicy = Cache::None>()`. It immediately returns an independent
+`SymmetricMatrix<Scalar, Order, OutputCachePolicy>`, using the input cache when
+available. The output policy is separate from the input SPD policy:
+
+```cpp
+auto logarithm = spd.log(); // owns symmetric coefficients without a cache
+auto cached_logarithm = spd.log<fdapde::Cache::Spectral>();
+auto values = cached_logarithm.eigenvalues(); // owns the output eigenvalues
+```
+
+The free function `matrix_log(spd)` remains available. Owning native batches
+provide corresponding eager logarithm and eigenvalue operations with optional
+parallel execution; see [MatrixBatch](matrix-batch.md#owning-spectral-operations).
+
+SPD construction treats the vector as coefficients of `S`, checks finite values and
+numerical positive definiteness, and prepares the selected caches. It does not interpret
+them as logarithms. For logarithmic coordinates, construct a symmetric matrix and call
+`matrix_exp` explicitly. Empty, nontriangular or mismatched native coordinate vectors
+are rejected before coefficient reads or allocation.

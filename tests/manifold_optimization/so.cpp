@@ -78,7 +78,7 @@ TEST(SORotation, InvariantsAndAtomicViewReplacement) {
     q = plane(2, .3);
     // same-shape owner replacement preserves existing value views and their cache bindings
     EXPECT_NEAR(read_only.cache().distance(), std::sqrt(2.) * .3, 1e-12);
-    const auto inverse = q.inverse();
+    const auto inverse = q.inv();
     const auto identity = q * inverse;
     // inverse and composition agree with the analytic identity rotation
     expect_matrix(identity, Cached::Identity(2));

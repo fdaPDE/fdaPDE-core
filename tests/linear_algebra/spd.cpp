@@ -28,10 +28,10 @@ using namespace fdapde;
 
 using fixed_matrix = Matrix<double, 3, 3>;
 using dynamic_matrix = Matrix<double, Dynamic, Dynamic>;
-using fixed_symmetric = SymmetricMatrix<double, 3, 3>;
-using dynamic_symmetric = SymmetricMatrix<double, Dynamic, Dynamic>;
-using fixed_spd = SPDMatrix<double, 3, 3>;
-using dynamic_spd = SPDMatrix<double, Dynamic, Dynamic>;
+using fixed_symmetric = SymmetricMatrix<double, 3>;
+using dynamic_symmetric = SymmetricMatrix<double, Dynamic>;
+using fixed_spd = SPDMatrix<double, 3>;
+using dynamic_spd = SPDMatrix<double, Dynamic>;
 
 template <typename T>
 concept permits_rvalue_derived = requires(T value) { std::move(value).derived(); };
@@ -196,7 +196,7 @@ template <typename SPDType, typename MatrixType> void expect_spectral_oracles(co
     // the computed root independently passes checked SPD construction
     EXPECT_NO_THROW((SPDType(dynamic_matrix(root))));
 
-    const auto inverse_root = matrix_inverse_sqrt(point);
+    const auto inverse_root = matrix_inv_sqrt(point);
     const dynamic_matrix inverse_root_dense(inverse_root);
     const dynamic_matrix dense_dynamic(dense);
     const dynamic_matrix identity(IdentityMatrix<double, Dynamic, Dynamic>(3, 3));
@@ -329,7 +329,7 @@ TEST(linear_algebra, spd_checked_symmetry_tolerance_remains_finite_near_the_scal
     asymmetric(0, 1) = 1.0e307;
 
     // the symmetry tolerance stays finite and rejects an unmatched off-diagonal entry near double limits
-    EXPECT_THROW((SPDMatrix<double, 4, 4>(asymmetric)), std::invalid_argument);
+    EXPECT_THROW((SPDMatrix<double, 4>(asymmetric)), std::invalid_argument);
 }
 
 // diagonal spectra on opposite sides of the numerical positivity threshold are accepted and rejected respectively
@@ -445,7 +445,7 @@ TEST(linear_algebra, spd_frechet_differentials_are_inverse_and_match_finite_diff
 // exponentiating a const packed view returns an owned SPD matrix containing exp(log(2)I)
 TEST(linear_algebra, spd_const_symmetric_views_produce_owning_nonconst_results) {
     const double packed_log_two[] = {std::log(2.0), 0.0, std::log(2.0), 0.0, 0.0, std::log(2.0)};
-    const SymmetricMatrixView<const double, 3, 3> logarithm(packed_log_two);
+    const SymmetricMatrixView<const double, 3> logarithm(packed_log_two);
     const auto point = matrix_exp(logarithm);
 
     // const view input produces owned coefficients with an unqualified scalar type
@@ -470,7 +470,9 @@ TEST(linear_algebra, spd_spectral_operations_reject_invalid_numerics_and_directi
     // the principal SPD root also rejects an indefinite tagged expression
     EXPECT_THROW(matrix_sqrt(unchecked_indefinite), std::domain_error);
     // the inverse SPD root also rejects an indefinite tagged expression
-    EXPECT_THROW(matrix_inverse_sqrt(unchecked_indefinite), std::domain_error);
+    EXPECT_THROW(matrix_inv_sqrt(unchecked_indefinite), std::domain_error);
+    // inversion cannot trust an SPD expression tag when its actual spectrum is indefinite
+    EXPECT_THROW(matrix_inv(unchecked_indefinite), std::domain_error);
 
     fixed_symmetric overflow;
     set_symmetric_zero(overflow);
@@ -492,7 +494,7 @@ TEST(linear_algebra, spd_spectral_operations_reject_invalid_numerics_and_directi
     EXPECT_THROW(matrix_exp(nonfinite), std::invalid_argument);
 
     const fixed_spd point(reference_spd());
-    SymmetricMatrix<double, Dynamic, Dynamic> wrong_direction(2, 2);
+    SymmetricMatrix<double, Dynamic> wrong_direction(2, 2);
     set_symmetric_zero(wrong_direction);
     // the logarithm derivative rejects a direction with a different dimension
     EXPECT_THROW(matrix_log_frechet(point, wrong_direction), std::invalid_argument);
@@ -515,9 +517,9 @@ TEST(linear_algebra, spd_spectral_operations_own_results_from_safe_temporaries) 
 // float SPD storage and spectral results preserve the scalar contract on a diagonal analytic example
 TEST(linear_algebra, spd_float_results_match_diagonal_oracles) {
     const Matrix<float, 2, 2> dense({4.0f, 0.0f, 0.0f, 9.0f});
-    const SPDMatrix<float, 2, 2> point(dense);
+    const SPDMatrix<float, 2> point(dense);
     const auto root = matrix_sqrt(point);
-    const auto inverse_root = matrix_inverse_sqrt(point);
+    const auto inverse_root = matrix_inv_sqrt(point);
     // the typed SPD root preserves float coefficients rather than promoting its public result to double
     static_assert(std::is_same_v<typename decltype(root)::Scalar, float>);
     // the first principal root equals sqrt(4)
@@ -534,16 +536,16 @@ TEST(linear_algebra, spd_float_results_match_diagonal_oracles) {
 
 // fixed and mixed extents keep the same checked Frechet action without dynamic copies
 TEST(linear_algebra, spd_frechet_static_bounds_and_mixed_directions) {
-    SymmetricMatrix<double, 2, 2> chart;
+    SymmetricMatrix<double, 2> chart;
     chart(0, 0) = 0.2;
     chart(1, 0) = 0;
     chart(1, 1) = 0.4;
-    SymmetricMatrix<double, 2, 2> direction;
+    SymmetricMatrix<double, 2> direction;
     direction(0, 0) = 1;
     direction(1, 0) = 0.7;
     direction(1, 1) = -2;
-    SymmetricMatrix<double, Dynamic, Dynamic> dynamic_chart(chart);
-    SymmetricMatrix<double, Dynamic, Dynamic> dynamic_direction(direction);
+    SymmetricMatrix<double, Dynamic> dynamic_chart(chart);
+    SymmetricMatrix<double, Dynamic> dynamic_direction(direction);
     const auto fixed = matrix_exp_frechet(chart, direction);
     const auto mixed_base = matrix_exp_frechet(dynamic_chart, direction);
     const auto mixed_direction = matrix_exp_frechet(chart, dynamic_direction);
@@ -558,7 +560,7 @@ TEST(linear_algebra, spd_frechet_static_bounds_and_mixed_directions) {
     EXPECT_NEAR(mixed_base(1, 0), off_diagonal, 1e-13);
     // a fixed base and dynamic direction retain the same off-diagonal value
     EXPECT_NEAR(mixed_direction(1, 0), off_diagonal, 1e-13);
-    SymmetricMatrix<double, Dynamic, Dynamic> wrong(3, 3);
+    SymmetricMatrix<double, Dynamic> wrong(3, 3);
     for (int i = 0; i < 3; ++i) {
         for (int j = 0; j <= i; ++j) wrong(i, j) = 0;
     }
@@ -628,4 +630,90 @@ TEST(linear_algebra, spd_exp_second_frechet_input_validation) {
     invalid(1, 0) = std::numeric_limits<double>::quiet_NaN();
     // nonfinite entries are rejected before rotation or divided-difference evaluation
     EXPECT_THROW(matrix_exp_second_frechet(point, invalid, direction), std::invalid_argument);
+}
+
+// packed SPD construction uses matrix coefficients and retains the normal checked cache pipeline
+TEST(SPDCoordinates, NativePackedVectorsAndCaches) {
+    using SPD = SPDMatrix<double, 2>;
+    const Vector<double, 3> coordinates {4., 1., 3.};
+    const SPD point(coordinates);
+    const Matrix<double, 2, 2> expected({4., 1., 1., 3.});
+    // construction copies S directly rather than exponentiating the supplied coordinates
+    EXPECT_DOUBLE_EQ((point - expected).norm(), 0.);
+    const SPDMatrix<double, Dynamic> dynamic(coordinates);
+    // triangular count inference determines the dynamic SPD order
+    EXPECT_EQ(dynamic.rows(), 2);
+    // inferred SPD construction preserves all supplied coefficients and their mirrored entry
+    EXPECT_DOUBLE_EQ((dynamic - expected).norm(), 0.);
+    const SPDMatrix<double, 2, Cache::Log> cached(coordinates);
+    const SymmetricMatrix<double, 2> cached_log(matrix_log(cached)), reference_log(matrix_log(point));
+    // the selected log cache agrees with the existing checked square-matrix construction path
+    EXPECT_LT((cached_log - reference_log).norm(), 1e-13);
+    const Vector<double, 6> order_three({4., 1., 3., .5, .25, 2.});
+    const SPDMatrix<double, 3> third(order_three);
+    // order-three coefficients follow lower-triangle row order rather than diagonal-first ordering
+    EXPECT_DOUBLE_EQ(third(0, 2), .5);
+    // the last coordinate represents the final diagonal entry
+    EXPECT_DOUBLE_EQ(third(2, 2), 2.);
+    const Matrix<double, 1, 3> row(coordinates.transpose());
+    const SPD from_row(row);
+    // native row-vector construction gives the same checked SPD as its column-vector counterpart
+    EXPECT_DOUBLE_EQ((from_row - point).norm(), 0.);
+}
+
+// packed inputs obey the same finite and positive-definite contracts as square SPD inputs
+TEST(SPDCoordinates, RejectsInvalidCoordinates) {
+    using SPD = SPDMatrix<double, 2>;
+    using DynamicSPD = SPDMatrix<double, Dynamic>;
+    const Vector<double, 3> indefinite {1., 2., 1.};
+    // a negative eigenvalue is rejected by the existing numerical SPD certificate
+    EXPECT_THROW((SPD(indefinite)), std::domain_error);
+    const Vector<double, 3> nonfinite {1., std::numeric_limits<double>::quiet_NaN(), 1.};
+    // nonfinite coordinates are rejected before publishing a checked owner or cache
+    EXPECT_THROW((SPD(nonfinite)), std::invalid_argument);
+    const Vector<double, Dynamic> empty;
+    // no positive SPD order can be inferred from an empty coordinate vector
+    EXPECT_THROW((DynamicSPD(empty)), std::invalid_argument);
+    const Vector<double, 4> wrong({1., 2., 3., 4.});
+    // a nontriangular count is rejected before symmetric storage is allocated
+    EXPECT_THROW((DynamicSPD(wrong)), std::invalid_argument);
+    const Vector<double, 6> wrong_order({4., 1., 3., .5, .25, 2.});
+    // fixed SPD order two rejects a valid triangle belonging to order three
+    EXPECT_THROW((SPD(wrong_order)), std::invalid_argument);
+    const SPDMatrix<double, 1> scalar(Vector<double, 1> {2.});
+    // the one-coordinate boundary case constructs the same positive scalar matrix
+    EXPECT_DOUBLE_EQ(scalar(0, 0), 2.);
+}
+
+namespace {
+/// @brief advertises an oversized packed native vector without allocating its coefficient storage
+struct oversized_spd_coordinates : MatrixExpr<oversized_spd_coordinates> {
+    using Scalar = double;
+    [[maybe_unused]] static constexpr int Rows = Dynamic, Cols = 1, StorageOrder = RowMajor, NestAsRef = 0,
+                                          ReadOnly = 1;
+    bool& accessed;
+    /// @brief retains the coefficient-access sentinel for the validation-order oracle
+    explicit oversized_spd_coordinates(bool& value) : accessed(value) { }
+    /// @brief supplies the triangular count for the first unsupported dense spectral order
+    int size() const { return static_cast<int>(std::int64_t(46341) * 46342 / 2); }
+    /// @brief records any coefficient read attempted before size validation
+    double operator[](int) const {
+        accessed = true;
+        return 0.;
+    }
+};
+}   // namespace
+
+// packed SPD vectors validate dense workspace limits before allocating packed coefficients
+TEST(SPDCoordinates, ChecksWorkspaceBeforeCoefficientAccess) {
+    bool accessed = false;
+    const oversized_spd_coordinates coordinates(accessed);
+    // a valid packed triangle can still exceed the supported dense spectral workspace
+    EXPECT_THROW((SPDMatrix<double, Dynamic>(coordinates)), std::length_error);
+    // the oversized expression is rejected before any coefficient is evaluated
+    EXPECT_FALSE(accessed);
+    const SPDMatrix<double, 1> scalar(Vector<double, 1> {2.});
+    const SPDMatrix<double, 1, Cache::Log> cached(scalar);
+    // policy conversion of an existing scalar SPD continues to use the verified matrix path
+    EXPECT_DOUBLE_EQ(matrix_log(cached)(0, 0), std::log(2.));
 }

@@ -77,7 +77,7 @@ template <typename Interpolant> class p1_interpolant_expr : public GeometryExpr<
         if constexpr (RotationLike<typename Prepared::Point>)
             return RotationMatrix<Scalar, Rows, Cols, Policy>(interpolant_.evaluate(weights_));
         else
-            return SPDMatrix<Scalar, Rows, Cols, Policy>(interpolant_.evaluate(weights_));
+            return SPDMatrix<Scalar, Rows, Policy>(interpolant_.evaluate(weights_));
     }
     /// @brief materializes the native point type for ordinary dense destinations
     auto eval_matrix() const { return interpolant_.evaluate(weights_); }
@@ -467,103 +467,104 @@ auto make_p1_interpolant(
 
 namespace fdapde::manifold {
 /// @brief delegates native C-LE interpolation to the shared simplex or mesh preparation path
-template <typename Scalar_, int Order_, Usage Uses_>
+template <typename Scalar_, int Order_, Usage Uses_, typename Point_>
 template <typename Element, typename Nodes>
     requires gfe::P1InterpolationBinding<Element, Nodes>
-auto CheegerLogEuclideanSPDGeometry<Scalar_, Order_, Uses_>::interpolant(Element&& element, Nodes&& nodes) const {
+auto CheegerLogEuclideanSPDGeometry<Scalar_, Order_, Uses_, Point_>::interpolant(
+  Element&& element, Nodes&& nodes) const {
     return interpolant(
       std::forward<Element>(element), std::forward<Nodes>(nodes), gfe::P1GeodesicLinearizationOptions {});
 }
 /// @brief delegates native C-LE interpolation to the shared simplex or mesh preparation path
-template <typename Scalar_, int Order_, Usage Uses_>
+template <typename Scalar_, int Order_, Usage Uses_, typename Point_>
 template <typename Element, typename Nodes>
     requires gfe::P1InterpolationBinding<Element, Nodes>
-auto CheegerLogEuclideanSPDGeometry<Scalar_, Order_, Uses_>::interpolant(
+auto CheegerLogEuclideanSPDGeometry<Scalar_, Order_, Uses_, Point_>::interpolant(
   Element&& element, Nodes&& nodes, const gfe::P1GeodesicLinearizationOptions& options) const {
     return gfe::internals::make_p1_interpolant(
       *this, std::forward<Element>(element), std::forward<Nodes>(nodes), options);
 }
 /// @brief delegates native C-LE interpolation to the shared simplex or mesh preparation path
-template <typename Scalar_, Usage Uses_>
+template <typename Scalar_, Usage Uses_, typename Point_>
 template <typename Element, typename Nodes>
     requires gfe::P1InterpolationBinding<Element, Nodes>
-auto CheegerLogEuclideanSPDGeometry<Scalar_, 2, Uses_>::interpolant(Element&& element, Nodes&& nodes) const {
+auto CheegerLogEuclideanSPDGeometry<Scalar_, 2, Uses_, Point_>::interpolant(Element&& element, Nodes&& nodes) const {
     return interpolant(
       std::forward<Element>(element), std::forward<Nodes>(nodes), gfe::P1GeodesicLinearizationOptions {});
 }
 /// @brief delegates native C-LE interpolation to the shared simplex or mesh preparation path
-template <typename Scalar_, Usage Uses_>
+template <typename Scalar_, Usage Uses_, typename Point_>
 template <typename Element, typename Nodes>
     requires gfe::P1InterpolationBinding<Element, Nodes>
-auto CheegerLogEuclideanSPDGeometry<Scalar_, 2, Uses_>::interpolant(
+auto CheegerLogEuclideanSPDGeometry<Scalar_, 2, Uses_, Point_>::interpolant(
   Element&& element, Nodes&& nodes, const gfe::P1GeodesicLinearizationOptions& options) const {
     return gfe::internals::make_p1_interpolant(
       *this, std::forward<Element>(element), std::forward<Nodes>(nodes), options);
 }
 /// @brief delegates native SPD interpolation to the shared simplex or mesh preparation path
-template <typename Scalar_, int Order_, Usage Uses_>
+template <typename Scalar_, int Order_, Usage Uses_, typename Point_>
 template <typename Element, typename Nodes>
     requires gfe::P1InterpolationBinding<Element, Nodes>
-auto LogEuclideanSPDGeometry<Scalar_, Order_, Uses_>::interpolant(Element&& element, Nodes&& nodes) const {
+auto LogEuclideanSPDGeometry<Scalar_, Order_, Uses_, Point_>::interpolant(Element&& element, Nodes&& nodes) const {
     return interpolant(
       std::forward<Element>(element), std::forward<Nodes>(nodes), gfe::P1GeodesicLinearizationOptions {});
 }
 /// @brief delegates native SPD interpolation to the shared simplex or mesh preparation path
-template <typename Scalar_, int Order_, Usage Uses_>
+template <typename Scalar_, int Order_, Usage Uses_, typename Point_>
 template <typename Element, typename Nodes>
     requires gfe::P1InterpolationBinding<Element, Nodes>
-auto LogEuclideanSPDGeometry<Scalar_, Order_, Uses_>::interpolant(
+auto LogEuclideanSPDGeometry<Scalar_, Order_, Uses_, Point_>::interpolant(
   Element&& element, Nodes&& nodes, const gfe::P1GeodesicLinearizationOptions& options) const {
     return gfe::internals::make_p1_interpolant(
       *this, std::forward<Element>(element), std::forward<Nodes>(nodes), options);
 }
 /// @brief delegates native SPD interpolation to the shared simplex or mesh preparation path
-template <typename Scalar_, int Order_, Usage Uses_>
+template <typename Scalar_, int Order_, Usage Uses_, typename Point_>
 template <typename Element, typename Nodes>
     requires gfe::P1InterpolationBinding<Element, Nodes>
-auto LogCholeskySPDGeometry<Scalar_, Order_, Uses_>::interpolant(Element&& element, Nodes&& nodes) const {
+auto LogCholeskySPDGeometry<Scalar_, Order_, Uses_, Point_>::interpolant(Element&& element, Nodes&& nodes) const {
     return interpolant(
       std::forward<Element>(element), std::forward<Nodes>(nodes), gfe::P1GeodesicLinearizationOptions {});
 }
 /// @brief delegates native SPD interpolation to the shared simplex or mesh preparation path
-template <typename Scalar_, int Order_, Usage Uses_>
+template <typename Scalar_, int Order_, Usage Uses_, typename Point_>
 template <typename Element, typename Nodes>
     requires gfe::P1InterpolationBinding<Element, Nodes>
-auto LogCholeskySPDGeometry<Scalar_, Order_, Uses_>::interpolant(
+auto LogCholeskySPDGeometry<Scalar_, Order_, Uses_, Point_>::interpolant(
   Element&& element, Nodes&& nodes, const gfe::P1GeodesicLinearizationOptions& options) const {
     return gfe::internals::make_p1_interpolant(
       *this, std::forward<Element>(element), std::forward<Nodes>(nodes), options);
 }
 /// @brief delegates native SPD interpolation to the shared simplex or mesh preparation path
-template <typename Scalar_, int Order_, Usage Uses_>
+template <typename Scalar_, int Order_, Usage Uses_, typename Point_>
 template <typename Element, typename Nodes>
     requires gfe::P1InterpolationBinding<Element, Nodes>
-auto AffineInvariantSPDGeometry<Scalar_, Order_, Uses_>::interpolant(Element&& element, Nodes&& nodes) const {
+auto AffineInvariantSPDGeometry<Scalar_, Order_, Uses_, Point_>::interpolant(Element&& element, Nodes&& nodes) const {
     return interpolant(
       std::forward<Element>(element), std::forward<Nodes>(nodes), gfe::P1GeodesicLinearizationOptions {});
 }
 /// @brief delegates native SPD interpolation to the shared simplex or mesh preparation path
-template <typename Scalar_, int Order_, Usage Uses_>
+template <typename Scalar_, int Order_, Usage Uses_, typename Point_>
 template <typename Element, typename Nodes>
     requires gfe::P1InterpolationBinding<Element, Nodes>
-auto AffineInvariantSPDGeometry<Scalar_, Order_, Uses_>::interpolant(
+auto AffineInvariantSPDGeometry<Scalar_, Order_, Uses_, Point_>::interpolant(
   Element&& element, Nodes&& nodes, const gfe::P1GeodesicLinearizationOptions& options) const {
     return gfe::internals::make_p1_interpolant(
       *this, std::forward<Element>(element), std::forward<Nodes>(nodes), options);
 }
 /// @brief delegates BW interpolation to the shared simplex or mesh preparation path
-template <typename Scalar, int Order, Usage Uses>
+template <typename Scalar, int Order, Usage Uses, typename Point_>
 template <typename Element, typename Nodes>
     requires gfe::P1InterpolationBinding<Element, Nodes>
-auto BuresWassersteinSPDGeometry<Scalar, Order, Uses>::interpolant(Element&& element, Nodes&& nodes) const {
+auto BuresWassersteinSPDGeometry<Scalar, Order, Uses, Point_>::interpolant(Element&& element, Nodes&& nodes) const {
     return interpolant(
       std::forward<Element>(element), std::forward<Nodes>(nodes), gfe::P1GeodesicLinearizationOptions {});
 }
 /// @brief delegates BW interpolation with explicit mean and differential tolerances
-template <typename Scalar, int Order, Usage Uses>
+template <typename Scalar, int Order, Usage Uses, typename Point_>
 template <typename Element, typename Nodes>
     requires gfe::P1InterpolationBinding<Element, Nodes>
-auto BuresWassersteinSPDGeometry<Scalar, Order, Uses>::interpolant(
+auto BuresWassersteinSPDGeometry<Scalar, Order, Uses, Point_>::interpolant(
   Element&& element, Nodes&& nodes, const gfe::P1GeodesicLinearizationOptions& options) const {
     return gfe::internals::make_p1_interpolant(
       *this, std::forward<Element>(element), std::forward<Nodes>(nodes), options);

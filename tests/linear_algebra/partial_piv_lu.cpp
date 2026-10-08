@@ -172,14 +172,14 @@ template <int StorageOrder> void check_partial_piv_lu_scale_and_determinant() {
       {0.0, 3.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 4.0, 0.0, 0.0, 0.0, 0.0, 5.0});
     // the signed permutation and diagonal factors produce determinant minus one hundred twenty
     EXPECT_DOUBLE_EQ(matrix.determinant(), -120.0);
-    const Matrix<double, 4, 4, StorageOrder> inverse(matrix.inverse());
+    const Matrix<double, 4, 4, StorageOrder> inverse(matrix.inv());
     Matrix<double, 4, 4, StorageOrder> identity;
     identity.set_zero();
     for (int i = 0; i < 4; ++i) identity(i, i) = 1.0;
     expect_matrix_near(Matrix<double, 4, 4, StorageOrder>(matrix * inverse), identity);
 
     const Matrix<double, 4, 4, StorageOrder> shifted(matrix + identity);
-    const Matrix<double, 4, 4, StorageOrder> expression_inverse((matrix + identity).inverse());
+    const Matrix<double, 4, 4, StorageOrder> expression_inverse((matrix + identity).inv());
     expect_matrix_near(Matrix<double, 4, 4, StorageOrder>(shifted * expression_inverse), identity);
     // determinant evaluation of a lazy sum agrees with its materialized matrix
     EXPECT_DOUBLE_EQ((matrix + identity).determinant(), shifted.determinant());
@@ -187,7 +187,7 @@ template <int StorageOrder> void check_partial_piv_lu_scale_and_determinant() {
     Matrix<double, Dynamic, Dynamic, StorageOrder> dynamic(matrix);
     // dynamic storage produces the same determinant as fixed storage
     EXPECT_DOUBLE_EQ(dynamic.determinant(), -120.0);
-    const Matrix<double, Dynamic, Dynamic, StorageOrder> dynamic_inverse(dynamic.inverse());
+    const Matrix<double, Dynamic, Dynamic, StorageOrder> dynamic_inverse(dynamic.inv());
     expect_matrix_near(Matrix<double, Dynamic, Dynamic, StorageOrder>(dynamic * dynamic_inverse), identity);
 
     const Matrix<double, 4, 4, StorageOrder> mixed_exponents(
@@ -223,7 +223,7 @@ template <int StorageOrder> void check_partial_piv_lu_scale_and_determinant() {
     Matrix<double, Dynamic, Dynamic, StorageOrder> singular(4, 4);
     singular.set_zero();
     // a singular matrix cannot produce an inverse
-    EXPECT_THROW(static_cast<void>(singular.inverse()), std::domain_error);
+    EXPECT_THROW(static_cast<void>(singular.inv()), std::domain_error);
 }
 
 // checks pivoted LU solves, singular-state reporting and determinants across extreme coefficient scales

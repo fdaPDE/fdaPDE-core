@@ -42,7 +42,10 @@ constexpr unsigned bures_wasserstein_cache_flags(Usage uses) {
 /// @brief defines the Bures-Wasserstein metric with exact first derivatives on native SPD values
 /// @details tangents use ambient symmetric coordinates; the metric is one half the Frobenius pairing with the
 /// solution of A X + X A = U, and exponential steps stay on the positive-definite horizontal lift
-template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class BuresWassersteinSPDGeometry {
+template <
+  typename Scalar_, int Order_, Usage Uses_ = Usage::None,
+  typename Point_ = fdapde::SPDMatrix<Scalar_, Order_, Cache::Policy<internals::bures_wasserstein_cache_flags(Uses_)>>>
+class BuresWassersteinSPDGeometry {
     fdapde_static_assert((static_cast<unsigned>(Uses_) & ~31u) == 0, SPD_GEOMETRY_USAGE_CONTAINS_UNKNOWN_FLAGS);
     fdapde_static_assert(
       std::is_floating_point_v<Scalar_> && !std::is_const_v<Scalar_> && !std::is_volatile_v<Scalar_>,
@@ -53,10 +56,13 @@ template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class BuresWa
       SPD_GEOMETRY_DENSE_WORKSPACE_SIZE_EXCEEDS_SUPPORTED_RANGE);
    public:
     using Scalar = Scalar_;
-    using CachePolicy = Cache::Policy<internals::bures_wasserstein_cache_flags(Uses_)>;
-    using Point = fdapde::SPDMatrix<Scalar, Order_, Order_, CachePolicy>;
-    using Tangent = fdapde::SymmetricMatrix<Scalar, Order_, Order_>;
+    using Point = Point_;
+    using CachePolicy = typename Point::CachePolicy;
+    using Tangent = fdapde::SymmetricMatrix<Scalar, Order_>;
     using MeanCachePolicy = Cache::Union<Cache::Spectral, Cache::Sqrt, Cache::InverseSqrt>;
+    fdapde_static_assert(
+      (std::same_as<Point, fdapde::SPDMatrix<Scalar, Order_, CachePolicy, Point::StorageOrder>>),
+      BURES_WASSERSTEIN_GEOMETRY_REQUIRES_A_NATIVE_SPD_OWNER_WITH_MATCHING_SCALAR_AND_SHAPE);
 
     /// @brief owns the base and transport residual of a deferred BW geodesic independently of its endpoints
     class Curve {
@@ -65,8 +71,7 @@ template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class BuresWa
         static constexpr int Rows = Order_;
 
         /// @brief snapshots a verified base and its prepared symmetric transport residual
-        Curve(SPDMatrix<Scalar, Rows, Rows> from, Tangent residual) :
-            from_(std::move(from)), residual_(std::move(residual)) {
+        Curve(SPDMatrix<Scalar, Rows> from, Tangent residual) : from_(std::move(from)), residual_(std::move(residual)) {
             internals::check_spd_geometry_shape(residual_, from_.rows());
         }
         /// @brief returns the matrix order of the stored base
@@ -89,21 +94,21 @@ template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class BuresWa
                 for (int j = 0; j <= i; ++j)
                     lift(i, j) = internals::checked_geometry_result(
                       coefficient * static_cast<Scalar>(lift(i, j)) + (i == j ? Scalar(1) : Scalar(0)));
-            const SPDMatrix<Scalar, Rows, Rows> positive_lift(lift);
+            const SPDMatrix<Scalar, Rows> positive_lift(lift);
             return internals::symmetric_congruence<Scalar, Rows>(positive_lift, from_, rows());
         }
        private:
-        SPDMatrix<Scalar, Rows, Rows> from_;
+        SPDMatrix<Scalar, Rows> from_;
         Tangent residual_;
     };
 
     /// @brief retains base factors and the relative spectrum shared by transport and its implicit derivatives
     struct RelativeFrame {
-        SPDMatrix<Scalar, Order_, Order_, Cache::Spectral> from;
-        SPDMatrix<Scalar, Order_, Order_> to;
+        SPDMatrix<Scalar, Order_, Cache::Spectral> from;
+        SPDMatrix<Scalar, Order_> to;
         Tangent from_sqrt;
         Tangent from_inverse_sqrt;
-        SPDMatrix<Scalar, Order_, Order_, Cache::Union<Cache::Spectral, Cache::Sqrt>> relative;
+        SPDMatrix<Scalar, Order_, Cache::Union<Cache::Spectral, Cache::Sqrt>> relative;
         Tangent transport;
         Scalar base_sqrt_scale;
         Scalar relative_scale;
@@ -182,7 +187,7 @@ template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class BuresWa
             for (int j = 0; j <= i; ++j)
                 lift(i, j) = internals::checked_geometry_result(
                   coefficient * static_cast<Scalar>(lift(i, j)) + (i == j ? Scalar(1) : Scalar(0)));
-        const SPDMatrix<Scalar, Order_, Order_> positive_lift(lift);
+        const SPDMatrix<Scalar, Order_> positive_lift(lift);
         return Point(internals::symmetric_congruence<Scalar, Order_>(positive_lift, point, order_));
     }
     /// @brief uses the exact BW exponential as a local retraction
@@ -194,12 +199,12 @@ template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class BuresWa
     template <SPDLike From, SPDLike To> RelativeFrame relative_frame(const From& from, const To& to) const {
         check_point_(from);
         check_point_(to);
-        const SPDMatrix<Scalar, Order_, Order_, MeanCachePolicy> base(from);
+        const SPDMatrix<Scalar, Order_, MeanCachePolicy> base(from);
         const Scalar base_sqrt_scale = std::sqrt(point_scale_(from));
         const Scalar target_sqrt_scale = std::sqrt(point_scale_(to));
         const Scalar relative_scale = base_sqrt_scale * target_sqrt_scale;
         Tangent root(internals::spd_sqrt_factor(base));
-        Tangent inverse_root(internals::spd_inverse_sqrt_factor(base));
+        Tangent inverse_root(internals::spd_inv_sqrt_factor(base));
         Tangent normalized_target(to);
         for (int i = 0; i < order_; ++i)
             for (int j = 0; j <= i; ++j) {
@@ -237,7 +242,16 @@ template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class BuresWa
     /// @brief snapshots the shortest BW geodesic as a native deferred curve
     template <SPDLike From, SPDLike To> Curve geodesic(const From& from, const To& to) const {
         const auto frame = relative_frame(from, to);
-        return Curve(SPDMatrix<Scalar, Order_, Order_>(frame.from), transport_residual_(frame));
+        return Curve(SPDMatrix<Scalar, Order_>(frame.from), transport_residual_(frame));
+    }
+    /// @brief returns uniformly spaced geodesic samples including both endpoints with the selected output cache policy
+    /// @details defaults to the geometry point policy; prepares one curve and requires count >= 2
+    /// sample i uses t = i / (count - 1); execution defaults to sequential and parallel calls join before returning
+    template <
+      typename OutputPolicy = CachePolicy, SPDLike From, SPDLike To,
+      fdapde::internals::BatchExecutionPolicy ExecutionPolicy = execution_seq_t>
+    auto geodesic(const From& from, const To& to, int count, ExecutionPolicy policy = {}) const {
+        return internals::sample_spd_geodesic<OutputPolicy>(*this, from, to, count, policy);
     }
     /// @brief returns the BW distance between two verified endpoints
     template <SPDLike From, SPDLike To> double distance(const From& from, const To& to) const {
@@ -384,14 +398,29 @@ template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class BuresWa
     int order_ = Order_ == fdapde::Dynamic ? 0 : Order_;
 };
 
+namespace internals {
+
+/// @brief selects the Bures-Wasserstein metric while preserving the exact native SPD owner
+template <typename Point> struct bures_wasserstein_geometry_type {
+    using type = BuresWassersteinSPDGeometry<typename Point::Scalar, Point::Rows, Usage::None, Point>;
+};
+
+}   // namespace internals
+
+/// @brief supplies the Bures-Wasserstein metric for a native SPD owner with its cache policy
+template <typename Point>
+using BuresWassersteinGeometry = typename internals::bures_wasserstein_geometry_type<Point>::type;
+
 /// @brief computes a BW barycenter with explicit diagnostics and retained implicit-derivative frames
-template <typename Scalar, int Order, Usage Uses, typename Samples>
-WeightedKarcherMeanResult<typename BuresWassersteinSPDGeometry<Scalar, Order, Uses>::Point> weighted_karcher_mean(
-  const BuresWassersteinSPDGeometry<Scalar, Order, Uses>& geometry, const Samples& samples,
-  std::span<const double> weights, const typename BuresWassersteinSPDGeometry<Scalar, Order, Uses>::Point& initial,
+template <typename Scalar, int Order, Usage Uses, typename Samples, typename Point_>
+WeightedKarcherMeanResult<typename BuresWassersteinSPDGeometry<Scalar, Order, Uses, Point_>::Point>
+weighted_karcher_mean(
+  const BuresWassersteinSPDGeometry<Scalar, Order, Uses, Point_>& geometry, const Samples& samples,
+  std::span<const double> weights,
+  const typename BuresWassersteinSPDGeometry<Scalar, Order, Uses, Point_>::Point& initial,
   const WeightedKarcherMeanOptions& options = {},
-  internals::KarcherWorkspace<BuresWassersteinSPDGeometry<Scalar, Order, Uses>>* retained = nullptr) {
-    using Geometry = BuresWassersteinSPDGeometry<Scalar, Order, Uses>;
+  internals::KarcherWorkspace<BuresWassersteinSPDGeometry<Scalar, Order, Uses, Point_>>* retained = nullptr) {
+    using Geometry = BuresWassersteinSPDGeometry<Scalar, Order, Uses, Point_>;
     fdapde_strong_assert(
       options.solver.line_search.initial_step <= 1, std::invalid_argument,
       "BW barycenter initial step must not exceed one to preserve the positive horizontal lift");
@@ -404,12 +433,13 @@ WeightedKarcherMeanResult<typename BuresWassersteinSPDGeometry<Scalar, Order, Us
 }
 
 /// @brief starts BW barycenter descent at the deterministic weighted arithmetic SPD mean
-template <typename Scalar, int Order, Usage Uses, typename Samples>
-WeightedKarcherMeanResult<typename BuresWassersteinSPDGeometry<Scalar, Order, Uses>::Point> weighted_karcher_mean(
-  const BuresWassersteinSPDGeometry<Scalar, Order, Uses>& geometry, const Samples& samples,
+template <typename Scalar, int Order, Usage Uses, typename Samples, typename Point_>
+WeightedKarcherMeanResult<typename BuresWassersteinSPDGeometry<Scalar, Order, Uses, Point_>::Point>
+weighted_karcher_mean(
+  const BuresWassersteinSPDGeometry<Scalar, Order, Uses, Point_>& geometry, const Samples& samples,
   std::span<const double> weights, const WeightedKarcherMeanOptions& options = {},
-  internals::KarcherWorkspace<BuresWassersteinSPDGeometry<Scalar, Order, Uses>>* retained = nullptr) {
-    using Geometry = BuresWassersteinSPDGeometry<Scalar, Order, Uses>;
+  internals::KarcherWorkspace<BuresWassersteinSPDGeometry<Scalar, Order, Uses, Point_>>* retained = nullptr) {
+    using Geometry = BuresWassersteinSPDGeometry<Scalar, Order, Uses, Point_>;
     fdapde_strong_assert(
       samples.size() != 0 && samples.size() == weights.size(), std::invalid_argument,
       "BW barycenter requires matching nonempty sample and weight counts");

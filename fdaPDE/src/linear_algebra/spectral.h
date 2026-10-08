@@ -73,7 +73,7 @@ auto apply_spectral_function(const MatrixExpr<XprType_>& matrix, UnaryOp_&& oper
         auto dense = spectral_matrix(matrix);
         const int dimension = dense.rows();
         const auto decomposition = [&] {
-            using Symmetric = SymmetricMatrix<double, Rows, Cols>;
+            using Symmetric = SymmetricMatrix<double, Rows>;
             if constexpr (is_spectral_cache_source<XprType>::value)
                 return EVD<Symmetric>(matrix.derived());
             else

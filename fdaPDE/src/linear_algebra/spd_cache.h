@@ -20,27 +20,10 @@
 #include <memory>
 #include <vector>
 
+#include "cache_policy.h"
 #include "header_check.h"
 
 namespace fdapde {
-namespace Cache {
-
-/// @brief selects the algebraic quantities retained by an SPD value at compile time
-template <unsigned Flags_> struct Policy {
-    fdapde_static_assert((Flags_ & ~127u) == 0, SPD_CACHE_POLICY_CONTAINS_UNKNOWN_FLAGS);
-    static constexpr unsigned Flags = Flags_;
-};
-using None = Policy<0>;
-using Spectral = Policy<1>;
-using Log = Policy<2>;
-using Sqrt = Policy<4>;
-using InverseSqrt = Policy<8>;
-using LogDividedDifferences = Policy<16>;
-using Cholesky = Policy<32>;
-using LogCholesky = Policy<64>;
-template <typename... Policies> using Union = Policy<(Policies::Flags | ... | 0u)>;
-
-}   // namespace Cache
 
 /// @brief identifies reusable per-point work requested by a geometry
 enum class Usage : unsigned {
@@ -60,9 +43,6 @@ namespace internals {
 
 /// @brief evaluates the stable logarithmic divided difference
 template <typename Scalar> Scalar log_divided_difference(Scalar x, Scalar y);
-
-/// @brief supplies storage-free state for a disabled cache
-template <int Tag = 0> struct empty_spd_cache { };
 
 template <typename Policy, typename Quantity>
 inline constexpr bool spd_cache_has_v = (Policy::Flags & Quantity::Flags) == Quantity::Flags;
@@ -109,7 +89,7 @@ template <typename Scalar_, int Order_, typename Policy_> class spd_cache_slot {
         static_assert(
           Quantity::Flags == 2 || Quantity::Flags == 4 || Quantity::Flags == 8 || Quantity::Flags == 64,
           "cache matrix access requires log, sqrt, inverse sqrt or log-Cholesky");
-        return SymmetricMatrixView<const Scalar, Rows, Cols>(data_ + offset_<Quantity>(), order_, order_);
+        return SymmetricMatrixView<const Scalar, Rows>(data_ + offset_<Quantity>(), order_, order_);
     }
     /// @brief borrows the logarithmic divided differences in the cache's original spectral ordering
     auto log_divided_differences() const

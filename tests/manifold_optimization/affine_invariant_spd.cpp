@@ -34,9 +34,9 @@ static_assert(fdapde::manifold::VectorTransportGeometry<FixedGeometry>);
 // the dynamic geometry exposes the same vector-transport contract
 static_assert(fdapde::manifold::VectorTransportGeometry<DynamicGeometry>);
 // points use the native SPD owner with the geometry's fixed order
-static_assert(std::is_same_v<FixedGeometry::Point, native::SPDMatrix<double, 3, 3>>);
+static_assert(std::is_same_v<FixedGeometry::Point, native::SPDMatrix<double, 3>>);
 // tangents use native symmetric storage rather than logarithmic-coordinate vectors
-static_assert(std::is_same_v<FixedGeometry::Tangent, native::SymmetricMatrix<double, 3, 3>>);
+static_assert(std::is_same_v<FixedGeometry::Tangent, native::SymmetricMatrix<double, 3>>);
 // the fixed geometry obtains its order from the template arguments
 static_assert(std::is_default_constructible_v<FixedGeometry>);
 // a runtime order cannot override a fixed geometry's template order
@@ -131,8 +131,8 @@ void expect_matrix_relative_near(const Lhs& lhs, const Rhs& rhs, double toleranc
 
 // computes a congruence oracle with explicit four-index sums independent of the geometry helpers
 template <typename Middle>
-native::SymmetricMatrix<double, 3, 3> congruence(const native::Matrix<double, 3, 3>& outer, const Middle& middle) {
-    native::SymmetricMatrix<double, 3, 3> result;
+native::SymmetricMatrix<double, 3> congruence(const native::Matrix<double, 3, 3>& outer, const Middle& middle) {
+    native::SymmetricMatrix<double, 3> result;
     for (int i = 0; i < 3; ++i) {
         for (int j = 0; j <= i; ++j) {
             double value = 0;

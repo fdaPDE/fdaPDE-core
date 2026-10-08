@@ -7,7 +7,7 @@ finite coefficient checks, the existing orthogonality tolerance
 `64 * order * epsilon`, and a positive determinant check. Reflections are rejected.
 There is no public unchecked rotation constructor. Coefficients are read-only;
 owner and view replacement prepare a complete candidate before publishing it.
-`inverse()` returns the checked transpose; composition returns a checked rotation.
+`inv()` returns the checked transpose; composition returns a checked rotation.
 
 ```cpp
 using Geometry = fdapde::manifold::SOGeometry<double, 3>;

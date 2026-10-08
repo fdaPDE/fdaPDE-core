@@ -39,7 +39,7 @@ template <typename MatrixType>
 concept exposes_owning_rvalue_derived = requires(MatrixType& matrix) { std::move(matrix).derived(); };
 
 template <typename MatrixType>
-concept permits_owning_rvalue_inverse = requires(MatrixType& matrix) { std::move(matrix).inverse(); };
+concept permits_owning_rvalue_inverse = requires(MatrixType& matrix) { std::move(matrix).inv(); };
 
 template <typename MatrixType>
 concept permits_owning_rvalue_assignment = requires(MatrixType& lhs, MatrixType& rhs) { std::move(lhs) = rhs; };
@@ -116,7 +116,8 @@ template <int StorageOrder> void check_orthogonal_contracts() {
     // the product of orthogonal matrices retains the orthogonal expression tag
     static_assert(is_orthogonal_matrix_v<decltype(squared)>);
     expect_matrix_near(squared, dense_type({-1.0, 0.0, 0.0, -1.0}));
-    expect_matrix_near(rotation.inverse(), dense_type({0.0, 1.0, -1.0, 0.0}));
+    // inversion transposes the known quarter-turn coefficients without a factorization
+    expect_matrix_near(rotation.inv(), dense_type({0.0, 1.0, -1.0, 0.0}));
 
     const Vector<double, 2> rhs({1.0, 0.0});
     expect_matrix_near(rotation.solve(rhs), Vector<double, 2>({0.0, -1.0}));

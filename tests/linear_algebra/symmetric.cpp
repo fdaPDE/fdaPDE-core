@@ -47,8 +47,8 @@ template <typename MatrixType>
 concept permits_owning_rvalue_copy_assignment = requires(MatrixType& lhs, MatrixType& rhs) { std::move(lhs) = rhs; };
 
 using lifetime_matrix = Matrix<double, 3, 3>;
-using owning_symmetric = SymmetricMatrix<double, 3, 3>;
-using const_symmetric_view = SymmetricMatrixView<const double, 3, 3>;
+using owning_symmetric = SymmetricMatrix<double, 3>;
+using const_symmetric_view = SymmetricMatrixView<const double, 3>;
 
 // a temporary dense owner cannot lend a symmetric wrapper
 static_assert(!permits_temporary_symmetric<lifetime_matrix>);
@@ -61,9 +61,9 @@ static_assert(!exposes_owning_rvalue_derived<owning_symmetric>);
 // a temporary symmetric owner cannot return a borrow through copy assignment
 static_assert(!permits_owning_rvalue_copy_assignment<owning_symmetric>);
 // a fixed nonempty symmetric view requires an explicit storage binding
-static_assert(!std::is_default_constructible_v<SymmetricMatrixView<double, 3, 3>>);
+static_assert(!std::is_default_constructible_v<SymmetricMatrixView<double, 3>>);
 // a dynamic symmetric view permits an initially empty binding
-static_assert(std::is_default_constructible_v<SymmetricMatrixView<double, Dynamic, Dynamic>>);
+static_assert(std::is_default_constructible_v<SymmetricMatrixView<double, Dynamic>>);
 // a const-storage symmetric view advertises read-only access
 static_assert(const_symmetric_view::ReadOnly == 1);
 // a const-storage symmetric view rejects coefficient writes
@@ -102,7 +102,7 @@ template <int StorageOrder> void check_dense_symmetric_views() {
     const auto temporary_upper = (dense + dense).template as_symmetric<Upper>();
     expect_matrix_near(temporary_upper, matrix_type({2.0, 4.0, 6.0, 4.0, 10.0, 12.0, 6.0, 12.0, 18.0}));
 
-    const SymmetricMatrix<double, 3, 3> packed({1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
+    const SymmetricMatrix<double, 3> packed({1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
     const Matrix<double, 3, 3> lower_value(lower);
     const Matrix<double, 3, 3> packed_value(packed);
     const Matrix<double, 3, 3> mixed_expected(lower_value + packed_value);
@@ -120,7 +120,7 @@ template <int StorageOrder> void check_dense_symmetric_views() {
 
 void check_packed_symmetric_contracts() {
     const double packed_data[] = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0};
-    SymmetricMatrix<double, 3, 3> matrix(packed_data);
+    SymmetricMatrix<double, 3> matrix(packed_data);
     const Matrix<double, 3, 3> expected({1.0, 2.0, 4.0, 2.0, 3.0, 5.0, 4.0, 5.0, 6.0});
     expect_matrix_near(matrix, expected);
 
@@ -157,19 +157,19 @@ void check_packed_symmetric_contracts() {
     // const access reads the same reflected coefficient after the write
     EXPECT_DOUBLE_EQ(static_cast<double>(const_matrix(2, 0)), 8.0);
 
-    SymmetricMatrix<double, 3, 3> coefficientwise(matrix);
+    SymmetricMatrix<double, 3> coefficientwise(matrix);
     coefficientwise.cwise() += 2.0;
     expect_matrix_near(coefficientwise, Matrix<double, 3, 3>({3.0, 4.0, 10.0, 4.0, 5.0, 7.0, 10.0, 7.0, 8.0}));
 
-    SymmetricMatrix<double, Dynamic, Dynamic> dynamic_source(std::vector<double> {1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
-    SymmetricMatrix<double, Dynamic, Dynamic> dynamic_target(2, 2);
+    SymmetricMatrix<double, Dynamic> dynamic_source(std::vector<double> {1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
+    SymmetricMatrix<double, Dynamic> dynamic_target(2);
     dynamic_target = dynamic_source;
     // assignment adopts the source's three-row shape
     EXPECT_EQ(dynamic_target.rows(), 3);
     // assignment preserves the source's square three-column shape
     EXPECT_EQ(dynamic_target.cols(), 3);
     expect_matrix_near(dynamic_target, expected);
-    dynamic_target.resize(2, 2);
+    dynamic_target.resize(2);
     // resizing a dynamic symmetric owner changes its row count to two
     EXPECT_EQ(dynamic_target.rows(), 2);
     dynamic_target = matrix;
@@ -177,14 +177,14 @@ void check_packed_symmetric_contracts() {
     EXPECT_EQ(dynamic_target.rows(), 3);
     // subsequent assignment restores the source's reflected coefficient
     EXPECT_DOUBLE_EQ(static_cast<double>(dynamic_target(0, 2)), 8.0);
-    const SymmetricMatrix<double, 3, Dynamic> partial_default;
-    // fixed columns determine the default partially dynamic owner's row count
-    EXPECT_EQ(partial_default.rows(), 3);
-    // fixed columns retain their declared extent in the default owner
-    EXPECT_EQ(partial_default.cols(), 3);
+    const SymmetricMatrix<double, 3> fixed_default;
+    // the fixed order determines the default owner's row count
+    EXPECT_EQ(fixed_default.rows(), 3);
+    // the same fixed order determines the default column count
+    EXPECT_EQ(fixed_default.cols(), 3);
 
     std::array<double, 6> first_storage {};
-    SymmetricMatrixView<double, 3, 3> first_view(first_storage.data());
+    SymmetricMatrixView<double, 3> first_view(first_storage.data());
     // symmetric views are stored by value in expression nodes
     static_assert(decltype(first_view)::NestAsRef == 0);
     const double* const first_address = first_view.data();
@@ -197,34 +197,34 @@ void check_packed_symmetric_contracts() {
     EXPECT_DOUBLE_EQ(static_cast<double>(first_view(2, 0)), 11.0);
 
     std::array<double, 6> second_storage {};
-    SymmetricMatrixView<double, 3, 3> second_view(second_storage.data());
+    SymmetricMatrixView<double, 3> second_view(second_storage.data());
     second_view = first_view;
     // assignment into the second view preserves its external storage binding
     EXPECT_EQ(second_view.data(), second_storage.data());
     expect_matrix_near(second_view, first_view);
 
     std::array<double, 6> temporary_storage {};
-    const auto temporary_view = SymmetricMatrixView<double, 3, 3>(temporary_storage.data()) = first_view;
+    const auto temporary_view = SymmetricMatrixView<double, 3>(temporary_storage.data()) = first_view;
     // assignment from a temporary view preserves the destination storage binding
     EXPECT_EQ(temporary_view.data(), temporary_storage.data());
     expect_matrix_near(temporary_view, first_view);
 
     std::array<double, 7> overlap_storage {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 0.0};
-    SymmetricMatrixView<double, 3, 3> overlap_source(overlap_storage.data());
-    SymmetricMatrixView<double, 3, 3> overlap_destination(overlap_storage.data() + 1);
+    SymmetricMatrixView<double, 3> overlap_source(overlap_storage.data());
+    SymmetricMatrixView<double, 3> overlap_destination(overlap_storage.data() + 1);
     overlap_destination = overlap_source;
     expect_matrix_near(overlap_destination, Matrix<double, 3, 3>({1.0, 2.0, 4.0, 2.0, 3.0, 5.0, 4.0, 5.0, 6.0}));
 
-    const SymmetricMatrixView<const double, 3, 3> const_view(first_storage.data());
+    const SymmetricMatrixView<const double, 3> const_view(first_storage.data());
     // a view of const packed storage advertises read-only access
     static_assert(decltype(const_view)::ReadOnly == 1);
     // a view of const packed storage rejects coefficient writes
     static_assert(!permits_coefficient_write<decltype(const_view)>);
     // the const view reads the assigned coefficient at its reflected coordinate
     EXPECT_DOUBLE_EQ(static_cast<double>(const_view(0, 2)), 11.0);
-    SymmetricMatrixView<double, Dynamic, Dynamic> dynamic_view(first_storage.data(), 3, 3);
+    SymmetricMatrixView<double, Dynamic> dynamic_view(first_storage.data(), 3);
     expect_matrix_near(dynamic_view + dynamic_view, Matrix<double, 3, 3>(first_view + first_view));
-    SymmetricMatrixView<double, Dynamic, Dynamic> empty_view;
+    SymmetricMatrixView<double, Dynamic> empty_view;
     // an empty symmetric view has zero rows
     EXPECT_EQ(empty_view.rows(), 0);
     // an empty symmetric view has zero columns
@@ -234,22 +234,21 @@ void check_packed_symmetric_contracts() {
 
     // construction rejects a packed length that is not a triangular number
     EXPECT_THROW(
-      static_cast<void>(SymmetricMatrix<double, Dynamic, Dynamic>(std::vector<double> {1.0, 2.0})),
-      std::invalid_argument);
+      static_cast<void>(SymmetricMatrix<double, Dynamic>(std::vector<double> {1.0, 2.0})), std::invalid_argument);
     // construction rejects a nonsquare runtime shape
-    EXPECT_THROW(static_cast<void>(SymmetricMatrix<double, Dynamic, Dynamic>(2, 3)), std::invalid_argument);
-    // construction rejects runtime dimensions inconsistent with a static axis
-    EXPECT_THROW(static_cast<void>(SymmetricMatrix<double, Dynamic, 3>(2, 2)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(SymmetricMatrix<double, Dynamic>(2, 3)), std::invalid_argument);
+    // construction rejects a negative runtime order before allocating symmetric storage
+    EXPECT_THROW(static_cast<void>(SymmetricMatrix<double, Dynamic>(-2)), std::invalid_argument);
     // a nonempty dynamic symmetric view rejects a null storage pointer
     EXPECT_THROW(
-      static_cast<void>(SymmetricMatrixView<double, Dynamic, Dynamic>(static_cast<double*>(nullptr), 2, 2)),
+      static_cast<void>(SymmetricMatrixView<double, Dynamic>(static_cast<double*>(nullptr), 2, 2)),
       std::invalid_argument);
     // mutable symmetric access rejects a negative row
     EXPECT_THROW(static_cast<void>(matrix(-1, 0)), std::out_of_range);
     // const symmetric access rejects a row equal to its dimension
     EXPECT_THROW(static_cast<void>(std::as_const(matrix)(3, 0)), std::out_of_range);
 
-    SymmetricMatrix<double, Dynamic, Dynamic> resize_target(3, 3);
+    SymmetricMatrix<double, Dynamic> resize_target(3, 3);
     resize_target(2, 0) = 7.0;
     // resize rejects a nonsquare target shape
     EXPECT_THROW(resize_target.resize(2, 3), std::invalid_argument);
@@ -259,7 +258,7 @@ void check_packed_symmetric_contracts() {
     EXPECT_DOUBLE_EQ(static_cast<double>(resize_target(2, 0)), 7.0);
 
     std::array<double, 3> assignment_storage {1.0, 2.0, 3.0};
-    SymmetricMatrixView<double, Dynamic, Dynamic> assignment_target(assignment_storage.data(), 2, 2);
+    SymmetricMatrixView<double, Dynamic> assignment_target(assignment_storage.data(), 2, 2);
     // view assignment rejects a source with incompatible dimensions
     EXPECT_THROW(assignment_target = matrix, std::invalid_argument);
     // failed view assignment preserves the destination's row count
@@ -279,7 +278,7 @@ TEST(linear_algebra, symmetric) {
 
 // verifies Frobenius reduction converts packed proxies and counts both reflected off-diagonal entries
 TEST(linear_algebra, symmetric_squared_norm) {
-    SymmetricMatrix<double, 2, 2> matrix;
+    SymmetricMatrix<double, 2> matrix;
     matrix(0, 0) = 2;
     matrix(1, 0) = -3;
     matrix(1, 1) = 4;
@@ -287,7 +286,42 @@ TEST(linear_algebra, symmetric_squared_norm) {
     EXPECT_DOUBLE_EQ(matrix.squared_norm(), 38);
 
     const std::array<double, 3> storage {2, -3, 4};
-    const SymmetricMatrixView<const double, 2, 2> view(storage.data());
+    const SymmetricMatrixView<const double, 2> view(storage.data());
     // a read-only packed view must reproduce the same full-matrix reduction as the owner
     EXPECT_DOUBLE_EQ(view.squared_norm(), 38);
+}
+
+// native coordinate vectors preserve lower-triangle row order for fixed and inferred matrix dimensions
+TEST(SymmetricCoordinates, NativePackedVectors) {
+    const Vector<double, 6> coordinates({1., 2., 3., 4., 5., 6.});
+    const SymmetricMatrix<double, 3> fixed(coordinates);
+    const SymmetricMatrix<double, Dynamic> dynamic(coordinates);
+    const Matrix<double, 3, 3> expected({1., 2., 4., 2., 3., 5., 4., 5., 6.});
+    // fixed construction mirrors the packed lower triangle in the independently specified full matrix
+    EXPECT_DOUBLE_EQ((fixed - expected).norm(), 0.);
+    // the triangular coordinate count determines dynamic order three
+    EXPECT_EQ(dynamic.rows(), 3);
+    // inferred construction uses exactly the same coefficient ordering as fixed construction
+    EXPECT_DOUBLE_EQ((dynamic - expected).norm(), 0.);
+    const Matrix<double, 1, 6> row(coordinates.transpose());
+    const SymmetricMatrix<double, 3> from_row(row);
+    // row vectors and column vectors describe the same packed coordinates
+    EXPECT_DOUBLE_EQ((from_row - expected).norm(), 0.);
+    const SymmetricMatrix<double, 2> from_expression(coordinates.block<3, 1>(0, 0));
+    // native vector views are materialized into independent lower-triangular storage
+    EXPECT_DOUBLE_EQ(from_expression(1, 1), 3.);
+}
+
+// malformed coordinate counts cannot create a differently shaped symmetric matrix
+TEST(SymmetricCoordinates, RejectsInvalidCounts) {
+    using DynamicSym = SymmetricMatrix<double, Dynamic>;
+    const Vector<double, Dynamic> empty;
+    // an empty vector has no positive matrix order
+    EXPECT_THROW((DynamicSym(empty)), std::invalid_argument);
+    const Vector<double, 4> nontriangular({1., 2., 3., 4.});
+    // four coordinates cannot represent a complete packed symmetric triangle
+    EXPECT_THROW((DynamicSym(nontriangular)), std::invalid_argument);
+    const Vector<double, 3> wrong_order {1., 2., 3.};
+    // order-two coordinates cannot construct a fixed order-three symmetric owner
+    EXPECT_THROW((SymmetricMatrix<double, 3>(wrong_order)), std::invalid_argument);
 }

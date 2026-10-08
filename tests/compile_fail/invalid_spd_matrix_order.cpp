@@ -16,8 +16,8 @@
 
 #include <fdaPDE/dense_linear_algebra.h>
 
-// a fixed dimension whose dense workspace exceeds int indexing must fail with the workspace diagnostic
-using oversized_spd_matrix = fdapde::SPDMatrix<double, 46341>;
+// zero is not a valid fixed order for a positive-definite matrix
+using invalid_spd_matrix_order = fdapde::SPDMatrix<double, 0>;
 
-// sizeof instantiates the invalid type without also requiring a deleted default constructor
-int main() { return sizeof(oversized_spd_matrix); }
+// sizeof instantiates the order check without requiring coefficient construction
+int main() { return sizeof(invalid_spd_matrix_order); }

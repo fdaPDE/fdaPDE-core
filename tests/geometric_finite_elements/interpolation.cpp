@@ -19,10 +19,10 @@
 
 namespace {
 using namespace fdapde;
-using Point = SPDMatrix<double, 2, 2>;
-using Tangent = SymmetricMatrix<double, 2, 2>;
+using Point = SPDMatrix<double, 2>;
+using Tangent = SymmetricMatrix<double, 2>;
 using Batch =
-  MatrixBatch<SPDMatrix<double, 2, 2, Cache::Union<Cache::Log, Cache::Spectral, Cache::LogDividedDifferences>>>;
+  MatrixBatch<SPDMatrix<double, 2, Cache::Union<Cache::Log, Cache::Spectral, Cache::LogDividedDifferences>>>;
 using LE = manifold::LogEuclideanSPDGeometry<double, 2, Usage::InterpolationNodes>;
 using AIRM = manifold::AffineInvariantSPDGeometry<double, 2, Usage::BasePointMaps>;
 
@@ -188,7 +188,7 @@ TEST(P1Interpolation, SelectionDynamicAndCommutingOracle) {
     const auto permuted = gfe::p1_geodesic_value(AIRM {}, selection, permuted_weights, accurate().mean);
     // simultaneously permuting local vertices and weights leaves the geometric value unchanged
     EXPECT_LT(error(result.value, permuted.value), 1e-10);
-    MatrixBatch<SPDMatrix<double, Dynamic, Dynamic, Cache::Log>> dynamic(batch);
+    MatrixBatch<SPDMatrix<double, Dynamic, Cache::Log>> dynamic(batch);
     const auto dynamic_result = gfe::p1_geodesic_value(
       manifold::AffineInvariantSPDGeometry<double, Dynamic>(2), dynamic, weights, accurate().mean);
     // runtime matrix order uses the same native algorithm as the fixed-order specialization

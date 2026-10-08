@@ -287,17 +287,17 @@ TEST(linear_algebra, inverse) {
     {
         // 1 x 1 inverse
         constexpr Matrix<double, 1, 1> A1(4.0);
-        constexpr auto invA1 = A1.inverse();
+        constexpr auto invA1 = A1.inv();
         // a singleton inverse equals the reciprocal of its sole coefficient
         static_assert(invA1 == Matrix<double, 1, 1>(1. / 4));
         // 2 x 2 inverse
         constexpr Matrix<double, 2, 2> A2({4.0, 7.0, 2.0, 6.0});
-        constexpr auto invA2 = A2.inverse();
+        constexpr auto invA2 = A2.inv();
         // the computed 2-by-2 inverse multiplies its input to the identity within tolerance
         static_assert(almost_equal(invA2 * A2, Matrix<double, 2, 2>({1, 0, 0, 1})));
         // 3 x 3 inverse
         constexpr Matrix<double, 3, 3> A3({1.0, 2.0, 3.0, 0.0, 1.0, 4.0, 5.0, 6.0, 0.0});
-        constexpr auto invA3 = A3.inverse();
+        constexpr auto invA3 = A3.inv();
         // the computed 3-by-3 inverse multiplies its input to the identity within tolerance
         static_assert(almost_equal(invA3 * A3, Matrix<double, 3, 3>({1, 0, 0, 0, 1, 0, 0, 0, 1})));
     }

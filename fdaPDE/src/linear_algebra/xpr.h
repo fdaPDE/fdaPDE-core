@@ -954,8 +954,8 @@ template <typename XprType_> struct MatrixExpr {
     constexpr void skew_part() const&&
         requires(XprType::NestAsRef != 0)
     = delete;
-    /// @brief returns the inverse matrix expression
-    constexpr auto inverse() const
+    /// @brief solves against the identity with pivoted LU and returns an owning dense inverse
+    constexpr auto inv() const
         requires(std::is_floating_point_v<std::remove_cv_t<typename XprType::Scalar>>)
     {
         using Scalar = std::remove_cv_t<typename XprType::Scalar>;
@@ -975,6 +975,18 @@ template <typename XprType_> struct MatrixExpr {
             for (int col = 0; col < cols_; ++col) identity(row, col) = row == col ? Scalar(1) : Scalar(0);
         }
         return factorization.solve(identity);
+    }
+    /// @brief sums the diagonal of a square matrix without preparing any factorization
+    constexpr auto trace() const {
+        using Scalar = std::remove_cv_t<typename XprType::Scalar>;
+        constexpr int Rows = XprType::Rows, Cols = XprType::Cols;
+        fdapde_static_assert(
+          Rows == Dynamic || Cols == Dynamic || Rows == Cols, THIS_METHODS_IS_FOR_SQUARE_MATRICES_ONLY);
+        const XprType& matrix = derived();
+        fdapde_strong_assert(matrix.rows() == matrix.cols(), std::invalid_argument, "trace requires a square matrix");
+        Scalar result = 0;
+        for (int i = 0; i < matrix.rows(); ++i) result += matrix(i, i);
+        return result;
     }
     /// @brief returns the matrix determinant
     constexpr auto determinant() const {

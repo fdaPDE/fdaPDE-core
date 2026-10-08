@@ -57,7 +57,7 @@ template <typename S, int N> class rotation_schur {
         angles_.set_zero();
         const S eps = std::numeric_limits<S>::epsilon();
         const S tolerance = S(64) * n * eps;
-        SymmetricMatrix<S, N, N> h;
+        SymmetricMatrix<S, N> h;
         if constexpr (N == Dynamic) h.resize(n, n);
         for (int i = 0; i < n; ++i)
             for (int j = 0; j <= i; ++j) h(i, j) = S(0.5) * (q(i, j) + q(j, i));
@@ -99,7 +99,7 @@ template <typename S, int N> class rotation_schur {
                 }
             // the real lift of -i times the skew part resolves near-real and repeated cosine subspaces without squaring
             // angles
-            SymmetricMatrix<S, Dynamic, Dynamic> lift(2 * m, 2 * m);
+            SymmetricMatrix<S, Dynamic> lift(2 * m, 2 * m);
             for (int i = 0; i < m; ++i)
                 for (int j = 0; j < m; ++j) lift(m + i, j) = skew(i, j);
             const EVD sine_evd(lift);
@@ -291,7 +291,7 @@ template <typename S, int N> class rotation_schur {
 /// @brief computes distance from cosine eigenvalues when rotation planes cannot be resolved numerically
 template <typename Q> double rotation_distance_cosines(const Q& q) {
     using S = typename Q::Scalar;
-    SymmetricMatrix<S, Q::Rows, Q::Cols> symmetric;
+    SymmetricMatrix<S, Q::Rows> symmetric;
     if constexpr (Q::Rows == Dynamic) symmetric.resize(q.rows(), q.cols());
     for (int i = 0; i < q.rows(); ++i)
         for (int j = 0; j <= i; ++j) symmetric(i, j) = S(0.5) * (q(i, j) + q(j, i));

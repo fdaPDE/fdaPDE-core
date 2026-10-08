@@ -131,7 +131,7 @@ TEST(SPDGeometryContracts, RejectsUnrepresentableFloatSteps) {
     dense.set_zero();
     dense(0, 0) = 1;
     dense(1, 1) = 1;
-    const SPDMatrix<float, 2, 2> point(dense);
+    const SPDMatrix<float, 2> point(dense);
     const LogEuclideanSPDGeometry<float, 2> le;
     const AffineInvariantSPDGeometry<float, 2> airm;
     const auto u = le.zero_tangent(point);

@@ -72,7 +72,7 @@ auto small_frechet_symmetric(
             q_coefficients[i][j] = value;
         }
     }
-    SymmetricMatrix<Scalar, Dimension, Dimension> result;
+    SymmetricMatrix<Scalar, Dimension> result;
     for (int i = 0; i < Dimension; ++i) {
         for (int j = 0; j <= i; ++j) {
             Scalar value = Scalar(0);

@@ -4,11 +4,11 @@
 #include "header_check.h"
 namespace fdapde::gfe {
 /// @brief prepares general C-LE means and their implicit derivatives on the selected rotation branch
-template <typename S, int N, Usage U, typename Nodes>
+template <typename S, int N, Usage U, typename Point_, typename Nodes>
     requires(N != 2)
-class P1GeodesicLinearization<manifold::CheegerLogEuclideanSPDGeometry<S, N, U>, Nodes> {
+class P1GeodesicLinearization<manifold::CheegerLogEuclideanSPDGeometry<S, N, U, Point_>, Nodes> {
    public:
-    using Geometry = manifold::CheegerLogEuclideanSPDGeometry<S, N, U>;
+    using Geometry = manifold::CheegerLogEuclideanSPDGeometry<S, N, U, Point_>;
     using Point = typename Geometry::Point;
     using Tangent = typename Geometry::Tangent;
     using Lift = manifold::internals::CheegerLift<S, N>;
@@ -223,7 +223,7 @@ class P1GeodesicLinearization<manifold::CheegerLogEuclideanSPDGeometry<S, N, U>,
     bool ready_ = false;
     std::optional<Lift> lift_;
     std::optional<typename Lift::State> state_;
-    std::optional<CachedSymmetricMatrix<S, N, N>> mean_log_;
+    std::optional<SymmetricMatrix<S, N, Cache::Spectral>> mean_log_;
     std::optional<CheegerP1ValueResult<Point>> result_;
 };
 }   // namespace fdapde::gfe

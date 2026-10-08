@@ -32,30 +32,29 @@
 namespace fdapde {
 
 /// @brief borrows verified SPD coefficients and their selected cache
-template <typename Scalar, int Rows, int Cols, typename Policy = Cache::None, int StorageOrder = RowMajor>
-class SPDMatrixView;
+template <typename Scalar, int Order, typename Policy = Cache::None, int StorageOrder = RowMajor> class SPDMatrixView;
 /// @brief owns a compact row-major collection of matrices
 template <typename MatrixType, int StorageOrder = RowMajor> class MatrixBatch;
 /// @brief identifies a deferred geometric operation evaluated globally at materialization
 template <typename Derived> struct GeometryExpr;
 
 namespace internals {
-template <typename Scalar, int Rows, int Cols, typename Policy, int StorageOrder> class spd_matrix_impl;
+template <typename Scalar, int Order, typename Policy, int StorageOrder> class spd_matrix_impl;
 /// @brief rejects arbitrary expressions as evidence of already verified SPD storage
 template <typename T> struct is_verified_spd : std::false_type { };
 /// @brief recognizes the native checked owner without accepting arbitrary SPD expression subclasses
-template <typename S, int R, int C, typename P, int O>
-struct is_verified_spd<spd_matrix_impl<S, R, C, P, O>> : std::true_type { };
+template <typename S, int Order, typename P, int O>
+struct is_verified_spd<spd_matrix_impl<S, Order, P, O>> : std::true_type { };
 /// @brief recognizes views whose bindings are created exclusively from checked native storage
-template <typename S, int R, int C, typename P, int O>
-struct is_verified_spd<SPDMatrixView<S, R, C, P, O>> : std::true_type { };
+template <typename S, int Order, typename P, int O>
+struct is_verified_spd<SPDMatrixView<S, Order, P, O>> : std::true_type { };
 /// @brief permits reuse of certified owner eigenpairs when spectral storage was selected
-template <typename S, int R, int C, typename P, int O>
-struct is_spectral_cache_source<spd_matrix_impl<S, R, C, P, O>> :
+template <typename S, int Order, typename P, int O>
+struct is_spectral_cache_source<spd_matrix_impl<S, Order, P, O>> :
     std::bool_constant<(P::Flags & Cache::Spectral::Flags) != 0> { };
 /// @brief permits reuse of certified view eigenpairs when spectral storage was selected
-template <typename S, int R, int C, typename P, int O>
-struct is_spectral_cache_source<SPDMatrixView<S, R, C, P, O>> :
+template <typename S, int Order, typename P, int O>
+struct is_spectral_cache_source<SPDMatrixView<S, Order, P, O>> :
     std::bool_constant<(P::Flags & Cache::Spectral::Flags) != 0> { };
 }   // namespace internals
 
@@ -66,6 +65,17 @@ concept SPDLike = internals::is_verified_spd<std::remove_cvref_t<T>>::value;
 template <typename XprType_> struct SPDMatrixExpr : public SymmetricMatrixExpr<XprType_> {
     using XprType = std::decay_t<XprType_>;
     using SymmetricMatrixExpr<XprType_>::derived;
+    /// @brief returns the matrix logarithm as an owning symmetric matrix with the requested output cache
+    /// @details reuses the input cache independently of the output policy; coefficients are not logged individually
+    template <typename Policy = Cache::None> auto log() const;
+    /// @brief returns the checked SPD principal square root with the requested output cache policy
+    /// @details reuses a retained square root or input eigenpairs before certifying the reconstructed output
+    template <typename Policy = Cache::None> auto sqrt() const;
+    /// @brief returns the checked SPD inverse principal square root with the requested output cache policy
+    /// @details reuses a retained inverse square root or input eigenpairs before certifying the output
+    template <typename Policy = Cache::None> auto inv_sqrt() const;
+    /// @brief returns a checked SPD inverse with the requested output cache, reusing retained input factors
+    template <typename Policy = Cache::None> auto inv() const;
     /// @brief multiplies retained eigenvalues when present, otherwise uses native determinant factorization
     auto determinant() const {
         if constexpr (SPDLike<XprType>) {
@@ -86,9 +96,11 @@ template <typename Policy_ = Cache::None, typename XprType_>
 auto matrix_exp(const SymmetricMatrixExpr<XprType_>& matrix);
 /// @brief returns a validated SPD principal square root
 template <typename Policy_ = Cache::None, typename XprType_> auto matrix_sqrt(const SPDMatrixExpr<XprType_>& matrix);
+/// @brief returns a checked SPD inverse using retained input decompositions when available
+template <typename Policy_ = Cache::None, typename XprType_> auto matrix_inv(const SPDMatrixExpr<XprType_>& matrix);
 /// @brief returns a validated SPD inverse principal square root
 template <typename Policy_ = Cache::None, typename XprType_>
-auto matrix_inverse_sqrt(const SPDMatrixExpr<XprType_>& matrix);
+auto matrix_inv_sqrt(const SPDMatrixExpr<XprType_>& matrix);
 
 namespace internals {
 
@@ -111,29 +123,27 @@ template <typename VectorType_> void validate_positive_spectrum(const VectorType
 
 /// @brief owns checked SPD coefficients in packed symmetric storage without a metric representation
 /// @details coefficient access is read-only; replacement validates a candidate before changing the owner
-template <typename Scalar_, int Rows_, int Cols_, typename Policy_, int StorageOrder_>
-class spd_matrix_impl : public SPDMatrixExpr<spd_matrix_impl<Scalar_, Rows_, Cols_, Policy_, StorageOrder_>> {
-    fdapde_static_assert(
-      (Rows_ == Dynamic && Cols_ == Dynamic) || (Rows_ > 0 && Cols_ > 0 && Rows_ == Cols_),
-      SPD_MATRICES_MUST_BE_SQUARE_AND_EITHER_FULLY_STATIC_OR_FULLY_DYNAMIC);
+template <typename Scalar_, int Order_, typename Policy_, int StorageOrder_>
+class spd_matrix_impl : public SPDMatrixExpr<spd_matrix_impl<Scalar_, Order_, Policy_, StorageOrder_>> {
+    fdapde_static_assert(Order_ == Dynamic || Order_ > 0, INVALID_SPD_MATRIX_ORDER);
     fdapde_static_assert(
       std::is_floating_point_v<Scalar_> && !std::is_const_v<Scalar_> && !std::is_volatile_v<Scalar_>,
       SPD_MATRICES_REQUIRE_AN_UNQUALIFIED_FLOATING_POINT_SCALAR);
     fdapde_static_assert(StorageOrder_ == RowMajor, PACKED_COL_MAJOR_STRUCTURED_STORAGE_IS_NOT_SUPPORTED);
     fdapde_static_assert(
-      Rows_ == Dynamic || std::int64_t(Rows_) * std::int64_t(Rows_) <= std::numeric_limits<int>::max(),
+      Order_ == Dynamic || std::int64_t(Order_) * std::int64_t(Order_) <= std::numeric_limits<int>::max(),
       SPD_DENSE_WORKSPACE_SIZE_EXCEEDS_SUPPORTED_RANGE);
 
-    using Base = SPDMatrixExpr<spd_matrix_impl<Scalar_, Rows_, Cols_, Policy_, StorageOrder_>>;
-    using StorageType = SymmetricMatrix<Scalar_, Rows_, Cols_, StorageOrder_>;
+    using Base = SPDMatrixExpr<spd_matrix_impl<Scalar_, Order_, Policy_, StorageOrder_>>;
+    using StorageType = SymmetricMatrix<Scalar_, Order_, Cache::None, StorageOrder_>;
    public:
     using Scalar = Scalar_;
     using CachePolicy = Policy_;
-    using View = SPDMatrixView<Scalar, Rows_, Cols_, CachePolicy, StorageOrder_>;
-    using ConstView = SPDMatrixView<const Scalar, Rows_, Cols_, CachePolicy, StorageOrder_>;
-    using CacheSlot = spd_cache_slot<Scalar, Rows_, CachePolicy>;
-    static constexpr int Rows = Rows_;
-    static constexpr int Cols = Cols_;
+    using View = SPDMatrixView<Scalar, Order_, CachePolicy, StorageOrder_>;
+    using ConstView = SPDMatrixView<const Scalar, Order_, CachePolicy, StorageOrder_>;
+    using CacheSlot = spd_cache_slot<Scalar, Order_, CachePolicy>;
+    static constexpr int Rows = Order_;
+    static constexpr int Cols = Order_;
     static constexpr int StorageOrder = StorageType::StorageOrder;
     static constexpr int NestAsRef = 1;
     static constexpr int ReadOnly = 1;
@@ -168,13 +178,23 @@ class spd_matrix_impl : public SPDMatrixExpr<spd_matrix_impl<Scalar_, Rows_, Col
     /// @brief copies square finite input after checking shape, symmetry and numerical positive definiteness
     /// @details verified native sources reuse compatible intermediates; other expressions are fully validated
     template <typename RhsXprType_>
-        requires(!requires(const RhsXprType_& expression) { expression.eval_matrix(); })
+        requires((!internals::is_vector_shaped_v<RhsXprType_> || is_symmetric_matrix_v<RhsXprType_>) &&
+                 !requires(const RhsXprType_& expression) { expression.eval_matrix(); })
     explicit spd_matrix_impl(const MatrixExpr<RhsXprType_>& rhs) : Base(), data_(make_storage_(rhs.derived())) {
         if constexpr (SPDLike<RhsXprType_> && std::same_as<Scalar, std::remove_cv_t<typename RhsXprType_::Scalar>>) {
             prepare_from_verified_(rhs.derived());
         } else {
             validate_spd_(rhs.derived(), data_);
         }
+    }
+    /// @brief copies native packed matrix coordinates and checks positive definiteness and selected caches
+    /// @details coordinates follow lower-triangle row order and represent S itself, not log(S)
+    template <typename Rhs>
+        requires(internals::is_vector_shaped_v<Rhs> && !is_symmetric_matrix_v<Rhs> &&
+                 !requires(const Rhs& expression) { expression.eval_matrix(); })
+    explicit spd_matrix_impl(const MatrixExpr<Rhs>& coordinates) :
+        Base(), data_(make_packed_storage_(coordinates.derived())) {
+        validate_spd_(data_, data_);
     }
     /// @brief evaluates a geometric operation once using this owner's destination policy
     template <typename Rhs>
@@ -190,10 +210,10 @@ class spd_matrix_impl : public SPDMatrixExpr<spd_matrix_impl<Scalar_, Rows_, Col
     /// @brief assigns a matrix expression through independent SPD validation
     template <typename Rhs> spd_matrix_impl& operator=(const MatrixExpr<Rhs>& rhs) & { return assign(rhs); }
     /// @brief constructs an identity with known coefficients and cache without spectral validation
-    static spd_matrix_impl Identity(int order = Rows_) {
+    static spd_matrix_impl Identity(int order = Order_) {
         validate_identity_order_(order);
         StorageType storage;
-        if constexpr (Rows_ == Dynamic) storage.resize(order, order);
+        if constexpr (Order_ == Dynamic) storage.resize(order, order);
         for (int i = 0; i < order; ++i)
             for (int j = 0; j <= i; ++j) storage(i, j) = i == j ? Scalar(1) : Scalar(0);
         spd_matrix_impl result(storage, trusted_t {});
@@ -241,14 +261,15 @@ class spd_matrix_impl : public SPDMatrixExpr<spd_matrix_impl<Scalar_, Rows_, Col
         return os;
     }
    private:
-    template <typename, int, int, typename, int> friend class fdapde::SPDMatrixView;
+    template <typename, int, typename, int> friend class fdapde::SPDMatrixView;
     template <typename, int> friend class fdapde::MatrixBatch;
     template <typename Policy, typename XprType_>
     friend auto fdapde::matrix_exp(const SymmetricMatrixExpr<XprType_>& matrix);
     template <typename Policy, typename XprType_>
     friend auto fdapde::matrix_sqrt(const SPDMatrixExpr<XprType_>& matrix);
     template <typename Policy, typename XprType_>
-    friend auto fdapde::matrix_inverse_sqrt(const SPDMatrixExpr<XprType_>& matrix);
+    friend auto fdapde::matrix_inv_sqrt(const SPDMatrixExpr<XprType_>& matrix);
+    template <typename Policy, typename XprType_> friend auto fdapde::matrix_inv(const SPDMatrixExpr<XprType_>& matrix);
 
     /// @brief marks internal storage adoption whose result is published only after certification
     struct trusted_t { };
@@ -280,6 +301,15 @@ class spd_matrix_impl : public SPDMatrixExpr<spd_matrix_impl<Scalar_, Rows_, Col
         fdapde_strong_assert(
           dense_size <= std::numeric_limits<int>::max(), std::length_error,
           "SPDMatrix: dense workspace size exceeds supported range");
+    }
+
+    /// @brief rejects oversized packed inputs before allocating dense spectral workspaces or reading coefficients
+    template <typename Rhs> static StorageType make_packed_storage_(const Rhs& coordinates) {
+        const std::int64_t order = internals::packed_symmetric_order<Rows>(coordinates.size());
+        fdapde_strong_assert(
+          order * order <= std::numeric_limits<int>::max(), std::length_error,
+          "SPDMatrix: dense workspace size exceeds supported range");
+        return StorageType(coordinates);
     }
 
     /// @brief checks dimensions and copies the lower triangle into an independent candidate
@@ -332,7 +362,7 @@ class spd_matrix_impl : public SPDMatrixExpr<spd_matrix_impl<Scalar_, Rows_, Col
     /// @brief validates the explicit order used by the identity factory before allocating storage
     static void validate_identity_order_(int order) {
         fdapde_strong_assert(
-          order > 0 && (Rows_ == Dynamic || order == Rows_), std::invalid_argument,
+          order > 0 && (Order_ == Dynamic || order == Order_), std::invalid_argument,
           "SPDMatrix: incompatible identity order");
         fdapde_strong_assert(
           std::int64_t(order) * order <= std::numeric_limits<int>::max(), std::length_error,
@@ -372,7 +402,7 @@ class spd_matrix_impl : public SPDMatrixExpr<spd_matrix_impl<Scalar_, Rows_, Col
                 cache_.swap(candidate.cache_);
         }
     }
-    using CacheOwner = owning_spd_cache<Scalar, Rows_, CachePolicy>;
+    using CacheOwner = owning_spd_cache<Scalar, Order_, CachePolicy>;
     using CacheStorage = std::conditional_t<CachePolicy::Flags == 0, empty_spd_cache<>, std::unique_ptr<CacheOwner>>;
     StorageType data_;
     [[no_unique_address]] CacheStorage cache_;
@@ -423,8 +453,7 @@ auto reconstruct_symmetric(const XprType_& evd, int dimension, const VectorType_
     using XprType = std::decay_t<XprType_>;
     using Scalar = std::remove_cv_t<typename XprType::Scalar>;
     constexpr int Rows = XprType::Rows;
-    constexpr int Cols = XprType::Cols;
-    SymmetricMatrix<Scalar, Rows, Cols> result;
+    SymmetricMatrix<Scalar, Rows> result;
     if constexpr (Rows == Dynamic) { result.resize(dimension, dimension); }
     const auto eigenvectors = evd.eigenvectors();
     for (int i = 0; i < dimension; ++i) {
@@ -607,7 +636,7 @@ auto second_frechet_symmetric(
         }
     }
 
-    SymmetricMatrix<Scalar, Rows, Cols> result;
+    SymmetricMatrix<Scalar, Rows> result;
     if constexpr (Rows == Dynamic) { result.resize(dimension, dimension); }
     for (int i = 0; i < dimension; ++i) {
         for (int j = 0; j <= i; ++j) {
@@ -700,7 +729,7 @@ auto frechet_symmetric(
         }
     }
 
-    SymmetricMatrix<Scalar, Rows, Cols> result;
+    SymmetricMatrix<Scalar, Rows> result;
     if constexpr (Rows == Dynamic) { result.resize(dimension, dimension); }
     for (int i = 0; i < extent; ++i) {
         for (int j = 0; j <= i; ++j) {
@@ -735,17 +764,17 @@ template <typename Xpr, typename Operation> auto with_spd_spectral(const Xpr& va
 
 }   // namespace internals
 
-/// @brief provides checked SPD ownership for unqualified floating scalars and square fixed or fully dynamic shapes
+/// @brief provides checked SPD ownership for unqualified floating scalars and a fixed or dynamic order
 /// @details only row-major packed storage is supported; public construction always validates the input
-template <typename Scalar_, int Rows_, int Cols_, typename Policy_ = Cache::None, int StorageOrder_ = RowMajor>
-using SPDMatrix = internals::spd_matrix_impl<Scalar_, Rows_, Cols_, Policy_, StorageOrder_>;
+template <typename Scalar_, int Order_, typename Policy_ = Cache::None, int StorageOrder_ = RowMajor>
+using SPDMatrix = internals::spd_matrix_impl<Scalar_, Order_, Policy_, StorageOrder_>;
 
 /// @brief borrows a verified packed SPD value, with assignment transferring values rather than bindings
 /// @details the owner must outlive the view; owner shape changes and batch replacement invalidate all views
-template <typename Scalar_, int Rows_, int Cols_, typename Policy_, int StorageOrder_>
-class SPDMatrixView : public SPDMatrixExpr<SPDMatrixView<Scalar_, Rows_, Cols_, Policy_, StorageOrder_>> {
+template <typename Scalar_, int Order_, typename Policy_, int StorageOrder_>
+class SPDMatrixView : public SPDMatrixExpr<SPDMatrixView<Scalar_, Order_, Policy_, StorageOrder_>> {
     using ValueScalar = std::remove_const_t<Scalar_>;
-    using Owner = SPDMatrix<ValueScalar, Rows_, Cols_, Policy_, StorageOrder_>;
+    using Owner = SPDMatrix<ValueScalar, Order_, Policy_, StorageOrder_>;
     using Slot = typename Owner::CacheSlot;
     using CachePointer = std::conditional_t<
       Policy_::Flags == 0, internals::empty_spd_cache<1>,
@@ -753,10 +782,10 @@ class SPDMatrixView : public SPDMatrixExpr<SPDMatrixView<Scalar_, Rows_, Cols_, 
    public:
     using Scalar = ValueScalar;
     using CachePolicy = Policy_;
-    using View = SPDMatrixView<ValueScalar, Rows_, Cols_, Policy_, StorageOrder_>;
-    using ConstView = SPDMatrixView<const ValueScalar, Rows_, Cols_, Policy_, StorageOrder_>;
-    static constexpr int Rows = Rows_;
-    static constexpr int Cols = Cols_;
+    using View = SPDMatrixView<ValueScalar, Order_, Policy_, StorageOrder_>;
+    using ConstView = SPDMatrixView<const ValueScalar, Order_, Policy_, StorageOrder_>;
+    static constexpr int Rows = Order_;
+    static constexpr int Cols = Order_;
     static constexpr int StorageOrder = StorageOrder_;
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
@@ -795,7 +824,9 @@ class SPDMatrixView : public SPDMatrixExpr<SPDMatrixView<Scalar_, Rows_, Cols_, 
     /// @brief borrows read-only lower-triangular coefficients
     const Scalar* data() const { return data_.data(); }
     /// @brief returns a read-only symmetric view suitable for ordinary matrix expressions
-    auto rep() const { return SymmetricMatrixView<const Scalar, Rows, Cols, StorageOrder>(data(), rows(), cols()); }
+    auto rep() const {
+        return SymmetricMatrixView<const Scalar, Rows, Cache::None, StorageOrder>(data(), rows(), cols());
+    }
     /// @brief returns the owner's ready selected cache without extending its lifetime
     const Slot& cache() const
         requires(CachePolicy::Flags != 0)
@@ -833,7 +864,7 @@ class SPDMatrixView : public SPDMatrixExpr<SPDMatrixView<Scalar_, Rows_, Cols_, 
     }
    private:
     template <typename, int> friend class MatrixBatch;
-    template <typename, int, int, typename, int> friend class SPDMatrixView;
+    template <typename, int, typename, int> friend class SPDMatrixView;
     /// @brief binds a batch-owned verified coefficient row and its ready cache slot
     SPDMatrixView(Scalar_* data, int n, CachePointer cache) : data_(data, n, n), cache_(cache) { }
     /// @brief commits already validated coefficients and intermediates with no allocating operations
@@ -843,7 +874,7 @@ class SPDMatrixView : public SPDMatrixExpr<SPDMatrixView<Scalar_, Rows_, Cols_, 
         std::copy_n(candidate.data(), std::size_t(rows()) * (rows() + 1) / 2, data_.data());
         if constexpr (CachePolicy::Flags != 0) cache_->copy_from(candidate.cache());
     }
-    SymmetricMatrixView<Scalar_, Rows_, Cols_, StorageOrder_> data_;
+    SymmetricMatrixView<Scalar_, Order_, Cache::None, StorageOrder_> data_;
     [[no_unique_address]] CachePointer cache_;
 };
 
@@ -852,7 +883,7 @@ template <typename XprType_> auto matrix_log(const SPDMatrixExpr<XprType_>& matr
     const XprType_& value = matrix.derived();
     if constexpr (SPDLike<XprType_>) {
         if constexpr (internals::spd_cache_has_v<typename XprType_::CachePolicy, Cache::Log>) {
-            return SymmetricMatrix<typename XprType_::Scalar, XprType_::Rows, XprType_::Cols>(
+            return SymmetricMatrix<typename XprType_::Scalar, XprType_::Rows>(
               value.cache().template matrix<Cache::Log>());
         } else
             return internals::with_spd_spectral(value, [&](const auto& evd) {
@@ -868,6 +899,12 @@ template <typename XprType_> auto matrix_log(const SPDMatrixExpr<XprType_>& matr
         });
 }
 
+/// @brief materializes the matrix logarithm with the selected symmetric output cache
+template <typename XprType_> template <typename Policy> auto SPDMatrixExpr<XprType_>::log() const {
+    using Result = SymmetricMatrix<std::remove_cv_t<typename XprType::Scalar>, XprType::Rows, Policy>;
+    return Result(fdapde::matrix_log(derived()));
+}
+
 /// @brief returns the checked SPD exponential of a finite symmetric expression
 /// @details rejects overflow, underflow to a singular spectrum and numerically ill-conditioned SPD results
 template <typename Policy_, typename XprType_> auto matrix_exp(const SymmetricMatrixExpr<XprType_>& matrix) {
@@ -875,12 +912,20 @@ template <typename Policy_, typename XprType_> auto matrix_exp(const SymmetricMa
     using Scalar = std::remove_cv_t<typename XprType::Scalar>;
     const XprType_& value = matrix.derived();
     internals::validate_finite_symmetric(value);
-    const EVD<XprType_> evd(value);
-    internals::require_computed(evd);
-    const auto eigenvalues = internals::transform_eigenvalues(evd, value.rows(), [](auto x) { return std::exp(x); });
-    internals::validate_positive_spectrum(eigenvalues, value.rows());
-    return SPDMatrix<Scalar, XprType::Rows, XprType::Cols, Policy_>::from_spectral_(
-      internals::reconstruct_symmetric(evd, value.rows(), eigenvalues));
+    const auto reconstruct = [&](const auto& spectral) {
+        const auto eigenvalues =
+          internals::transform_eigenvalues(spectral, value.rows(), [](auto x) { return std::exp(x); });
+        internals::validate_positive_spectrum(eigenvalues, value.rows());
+        return SPDMatrix<Scalar, XprType::Rows, Policy_>::from_spectral_(
+          internals::reconstruct_symmetric(spectral, value.rows(), eigenvalues));
+    };
+    if constexpr (internals::is_spectral_cache_source<XprType>::value) {
+        return reconstruct(value.cache());
+    } else {
+        const EVD<XprType_> evd(value);
+        internals::require_computed(evd);
+        return reconstruct(evd);
+    }
 }
 
 /// @brief returns the checked SPD principal square root, preserving the input scalar and static shape
@@ -888,7 +933,7 @@ template <typename Policy_, typename XprType_> auto matrix_sqrt(const SPDMatrixE
     using XprType = std::decay_t<XprType_>;
     using Scalar = std::remove_cv_t<typename XprType::Scalar>;
     const XprType_& value = matrix.derived();
-    using Result = SPDMatrix<Scalar, XprType::Rows, XprType::Cols, Policy_>;
+    using Result = SPDMatrix<Scalar, XprType::Rows, Policy_>;
     if constexpr (SPDLike<XprType>) {
         if constexpr (internals::spd_cache_has_v<typename XprType::CachePolicy, Cache::Sqrt>) {
             return Result(value.cache().template matrix<Cache::Sqrt>());
@@ -909,11 +954,11 @@ template <typename Policy_, typename XprType_> auto matrix_sqrt(const SPDMatrixE
 }
 
 /// @brief returns the checked SPD inverse principal square root of a numerically positive-definite expression
-template <typename Policy_, typename XprType_> auto matrix_inverse_sqrt(const SPDMatrixExpr<XprType_>& matrix) {
+template <typename Policy_, typename XprType_> auto matrix_inv_sqrt(const SPDMatrixExpr<XprType_>& matrix) {
     using XprType = std::decay_t<XprType_>;
     using Scalar = std::remove_cv_t<typename XprType::Scalar>;
     const XprType_& value = matrix.derived();
-    using Result = SPDMatrix<Scalar, XprType::Rows, XprType::Cols, Policy_>;
+    using Result = SPDMatrix<Scalar, XprType::Rows, Policy_>;
     if constexpr (SPDLike<XprType>) {
         if constexpr (internals::spd_cache_has_v<typename XprType::CachePolicy, Cache::InverseSqrt>) {
             return Result(value.cache().template matrix<Cache::InverseSqrt>());
@@ -931,6 +976,82 @@ template <typename Policy_, typename XprType_> auto matrix_inverse_sqrt(const SP
             internals::validate_positive_spectrum(eigenvalues, value.rows());
             return Result::from_spectral_(internals::reconstruct_symmetric(evd, value.rows(), eigenvalues));
         });
+}
+
+/// @brief inverts eigenvalues or retained Cholesky or inverse-root factors before certifying the rounded SPD output
+template <typename Policy_, typename XprType_> auto matrix_inv(const SPDMatrixExpr<XprType_>& matrix) {
+    using XprType = std::decay_t<XprType_>;
+    using Scalar = std::remove_cv_t<typename XprType::Scalar>;
+    using Result = SPDMatrix<Scalar, XprType::Rows, Policy_>;
+    const auto& value = matrix.derived();
+    const auto spectral_inverse = [&] {
+        return internals::with_spd_spectral(value, [&](const auto& spectral) {
+            const auto reciprocals =
+              internals::transform_eigenvalues(spectral, value.rows(), [](auto x) { return Scalar(1) / x; });
+            internals::validate_positive_spectrum(reciprocals, value.rows());
+            return Result::from_spectral_(internals::reconstruct_symmetric(spectral, value.rows(), reciprocals));
+        });
+    };
+    if constexpr (SPDLike<XprType>) {
+        using InputPolicy = typename XprType::CachePolicy;
+        if constexpr (internals::spd_cache_has_v<InputPolicy, Cache::Spectral>)
+            return spectral_inverse();
+        else if constexpr (internals::spd_cache_has_v<InputPolicy, Cache::Cholesky>) {
+            const auto factor = value.cache().cholesky();
+            const IdentityMatrix<Scalar, XprType::Rows, XprType::Rows> identity(value.rows(), value.rows());
+            const auto inverse_factor = factor.template triangular_block<Lower>().solve(identity);
+            return Result((inverse_factor.transpose() * inverse_factor).template as_symmetric<Lower>());
+        } else if constexpr (internals::spd_cache_has_v<InputPolicy, Cache::InverseSqrt>) {
+            const auto factor = value.cache().template matrix<Cache::InverseSqrt>();
+            return Result((factor * factor).template as_symmetric<Lower>());
+        } else
+            return spectral_inverse();
+    } else
+        return spectral_inverse();
+}
+
+/// @brief preserves symmetry in the inverse and refreshes native spectral caches before their reuse
+template <typename XprType_>
+template <typename Policy>
+auto SymmetricMatrixExpr<XprType_>::inv() const
+    requires std::floating_point<std::remove_cv_t<typename XprType::Scalar>>
+{
+    using Scalar = std::remove_cv_t<typename XprType::Scalar>;
+    using Result = SymmetricMatrix<Scalar, XprType::Rows, Policy>;
+    if constexpr (internals::is_spectral_cache_source<XprType>::value) {
+        const auto& spectral = derived().cache();
+        const auto reciprocals =
+          internals::transform_eigenvalues(spectral, derived().rows(), [](auto x) { return Scalar(1) / x; });
+        return Result(internals::reconstruct_symmetric(spectral, derived().rows(), reciprocals));
+    } else {
+        internals::validate_finite_symmetric(derived());
+        const auto dense_inverse = MatrixExpr<XprType>::inv();
+        for (int i = 0; i < dense_inverse.rows(); ++i)
+            for (int j = 0; j <= i; ++j)
+                fdapde_strong_assert(
+                  std::isfinite(dense_inverse(i, j)), std::domain_error, "symmetric inv: nonfinite result");
+        return Result(dense_inverse.template as_symmetric<Lower>());
+    }
+}
+
+/// @brief delegates SPD inversion to the checked cache-aware matrix kernel
+template <typename XprType_> template <typename Policy> auto SPDMatrixExpr<XprType_>::inv() const {
+    return fdapde::matrix_inv<Policy>(derived());
+}
+
+/// @brief delegates the symmetric exponential to the cache-aware checked SPD kernel
+template <typename XprType_> template <typename Policy> auto SymmetricMatrixExpr<XprType_>::exp() const {
+    return fdapde::matrix_exp<Policy>(derived());
+}
+
+/// @brief delegates the principal square root to the cache-aware checked SPD kernel
+template <typename XprType_> template <typename Policy> auto SPDMatrixExpr<XprType_>::sqrt() const {
+    return fdapde::matrix_sqrt<Policy>(derived());
+}
+
+/// @brief delegates the inverse principal square root to the cache-aware checked SPD kernel
+template <typename XprType_> template <typename Policy> auto SPDMatrixExpr<XprType_>::inv_sqrt() const {
+    return fdapde::matrix_inv_sqrt<Policy>(derived());
 }
 
 /// @brief returns the owned symmetric Frechet derivative of log at an SPD point along a symmetric direction

@@ -155,7 +155,7 @@ void check_packed_triangular_contracts() {
       std::vector<double> {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0});
     // a dynamic triangular owner adopts the requested four-row shape
     ASSERT_EQ(dynamic.rows(), 4);
-    const auto dynamic_inverse = dynamic.inverse();
+    const auto dynamic_inverse = dynamic.inv();
     const Matrix<double, Dynamic, Dynamic> identity(dynamic * dynamic_inverse);
     Matrix<double, 4, 4> expected_identity;
     for (int i = 0; i < 4; ++i) expected_identity(i, i) = 1.0;

@@ -24,11 +24,26 @@
 namespace fdapde {
 namespace manifold {
 
+namespace internals {
+
+/// @brief selects the legacy log-Cholesky cache quantities required by the declared usage
+constexpr unsigned log_cholesky_cache_flags(Usage uses) {
+    return (uses != Usage::None ? Cache::Cholesky::Flags | Cache::LogCholesky::Flags : 0u) |
+           (has_spd_usage(uses, Usage::LogExpDifferentials) ?
+              Cache::Spectral::Flags | Cache::LogDividedDifferences::Flags :
+              0u);
+}
+
+}   // namespace internals
+
 /// @brief defines Lin's flat log-Cholesky metric with ambient symmetric tangent coordinates
 /// @details the symmetric chart stores log(L_ii) on the diagonal and L_ij / sqrt(2) off the diagonal,
 /// so its full Frobenius product counts each strictly lower Cholesky coefficient once
 /// @see https://doi.org/10.1137/18M1221084
-template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class LogCholeskySPDGeometry {
+template <
+  typename Scalar_, int Order_, Usage Uses_ = Usage::None,
+  typename Point_ = SPDMatrix<Scalar_, Order_, Cache::Policy<internals::log_cholesky_cache_flags(Uses_)>>>
+class LogCholeskySPDGeometry {
     fdapde_static_assert((static_cast<unsigned>(Uses_) & ~31u) == 0, SPD_GEOMETRY_USAGE_CONTAINS_UNKNOWN_FLAGS);
     fdapde_static_assert(
       std::is_floating_point_v<Scalar_> && !std::is_const_v<Scalar_> && !std::is_volatile_v<Scalar_>,
@@ -38,15 +53,15 @@ template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class LogChol
       Order_ == fdapde::Dynamic || std::int64_t(Order_) * std::int64_t(Order_) <= std::numeric_limits<int>::max(),
       SPD_GEOMETRY_DENSE_WORKSPACE_SIZE_EXCEEDS_SUPPORTED_RANGE);
    public:
+    using Self = LogCholeskySPDGeometry<Scalar_, Order_, Uses_, Point_>;
     using Scalar = Scalar_;
-    using CachePolicy = Cache::Policy<
-      (Uses_ != Usage::None ? Cache::Cholesky::Flags | Cache::LogCholesky::Flags : 0u) |
-      (internals::has_spd_usage(Uses_, Usage::LogExpDifferentials) ?
-         Cache::Spectral::Flags | Cache::LogDividedDifferences::Flags :
-         0u)>;
-    using Point = SPDMatrix<Scalar, Order_, Order_, CachePolicy>;
-    using Tangent = SymmetricMatrix<Scalar, Order_, Order_>;
+    using Point = Point_;
+    using CachePolicy = typename Point::CachePolicy;
+    using Tangent = SymmetricMatrix<Scalar, Order_>;
     using Factor = Matrix<Scalar, Order_, Order_>;
+    fdapde_static_assert(
+      (std::same_as<Point, SPDMatrix<Scalar, Order_, CachePolicy, Point::StorageOrder>>),
+      LOG_CHOLESKY_GEOMETRY_REQUIRES_A_NATIVE_SPD_OWNER_WITH_MATCHING_SCALAR_AND_SHAPE);
 
     /// @brief owns a prepared Cholesky factor and its isometric symmetric chart
     struct ChartFrame {
@@ -339,6 +354,15 @@ template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class LogChol
           frame.from.coordinates, internals::combine_symmetric<Scalar, Order_>(
                                     frame.to.coordinates, Scalar(1), frame.from.coordinates, Scalar(-1), order_));
     }
+    /// @brief returns uniformly spaced geodesic samples including both endpoints with the selected output cache policy
+    /// @details defaults to the geometry point policy; prepares one curve and requires count >= 2
+    /// sample i uses t = i / (count - 1); execution defaults to sequential and parallel calls join before returning
+    template <
+      typename OutputPolicy = CachePolicy, SPDLike From, SPDLike To,
+      fdapde::internals::BatchExecutionPolicy ExecutionPolicy = execution_seq_t>
+    auto geodesic(const From& from, const To& to, int count, ExecutionPolicy policy = {}) const {
+        return internals::sample_spd_geodesic<OutputPolicy>(*this, from, to, count, policy);
+    }
     /// @brief transports an ambient tangent by keeping its chart coordinates constant
     template <SPDLike From, SPDLike To>
     Tangent transport(const From& from, const To& to, const Tangent& tangent) const {
@@ -507,12 +531,24 @@ template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class LogChol
     int order_ = Order_ == Dynamic ? 0 : Order_;
 };
 
+namespace internals {
+
+/// @brief selects the log-Cholesky metric while preserving the complete native SPD owner type
+template <typename Point> struct log_cholesky_geometry_type {
+    using type = LogCholeskySPDGeometry<typename Point::Scalar, Point::Rows, Usage::None, Point>;
+};
+
+}   // namespace internals
+
+/// @brief supplies the log-Cholesky metric for a native SPD owner with its exact cache policy
+template <typename Point> using LogCholeskyGeometry = typename internals::log_cholesky_geometry_type<Point>::type;
+
 /// @brief computes the globally unique closed-form barycenter and flat stationarity diagnostics
-template <typename Scalar, int Order, Usage Uses, typename Samples>
-WeightedKarcherMeanResult<typename LogCholeskySPDGeometry<Scalar, Order, Uses>::Point> weighted_karcher_mean(
-  const LogCholeskySPDGeometry<Scalar, Order, Uses>& geometry, const Samples& samples,
+template <typename Scalar, int Order, Usage Uses, typename Samples, typename Point_>
+WeightedKarcherMeanResult<typename LogCholeskySPDGeometry<Scalar, Order, Uses, Point_>::Point> weighted_karcher_mean(
+  const LogCholeskySPDGeometry<Scalar, Order, Uses, Point_>& geometry, const Samples& samples,
   std::span<const double> weights) {
-    using Geometry = LogCholeskySPDGeometry<Scalar, Order, Uses>;
+    using Geometry = LogCholeskySPDGeometry<Scalar, Order, Uses, Point_>;
     using Tangent = typename Geometry::Tangent;
     using Accumulation = std::common_type_t<Scalar, double>;
     fdapde_strong_assert(

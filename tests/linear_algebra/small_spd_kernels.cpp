@@ -27,11 +27,11 @@ namespace {
 using namespace fdapde;
 
 template <typename Scalar, int Order> using fixed_matrix = Matrix<Scalar, Order, Order>;
-template <typename Scalar, int Order> using fixed_symmetric = SymmetricMatrix<Scalar, Order, Order>;
-template <typename Scalar, int Order> using fixed_spd = SPDMatrix<Scalar, Order, Order>;
+template <typename Scalar, int Order> using fixed_symmetric = SymmetricMatrix<Scalar, Order>;
+template <typename Scalar, int Order> using fixed_spd = SPDMatrix<Scalar, Order>;
 template <typename Scalar> using dynamic_matrix = Matrix<Scalar, Dynamic, Dynamic>;
-template <typename Scalar> using dynamic_symmetric = SymmetricMatrix<Scalar, Dynamic, Dynamic>;
-template <typename Scalar> using dynamic_spd = SPDMatrix<Scalar, Dynamic, Dynamic>;
+template <typename Scalar> using dynamic_symmetric = SymmetricMatrix<Scalar, Dynamic>;
+template <typename Scalar> using dynamic_spd = SPDMatrix<Scalar, Dynamic>;
 
 /// @brief creates a fixed matrix from row-major test coefficients
 template <typename Scalar, int Order>

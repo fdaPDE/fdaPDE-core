@@ -23,6 +23,26 @@ namespace fdapde {
 namespace manifold {
 namespace internals {
 
+/// @brief materializes uniform samples of one prepared curve using the geometry's scalar and order with an explicit
+/// output cache
+template <
+  typename OutputPolicy, typename Geometry, SPDLike From, SPDLike To,
+  fdapde::internals::BatchExecutionPolicy ExecutionPolicy>
+auto sample_spd_geodesic(const Geometry& geometry, const From& from, const To& to, int count, ExecutionPolicy policy) {
+    fdapde_strong_assert(count >= 2, std::invalid_argument, "geodesic: at least two samples are required");
+    const auto curve = geometry.geodesic(from, to);
+    using Point = typename Geometry::Point;
+    using Result = SPDMatrix<typename Point::Scalar, Point::Rows, OutputPolicy>;
+    return fdapde::internals::generate_matrix_batch<Result>(
+      static_cast<std::size_t>(count), geometry.order(), geometry.order(), policy, [&](std::size_t i) {
+          const double t = static_cast<double>(i) / (count - 1);
+          if constexpr (requires { curve.template operator()<OutputPolicy>(t); })
+              return curve.template operator()<OutputPolicy>(t);
+          else
+              return curve(t);
+      });
+}
+
 /// @brief applies the exponential differential at log(point), reusing its spectral basis when retained
 template <SPDLike Point, typename Direction> auto spd_exp_log_frechet(const Point& point, const Direction& direction) {
     using Policy = typename Point::CachePolicy;
@@ -74,11 +94,11 @@ template <SPDLike Point> auto spd_sqrt_factor(const Point& point) {
         return fdapde::matrix_sqrt(point);
 }
 /// @brief borrows a retained inverse-square-root factor or computes an independent local factor
-template <SPDLike Point> auto spd_inverse_sqrt_factor(const Point& point) {
+template <SPDLike Point> auto spd_inv_sqrt_factor(const Point& point) {
     if constexpr (fdapde::internals::spd_cache_has_v<typename Point::CachePolicy, Cache::InverseSqrt>)
         return point.cache().template matrix<Cache::InverseSqrt>();
     else
-        return fdapde::matrix_inverse_sqrt(point);
+        return fdapde::matrix_inv_sqrt(point);
 }
 
 /// @brief checks positive order and the dense workspace bound
@@ -125,15 +145,15 @@ template <typename Scalar_> Scalar_ geometry_coefficient(double value) {
 }
 
 /// @brief allocates an owning symmetric result with the geometry order
-template <typename Scalar_, int Order_> fdapde::SymmetricMatrix<Scalar_, Order_, Order_> make_symmetric(int order) {
-    fdapde::SymmetricMatrix<Scalar_, Order_, Order_> result;
+template <typename Scalar_, int Order_> fdapde::SymmetricMatrix<Scalar_, Order_> make_symmetric(int order) {
+    fdapde::SymmetricMatrix<Scalar_, Order_> result;
     if constexpr (Order_ == fdapde::Dynamic) { result.resize(order, order); }
     return result;
 }
 
 /// @brief forms a finite linear combination in owning symmetric storage
 template <typename Scalar_, int Order_, typename LhsType_, typename RhsType_>
-fdapde::SymmetricMatrix<Scalar_, Order_, Order_>
+fdapde::SymmetricMatrix<Scalar_, Order_>
 combine_symmetric(const LhsType_& lhs, Scalar_ alpha, const RhsType_& rhs, Scalar_ beta, int order) {
     if (!std::isfinite(alpha) || !std::isfinite(beta)) {
         throw std::invalid_argument("SPD geometry coefficients must be finite.");
@@ -177,7 +197,7 @@ template <typename MatrixType_> double frobenius_norm(const MatrixType_& matrix,
 
 /// @brief forms outer * middle * outer transpose with checked native workspaces
 template <typename Scalar_, int Order_, typename OuterType_, typename MiddleType_>
-fdapde::SymmetricMatrix<Scalar_, Order_, Order_>
+fdapde::SymmetricMatrix<Scalar_, Order_>
 symmetric_congruence(const OuterType_& outer, const MiddleType_& middle, int order) {
     fdapde::Matrix<Scalar_, Order_, Order_> product;
     if constexpr (Order_ == fdapde::Dynamic) { product.resize(order, order); }
@@ -204,7 +224,7 @@ symmetric_congruence(const OuterType_& outer, const MiddleType_& middle, int ord
 
 /// @brief computes the square of a symmetric matrix in owning storage
 template <typename Scalar_, int Order_, typename MatrixType_>
-fdapde::SymmetricMatrix<Scalar_, Order_, Order_> symmetric_square(const MatrixType_& matrix, int order) {
+fdapde::SymmetricMatrix<Scalar_, Order_> symmetric_square(const MatrixType_& matrix, int order) {
     auto result = make_symmetric<Scalar_, Order_>(order);
     for (int i = 0; i < order; ++i) {
         for (int j = 0; j <= i; ++j) {

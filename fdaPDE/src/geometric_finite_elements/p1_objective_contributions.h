@@ -448,11 +448,11 @@ P1ObjectiveResult<WithGradient, typename Geometry::Tangent> p1_dirichlet_cell_ob
 // the observation is log(D), not D. Computing and validating it once belongs
 // to the data-ingest boundary
 /// @brief evaluates the LE log-coordinate data loss against a precomputed observation log
-template <typename Scalar_, int Order_, Usage Uses, typename Nodes>
+template <typename Scalar_, int Order_, Usage Uses, typename Nodes, typename Point_>
 P1ObjectiveValueResult p1_log_coordinate_data_site_value(
-  const manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses>& geometry, const Nodes& nodal_values,
+  const manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses, Point_>& geometry, const Nodes& nodal_values,
   std::span<const double> barycentric_weights,
-  const typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses>::Tangent& observation_log) {
+  const typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses, Point_>::Tangent& observation_log) {
     const auto value_result = p1_geodesic_value(geometry, nodal_values, barycentric_weights);
     return internals::p1_flat_coordinate_data_site_value_impl(geometry, value_result, observation_log);
 }
@@ -460,12 +460,12 @@ P1ObjectiveValueResult p1_log_coordinate_data_site_value(
 // the returned metric gradients follow nodal_values order. Observation
 // weighting and global scattering belong to the caller
 /// @brief returns the LE log-coordinate loss and metric gradients in nodal order
-template <typename Scalar_, int Order_, Usage Uses, typename Nodes>
-P1ObjectiveContributionResult<typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses>::Tangent>
+template <typename Scalar_, int Order_, Usage Uses, typename Nodes, typename Point_>
+P1ObjectiveContributionResult<typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses, Point_>::Tangent>
 p1_log_coordinate_data_site_contribution(
-  const manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses>& geometry, const Nodes& nodal_values,
+  const manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses, Point_>& geometry, const Nodes& nodal_values,
   std::span<const double> barycentric_weights,
-  const typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses>::Tangent& observation_log) {
+  const typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses, Point_>::Tangent& observation_log) {
     auto linearization = p1_geodesic_linearization(geometry, nodal_values, barycentric_weights);
     return internals::p1_flat_coordinate_data_site_contribution_impl(
       geometry, nodal_values, std::move(linearization), observation_log);
@@ -493,11 +493,11 @@ P1ObjectiveContributionResult<typename Geometry::Tangent> p1_flat_coordinate_dat
 }
 
 /// @brief evaluates the Frobenius loss of arithmetic P1 interpolation
-template <typename Scalar_, int Order_, Usage Uses, typename Nodes>
+template <typename Scalar_, int Order_, Usage Uses, typename Nodes, typename Point_>
 P1ObjectiveValueResult p1_ambient_frobenius_data_site_value(
-  const manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses>& geometry, const Nodes& nodal_values,
+  const manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses, Point_>& geometry, const Nodes& nodal_values,
   std::span<const double> barycentric_weights,
-  const typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses>::Tangent& observation) {
+  const typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses, Point_>::Tangent& observation) {
     return internals::p1_ambient_frobenius_data_site_impl<false>(
       geometry, nodal_values, barycentric_weights, observation);
 }
@@ -513,11 +513,11 @@ P1ObjectiveValueResult p1_ambient_frobenius_data_site_value(
 }
 
 /// @brief evaluates the Frobenius loss of arithmetic P1 interpolation
-template <typename Scalar_, int Order_, Usage Uses, typename Nodes>
+template <typename Scalar_, int Order_, Usage Uses, typename Nodes, typename Point_>
 P1ObjectiveValueResult p1_ambient_frobenius_data_site_value(
-  const manifold::AffineInvariantSPDGeometry<Scalar_, Order_, Uses>& geometry, const Nodes& nodal_values,
+  const manifold::AffineInvariantSPDGeometry<Scalar_, Order_, Uses, Point_>& geometry, const Nodes& nodal_values,
   std::span<const double> barycentric_weights,
-  const typename manifold::AffineInvariantSPDGeometry<Scalar_, Order_, Uses>::Tangent& observation) {
+  const typename manifold::AffineInvariantSPDGeometry<Scalar_, Order_, Uses, Point_>::Tangent& observation) {
     return internals::p1_ambient_frobenius_data_site_impl<false>(
       geometry, nodal_values, barycentric_weights, observation);
 }
@@ -525,12 +525,12 @@ P1ObjectiveValueResult p1_ambient_frobenius_data_site_value(
 // the returned metric gradients follow nodal_values order. This objective
 // uses ordinary ambient P1 interpolation, not a Karcher mean
 /// @brief returns the arithmetic P1 Frobenius loss and metric gradients in nodal order
-template <typename Scalar_, int Order_, Usage Uses, typename Nodes>
-P1ObjectiveContributionResult<typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses>::Tangent>
+template <typename Scalar_, int Order_, Usage Uses, typename Nodes, typename Point_>
+P1ObjectiveContributionResult<typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses, Point_>::Tangent>
 p1_ambient_frobenius_data_site_contribution(
-  const manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses>& geometry, const Nodes& nodal_values,
+  const manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses, Point_>& geometry, const Nodes& nodal_values,
   std::span<const double> barycentric_weights,
-  const typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses>::Tangent& observation) {
+  const typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses, Point_>::Tangent& observation) {
     return internals::p1_ambient_frobenius_data_site_impl<true>(
       geometry, nodal_values, barycentric_weights, observation);
 }
@@ -546,22 +546,22 @@ P1ObjectiveContributionResult<typename Geometry::Tangent> p1_ambient_frobenius_d
 }
 
 /// @brief returns the arithmetic P1 Frobenius loss and metric gradients in nodal order
-template <typename Scalar_, int Order_, Usage Uses, typename Nodes>
-P1ObjectiveContributionResult<typename manifold::AffineInvariantSPDGeometry<Scalar_, Order_, Uses>::Tangent>
+template <typename Scalar_, int Order_, Usage Uses, typename Nodes, typename Point_>
+P1ObjectiveContributionResult<typename manifold::AffineInvariantSPDGeometry<Scalar_, Order_, Uses, Point_>::Tangent>
 p1_ambient_frobenius_data_site_contribution(
-  const manifold::AffineInvariantSPDGeometry<Scalar_, Order_, Uses>& geometry, const Nodes& nodal_values,
+  const manifold::AffineInvariantSPDGeometry<Scalar_, Order_, Uses, Point_>& geometry, const Nodes& nodal_values,
   std::span<const double> barycentric_weights,
-  const typename manifold::AffineInvariantSPDGeometry<Scalar_, Order_, Uses>::Tangent& observation) {
+  const typename manifold::AffineInvariantSPDGeometry<Scalar_, Order_, Uses, Point_>::Tangent& observation) {
     return internals::p1_ambient_frobenius_data_site_impl<true>(
       geometry, nodal_values, barycentric_weights, observation);
 }
 
 /// @brief evaluates the Frobenius loss of geodesic P1 interpolation
-template <typename Scalar_, int Order_, Usage Uses, typename Nodes>
+template <typename Scalar_, int Order_, Usage Uses, typename Nodes, typename Point_>
 P1ObjectiveValueResult p1_frobenius_data_site_value(
-  const manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses>& geometry, const Nodes& nodal_values,
+  const manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses, Point_>& geometry, const Nodes& nodal_values,
   std::span<const double> barycentric_weights,
-  const typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses>::Tangent& observation) {
+  const typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses, Point_>::Tangent& observation) {
     const auto value_result = p1_geodesic_value(geometry, nodal_values, barycentric_weights);
     return internals::p1_frobenius_data_site_value_impl(geometry, value_result, observation);
 }
@@ -577,23 +577,23 @@ P1ObjectiveValueResult p1_frobenius_data_site_value(
 }
 
 /// @brief evaluates the Frobenius loss of geodesic P1 interpolation
-template <typename Scalar_, int Order_, Usage Uses, typename Nodes>
+template <typename Scalar_, int Order_, Usage Uses, typename Nodes, typename Point_>
 P1ObjectiveValueResult p1_frobenius_data_site_value(
-  const manifold::AffineInvariantSPDGeometry<Scalar_, Order_, Uses>& geometry, const Nodes& nodal_values,
+  const manifold::AffineInvariantSPDGeometry<Scalar_, Order_, Uses, Point_>& geometry, const Nodes& nodal_values,
   std::span<const double> barycentric_weights,
-  const typename manifold::AffineInvariantSPDGeometry<Scalar_, Order_, Uses>::Tangent& observation,
+  const typename manifold::AffineInvariantSPDGeometry<Scalar_, Order_, Uses, Point_>::Tangent& observation,
   const manifold::WeightedKarcherMeanOptions& options = {}) {
     const auto value_result = p1_geodesic_value(geometry, nodal_values, barycentric_weights, options);
     return internals::p1_frobenius_data_site_value_impl(geometry, value_result, observation);
 }
 
 /// @brief returns the geodesic P1 Frobenius loss and metric gradients in nodal order
-template <typename Scalar_, int Order_, Usage Uses, typename Nodes>
-P1ObjectiveContributionResult<typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses>::Tangent>
+template <typename Scalar_, int Order_, Usage Uses, typename Nodes, typename Point_>
+P1ObjectiveContributionResult<typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses, Point_>::Tangent>
 p1_frobenius_data_site_contribution(
-  const manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses>& geometry, const Nodes& nodal_values,
+  const manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses, Point_>& geometry, const Nodes& nodal_values,
   std::span<const double> barycentric_weights,
-  const typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses>::Tangent& observation) {
+  const typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses, Point_>::Tangent& observation) {
     auto linearization = p1_geodesic_linearization(geometry, nodal_values, barycentric_weights);
     return internals::p1_frobenius_data_site_contribution_impl(
       geometry, nodal_values, std::move(linearization), observation);
@@ -611,12 +611,12 @@ P1ObjectiveContributionResult<typename Geometry::Tangent> p1_frobenius_data_site
 }
 
 /// @brief returns the geodesic P1 Frobenius loss and metric gradients in nodal order
-template <typename Scalar_, int Order_, Usage Uses, typename Nodes>
-P1ObjectiveContributionResult<typename manifold::AffineInvariantSPDGeometry<Scalar_, Order_, Uses>::Tangent>
+template <typename Scalar_, int Order_, Usage Uses, typename Nodes, typename Point_>
+P1ObjectiveContributionResult<typename manifold::AffineInvariantSPDGeometry<Scalar_, Order_, Uses, Point_>::Tangent>
 p1_frobenius_data_site_contribution(
-  const manifold::AffineInvariantSPDGeometry<Scalar_, Order_, Uses>& geometry, const Nodes& nodal_values,
+  const manifold::AffineInvariantSPDGeometry<Scalar_, Order_, Uses, Point_>& geometry, const Nodes& nodal_values,
   std::span<const double> barycentric_weights,
-  const typename manifold::AffineInvariantSPDGeometry<Scalar_, Order_, Uses>::Tangent& observation,
+  const typename manifold::AffineInvariantSPDGeometry<Scalar_, Order_, Uses, Point_>::Tangent& observation,
   const P1GeodesicLinearizationOptions& options = {}) {
     auto linearization = p1_geodesic_linearization(geometry, nodal_values, barycentric_weights, options);
     return internals::p1_frobenius_data_site_contribution_impl(
@@ -624,23 +624,23 @@ p1_frobenius_data_site_contribution(
 }
 
 /// @brief evaluates the Frobenius loss of BW P1 interpolation
-template <typename Scalar, int Order, Usage Uses, typename Nodes>
+template <typename Scalar, int Order, Usage Uses, typename Nodes, typename Point_>
 P1ObjectiveValueResult p1_frobenius_data_site_value(
-  const manifold::BuresWassersteinSPDGeometry<Scalar, Order, Uses>& geometry, const Nodes& nodal_values,
+  const manifold::BuresWassersteinSPDGeometry<Scalar, Order, Uses, Point_>& geometry, const Nodes& nodal_values,
   std::span<const double> barycentric_weights,
-  const typename manifold::BuresWassersteinSPDGeometry<Scalar, Order, Uses>::Tangent& observation,
+  const typename manifold::BuresWassersteinSPDGeometry<Scalar, Order, Uses, Point_>::Tangent& observation,
   const manifold::WeightedKarcherMeanOptions& options = {}) {
     const auto value_result = p1_geodesic_value(geometry, nodal_values, barycentric_weights, options);
     return internals::p1_frobenius_data_site_value_impl(geometry, value_result, observation);
 }
 
 /// @brief returns the BW P1 Frobenius loss and its metric gradients in nodal order
-template <typename Scalar, int Order, Usage Uses, typename Nodes>
-P1ObjectiveContributionResult<typename manifold::BuresWassersteinSPDGeometry<Scalar, Order, Uses>::Tangent>
+template <typename Scalar, int Order, Usage Uses, typename Nodes, typename Point_>
+P1ObjectiveContributionResult<typename manifold::BuresWassersteinSPDGeometry<Scalar, Order, Uses, Point_>::Tangent>
 p1_frobenius_data_site_contribution(
-  const manifold::BuresWassersteinSPDGeometry<Scalar, Order, Uses>& geometry, const Nodes& nodal_values,
+  const manifold::BuresWassersteinSPDGeometry<Scalar, Order, Uses, Point_>& geometry, const Nodes& nodal_values,
   std::span<const double> barycentric_weights,
-  const typename manifold::BuresWassersteinSPDGeometry<Scalar, Order, Uses>::Tangent& observation,
+  const typename manifold::BuresWassersteinSPDGeometry<Scalar, Order, Uses, Point_>::Tangent& observation,
   const P1GeodesicLinearizationOptions& options = {}) {
     auto linearization = p1_geodesic_linearization(geometry, nodal_values, barycentric_weights, options);
     return internals::p1_frobenius_data_site_contribution_impl(
@@ -650,9 +650,9 @@ p1_frobenius_data_site_contribution(
 /// @brief integrates half the squared spatial metric derivative over one cell
 template <
   typename Scalar_, int Order_, std::size_t LocalDim, std::size_t EmbedDim, std::size_t QuadratureSize, Usage Uses,
-  typename Nodes>
+  typename Nodes, typename Point_>
 P1ObjectiveValueResult p1_dirichlet_cell_value(
-  const manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses>& geometry, const Nodes& nodal_values,
+  const manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses, Point_>& geometry, const Nodes& nodal_values,
   const P1FEMCellQuadrature<LocalDim, EmbedDim, QuadratureSize>& packet) {
     auto builder = [&geometry](const auto& nodes, auto weights) {
         return p1_geodesic_linearization(geometry, nodes, weights);
@@ -675,9 +675,9 @@ P1ObjectiveValueResult p1_dirichlet_cell_value(
 /// @brief integrates half the squared spatial metric derivative over one cell
 template <
   typename Scalar_, int Order_, std::size_t LocalDim, std::size_t EmbedDim, std::size_t QuadratureSize, Usage Uses,
-  typename Nodes>
+  typename Nodes, typename Point_>
 P1ObjectiveValueResult p1_dirichlet_cell_value(
-  const manifold::AffineInvariantSPDGeometry<Scalar_, Order_, Uses>& geometry, const Nodes& nodal_values,
+  const manifold::AffineInvariantSPDGeometry<Scalar_, Order_, Uses, Point_>& geometry, const Nodes& nodal_values,
   const P1FEMCellQuadrature<LocalDim, EmbedDim, QuadratureSize>& packet,
   const P1GeodesicLinearizationOptions& options = {}) {
     auto builder = [&geometry, &options](const auto& nodes, auto weights) {
@@ -691,10 +691,10 @@ P1ObjectiveValueResult p1_dirichlet_cell_value(
 /// @brief returns cell Dirichlet energy and metric gradients in packet dof order
 template <
   typename Scalar_, int Order_, std::size_t LocalDim, std::size_t EmbedDim, std::size_t QuadratureSize, Usage Uses,
-  typename Nodes>
-P1ObjectiveContributionResult<typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses>::Tangent>
+  typename Nodes, typename Point_>
+P1ObjectiveContributionResult<typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses, Point_>::Tangent>
 p1_dirichlet_cell_contribution(
-  const manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses>& geometry, const Nodes& nodal_values,
+  const manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses, Point_>& geometry, const Nodes& nodal_values,
   const P1FEMCellQuadrature<LocalDim, EmbedDim, QuadratureSize>& packet) {
     auto builder = [&geometry](const auto& nodes, auto weights) {
         return p1_geodesic_linearization(geometry, nodes, weights);
@@ -719,10 +719,10 @@ P1ObjectiveContributionResult<typename Geometry::Tangent> p1_dirichlet_cell_cont
 /// @brief returns cell Dirichlet energy and metric gradients in packet dof order
 template <
   typename Scalar_, int Order_, std::size_t LocalDim, std::size_t EmbedDim, std::size_t QuadratureSize, Usage Uses,
-  typename Nodes>
-P1ObjectiveContributionResult<typename manifold::AffineInvariantSPDGeometry<Scalar_, Order_, Uses>::Tangent>
+  typename Nodes, typename Point_>
+P1ObjectiveContributionResult<typename manifold::AffineInvariantSPDGeometry<Scalar_, Order_, Uses, Point_>::Tangent>
 p1_dirichlet_cell_contribution(
-  const manifold::AffineInvariantSPDGeometry<Scalar_, Order_, Uses>& geometry, const Nodes& nodal_values,
+  const manifold::AffineInvariantSPDGeometry<Scalar_, Order_, Uses, Point_>& geometry, const Nodes& nodal_values,
   const P1FEMCellQuadrature<LocalDim, EmbedDim, QuadratureSize>& packet,
   const P1GeodesicLinearizationOptions& options = {}) {
     auto builder = [&geometry, &options](const auto& nodes, auto weights) {

@@ -34,9 +34,9 @@ static_assert(fdapde::manifold::VectorTransportGeometry<FixedGeometry>);
 // the dynamic geometry exposes the same vector-transport contract
 static_assert(fdapde::manifold::VectorTransportGeometry<DynamicGeometry>);
 // points use the native SPD owner with the geometry's fixed order
-static_assert(std::is_same_v<FixedGeometry::Point, native::SPDMatrix<double, 3, 3>>);
+static_assert(std::is_same_v<FixedGeometry::Point, native::SPDMatrix<double, 3>>);
 // tangents use native symmetric storage rather than logarithmic-coordinate vectors
-static_assert(std::is_same_v<FixedGeometry::Tangent, native::SymmetricMatrix<double, 3, 3>>);
+static_assert(std::is_same_v<FixedGeometry::Tangent, native::SymmetricMatrix<double, 3>>);
 // the fixed geometry obtains its order from the template arguments
 static_assert(std::is_default_constructible_v<FixedGeometry>);
 // a runtime order cannot override a fixed geometry's template order

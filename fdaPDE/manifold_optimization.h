@@ -23,6 +23,7 @@
 #include <concepts>
 #include <cstddef>
 #include <optional>
+#include <ranges>
 #include <span>
 
 #include "src/manifold_optimization/manifold.h"

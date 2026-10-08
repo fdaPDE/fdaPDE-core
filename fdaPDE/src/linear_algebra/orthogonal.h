@@ -74,15 +74,15 @@ template <typename XprType_> struct OrthogonalMatrixExpr : public MatrixExpr<Xpr
     using XprType = std::remove_cvref_t<XprType_>;
 
     /// @brief returns the inverse matrix expression
-    constexpr auto inverse() const& { return internals::orthogonal_cast(this->derived().transpose()); }
+    constexpr auto inv() const& { return internals::orthogonal_cast(this->derived().transpose()); }
     /// @brief returns the inverse matrix expression
-    constexpr auto inverse() const&&
+    constexpr auto inv() const&&
         requires(XprType::NestAsRef == 0)
     {
         return internals::orthogonal_cast(this->derived().transpose());
     }
     /// @brief rejects borrowing an inverse expression from a temporary owner
-    constexpr void inverse() const&&
+    constexpr void inv() const&&
         requires(XprType::NestAsRef != 0)
     = delete;
 
@@ -90,7 +90,7 @@ template <typename XprType_> struct OrthogonalMatrixExpr : public MatrixExpr<Xpr
     template <typename RhsXprType> constexpr auto solve(const RhsXprType& rhs) const {
         using RhsType = std::remove_cvref_t<RhsXprType>;
         using Scalar = promote_type_t<typename XprType::Scalar, typename RhsType::Scalar>;
-        return Matrix<Scalar, XprType::Cols, RhsType::Cols>(inverse() * rhs);
+        return Matrix<Scalar, XprType::Cols, RhsType::Cols>(inv() * rhs);
     }
 };
 
@@ -171,6 +171,9 @@ struct OrthogonalMatrixBase : public OrthogonalMatrixExpr<OrthogonalMatrixType_>
     int rows_, cols_;
 };
 
+/// @brief borrows square storage whose columns satisfy the orthogonality contract
+template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_> class OrthogonalMatrixView;
+
 /// @brief stores an orthogonal matrix
 template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_ = RowMajor>
 class OrthogonalMatrix :
@@ -192,6 +195,8 @@ class OrthogonalMatrix :
     static constexpr int ReadOnly = 1;
     static constexpr int NestAsRef = 1;
     using assignment_executor = typename StorageType::assignment_executor;
+    using View = OrthogonalMatrixView<Scalar, Rows, Cols, StorageOrder>;
+    using ConstView = OrthogonalMatrixView<const Scalar, Rows, Cols, StorageOrder>;
 
     /// @brief rejects construction without coefficients that establish orthogonality
     constexpr OrthogonalMatrix() = delete;

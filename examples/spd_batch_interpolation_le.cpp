@@ -29,9 +29,9 @@ int main() {
     using namespace fdapde;
     using namespace fdapde::manifold;
     using Dense = Matrix<double, 2, 2>;
-    using Symmetric = SymmetricMatrix<double, 2, 2>;
-    using Point = SPDMatrix<double, 2, 2>;
-    using CachedPoint = SPDMatrix<double, 2, 2, Cache::Log>;
+    using Symmetric = SymmetricMatrix<double, 2>;
+    using Point = SPDMatrix<double, 2>;
+    using CachedPoint = SPDMatrix<double, 2, Cache::Log>;
     using Geometry = LogEuclideanSPDGeometry<double, 2>;
     using CachedGeometry = LogEuclideanSPDGeometry<double, 2, Usage::Distance>;
     using Clock = std::chrono::steady_clock;

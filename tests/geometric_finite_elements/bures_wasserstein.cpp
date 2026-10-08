@@ -8,7 +8,7 @@ using Geometry = manifold::BuresWassersteinSPDGeometry<double, 2>;
 using Point = Geometry::Point;
 using Tangent = Geometry::Tangent;
 using Dense = Matrix<double, 2, 2>;
-using Batch = MatrixBatch<SPDMatrix<double, 2, 2, Cache::Union<Cache::Spectral, Cache::Sqrt, Cache::InverseSqrt>>>;
+using Batch = MatrixBatch<SPDMatrix<double, 2, Cache::Union<Cache::Spectral, Cache::Sqrt, Cache::InverseSqrt>>>;
 
 /// @brief converts a dense symmetric oracle to independent packed tangent storage
 Tangent tangent(const Dense& value) { return Tangent(value.as_symmetric<Lower>()); }

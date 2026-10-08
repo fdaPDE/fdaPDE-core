@@ -296,7 +296,7 @@ TEST(LogCholeskySPDGeometry, RejectsInvalidOrdersCoordinatesAndWeights) {
     // runtime zero order is excluded by the geometry construction contract
     EXPECT_THROW((LogCholeskySPDGeometry<double, Dynamic>(0)), std::invalid_argument);
     const LogCholeskySPDGeometry<double, Dynamic> geometry(3);
-    const SPDMatrix<double, 2, 2> wrong = SPDMatrix<double, 2, 2>::Identity();
+    const SPDMatrix<double, 2> wrong = SPDMatrix<double, 2>::Identity();
     // a point of different order cannot enter a runtime chart
     EXPECT_THROW(geometry.chart(wrong), std::invalid_argument);
     const Geometry2 fixed;
@@ -341,7 +341,7 @@ TEST(LogCholeskySPDGeometry, CachedFramesPreserveMapsAndMetrics) {
     expect_matrix(
       cached_geometry.riemannian_to_euclidean_gradient(cached, direction),
       plain_geometry.riemannian_to_euclidean_gradient(point, direction), 0);
-    const SPDMatrix<double, 3, 3, Cache::LogCholesky> chart_only(point);
+    const SPDMatrix<double, 3, Cache::LogCholesky> chart_only(point);
     // the chart-only policy computes the coordinates directly from certified coefficients
     expect_matrix(cached_geometry.chart(chart_only), plain_frame.coordinates, 0);
 }

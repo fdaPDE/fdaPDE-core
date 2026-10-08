@@ -714,7 +714,7 @@ TEST(LinearAlgebraRuntimeContracts, DynamicSquareOperationsRemainAvailable) {
     Matrix<double, Dynamic, Dynamic> matrix = Matrix<double, 2, 2>({2, 1, 1, 3});
     const Matrix<double, 2, 2> zero = Matrix<double, 2, 2>::Zero();
     const Vector<double, 2> expected_diagonal({2, 3});
-    const Matrix<double, Dynamic, Dynamic> inverse = matrix.inverse();
+    const Matrix<double, Dynamic, Dynamic> inverse = matrix.inv();
 
     // the symmetric part of an already symmetric matrix equals the input
     EXPECT_EQ(matrix.symm_part(), matrix);
@@ -737,7 +737,7 @@ TEST(LinearAlgebraRuntimeContracts, SquareOperationsRejectRectangularMatrices) {
     // skew-part extraction rejects a rectangular matrix
     EXPECT_THROW((void)matrix.skew_part(), std::invalid_argument);
     // inverse rejects a rectangular matrix
-    EXPECT_THROW((void)matrix.inverse(), std::invalid_argument);
+    EXPECT_THROW((void)matrix.inv(), std::invalid_argument);
     // determinant rejects a rectangular matrix
     EXPECT_THROW((void)matrix.determinant(), std::invalid_argument);
 }
@@ -1092,12 +1092,12 @@ TEST(LinearAlgebraRuntimeContracts, ScalarDivisionUsesCoefficientArithmeticAndSa
 // exercise scalar division without losing symmetric, skew, diagonal or triangular structure
 TEST(LinearAlgebraRuntimeContracts, ScalarDivisionPreservesStructuredMatrixCategories) {
     const double symmetric_values[] {3.0, -5.0, 7.0};
-    const SymmetricMatrix<double, 2, 2> symmetric(symmetric_values);
+    const SymmetricMatrix<double, 2> symmetric(symmetric_values);
     const auto symmetric_divided = symmetric / 2;
     // scalar division preserves the symmetric expression tag
     static_assert(is_symmetric_matrix_v<decltype(symmetric_divided)>);
     // division cannot borrow a temporary symmetric owner
-    static_assert(!permits_temporary_integer_division<SymmetricMatrix<double, 2, 2>>);
+    static_assert(!permits_temporary_integer_division<SymmetricMatrix<double, 2>>);
     // dividing a symmetric matrix scales both reflected entries consistently
     EXPECT_EQ((Matrix<double, 2, 2>(symmetric_divided)), (Matrix<double, 2, 2>({1.5, -2.5, -2.5, 3.5})));
     const auto symmetric_nested = [&] { return (symmetric + symmetric) / 2; }();

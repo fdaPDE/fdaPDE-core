@@ -20,8 +20,8 @@
 
 namespace {
 using namespace fdapde;
-using Point = SPDMatrix<double, 2, 2>;
-using Batch = MatrixBatch<SPDMatrix<double, 2, 2, Cache::Log>>;
+using Point = SPDMatrix<double, 2>;
+using Batch = MatrixBatch<SPDMatrix<double, 2, Cache::Log>>;
 using Locations = MatrixBatch<Vector<double, 2>>;
 using LE = manifold::LogEuclideanSPDGeometry<double, 2, Usage::InterpolationNodes>;
 using AIRM = manifold::AffineInvariantSPDGeometry<double, 2, Usage::BasePointMaps>;
@@ -228,7 +228,7 @@ TEST(GeometricFeEvaluation, EmbeddedDynamicOrder) {
     const Triangulation<2, 3> mesh(vertices, cells, Eigen::Matrix<int, 3, 1>::Ones());
     const manifold::AffineInvariantSPDGeometry<double, Dynamic, Usage::BasePointMaps> geometry(3);
     const GeometricFeSpace space(mesh, P1<1>, geometry);
-    MatrixBatch<SPDMatrix<double, Dynamic, Dynamic, Cache::Log>> coefficients(3, 3, 3);
+    MatrixBatch<SPDMatrix<double, Dynamic, Cache::Log>> coefficients(3, 3, 3);
     const GeometricFeFunction function(space, std::move(coefficients));
     MatrixBatch<Vector<double, 3>> locations(2);
     locations[0] = Vector<double, 3> {.2, .3, 2.};

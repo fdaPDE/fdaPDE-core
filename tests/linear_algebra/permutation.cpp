@@ -37,7 +37,7 @@ template <typename MatrixType>
 concept exposes_owning_rvalue_derived = requires(MatrixType& matrix) { std::move(matrix).derived(); };
 
 template <typename MatrixType>
-concept permits_owning_rvalue_inverse = requires(MatrixType& matrix) { std::move(matrix).inverse(); };
+concept permits_owning_rvalue_inverse = requires(MatrixType& matrix) { std::move(matrix).inv(); };
 
 template <typename MatrixType>
 concept permits_owning_rvalue_assignment = requires(MatrixType& lhs, MatrixType& rhs) { std::move(lhs) = rhs; };
@@ -123,7 +123,7 @@ template <int StorageOrder> void check_permutation_actions_and_dispatch() {
 
     const DiagonalMatrix<double, 3> diagonal({2.0, 3.0, 4.0});
     const LowerTriangularMatrix<double, 3, 3> triangular({1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
-    const SymmetricMatrix<double, 3, 3> symmetric({1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
+    const SymmetricMatrix<double, 3> symmetric({1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
     const Matrix<double, 3, 3, StorageOrder> dense_permutation(permutation);
     const Matrix<double, 3, 3, StorageOrder> dense_diagonal(diagonal);
     const Matrix<double, 3, 3, StorageOrder> dense_triangular(triangular);
@@ -161,7 +161,7 @@ TEST(linear_algebra, permutation) {
     // a three-dimensional permutation has Frobenius norm sqrt(3)
     EXPECT_NEAR(permutation.norm(), fdapde::sqrt(3.0), 1.0e-12);
 
-    const auto inverse = permutation.inverse();
+    const auto inverse = permutation.inv();
     // inversion retains the permutation expression tag
     static_assert(is_permutation_matrix_v<decltype(inverse)>);
     // the inverse mapping reverses the original three-cycle

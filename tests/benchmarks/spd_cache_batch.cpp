@@ -137,17 +137,17 @@ using namespace fdapde::manifold;
 
 using full_cache =
   Cache::Union<Cache::Spectral, Cache::Log, Cache::Sqrt, Cache::InverseSqrt, Cache::LogDividedDifferences>;
-using static_none_owner = SPDMatrix<double, 2, 2>;
-using static_full_owner = SPDMatrix<double, 2, 2, full_cache>;
-using dynamic_none_owner = SPDMatrix<double, Dynamic, Dynamic>;
-using dynamic_full_owner = SPDMatrix<double, Dynamic, Dynamic, full_cache>;
+using static_none_owner = SPDMatrix<double, 2>;
+using static_full_owner = SPDMatrix<double, 2, full_cache>;
+using dynamic_none_owner = SPDMatrix<double, Dynamic>;
+using dynamic_full_owner = SPDMatrix<double, Dynamic, full_cache>;
 using no_cache_geometry = LogEuclideanSPDGeometry<double, 2, Usage::None>;
 using cached_geometry = LogEuclideanSPDGeometry<double, 2, Usage::Distance | Usage::BasePointMaps>;
 
 // no-cache owners retain exactly the compact symmetric representation
-static_assert(sizeof(static_none_owner) == sizeof(SymmetricMatrix<double, 2, 2>));
+static_assert(sizeof(static_none_owner) == sizeof(SymmetricMatrix<double, 2>));
 // no-cache owners preserve compact symmetric alignment
-static_assert(alignof(static_none_owner) == alignof(SymmetricMatrix<double, 2, 2>));
+static_assert(alignof(static_none_owner) == alignof(SymmetricMatrix<double, 2>));
 // geometry without uses stores no cache quantities in its canonical point
 static_assert(no_cache_geometry::CachePolicy::Flags == Cache::None::Flags);
 // distance and base-point uses request retained log and spectral quantities
@@ -299,9 +299,9 @@ void measure_batch_from_values() {
 void measure_policy_expansion() {
     const Matrix<double, 2, 2> coefficients({3, 1, 1, 2});
     const dynamic_none_owner none(coefficients);
-    const SPDMatrix<double, Dynamic, Dynamic, Cache::Log> logarithm(coefficients);
-    const SPDMatrix<double, Dynamic, Dynamic, Cache::Spectral> spectral(coefficients);
-    const SPDMatrix<double, Dynamic, Dynamic, Cache::Union<Cache::Spectral, Cache::Log>> spectral_log(coefficients);
+    const SPDMatrix<double, Dynamic, Cache::Log> logarithm(coefficients);
+    const SPDMatrix<double, Dynamic, Cache::Spectral> spectral(coefficients);
+    const SPDMatrix<double, Dynamic, Cache::Union<Cache::Spectral, Cache::Log>> spectral_log(coefficients);
     const auto from_none = measure_construction([&] { return dynamic_full_owner(none); });
     const auto from_log = measure_construction([&] { return dynamic_full_owner(logarithm); });
     const auto from_spectral = measure_construction([&] { return dynamic_full_owner(spectral); });
@@ -350,8 +350,8 @@ template <typename Geometry> void measure_geometry(const char* suffix) {
 // measures cache layout, allocation lifetime and sequential geometry costs without test framework dependencies
 int main() {
     std::cout << "metric,name,count,persistent_allocations,temporary_allocations,total_allocations\n";
-    std::cout << "layout,symmetric_owner_size," << sizeof(SymmetricMatrix<double, 2, 2>) << ",align,"
-              << alignof(SymmetricMatrix<double, 2, 2>) << '\n';
+    std::cout << "layout,symmetric_owner_size," << sizeof(SymmetricMatrix<double, 2>) << ",align,"
+              << alignof(SymmetricMatrix<double, 2>) << '\n';
     std::cout << "layout,static_none_owner_size," << sizeof(static_none_owner) << ",align,"
               << alignof(static_none_owner) << '\n';
     std::cout << "layout,static_full_owner_size," << sizeof(static_full_owner) << ",align,"

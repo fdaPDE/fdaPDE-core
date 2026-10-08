@@ -44,7 +44,7 @@ template <typename S, int N> class CheegerRotationDifferential {
 };
 /// @brief applies the C-LE log-coordinate metric using a symmetric spectral frame
 template <typename S, int N, typename X>
-SymmetricMatrix<S, N, N> cheeger_metric(const X& x, const SymmetricMatrix<S, N, N>& h, double rho) {
+SymmetricMatrix<S, N> cheeger_metric(const X& x, const SymmetricMatrix<S, N>& h, double rho) {
     const EVD evd(x);
     const auto& q = evd.eigenvectors();
     const Matrix<S, N, N> local(q.transpose() * h * q);
@@ -54,7 +54,7 @@ SymmetricMatrix<S, N, N> cheeger_metric(const X& x, const SymmetricMatrix<S, N, 
             const double gap = double(evd.eigenvalues()[i]) - double(evd.eigenvalues()[j]);
             scaled(i, j) *= S(rho / (rho + gap * gap));
         }
-    return SymmetricMatrix<S, N, N>((q * scaled * q.transpose()).template as_symmetric<Lower>());
+    return SymmetricMatrix<S, N>((q * scaled * q.transpose()).template as_symmetric<Lower>());
 }
 /// @brief minimizes rotational lifts and retains their analytic Hessian for implicit differentiation
 /// @details pair searches use one fixed chart; mean searches eliminate the weighted symmetric chart
@@ -62,7 +62,7 @@ SymmetricMatrix<S, N, N> cheeger_metric(const X& x, const SymmetricMatrix<S, N, 
 // ponytail: dense lifted Hessians scale quadratically in nodes*n*(n-1)/2, use matrix-free solves for large orders
 template <typename S, int N> class CheegerLift {
    public:
-    using Sym = SymmetricMatrix<S, N, N>;
+    using Sym = SymmetricMatrix<S, N>;
     using Skew = SkewSymmetricMatrix<S, N, N>;
     using Rotation = RotationMatrix<S, N, N, RotationCache::Log>;
     using Batch = MatrixBatch<Rotation>;
@@ -338,7 +338,7 @@ template <typename S, int N> class CheegerLift {
     void prepare(const State& state) {
         h_ = hessian(state);
         if (h_->rows() == 0) return;
-        const SPDMatrix<S, Dynamic, Dynamic> positive(*h_);
+        const SPDMatrix<S, Dynamic> positive(*h_);
         lu_.emplace(*h_);
     }
     /// @brief solves a retained implicit system and checks its relative residual

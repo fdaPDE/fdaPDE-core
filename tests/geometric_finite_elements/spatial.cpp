@@ -23,8 +23,8 @@
 
 namespace {
 using namespace fdapde;
-using Point = SPDMatrix<double, 2, 2>;
-using Batch = MatrixBatch<SPDMatrix<double, 2, 2, Cache::Log>>;
+using Point = SPDMatrix<double, 2>;
+using Batch = MatrixBatch<SPDMatrix<double, 2, Cache::Log>>;
 using AIRM = manifold::AffineInvariantSPDGeometry<double, 2, Usage::BasePointMaps>;
 using LE = manifold::LogEuclideanSPDGeometry<double, 2, Usage::InterpolationNodes>;
 /// @brief makes noncommuting data in vertex order

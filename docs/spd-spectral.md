@@ -5,15 +5,14 @@ and symmetric eigendecomposition APIs.
 
 ## Checked SPD ownership
 
-`SPDMatrix<Scalar, Rows, Cols>` stores the matrix coefficients in packed symmetric
-storage. Its default `Cache::None` retains no intermediates; an optional fourth
+`SPDMatrix<Scalar, Order>` stores the matrix coefficients in packed symmetric
+storage. Its default `Cache::None` retains no intermediates; an optional third
 type parameter selects algebraic cache quantities without selecting a geometric metric. `Scalar`
-must be an unqualified floating-point type. Dimensions must be either positive,
-fixed and equal, or both `Dynamic`; packed storage supports `RowMajor` only.
+must be an unqualified floating-point type. The order must be positive or `Dynamic`; packed storage supports `RowMajor` only.
 
 ```cpp
 const fdapde::Matrix<double, 2, 2> a({4.0, 1.0, 1.0, 3.0});
-fdapde::SPDMatrix<double, 2, 2> point(a);
+fdapde::SPDMatrix<double, 2> point(a);
 const auto logarithm = fdapde::matrix_log(point);
 const auto root = fdapde::matrix_sqrt(point);
 point.assign(a * 2.0);
@@ -46,8 +45,9 @@ coefficients and dimensions unchanged.
 | --- | --- | --- |
 | `matrix_log` | SPD expression | symmetric matrix |
 | `matrix_exp` | symmetric expression | checked SPD matrix |
+| `matrix_inv` | SPD expression | checked SPD inverse |
 | `matrix_sqrt` | SPD expression | checked SPD principal square root |
-| `matrix_inverse_sqrt` | SPD expression | checked SPD inverse principal square root |
+| `matrix_inv_sqrt` | SPD expression | checked SPD inverse principal square root |
 | `matrix_log_frechet` | SPD point, symmetric direction | symmetric logarithm differential |
 | `matrix_exp_frechet` | symmetric point, symmetric direction | symmetric exponential differential |
 
@@ -108,9 +108,9 @@ assertion contracts.
 
 ## Selective cache and views
 
-`SPDMatrix<Scalar, Rows, Cols, Policy = Cache::None, StorageOrder = RowMajor>`
-replaces the former integer fourth argument with a policy type. An explicitly
-specified storage order moves to the fifth position; `ColMajor` remains rejected.
+`SPDMatrix<Scalar, Order, Policy = Cache::None, StorageOrder = RowMajor>`
+takes a cache policy as its third argument and an optional storage order as its
+fourth. `ColMajor` remains rejected.
 `Cache::Union<...>` combines `Spectral`, `Log`, `Sqrt`, `InverseSqrt` and
 `LogDividedDifferences`. Unknown policy bits are rejected. Cache fields retain
 only the selected scalar data, separately from packed coefficients. The owner
@@ -140,7 +140,7 @@ currently preserve both values by independent copying. Batch moves transfer
 aggregate buffers, as described in [MatrixBatch](matrix-batch.md).
 
 `matrix_log` and logarithmic differentials consume compatible retained data.
-`matrix_sqrt<Policy>`, `matrix_inverse_sqrt<Policy>` and `matrix_exp<Policy>` return
+`matrix_sqrt<Policy>`, `matrix_inv_sqrt<Policy>` and `matrix_exp<Policy>` return
 owners with the requested destination policy (`None` by default), retaining
 certification of rounded result coefficients. Input EVD and result certification
 are decompositions of different matrices. A cached determinant multiplies stored
@@ -153,3 +153,20 @@ together. Cross-policy copies preserve this association, including repeated
 eigenspaces. Cache inspection is read-only via `cache().eigenvalues()`,
 `eigenvectors()`, `matrix<Cache::Log>()` (likewise root factors), and
 `log_divided_differences()` when the corresponding quantity is selected.
+
+### Structured inverse
+
+`point.inv<Policy>()` and `matrix_inv<Policy>(point)` return an owning SPD inverse.
+They reuse native input eigenpairs, or a retained Cholesky factor or inverse root
+when eigenpairs are absent. Without useful retained factors they compute a local
+symmetric eigendecomposition. Reciprocal eigenvalues and reconstructed outputs
+must remain finite and numerically positive definite; output certification and
+its selected cache use the rounded inverse coefficients.
+
+`matrix.inv<Policy>()` on a symmetric matrix returns a symmetric owner, including
+for indefinite invertible inputs. It refreshes and reuses native spectral caches;
+uncached symmetric inputs use pivoted LU. Orthogonal `inv()` is a transpose
+expression with the existing borrowing/lifetime rules. Dense, triangular,
+diagonal, permutation and rotation native methods use the same `inv()` spelling
+and their structure-specific algorithms. The inverse-root API is `inv_sqrt()` /
+`matrix_inv_sqrt()`; cache tags retain their previous names.

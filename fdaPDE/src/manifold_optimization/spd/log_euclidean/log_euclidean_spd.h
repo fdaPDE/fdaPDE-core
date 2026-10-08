@@ -25,7 +25,10 @@ namespace fdapde {
 namespace manifold {
 
 /// @brief defines the log-Euclidean metric on checked SPD owners with ambient symmetric tangents
-template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class LogEuclideanSPDGeometry {
+template <
+  typename Scalar_, int Order_, Usage Uses_ = Usage::None,
+  typename Point_ = fdapde::SPDMatrix<Scalar_, Order_, Cache::Policy<internals::log_euclidean_cache_flags(Uses_)>>>
+class LogEuclideanSPDGeometry {
     fdapde_static_assert((static_cast<unsigned>(Uses_) & ~31u) == 0, SPD_GEOMETRY_USAGE_CONTAINS_UNKNOWN_FLAGS);
     fdapde_static_assert(
       std::is_floating_point_v<Scalar_> && !std::is_const_v<Scalar_> && !std::is_volatile_v<Scalar_>,
@@ -36,9 +39,12 @@ template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class LogEucl
       SPD_GEOMETRY_DENSE_WORKSPACE_SIZE_EXCEEDS_SUPPORTED_RANGE);
    public:
     using Scalar = Scalar_;
-    using CachePolicy = Cache::Policy<internals::log_euclidean_cache_flags(Uses_)>;
-    using Point = fdapde::SPDMatrix<Scalar, Order_, Order_, CachePolicy>;
-    using Tangent = fdapde::SymmetricMatrix<Scalar, Order_, Order_>;
+    using Point = Point_;
+    using CachePolicy = typename Point::CachePolicy;
+    using Tangent = fdapde::SymmetricMatrix<Scalar, Order_>;
+    fdapde_static_assert(
+      (std::same_as<Point, fdapde::SPDMatrix<Scalar, Order_, CachePolicy, Point::StorageOrder>>),
+      LOG_EUCLIDEAN_GEOMETRY_REQUIRES_A_NATIVE_SPD_OWNER_WITH_MATCHING_SCALAR_AND_SHAPE);
 
     /// @brief constructs the fixed-order geometry using its positive compile-time matrix order
     LogEuclideanSPDGeometry()
@@ -176,6 +182,7 @@ template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class LogEucl
         }
     }
 
+
     /// @brief prepares an owning log-Euclidean geodesic snapshot from independently cached endpoints
     /// @details defers exp(log(from) + t * (log(to) - log(from))); SPD destinations certify evaluated coefficients
     template <SPDLike PointFrom, SPDLike PointTo> auto geodesic(const PointFrom& from, const PointTo& to) const {
@@ -185,6 +192,15 @@ template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class LogEucl
         const Tangent last(fdapde::matrix_log(to));
         Tangent difference(last - first);
         return fdapde::internals::spd_geodesic<Scalar, Order_, false>(first, std::move(difference));
+    }
+    /// @brief returns uniformly spaced geodesic samples including both endpoints with the selected output cache policy
+    /// @details defaults to the geometry point policy; prepares one curve and requires count >= 2
+    /// sample i uses t = i / (count - 1); execution defaults to sequential and parallel calls join before returning
+    template <
+      typename OutputPolicy = CachePolicy, SPDLike From, SPDLike To,
+      fdapde::internals::BatchExecutionPolicy ExecutionPolicy = execution_seq_t>
+    auto geodesic(const From& from, const To& to, int count, ExecutionPolicy policy = {}) const {
+        return internals::sample_spd_geodesic<OutputPolicy>(*this, from, to, count, policy);
     }
 
     /// @brief defers exp(sum_i weights[i] * log(points[i])) without normalizing finite real weights
@@ -213,12 +229,25 @@ template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class LogEucl
     int order_ = Order_ == fdapde::Dynamic ? 0 : Order_;
 };
 
+namespace internals {
+
+/// @brief selects a single-point log-Euclidean geometry while preserving the exact native SPD owner
+template <typename Point> struct log_euclidean_geometry_type {
+    using type = LogEuclideanSPDGeometry<typename Point::Scalar, Point::Rows, Usage::None, Point>;
+};
+
+}   // namespace internals
+
+/// @brief supplies the log-Euclidean metric for a native SPD owner with its exact cache policy
+template <typename Point> using LogEuclideanGeometry = typename internals::log_euclidean_geometry_type<Point>::type;
+
 /// @brief computes the weighted mean with explicit convergence diagnostics
-template <typename Scalar_, int Order_, Usage Uses_, typename Samples>
-WeightedKarcherMeanResult<typename LogEuclideanSPDGeometry<Scalar_, Order_, Uses_>::Point> weighted_karcher_mean(
-  const LogEuclideanSPDGeometry<Scalar_, Order_, Uses_>& geometry, const Samples& samples,
+template <typename Scalar_, int Order_, Usage Uses_, typename Samples, typename Point_>
+WeightedKarcherMeanResult<typename LogEuclideanSPDGeometry<Scalar_, Order_, Uses_, Point_>::Point>
+weighted_karcher_mean(
+  const LogEuclideanSPDGeometry<Scalar_, Order_, Uses_, Point_>& geometry, const Samples& samples,
   std::span<const double> weights) {
-    using Geometry = LogEuclideanSPDGeometry<Scalar_, Order_, Uses_>;
+    using Geometry = LogEuclideanSPDGeometry<Scalar_, Order_, Uses_, Point_>;
     using Point = typename Geometry::Point;
     using Tangent = typename Geometry::Tangent;
     using AccumulationScalar = std::common_type_t<Scalar_, double>;

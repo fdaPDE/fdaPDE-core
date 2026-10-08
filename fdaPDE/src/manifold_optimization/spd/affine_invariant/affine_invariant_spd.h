@@ -25,7 +25,10 @@ namespace fdapde {
 namespace manifold {
 
 /// @brief defines the affine-invariant metric on checked SPD owners with ambient symmetric tangents
-template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class AffineInvariantSPDGeometry {
+template <
+  typename Scalar_, int Order_, Usage Uses_ = Usage::None,
+  typename Point_ = fdapde::SPDMatrix<Scalar_, Order_, Cache::Policy<internals::affine_invariant_cache_flags(Uses_)>>>
+class AffineInvariantSPDGeometry {
     fdapde_static_assert((static_cast<unsigned>(Uses_) & ~31u) == 0, SPD_GEOMETRY_USAGE_CONTAINS_UNKNOWN_FLAGS);
     fdapde_static_assert(
       std::is_floating_point_v<Scalar_> && !std::is_const_v<Scalar_> && !std::is_volatile_v<Scalar_>,
@@ -36,15 +39,18 @@ template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class AffineI
       SPD_GEOMETRY_DENSE_WORKSPACE_SIZE_EXCEEDS_SUPPORTED_RANGE);
    public:
     using Scalar = Scalar_;
-    using CachePolicy = Cache::Policy<internals::affine_invariant_cache_flags(Uses_)>;
-    using Point = fdapde::SPDMatrix<Scalar, Order_, Order_, CachePolicy>;
-    using Tangent = fdapde::SymmetricMatrix<Scalar, Order_, Order_>;
+    using Point = Point_;
+    using CachePolicy = typename Point::CachePolicy;
+    using Tangent = fdapde::SymmetricMatrix<Scalar, Order_>;
+    fdapde_static_assert(
+      (std::same_as<Point, fdapde::SPDMatrix<Scalar, Order_, CachePolicy, Point::StorageOrder>>),
+      AFFINE_INVARIANT_GEOMETRY_REQUIRES_A_NATIVE_SPD_OWNER_WITH_MATCHING_SCALAR_AND_SHAPE);
 
     /// @brief retains certified base factors and the spectral data of one scaled relative SPD point
     struct RelativeFrame {
-        SPDMatrix<Scalar, Order_, Order_> from_sqrt;
-        SPDMatrix<Scalar, Order_, Order_> from_inverse_sqrt;
-        SPDMatrix<Scalar, Order_, Order_, Cache::Union<Cache::Spectral, Cache::Log, Cache::LogDividedDifferences>>
+        SPDMatrix<Scalar, Order_> from_sqrt;
+        SPDMatrix<Scalar, Order_> from_inverse_sqrt;
+        SPDMatrix<Scalar, Order_, Cache::Union<Cache::Spectral, Cache::Log, Cache::LogDividedDifferences>>
           scaled_relative;
         Scalar relative_scale;
     };
@@ -83,9 +89,9 @@ template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class AffineI
         check_point_(point);
         check_tangent_(u);
         check_tangent_(v);
-        const auto inverse_sqrt = internals::spd_inverse_sqrt_factor(point);
-        const auto whitened_u = internals::symmetric_congruence<Scalar, Order_>(inverse_sqrt, u, order_);
-        const auto whitened_v = internals::symmetric_congruence<Scalar, Order_>(inverse_sqrt, v, order_);
+        const auto inv_sqrt = internals::spd_inv_sqrt_factor(point);
+        const auto whitened_u = internals::symmetric_congruence<Scalar, Order_>(inv_sqrt, u, order_);
+        const auto whitened_v = internals::symmetric_congruence<Scalar, Order_>(inv_sqrt, v, order_);
         return static_cast<double>(internals::frobenius_inner(whitened_u, whitened_v, order_));
     }
 
@@ -93,8 +99,8 @@ template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class AffineI
     template <SPDLike PointPoint> double norm(const PointPoint& point, const Tangent& tangent) const {
         check_point_(point);
         check_tangent_(tangent);
-        const auto inverse_sqrt = internals::spd_inverse_sqrt_factor(point);
-        const auto whitened = internals::symmetric_congruence<Scalar, Order_>(inverse_sqrt, tangent, order_);
+        const auto inv_sqrt = internals::spd_inv_sqrt_factor(point);
+        const auto whitened = internals::symmetric_congruence<Scalar, Order_>(inv_sqrt, tangent, order_);
         return internals::frobenius_norm(whitened, order_);
     }
 
@@ -131,7 +137,7 @@ template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class AffineI
         check_point_(point);
         check_tangent_(tangent);
         const auto point_sqrt = internals::spd_sqrt_factor(point);
-        const auto point_inverse_sqrt = internals::spd_inverse_sqrt_factor(point);
+        const auto point_inverse_sqrt = internals::spd_inv_sqrt_factor(point);
         const auto whitened = internals::symmetric_congruence<Scalar, Order_>(point_inverse_sqrt, tangent, order_);
         const auto scaled = internals::combine_symmetric<Scalar, Order_>(
           whitened, internals::geometry_coefficient<Scalar>(step), whitened, Scalar(0), order_);
@@ -152,7 +158,7 @@ template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class AffineI
         check_point_(point);
         check_tangent_(tangent);
         const auto point_sqrt = internals::spd_sqrt_factor(point);
-        const auto point_inverse_sqrt = internals::spd_inverse_sqrt_factor(point);
+        const auto point_inverse_sqrt = internals::spd_inv_sqrt_factor(point);
         const auto whitened = internals::symmetric_congruence<Scalar, Order_>(point_inverse_sqrt, tangent, order_);
         const auto scaled = internals::combine_symmetric<Scalar, Order_>(
           whitened, internals::geometry_coefficient<Scalar>(step), whitened, Scalar(0), order_);
@@ -165,8 +171,8 @@ template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class AffineI
         check_point_(from);
         check_point_(to);
         const auto from_sqrt = internals::spd_sqrt_factor(from);
-        const auto from_inverse_sqrt = internals::spd_inverse_sqrt_factor(from);
-        const fdapde::SPDMatrix<Scalar, Order_, Order_> relative(
+        const auto from_inverse_sqrt = internals::spd_inv_sqrt_factor(from);
+        const fdapde::SPDMatrix<Scalar, Order_> relative(
           internals::symmetric_congruence<Scalar, Order_>(from_inverse_sqrt, to, order_));
         return internals::symmetric_congruence<Scalar, Order_>(from_sqrt, fdapde::matrix_log(relative), order_);
     }
@@ -177,14 +183,23 @@ template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class AffineI
         check_point_(from);
         check_point_(to);
         const auto root = internals::spd_sqrt_factor(from);
-        const auto inverse_root = internals::spd_inverse_sqrt_factor(from);
-        const fdapde::SPDMatrix<Scalar, Order_, Order_, Cache::Spectral> relative(
+        const auto inverse_root = internals::spd_inv_sqrt_factor(from);
+        const fdapde::SPDMatrix<Scalar, Order_, Cache::Spectral> relative(
           internals::symmetric_congruence<Scalar, Order_>(inverse_root, to, order_));
         fdapde::Matrix<Scalar, Order_, Order_> factors(root * relative.cache().eigenvectors());
         fdapde::Vector<Scalar, Order_> logarithms;
         if constexpr (Order_ == fdapde::Dynamic) logarithms.resize(order_);
         for (int k = 0; k < order_; ++k) logarithms[k] = std::log(relative.cache().eigenvalues()[k]);
         return fdapde::internals::spd_geodesic<Scalar, Order_, true>(std::move(factors), std::move(logarithms));
+    }
+    /// @brief returns uniformly spaced geodesic samples including both endpoints with the selected output cache policy
+    /// @details defaults to the geometry point policy; prepares one curve and requires count >= 2
+    /// sample i uses t = i / (count - 1); execution defaults to sequential and parallel calls join before returning
+    template <
+      typename OutputPolicy = CachePolicy, SPDLike From, SPDLike To,
+      fdapde::internals::BatchExecutionPolicy ExecutionPolicy = execution_seq_t>
+    auto geodesic(const From& from, const To& to, int count, ExecutionPolicy policy = {}) const {
+        return internals::sample_spd_geodesic<OutputPolicy>(*this, from, to, count, policy);
     }
 
     /// @brief applies the target differential of the affine-invariant logarithm
@@ -352,8 +367,8 @@ template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class AffineI
     template <SPDLike PointFrom, SPDLike PointTo> double distance(const PointFrom& from, const PointTo& to) const {
         check_point_(from);
         check_point_(to);
-        const auto from_inverse_sqrt = internals::spd_inverse_sqrt_factor(from);
-        const fdapde::SPDMatrix<Scalar, Order_, Order_> relative(
+        const auto from_inverse_sqrt = internals::spd_inv_sqrt_factor(from);
+        const fdapde::SPDMatrix<Scalar, Order_> relative(
           internals::symmetric_congruence<Scalar, Order_>(from_inverse_sqrt, to, order_));
         return internals::frobenius_norm(fdapde::matrix_log(relative), order_);
     }
@@ -365,8 +380,8 @@ template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class AffineI
         check_point_(to);
         check_tangent_(tangent);
         const auto from_sqrt = internals::spd_sqrt_factor(from);
-        const auto from_inverse_sqrt = internals::spd_inverse_sqrt_factor(from);
-        const fdapde::SPDMatrix<Scalar, Order_, Order_> relative(
+        const auto from_inverse_sqrt = internals::spd_inv_sqrt_factor(from);
+        const fdapde::SPDMatrix<Scalar, Order_> relative(
           internals::symmetric_congruence<Scalar, Order_>(from_inverse_sqrt, to, order_));
         const auto relative_sqrt = internals::spd_sqrt_factor(relative);
         const auto whitened = internals::symmetric_congruence<Scalar, Order_>(from_inverse_sqrt, tangent, order_);
@@ -382,6 +397,8 @@ template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class AffineI
         check_tangent_(euclidean_gradient);
         return internals::symmetric_congruence<Scalar, Order_>(point, euclidean_gradient, order_);
     }
+
+
     /// @brief prepares certified base roots and the cached scaled relative SPD spectrum
     template <SPDLike From, SPDLike To> RelativeFrame relative_frame(const From& from, const To& to) const {
         check_point_(from);
@@ -394,7 +411,7 @@ template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class AffineI
             }
         }
         auto from_sqrt = fdapde::matrix_sqrt(from);
-        auto from_inverse_sqrt = fdapde::matrix_inverse_sqrt(from);
+        auto from_inverse_sqrt = fdapde::matrix_inv_sqrt(from);
         const auto relative = internals::symmetric_congruence<Scalar, Order_>(from_inverse_sqrt, to, order_);
 
         Scalar scale = 0;
@@ -477,14 +494,29 @@ template <typename Scalar_, int Order_, Usage Uses_ = Usage::None> class AffineI
     int order_ = Order_ == fdapde::Dynamic ? 0 : Order_;
 };
 
+namespace internals {
+
+/// @brief selects the affine-invariant metric while preserving the exact native SPD owner
+template <typename Point> struct affine_invariant_geometry_type {
+    using type = AffineInvariantSPDGeometry<typename Point::Scalar, Point::Rows, Usage::None, Point>;
+};
+
+}   // namespace internals
+
+/// @brief supplies the affine-invariant metric for a native SPD owner with its cache policy
+template <typename Point>
+using AffineInvariantGeometry = typename internals::affine_invariant_geometry_type<Point>::type;
+
 /// @brief computes the weighted mean with explicit convergence diagnostics
-template <typename Scalar_, int Order_, Usage Uses_, typename Samples>
-WeightedKarcherMeanResult<typename AffineInvariantSPDGeometry<Scalar_, Order_, Uses_>::Point> weighted_karcher_mean(
-  const AffineInvariantSPDGeometry<Scalar_, Order_, Uses_>& geometry, const Samples& samples,
-  std::span<const double> weights, const typename AffineInvariantSPDGeometry<Scalar_, Order_, Uses_>::Point& initial,
+template <typename Scalar_, int Order_, Usage Uses_, typename Samples, typename Point_>
+WeightedKarcherMeanResult<typename AffineInvariantSPDGeometry<Scalar_, Order_, Uses_, Point_>::Point>
+weighted_karcher_mean(
+  const AffineInvariantSPDGeometry<Scalar_, Order_, Uses_, Point_>& geometry, const Samples& samples,
+  std::span<const double> weights,
+  const typename AffineInvariantSPDGeometry<Scalar_, Order_, Uses_, Point_>::Point& initial,
   const WeightedKarcherMeanOptions& options = {},
-  internals::KarcherWorkspace<AffineInvariantSPDGeometry<Scalar_, Order_, Uses_>>* retained = nullptr) {
-    using Geometry = AffineInvariantSPDGeometry<Scalar_, Order_, Uses_>;
+  internals::KarcherWorkspace<AffineInvariantSPDGeometry<Scalar_, Order_, Uses_, Point_>>* retained = nullptr) {
+    using Geometry = AffineInvariantSPDGeometry<Scalar_, Order_, Uses_, Point_>;
     internals::KarcherWorkspace<Geometry> workspace;
     auto result = weighted_karcher_mean<Geometry>(geometry, samples, weights, initial, options, &workspace);
     internals::polish_karcher_mean(geometry, samples, options, result, workspace);
@@ -494,11 +526,12 @@ WeightedKarcherMeanResult<typename AffineInvariantSPDGeometry<Scalar_, Order_, U
 }
 
 /// @brief computes the weighted mean with explicit convergence diagnostics
-template <typename Scalar_, int Order_, Usage Uses_, typename Samples>
-WeightedKarcherMeanResult<typename AffineInvariantSPDGeometry<Scalar_, Order_, Uses_>::Point> weighted_karcher_mean(
-  const AffineInvariantSPDGeometry<Scalar_, Order_, Uses_>& geometry, const Samples& samples,
+template <typename Scalar_, int Order_, Usage Uses_, typename Samples, typename Point_>
+WeightedKarcherMeanResult<typename AffineInvariantSPDGeometry<Scalar_, Order_, Uses_, Point_>::Point>
+weighted_karcher_mean(
+  const AffineInvariantSPDGeometry<Scalar_, Order_, Uses_, Point_>& geometry, const Samples& samples,
   std::span<const double> weights, const WeightedKarcherMeanOptions& options = {},
-  internals::KarcherWorkspace<AffineInvariantSPDGeometry<Scalar_, Order_, Uses_>>* retained = nullptr) {
+  internals::KarcherWorkspace<AffineInvariantSPDGeometry<Scalar_, Order_, Uses_, Point_>>* retained = nullptr) {
     auto log_geometry = [&]() {
         if constexpr (Order_ == fdapde::Dynamic) {
             return LogEuclideanSPDGeometry<Scalar_, Order_>(geometry.order());
@@ -510,8 +543,8 @@ WeightedKarcherMeanResult<typename AffineInvariantSPDGeometry<Scalar_, Order_, U
     /// initializer
     const auto initial = weighted_karcher_mean(log_geometry, samples, weights);
     return weighted_karcher_mean(
-      geometry, samples, weights, typename AffineInvariantSPDGeometry<Scalar_, Order_, Uses_>::Point(initial.point),
-      options, retained);
+      geometry, samples, weights,
+      typename AffineInvariantSPDGeometry<Scalar_, Order_, Uses_, Point_>::Point(initial.point), options, retained);
 }
 
 }   // namespace manifold

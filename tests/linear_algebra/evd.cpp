@@ -34,9 +34,9 @@ template <typename Decomposition>
 concept permits_rvalue_eigenvectors =
   requires(Decomposition decomposition) { std::move(decomposition).eigenvectors(); };
 
-using fixed_symmetric = SymmetricMatrix<double, 3, 3>;
+using fixed_symmetric = SymmetricMatrix<double, 3>;
 using fixed_evd = EVD<fixed_symmetric>;
-using const_view_evd = EVD<SymmetricMatrixView<const double, 3, 3>>;
+using const_view_evd = EVD<SymmetricMatrixView<const double, 3>>;
 // an eigendecomposition may be constructed before receiving a matrix
 static_assert(std::is_default_constructible_v<fixed_evd>);
 // a const input view still produces owned double-valued factors
@@ -148,7 +148,7 @@ template <int StorageOrder> void check_evd_shapes_lifetime_and_storage_order() {
 }
 
 void check_evd_repeated_scale_and_zero_contracts() {
-    SymmetricMatrix<double, Dynamic, Dynamic> repeated(4, 4);
+    SymmetricMatrix<double, Dynamic> repeated(4, 4);
     for (int row = 0; row < 4; ++row) {
         for (int col = row; col < 4; ++col) repeated(row, col) = row == col ? 2.75 : 0.75;
     }
@@ -166,7 +166,7 @@ void check_evd_repeated_scale_and_zero_contracts() {
     expect_valid_evd(repeated, repeated_evd);
 
     for (const double scale : {1.0e-20, 1.0e150}) {
-        const SymmetricMatrix<double, 2, 2> matrix({2.0 * scale, scale, 2.0 * scale});
+        const SymmetricMatrix<double, 2> matrix({2.0 * scale, scale, 2.0 * scale});
         const auto decomposition = matrix.evd();
         const double minimum = std::min(decomposition.eigenvalues()[0], decomposition.eigenvalues()[1]);
         const double maximum = std::max(decomposition.eigenvalues()[0], decomposition.eigenvalues()[1]);
@@ -177,7 +177,7 @@ void check_evd_repeated_scale_and_zero_contracts() {
         expect_valid_evd(matrix, decomposition);
     }
 
-    const SymmetricMatrix<double, 3, 3> zero({0.0, 0.0, 0.0, 0.0, 0.0, 0.0});
+    const SymmetricMatrix<double, 3> zero({0.0, 0.0, 0.0, 0.0, 0.0, 0.0});
     const auto zero_evd = zero.evd();
     // the zero matrix produces only zero eigenvalues
     EXPECT_EQ(zero_evd.eigenvalues(), (Vector<double, 3>({0.0, 0.0, 0.0})));
@@ -191,11 +191,11 @@ void check_evd_repeated_scale_and_zero_contracts() {
 }
 
 void check_evd_invalid_input_contracts() {
-    EVD<SymmetricMatrix<double, Dynamic, Dynamic>> reusable;
+    EVD<SymmetricMatrix<double, Dynamic>> reusable;
     // a default object has no completed eigendecomposition
     EXPECT_FALSE(reusable.computed());
 
-    SymmetricMatrix<double, Dynamic, Dynamic> valid(2, 2);
+    SymmetricMatrix<double, Dynamic> valid(2, 2);
     valid(0, 0) = 2.0;
     valid(1, 0) = 1.0;
     valid(1, 1) = 3.0;
@@ -230,14 +230,14 @@ void check_evd_invalid_input_contracts() {
     // an infinite input leaves no completed eigendecomposition
     EXPECT_FALSE(reusable.computed());
 
-    const SymmetricMatrix<double, Dynamic, Dynamic> empty;
+    const SymmetricMatrix<double, Dynamic> empty;
     // an empty symmetric matrix is rejected
     EXPECT_THROW(reusable.compute(empty), std::invalid_argument);
     // empty input leaves no completed eigendecomposition
     EXPECT_FALSE(reusable.computed());
 
-    EVD<SymmetricMatrix<double, 3, 3>> fixed_shape;
-    SymmetricMatrix<double, Dynamic, Dynamic> wrong_shape(2, 2);
+    EVD<SymmetricMatrix<double, 3>> fixed_shape;
+    SymmetricMatrix<double, Dynamic> wrong_shape(2, 2);
     // runtime dimensions must match the decomposition's fixed shape
     EXPECT_THROW(fixed_shape.compute(wrong_shape), std::invalid_argument);
     // a fixed-shape mismatch leaves no completed eigendecomposition

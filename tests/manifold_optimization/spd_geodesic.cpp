@@ -26,8 +26,24 @@ namespace {
 using namespace fdapde;
 using namespace fdapde::manifold;
 using Dense = Matrix<double, 2, 2>;
-using Point = SPDMatrix<double, 2, 2>;
+using Point = SPDMatrix<double, 2>;
 using Full = Cache::Union<Cache::Spectral, Cache::Log, Cache::Sqrt, Cache::InverseSqrt, Cache::LogDividedDifferences>;
+
+/// @brief bounds worker resources for the standalone geometry test process
+class GeodesicWorkerEnvironment : public ::testing::Environment {
+    /// @brief configures four threads before any geometry test invokes parallel sampling
+    void SetUp() override { parallel_set_num_threads(4); }
+    /// @brief drains the executor before the geometry test process exits
+    void TearDown() override { parallel_join(); }
+};
+[[maybe_unused]] ::testing::Environment* const geodesic_execution_environment =
+  ::testing::AddGlobalTestEnvironment(new GeodesicWorkerEnvironment);
+
+template <typename Policy>
+concept permits_sampling_policy =
+  requires(const LogEuclideanGeometry<Point>& geometry, const Point& point, Policy policy) {
+      geometry.geodesic(point, point, 3, policy);
+  };
 
 template <typename Actual, typename Expected>
 void expect_point(const Actual& actual, const Expected& expected, double tolerance = 1e-10) {
@@ -48,9 +64,9 @@ concept permits_const_temporary_curve = requires(const Curve& curve) { std::move
 template <typename Geometry> void check_curve(const Geometry& geometry) {
     using S = typename Geometry::Scalar;
     constexpr int N = Geometry::Point::Rows;
-    using Result = SPDMatrix<S, N, N, Full>;
-    const SPDMatrix<S, N, N, Cache::Log> first(Matrix<S, 2, 2>({3, 1, 1, 2}));
-    const SPDMatrix<S, N, N, Cache::Spectral> last(Matrix<S, 2, 2>({2, -0.5, -0.5, 4}));
+    using Result = SPDMatrix<S, N, Full>;
+    const SPDMatrix<S, N, Cache::Log> first(Matrix<S, 2, 2>({3, 1, 1, 2}));
+    const SPDMatrix<S, N, Cache::Spectral> last(Matrix<S, 2, 2>({2, -0.5, -0.5, 4}));
     const auto curve = geometry.geodesic(first.view(), last.view());
     // a const temporary cannot leave a borrowed curve inside an escaping expression
     static_assert(!permits_const_temporary_curve<std::remove_cvref_t<decltype(curve)>>);
@@ -61,7 +77,7 @@ template <typename Geometry> void check_curve(const Geometry& geometry) {
         // a deferred geodesic value is not trusted SPD storage before materialization
         static_assert(!SPDLike<decltype(expression)>);
         const Result result(expression);
-        const SymmetricMatrix<S, N, N> coefficients(expression);
+        const SymmetricMatrix<S, N> coefficients(expression);
         // symmetric construction preserves the same coefficients without requiring an SPD result type
         expect_point(coefficients, result, tolerance);
         // ordinary materialization cannot silently return a certified SPD owner
@@ -69,9 +85,9 @@ template <typename Geometry> void check_curve(const Geometry& geometry) {
         // interpolation and extrapolation match the public logarithm/exponential construction
         expect_point(result, geometry.exponential(first, tangent, t), tolerance);
         // the rounded prepared coefficients independently satisfy checked SPD construction
-        EXPECT_NO_THROW((SPDMatrix<S, N, N>(Matrix<S, N, N>(result))));
+        EXPECT_NO_THROW((SPDMatrix<S, N>(Matrix<S, N, N>(result))));
         // prepared caches agree with the logarithm of independently checked result coefficients
-        expect_point(result.cache().template matrix<Cache::Log>(), matrix_log(SPDMatrix<S, N, N>(result)), tolerance);
+        expect_point(result.cache().template matrix<Cache::Log>(), matrix_log(SPDMatrix<S, N>(result)), tolerance);
     }
     // the zero parameter reproduces the first endpoint
     expect_point(Result(curve(0)), first, tolerance);
@@ -109,7 +125,7 @@ template <typename Geometry> void check_snapshot(const Geometry& geometry) {
     const MatrixExpr<std::remove_cvref_t<decltype(expression)>>& base = expression;
     // dense conversion through the base materializes the same complete geometric value
     expect_point(Dense(base), midpoint);
-    MatrixBatch<SPDMatrix<double, 2, 2, Cache::Log>> points(1);
+    MatrixBatch<SPDMatrix<double, 2, Cache::Log>> points(1);
     points[0] = expression;
     // checked batch assignment preserves the analytic midpoint in the destination coefficients
     expect_point(points[0], midpoint);
@@ -149,7 +165,7 @@ template <typename Geometry> void check_failures(const Geometry& geometry) {
     const auto identity_curve = geometry.geodesic(first, first);
     // a repeated unit spectrum remains identity even far outside the interpolation interval
     expect_point(Point(identity_curve(100)), first);
-    const auto wrong = SPDMatrix<double, Dynamic, Dynamic>::Identity(3);
+    const auto wrong = SPDMatrix<double, Dynamic>::Identity(3);
     // preparation rejects endpoints incompatible with the geometry order
     EXPECT_THROW(geometry.geodesic(first, wrong), std::invalid_argument);
 }
@@ -163,7 +179,7 @@ TEST(SPDGeodesic, RejectsInvalidParametersResultsAndShapes) {
 }
 
 template <typename Geometry> void check_deferred_certification(const Geometry& geometry) {
-    using Symmetric = SymmetricMatrix<double, 2, 2>;
+    using Symmetric = SymmetricMatrix<double, 2>;
     const Point first = Point::Identity();
     const Point last(Dense({1, 0, 0, 2}));
     const auto curve = geometry.geodesic(first, last);
@@ -205,14 +221,151 @@ TEST(SPDGeodesic, DefersCertificationUntilSPDDestination) {
 
 // runtime orders beyond the example's two-by-two case preserve shape and analytic diagonal values
 TEST(SPDGeodesic, SupportsThreeDimensionalDynamicCurves) {
-    const auto first = SPDMatrix<double, Dynamic, Dynamic>::Identity(3);
-    const SPDMatrix<double, Dynamic, Dynamic> last(Matrix<double, 3, 3>({4, 0, 0, 0, 9, 0, 0, 0, 16}));
+    const auto first = SPDMatrix<double, Dynamic>::Identity(3);
+    const SPDMatrix<double, Dynamic> last(Matrix<double, 3, 3>({4, 0, 0, 0, 9, 0, 0, 0, 16}));
     const auto airm = AffineInvariantSPDGeometry<double, Dynamic>(3).geodesic(first, last);
     const auto le = LogEuclideanSPDGeometry<double, Dynamic>(3).geodesic(first, last);
     const Matrix<double, 3, 3> expected({2, 0, 0, 0, 3, 0, 0, 0, 4});
     // the AIRM midpoint takes the principal square root of the diagonal endpoint
-    expect_point(SPDMatrix<double, Dynamic, Dynamic>(airm(0.5)), expected);
+    expect_point(SPDMatrix<double, Dynamic>(airm(0.5)), expected);
     // the LE midpoint has the same closed-form value on commuting diagonal endpoints
-    expect_point(SPDMatrix<double, Dynamic, Dynamic>(le(0.5)), expected);
+    expect_point(SPDMatrix<double, Dynamic>(le(0.5)), expected);
 }
+
+/// @brief checks default, sequential and parallel sampling against one curve with independent output cache policies
+template <typename Geometry, SPDLike From, SPDLike To>
+void check_sampled_curve(const Geometry& geometry, const From& from, const To& to, double tolerance = 2e-9) {
+    using NativePoint = typename Geometry::Point;
+    using UncachedPoint = SPDMatrix<typename NativePoint::Scalar, NativePoint::Rows>;
+    const auto curve = geometry.geodesic(from, to);
+    const auto points = geometry.geodesic(from, to, 10);
+    const auto sequential = geometry.geodesic(from, to, 10, execution_seq);
+    const auto parallel = geometry.geodesic(from, to, 10, execution_par);
+    // batch elements retain the geometry's scalar, order and cache policy independently of endpoint types
+    static_assert(std::same_as<std::remove_cvref_t<decltype(points)>, MatrixBatch<NativePoint>>);
+    // the requested count includes both endpoints rather than adding them after sampling
+    ASSERT_EQ(points.size(), 10);
+    for (std::size_t i = 0; i < points.size(); ++i) {
+        const UncachedPoint expected(curve(static_cast<double>(i) / (points.size() - 1)));
+        // each coefficient matches the separately prepared curve at its uniformly spaced parameter
+        expect_point(points[i], expected, tolerance);
+        // an explicit sequential policy preserves the default sample value and index
+        expect_point(sequential[i], expected, tolerance);
+        // parallel completion order cannot permute the uniformly sampled output slots
+        expect_point(parallel[i], expected, tolerance);
+        if constexpr ((NativePoint::CachePolicy::Flags & Cache::Log::Flags) != 0) {
+            // the retained log cache agrees with an independent uncached decomposition of the sampled point
+            expect_point(points[i].cache().template matrix<Cache::Log>(), matrix_log(expected), tolerance);
+        }
+    }
+    // the initial sample reconstructs the supplied first endpoint
+    expect_point(points[0], from, tolerance);
+    // the final sample reconstructs the supplied second endpoint
+    expect_point(points[points.size() - 1], to, tolerance);
+    using CachedResult = SPDMatrix<typename NativePoint::Scalar, NativePoint::Rows, Full>;
+    const auto cached = geometry.template geodesic<Full>(from, to, 3);
+    const auto uncached = geometry.template geodesic<Cache::None>(from, to, 3, execution_par);
+    const auto parallel_cached = geometry.template geodesic<Full>(from, to, 3, execution_par);
+    // an explicit cache policy changes the exact output owner without changing the geometry or endpoint policies
+    static_assert(std::same_as<std::remove_cvref_t<decltype(cached)>, MatrixBatch<CachedResult>>);
+    // explicitly removing caches keeps the geometry scalar and matrix order
+    static_assert(std::same_as<std::remove_cvref_t<decltype(uncached)>, MatrixBatch<UncachedPoint>>);
+    // selecting an output cache cannot change the number of inclusive samples
+    ASSERT_EQ(cached.size(), 3);
+    for (std::size_t i = 0; i < cached.size(); ++i) {
+        const UncachedPoint expected(curve(static_cast<double>(i) / 2));
+        // requested cached outputs follow the same prepared curve at both endpoints and the midpoint
+        expect_point(cached[i], expected, tolerance);
+        // parallel cached construction retains the same coefficients as the independently evaluated curve
+        expect_point(parallel_cached[i], expected, tolerance);
+        // workers populate each requested log cache from its own rounded sample
+        expect_point(parallel_cached[i].cache().template matrix<Cache::Log>(), matrix_log(expected), tolerance);
+        // disabling output caching leaves the geometric coefficients unchanged
+        expect_point(uncached[i], expected, tolerance);
+        // cached logarithms agree with an independent uncached decomposition of the rounded result
+        expect_point(cached[i].cache().template matrix<Cache::Log>(), matrix_log(expected), tolerance);
+        // retained square roots agree with independently decomposed sampled coefficients
+        expect_point(cached[i].cache().template matrix<Cache::Sqrt>(), matrix_sqrt(expected), tolerance);
+    }
+    const auto endpoints = geometry.geodesic(from, to, 2);
+    // the minimum supported count produces exactly the two requested endpoint samples
+    ASSERT_EQ(endpoints.size(), 2);
+    // the minimum batch starts at the same input endpoint as the larger batch
+    expect_point(endpoints[0], from, tolerance);
+    // the minimum batch ends at the second endpoint without dividing by a zero interval count
+    expect_point(endpoints[1], to, tolerance);
+    for (int count : {-1, 0, 1}) {
+        // fewer than two samples cannot contain both endpoints and must fail at the public boundary
+        EXPECT_THROW(geometry.geodesic(from, to, count), std::invalid_argument);
+        // explicit output policy does not bypass the minimum sample-count contract
+        EXPECT_THROW(geometry.template geodesic<Full>(from, to, count), std::invalid_argument);
+        // parallel sampling applies count validation before allocating or submitting work
+        EXPECT_THROW(geometry.template geodesic<Full>(from, to, count, execution_par), std::invalid_argument);
+    }
+}
+
+// every SPD metric samples one prepared curve into owners with the geometry's exact cache policy
+TEST(SPDGeodesic, BatchSamplesUseDeclaredPointTypeAndUniformParameters) {
+    using CachedPoint = SPDMatrix<double, 2, Cache::Log>;
+    const Point from(Dense({3, 1, 1, 2}));
+    const SPDMatrix<double, 2, Cache::Spectral> to(Dense({2, -0.5, -0.5, 4}));
+    // LE batch values agree with uniform curve samples despite mixed endpoint cache policies
+    check_sampled_curve(LogEuclideanGeometry<CachedPoint>(), from.view(), to.view());
+    // AIRM batch values retain cached owners and include both endpoints on the prepared curve
+    check_sampled_curve(AffineInvariantGeometry<CachedPoint>(), from.view(), to.view());
+    // BW batch values use the same positive horizontal lift as the prepared curve
+    check_sampled_curve(BuresWassersteinGeometry<CachedPoint>(), from.view(), to.view());
+    // LC batch values follow the prepared chart segment with matching endpoint coefficients
+    check_sampled_curve(LogCholeskyGeometry<CachedPoint>(), from.view(), to.view());
+    // the planar Cheeger specialization preserves its selected alignment throughout the sampled batch
+    check_sampled_curve(CheegerLogEuclideanGeometry<CachedPoint>(.75), from.view(), to.view());
+}
+
+// batch sampling preserves runtime matrix order, float coefficients and both general Cheeger implementations
+TEST(SPDGeodesic, BatchSamplesPreserveDynamicOrdersAndFloatScalars) {
+    using FloatPoint = SPDMatrix<float, Dynamic, Cache::Spectral>;
+    const FloatPoint float_from = FloatPoint::Identity(3);
+    const FloatPoint float_to(Matrix<float, 3, 3>({2, 0, 0, 0, 3, 0, 0, 0, 4}));
+    // dynamic float sampling retains order three and agrees with the curve within single-precision tolerance
+    check_sampled_curve(LogEuclideanGeometry<FloatPoint>(3), float_from, float_to, 2e-4);
+    const auto from = SPDMatrix<double, 3>::Identity();
+    const SPDMatrix<double, 3> to(Matrix<double, 3, 3>({2, 0, 0, 0, 3, 0, 0, 0, 4}));
+    // fixed orders beyond two use the general Cheeger curve with the same inclusive uniform sampling
+    check_sampled_curve(CheegerLogEuclideanSPDGeometry<double, 3>(.75), from, to);
+    // dynamic Cheeger output derives its order from the geometry rather than the fixed endpoint owner type
+    check_sampled_curve(CheegerLogEuclideanSPDGeometry<double, Dynamic>(3, .75), from, to);
+}
+
+// returned batches own their coefficients after temporary curves, geometries and endpoints have expired
+TEST(SPDGeodesic, BatchSamplesOwnTheirResults) {
+    const auto points =
+      LogEuclideanGeometry<Point>().geodesic(Point(Dense({4, 0, 0, 9})), Point(Dense({16, 0, 0, 1})), 3);
+    // the middle element survives all input temporaries and equals the analytic commuting midpoint
+    expect_point(points[1], Dense({8, 0, 0, 3}));
+    Point from(Dense({4, 0, 0, 9})), to(Dense({16, 0, 0, 1}));
+    const auto snapshot = AffineInvariantGeometry<Point>().geodesic(from, to, 3);
+    from = Point::Identity();
+    to = Point::Identity();
+    // subsequent endpoint assignment cannot replace the owning batch's previously sampled midpoint
+    expect_point(snapshot[1], Dense({8, 0, 0, 3}));
+}
+// worker-side cache failures reach the caller after joining and do not poison later geodesic calls
+TEST(SPDGeodesic, ParallelSamplingPropagatesCacheFailureAndRecovers) {
+    using ScalarPoint = SPDMatrix<double, 1>;
+    const LogEuclideanGeometry<ScalarPoint> geometry;
+    const ScalarPoint tiny(Vector<double, 1> {1e-310});
+    const ScalarPoint unit = ScalarPoint::Identity();
+    // the derivative of log at a tiny positive endpoint exceeds the scalar range in the requested output cache
+    EXPECT_THROW(geometry.geodesic<Cache::LogDividedDifferences>(tiny, unit, 32, execution_par), std::domain_error);
+    const auto recovered = geometry.geodesic<Cache::Log>(unit, unit, 10, execution_par);
+    // a subsequent call completes all requested entries after the earlier parallel failure
+    ASSERT_EQ(recovered.size(), 10);
+    // the final slot and its cached logarithm match the independently known constant identity curve
+    EXPECT_DOUBLE_EQ(recovered[9].cache().template matrix<Cache::Log>()(0, 0), 0.);
+    // execution tags are accepted while unrelated argument types cannot select a sampling overload
+    static_assert(
+      permits_sampling_policy<execution_seq_t> && permits_sampling_policy<execution_par_t> &&
+      !permits_sampling_policy<int>);
+}
+
 }   // namespace

@@ -17,6 +17,6 @@
 // general symmetric caches cannot assume the SPD logarithm exists
 #include <fdaPDE/dense_linear_algebra.h>
 int main() {
-    fdapde::CachedSymmetricMatrix<double, 2, 2, fdapde::Cache::Log> q;
+    fdapde::SymmetricMatrix<double, 2, fdapde::Cache::Log> q;
     (void)q;
 }

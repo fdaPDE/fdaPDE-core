@@ -86,29 +86,30 @@ template <typename Point> P1ValueResult<Point> p1_value_result(manifold::Weighte
 }
 
 template <typename Geometry> inline constexpr bool is_log_euclidean_spd_geometry = false;
-template <typename Scalar_, int Order_, Usage Uses_>
-inline constexpr bool is_log_euclidean_spd_geometry<manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses_>> = true;
+template <typename Scalar_, int Order_, Usage Uses_, typename Point_>
+inline constexpr bool is_log_euclidean_spd_geometry<manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses_, Point_>> =
+  true;
 
 /// @brief identifies the SPD geometries with globally flat symmetric coordinates
 template <typename Geometry> inline constexpr bool is_flat_spd_geometry = is_log_euclidean_spd_geometry<Geometry>;
-template <typename Scalar, int Order, Usage Uses>
-inline constexpr bool is_flat_spd_geometry<manifold::LogCholeskySPDGeometry<Scalar, Order, Uses>> = true;
+template <typename Scalar, int Order, Usage Uses, typename Point_>
+inline constexpr bool is_flat_spd_geometry<manifold::LogCholeskySPDGeometry<Scalar, Order, Uses, Point_>> = true;
 
 /// @brief retains the compile-time order of a flat SPD coordinate chart
 template <typename Geometry> inline constexpr int flat_spd_order = fdapde::Dynamic;
-template <typename Scalar, int Order, Usage Uses>
-inline constexpr int flat_spd_order<manifold::LogEuclideanSPDGeometry<Scalar, Order, Uses>> = Order;
-template <typename Scalar, int Order, Usage Uses>
-inline constexpr int flat_spd_order<manifold::LogCholeskySPDGeometry<Scalar, Order, Uses>> = Order;
+template <typename Scalar, int Order, Usage Uses, typename Point_>
+inline constexpr int flat_spd_order<manifold::LogEuclideanSPDGeometry<Scalar, Order, Uses, Point_>> = Order;
+template <typename Scalar, int Order, Usage Uses, typename Point_>
+inline constexpr int flat_spd_order<manifold::LogCholeskySPDGeometry<Scalar, Order, Uses, Point_>> = Order;
 
 /// @brief retains the chart representation required by one flat SPD geometry
 template <typename Geometry> struct FlatSPDChartFrame {
     using type = typename Geometry::Tangent;
 };
 /// @brief retains the triangular factor alongside a log-Cholesky chart
-template <typename Scalar, int Order, Usage Uses>
-struct FlatSPDChartFrame<manifold::LogCholeskySPDGeometry<Scalar, Order, Uses>> {
-    using type = typename manifold::LogCholeskySPDGeometry<Scalar, Order, Uses>::ChartFrame;
+template <typename Scalar, int Order, Usage Uses, typename Point_>
+struct FlatSPDChartFrame<manifold::LogCholeskySPDGeometry<Scalar, Order, Uses, Point_>> {
+    using type = typename manifold::LogCholeskySPDGeometry<Scalar, Order, Uses, Point_>::ChartFrame;
 };
 
 /// @brief prepares one reusable coordinate frame while preserving native log-Euclidean owner caches
@@ -215,9 +216,9 @@ P1ValueResult<manifold::point_t<Geometry>> p1_geodesic_value(
 }
 
 /// @brief evaluates a closed-form P1 mean in the geometry's globally flat coordinates
-template <typename Scalar_, int Order_, Usage Uses_, typename Nodes>
-P1ValueResult<typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses_>::Point> p1_geodesic_value(
-  const manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses_>& geometry, const Nodes& nodal_values,
+template <typename Scalar_, int Order_, Usage Uses_, typename Nodes, typename Point_>
+P1ValueResult<typename manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses_, Point_>::Point> p1_geodesic_value(
+  const manifold::LogEuclideanSPDGeometry<Scalar_, Order_, Uses_, Point_>& geometry, const Nodes& nodal_values,
   std::span<const double> barycentric_weights) {
     const auto vertex_index = internals::validate_p1_data(nodal_values.size(), barycentric_weights);
     if (vertex_index) return internals::p1_vertex_result(geometry, nodal_values, *vertex_index);
@@ -234,12 +235,12 @@ P1ValueResult<typename Geometry::Point> p1_geodesic_value(
     return internals::p1_value_result(manifold::weighted_karcher_mean(geometry, nodal_values, barycentric_weights));
 }
 
-template <typename Scalar_, int Order_, Usage Uses_, typename Nodes>
-P1ValueResult<typename manifold::AffineInvariantSPDGeometry<Scalar_, Order_, Uses_>::Point> p1_geodesic_value(
-  const manifold::AffineInvariantSPDGeometry<Scalar_, Order_, Uses_>& geometry, const Nodes& nodal_values,
+template <typename Scalar_, int Order_, Usage Uses_, typename Nodes, typename Point_>
+P1ValueResult<typename manifold::AffineInvariantSPDGeometry<Scalar_, Order_, Uses_, Point_>::Point> p1_geodesic_value(
+  const manifold::AffineInvariantSPDGeometry<Scalar_, Order_, Uses_, Point_>& geometry, const Nodes& nodal_values,
   std::span<const double> barycentric_weights, const manifold::WeightedKarcherMeanOptions& options = {},
-  manifold::internals::KarcherWorkspace<manifold::AffineInvariantSPDGeometry<Scalar_, Order_, Uses_>>* retained =
-    nullptr) {
+  manifold::internals::KarcherWorkspace<manifold::AffineInvariantSPDGeometry<Scalar_, Order_, Uses_, Point_>>*
+    retained = nullptr) {
     const auto vertex_index = internals::validate_p1_data(nodal_values.size(), barycentric_weights);
     if (vertex_index) return internals::p1_vertex_result(geometry, nodal_values, *vertex_index);
     return internals::p1_value_result(
@@ -247,11 +248,11 @@ P1ValueResult<typename manifold::AffineInvariantSPDGeometry<Scalar_, Order_, Use
 }
 
 /// @brief evaluates a BW P1 mean while preserving its convergence diagnostics and cached frames
-template <typename Scalar, int Order, Usage Uses, typename Nodes>
-P1ValueResult<typename manifold::BuresWassersteinSPDGeometry<Scalar, Order, Uses>::Point> p1_geodesic_value(
-  const manifold::BuresWassersteinSPDGeometry<Scalar, Order, Uses>& geometry, const Nodes& nodal_values,
+template <typename Scalar, int Order, Usage Uses, typename Nodes, typename Point_>
+P1ValueResult<typename manifold::BuresWassersteinSPDGeometry<Scalar, Order, Uses, Point_>::Point> p1_geodesic_value(
+  const manifold::BuresWassersteinSPDGeometry<Scalar, Order, Uses, Point_>& geometry, const Nodes& nodal_values,
   std::span<const double> barycentric_weights, const manifold::WeightedKarcherMeanOptions& options = {},
-  manifold::internals::KarcherWorkspace<manifold::BuresWassersteinSPDGeometry<Scalar, Order, Uses>>* retained =
+  manifold::internals::KarcherWorkspace<manifold::BuresWassersteinSPDGeometry<Scalar, Order, Uses, Point_>>* retained =
     nullptr) {
     const auto vertex_index = internals::validate_p1_data(nodal_values.size(), barycentric_weights);
     if (vertex_index) return internals::p1_vertex_result(geometry, nodal_values, *vertex_index);

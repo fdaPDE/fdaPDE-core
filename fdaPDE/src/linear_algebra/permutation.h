@@ -35,15 +35,15 @@ template <typename XprType_> struct PermutationMatrixExpr : public OrthogonalMat
     using Base::derived;
 
     /// @brief returns the inverse matrix expression
-    constexpr auto inverse() const& { return PermutationInverseOp<XprType_>(derived()); }
+    constexpr auto inv() const& { return PermutationInverseOp<XprType_>(derived()); }
     /// @brief returns the inverse matrix expression
-    constexpr auto inverse() const&&
+    constexpr auto inv() const&&
         requires(XprType::NestAsRef == 0)
     {
         return PermutationInverseOp<XprType_>(derived());
     }
     /// @brief rejects borrowing an inverse expression from a temporary owner
-    constexpr void inverse() const&&
+    constexpr void inv() const&&
         requires(XprType::NestAsRef != 0)
     = delete;
     /// @brief returns the matrix determinant

@@ -164,14 +164,16 @@ gtest_discover_tests(fdapde_spd_test PROPERTIES TIMEOUT 60)
 
 fdapde_reject_program(col_major_spd_matrix PACKED_COL_MAJOR_STRUCTURED_STORAGE_IS_NOT_SUPPORTED)
 fdapde_reject_program(oversized_spd_matrix SPD_DENSE_WORKSPACE_SIZE_EXCEEDS_SUPPORTED_RANGE)
-fdapde_reject_program(partial_dynamic_spd_matrix SPD_MATRICES_MUST_BE_SQUARE_AND_EITHER_FULLY_STATIC_OR_FULLY_DYNAMIC)
+fdapde_reject_program(invalid_spd_matrix_order INVALID_SPD_MATRIX_ORDER)
+fdapde_reject_program(invalid_symmetric_matrix_order INVALID_MATRIX_DIMENSIONS)
 fdapde_reject_program(qualified_scalar_spd_matrix SPD_MATRICES_REQUIRE_AN_UNQUALIFIED_FLOATING_POINT_SCALAR)
+find_package(Threads REQUIRED)
 add_executable(fdapde_spd_geometry_test
   manifold_optimization/log_euclidean_spd.cpp manifold_optimization/affine_invariant_spd.cpp
   manifold_optimization/spd_geometry.cpp manifold_optimization/spd_batch_geometry.cpp
   manifold_optimization/spd_geodesic.cpp manifold_optimization/log_cholesky_spd.cpp)
 fdapde_configure_target(fdapde_spd_geometry_test)
-target_link_libraries(fdapde_spd_geometry_test PRIVATE GTest::gtest_main)
+target_link_libraries(fdapde_spd_geometry_test PRIVATE GTest::gtest_main Threads::Threads)
 gtest_discover_tests(fdapde_spd_geometry_test PROPERTIES TIMEOUT 60)
 
 # focused public error and ownership contracts run with default debug assertions
@@ -195,7 +197,6 @@ fdapde_reject_program(qualified_scalar_spd_geometry SPD_GEOMETRIES_REQUIRE_AN_UN
 fdapde_reject_program(zero_order_spd_geometry INVALID_SPD_GEOMETRY_ORDER)
 fdapde_reject_program(oversized_spd_geometry SPD_GEOMETRY_DENSE_WORKSPACE_SIZE_EXCEEDS_SUPPORTED_RANGE)
 
-find_package(Threads REQUIRED)
 add_executable(fdapde_execution_test
   execution/runtime.cpp execution/task_graph.cpp execution/parallel_algorithms.cpp execution/queues.cpp)
 add_executable(fdapde_execution_configuration_test execution/configuration.cpp)
@@ -240,7 +241,7 @@ fdapde_reject_program(invalid_spd_cache_policy SPD_CACHE_POLICY_CONTAINS_UNKNOWN
 
 add_executable(fdapde_matrix_batch_test linear_algebra/matrix_batch.cpp)
 fdapde_configure_target(fdapde_matrix_batch_test)
-target_link_libraries(fdapde_matrix_batch_test PRIVATE GTest::gtest_main)
+target_link_libraries(fdapde_matrix_batch_test PRIVATE GTest::gtest_main Threads::Threads)
 gtest_discover_tests(fdapde_matrix_batch_test PROPERTIES TIMEOUT 60)
 fdapde_reject_program(col_major_matrix_batch "MatrixBatch supports row-major storage only")
 fdapde_reject_program(view_matrix_batch "MatrixBatch requires owning matrix elements")

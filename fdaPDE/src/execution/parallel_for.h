@@ -22,92 +22,129 @@
 namespace fdapde {
 namespace internals {
 
+/// @brief retains loop failures until every published chunk has stopped using its captured state
+class parallel_for_task_group {
+   public:
+    /// @brief keeps the group alive while its submitting caller is still publishing work
+    parallel_for_task_group() = default;
+    /// @brief registers a chunk before its callable can become visible to workers
+    void reserve() { pending_.fetch_add(1, std::memory_order_release); }
+    /// @brief releases a completed chunk or a reservation whose submission failed
+    void complete() { pending_.fetch_sub(1, std::memory_order_release); }
+    /// @brief retains the active exception from the lowest failing iteration index
+    void fail(int index) {
+        const std::lock_guard lock(mutex_);
+        if (index < failure_index_) {
+            failure_index_ = index;
+            failure_ = std::current_exception();
+        }
+    }
+    /// @brief releases the submitting caller and cooperatively drains every published chunk
+    void wait(threaded_executor_impl* executor) {
+        complete();
+        executor->active_join(this_thread_id(), [&] { return pending_.load(std::memory_order_acquire) > 0; });
+    }
+    /// @brief rethrows a recorded body failure after all chunks have completed
+    void rethrow_failure() const {
+        if (failure_) std::rethrow_exception(failure_);
+    }
+   private:
+    std::atomic<int> pending_ {1};
+    std::mutex mutex_;
+    std::exception_ptr failure_;
+    int failure_index_ = std::numeric_limits<int>::max();
+};
+
 /// @brief partitions integer iteration ranges into cooperatively joined tasks
 struct task_parallel_for {
     /// @brief constructs a stateless parallel task descriptor
     task_parallel_for() = default;
 
-    /// @brief partitions work and waits cooperatively for its task group
+    /// @brief drains all submitted chunks before propagating submission or lowest-index body failures
     template <typename LoopBody>
         requires(std::is_invocable_v<LoopBody, int>)
     void run(threaded_executor_impl* executor, int begin, int end, int grain_size, LoopBody&& f) {
         const int size = end - begin;
-        if (size <= 0) return;   // nothing to loop on
-
+        if (size <= 0) return;
         grain_size = std::max(1, std::min(grain_size, size));
-        std::atomic<int> local_task_count {1};
-
-        for (int local_begin = begin; local_begin < end; local_begin += grain_size) {
-            // register task in the group
-            local_task_count.fetch_add(1, std::memory_order_release);
-
-            int local_end = ((end - local_begin) < grain_size) ? end : (local_begin + grain_size);
-            auto loop_body = [local_begin, local_end, &f, &local_task_count]() {
-                for (int it = local_begin; it < local_end; ++it) { f(it); }
-                // signal task completion
-                local_task_count.fetch_sub(1, std::memory_order_release);
-            };
-            executor->execute(std::move(loop_body));
-        }
-        // task_group collaborative wait
-        local_task_count.fetch_sub(1, std::memory_order_release);
-        executor->active_join(this_thread_id(), [&] {
-            // help the pool while the task group is not fully consumed
-            return local_task_count.load(std::memory_order_acquire) > 0;
-        });
-        return;
+        parallel_for_task_group group;
+        std::exception_ptr submission_failure;
+        try {
+            for (int local_begin = begin; local_begin < end;) {
+                const int local_end = ((end - local_begin) < grain_size) ? end : (local_begin + grain_size);
+                group.reserve();
+                try {
+                    auto loop_body = [local_begin, local_end, &f, &group]() {
+                        int i = local_begin;
+                        try {
+                            for (; i < local_end; ++i) f(i);
+                        } catch (...) { group.fail(i); }
+                        group.complete();
+                    };
+                    executor->execute(std::move(loop_body));
+                } catch (...) {
+                    // the executor rolls back global accounting before a failed submission reaches this group
+                    group.complete();
+                    throw;
+                }
+                local_begin = local_end;
+            }
+        } catch (...) { submission_failure = std::current_exception(); }
+        group.wait(executor);
+        if (submission_failure) std::rethrow_exception(submission_failure);
+        group.rethrow_failure();
     }
-    /// @brief partitions work and waits cooperatively for its task group
+    /// @brief drains stepped chunks before propagating submission, step or lowest-index body failures
     template <typename LoopBody, typename NextFunctor>
         requires(std::is_invocable_v<LoopBody, int> && std::is_invocable_r_v<int, NextFunctor, int>)
     void run(threaded_executor_impl* executor, int begin, int end, int grain_size, LoopBody&& f, NextFunctor&& next) {
         int size = 0;
         for (int i = begin; i < end; i = next(i), size++);
-        if (size <= 0) return;   // nothing to loop on
-
+        if (size <= 0) return;
         grain_size = std::max(1, std::min(grain_size, size));
-        std::atomic<int> local_task_count {1};
-        int n_batches = std::ceil(double(size) / grain_size);
-
-        int local_begin = begin;
-        int local_end = local_begin;
-        for (int i = 0; i < grain_size && local_end < end; ++i) { local_end = next(local_end); }
-
-        for (int j = 0; j < n_batches; j++) {
-            // register task in the group
-            local_task_count.fetch_add(1, std::memory_order_release);
-            auto loop_body = [local_begin, local_end, next, &f, &local_task_count]() {
-                for (int it = local_begin; it < local_end; it = next(it)) { f(it); }
-                // signal task completion
-                local_task_count.fetch_sub(1, std::memory_order_release);
-            };
-            executor->execute(std::move(loop_body));
-
-            // update next task range
-            local_begin = local_end;
-            local_end = local_begin;
-            for (int i = 0; i < grain_size && local_end < end; ++i) { local_end = next(local_end); }
-        }
-        // task_group collaborative wait
-        local_task_count.fetch_sub(1, std::memory_order_release);
-        executor->active_join(this_thread_id(), [&] {
-            // help the pool while the task group is not fully consumed
-            return local_task_count.load(std::memory_order_acquire) > 0;
-        });
-        return;
+        const int n_batches = size / grain_size + (size % grain_size != 0);
+        parallel_for_task_group group;
+        std::exception_ptr submission_failure;
+        try {
+            int local_begin = begin;
+            int local_end = local_begin;
+            for (int i = 0; i < grain_size && local_end < end; ++i) local_end = next(local_end);
+            for (int j = 0; j < n_batches; ++j) {
+                group.reserve();
+                try {
+                    auto loop_body = [local_begin, local_end, next, &f, &group]() {
+                        int i = local_begin;
+                        try {
+                            for (; i < local_end; i = next(i)) f(i);
+                        } catch (...) { group.fail(i); }
+                        group.complete();
+                    };
+                    executor->execute(std::move(loop_body));
+                } catch (...) {
+                    // retain stack-bound callbacks until every earlier published chunk has completed
+                    group.complete();
+                    throw;
+                }
+                local_begin = local_end;
+                for (int i = 0; i < grain_size && local_end < end; ++i) local_end = next(local_end);
+            }
+        } catch (...) { submission_failure = std::current_exception(); }
+        group.wait(executor);
+        if (submission_failure) std::rethrow_exception(submission_failure);
+        group.rethrow_failure();
     }
 };
 
 }   // namespace internals
 
-/// @brief executes an integer range in parallel and waits for its chunks
+/// @brief executes an integer range in parallel and rethrows failures only after its submitted chunks complete
 template <typename LoopBody, typename NextFunctor>
     requires(std::is_invocable_v<LoopBody, int> && std::is_invocable_r_v<int, NextFunctor, int>)
 void parallel_for(int begin, int end, int grain_size, LoopBody&& loop_body, NextFunctor&& next) {
     internals::threaded_executor::instance().execute(
       internals::task_parallel_for(), begin, end, grain_size, loop_body, next);
 }
-/// @brief executes an integer range in parallel and waits for its chunks
+/// @brief executes an integer range in parallel and rethrows failures only after its submitted chunks complete
 template <typename LoopBody, typename NextFunctor>
     requires(std::is_invocable_v<LoopBody, int> && std::is_invocable_r_v<int, NextFunctor, int>)
 void parallel_for(int begin, int end, LoopBody&& loop_body, NextFunctor&& next) {
@@ -115,13 +152,13 @@ void parallel_for(int begin, int end, LoopBody&& loop_body, NextFunctor&& next) 
     internals::threaded_executor::instance().execute(
       internals::task_parallel_for(), begin, end, grain_size, loop_body, next);
 }
-/// @brief executes an integer range in parallel and waits for its chunks
+/// @brief executes an integer range in parallel and rethrows failures only after its submitted chunks complete
 template <typename LoopBody>
     requires(std::is_invocable_v<LoopBody, int>)
 void parallel_for(int begin, int end, int grain_size, LoopBody&& loop_body) {
     internals::threaded_executor::instance().execute(internals::task_parallel_for(), begin, end, grain_size, loop_body);
 }
-/// @brief executes an integer range in parallel and waits for its chunks
+/// @brief executes an integer range in parallel and rethrows failures only after its submitted chunks complete
 template <typename LoopBody>
     requires(std::is_invocable_v<LoopBody, int>)
 void parallel_for(int begin, int end, LoopBody&& loop_body) {

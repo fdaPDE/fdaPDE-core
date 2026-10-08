@@ -139,8 +139,8 @@ Matrix<double, 2, 2> noncommuting_left() { return Matrix<double, 2, 2>({3, 1, 1,
 
 Matrix<double, 2, 2> noncommuting_right() { return Matrix<double, 2, 2>({2, -0.5, -0.5, 4}); }
 
-SymmetricMatrix<double, 2, 2> off_diagonal_tangent(double diagonal, double off_diagonal) {
-    SymmetricMatrix<double, 2, 2> tangent;
+SymmetricMatrix<double, 2> off_diagonal_tangent(double diagonal, double off_diagonal) {
+    SymmetricMatrix<double, 2> tangent;
     tangent(0, 0) = diagonal;
     tangent(1, 0) = off_diagonal;
     tangent(1, 1) = -0.5 * diagonal;
@@ -149,8 +149,7 @@ SymmetricMatrix<double, 2, 2> off_diagonal_tangent(double diagonal, double off_d
 
 // verifies that the native exp and log Frechet actions invert each other at one SPD point
 template <typename Point>
-void expect_exp_log_frechet_inverse(
-  const Point& point, const SymmetricMatrix<double, 2, 2>& tangent, double tolerance) {
+void expect_exp_log_frechet_inverse(const Point& point, const SymmetricMatrix<double, 2>& tangent, double tolerance) {
     const auto logarithm = matrix_log(point);
     const auto logarithmic_differential = matrix_log_frechet(point, tangent);
     const auto restored = matrix_exp_frechet(logarithm, logarithmic_differential);
@@ -162,7 +161,7 @@ void expect_exp_log_frechet_inverse(
 template <typename Geometry, typename CachedFrom, typename CachedTo>
 void expect_cached_geometry_operations(
   const Geometry& geometry, const CachedFrom& cached_from, const CachedTo& cached_to,
-  const SPDMatrix<double, 2, 2>& uncached_from, const SPDMatrix<double, 2, 2>& uncached_to,
+  const SPDMatrix<double, 2>& uncached_from, const SPDMatrix<double, 2>& uncached_to,
   const typename Geometry::Tangent& first_tangent, const typename Geometry::Tangent& second_tangent, double tolerance) {
     // cached distance agrees with an independently decomposed uncached point pair
     EXPECT_NEAR(geometry.distance(cached_from, cached_to), geometry.distance(uncached_from, uncached_to), tolerance);
@@ -197,8 +196,8 @@ void expect_cached_geometry_operations(
 TEST(SPDBatchGeometry, WeightedMeanAcceptsNegativeAndUnnormalizedWeights) {
     const log_geometry geometry;
     point_batch points(2);
-    const SPDMatrix<double, 2, 2> left(noncommuting_left());
-    const SPDMatrix<double, 2, 2> right(noncommuting_right());
+    const SPDMatrix<double, 2> left(noncommuting_left());
+    const SPDMatrix<double, 2> right(noncommuting_right());
     points[0].assign(left);
     points[1].assign(right);
     weights_type weights({1.5, -0.25});
@@ -206,7 +205,7 @@ TEST(SPDBatchGeometry, WeightedMeanAcceptsNegativeAndUnnormalizedWeights) {
     const log_geometry::Point result(expression);
     const auto left_chart = matrix_log(left);
     const auto right_chart = matrix_log(right);
-    SymmetricMatrix<double, 2, 2> expected_chart;
+    SymmetricMatrix<double, 2> expected_chart;
     for (int i = 0; i < expected_chart.rows(); ++i)
         for (int j = 0; j <= i; ++j) expected_chart(i, j) = 1.5 * left_chart(i, j) - 0.25 * right_chart(i, j);
     const auto expected = matrix_exp(expected_chart);
@@ -307,7 +306,7 @@ TEST(SPDBatchGeometry, TemporarySelectionsAndDestinationPoliciesMaterializeSafel
     const std::array<int, 2> reverse {1, 0};
     weights_type weights({1, 0});
     const auto expression = geometry.weighted_mean(points.select(reverse).select(reverse), weights);
-    const SPDMatrix<double, 2, 2, complete_cache> destination(expression);
+    const SPDMatrix<double, 2, complete_cache> destination(expression);
 
     // nested temporary selections retain both copied index lists after the call returns
     expect_matrix_near(destination, diagonal(2, 2));
@@ -387,13 +386,13 @@ TEST(SPDBatchGeometry, AffineInvariantRetractionRemainsSecondOrderAndDistinctFro
 // log-Euclidean cache policies preserve every geometry operation on noncommuting SPD inputs
 TEST(SPDBatchGeometry, LogEuclideanCachePoliciesMatchUncachedOperationsAndFrechetInverses) {
     using cached_geometry = LogEuclideanSPDGeometry<double, 2, Usage::Distance | Usage::TangentMetric>;
-    using spectral_point = SPDMatrix<double, 2, 2, Cache::Spectral>;
-    using logarithm_point = SPDMatrix<double, 2, 2, Cache::Log>;
+    using spectral_point = SPDMatrix<double, 2, Cache::Spectral>;
+    using logarithm_point = SPDMatrix<double, 2, Cache::Log>;
     const cached_geometry geometry;
     const cached_geometry::Point cached_from(noncommuting_left());
     const cached_geometry::Point cached_to(noncommuting_right());
-    const SPDMatrix<double, 2, 2> uncached_from(noncommuting_left());
-    const SPDMatrix<double, 2, 2> uncached_to(noncommuting_right());
+    const SPDMatrix<double, 2> uncached_from(noncommuting_left());
+    const SPDMatrix<double, 2> uncached_to(noncommuting_right());
     const spectral_point spectral_from(noncommuting_left());
     const logarithm_point logarithm_from(noncommuting_left());
     const logarithm_point logarithm_to(noncommuting_right());
@@ -437,7 +436,7 @@ TEST(SPDBatchGeometry, LogEuclideanNearRepeatedCacheMatchesUncachedFrechetAction
     const cached_geometry geometry;
     const Matrix<double, 2, 2> close_spectrum({2, 1.0e-7, 1.0e-7, 2 + 2.0e-7});
     const cached_geometry::Point cached(close_spectrum);
-    const SPDMatrix<double, 2, 2> uncached(close_spectrum);
+    const SPDMatrix<double, 2> uncached(close_spectrum);
     const auto tangent = off_diagonal_tangent(0.4, -0.3);
 
     // cached near-repeated divided differences reproduce the uncached log derivative
@@ -452,8 +451,8 @@ TEST(SPDBatchGeometry, LogEuclideanNearRepeatedCacheMatchesUncachedFrechetAction
 
 // affine-invariant square-root caches preserve all operations on noncommuting SPD inputs
 TEST(SPDBatchGeometry, AffineInvariantCachePoliciesMatchUncachedOperations) {
-    using sqrt_point = SPDMatrix<double, 2, 2, Cache::Sqrt>;
-    using inverse_sqrt_point = SPDMatrix<double, 2, 2, Cache::InverseSqrt>;
+    using sqrt_point = SPDMatrix<double, 2, Cache::Sqrt>;
+    using inverse_sqrt_point = SPDMatrix<double, 2, Cache::InverseSqrt>;
     const airm_base_geometry geometry;
     const airm_base_geometry::Point cached_from(noncommuting_left());
     const airm_base_geometry::Point cached_to(noncommuting_right());
@@ -461,8 +460,8 @@ TEST(SPDBatchGeometry, AffineInvariantCachePoliciesMatchUncachedOperations) {
     const inverse_sqrt_point inverse_sqrt_to(noncommuting_right());
     const auto sqrt_from_view = sqrt_from.view();
     const auto inverse_sqrt_to_view = inverse_sqrt_to.view();
-    const SPDMatrix<double, 2, 2> uncached_from(noncommuting_left());
-    const SPDMatrix<double, 2, 2> uncached_to(noncommuting_right());
+    const SPDMatrix<double, 2> uncached_from(noncommuting_left());
+    const SPDMatrix<double, 2> uncached_to(noncommuting_right());
     const auto first_tangent = off_diagonal_tangent(0.25, -0.4);
     const auto second_tangent = off_diagonal_tangent(-0.35, 0.3);
 

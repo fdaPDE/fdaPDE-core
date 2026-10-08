@@ -222,7 +222,7 @@ class RotationMatrix : public OrthogonalMatrixExpr<RotationMatrix<S, R, C, P>> {
     /// @brief borrows read-only row-major coefficients
     const S* data() const { return data_.data(); }
     /// @brief returns a checked inverse by transposing the orthogonal coefficients
-    RotationMatrix inverse() const { return RotationMatrix(data_.transpose()); }
+    RotationMatrix inv() const { return RotationMatrix(data_.transpose()); }
     /// @brief borrows a persistent owner for joint value and cache updates
     View view() & { return View(*this); }
     /// @brief borrows read-only coefficients and cache from a persistent owner
@@ -322,7 +322,7 @@ class RotationMatrixView : public OrthogonalMatrixExpr<RotationMatrixView<S, R, 
     /// @brief borrows read-only dense coefficients
     const Scalar* data() const { return data_; }
     /// @brief returns the checked transpose as an owning inverse
-    Owner inverse() const { return Owner(this->transpose()); }
+    Owner inv() const { return Owner(this->transpose()); }
     /// @brief borrows the current prepared cache without extending its lifetime
     const CacheSlot& cache() const
         requires(P::Flags != 0)
