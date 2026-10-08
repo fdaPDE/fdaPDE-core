@@ -22,6 +22,16 @@ p1_cheeger_cached_logs(const Nodes& nodes, int order, Policy policy) {
           nodes.size(), order, order, policy, [&](std::size_t i) { return matrix_log(nodes[i]); });
     }
 }
+/// @brief prepares each general-order nodal eigenframe before edges share the immutable chart caches
+template <typename S, int N, typename Charts, PointExecutionPolicy Policy>
+std::vector<Matrix<S, N, N>> p1_cheeger_eigenframes(const Charts& charts, int order, Policy policy) {
+    if (order == 2) return {};
+    std::vector<Matrix<S, N, N>> result(charts.size());
+    for_each_point(charts.size(), policy, [&](std::size_t i) {
+        result[i] = manifold::internals::cheeger_eigenframe<S, N>(charts[i]);
+    });
+    return result;
+}
 }   // namespace internals
 
 /// @brief returns Frobenius log-coordinate covectors and scalar rho derivatives in nodal order
@@ -134,6 +144,8 @@ p1_cheeger_discrete_tension_log_contribution(
     if (!rho_nodes.empty()) rho.assign(rho_nodes.begin(), rho_nodes.end());
     for (double r : rho) geometry.with_rho(r);
     const auto charts = internals::p1_cheeger_cached_logs<S, N>(nodes, geometry.order(), execution_seq);
+    const auto eigenframes = internals::p1_cheeger_eigenframes<S, N>(charts, geometry.order(), execution_seq);
+    const auto eigenframe = [&](std::size_t i) { return eigenframes.empty() ? nullptr : &eigenframes[i]; };
     Sym zero;
     if constexpr (N == Dynamic) zero.resize(geometry.order(), geometry.order());
     for (int i = 0; i < geometry.order(); ++i)
@@ -143,8 +155,12 @@ p1_cheeger_discrete_tension_log_contribution(
     frames.reserve(stencil.edges.size());
     for (const auto& edge : stencil.edges) {
         frames.push_back(
-          {Frame(Sym(charts[edge.first]), Sym(charts[edge.second]), rho[edge.first]),
-           Frame(Sym(charts[edge.second]), Sym(charts[edge.first]), rho[edge.second])});
+          {Frame(
+             Sym(charts[edge.first]), Sym(charts[edge.second]), rho[edge.first], true, eigenframe(edge.first),
+             eigenframe(edge.second)),
+           Frame(
+             Sym(charts[edge.second]), Sym(charts[edge.first]), rho[edge.second], true, eigenframe(edge.second),
+             eigenframe(edge.first))});
         const auto a = frames.back()[0].logarithm(), b = frames.back()[1].logarithm();
         residual[edge.first] += S(edge.stiffness) * a;
         residual[edge.second] += S(edge.stiffness) * b;
@@ -188,7 +204,8 @@ template <typename S, Usage U, typename Point_, typename Nodes>
 P1CheegerLogContributionResult<typename manifold::CheegerLogEuclideanSPDGeometry<S, 2, U, Point_>::Tangent>
 p1_cheeger_discrete_tension_log_parallel_contribution(
   const manifold::CheegerLogEuclideanSPDGeometry<S, 2, U, Point_>& geometry, const Nodes& nodes,
-  const P1LumpedLaplacianStencil& stencil, std::span<const double> rho_nodes) {
+  const P1LumpedLaplacianStencil& stencil, std::span<const double> rho_nodes,
+  const std::vector<std::vector<std::size_t>>* prepared_incident = nullptr) {
     using G = manifold::CheegerLogEuclideanSPDGeometry<S, 2, U, Point_>;
     using C = manifold::internals::CheegerChart;
     using V = std::array<double, 3>;
@@ -197,7 +214,9 @@ p1_cheeger_discrete_tension_log_parallel_contribution(
       rho_nodes.empty() || rho_nodes.size() == nodes.size(), std::invalid_argument, "rho count must match nodes");
     for (double rho : rho_nodes) geometry.with_rho(rho);
     const auto rho = [&](std::size_t i) { return rho_nodes.empty() ? geometry.rho() : rho_nodes[i]; };
-    const auto incident = internals::p1_discrete_tension_incidence(stencil);
+    std::vector<std::vector<std::size_t>> owned_incident;
+    if (!prepared_incident) owned_incident = internals::p1_discrete_tension_incidence(stencil);
+    const auto& incident = prepared_incident ? *prepared_incident : owned_incident;
     std::vector<C> q(nodes.size());
     internals::for_each_point(nodes.size(), execution_par, [&](std::size_t i) { q[i] = G::chart(nodes[i]); });
     /// @brief retains one directed scalar branch and its coordinate differential columns
@@ -302,7 +321,8 @@ template <typename S, int N, Usage U, typename Point_, typename Nodes>
 P1CheegerLogContributionResult<typename manifold::CheegerLogEuclideanSPDGeometry<S, N, U, Point_>::Tangent>
 p1_cheeger_discrete_tension_log_parallel_contribution(
   const manifold::CheegerLogEuclideanSPDGeometry<S, N, U, Point_>& geometry, const Nodes& nodes,
-  const P1LumpedLaplacianStencil& stencil, std::span<const double> rho_nodes) {
+  const P1LumpedLaplacianStencil& stencil, std::span<const double> rho_nodes,
+  const std::vector<std::vector<std::size_t>>* prepared_incident = nullptr) {
     using Sym = typename manifold::CheegerLogEuclideanSPDGeometry<S, N, U, Point_>::Tangent;
     using Frame = manifold::internals::CheegerPairFrame<S, N>;
     internals::p1_discrete_tension_validate(geometry, nodes, stencil);
@@ -311,8 +331,12 @@ p1_cheeger_discrete_tension_log_parallel_contribution(
     std::vector<double> rho(nodes.size(), geometry.rho());
     if (!rho_nodes.empty()) rho.assign(rho_nodes.begin(), rho_nodes.end());
     for (double r : rho) geometry.with_rho(r);
-    const auto incident = internals::p1_discrete_tension_incidence(stencil);
+    std::vector<std::vector<std::size_t>> owned_incident;
+    if (!prepared_incident) owned_incident = internals::p1_discrete_tension_incidence(stencil);
+    const auto& incident = prepared_incident ? *prepared_incident : owned_incident;
     const auto charts = internals::p1_cheeger_cached_logs<S, N>(nodes, geometry.order(), execution_par);
+    const auto eigenframes = internals::p1_cheeger_eigenframes<S, N>(charts, geometry.order(), execution_par);
+    const auto eigenframe = [&](std::size_t i) { return eigenframes.empty() ? nullptr : &eigenframes[i]; };
     Sym zero;
     if constexpr (N == Dynamic) zero.resize(geometry.order(), geometry.order());
     for (int i = 0; i < geometry.order(); ++i)
@@ -321,8 +345,12 @@ p1_cheeger_discrete_tension_log_parallel_contribution(
     std::vector<std::array<Sym, 2>> logarithms(stencil.edges.size());
     internals::for_each_point(stencil.edges.size(), execution_par, [&](std::size_t e) {
         const auto& edge = stencil.edges[e];
-        frames[e][0].emplace(Sym(charts[edge.first]), Sym(charts[edge.second]), rho[edge.first]);
-        frames[e][1].emplace(Sym(charts[edge.second]), Sym(charts[edge.first]), rho[edge.second]);
+        frames[e][0].emplace(
+          Sym(charts[edge.first]), Sym(charts[edge.second]), rho[edge.first], true, eigenframe(edge.first),
+          eigenframe(edge.second));
+        frames[e][1].emplace(
+          Sym(charts[edge.second]), Sym(charts[edge.first]), rho[edge.second], true, eigenframe(edge.second),
+          eigenframe(edge.first));
         logarithms[e][0] = frames[e][0]->logarithm();
         logarithms[e][1] = frames[e][1]->logarithm();
     });
@@ -400,6 +428,32 @@ p1_cheeger_discrete_tension_log_contribution(
   const manifold::CheegerLogEuclideanSPDGeometry<S, N, U, Point_>& geometry, const Nodes& nodes,
   const P1LumpedLaplacianStencil& stencil, Policy policy) {
     return p1_cheeger_discrete_tension_log_contribution(geometry, nodes, stencil, {}, policy);
+}
+
+/// @brief reuses prepared edge incidence when evaluating parallel C-LE nodal and rho covectors
+template <
+  typename S, int N, Usage U, typename Point_, typename Nodes, internals::PointExecutionPolicy Policy = execution_seq_t>
+P1CheegerLogContributionResult<typename manifold::CheegerLogEuclideanSPDGeometry<S, N, U, Point_>::Tangent>
+p1_cheeger_discrete_tension_log_contribution(
+  const manifold::CheegerLogEuclideanSPDGeometry<S, N, U, Point_>& geometry, const Nodes& nodes,
+  const PreparedP1LumpedLaplacianStencil& prepared, std::span<const double> rho_nodes = {}, Policy = {}) {
+    if constexpr (std::same_as<Policy, execution_seq_t>)
+        return p1_cheeger_discrete_tension_log_contribution(geometry, nodes, prepared.stencil(), rho_nodes);
+    else {
+        if (nodes.size() < 32 || parallel_get_num_threads() == 1)
+            return p1_cheeger_discrete_tension_log_contribution(geometry, nodes, prepared.stencil(), rho_nodes);
+        return internals::p1_cheeger_discrete_tension_log_parallel_contribution(
+          geometry, nodes, prepared.stencil(), rho_nodes, &prepared.incident_edges());
+    }
+}
+
+/// @brief evaluates constant-rho C-LE tension with retained edge incidence and the requested execution policy
+template <typename S, int N, Usage U, typename Point_, typename Nodes, internals::PointExecutionPolicy Policy>
+P1CheegerLogContributionResult<typename manifold::CheegerLogEuclideanSPDGeometry<S, N, U, Point_>::Tangent>
+p1_cheeger_discrete_tension_log_contribution(
+  const manifold::CheegerLogEuclideanSPDGeometry<S, N, U, Point_>& geometry, const Nodes& nodes,
+  const PreparedP1LumpedLaplacianStencil& prepared, Policy policy) {
+    return p1_cheeger_discrete_tension_log_contribution(geometry, nodes, prepared, {}, policy);
 }
 
 /// @brief pulls a Frobenius data residual back through C-LE interpolation to nodal logs and rho

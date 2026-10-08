@@ -71,6 +71,33 @@ and reused for its logarithm and both gradient actions. The value-only path
 avoids retaining these frames. Signed stiffness edges, including positive
 off-diagonals from obtuse cells, are valid for discrete tension.
 
+For repeated parallel evaluations on the same spatial stencil, prepare its
+node-to-edge incidence once outside the fitting loop:
+
+```cpp
+const gfe::PreparedP1LumpedLaplacianStencil prepared(stencil);
+auto penalty = [&](const auto& candidate_nodes) {
+    return gfe::p1_discrete_tension_contribution(
+      geometry, candidate_nodes, prepared, execution_par);
+};
+// the optimizer may call penalty with successive nodal candidates
+const auto initial_penalty = penalty(nodes);
+```
+
+The prepared object owns a validated copy of the masses and edges; subsequent
+changes to the original mutable stencil cannot make its incidence stale. Pass
+an rvalue stencil to transfer its storage instead. Rebuild the prepared object
+when the spatial topology, masses or stiffness coefficients change. It exposes
+only const `stencil()` and `incident_edges()` accessors.
+
+Both tension value and gradient overloads accept the prepared object. Omitting
+the execution policy retains sequential execution; `execution_par` reuses the
+ordered incidence while preserving the raw stencil's nodal summation order.
+Fewer than 32 nodes or one configured worker use the serial fallback. The
+C-LE `p1_cheeger_discrete_tension_log_contribution` overloads accept the same
+prepared object, with either constant or nodal rho. Raw mutable stencils remain
+supported and rebuild incidence for each parallel evaluation.
+
 The imported alternatives remain explicitly named:
 
 - `p1_log_coordinate_data_site_*` (LE): residual against a precomputed `log(D)`

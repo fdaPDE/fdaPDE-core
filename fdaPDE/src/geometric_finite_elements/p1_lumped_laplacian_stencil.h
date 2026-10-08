@@ -115,7 +115,38 @@ inline void validate_p1_lumped_laplacian_stencil(const P1LumpedLaplacianStencil&
     }
 }
 
+/// @brief lists incident edges in their original summation order for a validated stencil
+inline std::vector<std::vector<std::size_t>> p1_discrete_tension_incidence(const P1LumpedLaplacianStencil& stencil) {
+    std::vector<std::vector<std::size_t>> result(stencil.node_count());
+    for (std::size_t e = 0; e < stencil.edges.size(); ++e) {
+        result[stencil.edges[e].first].push_back(e);
+        result[stencil.edges[e].second].push_back(e);
+    }
+    return result;
+}
+
 }   // namespace internals
+
+/// @brief owns an immutable stencil snapshot and reusable ordered incidence for repeated tension evaluations
+class PreparedP1LumpedLaplacianStencil {
+   public:
+    /// @brief validates and snapshots masses and edges before preparing their nodal incidence
+    explicit PreparedP1LumpedLaplacianStencil(P1LumpedLaplacianStencil stencil) : stencil_(std::move(stencil)) {
+        internals::validate_p1_lumped_laplacian_stencil(stencil_);
+        incident_ = internals::p1_discrete_tension_incidence(stencil_);
+    }
+    /// @brief borrows the immutable source used to construct the incidence
+    const P1LumpedLaplacianStencil& stencil() const& noexcept { return stencil_; }
+    /// @brief rejects source references escaping an expiring prepared stencil
+    void stencil() const&& = delete;
+    /// @brief borrows incident edge indices in their original summation order
+    const std::vector<std::vector<std::size_t>>& incident_edges() const& noexcept { return incident_; }
+    /// @brief rejects incidence references escaping an expiring prepared stencil
+    void incident_edges() const&& = delete;
+   private:
+    P1LumpedLaplacianStencil stencil_;
+    std::vector<std::vector<std::size_t>> incident_;
+};
 
 /// @brief assembles lumped masses and signed stiffness edges for the full P1 space
 template <std::size_t LocalDim, std::size_t EmbedDim, std::size_t QuadratureSize>

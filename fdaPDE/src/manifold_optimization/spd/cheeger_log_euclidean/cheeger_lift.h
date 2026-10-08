@@ -11,6 +11,14 @@ inline double cheeger_inner(const auto& a, const auto& b) {
         for (int j = 0; j < a.cols(); ++j) value += double(a(i, j)) * double(b(i, j));
     return value;
 }
+/// @brief copies cached eigenvectors when available and orients the frame as a proper rotation
+template <typename S, int N, typename X> Matrix<S, N, N> cheeger_eigenframe(const X& chart) {
+    const EVD evd(chart);
+    Matrix<S, N, N> q(evd.eigenvectors());
+    if (PartialPivLU(q).determinant() < 0)
+        for (int r = 0; r < chart.rows(); ++r) q(r, 0) = -q(r, 0);
+    return q;
+}
 /// @brief specializes rotation differentials in dimensions two and three and reuses SO(n) otherwise
 template <typename S, int N> class CheegerRotationDifferential {
    public:
@@ -54,6 +62,7 @@ template <typename S, int N> class CheegerLift {
     using Batch = MatrixBatch<Rotation>;
     using Dense = Matrix<S, Dynamic, Dynamic>;
     using Vec = Vector<S, Dynamic>;
+    using Eigenframe = Matrix<S, N, N>;
     /// @brief stores one evaluation's rotations, aligned charts and stationarity residual
     struct State {
         Batch rotations;
@@ -220,6 +229,12 @@ template <typename S, int N> class CheegerLift {
     };
     /// @brief solves several deterministic local starts and retains competing stationary candidates
     State solve(double tolerance = 1e-10, std::size_t iterations = 200) {
+        return solve({}, nullptr, tolerance, iterations);
+    }
+    /// @brief reuses prepared oriented eigenframes without changing the local starts or solver certificates
+    State solve(
+      std::span<const Eigenframe> eigenframes, const Eigenframe* base_eigenframe, double tolerance = 1e-10,
+      std::size_t iterations = 200) {
         Batch initial(w_.size(), n_, n_);
         if (!base_ && w_.size() == 1) {
             converged_ = true;
@@ -229,21 +244,21 @@ template <typename S, int N> class CheegerLift {
         std::vector<Batch> starts;
         starts.push_back(initial);
         // seed whole eigenframe alignments as well as individual rotation planes
-        std::vector<Matrix<S, N, N>> eigenframes;
-        for (std::size_t i = 0; i < w_.size(); ++i) {
-            const EVD evd(charts_[i]);
-            Matrix<S, N, N> q(evd.eigenvectors());
-            if (PartialPivLU(q).determinant() < 0)
-                for (int r = 0; r < n_; ++r) q(r, 0) = -q(r, 0);
-            eigenframes.push_back(std::move(q));
+        std::vector<Eigenframe> prepared;
+        if (eigenframes.empty()) {
+            prepared.reserve(w_.size());
+            for (std::size_t i = 0; i < w_.size(); ++i) prepared.push_back(cheeger_eigenframe<S, N>(charts_[i]));
+            eigenframes = prepared;
         }
-        std::vector<Matrix<S, N, N>> references = eigenframes;
+        fdapde_assert(eigenframes.size() == w_.size(), std::invalid_argument, "invalid lifted eigenframe count");
+        std::span<const Eigenframe> references = eigenframes;
+        std::optional<Eigenframe> prepared_base;
         if (base_) {
-            const EVD evd(*base_);
-            Matrix<S, N, N> q(evd.eigenvectors());
-            if (PartialPivLU(q).determinant() < 0)
-                for (int r = 0; r < n_; ++r) q(r, 0) = -q(r, 0);
-            references = {std::move(q)};
+            if (!base_eigenframe) {
+                prepared_base.emplace(cheeger_eigenframe<S, N>(*base_));
+                base_eigenframe = &*prepared_base;
+            }
+            references = {base_eigenframe, 1};
         }
         for (const auto& reference : references) {
             Batch seed(initial);

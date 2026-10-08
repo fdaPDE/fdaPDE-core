@@ -134,6 +134,37 @@ TEST(CheegerSmoothing, SpecializedRotationDifferentials) {
             EXPECT_LT((Matrix<double, Dynamic, Dynamic>(d - rd).norm()), 1e-12);
         }
 }
+/// @brief checks reused eigenframe seeds against fresh pair searches with noncommuting and repeated spectra
+TEST(CheegerSmoothing, PreparedEigenframesPreservePairSearch) {
+    using Sym = SymmetricMatrix<double, 3>;
+    using Frame = manifold::internals::CheegerPairFrame<double, 3>;
+    MatrixBatch<SymmetricMatrix<double, 3, Cache::Spectral>> charts(3);
+    charts[0] = Sym(Matrix<double, 3, 3>({.2, .03, -.02, .03, .5, .04, -.02, .04, .8}));
+    charts[1] = Sym(Matrix<double, 3, 3>({.3, 0, 0, 0, .3, 0, 0, 0, .3}));
+    charts[2] = Sym(Matrix<double, 3, 3>({.2, 0, 0, 0, .2, 0, 0, 0, .7}));
+    const auto eigenframes = gfe::internals::p1_cheeger_eigenframes<double, 3>(charts, 3, execution_par);
+    const Sym dual(Matrix<double, 3, 3>({.1, -.03, .02, -.03, -.2, .04, .02, .04, .3}));
+    for (std::size_t i = 0; i < charts.size(); ++i)
+        for (std::size_t j = 0; j < charts.size(); ++j) {
+            const Sym x(charts[i]), y(charts[j]);
+            const Frame fresh(x, y, .6), reused(x, y, .6, true, &eigenframes[i], &eigenframes[j]);
+            // identical local starts retain the same selected pair objective including repeated eigenvalues
+            EXPECT_EQ(fresh.state().cost, reused.state().cost);
+            // preserving seed order retains the detected-tie diagnostic
+            EXPECT_EQ(fresh.ambiguous(), reused.ambiguous());
+            const auto fresh_logarithm = fresh.logarithm(), logarithm = reused.logarithm();
+            // the prepared frame must produce the same selected initial chart velocity
+            EXPECT_EQ((Matrix<double, 3, 3>(fresh_logarithm - logarithm).norm()), 0.);
+            const auto [fresh_base, fresh_target, fresh_rho] = fresh.pullback(dual);
+            const auto [base, target, rho] = reused.pullback(dual);
+            // the retained lifted Hessian supplies the same base-endpoint covector
+            EXPECT_EQ((Matrix<double, 3, 3>(fresh_base - base).norm()), 0.);
+            // the target-endpoint covector uses the same implicit factorization
+            EXPECT_EQ((Matrix<double, 3, 3>(fresh_target - target).norm()), 0.);
+            // the scalar parameter pullback remains independent of eigenframe preparation
+            EXPECT_EQ(fresh_rho, rho);
+        }
+}
 /// @brief checks active-support data losses and rejected scalar inputs at the public kernel boundary
 TEST(CheegerSmoothing, VertexEdgeAndParameterContracts) {
     using G = manifold::CheegerLogEuclideanSPDGeometry<double, 2>;

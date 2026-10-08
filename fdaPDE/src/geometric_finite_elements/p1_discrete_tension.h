@@ -210,26 +210,19 @@ P1ObjectiveResult<WithGradient, typename Geometry::Tangent> p1_intrinsic_discret
     return result;
 }
 
-/// @brief lists each node's incident edges in the stencil's original accumulation order
-inline std::vector<std::vector<std::size_t>> p1_discrete_tension_incidence(const P1LumpedLaplacianStencil& stencil) {
-    std::vector<std::vector<std::size_t>> incident(stencil.node_count());
-    for (std::size_t e = 0; e < stencil.edges.size(); ++e) {
-        incident[stencil.edges[e].first].push_back(e);
-        incident[stencil.edges[e].second].push_back(e);
-    }
-    return incident;
-}
-
 /// @brief evaluates flat-coordinate tension with independent edge work and ordered nodal gathers
 template <bool WithGradient, typename Geometry, typename Nodes>
     requires is_flat_spd_geometry<Geometry>
 P1ObjectiveResult<WithGradient, typename Geometry::Tangent> p1_flat_discrete_tension_parallel_impl(
-  const Geometry& geometry, const Nodes& nodes, const P1LumpedLaplacianStencil& stencil) {
+  const Geometry& geometry, const Nodes& nodes, const P1LumpedLaplacianStencil& stencil,
+  const std::vector<std::vector<std::size_t>>* prepared_incident = nullptr) {
     using Scalar = typename Geometry::Scalar;
     using Tangent = typename Geometry::Tangent;
     using Frame = typename FlatSPDChartFrame<Geometry>::type;
     p1_discrete_tension_validate(geometry, nodes, stencil);
-    const auto incident = p1_discrete_tension_incidence(stencil);
+    std::vector<std::vector<std::size_t>> owned_incident;
+    if (!prepared_incident) owned_incident = p1_discrete_tension_incidence(stencil);
+    const auto& incident = prepared_incident ? *prepared_incident : owned_incident;
     std::vector<std::optional<Frame>> frames(nodes.size());
     for_each_point(nodes.size(), execution_par, [&](std::size_t i) {
         frames[i].emplace(p1_flat_chart_frame(geometry, nodes[i]));
@@ -301,11 +294,14 @@ P1ObjectiveResult<WithGradient, typename Geometry::Tangent> p1_flat_discrete_ten
 /// @brief evaluates intrinsic tension with parallel relative frames and order-preserving nodal pullbacks
 template <bool WithGradient, typename Geometry, typename Nodes>
 P1ObjectiveResult<WithGradient, typename Geometry::Tangent> p1_intrinsic_discrete_tension_parallel_impl(
-  const Geometry& geometry, const Nodes& nodes, const P1LumpedLaplacianStencil& stencil) {
+  const Geometry& geometry, const Nodes& nodes, const P1LumpedLaplacianStencil& stencil,
+  const std::vector<std::vector<std::size_t>>* prepared_incident = nullptr) {
     using Tangent = typename Geometry::Tangent;
     using Frame = typename Geometry::RelativeFrame;
     p1_discrete_tension_validate(geometry, nodes, stencil);
-    const auto incident = p1_discrete_tension_incidence(stencil);
+    std::vector<std::vector<std::size_t>> owned_incident;
+    if (!prepared_incident) owned_incident = p1_discrete_tension_incidence(stencil);
+    const auto& incident = prepared_incident ? *prepared_incident : owned_incident;
     std::vector<std::array<std::optional<Frame>, 2>> frames;
     if constexpr (WithGradient) frames.resize(stencil.edges.size());
     std::vector<std::array<Tangent, 2>> logarithms(stencil.edges.size());
@@ -454,7 +450,7 @@ p1_discrete_tension_contribution(
 /// @details fewer than 32 nodes or one configured worker use the unchanged serial implementation
 template <typename Geometry, typename Nodes, internals::PointExecutionPolicy Policy>
     requires requires(const Geometry& geometry, const Nodes& nodes, const P1LumpedLaplacianStencil& stencil) {
-        p1_discrete_tension_value(geometry, nodes, stencil);
+        fdapde::gfe::p1_discrete_tension_value(geometry, nodes, stencil);
     }
 P1ObjectiveValueResult p1_discrete_tension_value(
   const Geometry& geometry, const Nodes& nodes, const P1LumpedLaplacianStencil& stencil, Policy) {
@@ -474,7 +470,7 @@ P1ObjectiveValueResult p1_discrete_tension_value(
 /// @details fewer than 32 nodes or one configured worker use the unchanged serial implementation
 template <typename Geometry, typename Nodes, internals::PointExecutionPolicy Policy>
     requires requires(const Geometry& geometry, const Nodes& nodes, const P1LumpedLaplacianStencil& stencil) {
-        p1_discrete_tension_contribution(geometry, nodes, stencil);
+        fdapde::gfe::p1_discrete_tension_contribution(geometry, nodes, stencil);
     }
 P1ObjectiveContributionResult<typename Geometry::Tangent> p1_discrete_tension_contribution(
   const Geometry& geometry, const Nodes& nodes, const P1LumpedLaplacianStencil& stencil, Policy) {
@@ -487,6 +483,50 @@ P1ObjectiveContributionResult<typename Geometry::Tangent> p1_discrete_tension_co
             return internals::p1_flat_discrete_tension_parallel_impl<true>(geometry, nodes, stencil);
         else
             return internals::p1_intrinsic_discrete_tension_parallel_impl<true>(geometry, nodes, stencil);
+    }
+}
+
+/// @brief evaluates tension while reusing a prepared stencil's immutable nodal incidence
+template <typename Geometry, typename Nodes, internals::PointExecutionPolicy Policy = execution_seq_t>
+    requires requires(const Geometry& geometry, const Nodes& nodes, const P1LumpedLaplacianStencil& stencil) {
+        fdapde::gfe::p1_discrete_tension_value(geometry, nodes, stencil);
+    }
+P1ObjectiveValueResult p1_discrete_tension_value(
+  const Geometry& geometry, const Nodes& nodes, const PreparedP1LumpedLaplacianStencil& prepared, Policy = {}) {
+    const auto& stencil = prepared.stencil();
+    if constexpr (std::same_as<Policy, execution_seq_t>)
+        return p1_discrete_tension_value(geometry, nodes, stencil);
+    else {
+        if (nodes.size() < 32 || parallel_get_num_threads() == 1)
+            return p1_discrete_tension_value(geometry, nodes, stencil);
+        if constexpr (internals::is_flat_spd_geometry<Geometry>)
+            return internals::p1_flat_discrete_tension_parallel_impl<false>(
+              geometry, nodes, stencil, &prepared.incident_edges());
+        else
+            return internals::p1_intrinsic_discrete_tension_parallel_impl<false>(
+              geometry, nodes, stencil, &prepared.incident_edges());
+    }
+}
+
+/// @brief evaluates tension gradients while reusing a prepared stencil's immutable nodal incidence
+template <typename Geometry, typename Nodes, internals::PointExecutionPolicy Policy = execution_seq_t>
+    requires requires(const Geometry& geometry, const Nodes& nodes, const P1LumpedLaplacianStencil& stencil) {
+        fdapde::gfe::p1_discrete_tension_contribution(geometry, nodes, stencil);
+    }
+P1ObjectiveContributionResult<typename Geometry::Tangent> p1_discrete_tension_contribution(
+  const Geometry& geometry, const Nodes& nodes, const PreparedP1LumpedLaplacianStencil& prepared, Policy = {}) {
+    const auto& stencil = prepared.stencil();
+    if constexpr (std::same_as<Policy, execution_seq_t>)
+        return p1_discrete_tension_contribution(geometry, nodes, stencil);
+    else {
+        if (nodes.size() < 32 || parallel_get_num_threads() == 1)
+            return p1_discrete_tension_contribution(geometry, nodes, stencil);
+        if constexpr (internals::is_flat_spd_geometry<Geometry>)
+            return internals::p1_flat_discrete_tension_parallel_impl<true>(
+              geometry, nodes, stencil, &prepared.incident_edges());
+        else
+            return internals::p1_intrinsic_discrete_tension_parallel_impl<true>(
+              geometry, nodes, stencil, &prepared.incident_edges());
     }
 }
 

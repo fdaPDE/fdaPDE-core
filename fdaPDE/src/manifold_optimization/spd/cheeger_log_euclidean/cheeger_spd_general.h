@@ -11,9 +11,13 @@ template <typename S, int N> class CheegerPairFrame {
     using Skew = typename Lift::Skew;
     using Vec = typename Lift::Vec;
     using Rotation = typename Lift::Rotation;
+    using Eigenframe = typename Lift::Eigenframe;
     /// @brief prepares the scalar planar branch or the general native rotation search
-    CheegerPairFrame(const Sym& x, const Sym& y, double rho, bool derivatives = true) :
-        x_(x), lift_(batch_(y), {1}, rho, x), state_(solve_(x, y, rho)) {
+    /// @details optional oriented eigenframes are borrowed only while preparing the general search
+    CheegerPairFrame(
+      const Sym& x, const Sym& y, double rho, bool derivatives = true, const Eigenframe* x_eigenframe = nullptr,
+      const Eigenframe* y_eigenframe = nullptr) :
+        x_(x), lift_(batch_(y), {1}, rho, x), state_(solve_(x, y, rho, x_eigenframe, y_eigenframe)) {
         if (derivatives) {
             fdapde_strong_assert(!ambiguous_, std::domain_error, "ambiguous C-LE tension edge");
             lift_.prepare(state_);
@@ -56,7 +60,8 @@ template <typename S, int N> class CheegerPairFrame {
         return result;
     }
     /// @brief preserves the exact planar branch enumeration and otherwise runs the general solver
-    typename Lift::State solve_(const Sym& x, const Sym& y, double rho) {
+    typename Lift::State
+    solve_(const Sym& x, const Sym& y, double rho, const Eigenframe* x_eigenframe, const Eigenframe* y_eigenframe) {
         if (x.rows() == 2) {
             const auto pair = cheeger_pair(cheeger_chart(x), cheeger_chart(y), rho);
             ambiguous_ = pair.rotations.size() != 1;
@@ -69,7 +74,9 @@ template <typename S, int N> class CheegerPairFrame {
             rotations[0] = rotation_exp(omega);
             return lift_.evaluate(rotations);
         }
-        auto state = lift_.solve();
+        const std::span<const Eigenframe> target =
+          y_eigenframe ? std::span<const Eigenframe>(y_eigenframe, 1) : std::span<const Eigenframe>();
+        auto state = lift_.solve(target, x_eigenframe);
         fdapde_strong_assert(lift_.converged(), std::domain_error, "C-LE pair alignment did not converge");
         ambiguous_ = lift_.ambiguous();
         return state;
