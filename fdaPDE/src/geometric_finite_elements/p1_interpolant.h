@@ -27,6 +27,21 @@ template <typename, typename> class GeometricFeEvaluation;
 
 namespace fdapde::gfe {
 namespace internals {
+/// @brief clamps only out-of-range spatial roundoff using simplex containment's dimensionless tolerance
+template <typename Exception = std::domain_error> void normalize_p1_spatial_weights(std::span<double> weights) {
+    const double upper_bound = 1 + (weights.size() - 1) * machine_epsilon;
+    double total = 0;
+    for (double& weight : weights) {
+        fdapde_strong_assert(
+          std::isfinite(weight) && weight >= -machine_epsilon && weight <= upper_bound, Exception,
+          "physical point lies outside the P1 cell");
+        weight = std::clamp(weight, 0., 1.);
+        total += weight;
+    }
+    fdapde_strong_assert(total > 0 && std::isfinite(total), Exception, "invalid P1 weight normalization");
+    for (double& weight : weights) weight /= total;
+    validate_p1_data(weights.size(), weights);
+}
 /// @brief attaches mean diagnostics to a failed matrix materialization
 inline void require_converged(const auto& result) {
     if constexpr (requires { result.detected_ambiguity; })
@@ -192,7 +207,7 @@ template <typename Geometry, typename Element, typename Nodes> class P1Interpola
         const auto coordinates = element_.barycentric_coords(x);
         Weights weights;
         for (int i = 0; i < NodeCount; ++i) weights[i] = coordinates[i];
-        internals::validate_p1_data(NodeCount, weights);
+        internals::normalize_p1_spatial_weights<std::invalid_argument>(weights);
         return weights;
     }
     /// @brief evaluates vertices and reusable edges directly, delegating other supports to the geometry-specific solver
@@ -279,19 +294,9 @@ auto p1_shape_weights(const Space& space, const Element& element, const Point& x
     Matrix<double, Space::local_dim, 1> reference;
     for (int i = 0; i < Space::local_dim; ++i) reference[i] = mapped[i];
     std::array<double, Space::local_dim + 1> weights;
-    const double tolerance = 8 * std::numeric_limits<double>::epsilon() * std::max(1., element.invJ().norm());
-    double total = 0;
-    for (std::size_t i = 0; i < weights.size(); ++i) {
+    for (std::size_t i = 0; i < weights.size(); ++i)
         weights[i] = space.eval_shape_value(static_cast<int>(i), reference);
-        fdapde_strong_assert(
-          std::isfinite(weights[i]) && weights[i] >= -tolerance && weights[i] <= 1 + tolerance, std::domain_error,
-          "physical point lies outside the P1 cell");
-        weights[i] = weights[i] <= tolerance ? 0. : weights[i];
-        total += weights[i];
-    }
-    fdapde_strong_assert(total > 0 && std::isfinite(total), std::domain_error, "invalid P1 weight normalization");
-    for (double& weight : weights) weight /= total;
-    validate_p1_data(weights.size(), weights);
+    normalize_p1_spatial_weights(weights);
     return weights;
 }
 }   // namespace internals

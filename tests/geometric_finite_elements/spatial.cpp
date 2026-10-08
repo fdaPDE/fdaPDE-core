@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <fdaPDE/execution.h>
-#include <fdaPDE/geometric_finite_elements.h>
+#include <fdaPDE/geometric_finite_elements_fem.h>
 #include <fdaPDE/geometry.h>
 #include <gtest/gtest.h>
 
@@ -120,6 +120,114 @@ TEST(P1SpatialInterpolation, EmbeddedCellAndVertexOrder) {
     EXPECT_EQ((Matrix<double, 2, 2>(at_origin - nodes[2]).norm()), 0.);
     // barycentric projection alone would accept this point; the cell plane check must reject it
     EXPECT_THROW(interpolation(Eigen::Vector3d(.2, .2, 2.1)), std::invalid_argument);
+}
+/// @brief compares spatial routes with a geodesic oracle on the boundary of a skew triangle
+template <int EmbedDim, typename Geometry> void check_boundary_roundoff(const Geometry& geometry) {
+    Eigen::Matrix<double, EmbedDim, 3> coordinates;
+    coordinates.row(0) << .1, 1.3, .4;
+    coordinates.row(1) << .2, .7, 1.8;
+    if constexpr (EmbedDim == 3) coordinates.row(2).setConstant(2.);
+    const Simplex<2, EmbedDim> cell(coordinates);
+    Eigen::Matrix<int, 1, 3> connectivity;
+    connectivity << 0, 1, 2;
+    const Triangulation<2, EmbedDim> mesh(coordinates.transpose(), connectivity, Eigen::Matrix<int, 3, 1>::Ones());
+    MatrixBatch<typename Geometry::Point> nodes(3, geometry.order(), geometry.order());
+    const auto source = data();
+    for (int i = 0; i < 3; ++i) nodes[i] = source[i];
+    const auto local = geometry.interpolant(cell, nodes);
+    const auto field = geometry.interpolant(mesh, nodes);
+    const GeometricFeSpace space(mesh, P1<1>, geometry);
+    const GeometricFeFunction function(space, nodes);
+    const auto edge = geometry.geodesic(nodes[1], nodes[2]);
+    for (int k = 0; k <= 10; ++k) {
+        const double parameter = k / 10.;
+        const typename Simplex<2, EmbedDim>::NodeType x =
+          (1 - parameter) * coordinates.col(1) + parameter * coordinates.col(2);
+        const typename Geometry::Point expected(edge(parameter));
+        const auto result = local.result(x);
+        const typename Geometry::Point field_value(field(x)), function_value(function(x));
+        // logarithmic interpolation remains closed form when boundary roundoff changes the computed support
+        EXPECT_EQ(result.iterations, 0);
+        // simplex weights reproduce the analytical geodesic even when a raw coordinate is slightly negative
+        EXPECT_LT((Matrix<double, Dynamic, Dynamic>(result.value - expected).norm()), 1e-12);
+        // mesh location and local preparation retain the same boundary value
+        EXPECT_LT((Matrix<double, Dynamic, Dynamic>(field_value - expected).norm()), 1e-12);
+        // scalar FEM shape evaluation uses the shared normalization and agrees with the direct route
+        EXPECT_LT((Matrix<double, Dynamic, Dynamic>(function_value - expected).norm()), 1e-12);
+    }
+    const std::array<double, 3> invalid {-std::numeric_limits<double>::epsilon(), .9, .1};
+    // directly supplied convex weights remain strict rather than inheriting the spatial roundoff tolerance
+    EXPECT_THROW(gfe::p1_geodesic_value(geometry, nodes, invalid), std::invalid_argument);
+}
+// spatial boundary normalization supports fixed and dynamic matrix orders and embedded simplices
+TEST(P1SpatialInterpolation, SkewBoundaryRoundoff) {
+    check_boundary_roundoff<2>(LE {});
+    check_boundary_roundoff<2>(manifold::LogEuclideanSPDGeometry<double, Dynamic>(2));
+    check_boundary_roundoff<3>(LE {});
+}
+// barycentric support is independent of physical units, including small positive interior weights
+TEST(P1SpatialInterpolation, NormalizationPreservesSupportAcrossCellScales) {
+    const auto nodes = data();
+    for (const double scale : {1e-15, 1., 1e15}) {
+        Eigen::Matrix<double, 2, 3> coordinates;
+        coordinates << 0, scale, 0, 0, 0, scale;
+        const Simplex<2, 2> cell(coordinates);
+        Eigen::Matrix<int, 1, 3> connectivity;
+        connectivity << 0, 1, 2;
+        const Triangulation<2, 2> mesh(coordinates.transpose(), connectivity, Eigen::Matrix<int, 3, 1>::Ones());
+        const GeometricFeSpace space(mesh, P1<1>, LE {});
+        const GeometricFeFunction function(space, nodes);
+        const auto local = LE {}.interpolant(cell, nodes);
+        for (const auto& weights : {
+               std::array {1. / 3, 1. / 3, 1. / 3},
+                std::array {.001,   .4,     .599  }
+        }) {
+            const Eigen::Vector2d x(scale * weights[1], scale * weights[2]);
+            const auto expected = gfe::p1_geodesic_value(LE {}, nodes, weights);
+            const auto direct = local.result(x);
+            const auto finite_element = function.result(x);
+            for (int i = 0; i < 3; ++i) {
+                // direct spatial normalization retains the analytical barycentric coordinates at every scale
+                EXPECT_NEAR(direct.normalized_weights[i], weights[i], 2e-15);
+                // FEM normalization retains small interior support instead of applying a dimensional cutoff
+                EXPECT_NEAR(finite_element.normalized_weights[i], weights[i], 2e-15);
+            }
+            // the spatial value agrees with the independent convex mean in dimensionless coordinates
+            EXPECT_LT((Matrix<double, 2, 2>(direct.value - expected.value).norm()), 1e-12);
+            // the FEM value remains invariant when only the cell's physical units change
+            EXPECT_LT((Matrix<double, 2, 2>(finite_element.value - expected.value).norm()), 1e-12);
+        }
+    }
+}
+// spatial adapters accept the same roundoff interval as simplex containment without deleting positive support
+TEST(P1SpatialInterpolation, NormalizationMatchesContainmentTolerance) {
+    const auto nodes = data();
+    const auto cell = Simplex<2, 2>::Unit();
+    Eigen::Matrix<int, 1, 3> connectivity;
+    connectivity << 0, 1, 2;
+    const Triangulation<2, 2> mesh(cell.nodes().transpose(), connectivity, Eigen::Matrix<int, 3, 1>::Ones());
+    const GeometricFeSpace space(mesh, P1<1>, LE {});
+    const auto local = LE {}.interpolant(cell, nodes);
+    const double roundoff = 20 * std::numeric_limits<double>::epsilon();
+    for (const Eigen::Vector2d& x : {Eigen::Vector2d(-roundoff, .5), Eigen::Vector2d(-roundoff, -roundoff)}) {
+        // both the edge and vertex perturbations lie inside the existing containment roundoff allowance
+        ASSERT_NE(cell.contains(x), (Simplex<2, 2>::OUTSIDE));
+        const auto direct = local.result(x);
+        const auto weights = gfe::p1_fem_barycentric_weights(space, 0, x);
+        for (int i = 0; i < 3; ++i) {
+            // direct and FEM routes apply identical clipping and partition-of-unity normalization
+            EXPECT_EQ(direct.normalized_weights[i], weights[i]);
+        }
+        // the slightly negative second coordinate is clamped to the simplex boundary
+        EXPECT_EQ(weights[1], 0.);
+    }
+    const Eigen::Vector2d interior(roundoff, .5);
+    const auto direct = local.result(interior);
+    const auto weights = gfe::p1_fem_barycentric_weights(space, 0, interior);
+    // positive interior support survives even below the containment roundoff threshold
+    EXPECT_GT(direct.normalized_weights[1], 0.);
+    // the scalar FEM adapter also preserves positive support rather than snapping it to zero
+    EXPECT_GT(weights[1], 0.);
 }
 /// @brief recognizes mesh and field temporaries that could leave dangling spatial bindings
 template <typename G>
