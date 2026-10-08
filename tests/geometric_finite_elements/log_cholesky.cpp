@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include <fdaPDE/execution.h>
-#include <fdaPDE/geometric_finite_elements.h>
+#include <fdaPDE/geometric_discretization.h>
 #include <fdaPDE/geometry.h>
 #include <gtest/gtest.h>
 

@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <fdaPDE/finite_elements.h>
-#include <fdaPDE/geometric_finite_elements.h>
+#include <fdaPDE/geometric_discretization.h>
 #include <gtest/gtest.h>
 
 namespace {
@@ -52,9 +52,10 @@ double error(const auto& a, const auto& b) { return Matrix<double, 3, 3>(a - b).
 TEST(SOSpatialInterpolation, FunctionsPoliciesAndCacheReplacement) {
     const auto domain = mesh();
     const Geometry g;
-    const GeometricFeSpace space(domain, P1<1>, g);
+    const fdapde::FeSpace scalar_source_space(domain, fdapde::P1<1>);
+    const GeometricSpace space(scalar_source_space, g);
     auto batch = nodes();
-    GeometricFeFunction function(space, batch);
+    GeometricFunction function(space, batch);
     const auto field = g.interpolant(domain, batch);
     Locations locations(5);
     locations[0] = Vector<double, 2> {.8, .7};
@@ -112,7 +113,8 @@ TEST(SOSpatialInterpolation, FunctionsPoliciesAndCacheReplacement) {
 TEST(SOSpatialInterpolation, AmbiguousEdgesAndParallelErrors) {
     const auto domain = mesh();
     const Geometry g;
-    const GeometricFeSpace space(domain, P1<1>, g);
+    const fdapde::FeSpace scalar_source_space(domain, fdapde::P1<1>);
+    const GeometricSpace space(scalar_source_space, g);
     Batch batch(4);
     const auto identity = Point::Identity();
     batch[0] = identity;
@@ -121,7 +123,7 @@ TEST(SOSpatialInterpolation, AmbiguousEdgesAndParallelErrors) {
     t(0, 1) = .4;
     batch[2] = g.exponential(identity, t);
     batch[3] = identity;
-    GeometricFeFunction function(space, batch);
+    GeometricFunction function(space, batch);
     const Point vertex(function(Eigen::Vector2d(0, 0)));
     // vertex reproduction does not need a logarithm for the opposite inactive edge
     EXPECT_LT(error(vertex, identity), 2e-12);

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-#include <fdaPDE/geometric_finite_elements_fem.h>
+#include <fdaPDE/geometric_finite_elements.h>
 #include <gtest/gtest.h>
 
 namespace {
@@ -12,7 +12,8 @@ TEST(GeometricSmoothingFEM, NativeSpaceAndScalarAssembly) {
     cells << 0, 1, 2;
     const Triangulation<2, 2> mesh(vertices, cells, Eigen::Matrix<int, 3, 1>::Ones());
     using LE = manifold::LogEuclideanSPDGeometry<double, 2>;
-    const GeometricFeSpace space(mesh, P1<1>, LE {});
+    const fdapde::FeSpace scalar_source_space(mesh, fdapde::P1<1>);
+    const GeometricSpace space(scalar_source_space, LE {});
     const auto packet = gfe::p1_fem_cell_quadrature(space, 0, QS2DP4);
     const auto stencil = gfe::p1_lumped_laplacian_stencil(space, QS2DP4);
     // P1 lumping divides area 1/2 equally between the three scalar nodal DOFs
@@ -37,7 +38,8 @@ TEST(GeometricSmoothingFEM, NeumannRefinement) {
     for (int side : {9, 17, 33}) {
         const auto mesh = Triangulation<2, 2>::UnitSquare(side);
         using LE = manifold::LogEuclideanSPDGeometry<double, 2, Usage::InterpolationNodes>;
-        const GeometricFeSpace space(mesh, P1<1>, LE {});
+        const fdapde::FeSpace scalar_source_space(mesh, fdapde::P1<1>);
+        const GeometricSpace space(scalar_source_space, LE {});
         const auto stencil = gfe::p1_lumped_laplacian_stencil(space, QS2DP4);
         MatrixBatch<LE::Point> coefficients(space.n_dofs());
         for (int i = 0; i < space.n_dofs(); ++i) {
@@ -61,7 +63,8 @@ TEST(GeometricSmoothingFEM, MutableRhoPlans) {
     const auto mesh = fdapde::Triangulation<2, 2>::UnitSquare(3);
     using G = fdapde::manifold::CheegerLogEuclideanSPDGeometry<double, 3, fdapde::Usage::InterpolationNodes>;
     const G geometry;
-    const fdapde::GeometricFeSpace space(mesh, fdapde::P1<1>, geometry);
+    const fdapde::FeSpace scalar_source_space(mesh, fdapde::P1<1>);
+    const fdapde::GeometricSpace space(scalar_source_space, geometry);
     fdapde::MatrixBatch<G::Point> nodes(space.n_dofs());
     for (int i = 0; i < space.n_dofs(); ++i) {
         G::Tangent x;
@@ -70,7 +73,7 @@ TEST(GeometricSmoothingFEM, MutableRhoPlans) {
                 x(r, c) = r == c ? .1 * (r + 1) * (1 + mesh.nodes()(i, 0)) : .08 * std::sin(i + r + c);
         nodes[i] = fdapde::matrix_exp(x);
     }
-    fdapde::GeometricFeFunction field(space, nodes);
+    fdapde::GeometricFunction field(space, nodes);
     fdapde::MatrixBatch<fdapde::Vector<double, 2>> points(2);
     points[0] = fdapde::Vector<double, 2>(.2, .3);
     points[1] = fdapde::Vector<double, 2>(.65, .7);
@@ -87,8 +90,9 @@ TEST(GeometricSmoothingFEM, MutableRhoPlans) {
     // rho-only replacement preserves the original matrix cache buffer
     EXPECT_EQ(field.coeff()[0].cache().data(), cached_log);
     const auto updated = plan(field);
-    const fdapde::GeometricFeSpace reference_space(mesh, fdapde::P1<1>, geometry, std::span<const double>(rho));
-    const fdapde::GeometricFeFunction reference(reference_space, nodes);
+    const fdapde::FeSpace scalar_source_reference_space(mesh, fdapde::P1<1>);
+    const fdapde::GeometricSpace reference_space(scalar_source_reference_space, geometry, std::span<const double>(rho));
+    const fdapde::GeometricFunction reference(reference_space, nodes);
     const auto expected = reference.eval_at(points);
     double change = 0;
     for (std::size_t i = 0; i < points.size(); ++i) {

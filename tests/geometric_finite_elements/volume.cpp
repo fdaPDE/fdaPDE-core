@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-#include <fdaPDE/geometric_finite_elements_fem.h>
+#include <fdaPDE/geometric_finite_elements.h>
 #include <gtest/gtest.h>
 
 #include <chrono>
@@ -174,7 +174,8 @@ template <typename Geometry, bool Euclidean = false>
 void check_volume(const Geometry& geometry, const std::string& model) {
     SCOPED_TRACE(model);
     const auto mesh = tetrahedron();
-    const GeometricFeSpace space(mesh, P1<1>, geometry);
+    const fdapde::FeSpace scalar_source_space(mesh, fdapde::P1<1>);
+    const GeometricSpace space(scalar_source_space, geometry);
     const auto packet = gfe::p1_fem_cell_quadrature(space, 0, QS3DP6);
     const auto stencil = gfe::p1_lumped_laplacian_stencil(space, QS3DP6);
     VolumeProblem<Geometry, Euclidean> problem(geometry, stencil, mesh);
@@ -195,7 +196,7 @@ void check_volume(const Geometry& geometry, const std::string& model) {
         // arithmetic interpolation uses the independent physical tetrahedron barycentric coordinates
         EXPECT_LT((Matrix<double, 3, 3>(actual - expected).norm()), 1e-14);
     } else {
-        const GeometricFeFunction field(space, nodes);
+        const GeometricFunction field(space, nodes);
         const Point actual(field(location));
         const auto reference = gfe::p1_geodesic_value(geometry, nodes, std::array {.4, .2, .3, .1});
         // the physical-space evaluation and independent four-node mean both have valid stationary branches

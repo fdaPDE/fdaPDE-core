@@ -14,6 +14,6 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_GEOMETRIC_FINITE_ELEMENTS_MODULE_H__
+#if !defined(__FDAPDE_GEOMETRIC_FINITE_ELEMENTS_MODULE_H__) && !defined(__FDAPDE_GEOMETRIC_DISCRETIZATION_MODULE_H__)
 #    error "include <fdaPDE/geometric_finite_elements.h> before using this header"
 #endif

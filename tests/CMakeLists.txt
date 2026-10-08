@@ -295,6 +295,15 @@ fdapde_reject_program(invalid_symmetric_cache_policy "symmetric cache supports N
 fdapde_reject_program(partial_dynamic_rotation "rotation shape must be square")
 fdapde_reject_program(invalid_so_usage "invalid SO geometry usage")
 
+add_library(fdapde_geometric_discretization_header_check OBJECT public_headers/geometric_discretization.cpp)
+fdapde_configure_target(fdapde_geometric_discretization_header_check)
+if(NOT FDAPDE_NATIVE_ONLY)
+  add_executable(fdapde_geometric_discretization_test geometric_discretization/space.cpp)
+  fdapde_configure_target(fdapde_geometric_discretization_test)
+  target_link_libraries(fdapde_geometric_discretization_test PRIVATE GTest::gtest_main Eigen3::Eigen Threads::Threads)
+  gtest_discover_tests(fdapde_geometric_discretization_test PROPERTIES TIMEOUT 60)
+endif()
+
 add_executable(fdapde_interpolation_test geometric_finite_elements/interpolation.cpp
   geometric_finite_elements/rotations.cpp geometric_finite_elements/cheeger.cpp
   manifold_optimization/cheeger_pair.cpp)

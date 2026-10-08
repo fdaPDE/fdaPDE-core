@@ -38,7 +38,8 @@ endforeach()
 if(FDAPDE_EXAMPLES_WITH_FEM)
   find_package(Eigen3 3.4 REQUIRED NO_MODULE)
   foreach(example IN ITEMS geometric_finite_elements/spd_p1_field.cpp
-                           geometric_finite_elements/spd_field_estimation.cpp)
+                           geometric_finite_elements/spd_field_estimation.cpp
+                           geometric_discretization/01_spd_spline_field.cpp)
     fdapde_example(${example})
     get_filename_component(name "${example}" NAME_WE)
     target_link_libraries(${name} PRIVATE Eigen3::Eigen)

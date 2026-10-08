@@ -1,7 +1,7 @@
 # Native LE/AIRM/C-LE smoothing kernels
 
 Include `fdaPDE/geometric_finite_elements.h` for the Eigen-free objective kernels
-and trust-region solver. Include `fdaPDE/geometric_finite_elements_fem.h` to
+and trust-region solver. Include `fdaPDE/geometric_finite_elements.h` to
 assemble their spatial data from the existing FEM module, which uses Eigen.
 
 The runnable [smoothing tutorial](../examples/geometric_finite_elements/spd_discrete_tension.cpp) prepares one
@@ -16,7 +16,8 @@ using namespace fdapde;
 using Geometry = manifold::LogEuclideanSPDGeometry<
   double, 2, Usage::InterpolationNodes | Usage::LogExpDifferentials>;
 Geometry geometry;
-GeometricFeSpace space(mesh, P1<1>, geometry);
+const FeSpace scalar_space(mesh, P1<1>);
+GeometricSpace space(scalar_space, geometry);
 MatrixBatch<Geometry::Point> nodes(source_tensors); // one SPD tensor per scalar DOF
 const auto stencil = gfe::p1_lumped_laplacian_stencil(space, QS2DP4);
 const auto cell = gfe::p1_fem_cell_quadrature(space, 0, QS2DP4);
@@ -202,7 +203,7 @@ An omitted rho span uses constant `geometry.rho()`, but `rho_gradient` still
 contains the derivatives of independent nodal coefficients at those equal
 values. Their sum gives the derivative of a single shared rho parameter.
 All rho values must be positive and finite. Passing a new span changes rho on
-the next evaluation. `GeometricFeFunction::set_rho()` updates prediction fields
+the next evaluation. `GeometricFunction::set_rho()` updates prediction fields
 without rebuilding spatial plans or matrix caches; retained metric-dependent
 linearizations must be rebuilt. A function override does not mutate the space
 or automatically change spans passed separately to objective kernels. The

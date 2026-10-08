@@ -55,7 +55,7 @@ An arrow below points to a prerequisite:
 
 ```mermaid
 flowchart TD
-    A[geometric_finite_elements_fem.h] --> F[geometric_finite_elements.h]
+    A[geometric_finite_elements.h] --> F[geometric_finite_elements.h]
     A --> E[finite_elements.h: mesh and scalar FEM]
     F --> M[manifold_means.h]
     F --> X[execution.h]
@@ -89,8 +89,8 @@ and weighted means remain in the manifold module.
 `geometric_finite_elements.h` supplies native local P1 values and linearizations,
 prepared stencils and energy contributions without importing Eigen or the scalar
 FEM module. It also declares template-based spatial wrappers; instantiating
-`GeometricFeSpace` and mesh-backed field evaluation requires the spatial types.
-`geometric_finite_elements_fem.h` supplies that integration by including both
+`GeometricSpace` and mesh-backed field evaluation requires the spatial types.
+`geometric_finite_elements.h` supplies that integration by including both
 modules and the adapter for scalar FEM quadrature, DOFs and lumped stencils.
 
 The dependency direction is therefore from discretization to manifold

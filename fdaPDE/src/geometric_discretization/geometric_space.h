@@ -14,132 +14,106 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#ifndef __FDAPDE_GEOMETRIC_FE_H__
-#define __FDAPDE_GEOMETRIC_FE_H__
+#ifndef __FDAPDE_GEOMETRIC_SPACE_H__
+#define __FDAPDE_GEOMETRIC_SPACE_H__
 #include "header_check.h"
 
 namespace fdapde {
 template <typename, typename> class FeSpace;
 template <int, int> struct FeP;
 
-namespace gfe::internals {
-/// @brief limits geometric point loops to the policies supplied by the execution module
-template <typename Policy>
-concept PointExecutionPolicy = std::same_as<Policy, execution_seq_t> || std::same_as<Policy, execution_par_t>;
-/// @brief runs independent point work and rethrows the lowest-index failure after parallel workers complete
-template <PointExecutionPolicy Policy, typename Body> void for_each_point(std::size_t count, Policy, Body body) {
-    fdapde_assert(
-      count <= static_cast<std::size_t>(std::numeric_limits<int>::max()), std::length_error,
-      "geometric evaluation point count exceeds the execution index range");
-    if constexpr (std::same_as<Policy, execution_seq_t>) {
-        for (std::size_t i = 0; i < count; ++i) body(i);
-    } else {
-        if (count == 0) return;
-        std::exception_ptr failure;
-        std::size_t first_failure = count;
-        std::mutex mutex;
-        parallel_for(0, static_cast<int>(count), [&](int i) {
-            try {
-                body(static_cast<std::size_t>(i));
-            } catch (...) {
-                const std::lock_guard lock(mutex);
-                if (static_cast<std::size_t>(i) < first_failure) {
-                    first_failure = i;
-                    failure = std::current_exception();
-                }
-            }
-        });
-        if (failure) std::rethrow_exception(failure);
-    }
-}
-}   // namespace gfe::internals
-
-/// @brief pairs an existing scalar P1 finite element space with its target matrix geometry
-/// @details include finite_elements.h for spatial types; the immutable mesh must outlive this space
-template <typename Triangulation_, typename FeType_, typename Geometry_>
-    requires std::same_as<std::remove_cvref_t<FeType_>, FeP<1, 1>>
-class GeometricFeSpace {
+/// @brief borrows a scalar P1 or B-spline discretization and owns its target matrix geometry
+/// @details the immutable scalar space and its mesh must outlive this space and all dependent fields
+template <gfe::internals::GeometricScalarSpace ScalarSpace_, typename Geometry_>
+class GeometricSpace : public gfe::internals::geometric_space_descriptors<std::remove_cvref_t<ScalarSpace_>> {
    public:
-    using Triangulation = std::remove_cvref_t<Triangulation_>;
-    using FeType = std::remove_cvref_t<FeType_>;
+    using ScalarSpace = std::remove_cvref_t<ScalarSpace_>;
+    using Triangulation = typename ScalarSpace::Triangulation;
     using Geometry = std::remove_cvref_t<Geometry_>;
-    using ScalarSpace = FeSpace<Triangulation, FeType>;
+    using Adapter = gfe::internals::geometric_scalar_adapter<ScalarSpace>;
     using DofHandlerType = typename ScalarSpace::DofHandlerType;
-    using cell_dof_descriptor = typename ScalarSpace::cell_dof_descriptor;
     static constexpr int n_components = 1;
     static constexpr int local_dim = Triangulation::local_dim;
     static constexpr int embed_dim = Triangulation::embed_dim;
-    /// @brief enumerates scalar nodal DOFs and owns a copy of the target geometry
-    GeometricFeSpace(Triangulation_& mesh, FeType_ element, Geometry_ geometry) :
-        space_(mesh, element), geometry_(std::move(geometry)) { }
-    /// @brief owns positive continuous P1 rho coefficients in the scalar nodal DOF ordering
-    GeometricFeSpace(Triangulation_& mesh, FeType_ element, Geometry_ geometry, std::span<const double> rho)
+    /// @brief retains scalar DOF numbering without duplicating its space and owns a copy of the geometry
+    GeometricSpace(ScalarSpace_& space, Geometry_ geometry) : space_(&space), geometry_(std::move(geometry)) {
+        fdapde_strong_assert(
+          space.n_dofs() > 0 && space.triangulation().n_cells() > 0, std::invalid_argument,
+          "geometric space requires an initialized nonempty scalar space");
+    }
+    /// @brief owns positive scalar metric coefficients in the scalar discretization ordering
+    GeometricSpace(ScalarSpace_& space, Geometry_ geometry, std::span<const double> rho)
         requires gfe::internals::is_cheeger_geometry<Geometry>
-        : space_(mesh, element), geometry_(std::move(geometry)), rho_(rho.begin(), rho.end()) {
+        : GeometricSpace(space, std::move(geometry)) {
+        rho_.assign(rho.begin(), rho.end());
         fdapde_strong_assert(
           std::cmp_equal(rho_.size(), n_dofs()), std::invalid_argument,
           "rho coefficient count must match the scalar space DOFs");
         for (double value : rho_) geometry_.with_rho(value);
     }
-    /// @brief rejects a rho field whose space would borrow an expiring mesh
-    GeometricFeSpace(const Triangulation&&, FeType_, Geometry_, std::span<const double>) = delete;
-    /// @brief exposes immutable nodal rho coefficients, with empty storage denoting the constant geometry value
+    /// @brief rejects a rho field whose space would borrow an expiring scalar discretization
+    GeometricSpace(const ScalarSpace&&, Geometry_, std::span<const double>) = delete;
+    /// @brief exposes immutable scalar metric coefficients, with empty storage denoting the constant geometry value
     std::span<const double> rho_coefficients() const& { return rho_; }
     /// @brief prevents coefficient views from escaping an expiring space
     void rho_coefficients() const&& = delete;
-    /// @brief rejects temporary meshes even when the space template explicitly names a const triangulation
-    GeometricFeSpace(const Triangulation&&, FeType_, Geometry_) = delete;
+    /// @brief rejects temporary scalar spaces even when the space template explicitly names a const scalar space
+    GeometricSpace(const ScalarSpace&&, Geometry_) = delete;
     /// @brief preserves the address of the space borrowed by geometric functions
-    GeometricFeSpace(const GeometricFeSpace&) = delete;
+    GeometricSpace(const GeometricSpace&) = delete;
     /// @brief prevents replacing a space while functions refer to its DOFs and geometry
-    GeometricFeSpace& operator=(const GeometricFeSpace&) = delete;
+    GeometricSpace& operator=(const GeometricSpace&) = delete;
     /// @brief preserves the scalar DOF handler's internal bindings and external function references
-    GeometricFeSpace(GeometricFeSpace&&) = delete;
+    GeometricSpace(GeometricSpace&&) = delete;
     /// @brief prevents transferring a space while functions retain its address
-    GeometricFeSpace& operator=(GeometricFeSpace&&) = delete;
+    GeometricSpace& operator=(GeometricSpace&&) = delete;
+    /// @brief borrows the immutable scalar discretization that supplies coefficients and basis weights
+    const ScalarSpace& scalar_space() const { return *space_; }
     /// @brief borrows the unchanged spatial triangulation
-    const Triangulation& triangulation() const { return space_.triangulation(); }
-    /// @brief exposes the scalar nodal enumeration without allowing its mutation
-    const DofHandlerType& dof_handler() const { return space_.dof_handler(); }
-    /// @brief returns the number of geometric nodal coefficients
-    int n_dofs() const { return space_.n_dofs(); }
-    /// @brief evaluates a scalar P1 weight through the existing reference basis
+    const Triangulation& triangulation() const { return space_->triangulation(); }
+    /// @brief exposes the scalar coefficient enumeration without allowing its mutation
+    const DofHandlerType& dof_handler() const { return space_->dof_handler(); }
+    /// @brief returns the number of geometric control coefficients
+    int n_dofs() const { return space_->n_dofs(); }
+    /// @brief evaluates a scalar weight through the existing reference basis
     template <typename Input> double eval_shape_value(int i, const Input& reference_point) const {
-        return space_.eval_shape_value(i, reference_point);
+        return space_->eval_shape_value(i, reference_point);
     }
     /// @brief borrows the target geometry shared by geometric functions on this space
     const Geometry& geometry() const { return geometry_; }
     /// @brief owns location data and prepares reusable scalar shape weights and cell-local DOFs
     template <typename Location, gfe::internals::PointExecutionPolicy Policy = execution_seq_t>
     auto prepare_evaluation(MatrixBatch<Location> locations, Policy policy = execution_seq) const& {
-        return GeometricFeEvaluation<GeometricFeSpace, Location>(*this, std::move(locations), policy);
+        return GeometricEvaluation<GeometricSpace, Location>(*this, std::move(locations), policy);
     }
     /// @brief prevents a prepared evaluation from borrowing an expiring space
     template <typename Location, gfe::internals::PointExecutionPolicy Policy = execution_seq_t>
     void prepare_evaluation(MatrixBatch<Location>, Policy = execution_seq) const&& = delete;
    private:
-    ScalarSpace space_;
+    const ScalarSpace* space_;
     Geometry geometry_;
     std::vector<double> rho_;
 };
 
-/// @brief owns matrix coefficients and their prepared P1 cells while borrowing an immutable geometric space
+/// @brief owns geometric coefficients and prepared local data while borrowing an immutable geometric space
 /// @details the space must outlive the function; coefficient replacement invalidates expressions and linearizations
-template <typename Space_, typename MatrixType_> class GeometricFeFunction {
+template <typename Space_, typename MatrixType_> class GeometricFunction {
    public:
     using Space = std::remove_cvref_t<Space_>;
     using Geometry = typename Space::Geometry;
     using Coefficients = MatrixBatch<MatrixType_>;
-    using Interpolant = gfe::P1FieldInterpolant<Geometry, Space, const Coefficients&>;
+    using Interpolant = std::conditional_t<
+      Space::Adapter::is_spline, gfe::internals::spline_field_interpolant<Geometry, Space, const Coefficients&>,
+      gfe::P1FieldInterpolant<Geometry, Space, const Coefficients&>>;
     using InputType = typename Interpolant::NodeType;
     /// @brief copies an lvalue batch or transfers an rvalue, then prepares only the spatial index
-    GeometricFeFunction(
+    GeometricFunction(
       Space_& space, Coefficients coefficients, const gfe::P1GeodesicLinearizationOptions& options = {}) :
         space_(&space),
         coefficients_(checked_coeff_(space, std::move(coefficients))),
         interpolant_(space.geometry(), space, coefficients_, options) { }
     /// @brief rejects temporary spaces even when the function template explicitly names a const space
-    GeometricFeFunction(const Space&&, Coefficients, const gfe::P1GeodesicLinearizationOptions& = {}) = delete;
+    GeometricFunction(const Space&&, Coefficients, const gfe::P1GeodesicLinearizationOptions& = {}) = delete;
     /// @brief borrows the immutable function space
     const Space& function_space() const { return *space_; }
     /// @brief borrows the owned coefficients without permitting changes that bypass cache invalidation
@@ -153,7 +127,7 @@ template <typename Space_, typename MatrixType_> class GeometricFeFunction {
         interpolant_.clear_cache();
         coefficients_.swap(coefficients);
     }
-    /// @brief replaces this field's rho coefficients while preserving nodal matrix caches and spatial plans
+    /// @brief replaces this field's rho coefficients while preserving control matrix caches and spatial plans
     /// @details an empty vector restores the geometry's constant rho; updates require exclusive access
     void set_rho(std::vector<double> rho)
         requires gfe::internals::is_cheeger_geometry<Geometry>
@@ -168,32 +142,33 @@ template <typename Space_, typename MatrixType_> class GeometricFeFunction {
     }
     /// @brief rejects scalar references escaping a temporary field
     void rho_coefficients() const&& = delete;
-    /// @brief locates a cell and defers its native geometric interpolation using scalar shape weights
+    /// @brief locates local support and defers geometric interpolation using scalar basis weights
     auto operator()(const InputType& x) const& { return interpolant_(x); }
     /// @brief rejects expressions that would borrow an expiring coefficient owner
     void operator()(const InputType&) const&& = delete;
     /// @brief exposes the local value and mean convergence diagnostics
     auto result(const InputType& x) const { return interpolant_.result(x); }
-    /// @brief prepares derivatives in the located cell's local DOF order
+    /// @brief prepares derivatives in the located support's active control order
     auto linearization(const InputType& x) const& { return interpolant_.linearization(x); }
     /// @brief rejects derivatives that could outlive their coefficient owner
     void linearization(const InputType&) const&& = delete;
     /// @brief reports the number of prepared cells for the current coefficients
     std::size_t prepared_cells() const { return interpolant_.prepared_cells(); }
-    /// @brief prepares and evaluates locations sequentially through the reusable multipoint engine
-    template <typename Location> auto eval_at(MatrixBatch<Location> locations) const {
-        return space_->prepare_evaluation(std::move(locations))(*this);
+    /// @brief prepares and evaluates locations through the shared multipoint engine using one execution policy
+    template <typename Location, gfe::internals::PointExecutionPolicy Policy = execution_seq_t>
+    auto eval_at(MatrixBatch<Location> locations, Policy policy = execution_seq) const {
+        return space_->prepare_evaluation(std::move(locations), policy)(*this, policy);
     }
    private:
-    template <typename, typename> friend class GeometricFeEvaluation;
-    /// @brief checks the nodal count and matrix order without evaluating any cell
+    template <typename, typename> friend class GeometricEvaluation;
+    /// @brief checks the control count and matrix order without evaluating any cell
     static void validate_coeff_(const Space& space, const Coefficients& coefficients) {
         fdapde_strong_assert(
           std::cmp_equal(coefficients.size(), space.n_dofs()), std::invalid_argument,
-          "GeometricFeFunction coefficient count must match the space DOFs");
+          "GeometricFunction coefficient count must match the space DOFs");
         fdapde_strong_assert(
           coefficients.rows() == space.geometry().order() && coefficients.cols() == space.geometry().order(),
-          std::invalid_argument, "GeometricFeFunction coefficient shape must match the target geometry");
+          std::invalid_argument, "GeometricFunction coefficient shape must match the target geometry");
     }
     /// @brief validates construction data before transferring its complete coefficient and cache buffers
     static Coefficients checked_coeff_(const Space& space, Coefficients coefficients) {
@@ -204,18 +179,20 @@ template <typename Space_, typename MatrixType_> class GeometricFeFunction {
     Coefficients coefficients_;
     Interpolant interpolant_;
 };
-/// @brief owns locations and spatial P1 preparation independently of any function's coefficients
+/// @brief owns locations and scalar basis preparation independently of any function's coefficients
 /// @details the immutable space must outlive this object; copying or moving retains that space binding
-template <typename Space, typename Location> class GeometricFeEvaluation {
+template <typename Space, typename Location> class GeometricEvaluation {
    public:
     using Geometry = typename Space::Geometry;
-    using Element = Simplex<Space::local_dim, Space::embed_dim>;
-    using Weights = std::array<double, Element::n_nodes>;
+    using Adapter = typename Space::Adapter;
+    using Element = typename Adapter::Element;
+    using Weights = typename Adapter::Weights;
+    using Dofs = typename Adapter::Dofs;
     using Locations = MatrixBatch<Location>;
     using Values = MatrixBatch<typename Geometry::Point>;
     /// @brief copies or transfers locations and prepares each point with the selected execution policy
     template <gfe::internals::PointExecutionPolicy Policy = execution_seq_t>
-    GeometricFeEvaluation(const Space& space, Locations locations, Policy policy = execution_seq) :
+    GeometricEvaluation(const Space& space, Locations locations, Policy policy = execution_seq) :
         space_(&space), locations_(std::move(locations)) {
         fdapde_strong_assert(
           locations_.rows() == Space::embed_dim && locations_.cols() == 1, std::invalid_argument,
@@ -232,25 +209,26 @@ template <typename Space, typename Location> class GeometricFeEvaluation {
             typename Element::NodeType x;
             const auto location = std::as_const(locations_)[i];
             for (int d = 0; d < Space::embed_dim; ++d) x[d] = location(d, 0);
-            fdapde_strong_assert(x.allFinite(), std::invalid_argument, "P1 field spatial point must be finite");
-            const int id = locator.locate(x);
-            fdapde_strong_assert(id >= 0, std::invalid_argument, "P1 field spatial point must belong to the mesh");
+            fdapde_strong_assert(x.allFinite(), std::invalid_argument, "geometric field spatial point must be finite");
+            const int id = Adapter::locate(space.scalar_space(), locator, x);
+            fdapde_strong_assert(
+              id >= 0, std::invalid_argument, "geometric field spatial point must belong to the mesh");
             const Cell& cell = [&]() -> const Cell& {
                 const std::lock_guard lock(mutex);
                 return cells_.try_emplace(id, space, id).first->second;
             }();
-            points_[i] = {id, gfe::internals::p1_shape_weights(space, cell.element, x)};
+            points_[i] = {id, Adapter::weights(space.scalar_space(), cell.element, cell.dofs, x)};
         });
     }
     /// @brief rejects an expiring space even for direct construction of the preparation object
     template <gfe::internals::PointExecutionPolicy Policy = execution_seq_t>
-    GeometricFeEvaluation(const Space&&, Locations, Policy = execution_seq) = delete;
+    GeometricEvaluation(const Space&&, Locations, Policy = execution_seq) = delete;
     /// @brief copies owned locations and spatial metadata while retaining the same borrowed space
-    GeometricFeEvaluation(const GeometricFeEvaluation&) = default;
+    GeometricEvaluation(const GeometricEvaluation&) = default;
     /// @brief transfers the complete spatial preparation without rebinding its space
-    GeometricFeEvaluation(GeometricFeEvaluation&&) noexcept = default;
+    GeometricEvaluation(GeometricEvaluation&&) noexcept = default;
     /// @brief replaces a preparation only after a complete copy or transfer has succeeded
-    GeometricFeEvaluation& operator=(GeometricFeEvaluation other) & noexcept {
+    GeometricEvaluation& operator=(GeometricEvaluation other) & noexcept {
         std::swap(space_, other.space_);
         locations_.swap(other.locations_);
         cells_.swap(other.cells_);
@@ -270,7 +248,7 @@ template <typename Space, typename Location> class GeometricFeEvaluation {
       typename FunctionSpace, typename MatrixType, gfe::internals::PointExecutionPolicy Policy = execution_seq_t>
         requires std::same_as<std::remove_cvref_t<FunctionSpace>, Space>
     Values
-    operator()(const GeometricFeFunction<FunctionSpace, MatrixType>& function, Policy policy = execution_seq) const {
+    operator()(const GeometricFunction<FunctionSpace, MatrixType>& function, Policy policy = execution_seq) const {
         fdapde_strong_assert(
           &function.function_space() == space_, std::invalid_argument,
           "prepared geometric evaluation requires a function of the same space");
@@ -292,11 +270,10 @@ template <typename Space, typename Location> class GeometricFeEvaluation {
     /// @brief shares immutable spatial geometry and local DOF numbering between points in one cell
     struct Cell {
         Element element;
-        std::array<int, Element::n_nodes> dofs;
-        /// @brief snapshots cell geometry and scalar DOFs without reading any matrix coefficients
-        Cell(const Space& space, int id) : element(space.dof_handler().cell(id).nodes()) {
-            for (int i = 0; i < Element::n_nodes; ++i) dofs[i] = space.dof_handler().dofs()(id, i);
-        }
+        Dofs dofs;
+        /// @brief snapshots cell geometry and active scalar controls without reading geometric coefficients
+        Cell(const Space& space, int id) :
+            element(space.dof_handler().cell(id).nodes()), dofs(Adapter::dofs(space.scalar_space(), id)) { }
     };
     /// @brief retains a cell id and scalar shape weights for one location
     struct PointData {

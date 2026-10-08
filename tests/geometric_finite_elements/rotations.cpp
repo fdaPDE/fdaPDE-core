@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <fdaPDE/geometric_finite_elements.h>
+#include <fdaPDE/geometric_discretization.h>
 #include <gtest/gtest.h>
 
 namespace {

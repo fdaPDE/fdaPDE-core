@@ -17,8 +17,8 @@
 #ifndef __FDAPDE_GFE_P1_FEM_ADAPTER_H__
 #define __FDAPDE_GFE_P1_FEM_ADAPTER_H__
 
-#ifndef __FDAPDE_GEOMETRIC_FINITE_ELEMENTS_FEM_MODULE_H__
-#    error "Include fdaPDE/geometric_finite_elements_fem.h instead of including this adapter directly."
+#ifndef __FDAPDE_GEOMETRIC_FINITE_ELEMENTS_MODULE_H__
+#    error "Include fdaPDE/geometric_finite_elements.h instead of including this adapter directly."
 #endif
 
 namespace fdapde {

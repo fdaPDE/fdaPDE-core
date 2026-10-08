@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <fdaPDE/finite_elements.h>
-#include <fdaPDE/geometric_finite_elements.h>
+#include <fdaPDE/geometric_discretization.h>
 #include <gtest/gtest.h>
 
 namespace {
@@ -58,7 +58,8 @@ double error(const auto& lhs, const auto& rhs) { return Matrix<double, 2, 2>(lhs
 /// @brief checks policy independence, owned locations, coefficient replacement and scalar agreement
 void check_multipoint(const auto& geometry) {
     const auto mesh = domain();
-    const GeometricFeSpace space(mesh, P1<1>, geometry);
+    const fdapde::FeSpace scalar_source_space(mesh, fdapde::P1<1>);
+    const GeometricSpace space(scalar_source_space, geometry);
     auto points = locations();
     const auto prepared = space.prepare_evaluation(points);
     // spatial preparation copies lvalue location buffers rather than borrowing mutable caller storage
@@ -70,7 +71,7 @@ void check_multipoint(const auto& geometry) {
     const auto parallel_prepared = space.prepare_evaluation(std::move(moved_locations), execution_par);
     // preparation transfers native location storage from an rvalue batch
     EXPECT_EQ(parallel_prepared.locations().coefficients().data(), transferred);
-    GeometricFeFunction function(space, coefficients());
+    GeometricFunction function(space, coefficients());
     // preparing locations is independent of coefficient-dependent geodesics and caches
     EXPECT_EQ(function.prepared_cells(), 0);
     const auto sequential = prepared(function);
@@ -118,7 +119,7 @@ void check_multipoint(const auto& geometry) {
     const Point constant(Matrix<double, 2, 2>({4., .2, .2, 3.}));
     auto replacement = coefficients();
     for (std::size_t i = 0; i < replacement.size(); ++i) replacement[i] = constant;
-    GeometricFeFunction other_function(space, replacement);
+    GeometricFunction other_function(space, replacement);
     const auto other_values = prepared(other_function, execution_par);
     function.set_coeff(std::move(replacement));
     const auto after_update = prepared(function, execution_par);
@@ -132,9 +133,9 @@ void check_multipoint(const auto& geometry) {
     EXPECT_GT(error(sequential[0], after_update[0]), .1);
 }
 // LE multipoint evaluation reuses logarithms with all four preparation/evaluation policy combinations
-TEST(GeometricFeEvaluation, LogEuclidean) { check_multipoint(LE {}); }
+TEST(GeometricEvaluation, LogEuclidean) { check_multipoint(LE {}); }
 // AIRM multipoint evaluation retains the P1 interior solver and prepared edge restrictions
-TEST(GeometricFeEvaluation, AffineInvariant) { check_multipoint(AIRM {}); }
+TEST(GeometricEvaluation, AffineInvariant) { check_multipoint(AIRM {}); }
 /// @brief captures the expected exception text while allowing an unexpected type to fail the test
 template <typename Exception, typename Call> std::string failure_message(Call call) {
     try {
@@ -143,9 +144,10 @@ template <typename Exception, typename Call> std::string failure_message(Call ca
     return {};
 }
 // invalid locations and solver failures are rethrown deterministically after the parallel task group completes
-TEST(GeometricFeEvaluation, ErrorsAndDiagnostics) {
+TEST(GeometricEvaluation, ErrorsAndDiagnostics) {
     const auto mesh = domain();
-    const GeometricFeSpace space(mesh, P1<1>, AIRM {});
+    const fdapde::FeSpace scalar_source_space(mesh, fdapde::P1<1>);
+    const GeometricSpace space(scalar_source_space, AIRM {});
     auto points = locations();
     points[1] = Vector<double, 2> {std::numeric_limits<double>::quiet_NaN(), 0.};
     points[2] = Vector<double, 2> {3., 3.};
@@ -153,13 +155,13 @@ TEST(GeometricFeEvaluation, ErrorsAndDiagnostics) {
     const auto parallel =
       failure_message<std::invalid_argument>([&] { space.prepare_evaluation(points, execution_par); });
     // sequential preparation reports the first invalid location rather than returning partial data
-    EXPECT_EQ(sequential, "P1 field spatial point must be finite");
+    EXPECT_EQ(sequential, "geometric field spatial point must be finite");
     // parallel preparation rethrows the lowest-index error regardless of task completion order
     EXPECT_EQ(parallel, sequential);
     gfe::P1GeodesicLinearizationOptions options;
     options.mean.solver.max_iterations = 1;
     options.mean.solver.gradient_tolerance = 0;
-    const GeometricFeFunction failing(space, coefficients(), options);
+    const GeometricFunction failing(space, coefficients(), options);
     const auto prepared = space.prepare_evaluation(locations(), execution_par);
     const auto sequential_solve = failure_message<std::runtime_error>([&] { prepared(failing); });
     const auto parallel_solve = failure_message<std::runtime_error>([&] { prepared(failing, execution_par); });
@@ -181,10 +183,11 @@ TEST(GeometricFeEvaluation, ErrorsAndDiagnostics) {
     EXPECT_NO_THROW(space.prepare_evaluation(locations(), execution_par));
 }
 // empty batches retain matrix shape and runtime identity checks reject functions from another space
-TEST(GeometricFeEvaluation, EmptyAndSpaceContracts) {
+TEST(GeometricEvaluation, EmptyAndSpaceContracts) {
     const auto mesh = domain();
-    const GeometricFeSpace space(mesh, P1<1>, LE {}), other_space(mesh, P1<1>, LE {});
-    const GeometricFeFunction function(space, coefficients()), other(other_space, coefficients());
+    const fdapde::FeSpace scalar_source_space(mesh, fdapde::P1<1>);
+    const GeometricSpace space(scalar_source_space, LE {}), other_space(scalar_source_space, LE {});
+    const GeometricFunction function(space, coefficients()), other(other_space, coefficients());
     const auto empty = space.prepare_evaluation(Locations {}, execution_par);
     const auto values = empty(function, execution_par);
     // no location means no cell preparation and no fabricated output matrix
@@ -205,10 +208,11 @@ TEST(GeometricFeEvaluation, EmptyAndSpaceContracts) {
     EXPECT_THROW(space.prepare_evaluation(wrong_shape, execution_par), std::invalid_argument);
 }
 // preparation and evaluation can both run cooperatively from an existing executor worker
-TEST(GeometricFeEvaluation, NestedExecution) {
+TEST(GeometricEvaluation, NestedExecution) {
     const auto mesh = domain();
-    const GeometricFeSpace space(mesh, P1<1>, LE {});
-    const GeometricFeFunction function(space, coefficients());
+    const fdapde::FeSpace scalar_source_space(mesh, fdapde::P1<1>);
+    const GeometricSpace space(scalar_source_space, LE {});
+    const GeometricFunction function(space, coefficients());
     auto pending = parallel_async([&] {
         const auto prepared = space.prepare_evaluation(locations(), execution_par);
         return prepared(function, execution_par);
@@ -220,16 +224,17 @@ TEST(GeometricFeEvaluation, NestedExecution) {
     EXPECT_LT(error(values[0], expected[0]), 1e-13);
 }
 // embedded location dimension and dynamic SPD order are independent in the prepared output batch
-TEST(GeometricFeEvaluation, EmbeddedDynamicOrder) {
+TEST(GeometricEvaluation, EmbeddedDynamicOrder) {
     Eigen::Matrix<double, 3, 3> vertices;
     vertices << 0, 0, 2, 1, 0, 2, 0, 1, 2;
     Eigen::Matrix<int, 1, 3> cells;
     cells << 2, 0, 1;
     const Triangulation<2, 3> mesh(vertices, cells, Eigen::Matrix<int, 3, 1>::Ones());
     const manifold::AffineInvariantSPDGeometry<double, Dynamic, Usage::BasePointMaps> geometry(3);
-    const GeometricFeSpace space(mesh, P1<1>, geometry);
+    const fdapde::FeSpace scalar_source_space(mesh, fdapde::P1<1>);
+    const GeometricSpace space(scalar_source_space, geometry);
     MatrixBatch<SPDMatrix<double, Dynamic, Cache::Log>> coefficients(3, 3, 3);
-    const GeometricFeFunction function(space, std::move(coefficients));
+    const GeometricFunction function(space, std::move(coefficients));
     MatrixBatch<Vector<double, 3>> locations(2);
     locations[0] = Vector<double, 3> {.2, .3, 2.};
     locations[1] = Vector<double, 3> {0., 1., 2.};

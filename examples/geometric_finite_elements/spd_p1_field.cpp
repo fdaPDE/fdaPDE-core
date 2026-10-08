@@ -16,7 +16,7 @@
 
 // compile from the core root with c++ -std=c++20 -O2 -pthread -I. -I/path/to/eigen3
 // examples/geometric_finite_elements/spd_p1_field.cpp
-#include <fdaPDE/geometric_finite_elements_fem.h>
+#include <fdaPDE/geometric_finite_elements.h>
 
 #include <algorithm>
 #include <array>
@@ -46,7 +46,8 @@ int main() {
     // 2. define the spatial mesh and scalar P1 basis; each DOF will hold one complete SPD matrix
     // the mesh must outlive the space, which must outlive its fields and prepared evaluations
     const auto mesh = Triangulation<2, 2>::UnitSquare(5);
-    const GeometricFeSpace space(mesh, P1<1>, geometry);
+    const fdapde::FeSpace scalar_source_space(mesh, fdapde::P1<1>);
+    const GeometricSpace space(scalar_source_space, geometry);
 
     // 3. prescribe nodal tensors through their symmetric logarithms, then construct the field
     // the affine log field L(x,y) = [[0.2+x, 0.1(x+y)], [0.1(x+y), 0.4+y]] gives a known example
@@ -59,7 +60,7 @@ int main() {
     // MatrixBatch<SPD>
     auto coefficients = logs.exp<Policy>(execution_par);
     // the field takes ownership; pass an lvalue batch instead to keep a separate copy
-    GeometricFeFunction field(space, std::move(coefficients));
+    GeometricFunction field(space, std::move(coefficients));
 
     // 4. evaluate a set of locations once, for example to predict or plot the field
     // eval_at prepares the spatial data and returns owning results in the supplied location order

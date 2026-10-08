@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include <fdaPDE/finite_elements.h>
-#include <fdaPDE/geometric_finite_elements.h>
+#include <fdaPDE/geometric_discretization.h>
 #include <gtest/gtest.h>
 
 namespace {
@@ -37,13 +37,14 @@ gfe::P1GeodesicLinearizationOptions accurate() {
 TEST(CheegerSpatial, OwnedP1RhoAndReusableEvaluation) {
     const auto domain = mesh();
     auto rho = std::array {.2, .4, .3, .6};
-    const GeometricFeSpace space(domain, P1<1>, Geometry {}, std::span<const double>(rho));
+    const fdapde::FeSpace scalar_source_space(domain, fdapde::P1<1>);
+    const GeometricSpace space(scalar_source_space, Geometry {}, std::span<const double>(rho));
     const auto original = rho;
     rho[0] = 100;
     // the space snapshots rho, so external mutation cannot invalidate prepared geometry
     EXPECT_EQ(space.rho_coefficients()[0], original[0]);
     const auto data = values();
-    GeometricFeFunction function(space, data, accurate());
+    GeometricFunction function(space, data, accurate());
     const Eigen::Vector2d x(.2, .3);
     const auto fit = function.linearization(x);
     // the first cell uses local order (2,0,1), giving the continuous scalar value at x
@@ -89,16 +90,20 @@ TEST(CheegerSpatial, OwnedP1RhoAndReusableEvaluation) {
 /// @brief checks constant-field equivalence and public scalar-field validation
 TEST(CheegerSpatial, ConstantAndInvalidRho) {
     const auto domain = mesh();
-    const GeometricFeSpace constant(domain, P1<1>, Geometry {});
-    const GeometricFeSpace nodal(domain, P1<1>, Geometry {}, std::span<const double>(std::array {.25, .25, .25, .25}));
-    GeometricFeFunction f(constant, values(), accurate()), g(nodal, values(), accurate());
+    const fdapde::FeSpace scalar_source_constant(domain, fdapde::P1<1>);
+    const GeometricSpace constant(scalar_source_constant, Geometry {});
+    const fdapde::FeSpace scalar_source_nodal(domain, fdapde::P1<1>);
+    const GeometricSpace nodal(
+      scalar_source_nodal, Geometry {}, std::span<const double>(std::array {.25, .25, .25, .25}));
+    GeometricFunction f(constant, values(), accurate()), g(nodal, values(), accurate());
     // a constant geometry has no per-node scalar allocation
     EXPECT_TRUE(constant.rho_coefficients().empty());
     const Eigen::Vector2d x(.2, .3);
     // a constant P1 coefficient field reduces to the fixed-rho implementation
     EXPECT_LT(error(Point(f(x)), Point(g(x))), 1e-12);
     const auto invalid = [&](std::span<const double> rho) {
-        const GeometricFeSpace space(domain, P1<1>, Geometry {}, rho);
+        const fdapde::FeSpace scalar_source_space(domain, fdapde::P1<1>);
+        const GeometricSpace space(scalar_source_space, Geometry {}, rho);
     };
     // nodal scalar data must cover exactly the scalar space DOFs
     EXPECT_THROW(invalid(std::array {.25, .25}), std::invalid_argument);
@@ -108,7 +113,8 @@ TEST(CheegerSpatial, ConstantAndInvalidRho) {
 /// @brief retains the TSPDE nodal state that previously produced false ties from unfinished starts
 TEST(CheegerSpatial, CapturedUnfinishedCandidateRegression) {
     const auto domain = Triangulation<2, 2>::UnitSquare(3);
-    const GeometricFeSpace space(domain, P1<1>, Geometry {});
+    const fdapde::FeSpace scalar_source_space(domain, fdapde::P1<1>);
+    const GeometricSpace space(scalar_source_space, Geometry {});
     const std::array<double, 27> logs {
       1.8455488404708391,  0.12715912181951602, -0.9092253927076908, 0.8964963979510548,   -0.16971611821107793,
       -1.2127779331606146, -0.2716594345598309, 0.3669867113339678,  -0.8961476981679555,  -0.3441704318300115,
@@ -127,7 +133,7 @@ TEST(CheegerSpatial, CapturedUnfinishedCandidateRegression) {
     auto options = accurate();
     options.mean.solver.gradient_tolerance = 1e-10;
     options.mean.solver.max_iterations = 500;
-    const GeometricFeFunction function(space, std::move(data), options);
+    const GeometricFunction function(space, std::move(data), options);
     const std::array<std::array<double, 2>, 40> locations {
       {{0.486667179735377, 0.541803933912888},  {0.191365255275741, 0.00907950708642602},
        {0.993271879851818, 0.390592301730067},  {0.14670268422924, 0.854989633196965},

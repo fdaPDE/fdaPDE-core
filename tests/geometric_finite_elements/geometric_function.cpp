@@ -16,7 +16,7 @@
 
 #include <fdaPDE/execution.h>
 #include <fdaPDE/finite_elements.h>
-#include <fdaPDE/geometric_finite_elements.h>
+#include <fdaPDE/geometric_discretization.h>
 #include <gtest/gtest.h>
 
 namespace {
@@ -47,10 +47,11 @@ double error(const auto& lhs, const auto& rhs) { return Matrix<double, 2, 2>(lhs
 /// @brief exercises scalar space delegation, coefficient ownership, derivatives and replacement
 void check_function(const auto& geometry) {
     const auto domain = mesh();
-    const GeometricFeSpace space(domain, P1<1>, geometry);
+    const fdapde::FeSpace scalar_source_space(domain, fdapde::P1<1>);
+    const GeometricSpace space(scalar_source_space, geometry);
     const FeSpace scalar_space(domain, P1<1>);
     auto source = values();
-    GeometricFeFunction function(space, source);
+    GeometricFunction function(space, source);
     // the geometric function borrows the exact space rather than creating another DOF enumeration
     EXPECT_EQ(&function.function_space(), &space);
     // the space retains the original spatial mesh binding
@@ -116,9 +117,9 @@ void check_function(const auto& geometry) {
     EXPECT_LT(error(function.result(x).value, constant), 1e-12);
 }
 // the LE finite element facade uses scalar bases and owns independently replaceable matrix coefficients
-TEST(GeometricFeFunction, LogEuclidean) { check_function(LE {}); }
+TEST(GeometricFunction, LogEuclidean) { check_function(LE {}); }
 // the typed cached geometry retains flat dispatch and reproduces an affine logarithmic field at an interior site
-TEST(GeometricFeFunction, TypedCachedLogEuclideanAffineField) {
+TEST(GeometricFunction, TypedCachedLogEuclideanAffineField) {
     using CachedPoint = SPDMatrix<double, 2, Cache::Log>;
     using Geometry = manifold::LogEuclideanGeometry<CachedPoint>;
     // the point-typed alias retains the exact requested logarithm-cache owner
@@ -129,7 +130,8 @@ TEST(GeometricFeFunction, TypedCachedLogEuclideanAffineField) {
     static_assert(gfe::internals::is_flat_spd_geometry<Geometry>);
 
     const auto domain = Triangulation<2, 2>::UnitSquare(3);
-    const GeometricFeSpace space(domain, P1<1>, Geometry {});
+    const fdapde::FeSpace scalar_source_space(domain, fdapde::P1<1>);
+    const GeometricSpace space(scalar_source_space, Geometry {});
     using Space = std::remove_cvref_t<decltype(space)>;
     // the finite element space retains the same cached target Point through its geometry binding
     static_assert(std::is_same_v<typename Space::Geometry::Point, CachedPoint>);
@@ -141,7 +143,7 @@ TEST(GeometricFeFunction, TypedCachedLogEuclideanAffineField) {
     for (int i = 0; i < space.n_dofs(); ++i) {
         coefficients[i] = matrix_exp<Cache::Log>(chart(domain.nodes()(i, 0), domain.nodes()(i, 1)));
     }
-    const GeometricFeFunction function(space, coefficients);
+    const GeometricFunction function(space, coefficients);
     MatrixBatch<Vector<double, 2>> locations(1);
     locations[0] = Vector<double, 2> {.23, .37};
     const auto prepared = space.prepare_evaluation(locations);
@@ -156,14 +158,15 @@ TEST(GeometricFeFunction, TypedCachedLogEuclideanAffineField) {
     EXPECT_EQ(function.prepared_cells(), std::size_t {0});
 }
 // the AIRM facade shares the P1 solver and preserves derivative ordering across coefficient replacement
-TEST(GeometricFeFunction, AffineInvariant) { check_function(AIRM {}); }
+TEST(GeometricFunction, AffineInvariant) { check_function(AIRM {}); }
 // move construction transfers storage and invalid replacements leave both coefficients and cache usable
-TEST(GeometricFeFunction, OwnershipAndInvalidReplacement) {
+TEST(GeometricFunction, OwnershipAndInvalidReplacement) {
     const auto domain = mesh();
-    const GeometricFeSpace space(domain, P1<1>, LE {});
+    const fdapde::FeSpace scalar_source_space(domain, fdapde::P1<1>);
+    const GeometricSpace space(scalar_source_space, LE {});
     auto batch = values();
     const auto* transferred = batch.coefficients().data();
-    GeometricFeFunction function(space, std::move(batch));
+    GeometricFunction function(space, std::move(batch));
     // an rvalue constructor retains the original contiguous buffer rather than deep-copying it
     EXPECT_EQ(function.coeff().coefficients().data(), transferred);
     // a successfully transferred source batch has no remaining matrices
@@ -184,57 +187,57 @@ TEST(GeometricFeFunction, OwnershipAndInvalidReplacement) {
     EXPECT_NE(function.coeff().coefficients().data(), replacement.coefficients().data());
     using DynamicBatch = MatrixBatch<SPDMatrix<double, Dynamic>>;
     DynamicBatch dynamic_values(4, 2, 2);
-    GeometricFeFunction dynamic_function(space, std::move(dynamic_values));
+    GeometricFunction dynamic_function(space, std::move(dynamic_values));
     DynamicBatch wrong_shape(4, 3, 3);
     // uniform batch shape must match the target geometry before any cache invalidation
     EXPECT_THROW(dynamic_function.set_coeff(wrong_shape), std::invalid_argument);
     // construction applies the same public shape validation before indexing or cell preparation
-    EXPECT_THROW(GeometricFeFunction(space, wrong_shape), std::invalid_argument);
+    EXPECT_THROW(GeometricFunction(space, wrong_shape), std::invalid_argument);
 }
 /// @brief checks supported finite element tags through the public deduction interface
 template <typename Fe>
 concept AcceptedElement =
-  requires(const Triangulation<2, 2>& mesh, Fe element) { GeometricFeSpace(mesh, element, LE {}); };
-/// @brief detects a temporary spatial mesh that would leave the scalar space dangling
-template <typename Mesh>
-concept TemporarySpaceMesh = requires { GeometricFeSpace(Mesh {}, P1<1>, LE {}); };
+  requires(FeSpace<Triangulation<2, 2>, std::remove_cvref_t<Fe>>& scalar) { GeometricSpace(scalar, LE {}); };
+/// @brief detects a temporary scalar discretization that would leave the geometric space dangling
+template <typename ScalarSpace>
+concept TemporarySpaceMesh = requires { GeometricSpace(ScalarSpace {}, LE {}); };
 /// @brief detects a temporary space that would leave a function's space binding dangling
 template <typename Space>
-concept TemporaryFunctionSpace =
-  requires(const Triangulation<2, 2>& domain, Batch batch) { GeometricFeFunction(Space(domain, P1<1>, LE {}), batch); };
+concept TemporaryFunctionSpace = requires(Batch batch) { GeometricFunction(std::declval<Space>(), batch); };
 // unsupported degrees, vector bases and expiring spatial bindings fail at compile time
-TEST(GeometricFeFunction, CompileTimeContracts) {
+TEST(GeometricFunction, CompileTimeContracts) {
     // the agreed scalar P1 descriptor remains constructible
     static_assert(AcceptedElement<decltype(P1<1>)>);
     // quadratic shape functions are not silently routed through the P1 geometric solver
     static_assert(!AcceptedElement<decltype(P2<1>)>);
     // matrix dimensions come from geometry, so scalar vector components are rejected
     static_assert(!AcceptedElement<decltype(P1<2>)>);
-    // the scalar space cannot borrow a temporary triangulation
-    static_assert(!TemporarySpaceMesh<Triangulation<2, 2>>);
-    using Space = GeometricFeSpace<const Triangulation<2, 2>, FeP<1, 1>, LE>;
+    // the geometric space cannot borrow a temporary scalar discretization
+    static_assert(!TemporarySpaceMesh<FeSpace<Triangulation<2, 2>, FeP<1, 1>>>);
+    using Space = GeometricSpace<const FeSpace<Triangulation<2, 2>, FeP<1, 1>>, LE>;
     // a function cannot borrow a temporary space
     static_assert(!TemporaryFunctionSpace<Space>);
-    // explicit const template arguments cannot circumvent the mesh lifetime constraint
-    static_assert(!std::is_constructible_v<Space, Triangulation<2, 2>&&, FeP<1, 1>, LE>);
-    using ConstFunction = GeometricFeFunction<const Space, typename Batch::MatrixType>;
+    // explicit const template arguments cannot circumvent the scalar-space lifetime constraint
+    static_assert(!std::is_constructible_v<Space, FeSpace<Triangulation<2, 2>, FeP<1, 1>>&&, LE>);
+    using ConstFunction = GeometricFunction<const Space, typename Batch::MatrixType>;
     // explicit const template arguments cannot circumvent the function's space lifetime constraint
     static_assert(!std::is_constructible_v<ConstFunction, Space&&, Batch>);
-    using Function = GeometricFeFunction<Space, typename Batch::MatrixType>;
+    using Function = GeometricFunction<Space, typename Batch::MatrixType>;
     // the public coefficient accessor cannot bypass invalidation through mutable matrix views
     static_assert(std::same_as<decltype(std::declval<Function&>().coeff()), const Batch&>);
 }
 // reference shape evaluation uses local dimension on embedded triangles and still rejects off-surface points
-TEST(GeometricFeFunction, EmbeddedReferenceCoordinates) {
+TEST(GeometricFunction, EmbeddedReferenceCoordinates) {
     Eigen::Matrix<double, 3, 3> vertices;
     vertices << 0, 0, 2, 1, 0, 2, 0, 1, 2;
     Eigen::Matrix<int, 1, 3> cells;
     cells << 2, 0, 1;
     const Triangulation<2, 3> domain(vertices, cells, Eigen::Matrix<int, 3, 1>::Ones());
-    const GeometricFeSpace space(domain, P1<1>, LE {});
+    const fdapde::FeSpace scalar_source_space(domain, fdapde::P1<1>);
+    const GeometricSpace space(scalar_source_space, LE {});
     Batch batch(3);
     for (int i = 0; i < 3; ++i) batch[i] = Matrix<double, 2, 2>({2. + i, 0., 0., 2. + i});
-    const GeometricFeFunction function(space, batch);
+    const GeometricFunction function(space, batch);
     const auto local = LE {}.interpolant(domain.cell(0), batch.select(std::array {2, 0, 1}));
     const Eigen::Vector3d x(.2, .3, 2.);
     // local two-dimensional reference weights give the same value as the embedded simplex engine
@@ -243,10 +246,11 @@ TEST(GeometricFeFunction, EmbeddedReferenceCoordinates) {
     EXPECT_THROW(function(Eigen::Vector3d(.2, .3, 2.1)), std::invalid_argument);
 }
 // immutable functions support concurrent lazy preparation and may be updated after workers finish
-TEST(GeometricFeFunction, ConcurrentEvaluationAndUpdate) {
+TEST(GeometricFunction, ConcurrentEvaluationAndUpdate) {
     const auto domain = mesh();
-    const GeometricFeSpace space(domain, P1<1>, AIRM {});
-    GeometricFeFunction function(space, values());
+    const fdapde::FeSpace scalar_source_space(domain, fdapde::P1<1>);
+    const GeometricSpace space(scalar_source_space, AIRM {});
+    GeometricFunction function(space, values());
     auto first = parallel_async([&] { return Point(function(Eigen::Vector2d(.2, .3))); });
     auto second = parallel_async([&] { return Point(function(Eigen::Vector2d(.8, .7))); });
     const Point first_value = first.get(), second_value = second.get();

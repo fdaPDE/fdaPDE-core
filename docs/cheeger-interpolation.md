@@ -20,9 +20,10 @@ fdapde::MatrixBatch<Geometry::Point> coefficients(mesh.n_nodes());
 // assign the SPD matrices in scalar P1 DOF order
 std::vector<double> rho(mesh.n_nodes(), .25);
 // assign strictly positive nodal rho values in the same DOF order
-fdapde::GeometricFeSpace W(mesh, fdapde::P1<1>, geometry,
+const fdapde::FeSpace scalar_space(mesh, fdapde::P1<1>);
+fdapde::GeometricSpace W(scalar_space, geometry,
                          std::span<const double>(rho));
-fdapde::GeometricFeFunction U(W, std::move(coefficients));
+fdapde::GeometricFunction U(W, std::move(coefficients));
 Geometry::Point value(U(x));
 auto fit = U.linearization(x);
 auto spatial = fit.weight_jvp(weight_direction);

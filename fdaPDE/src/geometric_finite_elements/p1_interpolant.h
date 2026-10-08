@@ -22,7 +22,7 @@
 #include "header_check.h"
 
 namespace fdapde {
-template <typename, typename> class GeometricFeEvaluation;
+template <typename, typename> class GeometricEvaluation;
 }
 
 namespace fdapde::gfe {
@@ -411,7 +411,7 @@ template <typename Geometry, typename Domain, typename Values> class P1FieldInte
             return Local(geometry_, Element(cell.nodes()), values_.select(ids), options_, rho_(ids));
         });
     }
-    template <typename, typename> friend class fdapde::GeometricFeEvaluation;
+    template <typename, typename> friend class fdapde::GeometricEvaluation;
     /// @brief evaluates prepared spatial data using the current coefficient-dependent local cache
     typename Geometry::Point evaluate_prepared_(
       int id, const Element& element, const std::array<int, Element::n_nodes>& dofs,

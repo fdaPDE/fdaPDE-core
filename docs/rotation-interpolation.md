@@ -15,8 +15,9 @@ using Rotation = fdapde::RotationMatrix<double, 3, 3>;
 Geometry geometry;
 fdapde::MatrixBatch<Rotation> coefficients(mesh.n_nodes());
 // assign certified nodal rotations in the scalar P1 DOF order
-fdapde::GeometricFeSpace W(mesh, fdapde::P1<1>, geometry);
-fdapde::GeometricFeFunction U(W, std::move(coefficients));
+const fdapde::FeSpace scalar_space(mesh, fdapde::P1<1>);
+fdapde::GeometricSpace W(scalar_space, geometry);
+fdapde::GeometricFunction U(W, std::move(coefficients));
 Rotation value(U(x));
 auto local = U.linearization(x);
 

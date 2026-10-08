@@ -1,0 +1,38 @@
+// This file is part of fdaPDE, a C++ library for physics-informed
+// spatial and functional data analysis.
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#ifndef __FDAPDE_GEOMETRIC_DISCRETIZATION_MODULE_H__
+#define __FDAPDE_GEOMETRIC_DISCRETIZATION_MODULE_H__
+// clang-format off
+#include "manifold_means.h"
+#include "execution.h"
+#include "src/geometric_finite_elements/p1_geodesic_value.h"
+#include "src/geometric_finite_elements/p1_geodesic_linearization.h"
+#include "src/geometric_finite_elements/cheeger_p1.h"
+#include "src/geometric_finite_elements/cheeger_p1_general.h"
+#include "src/geometric_finite_elements/p1_interpolant.h"
+#include "src/geometric_discretization/execution.h"
+#include "src/geometric_discretization/scalar_space_adapter.h"
+#include "src/geometric_discretization/spline_interpolant.h"
+#include "src/geometric_discretization/geometric_space.h"
+#include "src/geometric_finite_elements/p1_fem_cell_quadrature.h"
+#include "src/geometric_finite_elements/p1_lumped_laplacian_stencil.h"
+#include "src/geometric_finite_elements/p1_objective_contributions.h"
+#include "src/geometric_finite_elements/p1_discrete_tension.h"
+#include "src/geometric_finite_elements/cheeger_smoothing.h"
+#include "src/geometric_finite_elements/p1_squared_distance_edge_dirichlet.h"
+// clang-format on
+#endif

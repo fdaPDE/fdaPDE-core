@@ -16,7 +16,7 @@
 
 // compile from the repository root with c++ -std=c++20 -O2 -pthread -I. -I/path/to/eigen3
 // examples/geometric_finite_elements/spd_field_estimation.cpp
-#include <fdaPDE/geometric_finite_elements_fem.h>
+#include <fdaPDE/geometric_finite_elements.h>
 #include <fdaPDE/manifold_solvers.h>
 
 #include <algorithm>
@@ -112,7 +112,8 @@ int main() {
     // LogCholeskyGeometry<SPD> or CheegerLogEuclideanGeometry<SPD>(0.1)
 
     // define geometric finite elements space
-    const GeometricFeSpace space(mesh, P1<1>, geometry);
+    const fdapde::FeSpace scalar_source_space(mesh, fdapde::P1<1>);
+    const GeometricSpace space(scalar_source_space, geometry);
     using Space = std::remove_cvref_t<decltype(space)>;
 
     // define target field
@@ -139,7 +140,7 @@ int main() {
         for (int i = 0; i < side; ++i)
             grid[j * side + i] = Vector<double, 2> {double(i) / (side - 1), double(j) / (side - 1)};
 
-    // GeometricFeEvaluation<Space, Vector<double, 2>>
+    // GeometricEvaluation<Space, Vector<double, 2>>
     const auto Psi = space.prepare_evaluation(grid, execution_par);
 
     SPDBatch symmetric_estimates, spd_estimates;
@@ -155,7 +156,7 @@ int main() {
         fdapde_strong_assert(solution.converged(), std::runtime_error, "symmetric trust region did not converge");
         // SPDBatch
         const auto coefficients = solution.point.exp<Policy>(execution_par);
-        const GeometricFeFunction<const Space, SPD> tensor_field(space, coefficients);
+        const GeometricFunction<const Space, SPD> tensor_field(space, coefficients);
         symmetric_estimates = Psi(tensor_field, execution_par);
     }
 
@@ -167,7 +168,7 @@ int main() {
         // TrustRegionResult<SPDBatch>
         const auto solution = optimizer.optimize(objective, optimization_geometry, initial);
         fdapde_strong_assert(solution.converged(), std::runtime_error, "SPD trust region did not converge");
-        const GeometricFeFunction<const Space, SPD> tensor_field(space, solution.point);
+        const GeometricFunction<const Space, SPD> tensor_field(space, solution.point);
         spd_estimates = Psi(tensor_field, execution_par);
     }
 

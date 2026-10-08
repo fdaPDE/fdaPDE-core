@@ -15,8 +15,8 @@ Its numbered steps follow this usage sequence:
 | Step | Operation | Purpose |
 | --- | --- | --- |
 | 1 | Matrix cache policy and `LogEuclideanGeometry<SPD>` | Choose the matrix representation and the metric that defines interpolation |
-| 2 | `GeometricFeSpace(mesh, P1<1>, geometry)` | Attach one matrix coefficient to each scalar P1 DOF |
-| 3 | `logs.exp()` and `GeometricFeFunction` | Build positive-definite nodal data and transfer their ownership to a spatial field |
+| 2 | `FeSpace(mesh, P1<1>)` and `GeometricSpace(scalar_space, geometry)` | Attach one matrix coefficient to each scalar P1 DOF |
+| 3 | `logs.exp()` and `GeometricFunction` | Build positive-definite nodal data and transfer their ownership to a spatial field |
 | 4 | `field.eval_at(grid)` | Obtain predictions at a set of locations with one-off sequential preparation |
 | 5 | `space.prepare_evaluation(grid)` and `Psi(field, execution_par)` | Reuse locations, cell IDs and scalar weights across repeated evaluations, with independently selected execution policies |
 | 6 | `field.set_coeff(...)` | Replace nodal values during fitting while retaining the spatial preparation and previously returned owning batches |
@@ -39,7 +39,7 @@ cell energy, agreement of evaluation paths, uniform coefficient scaling and the
 metric differential-adjoint identity. They are verification of this example;
 the preceding numbered steps show the library calls needed by an application.
 
-Include `fdaPDE/geometric_finite_elements.h` for LE/AIRM P1 values, linearizations
+Include `fdaPDE/geometric_discretization.h` for LE/AIRM P1 values, linearizations
 and prepared spatial interpolants. This header and its algebra/solver paths do
 not require Eigen. The existing `Simplex` and mesh APIs still use Eigen spatial
 coordinates; include `fdaPDE/geometry.h` when using them.
@@ -53,27 +53,29 @@ using namespace fdapde;
 using Node = SPDMatrix<double, 3, Cache::Log>;
 MatrixBatch<Node> values_batch(source_values);
 manifold::AffineInvariantSPDGeometry<double, 3, Usage::BasePointMaps> geometry;
-GeometricFeSpace W(mesh, P1<1>, geometry);
-GeometricFeFunction U(W, values_batch);  // copies the batch
-// use GeometricFeFunction U(W, std::move(values_batch)) to transfer its storage
+const FeSpace scalar_space(mesh, P1<1>);
+GeometricSpace W(scalar_space, geometry);
+GeometricFunction U(W, values_batch);  // copies the batch
+// use GeometricFunction U(W, std::move(values_batch)) to transfer its storage
 auto expression = U(x);
 SPDMatrix<double, 3> value(expression);
 ```
 
-`GeometricFeSpace` owns an existing scalar `FeSpace` and a copy of the target
-geometry. `triangulation()`, `dof_handler()`, `n_dofs()`,
+`GeometricSpace` borrows an existing scalar `FeSpace` or `BsSpace` and owns a
+copy of the target geometry. The scalar space and its mesh must remain alive and
+unchanged for the lifetime of the geometric space and its dependent objects. `triangulation()`, `dof_handler()`, `n_dofs()`,
 `eval_shape_value(i, reference_point)` and `geometry()` expose its immutable
 bindings. Each scalar DOF weights a complete matrix: the SPD order is set by
-`geometry`, not by scalar vector components. Only `P1<1>` is accepted;
-`P2<1>`, other degrees and vector descriptors such as `P1<3>` fail compilation.
+`geometry`, not by scalar vector components. For finite element sources, only `P1<1>` is accepted;
+`P2<1>`, other Lagrange degrees and vector descriptors such as `P1<3>` fail compilation.
 
-`GeometricFeFunction` owns its `MatrixBatch`, preserving the batch's element
+`GeometricFunction` owns its `MatrixBatch`, preserving the batch's element
 cache policy. An lvalue is copied; an rvalue transfers its buffers.
 `function_space()` returns the borrowed space and `coeff()` returns a const
 batch reference. It uses the `DofHandler` table in local DOF order and evaluates
 weights through the scalar reference basis, reusing the prepared P1 engine.
 Optional solver tolerances are the third constructor argument, as in
-`GeometricFeFunction U(W, values_batch, options)`.
+`GeometricFunction U(W, values_batch, options)`.
 
 `U.set_coeff(new_values)` validates the count and matrix shape, discards
 coefficient-dependent prepared cells, and copies or transfers the replacement
@@ -116,7 +118,7 @@ These are the existing `execution_seq` and `execution_par` policies from
 `fdaPDE/execution.h`, included by the geometric finite element aggregate. Either
 phase may be parallel independently of the other. Scalar FEM APIs are unchanged.
 
-`GeometricFeEvaluation` copies an lvalue location batch or takes an rvalue's
+`GeometricEvaluation` copies an lvalue location batch or takes an rvalue's
 buffers. It retains each point's cell id and scalar shape weights, with spatial
 cell geometry and local DOF indices shared by points in the same cell.
 `locations()` exposes the retained batch as const; `size()` and
@@ -286,3 +288,5 @@ they are not assembled into a global nodal vector. On shared faces, any
 containing cell may be chosen: P1 values agree, while derivatives are those of
 the chosen cell. Points outside the mesh, including off-surface points, and
 nonfinite coordinates are rejected.
+
+For the common scalar-space facade and spline fields, see [geometric discretization](geometric-discretization.md).

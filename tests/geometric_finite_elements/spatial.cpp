@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <fdaPDE/execution.h>
-#include <fdaPDE/geometric_finite_elements_fem.h>
+#include <fdaPDE/geometric_finite_elements.h>
 #include <fdaPDE/geometry.h>
 #include <gtest/gtest.h>
 
@@ -136,8 +136,9 @@ template <int EmbedDim, typename Geometry> void check_boundary_roundoff(const Ge
     for (int i = 0; i < 3; ++i) nodes[i] = source[i];
     const auto local = geometry.interpolant(cell, nodes);
     const auto field = geometry.interpolant(mesh, nodes);
-    const GeometricFeSpace space(mesh, P1<1>, geometry);
-    const GeometricFeFunction function(space, nodes);
+    const fdapde::FeSpace scalar_source_space(mesh, fdapde::P1<1>);
+    const GeometricSpace space(scalar_source_space, geometry);
+    const GeometricFunction function(space, nodes);
     const auto edge = geometry.geodesic(nodes[1], nodes[2]);
     for (int k = 0; k <= 10; ++k) {
         const double parameter = k / 10.;
@@ -175,8 +176,9 @@ TEST(P1SpatialInterpolation, NormalizationPreservesSupportAcrossCellScales) {
         Eigen::Matrix<int, 1, 3> connectivity;
         connectivity << 0, 1, 2;
         const Triangulation<2, 2> mesh(coordinates.transpose(), connectivity, Eigen::Matrix<int, 3, 1>::Ones());
-        const GeometricFeSpace space(mesh, P1<1>, LE {});
-        const GeometricFeFunction function(space, nodes);
+        const fdapde::FeSpace scalar_source_space(mesh, fdapde::P1<1>);
+        const GeometricSpace space(scalar_source_space, LE {});
+        const GeometricFunction function(space, nodes);
         const auto local = LE {}.interpolant(cell, nodes);
         for (const auto& weights : {
                std::array {1. / 3, 1. / 3, 1. / 3},
@@ -206,7 +208,8 @@ TEST(P1SpatialInterpolation, NormalizationMatchesContainmentTolerance) {
     Eigen::Matrix<int, 1, 3> connectivity;
     connectivity << 0, 1, 2;
     const Triangulation<2, 2> mesh(cell.nodes().transpose(), connectivity, Eigen::Matrix<int, 3, 1>::Ones());
-    const GeometricFeSpace space(mesh, P1<1>, LE {});
+    const fdapde::FeSpace scalar_source_space(mesh, fdapde::P1<1>);
+    const GeometricSpace space(scalar_source_space, LE {});
     const auto local = LE {}.interpolant(cell, nodes);
     const double roundoff = 20 * std::numeric_limits<double>::epsilon();
     for (const Eigen::Vector2d& x : {Eigen::Vector2d(-roundoff, .5), Eigen::Vector2d(-roundoff, -roundoff)}) {
