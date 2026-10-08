@@ -69,6 +69,11 @@ unsupported packed `ColMajor` instantiations fail at compile time. This restrict
 does not apply to ordinary dense `Matrix` or packed Boolean storage.
 
 `PartialPivLU` factors square matrices and solves nonsingular systems.
+For usable finite factors, its determinant reuses the pivot signs and normalized
+pivots with binary exponent tracking, avoiding another elimination and intermediate
+scale overflow. Unusable numerical pivots or factor growth retain the independent
+complete-pivot determinant path; the algebraic determinant remains available even
+when solving is rejected. Constant evaluation retains its existing implementation.
 `HouseholderQR` factors rectangular matrices. `EVD` computes a symmetric
 Jacobi eigendecomposition. Check the decomposition's reported status where
 provided; singularity, invalid input and convergence failures remain distinct.

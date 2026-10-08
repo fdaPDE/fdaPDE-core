@@ -80,8 +80,6 @@ template <typename XprType_> class PartialPivLU {
             }
         }
 
-        determinant_ = algebraic_determinant_(matrix.derived());
-        determinant_computed_ = true;
         scale_ = scale == Scalar(0) ? Scalar(1) : scale;
         normalized /= scale_;
         Matrix<Scalar, Rows, Cols> lu(normalized);
@@ -93,6 +91,7 @@ template <typename XprType_> class PartialPivLU {
 
         info_ = 0;
         rank_ = 0;
+        int determinant_sign = 1;
         for (int k = 0; k < n; ++k) {
             int pivot_index = k;
             Scalar max_value = Scalar(0);
@@ -114,10 +113,13 @@ template <typename XprType_> class PartialPivLU {
             if (pivot_index != k) {
                 for (int col = 0; col < n; ++col) std::swap(lu(k, col), lu(pivot_index, col));
                 std::swap(permutation[k], permutation[pivot_index]);
+                determinant_sign = -determinant_sign;
             }
             for (int row = k + 1; row < n; ++row) {
                 const Scalar multiplier = lu(row, k) / lu(k, k);
                 if (!is_finite_(multiplier)) {
+                    determinant_ = algebraic_determinant_(matrix.derived());
+                    determinant_computed_ = true;
                     reset_factors_();
                     return;
                 }
@@ -125,6 +127,8 @@ template <typename XprType_> class PartialPivLU {
                 for (int col = k + 1; col < n; ++col) {
                     lu(row, col) -= multiplier * lu(k, col);
                     if (!is_finite_(lu(row, col))) {
+                        determinant_ = algebraic_determinant_(matrix.derived());
+                        determinant_computed_ = true;
                         reset_factors_();
                         return;
                     }
@@ -133,6 +137,10 @@ template <typename XprType_> class PartialPivLU {
         }
 
         if (info_ != 0) rank_ = numerical_rank_(normalized, threshold);
+        determinant_ = info_ == 0 && !std::is_constant_evaluated() ?
+                         factored_determinant_(lu, scale_, determinant_sign) :
+                         algebraic_determinant_(matrix.derived());
+        determinant_computed_ = true;
         L_ = lu.template triangular_block<Lower>();
         for (int i = 0; i < n; ++i) L_(i, i) = Scalar(1);
         normalized_U_ = lu.template triangular_block<Upper>();
@@ -263,6 +271,17 @@ template <typename XprType_> class PartialPivLU {
         }
         if (value.exponent < std::numeric_limits<int>::min()) { return std::copysign(Scalar(0), value.significand); }
         return std::ldexp(value.significand, static_cast<int>(value.exponent));
+    }
+
+    /// @brief reuses usable normalized pivots while tracking the input scale without intermediate overflow
+    template <typename MatrixType> static Scalar factored_determinant_(const MatrixType& lu, Scalar scale, int sign) {
+        ScaledValue determinant = scaled_value_(Scalar(sign));
+        const ScaledValue scaled_scale = scaled_value_(scale);
+        for (int i = 0; i < lu.rows(); ++i) {
+            determinant = multiply_(determinant, scaled_value_(lu(i, i)));
+            determinant = multiply_(determinant, scaled_scale);
+        }
+        return materialize_(determinant);
     }
 
     /// @brief computes the determinant during constant evaluation

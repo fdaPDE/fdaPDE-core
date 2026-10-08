@@ -226,6 +226,28 @@ template <int StorageOrder> void check_partial_piv_lu_scale_and_determinant() {
     EXPECT_THROW(static_cast<void>(singular.inv()), std::domain_error);
 }
 
+// usable LU pivots retain determinant sign and scale even when direct products overflow or underflow
+TEST(PartialPivLU, ReusesWellConditionedFactorsAcrossBinaryScales) {
+    const auto check = []<typename Scalar>(int extreme_exponent) {
+        const Matrix<Scalar, 4, 4> base({0., 3., 1., 0., 2., 0., 0., 0., 0., 0., 4., 1., 0., 0., 0., 5.});
+        const double tolerance = 16 * std::numeric_limits<Scalar>::epsilon();
+        for (int exponent : {-extreme_exponent, 0, extreme_exponent}) {
+            const Scalar scale = std::ldexp(Scalar(1), exponent);
+            const Matrix<Scalar, 4, 4> input(scale * base);
+            const PartialPivLU factorization(input);
+            // uniform binary scaling preserves all four usable pivots of this row-permuted triangular matrix
+            ASSERT_EQ(factorization.info(), 0);
+            // undoing four powers of the scale recovers the independently known signed diagonal product
+            EXPECT_NEAR(std::ldexp(factorization.determinant(), -4 * exponent), -120., 120 * tolerance);
+            const Matrix<Scalar, 4, 1> expected({1., -2., 3., -4.});
+            const Matrix<Scalar, 4, 1> rhs(input * expected);
+            expect_matrix_near(factorization.solve(rhs), expected, tolerance);
+        }
+    };
+    check.template operator()<double>(200);
+    check.template operator()<float>(20);
+}
+
 // checks pivoted LU solves, singular-state reporting and determinants across extreme coefficient scales
 TEST(linear_algebra, partial_piv_lu) {
     check_partial_piv_lu_contracts<RowMajor>();
