@@ -61,6 +61,36 @@ gfe::P1GeodesicLinearizationOptions accurate() {
     result.linear_solve.residual_tolerance = 1e-12;
     return result;
 }
+
+/// @brief supplies a Frobenius objective whose first BW gradient step crosses the positive lift boundary
+struct FrobeniusQuadratic {
+    /// @brief reserves evaluation-local storage for callbacks without intermediates
+    struct Workspace { };
+    std::size_t cost_calls = 0;
+    /// @brief measures the squared ambient distance to one tenth of the identity
+    double cost(const Point& point, Workspace& workspace) {
+        ++cost_calls;
+        return .5 * Dense(egrad(point, workspace)).squared_norm();
+    }
+    /// @brief returns the exact ambient residual from the fixed diagonal target
+    Tangent egrad(const Point& point, Workspace&) {
+        Tangent result(point);
+        for (int i = 0; i < 2; ++i) result(i, i) = static_cast<double>(result(i, i)) - .1;
+        return result;
+    }
+};
+
+/// @brief supplies a smooth linear objective whose BW Newton model reaches a singular lift
+struct TraceObjective {
+    /// @brief reserves evaluation-local storage for constant ambient derivatives
+    struct Workspace { };
+    /// @brief evaluates the sum of the two positive diagonal entries
+    double cost(const Point& point, Workspace&) { return point(0, 0) + point(1, 1); }
+    /// @brief returns the constant ambient gradient of the trace
+    Tangent egrad(const Point&, Workspace&) { return Tangent(Point::Identity()); }
+    /// @brief returns the zero ambient curvature of a linear objective
+    Tangent ehess(const Point&, const Tangent&, Workspace&) { return Tangent(Dense::Zero()); }
+};
 /// @brief checks noncommuting target maps in the fixed and runtime SPD3 kernel paths
 void check_three_dimensional(const auto& geometry) {
     using G = std::remove_cvref_t<decltype(geometry)>;
@@ -339,8 +369,8 @@ TEST(BuresWasserstein, PublicBoundaryContracts) {
     const Tangent crossing = tangent(Dense({-4., 0., 0., -4.}));
     // a negative lift must fail even though its congruence after crossing the singularity would again be SPD
     EXPECT_THROW(geometry.exponential(identity, crossing), std::domain_error);
-    // the retraction shares the same BW exponential domain rather than accepting a crossed lift
-    EXPECT_THROW(geometry.retract(identity, crossing, 1), std::domain_error);
+    // a crossed BW retraction marks its domain error so optimizers may contract the trial step
+    EXPECT_THROW(geometry.retract(identity, crossing, 1), manifold::RetractionDomainError);
     const Point four(Dense({4., 0., 0., 4.}));
     const auto curve = geometry.geodesic(identity, four);
     // deferred curve extrapolation must enforce the same positive lift boundary when coefficients are evaluated
@@ -349,6 +379,10 @@ TEST(BuresWasserstein, PublicBoundaryContracts) {
     invalid(1, 0) = std::numeric_limits<double>::quiet_NaN();
     // nonfinite ambient tangent coefficients are rejected before a Lyapunov solve can obscure the input error
     EXPECT_THROW(geometry.exponential(identity, invalid), std::invalid_argument);
+    // invalid tangent input remains a programming error rather than a recoverable retraction failure
+    EXPECT_THROW(geometry.retract(identity, invalid, 1), std::invalid_argument);
+    // a nonfinite step remains an input error rather than entering the solver's recovery path
+    EXPECT_THROW(geometry.retract(identity, crossing, std::numeric_limits<double>::infinity()), std::invalid_argument);
     const manifold::BuresWassersteinSPDGeometry<double, Dynamic> dynamic(3);
     // a runtime geometry rejects certified points with a different matrix order
     EXPECT_THROW(dynamic.distance(identity, identity), std::invalid_argument);
@@ -367,5 +401,38 @@ TEST(BuresWasserstein, PublicBoundaryContracts) {
     };
     // an inverse lumped mass cannot be formed from a zero-measure degree of freedom
     EXPECT_THROW(gfe::p1_discrete_tension_value(geometry, batch, invalid_stencil), std::invalid_argument);
+}
+
+// native BW steepest descent contracts a crossed lift and converges from the default unit step
+TEST(BuresWasserstein, ArmijoContractsOutsidePositiveLift) {
+    FrobeniusQuadratic objective;
+    const auto result = manifold::RiemannianSteepestDescent().optimize(objective, Geometry {}, Point::Identity());
+    // the default step is recoverable and reaches the ambient quadratic's interior SPD optimum
+    ASSERT_TRUE(result.converged());
+    // the original unit step has lift minus eight tenths of the identity and must be rejected
+    EXPECT_GT(result.rejected_trials, 0u);
+    // independent diagonal target coefficients verify the solution after repeated retractions
+    EXPECT_LT(error(result.point, Dense({.1, 0., 0., .1})), 2e-6);
+    // the solver's evaluation count excludes rejected lifts that never reach the cost callback
+    EXPECT_EQ(result.cost_evaluations, objective.cost_calls);
+}
+
+// native BW trust regions shrink a singular Newton lift before evaluating a feasible descent candidate
+TEST(BuresWasserstein, TrustRegionContractsOutsidePositiveLift) {
+    TraceObjective objective;
+    manifold::TrustRegionOptions options;
+    options.initial_radius = 2;
+    options.max_iterations = 2;
+    const auto result = manifold::RiemannianTrustRegion(options).optimize(objective, Geometry {}, Point::Identity());
+    // the first unconstrained trace-Newton step reaches a singular lift and is rejected
+    EXPECT_EQ(result.rejected_steps, 1u);
+    // the reduced trust radius admits the following step inside the positive lift
+    EXPECT_EQ(result.accepted_steps, 1u);
+    // the singular candidate consumes an iteration without evaluating its objective
+    EXPECT_EQ(result.cost_evaluations, 2u);
+    // the feasible reduced step lowers the trace from its initial value of two
+    EXPECT_LT(result.cost, 2.);
+    // the iteration cap remains explicit for an objective whose infimum lies outside the SPD manifold
+    EXPECT_EQ(result.stop_reason, manifold::TrustRegionStopReason::max_iterations);
 }
 }   // namespace

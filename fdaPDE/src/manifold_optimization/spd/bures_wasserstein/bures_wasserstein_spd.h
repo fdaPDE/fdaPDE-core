@@ -190,9 +190,11 @@ class BuresWassersteinSPDGeometry {
         const SPDMatrix<Scalar, Order_> positive_lift(lift);
         return Point(internals::symmetric_congruence<Scalar, Order_>(positive_lift, point, order_));
     }
-    /// @brief uses the exact BW exponential as a local retraction
+    /// @brief uses the exact BW exponential and marks numerical domain exits as recoverable trial failures
     template <SPDLike PointPoint> Point retract(const PointPoint& point, const Tangent& tangent, double step) const {
-        return exponential(point, tangent, step);
+        try {
+            return exponential(point, tangent, step);
+        } catch (const std::domain_error& error) { throw RetractionDomainError(error.what()); }
     }
 
     /// @brief prepares an immutable relative frame without discarding compatible endpoint caches

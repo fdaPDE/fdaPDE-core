@@ -50,6 +50,32 @@ struct Curvature : Quadratic {
     /// @brief applies the requested scalar model curvature
     double hess(double, double v, Workspace&) { return coefficient * v; }
 };
+
+/// @brief restricts affine steps to a local chart without changing the objective or metric
+struct LocalChart : Chart {
+    /// @brief rejects chart displacements larger than its supported local radius
+    double retract(double x, double u, double step) const {
+        fdapde_strong_assert(
+          std::abs(step * u) <= .3, fdapde::manifold::RetractionDomainError, "trial leaves the local chart");
+        return x + step * u;
+    }
+};
+
+/// @brief models a geometric failure that has not opted into recoverable trial rejection
+struct BrokenChart : Chart {
+    /// @brief reports a permanent numerical error independently of the requested step
+    double retract(double, double, double) const { throw std::domain_error("invalid geometry state"); }
+};
+
+/// @brief detects accidental recovery of exceptions raised by objective callbacks
+struct ThrowingObjective : Quadratic {
+    /// @brief permits the initial point and rejects later objective evaluations with the retraction marker
+    double cost(double x, Workspace& workspace) {
+        fdapde_strong_assert(
+          x == -1, fdapde::manifold::RetractionDomainError, "objective callback error must propagate");
+        return Quadratic::cost(x, workspace);
+    }
+};
 /// @brief checks interior solutions, boundary truncation, negative curvature and invalid Hessian actions
 TEST(SmoothingTrustRegion, TruncatedSubproblem) {
     using namespace fdapde::manifold;
@@ -100,5 +126,78 @@ TEST(SmoothingTrustRegion, ConvergenceAndRejectedTrials) {
     options.initial_radius = 0;
     // invalid trust-region radii fail at the public constructor boundary
     EXPECT_THROW(RiemannianTrustRegion {options}, std::invalid_argument);
+}
+
+// a local retraction failure contracts the radius without evaluating or promoting an invalid candidate
+TEST(SmoothingTrustRegion, RecoversLocalRetractionFailures) {
+    using namespace fdapde::manifold;
+    Quadratic problem;
+    TrustRegionOptions options;
+    options.initial_radius = 2;
+    const auto result = RiemannianTrustRegion(options).optimize(problem, LocalChart {}, -1.);
+    // repeated local radius contractions still reach the same exact scalar optimum
+    ASSERT_TRUE(result.converged());
+    // recovering a local chart exit preserves the independent closed-form solution
+    EXPECT_NEAR(result.point, 1., 1e-12);
+    // the initial Newton displacement exceeds the supported chart radius and must be refused
+    EXPECT_GT(result.rejected_steps, 0u);
+    // invalid retractions count as iterations but never as calls to the quadratic objective
+    EXPECT_EQ(result.cost_evaluations + result.rejected_steps, result.iterations + 1);
+    options.minimum_radius = 1;
+    const auto bounded = RiemannianTrustRegion(options).optimize(problem, LocalChart {}, -1.);
+    // an inadmissible first trial respects the configured lower radius bound
+    EXPECT_EQ(bounded.stop_reason, TrustRegionStopReason::radius_too_small);
+    // a refused retraction leaves the original point unchanged
+    EXPECT_DOUBLE_EQ(bounded.point, -1.);
+    // only the initial objective is evaluated when no retraction trial succeeds
+    EXPECT_EQ(bounded.cost_evaluations, 1u);
+}
+
+// Armijo budgets count all retraction trials while evaluations count only candidates in the local chart
+TEST(SmoothingTrustRegion, ArmijoRetractionBudgetsAndWorkspace) {
+    using namespace fdapde::manifold;
+    Quadratic problem;
+    const LocalChart geometry;
+    evaluation_context_t<Quadratic, LocalChart> context;
+    const double current_cost = evaluate_cost(problem, geometry, -1., context.current());
+    const auto result = ArmijoBacktracking().search(problem, geometry, -1., 2., current_cost, -4., context);
+    // contractions from displacement two first enter the supported chart at step one eighth
+    ASSERT_TRUE(result.accepted());
+    // three failed retractions precede the first evaluable and decreasing candidate
+    EXPECT_EQ(result.trials, 4u);
+    // rejected retractions are reflected in the same bounded trial accounting as rejected costs
+    EXPECT_EQ(result.rejected_trials, 3u);
+    // only the admissible trial reaches the objective callback
+    EXPECT_EQ(result.cost_evaluations, 1u);
+    // the accepted displacement equals the analytically first admissible contracted step
+    EXPECT_DOUBLE_EQ(*result.point, -.75);
+    // searching never replaces the current workspace before the caller promotes an accepted candidate
+    EXPECT_DOUBLE_EQ(*context.current().workspace().point, -1.);
+    ArmijoOptions options;
+    options.max_trials = 1;
+    const auto bounded = ArmijoBacktracking(options).search(problem, geometry, -1., 2., current_cost, -4., context);
+    // a failed retraction consumes the last trial and reports bounded line-search failure
+    EXPECT_EQ(bounded.status, ArmijoStatus::max_trials);
+    // exhausting the retraction budget cannot leave an accepted candidate behind
+    EXPECT_FALSE(bounded.point);
+    // exhausting the retraction budget never invokes an objective on an invalid candidate
+    EXPECT_EQ(bounded.cost_evaluations, 0u);
+    // the unsuccessful search clears the preceding trial workspace instead of retaining stale point data
+    EXPECT_FALSE(context.trial().workspace().point);
+}
+
+// solvers recover only explicit retraction markers raised inside the geometry callback
+TEST(SmoothingTrustRegion, PropagatesUnrelatedFailures) {
+    using namespace fdapde::manifold;
+    Quadratic problem;
+    // ordinary geometry domain errors remain visible instead of being silently retried
+    EXPECT_THROW(RiemannianTrustRegion().optimize(problem, BrokenChart {}, -1.), std::domain_error);
+    // the line search preserves the same distinction for unmarked geometry failures
+    EXPECT_THROW(RiemannianSteepestDescent().optimize(problem, BrokenChart {}, -1.), std::domain_error);
+    ThrowingObjective throwing;
+    // even the recoverable marker must propagate when it comes from a trust-region objective callback
+    EXPECT_THROW(RiemannianTrustRegion().optimize(throwing, Chart {}, -1.), RetractionDomainError);
+    // Armijo must also leave objective failures outside its retraction-only recovery scope
+    EXPECT_THROW(RiemannianSteepestDescent().optimize(throwing, Chart {}, -1.), RetractionDomainError);
 }
 }   // namespace

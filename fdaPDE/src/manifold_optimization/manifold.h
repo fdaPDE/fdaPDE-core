@@ -32,6 +32,13 @@ concept P1InterpolationBinding =
 }   // namespace gfe
 namespace manifold {
 
+/// @brief marks a numerically inadmissible retraction trial that a solver may retry with a smaller step
+class RetractionDomainError : public std::domain_error {
+   public:
+    /// @brief preserves the numerical failure message for direct callers
+    explicit RetractionDomainError(const char* message) : std::domain_error(message) { }
+};
+
 template <typename Geometry> using point_t = typename std::remove_cvref_t<Geometry>::Point;
 template <typename Geometry> using tangent_t = typename std::remove_cvref_t<Geometry>::Tangent;
 
@@ -54,6 +61,19 @@ concept FirstOrderGeometry =
       { geometry.linear_combination(point, alpha, u, beta, v) } -> std::same_as<tangent_t<Geometry>>;
       { geometry.retract(point, u, alpha) } -> std::same_as<point_t<Geometry>>;
   };
+
+namespace internals {
+
+/// @brief isolates recoverable retraction failures from objective callbacks and input errors
+template <FirstOrderGeometry Geometry>
+std::optional<point_t<Geometry>> retract_trial(
+  const Geometry& geometry, const point_t<Geometry>& point, const tangent_t<Geometry>& tangent, double step) {
+    try {
+        return geometry.retract(point, tangent, step);
+    } catch (const RetractionDomainError&) { return std::nullopt; }
+}
+
+}   // namespace internals
 
 // logarithm(from, to) must equal the negative from-gradient of one half the squared distance
 template <typename Geometry>

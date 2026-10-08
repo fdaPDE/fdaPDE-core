@@ -120,6 +120,22 @@ components factor by factor; it does not assume a separable cost. Its ambient
 gradient cache is bound to a candidate generation, reused across truncated-CG
 directions, promoted with accepted trials and cleared when the slot is reset.
 
+## Retraction trials
+
+A geometry may throw `RetractionDomainError`, a subtype of `std::domain_error`,
+when a valid numerical trial leaves the local domain of its retraction. The BW
+retraction uses this marker when its horizontal lift is no longer positive
+definite or its numerical result cannot be represented. Direct callers still
+receive the exception. Armijo rejects that trial and contracts the step;
+trust-region rejects it and reduces the radius, preserving the current point and
+workspace. No objective callback is evaluated for an inadmissible candidate.
+
+Input errors, ordinary geometry `std::domain_error` exceptions and all exceptions
+from objective or derivative callbacks propagate. `ArmijoResult::trials` counts
+all retraction attempts; `cost_evaluations` counts only actual objective calls.
+Both solvers retain their configured iteration/trial limits when every attempt
+is inadmissible.
+
 ## Metric and maps
 
 Write `L_P(U) = D log(P)[U]`, `E_A(U) = D exp(A)[U]`, and

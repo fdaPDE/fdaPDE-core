@@ -47,6 +47,7 @@ template <typename Point> struct ArmijoResult {
     double cost = std::numeric_limits<double>::quiet_NaN();
     double step = 0;
     std::size_t trials = 0;
+    std::size_t cost_evaluations = 0;
     std::size_t rejected_trials = 0;
     ArmijoStatus status = ArmijoStatus::not_run;
 
@@ -111,9 +112,13 @@ class ArmijoBacktracking {
             }
             if (trial != 0) context.reset_trial();
             result.step = step;
-            point_t<Geometry> candidate = geometry.retract(point, direction, step);
-            double candidate_cost = evaluate_cost(problem, geometry, candidate, context.trial());
             ++result.trials;
+            auto candidate = internals::retract_trial(geometry, point, direction, step);
+            double candidate_cost = std::numeric_limits<double>::infinity();
+            if (candidate) {
+                candidate_cost = evaluate_cost(problem, geometry, *candidate, context.trial());
+                ++result.cost_evaluations;
+            }
             double scaled_step = step;
             double scaled_derivative = directional_derivative;
             if (step >= std::abs(directional_derivative)) {
@@ -124,7 +129,7 @@ class ArmijoBacktracking {
             const double sufficient_decrease = std::fma(scaled_step, scaled_derivative, current_cost);
             if (
               std::isfinite(candidate_cost) && candidate_cost < current_cost && candidate_cost <= sufficient_decrease) {
-                result.point.emplace(std::move(candidate));
+                result.point.emplace(std::move(*candidate));
                 result.cost = candidate_cost;
                 result.step = step;
                 result.status = ArmijoStatus::accepted;

@@ -133,7 +133,7 @@ class RiemannianSteepestDescent {
             double directional_derivative = geometry.inner_product(result.point, gradient, direction);
             auto line_result = line_search_.search(
               problem, geometry, result.point, direction, result.cost, directional_derivative, context);
-            result.cost_evaluations += line_result.trials;
+            result.cost_evaluations += line_result.cost_evaluations;
             result.rejected_trials += line_result.rejected_trials;
             result.line_search_status = line_result.status;
             if (!line_result.accepted()) {

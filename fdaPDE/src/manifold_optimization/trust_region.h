@@ -177,10 +177,13 @@ class RiemannianTrustRegion {
                 return result;
             }
 
-            point_t<Geometry> candidate = geometry.retract(result.point, subproblem_result.step, 1);
             context.reset_trial();
-            double candidate_cost = evaluate_cost(problem, geometry, candidate, context.trial());
-            ++result.cost_evaluations;
+            auto candidate = internals::retract_trial(geometry, result.point, subproblem_result.step, 1);
+            double candidate_cost = std::numeric_limits<double>::infinity();
+            if (candidate) {
+                candidate_cost = evaluate_cost(problem, geometry, *candidate, context.trial());
+                ++result.cost_evaluations;
+            }
             // actual-to-predicted reduction controls acceptance and radius updates
             double actual_reduction = result.cost - candidate_cost;
             double ratio_shift = std::max(1.0, std::abs(result.cost)) * std::numeric_limits<double>::epsilon() *
@@ -199,7 +202,7 @@ class RiemannianTrustRegion {
             ++result.iterations;
             if (
               std::isfinite(candidate_cost) && !cost_increased && result.last_ratio >= options_.acceptance_threshold) {
-                result.point = std::move(candidate);
+                result.point = std::move(*candidate);
                 result.cost = candidate_cost;
                 context.promote_trial();
                 ++result.accepted_steps;
