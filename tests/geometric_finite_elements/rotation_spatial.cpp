@@ -22,7 +22,7 @@ namespace {
 using namespace fdapde;
 using Geometry = manifold::SOGeometry<double, 3>;
 using Point = Geometry::Point;
-using Batch = MatrixBatch<RotationMatrix<double, 3, 3, RotationCache::Union<RotationCache::Log, RotationCache::Schur>>>;
+using Batch = MatrixBatch<RotationMatrix<double, 3, RotationCache::Union<RotationCache::Log, RotationCache::Schur>>>;
 using Locations = MatrixBatch<Vector<double, 2>>;
 /// @brief supplies two triangles with different local vertex orders
 Triangulation<2, 2> mesh() {

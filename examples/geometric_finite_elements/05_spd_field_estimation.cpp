@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // compile from the repository root with c++ -std=c++20 -O2 -pthread -I. -I/path/to/eigen3
-// examples/geometric_finite_elements/spd_field_estimation.cpp
+// examples/geometric_finite_elements/05_spd_field_estimation.cpp
 #include <fdaPDE/geometric_finite_elements.h>
 #include <fdaPDE/manifold_solvers.h>
 

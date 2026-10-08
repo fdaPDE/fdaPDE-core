@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // compile from the repository root with c++ -std=c++20 -O3 -I.
-// examples/benchmarks/spd_log_euclidean_interpolation.cpp
+// examples/benchmarks/03_spd_airm_interpolation.cpp
 #include <fdaPDE/manifold_geometry.h>
 
 #include <algorithm>
@@ -32,9 +32,9 @@ int main() {
     using Dense = Matrix<double, 2, 2>;
     using Symmetric = SymmetricMatrix<double, 2>;
     using Point = SPDMatrix<double, 2>;
-    using CachedPoint = SPDMatrix<double, 2, Cache::Log>;
-    using Geometry = LogEuclideanSPDGeometry<double, 2>;
-    using CachedGeometry = LogEuclideanSPDGeometry<double, 2, Usage::Distance>;
+    using CachedPoint = SPDMatrix<double, 2, Cache::Union<Cache::Sqrt, Cache::InverseSqrt>>;
+    using Geometry = AffineInvariantSPDGeometry<double, 2>;
+    using CachedGeometry = AffineInvariantSPDGeometry<double, 2, Usage::BasePointMaps>;
     using Clock = std::chrono::steady_clock;
     using Milliseconds = std::chrono::duration<double, std::milli>;
 
@@ -145,7 +145,7 @@ int main() {
                         }
                     }
                 const double error = std::sqrt(difference / norm);
-                // all coefficients must agree with the public LE path in relative Frobenius norm
+                // all coefficients must agree with the public AIRM path in relative Frobenius norm
                 fdapde_strong_assert(
                   std::isfinite(error) && error < 1e-10, std::runtime_error,
                   "interpolation result differs from reference");

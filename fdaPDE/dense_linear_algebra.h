@@ -76,6 +76,7 @@ struct unchecked_t { };
 #include "src/linear_algebra/partial_piv_lu.h"
 #include "src/linear_algebra/qr.h"
 #include "src/linear_algebra/evd.h"
+#include "src/linear_algebra/cholesky.h"
 #include "src/linear_algebra/xpr.h"
 
 #include "src/linear_algebra/spd.h"

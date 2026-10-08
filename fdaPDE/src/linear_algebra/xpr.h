@@ -1014,6 +1014,13 @@ template <typename XprType_> struct MatrixExpr {
         }
     }
 
+    /// @brief orthonormalizes a copy of the square input into an owning orthogonal matrix
+    constexpr auto orthogonalize() const {
+        using Scalar = std::remove_cv_t<typename XprType::Scalar>;
+        constexpr int Order = XprType::Rows == Dynamic ? XprType::Cols : XprType::Rows;
+        return OrthogonalMatrix<Scalar, Order, XprType::StorageOrder>(derived(), fdapde::orthogonalize);
+    }
+
     // triangular block accessors
     /// @brief returns a view of the selected triangular region
     template <int BlockMode> constexpr Triangular<BlockMode, const XprType> triangular_block() const& {

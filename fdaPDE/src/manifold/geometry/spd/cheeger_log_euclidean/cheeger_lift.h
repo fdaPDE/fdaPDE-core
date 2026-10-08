@@ -22,7 +22,7 @@ template <typename S, int N, typename X> Matrix<S, N, N> cheeger_eigenframe(cons
 /// @brief specializes rotation differentials in dimensions two and three and reuses SO(n) otherwise
 template <typename S, int N> class CheegerRotationDifferential {
    public:
-    using Tangent = SkewSymmetricMatrix<S, N, N>;
+    using Tangent = SkewSymmetricMatrix<S, N>;
     /// @brief prepares the scalar Rodrigues coefficient or the general adjoint spectrum
     explicit CheegerRotationDifferential(const Tangent& omega) : omega_(omega), squared_(cheeger_inner(omega, omega)) {
         if (omega.rows() > 3) general_.emplace(omega);
@@ -57,8 +57,8 @@ template <typename S, int N> class CheegerRotationDifferential {
 template <typename S, int N> class CheegerLift {
    public:
     using Sym = SymmetricMatrix<S, N>;
-    using Skew = SkewSymmetricMatrix<S, N, N>;
-    using Rotation = RotationMatrix<S, N, N, RotationCache::Log>;
+    using Skew = SkewSymmetricMatrix<S, N>;
+    using Rotation = RotationMatrix<S, N, RotationCache::Log>;
     using Batch = MatrixBatch<Rotation>;
     using Dense = Matrix<S, Dynamic, Dynamic>;
     using Vec = Vector<S, Dynamic>;

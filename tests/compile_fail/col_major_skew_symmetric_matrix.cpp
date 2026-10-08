@@ -16,6 +16,6 @@
 
 #include <fdaPDE/dense_linear_algebra.h>
 
-fdapde::SkewSymmetricMatrix<double, 3, 3, fdapde::ColMajor> col_major_skew_symmetric_matrix;
+fdapde::SkewSymmetricMatrix<double, 3, fdapde::ColMajor> col_major_skew_symmetric_matrix;
 
 int main() { return col_major_skew_symmetric_matrix.rows(); }

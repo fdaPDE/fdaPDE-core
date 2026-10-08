@@ -1,6 +1,6 @@
 # Native rotation P1 interpolation
 
-The runnable [rotation interpolation tutorial](../examples/geometric_finite_elements/so_p1_interpolation.cpp)
+The runnable [rotation interpolation tutorial](../examples/geometric_finite_elements/01_so_p1_interpolation.cpp)
 shows native values, first and mixed covariant derivatives, and metric adjoints
 without a spatial mesh.
 See the [example instructions](../examples/README.md) to build and run it.
@@ -11,7 +11,7 @@ spaces. The native value and derivative kernels do not require Eigen.
 
 ```cpp
 using Geometry = fdapde::manifold::SOGeometry<double, 3>;
-using Rotation = fdapde::RotationMatrix<double, 3, 3>;
+using Rotation = fdapde::RotationMatrix<double, 3>;
 Geometry geometry;
 fdapde::MatrixBatch<Rotation> coefficients(mesh.n_nodes());
 // assign certified nodal rotations in the scalar P1 DOF order

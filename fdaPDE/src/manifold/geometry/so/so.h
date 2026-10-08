@@ -50,7 +50,7 @@ template <typename Curve> class rotation_geodesic_expr : public GeometryExpr<rot
     /// @brief reconstructs one matrix without rotation certification for ordinary destinations
     auto eval_matrix() const { return curve_.eval(t_); }
     /// @brief certifies a reconstructed rotation with the requested cache policy
-    template <typename Policy> auto eval() const { return RotationMatrix<Scalar, Rows, Cols, Policy>(eval_matrix()); }
+    template <typename Policy> auto eval() const { return RotationMatrix<Scalar, Rows, Policy>(eval_matrix()); }
    private:
     Curve curve_;
     double t_;
@@ -119,11 +119,11 @@ template <typename S, int N, RotationUsage Uses = RotationUsage::None> class SOG
     static_assert((static_cast<unsigned>(Uses) & ~7u) == 0, "invalid SO geometry usage");
     using Scalar = S;
     using CachePolicy = std::conditional_t<Uses == RotationUsage::None, RotationCache::None, RotationCache::Log>;
-    using Point = RotationMatrix<S, N, N, CachePolicy>;
-    using Tangent = SkewSymmetricMatrix<S, N, N>;
+    using Point = RotationMatrix<S, N, CachePolicy>;
+    using Tangent = SkewSymmetricMatrix<S, N>;
     /// @brief retains one relative logarithm and optional immutable differential preparation
     struct RelativeFrame {
-        RotationMatrix<S, N, N, RotationCache::Log> relative;
+        RotationMatrix<S, N, RotationCache::Log> relative;
         std::optional<internals::SOLogDifferential<S, N>> differential;
     };
     /// @brief prepares spatial rotation interpolation over a simplex or an immutable mesh
@@ -270,7 +270,7 @@ template <typename S, int N, RotationUsage Uses = RotationUsage::None> class SOG
     template <RotationLike Q, RotationLike R> RelativeFrame relative_frame(const Q& from, const R& to) const {
         check_point_(from);
         check_point_(to);
-        return {RotationMatrix<S, N, N, RotationCache::Log>(from.transpose() * to), std::nullopt};
+        return {RotationMatrix<S, N, RotationCache::Log>(from.transpose() * to), std::nullopt};
     }
     /// @brief reuses the retained minimum body logarithm without repeating the relative decomposition
     Tangent logarithm(const RelativeFrame& frame) const {
@@ -379,7 +379,7 @@ template <typename S, int N, RotationUsage Uses = RotationUsage::None> class SOG
         check_point_(to);
         check_tangent_(branch.tangent);
         const auto endpoint = exponential(from, branch.tangent);
-        const RotationMatrix<S, N, N, RotationCache::Log> relative(from.transpose() * to);
+        const RotationMatrix<S, N, RotationCache::Log> relative(from.transpose() * to);
         const double tolerance = 512 * n_ * std::numeric_limits<S>::epsilon();
         double error = 0;
         for (int i = 0; i < n_; ++i)
@@ -435,7 +435,7 @@ template <typename S, int N, RotationUsage Uses = RotationUsage::None> class SOG
     template <RotationLike Q, RotationLike R> auto relative_(const Q& from, const R& to) const {
         check_point_(from);
         check_point_(to);
-        return RotationMatrix<S, N, N>(from.transpose() * to);
+        return RotationMatrix<S, N>(from.transpose() * to);
     }
     int n_ = N;
 };

@@ -82,7 +82,7 @@ template <typename Scalar_, int Order, typename Policy> class symmetric_cache_sl
                   std::isfinite(static_cast<Scalar>(value(i, j))), std::invalid_argument,
                   "symmetric coefficients must be finite");
         const EVD evd(value);
-        const auto vectors = evd.eigenvectors();
+        const auto& vectors = evd.eigenvectors();
         for (int i = 0; i < n_; ++i) {
             for (int j = 0; j < n_; ++j) data_[std::size_t(i) * n_ + j] = vectors(i, j);
             fdapde_strong_assert(

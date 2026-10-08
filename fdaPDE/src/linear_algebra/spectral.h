@@ -100,7 +100,7 @@ auto apply_spectral_function(const MatrixExpr<XprType_>& matrix, UnaryOp_&& oper
 
         Matrix<double, Rows, Cols> result;
         if constexpr (Rows == Dynamic || Cols == Dynamic) { result.resize(dimension, dimension); }
-        const auto eigenvectors = decomposition.eigenvectors();
+        const auto& eigenvectors = decomposition.eigenvectors();
         for (int i = 0; i < dimension; ++i) {
             for (int j = 0; j < dimension; ++j) {
                 double value = 0.0;

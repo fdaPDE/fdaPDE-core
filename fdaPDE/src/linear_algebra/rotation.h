@@ -32,16 +32,16 @@ using Log = Policy<2>;
 template <typename... Policies> using Union = Policy<(Policies::Flags | ... | 0u)>;
 }   // namespace RotationCache
 /// @brief owns a verified orientation-preserving orthogonal matrix and its selected algebraic cache
-template <typename S, int R, int C, typename P = RotationCache::None> class RotationMatrix;
+template <typename S, int N, typename P = RotationCache::None> class RotationMatrix;
 /// @brief borrows a verified rotation with joint coefficient and cache replacement
-template <typename S, int R, int C, typename P = RotationCache::None> class RotationMatrixView;
+template <typename S, int N, typename P = RotationCache::None> class RotationMatrixView;
 namespace internals {
 /// @brief recognizes only verified rotation owners and their controlled views
 template <typename T> struct is_rotation : std::false_type { };
 /// @brief recognizes the checked owning rotation type
-template <typename S, int R, int C, typename P> struct is_rotation<RotationMatrix<S, R, C, P>> : std::true_type { };
+template <typename S, int N, typename P> struct is_rotation<RotationMatrix<S, N, P>> : std::true_type { };
 /// @brief recognizes views created exclusively from checked rotation storage
-template <typename S, int R, int C, typename P> struct is_rotation<RotationMatrixView<S, R, C, P>> : std::true_type { };
+template <typename S, int N, typename P> struct is_rotation<RotationMatrixView<S, N, P>> : std::true_type { };
 
 /// @brief binds selected real planes and compact logarithms to an external cache buffer
 template <typename S, int N, typename P> class rotation_cache_slot {
@@ -137,7 +137,7 @@ template <typename S, int N, typename P> class rotation_cache_slot {
         requires(HasLog)
     {
         fdapde_strong_assert(diagnostics_.unique(), std::domain_error, "rotation logarithm is ambiguous or unresolved");
-        return SkewSymmetricMatrixView<const S, N, N>(data_ + log_offset_(), n_, n_);
+        return SkewSymmetricMatrixView<const S, N>(data_ + log_offset_(), n_, n_);
     }
     /// @brief returns branch diagnostics even when no ordinary logarithm is available
     RotationLogDiagnostics diagnostics() const { return diagnostics_; }
@@ -162,19 +162,18 @@ concept RotationLike = internals::is_rotation<std::remove_cvref_t<T>>::value;
 
 /// @brief owns finite rotations checked for orthogonality and positive determinant
 /// @details coefficient access is read-only and every replacement commits coefficients and cache together
-template <typename S, int R, int C, typename P>
-class RotationMatrix : public OrthogonalMatrixExpr<RotationMatrix<S, R, C, P>> {
+template <typename S, int N, typename P> class RotationMatrix : public OrthogonalMatrixExpr<RotationMatrix<S, N, P>> {
    public:
     static_assert(
       std::is_floating_point_v<S> && std::same_as<S, std::remove_cv_t<S>>,
       "rotation scalar must be unqualified floating point");
-    static_assert((R == Dynamic && C == Dynamic) || (R > 0 && R == C), "rotation shape must be square");
+    static_assert(N == Dynamic || N > 0, "rotation order must be positive or Dynamic");
     using Scalar = S;
     using CachePolicy = P;
-    using CacheSlot = internals::rotation_cache_slot<S, R, P>;
-    using View = RotationMatrixView<S, R, C, P>;
-    using ConstView = RotationMatrixView<const S, R, C, P>;
-    static constexpr int Rows = R, Cols = C, StorageOrder = RowMajor, NestAsRef = 1, ReadOnly = 1;
+    using CacheSlot = internals::rotation_cache_slot<S, N, P>;
+    using View = RotationMatrixView<S, N, P>;
+    using ConstView = RotationMatrixView<const S, N, P>;
+    static constexpr int Order = N, Rows = N, Cols = N, StorageOrder = RowMajor, NestAsRef = 1, ReadOnly = 1;
     using assignment_executor = internals::deleted_assignment_executor;
     /// @brief rejects an owner with no verified coefficients
     RotationMatrix() = delete;
@@ -208,9 +207,9 @@ class RotationMatrix : public OrthogonalMatrixExpr<RotationMatrix<S, R, C, P>> {
         return *this;
     }
     /// @brief creates a verified identity and its known cache without Schur computation
-    static RotationMatrix Identity(int n = R) {
+    static RotationMatrix Identity(int n = N) {
         fdapde_strong_assert(
-          n > 0 && (R == Dynamic || n == R), std::invalid_argument, "rotation identity: invalid order");
+          n > 0 && (N == Dynamic || n == N), std::invalid_argument, "rotation identity: invalid order");
         return RotationMatrix(n, identity_t {});
     }
     /// @brief returns the matrix order
@@ -240,12 +239,12 @@ class RotationMatrix : public OrthogonalMatrixExpr<RotationMatrix<S, R, C, P>> {
         requires(P::Flags != 0)
     = delete;
    private:
-    template <typename, int, int, typename> friend class RotationMatrixView;
+    template <typename, int, typename> friend class RotationMatrixView;
     using CacheOwner = internals::matrix_cache_owner<CacheSlot>;
     /// @brief restricts the known-identity construction path to the owning factory
     struct identity_t { };
     /// @brief initializes exact identity coefficients and selected cached quantities
-    RotationMatrix(int n, identity_t) : data_(IdentityMatrix<S, R, C>(n, n)) {
+    RotationMatrix(int n, identity_t) : data_(IdentityMatrix<S, N, N>(n, n)) {
         if constexpr (P::Flags) {
             cache_ = std::make_unique<CacheOwner>(n);
             cache_->slot.set_identity();
@@ -254,9 +253,9 @@ class RotationMatrix : public OrthogonalMatrixExpr<RotationMatrix<S, R, C, P>> {
     /// @brief validates dimensions and the SO(n) invariants before publishing coefficients
     template <typename Xpr> static auto checked_storage_(const MatrixExpr<Xpr>& source) {
         fdapde_strong_assert(
-          source.rows() > 0 && source.rows() == source.cols() && (R == Dynamic || source.rows() == R),
+          source.rows() > 0 && source.rows() == source.cols() && (N == Dynamic || source.rows() == N),
           std::invalid_argument, "rotation: invalid square shape");
-        const Matrix<S, R, C> value(source);
+        const Matrix<S, N, N> value(source);
         fdapde_strong_assert(
           internals::is_orthogonal(value), std::domain_error, "rotation: coefficients must be finite and orthogonal");
         fdapde_strong_assert(value.determinant() > S(0), std::domain_error, "rotation: reflections are not in SO(n)");
@@ -272,23 +271,23 @@ class RotationMatrix : public OrthogonalMatrixExpr<RotationMatrix<S, R, C, P>> {
                 cache_.swap(candidate.cache_);
         }
     }
-    Matrix<S, R, C> data_;
+    Matrix<S, N, N> data_;
     [[no_unique_address]] std::conditional_t<P::Flags == 0, internals::empty_spd_cache<4>, std::unique_ptr<CacheOwner>>
       cache_;
 };
 
 /// @brief borrows verified dense coefficients and preserves the SO(n) contract on assignment
 /// @details owner destruction or shape changes invalidate views; view assignment keeps its original binding
-template <typename S, int R, int C, typename P>
-class RotationMatrixView : public OrthogonalMatrixExpr<RotationMatrixView<S, R, C, P>> {
+template <typename S, int N, typename P>
+class RotationMatrixView : public OrthogonalMatrixExpr<RotationMatrixView<S, N, P>> {
    public:
     using Scalar = std::remove_const_t<S>;
-    using Owner = RotationMatrix<Scalar, R, C, P>;
+    using Owner = RotationMatrix<Scalar, N, P>;
     using CachePolicy = P;
     using CacheSlot = typename Owner::CacheSlot;
-    using View = RotationMatrixView<Scalar, R, C, P>;
-    using ConstView = RotationMatrixView<const Scalar, R, C, P>;
-    static constexpr int Rows = R, Cols = C, StorageOrder = RowMajor, NestAsRef = 0, ReadOnly = 1;
+    using View = RotationMatrixView<Scalar, N, P>;
+    using ConstView = RotationMatrixView<const Scalar, N, P>;
+    static constexpr int Order = N, Rows = N, Cols = N, StorageOrder = RowMajor, NestAsRef = 0, ReadOnly = 1;
     using assignment_executor = internals::deleted_assignment_executor;
     /// @brief copies a verified view binding
     RotationMatrixView(const RotationMatrixView&) = default;
@@ -360,7 +359,7 @@ class RotationMatrixView : public OrthogonalMatrixExpr<RotationMatrixView<S, R, 
     = delete;
    private:
     template <typename, int> friend class MatrixBatch;
-    template <typename, int, int, typename> friend class RotationMatrixView;
+    template <typename, int, typename> friend class RotationMatrixView;
     /// @brief binds batch-owned verified coefficients and their optional cache slot
     RotationMatrixView(S* data, int n, CacheSlot* cache) : data_(data), n_(n), cache_(cache) { }
     S* data_;
@@ -373,11 +372,11 @@ template <RotationLike L, RotationLike R> auto operator*(const L& left, const R&
     using S = promote_type_t<typename L::Scalar, typename R::Scalar>;
     const Matrix<S, L::Rows, L::Cols> a(left);
     const Matrix<S, R::Rows, R::Cols> b(right);
-    return RotationMatrix<S, L::Rows, R::Cols, typename L::CachePolicy>(a * b);
+    return RotationMatrix<S, L::Rows, typename L::CachePolicy>(a * b);
 }
 /// @brief returns a minimum skew logarithm together with branch diagnostics
 template <typename S, int N> struct RotationLogResult {
-    SkewSymmetricMatrix<S, N, N> tangent;
+    SkewSymmetricMatrix<S, N> tangent;
     RotationLogDiagnostics diagnostics;
 };
 /// @brief explicitly selects a minimum logarithm, including a deterministic branch at the cut locus
@@ -386,8 +385,7 @@ template <RotationLike Q> auto minimum_rotation_log(const Q& q) {
     constexpr int N = Q::Rows;
     if constexpr ((Q::CachePolicy::Flags & 2) != 0) {
         if (q.cache().diagnostics().unique())
-            return RotationLogResult<S, N> {
-              SkewSymmetricMatrix<S, N, N>(q.cache().logarithm()), q.cache().diagnostics()};
+            return RotationLogResult<S, N> {SkewSymmetricMatrix<S, N>(q.cache().logarithm()), q.cache().diagnostics()};
     }
     if constexpr ((Q::CachePolicy::Flags & 1) != 0)
         return RotationLogResult<S, N> {
@@ -403,7 +401,7 @@ template <RotationLike Q> auto rotation_log(const Q& q) {
     using S = typename Q::Scalar;
     constexpr int N = Q::Rows;
     if constexpr ((Q::CachePolicy::Flags & 2) != 0)
-        return SkewSymmetricMatrix<S, N, N>(q.cache().logarithm());
+        return SkewSymmetricMatrix<S, N>(q.cache().logarithm());
     else if constexpr ((Q::CachePolicy::Flags & 1) != 0) {
         fdapde_strong_assert(
           q.cache().diagnostics().unique(), std::domain_error, "rotation logarithm is ambiguous or unresolved");
@@ -433,7 +431,7 @@ template <RotationLike Q> double rotation_distance_identity(const Q& q) {
 /// @brief maps a finite skew tangent to a verified rotation with the requested cache policy
 template <typename P = RotationCache::None, typename Xpr>
 auto rotation_exp(const SkewSymmetricMatrixExpr<Xpr>& tangent, double step = 1) {
-    return RotationMatrix<std::remove_cv_t<typename Xpr::Scalar>, Xpr::Rows, Xpr::Cols, P>(
+    return RotationMatrix<std::remove_cv_t<typename Xpr::Scalar>, Xpr::Rows, P>(
       internals::skew_exponential(tangent, step));
 }
 }   // namespace fdapde

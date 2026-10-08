@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // compile from the repository root with c++ -std=c++20 -O2 -pthread -I.
-// examples/manifold/so_maps_and_branches.cpp
+// examples/manifold/02_so_maps_and_branches.cpp
 #include <fdaPDE/manifold_geometry.h>
 
 #include <cmath>

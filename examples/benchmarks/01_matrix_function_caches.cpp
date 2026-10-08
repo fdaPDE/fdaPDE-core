@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // compile from the repository root with c++ -std=c++20 -O3 -I.
-// examples/benchmarks/matrix_function_caches.cpp
+// examples/benchmarks/01_matrix_function_caches.cpp
 #include <fdaPDE/manifold_geometry.h>
 
 #include <chrono>
@@ -26,8 +26,8 @@ int main() {
     using Dense = Matrix<double, 6, 6>;
     using Clock = std::chrono::steady_clock;
     using Milliseconds = std::chrono::duration<double, std::milli>;
-    using Point = RotationMatrix<double, 6, 6>;
-    using CachedPoint = RotationMatrix<double, 6, 6, RotationCache::Log>;
+    using Point = RotationMatrix<double, 6>;
+    using CachedPoint = RotationMatrix<double, 6, RotationCache::Log>;
     constexpr int repetitions = 2000;
     double checksum = 0;
     Dense input {IdentityMatrix<double, 6, 6>()};

@@ -62,7 +62,7 @@ template <typename S, int N> class rotation_schur {
         for (int i = 0; i < n; ++i)
             for (int j = 0; j <= i; ++j) h(i, j) = S(0.5) * (q(i, j) + q(j, i));
         const EVD decomposition(h);
-        const auto basis = decomposition.eigenvectors();
+        const auto& basis = decomposition.eigenvectors();
         std::vector<int> indices(n);
         for (int i = 0; i < n; ++i) indices[i] = i;
         std::sort(indices.begin(), indices.end(), [&](int a, int b) {
@@ -103,7 +103,7 @@ template <typename S, int N> class rotation_schur {
             for (int i = 0; i < m; ++i)
                 for (int j = 0; j < m; ++j) lift(m + i, j) = skew(i, j);
             const EVD sine_evd(lift);
-            const auto sine_basis = sine_evd.eigenvectors();
+            const auto& sine_basis = sine_evd.eigenvectors();
             std::vector<int> order(2 * m);
             for (int i = 0; i < 2 * m; ++i) order[i] = i;
             std::sort(order.begin(), order.end(), [&](int a, int b) {
@@ -242,7 +242,7 @@ template <typename S, int N> class rotation_schur {
     }
     /// @brief reconstructs the selected minimum skew logarithm from its rotation planes
     template <typename Basis, typename Angles> static auto logarithm(const Basis& basis, const Angles& angles) {
-        SkewSymmetricMatrix<S, N, N> result;
+        SkewSymmetricMatrix<S, N> result;
         const int n = basis.rows();
         if constexpr (N == Dynamic) result.resize(n, n);
         for (int i = 0; i < n; ++i)

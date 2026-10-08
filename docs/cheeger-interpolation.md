@@ -1,6 +1,6 @@
 # Native C-LE SPD(n) interpolation
 
-The runnable [Cheeger tutorial](../examples/geometric_finite_elements/cheeger_p1_interpolation.cpp) follows
+The runnable [Cheeger tutorial](../examples/geometric_finite_elements/02_cheeger_p1_interpolation.cpp) follows
 interpolation with nodal rho and differentiates the scalar field. Build
 instructions are in the [example index](../examples/README.md).
 

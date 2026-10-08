@@ -118,7 +118,7 @@ TEST(CheegerSmoothing, JointGradientsAndGeometry) {
 TEST(CheegerSmoothing, SpecializedRotationDifferentials) {
     for (int n : {2, 3})
         for (double angle : {0., 1e-7, .2, 1.4, 3.}) {
-            SkewSymmetricMatrix<double, Dynamic, Dynamic> omega(n, n), v(n, n);
+            SkewSymmetricMatrix<double, Dynamic> omega(n, n), v(n, n);
             for (int i = 0; i < n; ++i)
                 for (int j = i + 1; j < n; ++j) {
                     omega(i, j) = i == 0 && j == 1 ? angle : 0;

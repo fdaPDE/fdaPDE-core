@@ -6,7 +6,7 @@ see [LE/AIRM smoothing](spd-smoothing.md).
 Rotation-valued P1 fields use the same spatial API; see
 [rotation interpolation and derivatives](rotation-interpolation.md).
 
-The runnable [geometric finite elements example](../examples/geometric_finite_elements/spd_p1_field.cpp)
+The runnable [geometric finite elements example](../examples/geometric_finite_elements/04_spd_p1_field.cpp)
 shows space and field construction, point and batch evaluation, local derivatives
 and their metric adjoints, cell quadrature and spatial-plan reuse after coefficient updates.
 

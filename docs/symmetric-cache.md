@@ -99,12 +99,17 @@ An invalidated cache is refreshed first; a source without a spectral cache uses
 the native eigensolver. The result preserves scalar precision and remains valid
 after source mutation or destruction. Eigenvalues are not guaranteed to be sorted.
 `matrix.eigenvectors()` similarly returns an independent
-`OrthogonalMatrix<Scalar, Order, Order>`, copying a reusable cache's eigenvectors or running
+`OrthogonalMatrix<Scalar, Order>`, copying a reusable cache's eigenvectors or running
 the native eigensolver. Its columns follow the corresponding eigenvalue order;
 signs and bases within repeated eigenspaces are not unique. After mutable
 `data()` access, every `eigenvalues()` or `eigenvectors()` request refreshes the
-spectrum, just like `cache()` and `evd()`. Use `evd()` when both factors are
-required from one decomposition.
+spectrum, just like `cache()` and `evd()`. With `Cache::Spectral`, separate direct
+requests reuse the same prepared decomposition until a tracked write invalidates
+it. Without that policy, use `evd()` when both factors are required from one
+decomposition: `evd.eigenvalues()` borrows a const vector and
+`evd.eigenvectors()` borrows a validated `OrthogonalMatrix<Scalar, Order>`.
+These references require the decomposition to remain alive and must not outlive
+its recomputation; the direct matrix methods return independent owners.
 
 Symmetric and SPD owners, views and expressions provide `exp<Policy>()`, which
 returns a checked owning SPD exponential; SPD inputs also provide
@@ -197,5 +202,5 @@ batches; materialize selections or maps before using them. See
 [owning spectral operations](matrix-batch.md#owning-spectral-operations) for the
 execution and empty-batch contracts.
 
-The example `examples/benchmarks/matrix_function_caches.cpp` compares repeated exponentials with and
+The example `examples/benchmarks/01_matrix_function_caches.cpp` compares repeated exponentials with and
 without spectral caching.

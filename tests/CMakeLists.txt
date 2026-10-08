@@ -73,11 +73,17 @@ if(NOT FDAPDE_NATIVE_ONLY)
   add_library(fdapde_linear_algebra_header_check OBJECT public_headers/linear_algebra.cpp)
   fdapde_configure_target(fdapde_linear_algebra_header_check)
   target_link_libraries(fdapde_linear_algebra_header_check PRIVATE Eigen3::Eigen)
+
+  add_executable(fdapde_sparse_block_test linear_algebra/sparse_block_matrix.cpp)
+  fdapde_configure_target(fdapde_sparse_block_test)
+  target_link_libraries(fdapde_sparse_block_test PRIVATE GTest::gtest_main Eigen3::Eigen)
+  gtest_discover_tests(fdapde_sparse_block_test PROPERTIES TIMEOUT 60)
 endif()
 
 set(dense_sources
   linear_algebra/block.cpp
   linear_algebra/bool.cpp
+  linear_algebra/cholesky.cpp
   linear_algebra/diagonal.cpp
   linear_algebra/evd.cpp
   linear_algebra/historical_boolean.cpp
@@ -99,7 +105,7 @@ fdapde_configure_target(fdapde_dense_test)
 target_link_libraries(fdapde_dense_test PRIVATE GTest::gtest_main)
 gtest_discover_tests(fdapde_dense_test PROPERTIES TIMEOUT 60)
 
-# orthogonalization is required computation even when debug assertion arguments are erased
+# structured factor computation and public validation remain active when debug checks are erased
 add_executable(fdapde_orthogonal_disabled_test linear_algebra/orthogonal_disabled.cpp)
 fdapde_configure_target(fdapde_orthogonal_disabled_test)
 target_compile_definitions(fdapde_orthogonal_disabled_test PRIVATE FDAPDE_NO_DEBUG)
@@ -292,7 +298,7 @@ target_link_libraries(fdapde_so_test PRIVATE GTest::gtest_main)
 gtest_discover_tests(fdapde_so_test PROPERTIES TIMEOUT 60)
 fdapde_reject_program(invalid_rotation_cache_policy "rotation cache supports Schur and Log only")
 fdapde_reject_program(invalid_symmetric_cache_policy "symmetric cache supports None and Spectral only")
-fdapde_reject_program(partial_dynamic_rotation "rotation shape must be square")
+fdapde_reject_program(invalid_rotation_order "rotation order must be positive or Dynamic")
 fdapde_reject_program(invalid_so_usage "invalid SO geometry usage")
 
 add_library(fdapde_geometric_discretization_header_check OBJECT public_headers/geometric_discretization.cpp)

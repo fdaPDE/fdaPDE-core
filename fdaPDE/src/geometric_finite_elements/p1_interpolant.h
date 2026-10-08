@@ -90,7 +90,7 @@ template <typename Interpolant> class p1_interpolant_expr : public GeometryExpr<
     /// @brief evaluates a certified geometric point, throwing if its mean does not converge
     template <typename Policy> auto eval() const {
         if constexpr (RotationLike<typename Prepared::Point>)
-            return RotationMatrix<Scalar, Rows, Cols, Policy>(interpolant_.evaluate(weights_));
+            return RotationMatrix<Scalar, Rows, Policy>(interpolant_.evaluate(weights_));
         else
             return SPDMatrix<Scalar, Rows, Policy>(interpolant_.evaluate(weights_));
     }

@@ -48,6 +48,14 @@ struct is_verified_spd<spd_matrix_impl<S, Order, P, O>> : std::true_type { };
 /// @brief recognizes views whose bindings are created exclusively from checked native storage
 template <typename S, int Order, typename P, int O>
 struct is_verified_spd<SPDMatrixView<S, Order, P, O>> : std::true_type { };
+/// @brief permits retained lower-factor reuse from native SPD owners with a Cholesky policy
+template <typename S, int Order, typename P, int O>
+struct is_cholesky_cache_source<spd_matrix_impl<S, Order, P, O>> :
+    std::bool_constant<(P::Flags & Cache::Cholesky::Flags) != 0> { };
+/// @brief permits retained lower-factor reuse from native SPD views with a Cholesky policy
+template <typename S, int Order, typename P, int O>
+struct is_cholesky_cache_source<SPDMatrixView<S, Order, P, O>> :
+    std::bool_constant<(P::Flags & Cache::Cholesky::Flags) != 0> { };
 /// @brief permits reuse of certified owner eigenpairs when spectral storage was selected
 template <typename S, int Order, typename P, int O>
 struct is_spectral_cache_source<spd_matrix_impl<S, Order, P, O>> :
@@ -65,6 +73,20 @@ concept SPDLike = internals::is_verified_spd<std::remove_cvref_t<T>>::value;
 template <typename XprType_> struct SPDMatrixExpr : public SymmetricMatrixExpr<XprType_> {
     using XprType = std::decay_t<XprType_>;
     using SymmetricMatrixExpr<XprType_>::derived;
+    /// @brief returns an independent Cholesky decomposition, reusing a retained input factor when available
+    auto cholesky() const { return Cholesky<XprType>(derived()); }
+    /// @brief returns an owning lower Cholesky factor, reusing a native factor cache when available
+    /// @details works with any cache policy and remains valid after source replacement or destruction
+    auto cholesky_factor() const {
+        using Scalar = std::remove_cv_t<typename XprType::Scalar>;
+        using Factor = LowerTriangularMatrix<Scalar, XprType::Rows>;
+        if constexpr (internals::is_cholesky_cache_source<XprType>::value) {
+            return Factor(derived().cache().cholesky());
+        } else {
+            const auto decomposition = cholesky();
+            return Factor(decomposition.L());
+        }
+    }
     /// @brief returns the matrix logarithm as an owning symmetric matrix with the requested output cache
     /// @details reuses the input cache independently of the output policy; coefficients are not logged individually
     template <typename Policy = Cache::None> auto log() const;
@@ -455,7 +477,7 @@ auto reconstruct_symmetric(const XprType_& evd, int dimension, const VectorType_
     constexpr int Rows = XprType::Rows;
     SymmetricMatrix<Scalar, Rows> result;
     if constexpr (Rows == Dynamic) { result.resize(dimension, dimension); }
-    const auto eigenvectors = evd.eigenvectors();
+    const auto& eigenvectors = evd.eigenvectors();
     for (int i = 0; i < dimension; ++i) {
         for (int j = 0; j <= i; ++j) {
             Scalar value = Scalar(0);
@@ -586,7 +608,7 @@ auto second_frechet_symmetric(
         q_coefficients.resize(dimension, dimension);
     }
 
-    const auto eigenvectors = evd.eigenvectors();
+    const auto& eigenvectors = evd.eigenvectors();
     for (int i = 0; i < dimension; ++i) {
         for (int j = 0; j < dimension; ++j) {
             Scalar first_value = Scalar(0);
@@ -699,7 +721,7 @@ auto frechet_symmetric(
     }
 
     // rotate the direction into the eigenvector basis before applying the divided differences
-    const auto eigenvectors = evd.eigenvectors();
+    const auto& eigenvectors = evd.eigenvectors();
     for (int i = 0; i < extent; ++i) {
         for (int j = 0; j < extent; ++j) {
             Scalar value = Scalar(0);
@@ -999,7 +1021,7 @@ template <typename Policy_, typename XprType_> auto matrix_inv(const SPDMatrixEx
         else if constexpr (internals::spd_cache_has_v<InputPolicy, Cache::Cholesky>) {
             const auto factor = value.cache().cholesky();
             const IdentityMatrix<Scalar, XprType::Rows, XprType::Rows> identity(value.rows(), value.rows());
-            const auto inverse_factor = factor.template triangular_block<Lower>().solve(identity);
+            const auto inverse_factor = factor.solve(identity);
             return Result((inverse_factor.transpose() * inverse_factor).template as_symmetric<Lower>());
         } else if constexpr (internals::spd_cache_has_v<InputPolicy, Cache::InverseSqrt>) {
             const auto factor = value.cache().template matrix<Cache::InverseSqrt>();

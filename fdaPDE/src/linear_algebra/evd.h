@@ -21,6 +21,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 #include <type_traits>
 
@@ -47,19 +48,18 @@ template <typename XprType_> class EVD {
     using Scalar = std::remove_cv_t<typename XprType::Scalar>;
     static constexpr int Rows = XprType::Rows;
     static constexpr int Cols = XprType::Cols;
+    static constexpr int Order = Rows == Dynamic ? Cols : Rows;
     fdapde_static_assert(std::is_floating_point_v<Scalar>, EVD_REQUIRES_FLOATING_POINT_SCALARS);
 
     /// @brief creates an uncomputed decomposition with no available factors
     constexpr EVD() = default;
     /// @brief computes Jacobi eigenpairs from a finite, nonempty symmetric matrix
-    template <typename MatrixType> constexpr explicit EVD(const SymmetricMatrixExpr<MatrixType>& matrix) {
-        compute(matrix);
-    }
+    template <typename MatrixType> constexpr explicit EVD(const MatrixExpr<MatrixType>& matrix) { compute(matrix); }
 
     // maximum-pivot Jacobi rotations with scale normalization; see Golub and
     // van Loan, Matrix Computations, Section 8.5
     /// @brief computes symmetric eigenpairs with scaled Jacobi rotations and throws if iteration does not converge
-    template <typename MatrixType> constexpr void compute(const SymmetricMatrixExpr<MatrixType>& matrix) {
+    template <typename MatrixType> constexpr void compute(const MatrixExpr<MatrixType>& matrix) {
         computed_ = false;
         fdapde_static_assert(
           MatrixType::Rows == Dynamic || Rows == Dynamic || MatrixType::Rows == Rows, INVALID_EVD_MATRIX_STATIC_SHAPE);
@@ -80,24 +80,23 @@ template <typename XprType_> class EVD {
           internals::is_spectral_cache_source<std::remove_cvref_t<MatrixType>>::value &&
           std::same_as<Scalar, std::remove_cv_t<typename MatrixType::Scalar>>) {
             const auto& cached = matrix.derived().cache();
-            if constexpr (Rows == Dynamic) {
-                eigenvectors_.resize(n, n);
-                eigenvalues_.resize(n);
-            }
+            if constexpr (Rows == Dynamic) eigenvalues_.resize(n);
             const auto vectors = cached.eigenvectors();
             const auto values = cached.eigenvalues();
-            for (int i = 0; i < n; ++i) {
-                eigenvalues_[i] = values[i];
-                for (int j = 0; j < n; ++j) eigenvectors_(i, j) = vectors(i, j);
-            }
+            for (int i = 0; i < n; ++i) eigenvalues_[i] = values[i];
+            eigenvectors_.emplace(vectors);
             computed_ = true;
             return;
         }
 
+        if constexpr (!is_symmetric_matrix_v<MatrixType>) internals::validate_symmetric_coefficients(matrix.derived());
+
         if constexpr (
           (Rows == 2 || Rows == 3) && Cols == Rows &&
           (std::is_same_v<Scalar, float> || std::is_same_v<Scalar, double>)) {
-            internals::small_symmetric_evd<Rows>(matrix.derived(), eigenvectors_.data(), eigenvalues_.data());
+            Matrix<Scalar, Rows, Rows> vectors;
+            internals::small_symmetric_evd<Rows>(matrix.derived(), vectors.data(), eigenvalues_.data());
+            eigenvectors_.emplace(vectors);
             computed_ = true;
             return;
         }
@@ -115,9 +114,10 @@ template <typename XprType_> class EVD {
         const Scalar normalization = matrix_scale == Scalar(0) ? Scalar(1) : matrix_scale;
         diagonalized /= normalization;
 
-        if constexpr (Rows == Dynamic || Cols == Dynamic) eigenvectors_.resize(n, n);
-        eigenvectors_.set_zero();
-        for (int i = 0; i < n; ++i) eigenvectors_(i, i) = Scalar(1);
+        Matrix<Scalar, Order, Order> vectors;
+        if constexpr (Order == Dynamic) vectors.resize(n, n);
+        vectors.set_zero();
+        for (int i = 0; i < n; ++i) vectors(i, i) = Scalar(1);
 
         const Scalar epsilon = std::numeric_limits<Scalar>::epsilon();
         const Scalar tolerance = fdapde::max(std::numeric_limits<Scalar>::min(), epsilon * static_cast<Scalar>(n));
@@ -163,41 +163,110 @@ template <typename XprType_> class EVD {
                 diagonalized(row, q) = diagonalized(q, row) = sine * arp + cosine * arq;
             }
             for (int row = 0; row < n; ++row) {
-                const Scalar erp = eigenvectors_(row, p);
-                const Scalar erq = eigenvectors_(row, q);
-                eigenvectors_(row, p) = cosine * erp - sine * erq;
-                eigenvectors_(row, q) = sine * erp + cosine * erq;
+                const Scalar erp = vectors(row, p);
+                const Scalar erq = vectors(row, q);
+                vectors(row, p) = cosine * erp - sine * erq;
+                vectors(row, q) = sine * erp + cosine * erq;
             }
         }
 
         if constexpr (Rows == Dynamic) eigenvalues_.resize(n);
         for (int i = 0; i < n; ++i) eigenvalues_[i] = diagonalized(i, i) * normalization;
+        eigenvectors_.emplace(vectors);
         computed_ = true;
     }
 
     /// @brief returns unsorted eigenvalues in the same order as the eigenvector columns
     constexpr const Vector<Scalar, Rows>& eigenvalues() const& {
-        fdapde_assert(computed_, std::logic_error, "eigendecomposition has not been computed");
+        fdapde_strong_assert(computed_, std::logic_error, "eigendecomposition has not been computed");
         return eigenvalues_;
     }
     /// @brief rejects access through a temporary decomposition to prevent dangling factor references
     constexpr void eigenvalues() const&& = delete;
-    /// @brief returns a borrowed orthogonal adaptor whose columns match the computed eigenvalues
-    constexpr auto eigenvectors() const& {
-        fdapde_assert(computed_, std::logic_error, "eigendecomposition has not been computed");
-        return internals::orthogonal_cast(eigenvectors_);
+    /// @brief borrows the validated orthogonal owner whose columns match the computed eigenvalues
+    constexpr const OrthogonalMatrix<Scalar, Order>& eigenvectors() const& {
+        fdapde_strong_assert(computed_, std::logic_error, "eigendecomposition has not been computed");
+        return *eigenvectors_;
     }
     /// @brief rejects access through a temporary decomposition to prevent dangling factor references
     constexpr void eigenvectors() const&& = delete;
     /// @brief reports whether a factorization has been computed
     constexpr bool computed() const { return computed_; }
+
+    /// @brief solves a numerically nonsingular symmetric system using retained eigenpairs and finite right-hand sides
+    /// @details rejects eigenvalue magnitudes at or below dimension times epsilon times the largest magnitude
+    template <typename RhsType> auto solve(const MatrixExpr<RhsType>& rhs) const {
+        const auto& Q = eigenvectors();
+        const int n = Q.rows();
+        fdapde_static_assert(
+          RhsType::Rows == Dynamic || Order == Dynamic || RhsType::Rows == Order, INVALID_EVD_RHS_STATIC_SHAPE);
+        fdapde_strong_assert(
+          rhs.rows() == n && rhs.cols() > 0, std::invalid_argument,
+          "EVD solve requires matching nonempty right-hand sides");
+        Scalar spectral_scale = Scalar(0);
+        for (int i = 0; i < n; ++i) {
+            fdapde_strong_assert(
+              std::isfinite(eigenvalues_[i]), std::domain_error, "EVD solve requires finite eigenvalues");
+            spectral_scale = std::max(spectral_scale, std::abs(eigenvalues_[i]));
+        }
+        fdapde_strong_assert(spectral_scale > Scalar(0), std::domain_error, "EVD solve requires a nonzero spectrum");
+        const Scalar tolerance = Scalar(n) * std::numeric_limits<Scalar>::epsilon();
+        for (int i = 0; i < n; ++i)
+            fdapde_strong_assert(
+              std::abs(eigenvalues_[i]) / spectral_scale > tolerance, std::domain_error,
+              "EVD solve requires numerical nonsingularity");
+        for (int i = 0; i < n; ++i)
+            for (int j = 0; j < rhs.cols(); ++j)
+                fdapde_strong_assert(
+                  std::isfinite(static_cast<Scalar>(rhs.derived()(i, j))), std::invalid_argument,
+                  "EVD solve requires finite right-hand sides");
+
+        // solve in the eigenvector basis with normalized loads and signed eigenvalues
+        Matrix<long double, Order, RhsType::Cols> projected;
+        Matrix<Scalar, Order, RhsType::Cols> solution;
+        if constexpr (Order == Dynamic || RhsType::Cols == Dynamic) {
+            projected.resize(n, rhs.cols());
+            solution.resize(n, rhs.cols());
+        }
+        int spectral_exponent = 0;
+        const long double spectral_fraction = std::frexp(static_cast<long double>(spectral_scale), &spectral_exponent);
+        for (int col = 0; col < rhs.cols(); ++col) {
+            Scalar rhs_scale = Scalar(0);
+            for (int k = 0; k < n; ++k)
+                rhs_scale = std::max(rhs_scale, std::abs(static_cast<Scalar>(rhs.derived()(k, col))));
+            const Scalar normalization = rhs_scale == Scalar(0) ? Scalar(1) : rhs_scale;
+            for (int i = 0; i < n; ++i) {
+                long double value = 0;
+                for (int k = 0; k < n; ++k)
+                    value += static_cast<long double>(Q(k, i)) *
+                             (static_cast<long double>(static_cast<Scalar>(rhs.derived()(k, col))) / normalization);
+                projected(i, col) = value / (static_cast<long double>(eigenvalues_[i]) / spectral_scale);
+            }
+
+            // return to the original basis and restore scale without forming an overflowing scale ratio
+            int rhs_exponent = 0;
+            const long double rhs_fraction = std::frexp(static_cast<long double>(normalization), &rhs_exponent);
+            for (int i = 0; i < n; ++i) {
+                long double value = 0;
+                for (int k = 0; k < n; ++k) value += static_cast<long double>(Q(i, k)) * projected(k, col);
+                int exponent = 0;
+                const long double fraction = std::frexp(value, &exponent);
+                const Scalar coefficient = static_cast<Scalar>(std::scalbn(
+                  fraction * rhs_fraction / spectral_fraction, exponent + rhs_exponent - spectral_exponent));
+                fdapde_strong_assert(
+                  std::isfinite(coefficient), std::domain_error, "EVD solution is not representable");
+                solution(i, col) = coefficient;
+            }
+        }
+        return solution;
+    }
    private:
-    Matrix<Scalar, Rows, Cols> eigenvectors_;
+    std::optional<OrthogonalMatrix<Scalar, Order>> eigenvectors_;
     Vector<Scalar, Rows> eigenvalues_;
     bool computed_ = false;
 };
 
-template <typename XprType> EVD(const SymmetricMatrixExpr<XprType>&) -> EVD<XprType>;
+template <typename XprType> EVD(const MatrixExpr<XprType>&) -> EVD<XprType>;
 
 }   // namespace fdapde
 

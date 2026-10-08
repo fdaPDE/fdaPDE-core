@@ -37,7 +37,7 @@ auto small_frechet_symmetric(
     Scalar hq[Dimension][Dimension];
     Scalar coefficients[Dimension][Dimension];
     Scalar q_coefficients[Dimension][Dimension];
-    const auto eigenvectors = spectral.eigenvectors();
+    const auto& eigenvectors = spectral.eigenvectors();
     const auto& eigenvalues = spectral.eigenvalues();
     for (int i = 0; i < Dimension; ++i) {
         for (int j = 0; j < Dimension; ++j) q[i][j] = eigenvectors(i, j);

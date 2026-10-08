@@ -82,7 +82,7 @@ the input elements; `P` is an explicit output cache policy defaulting to
 | `inv<P>()` | symmetric | `SymmetricMatrix<Scalar, Order, P>` |
 | `inv()` | dense, diagonal or orthogonal | corresponding native inverse owner |
 | `eigenvalues()` | symmetric or SPD | `Vector<Scalar, Order>` |
-| `eigenvectors()` | symmetric or SPD | `OrthogonalMatrix<Scalar, Order, Order>` |
+| `eigenvectors()` | symmetric or SPD | `OrthogonalMatrix<Scalar, Order>` |
 | `diagonal()` | square matrices | `Vector<Scalar, Order>` |
 | `trace()`, `determinant()` | square matrices | `Matrix<Scalar, 1, 1>` |
 | `norm()`, `squared_norm()` | matrices, including rectangular shapes | `Matrix<Scalar, 1, 1>` |
@@ -169,7 +169,12 @@ diagonals have shape `order x 1`, and scalar results have shape `1 x 1`.
 They contain zero entries and submit no worker tasks; shape restrictions still
 apply before returning an empty result.
 
-These methods belong to owning native batches. To apply them to a selection or
+`squared_norm(policy)` is also available directly on maps, selections and arithmetic
+expressions. It evaluates each entry and returns an independent owning
+`MatrixBatch<Matrix<Scalar, 1, 1>>`, preserving the selection order and counting
+both reflected halves of structured matrices. It accepts either execution policy.
+
+The other methods belong to owning native batches. To apply them to a selection or
 map, first materialize that expression into a `MatrixBatch`; the independent
 element storage then supports parallel evaluation. Expression materialization
 also accepts an execution policy through `eval()` or `assign()`.
@@ -252,8 +257,8 @@ cannot silently store only one triangle. SPD destination updates additionally
 certify the resulting values through native SPD construction. For a parallel
 update, use `a.assign(a + shift, execution_par)`.
 
-See the standalone [arithmetic tutorial](../examples/linear_algebra/matrix_batch_arithmetic.cpp),
-kept separate from the [spectral operations tutorial](../examples/linear_algebra/spd_batch_operations.cpp).
+See the standalone [arithmetic tutorial](../examples/linear_algebra/09_matrix_batch_arithmetic.cpp),
+kept separate from the [spectral operations tutorial](../examples/linear_algebra/10_spd_batch_operations.cpp).
 
 ## Expressions
 

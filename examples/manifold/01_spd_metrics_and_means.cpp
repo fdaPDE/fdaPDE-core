@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // compile from the repository root with c++ -std=c++20 -O2 -pthread -I.
-// examples/manifold/spd_metrics_and_means.cpp
+// examples/manifold/01_spd_metrics_and_means.cpp
 #include <fdaPDE/manifold_means.h>
 
 #include <array>

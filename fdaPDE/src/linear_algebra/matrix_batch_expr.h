@@ -79,9 +79,9 @@ template <typename Result, bool Numeric = std::is_arithmetic_v<std::remove_cvref
         if constexpr (SPDLike<Xpr>)
             return std::type_identity<SPDMatrix<Scalar, Xpr::Rows, typename Xpr::CachePolicy>> {};
         else if constexpr (RotationLike<Xpr>)
-            return std::type_identity<RotationMatrix<Scalar, Xpr::Rows, Xpr::Cols, typename Xpr::CachePolicy>> {};
+            return std::type_identity<RotationMatrix<Scalar, Xpr::Rows, typename Xpr::CachePolicy>> {};
         else if constexpr (is_orthogonal_matrix_v<Xpr> && std::floating_point<Scalar>)
-            return std::type_identity<OrthogonalMatrix<Scalar, Xpr::Rows, Xpr::Cols>> {};
+            return std::type_identity<OrthogonalMatrix<Scalar, Xpr::Rows>> {};
         else if constexpr (NativeSymmetricLike<Xpr>)
             return std::type_identity<SymmetricMatrix<Scalar, Xpr::Rows, typename Xpr::CachePolicy>> {};
         else if constexpr (is_diagonal_matrix_v<Xpr>)
@@ -89,7 +89,7 @@ template <typename Result, bool Numeric = std::is_arithmetic_v<std::remove_cvref
         else if constexpr (is_symmetric_matrix_v<Xpr>)
             return std::type_identity<SymmetricMatrix<Scalar, Xpr::Rows>> {};
         else if constexpr (is_skew_symmetric_matrix_v<Xpr>)
-            return std::type_identity<SkewSymmetricMatrix<Scalar, Xpr::Rows, Xpr::Cols>> {};
+            return std::type_identity<SkewSymmetricMatrix<Scalar, Xpr::Rows>> {};
         else
             return std::type_identity<Matrix<Scalar, Xpr::Rows, Xpr::Cols>> {};
     }
@@ -111,7 +111,7 @@ template <typename Value> auto batch_const_view(const Value& value) {
         if constexpr (SPDLike<Value> || RotationLike<Value> || NativeSymmetricLike<Value>)
             return value.view();
         else if constexpr (is_orthogonal_matrix_v<Value>)
-            return View(value.data().data(), value.rows(), value.cols(), unchecked);
+            return value.view();
         else if constexpr (is_diagonal_matrix_v<Value>) {
             if constexpr (Value::Rows == Dynamic)
                 return View(value.data(), value.rows());
@@ -397,6 +397,11 @@ template <typename Derived> class MatrixBatchExpr {
       /// @brief rejects borrowing an expiring owning batch
       template <typename Function>
       void map(Function) const&& = delete;
+    /// @brief materializes each entry's logical squared Frobenius norm as an owning one-by-one matrix
+    template <internals::BatchExecutionPolicy ExecutionPolicy = execution_seq_t>
+    auto squared_norm(ExecutionPolicy policy = {}) const {
+        return map([](const auto& value) { return value.squared_norm(); }).eval(policy);
+    }
     /// @brief folds values in increasing index order without materializing an intermediate batch
     template <typename Accumulator, typename Function> Accumulator redux(Accumulator init, Function function) const {
         for (std::size_t i = 0; i < derived().size(); ++i) {

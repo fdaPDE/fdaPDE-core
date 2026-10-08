@@ -253,12 +253,6 @@ class MatrixBatch : public MatrixBatchExpr<MatrixBatch<MatrixType_, StorageOrder
         using Result = Matrix<Scalar, 1, 1>;
         return materialize_<Result>(1, 1, policy, [](const auto& point) { return Result(point.norm()); });
     }
-    /// @brief sums squared logical coefficients per element, including both mirrored symmetric entries
-    template <internals::BatchExecutionPolicy ExecutionPolicy = execution_seq_t>
-    auto squared_norm(ExecutionPolicy policy = {}) const {
-        using Result = Matrix<Scalar, 1, 1>;
-        return materialize_<Result>(1, 1, policy, [](const auto& point) { return Result(point.squared_norm()); });
-    }
     /// @brief materializes each square element's main diagonal as an independent column vector
     template <internals::BatchExecutionPolicy ExecutionPolicy = execution_seq_t>
         requires(MatrixType::Rows == Dynamic || MatrixType::Cols == Dynamic || MatrixType::Rows == MatrixType::Cols)
@@ -290,7 +284,7 @@ class MatrixBatch : public MatrixBatchExpr<MatrixBatch<MatrixType_, StorageOrder
     template <internals::BatchExecutionPolicy ExecutionPolicy = execution_seq_t>
         requires(std::floating_point<Scalar> && (SPDLike<MatrixType> || NativeSymmetricLike<MatrixType>))
     auto eigenvectors(ExecutionPolicy policy = {}) const {
-        using Result = OrthogonalMatrix<Scalar, MatrixType::Rows, MatrixType::Cols>;
+        using Result = OrthogonalMatrix<Scalar, MatrixType::Rows>;
         return materialize_<Result>(rows_, cols_, policy, [](const auto& point) { return point.eigenvectors(); });
     }
     /// @brief materializes checked SPD exponentials from symmetric elements using available input spectral caches
@@ -459,7 +453,7 @@ class MatrixBatch : public MatrixBatchExpr<MatrixBatch<MatrixType_, StorageOrder
             } else
                 return Target(data, rows_, const_cast<typename MatrixType::CacheSlot*>(cache_.pointers[i]));
         } else if constexpr (is_orthogonal_matrix_v<MatrixType>)
-            return Target(data, rows_, cols_, unchecked);
+            return Target(data, rows_, cols_, typename Target::verified_t {});
         else if constexpr (is_diagonal_matrix_v<MatrixType>) {
             if constexpr (MatrixType::Rows == Dynamic)
                 return Target(data, rows_);
@@ -477,6 +471,9 @@ class MatrixBatch : public MatrixBatchExpr<MatrixBatch<MatrixType_, StorageOrder
             const MatrixType candidate(value);
             std::copy_n(candidate.data(), stride_, data_.data() + i * stride_);
             if constexpr (CachePolicy::Flags != 0) cache_.slots[i].copy_from(candidate.cache());
+        } else if constexpr (is_orthogonal_matrix_v<MatrixType>) {
+            const MatrixType candidate(value);
+            std::copy_n(candidate.data().data(), stride_, data_.data() + i * stride_);
         } else {
             if constexpr (is_skew_symmetric_matrix_v<MatrixType>)
                 static_assert(

@@ -17,6 +17,6 @@
 // rotation cache bit four is unsupported and must trigger its policy diagnostic
 #include <fdaPDE/dense_linear_algebra.h>
 int main() {
-    auto q = fdapde::RotationMatrix<double, 2, 2, fdapde::RotationCache::Policy<4>>::Identity();
+    auto q = fdapde::RotationMatrix<double, 2, fdapde::RotationCache::Policy<4>>::Identity();
     (void)q;
 }

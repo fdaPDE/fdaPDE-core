@@ -1124,7 +1124,7 @@ TEST(LinearAlgebraRuntimeContracts, ScalarDivisionPreservesStructuredMatrixCateg
     static_assert(is_diagonal_matrix_v<decltype(diagonal_divided)>);
     // dividing a diagonal matrix scales only its stored diagonal entries
     EXPECT_EQ((Matrix<double, 2, 2>(diagonal_divided)), (Matrix<double, 2, 2>({1.5, 0.0, 0.0, 2.5})));
-    const LowerTriangularMatrix<double, 2, 2> triangular(symmetric_values);
+    const LowerTriangularMatrix<double, 2> triangular(symmetric_values);
     const auto triangular_divided = triangular / 2;
     // scalar division preserves the triangular expression tag
     static_assert(is_triangular_matrix_v<decltype(triangular_divided)>);

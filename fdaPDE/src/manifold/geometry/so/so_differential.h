@@ -23,7 +23,7 @@ namespace fdapde::manifold::internals {
 /// @details with K = ad(log(Q)), the distance Hessian is f(-K*K), f(x) = sqrt(x)/2 cot(sqrt(x)/2)
 template <typename S, int N> class SOLogDifferential {
    public:
-    using Tangent = SkewSymmetricMatrix<S, N, N>;
+    using Tangent = SkewSymmetricMatrix<S, N>;
     /// @brief prepares the native symmetric spectrum and divided differences once per relative logarithm
     explicit SOLogDifferential(const Tangent& logarithm) : n_(logarithm.rows()), k_(ad(logarithm)) {
         const int m = k_.rows();

@@ -25,7 +25,7 @@ namespace {
 using namespace fdapde;
 using G = manifold::SOGeometry<double, Dynamic>;
 using Dense = Matrix<double, Dynamic, Dynamic>;
-using Cached = RotationMatrix<double, Dynamic, Dynamic, RotationCache::Union<RotationCache::Schur, RotationCache::Log>>;
+using Cached = RotationMatrix<double, Dynamic, RotationCache::Union<RotationCache::Schur, RotationCache::Log>>;
 
 // the supported optimizer contracts use body skew tangents and owning verified points
 static_assert(manifold::GeodesicGeometry<G> && manifold::VectorTransportGeometry<G>);
@@ -51,6 +51,9 @@ Dense plane(int n, double angle) {
 
 // checked rotations reject reflections and nonfinite or nonorthogonal coefficients regardless of debug mode
 TEST(SORotation, InvariantsAndAtomicViewReplacement) {
+    using Fixed = RotationMatrix<double, 2>;
+    // one static order determines both rotation axes while preserving the verified native type
+    static_assert(Fixed::Order == 2 && Fixed::Rows == Fixed::Cols && RotationLike<Fixed>);
     const Dense reflection(Matrix<double, 2, 2>({1, 0, 0, -1}));
     // a reflection is orthogonal but violates the determinant plus-one invariant
     EXPECT_THROW((Cached(reflection)), std::domain_error);
@@ -88,9 +91,9 @@ TEST(SORotation, InvariantsAndAtomicViewReplacement) {
 // ordinary logs reject the cut locus while explicit branches and distances remain available for every policy
 TEST(SORotation, CutLocusAndNumericalProximity) {
     const Dense cut(Matrix<double, 2, 2>({-1, 0, 0, -1}));
-    const RotationMatrix<double, 2, 2> none(cut);
-    const RotationMatrix<double, 2, 2, RotationCache::Schur> schur(cut);
-    const RotationMatrix<double, 2, 2, RotationCache::Log> log(cut);
+    const RotationMatrix<double, 2> none(cut);
+    const RotationMatrix<double, 2, RotationCache::Schur> schur(cut);
+    const RotationMatrix<double, 2, RotationCache::Log> log(cut);
     const Cached both(cut);
     // selecting a logarithm cache does not reject a valid cut-locus rotation or hide its ambiguity
     EXPECT_EQ(log.cache().diagnostics().status, RotationLogStatus::Ambiguous);
@@ -160,10 +163,10 @@ TEST(SORotation, GeneralOrderConjugatedPlanes) {
             // exponentiating an explicitly selected minimum logarithm reconstructs the known conjugated blocks
             expect_matrix(rotation_exp(branch.tangent), expected, 2e-10);
         }
-    const RotationMatrix<float, 3, 3, RotationCache::Log> single(Matrix<float, 3, 3>({0, -1, 0, 1, 0, 0, 0, 0, 1}));
+    const RotationMatrix<float, 3, RotationCache::Log> single(Matrix<float, 3, 3>({0, -1, 0, 1, 0, 0, 0, 0, 1}));
     // fixed single-precision rotations use the same general path and angle normalization
     EXPECT_NEAR(rotation_distance_identity(single), std::sqrt(2.) * std::numbers::pi / 2, 2e-5);
-    const auto trivial = RotationMatrix<double, 1, 1, RotationCache::Log>::Identity();
+    const auto trivial = RotationMatrix<double, 1, RotationCache::Log>::Identity();
     // the trivial SO(1) group has zero distance and a valid empty skew logarithm
     EXPECT_DOUBLE_EQ(rotation_distance_identity(trivial), 0);
 }
@@ -230,7 +233,7 @@ TEST(SORotation, BatchCachesAndSelections) {
     EXPECT_NEAR(read.cache().distance(), std::sqrt(2.) * .9, 1e-12);
     // deep batch copies retain the original independent cache contents
     EXPECT_NEAR(saved[1].cache().distance(), std::sqrt(2.) * .6, 1e-12);
-    MatrixBatch<RotationMatrix<double, 1, 1, RotationCache::Log>> trivial(2);
+    MatrixBatch<RotationMatrix<double, 1, RotationCache::Log>> trivial(2);
     // zero-dimensional SO(1) caches also initialize correctly inside aggregate batch storage
     EXPECT_DOUBLE_EQ(trivial[0].cache().distance(), 0);
 }
@@ -246,7 +249,7 @@ TEST(SOGeometry, FixedOrderAndInvalidInputs) {
     const auto invalid = curve(std::numeric_limits<double>::quiet_NaN());
     // parameter validation is deferred until complete expression materialization
     EXPECT_THROW((Fixed(invalid)), std::invalid_argument);
-    const auto wrong = RotationMatrix<double, Dynamic, Dynamic>::Identity(3);
+    const auto wrong = RotationMatrix<double, Dynamic>::Identity(3);
     // geometry methods reject a verified point having the wrong runtime order
     EXPECT_THROW(geometry.distance(first, wrong), std::invalid_argument);
     auto branch = geometry.minimum_logarithm(first, last);

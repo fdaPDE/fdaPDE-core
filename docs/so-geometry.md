@@ -1,16 +1,16 @@
 # Rotations and SO(n)
 
-The standalone [geometry tutorial](../examples/manifold/so_maps_and_branches.cpp) demonstrates
+The standalone [geometry tutorial](../examples/manifold/02_so_maps_and_branches.cpp) demonstrates
 tangent coordinates and branch selection; the
-[product optimization tutorial](../examples/manifold/so_product_optimization.cpp) solves
+[product optimization tutorial](../examples/manifold/03_so_product_optimization.cpp) solves
 a coupled rotation problem with both optimizers. Build them using the
 [example instructions](../examples/README.md).
 
 Include `<fdaPDE/manifold_geometry.h>` for geometric operations and
 `<fdaPDE/manifold_means.h>` for Karcher means. Add
 `<fdaPDE/manifold_solvers.h>` for optimization; see the
-[module boundaries](manifold-modules.md). `RotationMatrix<Scalar, Rows, Cols,
-Policy>` supports positive fixed square orders and fully dynamic square orders.
+[module boundaries](manifold-modules.md). `RotationMatrix<Scalar, Order, Policy>`
+supports positive fixed orders and `Dynamic` for runtime order.
 SO(1) is the trivial group. It uses the native orthogonal expression interface,
 finite coefficient checks, the existing orthogonality tolerance
 `64 * order * epsilon`, and a positive determinant check. Reflections are rejected.
@@ -155,7 +155,7 @@ must outlive their expressions without replacement or moving. Ordinary dense
 materialization reconstructs coefficients; rotation destinations additionally
 certify the rounded matrix and prepare their requested cache.
 
-The standalone `examples/benchmarks/matrix_function_caches.cpp` reports cache preparation separately from
+The standalone `examples/benchmarks/01_matrix_function_caches.cpp` reports cache preparation separately from
 repeated per-point operations and compares prepared interpolation with repeated
 exponential evaluation. It does not claim reuse of endpoint logarithms for a
 relative rotation. C-LE geometry and logarithm Frechet derivatives are not included.

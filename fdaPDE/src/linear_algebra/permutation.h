@@ -250,16 +250,14 @@ constexpr auto operator*(const PermutationMatrixExpr<LhsXprType>& lhs, const Per
 
 // owning permutation matrix type.
 /// @brief represents a permutation matrix
-template <int Rows_, int Cols_>
-class PermutationMatrix : public PermutationMatrixExpr<PermutationMatrix<Rows_, Cols_>> {
-    fdapde_static_assert((Rows_ == Dynamic || Rows_ > 0) && (Cols_ == Dynamic || Cols_ > 0), INVALID_MATRIX_DIMENSIONS);
-    fdapde_static_assert(
-      Rows_ == Dynamic || Cols_ == Dynamic || Rows_ == Cols_, THIS_CLASS_IS_FOR_SQUARE_MATRICES_ONLY);
-    using StorageType = Vector<int, Rows_>;
+template <int Order_> class PermutationMatrix : public PermutationMatrixExpr<PermutationMatrix<Order_>> {
+    fdapde_static_assert(Order_ == Dynamic || Order_ > 0, INVALID_MATRIX_DIMENSIONS);
+    using StorageType = Vector<int, Order_>;
    public:
     using Scalar = int;
-    static constexpr int Rows = Rows_;
-    static constexpr int Cols = Cols_;
+    static constexpr int Order = Order_;
+    static constexpr int Rows = Order_;
+    static constexpr int Cols = Order_;
     static constexpr int StorageOrder = StorageType::StorageOrder;
     static constexpr int NestAsRef = 1;
     static constexpr int ReadOnly = 1;
@@ -267,7 +265,7 @@ class PermutationMatrix : public PermutationMatrixExpr<PermutationMatrix<Rows_, 
     // constructors
     /// @brief creates a fixed identity permutation or an empty dynamic permutation
     constexpr PermutationMatrix() : permutation_() {
-        if constexpr (Rows_ != Dynamic || Cols_ != Dynamic) set_identity_(static_shape_());
+        if constexpr (Order_ != Dynamic) set_identity_(static_shape_());
     }
     // copy-semantic
     /// @brief copies the permutation indices into independent storage
@@ -301,9 +299,7 @@ class PermutationMatrix : public PermutationMatrixExpr<PermutationMatrix<Rows_, 
     template <typename Scalar__, std::size_t Size>
         requires(std::integral<std::remove_cv_t<Scalar__>>)
     constexpr explicit PermutationMatrix(const Scalar__ (&permutation)[Size]) : permutation_() {
-        fdapde_static_assert(
-          Rows_ != Dynamic && Cols_ != Dynamic && Rows_ == Size && Cols_ == Size,
-          THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
+        fdapde_static_assert(Order_ != Dynamic && Order_ == Size, THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
         load_(static_cast<int>(Size), [&permutation](int i) { return permutation[static_cast<std::size_t>(i)]; });
     }
     // observers
@@ -325,22 +321,18 @@ class PermutationMatrix : public PermutationMatrixExpr<PermutationMatrix<Rows_, 
     }
    private:
     /// @brief returns the compile-time permutation dimension
-    static constexpr int static_shape_() {
-        if constexpr (Rows_ != Dynamic) return Rows_;
-        if constexpr (Cols_ != Dynamic) return Cols_;
-        return 0;
-    }
+    static constexpr int static_shape_() { return Order_ == Dynamic ? 0 : Order_; }
     /// @brief sets identity
     constexpr void set_identity_(int size) {
-        if constexpr (Rows_ == Dynamic) permutation_.resize(size);
+        if constexpr (Order_ == Dynamic) permutation_.resize(size);
         for (int i = 0; i < size; ++i) permutation_[i] = i;
     }
     /// @brief validates the dimension and prepares permutation storage
     constexpr void prepare_size_(int size) {
         fdapde_assert(
-          !(size < 0 || (Rows_ != Dynamic && size != Rows_) || (Cols_ != Dynamic && size != Cols_)),
-          std::invalid_argument, "permutation size does not match its static shape");
-        if constexpr (Rows_ == Dynamic) permutation_.resize(size);
+          !(size < 0 || (Order_ != Dynamic && size != Order_)), std::invalid_argument,
+          "permutation size does not match its static shape");
+        if constexpr (Order_ == Dynamic) permutation_.resize(size);
     }
     /// @brief loads and validates a permutation
     template <typename Reader> constexpr void load_(int size, Reader&& read) {
@@ -360,7 +352,7 @@ class PermutationMatrix : public PermutationMatrixExpr<PermutationMatrix<Rows_, 
     /// @brief copies permutation dimensions and indices into this owner
     constexpr void clone_(const PermutationMatrix& rhs) {
         if (this == std::addressof(rhs)) return;
-        if constexpr (Rows_ == Dynamic) permutation_.resize(rhs.rows());
+        if constexpr (Order_ == Dynamic) permutation_.resize(rhs.rows());
         for (int i = 0; i < rhs.rows(); ++i) permutation_[i] = rhs.permutation_[i];
     }
     StorageType permutation_;

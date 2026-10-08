@@ -8,7 +8,7 @@ opt-in and is not included by `core.h`. Add `<fdaPDE/manifold_means.h>` for
 `weighted_karcher_mean` and `<fdaPDE/manifold_solvers.h>` for optimization. See the
 [module boundaries](manifold-modules.md) for responsibilities and dependencies.
 
-The runnable [SPD geometry tutorial](../examples/manifold/spd_metrics_and_means.cpp) compares
+The runnable [SPD geometry tutorial](../examples/manifold/01_spd_metrics_and_means.cpp) compares
 LE, AIRM, BW, log-Cholesky and Cheeger metrics and weighted means. See the
 [example index](../examples/README.md) for build instructions and API coverage.
 
@@ -334,8 +334,8 @@ become singular or numerically ill-conditioned. Only an SPD destination certifie
 positive definiteness and selects its cache policy; the certification EVD also
 prepares the requested cache.
 
-The standalone examples `examples/benchmarks/spd_airm_interpolation.cpp` (AIRM) and
-`examples/benchmarks/spd_log_euclidean_interpolation.cpp` (LE) compare cached inputs, output cache
+The standalone examples `examples/benchmarks/03_spd_airm_interpolation.cpp` (AIRM) and
+`examples/benchmarks/02_spd_log_euclidean_interpolation.cpp` (LE) compare cached inputs, output cache
 costs, and prepared curves in a single `main` with separate scopes. Cases 4 and 5
 use identical preparation and `points[i] = curve(t)` evaluation. Only the batch
 element type changes: SPD in case 4, symmetric in case 5. Case 5 defers SPD

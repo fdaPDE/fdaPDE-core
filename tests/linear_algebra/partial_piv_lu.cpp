@@ -84,6 +84,16 @@ template <int StorageOrder> void check_partial_piv_lu_contracts() {
     EXPECT_DOUBLE_EQ(const_view_factorization.determinant(), -7.0);
     expect_matrix_near(const_view_factorization.solve(rhs), expected);
 
+    const Matrix<double, Dynamic, 3, StorageOrder> fixed_columns(matrix);
+    const PartialPivLU fixed_order_factorization(fixed_columns);
+    // a known column count determines the single static order of all square LU factors
+    static_assert(
+      std::is_same_v<std::remove_cvref_t<decltype(fixed_order_factorization.P())>, PermutationMatrix<3>> &&
+      std::is_same_v<std::remove_cvref_t<decltype(fixed_order_factorization.L())>, LowerTriangularMatrix<double, 3>> &&
+      std::is_same_v<std::remove_cvref_t<decltype(fixed_order_factorization.U())>, UpperTriangularMatrix<double, 3>>);
+    // factors inferred from the fixed column count solve the same known system
+    expect_matrix_near(fixed_order_factorization.solve(rhs), expected);
+
     const auto retained_factorization = [] {
         const matrix_type source({0.0, 2.0, 1.0, 1.0, -2.0, -3.0, 2.0, 3.0, 1.0});
         const matrix_type zero = matrix_type::Zero();

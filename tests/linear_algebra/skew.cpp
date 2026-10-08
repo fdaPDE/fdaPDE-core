@@ -60,8 +60,8 @@ template <typename MatrixType>
 concept permits_scalar_compound_multiply = requires(MatrixType& matrix) { matrix *= 2.0; };
 
 using lifetime_matrix = Matrix<double, 3, 3>;
-using skew_matrix = SkewSymmetricMatrix<double, 3, 3>;
-using const_skew_view = SkewSymmetricMatrixView<const double, 3, 3>;
+using skew_matrix = SkewSymmetricMatrix<double, 3>;
+using const_skew_view = SkewSymmetricMatrixView<const double, 3>;
 
 // a temporary dense owner cannot lend a skew-symmetric wrapper
 static_assert(!permits_temporary_skew<lifetime_matrix>);
@@ -70,9 +70,9 @@ static_assert(!permits_const_temporary_skew<lifetime_matrix>);
 // a stored expression can safely retain a skew-symmetric wrapper
 static_assert(permits_expression_skew<lifetime_matrix>);
 // a fixed nonempty skew view requires an explicit storage binding
-static_assert(!std::is_default_constructible_v<SkewSymmetricMatrixView<double, 3, 3>>);
+static_assert(!std::is_default_constructible_v<SkewSymmetricMatrixView<double, 3>>);
 // a dynamic skew view permits an initially empty binding
-static_assert(std::is_default_constructible_v<SkewSymmetricMatrixView<double, Dynamic, Dynamic>>);
+static_assert(std::is_default_constructible_v<SkewSymmetricMatrixView<double, Dynamic>>);
 // a const-storage skew view advertises read-only access
 static_assert(const_skew_view::ReadOnly == 1);
 // a const-storage skew view rejects coefficient writes
@@ -200,7 +200,7 @@ void check_packed_skew_contracts() {
     expect_matrix_near(compounds, source);
 
     std::array<double, 3> first_storage {};
-    SkewSymmetricMatrixView<double, 3, 3> first_view(first_storage.data());
+    SkewSymmetricMatrixView<double, 3> first_view(first_storage.data());
     const double* const first_address = first_view.data();
     first_view = source;
     // assignment into the first view retains its external storage binding
@@ -208,27 +208,27 @@ void check_packed_skew_contracts() {
     expect_matrix_near(first_view, source);
 
     std::array<double, 3> second_storage {};
-    SkewSymmetricMatrixView<double, 3, 3> second_view(second_storage.data());
+    SkewSymmetricMatrixView<double, 3> second_view(second_storage.data());
     second_view = first_view;
     // view-to-view assignment retains the second view's external storage binding
     EXPECT_EQ(second_view.data(), second_storage.data());
     expect_matrix_near(second_view, first_view);
 
     std::array<double, 3> temporary_storage {};
-    const auto temporary_view = SkewSymmetricMatrixView<double, 3, 3>(temporary_storage.data()) = first_view;
+    const auto temporary_view = SkewSymmetricMatrixView<double, 3>(temporary_storage.data()) = first_view;
     // assignment from a temporary view retains the destination storage binding
     EXPECT_EQ(temporary_view.data(), temporary_storage.data());
     expect_matrix_near(temporary_view, first_view);
 
     std::array<double, 4> overlap_storage {1.0, 2.0, 3.0, 0.0};
-    SkewSymmetricMatrixView<double, 3, 3> overlap_source(overlap_storage.data());
-    SkewSymmetricMatrixView<double, 3, 3> overlap_destination(overlap_storage.data() + 1);
+    SkewSymmetricMatrixView<double, 3> overlap_source(overlap_storage.data());
+    SkewSymmetricMatrixView<double, 3> overlap_destination(overlap_storage.data() + 1);
     overlap_destination = overlap_source;
     // overlapping view assignment retains the destination's original offset
     EXPECT_EQ(overlap_destination.data(), overlap_storage.data() + 1);
     expect_matrix_near(overlap_destination, expected);
 
-    const SkewSymmetricMatrixView<const double, 3, 3> const_view(first_storage.data());
+    const SkewSymmetricMatrixView<const double, 3> const_view(first_storage.data());
     // a view of const packed storage advertises read-only access
     static_assert(decltype(const_view)::ReadOnly == 1);
     // a const view reads a lower entry as the negation of the stored upper entry
@@ -236,7 +236,7 @@ void check_packed_skew_contracts() {
 }
 
 void check_dynamic_skew_contracts() {
-    SkewSymmetricMatrix<double, Dynamic, Dynamic> dynamic(std::vector<double> {1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
+    SkewSymmetricMatrix<double, Dynamic> dynamic(std::vector<double> {1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
     // resizing the dynamic skew owner updates its row count to four
     EXPECT_EQ(dynamic.rows(), 4);
     // resizing the dynamic skew owner keeps it square
@@ -254,19 +254,12 @@ void check_dynamic_skew_contracts() {
     EXPECT_EQ(dynamic.storage_size(), 3);
     expect_matrix_near(dynamic, Matrix<double, 3, 3>({0.0, 1.0, 2.0, -1.0, 0.0, 3.0, -2.0, -3.0, 0.0}));
 
-    const SkewSymmetricMatrix<double, 3, Dynamic> partial_default;
-    const SkewSymmetricMatrix<double, Dynamic, 3> other_partial_default;
-    // fixed columns determine the default partially dynamic owner's rows
-    EXPECT_EQ(partial_default.rows(), 3);
-    // fixed columns retain their declared extent in the default owner
-    EXPECT_EQ(partial_default.cols(), 3);
-    // fixed rows retain their declared extent in the default owner
-    EXPECT_EQ(other_partial_default.rows(), 3);
-    // fixed rows determine the default partially dynamic owner's columns
-    EXPECT_EQ(other_partial_default.cols(), 3);
+    using Fixed = SkewSymmetricMatrix<double, 3>;
+    // one static order determines both skew-symmetric axes
+    static_assert(Fixed::Order == 3 && Fixed::Rows == Fixed::Cols);
 
     std::array<double, 3> view_storage {4.0, 5.0, 6.0};
-    SkewSymmetricMatrixView<double, Dynamic, Dynamic> dynamic_view(view_storage.data(), 3, 3);
+    SkewSymmetricMatrixView<double, Dynamic> dynamic_view(view_storage.data(), 3, 3);
     // a dynamic view reads the sign-correct reflection of its packed coefficient
     EXPECT_DOUBLE_EQ(static_cast<double>(dynamic_view(2, 1)), -6.0);
     dynamic_view = dynamic;
@@ -274,22 +267,22 @@ void check_dynamic_skew_contracts() {
     EXPECT_EQ(dynamic_view.data(), view_storage.data());
     expect_matrix_near(dynamic_view + dynamic_view, Matrix<double, 3, 3>(dynamic + dynamic));
 
-    const SkewSymmetricMatrix<double, 1, 1> singleton;
+    const SkewSymmetricMatrix<double, 1> singleton;
     // a fixed singleton skew matrix needs no stored coefficients
     EXPECT_EQ(singleton.storage_size(), 0);
     // a fixed singleton skew matrix exposes an implicit zero diagonal
     EXPECT_DOUBLE_EQ(static_cast<double>(singleton(0, 0)), 0.0);
-    const SkewSymmetricMatrix<double, Dynamic, Dynamic> dynamic_singleton(1, 1);
+    const SkewSymmetricMatrix<double, Dynamic> dynamic_singleton(1, 1);
     // a dynamic singleton skew matrix needs no stored coefficients
     EXPECT_EQ(dynamic_singleton.storage_size(), 0);
     // a dynamic singleton skew matrix exposes an implicit zero diagonal
     EXPECT_DOUBLE_EQ(static_cast<double>(dynamic_singleton(0, 0)), 0.0);
-    const SkewSymmetricMatrixView<double, 1, 1> singleton_view(static_cast<double*>(nullptr));
+    const SkewSymmetricMatrixView<double, 1> singleton_view(static_cast<double*>(nullptr));
     // a singleton view can read its implicit diagonal without coefficient storage
     EXPECT_DOUBLE_EQ(static_cast<double>(singleton_view(0, 0)), 0.0);
 
-    const SkewSymmetricMatrix<double, Dynamic, Dynamic> empty_owner;
-    const SkewSymmetricMatrixView<double, Dynamic, Dynamic> empty_view;
+    const SkewSymmetricMatrix<double, Dynamic> empty_owner;
+    const SkewSymmetricMatrixView<double, Dynamic> empty_view;
     // an empty skew owner has zero rows
     EXPECT_EQ(empty_owner.rows(), 0);
     // an empty skew owner has zero columns
@@ -305,30 +298,29 @@ void check_dynamic_skew_contracts() {
 
     // construction rejects a packed length that cannot represent a skew matrix
     EXPECT_THROW(
-      static_cast<void>(SkewSymmetricMatrix<double, Dynamic, Dynamic>(std::vector<double> {1.0, 2.0})),
-      std::invalid_argument);
+      static_cast<void>(SkewSymmetricMatrix<double, Dynamic>(std::vector<double> {1.0, 2.0})), std::invalid_argument);
     // construction rejects a nonsquare runtime shape
-    EXPECT_THROW(static_cast<void>(SkewSymmetricMatrix<double, Dynamic, Dynamic>(2, 3)), std::invalid_argument);
-    // construction rejects runtime dimensions inconsistent with a static axis
-    EXPECT_THROW(static_cast<void>(SkewSymmetricMatrix<double, Dynamic, 3>(2, 2)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(SkewSymmetricMatrix<double, Dynamic>(2, 3)), std::invalid_argument);
+    // construction rejects packed coefficients whose inferred order differs from the fixed order
+    EXPECT_THROW(static_cast<void>(SkewSymmetricMatrix<double, 3>(std::vector<double> {1.0})), std::invalid_argument);
     // construction rejects dimensions whose packed size exceeds the supported range
     EXPECT_THROW(
-      static_cast<void>(SkewSymmetricMatrix<double, Dynamic, Dynamic>(
-        std::numeric_limits<int>::max(), std::numeric_limits<int>::max())),
+      static_cast<void>(
+        SkewSymmetricMatrix<double, Dynamic>(std::numeric_limits<int>::max(), std::numeric_limits<int>::max())),
       std::length_error);
     // a nonempty dynamic skew view rejects a null storage pointer
     EXPECT_THROW(
-      static_cast<void>(SkewSymmetricMatrixView<double, Dynamic, Dynamic>(static_cast<double*>(nullptr), 3, 3)),
+      static_cast<void>(SkewSymmetricMatrixView<double, Dynamic>(static_cast<double*>(nullptr), 3, 3)),
       std::invalid_argument);
     // a nonempty fixed skew view rejects a null storage pointer
     EXPECT_THROW(
-      static_cast<void>(SkewSymmetricMatrixView<double, 3, 3>(static_cast<double*>(nullptr))), std::invalid_argument);
+      static_cast<void>(SkewSymmetricMatrixView<double, 3>(static_cast<double*>(nullptr))), std::invalid_argument);
     // mutable skew access rejects a negative row
     EXPECT_THROW(static_cast<void>(dynamic(-1, 0)), std::out_of_range);
     // const skew access rejects a row equal to its dimension
     EXPECT_THROW(static_cast<void>(std::as_const(dynamic)(3, 0)), std::out_of_range);
 
-    SkewSymmetricMatrix<double, Dynamic, Dynamic> resize_target(3, 3);
+    SkewSymmetricMatrix<double, Dynamic> resize_target(3, 3);
     resize_target(2, 0) = 7.0;
     // resize rejects a nonsquare target shape
     EXPECT_THROW(resize_target.resize(2, 3), std::invalid_argument);
@@ -338,7 +330,7 @@ void check_dynamic_skew_contracts() {
     EXPECT_DOUBLE_EQ(static_cast<double>(resize_target(2, 0)), 7.0);
 
     std::array<double, 1> assignment_storage {9.0};
-    SkewSymmetricMatrixView<double, Dynamic, Dynamic> assignment_target(assignment_storage.data(), 2, 2);
+    SkewSymmetricMatrixView<double, Dynamic> assignment_target(assignment_storage.data(), 2, 2);
     // view assignment rejects a source of incompatible dimension
     EXPECT_THROW(assignment_target = dynamic, std::invalid_argument);
     // failed view assignment preserves the target's row count

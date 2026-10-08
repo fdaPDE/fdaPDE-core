@@ -23,7 +23,7 @@ using Geometry = manifold::SOGeometry<double, Dynamic>;
 using Point = Geometry::Point;
 using Tangent = Geometry::Tangent;
 using Dense = Matrix<double, Dynamic, Dynamic>;
-using Batch = MatrixBatch<RotationMatrix<double, Dynamic, Dynamic, RotationCache::Log>>;
+using Batch = MatrixBatch<RotationMatrix<double, Dynamic, RotationCache::Log>>;
 /// @brief supplies deterministic noncommuting body tangents across arbitrary rotation orders
 Tangent direction(int n, double seed) {
     Tangent result(n, n);

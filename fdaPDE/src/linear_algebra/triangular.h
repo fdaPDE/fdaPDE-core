@@ -25,15 +25,15 @@ namespace fdapde {
 /// @brief provides triangular expression arithmetic, determinant and substitution solves
 template <typename XprType> struct TriangularMatrixExpr;
 /// @brief owns a triangular matrix
-template <typename Scalar_, int Rows_, int Cols_, int ViewMode_, int StorageOrder_ = RowMajor> struct TriangularMatrix;
+template <typename Scalar_, int Order_, int ViewMode_, int StorageOrder_ = RowMajor> struct TriangularMatrix;
 /// @brief views external packed storage as an upper or lower triangular matrix
-template <typename Scalar_, int Rows_, int Cols_, int ViewMode_, int StorageOrder_> class TriangularMatrixView;
+template <typename Scalar_, int Order_, int ViewMode_, int StorageOrder_> class TriangularMatrixView;
 
 namespace internals {
 
 /// @brief identifies a view whose scalar type permits writes
-template <typename Scalar, int Rows, int Cols, int ViewMode, int StorageOrder>
-struct is_mutable_matrix_view<TriangularMatrixView<Scalar, Rows, Cols, ViewMode, StorageOrder>> :
+template <typename Scalar, int Rows, int ViewMode, int StorageOrder>
+struct is_mutable_matrix_view<TriangularMatrixView<Scalar, Rows, ViewMode, StorageOrder>> :
     std::bool_constant<!std::is_const_v<Scalar>> { };
 
 }   // namespace internals
@@ -215,7 +215,7 @@ template <typename XprType_> struct TriangularMatrixExpr : public MatrixExpr<Xpr
         constexpr int Cols = XprType::Cols;
         constexpr int ViewMode = XprType::ViewMode;
 
-        TriangularMatrix<Scalar, Rows, Cols, ViewMode> inverse_;
+        TriangularMatrix<Scalar, Rows, ViewMode> inverse_;
         if constexpr (Rows == 1) {
             inverse_(0, 0) = 1. / derived()(0, 0);
         } else if constexpr (Rows == 2) {
@@ -749,16 +749,14 @@ constexpr auto operator*(const TriangularMatrixExpr<LhsXprType>& lhs, const Tria
 
 // owning packed triangular matrix
 /// @brief owns a triangular matrix
-template <typename Scalar_, int Rows_, int Cols_, int ViewMode_, int StorageOrder_>
+template <typename Scalar_, int Order_, int ViewMode_, int StorageOrder_>
 struct TriangularMatrix :
     public TriangularMatrixBase<
-      Scalar_, Rows_, Cols_, ViewMode_, StorageOrder_,
-      TriangularMatrix<Scalar_, Rows_, Cols_, ViewMode_, StorageOrder_>> {
+      Scalar_, Order_, Order_, ViewMode_, StorageOrder_, TriangularMatrix<Scalar_, Order_, ViewMode_, StorageOrder_>> {
    private:
     using Base = TriangularMatrixBase<
-      Scalar_, Rows_, Cols_, ViewMode_, StorageOrder_,
-      TriangularMatrix<Scalar_, Rows_, Cols_, ViewMode_, StorageOrder_>>;
-    static constexpr int StaticShape = Rows_ != Dynamic ? Rows_ : Cols_;
+      Scalar_, Order_, Order_, ViewMode_, StorageOrder_, TriangularMatrix<Scalar_, Order_, ViewMode_, StorageOrder_>>;
+    static constexpr int StaticShape = Order_;
     static constexpr bool HasSupportedStaticStorage =
       StaticShape == Dynamic || static_cast<std::uint64_t>(StaticShape) * static_cast<std::uint64_t>(StaticShape) <=
                                   static_cast<std::uint64_t>(std::numeric_limits<int>::max());
@@ -766,14 +764,13 @@ struct TriangularMatrix :
       StaticShape == Dynamic || !HasSupportedStaticStorage ? Dynamic : StaticShape * (StaticShape + 1) / 2;
     using StorageType = Vector<Scalar_, StorageSize>;
    public:
-    fdapde_static_assert((Rows_ == Dynamic || Rows_ > 0) && (Cols_ == Dynamic || Cols_ > 0), INVALID_MATRIX_DIMENSIONS);
-    fdapde_static_assert(
-      Rows_ == Dynamic || Cols_ == Dynamic || Rows_ == Cols_, THIS_CLASS_IS_FOR_SQUARE_MATRICES_ONLY);
+    fdapde_static_assert(Order_ == Dynamic || Order_ > 0, INVALID_MATRIX_DIMENSIONS);
     fdapde_static_assert(ViewMode_ == Lower || ViewMode_ == Upper, THIS_CLASS_IS_FOR_LOWER_OR_UPPER_VIEW_MODE_ONLY);
     fdapde_static_assert(StorageOrder_ == RowMajor, PACKED_COL_MAJOR_STRUCTURED_STORAGE_IS_NOT_SUPPORTED);
     fdapde_static_assert(HasSupportedStaticStorage, MATRIX_SIZE_EXCEEDS_SUPPORTED_RANGE);
-    static constexpr int Rows = Rows_;
-    static constexpr int Cols = Cols_;
+    static constexpr int Order = Order_;
+    static constexpr int Rows = Order_;
+    static constexpr int Cols = Order_;
     static constexpr int NestAsRef = 1;
     static constexpr int StorageOrder = StorageOrder_;
     using assignment_executor = internals::triangular_assignment_executor;
@@ -792,6 +789,8 @@ struct TriangularMatrix :
     using Base::operator=;
 
     /// @brief validates square dimensions and allocates dynamic packed triangular storage
+    constexpr explicit TriangularMatrix(int order) : TriangularMatrix(order, order) { }
+    /// @brief accepts equal dimensions from generic construction and allocates dynamic packed storage
     constexpr explicit TriangularMatrix(int rows, int cols) : Base(rows, cols), data_() {
         fdapde_static_assert(Rows == Dynamic || Cols == Dynamic, THIS_METHOD_IS_FOR_DYNAMIC_SIZED_MATRICES_ONLY);
         const int storage_size = internals::checked_triangular_storage_size(this->rows_);
@@ -821,11 +820,12 @@ struct TriangularMatrix :
         requires(std::is_constructible_v<Scalar_, Scalar__>)
     constexpr explicit TriangularMatrix(const Scalar__ (&data)[Size]) : Base(), data_() {
         fdapde_static_assert(
-          Rows_ != Dynamic && Cols_ != Dynamic && StorageSize == static_cast<int>(Size),
-          THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
+          Order_ != Dynamic && StorageSize == static_cast<int>(Size), THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
         for (int i = 0; i < StorageSize; ++i) data_[i] = data[static_cast<std::size_t>(i)];
     }
     /// @brief resizes the owned storage to the requested dimensions
+    void resize(int order) { resize(order, order); }
+    /// @brief accepts equal dimensions from generic resizing
     void resize(int rows, int cols) {
         fdapde_static_assert(Rows == Dynamic || Cols == Dynamic, THIS_METHOD_IS_FOR_DYNAMIC_SIZED_MATRICES_ONLY);
         internals::validate_matrix_shape<Rows, Cols>(rows, cols);
@@ -859,28 +859,27 @@ struct TriangularMatrix :
 
 // non-owning view of packed triangular storage
 /// @brief views external packed storage as an upper or lower triangular matrix
-template <typename Scalar_, int Rows_, int Cols_, int ViewMode_, int StorageOrder_>
+template <typename Scalar_, int Order_, int ViewMode_, int StorageOrder_>
 class TriangularMatrixView :
     public TriangularMatrixBase<
-      Scalar_, Rows_, Cols_, ViewMode_, StorageOrder_,
-      TriangularMatrixView<Scalar_, Rows_, Cols_, ViewMode_, StorageOrder_>> {
+      Scalar_, Order_, Order_, ViewMode_, StorageOrder_,
+      TriangularMatrixView<Scalar_, Order_, ViewMode_, StorageOrder_>> {
    private:
     using Base = TriangularMatrixBase<
-      Scalar_, Rows_, Cols_, ViewMode_, StorageOrder_,
-      TriangularMatrixView<Scalar_, Rows_, Cols_, ViewMode_, StorageOrder_>>;
+      Scalar_, Order_, Order_, ViewMode_, StorageOrder_,
+      TriangularMatrixView<Scalar_, Order_, ViewMode_, StorageOrder_>>;
     using StorageType = std::add_pointer_t<Scalar_>;
    public:
-    fdapde_static_assert((Rows_ == Dynamic || Rows_ > 0) && (Cols_ == Dynamic || Cols_ > 0), INVALID_MATRIX_DIMENSIONS);
-    fdapde_static_assert(
-      Rows_ == Dynamic || Cols_ == Dynamic || Rows_ == Cols_, THIS_CLASS_IS_FOR_SQUARE_MATRICES_ONLY);
+    fdapde_static_assert(Order_ == Dynamic || Order_ > 0, INVALID_MATRIX_DIMENSIONS);
     fdapde_static_assert(ViewMode_ == Lower || ViewMode_ == Upper, THIS_CLASS_IS_FOR_LOWER_OR_UPPER_VIEW_MODE_ONLY);
     fdapde_static_assert(StorageOrder_ == RowMajor, PACKED_COL_MAJOR_STRUCTURED_STORAGE_IS_NOT_SUPPORTED);
-    static constexpr int Rows = Rows_;
-    static constexpr int Cols = Cols_;
+    static constexpr int Order = Order_;
+    static constexpr int Rows = Order_;
+    static constexpr int Cols = Order_;
     static constexpr int StorageOrder = StorageOrder_;
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = std::is_const_v<Scalar_>;
-    static constexpr int StaticShape = Rows_ != Dynamic ? Rows_ : Cols_;
+    static constexpr int StaticShape = Order_;
     static constexpr bool HasSupportedStaticStorage =
       StaticShape == Dynamic || static_cast<std::uint64_t>(StaticShape) * static_cast<std::uint64_t>(StaticShape) <=
                                   static_cast<std::uint64_t>(std::numeric_limits<int>::max());
@@ -891,13 +890,13 @@ class TriangularMatrixView :
 
     /// @brief copies the binding to external packed triangular storage
     constexpr TriangularMatrixView(const TriangularMatrixView&) = default;
-    /// @brief creates an empty fully dynamic triangular view without a buffer
+    /// @brief creates an empty dynamic triangular view without a buffer
     constexpr TriangularMatrixView()
-        requires(Rows_ == Dynamic && Cols_ == Dynamic)
+        requires(Order_ == Dynamic)
         : Base(), data_(nullptr) { }
-    /// @brief rejects default construction when either dimension is fixed
+    /// @brief rejects default construction when the order is fixed
     constexpr TriangularMatrixView()
-        requires(Rows_ != Dynamic || Cols_ != Dynamic)
+        requires(Order_ != Dynamic)
     = delete;
     /// @brief binds fixed dimensions to nonnull packed triangular storage
     template <typename Scalar__>
@@ -907,6 +906,10 @@ class TriangularMatrixView :
         fdapde_assert(!(data == nullptr), std::invalid_argument, "nonempty triangular view requires storage");
     }
     /// @brief validates square dimensions and binds external storage, permitting null only for an empty shape
+    template <typename Scalar__>
+        requires(std::is_convertible_v<Scalar__*, Scalar_*>)
+    constexpr TriangularMatrixView(Scalar__* data, int order) : TriangularMatrixView(data, order, order) { }
+    /// @brief accepts equal dimensions from generic view construction, permitting null only for an empty shape
     template <typename Scalar__>
         requires(std::is_convertible_v<Scalar__*, Scalar_*>)
     constexpr TriangularMatrixView(Scalar__* data, int rows, int cols) : Base(rows, cols), data_(data) {
@@ -958,14 +961,14 @@ class TriangularMatrixView :
 };
 
 // type aliases
-template <typename Scalar, int Rows, int Cols, int StorageOrder = RowMajor>
-using UpperTriangularMatrix = TriangularMatrix<Scalar, Rows, Cols, Upper, StorageOrder>;
-template <typename Scalar, int Rows, int Cols, int StorageOrder = RowMajor>
-using LowerTriangularMatrix = TriangularMatrix<Scalar, Rows, Cols, Lower, StorageOrder>;
-template <typename Scalar, int Rows, int Cols, int StorageOrder = RowMajor>
-using UpperTriangularMatrixView = TriangularMatrixView<Scalar, Rows, Cols, Upper, StorageOrder>;
-template <typename Scalar, int Rows, int Cols, int StorageOrder = RowMajor>
-using LowerTriangularMatrixView = TriangularMatrixView<Scalar, Rows, Cols, Lower, StorageOrder>;
+template <typename Scalar, int Order, int StorageOrder = RowMajor>
+using UpperTriangularMatrix = TriangularMatrix<Scalar, Order, Upper, StorageOrder>;
+template <typename Scalar, int Order, int StorageOrder = RowMajor>
+using LowerTriangularMatrix = TriangularMatrix<Scalar, Order, Lower, StorageOrder>;
+template <typename Scalar, int Order, int StorageOrder = RowMajor>
+using UpperTriangularMatrixView = TriangularMatrixView<Scalar, Order, Upper, StorageOrder>;
+template <typename Scalar, int Order, int StorageOrder = RowMajor>
+using LowerTriangularMatrixView = TriangularMatrixView<Scalar, Order, Lower, StorageOrder>;
 
 // detection trait
 /// @brief identifies triangular matrix expressions after removing cv and reference qualifiers

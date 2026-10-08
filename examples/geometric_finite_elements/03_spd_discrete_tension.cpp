@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // compile from the repository root with c++ -std=c++20 -O2 -pthread -I.
-// examples/geometric_finite_elements/spd_discrete_tension.cpp
+// examples/geometric_finite_elements/03_spd_discrete_tension.cpp
 #include <fdaPDE/geometric_discretization.h>
 
 #include <algorithm>

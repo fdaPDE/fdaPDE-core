@@ -841,6 +841,63 @@ TEST(MatrixBatch, DirectNormsAndDiagonalsUseLogicalCoefficients) {
     static_assert(!permits_batch_norm<decltype(integers)>);
 }
 
+// direct expression norms preserve selection order, evaluate maps once per entry and own their scalar results
+TEST(MatrixBatch, ExpressionSquaredNorms) {
+    using Dense = Matrix<float, Dynamic, Dynamic>;
+    MatrixBatch<Dense> source(3, 1, 2);
+    source[0] = Matrix<float, 1, 2>({3.f, 4.f});
+    source[1] = Matrix<float, 1, 2>({1.f, 2.f});
+    source[2] = Matrix<float, 1, 2>({5.f, 12.f});
+    const auto selected = source.select(std::array<int, 3> {2, 0, 2});
+    const auto sequential = selected.squared_norm();
+    const auto parallel = selected.squared_norm(execution_par);
+    // dynamic float inputs retain their scalar type in fixed one-by-one result owners
+    static_assert(std::same_as<std::remove_cvref_t<decltype(sequential)>, MatrixBatch<Matrix<float, 1, 1>>>);
+    // repeated selection indices produce one result per requested position
+    ASSERT_EQ(sequential.size(), 3u);
+    const std::array<float, 3> expected {169.f, 25.f, 169.f};
+    for (std::size_t i = 0; i < expected.size(); ++i) {
+        // independent sums of the supplied coefficient squares follow the requested permutation including repeats
+        EXPECT_FLOAT_EQ(sequential[i](0, 0), expected[i]);
+        // parallel evaluation retains the same analytic result at each selected position
+        EXPECT_FLOAT_EQ(parallel[i](0, 0), expected[i]);
+    }
+    const auto arithmetic = (selected + selected).squared_norm();
+    // squaring doubled coefficients scales the independently known norm by four
+    EXPECT_FLOAT_EQ(arithmetic[0](0, 0), 676.f);
+    int visits = 0;
+    const auto mapped = selected
+                          .map([&visits](const auto& value) {
+                              ++visits;
+                              return value * 2.f;
+                          })
+                          .squared_norm();
+    // eager norm evaluation invokes the source map once per selected entry rather than once per coefficient
+    EXPECT_EQ(visits, 3);
+    // mapped doubling follows the same analytic norm scaling as direct arithmetic
+    EXPECT_FLOAT_EQ(mapped[1](0, 0), 100.f);
+    source[2](0, 0) = 0.f;
+    // previously returned scalar owners keep their values after the borrowed source changes
+    EXPECT_FLOAT_EQ(sequential[0](0, 0), 169.f);
+    const auto refreshed = selected.squared_norm();
+    // a subsequent eager request reads the changed source coefficients through the selection
+    EXPECT_FLOAT_EQ(refreshed[0](0, 0), 144.f);
+    const auto empty = source.select(std::array<int, 0> {}).squared_norm(execution_par);
+    // an empty selection returns no norm entries even when input matrix extents are dynamic
+    EXPECT_TRUE(empty.empty());
+    // the empty scalar result retains its known single-row shape
+    EXPECT_EQ(empty.rows(), 1);
+    // the empty scalar result retains its known single-column shape
+    EXPECT_EQ(empty.cols(), 1);
+    MatrixBatch<SymmetricMatrix<int, 2>> symmetric(1);
+    symmetric[0] = SymmetricMatrix<int, 2>(Vector<int, 3> {1, 2, 3});
+    const auto logical = symmetric.select(std::array<int, 1> {0}).squared_norm();
+    // structured integer expressions preserve integral scalar output types
+    static_assert(std::same_as<std::remove_cvref_t<decltype(logical)>, MatrixBatch<Matrix<int, 1, 1>>>);
+    // the logical square sum counts both mirrored off-diagonal twos rather than only packed coefficients
+    EXPECT_EQ(logical[0](0, 0), 18);
+}
+
 // spectral transforms reuse original slots and preserve eigenspaces and principal matrix-function identities
 TEST(MatrixBatch, DirectSpectralTransformsReuseSlotsAndMatchUncachedFunctions) {
     using Sym = SymmetricMatrix<double, 2, Cache::Spectral>;
@@ -969,20 +1026,24 @@ TEST(MatrixBatch, ParallelExponentialRejectsOverflowAndRecovers) {
 
 // orthogonal batches preserve reflected bases, independent owners and structured results of lazy maps
 TEST(MatrixBatch, OrthogonalEigenvectorsRetainStructureAndControlledAssignment) {
-    using Basis = OrthogonalMatrix<double, 2, 2>;
+    using Basis = OrthogonalMatrix<double, 2>;
     using Dense = Matrix<double, 2, 2>;
     MatrixBatch<Basis> bases(2);
     const Dense identity({1., 0., 0., 1.});
     // new orthogonal slots start at identity rather than an invalid zero matrix
     expect_matrix_eq(bases[0], identity);
-    const Basis reflection({1., 0., 0., -1.}, checked);
+    const Basis reflection({1., 0., 0., -1.});
     bases[0] = reflection;
     // the full orthogonal group admits reflected bases with determinant minus one
     EXPECT_DOUBLE_EQ(bases[0].determinant(), -1.);
     // direct coefficient access cannot break an orthogonal batch's invariant
     static_assert(std::same_as<decltype(bases.coefficients()), std::span<const double>>);
-    // unstructured matrices cannot be assigned through a controlled orthogonal view
-    static_assert(!std::is_assignable_v<decltype(bases[0]), Dense>);
+    // dense inputs can replace a full basis only after permanent orthogonality validation
+    static_assert(std::is_assignable_v<decltype(bases[0]), Dense>);
+    const Dense nonorthogonal({1., 0., 0., 2.});
+    // a rejected dense replacement preserves the previously stored reflection
+    EXPECT_THROW(bases[0] = nonorthogonal, std::invalid_argument);
+    expect_matrix_eq(bases[0], reflection);
     auto independent = bases;
     bases[0] = bases[1];
     // copying a batch preserves the reflection independently of later source assignment
@@ -1001,14 +1062,13 @@ TEST(MatrixBatch, OrthogonalEigenvectorsRetainStructureAndControlledAssignment) 
     input[0] = SymmetricMatrix<float, Dynamic>(Matrix<float, 3, 3>({1, .2f, 0, .2f, 2, 0, 0, 0, 3}));
     const auto vectors = input.eigenvectors(execution_par);
     // dynamic eigenspaces retain float precision, runtime order and an orthogonal owner type
-    static_assert(
-      std::same_as<std::remove_cvref_t<decltype(vectors)>, MatrixBatch<OrthogonalMatrix<float, Dynamic, Dynamic>>>);
+    static_assert(std::same_as<std::remove_cvref_t<decltype(vectors)>, MatrixBatch<OrthogonalMatrix<float, Dynamic>>>);
     const auto basis = vectors[0];
     const Matrix<float, 3, 3> identity3({1, 0, 0, 0, 1, 0, 0, 0, 1});
     // the structural inverse agrees with the transpose and composes to identity within float precision
     EXPECT_LT((basis * basis.inv() - identity3).norm(), 2e-5f);
     // runtime nonsquare dimensions cannot create even an empty orthogonal batch
-    EXPECT_THROW((MatrixBatch<OrthogonalMatrix<double, Dynamic, Dynamic>>(0, 2, 3)), std::invalid_argument);
+    EXPECT_THROW((MatrixBatch<OrthogonalMatrix<double, Dynamic>>(0, 2, 3)), std::invalid_argument);
 }
 
 // eager inverses retain structure, result order and shape while dispatching to each element's native algorithm
@@ -1030,7 +1090,7 @@ TEST(MatrixBatch, InversePreservesStructureAndParallelOrder) {
     const auto bases = points.eigenvectors(execution_par);
     const auto inverses = bases.inv(execution_par);
     // orthogonal batch inverses retain orthogonal owners without promotion to dense matrices
-    static_assert(std::same_as<std::remove_cvref_t<decltype(inverses)>, MatrixBatch<OrthogonalMatrix<double, 2, 2>>>);
+    static_assert(std::same_as<std::remove_cvref_t<decltype(inverses)>, MatrixBatch<OrthogonalMatrix<double, 2>>>);
     // structural inversion is the transpose coefficient-for-coefficient
     expect_matrix_eq(inverses[0], bases[0].transpose());
     MatrixBatch<DiagonalMatrix<double, 2>> diagonals(1);
@@ -1266,16 +1326,16 @@ TEST(MatrixBatch, DiagonalAndOrthogonalProductsRetainStructure) {
         // native diagonal multiplication supplies both diagonal values and implicit off-diagonal zeros
         expect_matrix_eq(products[i], Diagonal(a * b));
     }
-    using Basis = OrthogonalMatrix<double, 2, 2>;
+    using Basis = OrthogonalMatrix<double, 2>;
     // native orthogonal products remain compatible with a controlled orthogonal compound destination
     static_assert(permits_batch_compound_product<MatrixBatch<Basis>, MatrixBatch<Basis>>);
     using Dense = Matrix<double, 2, 2>;
     MatrixBatch<Basis> bases(2), rotations(2);
-    bases[0] = Basis({1., 0., 0., -1.}, checked);
-    rotations[0] = Basis({0., -1., 1., 0.}, checked);
-    rotations[1] = Basis({-1., 0., 0., -1.}, checked);
+    bases[0] = Basis({1., 0., 0., -1.});
+    rotations[0] = Basis({0., -1., 1., 0.});
+    rotations[1] = Basis({-1., 0., 0., -1.});
     const auto composed = (bases * rotations).eval(execution_par);
-    const Basis broadcast({0., -1., 1., 0.}, checked);
+    const Basis broadcast({0., -1., 1., 0.});
     const auto broadcast_right = (bases * broadcast).eval();
     const auto broadcast_left = (broadcast * bases).eval();
     // composing native orthogonal expressions infers controlled orthogonal owners

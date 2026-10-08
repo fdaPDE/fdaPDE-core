@@ -28,8 +28,8 @@ void instantiate_manifold_means() {
     (void)weighted_karcher_mean(AffineInvariantSPDGeometry<double, 2> {}, points, weights);
     (void)weighted_karcher_mean(BuresWassersteinSPDGeometry<double, 2> {}, points, weights);
     (void)weighted_karcher_mean(CheegerLogEuclideanSPDGeometry<double, 2> {}, points, weights, identity);
-    const MatrixBatch<RotationMatrix<double, 3, 3>> rotations(2);
-    (void)weighted_karcher_mean(SOGeometry<double, 3> {}, rotations, weights, RotationMatrix<double, 3, 3>::Identity());
+    const MatrixBatch<RotationMatrix<double, 3>> rotations(2);
+    (void)weighted_karcher_mean(SOGeometry<double, 3> {}, rotations, weights, RotationMatrix<double, 3>::Identity());
 }
 
 #include <fdaPDE/manifold_geometry.h>

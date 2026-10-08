@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // compile from the repository root with c++ -std=c++20 -O2 -pthread -I.
-// examples/geometric_finite_elements/cheeger_p1_interpolation.cpp
+// examples/geometric_finite_elements/02_cheeger_p1_interpolation.cpp
 #include <fdaPDE/geometric_discretization.h>
 
 #include <array>

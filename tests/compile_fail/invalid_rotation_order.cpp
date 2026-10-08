@@ -14,9 +14,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// rotation matrices require either fixed square or fully dynamic square dimensions
+// a fixed rotation order must be positive
 #include <fdaPDE/dense_linear_algebra.h>
 int main() {
-    auto q = fdapde::RotationMatrix<double, 2, fdapde::Dynamic>::Identity();
+    auto q = fdapde::RotationMatrix<double, 0>::Identity();
     (void)q;
 }

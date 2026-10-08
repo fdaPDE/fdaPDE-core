@@ -102,7 +102,7 @@ TEST(SOAmbientDerivatives, CovariantHessianMatchesTransportedGradient) {
 
 // cached owners and borrowed batch views preserve the same ambient-to-body Hessian conversion
 TEST(SOAmbientDerivatives, CachedOwnersAndViewsAgree) {
-    using Cached = RotationMatrix<double, 3, 3, RotationCache::Union<RotationCache::Schur, RotationCache::Log>>;
+    using Cached = RotationMatrix<double, 3, RotationCache::Union<RotationCache::Schur, RotationCache::Log>>;
     const Geometry geometry;
     Skew base, direction;
     base(0, 1) = .29;

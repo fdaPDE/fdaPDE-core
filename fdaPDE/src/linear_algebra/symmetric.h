@@ -50,6 +50,28 @@ template <typename XprType> class EVD;
 
 namespace internals {
 
+/// @brief rejects nonfinite coefficients and relative asymmetry before a symmetric dense algorithm
+template <typename MatrixType> void validate_symmetric_coefficients(const MatrixType& matrix) {
+    using Scalar = std::remove_cv_t<typename MatrixType::Scalar>;
+    Scalar scale = Scalar(0);
+    for (int i = 0; i < matrix.rows(); ++i) {
+        for (int j = 0; j < matrix.cols(); ++j) {
+            const Scalar value = matrix(i, j);
+            fdapde_strong_assert(
+              std::isfinite(value), std::invalid_argument, "symmetric algorithm requires finite input");
+            scale = std::max(scale, std::abs(value));
+        }
+    }
+    const Scalar tolerance = Scalar(32) * Scalar(matrix.rows()) * std::numeric_limits<Scalar>::epsilon();
+    if (scale > Scalar(0)) {
+        for (int i = 0; i < matrix.rows(); ++i)
+            for (int j = 0; j < i; ++j)
+                fdapde_strong_assert(
+                  std::abs(matrix(i, j) / scale - matrix(j, i) / scale) <= tolerance, std::invalid_argument,
+                  "symmetric algorithm requires symmetric input");
+    }
+}
+
 // class wrapping a generic expression to the expression of a symmetric matrix. internal usage only
 /// @brief mirrors one selected triangle of a square expression
 template <int ViewMode_, typename SymmetricXprType_>
@@ -142,9 +164,9 @@ template <typename XprType_> struct SymmetricMatrixExpr : public MatrixExpr<XprT
     /// the returned matrix remains valid after source mutation or destruction, including temporary sources
     auto eigenvectors() const {
         using Scalar = std::remove_cv_t<typename XprType::Scalar>;
-        using Vectors = OrthogonalMatrix<Scalar, XprType::Rows, XprType::Rows>;
+        using Vectors = OrthogonalMatrix<Scalar, XprType::Rows>;
         if constexpr (internals::is_spectral_cache_source<XprType>::value) {
-            return Vectors(derived().cache().eigenvectors(), unchecked);
+            return Vectors(derived().cache().eigenvectors());
         } else {
             const auto decomposition = evd();
             return Vectors(decomposition.eigenvectors());
@@ -293,7 +315,7 @@ class SymmetricMatrix :
       Scalar_, Order_, Policy_, StorageOrder_, SymmetricMatrix<Scalar_, Order_, Policy_, StorageOrder_>> {
    private:
     using Base = SymmetricMatrixBase<Scalar_, Order_, Policy_, StorageOrder_, SymmetricMatrix>;
-    using StorageType = TriangularMatrix<Scalar_, Order_, Order_, Lower, StorageOrder_>;
+    using StorageType = TriangularMatrix<Scalar_, Order_, Lower, StorageOrder_>;
    public:
     // packed storage supports positive fixed orders and arithmetic scalars; spectral work requires floating point
     fdapde_static_assert(Order_ == Dynamic || Order_ > 0, INVALID_MATRIX_DIMENSIONS);
@@ -554,7 +576,7 @@ class SymmetricMatrixView :
         requires(Policy_::Flags == 0)
         : data_(data), n_(rows) {
         // reuse the packed triangle's shape, overflow and nonnull-storage contract
-        (void)TriangularMatrixView<Scalar_, Order_, Order_, Lower, StorageOrder_>(data, rows, cols);
+        (void)TriangularMatrixView<Scalar_, Order_, Lower, StorageOrder_>(data, rows, cols);
     }
     /// @brief borrows writable coefficients and their owner's cache slot
     constexpr explicit SymmetricMatrixView(Owner& owner) : data_(owner.coefficient_data_()), n_(owner.rows()) {

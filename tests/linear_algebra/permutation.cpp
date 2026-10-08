@@ -50,7 +50,7 @@ template <typename Permutation, typename Dense>
 concept permits_right_owning_rvalue_action =
   requires(Permutation& permutation, Dense& dense) { dense * std::move(permutation); };
 
-using fixed_permutation = PermutationMatrix<3, 3>;
+using fixed_permutation = PermutationMatrix<3>;
 using fixed_dense = Matrix<double, 3, 3>;
 
 // a permutation exposes immutable matrix coefficients
@@ -89,7 +89,7 @@ template <typename Actual, typename Expected> void expect_matrix_equal(const Act
 
 template <int StorageOrder> void check_permutation_actions_and_dispatch() {
     const int mapping[] = {2, 0, 1};
-    const PermutationMatrix<3, 3> permutation(mapping);
+    const PermutationMatrix<3> permutation(mapping);
 
     const Matrix<double, 3, 2, StorageOrder> left_operand({1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
     const Matrix<double, 3, 2, StorageOrder> expected_left({5.0, 6.0, 1.0, 2.0, 3.0, 4.0});
@@ -111,7 +111,7 @@ template <int StorageOrder> void check_permutation_actions_and_dispatch() {
     expect_matrix_equal(aliased_right, expected_right);
 
     const double identity_data[] = {1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0};
-    const OrthogonalMatrix<double, 3, 3, StorageOrder> orthogonal(identity_data, checked);
+    const OrthogonalMatrix<double, 3, StorageOrder> orthogonal(identity_data);
     // left permutation of an orthogonal matrix retains orthogonality
     static_assert(is_orthogonal_matrix_v<decltype(permutation * orthogonal)>);
     // right permutation of an orthogonal matrix retains orthogonality
@@ -122,7 +122,7 @@ template <int StorageOrder> void check_permutation_actions_and_dispatch() {
       Matrix<double, 3, 3, StorageOrder>(orthogonal * permutation), Matrix<double, 3, 3, StorageOrder>(permutation));
 
     const DiagonalMatrix<double, 3> diagonal({2.0, 3.0, 4.0});
-    const LowerTriangularMatrix<double, 3, 3> triangular({1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
+    const LowerTriangularMatrix<double, 3> triangular({1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
     const SymmetricMatrix<double, 3> symmetric({1.0, 2.0, 3.0, 4.0, 5.0, 6.0});
     const Matrix<double, 3, 3, StorageOrder> dense_permutation(permutation);
     const Matrix<double, 3, 3, StorageOrder> dense_diagonal(diagonal);
@@ -182,25 +182,19 @@ TEST(linear_algebra, permutation) {
     EXPECT_EQ(composition.permutation(), (Vector<int, 3>({2, 1, 0})));
 
     const fixed_permutation fixed_identity;
-    const PermutationMatrix<3, Dynamic> fixed_rows_identity;
-    const PermutationMatrix<Dynamic, 3> fixed_cols_identity;
     // a default fixed permutation initializes every index to itself
     EXPECT_EQ(fixed_identity.permutation(), (Vector<int, 3>({0, 1, 2})));
-    // a default permutation with fixed rows initializes the matching identity
-    EXPECT_EQ(fixed_rows_identity.permutation(), (Vector<int, 3>({0, 1, 2})));
-    // a fixed column count determines the square identity's row count
-    ASSERT_EQ(fixed_cols_identity.rows(), 3);
-    // the identity with fixed columns maps each index to itself
-    for (int i = 0; i < fixed_cols_identity.rows(); ++i) { EXPECT_EQ(fixed_cols_identity.image(i), i); }
+    // one static order determines both permutation axes
+    static_assert(fixed_permutation::Order == 3 && fixed_permutation::Rows == fixed_permutation::Cols);
 
-    const PermutationMatrix<Dynamic, Dynamic> dynamic(std::vector<int> {1, 2, 0});
+    const PermutationMatrix<Dynamic> dynamic(std::vector<int> {1, 2, 0});
     // a dynamic permutation adopts the three-entry mapping size
     EXPECT_EQ(dynamic.rows(), 3);
     // a dynamic permutation keeps the mapping's square shape
     EXPECT_EQ(dynamic.cols(), 3);
     // the dynamic mapping retains the supplied image of its last index
     EXPECT_EQ(dynamic.image(2), 0);
-    const PermutationMatrix<Dynamic, Dynamic> empty;
+    const PermutationMatrix<Dynamic> empty;
     // an empty dynamic permutation has zero rows
     EXPECT_EQ(empty.rows(), 0);
     std::ostringstream stream;
@@ -233,7 +227,7 @@ TEST(linear_algebra, permutation) {
         fixed_permutation(std::vector<long long> {0, 1, static_cast<long long>(std::numeric_limits<int>::max()) + 1})),
       std::invalid_argument);
     // a partially fixed permutation rejects a mapping inconsistent with its fixed dimension
-    EXPECT_THROW(static_cast<void>(PermutationMatrix<Dynamic, 3>(std::vector<int> {0, 1})), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(PermutationMatrix<3>(std::vector<int> {0, 1})), std::invalid_argument);
     Matrix<int, Dynamic, 1> short_mapping(2);
     short_mapping[0] = 1;
     short_mapping[1] = 0;
@@ -245,13 +239,13 @@ TEST(linear_algebra, permutation) {
     rectangular_mapping(1, 0) = 2;
     rectangular_mapping(1, 1) = 3;
     // construction rejects a rectangular matrix used as a mapping
-    EXPECT_THROW(static_cast<void>(PermutationMatrix<Dynamic, Dynamic>(rectangular_mapping)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(PermutationMatrix<Dynamic>(rectangular_mapping)), std::invalid_argument);
     // image access rejects a negative source index
     EXPECT_THROW(static_cast<void>(permutation.image(-1)), std::out_of_range);
     // matrix access rejects a row equal to the permutation dimension
     EXPECT_THROW(static_cast<void>(permutation(3, 0)), std::out_of_range);
 
-    const PermutationMatrix<Dynamic, Dynamic> short_permutation(std::vector<int> {1, 0});
+    const PermutationMatrix<Dynamic> short_permutation(std::vector<int> {1, 0});
     // composition rejects permutations with different dimensions
     EXPECT_THROW(static_cast<void>(dynamic * short_permutation), std::invalid_argument);
     Matrix<double, Dynamic, 1> short_vector(2);

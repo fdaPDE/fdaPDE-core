@@ -104,7 +104,7 @@ template <typename S, int N, Usage U, typename Point_> class CheegerLogEuclidean
     using CachePolicy = typename Point::CachePolicy;
     using Tangent = typename Base::Tangent;
     using Chart = Tangent;
-    using Rotation = RotationMatrix<S, N, N, RotationCache::Log>;
+    using Rotation = RotationMatrix<S, N, RotationCache::Log>;
     /// @brief constructs a fixed-order geometry from the legacy epsilon parameter
     explicit CheegerLogEuclideanSPDGeometry(double epsilon = .5)
         requires(N != Dynamic)
@@ -207,7 +207,7 @@ template <typename S, int N, Usage U, typename Point_> class CheegerLogEuclidean
     /// @brief retains a pair lift for repeated quotient-geodesic evaluation
     class Curve {
         Chart x_, v_;
-        SkewSymmetricMatrix<S, N, N> omega_;
+        SkewSymmetricMatrix<S, N> omega_;
         double distance_;
        public:
         /// @brief retains endpoint charts and the selected rotation logarithm
@@ -259,7 +259,7 @@ template <typename S, int N, Usage U, typename Point_> class CheegerLogEuclidean
         const EVD evd(x);
         const auto& q = evd.eigenvectors();
         const Matrix<S, N, N> local(q.transpose() * h * q);
-        SkewSymmetricMatrix<S, N, N> omega;
+        SkewSymmetricMatrix<S, N> omega;
         if constexpr (N == Dynamic) omega.resize(order(), order());
         for (int r = 0; r < omega.rows(); ++r)
             for (int c = r + 1; c < omega.rows(); ++c) omega(r, c) = 0;
@@ -268,7 +268,7 @@ template <typename S, int N, Usage U, typename Point_> class CheegerLogEuclidean
                 const S gap = evd.eigenvalues()[j] - evd.eigenvalues()[i];
                 omega(i, j) = local(i, j) * gap / S(rho_ + gap * gap);
             }
-        const SkewSymmetricMatrix<S, N, N> world((q * omega * q.transpose()).template as_skew_symmetric<Lower>());
+        const SkewSymmetricMatrix<S, N> world((q * omega * q.transpose()).template as_skew_symmetric<Lower>());
         const Chart v((h - world * x + x * world).template as_symmetric<Lower>());
         const auto rotation = rotation_exp(world, step);
         return from_chart(Chart((rotation * (x + S(step) * v) * rotation.transpose()).template as_symmetric<Lower>()));

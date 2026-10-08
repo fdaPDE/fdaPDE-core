@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // compile from the repository root with c++ -std=c++20 -O2 -pthread -I.
-// examples/manifold/so_product_optimization.cpp
+// examples/manifold/03_so_product_optimization.cpp
 #include <fdaPDE/manifold_geometry.h>
 #include <fdaPDE/manifold_solvers.h>
 

@@ -112,7 +112,7 @@ assertion contracts.
 takes a cache policy as its third argument and an optional storage order as its
 fourth. `ColMajor` remains rejected.
 `Cache::Union<...>` combines `Spectral`, `Log`, `Sqrt`, `InverseSqrt` and
-`LogDividedDifferences`. Unknown policy bits are rejected. Cache fields retain
+`LogDividedDifferences`, `Cholesky` and `LogCholesky`. Unknown policy bits are rejected. Cache fields retain
 only the selected scalar data, separately from packed coefficients. The owner
 uses a conditional empty member for `None`, with `[[no_unique_address]]`.
 
@@ -153,6 +153,19 @@ together. Cross-policy copies preserve this association, including repeated
 eigenspaces. Cache inspection is read-only via `cache().eigenvalues()`,
 `eigenvectors()`, `matrix<Cache::Log>()` (likewise root factors), and
 `log_divided_differences()` when the corresponding quantity is selected.
+
+`point.cholesky()` returns an independent `Cholesky` decomposition for owners and
+views with any policy, including `Cache::None`. With `Cache::Cholesky`, it copies
+the retained lower factor instead of factoring the input again; otherwise it
+computes the factor on demand. `L()` borrows the decomposition's owning
+`LowerTriangularMatrix`, and `solve(B)` supports one or several right-hand sides.
+The decomposition survives source replacement or destruction.
+`point.cholesky_factor()` returns only the owning `LowerTriangularMatrix<Scalar, Order>`
+for any cache policy, copying the retained factor when available and computing it
+otherwise. The result also survives source replacement or destruction. In contrast,
+`point.cache().cholesky()` borrows a `LowerTriangularMatrixView<const Scalar, Order>`
+whose packed buffer stores `order*(order+1)/2` lower-triangle scalars and must not
+outlive the source value.
 
 ### Structured inverse
 

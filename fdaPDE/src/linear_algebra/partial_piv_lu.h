@@ -39,6 +39,7 @@ template <typename XprType_> class PartialPivLU {
     using Scalar = std::remove_cv_t<typename XprType::Scalar>;
     static constexpr int Rows = XprType::Rows;
     static constexpr int Cols = XprType::Cols;
+    static constexpr int Order = Rows == Dynamic ? Cols : Rows;
     fdapde_static_assert(std::is_floating_point_v<Scalar>, LU_DECOMPOSITION_REQUIRES_FLOATING_POINT_SCALARS);
 
     /// @brief creates an uncomputed decomposition with no available factors
@@ -146,20 +147,20 @@ template <typename XprType_> class PartialPivLU {
         normalized_U_ = lu.template triangular_block<Upper>();
         U_ = normalized_U_;
         U_ *= scale_;
-        P_ = PermutationMatrix<Rows, Cols>(permutation);
+        P_ = PermutationMatrix<Order>(permutation);
     }
 
     /// @brief returns the row permutation factor
-    constexpr const PermutationMatrix<Rows, Cols>& P() const& { return P_; }
+    constexpr const PermutationMatrix<Order>& P() const& { return P_; }
     /// @brief rejects access through a temporary decomposition to prevent dangling factor references
     constexpr void P() const&& = delete;
     /// @brief returns the unit lower triangular factor
-    constexpr const LowerTriangularMatrix<Scalar, Rows, Cols>& L() const& { return L_; }
+    constexpr const LowerTriangularMatrix<Scalar, Order>& L() const& { return L_; }
     /// @brief rejects access through a temporary decomposition to prevent dangling factor references
     constexpr void L() const&& = delete;
     // u is reported in the input scale. It can overflow even when the normalized solve remains usable
     /// @brief returns U in the input scale, which may overflow even if the normalized solve remains usable
-    constexpr const UpperTriangularMatrix<Scalar, Rows, Cols>& U() const& { return U_; }
+    constexpr const UpperTriangularMatrix<Scalar, Order>& U() const& { return U_; }
     /// @brief rejects access through a temporary decomposition to prevent dangling factor references
     constexpr void U() const&& = delete;
     // -1: factors unavailable, 0: success, >0: first unusable pivot (one based).
@@ -396,10 +397,10 @@ template <typename XprType_> class PartialPivLU {
 
     /// @brief clears the stored decomposition factors
     constexpr void reset_factors_() {
-        L_ = LowerTriangularMatrix<Scalar, Rows, Cols>();
-        U_ = UpperTriangularMatrix<Scalar, Rows, Cols>();
-        normalized_U_ = UpperTriangularMatrix<Scalar, Rows, Cols>();
-        P_ = PermutationMatrix<Rows, Cols>();
+        L_ = LowerTriangularMatrix<Scalar, Order>();
+        U_ = UpperTriangularMatrix<Scalar, Order>();
+        normalized_U_ = UpperTriangularMatrix<Scalar, Order>();
+        P_ = PermutationMatrix<Order>();
         scale_ = Scalar(1);
         info_ = -1;
         rank_ = 0;
@@ -412,10 +413,10 @@ template <typename XprType_> class PartialPivLU {
         determinant_computed_ = false;
     }
 
-    LowerTriangularMatrix<Scalar, Rows, Cols> L_;
-    UpperTriangularMatrix<Scalar, Rows, Cols> U_;
-    UpperTriangularMatrix<Scalar, Rows, Cols> normalized_U_;
-    PermutationMatrix<Rows, Cols> P_;
+    LowerTriangularMatrix<Scalar, Order> L_;
+    UpperTriangularMatrix<Scalar, Order> U_;
+    UpperTriangularMatrix<Scalar, Order> normalized_U_;
+    PermutationMatrix<Order> P_;
     Scalar scale_ = Scalar(1);
     Scalar determinant_ = Scalar(0);
     bool determinant_computed_ = false;

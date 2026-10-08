@@ -60,4 +60,4 @@ P1-specific quadrature packets, lumped stencils and smoothing energies are not
 implicitly generalized to splines.
 
 See the runnable [spline field tutorial](../examples/geometric_discretization/01_spd_spline_field.cpp)
-and [P1 field tutorial](../examples/geometric_finite_elements/spd_p1_field.cpp).
+and [P1 field tutorial](../examples/geometric_finite_elements/04_spd_p1_field.cpp).

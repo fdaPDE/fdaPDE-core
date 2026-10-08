@@ -185,7 +185,7 @@ TEST(GeometricSpace, SplineAffineInvariantMeanAndFailure) {
 TEST(GeometricSpace, SplineRotationMean) {
     const auto domain = interval();
     const BsSpace scalar(domain, 3);
-    using Rotation = RotationMatrix<double, 2, 2>;
+    using Rotation = RotationMatrix<double, 2>;
     const manifold::SOGeometry<double, 2> geometry;
     const GeometricSpace space(scalar, geometry);
     MatrixBatch<Rotation> points(space.n_dofs());

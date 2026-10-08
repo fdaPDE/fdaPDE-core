@@ -372,7 +372,7 @@ TEST(SymmetricCache, DirectEigenvectorsAndExponentialsRefreshRetainedAliases) {
     const auto values = view.eigenvalues();
     const Dense saved(matrix);
     // const views retain orthogonality in an owning eigenvector type with an unqualified scalar
-    static_assert(std::same_as<std::remove_cvref_t<decltype(vectors)>, OrthogonalMatrix<double, 2, 2>>);
+    static_assert(std::same_as<std::remove_cvref_t<decltype(vectors)>, OrthogonalMatrix<double, 2>>);
     // direct eigenvectors prepare the original owner's shared cache rather than a detached decomposition
     EXPECT_TRUE(slot.valid());
     auto* writable = matrix.data();

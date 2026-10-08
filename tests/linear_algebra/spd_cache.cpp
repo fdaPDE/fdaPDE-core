@@ -420,8 +420,8 @@ TEST(SPDCache, CholeskyCoordinatesAndBatchReplacement) {
     // policy conversion preserves the common chart coefficients without a spectral or triangular recomputation
     expect_symmetric_near(dynamic.cache().template matrix<Cache::LogCholesky>(), chart);
     const SPDMatrix<double, 3, Cache::Cholesky> lower_only {SPDMatrix<double, 3>(point)};
-    // converting verified uncached coefficients prepares only the requested full lower factor
-    EXPECT_EQ(lower_only.cache().scalar_count(3), 9u);
+    // converting verified uncached coefficients prepares only the six independent lower-factor entries
+    EXPECT_EQ(lower_only.cache().scalar_count(3), 6u);
     for (int row = 0; row < 3; ++row)
         for (int col = 0; col < 3; ++col) {
             // the factor-only conversion has the same unique positive-diagonal Cholesky factor

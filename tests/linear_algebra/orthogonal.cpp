@@ -18,6 +18,7 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <limits>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -44,16 +45,25 @@ concept permits_owning_rvalue_inverse = requires(MatrixType& matrix) { std::move
 template <typename MatrixType>
 concept permits_owning_rvalue_assignment = requires(MatrixType& lhs, MatrixType& rhs) { std::move(lhs) = rhs; };
 
-using fixed_orthogonal = OrthogonalMatrix<double, 2, 2>;
-using fixed_orthogonal_view = OrthogonalMatrixView<double, 2, 2>;
-using const_orthogonal_view = OrthogonalMatrixView<const double, 2, 2>;
+using fixed_orthogonal = OrthogonalMatrix<double, 2>;
+using fixed_orthogonal_view = OrthogonalMatrixView<double, 2>;
+using const_orthogonal_view = OrthogonalMatrixView<const double, 2>;
+
+// arbitrary matrices cannot bypass validation through the removed checked tag
+static_assert(!std::is_constructible_v<fixed_orthogonal, Matrix<double, 2, 2>, decltype(checked)>);
+// arbitrary matrices cannot bypass validation through the removed unchecked tag
+static_assert(!std::is_constructible_v<fixed_orthogonal, Matrix<double, 2, 2>, decltype(unchecked)>);
+// raw storage cannot request the removed checked view overload
+static_assert(!std::is_constructible_v<fixed_orthogonal_view, double*, decltype(checked)>);
+// raw storage cannot request an unchecked view binding
+static_assert(!std::is_constructible_v<fixed_orthogonal_view, double*, decltype(unchecked)>);
 
 // a fixed orthogonal owner requires explicit coefficients and a construction policy
 static_assert(!std::is_default_constructible_v<fixed_orthogonal>);
 // a fixed nonempty orthogonal view requires an explicit storage binding
 static_assert(!std::is_default_constructible_v<fixed_orthogonal_view>);
-// a dynamic orthogonal view permits an initially empty binding
-static_assert(std::is_default_constructible_v<OrthogonalMatrixView<double, Dynamic, Dynamic>>);
+// a dynamic orthogonal view also requires an explicit verified binding
+static_assert(!std::is_default_constructible_v<OrthogonalMatrixView<double, Dynamic>>);
 // an orthogonal owner advertises immutable coefficient access
 static_assert(fixed_orthogonal::ReadOnly == 1);
 // a mutable-storage orthogonal view still advertises immutable coefficient access
@@ -100,12 +110,12 @@ void expect_matrix_near(const Actual& actual, const Expected& expected, double t
 }
 
 template <int StorageOrder> void check_orthogonal_contracts() {
-    using owner_type = OrthogonalMatrix<double, 2, 2, StorageOrder>;
+    using owner_type = OrthogonalMatrix<double, 2, StorageOrder>;
     using dense_type = Matrix<double, 2, 2, StorageOrder>;
-    using view_type = OrthogonalMatrixView<double, 2, 2, StorageOrder>;
+    using view_type = OrthogonalMatrixView<double, 2, StorageOrder>;
 
     const double rotation_data[] = {0.0, -1.0, 1.0, 0.0};
-    const owner_type rotation(rotation_data, checked);
+    const owner_type rotation(rotation_data);
     // the orthogonal owner retains its requested storage order
     static_assert(owner_type::StorageOrder == StorageOrder);
     expect_matrix_near(rotation, dense_type({0.0, -1.0, 1.0, 0.0}));
@@ -124,16 +134,12 @@ template <int StorageOrder> void check_orthogonal_contracts() {
     const dense_type matrix_rhs({1.0, 2.0, 3.0, 4.0});
     expect_matrix_near(rotation.solve(matrix_rhs), dense_type({3.0, 4.0, -1.0, -2.0}));
 
-    const OrthogonalMatrix<double, Dynamic, Dynamic, StorageOrder> dynamic(
-      std::vector<double> {0.0, -1.0, 1.0, 0.0}, checked);
-    const OrthogonalMatrix<double, 2, Dynamic, StorageOrder> partial(
-      std::vector<double> {0.0, -1.0, 1.0, 0.0}, checked);
+    const OrthogonalMatrix<double, Dynamic, StorageOrder> dynamic(std::vector<double> {0.0, -1.0, 1.0, 0.0});
     // a dynamic orthogonal owner adopts the two-row input shape
     EXPECT_EQ(dynamic.rows(), 2);
-    // a partially dynamic orthogonal owner adopts the two-column input shape
-    EXPECT_EQ(partial.cols(), 2);
+    // one static order determines both orthogonal axes independently of storage order
+    static_assert(owner_type::Order == 2 && owner_type::Rows == owner_type::Cols);
     expect_matrix_near(dynamic, rotation);
-    expect_matrix_near(partial, rotation);
 
     const double basis_data[] = {1.0, 1.0, 0.0, 1.0};
     const owner_type orthogonalized(basis_data, orthogonalize);
@@ -143,15 +149,12 @@ template <int StorageOrder> void check_orthogonal_contracts() {
     expect_matrix_near(
       reorthogonalized.data().transpose() * reorthogonalized.data(), IdentityMatrix<double, 2, 2>(), 1.0e-9);
 
-    const double unchecked_data[] = {1.0, 2.0, 3.0, 4.0};
-    const owner_type unchecked_owner(unchecked_data, unchecked);
-    // unchecked construction preserves the supplied nonorthogonal coefficient
-    EXPECT_DOUBLE_EQ(unchecked_owner(1, 0), 3.0);
+    const double nonorthogonal_data[] = {1.0, 2.0, 3.0, 4.0};
 
     dense_type view_storage({0.0, -1.0, 1.0, 0.0});
     dense_type identity_storage({1.0, 0.0, 0.0, 1.0});
-    view_type view(view_storage.data(), checked);
-    view_type identity_view(identity_storage.data(), checked);
+    view_type view(view_storage.data());
+    view_type identity_view(identity_storage.data());
     const double* const view_address = view.data().data();
     view = identity_view;
     // view-to-view assignment keeps the destination storage binding
@@ -165,49 +168,39 @@ template <int StorageOrder> void check_orthogonal_contracts() {
     // assignment from an orthogonal product keeps the destination storage binding
     EXPECT_EQ(view.data().data(), view_address);
     expect_matrix_near(view, dense_type({-1.0, 0.0, 0.0, -1.0}));
-    const OrthogonalMatrixView<const double, 2, 2, StorageOrder> const_identity_view(identity_storage.data(), checked);
+    const OrthogonalMatrixView<const double, 2, StorageOrder> const_identity_view(identity_storage.data());
     view = const_identity_view;
     // assignment from a const-storage view keeps the destination storage binding
     EXPECT_EQ(view.data().data(), view_address);
     expect_matrix_near(view, identity_storage);
 
     std::array<double, 6> overlap_storage {1.0, 0.0, 0.0, 1.0, -1.0, 0.0};
-    view_type overlap_source(overlap_storage.data(), checked);
-    view_type overlap_target(overlap_storage.data() + 2, checked);
+    view_type overlap_source(overlap_storage.data());
+    view_type overlap_target(overlap_storage.data() + 2);
     const double* const overlap_address = overlap_target.data().data();
     overlap_target = overlap_source;
     // overlapping assignment keeps the destination bound to its original offset
     EXPECT_EQ(overlap_target.data().data(), overlap_address);
     expect_matrix_near(overlap_target, dense_type({1.0, 0.0, 0.0, 1.0}));
 
-    const OrthogonalMatrixView<const double, 2, 2, StorageOrder> const_view(identity_storage.data(), checked);
+    const OrthogonalMatrixView<const double, 2, StorageOrder> const_view(identity_storage.data());
     // a const orthogonal view reads the identity matrix's final diagonal entry
     EXPECT_DOUBLE_EQ(const_view(1, 1), 1.0);
-    OrthogonalMatrixView<double, Dynamic, Dynamic, StorageOrder> dynamic_view(identity_storage.data(), 2, 2, checked);
+    OrthogonalMatrixView<double, Dynamic, StorageOrder> dynamic_view(identity_storage.data(), 2, 2);
     expect_matrix_near(dynamic_view, identity_storage);
 
-    // checked construction rejects three coefficients for a 2-by-2 owner
-    EXPECT_THROW(static_cast<void>(owner_type(std::vector<double> {1.0, 0.0, 0.0}, checked)), std::invalid_argument);
-    // unchecked construction still rejects an incomplete 2-by-2 input
-    EXPECT_THROW(static_cast<void>(owner_type(std::vector<double> {1.0, 0.0, 0.0}, unchecked)), std::invalid_argument);
-    // checked construction rejects coefficients that are not orthogonal
-    EXPECT_THROW(static_cast<void>(owner_type(unchecked_data, checked)), std::invalid_argument);
+    // construction rejects three coefficients for a 2-by-2 owner
+    EXPECT_THROW(static_cast<void>(owner_type(std::vector<double> {1.0, 0.0, 0.0})), std::invalid_argument);
+    // construction rejects coefficients that are not orthogonal
+    EXPECT_THROW(static_cast<void>(owner_type(nonorthogonal_data)), std::invalid_argument);
     const double rank_deficient_data[] = {1.0, 2.0, 2.0, 4.0};
     // orthogonalization rejects a rank-deficient basis
     EXPECT_THROW(static_cast<void>(owner_type(rank_deficient_data, orthogonalize)), std::invalid_argument);
-    // checked construction rejects a null pointer for a nonempty view
-    EXPECT_THROW(static_cast<void>(view_type(static_cast<double*>(nullptr), checked)), std::invalid_argument);
-    // unchecked construction still rejects a null pointer for a nonempty view
-    EXPECT_THROW(static_cast<void>(view_type(static_cast<double*>(nullptr), unchecked)), std::invalid_argument);
-    // unchecked construction still rejects a nonsquare view shape
+    // construction rejects a null pointer for a nonempty view
+    EXPECT_THROW(static_cast<void>(view_type(static_cast<double*>(nullptr))), std::invalid_argument);
+    // construction rejects a nonsquare view shape
     EXPECT_THROW(
-      static_cast<void>(
-        OrthogonalMatrixView<double, Dynamic, Dynamic, StorageOrder>(identity_storage.data(), 1, 2, unchecked)),
-      std::invalid_argument);
-    // checked construction rejects a nonsquare view shape
-    EXPECT_THROW(
-      static_cast<void>(
-        OrthogonalMatrixView<double, Dynamic, Dynamic, StorageOrder>(identity_storage.data(), 1, 2, checked)),
+      static_cast<void>(OrthogonalMatrixView<double, Dynamic, StorageOrder>(identity_storage.data(), 1, 2)),
       std::invalid_argument);
     // owner coefficient access rejects a negative row
     EXPECT_THROW(static_cast<void>(rotation(-1, 0)), std::out_of_range);
@@ -215,14 +208,60 @@ template <int StorageOrder> void check_orthogonal_contracts() {
     EXPECT_THROW(static_cast<void>(view(2, 0)), std::out_of_range);
 
     std::array<double, 9> larger_identity {1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0};
-    OrthogonalMatrixView<double, Dynamic, Dynamic, StorageOrder> mismatched_target(
-      identity_storage.data(), 2, 2, checked);
-    OrthogonalMatrixView<double, Dynamic, Dynamic, StorageOrder> mismatched_source(
-      larger_identity.data(), 3, 3, checked);
+    OrthogonalMatrixView<double, Dynamic, StorageOrder> mismatched_target(identity_storage.data(), 2, 2);
+    OrthogonalMatrixView<double, Dynamic, StorageOrder> mismatched_source(larger_identity.data(), 3, 3);
     // view assignment rejects a source with a different shape
     EXPECT_THROW(mismatched_target = mismatched_source, std::invalid_argument);
     // failed view assignment preserves the destination's row extent
     EXPECT_EQ(mismatched_target.rows(), 2);
+}
+
+template <int StorageOrder> void check_matrix_orthogonalization() {
+    using dense_type = Matrix<double, 2, 2, StorageOrder>;
+    dense_type directions({1., 1., 1., 0.});
+    const dense_type original(directions);
+    const double h = 1. / std::sqrt(2.);
+    const dense_type expected({h, h, h, -h});
+    const auto basis = std::as_const(directions).orthogonalize();
+    // the operation returns an owner preserving the scalar, static dimensions and storage order
+    static_assert(std::is_same_v<std::remove_cv_t<decltype(basis)>, OrthogonalMatrix<double, 2, StorageOrder>>);
+    // these columns have analytically known orthonormal directions
+    expect_matrix_near(basis, expected);
+    // constructing the basis leaves all source coefficients untouched
+    expect_matrix_near(directions, original);
+    // the Gram matrix verifies both unit column norms and zero cross-column inner products
+    expect_matrix_near(basis.transpose() * basis, IdentityMatrix<double, 2, 2>());
+
+    const Matrix<double, Dynamic, Dynamic, StorageOrder> dynamic(original);
+    const auto dynamic_basis = dynamic.orthogonalize();
+    // runtime dimensions and the requested layout remain encoded in the returned owner
+    static_assert(
+      std::is_same_v<std::remove_cv_t<decltype(dynamic_basis)>, OrthogonalMatrix<double, Dynamic, StorageOrder>>);
+    // runtime shape and coefficients agree with the same analytic basis
+    expect_matrix_near(dynamic_basis, expected);
+
+    const Matrix<double, Dynamic, 2, StorageOrder> fixed_columns(original);
+    const auto fixed_order_basis = fixed_columns.orthogonalize();
+    // a known column count determines the result's single order even when input rows are dynamic
+    static_assert(
+      std::is_same_v<std::remove_cv_t<decltype(fixed_order_basis)>, OrthogonalMatrix<double, 2, StorageOrder>>);
+    // inferred fixed order produces the same analytic orthonormal basis
+    expect_matrix_near(fixed_order_basis, expected);
+
+    const MatrixView<const double, 2, 2, StorageOrder> view(directions.data());
+    const auto view_basis = view.orthogonalize();
+    // a read-only external view can produce an independent orthogonal owner
+    expect_matrix_near(view_basis, expected);
+    const auto expression_basis = (directions + original).orthogonalize();
+    // doubling both columns preserves their analytically known orthonormal directions
+    expect_matrix_near(expression_basis, expected);
+    const auto temporary_basis = dense_type({1., 1., 1., 0.}).orthogonalize();
+    // eager ownership keeps the result valid after the temporary input is destroyed
+    expect_matrix_near(temporary_basis, expected);
+
+    directions(0, 0) = 7.;
+    // changing the original buffer cannot alter the basis obtained from its view
+    expect_matrix_near(view_basis, expected);
 }
 
 }   // namespace
@@ -231,4 +270,23 @@ template <int StorageOrder> void check_orthogonal_contracts() {
 TEST(linear_algebra, orthogonal) {
     check_orthogonal_contracts<RowMajor>();
     check_orthogonal_contracts<ColMajor>();
+}
+
+// matrix orthogonalization owns its result and preserves inputs across layouts, views and expressions
+TEST(linear_algebra, orthogonalize_matrix) {
+    check_matrix_orthogonalization<RowMajor>();
+    check_matrix_orthogonalization<ColMajor>();
+}
+
+// permanent validation rejects inputs that cannot establish a finite square orthonormal basis
+TEST(linear_algebra, orthogonalize_invalid_matrix) {
+    const Matrix<double, 2, 2> dependent({1., 2., 2., 4.});
+    // collinear columns cannot produce a full-rank orthogonal matrix
+    EXPECT_THROW(static_cast<void>(dependent.orthogonalize()), std::invalid_argument);
+    const Matrix<double, Dynamic, Dynamic> rectangular(2, 3);
+    // runtime rectangular dimensions cannot represent an orthogonal owner
+    EXPECT_THROW(static_cast<void>(rectangular.orthogonalize()), std::invalid_argument);
+    const Matrix<double, 2, 2> nonfinite({std::numeric_limits<double>::quiet_NaN(), 1., 1., 0.});
+    // a nonfinite column cannot satisfy the orthonormality check
+    EXPECT_THROW(static_cast<void>(nonfinite.orthogonalize()), std::invalid_argument);
 }
