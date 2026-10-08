@@ -99,6 +99,20 @@ fdapde_configure_target(fdapde_dense_test)
 target_link_libraries(fdapde_dense_test PRIVATE GTest::gtest_main)
 gtest_discover_tests(fdapde_dense_test PROPERTIES TIMEOUT 60)
 
+# orthogonalization is required computation even when debug assertion arguments are erased
+add_executable(fdapde_orthogonal_disabled_test linear_algebra/orthogonal_disabled.cpp)
+fdapde_configure_target(fdapde_orthogonal_disabled_test)
+target_compile_definitions(fdapde_orthogonal_disabled_test PRIVATE FDAPDE_NO_DEBUG)
+if(MSVC)
+  target_compile_options(fdapde_orthogonal_disabled_test PRIVATE /wd4100 /wd4189)
+else()
+  # erasing debug preconditions leaves existing header parameters and validation temporaries unused
+  target_compile_options(fdapde_orthogonal_disabled_test PRIVATE
+    -Wno-unused-parameter -Wno-unused-variable -Wno-unused-but-set-variable)
+endif()
+target_link_libraries(fdapde_orthogonal_disabled_test PRIVATE GTest::gtest_main)
+gtest_discover_tests(fdapde_orthogonal_disabled_test PROPERTIES TIMEOUT 60)
+
 if(NOT FDAPDE_NATIVE_ONLY)
   add_executable(fdapde_dense_callers_test integration/dense_callers.cpp)
   fdapde_configure_target(fdapde_dense_callers_test)

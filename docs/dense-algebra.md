@@ -79,6 +79,8 @@ Debug preconditions use the typed `fdapde_assert` interface. Storage-capacity
 limits, null external storage and finite factorization inputs have selected
 permanent checks. Compile-time shape, size and unsupported-storage checks remain
 independent of debug configuration.
+Constructors with the `orthogonalize` tag always perform orthogonalization,
+including with `FDAPDE_NO_DEBUG`; only the optional validity assertion disappears.
 
 ## Core integration
 

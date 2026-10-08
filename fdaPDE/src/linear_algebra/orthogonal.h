@@ -233,9 +233,9 @@ class OrthogonalMatrix :
           internals::checked_orthogonal_square_shape(data.size())),
         data_() {
         load_data_(data);
+        [[maybe_unused]] const bool orthogonalized = this->orthogonalize_(data_);
         fdapde_assert(
-          !(!this->orthogonalize_(data_)), std::invalid_argument,
-          "orthogonalization requires a finite full-rank square matrix");
+          orthogonalized, std::invalid_argument, "orthogonalization requires a finite full-rank square matrix");
     }
     /// @brief copies a fixed C array and orthogonalizes its finite full-rank columns
     template <typename Scalar__, std::size_t Size>
@@ -248,9 +248,9 @@ class OrthogonalMatrix :
             static_cast<std::size_t>(Rows_) * static_cast<std::size_t>(Cols_) == Size,
           THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
         load_data_(data);
+        [[maybe_unused]] const bool orthogonalized = this->orthogonalize_(data_);
         fdapde_assert(
-          !(!this->orthogonalize_(data_)), std::invalid_argument,
-          "orthogonalization requires a finite full-rank square matrix");
+          orthogonalized, std::invalid_argument, "orthogonalization requires a finite full-rank square matrix");
     }
 
     /// @brief copies row-ordered input and checks that its columns are orthonormal
