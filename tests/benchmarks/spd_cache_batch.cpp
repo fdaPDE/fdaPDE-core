@@ -345,6 +345,34 @@ template <typename Geometry> void measure_geometry(const char* suffix) {
                  }));
 }
 
+/// @brief compares dynamic batch coefficient fusion with a single native matrix expression per entry
+void measure_batch_arithmetic() {
+    using Dense = Matrix<double, Dynamic, Dynamic>;
+    MatrixBatch<Dense> points(1024, 3, 3);
+    for (std::size_t i = 0; i < points.size(); ++i) points[i](0, 0) = 1.;
+    const auto fused = measure_construction([&] { return (2. * points + points).eval(); });
+    const auto mapped =
+      measure_construction([&] { return points.map([](const auto& value) { return 2. * value + value; }).eval(); });
+    // a fused chain must allocate no more temporaries than one native expression for each dynamic matrix
+    fdapde_strong_assert(
+      fused.total_allocations == mapped.total_allocations, std::logic_error,
+      "benchmark: batch coefficient fusion retained intermediate owners");
+    print_allocation("batch_dynamic_fused_arithmetic", points.size(), fused);
+    print_allocation("batch_dynamic_mapped_arithmetic", points.size(), mapped);
+    print_timing("batch_dynamic_fused_arithmetic", median_nanoseconds(100, [&] {
+                     const auto value = (2. * points + points).eval();
+                     return value[0](0, 0);
+                 }));
+}
+
+/// @brief measures a well-conditioned factorization whose determinant reuses the computed pivots
+void measure_lu() {
+    Matrix<double, Dynamic, Dynamic> matrix(32, 32);
+    for (int row = 0; row < 32; ++row)
+        for (int col = 0; col < 32; ++col) matrix(row, col) = row == col ? 2. : .01 / (1 + std::abs(row - col));
+    print_timing("lu_dynamic_32", median_nanoseconds(1000, [&] { return PartialPivLU(matrix).determinant(); }));
+}
+
 }   // namespace
 
 // measures cache layout, allocation lifetime and sequential geometry costs without test framework dependencies
@@ -384,6 +412,8 @@ int main() {
 
     for (const std::size_t count : {std::size_t {1}, std::size_t {64}, std::size_t {1024}}) measure_batches(count);
     measure_batch_from_values();
+    measure_batch_arithmetic();
+    measure_lu();
     measure_policy_expansion();
     measure_geometry<no_cache_geometry>("none");
     measure_geometry<cached_geometry>("distance_base_maps");

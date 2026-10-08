@@ -151,30 +151,31 @@ template <typename S, int N, RotationUsage Uses = RotationUsage::None> class SOG
     /// @brief returns the number of independent skew tangent coefficients
     std::size_t dimension() const { return std::size_t(n_) * (n_ - 1) / 2; }
     /// @brief pairs body-coordinate tangents using the full Frobenius metric
-    template <RotationLike Q> double inner_product(const Q& q, const Tangent& u, const Tangent& v) const {
+    template <RotationLike Q, typename U, typename V>
+    double inner_product(const Q& q, const SkewSymmetricMatrixExpr<U>& u, const SkewSymmetricMatrixExpr<V>& v) const {
         check_point_(q);
         check_tangent_(u);
         check_tangent_(v);
         long double value = 0;
         for (int i = 0; i < n_; ++i)
             for (int j = i + 1; j < n_; ++j)
-                value += 2 * static_cast<long double>(u(i, j)) * static_cast<long double>(v(i, j));
+                value += 2 * static_cast<long double>(u.derived()(i, j)) * static_cast<long double>(v.derived()(i, j));
         return internals::checked_geometry_result(double(value));
     }
     /// @brief computes the scale-safe full Frobenius norm of a body tangent
-    template <RotationLike Q> double norm(const Q& q, const Tangent& u) const {
+    template <RotationLike Q, typename U> double norm(const Q& q, const SkewSymmetricMatrixExpr<U>& u) const {
         check_point_(q);
         check_tangent_(u);
         double value = 0;
         for (int i = 0; i < n_; ++i)
             for (int j = i + 1; j < n_; ++j) {
-                value = std::hypot(value, double(u(i, j)));
-                value = std::hypot(value, double(u(i, j)));
+                value = std::hypot(value, double(u.derived()(i, j)));
+                value = std::hypot(value, double(u.derived()(i, j)));
             }
         return value;
     }
-    /// @brief copies a tangent already expressed in body skew coordinates
-    template <RotationLike Q> Tangent project(const Q& q, const Tangent& u) const {
+    /// @brief copies an owning or borrowed tangent already expressed in body skew coordinates
+    template <RotationLike Q, typename U> Tangent project(const Q& q, const SkewSymmetricMatrixExpr<U>& u) const {
         check_point_(q);
         check_tangent_(u);
         return u;
@@ -195,7 +196,7 @@ template <typename S, int N, RotationUsage Uses = RotationUsage::None> class SOG
         return result;
     }
     /// @brief returns the ambient velocity Q Omega represented by a body tangent
-    template <RotationLike Q> auto to_ambient(const Q& q, const Tangent& u) const {
+    template <RotationLike Q, typename U> auto to_ambient(const Q& q, const SkewSymmetricMatrixExpr<U>& u) const {
         check_point_(q);
         check_tangent_(u);
         return Matrix<S, N, N>(q * u);
@@ -206,9 +207,10 @@ template <typename S, int N, RotationUsage Uses = RotationUsage::None> class SOG
         return from_ambient(q, gradient);
     }
     /// @brief converts an ambient Hessian action to body coordinates with the embedded connection correction
-    template <RotationLike Q, typename G, typename H>
+    template <RotationLike Q, typename G, typename H, typename U>
     Tangent euclidean_to_riemannian_hessian(
-      const Q& q, const MatrixExpr<G>& gradient, const MatrixExpr<H>& hessian, const Tangent& direction) const {
+      const Q& q, const MatrixExpr<G>& gradient, const MatrixExpr<H>& hessian,
+      const SkewSymmetricMatrixExpr<U>& direction) const {
         check_point_(q);
         check_shape_(gradient);
         check_shape_(hessian);
@@ -234,26 +236,30 @@ template <typename S, int N, RotationUsage Uses = RotationUsage::None> class SOG
         return result;
     }
     /// @brief combines finite body tangents with finite scalar weights
-    template <RotationLike Q>
-    Tangent linear_combination(const Q& q, double alpha, const Tangent& u, double beta, const Tangent& v) const {
+    template <RotationLike Q, typename U, typename V>
+    Tangent linear_combination(
+      const Q& q, double alpha, const SkewSymmetricMatrixExpr<U>& u, double beta,
+      const SkewSymmetricMatrixExpr<V>& v) const {
         check_tangent_(u);
         check_tangent_(v);
         const S a = internals::geometry_coefficient<S>(alpha), b = internals::geometry_coefficient<S>(beta);
         Tangent result = zero_tangent(q);
         for (int i = 0; i < n_; ++i)
             for (int j = i + 1; j < n_; ++j)
-                result(i, j) = internals::checked_geometry_result(a * S(u(i, j)) + b * S(v(i, j)));
+                result(i, j) = internals::checked_geometry_result(a * S(u.derived()(i, j)) + b * S(v.derived()(i, j)));
         return result;
     }
     /// @brief follows Q exp(step Omega) and certifies the rounded rotation
-    template <RotationLike Q> Point exponential(const Q& q, const Tangent& u, double step = 1) const {
+    template <RotationLike Q, typename U>
+    Point exponential(const Q& q, const SkewSymmetricMatrixExpr<U>& u, double step = 1) const {
         check_point_(q);
         check_tangent_(u);
         const auto delta = fdapde::internals::skew_exponential(u, step);
         return Point(q * delta);
     }
     /// @brief uses the exact exponential as a rotation-preserving retraction
-    template <RotationLike Q> Point retract(const Q& q, const Tangent& u, double step = 1) const {
+    template <RotationLike Q, typename U>
+    Point retract(const Q& q, const SkewSymmetricMatrixExpr<U>& u, double step = 1) const {
         return exponential(q, u, step);
     }
     /// @brief returns the unique minimum body logarithm of from transpose times to
@@ -384,7 +390,8 @@ template <typename S, int N, RotationUsage Uses = RotationUsage::None> class SOG
         return fdapde::internals::rotation_geodesic<S, N>(from, {branch.tangent, relative.cache().diagnostics()});
     }
     /// @brief parallel-transports body tangents along the uniquely resolved shortest geodesic
-    template <RotationLike Q, RotationLike R> Tangent transport(const Q& from, const R& to, const Tangent& u) const {
+    template <RotationLike Q, RotationLike R, typename U>
+    Tangent transport(const Q& from, const R& to, const SkewSymmetricMatrixExpr<U>& u) const {
         check_tangent_(u);
         const auto omega = logarithm(from, to);
         const auto half = rotation_exp(omega, 0.5);
@@ -416,11 +423,13 @@ template <typename S, int N, RotationUsage Uses = RotationUsage::None> class SOG
         check_shape_(q);
     }
     /// @brief checks finite body tangent coefficients and the geometry order
-    void check_tangent_(const Tangent& u) const {
+    template <typename U> void check_tangent_(const SkewSymmetricMatrixExpr<U>& u) const {
+        static_assert(std::same_as<S, std::remove_cv_t<typename U::Scalar>>, "SO geometry tangent scalar mismatch");
         check_shape_(u);
         for (int i = 0; i < n_; ++i)
             for (int j = i + 1; j < n_; ++j)
-                fdapde_strong_assert(std::isfinite(S(u(i, j))), std::invalid_argument, "SO tangent must be finite");
+                fdapde_strong_assert(
+                  std::isfinite(S(u.derived()(i, j))), std::invalid_argument, "SO tangent must be finite");
     }
     /// @brief forms the relative rotation without assuming endpoint logarithms can be subtracted
     template <RotationLike Q, RotationLike R> auto relative_(const Q& from, const R& to) const {

@@ -1523,4 +1523,151 @@ TEST(MatrixBatch, StructuredArithmeticAssignmentRetainsDestinationPolicyAndFailu
     }
 }
 
+// fused coefficient chains retain temporary map owners and evaluate matrix products before reusing their coefficients
+TEST(MatrixBatch, FusedArithmeticPreservesTemporaryOperandsAndAliasSafety) {
+    using Dense = Matrix<double, Dynamic, Dynamic>;
+    MatrixBatch<Dense> input(3, 2, 2);
+    for (std::size_t i = 0; i < input.size(); ++i) input[i] = Matrix<double, 2, 2>({1. + i, 2., -1., 3. + i});
+    const Dense shift(Matrix<double, 2, 2>({.5, 1., 2., -.5}));
+    std::atomic<std::size_t> map_calls = 0;
+    const auto expression = 2. * input.map([&](const auto& value) {
+        ++map_calls;
+        return 2. * value;
+    }) + input * input - shift;
+    const auto sequential = expression.eval();
+    const auto parallel = expression.eval(execution_par);
+    // each materialization calls the mapped source once per entry, including shape inference
+    EXPECT_EQ(map_calls.load(), 2 * input.size());
+    for (std::size_t i = 0; i < input.size(); ++i) {
+        const auto value = input[i];
+        for (int row = 0; row < 2; ++row)
+            for (int col = 0; col < 2; ++col) {
+                double expected = 4 * value(row, col) - shift(row, col);
+                for (int k = 0; k < 2; ++k) expected += value(row, k) * value(k, col);
+                // the scalar expansion checks the sum and noncommuting matrix product independently of batch nodes
+                EXPECT_DOUBLE_EQ(sequential[i](row, col), expected);
+                // parallel materialization preserves every coefficient of the sequential result
+                EXPECT_DOUBLE_EQ(parallel[i](row, col), expected);
+            }
+    }
+    input.assign(expression, execution_par);
+    // alias-safe replacement evaluates every original entry once before publishing the new storage
+    EXPECT_EQ(map_calls.load(), 3 * input.size());
+    for (std::size_t i = 0; i < input.size(); ++i) {
+        // assignment from a borrowing expression agrees with the independent pre-assignment result
+        expect_matrix_eq(input[i], sequential[i]);
+    }
+}
+
+/// @brief checks packed skew batch ownership, arithmetic and aliasing at a fixed or dynamic order
+template <int Order> void check_skew_batches(int order) {
+    using Skew = SkewSymmetricMatrix<double, Order>;
+    using Batch = MatrixBatch<Skew>;
+    Batch values(3, order, order);
+    const std::size_t stride = std::size_t(order) * (order - 1) / 2;
+    // strict-upper storage omits both the zero diagonal and the sign-reflected lower triangle
+    EXPECT_EQ(values.coefficient_stride(), stride);
+    // all three elements occupy one packed coefficient sequence without dense padding
+    EXPECT_EQ(values.coefficients().size(), 3 * stride);
+    // const batch access provides a view that cannot write any independent coefficient
+    static_assert(std::same_as<decltype(std::as_const(values)[0].data()), const double*>);
+    // multiplying skew matrices generally produces dense output and cannot be a skew compound update
+    static_assert(!permits_batch_compound_product<Batch, Batch>);
+    for (std::size_t slot = 0; slot < values.size(); ++slot) {
+        std::size_t packed = 0;
+        for (int row = 0; row < order; ++row)
+            for (int col = row + 1; col < order; ++col) {
+                const double expected = 10 * slot + 3 * row + col + 1;
+                values[slot](row, col) = expected;
+                // consecutive strict-upper entries map directly to the corresponding aggregate buffer row
+                EXPECT_DOUBLE_EQ(values.coefficients()[slot * stride + packed++], expected);
+                // reflected reads negate the stored upper coefficient
+                EXPECT_DOUBLE_EQ(double(values[slot](col, row)), -expected);
+            }
+    }
+    Batch independent(values);
+    values[0](0, 1) = -7.;
+    // deep-copy storage stays independent of a later write through an original element view
+    EXPECT_DOUBLE_EQ(double(independent[0](0, 1)), 2.);
+    const Skew shift(independent[0]);
+    const auto combined = (2. * values + values - shift).eval(execution_par);
+    // sums and scalar operations retain the native packed skew result type
+    static_assert(std::same_as<typename decltype(combined)::MatrixType, Skew>);
+    const auto mapped = values.map([](const auto& value) { return value * 3.; }).eval(execution_par);
+    // a mapped skew expression also materializes as a packed skew owner
+    static_assert(std::same_as<typename decltype(mapped)::MatrixType, Skew>);
+    const auto products = (values * values).eval();
+    // the unconstrained matrix product is dense because the skew invariant is not preserved
+    static_assert(std::same_as<typename decltype(products)::MatrixType, Matrix<double, Order, Order>>);
+    const auto squared = values.squared_norm();
+    for (std::size_t slot = 0; slot < values.size(); ++slot) {
+        double norm_squared = 0;
+        for (int row = 0; row < order; ++row)
+            for (int col = 0; col < order; ++col) {
+                const double coefficient = double(values[slot](row, col));
+                // fused coefficient arithmetic preserves the full signed matrix coefficients
+                EXPECT_DOUBLE_EQ(double(combined[slot](row, col)), 3 * coefficient - double(shift(row, col)));
+                // temporary map results retain their independent skew storage through evaluation
+                EXPECT_DOUBLE_EQ(double(mapped[slot](row, col)), 3 * coefficient);
+                double expected = 0;
+                for (int k = 0; k < order; ++k) expected += double(values[slot](row, k)) * double(values[slot](k, col));
+                // scalar multiplication of complete matrix coordinates independently checks the dense product
+                EXPECT_DOUBLE_EQ(products[slot](row, col), expected);
+                norm_squared += coefficient * coefficient;
+            }
+        // the Frobenius norm counts both signs of every packed off-diagonal coefficient
+        EXPECT_DOUBLE_EQ(squared[slot](0, 0), norm_squared);
+    }
+    const Batch before(values);
+    const std::array<int, 3> indices {2, 0, 2};
+    values.assign(2. * values.select(indices), execution_par);
+    values *= .5;
+    for (std::size_t slot = 0; slot < values.size(); ++slot) {
+        // alias-safe assignment preserves repeated selection order and scalar compound arithmetic
+        expect_matrix_eq(values[slot], before[indices[slot]]);
+    }
+    Batch moved(std::move(values));
+    // moving preserves the packed element count and leaves the source logically empty
+    EXPECT_EQ(moved.size(), 3);
+    // the moved-from source no longer exposes elements from transferred storage
+    EXPECT_TRUE(values.empty());
+}
+
+// fixed and dynamic packed skew batches retain native views and structural arithmetic
+TEST(MatrixBatch, PackedSkewStorageAndArithmetic) {
+    check_skew_batches<2>(2);
+    check_skew_batches<3>(3);
+    check_skew_batches<Dynamic>(4);
+    using DynamicSkew = SkewSymmetricMatrix<double, Dynamic>;
+    // a structured dynamic batch rejects nonsquare elements before allocating coefficient storage
+    EXPECT_THROW((MatrixBatch<DynamicSkew>(2, 2, 3)), std::invalid_argument);
+}
+
+// order-one skew elements have a logical zero matrix with no physical coefficients
+TEST(MatrixBatch, ZeroStrideSkewElementsAndEmptySelections) {
+    using Skew = SkewSymmetricMatrix<double, 1>;
+    MatrixBatch<Skew> values(4);
+    // the implicit diagonal requires zero stored coefficients for each order-one element
+    EXPECT_EQ(values.coefficient_stride(), 0);
+    // multiple order-one matrices can share an empty coefficient span without forming invalid offsets
+    EXPECT_TRUE(values.coefficients().empty());
+    values[3](0, 0) = 0.;
+    const auto result = (2. * values + values).eval(execution_par);
+    // materialization retains all logical elements even when the aggregate allocation is empty
+    EXPECT_EQ(result.size(), 4);
+    // the final element still reads its implicit zero diagonal through a const view
+    EXPECT_DOUBLE_EQ(double(result[3](0, 0)), 0.);
+    MatrixBatch<SkewSymmetricMatrix<double, Dynamic>> dynamic(2, 1, 1);
+    const auto dynamic_result = dynamic.eval(execution_par);
+    // runtime order-one shapes obey the same zero-storage contract
+    EXPECT_EQ(dynamic_result.coefficient_stride(), 0);
+    // reading the final dynamic element never dereferences its empty packed storage
+    EXPECT_DOUBLE_EQ(double(dynamic_result[1](0, 0)), 0.);
+    const auto empty = dynamic.select(std::array<int, 0> {}).eval();
+    // an empty selection preserves the known runtime matrix order for later batch operations
+    EXPECT_EQ(empty.rows(), 1);
+    // selecting no elements produces a logically empty batch independently of its element stride
+    EXPECT_TRUE(empty.empty());
+}
+
 }   // namespace

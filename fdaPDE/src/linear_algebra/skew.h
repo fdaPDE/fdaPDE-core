@@ -306,6 +306,8 @@ class SkewSymmetricMatrix :
     fdapde_static_assert(StorageOrder_ == RowMajor, PACKED_COL_MAJOR_STRUCTURED_STORAGE_IS_NOT_SUPPORTED);
     fdapde_static_assert(HasSupportedStaticStorage, MATRIX_SIZE_EXCEEDS_SUPPORTED_RANGE);
     using Scalar = Scalar_;
+    using View = SkewSymmetricMatrixView<Scalar_, Rows_, Cols_, StorageOrder_>;
+    using ConstView = SkewSymmetricMatrixView<const std::remove_const_t<Scalar_>, Rows_, Cols_, StorageOrder_>;
     static constexpr int Rows = Rows_;
     static constexpr int Cols = Cols_;
     static constexpr int StorageOrder = StorageOrder_;

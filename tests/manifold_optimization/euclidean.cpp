@@ -8,6 +8,19 @@ using namespace fdapde::manifold;
 using Sym = SymmetricMatrix<double, 2>;
 using Batch = MatrixBatch<Sym>;
 
+/// @brief checks whether the public product template accepts a geometry before instantiating its methods
+template <typename Geometry>
+concept has_product_geometry = requires { typename ProductGeometry<Geometry>; };
+
+// native symmetric points and tangents expose the owner/view contract required by batch storage
+static_assert(has_product_geometry<EuclideanGeometry<Sym>>);
+// SPD point owners and symmetric tangents both satisfy the batch storage contract
+static_assert(has_product_geometry<LogEuclideanSPDGeometry<double, 2>>);
+// SO uses owning rotation points and body-coordinate skew tangents in its single-factor contract
+static_assert(FirstOrderGeometry<SOGeometry<double, 3>>);
+// native packed skew views allow the public product template to accept rotation geometries
+static_assert(has_product_geometry<SOGeometry<double, 3>>);
+
 /// @brief supplies a coupled quadratic whose Frobenius gradient and Hessian have an exact known solution
 struct Quadratic {
     /// @brief satisfies evaluation-local workspace ownership without retaining candidate data

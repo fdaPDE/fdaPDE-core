@@ -1,9 +1,10 @@
 # MatrixBatch
 
 Include `<fdaPDE/dense_linear_algebra.h>`. `MatrixBatch<MatrixType, RowMajor>` owns
-uniformly shaped native `Matrix`, `SymmetricMatrix`, `DiagonalMatrix`,
-`SPDMatrix` or `OrthogonalMatrix` elements. Both the batch and its element storage
-must be RowMajor; ColMajor is rejected at compilation.
+uniformly shaped native `Matrix`, `SymmetricMatrix`, `SkewSymmetricMatrix`,
+`DiagonalMatrix`, `SPDMatrix`, `OrthogonalMatrix` or `RotationMatrix` elements.
+Both the batch and its element storage must be RowMajor; ColMajor is rejected
+at compilation.
 
 ```cpp
 using Point = fdapde::SPDMatrix<double, 2, fdapde::Cache::Log>;
@@ -25,8 +26,12 @@ must have a uniform positive shape; square structures require square elements.
 
 `size()` counts matrices; `rows()`/`cols()` describe each matrix, including an
 empty batch. `coefficient_stride()` is the physical count per matrix: r*c dense,
-n diagonal, n*(n+1)/2 symmetric/SPD. `coefficients()` borrows a contiguous span of
-row-packed coefficients, preserving native lower-triangular order. SPD, orthogonal and cached
+n diagonal, n*(n+1)/2 symmetric/SPD, and n*(n-1)/2 skew-symmetric.
+`coefficients()` borrows a contiguous span of row-packed coefficients: lower
+triangle for symmetric/SPD and strict upper triangle for skew-symmetric elements.
+Order-one skew elements have stride zero and no stored coefficients, including
+in a nonempty batch; their only logical coefficient is zero.
+SPD, orthogonal and cached
 symmetric spans are read-only; `Cache::None` symmetric batches permit writable spans.
 A cached symmetric element exposes writable packed coefficients through its view
 `data()`. Calling `batch[i].data()` immediately invalidates that slot and permanently
@@ -38,6 +43,11 @@ still invokes mutable access. See the [raw-access contract and example](symmetri
 
 `operator[]` returns the element's native `View` or `ConstView`;
 SPD value assignment validates an independent candidate before committing it.
+Skew views reflect upper coefficients with the opposite sign below the diagonal.
+As with standalone skew views, element assignment reads only the strict upper
+triangle of its source; whole-batch skew construction and assignment require
+skew-symmetric expressions. Use `as_skew_symmetric<Upper>()` or
+`as_skew_symmetric<Lower>()` to explicitly interpret a dense source triangle.
 Bounds and allocation-size overflow checks are always active.
 
 Selected SPD cache quantities or symmetric eigenpairs occupy one scalar buffer for the entire batch,
@@ -90,7 +100,7 @@ expose `trace()`, `determinant()`, `diagonal()` or `inv()`. Dynamic rectangular 
 throw `std::invalid_argument` for these operations, even for an empty batch.
 
 `norm()` requires floating-point scalars and returns the Frobenius norm.
-`squared_norm()` sums squared logical coefficients: a packed symmetric
+`squared_norm()` sums squared logical coefficients: a packed symmetric or skew-symmetric
 off-diagonal coefficient contributes twice. These norms, `trace()` and
 `diagonal()` read coefficients without preparing an eigendecomposition or a
 spectral cache. Batch determinants use each element's existing determinant
@@ -208,7 +218,11 @@ invalidates previously borrowed destination views.
 
 Expressions are composed before materialization: `(2.0 * a + b - shift).eval(policy)`
 evaluates the whole formula for each index without allocating intermediate
-batches. The same evaluation methods apply to maps and selections. Nonempty
+batches. Coefficientwise sums, differences and scalar operations fuse across
+arithmetic nodes, also avoiding intermediate dynamic matrix owners. Full matrix
+products and mapped results retain their materialization boundaries so products
+are not recomputed for every downstream coefficient and returned temporaries
+stay alive. The same evaluation methods apply to maps and selections. Nonempty
 dynamic results infer their shape from the first entry, which is evaluated only
 once. Empty expressions retain known operand/result shapes; an empty dynamic map
 with unknown output shape remains invalid.
@@ -218,8 +232,10 @@ Native structure determines the result owner:
 | Element operation | Inferred result element |
 |---|---|
 | symmetric `+`, `-`, scalar `*`, scalar `/`, unary `-` | symmetric |
+| skew-symmetric `+`, `-`, scalar `*`, scalar `/`, unary `-` | skew-symmetric |
 | SPD `+` or `-`, scalar scaling | symmetric, following native arithmetic |
 | symmetric matrix product | dense |
+| skew-symmetric matrix product | dense |
 | diagonal arithmetic and diagonal matrix product | diagonal |
 | orthogonal matrix product | orthogonal |
 | rotation matrix product | rotation |
@@ -244,8 +260,10 @@ kept separate from the [spectral operations tutorial](../examples/spd_batch_oper
 `map(callable)` retains a callable by value and borrows its persistent source.
 It does no work until an element is requested or materialized. Access to i
 evaluates only i; repeated access repeats computation and sees current source
-values. The callable receives a const view. Scalar results become native
-`Matrix<T,1,1>` owners. Matrix results retain their dense, symmetric, diagonal or
+values. The callable receives a const view. During one evaluation, the callable
+must not modify any operand storage, including through captured aliases; future
+evaluations may observe changes made between calls. Scalar results become native
+`Matrix<T,1,1>` owners. Matrix results retain their dense, symmetric, skew-symmetric, diagonal or
 verified SPD structure; expressions and views are materialized while the source
 proxy remains alive. Native nesting rules still apply: a lambda must not return
 an expression borrowing its destroyed local owner. Return that local owner by

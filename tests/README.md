@@ -77,8 +77,10 @@ and integration lanes both keep debug assertions enabled in ordinary tests.
 
 ## SPD geometry
 
-The geometry targets exercise log-Euclidean and affine-invariant SPD operations,
-public error contracts and owning results. The integration lane additionally
+The geometry and interpolation targets exercise log-Euclidean, affine-invariant,
+Bures-Wasserstein, log-Cholesky and Cheeger log-Euclidean SPD operations, SO,
+public error contracts and owning results. Regressions cover recoverable
+retraction-domain failures, spatial boundary roundoff and prepared stencil reuse. The integration lane additionally
 checks both manifold/full aggregate include orders in linked translation units.
 
 ## Execution
@@ -95,8 +97,9 @@ multi-TU shared configuration, singleton identity and real execution.
 
 The runtime suite also reads prepared SPD batch caches from asynchronous tasks
 and checks their logarithmic Frobenius norms against a diagonal analytic oracle.
-The shared batch stays alive until all tasks finish. Batch operations themselves
-remain sequential; execution is selected explicitly by the caller.
+The shared batch stays alive until all tasks finish. Batch operations default to
+sequential execution and accept explicit `execution_par` for supported owning
+transforms, expression evaluation and assignment. Reductions remain sequential.
 
 See [the execution contract](../docs/execution.md) for API requirements and limits.
 
@@ -106,8 +109,16 @@ The cache and batch targets cover selective static/dynamic storage, identity,
 policy conversion, checked view assignment, deferred map/redux/select and
 lifetime rejection. Geometry tests cover mixed policies, canonical result types,
 non-normalized LE means, global materialization counts and cached metric/map
-agreement on noncommuting inputs. All use default debug assertions. The only
-NoDebug target is the focused assertion-argument-erasure test.
+agreement on noncommuting inputs. All ordinary suites use default debug assertions.
+Two focused NoDebug targets check assertion-argument erasure and the required
+orthogonalization in both vector and fixed-array constructors; they do not duplicate
+the ordinary suites. The orthogonalization target suppresses only unused-parameter
+and unused-variable warnings caused by erasing existing debug preconditions.
+
+The benchmark also checks that fused dynamic batch arithmetic uses the same
+allocation count as one native expression per element, and reports a 32-by-32 LU
+factorization timing. Timings are observations on the current machine, not test
+thresholds.
 
 For a standalone allocation probe and sequential microbenchmark:
 

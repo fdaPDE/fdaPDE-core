@@ -273,6 +273,7 @@ target_link_libraries(fdapde_matrix_batch_test PRIVATE GTest::gtest_main Threads
 gtest_discover_tests(fdapde_matrix_batch_test PROPERTIES TIMEOUT 60)
 fdapde_reject_program(col_major_matrix_batch "MatrixBatch supports row-major storage only")
 fdapde_reject_program(view_matrix_batch "MatrixBatch requires owning matrix elements")
+fdapde_reject_program(dense_skew_matrix_batch "MatrixBatch skew elements require skew-symmetric expressions")
 
 option(FDAPDE_BUILD_SPD_BENCHMARK "Build the standalone SPD allocation and timing probe" OFF)
 if(FDAPDE_BUILD_SPD_BENCHMARK)

@@ -247,14 +247,14 @@ struct generic_matrix_product_executor {
 // outer product v * v^\top executor
 /// @brief computes a column-vector and row-vector outer product
 struct outer_product_executor {
-    /// @brief computes one outer-product entry from the corresponding vector coefficients
+    /// @brief computes one outer-product entry through matrix coordinates, including structured scalars
     template <typename LhsXprType_, typename RhsXprType_>
     static constexpr auto run(int i, int j, const LhsXprType_& lhs, const RhsXprType_& rhs) {
         using LhsXprType = std::decay_t<LhsXprType_>;
         using RhsXprType = std::decay_t<RhsXprType_>;
         fdapde_static_assert(
           LhsXprType::Cols == 1 && RhsXprType::Rows == 1, INVALID_OUTER_PRODUCT__OPERANDS_HAVE_INCOMPATIBLE_SHAPES);
-        return lhs[i] * rhs[j];
+        return lhs(i, 0) * rhs(0, j);
     }
 };
 

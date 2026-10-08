@@ -261,4 +261,197 @@ TEST(SOGeometry, FixedOrderAndInvalidInputs) {
     EXPECT_NEAR(result(0, 1), -std::sin(.2f), 2e-6);
 }
 
+/// @brief supplies a coupled ambient quadratic with an independently known attainable rotation minimum
+template <typename Geometry> struct CoupledRotations {
+    using Point = typename manifold::ProductGeometry<Geometry>::Point;
+    using Ambient = MatrixBatch<Matrix<typename Geometry::Scalar, Geometry::Point::Rows, Geometry::Point::Cols>>;
+    /// @brief provides candidate-local storage without shared objective intermediates
+    struct Workspace { };
+    Point target;
+    /// @brief penalizes both factor residuals and their difference so the objective is not separable
+    double cost(const Point& point, Workspace&) const {
+        double value = 0;
+        for (std::size_t i = 0; i < point.size(); ++i) value += .5 * (point[i] - target[i]).squared_norm();
+        const auto difference = (point[0] - target[0]) - (point[1] - target[1]);
+        return value + .5 * difference.squared_norm();
+    }
+    /// @brief differentiates the shared residual difference in both ambient factor matrices
+    Ambient egrad(const Point& point, Workspace&) const {
+        Ambient result(point.size(), point.rows(), point.cols());
+        for (std::size_t i = 0; i < point.size(); ++i) result[i] = point[i] - target[i];
+        const typename Ambient::MatrixType difference(result[0] - result[1]);
+        result[0] += difference;
+        result[1] -= difference;
+        return result;
+    }
+    /// @brief applies every diagonal and cross-factor block of the constant ambient Hessian
+    Ambient ehess(const Point&, const Ambient& direction, Workspace&) const {
+        Ambient result(direction);
+        const typename Ambient::MatrixType difference(direction[0] - direction[1]);
+        result[0] += difference;
+        result[1] -= difference;
+        return result;
+    }
+};
+
+/// @brief exercises product tangent operations with nonidentity rotations and borrowed skew entries
+template <typename Geometry> void check_product_operations(const Geometry& factor) {
+    using Product = manifold::ProductGeometry<Geometry>;
+    // fixed and dynamic SO products retain geodesic and transport contracts with owning skew batches
+    static_assert(manifold::GeodesicGeometry<Product> && manifold::VectorTransportGeometry<Product>);
+    const Product geometry(factor, 2);
+    typename Product::Point points(2, factor.order(), factor.order());
+    points[0] = plane(factor.order(), .4);
+    points[1] = plane(factor.order(), -.25);
+    auto u = geometry.zero_tangent(points), v = geometry.zero_tangent(points);
+    for (std::size_t i = 0; i < points.size(); ++i) {
+        u[i](0, 1) = .2 + .1 * i;
+        u[i](0, 2) = -.15;
+        u[i](1, 2) = .07;
+        v[i](0, 1) = -.1;
+        v[i](0, 2) = .3;
+        v[i](1, 2) = .15 - .1 * i;
+    }
+    double pairing = 0, squared_norm = 0;
+    for (std::size_t k = 0; k < points.size(); ++k)
+        for (int i = 0; i < factor.order(); ++i)
+            for (int j = 0; j < factor.order(); ++j) {
+                pairing += u[k](i, j) * v[k](i, j);
+                squared_norm += u[k](i, j) * u[k](i, j);
+            }
+    // the product counts only independent strict-upper coefficients of both skew tangents
+    EXPECT_EQ(geometry.dimension(), 2 * factor.dimension());
+    // an independent complete-matrix contraction counts both signed skew triangles
+    EXPECT_NEAR(geometry.inner_product(points, u, v), pairing, 1e-14);
+    // the product norm agrees with the independently accumulated full Frobenius norm
+    EXPECT_NEAR(geometry.norm(points, u), std::sqrt(squared_norm), 1e-14);
+    const auto projected = geometry.project(points, u), combined = geometry.linear_combination(points, 2., u, -.5, v);
+    const auto ambient = geometry.to_ambient(points, u);
+    const auto endpoint = geometry.exponential(points, u, .3), retracted = geometry.retract(points, u, .3);
+    const auto logarithm = geometry.logarithm(points, endpoint), transported = geometry.transport(points, endpoint, v);
+    for (std::size_t i = 0; i < points.size(); ++i) {
+        // projecting a borrowed skew body tangent at a nonidentity rotation must preserve its coordinates
+        expect_matrix(projected[i], u[i]);
+        // typed skew arithmetic keeps the body convention instead of selecting the ambient projection overload
+        expect_matrix(factor.project(points[i], 2. * u[i] - u[i]), u[i]);
+        // both source skew views participate in the prescribed factorwise linear combination
+        expect_matrix(combined[i], 2. * u[i] - .5 * v[i]);
+        // body velocity becomes an ambient matrix by multiplying by its own base rotation
+        expect_matrix(ambient[i], points[i] * u[i]);
+        // a full dense velocity still takes the ambient projection route and recovers its body coordinates
+        expect_matrix(factor.project(points[i], ambient[i]), u[i]);
+        // the product exponential uses the same finite geodesic parameter at every factor
+        expect_matrix(endpoint[i], factor.exponential(points[i], typename Geometry::Tangent(u[i]), .3));
+        // exact exponential retraction preserves each verified product rotation
+        expect_matrix(retracted[i], endpoint[i]);
+        // a short exponential stays on the unique logarithm branch with the original body direction
+        expect_matrix(logarithm[i], .3 * u[i]);
+        // transporting a borrowed skew direction agrees with its independent owning factor invocation
+        expect_matrix(transported[i], factor.transport(points[i], endpoint[i], typename Geometry::Tangent(v[i])));
+    }
+    // the product geodesic distance equals the combined speed times the short common parameter
+    EXPECT_NEAR(geometry.distance(points, endpoint), .3 * std::sqrt(squared_norm), 2e-12);
+    // factorwise parallel transport preserves the full product metric norm
+    EXPECT_NEAR(geometry.norm(endpoint, transported), geometry.norm(points, v), 2e-12);
+    const auto zero = geometry.zero_tangent(points);
+    // freshly allocated packed skew rows represent the additive identity at every factor
+    EXPECT_DOUBLE_EQ(geometry.norm(points, zero), 0.);
+}
+
+/// @brief validates cross-factor ambient derivatives and solves the same coupled rotation objective
+template <typename Geometry> void check_product_optimization(const Geometry& factor) {
+    using Product = manifold::ProductGeometry<Geometry>;
+    const Product geometry(factor, 2);
+    typename Product::Point initial(2, factor.order(), factor.order()), target(initial);
+    target[0] = plane(factor.order(), .35);
+    target[1] = plane(factor.order(), -.2);
+    initial[0] = plane(factor.order(), -.1);
+    initial[1] = plane(factor.order(), .15);
+    CoupledRotations<Geometry> problem {target};
+    typename CoupledRotations<Geometry>::Workspace workspace;
+    auto u = geometry.zero_tangent(initial), v = geometry.zero_tangent(initial);
+    u[0](0, 1) = .3;
+    u[0](0, 2) = -.1;
+    v[1](0, 1) = -.2;
+    v[1](0, 2) = .12;
+    const auto egrad = problem.egrad(initial, workspace);
+    const auto grad = geometry.euclidean_to_riemannian_gradient(initial, egrad);
+    const auto ambient_u = geometry.to_ambient(initial, u), ambient_v = geometry.to_ambient(initial, v);
+    const auto hessian =
+      geometry.euclidean_to_riemannian_hessian(initial, egrad, problem.ehess(initial, ambient_u, workspace), u);
+    double mixed = 0;
+    for (int i = 0; i < factor.order(); ++i)
+        for (int j = 0; j < factor.order(); ++j) mixed -= ambient_u[0](i, j) * ambient_v[1](i, j);
+    // disjoint factor directions isolate the exact negative cross block of the coupled ambient residual
+    EXPECT_NEAR(geometry.inner_product(initial, v, hessian), mixed, 2e-13);
+    constexpr double step = 1e-6;
+    const auto plus = geometry.exponential(initial, u, step), minus = geometry.exponential(initial, u, -step);
+    const double finite = (problem.cost(plus, workspace) - problem.cost(minus, workspace)) / (2 * step);
+    // independent geodesic perturbations check the converted coupled gradient in body coordinates
+    EXPECT_NEAR(geometry.inner_product(initial, grad, u), finite, 2e-9);
+    manifold::TrustRegionOptions options;
+    options.gradient_tolerance = 1e-9;
+    const auto result = manifold::RiemannianTrustRegion(options).optimize(problem, geometry, initial);
+    // the complete ambient Hessian route converges to the coupled objective's attainable zero residual
+    ASSERT_TRUE(result.converged());
+    // no positive residual remains at the independently prescribed rotation target
+    EXPECT_LT(result.cost, 1e-16);
+    for (std::size_t i = 0; i < target.size(); ++i) {
+        // each optimized native rotation matches its factor of the exact coupled minimizer
+        expect_matrix(result.point[i], target[i], 2e-8);
+    }
+    manifold::SteepestDescentOptions descent_options;
+    descent_options.gradient_tolerance = 1e-8;
+    const auto descent = manifold::RiemannianSteepestDescent(descent_options).optimize(problem, geometry, initial);
+    // first-order optimization accepts the same native skew-batch gradient without a Hessian callback
+    ASSERT_TRUE(descent.converged());
+    // Armijo updates reach the same zero-residual solution as the second-order solver
+    EXPECT_LT(descent.cost, 1e-15);
+}
+
+// fixed and dynamic products preserve every first-order, geodesic and transport operation on skew views
+TEST(SOGeometry, NativeProductOperations) {
+    // fixed SO(3) factors retain the selected point-log cache and typed borrowed tangent semantics
+    check_product_operations(manifold::SOGeometry<double, 3, RotationUsage::IdentityLog> {});
+    // runtime SO(3) factors reproduce the same metric and map oracles through dynamic skew rows
+    check_product_operations(G(3));
+}
+
+// joint optimization retains cross-factor ambient Hessian terms and body-coordinate tangent conventions
+TEST(SOGeometry, CoupledProductOptimization) {
+    // fixed packed tangents preserve the coupled gradient, cross Hessian block and exact optimizer target
+    check_product_optimization(manifold::SOGeometry<double, 3> {});
+    // dynamic tangent storage uses the same full ambient derivative and joint solver contracts
+    check_product_optimization(G(3));
+}
+
+/// @brief checks the zero-dimensional product without indexing its empty packed tangent storage
+template <typename Geometry> void check_trivial_product(const Geometry& factor) {
+    const manifold::ProductGeometry geometry(factor, 2);
+    using Product = decltype(geometry);
+    const typename Product::Point points(2, 1, 1);
+    const auto zero = geometry.zero_tangent(points);
+    // the product of trivial rotation groups has no independent tangent coordinates
+    EXPECT_EQ(geometry.dimension(), 0u);
+    // empty packed tangents retain the zero metric norm without dereferencing coefficient storage
+    EXPECT_DOUBLE_EQ(geometry.norm(points, zero), 0.);
+    const auto retracted = geometry.retract(points, zero, 1.);
+    // zero-dimensional retraction preserves the only possible rotation in each factor
+    EXPECT_DOUBLE_EQ(geometry.distance(points, retracted), 0.);
+    CoupledRotations<Geometry> problem {points};
+    const auto result = manifold::RiemannianTrustRegion().optimize(problem, geometry, points);
+    // the zero tangent gradient certifies the trivial objective before any subproblem solve
+    EXPECT_TRUE(result.converged());
+    // a singleton manifold requires no trust-region iterations
+    EXPECT_EQ(result.iterations, 0u);
+}
+
+// SO(1) products keep verified identity points with valid zero-length tangent rows
+TEST(SOGeometry, TrivialProduct) {
+    // fixed SO(1) verifies zero-dimensional arithmetic and optimizer termination without stored coefficients
+    check_trivial_product(manifold::SOGeometry<double, 1> {});
+    // runtime SO(1) retains the same valid empty tangent representation and immediate convergence
+    check_trivial_product(G(1));
+}
+
 }   // namespace

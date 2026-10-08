@@ -52,6 +52,14 @@ its product for a positive number of uniformly shaped matrices. Its `Point` is
 The matrix shape comes from the element geometry, independently of the factor count.
 The product dimension is `count * geometry.dimension()`.
 
+`BatchCompatibleGeometry` additionally requires owning row-major point and tangent
+matrices with native `View` and `ConstView` types. Euclidean dense/symmetric, SPD
+and SO geometries satisfy this contract. SO products retain verified rotation
+points and packed strict-upper skew tangents, including zero-dimensional SO(1).
+See [rotation products](so-geometry.md#products-and-joint-optimization) for body
+coordinates, ambient derivatives and fixed or dynamic matrix orders.
+Nested products are also outside this uniform matrix-element contract.
+
 ```cpp
 using SPD = fdapde::SPDMatrix<double, 2, fdapde::Cache::Log>;
 using Sym = fdapde::SymmetricMatrix<double, 2>;

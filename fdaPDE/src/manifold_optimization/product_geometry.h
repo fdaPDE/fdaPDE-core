@@ -21,9 +21,15 @@
 
 namespace fdapde::manifold {
 
+/// @brief requires native batch-compatible owners for both manifold points and tangent vectors
+template <typename Geometry>
+concept BatchCompatibleGeometry =
+  FirstOrderGeometry<Geometry> && fdapde::internals::batch_matrix_owner<point_t<Geometry>> &&
+  fdapde::internals::batch_matrix_owner<tangent_t<Geometry>>;
+
 /// @brief lifts one native matrix geometry to a product of uniformly shaped matrix owners
 /// @details the problem retains a single joint cost, gradient and Hessian across all batch elements
-template <FirstOrderGeometry Geometry> class ProductGeometry {
+template <BatchCompatibleGeometry Geometry> class ProductGeometry {
    public:
     using MatrixType = point_t<Geometry>;
     using TangentType = tangent_t<Geometry>;
@@ -38,7 +44,7 @@ template <FirstOrderGeometry Geometry> class ProductGeometry {
         fdapde_strong_assert(
           rows_ > 0 && cols_ > 0, std::invalid_argument, "batch geometry: element dimensions must be positive");
         fdapde_strong_assert(
-          geometry_.dimension() > 0 && count <= std::numeric_limits<std::size_t>::max() / geometry_.dimension(),
+          geometry_.dimension() == 0 || count <= std::numeric_limits<std::size_t>::max() / geometry_.dimension(),
           std::length_error, "batch geometry: dimension exceeds supported range");
     }
     /// @brief validates the initial batch count and shape before objective evaluation
@@ -62,7 +68,7 @@ template <FirstOrderGeometry Geometry> class ProductGeometry {
         for (std::size_t i = 0; i < count_; ++i) value = std::hypot(value, geometry_.norm(point[i], u[i]));
         return value;
     }
-    /// @brief projects each ambient matrix into the corresponding tangent space
+    /// @brief applies each factor's tangent projection while preserving its coordinate convention
     Tangent project(const Point& point, const Tangent& u) const {
         check_batch_(point);
         check_batch_(u);

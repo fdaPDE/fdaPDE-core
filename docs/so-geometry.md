@@ -33,6 +33,45 @@ along a regular shortest branch uses `exp(-omega/2) xi exp(omega/2)` in body
 coordinates. The geometry satisfies the existing first-order, geodesic and
 vector-transport optimizer concepts.
 
+## Products and joint optimization
+
+`ProductGeometry(SOGeometry<Scalar, Order>{}, count)` operates on a native
+`MatrixBatch<RotationMatrix<...>>` point and a
+`MatrixBatch<SkewSymmetricMatrix<...>>` tangent. Fixed and dynamic orders are
+supported. The point cache policy comes from the supplied SO geometry; tangent
+rows store only their strict upper triangles. SO(1) products have dimension zero
+and valid empty tangent rows.
+
+```cpp
+using Factor = fdapde::manifold::SOGeometry<double, 3>;
+const fdapde::manifold::ProductGeometry geometry(Factor {}, 2);
+using Product = decltype(geometry);
+Product::Point points(2);  // two identities
+auto direction = geometry.zero_tangent(points);
+direction[0](0, 1) = -0.2;
+direction[1](0, 2) = 0.1;
+auto next = geometry.retract(points, direction, 0.5);
+auto ambient_velocity = geometry.to_ambient(points, direction);
+```
+
+For runtime order, construct the factor as `SOGeometry<double, Dynamic>(order)`
+and the point batch as `Product::Point(count, order, order)`. The product metric
+sums full Frobenius body pairings. Its norm and distance combine factor values
+with `hypot`; retraction, exponential, logarithm and transport act on corresponding
+factors using the same tangent conventions and branch restrictions as a single
+rotation. A skew owner, skew view or typed skew expression passed to `project`
+already represents body coordinates and is copied unchanged. A general dense
+matrix is interpreted as ambient input and projected by `skew(Q^T A)`.
+
+The optimization problem receives the complete batch and may couple different
+factors. Intrinsic `grad` and `hess` return packed skew batches. For ambient
+objectives, `egrad` returns a batch of full matrices, while `ehess` receives full
+ambient velocities `Q_i Omega_i` and returns their coupled ambient Hessian action.
+The product converts each resulting component back to body coordinates, including
+the SO connection correction; it never discards mixed-factor derivatives. Both
+`RiemannianSteepestDescent` and `RiemannianTrustRegion` accept these problems through
+the ordinary [objective contracts](spd-geometry.md#objective-derivatives).
+
 ## Branches and numerical limits
 
 The relative rotation is `Q0^T Q1`; endpoint logarithms are never subtracted.
