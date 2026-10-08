@@ -1,4 +1,5 @@
 *.txt
+!examples/CMakeLists.txt
 *.json
 *.cmake
 *Makefile

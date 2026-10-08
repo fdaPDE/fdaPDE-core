@@ -11,11 +11,21 @@ This repository contains the C++, header-only, core library system for the fdaPD
 ## Documentation
 Documentation can be found on our [documentation site](https://fdapde.github.io/)
 
+The [runnable examples](examples/README.md) cover native matrix batches, SPD and
+SO geometries, manifold optimization, interpolation and spatial tensor fields.
+Their index includes API coverage and standalone build instructions.
+
 ## Dependencies
-fdaPDE-core is an header-only library, therefore it does not require any installation. Just make sure to have it in your include path. Neverthless, to compile code including this library you need:
+fdaPDE-core is a header-only library and does not require installation. Add the
+repository root to your include path. To compile code using the library you need:
 * A C++20 compliant compiler. Supported versions are:
      * Linux: `gcc` 11 (or higher), `clang` 15 (or higher)
 	 * macOS: `apple-clang` (the XCode version of `clang`, AppleClang 15 or higher).
-* The [Eigen](https://eigen.tuxfamily.org/index.php?title=Main_Page) linear algebra library, version 3.4.0.
+* [Eigen](https://eigen.tuxfamily.org/index.php?title=Main_Page) 3.4 for
+  `core.h`, `linear_algebra.h` and the spatial mesh/FEM modules.
+
+The native `dense_linear_algebra.h`, [manifold aggregates](docs/manifold-modules.md) and
+`geometric_finite_elements.h` aggregates do not require Eigen. The example build
+enables mesh/FEM programs explicitly with `FDAPDE_EXAMPLES_WITH_FEM=ON`.
 
 If you wish to run the test suite contained in the `test/` folder, be sure to have [Google Test](http://google.github.io/googletest/) installed. 

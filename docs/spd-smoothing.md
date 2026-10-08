@@ -4,6 +4,11 @@ Include `fdaPDE/geometric_finite_elements.h` for the Eigen-free objective kernel
 and trust-region solver. Include `fdaPDE/geometric_finite_elements_fem.h` to
 assemble their spatial data from the existing FEM module, which uses Eigen.
 
+The runnable [smoothing tutorial](../examples/geometric_finite_elements/spd_discrete_tension.cpp) prepares one
+stencil for repeated nodal candidates and compares sequential and parallel
+value/gradient evaluation, including Cheeger rho covectors. See the
+[example instructions](../examples/README.md) for building it without Eigen.
+
 ## Nodal storage and spatial assembly
 
 ```cpp

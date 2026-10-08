@@ -14,8 +14,14 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// compile from the core root with c++ -std=c++20 -O2 -pthread -I. examples/matrix_batch_arithmetic.cpp
+// compile from the repository root with c++ -std=c++20 -O2 -pthread -I.
+// examples/linear_algebra/matrix_batch_arithmetic.cpp
 #include <fdaPDE/manifold_geometry.h>
+
+#include <algorithm>
+#include <array>
+#include <iostream>
+#include <stdexcept>
 
 using namespace fdapde;
 using namespace fdapde::manifold;
@@ -88,4 +94,26 @@ int main() {
     MatrixBatch<Sym> updated;
     updated.assign(mean_expr, execution_par);
     updated += shift;
+
+    // select keeps the supplied order and borrows existing entries without copying the full batch
+    const std::array<int, 3> indices {count - 1, 0, count / 2};
+    const auto selected = logs.select(indices);
+    // map receives a const element view; scalar results become owning one-by-one matrices when evaluated
+    const auto selected_norms = selected.map([](const auto& value) { return value.squared_norm(); });
+    const auto evaluated_norms = selected_norms.eval(execution_par);
+    // redux visits entries in order and remains sequential even when other evaluations use execution_par
+    const double total = evaluated_norms.redux(0., [](double sum, const auto& value) { return sum + value(0, 0); });
+    const auto maximum_norm = [](double maximum, const auto& value) { return std::max(maximum, value.norm()); };
+    const double policy_error = (sum_seq - sum_par).redux(0., maximum_norm);
+    const double restoration_error = (restored - logs).redux(0., maximum_norm);
+    // sequential and parallel materialization evaluate the same coefficientwise sum
+    fdapde_strong_assert(policy_error < 1e-12, std::runtime_error, "batch execution policies disagree");
+    // subtracting the broadcast shift recovers every original logarithm
+    fdapde_strong_assert(restoration_error < 1e-12, std::runtime_error, "batch broadcast did not round-trip");
+    // the first selected scalar belongs to the last source entry, preserving the requested permutation
+    fdapde_strong_assert(
+      std::abs(evaluated_norms[0](0, 0) - logs[count - 1].squared_norm()) < 1e-12, std::runtime_error,
+      "batch selection changed entry order");
+    std::cout << "selected log squared norms: " << total << "; policy error: " << policy_error
+              << "; broadcast restoration error: " << restoration_error << '\n';
 }

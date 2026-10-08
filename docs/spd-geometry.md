@@ -1,10 +1,16 @@
 # SPD geometry
 
-Include `<fdaPDE/manifold_optimization.h>` to use the point-typed
-`fdapde::manifold::LogEuclideanGeometry<Point>` API and the compatible legacy forms
+Include `<fdaPDE/manifold_geometry.h>` to use the point-typed
+`fdapde::manifold::LogEuclideanGeometry<Point>` API and the scalar/order forms
 `fdapde::manifold::LogEuclideanSPDGeometry<Scalar, Order, Uses = Usage::None>` and
 `fdapde::manifold::AffineInvariantSPDGeometry<Scalar, Order, Uses = Usage::None>`. This aggregate is
-opt-in and is not included by `core.h`.
+opt-in and is not included by `core.h`. Add `<fdaPDE/manifold_means.h>` for
+`weighted_karcher_mean` and `<fdaPDE/manifold_solvers.h>` for optimization. See the
+[module boundaries](manifold-modules.md) for responsibilities and dependencies.
+
+The runnable [SPD geometry tutorial](../examples/manifold/spd_metrics_and_means.cpp) compares
+LE, AIRM, BW, log-Cholesky and Cheeger metrics and weighted means. See the
+[example index](../examples/README.md) for build instructions and API coverage.
 
 Both geometries expose a canonical `Point` owner with their `CachePolicy`, and
 `fdapde::SymmetricMatrix<Scalar, Order>` tangents. Inputs accept `SPDLike`
@@ -21,7 +27,7 @@ order; `dimension()` returns `order * (order + 1) / 2`. The same dense workspace
 bound as SPD spectral operations applies. Packed storage is row-major.
 
 ```cpp
-#include <fdaPDE/manifold_optimization.h>
+#include <fdaPDE/manifold_geometry.h>
 
 fdapde::Matrix<double, 2, 2> coefficients;
 coefficients.set_zero();
@@ -79,8 +85,7 @@ which also retains the ambient gradient when the objective supplies one.
 Product inner products sum factor metrics; norms and distances combine factor
 norms and distances with `hypot`. Retractions, logarithms, exponentials, transport
 and derivative conversions apply the element geometry to corresponding factors.
-Spatial GFE uses the element geometry with `MatrixBatch<SPD>` coefficients. Existing
-legacy `*SPDGeometry<Scalar, Order, Uses>` calls retain their original constructors.
+Spatial GFE uses the element geometry with `MatrixBatch<SPD>` coefficients.
 
 ## Objective derivatives
 
@@ -329,8 +334,8 @@ become singular or numerically ill-conditioned. Only an SPD destination certifie
 positive definiteness and selects its cache policy; the certification EVD also
 prepares the requested cache.
 
-The standalone examples `examples/spd_batch_interpolation.cpp` (AIRM) and
-`examples/spd_batch_interpolation_le.cpp` (LE) compare cached inputs, output cache
+The standalone examples `examples/benchmarks/spd_airm_interpolation.cpp` (AIRM) and
+`examples/benchmarks/spd_log_euclidean_interpolation.cpp` (LE) compare cached inputs, output cache
 costs, and prepared curves in a single `main` with separate scopes. Cases 4 and 5
 use identical preparation and `points[i] = curve(t)` evaluation. Only the batch
 element type changes: SPD in case 4, symmetric in case 5. Case 5 defers SPD

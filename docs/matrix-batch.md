@@ -252,8 +252,8 @@ cannot silently store only one triangle. SPD destination updates additionally
 certify the resulting values through native SPD construction. For a parallel
 update, use `a.assign(a + shift, execution_par)`.
 
-See the standalone [arithmetic tutorial](../examples/matrix_batch_arithmetic.cpp),
-kept separate from the [spectral operations tutorial](../examples/spd_batch_operations.cpp).
+See the standalone [arithmetic tutorial](../examples/linear_algebra/matrix_batch_arithmetic.cpp),
+kept separate from the [spectral operations tutorial](../examples/linear_algebra/spd_batch_operations.cpp).
 
 ## Expressions
 

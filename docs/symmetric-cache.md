@@ -132,7 +132,7 @@ The owning batch methods evaluate immediately and accept `execution_seq` (the
 default) or `execution_par`:
 
 ```cpp
-#include <fdaPDE/manifold_optimization.h>
+#include <fdaPDE/manifold_geometry.h>
 
 using namespace fdapde;
 using namespace fdapde::manifold;
@@ -197,5 +197,5 @@ batches; materialize selections or maps before using them. See
 [owning spectral operations](matrix-batch.md#owning-spectral-operations) for the
 execution and empty-batch contracts.
 
-The example `examples/so_cache.cpp` compares repeated exponentials with and
+The example `examples/benchmarks/matrix_function_caches.cpp` compares repeated exponentials with and
 without spectral caching.

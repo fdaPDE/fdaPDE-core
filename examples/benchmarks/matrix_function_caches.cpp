@@ -14,7 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// compile from the repository root with c++ -std=c++20 -O3 -I. examples/so_cache.cpp
+// compile from the repository root with c++ -std=c++20 -O3 -I.
+// examples/benchmarks/matrix_function_caches.cpp
 #include <fdaPDE/manifold_geometry.h>
 
 #include <chrono>

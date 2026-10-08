@@ -1,5 +1,9 @@
 # Native C-LE SPD(n) interpolation
 
+The runnable [Cheeger tutorial](../examples/geometric_finite_elements/cheeger_p1_interpolation.cpp) follows
+interpolation with nodal rho and differentiates the scalar field. Build
+instructions are in the [example index](../examples/README.md).
+
 `manifold::CheegerLogEuclideanSPDGeometry<double, 2>` implements the recovered
 Cheeger log-Euclidean geometry for SPD(2); fixed orders `n >= 2` and
 `Dynamic` orders are supported. Scalar positive data use LE. Include

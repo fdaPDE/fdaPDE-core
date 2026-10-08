@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // compile from the core root with c++ -std=c++20 -O2 -pthread -I. -I/path/to/eigen3
-// examples/geometric_finite_elements.cpp
+// examples/geometric_finite_elements/spd_p1_field.cpp
 #include <fdaPDE/geometric_finite_elements_fem.h>
 
 #include <algorithm>

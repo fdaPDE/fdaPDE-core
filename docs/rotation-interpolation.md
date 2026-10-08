@@ -1,5 +1,10 @@
 # Native rotation P1 interpolation
 
+The runnable [rotation interpolation tutorial](../examples/geometric_finite_elements/so_p1_interpolation.cpp)
+shows native values, first and mixed covariant derivatives, and metric adjoints
+without a spatial mesh.
+See the [example instructions](../examples/README.md) to build and run it.
+
 Include `fdaPDE/geometric_finite_elements.h` for rotation values and derivatives.
 Include `fdaPDE/finite_elements.h` as well when using meshes or finite element
 spaces. The native value and derivative kernels do not require Eigen.
