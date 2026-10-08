@@ -151,6 +151,22 @@ template <typename S, int N, Usage U, typename Point_> class CheegerLogEuclidean
     template <SPDLike P> Tangent project(const P& p, const Tangent& v) const { return ambient_.project(p, v); }
     /// @brief constructs a zero tangent at the requested point
     template <SPDLike P> Tangent zero_tangent(const P& p) const { return ambient_.zero_tangent(p); }
+    /// @brief raises an ambient gradient using the local C-LE metric
+    template <SPDLike P> Tangent euclidean_to_riemannian_gradient(const P& p, const Tangent& gradient) const {
+        internals::check_spd_geometry_shape(p, order());
+        internals::check_spd_geometry_shape(gradient, order());
+        return internals::cheeger_ambient_gradient(p, gradient, rho_);
+    }
+    /// @brief converts an ambient Hessian action using the local C-LE Levi-Civita connection
+    template <SPDLike P>
+    Tangent euclidean_to_riemannian_hessian(
+      const P& p, const Tangent& gradient, const Tangent& hessian, const Tangent& direction) const {
+        internals::check_spd_geometry_shape(p, order());
+        internals::check_spd_geometry_shape(gradient, order());
+        internals::check_spd_geometry_shape(hessian, order());
+        internals::check_spd_geometry_shape(direction, order());
+        return internals::cheeger_ambient_hessian(p, gradient, hessian, direction, rho_);
+    }
     /// @brief combines ambient symmetric tangents
     template <SPDLike P>
     Tangent linear_combination(const P& p, double a, const Tangent& x, double b, const Tangent& y) const {

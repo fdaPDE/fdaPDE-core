@@ -90,8 +90,7 @@ class ArmijoBacktracking {
         requires FirstOrderProblem<Problem, Geometry>
     ArmijoResult<point_t<Geometry>> search(
       Problem& problem, const Geometry& geometry, const point_t<Geometry>& point, const tangent_t<Geometry>& direction,
-      double current_cost, double directional_derivative,
-      EvaluationContext<tangent_t<Geometry>, workspace_t<Problem>>& context) const {
+      double current_cost, double directional_derivative, evaluation_context_t<Problem, Geometry>& context) const {
         ArmijoResult<point_t<Geometry>> result;
         context.reset_trial();
         if (!std::isfinite(current_cost)) {

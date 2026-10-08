@@ -182,6 +182,23 @@ class LogEuclideanSPDGeometry {
         }
     }
 
+    /// @brief converts a Frobenius Hessian action using the flat logarithm chart and its differential
+    /// @details euclidean_hessian is the ambient derivative of euclidean_gradient along direction
+    template <SPDLike PointPoint>
+    Tangent euclidean_to_riemannian_hessian(
+      const PointPoint& point, const Tangent& euclidean_gradient, const Tangent& euclidean_hessian,
+      const Tangent& direction) const {
+        check_point_(point);
+        check_tangent_(euclidean_gradient);
+        check_tangent_(euclidean_hessian);
+        check_tangent_(direction);
+        const auto chart = fdapde::matrix_log(point);
+        const auto chart_direction = fdapde::matrix_log_frechet(point, direction);
+        const auto chart_curvature = fdapde::matrix_exp_second_frechet(chart, chart_direction, euclidean_gradient);
+        const auto chart_hessian = internals::spd_exp_log_frechet(point, euclidean_hessian);
+        const Tangent chart_sum(chart_curvature + chart_hessian);
+        return internals::spd_exp_log_frechet(point, chart_sum);
+    }
 
     /// @brief prepares an owning log-Euclidean geodesic snapshot from independently cached endpoints
     /// @details defers exp(log(from) + t * (log(to) - log(from))); SPD destinations certify evaluated coefficients

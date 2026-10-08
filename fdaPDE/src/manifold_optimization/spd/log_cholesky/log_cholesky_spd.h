@@ -375,6 +375,20 @@ class LogCholeskySPDGeometry {
         check_tangent_(gradient);
         return inverse_differential_(frame.factor, inverse_adjoint_(frame.factor, gradient));
     }
+    /// @brief converts an ambient Hessian action using the exact flat-chart gradient differential
+    template <SPDLike P>
+    Tangent euclidean_to_riemannian_hessian(
+      const P& point, const Tangent& gradient, const Tangent& hessian, const Tangent& direction) const {
+        const auto frame = chart_frame(point);
+        check_tangent_(gradient);
+        check_tangent_(hessian);
+        const auto chart_direction = chart_differential(frame, direction);
+        const auto ordinary = inverse_adjoint_(frame.factor, hessian);
+        const auto chart_action = inverse_second_adjoint_(frame.factor, chart_direction, gradient);
+        const auto chart_hessian =
+          internals::combine_symmetric<Scalar, Order_>(ordinary, Scalar(1), chart_action, Scalar(1), order_);
+        return inverse_differential_(frame.factor, chart_hessian);
+    }
     /// @brief maps a metric-dual tangent to its Frobenius covector
     template <SPDLike P> Tangent riemannian_to_euclidean_gradient(const P& point, const Tangent& gradient) const {
         const auto frame = chart_frame(point);
@@ -488,6 +502,23 @@ class LogCholeskySPDGeometry {
             for (int j = 0; j <= i; ++j) {
                 Scalar value = 0;
                 for (int k = j; k < order_; ++k) value += cotangent(i, k) * factor(k, j);
+                result(i, j) =
+                  internals::checked_geometry_result(i == j ? Scalar(2) * value * factor(i, i) : root_two * value);
+            }
+        return result;
+    }
+    /// @brief differentiates the inverse-chart adjoint along a fixed chart direction without Jacobian assembly
+    Tangent inverse_second_adjoint_(const Factor& factor, const Tangent& direction, const Tangent& cotangent) const {
+        const auto derivative = factor_differential_(factor, direction);
+        auto result = internals::make_symmetric<Scalar, Order_>(order_);
+        const Scalar root_two = std::sqrt(Scalar(2));
+        for (int i = 0; i < order_; ++i)
+            for (int j = 0; j <= i; ++j) {
+                Scalar value = 0;
+                for (int k = j; k < order_; ++k) {
+                    value += cotangent(i, k) * derivative(k, j);
+                    if (i == j) value += cotangent(i, k) * factor(k, j) * direction(i, i);
+                }
                 result(i, j) =
                   internals::checked_geometry_result(i == j ? Scalar(2) * value * factor(i, i) : root_two * value);
             }

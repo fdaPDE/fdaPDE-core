@@ -1,6 +1,7 @@
 # SPD geometry
 
-Include `<fdaPDE/manifold_optimization.h>` to use
+Include `<fdaPDE/manifold_optimization.h>` to use the point-typed
+`fdapde::manifold::LogEuclideanGeometry<Point>` API and the compatible legacy forms
 `fdapde::manifold::LogEuclideanSPDGeometry<Scalar, Order, Uses = Usage::None>` and
 `fdapde::manifold::AffineInvariantSPDGeometry<Scalar, Order, Uses = Usage::None>`. This aggregate is
 opt-in and is not included by `core.h`.
@@ -10,8 +11,9 @@ Both geometries expose a canonical `Point` owner with their `CachePolicy`, and
 owners and views with different cache policies. `retract` and `exponential`
 always return the geometry's canonical `Point`. A tangent is an ambient
 symmetric matrix at its base point, not a vector of logarithmic coordinates.
-`SPDMatrix` remains independent of the metric. Geometry objects store only their
-order; deferred means borrow their geometry and operands until evaluation.
+`SPDMatrix` remains independent of the metric. Geometry objects store their matrix
+order and metric parameters; deferred means borrow their geometry and operands until
+evaluation.
 
 A positive fixed order is default-constructed. For `Order = fdapde::Dynamic`,
 construct the geometry with a positive order. `order()` returns the matrix
@@ -33,13 +35,90 @@ const auto next = geometry.exponential(point, tangent, 0.5);
 // next = diag(exp(0.1), 1), independently owned
 ```
 
-## Matrix element types
+## Matrix element types and product geometry
 
-`LogEuclideanGeometry<SPD>`, `AffineInvariantGeometry<SPD>`,
-`BuresWassersteinGeometry<SPD>`, `LogCholeskyGeometry<SPD>` and
-`CheegerLogEuclideanGeometry<SPD>` retain the exact native SPD owner and cache
-policy. Dynamic geometries take the matrix order. The legacy
-`*SPDGeometry<Scalar, Order, Uses>` interfaces remain available.
+Geometry templates identify one native matrix element. The point-typed APIs are
+`EuclideanGeometry<Matrix>`, `LogEuclideanGeometry<SPD>`,
+`AffineInvariantGeometry<SPD>`, `BuresWassersteinGeometry<SPD>`,
+`LogCholeskyGeometry<SPD>` and `CheegerLogEuclideanGeometry<SPD>`. SPD aliases retain
+the exact requested owner and cache policy. Metric parameters belong to the element
+geometry; for example, `CheegerLogEuclideanGeometry<SPD>(epsilon)` selects its
+deformation parameter. Dynamic SPD geometries take their matrix order, while dynamic
+Euclidean geometries take their element shape.
+
+`ProductGeometry(geometry, count)` owns a copy of the element metric and constructs
+its product for a positive number of uniformly shaped matrices. Its `Point` is
+`MatrixBatch<Geometry::Point>` and its `Tangent` is `MatrixBatch<Geometry::Tangent>`.
+The matrix shape comes from the element geometry, independently of the factor count.
+The product dimension is `count * geometry.dimension()`.
+
+```cpp
+using SPD = fdapde::SPDMatrix<double, 2, fdapde::Cache::Log>;
+using Sym = fdapde::SymmetricMatrix<double, 2>;
+const fdapde::manifold::EuclideanGeometry<Sym> symmetric_geometry;
+const fdapde::manifold::ProductGeometry symmetric_product(symmetric_geometry, count);
+const fdapde::manifold::CheegerLogEuclideanGeometry<SPD> cheeger_geometry(0.1);
+const fdapde::manifold::ProductGeometry spd_product(cheeger_geometry, count);
+```
+
+`RiemannianTrustRegion` and `RiemannianSteepestDescent` optimize native matrix batches
+using this explicit product geometry. They validate the initial count and shape
+before evaluating the problem and return an owning batch. The problem supplies one
+scalar cost and batch gradient/Hessian, including any cross-matrix coupling. The
+steepest-descent workspace overload uses `evaluation_context_t<Problem, Geometry>`,
+which also retains the ambient gradient when the objective supplies one.
+
+Product inner products sum factor metrics; norms and distances combine factor
+norms and distances with `hypot`. Retractions, logarithms, exponentials, transport
+and derivative conversions apply the element geometry to corresponding factors.
+Spatial GFE uses the element geometry with `MatrixBatch<SPD>` coefficients. Existing
+legacy `*SPDGeometry<Scalar, Order, Uses>` calls retain their original constructors.
+
+## Objective derivatives
+
+An objective supplies a default-constructible, movable `Workspace` and
+`cost(point, workspace)`. Derivative dispatch prefers an explicit Riemannian
+`grad(point, workspace)` and `hess(point, tangent_direction, workspace)`.
+The former objective names `gradient` and `hessian_vector` are no longer accepted.
+`cost_gradient` can supply a joint scalar cost and intrinsic gradient when no
+separate intrinsic gradient is provided.
+
+If an intrinsic derivative is absent, supply its ambient counterpart:
+
+- `egrad(point, workspace)` returns an owning Euclidean gradient
+- `ehess(point, ambient_direction, workspace)` returns the Euclidean Hessian
+  applied to that direction, rather than a dense Hessian matrix
+
+The geometry converts these through
+`euclidean_to_riemannian_gradient(point, egrad)` and
+`euclidean_to_riemannian_hessian(point, egrad, ehess, direction)`. Hessian
+conversion also requires `egrad`, even when an intrinsic gradient is supplied,
+because the connection correction depends on it. The core supports either
+mixed derivative combination, with the intrinsic derivative taking precedence
+independently for each order. A geometry without the required conversion cannot
+use that ambient route.
+
+Use `egrad` and `ehess` for an ambient objective independent of the optimizer's
+metric: the objective then has no geometry member or metric conversion code.
+Objectives built from metric distances, GFE interpolation or intrinsic penalties
+may provide `grad` and `hess` directly. These outputs are already Riemannian and
+are not converted again. A change of derivative interface does not change the
+metric defining the objective or its interpolation.
+
+Euclidean, LE, AIRM, BW, LC, C-LE and SO geometries provide these conversions.
+For SPD points both ambient vectors and tangents are native symmetric matrices
+with the full Frobenius inner product. Derivatives are with respect to SPD
+coefficients, not logarithmic coordinates. If starting from derivatives of
+packed coordinates, divide off-diagonal gradient entries by two. For SO,
+`to_ambient(point, direction)` converts body skew tangents to full matrix
+velocities before calling `ehess`; ambient gradients and Hessian actions use
+full matrices, while intrinsic outputs remain skew body tangents.
+
+An objective on `ProductGeometry` evaluates the complete batch at once, including
+all mixed-node Hessian terms. The product converts the resulting ambient
+components factor by factor; it does not assume a separable cost. Its ambient
+gradient cache is bound to a candidate generation, reused across truncated-CG
+directions, promoted with accepted trials and cleared when the slot is reset.
 
 ## Metric and maps
 
@@ -234,3 +313,33 @@ element type changes: SPD in case 4, symmetric in case 5. Case 5 defers SPD
 certification until after timing. Setup and allocation are timed, and every sample
 is checked after timing. The ratio includes destination storage and assignment
 costs as well as certification work.
+
+## Native Euclidean parameter spaces
+
+`EuclideanGeometry<Point>` uses native dense matrices, vectors or symmetric owners as
+both points and tangents. It supplies the Frobenius inner product and affine retraction.
+A symmetric off-diagonal entry contributes twice to the metric, while `dimension()`
+counts only independent entries. Fixed extents can be default-constructed; dynamic
+extents are supplied as `(rows, cols)` (a dynamic column vector only needs `rows`).
+
+`ProductGeometry(EuclideanGeometry<Point>{}, count)` supplies the product Frobenius
+metric for a joint native batch optimizer call.
+
+```cpp
+using Sym = fdapde::SymmetricMatrix<double, 2>;
+using Batch = fdapde::MatrixBatch<Sym>;
+const fdapde::manifold::ProductGeometry geometry(
+    fdapde::manifold::EuclideanGeometry<Sym> {}, initial.size());
+const auto solution = fdapde::manifold::RiemannianTrustRegion().optimize(problem, geometry, initial);
+const auto tensors = solution.point.exp(fdapde::execution_par);
+```
+
+The problem supplies `Workspace`, `cost`, `grad` and `hess`. Gradients
+satisfy `dF(L)[V] = sum_i <gradient_i, V_i>_F`; Hessian actions differentiate that same
+gradient. For unscaled packed coordinates, each off-diagonal gradient entry is half
+the corresponding coordinate derivative, because the Frobenius product includes
+both mirrored entries. If the application evaluates SPD tensors through `S_i = exp(L_i)`, its
+objective and derivatives include this map and any subsequent GFE interpolation.
+This optimizes symmetric logarithms; the selected SPD geometry still defines the field
+interpolation and metric-dependent objective terms. Application whitening remains a
+separate coordinate change rather than an implicit property of this geometry.

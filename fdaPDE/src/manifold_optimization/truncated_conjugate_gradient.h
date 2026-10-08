@@ -107,10 +107,11 @@ class SteihaugTruncatedCG {
 
     /// @brief computes a truncated tangent step using the current evaluation workspace
     template <typename Problem, FirstOrderGeometry Geometry>
-        requires RiemannianHessianProblem<Problem, Geometry>
+        requires SecondOrderProblem<Problem, Geometry>
     TruncatedCGResult<tangent_t<Geometry>> solve(
       Problem& problem, const Geometry& geometry, const point_t<Geometry>& point, const tangent_t<Geometry>& gradient,
-      double radius, workspace_t<Problem>& workspace) const {
+      double radius, workspace_t<Problem>& workspace,
+      const euclidean_gradient_t<Problem, Geometry>* euclidean_gradient = nullptr) const {
         fdapde_strong_assert(
           valid_radius(radius), std::invalid_argument,
           "TruncatedCG radius must be positive with a finite normal square");
@@ -129,6 +130,13 @@ class SteihaugTruncatedCG {
             return result;
         }
 
+        std::optional<euclidean_gradient_t<Problem, Geometry>> local_euclidean_gradient;
+        if constexpr (!RiemannianHessianProblem<Problem, Geometry>) {
+            if (!euclidean_gradient) {
+                local_euclidean_gradient = problem.egrad(point, workspace);
+                euclidean_gradient = &*local_euclidean_gradient;
+            }
+        }
         double residual_norm_sq = geometry.inner_product(point, residual, residual);
         if (!std::isfinite(residual_norm_sq) || residual_norm_sq <= 0) {
             result.stop_reason = TruncatedCGStopReason::non_finite;
@@ -137,7 +145,8 @@ class SteihaugTruncatedCG {
         tangent_t<Geometry> direction =
           geometry.linear_combination(point, -1, residual, 0, geometry.zero_tangent(point));
         for (std::size_t iteration = 0; iteration < options_.max_iterations; ++iteration) {
-            tangent_t<Geometry> hessian_direction = problem.hessian_vector(point, direction, workspace);
+            tangent_t<Geometry> hessian_direction =
+              evaluate_hessian_vector(problem, geometry, point, direction, workspace, euclidean_gradient);
             ++result.hessian_evaluations;
             ++result.iterations;
             double curvature = geometry.inner_product(point, direction, hessian_direction);

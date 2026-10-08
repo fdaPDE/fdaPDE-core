@@ -205,6 +205,27 @@ template <typename S, int N, RotationUsage Uses = RotationUsage::None> class SOG
     Tangent euclidean_to_riemannian_gradient(const Q& q, const MatrixExpr<A>& gradient) const {
         return from_ambient(q, gradient);
     }
+    /// @brief converts an ambient Hessian action to body coordinates with the embedded connection correction
+    template <RotationLike Q, typename G, typename H>
+    Tangent euclidean_to_riemannian_hessian(
+      const Q& q, const MatrixExpr<G>& gradient, const MatrixExpr<H>& hessian, const Tangent& direction) const {
+        check_point_(q);
+        check_shape_(gradient);
+        check_shape_(hessian);
+        check_tangent_(direction);
+        const Matrix<S, N, N> body_gradient(q.transpose() * gradient), body_hessian(q.transpose() * hessian);
+        SymmetricMatrix<S, N> normal;
+        if constexpr (N == Dynamic) normal.resize(n_, n_);
+        for (int i = 0; i < n_; ++i)
+            for (int j = i; j < n_; ++j) normal(i, j) = S(0.5) * (body_gradient(i, j) + body_gradient(j, i));
+        const Matrix<S, N, N> correction(direction * normal);
+        Tangent result = zero_tangent(q);
+        for (int i = 0; i < n_; ++i)
+            for (int j = i + 1; j < n_; ++j)
+                result(i, j) = internals::checked_geometry_result(
+                  S(0.5) * (body_hessian(i, j) - body_hessian(j, i) - correction(i, j) + correction(j, i)));
+        return result;
+    }
     /// @brief creates an owning zero skew tangent of the geometry order
     template <RotationLike Q> Tangent zero_tangent(const Q& q) const {
         check_point_(q);

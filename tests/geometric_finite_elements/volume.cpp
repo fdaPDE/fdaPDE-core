@@ -166,7 +166,7 @@ template <typename Geometry, bool Euclidean = false> struct VolumeProblem {
     /// @brief exposes the cached scalar objective to Armijo backtracking
     double cost(const Eigen::VectorXd& x, Workspace& workspace) { return cost_gradient(x, workspace).first; }
     /// @brief exposes the cached coefficient covector to the descent solver
-    Eigen::VectorXd gradient(const Eigen::VectorXd& x, Workspace& workspace) { return cost_gradient(x, workspace).second; }
+    Eigen::VectorXd grad(const Eigen::VectorXd& x, Workspace& workspace) { return cost_gradient(x, workspace).second; }
 };
 
 /// @brief checks tetrahedral interpolation, independent objective derivatives and native smoothing descent

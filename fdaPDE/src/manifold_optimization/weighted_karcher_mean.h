@@ -151,7 +151,7 @@ template <GeodesicGeometry Geometry, typename Samples> class WeightedKarcherMean
     }
 
     /// @brief evaluates the Riemannian gradient in the candidate-bound workspace
-    Tangent gradient(const Point& point, Workspace& workspace) const {
+    Tangent grad(const Point& point, Workspace& workspace) const {
         prepare(point, workspace);
         Tangent result = geometry_.zero_tangent(point);
         for (std::size_t i = 0; i < samples_.size(); ++i) {
@@ -170,7 +170,7 @@ template <GeodesicGeometry Geometry, typename Samples> class WeightedKarcherMean
     /// @brief shares the relative preparation between objective and gradient evaluation
     std::pair<double, Tangent> cost_gradient(const Point& point, Workspace& workspace) const {
         const double value = cost(point, workspace);
-        return {value, gradient(point, workspace)};
+        return {value, grad(point, workspace)};
     }
     /// @brief prepares supported nodes once; the caller resets the workspace on every candidate change
     void prepare(const Point& point, Workspace& workspace) const {
@@ -205,7 +205,7 @@ void polish_karcher_mean(
                 geometry.prepare_linearization(workspace.frames, result.normalized_weights);
             } catch (const std::domain_error&) { break; }
         }
-        const auto gradient = problem.gradient(result.point, workspace);
+        const auto gradient = problem.grad(result.point, workspace);
         auto hessian = [&](const Tangent& u) {
             Tangent h = geometry.zero_tangent(result.point);
             for (std::size_t i = 0; i < samples.size(); ++i)
@@ -220,7 +220,7 @@ void polish_karcher_mean(
         if (!step.converged() || geometry.norm(result.point, step.solution) > .01) break;
         const auto next = geometry.exponential(result.point, step.solution);
         KarcherWorkspace<Geometry> trial;
-        const double cost = problem.cost(next, trial), norm = geometry.norm(next, problem.gradient(next, trial));
+        const double cost = problem.cost(next, trial), norm = geometry.norm(next, problem.grad(next, trial));
         // near stationarity the cost decrease is below roundoff; require residual contraction instead
         if (!std::isfinite(cost) || !(norm <= .5 * result.stationarity_norm)) break;
         workspace = std::move(trial);

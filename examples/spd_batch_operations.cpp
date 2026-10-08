@@ -77,6 +77,4 @@ int main() {
 
     // MatrixBatch<OrthogonalMatrix<double, 2, 2>>
     const auto inverse_bases = eigenvectors.inv(execution_par);
-
-    parallel_join();
 }

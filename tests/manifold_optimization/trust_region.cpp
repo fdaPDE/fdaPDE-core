@@ -34,7 +34,7 @@ struct Quadratic {
         return reject && x > 0 ? std::numeric_limits<double>::infinity() : .5 * (x - 1) * (x - 1);
     }
     /// @brief checks workspace ownership and returns the analytic gradient
-    double gradient(double x, Workspace& workspace) {
+    double grad(double x, Workspace& workspace) {
         if (workspace.point) {
             // accepted gradients must see the cache promoted from the same trial point
             EXPECT_EQ(*workspace.point, x);
@@ -42,13 +42,13 @@ struct Quadratic {
         return x - 1;
     }
     /// @brief applies the constant scalar curvature
-    double hessian_vector(double, double v, Workspace&) { return v; }
+    double hess(double, double v, Workspace&) { return v; }
 };
 /// @brief supplies a scalar Hessian to test each truncated-CG termination path
 struct Curvature : Quadratic {
     double coefficient = 1;
     /// @brief applies the requested scalar model curvature
-    double hessian_vector(double, double v, Workspace&) { return coefficient * v; }
+    double hess(double, double v, Workspace&) { return coefficient * v; }
 };
 /// @brief checks interior solutions, boundary truncation, negative curvature and invalid Hessian actions
 TEST(SmoothingTrustRegion, TruncatedSubproblem) {

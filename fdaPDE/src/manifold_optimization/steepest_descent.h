@@ -84,7 +84,7 @@ class RiemannianSteepestDescent {
         requires FirstOrderProblem<Problem, Geometry>
     SteepestDescentResult<point_t<Geometry>>
     optimize(Problem& problem, const Geometry& geometry, const point_t<Geometry>& initial_point) const {
-        EvaluationContext<tangent_t<Geometry>, workspace_t<Problem>> context;
+        evaluation_context_t<Problem, Geometry> context;
         return optimize(problem, geometry, initial_point, context);
     }
 
@@ -93,12 +93,13 @@ class RiemannianSteepestDescent {
         requires FirstOrderProblem<Problem, Geometry>
     SteepestDescentResult<point_t<Geometry>> optimize(
       Problem& problem, const Geometry& geometry, const point_t<Geometry>& initial_point,
-      EvaluationContext<tangent_t<Geometry>, workspace_t<Problem>>& context) const {
+      evaluation_context_t<Problem, Geometry>& context) const {
+        if constexpr (requires { geometry.validate_point(initial_point); }) geometry.validate_point(initial_point);
         context.reset_current();
         context.reset_trial();
         SteepestDescentResult<point_t<Geometry>> result {initial_point};
 
-        if constexpr (CombinedCostGradientProblem<Problem, Geometry>) {
+        if constexpr (CombinedCostGradientProblem<Problem, Geometry> && !RiemannianGradientProblem<Problem, Geometry>) {
             evaluate_cost_gradient(problem, geometry, result.point, context.current());
             ++result.cost_evaluations;
             ++result.gradient_evaluations;

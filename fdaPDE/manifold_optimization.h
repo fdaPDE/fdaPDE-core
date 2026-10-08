@@ -27,6 +27,8 @@
 #include <span>
 
 #include "src/manifold_optimization/manifold.h"
+#include "src/manifold_optimization/euclidean.h"
+#include "src/manifold_optimization/product_geometry.h"
 #include "src/manifold_optimization/evaluation_context.h"
 #include "src/manifold_optimization/problem.h"
 #include "src/manifold_optimization/armijo.h"

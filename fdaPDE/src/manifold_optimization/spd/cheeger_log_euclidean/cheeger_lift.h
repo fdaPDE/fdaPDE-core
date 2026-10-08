@@ -42,20 +42,6 @@ template <typename S, int N> class CheegerRotationDifferential {
     double squared_, coefficient_ = 1;
     std::optional<SOLogDifferential<S, N>> general_;
 };
-/// @brief applies the C-LE log-coordinate metric using a symmetric spectral frame
-template <typename S, int N, typename X>
-SymmetricMatrix<S, N> cheeger_metric(const X& x, const SymmetricMatrix<S, N>& h, double rho) {
-    const EVD evd(x);
-    const auto& q = evd.eigenvectors();
-    const Matrix<S, N, N> local(q.transpose() * h * q);
-    Matrix<S, N, N> scaled(local);
-    for (int i = 0; i < x.rows(); ++i)
-        for (int j = 0; j < x.rows(); ++j) {
-            const double gap = double(evd.eigenvalues()[i]) - double(evd.eigenvalues()[j]);
-            scaled(i, j) *= S(rho / (rho + gap * gap));
-        }
-    return SymmetricMatrix<S, N>((q * scaled * q.transpose()).template as_symmetric<Lower>());
-}
 /// @brief minimizes rotational lifts and retains their analytic Hessian for implicit differentiation
 /// @details pair searches use one fixed chart; mean searches eliminate the weighted symmetric chart
 /// @details multistart is a local search and does not certify global optimality
@@ -221,12 +207,12 @@ template <typename S, int N> class CheegerLift {
             } catch (const std::domain_error&) { return std::numeric_limits<double>::infinity(); }
         }
         /// @brief reuses the candidate's body gradient
-        Vec gradient(const Batch& p, Workspace& w) {
+        Vec grad(const Batch& p, Workspace& w) {
             if (!w.state) w.state = lift->evaluate(p);
             return w.state->gradient;
         }
         /// @brief reuses the analytic candidate Hessian across subproblem iterations
-        Vec hessian_vector(const Batch& p, const Vec& v, Workspace& w) {
+        Vec hess(const Batch& p, const Vec& v, Workspace& w) {
             if (!w.state) w.state = lift->evaluate(p);
             if (!w.hessian) w.hessian = lift->hessian(*w.state);
             return Vec(*w.hessian * v);

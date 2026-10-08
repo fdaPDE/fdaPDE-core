@@ -398,6 +398,38 @@ class AffineInvariantSPDGeometry {
         return internals::symmetric_congruence<Scalar, Order_>(point, euclidean_gradient, order_);
     }
 
+    /// @brief converts a Frobenius Hessian action with the affine-invariant connection correction
+    /// @details euclidean_hessian is the ambient derivative of euclidean_gradient along direction
+    template <SPDLike PointPoint>
+    Tangent euclidean_to_riemannian_hessian(
+      const PointPoint& point, const Tangent& euclidean_gradient, const Tangent& euclidean_hessian,
+      const Tangent& direction) const {
+        check_point_(point);
+        check_tangent_(euclidean_gradient);
+        check_tangent_(euclidean_hessian);
+        check_tangent_(direction);
+        fdapde::Matrix<Scalar, Order_, Order_> direction_gradient;
+        if constexpr (Order_ == fdapde::Dynamic) direction_gradient.resize(order_, order_);
+        for (int i = 0; i < order_; ++i) {
+            for (int j = 0; j < order_; ++j) {
+                Scalar coefficient = 0;
+                for (int k = 0; k < order_; ++k) coefficient += direction(i, k) * euclidean_gradient(k, j);
+                direction_gradient(i, j) = internals::checked_geometry_result(coefficient);
+            }
+        }
+        auto result = internals::symmetric_congruence<Scalar, Order_>(point, euclidean_hessian, order_);
+        for (int i = 0; i < order_; ++i) {
+            for (int j = 0; j <= i; ++j) {
+                Scalar correction = 0;
+                for (int k = 0; k < order_; ++k) {
+                    correction += Scalar(0.5) * (direction_gradient(i, k) * static_cast<Scalar>(point(k, j)) +
+                                                 static_cast<Scalar>(point(i, k)) * direction_gradient(j, k));
+                }
+                result(i, j) = internals::checked_geometry_result(Scalar(result(i, j)) + correction);
+            }
+        }
+        return result;
+    }
 
     /// @brief prepares certified base roots and the cached scaled relative SPD spectrum
     template <SPDLike From, SPDLike To> RelativeFrame relative_frame(const From& from, const To& to) const {

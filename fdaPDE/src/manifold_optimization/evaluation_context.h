@@ -29,7 +29,9 @@ struct EmptyWorkspace { };
 /// @details each Evaluation generation belongs to exactly one manifold point
 /// @details the context deliberately stores no point key: reset a slot before binding it
 /// to another point, promote an accepted trial, and reset a rejected trial
-template <std::movable Gradient, std::default_initializable Workspace = EmptyWorkspace>
+template <
+  std::movable Gradient, std::default_initializable Workspace = EmptyWorkspace,
+  std::movable EuclideanGradient = Gradient>
     requires std::movable<Workspace>
 class EvaluationContext {
    public:
@@ -40,6 +42,7 @@ class EvaluationContext {
         std::size_t generation_;
         std::optional<double> cost_;
         std::optional<Gradient> gradient_;
+        std::optional<EuclideanGradient> euclidean_gradient_;
         Workspace workspace_;
 
         /// @brief binds an initially empty evaluation to a candidate generation
@@ -49,6 +52,7 @@ class EvaluationContext {
             generation_ = generation;
             cost_.reset();
             gradient_.reset();
+            euclidean_gradient_.reset();
             workspace_ = Workspace {};
         }
        public:
@@ -66,6 +70,12 @@ class EvaluationContext {
         const std::optional<Gradient>& gradient() && = delete;
         /// @brief prevents borrowing storage from a temporary object
         const std::optional<Gradient>& gradient() const&& = delete;
+        /// @brief borrows the ambient gradient reused by derivative conversions at this candidate
+        const std::optional<EuclideanGradient>& euclidean_gradient() const& { return euclidean_gradient_; }
+        /// @brief prevents borrowing storage from a temporary object
+        const std::optional<EuclideanGradient>& euclidean_gradient() && = delete;
+        /// @brief prevents borrowing storage from a temporary object
+        const std::optional<EuclideanGradient>& euclidean_gradient() const&& = delete;
         /// @brief borrows intermediates belonging exclusively to this candidate generation
         Workspace& workspace() & { return workspace_; }
         /// @brief borrows intermediates bound to this candidate generation
@@ -79,6 +89,8 @@ class EvaluationContext {
         void set_cost(double cost) noexcept { cost_ = cost; }
         /// @brief stores the evaluated tangent gradient for the current slot generation
         void set_gradient(Gradient gradient) { gradient_ = std::move(gradient); }
+        /// @brief stores the ambient gradient for reuse across Hessian directions at this candidate
+        void set_euclidean_gradient(EuclideanGradient gradient) { euclidean_gradient_ = std::move(gradient); }
     };
    private:
     std::size_t next_generation_ = 2;

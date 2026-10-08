@@ -118,14 +118,15 @@ class RiemannianTrustRegion {
 
     /// @brief iterates accepted manifold steps while keeping trial workspaces isolated
     template <typename Problem, FirstOrderGeometry Geometry>
-        requires RiemannianHessianProblem<Problem, Geometry>
+        requires SecondOrderProblem<Problem, Geometry>
     TrustRegionResult<point_t<Geometry>>
     optimize(Problem& problem, const Geometry& geometry, const point_t<Geometry>& initial_point) const {
-        EvaluationContext<tangent_t<Geometry>, workspace_t<Problem>> context;
+        if constexpr (requires { geometry.validate_point(initial_point); }) geometry.validate_point(initial_point);
+        evaluation_context_t<Problem, Geometry> context;
         TrustRegionResult<point_t<Geometry>> result {initial_point};
         result.radius = options_.initial_radius;
 
-        if constexpr (CombinedCostGradientProblem<Problem, Geometry>) {
+        if constexpr (CombinedCostGradientProblem<Problem, Geometry> && !RiemannianGradientProblem<Problem, Geometry>) {
             evaluate_cost_gradient(problem, geometry, result.point, context.current());
             ++result.cost_evaluations;
             ++result.gradient_evaluations;
@@ -154,8 +155,12 @@ class RiemannianTrustRegion {
                 return result;
             }
             const tangent_t<Geometry>& gradient = *context.current().gradient();
+            const euclidean_gradient_t<Problem, Geometry>* euclidean_gradient = nullptr;
+            if constexpr (!RiemannianHessianProblem<Problem, Geometry>)
+                euclidean_gradient = &evaluate_euclidean_gradient(problem, geometry, result.point, context.current());
             auto subproblem_result = subproblem_.solve(
-              problem, geometry, result.point, gradient, result.radius, context.current().workspace());
+              problem, geometry, result.point, gradient, result.radius, context.current().workspace(),
+              euclidean_gradient);
             result.hessian_evaluations += subproblem_result.hessian_evaluations;
             result.subproblem_stop_reason = subproblem_result.stop_reason;
             if (subproblem_result.stop_reason == TruncatedCGStopReason::non_finite) {

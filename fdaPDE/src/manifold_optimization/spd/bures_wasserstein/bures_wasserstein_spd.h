@@ -278,6 +278,21 @@ class BuresWassersteinSPDGeometry {
         const auto result = jordan_sum_(point, gradient);
         return internals::combine_symmetric<Scalar, Order_>(result, Scalar(2), result, Scalar(0), order_);
     }
+    /// @brief converts an ambient Hessian action through the BW metric and its Levi-Civita connection
+    template <SPDLike P>
+    Tangent euclidean_to_riemannian_hessian(
+      const P& point, const Tangent& gradient, const Tangent& hessian, const Tangent& direction) const {
+        check_point_(point);
+        check_tangent_(gradient);
+        check_tangent_(hessian);
+        check_tangent_(direction);
+        const auto ordinary = jordan_sum_(direction, gradient);
+        const auto metric_action = jordan_sum_(point, hessian);
+        const auto connection = symmetric_triple_sum_(lyapunov_(point, direction), point, gradient);
+        const auto derivative =
+          internals::combine_symmetric<Scalar, Order_>(ordinary, Scalar(2), metric_action, Scalar(2), order_);
+        return internals::combine_symmetric<Scalar, Order_>(derivative, Scalar(1), connection, Scalar(-2), order_);
+    }
     /// @brief maps a metric-dual tangent to the ambient Frobenius covector
     template <SPDLike PointPoint>
     Tangent riemannian_to_euclidean_gradient(const PointPoint& point, const Tangent& gradient) const {
