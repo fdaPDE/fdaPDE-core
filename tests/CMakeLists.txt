@@ -210,7 +210,9 @@ fdapde_configure_target(fdapde_spd_geometry_contract_test)
 target_link_libraries(fdapde_spd_geometry_contract_test PRIVATE GTest::gtest_main)
 gtest_discover_tests(fdapde_spd_geometry_contract_test PROPERTIES TIMEOUT 60)
 
-add_library(fdapde_manifold_header_check OBJECT public_headers/manifold_optimization.cpp)
+add_library(fdapde_manifold_header_check OBJECT
+  public_headers/manifold_geometry.cpp public_headers/manifold_solvers.cpp
+  public_headers/manifold_means.cpp)
 fdapde_configure_target(fdapde_manifold_header_check)
 
 if(NOT FDAPDE_NATIVE_ONLY)

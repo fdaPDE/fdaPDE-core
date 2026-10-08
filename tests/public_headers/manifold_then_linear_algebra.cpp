@@ -16,7 +16,7 @@
 
 // preserve the reversed aggregate order exercised by this translation unit
 // clang-format off
-#include <fdaPDE/manifold_optimization.h>
+#include <fdaPDE/manifold_geometry.h>
 #include <fdaPDE/linear_algebra.h>
 // clang-format on
 

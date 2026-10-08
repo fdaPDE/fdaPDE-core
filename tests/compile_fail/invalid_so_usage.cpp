@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // the SO geometry rejects usage bits unrelated to supported identity-based operations
-#include <fdaPDE/manifold_optimization.h>
+#include <fdaPDE/manifold_geometry.h>
 int main() {
     fdapde::manifold::SOGeometry<double, 2, static_cast<fdapde::RotationUsage>(8)> q;
     (void)q;

@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // compile from the core root with c++ -std=c++20 -O2 -pthread -I. examples/matrix_batch_arithmetic.cpp
-#include <fdaPDE/manifold_optimization.h>
+#include <fdaPDE/manifold_geometry.h>
 
 using namespace fdapde;
 using namespace fdapde::manifold;

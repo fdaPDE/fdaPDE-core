@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <fdaPDE/manifold_optimization.h>
+#include <fdaPDE/manifold_geometry.h>
 
 // force log-Euclidean instantiation to check rejection of
 // a const-qualified scalar instead of an unqualified floating-point type

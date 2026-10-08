@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <fdaPDE/manifold_optimization.h>
+#include <fdaPDE/manifold_geometry.h>
 
 // sizeof requires the geometry to reject usage bits with no public operation contract
 int main() { return sizeof(fdapde::manifold::AffineInvariantSPDGeometry<double, 2, static_cast<fdapde::Usage>(32)>); }

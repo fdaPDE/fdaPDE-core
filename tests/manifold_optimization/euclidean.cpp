@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-#include <fdaPDE/manifold_optimization.h>
+#include <fdaPDE/manifold_geometry.h>
+#include <fdaPDE/manifold_solvers.h>
 #include <gtest/gtest.h>
 
 namespace {

@@ -16,7 +16,7 @@
 
 // compile from the core root with c++ -std=c++20 -O2 -pthread -I. -I/path/to/eigen3 examples/spd_field_estimation.cpp
 #include <fdaPDE/geometric_finite_elements_fem.h>
-#include <fdaPDE/manifold_optimization.h>
+#include <fdaPDE/manifold_solvers.h>
 
 #include <algorithm>
 #include <cmath>

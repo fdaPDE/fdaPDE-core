@@ -83,6 +83,13 @@ public error contracts and owning results. Regressions cover recoverable
 retraction-domain failures, spatial boundary roundoff and prepared stencil reuse. The integration lane additionally
 checks both manifold/full aggregate include orders in linked translation units.
 
+Public-header translation units also compile `manifold_geometry.h`,
+`manifold_solvers.h` and `manifold_means.h` independently before composing them.
+They instantiate geometry/mean APIs and custom-geometry solvers, enforcing that
+the generic solver aggregate imports neither concrete geometries nor means.
+The geometry aggregate must not import mean implementations; Cheeger may use
+the generic solvers internally.
+
 ## Execution
 
 The execution tests run in both native-only and integration builds. Configuration

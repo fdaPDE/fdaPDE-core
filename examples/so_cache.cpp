@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // compile from the repository root with c++ -std=c++20 -O3 -I. examples/so_cache.cpp
-#include <fdaPDE/manifold_optimization.h>
+#include <fdaPDE/manifold_geometry.h>
 
 #include <chrono>
 #include <iostream>
