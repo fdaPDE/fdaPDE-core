@@ -27,6 +27,16 @@ namespace fdapde {
 template <typename Derived> class MatrixBatchExpr;
 namespace internals {
 
+/// @brief identifies native batch owners and deferred batch expressions
+template <typename T>
+concept matrix_batch_expression = std::derived_from<std::remove_cvref_t<T>, MatrixBatchExpr<std::remove_cvref_t<T>>>;
+
+/// @brief accepts persistent operands and temporary nodes without borrowing expiring owners
+template <typename T>
+concept batch_operand =
+  (matrix_batch_expression<T> || matrix_expression<T> || std::is_arithmetic_v<std::remove_cvref_t<T>>) &&
+  !is_owning_rvalue_expression_v<T>;
+
 /// @brief limits eager batch transforms to the native sequential and parallel execution policies
 template <typename Policy>
 concept BatchExecutionPolicy = std::same_as<Policy, execution_seq_t> || std::same_as<Policy, execution_par_t>;
@@ -36,10 +46,19 @@ template <typename Result, BatchExecutionPolicy ExecutionPolicy, typename Functi
 MatrixBatch<Result>
 generate_matrix_batch(std::size_t count, int rows, int cols, ExecutionPolicy policy, const Function& function);
 
+/// @brief infers nonempty expression shape once and materializes every entry with joined optional parallel execution
+template <typename Result, BatchExecutionPolicy ExecutionPolicy, typename Source>
+MatrixBatch<Result> evaluate_matrix_batch(const Source& source, ExecutionPolicy policy);
+
 /// @brief borrows persistent batch operands and owns temporary expression nodes
 template <typename Arg>
 using batch_nested_t =
   std::conditional_t<std::is_lvalue_reference_v<Arg>, const std::remove_reference_t<Arg>&, std::remove_cvref_t<Arg>>;
+
+/// @brief stores scalar operands by value while applying native lifetime rules to matrices and batches
+template <typename Arg>
+using batch_operand_nested_t =
+  std::conditional_t<std::is_arithmetic_v<std::remove_cvref_t<Arg>>, std::remove_cvref_t<Arg>, batch_nested_t<Arg>>;
 
 /// @brief assigns cache-free state to ordinary matrices
 template <typename Matrix, bool = requires { typename Matrix::CachePolicy; }> struct batch_cache_policy {
@@ -125,9 +144,11 @@ template <typename Result> struct batch_result_owner<Result, true> {
     using type = Matrix<std::remove_cvref_t<Result>, 1, 1>;
 };
 
-/// @brief passes a read-only view of a source value while its local owner or original batch remains alive
+/// @brief passes a scalar or read-only matrix view while its source owner remains alive
 template <typename Value> auto batch_const_view(const Value& value) {
-    if constexpr (Value::NestAsRef == 0)
+    if constexpr (std::is_arithmetic_v<Value>)
+        return value;
+    else if constexpr (Value::NestAsRef == 0)
         return value;
     else {
         using View = typename Value::ConstView;
@@ -144,6 +165,91 @@ template <typename Value> auto batch_const_view(const Value& value) {
             return View(value.data(), value.rows(), value.cols());
     }
 }
+
+/// @brief selects one batch entry or broadcasts a persistent matrix or scalar operand
+template <typename Operand> decltype(auto) batch_operand_value(const Operand& operand, std::size_t i) {
+    if constexpr (matrix_batch_expression<Operand>)
+        return operand[i];
+    else
+        return (operand);
+}
+
+/// @brief lifts a native binary matrix operation to corresponding batch entries or a broadcast operand
+template <typename Lhs, typename Rhs, typename Operation>
+class matrix_batch_binary : public MatrixBatchExpr<matrix_batch_binary<Lhs, Rhs, Operation>> {
+   public:
+    using LhsType = std::remove_cvref_t<Lhs>;
+    using RhsType = std::remove_cvref_t<Rhs>;
+    using LhsArgument = decltype(batch_const_view(batch_operand_value(std::declval<const LhsType&>(), 0)));
+    using RhsArgument = decltype(batch_const_view(batch_operand_value(std::declval<const RhsType&>(), 0)));
+    using Result = std::invoke_result_t<Operation, const LhsArgument&, const RhsArgument&>;
+    using MatrixType = typename batch_result_owner<Result>::type;
+    static constexpr int NestAsRef = 0;
+    /// @brief nests operands without evaluating entries and rejects unequal batch lengths
+    matrix_batch_binary(Lhs lhs, Rhs rhs) : lhs_(std::forward<Lhs>(lhs)), rhs_(std::forward<Rhs>(rhs)) { (void)size(); }
+    /// @brief reports the current batch length after checking any paired collection
+    std::size_t size() const {
+        if constexpr (matrix_batch_expression<LhsType> && matrix_batch_expression<RhsType>)
+            fdapde_strong_assert(
+              lhs_.size() == rhs_.size(), std::invalid_argument, "MatrixBatch arithmetic requires equal lengths");
+        if constexpr (matrix_batch_expression<LhsType>)
+            return lhs_.size();
+        else
+            return rhs_.size();
+    }
+    /// @brief materializes a native result before local matrix views and temporary owners expire
+    MatrixType operator[](std::size_t i) const {
+        fdapde_strong_assert(i < size(), std::out_of_range, "MatrixBatch arithmetic: index out of range");
+        const auto& lhs = batch_operand_value(lhs_, i);
+        const auto& rhs = batch_operand_value(rhs_, i);
+        const auto left = batch_const_view(lhs);
+        const auto right = batch_const_view(rhs);
+        (void)shape_(left, right);
+        return MatrixType(Operation {}(left, right));
+    }
+    /// @brief preserves the result row extent for empty expressions with known operand shapes
+    int rows() const { return shape_(lhs_, rhs_).first; }
+    /// @brief preserves the result column extent for empty expressions with known operand shapes
+    int cols() const { return shape_(lhs_, rhs_).second; }
+   private:
+    /// @brief derives result shape and checks matrix compatibility even when no entry can be evaluated
+    template <typename Left, typename Right> static std::pair<int, int> shape_(const Left& lhs, const Right& rhs) {
+        if constexpr (std::is_arithmetic_v<Left>)
+            return {rhs.rows(), rhs.cols()};
+        else if constexpr (std::is_arithmetic_v<Right>)
+            return {lhs.rows(), lhs.cols()};
+        else if constexpr (std::same_as<Operation, std::multiplies<>>) {
+            fdapde_strong_assert(
+              lhs.cols() == rhs.rows(), std::invalid_argument,
+              "MatrixBatch product requires compatible inner dimensions");
+            return {lhs.rows(), rhs.cols()};
+        } else {
+            fdapde_strong_assert(
+              lhs.rows() == rhs.rows() && lhs.cols() == rhs.cols(), std::invalid_argument,
+              "MatrixBatch arithmetic requires matching matrix dimensions");
+            return {lhs.rows(), lhs.cols()};
+        }
+    }
+    Lhs lhs_;
+    Rhs rhs_;
+};
+
+/// @brief rejects compound arithmetic that would implicitly discard a structured destination invariant
+template <typename Target, typename Result>
+inline constexpr bool batch_compound_compatible_v = [] {
+    if constexpr (SPDLike<Target>)
+        return true;
+    else if constexpr (is_symmetric_matrix_v<Target>)
+        return is_symmetric_matrix_v<Result>;
+    else if constexpr (is_diagonal_matrix_v<Target>)
+        return is_diagonal_matrix_v<Result>;
+    else if constexpr (RotationLike<Target>)
+        return RotationLike<Result>;
+    else if constexpr (is_orthogonal_matrix_v<Target>)
+        return is_orthogonal_matrix_v<Result>;
+    else
+        return true;
+}();
 
 /// @brief applies a stored callable only when a requested batch element is evaluated
 template <typename Source, typename Function>
@@ -221,13 +327,73 @@ template <typename Source> class matrix_batch_selection : public MatrixBatchExpr
 
 }   // namespace internals
 
-/// @brief composes deferred element maps and selections with immediate sequential reductions
+/// @brief returns a deferred pairwise or broadcast sum using the native element operators
+template <typename Lhs, typename Rhs>
+    requires(
+      internals::batch_operand<Lhs &&> && internals::batch_operand<Rhs &&> &&
+      (internals::matrix_batch_expression<Lhs> || internals::matrix_batch_expression<Rhs>) &&
+      !std::is_arithmetic_v<std::remove_cvref_t<Lhs>> && !std::is_arithmetic_v<std::remove_cvref_t<Rhs>>)
+auto operator+(Lhs&& lhs, Rhs&& rhs) {
+    return internals::matrix_batch_binary<
+      internals::batch_operand_nested_t<Lhs&&>, internals::batch_operand_nested_t<Rhs&&>, std::plus<>>(
+      std::forward<Lhs>(lhs), std::forward<Rhs>(rhs));
+}
+
+/// @brief returns a deferred pairwise or broadcast difference preserving operand order
+template <typename Lhs, typename Rhs>
+    requires(
+      internals::batch_operand<Lhs &&> && internals::batch_operand<Rhs &&> &&
+      (internals::matrix_batch_expression<Lhs> || internals::matrix_batch_expression<Rhs>) &&
+      !std::is_arithmetic_v<std::remove_cvref_t<Lhs>> && !std::is_arithmetic_v<std::remove_cvref_t<Rhs>>)
+auto operator-(Lhs&& lhs, Rhs&& rhs) {
+    return internals::matrix_batch_binary<
+      internals::batch_operand_nested_t<Lhs&&>, internals::batch_operand_nested_t<Rhs&&>, std::minus<>>(
+      std::forward<Lhs>(lhs), std::forward<Rhs>(rhs));
+}
+
+/// @brief returns deferred scalar scaling or per-entry matrix products preserving operand order
+template <typename Lhs, typename Rhs>
+    requires(
+      internals::batch_operand<Lhs &&> && internals::batch_operand<Rhs &&> &&
+      (internals::matrix_batch_expression<Lhs> || internals::matrix_batch_expression<Rhs>))
+auto operator*(Lhs&& lhs, Rhs&& rhs) {
+    return internals::matrix_batch_binary<
+      internals::batch_operand_nested_t<Lhs&&>, internals::batch_operand_nested_t<Rhs&&>, std::multiplies<>>(
+      std::forward<Lhs>(lhs), std::forward<Rhs>(rhs));
+}
+
+/// @brief returns deferred division of each matrix by a scalar stored by value
+template <typename Lhs, typename Scalar>
+    requires(
+      internals::matrix_batch_expression<Lhs> && internals::batch_operand<Lhs &&> &&
+      std::is_arithmetic_v<std::remove_cvref_t<Scalar>>)
+auto operator/(Lhs&& lhs, Scalar rhs) {
+    return internals::matrix_batch_binary<
+      internals::batch_operand_nested_t<Lhs&&>, std::remove_cvref_t<Scalar>, std::divides<>>(
+      std::forward<Lhs>(lhs), rhs);
+}
+
+/// @brief negates batch coefficients through deferred native scalar multiplication
+template <typename Source>
+    requires(internals::matrix_batch_expression<Source> && internals::batch_operand<Source &&>)
+auto operator-(Source&& source) {
+    return std::forward<Source>(source) * -1;
+}
+
+/// @brief composes deferred arithmetic, maps and selections with owning evaluation and sequential reductions
 template <typename Derived> class MatrixBatchExpr {
    public:
     /// @brief borrows the complete batch expression without changing its evaluation state
     const Derived& derived() const& { return static_cast<const Derived&>(*this); }
     /// @brief prevents a borrowed expression reference from escaping a temporary batch node
     void derived() const&& = delete;
+    /// @brief returns an independent owning batch with inferred element structure and explicit execution policy
+    /// @details parallel evaluation joins before returning; mapped callables and shared cache access must be
+    /// thread-safe
+    template <internals::BatchExecutionPolicy ExecutionPolicy = execution_seq_t>
+    auto eval(ExecutionPolicy policy = {}) const {
+        return internals::evaluate_matrix_batch<typename Derived::MatrixType>(derived(), policy);
+    }
     /// @brief creates a deferred map over a persistent batch or expression
     template <typename Function> auto map(Function function) const& {
         return internals::matrix_batch_map<const Derived&, Function>(derived(), std::move(function));
@@ -365,9 +531,50 @@ class MatrixBatch : public MatrixBatchExpr<MatrixBatch<MatrixType_, StorageOrder
     }
     /// @brief replaces this collection only after all source values have been materialized successfully
     template <typename Source> MatrixBatch& operator=(const MatrixBatchExpr<Source>& source) & {
-        MatrixBatch candidate(source.derived());
+        return assign(source);
+    }
+    /// @brief evaluates into the destination element type and cache policy before replacing the entire collection
+    template <typename Source, internals::BatchExecutionPolicy ExecutionPolicy = execution_seq_t>
+    MatrixBatch& assign(const MatrixBatchExpr<Source>& source, ExecutionPolicy policy = {}) & {
+        auto candidate = internals::evaluate_matrix_batch<MatrixType>(source.derived(), policy);
         swap(candidate);
         return *this;
+    }
+    /// @brief adds compatible batch or broadcast entries with alias-safe sequential replacement
+    template <typename Rhs>
+        requires requires(MatrixBatch& batch, const Rhs& rhs) {
+            batch + rhs;
+            requires internals::batch_compound_compatible_v<MatrixType, typename decltype(batch + rhs)::MatrixType>;
+        }
+    MatrixBatch& operator+=(const Rhs& rhs) & {
+        return assign(*this + rhs);
+    }
+    /// @brief subtracts compatible batch or broadcast entries with alias-safe sequential replacement
+    template <typename Rhs>
+        requires requires(MatrixBatch& batch, const Rhs& rhs) {
+            batch - rhs;
+            requires internals::batch_compound_compatible_v<MatrixType, typename decltype(batch - rhs)::MatrixType>;
+        }
+    MatrixBatch& operator-=(const Rhs& rhs) & {
+        return assign(*this - rhs);
+    }
+    /// @brief scales or multiplies entries when the result retains the destination structure
+    template <typename Rhs>
+        requires requires(MatrixBatch& batch, const Rhs& rhs) {
+            batch * rhs;
+            requires internals::batch_compound_compatible_v<MatrixType, typename decltype(batch * rhs)::MatrixType>;
+        }
+    MatrixBatch& operator*=(const Rhs& rhs) & {
+        return assign(*this * rhs);
+    }
+    /// @brief divides entries by a scalar with alias-safe sequential replacement
+    template <typename Scalar>
+        requires(
+          std::is_arithmetic_v<Scalar> &&
+          internals::batch_compound_compatible_v<
+            MatrixType, typename decltype(std::declval<MatrixBatch&>() / std::declval<Scalar>())::MatrixType>)
+    MatrixBatch& operator/=(Scalar scalar) & {
+        return assign(*this / scalar);
     }
     /// @brief exchanges complete buffer ownership and their associated shape metadata
     void swap(MatrixBatch& other) noexcept {
@@ -643,6 +850,20 @@ generate_matrix_batch(std::size_t count, int rows, int cols, ExecutionPolicy, co
     else
         for (std::size_t i = 0; i < count; ++i) evaluate(i);
     return result;
+}
+
+/// @brief evaluates the first entry once to infer shape and publishes only a completely initialized result
+template <typename Result, BatchExecutionPolicy ExecutionPolicy, typename Source>
+MatrixBatch<Result> evaluate_matrix_batch(const Source& source, ExecutionPolicy policy) {
+    const auto count = source.size();
+    if (count == 0)
+        return generate_matrix_batch<Result>(
+          0, source.rows(), source.cols(), policy, [&](std::size_t i) { return Result(source[i]); });
+    const auto first = source[0];
+    return generate_matrix_batch<Result>(count, first.rows(), first.cols(), policy, [&](std::size_t i) {
+        if (i == 0) return Result(first);
+        return Result(source[i]);
+    });
 }
 }   // namespace internals
 

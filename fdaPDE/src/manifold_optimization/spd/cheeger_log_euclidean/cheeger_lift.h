@@ -183,12 +183,12 @@ template <typename S, int N> class CheegerLift {
         }
         /// @brief retracts each rotation with the native skew exponential
         Point retract(const Point& p, const Vec& v, double step) const {
-            Point q(p.size(), lift->n_, lift->n_);
-            for (std::size_t i = 0; i < p.size(); ++i) {
-                const auto delta = rotation_exp(lift->tangent(v, i), step);
-                q[i] = p[i] * delta;
-            }
-            return q;
+            return fdapde::internals::generate_matrix_batch<Rotation>(
+              p.size(), lift->n_, lift->n_, execution_seq, [&](std::size_t i) {
+                  const auto point = p[i];
+                  const auto delta = rotation_exp(lift->tangent(v, i), step);
+                  return Rotation(point * delta);
+              });
         }
     };
     /// @brief exposes a lifted objective through the existing optimizer workspace contract
@@ -220,11 +220,7 @@ template <typename S, int N> class CheegerLift {
     };
     /// @brief solves several deterministic local starts and retains competing stationary candidates
     State solve(double tolerance = 1e-10, std::size_t iterations = 200) {
-        Matrix<S, N, N> identity(n_, n_);
-        identity.set_zero();
-        for (int i = 0; i < n_; ++i) identity(i, i) = 1;
         Batch initial(w_.size(), n_, n_);
-        for (std::size_t i = 0; i < w_.size(); ++i) initial[i] = identity;
         if (!base_ && w_.size() == 1) {
             converged_ = true;
             ambiguous_ = false;
@@ -312,8 +308,9 @@ template <typename S, int N> class CheegerLift {
             if (c.gradient.norm() <= tolerance && c.cost - best.cost <= 1e-10 * std::max(1., best.cost)) {
                 double separation = 0;
                 if (base_) {
-                    for (std::size_t i = 0; i < w_.size(); ++i)
-                        separation += Matrix<S, N, N>(c.rotations[i] - best.rotations[i]).norm();
+                    separation = (c.rotations - best.rotations).redux(0., [](double sum, const auto& difference) {
+                        return sum + difference.norm();
+                    });
                 } else
                     separation = Sym(c.mean - best.mean).norm();
                 if (separation > 1e-5) ambiguous_ = true;

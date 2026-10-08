@@ -65,7 +65,7 @@ int main() {
                 points[i] = geometry.exponential(first, tangent, step);
             }
             elapsed[0] = Milliseconds(Clock::now() - start).count();
-            results[0] = MatrixBatch<Symmetric>(points);
+            results[0].assign(points);
         }
 
         // 2. cache sugli ingressi e sul risultato temporaneo
@@ -80,7 +80,7 @@ int main() {
                 points[i] = geometry.exponential(first, tangent, step);
             }
             elapsed[1] = Milliseconds(Clock::now() - start).count();
-            results[1] = MatrixBatch<Symmetric>(points);
+            results[1].assign(points);
         }
 
         // 3. cache sugli ingressi, risultato senza cache
@@ -95,7 +95,7 @@ int main() {
                 points[i] = geometry.exponential(first, tangent, step);
             }
             elapsed[2] = Milliseconds(Clock::now() - start).count();
-            results[2] = MatrixBatch<Symmetric>(points);
+            results[2].assign(points);
         }
 
         // 4. geodetica preparata tramite l'API, con verifica SPD di ogni risultato
@@ -103,14 +103,10 @@ int main() {
             const auto start = Clock::now();
             const Geometry geometry;
             const CachedPoint first(first_data), last(last_data);
-            const auto curve = geometry.geodesic(first, last);
-            MatrixBatch<Point> points(point_count);
-            for (std::size_t i = 0; i < point_count; ++i) {
-                const double step = static_cast<double>(i) / (point_count - 1);
-                points[i] = curve(step);
-            }
+            // MatrixBatch<Point>: uniform samples of one prepared geodesic with checked SPD output
+            const auto points = geometry.interpolate<Cache::None>(first, last, static_cast<int>(point_count));
             elapsed[3] = Milliseconds(Clock::now() - start).count();
-            results[3] = MatrixBatch<Symmetric>(points);
+            results[3].assign(points);
         }
 
         // 5. stessa espressione del caso 4, con verifica SPD soltanto dopo il cronometro
@@ -125,7 +121,7 @@ int main() {
                 points[i] = curve(step);
             }
             elapsed[4] = Milliseconds(Clock::now() - start).count();
-            results[4] = MatrixBatch<Symmetric>(points);
+            results[4].assign(points);
         }
 
         // verify every result against the uncached path, after all five timers have stopped

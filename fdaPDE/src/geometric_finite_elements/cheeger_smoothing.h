@@ -3,6 +3,27 @@
 #define __FDAPDE_CHEEGER_SMOOTHING_H__
 #include "header_check.h"
 namespace fdapde::gfe {
+namespace internals {
+/// @brief materializes cached nodal logarithms through native batch transforms or indexed collection evaluation
+template <typename S, int N, typename Nodes, PointExecutionPolicy Policy>
+MatrixBatch<SymmetricMatrix<S, N, Cache::Spectral>>
+p1_cheeger_cached_logs(const Nodes& nodes, int order, Policy policy) {
+    using Result = SymmetricMatrix<S, N, Cache::Spectral>;
+    if constexpr (requires {
+                      { nodes.template log<Cache::Spectral>(policy) } -> std::same_as<MatrixBatch<Result>>;
+                  }) {
+        return nodes.template log<Cache::Spectral>(policy);
+    } else if constexpr (fdapde::internals::matrix_batch_expression<Nodes>) {
+        MatrixBatch<Result> result(0, order, order);
+        if (nodes.size() != 0) result.assign(nodes.map([](const auto& point) { return matrix_log(point); }), policy);
+        return result;
+    } else {
+        return fdapde::internals::generate_matrix_batch<Result>(
+          nodes.size(), order, order, policy, [&](std::size_t i) { return matrix_log(nodes[i]); });
+    }
+}
+}   // namespace internals
+
 /// @brief returns Frobenius log-coordinate covectors and scalar rho derivatives in nodal order
 /// @details these are coordinate gradients, not ambient Riemannian metric gradients
 template <typename Tangent> struct P1CheegerLogContributionResult : P1ObjectiveContributionResult<Tangent> {
@@ -112,13 +133,12 @@ p1_cheeger_discrete_tension_log_contribution(
     std::vector<double> rho(nodes.size(), geometry.rho());
     if (!rho_nodes.empty()) rho.assign(rho_nodes.begin(), rho_nodes.end());
     for (double r : rho) geometry.with_rho(r);
-    MatrixBatch<SymmetricMatrix<S, N, Cache::Spectral>> charts(nodes.size(), geometry.order(), geometry.order());
+    const auto charts = internals::p1_cheeger_cached_logs<S, N>(nodes, geometry.order(), execution_seq);
     Sym zero;
     if constexpr (N == Dynamic) zero.resize(geometry.order(), geometry.order());
     for (int i = 0; i < geometry.order(); ++i)
         for (int j = 0; j <= i; ++j) zero(i, j) = 0;
     std::vector<Sym> residual(nodes.size(), zero), dual(nodes.size(), zero);
-    for (std::size_t i = 0; i < nodes.size(); ++i) charts[i] = matrix_log(nodes[i]);
     std::vector<std::array<Frame, 2>> frames;
     frames.reserve(stencil.edges.size());
     for (const auto& edge : stencil.edges) {
@@ -292,12 +312,11 @@ p1_cheeger_discrete_tension_log_parallel_contribution(
     if (!rho_nodes.empty()) rho.assign(rho_nodes.begin(), rho_nodes.end());
     for (double r : rho) geometry.with_rho(r);
     const auto incident = internals::p1_discrete_tension_incidence(stencil);
-    MatrixBatch<SymmetricMatrix<S, N, Cache::Spectral>> charts(nodes.size(), geometry.order(), geometry.order());
+    const auto charts = internals::p1_cheeger_cached_logs<S, N>(nodes, geometry.order(), execution_par);
     Sym zero;
     if constexpr (N == Dynamic) zero.resize(geometry.order(), geometry.order());
     for (int i = 0; i < geometry.order(); ++i)
         for (int j = 0; j <= i; ++j) zero(i, j) = 0;
-    internals::for_each_point(nodes.size(), execution_par, [&](std::size_t i) { charts[i] = matrix_log(nodes[i]); });
     std::vector<std::array<std::optional<Frame>, 2>> frames(stencil.edges.size());
     std::vector<std::array<Sym, 2>> logarithms(stencil.edges.size());
     internals::for_each_point(stencil.edges.size(), execution_par, [&](std::size_t e) {

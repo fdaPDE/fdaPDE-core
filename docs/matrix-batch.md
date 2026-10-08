@@ -161,8 +161,83 @@ apply before returning an empty result.
 
 These methods belong to owning native batches. To apply them to a selection or
 map, first materialize that expression into a `MatrixBatch`; the independent
-element storage then supports parallel evaluation. The expression operations
-below retain their existing sequential evaluation rules.
+element storage then supports parallel evaluation. Expression materialization
+also accepts an execution policy through `eval()` or `assign()`.
+
+## Batch arithmetic and evaluation
+
+Native arithmetic operators lift to batch entries. Two batch operands must
+have equal lengths: result entry `i` combines the two entries at `i`, with no
+Cartesian product or implicit length-one batch broadcasting. A single matrix
+operand is broadcast to every entry. Matrix addition and subtraction require
+matching shapes; multiplication is the native matrix product and requires
+compatible inner dimensions. Scalars support multiplication on either side
+and division on the right. Unary minus negates each entry.
+
+```cpp
+using Sym = fdapde::SymmetricMatrix<double, 2>;
+fdapde::MatrixBatch<Sym> a(10), b(10), sum;
+const Sym shift(fdapde::Vector<double, 3>{0.2, 0.05, 0.1});
+
+auto expression = a + b;                       // deferred MatrixBatchExpr
+auto result = expression.eval(fdapde::execution_par);  // owning MatrixBatch<Sym>
+sum = expression;                             // sequential owning assignment
+sum.assign(expression, fdapde::execution_par); // preserves destination type and cache policy
+auto combined = (2.0 * a + b - shift).eval();   // sequential by default
+a += shift;                                   // alias-safe sequential update
+```
+
+`auto expression = a + b` stores an expression node, not a batch of per-entry
+matrix expressions. It borrows persistent matrix and batch operands and owns
+temporary expression nodes. Scalars are copied by value. No entries are
+evaluated until accessed or materialized; repeated evaluation sees current
+operand values. Keep borrowed operands alive. Temporary owning matrices and
+batches are rejected as deferred arithmetic operands, following native matrix
+and batch nesting rules.
+
+`expression.eval(policy)` returns an independent owning `MatrixBatch` with the
+element type inferred from the native operation. `destination.assign(expression,
+policy)` instead uses the destination's element type and cache policy, applying
+its native constructor conversions and validation. `destination = expression`
+selects sequential assignment. Each method defaults to `execution_seq`, accepts
+`execution_par`, and finishes before returning. Parallel evaluation preserves
+entry order and joins submitted work before propagating an exception. The
+complete candidate replaces the destination only after success, so expressions
+may read the destination or selections that alias it. Successful replacement
+invalidates previously borrowed destination views.
+
+Expressions are composed before materialization: `(2.0 * a + b - shift).eval(policy)`
+evaluates the whole formula for each index without allocating intermediate
+batches. The same evaluation methods apply to maps and selections. Nonempty
+dynamic results infer their shape from the first entry, which is evaluated only
+once. Empty expressions retain known operand/result shapes; an empty dynamic map
+with unknown output shape remains invalid.
+
+Native structure determines the result owner:
+
+| Element operation | Inferred result element |
+|---|---|
+| symmetric `+`, `-`, scalar `*`, scalar `/`, unary `-` | symmetric |
+| SPD `+` or `-`, scalar scaling | symmetric, following native arithmetic |
+| symmetric matrix product | dense |
+| diagonal arithmetic and diagonal matrix product | diagonal |
+| orthogonal matrix product | orthogonal |
+| rotation matrix product | rotation |
+| general mixed matrix arithmetic | native dense result |
+
+Ordinary symmetric arithmetic expressions use `Cache::None`; caches cannot be
+copied from changed operand values. A cached destination retains its selected
+policy through `assign()` and receives independent cache slots for the new
+values. Arithmetic does not populate or invalidate input caches. Compound
+`+=`, `-=`, `*=`, and `/=` evaluate sequentially through the same candidate
+replacement path. They require a result structure compatible with the
+destination; for example, multiplying a symmetric batch by a general matrix
+cannot silently store only one triangle. SPD destination updates additionally
+certify the resulting values through native SPD construction. For a parallel
+update, use `a.assign(a + shift, execution_par)`.
+
+See the standalone [arithmetic tutorial](../examples/matrix_batch_arithmetic.cpp),
+kept separate from the [spectral operations tutorial](../examples/spd_batch_operations.cpp).
 
 ## Expressions
 
@@ -193,9 +268,13 @@ any evaluation.
 Empty collections support map and redux. A materialized empty map needs a known
 result shape: fixed result extents work; dynamic shape-changing callables cannot
 supply an unknown result shape without evaluation and are rejected. An empty
-selection retains its source shape. There is no strided batch storage or general
-parallel map/redux API; the owning spectral operations above provide explicit
-parallel evaluation.
+selection retains its source shape. There is no strided batch storage or parallel
+reduction API. Maps can be materialized with `eval(execution_par)` when their
+callable and captures are thread-safe. The callable is shared between workers;
+stateful captures require synchronization. Selections with repeated indices can
+share input cache slots, so mapped operations that prepare those same slots
+concurrently also require external synchronization. Plain coefficient arithmetic
+does not prepare input caches.
 
 Allocation and timing measurements are available through the optional benchmark
 in `tests/benchmarks/spd_cache_batch.cpp`; see [test instructions](../tests/README.md).

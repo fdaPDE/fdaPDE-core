@@ -79,6 +79,18 @@ template <typename Batch>
 concept permits_batch_inverse_sqrt = requires(const Batch& batch) { batch.inv_sqrt(); };
 template <typename Batch>
 concept permits_batch_norm = requires(const Batch& batch) { batch.norm(); };
+/// @brief detects arithmetic that would borrow an expiring owning batch
+template <typename Batch>
+concept permits_rvalue_batch_sum = requires(Batch& batch) { batch + std::move(batch); };
+/// @brief detects arithmetic that would borrow an expiring const owning batch
+template <typename Batch>
+concept permits_const_rvalue_batch_sum = requires(const Batch& batch) { std::move(batch) + batch; };
+/// @brief detects broadcasting that would borrow an expiring owning matrix
+template <typename Batch, typename Matrix>
+concept permits_rvalue_matrix_broadcast = requires(Batch& batch, Matrix& matrix) { batch + std::move(matrix); };
+/// @brief detects compound products admitted by the destination's retained structure
+template <typename Batch, typename Operand>
+concept permits_batch_compound_product = requires(Batch& batch, const Operand& operand) { batch *= operand; };
 
 using scalar_batch = MatrixBatch<Matrix<double, 1, 1>>;
 using scalar_map = decltype(std::declval<scalar_batch&>().map(leading_coefficient {}));
@@ -93,6 +105,12 @@ static_assert(!permits_const_rvalue_select<scalar_batch>);
 static_assert(!permits_const_rvalue_select<scalar_map>);
 // the CRTP base cannot expose a derived reference from a const temporary
 static_assert(!permits_const_rvalue_derived<scalar_map>);
+// deferred arithmetic cannot retain a borrowed owning batch after its rvalue lifetime ends
+static_assert(!permits_rvalue_batch_sum<scalar_batch>);
+// deferred arithmetic cannot retain an expiring const owning batch either
+static_assert(!permits_const_rvalue_batch_sum<scalar_batch>);
+// deferred broadcasts cannot retain a borrowed owning matrix after its rvalue lifetime ends
+static_assert(!permits_rvalue_matrix_broadcast<scalar_batch, Matrix<double, 1, 1>>);
 
 template <typename Actual, typename Expected> void expect_matrix_eq(const Actual& actual, const Expected& expected) {
     // matching row counts make each comparison coordinate valid
@@ -1041,6 +1059,468 @@ TEST(MatrixBatch, InversePreservesStructureAndParallelOrder) {
     const auto recovered = singular.inv(execution_par);
     // the executor and complete result initialization remain usable after the failed inversion
     expect_matrix_eq(recovered[1], identity);
+}
+
+// deferred dense arithmetic follows native element kernels and sees source changes made before evaluation
+TEST(MatrixBatch, LazyDenseArithmeticMatchesNativeKernelsAndExecutionPolicies) {
+    using Dense = Matrix<double, 2, 2>;
+    MatrixBatch<Dense> left(64), right(64);
+    for (std::size_t i = 0; i < left.size(); ++i) {
+        left[i] = Dense({1. + i, 2., 3., 4.});
+        right[i] = Dense({2., -1., 0., 3. + i});
+    }
+    int calls = 0;
+    const auto observed = left.map([&calls](const auto& value) {
+        ++calls;
+        return value;
+    });
+    const auto lazy = 2. * (observed + right) - observed * right / 2.;
+    // building nested arithmetic nodes does not invoke the mapped source callable
+    EXPECT_EQ(calls, 0);
+    left[0](0, 0) = 10.;
+    const auto result = lazy.eval();
+    // default evaluation reads both occurrences of the mapped operand exactly once per output element
+    EXPECT_EQ(calls, 2 * static_cast<int>(left.size()));
+    const auto sequential = (2. * (left + right) - left * right / 2.).eval(execution_seq);
+    const auto parallel = (2. * (left + right) - left * right / 2.).eval(execution_par);
+    const auto sum = (left + right).eval();
+    const auto difference = (left - right).eval();
+    const auto product = (left * right).eval();
+    const auto negative = (-left).eval();
+    const auto scaled_left = (3. * left).eval();
+    const auto scaled_right = (left * 3.).eval();
+    const auto divided = (left / 2.).eval();
+    // generic matrix arithmetic materializes native dense owners with the fixed two-by-two shape
+    static_assert(std::same_as<std::remove_cvref_t<decltype(result)>, MatrixBatch<Dense>>);
+    // expression evaluation retains one owning output for each source position
+    ASSERT_EQ(result.size(), left.size());
+    for (std::size_t i = 0; i < left.size(); ++i) {
+        const auto a = left[i];
+        const auto b = right[i];
+        // the native dense expression supplies the coefficient oracle for the complete arithmetic chain
+        expect_matrix_eq(result[i], Dense(2. * (a + b) - a * b / 2.));
+        // default evaluation produces the same values as the explicit sequential execution policy
+        expect_matrix_eq(result[i], sequential[i]);
+        // independent parallel output rows preserve sequential coefficients and source order
+        expect_matrix_eq(parallel[i], sequential[i]);
+        // native coefficientwise addition supplies the batch sum oracle
+        expect_matrix_eq(sum[i], Dense(a + b));
+        // native coefficientwise subtraction supplies the batch difference oracle
+        expect_matrix_eq(difference[i], Dense(a - b));
+        // native matrix multiplication supplies the batch product oracle
+        expect_matrix_eq(product[i], Dense(a * b));
+        // native scaling by minus one supplies the sign of every batch coefficient
+        expect_matrix_eq(negative[i], Dense(-1. * a));
+        // native left scalar multiplication supplies the promoted coefficient values
+        expect_matrix_eq(scaled_left[i], Dense(3. * a));
+        // native right scalar multiplication supplies the same retained coefficient values
+        expect_matrix_eq(scaled_right[i], Dense(a * 3.));
+        // native scalar division supplies the quotient of every source coefficient
+        expect_matrix_eq(divided[i], Dense(a / 2.));
+    }
+    std::vector<int> visits;
+    const auto ordered = left
+                           .map([&visits](const auto& value) {
+                               visits.push_back(static_cast<int>(value(0, 0)));
+                               return value;
+                           })
+                           .eval();
+    // the default policy invokes a stateful mapper sequentially for every source row
+    ASSERT_EQ(visits.size(), left.size());
+    // index-zero evaluation observes the source write performed after lazy expression construction
+    EXPECT_EQ(visits.front(), 10);
+    // later evaluations preserve increasing source-index order under the default policy
+    EXPECT_EQ(visits.back(), 64);
+    // a materialized map owns the same source coefficients observed by its stateful callback
+    expect_matrix_eq(ordered[0], left[0]);
+}
+
+// broadcast matrices preserve subtraction and product order while temporary expression nodes retain their operands
+TEST(MatrixBatch, MatrixBroadcastingPreservesOperandOrderAndNestedExpressionLifetimes) {
+    using Dense = Matrix<double, 2, 2>;
+    MatrixBatch<Dense> values(3);
+    for (std::size_t i = 0; i < values.size(); ++i) values[i] = Dense({1. + i, 2., 0., 3.});
+    Dense matrix({2., 1., -1., 4.});
+    const auto nested = ((values + matrix) - (matrix - values)) * (matrix + matrix);
+    double scale = 2.;
+    const auto retained_scale = values * scale;
+    scale = 7.;
+    values[1](0, 0) = 7.;
+    matrix(1, 0) = -3.;
+    const auto result = nested.eval(execution_par);
+    const auto add_right = (values + matrix).eval();
+    const auto add_left = (matrix + values).eval();
+    const auto subtract_right = (values - matrix).eval();
+    const auto subtract_left = (matrix - values).eval();
+    const auto multiply_right = (values * matrix).eval();
+    const auto multiply_left = (matrix * values).eval();
+    const auto scaled = retained_scale.eval();
+    const auto selected = (values + matrix).select(std::array<int, 3> {2, 0, 2}).eval();
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        const auto value = values[i];
+        // nested batch and broadcast expression temporaries survive until the native product is evaluated
+        expect_matrix_eq(result[i], Dense(((value + matrix) - (matrix - value)) * (matrix + matrix)));
+        // a matrix on the right contributes to every source entry through native addition
+        expect_matrix_eq(add_right[i], Dense(value + matrix));
+        // a matrix on the left follows the same native broadcast addition rule
+        expect_matrix_eq(add_left[i], Dense(matrix + value));
+        // right subtraction preserves the source-minus-matrix operand order
+        expect_matrix_eq(subtract_right[i], Dense(value - matrix));
+        // left subtraction preserves the matrix-minus-source operand order
+        expect_matrix_eq(subtract_left[i], Dense(matrix - value));
+        // right matrix multiplication uses the native source-times-matrix product
+        expect_matrix_eq(multiply_right[i], Dense(value * matrix));
+        // left matrix multiplication uses the native matrix-times-source product
+        expect_matrix_eq(multiply_left[i], Dense(matrix * value));
+        // scalar operands are retained by value even when the original multiplier changes before evaluation
+        expect_matrix_eq(scaled[i], Dense(value * 2.));
+    }
+    const auto final_value = values[2];
+    // selecting a temporary arithmetic node retains its repeated original source position
+    expect_matrix_eq(selected[2], Dense(final_value + matrix));
+}
+
+// arithmetic infers symmetric owners from native structure while products and SPD sums use native promotion rules
+TEST(MatrixBatch, StructuredArithmeticInfersNativeOwnerAndFreshCachePolicies) {
+    using Dense = Matrix<double, 2, 2>;
+    using Sym = SymmetricMatrix<double, 2>;
+    using CachedSym = SymmetricMatrix<double, 2, Cache::Spectral>;
+    // a general symmetric product cannot be assigned through a compound operator that would discard its upper triangle
+    static_assert(!permits_batch_compound_product<MatrixBatch<Sym>, MatrixBatch<Sym>>);
+    // scalar multiplication remains compatible with the retained symmetric owner structure
+    static_assert(permits_batch_compound_product<MatrixBatch<Sym>, double>);
+    MatrixBatch<CachedSym> left(2), right(2);
+    left[0] = Sym(Vector<double, 3> {2., 1., 4.});
+    left[1] = Sym(Vector<double, 3> {3., -1., 5.});
+    right[0] = Sym(Vector<double, 3> {1., 2., 3.});
+    right[1] = Sym(Vector<double, 3> {4., 1., 2.});
+    const auto sum = (left + right).eval(execution_par);
+    const auto difference = (left - right).eval();
+    const auto scaled = (left * 2.).eval();
+    const auto divided = (left / 2.).eval();
+    const auto negative = (-left).eval();
+    const auto product = (left * right).eval(execution_par);
+    // native symmetric sums infer a symmetric owner with a fresh cache-free arithmetic policy
+    static_assert(std::same_as<std::remove_cvref_t<decltype(sum)>, MatrixBatch<Sym>>);
+    // symmetric subtraction retains compact symmetric storage through native structure inference
+    static_assert(std::same_as<std::remove_cvref_t<decltype(difference)>, MatrixBatch<Sym>>);
+    // scalar multiplication retains the native symmetric expression structure
+    static_assert(std::same_as<std::remove_cvref_t<decltype(scaled)>, MatrixBatch<Sym>>);
+    // scalar division retains the native symmetric expression structure
+    static_assert(std::same_as<std::remove_cvref_t<decltype(divided)>, MatrixBatch<Sym>>);
+    // unary negation retains symmetric coefficients without an SPD constraint
+    static_assert(std::same_as<std::remove_cvref_t<decltype(negative)>, MatrixBatch<Sym>>);
+    // products of noncommuting symmetric inputs infer a dense owner rather than discard its upper triangle
+    static_assert(std::same_as<std::remove_cvref_t<decltype(product)>, MatrixBatch<Dense>>);
+    // arithmetic sums retain only the native three lower-triangle coefficients
+    EXPECT_EQ(sum.coefficient_stride(), std::size_t {3});
+    for (std::size_t i = 0; i < left.size(); ++i) {
+        const auto a = left[i];
+        const auto b = right[i];
+        // native symmetric coefficientwise addition supplies each compact batch sum oracle
+        expect_matrix_eq(sum[i], Sym(a + b));
+        // native symmetric subtraction supplies the retained lower and reflected upper coefficients
+        expect_matrix_eq(difference[i], Sym(a - b));
+        // native scalar multiplication supplies the symmetric scaling oracle
+        expect_matrix_eq(scaled[i], Sym(a * 2.));
+        // native scalar division supplies the symmetric quotient oracle
+        expect_matrix_eq(divided[i], Sym(a / 2.));
+        // native scaling by minus one supplies the symmetric sign oracle
+        expect_matrix_eq(negative[i], Sym(-1. * a));
+        // the full native product retains every coefficient of the nonsymmetric result
+        expect_matrix_eq(product[i], Dense(a * b));
+    }
+    MatrixBatch<cached_point> points(2);
+    points[0] = cached_point(Vector<double, 3> {4., 1., 3.});
+    const auto point_sum = (points + points).eval();
+    // native SPD addition carries symmetric structure without promising an SPD-tagged arithmetic result
+    static_assert(std::same_as<std::remove_cvref_t<decltype(point_sum)>, MatrixBatch<Sym>>);
+    const auto point = points[0];
+    // the native SPD-view sum supplies the symmetric arithmetic value independently of retained input caches
+    expect_matrix_eq(point_sum[0], Sym(point + point));
+    const auto copy = left.eval(execution_par);
+    // evaluating a cached owning source retains its explicitly selected element and cache owner type
+    static_assert(std::same_as<std::remove_cvref_t<decltype(copy)>, MatrixBatch<CachedSym>>);
+    // inferred owning evaluation allocates a new cache slot independently of its source
+    EXPECT_NE(copy.cache_pointers()[0], left.cache_pointers()[0]);
+}
+
+// diagonal and orthogonal products retain their native structures and independently owned coefficient rows
+TEST(MatrixBatch, DiagonalAndOrthogonalProductsRetainStructure) {
+    using Diagonal = DiagonalMatrix<double, 2>;
+    // native diagonal products remain compatible with a compact diagonal compound destination
+    static_assert(permits_batch_compound_product<MatrixBatch<Diagonal>, MatrixBatch<Diagonal>>);
+    MatrixBatch<Diagonal> diagonals(2), factors(2);
+    diagonals[0] = Diagonal(2., 3.);
+    diagonals[1] = Diagonal(4., 5.);
+    factors[0] = Diagonal(7., 11.);
+    factors[1] = Diagonal(13., 17.);
+    const auto products = (diagonals * factors).eval(execution_par);
+    // the native diagonal product infers another compact diagonal batch
+    static_assert(std::same_as<std::remove_cvref_t<decltype(products)>, MatrixBatch<Diagonal>>);
+    // inferred diagonal owners store exactly their two diagonal coefficients per row
+    EXPECT_EQ(products.coefficient_stride(), std::size_t {2});
+    for (std::size_t i = 0; i < diagonals.size(); ++i) {
+        const auto a = diagonals[i];
+        const auto b = factors[i];
+        // native diagonal multiplication supplies both diagonal values and implicit off-diagonal zeros
+        expect_matrix_eq(products[i], Diagonal(a * b));
+    }
+    using Basis = OrthogonalMatrix<double, 2, 2>;
+    // native orthogonal products remain compatible with a controlled orthogonal compound destination
+    static_assert(permits_batch_compound_product<MatrixBatch<Basis>, MatrixBatch<Basis>>);
+    using Dense = Matrix<double, 2, 2>;
+    MatrixBatch<Basis> bases(2), rotations(2);
+    bases[0] = Basis({1., 0., 0., -1.}, checked);
+    rotations[0] = Basis({0., -1., 1., 0.}, checked);
+    rotations[1] = Basis({-1., 0., 0., -1.}, checked);
+    const auto composed = (bases * rotations).eval(execution_par);
+    const Basis broadcast({0., -1., 1., 0.}, checked);
+    const auto broadcast_right = (bases * broadcast).eval();
+    const auto broadcast_left = (broadcast * bases).eval();
+    // composing native orthogonal expressions infers controlled orthogonal owners
+    static_assert(std::same_as<std::remove_cvref_t<decltype(composed)>, MatrixBatch<Basis>>);
+    // orthogonal right broadcasting retains the same orthogonal result contract
+    static_assert(std::same_as<std::remove_cvref_t<decltype(broadcast_right)>, MatrixBatch<Basis>>);
+    // orthogonal left broadcasting retains the same orthogonal result contract
+    static_assert(std::same_as<std::remove_cvref_t<decltype(broadcast_left)>, MatrixBatch<Basis>>);
+    for (std::size_t i = 0; i < bases.size(); ++i) {
+        const auto a = bases[i];
+        const auto b = rotations[i];
+        // the native full orthogonal-group product preserves the reflected first basis and source order
+        expect_matrix_eq(composed[i], Dense(a * b));
+        // the right broadcast matrix uses native orthogonal composition in the requested order
+        expect_matrix_eq(broadcast_right[i], Dense(a * broadcast));
+        // the left broadcast matrix uses native orthogonal composition in the reversed order
+        expect_matrix_eq(broadcast_left[i], Dense(broadcast * a));
+    }
+}
+
+// dynamic products derive rectangular extents from both operands even when no source entries exist
+TEST(MatrixBatch, DynamicRectangularArithmeticPreservesResultAndEmptyShapes) {
+    using Dense = Matrix<double, Dynamic, Dynamic>;
+    MatrixBatch<Dense> left(2, 2, 3), right(2, 3, 4);
+    for (std::size_t i = 0; i < left.coefficients().size(); ++i) left.coefficients()[i] = static_cast<double>(i + 1);
+    for (std::size_t i = 0; i < right.coefficients().size(); ++i)
+        right.coefficients()[i] = static_cast<double>(i % 5 + 1);
+    const auto product = (left * right).eval(execution_par);
+    // runtime product extents combine the left row count with the right column count
+    expect_batch_shape(product, 2, 2, 4);
+    Dense right_matrix(3, 4), left_matrix(5, 2);
+    for (int i = 0; i < right_matrix.rows(); ++i)
+        for (int j = 0; j < right_matrix.cols(); ++j) right_matrix(i, j) = i + j + 1.;
+    for (int i = 0; i < left_matrix.rows(); ++i)
+        for (int j = 0; j < left_matrix.cols(); ++j) left_matrix(i, j) = 2. * i + j + 1.;
+    const auto right_broadcast = (left * right_matrix).eval();
+    const auto left_broadcast = (left_matrix * left).eval(execution_par);
+    // right matrix broadcasting retains the matrix's four output columns
+    expect_batch_shape(right_broadcast, 2, 2, 4);
+    // left matrix broadcasting retains the matrix's five output rows
+    expect_batch_shape(left_broadcast, 2, 5, 3);
+    for (std::size_t i = 0; i < left.size(); ++i) {
+        const auto a = left[i];
+        const auto b = right[i];
+        // native dynamic matrix multiplication supplies the rectangular batch product oracle
+        expect_matrix_eq(product[i], Dense(a * b));
+        // native multiplication supplies the runtime right-broadcast coefficient oracle
+        expect_matrix_eq(right_broadcast[i], Dense(a * right_matrix));
+        // native multiplication supplies the runtime left-broadcast coefficient oracle
+        expect_matrix_eq(left_broadcast[i], Dense(left_matrix * a));
+    }
+    const MatrixBatch<Dense> empty_left(0, 2, 3), empty_right(0, 3, 4);
+    // empty rectangular products infer known extents without trying to access an input element
+    expect_batch_shape((empty_left * empty_right).eval(execution_par), 0, 2, 4);
+    // empty coefficientwise sums retain the input's known rectangular shape
+    expect_batch_shape((empty_left + empty_left).eval(), 0, 2, 3);
+    // empty right broadcasting uses known input and matrix extents without evaluating a product
+    expect_batch_shape((empty_left * right_matrix).eval(), 0, 2, 4);
+    // empty left broadcasting uses the same product shape rule as nonempty inputs
+    expect_batch_shape((left_matrix * empty_left).eval(execution_par), 0, 5, 3);
+}
+
+// arithmetic rejects cardinality and runtime dimension mismatches before empty inputs can bypass validation
+TEST(MatrixBatch, ArithmeticRejectsMismatchedLengthsAndDynamicShapes) {
+    scalar_batch one(1), two(2), empty;
+    // pairwise addition requires identical cardinalities rather than truncating the longer input
+    EXPECT_THROW(static_cast<void>(one + two), std::invalid_argument);
+    // pairwise subtraction applies the same cardinality validation
+    EXPECT_THROW(static_cast<void>(two - one), std::invalid_argument);
+    // pairwise matrix multiplication cannot silently omit an unmatched source element
+    EXPECT_THROW(static_cast<void>(one * two), std::invalid_argument);
+    // a nonempty left input cannot pairwise add to an empty right input
+    EXPECT_THROW(static_cast<void>(one + empty), std::invalid_argument);
+    // an empty left input cannot pairwise multiply a nonempty right input
+    EXPECT_THROW(static_cast<void>(empty * one), std::invalid_argument);
+    using Dense = Matrix<double, Dynamic, Dynamic>;
+    MatrixBatch<Dense> rectangular(2, 2, 3), different_shape(2, 3, 2), wrong_inner(2, 2, 4);
+    // addition requires equal runtime row and column extents for corresponding entries
+    EXPECT_THROW((rectangular + different_shape).eval(), std::invalid_argument);
+    // matrix multiplication requires matching runtime inner extents
+    EXPECT_THROW((rectangular * wrong_inner).eval(), std::invalid_argument);
+    const Dense broadcast(3, 2);
+    // matrix broadcasting cannot add a differently shaped matrix to every source element
+    EXPECT_THROW((rectangular + broadcast).eval(), std::invalid_argument);
+    const MatrixBatch<Dense> empty_rectangular(0, 2, 3), empty_different(0, 3, 2), empty_wrong_inner(0, 2, 4);
+    // empty addition still validates the supplied runtime extents before materializing an owning result
+    EXPECT_THROW((empty_rectangular + empty_different).eval(), std::invalid_argument);
+    // empty multiplication still rejects incompatible inner dimensions
+    EXPECT_THROW((empty_rectangular * empty_wrong_inner).eval(), std::invalid_argument);
+    // empty matrix broadcasting applies the same coefficientwise dimension contract
+    EXPECT_THROW((broadcast - empty_rectangular).eval(), std::invalid_argument);
+}
+
+// dynamic map evaluation establishes its shape from the first result without invoking that source entry twice
+TEST(MatrixBatch, DynamicMapEvaluationVisitsEverySourceExactlyOnce) {
+    using Dense = Matrix<double, Dynamic, Dynamic>;
+    scalar_batch source(64);
+    for (std::size_t i = 0; i < source.size(); ++i) source.coefficients()[i] = static_cast<double>(i);
+    std::array<int, 64> calls {};
+    const auto mapped = source.map([&calls](const auto& value) {
+        const auto index = static_cast<std::size_t>(value(0, 0));
+        ++calls[index];
+        Dense result(2, 3);
+        for (int i = 0; i < result.rows(); ++i)
+            for (int j = 0; j < result.cols(); ++j) result(i, j) = value(0, 0) + 3. * i + j;
+        return result;
+    });
+    const auto sequential = mapped.eval();
+    // the first evaluated result establishes the dynamic two-by-three output extents
+    expect_batch_shape(sequential, 64, 2, 3);
+    for (std::size_t i = 0; i < calls.size(); ++i) {
+        // every sequential result invokes its source callback once including the shape-establishing first entry
+        EXPECT_EQ(calls[i], 1);
+        // the independently known final coefficient follows the source index and output coordinate
+        EXPECT_DOUBLE_EQ(sequential[i](1, 2), static_cast<double>(i + 5));
+    }
+    calls.fill(0);
+    const auto parallel = mapped.eval(execution_par);
+    for (std::size_t i = 0; i < calls.size(); ++i) {
+        // parallel materialization also evaluates each independent source callback exactly once
+        EXPECT_EQ(calls[i], 1);
+        // parallel dynamic output coefficients match the established sequential map results
+        expect_matrix_eq(parallel[i], sequential[i]);
+    }
+    calls.fill(0);
+    MatrixBatch<Dense> assigned(0, 1, 1);
+    assigned.assign(mapped, execution_par);
+    // explicit parallel assignment adopts the mapped runtime shape and complete cardinality
+    expect_batch_shape(assigned, 64, 2, 3);
+    for (std::size_t i = 0; i < calls.size(); ++i) {
+        // dynamic assignment evaluates the first result once instead of repeating it to infer dimensions
+        EXPECT_EQ(calls[i], 1);
+        // destination replacement preserves each mapped coefficient at its source index
+        expect_matrix_eq(assigned[i], sequential[i]);
+    }
+    const MatrixBatch<Dense> empty(0, 2, 3);
+    const auto unknown_shape = empty.map([](const auto&) { return Dense(2, 3); });
+    // an empty map cannot infer the runtime shape of a callable result that has never been evaluated
+    EXPECT_THROW(unknown_shape.eval(execution_par), std::invalid_argument);
+}
+
+// whole-batch and compound assignments build complete candidates before replacing aliased source coefficients
+TEST(MatrixBatch, ArithmeticAssignmentHandlesSelfAndPermutedSelectionAliases) {
+    using Dense = Matrix<double, 2, 2>;
+    MatrixBatch<Dense> values(3), other(3);
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        values[i] = Dense({1. + i, 2., 0., 3. + i});
+        other[i] = Dense({2., 1., -1., 4.});
+    }
+    const auto original = values;
+    values = values + other;
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        const auto before = original[i];
+        const auto addend = other[i];
+        // assigning a sum that borrows its destination preserves all source values until evaluation completes
+        expect_matrix_eq(values[i], Dense(before + addend));
+    }
+    values = original;
+    const std::array<int, 3> permutation {2, 0, 1};
+    values += values.select(permutation);
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        const auto before = original[i];
+        const auto selected = original[permutation[i]];
+        // a permuted borrowed source reads original rows even after an earlier destination row is evaluated
+        expect_matrix_eq(values[i], Dense(before + selected));
+    }
+    values -= original;
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        // native batch subtraction recovers the original permuted addend at every position
+        expect_matrix_eq(values[i], original[permutation[i]]);
+    }
+    values *= 2.;
+    values /= 2.;
+    // compound scalar multiplication and division round-trip exactly representable source coefficients
+    expect_matrix_eq(values[1], original[permutation[1]]);
+    const auto before_product = values;
+    values *= other;
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        const auto before = before_product[i];
+        const auto factor = other[i];
+        // compound batch multiplication uses a full native matrix product from the unreplaced destination row
+        expect_matrix_eq(values[i], Dense(before * factor));
+    }
+    const Dense matrix({1., -1., 2., 1.});
+    const auto before_broadcast = values;
+    values += matrix;
+    values -= matrix;
+    values *= matrix;
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        const auto before = before_broadcast[i];
+        // compound matrix broadcasts preserve coefficientwise round-trips and the native right product order
+        expect_matrix_eq(values[i], Dense(before * matrix));
+    }
+    MatrixBatch<Dense> sequential(0), parallel(0);
+    sequential.assign(original + other);
+    parallel.assign(original + other, execution_par);
+    for (std::size_t i = 0; i < original.size(); ++i) {
+        // assigning with the explicit parallel policy matches the default sequential candidate coefficients
+        expect_matrix_eq(parallel[i], sequential[i]);
+    }
+}
+
+// structured destinations retain their cache policies and validated values when arithmetic candidate construction fails
+TEST(MatrixBatch, StructuredArithmeticAssignmentRetainsDestinationPolicyAndFailureState) {
+    using Sym = SymmetricMatrix<double, 2>;
+    using CachedSym = SymmetricMatrix<double, 2, Cache::Spectral>;
+    MatrixBatch<Sym> source(2);
+    source[0] = Sym(Vector<double, 3> {2., 1., 4.});
+    source[1] = Sym(Vector<double, 3> {3., -1., 5.});
+    MatrixBatch<CachedSym> destination(1);
+    destination.assign(source + source, execution_par);
+    // assigning a cache-free symmetric expression retains the destination's spectral cache policy
+    static_assert(std::same_as<typename decltype(destination)::CachePolicy, Cache::Spectral>);
+    const auto spectrum = destination.eigenvalues(execution_par);
+    for (std::size_t i = 0; i < source.size(); ++i) {
+        // retained destination spectral slots are prepared independently from the assigned arithmetic coefficients
+        EXPECT_TRUE(destination.cache_pointers()[i]->valid());
+        // doubling each input diagonal gives the independent trace of the assigned matrix spectrum
+        EXPECT_NEAR(spectrum[i].sum(), i == 0 ? 12. : 16., 1e-13);
+    }
+    using Point = SPDMatrix<double, 2, Cache::Log>;
+    MatrixBatch<Point> points(2);
+    points[0] = Point(Vector<double, 3> {2., 0., 3.});
+    points[1] = Point(Vector<double, 3> {4., 0., 5.});
+    MatrixBatch<Point> assigned(1);
+    assigned.assign(points + points, execution_par);
+    // assigning native symmetric arithmetic into verified SPD storage preserves the requested logarithm cache policy
+    static_assert(std::same_as<typename decltype(assigned)::CachePolicy, Cache::Log>);
+    // the destination cache is allocated independently of the original SPD source slot
+    EXPECT_NE(assigned.cache_pointers()[0]->data(), points.cache_pointers()[0]->data());
+    // checked assignment refreshes the logarithm of the doubled independent diagonal coefficient
+    EXPECT_NEAR(assigned[0].cache().template matrix<Cache::Log>()(1, 1), std::log(6.), 1e-14);
+    const auto before = assigned;
+    const auto* const cache_before = assigned.cache_pointers()[0]->data();
+    // negative arithmetic fails SPD validation before replacing any destination batch entry
+    EXPECT_THROW(assigned.assign(-points, execution_par), std::domain_error);
+    // a failed parallel candidate retains the destination's original aggregate cache storage
+    EXPECT_EQ(assigned.cache_pointers()[0]->data(), cache_before);
+    for (std::size_t i = 0; i < assigned.size(); ++i) {
+        // a failed whole-batch candidate leaves every previously verified SPD coefficient unchanged
+        expect_matrix_eq(assigned[i], before[i]);
+        // a failed candidate leaves the retained logarithm associated with the original coefficient row
+        expect_matrix_eq(
+          assigned[i].cache().template matrix<Cache::Log>(), before[i].cache().template matrix<Cache::Log>());
+    }
 }
 
 }   // namespace

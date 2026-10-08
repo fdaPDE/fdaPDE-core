@@ -44,12 +44,20 @@ class P1GeodesicLinearization<manifold::CheegerLogEuclideanSPDGeometry<S, N, U, 
             }
         }
         if (!rho_.empty()) geometry_ = geometry.with_rho(rho);
-        MatrixBatch<Tangent> charts(active_.size(), geometry.order(), geometry.order());
+        auto charts = [&] {
+            if constexpr (requires { binding_.select(active_); }) {
+                MatrixBatch<Tangent> result(0, geometry.order(), geometry.order());
+                result.assign(binding_.select(active_).map([](const auto& node) { return matrix_log(node); }));
+                return result;
+            } else {
+                return fdapde::internals::generate_matrix_batch<Tangent>(
+                  active_.size(), geometry.order(), geometry.order(), execution_seq,
+                  [&](std::size_t i) { return matrix_log(binding_[active_[i]]); });
+            }
+        }();
         std::vector<double> active_weights;
-        for (std::size_t i = 0; i < active_.size(); ++i) {
-            charts[i] = matrix_log(binding_[active_[i]]);
-            active_weights.push_back(w_[active_[i]]);
-        }
+        active_weights.reserve(active_.size());
+        for (std::size_t index : active_) active_weights.push_back(w_[index]);
         lift_.emplace(std::move(charts), std::move(active_weights), geometry_.rho());
         state_.emplace(lift_->solve(options.mean.solver.gradient_tolerance, options.mean.solver.max_iterations));
         result_.emplace(

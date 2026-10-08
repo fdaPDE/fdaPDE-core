@@ -44,12 +44,11 @@ struct SymmetricObjective {
 
     /// @brief evaluates one half of the squared Frobenius residual after exponentiation
     double cost(const LogBatch& logs, Workspace&) {
-        double value = 0;
-        for (std::size_t i = 0; i < logs.size(); ++i) {
-            const auto point = logs[i].exp();
-            value += 0.5 * (point - target[i]).squared_norm();
-        }
-        return value;
+        // MatrixBatch<SPDMatrix<double, 2>>
+        const auto points = logs.exp(execution_par);
+        return (points - target).redux(0., [](double value, const auto& residual) {
+            return value + 0.5 * residual.squared_norm();
+        });
     }
 
     /// @brief pulls residuals back through the self-adjoint exponential differential
@@ -86,17 +85,13 @@ struct SPDObjective {
 
     /// @brief evaluates the squared Frobenius loss directly on the SPD coefficients
     double cost(const SPDBatch& points, Workspace&) {
-        double value = 0;
-        for (std::size_t i = 0; i < points.size(); ++i) value += 0.5 * (points[i] - target[i]).squared_norm();
-        return value;
+        return (points - target).redux(0., [](double value, const auto& residual) {
+            return value + 0.5 * residual.squared_norm();
+        });
     }
 
     /// @brief returns the ambient symmetric residual for every nodal coefficient
-    SymBatch egrad(const SPDBatch& points, Workspace&) {
-        SymBatch result(points.size());
-        for (std::size_t i = 0; i < points.size(); ++i) result[i] = points[i] - target[i];
-        return result;
-    }
+    SymBatch egrad(const SPDBatch& points, Workspace&) { return (points - target).eval(execution_par); }
 
     /// @brief applies the identity ambient Hessian of the quadratic loss
     SymBatch ehess(const SPDBatch&, const SymBatch& direction, Workspace&) { return direction; }
@@ -176,13 +171,15 @@ int main() {
     }
 
     // compare both fields at the same grid points using the full Frobenius norm
-    double max_difference = 0, difference_norm = 0, spd_norm = 0;
-    for (std::size_t i = 0; i < grid.size(); ++i) {
-        const double difference = (symmetric_estimates[i] - spd_estimates[i]).norm();
-        max_difference = std::max(max_difference, difference);
-        difference_norm = std::hypot(difference_norm, difference);
-        spd_norm = std::hypot(spd_norm, spd_estimates[i].norm());
-    }
+    // MatrixBatch<Matrix<double, 1, 1>>
+    const auto differences = (symmetric_estimates - spd_estimates).eval(execution_par).norm(execution_par);
+    // MatrixBatch<Matrix<double, 1, 1>>
+    const auto spd_norms = spd_estimates.norm(execution_par);
+    const double max_difference =
+      differences.redux(0., [](double maximum, const auto& value) { return std::max(maximum, value(0, 0)); });
+    const auto norm = [](double total, const auto& value) { return std::hypot(total, value(0, 0)); };
+    const double difference_norm = differences.redux(0., norm);
+    const double spd_norm = spd_norms.redux(0., norm);
     std::cout << std::scientific << std::setprecision(6) << "grid points: " << grid.size() << '\n'
               << "maximum Frobenius difference: " << max_difference << '\n'
               << "relative Frobenius difference (SPD reference): " << difference_norm / spd_norm << '\n';

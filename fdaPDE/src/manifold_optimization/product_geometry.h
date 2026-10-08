@@ -66,9 +66,8 @@ template <FirstOrderGeometry Geometry> class ProductGeometry {
     Tangent project(const Point& point, const Tangent& u) const {
         check_batch_(point);
         check_batch_(u);
-        Tangent result(count_, rows_, cols_);
-        for (std::size_t i = 0; i < count_; ++i) result[i] = geometry_.project(point[i], u[i]);
-        return result;
+        return fdapde::internals::generate_matrix_batch<TangentType>(
+          count_, rows_, cols_, execution_seq, [&](std::size_t i) { return geometry_.project(point[i], u[i]); });
     }
     /// @brief allocates an independent zero tangent batch of the configured shape
     Tangent zero_tangent(const Point& point) const {
@@ -80,17 +79,16 @@ template <FirstOrderGeometry Geometry> class ProductGeometry {
         check_batch_(point);
         check_batch_(u);
         check_batch_(v);
-        Tangent result(count_, rows_, cols_);
-        for (std::size_t i = 0; i < count_; ++i) result[i] = geometry_.linear_combination(point[i], a, u[i], b, v[i]);
-        return result;
+        return fdapde::internals::generate_matrix_batch<TangentType>(
+          count_, rows_, cols_, execution_seq,
+          [&](std::size_t i) { return geometry_.linear_combination(point[i], a, u[i], b, v[i]); });
     }
     /// @brief takes one joint retraction step while preserving each element's native point type
     Point retract(const Point& point, const Tangent& u, double step) const {
         check_batch_(point);
         check_batch_(u);
-        Point result(count_, rows_, cols_);
-        for (std::size_t i = 0; i < count_; ++i) result[i] = geometry_.retract(point[i], u[i], step);
-        return result;
+        return fdapde::internals::generate_matrix_batch<MatrixType>(
+          count_, rows_, cols_, execution_seq, [&](std::size_t i) { return geometry_.retract(point[i], u[i], step); });
     }
     /// @brief follows the product geodesic with the same finite parameter on every factor
     Point exponential(const Point& point, const Tangent& u, double step = 1) const
@@ -98,9 +96,9 @@ template <FirstOrderGeometry Geometry> class ProductGeometry {
     {
         check_batch_(point);
         check_batch_(u);
-        Point result(count_, rows_, cols_);
-        for (std::size_t i = 0; i < count_; ++i) result[i] = geometry_.exponential(point[i], u[i], step);
-        return result;
+        return fdapde::internals::generate_matrix_batch<MatrixType>(
+          count_, rows_, cols_, execution_seq,
+          [&](std::size_t i) { return geometry_.exponential(point[i], u[i], step); });
     }
     /// @brief collects the initial geodesic velocities between corresponding batch elements
     Tangent logarithm(const Point& from, const Point& to) const
@@ -108,9 +106,8 @@ template <FirstOrderGeometry Geometry> class ProductGeometry {
     {
         check_batch_(from);
         check_batch_(to);
-        Tangent result(count_, rows_, cols_);
-        for (std::size_t i = 0; i < count_; ++i) result[i] = geometry_.logarithm(from[i], to[i]);
-        return result;
+        return fdapde::internals::generate_matrix_batch<TangentType>(
+          count_, rows_, cols_, execution_seq, [&](std::size_t i) { return geometry_.logarithm(from[i], to[i]); });
     }
     /// @brief combines factor distances with the product metric's scale-safe norm
     double distance(const Point& from, const Point& to) const
@@ -129,9 +126,9 @@ template <FirstOrderGeometry Geometry> class ProductGeometry {
         check_batch_(from);
         check_batch_(to);
         check_batch_(u);
-        Tangent result(count_, rows_, cols_);
-        for (std::size_t i = 0; i < count_; ++i) result[i] = geometry_.transport(from[i], to[i], u[i]);
-        return result;
+        return fdapde::internals::generate_matrix_batch<TangentType>(
+          count_, rows_, cols_, execution_seq,
+          [&](std::size_t i) { return geometry_.transport(from[i], to[i], u[i]); });
     }
     /// @brief converts each ambient gradient to its element Riemannian metric dual
     template <typename Ambient>
@@ -142,9 +139,9 @@ template <FirstOrderGeometry Geometry> class ProductGeometry {
     {
         check_batch_(point);
         check_batch_(u);
-        Tangent result(count_, rows_, cols_);
-        for (std::size_t i = 0; i < count_; ++i) result[i] = geometry_.euclidean_to_riemannian_gradient(point[i], u[i]);
-        return result;
+        return fdapde::internals::generate_matrix_batch<TangentType>(
+          count_, rows_, cols_, execution_seq,
+          [&](std::size_t i) { return geometry_.euclidean_to_riemannian_gradient(point[i], u[i]); });
     }
     /// @brief converts full objective Hessian components while retaining all cross-factor coupling
     template <typename Gradient, typename Hessian>
@@ -161,10 +158,10 @@ template <FirstOrderGeometry Geometry> class ProductGeometry {
         check_batch_(gradient);
         check_batch_(hessian);
         check_batch_(direction);
-        Tangent result(count_, rows_, cols_);
-        for (std::size_t i = 0; i < count_; ++i)
-            result[i] = geometry_.euclidean_to_riemannian_hessian(point[i], gradient[i], hessian[i], direction[i]);
-        return result;
+        return fdapde::internals::generate_matrix_batch<TangentType>(
+          count_, rows_, cols_, execution_seq, [&](std::size_t i) {
+              return geometry_.euclidean_to_riemannian_hessian(point[i], gradient[i], hessian[i], direction[i]);
+          });
     }
     /// @brief materializes each factor's ambient velocity when tangents use different coordinates
     auto to_ambient(const Point& point, const Tangent& direction) const
@@ -176,9 +173,9 @@ template <FirstOrderGeometry Geometry> class ProductGeometry {
         check_batch_(direction);
         using Ambient = std::remove_cvref_t<decltype(geometry_.to_ambient(
           std::declval<const MatrixType&>(), std::declval<const TangentType&>()))>;
-        MatrixBatch<Ambient> result(count_, rows_, cols_);
-        for (std::size_t i = 0; i < count_; ++i) result[i] = geometry_.to_ambient(point[i], direction[i]);
-        return result;
+        return fdapde::internals::generate_matrix_batch<Ambient>(
+          count_, rows_, cols_, execution_seq,
+          [&](std::size_t i) { return geometry_.to_ambient(point[i], direction[i]); });
     }
    private:
     /// @brief rejects mismatched batch operands before element access

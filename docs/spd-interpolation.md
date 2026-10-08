@@ -6,6 +6,39 @@ see [LE/AIRM smoothing](spd-smoothing.md).
 Rotation-valued P1 fields use the same spatial API; see
 [rotation interpolation and derivatives](rotation-interpolation.md).
 
+The runnable [geometric finite elements example](../examples/geometric_finite_elements.cpp)
+shows space and field construction, point and batch evaluation, local derivatives
+and their metric adjoints, cell quadrature and spatial-plan reuse after coefficient updates.
+
+Its numbered steps follow this usage sequence:
+
+| Step | Operation | Purpose |
+| --- | --- | --- |
+| 1 | Matrix cache policy and `LogEuclideanGeometry<SPD>` | Choose the matrix representation and the metric that defines interpolation |
+| 2 | `GeometricFeSpace(mesh, P1<1>, geometry)` | Attach one matrix coefficient to each scalar P1 DOF |
+| 3 | `logs.exp()` and `GeometricFeFunction` | Build positive-definite nodal data and transfer their ownership to a spatial field |
+| 4 | `field.eval_at(grid)` | Obtain predictions at a set of locations with one-off sequential preparation |
+| 5 | `space.prepare_evaluation(grid)` and `Psi(field, execution_par)` | Reuse locations, cell IDs and scalar weights across repeated evaluations, with independently selected execution policies |
+| 6 | `field.set_coeff(...)` | Replace nodal values during fitting while retaining the spatial preparation and previously returned owning batches |
+| 7 | `field.result(x)` | Get one interpolated tensor and inspect the convergence of its geometric mean |
+| 8 | Cell quadrature and `field.coeff().select(packet.dofs)` | Connect global nodal storage to local cell interpolation, physical basis gradients and integration weights |
+| 9 | `field.linearization(x).weight_jvp(...)` | Differentiate the interpolated tensor in a physical spatial direction by differentiating its P1 weights |
+| 10 | `nodal_jvp(...)` | Measure the effect of a specified perturbation of the local nodal tensors |
+| 11 | `nodal_vjp(...)` and global scatter | Propagate a scalar data-loss gradient at the interpolated tensor to the global nodal coefficients for optimization |
+| 12 | `p1_dirichlet_cell_value(...)` | Integrate spatial variation over one cell as a possible smoothing penalty |
+
+Step 11 uses the concrete loss `F = 0.5 * ||U(x) - D||_F^2`. Its Frobenius residual
+is converted to the Riemannian gradient at `U(x)` before applying `nodal_vjp`.
+The returned local metric gradients are accumulated at their global `packet.dofs`
+indices. Derivative objects are obtained after the coefficient update: `set_coeff`
+invalidates older borrowed expressions and linearizations. The reusable `Psi`
+depends on the space and locations and remains valid.
+
+The final assertions check the affine logarithmic field's known derivative and
+cell energy, agreement of evaluation paths, uniform coefficient scaling and the
+metric differential-adjoint identity. They are verification of this example;
+the preceding numbered steps show the library calls needed by an application.
+
 Include `fdaPDE/geometric_finite_elements.h` for LE/AIRM P1 values, linearizations
 and prepared spatial interpolants. This header and its algebra/solver paths do
 not require Eigen. The existing `Simplex` and mesh APIs still use Eigen spatial

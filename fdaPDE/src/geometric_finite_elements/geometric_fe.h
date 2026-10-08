@@ -274,21 +274,19 @@ template <typename Space, typename Location> class GeometricFeEvaluation {
         fdapde_strong_assert(
           &function.function_space() == space_, std::invalid_argument,
           "prepared geometric evaluation requires a function of the same space");
-        Values values(size(), space_->geometry().order(), space_->geometry().order());
-        gfe::internals::for_each_point(size(), policy, [&](std::size_t i) {
-            const auto& point = points_[i];
-            const auto& cell = cells_.at(point.cell);
-            if constexpr (gfe::internals::is_flat_spd_geometry<Geometry>) {
-                auto result =
-                  gfe::p1_geodesic_value(space_->geometry(), function.coeff().select(cell.dofs), point.weights);
-                gfe::internals::require_converged(result);
-                values[i] = result.value;
-            } else {
-                values[i] =
-                  function.interpolant_.evaluate_prepared_(point.cell, cell.element, cell.dofs, point.weights);
-            }
-        });
-        return values;
+        return fdapde::internals::generate_matrix_batch<typename Geometry::Point>(
+          size(), space_->geometry().order(), space_->geometry().order(), policy, [&](std::size_t i) {
+              const auto& point = points_[i];
+              const auto& cell = cells_.at(point.cell);
+              if constexpr (gfe::internals::is_flat_spd_geometry<Geometry>) {
+                  auto result =
+                    gfe::p1_geodesic_value(space_->geometry(), function.coeff().select(cell.dofs), point.weights);
+                  gfe::internals::require_converged(result);
+                  return result.value;
+              } else {
+                  return function.interpolant_.evaluate_prepared_(point.cell, cell.element, cell.dofs, point.weights);
+              }
+          });
     }
    private:
     /// @brief shares immutable spatial geometry and local DOF numbering between points in one cell
