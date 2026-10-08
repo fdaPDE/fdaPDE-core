@@ -29,7 +29,7 @@ template <
   typename OutputPolicy, typename Geometry, SPDLike From, SPDLike To,
   fdapde::internals::BatchExecutionPolicy ExecutionPolicy>
 auto sample_spd_geodesic(const Geometry& geometry, const From& from, const To& to, int count, ExecutionPolicy policy) {
-    fdapde_strong_assert(count >= 2, std::invalid_argument, "geodesic: at least two samples are required");
+    fdapde_strong_assert(count >= 2, std::invalid_argument, "interpolate: at least two samples are required");
     const auto curve = geometry.geodesic(from, to);
     using Point = typename Geometry::Point;
     using Result = SPDMatrix<typename Point::Scalar, Point::Rows, OutputPolicy>;

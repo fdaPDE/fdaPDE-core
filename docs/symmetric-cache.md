@@ -141,7 +141,7 @@ using SPD = SPDMatrix<double, 2, Cache::Log>;
 const SPD A(Vector<double, 3> {2., 0.3, 1.});
 const SPD B(Vector<double, 3> {1., 0.2, 3.});
 const LogEuclideanGeometry<SPD> geometry;
-auto points = geometry.geodesic<Cache::Log>(A, B, 10, execution_par);
+auto points = geometry.interpolate<Cache::Log>(A, B, 10, execution_par);
 
 auto logs = points.log<Cache::Spectral>(execution_par);
 auto eigenvalues = logs.eigenvalues(execution_par);
@@ -149,8 +149,8 @@ auto traces = logs.trace(execution_par);
 auto determinants = logs.determinant(execution_par);
 ```
 
-The overload returns an owning `MatrixBatch<SPD>` using the geometry's point
-type and cache policy by default. `geometry.geodesic<Cache::Spectral>(A, B, 10)`
+The method returns an owning `MatrixBatch<SPD>` using the geometry's point
+type and cache policy by default. `geometry.interpolate<Cache::Spectral>(A, B, 10)`
 selects a different output cache while preserving scalar and order. The fourth
 argument selects `execution_seq` (default) or `execution_par`, preserving output
 order and joining all submitted work before returning or rethrowing. It prepares

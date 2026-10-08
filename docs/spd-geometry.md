@@ -172,19 +172,19 @@ Point checked(value); // certifies the stored coefficients later
 points[i] = curve(t); // follows the destination type, including batch views
 ```
 
-For uniformly spaced samples on `[0,1]`, `geometry.geodesic(from, to, int count)`
-returns an owning `MatrixBatch<typename Geometry::Point>`. This overload is
+For uniformly spaced samples on `[0,1]`, `geometry.interpolate(from, to, int count)`
+returns an owning `MatrixBatch<typename Geometry::Point>`. This method is
 available for LE, AIRM, BW, LC and Cheeger LE geometries. The geometry's point
 type determines the output scalar and order. An optional leading template
-argument selects the output cache: `geometry.geodesic<OutputPolicy>(from, to, count)`.
+argument selects the output cache: `geometry.interpolate<OutputPolicy>(from, to, count)`.
 It defaults to `Geometry::Point::CachePolicy`, independently of the endpoint
 cache policies; explicit `Cache::None` requests uncached samples. A count below two throws `std::invalid_argument`.
-The overload prepares the two-point curve once, then evaluates each sample once
+The method prepares the two-point curve once, then evaluates each sample once
 at `t = i / (count - 1)` for `i = 0, ..., count - 1`. The first and last samples
 include the endpoints up to floating-point reconstruction.
 
 A fourth argument selects `execution_seq` (the default) or `execution_par`:
-`geometry.geodesic<OutputPolicy>(from, to, count, execution_par)`. Preparation
+`geometry.interpolate<OutputPolicy>(from, to, count, execution_par)`. Preparation
 runs once before sampling; parallel evaluation shares the immutable prepared
 curve and writes independent result slots directly, preserving index order and
 the requested output caches. Both policies return a complete owning batch.
@@ -200,9 +200,9 @@ const SPD A(fdapde::Vector<double, 3> {2., 0.3, 1.});
 const SPD B(fdapde::Vector<double, 3> {1., 0.2, 3.});
 const fdapde::manifold::LogEuclideanGeometry<SPD> geometry;
 // MatrixBatch<SPD>
-auto points = geometry.geodesic(A, B, 10);
+auto points = geometry.interpolate(A, B, 10);
 // MatrixBatch<SPDMatrix<double, 2, Cache::Spectral>>
-auto spectral_points = geometry.geodesic<fdapde::Cache::Spectral>(A, B, 10, fdapde::execution_par);
+auto spectral_points = geometry.interpolate<fdapde::Cache::Spectral>(A, B, 10, fdapde::execution_par);
 ```
 
 For AIRM, preparation computes `A^(-1/2) B A^(-1/2) = U Lambda U^T` and retains

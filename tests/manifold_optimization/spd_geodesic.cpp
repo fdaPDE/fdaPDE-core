@@ -42,7 +42,7 @@ class GeodesicWorkerEnvironment : public ::testing::Environment {
 template <typename Policy>
 concept permits_sampling_policy =
   requires(const LogEuclideanGeometry<Point>& geometry, const Point& point, Policy policy) {
-      geometry.geodesic(point, point, 3, policy);
+      geometry.interpolate(point, point, 3, policy);
   };
 
 template <typename Actual, typename Expected>
@@ -238,9 +238,9 @@ void check_sampled_curve(const Geometry& geometry, const From& from, const To& t
     using NativePoint = typename Geometry::Point;
     using UncachedPoint = SPDMatrix<typename NativePoint::Scalar, NativePoint::Rows>;
     const auto curve = geometry.geodesic(from, to);
-    const auto points = geometry.geodesic(from, to, 10);
-    const auto sequential = geometry.geodesic(from, to, 10, execution_seq);
-    const auto parallel = geometry.geodesic(from, to, 10, execution_par);
+    const auto points = geometry.interpolate(from, to, 10);
+    const auto sequential = geometry.interpolate(from, to, 10, execution_seq);
+    const auto parallel = geometry.interpolate(from, to, 10, execution_par);
     // batch elements retain the geometry's scalar, order and cache policy independently of endpoint types
     static_assert(std::same_as<std::remove_cvref_t<decltype(points)>, MatrixBatch<NativePoint>>);
     // the requested count includes both endpoints rather than adding them after sampling
@@ -263,9 +263,9 @@ void check_sampled_curve(const Geometry& geometry, const From& from, const To& t
     // the final sample reconstructs the supplied second endpoint
     expect_point(points[points.size() - 1], to, tolerance);
     using CachedResult = SPDMatrix<typename NativePoint::Scalar, NativePoint::Rows, Full>;
-    const auto cached = geometry.template geodesic<Full>(from, to, 3);
-    const auto uncached = geometry.template geodesic<Cache::None>(from, to, 3, execution_par);
-    const auto parallel_cached = geometry.template geodesic<Full>(from, to, 3, execution_par);
+    const auto cached = geometry.template interpolate<Full>(from, to, 3);
+    const auto uncached = geometry.template interpolate<Cache::None>(from, to, 3, execution_par);
+    const auto parallel_cached = geometry.template interpolate<Full>(from, to, 3, execution_par);
     // an explicit cache policy changes the exact output owner without changing the geometry or endpoint policies
     static_assert(std::same_as<std::remove_cvref_t<decltype(cached)>, MatrixBatch<CachedResult>>);
     // explicitly removing caches keeps the geometry scalar and matrix order
@@ -287,7 +287,7 @@ void check_sampled_curve(const Geometry& geometry, const From& from, const To& t
         // retained square roots agree with independently decomposed sampled coefficients
         expect_point(cached[i].cache().template matrix<Cache::Sqrt>(), matrix_sqrt(expected), tolerance);
     }
-    const auto endpoints = geometry.geodesic(from, to, 2);
+    const auto endpoints = geometry.interpolate(from, to, 2);
     // the minimum supported count produces exactly the two requested endpoint samples
     ASSERT_EQ(endpoints.size(), 2);
     // the minimum batch starts at the same input endpoint as the larger batch
@@ -296,11 +296,11 @@ void check_sampled_curve(const Geometry& geometry, const From& from, const To& t
     expect_point(endpoints[1], to, tolerance);
     for (int count : {-1, 0, 1}) {
         // fewer than two samples cannot contain both endpoints and must fail at the public boundary
-        EXPECT_THROW(geometry.geodesic(from, to, count), std::invalid_argument);
+        EXPECT_THROW(geometry.interpolate(from, to, count), std::invalid_argument);
         // explicit output policy does not bypass the minimum sample-count contract
-        EXPECT_THROW(geometry.template geodesic<Full>(from, to, count), std::invalid_argument);
+        EXPECT_THROW(geometry.template interpolate<Full>(from, to, count), std::invalid_argument);
         // parallel sampling applies count validation before allocating or submitting work
-        EXPECT_THROW(geometry.template geodesic<Full>(from, to, count, execution_par), std::invalid_argument);
+        EXPECT_THROW(geometry.template interpolate<Full>(from, to, count, execution_par), std::invalid_argument);
     }
 }
 
@@ -339,25 +339,25 @@ TEST(SPDGeodesic, BatchSamplesPreserveDynamicOrdersAndFloatScalars) {
 // returned batches own their coefficients after temporary curves, geometries and endpoints have expired
 TEST(SPDGeodesic, BatchSamplesOwnTheirResults) {
     const auto points =
-      LogEuclideanGeometry<Point>().geodesic(Point(Dense({4, 0, 0, 9})), Point(Dense({16, 0, 0, 1})), 3);
+      LogEuclideanGeometry<Point>().interpolate(Point(Dense({4, 0, 0, 9})), Point(Dense({16, 0, 0, 1})), 3);
     // the middle element survives all input temporaries and equals the analytic commuting midpoint
     expect_point(points[1], Dense({8, 0, 0, 3}));
     Point from(Dense({4, 0, 0, 9})), to(Dense({16, 0, 0, 1}));
-    const auto snapshot = AffineInvariantGeometry<Point>().geodesic(from, to, 3);
+    const auto snapshot = AffineInvariantGeometry<Point>().interpolate(from, to, 3);
     from = Point::Identity();
     to = Point::Identity();
     // subsequent endpoint assignment cannot replace the owning batch's previously sampled midpoint
     expect_point(snapshot[1], Dense({8, 0, 0, 3}));
 }
-// worker-side cache failures reach the caller after joining and do not poison later geodesic calls
+// worker-side cache failures reach the caller after joining and do not poison later interpolation calls
 TEST(SPDGeodesic, ParallelSamplingPropagatesCacheFailureAndRecovers) {
     using ScalarPoint = SPDMatrix<double, 1>;
     const LogEuclideanGeometry<ScalarPoint> geometry;
     const ScalarPoint tiny(Vector<double, 1> {1e-310});
     const ScalarPoint unit = ScalarPoint::Identity();
     // the derivative of log at a tiny positive endpoint exceeds the scalar range in the requested output cache
-    EXPECT_THROW(geometry.geodesic<Cache::LogDividedDifferences>(tiny, unit, 32, execution_par), std::domain_error);
-    const auto recovered = geometry.geodesic<Cache::Log>(unit, unit, 10, execution_par);
+    EXPECT_THROW(geometry.interpolate<Cache::LogDividedDifferences>(tiny, unit, 32, execution_par), std::domain_error);
+    const auto recovered = geometry.interpolate<Cache::Log>(unit, unit, 10, execution_par);
     // a subsequent call completes all requested entries after the earlier parallel failure
     ASSERT_EQ(recovered.size(), 10);
     // the final slot and its cached logarithm match the independently known constant identity curve

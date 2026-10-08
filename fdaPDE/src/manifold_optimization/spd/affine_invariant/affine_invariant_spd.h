@@ -198,7 +198,7 @@ class AffineInvariantSPDGeometry {
     template <
       typename OutputPolicy = CachePolicy, SPDLike From, SPDLike To,
       fdapde::internals::BatchExecutionPolicy ExecutionPolicy = execution_seq_t>
-    auto geodesic(const From& from, const To& to, int count, ExecutionPolicy policy = {}) const {
+    auto interpolate(const From& from, const To& to, int count, ExecutionPolicy policy = {}) const {
         return internals::sample_spd_geodesic<OutputPolicy>(*this, from, to, count, policy);
     }
 

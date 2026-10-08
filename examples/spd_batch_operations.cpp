@@ -32,8 +32,12 @@ int main() {
     const LogEuclideanGeometry<SPD> geometry;
     constexpr int count = 10;
 
-    // MatrixBatch<SPD>
-    const auto points = geometry.geodesic<Policy>(A, B, count, execution_par);
+    // prepared geodesic callable, evaluated at any parameter t
+    const auto curve = geometry.geodesic(A, B);
+    const SPD midpoint(curve(0.5));
+
+    // MatrixBatch<SPD>, uniformly spaced samples including both endpoints
+    const auto points = geometry.interpolate<Policy>(A, B, count, execution_par);
 
     // MatrixBatch<SymmetricMatrix<double, 2, Cache::Spectral>>
     const auto logs = points.log<Cache::Spectral>(execution_par);
