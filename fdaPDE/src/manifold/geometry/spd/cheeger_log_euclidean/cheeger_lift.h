@@ -297,9 +297,9 @@ template <typename S, int N> class CheegerLift {
                      polish < 6 && candidate.gradient.norm() > tolerance && candidate.gradient.norm() < 1e-4;
                      ++polish) {
                     const auto h = hessian(candidate);
-                    const PartialPivLU lu(h);
+                    const PartialPivLU lu(equilibrated_hessian_(h));
                     if (lu.info() != 0) break;
-                    const Vec rhs(S(-1) * candidate.gradient), step(lu.solve(rhs));
+                    const Vec rhs(S(-1) * candidate.gradient), step(equilibrated_solve_(lu, rhs));
                     if (step.norm() > .01) break;
                     const auto point = geometry.retract(candidate.rotations, step, 1);
                     auto next = evaluate(point);
@@ -336,14 +336,15 @@ template <typename S, int N> class CheegerLift {
     void prepare(const State& state) {
         h_ = hessian(state);
         if (h_->rows() == 0) return;
-        const SPDMatrix<S, Dynamic> positive(*h_);
-        lu_.emplace(*h_);
+        const auto equilibrated = equilibrated_hessian_(*h_);
+        const SPDMatrix<S, Dynamic> positive(equilibrated);
+        lu_.emplace(equilibrated);
     }
     /// @brief solves a retained implicit system and checks its relative residual
     Vec solve_linear(const Vec& rhs, double tolerance = 1e-9) const {
         if (rhs.rows() == 0) return rhs;
         fdapde_strong_assert(lu_.has_value(), std::domain_error, "C-LE derivative requires a positive lifted Hessian");
-        Vec x(lu_->solve(rhs));
+        Vec x(equilibrated_solve_(*lu_, rhs));
         fdapde_strong_assert(
           Vec(*h_ * x - rhs).norm() <= tolerance * rhs.norm() + 32 * std::numeric_limits<S>::epsilon(),
           std::domain_error, "C-LE implicit solve failed");
@@ -360,6 +361,22 @@ template <typename S, int N> class CheegerLift {
     /// @brief returns the number of skew coordinates per rotation
     int skew_size() const { return k_; }
    private:
+    /// @brief removes nodal weight units by a positive diagonal congruence without changing the lifted system
+    Dense equilibrated_hessian_(const Dense& h) const {
+        Dense scaled(h);
+        for (int i = 0; i < h.rows(); ++i)
+            for (int j = 0; j < h.cols(); ++j)
+                scaled(i, j) = h(i, j) / S(std::sqrt(w_[i / k_])) / S(std::sqrt(w_[j / k_]));
+        return scaled;
+    }
+    /// @brief converts both sides of an equilibrated solve back to the original rotation coordinates
+    Vec equilibrated_solve_(const PartialPivLU<Dense>& lu, const Vec& rhs) const {
+        Vec scaled(rhs);
+        for (int i = 0; i < rhs.rows(); ++i) scaled[i] /= S(std::sqrt(w_[i / k_]));
+        Vec result(lu.solve(scaled));
+        for (int i = 0; i < result.rows(); ++i) result[i] /= S(std::sqrt(w_[i / k_]));
+        return result;
+    }
     MatrixBatch<Sym> charts_;
     std::vector<double> w_;
     double rho_;

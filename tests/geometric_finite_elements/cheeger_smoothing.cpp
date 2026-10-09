@@ -263,4 +263,78 @@ TEST(CheegerSmoothing, GeneralInterpolationDerivatives) {
           (Matrix<double, 3, 3>(analytic.derivative - (p.result().value - m.result().value) / 2e-5).norm()), 1e-6);
     }
 }
+/// @brief retains positive near-edge weights while differentiating the captured SPD2 fixture embedded in SPD3
+TEST(CheegerSmoothing, GeneralNearEdgeImplicitDerivatives) {
+    using G = manifold::CheegerLogEuclideanSPDGeometry<double, 3>;
+    using T = G::Tangent;
+    const G geometry;
+    const std::array<std::array<double, 3>, 3> logs {
+      {{.73228411922199965, 4.0436828641257814e-06, .58784730643748428},
+       {.71294875312875017, 1.6309328873535968e-05, .59880399950094432},
+       {.73206110007738123, -.0093906122717749702, .59887764716908209}}
+    };
+    MatrixBatch<G::Point> nodes(3), plus(3), minus(3);
+    std::array<T, 3> directions;
+    constexpr double step = 1e-4;
+    for (int i = 0; i < 3; ++i) {
+        T log;
+        log(0, 0) = logs[i][0];
+        log(0, 1) = logs[i][1];
+        log(1, 1) = logs[i][2];
+        log(0, 2) = log(1, 2) = 0;
+        log(2, 2) = 1.1;
+        auto& d = directions[i];
+        d(0, 0) = .01 * (i + 1);
+        d(0, 1) = .02;
+        d(1, 1) = -.01 * i;
+        d(0, 2) = .001;
+        d(1, 2) = .002;
+        d(2, 2) = .01;
+        nodes[i] = matrix_exp(log);
+        plus[i] = matrix_exp(T(log + step * d));
+        minus[i] = matrix_exp(T(log - step * d));
+    }
+    gfe::P1GeodesicLinearizationOptions options;
+    options.mean.solver.gradient_tolerance = 1e-10;
+    options.mean.solver.max_iterations = 500;
+    options.linear_solve.residual_tolerance = 1e-10;
+    const T covector(Matrix<double, 3, 3>({.2, -.03, .02, -.03, -.1, .04, .02, .04, .3}));
+    for (double tiny : {0., 1e-16, 3.3306690738754696e-16, 1e-14, 1e-8, .2}) {
+        SCOPED_TRACE(tiny);
+        const std::array weights {2 * (1 - tiny) / 3, (1 - tiny) / 3, tiny};
+        const auto fit = gfe::p1_geodesic_linearization(geometry, nodes, weights, options);
+        // the captured mean must remain stationary under the original tolerance without dropping positive support
+        ASSERT_TRUE(fit.result().converged() && !fit.result().detected_ambiguity);
+        if (tiny == 0) {
+            // exact zero remains inactive after normalization
+            EXPECT_EQ(fit.result().normalized_weights[2], 0);
+        } else {
+            // every positive test weight survives normalization without being snapped to the boundary
+            EXPECT_GT(fit.result().normalized_weights[2], 0);
+        }
+        const auto rho = fit.rho_jvp();
+        // the original unscaled system residual certifies the equilibrated implicit solution
+        ASSERT_TRUE(rho.converged());
+        const auto rp = gfe::p1_geodesic_value(geometry.with_rho(geometry.rho() + step), nodes, weights, options.mean);
+        const auto rm = gfe::p1_geodesic_value(geometry.with_rho(geometry.rho() - step), nodes, weights, options.mean);
+        // independently refitted scalar perturbations stay on a stationary unambiguous branch
+        ASSERT_TRUE(rp.converged() && rm.converged() && !rp.detected_ambiguity && !rm.detected_ambiguity);
+        // centered changes in the unchanged C-LE parameter independently check the rho derivative
+        EXPECT_LT((Matrix<double, 3, 3>(rho.derivative - (rp.value - rm.value) / (2 * step)).norm()), 2e-7);
+        const auto derivative = fit.nodal_log_jvp(directions);
+        const auto np = gfe::p1_geodesic_value(geometry, plus, weights, options.mean);
+        const auto nm = gfe::p1_geodesic_value(geometry, minus, weights, options.mean);
+        // independently refitted tensor perturbations certify the nodal finite-difference oracle
+        ASSERT_TRUE(np.converged() && nm.converged() && !np.detected_ambiguity && !nm.detected_ambiguity);
+        // tensor-log directions include off-plane entries that exercise all three rotation coordinates
+        EXPECT_LT((Matrix<double, 3, 3>(derivative - (np.value - nm.value) / (2 * step)).norm()), 2e-7);
+        const auto [adjoint, rho_adjoint] = fit.nodal_log_rho_vjp(covector);
+        double paired = 0;
+        for (int i = 0; i < 3; ++i) paired += manifold::internals::cheeger_inner(adjoint[i], directions[i]);
+        // the adjoint and forward actions pair identically in the original unscaled nodal coordinates
+        EXPECT_NEAR(paired, manifold::internals::cheeger_inner(covector, derivative), 1e-12);
+        // the scalar adjoint uses the same equilibrated solve and original covector pairing
+        EXPECT_NEAR(rho_adjoint, manifold::internals::cheeger_inner(covector, rho.derivative), 1e-12);
+    }
+}
 }   // namespace

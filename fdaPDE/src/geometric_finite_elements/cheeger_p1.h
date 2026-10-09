@@ -124,9 +124,10 @@ class P1GeodesicLinearization<manifold::CheegerLogEuclideanSPDGeometry<S, 2, U, 
         if (derivatives && result_.converged() && !result_.detected_ambiguity) {
             hessian_.emplace(lifted_hessian_(fit_));
             try {
-                const SPDMatrix<double, Dynamic> positive(*hessian_);
+                const Dense equilibrated = lifted_hessian_(fit_, true);
+                const SPDMatrix<double, Dynamic> positive(equilibrated);
                 static_cast<void>(positive);
-                lu_.emplace(*hessian_);
+                lu_.emplace(equilibrated);
                 mean_log_.emplace(manifold::internals::cheeger_matrix<S>(fit_.mean));
                 mean_log_->cache();
             } catch (const std::domain_error&) {
@@ -220,7 +221,7 @@ class P1GeodesicLinearization<manifold::CheegerLogEuclideanSPDGeometry<S, 2, U, 
         const int n = int(w_.size());
         Vector rhs(n);
         for (int i = 0; i < n; ++i) rhs[i] = 4 * w_[i] * (b.x * fit_.z[i].y - b.y * fit_.z[i].x);
-        const Vector adjoint(lu_->solve(rhs));
+        const Vector adjoint = lifted_solve_(*lu_, rhs);
         Chart v;
         double drho = 0;
         for (int i = 0; i < n; ++i) {
@@ -277,7 +278,7 @@ class P1GeodesicLinearization<manifold::CheegerLogEuclideanSPDGeometry<S, 2, U, 
               4 * drho * w_[i] * fit_.phi[i] -
               d * (8 * (fit_.mean.y * fit_.z[i].x - fit_.mean.x * fit_.z[i].y) + 4 * geometry_.rho() * fit_.phi[i]);
         }
-        const Vector dphi(lu_->solve(rhs));
+        const Vector dphi = lifted_solve_(*lu_, rhs);
         double residual = 0, rhsnorm = 0;
         for (std::size_t i = 0; i < w_.size(); ++i) {
             double r = -rhs[i];
@@ -336,19 +337,32 @@ class P1GeodesicLinearization<manifold::CheegerLogEuclideanSPDGeometry<S, 2, U, 
         }
         return f;
     }
-    /// @brief forms the active rotation Hessian with unit diagonal on unused coordinates
-    Dense lifted_hessian_(const Fit& f) const {
+    /// @brief forms the rotation Hessian, optionally in square-root-weight coordinates, with unit inactive diagonals
+    Dense lifted_hessian_(const Fit& f, bool equilibrated = false) const {
         const int n = int(w_.size());
         Dense h(n, n);
         for (int i = 0; i < n; ++i)
             for (int j = 0; j < n; ++j) {
-                h(i, j) = -16 * w_[i] * w_[j] * (f.z[i].x * f.z[j].x + f.z[i].y * f.z[j].y);
+                const double wi = equilibrated ? std::sqrt(w_[i]) : w_[i], wj = equilibrated ? std::sqrt(w_[j]) : w_[j];
+                h(i, j) = -16 * wi * wj * (f.z[i].x * f.z[j].x + f.z[i].y * f.z[j].y);
                 if (i == j)
                     h(i, j) += w_[i] == 0 ?
                                  1 :
+                               equilibrated ?
+                                 16 * (f.mean.x * f.z[i].x + f.mean.y * f.z[i].y) + 4 * geometry_.rho() :
                                  16 * w_[i] * (f.mean.x * f.z[i].x + f.mean.y * f.z[i].y) + 4 * geometry_.rho() * w_[i];
             }
         return h;
+    }
+    /// @brief solves the original lifted system through its square-root-weight congruence without discarding nodes
+    Vector lifted_solve_(const PartialPivLU<Dense>& lu, const Vector& rhs) const {
+        Vector scaled(rhs);
+        for (std::size_t i = 0; i < w_.size(); ++i)
+            if (w_[i] > 0) scaled[i] /= std::sqrt(w_[i]);
+        Vector result(lu.solve(scaled));
+        for (std::size_t i = 0; i < w_.size(); ++i)
+            if (w_[i] > 0) result[i] /= std::sqrt(w_[i]);
+        return result;
     }
     /// @brief solves the globally strongly convex rotation problem by damped Newton
     Fit optimize_convex_() const {
@@ -358,11 +372,11 @@ class P1GeodesicLinearization<manifold::CheegerLogEuclideanSPDGeometry<S, 2, U, 
         for (std::size_t iteration = 0; iteration < options_.mean.solver.max_iterations; ++iteration) {
             const double norm = norm_(f.gradient);
             if (norm <= options_.mean.solver.gradient_tolerance * .1) break;
-            const fdapde::PartialPivLU lu(lifted_hessian_(f));
+            const fdapde::PartialPivLU lu(lifted_hessian_(f, true));
             if (lu.info() != 0) break;
             Vector rhs(n);
             for (int i = 0; i < n; ++i) rhs[i] = -f.gradient[i];
-            const Vector direction(lu.solve(rhs));
+            const Vector direction = lifted_solve_(lu, rhs);
             double slope = 0;
             for (int i = 0; i < n; ++i) slope += direction[i] * f.gradient[i];
             bool accepted = false;
@@ -439,12 +453,12 @@ class P1GeodesicLinearization<manifold::CheegerLogEuclideanSPDGeometry<S, 2, U, 
         for (int polish = 0;
              polish < 5 && norm_(f.gradient) > options_.mean.solver.gradient_tolerance * .1 && norm_(f.gradient) < 1e-5;
              ++polish) {
-            const Dense h = lifted_hessian_(f);
+            const Dense h = lifted_hessian_(f, true);
             const fdapde::PartialPivLU lu(h);
             if (lu.info() != 0) break;
             Vector rhs(n);
             for (int i = 0; i < n; ++i) rhs[i] = -f.gradient[i];
-            const Vector delta(lu.solve(rhs));
+            const Vector delta = lifted_solve_(lu, rhs);
             double maximum = 0;
             for (int i = 0; i < n; ++i) {
                 maximum = std::max(maximum, std::abs(delta[i]));

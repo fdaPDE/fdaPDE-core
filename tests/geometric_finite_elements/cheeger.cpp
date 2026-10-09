@@ -29,6 +29,131 @@ Batch nodes() {
     data[2] = tensor(.3, .4, 2.1);
     return data;
 }
+/// @brief retains the fitted noncommuting nodes adjacent to the captured smoothing edge
+Batch near_edge_nodes() {
+    const std::array<std::array<double, 3>, 3> logs {
+      {{0.73228411922199965, 4.0436828641257814e-06, 0.58784730643748428},
+       {0.71294875312875017, 1.6309328873535968e-05, 0.59880399950094432},
+       {0.73206110007738123, -0.0093906122717749702, 0.59887764716908209}}
+    };
+    Batch data(logs.size());
+    for (std::size_t i = 0; i < logs.size(); ++i) {
+        Tangent log;
+        log(0, 0) = logs[i][0];
+        log(0, 1) = logs[i][1];
+        log(1, 1) = logs[i][2];
+        data[i] = matrix_exp(log);
+    }
+    return data;
+}
+/// @brief preserves positive edge-limit weights and resolves their mean and rho derivative in every nodal order
+TEST(CheegerInterpolation, NearEdgePositiveWeights) {
+    const auto data = near_edge_nodes();
+    const Geometry geometry;
+    auto options = accurate();
+    options.mean.solver.gradient_tolerance = 1e-10;
+    options.mean.solver.max_iterations = 500;
+    options.linear_solve.residual_tolerance = 1e-10;
+    const auto edge = geometry.geodesic(data[0], data[1])(1. / 3);
+    for (double tiny : {std::numeric_limits<double>::denorm_min(), 3.3306690738754696e-16, 1e-14, 1e-8, .02}) {
+        const std::array weights {(1 - tiny) * 2 / 3, (1 - tiny) / 3, tiny};
+        std::array<std::size_t, 3> permutation {0, 1, 2};
+        do {
+            std::array<double, 3> permuted_weights;
+            for (int i = 0; i < 3; ++i) permuted_weights[i] = weights[permutation[i]];
+            const auto fit =
+              gfe::p1_geodesic_linearization(geometry, data.select(permutation), permuted_weights, options);
+            // every supplied positive coordinate remains active, including the smallest representable weight
+            EXPECT_TRUE(
+              std::all_of(
+                fit.result().normalized_weights.begin(), fit.result().normalized_weights.end(),
+                [](double weight) { return weight > 0; }));
+            // conditioning must resolve the original stationarity criterion without changing its tolerance
+            ASSERT_TRUE(fit.result().converged());
+            // the reported residual is still the unscaled lifted gradient norm
+            EXPECT_LE(fit.result().stationarity_norm, options.mean.solver.gradient_tolerance);
+            // the interior means approach the independently prepared two-node geodesic as the third weight vanishes
+            EXPECT_LT(error(fit.result().value, edge), 1e-10 + tiny);
+            const auto derivative = fit.rho_jvp();
+            // the derivative factorization must remain usable under the same extreme weight ratios
+            EXPECT_TRUE(derivative.converged());
+        } while (std::next_permutation(permutation.begin(), permutation.end()));
+    }
+}
+/// @brief checks boundary-limit implicit actions and their adjoint against independent refits
+TEST(CheegerInterpolation, NearEdgeImplicitDerivatives) {
+    const auto data = near_edge_nodes();
+    const Geometry geometry;
+    const std::array weights {2. / 3, 1. / 3, 3.3306690738754696e-16};
+    auto options = accurate();
+    options.mean.solver.gradient_tolerance = 1e-10;
+    options.mean.solver.max_iterations = 500;
+    options.linear_solve.residual_tolerance = 1e-10;
+    const auto fit = gfe::p1_geodesic_linearization(geometry, data, weights, options);
+    // implicit actions are checked only after the captured positive-weight mean has converged
+    ASSERT_TRUE(fit.result().converged());
+    constexpr double step = 1e-5;
+    const auto rho_plus =
+      gfe::p1_geodesic_value(Geometry::from_rho(geometry.rho() + step), data, weights, options.mean);
+    const auto rho_minus =
+      gfe::p1_geodesic_value(Geometry::from_rho(geometry.rho() - step), data, weights, options.mean);
+    // the independently refitted metric perturbations remain stationary on an unambiguous branch
+    ASSERT_TRUE(
+      rho_plus.converged() && rho_minus.converged() && !rho_plus.detected_ambiguity && !rho_minus.detected_ambiguity);
+    const auto rho_derivative = fit.rho_jvp();
+    // the equilibrated solve is certified by the residual of the original unscaled system
+    ASSERT_TRUE(rho_derivative.converged());
+    // centered metric perturbations independently verify the original rho derivative
+    EXPECT_LT(error(rho_derivative.derivative, Tangent((rho_plus.value - rho_minus.value) / (2 * step))), 1e-6);
+    std::array<Tangent, 3> directions;
+    auto plus = data, minus = data;
+    for (int i = 0; i < 3; ++i) {
+        directions[i] = manifold::internals::cheeger_matrix<double>({.02 * i, .03 - .01 * i, -.01 + .02 * i});
+        const auto log = matrix_log(data[i]);
+        plus[i] = matrix_exp(Tangent(log + step * directions[i]));
+        minus[i] = matrix_exp(Tangent(log - step * directions[i]));
+    }
+    const auto nodal_plus = gfe::p1_geodesic_value(geometry, plus, weights, options.mean);
+    const auto nodal_minus = gfe::p1_geodesic_value(geometry, minus, weights, options.mean);
+    // stationary unambiguous nodal refits provide the finite-difference oracle
+    ASSERT_TRUE(
+      nodal_plus.converged() && nodal_minus.converged() && !nodal_plus.detected_ambiguity &&
+      !nodal_minus.detected_ambiguity);
+    const Tangent action = fit.nodal_log_jvp(directions);
+    // centered nodal-log refits verify the forward action with the tiny weight retained
+    EXPECT_LT(error(action, Tangent((nodal_plus.value - nodal_minus.value) / (2 * step))), 1e-6);
+    const Tangent covector = manifold::internals::cheeger_matrix<double>({.2, -.1, .03});
+    double rho_pullback = 0, nodal_pairing = 0;
+    const auto pullback = fit.nodal_log_vjp(covector, &rho_pullback);
+    for (int i = 0; i < 3; ++i)
+        nodal_pairing += manifold::internals::cheeger_dot(
+          manifold::internals::cheeger_chart(pullback[i]), manifold::internals::cheeger_chart(directions[i]));
+    const auto pair = [&](const Tangent& value) {
+        return manifold::internals::cheeger_dot(
+          manifold::internals::cheeger_chart(covector), manifold::internals::cheeger_chart(value));
+    };
+    // the forward and reverse nodal actions must satisfy the same Frobenius adjoint identity
+    EXPECT_NEAR(nodal_pairing, pair(action), 1e-12);
+    // the reverse metric action must agree with the independently checked forward rho action
+    EXPECT_NEAR(rho_pullback, pair(rho_derivative.derivative), 1e-12);
+    const auto weight_derivative = fit.weight_jvp(std::array {-1., 0., 1.});
+    // the weight action must satisfy the original implicit-system residual criterion
+    ASSERT_TRUE(weight_derivative.converged());
+    auto shifted = weights, twice_shifted = weights;
+    shifted[0] -= step;
+    shifted[2] += step;
+    twice_shifted[0] -= 2 * step;
+    twice_shifted[2] += 2 * step;
+    const auto first = gfe::p1_geodesic_value(geometry, data, shifted, options.mean);
+    const auto second = gfe::p1_geodesic_value(geometry, data, twice_shifted, options.mean);
+    // both inward refits must converge on the same unambiguous branch as the boundary limit
+    ASSERT_TRUE(first.converged() && second.converged() && !first.detected_ambiguity && !second.detected_ambiguity);
+    // an inward direction admits a second-order one-sided oracle without introducing negative barycentric weights
+    EXPECT_LT(
+      error(
+        weight_derivative.derivative, Tangent((-3 * fit.result().value + 4 * first.value - second.value) / (2 * step))),
+      1e-6);
+}
 /// @brief checks the imported metric, exact pair reduction and known multistart branch switch
 TEST(CheegerInterpolation, GeometryAndHistoricalBranches) {
     // C-LE supplies intrinsic geodesics without inheriting the unrelated LE transport
