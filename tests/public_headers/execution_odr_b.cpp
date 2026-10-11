@@ -16,21 +16,4 @@
 
 #include <fdaPDE/execution.h>
 
-#include <gtest/gtest.h>   // testing framework
-using namespace fdapde;
-
-TEST(execution, task_graphs) {
-
-    int x = 0, y = 0;
-    std::vector<int> v1(1000);
-    
-    TaskGraph g;
-    auto n1 = g.add_node([&] { x = 1; });
-    auto n2 = g.add_node([&] { y = 2; });
-    auto n3 = g.add_node([&] { fdapde::parallel_for(0, v1.size(), [&](int i) { v1[i] = x + y; }); });
-    n3.succeeds(n1, n2);
-    
-    fdapde::parallel_execute(g);
-    
-    for(int x : v1) { EXPECT_EQ(x, 3); }
-}
+int fdapde_execution_odr_b() { return 2; }

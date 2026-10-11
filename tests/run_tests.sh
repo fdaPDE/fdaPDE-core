@@ -134,3 +134,6 @@ if [ "$MEMCHECK" = true ]; then
 else
     "$BUILD_DIR/fdapde_test"
 fi
+
+# Run the execution topic suite and linkage check.
+(cd "$BUILD_DIR" && ctest --output-on-failure -R '^execution[._]')

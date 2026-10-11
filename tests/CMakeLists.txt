@@ -42,3 +42,20 @@ target_link_libraries(fdapde_test
 enable_testing()
 include(GoogleTest)
 gtest_discover_tests(fdapde_test)
+
+# Execution topic tests share one suite and one worker pool.
+find_package(Threads REQUIRED)
+add_executable(fdapde_execution_test execution.cpp)
+target_compile_options(fdapde_execution_test PRIVATE ${WARNING_FLAGS})
+target_include_directories(fdapde_execution_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_link_libraries(fdapde_execution_test PRIVATE gtest_main Threads::Threads)
+gtest_discover_tests(fdapde_execution_test PROPERTIES TIMEOUT 120)
+
+add_executable(fdapde_execution_odr
+  public_headers/execution_odr_a.cpp public_headers/execution_odr_b.cpp
+  public_headers/execution_odr_main.cpp)
+target_compile_options(fdapde_execution_odr PRIVATE ${WARNING_FLAGS})
+target_include_directories(fdapde_execution_odr PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_link_libraries(fdapde_execution_odr PRIVATE Threads::Threads)
+add_test(NAME execution_multi_translation_unit COMMAND fdapde_execution_odr)
+set_tests_properties(execution_multi_translation_unit PROPERTIES TIMEOUT 30)
