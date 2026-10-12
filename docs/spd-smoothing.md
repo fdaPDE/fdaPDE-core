@@ -125,7 +125,10 @@ inputs and nonfinite numerical results throw through the core assertions.
 `manifold::RiemannianTrustRegion` and `SteihaugTruncatedCG` use the existing
 geometry, problem and evaluation-workspace contracts. The outer solver keeps
 accepted and trial workspaces separate and rejects nonfinite trial costs.
-Hessian-vector products are supplied by the problem. See
+When a finite truncated-CG model predicts no descent, it checks a Cauchy step
+within the same radius before stopping with a model failure. Cost acceptance,
+gradient tolerances and iteration budgets are unchanged; `cauchy_trials` records
+these attempts. Hessian-vector products are supplied by the problem. See
 [the runnable solver checks](../tests/manifold_optimization/trust_region.cpp).
 
 The TSPDE fit driver was adapted in a separate verification probe to use these
@@ -143,6 +146,36 @@ caches, geometries, FEM operators, objective contributions, derivatives and
 generic optimizers; it does not own smoothing model classes or a model fit API.
 The fdaPDE-cpp model integration and rho optimization for uniqueness are separate work.
 
+
+## Retained AIRM and BW curvature
+
+Both intrinsic geometries expose covariant distance-Hessian derivatives through
+`half_squared_distance_hessian_covariant_jvp(frame, base_direction,
+target_direction, action_direction)` and
+`half_squared_distance_hessian_covariant_vjp(frame, action_direction, output_dual)`.
+The action tangent is continued parallelly at the base. The adjoint returns
+metric-dual tangents at the base and target, with the same endpoint metrics used
+by the first-order logarithm JVP/VJP. Endpoint overloads prepare a relative frame;
+retained-frame overloads reuse its spectral and transport factors.
+
+BW differentiates its transport equation `T P T = Q` by solving
+`dT P T + T P dT = dQ - T dP T`. Differentiating subsequent Lyapunov equations
+gives the complete distance third derivative, including the Levi-Civita
+connection and the parallel continuation of the action tangent. The dedicated
+`half_squared_distance_hessian_covariant_target_vjp` reverses target dependence
+through the transposed transport solves without assembling a coordinate Jacobian.
+The full BW adjoint uses symmetric-coordinate contractions for base dependence.
+These are analytic derivatives; no perturbations or refitted distance problems
+are used.
+
+An external objective can retain each converged mean's weighted distance Hessian,
+differentiate its implicit adjoint, and combine these operations with the tension
+pullback. This removes repeated mean solves from Hessian-vector actions while
+retaining data-residual curvature, penalty curvature and the second differential
+of the optimizer's exponential chart. Positive mean curvature and the original
+linear residual tolerance must still be certified when retaining a factorization.
+This composition belongs to the model layer; the reusable geometry operations do
+not change the objective, optimizer tolerances or smoothing model API.
 
 ## C-LE with variable rho
 

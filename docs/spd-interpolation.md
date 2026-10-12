@@ -204,11 +204,16 @@ workspaces and can share the ready node caches through `parallel_async`.
 Vertices return their certified nodal value. Each simplex edge has a prepared
 geodesic, evaluated directly when exactly two weights are active. Interior LE
 uses its compensated logarithmic mean. AIRM with at least three active nodes
-uses the existing weighted Karcher mean with Armijo steepest descent, followed
-by at most six local stationarity polishing steps when the residual is below
+uses the weighted Karcher mean with an analytic Hessian trust-region solve,
+keeping the configured gradient tolerance and iteration budget. The solver is
+followed by at most six local stationarity polishing steps when the residual is below
 `1e-5`. The polishing step uses the existing tangent CG Hessian solve and
 requires a residual contraction, accommodating the cost roundoff floor.
 All SPD values and relative matrices remain certified `SPDMatrix` objects.
+BW transport factors the product of endpoint square roots with native one-sided
+Jacobi rotations. It retains the relative square-root spectrum for implicit
+derivatives, avoiding an intermediate matrix with a squared condition number.
+The endpoint SPD certification thresholds remain unchanged.
 
 `interpolant.result(x)` exposes the candidate, normalized weights, iteration
 count, residual, stop reason and uniqueness certificate. Materializing

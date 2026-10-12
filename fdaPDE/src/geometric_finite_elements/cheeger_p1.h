@@ -200,6 +200,17 @@ class P1GeodesicLinearization<manifold::CheegerLogEuclideanSPDGeometry<S, 2, U, 
         fdapde_strong_assert(result.converged(), std::domain_error, "Cheeger nodal derivative solve failed");
         return std::move(result.derivative);
     }
+    /// @brief differentiates the selected planar mean in nodal log coordinates and the local rho parameter
+    Tangent nodal_log_rho_jvp(std::span<const Tangent> directions, double rho_direction = 0) const {
+        fdapde_strong_assert(directions.size() == w_.size(), std::invalid_argument, "nodal direction size mismatch");
+        fdapde_strong_assert(std::isfinite(rho_direction), std::invalid_argument, "nonfinite rho direction");
+        std::vector<Chart> charts;
+        charts.reserve(directions.size());
+        for (const auto& direction : directions) charts.push_back(manifold::internals::cheeger_chart(direction));
+        auto result = differentiate_({}, charts, rho_direction);
+        fdapde_strong_assert(result.converged(), std::domain_error, "Cheeger nodal derivative solve failed");
+        return std::move(result.derivative);
+    }
     /// @brief pulls an ambient Frobenius covector back to nodal logs and optionally to local rho with one adjoint solve
     std::vector<Tangent> nodal_log_vjp(const Tangent& covector, double* rho_derivative = nullptr) const {
         fdapde_strong_assert(
@@ -240,7 +251,126 @@ class P1GeodesicLinearization<manifold::CheegerLogEuclideanSPDGeometry<S, 2, U, 
         if (rho_derivative) *rho_derivative = drho;
         return result;
     }
+    /// @brief returns both planar nodal log covectors and the local rho covector
+    auto nodal_log_rho_vjp(const Tangent& covector) const {
+        double rho = 0;
+        auto gradient = nodal_log_vjp(covector, &rho);
+        return std::pair {std::move(gradient), rho};
+    }
+    /// @brief differentiates the planar nodal and rho adjoint through the retained scalar rotation branch
+    auto nodal_log_rho_vjp_jvp(
+      const Tangent& covector, const Tangent& covector_direction, std::span<const Tangent> directions,
+      double rho_direction = 0) const {
+        fdapde_strong_assert(directions.size() == w_.size(), std::invalid_argument, "nodal direction size mismatch");
+        fdapde_strong_assert(std::isfinite(rho_direction), std::invalid_argument, "nonfinite rho direction");
+        check_curvature_tangent_(covector);
+        check_curvature_tangent_(covector_direction);
+        for (const auto& direction : directions) check_curvature_tangent_(direction);
+        fdapde_strong_assert(
+          result_.converged() && !result_.detected_ambiguity, std::domain_error, "unresolved Cheeger mean branch");
+        const auto matrix = [](const Chart& value) { return manifold::internals::cheeger_matrix<S>(value); };
+        for (std::size_t i = 0; i < w_.size(); ++i)
+            if (w_[i] == 1.) {
+                const auto chart = matrix(nodes_[i]);
+                const Tangent curvature(matrix_exp_second_frechet(chart, directions[i], covector));
+                const Tangent change(matrix_exp_frechet(chart, covector_direction));
+                std::vector<Tangent> out(w_.size(), matrix({}));
+                out[i] = curvature + change;
+                return std::pair {std::move(out), 0.};
+            }
+        fdapde_strong_assert(
+          lu_.has_value() && lu_->info() == 0 && mean_log_.has_value(), std::domain_error,
+          "singular Cheeger mean Hessian");
+        const int n = int(w_.size());
+        std::vector<Chart> dz(n);
+        Chart dm;
+        for (int i = 0; i < n; ++i) {
+            dz[i] =
+              manifold::internals::cheeger_rotate(manifold::internals::cheeger_chart(directions[i]), -fit_.phi[i]);
+            dm.s += w_[i] * dz[i].s;
+            dm.x += w_[i] * dz[i].x;
+            dm.y += w_[i] * dz[i].y;
+        }
+        Vector rhs(n);
+        for (int i = 0; i < n; ++i)
+            rhs[i] =
+              -8 * w_[i] * (dm.y * fit_.z[i].x - dm.x * fit_.z[i].y + fit_.mean.y * dz[i].x - fit_.mean.x * dz[i].y) -
+              4 * rho_direction * w_[i] * fit_.phi[i];
+        const Vector dphi = verified_lifted_solve_(rhs);
+        for (int i = 0; i < n; ++i) {
+            dz[i].x += 2 * fit_.z[i].y * dphi[i];
+            dz[i].y -= 2 * fit_.z[i].x * dphi[i];
+            dm.x += 2 * w_[i] * fit_.z[i].y * dphi[i];
+            dm.y -= 2 * w_[i] * fit_.z[i].x * dphi[i];
+        }
+        Dense dh(n, n);
+        for (int i = 0; i < n; ++i)
+            for (int j = 0; j < n; ++j) {
+                dh(i, j) =
+                  -16 * w_[i] * w_[j] *
+                  (dz[i].x * fit_.z[j].x + fit_.z[i].x * dz[j].x + dz[i].y * fit_.z[j].y + fit_.z[i].y * dz[j].y);
+                if (i == j)
+                    dh(i, j) +=
+                      16 * w_[i] *
+                        (dm.x * fit_.z[i].x + fit_.mean.x * dz[i].x + dm.y * fit_.z[i].y + fit_.mean.y * dz[i].y) +
+                      4 * rho_direction * w_[i];
+            }
+        const Tangent chart_direction = matrix(dm);
+        const Tangent curvature(matrix_exp_second_frechet(*mean_log_, chart_direction, covector));
+        const Tangent dual_change(matrix_exp_frechet(*mean_log_, covector_direction));
+        const auto b = manifold::internals::cheeger_chart(matrix_exp_frechet(*mean_log_, covector));
+        const auto db = manifold::internals::cheeger_chart(Tangent(curvature + dual_change));
+        Vector adjoint_rhs(n), adjoint_rhs_direction(n);
+        for (int i = 0; i < n; ++i) {
+            adjoint_rhs[i] = 4 * w_[i] * (b.x * fit_.z[i].y - b.y * fit_.z[i].x);
+            adjoint_rhs_direction[i] =
+              4 * w_[i] * (db.x * fit_.z[i].y + b.x * dz[i].y - db.y * fit_.z[i].x - b.y * dz[i].x);
+        }
+        const Vector adjoint = verified_lifted_solve_(adjoint_rhs);
+        const Vector dadjoint = verified_lifted_solve_(Vector(adjoint_rhs_direction - dh * adjoint));
+        Chart v, dv;
+        double drho = 0;
+        for (int i = 0; i < n; ++i) {
+            v.x += adjoint[i] * w_[i] * fit_.z[i].x;
+            v.y += adjoint[i] * w_[i] * fit_.z[i].y;
+            dv.x += w_[i] * (dadjoint[i] * fit_.z[i].x + adjoint[i] * dz[i].x);
+            dv.y += w_[i] * (dadjoint[i] * fit_.z[i].y + adjoint[i] * dz[i].y);
+            drho -= 4 * w_[i] * (dadjoint[i] * fit_.phi[i] + adjoint[i] * dphi[i]);
+        }
+        std::vector<Tangent> out;
+        out.reserve(w_.size());
+        for (int i = 0; i < n; ++i) {
+            const auto value = manifold::internals::cheeger_rotate(
+              {w_[i] * b.s, w_[i] * (b.x + 4 * v.y - 4 * adjoint[i] * fit_.mean.y),
+               w_[i] * (b.y - 4 * v.x + 4 * adjoint[i] * fit_.mean.x)},
+              fit_.phi[i]);
+            auto change = manifold::internals::cheeger_rotate(
+              {w_[i] * db.s, w_[i] * (db.x + 4 * dv.y - 4 * dadjoint[i] * fit_.mean.y - 4 * adjoint[i] * dm.y),
+               w_[i] * (db.y - 4 * dv.x + 4 * dadjoint[i] * fit_.mean.x + 4 * adjoint[i] * dm.x)},
+              fit_.phi[i]);
+            change.x -= 2 * value.y * dphi[i];
+            change.y += 2 * value.x * dphi[i];
+            out.push_back(matrix(change));
+        }
+        return std::pair {std::move(out), drho};
+    }
    private:
+    /// @brief rejects nonfinite user-supplied planar curvature directions and covectors
+    static void check_curvature_tangent_(const Tangent& value) {
+        for (int r = 0; r < N; ++r)
+            for (int c = 0; c <= r; ++c)
+                fdapde_strong_assert(
+                  std::isfinite(double(value(r, c))), std::invalid_argument, "nonfinite Cheeger tangent");
+    }
+    /// @brief enforces the existing linear residual tolerance on a retained planar implicit solve
+    Vector verified_lifted_solve_(const Vector& rhs) const {
+        const Vector result = lifted_solve_(*lu_, rhs);
+        fdapde_strong_assert(
+          Vector(*hessian_ * result - rhs).norm() <=
+            options_.linear_solve.residual_tolerance * rhs.norm() + 32 * std::numeric_limits<double>::epsilon(),
+          std::domain_error, "Cheeger implicit solve failed");
+        return result;
+    }
     /// @brief reuses the lifted Hessian for weight, nodal chart and local metric perturbations
     P1DerivativeResult<Tangent>
     differentiate_(std::span<const double> dw, std::span<const Chart> dx, double drho) const {

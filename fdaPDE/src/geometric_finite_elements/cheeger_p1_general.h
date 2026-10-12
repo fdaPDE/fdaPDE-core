@@ -128,6 +128,12 @@ class P1GeodesicLinearization<manifold::CheegerLogEuclideanSPDGeometry<S, N, U, 
         for (const auto& d : direction) check_tangent_(d);
         return derivative_({}, direction, 0).derivative;
     }
+    /// @brief differentiates the selected mean in nodal log coordinates and the local rho parameter
+    Tangent nodal_log_rho_jvp(std::span<const Tangent> direction, double rho_direction = 0) const {
+        fdapde_strong_assert(direction.size() == w_.size(), std::invalid_argument, "nodal direction count mismatch");
+        for (const auto& d : direction) check_tangent_(d);
+        return derivative_({}, direction, rho_direction).derivative;
+    }
     /// @brief converts ambient SPD perturbations into nodal log directions
     P1DerivativeResult<Tangent> nodal_jvp(std::span<const Tangent> direction) const {
         fdapde_strong_assert(direction.size() == w_.size(), std::invalid_argument, "nodal direction count mismatch");
@@ -167,6 +173,72 @@ class P1GeodesicLinearization<manifold::CheegerLogEuclideanSPDGeometry<S, N, U, 
             const Tangent dual((S(w_[active_[i]]) * (c - coupled - S(2) * (state_->mean * l - l * state_->mean)))
                                  .template as_symmetric<Lower>());
             out[active_[i]] = Tangent((q * dual * q.transpose()).template as_symmetric<Lower>());
+        }
+        return std::pair {std::move(out), drho};
+    }
+    /// @brief differentiates the nodal log and rho adjoint while retaining the selected rotation branch
+    auto nodal_log_rho_vjp_jvp(
+      const Tangent& ambient_dual, const Tangent& dual_direction, std::span<const Tangent> nodal_direction,
+      double rho_direction = 0) const
+        requires(N == 3)
+    {
+        require_ready_();
+        check_tangent_(ambient_dual);
+        check_tangent_(dual_direction);
+        fdapde_strong_assert(
+          nodal_direction.size() == w_.size(), std::invalid_argument, "nodal direction count mismatch");
+        fdapde_strong_assert(std::isfinite(rho_direction), std::invalid_argument, "nonfinite rho direction");
+        for (const auto& direction : nodal_direction) check_tangent_(direction);
+        std::vector<Tangent> active_direction;
+        active_direction.reserve(active_.size());
+        for (std::size_t index : active_) { active_direction.push_back(nodal_direction[index]); }
+        const auto variation =
+          lift_->differentiate(*state_, active_direction, rho_direction, {}, options_.linear_solve.residual_tolerance);
+        const Tangent c(matrix_exp_frechet(*mean_log_, ambient_dual));
+        const Tangent curvature(matrix_exp_second_frechet(*mean_log_, variation.mean, ambient_dual));
+        const Tangent dual_change(matrix_exp_frechet(*mean_log_, dual_direction));
+        const Tangent dc(curvature + dual_change);
+        Vec rhs(state_->gradient.rows()), drhs(state_->gradient.rows());
+        const int k = lift_->skew_size();
+        for (std::size_t i = 0; i < active_.size(); ++i)
+            for (int a = 0; a < k; ++a) {
+                const auto b = lift_->basis(a);
+                const Tangent image((state_->z[i] * b - b * state_->z[i]).template as_symmetric<Lower>());
+                const Tangent change((variation.z[i] * b - b * variation.z[i]).template as_symmetric<Lower>());
+                rhs[int(i) * k + a] = S(w_[active_[i]] * manifold::internals::cheeger_inner(c, image));
+                drhs[int(i) * k + a] =
+                  S(w_[active_[i]] *
+                    (manifold::internals::cheeger_inner(dc, image) + manifold::internals::cheeger_inner(c, change)));
+            }
+        const Vec solution = lift_->solve_linear(rhs, options_.linear_solve.residual_tolerance);
+        const Vec dsolution =
+          lift_->solve_linear(Vec(drhs - variation.hessian * solution), options_.linear_solve.residual_tolerance);
+        Tangent coupled = lift_->zero(), dcoupled = lift_->zero();
+        double drho = 0;
+        for (std::size_t i = 0; i < active_.size(); ++i) {
+            const auto l = lift_->tangent(solution, i), dl = lift_->tangent(dsolution, i);
+            coupled +=
+              Tangent((S(2 * w_[active_[i]]) * (l * state_->z[i] - state_->z[i] * l)).template as_symmetric<Lower>());
+            dcoupled += Tangent((S(2 * w_[active_[i]]) *
+                                 (dl * state_->z[i] - state_->z[i] * dl + l * variation.z[i] - variation.z[i] * l))
+                                  .template as_symmetric<Lower>());
+            drho -= 2 * w_[active_[i]] *
+                    (manifold::internals::cheeger_inner(dl, state_->omega[i]) +
+                     manifold::internals::cheeger_inner(l, variation.omega[i]));
+        }
+        std::vector<Tangent> out(w_.size(), lift_->zero());
+        for (std::size_t i = 0; i < active_.size(); ++i) {
+            const auto l = lift_->tangent(solution, i), dl = lift_->tangent(dsolution, i);
+            const auto body = lift_->tangent(variation.rotations, i);
+            const auto q = state_->rotations[i];
+            const Tangent dual((S(w_[active_[i]]) * (c - coupled - S(2) * (state_->mean * l - l * state_->mean)))
+                                 .template as_symmetric<Lower>());
+            const Tangent change((S(w_[active_[i]]) * (dc - dcoupled -
+                                                       S(2) * (variation.mean * l - l * variation.mean +
+                                                               state_->mean * dl - dl * state_->mean)) +
+                                  body * dual - dual * body)
+                                   .template as_symmetric<Lower>());
+            out[active_[i]] = Tangent((q * change * q.transpose()).template as_symmetric<Lower>());
         }
         return std::pair {std::move(out), drho};
     }

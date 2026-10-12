@@ -436,3 +436,78 @@ TEST(BuresWasserstein, TrustRegionContractsOutsidePositiveLift) {
     EXPECT_EQ(result.stop_reason, manifold::TrustRegionStopReason::max_iterations);
 }
 }   // namespace
+
+// valid ill-conditioned endpoints do not inherit the squared condition number of a relative product
+TEST(BuresWasserstein, IllConditionedSPD3Transport) {
+    using Geometry3 = manifold::BuresWassersteinSPDGeometry<double, 3>;
+    using Matrix3 = Matrix<double, 3, 3>;
+    const Geometry3 geometry;
+    const Matrix3 diagonal({1., 0., 0., 0., 1e-7, 0., 0., 0., .2});
+    const Geometry3::Point base(diagonal.as_symmetric<Lower>());
+    const auto self = geometry.relative_frame(base, base);
+    // identical valid endpoints have zero distance even beyond the former artificial conditioning boundary
+    EXPECT_LT(geometry.distance(self), 1e-13);
+    const Matrix3 rotation({.8, -.6, 0., .6, .8, 0., 0., 0., 1.});
+    const Matrix3 thin_diagonal({1., 0., 0., 0., 1e-11, 0., 0., 0., .2});
+    const Matrix3 rotated_dense(rotation * thin_diagonal * rotation.transpose());
+    const Geometry3::Point rotated(rotated_dense.as_symmetric<Lower>());
+    const auto rotated_self = geometry.relative_frame(rotated, rotated);
+    // lift residuals preserve zero self-distance without multiplying by an ill-conditioned inverse root
+    EXPECT_LT(geometry.distance(rotated_self), 1e-13);
+    // the self-logarithm retains the same zero certificate at high condition number
+    EXPECT_LT(geometry.norm(rotated, geometry.logarithm(rotated_self)), 1e-13);
+    const Matrix3 transport({1.1, .1, .03, .1, .9, -.04, .03, -.04, 1.2});
+    const Matrix3 target_dense(transport * diagonal * transport);
+    const Geometry3::Point target(target_dense.as_symmetric<Lower>());
+    const auto frame = geometry.relative_frame(base, target);
+    // the known positive transport solves T A T = B for noncommuting endpoints
+    EXPECT_LT(Matrix3(frame.transport - transport).norm(), 1e-8);
+    Matrix3 residual(transport);
+    for (int i = 0; i < 3; ++i) residual(i, i) -= 1;
+    double squared_distance = 0;
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 3; ++j) squared_distance += residual(i, j) * residual(i, j) * diagonal(j, j);
+    // the lift norm agrees with the independent diagonal-base distance oracle
+    EXPECT_NEAR(geometry.distance(frame), std::sqrt(squared_distance), 1e-9);
+}
+
+// the captured near-edge SPD3 mean retains its original stationarity certificate
+TEST(BuresWasserstein, DifficultSPD3BoundaryMean) {
+    using Geometry3 = manifold::BuresWassersteinSPDGeometry<double, 3>;
+    using Node = SPDMatrix<double, 3, Cache::Union<Cache::Sqrt, Cache::InverseSqrt, Cache::Spectral>>;
+    const Geometry3 geometry;
+    MatrixBatch<Node> nodes(3);
+    SymmetricMatrix<double, 3> log0;
+    log0(0, 0) = 1.1453804297187333;
+    log0(0, 1) = -0.5927473604363704;
+    log0(0, 2) = -0.018133033277504356;
+    log0(1, 1) = -1.234452631681595;
+    log0(1, 2) = -0.10841043104308337;
+    log0(2, 2) = -1.457656329636006;
+    nodes[0] = matrix_exp<typename Node::CachePolicy>(log0);
+    SymmetricMatrix<double, 3> log1;
+    log1(0, 0) = 0.8501202450839003;
+    log1(0, 1) = 0.07438716093572051;
+    log1(0, 2) = -0.07484586847102105;
+    log1(1, 1) = -1.1983382830108653;
+    log1(1, 2) = 0.07610936139904438;
+    log1(2, 2) = -1.5794084350247963;
+    nodes[1] = matrix_exp<typename Node::CachePolicy>(log1);
+    SymmetricMatrix<double, 3> log2;
+    log2(0, 0) = -10.330345373917647;
+    log2(0, 1) = 4.591937861007633;
+    log2(0, 2) = -4.88649348292352;
+    log2(1, 1) = -2.0064401167906656;
+    log2(1, 2) = 1.6634610492728896;
+    log2(2, 2) = -1.16325604065036;
+    nodes[2] = matrix_exp<typename Node::CachePolicy>(log2);
+    const std::array weights {0.0, 0.03030303030302939, 0.9696969696969705};
+    manifold::WeightedKarcherMeanOptions options;
+    options.solver.gradient_tolerance = 1e-10;
+    options.solver.max_iterations = 500;
+    const auto result = manifold::weighted_karcher_mean(geometry, nodes, weights, options);
+    // the captured near-edge mean converges with its original weights and iteration budget
+    ASSERT_TRUE(result.converged());
+    // the retained native residual meets the original inner stationarity tolerance
+    EXPECT_LE(result.stationarity_norm, options.solver.gradient_tolerance);
+}

@@ -907,7 +907,10 @@ template <typename XprType_> auto matrix_log(const SPDMatrixExpr<XprType_>& matr
         if constexpr (internals::spd_cache_has_v<typename XprType_::CachePolicy, Cache::Log>) {
             return SymmetricMatrix<typename XprType_::Scalar, XprType_::Rows>(
               value.cache().template matrix<Cache::Log>());
-        } else
+        } else if constexpr (
+          XprType_::Rows == 2 && !internals::spd_cache_has_v<typename XprType_::CachePolicy, Cache::Spectral>)
+            return internals::small_symmetric_function_2<internals::SmallSymmetricFunction::Log>(value);
+        else
             return internals::with_spd_spectral(value, [&](const auto& evd) {
                 const auto eigenvalues =
                   internals::transform_eigenvalues(evd, value.rows(), [](auto x) { return std::log(x); });
@@ -943,6 +946,9 @@ template <typename Policy_, typename XprType_> auto matrix_exp(const SymmetricMa
     };
     if constexpr (internals::is_spectral_cache_source<XprType>::value) {
         return reconstruct(value.cache());
+    } else if constexpr (XprType::Rows == 2) {
+        return SPDMatrix<Scalar, 2, Policy_>::from_spectral_(
+          internals::small_symmetric_function_2<internals::SmallSymmetricFunction::Exp>(value));
     } else {
         const EVD<XprType_> evd(value);
         internals::require_computed(evd);
@@ -959,7 +965,11 @@ template <typename Policy_, typename XprType_> auto matrix_sqrt(const SPDMatrixE
     if constexpr (SPDLike<XprType>) {
         if constexpr (internals::spd_cache_has_v<typename XprType::CachePolicy, Cache::Sqrt>) {
             return Result(value.cache().template matrix<Cache::Sqrt>());
-        } else
+        } else if constexpr (
+          XprType::Rows == 2 && !internals::spd_cache_has_v<typename XprType::CachePolicy, Cache::Spectral>)
+            return Result::from_spectral_(
+              internals::small_symmetric_function_2<internals::SmallSymmetricFunction::Sqrt>(value));
+        else
             return internals::with_spd_spectral(value, [&](const auto& evd) {
                 const auto eigenvalues =
                   internals::transform_eigenvalues(evd, value.rows(), [](auto x) { return std::sqrt(x); });
@@ -984,7 +994,11 @@ template <typename Policy_, typename XprType_> auto matrix_inv_sqrt(const SPDMat
     if constexpr (SPDLike<XprType>) {
         if constexpr (internals::spd_cache_has_v<typename XprType::CachePolicy, Cache::InverseSqrt>) {
             return Result(value.cache().template matrix<Cache::InverseSqrt>());
-        } else
+        } else if constexpr (
+          XprType::Rows == 2 && !internals::spd_cache_has_v<typename XprType::CachePolicy, Cache::Spectral>)
+            return Result::from_spectral_(
+              internals::small_symmetric_function_2<internals::SmallSymmetricFunction::InverseSqrt>(value));
+        else
             return internals::with_spd_spectral(value, [&](const auto& evd) {
                 const auto eigenvalues =
                   internals::transform_eigenvalues(evd, value.rows(), [](auto x) { return Scalar(1) / std::sqrt(x); });

@@ -53,6 +53,7 @@ template <typename Point> struct TrustRegionResult {
     Point point;
     double cost = std::numeric_limits<double>::quiet_NaN();
     double gradient_norm = std::numeric_limits<double>::quiet_NaN();
+    double stationarity_norm = std::numeric_limits<double>::quiet_NaN();
     double radius = std::numeric_limits<double>::quiet_NaN();
     double last_ratio = std::numeric_limits<double>::quiet_NaN();
     std::size_t iterations = 0;
@@ -63,6 +64,8 @@ template <typename Point> struct TrustRegionResult {
     std::size_t hessian_evaluations = 0;
     TrustRegionStopReason stop_reason = TrustRegionStopReason::max_iterations;
     TruncatedCGStopReason subproblem_stop_reason = TruncatedCGStopReason::not_run;
+
+    std::size_t cauchy_trials = 0;
 
     /// @brief reports termination at the requested gradient tolerance
     bool converged() const { return stop_reason == TrustRegionStopReason::gradient_tolerance; }
@@ -117,6 +120,7 @@ class RiemannianTrustRegion {
     const TrustRegionOptions& options() const&& = delete;
 
     /// @brief iterates accepted manifold steps while keeping trial workspaces isolated
+    /// @details an optional problem stationarity_norm callback supplies the stopping certificate in its own units
     template <typename Problem, FirstOrderGeometry Geometry>
         requires SecondOrderProblem<Problem, Geometry>
     TrustRegionResult<point_t<Geometry>>
@@ -143,14 +147,25 @@ class RiemannianTrustRegion {
             evaluate_gradient(problem, geometry, result.point, context.current());
             ++result.gradient_evaluations;
         }
-        result.gradient_norm = geometry.norm(result.point, *context.current().gradient());
-        if (!std::isfinite(result.gradient_norm)) {
+        const auto update_stationarity = [&] {
+            const auto& gradient = *context.current().gradient();
+            result.gradient_norm = geometry.norm(result.point, gradient);
+            result.stationarity_norm = result.gradient_norm;
+            if (!std::isfinite(result.gradient_norm)) return false;
+            if constexpr (requires {
+                              problem.stationarity_norm(result.point, gradient, context.current().workspace());
+                          })
+                result.stationarity_norm =
+                  problem.stationarity_norm(result.point, gradient, context.current().workspace());
+            return std::isfinite(result.stationarity_norm) && result.stationarity_norm >= 0;
+        };
+        if (!update_stationarity()) {
             result.stop_reason = TrustRegionStopReason::non_finite_gradient;
             return result;
         }
 
         while (result.iterations < options_.max_iterations) {
-            if (result.gradient_norm <= options_.gradient_tolerance) {
+            if (result.stationarity_norm <= options_.gradient_tolerance) {
                 result.stop_reason = TrustRegionStopReason::gradient_tolerance;
                 return result;
             }
@@ -168,10 +183,30 @@ class RiemannianTrustRegion {
                 return result;
             }
 
+            bool hit_boundary = subproblem_result.hit_boundary();
             // predicted reduction of the quadratic model at the proposed step
             double predicted_reduction =
               -(geometry.inner_product(result.point, gradient, subproblem_result.step) +
                 0.5 * geometry.inner_product(result.point, subproblem_result.step, subproblem_result.hessian_step));
+            // an inexact Hessian can spoil CG conjugacy; certify descent on the Cauchy ray before giving up
+            if (std::isfinite(predicted_reduction) && predicted_reduction <= 0) {
+                const auto direction =
+                  geometry.linear_combination(result.point, -1 / result.gradient_norm, gradient, 0, gradient);
+                const auto hessian_direction = evaluate_hessian_vector(
+                  problem, geometry, result.point, direction, context.current().workspace(), euclidean_gradient);
+                ++result.hessian_evaluations;
+                const double curvature = geometry.inner_product(result.point, direction, hessian_direction);
+                const double length =
+                  curvature > 0 ? std::min(result.radius, result.gradient_norm / curvature) : result.radius;
+                subproblem_result.step = geometry.linear_combination(result.point, length, direction, 0, direction);
+                subproblem_result.hessian_step =
+                  geometry.linear_combination(result.point, length, hessian_direction, 0, hessian_direction);
+                predicted_reduction =
+                  -(geometry.inner_product(result.point, gradient, subproblem_result.step) +
+                    .5 * geometry.inner_product(result.point, subproblem_result.step, subproblem_result.hessian_step));
+                hit_boundary = length == result.radius;
+                ++result.cauchy_trials;
+            }
             if (!std::isfinite(predicted_reduction) || predicted_reduction <= 0) {
                 result.stop_reason = TrustRegionStopReason::model_failure;
                 return result;
@@ -195,7 +230,7 @@ class RiemannianTrustRegion {
 
             if (cost_increased || result.last_ratio < options_.shrink_threshold) {
                 result.radius *= options_.shrink_factor;
-            } else if (result.last_ratio > options_.expansion_threshold && subproblem_result.hit_boundary()) {
+            } else if (result.last_ratio > options_.expansion_threshold && hit_boundary) {
                 result.radius = std::min(options_.maximum_radius, options_.expansion_factor * result.radius);
             }
 
@@ -208,8 +243,7 @@ class RiemannianTrustRegion {
                 ++result.accepted_steps;
                 evaluate_gradient(problem, geometry, result.point, context.current());
                 ++result.gradient_evaluations;
-                result.gradient_norm = geometry.norm(result.point, *context.current().gradient());
-                if (!std::isfinite(result.gradient_norm)) {
+                if (!update_stationarity()) {
                     result.stop_reason = TrustRegionStopReason::non_finite_gradient;
                     return result;
                 }
@@ -218,7 +252,7 @@ class RiemannianTrustRegion {
                 context.reset_trial();
                 ++result.rejected_steps;
             }
-            if (result.gradient_norm <= options_.gradient_tolerance) {
+            if (result.stationarity_norm <= options_.gradient_tolerance) {
                 result.stop_reason = TrustRegionStopReason::gradient_tolerance;
                 return result;
             }

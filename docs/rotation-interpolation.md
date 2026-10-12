@@ -55,6 +55,38 @@ lowest-index parallel failure propagation follow [the shared P1 contracts](spd-i
 Plans borrow their space, while outputs own their rotation storage. Concurrent
 evaluations are supported; coefficient replacement requires exclusive access.
 
+## Reusable SO(3) kernels and quaternions
+
+`fdaPDE/dense_linear_algebra.h` exposes `UnitQuaternion<Scalar>` independently
+of interpolation and SPD geometries. Hamilton coefficients are scalar first;
+construction normalizes finite nonzero coefficients with overflow-safe scaling.
+The product uses the same composition order as rotation matrix multiplication.
+Conversions always produce verified `RotationMatrix` owners, with optional caches.
+
+```cpp
+using Quaternion = fdapde::UnitQuaternion<double>;
+const fdapde::Vector<double, 3> rotation_vector {.2, -.1, .3};
+const auto orientation = Quaternion::from_rotation_vector(rotation_vector);
+const auto matrix = orientation.rotation<fdapde::RotationCache::Log>();
+const auto recovered = Quaternion::from_rotation(matrix);
+const auto identity = (orientation * recovered.inverse()).rotation();
+```
+
+A rotation vector stores axis times angle, so its skew matrix acts by the usual
+cross product. Quaternion conversion from a verified rotation selects the
+nonnegative scalar hemisphere; opposite quaternion signs describe the same
+orientation. The class does not choose a unique logarithm at a half-turn.
+Use `rotation_log()` or explicit `minimum_rotation_log()` on its rotation owner
+when branch diagnostics matter.
+
+Fixed and runtime order-three `rotation_exp()`, rotation-plane preparation,
+logarithms and cache preparation share scalar quaternion kernels. The
+exponential uses an analytic small-angle limit; matrix conversion selects the
+largest trace or diagonal pivot, retaining accuracy near a half-turn. Exact,
+near-cut and unresolved branch diagnostics keep the ordinary logarithm and
+geometric derivative policies described below. Other orders retain the general
+real-plane decomposition and scaling-and-squaring exponential.
+
 ## Values and branch policy
 
 Vertices reproduce the selected rotation exactly. Edges use the existing

@@ -93,6 +93,7 @@ set(dense_sources
   linear_algebra/native_dense.cpp
   linear_algebra/orthogonal.cpp
   linear_algebra/partial_piv_lu.cpp
+  linear_algebra/quaternion.cpp
   linear_algebra/permutation.cpp
   linear_algebra/qr.cpp
   linear_algebra/skew.cpp
@@ -176,7 +177,7 @@ if(NOT FDAPDE_NATIVE_ONLY)
   add_test(NAME DenseHeaderOrder COMMAND fdapde_dense_header_order_test)
 endif()
 add_executable(fdapde_spd_test
-  linear_algebra/spd.cpp linear_algebra/spectral.cpp linear_algebra/small_spd_kernels.cpp)
+  linear_algebra/spd.cpp linear_algebra/spectral.cpp linear_algebra/small_spd_kernels.cpp linear_algebra/spd2_functions.cpp linear_algebra/small_evd3.cpp)
 fdapde_configure_target(fdapde_spd_test)
 target_link_libraries(fdapde_spd_test PRIVATE GTest::gtest_main)
 gtest_discover_tests(fdapde_spd_test PROPERTIES TIMEOUT 60)
@@ -275,7 +276,7 @@ target_link_libraries(fdapde_spd_cache_test PRIVATE GTest::gtest_main)
 gtest_discover_tests(fdapde_spd_cache_test PROPERTIES TIMEOUT 60)
 fdapde_reject_program(invalid_spd_cache_policy SPD_CACHE_POLICY_CONTAINS_UNKNOWN_FLAGS)
 
-add_executable(fdapde_matrix_batch_test linear_algebra/matrix_batch.cpp)
+add_executable(fdapde_matrix_batch_test linear_algebra/matrix_batch.cpp linear_algebra/matrix_batch_selection.cpp)
 fdapde_configure_target(fdapde_matrix_batch_test)
 target_link_libraries(fdapde_matrix_batch_test PRIVATE GTest::gtest_main Threads::Threads)
 gtest_discover_tests(fdapde_matrix_batch_test PROPERTIES TIMEOUT 60)
@@ -304,7 +305,8 @@ fdapde_reject_program(invalid_so_usage "invalid SO geometry usage")
 add_library(fdapde_geometric_discretization_header_check OBJECT public_headers/geometric_discretization.cpp)
 fdapde_configure_target(fdapde_geometric_discretization_header_check)
 if(NOT FDAPDE_NATIVE_ONLY)
-  add_executable(fdapde_geometric_discretization_test geometric_discretization/space.cpp)
+  add_executable(fdapde_geometric_discretization_test
+    geometric_discretization/space.cpp geometric_discretization/compatibility.cpp)
   fdapde_configure_target(fdapde_geometric_discretization_test)
   target_link_libraries(fdapde_geometric_discretization_test PRIVATE GTest::gtest_main Eigen3::Eigen Threads::Threads)
   gtest_discover_tests(fdapde_geometric_discretization_test PROPERTIES TIMEOUT 60)
@@ -312,6 +314,7 @@ endif()
 
 add_executable(fdapde_interpolation_test geometric_finite_elements/interpolation.cpp
   geometric_finite_elements/rotations.cpp geometric_finite_elements/cheeger.cpp
+  geometric_finite_elements/cheeger_rotation_differential.cpp
   manifold_optimization/cheeger_pair.cpp)
 fdapde_configure_target(fdapde_interpolation_test)
 target_link_libraries(fdapde_interpolation_test PRIVATE GTest::gtest_main)
@@ -328,8 +331,10 @@ endif()
 
 add_executable(fdapde_smoothing_test geometric_finite_elements/smoothing.cpp
   geometric_finite_elements/tension_execution.cpp
-  geometric_finite_elements/cheeger_smoothing.cpp
-  geometric_finite_elements/bures_wasserstein.cpp
+  geometric_finite_elements/cheeger_smoothing.cpp geometric_finite_elements/cheeger_workspaces.cpp
+  geometric_finite_elements/cheeger_curvature.cpp
+  geometric_finite_elements/bures_wasserstein.cpp geometric_finite_elements/bures_wasserstein_curvature.cpp
+  geometric_finite_elements/bures_wasserstein_conditioning.cpp
   manifold_optimization/trust_region.cpp)
 fdapde_configure_target(fdapde_smoothing_test)
 target_link_libraries(fdapde_smoothing_test PRIVATE GTest::gtest_main Threads::Threads)

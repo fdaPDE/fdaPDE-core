@@ -21,7 +21,7 @@
 
 namespace fdapde::manifold {
 
-/// @brief computes the weighted mean with explicit convergence diagnostics
+/// @brief computes the weighted AIRM mean with an analytic Hessian trust-region solve
 template <typename Scalar_, int Order_, Usage Uses_, typename Samples, typename Point_>
 WeightedKarcherMeanResult<typename AffineInvariantSPDGeometry<Scalar_, Order_, Uses_, Point_>::Point>
 weighted_karcher_mean(
@@ -31,8 +31,36 @@ weighted_karcher_mean(
   const WeightedKarcherMeanOptions& options = {},
   internals::KarcherWorkspace<AffineInvariantSPDGeometry<Scalar_, Order_, Uses_, Point_>>* retained = nullptr) {
     using Geometry = AffineInvariantSPDGeometry<Scalar_, Order_, Uses_, Point_>;
+    fdapde_strong_assert(
+      samples.size() != 0 && samples.size() == weights.size(), std::invalid_argument,
+      "AIRM barycenter requires matching nonempty sample and weight counts");
+    RiemannianSteepestDescent validate_options(options.solver);
+    auto normalized = internals::normalize_karcher_weights(weights);
+    internals::WeightedKarcherMeanProblem<Geometry, Samples> problem(geometry, samples, normalized);
+    TrustRegionOptions solver_options;
+    solver_options.max_iterations = options.solver.max_iterations;
+    solver_options.gradient_tolerance = options.solver.gradient_tolerance;
+    auto solved = RiemannianTrustRegion(solver_options).optimize(problem, geometry, initial);
     internals::KarcherWorkspace<Geometry> workspace;
-    auto result = weighted_karcher_mean<Geometry>(geometry, samples, weights, initial, options, &workspace);
+    problem.prepare(solved.point, workspace);
+    WeightedKarcherMeanResult<typename Geometry::Point> result {
+      std::move(solved.point),
+      std::move(normalized),
+      solved.cost,
+      solved.gradient_norm,
+      solved.iterations,
+      solved.cost_evaluations,
+      solved.gradient_evaluations,
+      solved.rejected_steps,
+      solved.converged() ? BarycenterStopReason::stationarity_tolerance : BarycenterStopReason::max_iterations};
+    if (solved.stop_reason == TrustRegionStopReason::non_finite_cost)
+        result.stop_reason = BarycenterStopReason::non_finite_cost;
+    else if (solved.stop_reason == TrustRegionStopReason::non_finite_gradient)
+        result.stop_reason = BarycenterStopReason::non_finite_gradient;
+    else if (
+      solved.stop_reason != TrustRegionStopReason::gradient_tolerance &&
+      solved.stop_reason != TrustRegionStopReason::max_iterations)
+        result.stop_reason = BarycenterStopReason::trust_region_failed;
     internals::polish_karcher_mean(geometry, samples, options, result, workspace);
     if (retained) *retained = std::move(workspace);
     result.uniqueness = BarycenterUniqueness::globally_unique;

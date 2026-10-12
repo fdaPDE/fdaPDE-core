@@ -201,7 +201,7 @@ TEST(P1SpatialInterpolation, NormalizationPreservesSupportAcrossCellScales) {
         }
     }
 }
-// spatial adapters accept the same roundoff interval as simplex containment without deleting positive support
+// spatial adapters snap boundary roundoff and retain interior support above the containment tolerance
 TEST(P1SpatialInterpolation, NormalizationMatchesContainmentTolerance) {
     const auto nodes = data();
     const auto cell = Simplex<2, 2>::Unit();
@@ -227,10 +227,19 @@ TEST(P1SpatialInterpolation, NormalizationMatchesContainmentTolerance) {
     const Eigen::Vector2d interior(roundoff, .5);
     const auto direct = local.result(interior);
     const auto weights = gfe::p1_fem_barycentric_weights(space, 0, interior);
-    // positive interior support survives even below the containment roundoff threshold
-    EXPECT_GT(direct.normalized_weights[1], 0.);
-    // the scalar FEM adapter also preserves positive support rather than snapping it to zero
-    EXPECT_GT(weights[1], 0.);
+    // direct spatial evaluation snaps a positive coordinate within the geometric roundoff allowance
+    EXPECT_EQ(direct.normalized_weights[1], 0.);
+    // the FEM adapter removes the same numerical boundary support
+    EXPECT_EQ(weights[1], 0.);
+    const Eigen::Vector2d resolved(2 * machine_epsilon, .5);
+    const auto resolved_direct = local.result(resolved);
+    const auto resolved_weights = gfe::p1_fem_barycentric_weights(space, 0, resolved);
+    // a coordinate above the dimensionless cutoff remains an active interior weight
+    EXPECT_GT(resolved_direct.normalized_weights[1], 0.);
+    // FEM preparation retains the same resolved interior support
+    EXPECT_GT(resolved_weights[1], 0.);
+    // removing boundary noise is followed by partition-of-unity normalization
+    EXPECT_NEAR(std::accumulate(weights.begin(), weights.end(), 0.), 1., 1e-15);
 }
 /// @brief recognizes mesh and field temporaries that could leave dangling spatial bindings
 template <typename G>

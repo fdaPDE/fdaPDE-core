@@ -6,7 +6,7 @@ namespace fdapde::manifold::internals {
 /// @brief retains one resolved pair lift and reuses its factorization for logarithm pullbacks
 template <typename S, int N> class CheegerPairFrame {
    public:
-    using Lift = CheegerLift<S, N>;
+    using Lift = CheegerLift<S, N, 1>;
     using Sym = typename Lift::Sym;
     using Skew = typename Lift::Skew;
     using Vec = typename Lift::Vec;
@@ -47,6 +47,74 @@ template <typename S, int N> class CheegerPairFrame {
         const Sym target(
           (q * (dual - S(2) * (x_ * lambda - lambda * x_)) * q.transpose()).template as_symmetric<Lower>());
         return std::tuple {base, target, -2 * cheeger_inner(lambda, omega)};
+    }
+    using Variation = typename Lift::Variation;
+    /// @brief differentiates the retained pair branch without repeating its deterministic starts
+    Variation linearize(const Sym& base_direction, const Sym& target_direction, double rho_direction = 0) const
+        requires(N == 2 || N == 3)
+    {
+        fdapde_strong_assert(differential_.has_value(), std::logic_error, "pair derivatives were not prepared");
+        const std::array<Sym, 1> direction {target_direction};
+        return lift_.differentiate(state_, direction, rho_direction, base_direction);
+    }
+    /// @brief applies a retained pair variation to the quotient logarithm
+    Sym logarithm_jvp(const Variation& direction) const
+        requires(N == 2 || N == 3)
+    {
+        return Sym((direction.z[0] - direction.mean + direction.omega[0] * x_ - x_ * direction.omega[0] +
+                    state_.omega[0] * direction.mean - direction.mean * state_.omega[0])
+                     .template as_symmetric<Lower>());
+    }
+    /// @brief differentiates the quotient logarithm in both endpoint charts and rho
+    Sym logarithm_jvp(const Sym& base_direction, const Sym& target_direction, double rho_direction = 0) const
+        requires(N == 2 || N == 3)
+    {
+        return logarithm_jvp(linearize(base_direction, target_direction, rho_direction));
+    }
+    /// @brief differentiates the logarithm adjoint through the retained lifted Hessian
+    auto pullback_jvp(const Sym& dual, const Sym& dual_direction, const Variation& direction) const
+        requires(N == 2 || N == 3)
+    {
+        fdapde_strong_assert(differential_.has_value(), std::logic_error, "pair derivatives were not prepared");
+        Vec rhs(lift_.skew_size()), rhs_direction(lift_.skew_size());
+        for (int a = 0; a < rhs.rows(); ++a) {
+            const auto b = lift_.basis(a), domega = differential_->target_action(b);
+            const auto ddomega = differential_->target_action_jvp(b, direction.omega[0]);
+            const Sym dl(
+              (state_.z[0] * b - b * state_.z[0] + domega * x_ - x_ * domega).template as_symmetric<Lower>());
+            const Sym ddl((direction.z[0] * b - b * direction.z[0] + ddomega * x_ - x_ * ddomega +
+                           domega * direction.mean - direction.mean * domega)
+                            .template as_symmetric<Lower>());
+            rhs[a] = S(cheeger_inner(dual, dl));
+            rhs_direction[a] = S(cheeger_inner(dual_direction, dl) + cheeger_inner(dual, ddl));
+        }
+        const Vec solution = lift_.solve_linear(rhs);
+        const Vec solution_direction = lift_.solve_linear(Vec(rhs_direction - direction.hessian * solution));
+        const auto lambda = lift_.tangent(solution, 0), dlambda = lift_.tangent(solution_direction, 0);
+        const auto& q = state_.rotations[0];
+        const auto body = lift_.tangent(direction.rotations, 0);
+        const auto& omega = state_.omega[0];
+        const auto& dx = direction.mean;
+        const auto& dz = direction.z[0];
+        const auto& dw = direction.omega[0];
+        const Sym base((S(-1) * dual_direction + dual_direction * omega - omega * dual_direction + dual * dw -
+                        dw * dual - S(2) * (dlambda * state_.z[0] - state_.z[0] * dlambda + lambda * dz - dz * lambda))
+                         .template as_symmetric<Lower>());
+        const Sym local((dual - S(2) * (x_ * lambda - lambda * x_)).template as_symmetric<Lower>());
+        const Sym local_direction((dual_direction - S(2) * (dx * lambda - lambda * dx + x_ * dlambda - dlambda * x_) +
+                                   body * local - local * body)
+                                    .template as_symmetric<Lower>());
+        const Sym target((q * local_direction * q.transpose()).template as_symmetric<Lower>());
+        return std::tuple {
+          base, target, -2 * (cheeger_inner(dlambda, omega) + cheeger_inner(lambda, direction.omega[0]))};
+    }
+    /// @brief differentiates the logarithm adjoint in both endpoint charts, rho and its covector
+    auto pullback_jvp(
+      const Sym& dual, const Sym& dual_direction, const Sym& base_direction, const Sym& target_direction,
+      double rho_direction = 0) const
+        requires(N == 2 || N == 3)
+    {
+        return pullback_jvp(dual, dual_direction, linearize(base_direction, target_direction, rho_direction));
     }
     /// @brief borrows the selected rotation and its aligned chart
     const auto& state() const { return state_; }

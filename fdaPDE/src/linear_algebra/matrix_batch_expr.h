@@ -17,7 +17,9 @@
 #ifndef __FDAPDE_LINALG_MATRIX_BATCH_EXPR_H__
 #define __FDAPDE_LINALG_MATRIX_BATCH_EXPR_H__
 
+#include <array>
 #include <functional>
+#include <span>
 
 #include "header_check.h"
 
@@ -279,15 +281,38 @@ class matrix_batch_map : public MatrixBatchExpr<matrix_batch_map<Source, Functio
     mutable Function function_;
 };
 
+/// @brief infers inline index storage from fixed containers and native vectors
+template <typename Indices>
+inline constexpr int batch_index_extent = [] {
+    using T = std::remove_cvref_t<Indices>;
+    if constexpr (requires { std::tuple_size<T>::value; })
+        return static_cast<int>(std::tuple_size_v<T>);
+    else if constexpr (requires { T::extent; })
+        return T::extent == std::dynamic_extent ? Dynamic : static_cast<int>(T::extent);
+    else if constexpr (requires {
+                           T::Rows;
+                           T::Cols;
+                       })
+        return T::Rows == 1 ? T::Cols : (T::Cols == 1 ? T::Rows : Dynamic);
+    else
+        return Dynamic;
+}();
+
 /// @brief owns ordered node indices while sharing the original matrices and their cache slots
-template <typename Source> class matrix_batch_selection : public MatrixBatchExpr<matrix_batch_selection<Source>> {
+template <typename Source, int Count = Dynamic>
+class matrix_batch_selection : public MatrixBatchExpr<matrix_batch_selection<Source, Count>> {
    public:
     using MatrixType = typename std::remove_cvref_t<Source>::MatrixType;
     static constexpr int NestAsRef = 0;
+    static constexpr int IndexCount = Count;
     /// @brief copies and validates every index without reordering or evaluating the selected matrices
     template <typename Indices>
     matrix_batch_selection(Source source, const Indices& indices) : source_(std::forward<Source>(source)) {
-        indices_.reserve(indices.size());
+        if constexpr (Count == Dynamic)
+            indices_.resize(indices.size());
+        else
+            fdapde_assert(
+              indices.size() == Count, std::invalid_argument, "MatrixBatch select: static index count mismatch");
         for (std::size_t i = 0; i < static_cast<std::size_t>(indices.size()); ++i) {
             const auto index = indices[i];
             static_assert(std::is_integral_v<std::remove_cvref_t<decltype(index)>>, "batch indices must be integral");
@@ -295,7 +320,7 @@ template <typename Source> class matrix_batch_selection : public MatrixBatchExpr
               std::cmp_less(index, source_.size()), std::out_of_range, "MatrixBatch select: index out of range");
             fdapde_strong_assert(
               std::cmp_greater_equal(index, 0), std::out_of_range, "MatrixBatch select: negative index");
-            indices_.push_back(static_cast<std::size_t>(index));
+            indices_[i] = static_cast<std::size_t>(index);
         }
     }
     /// @brief returns the number of selected entries including repeated indices
@@ -311,7 +336,9 @@ template <typename Source> class matrix_batch_selection : public MatrixBatchExpr
     }
    private:
     Source source_;
-    std::vector<std::size_t> indices_;
+    std::conditional_t<
+      Count == Dynamic, std::vector<std::size_t>, std::array<std::size_t, Count == Dynamic ? 0 : Count>>
+      indices_;
 };
 
 }   // namespace internals
@@ -412,13 +439,15 @@ template <typename Derived> class MatrixBatchExpr {
     }
     /// @brief copies indices and borrows a persistent collection
     template <typename Indices> auto select(const Indices& indices) const& {
-        return internals::matrix_batch_selection<const Derived&>(derived(), indices);
+        return internals::matrix_batch_selection<const Derived&, internals::batch_index_extent<Indices>>(
+          derived(), indices);
     }
     /// @brief retains a temporary expression while copying the selection indices
     template <typename Indices>
       auto select(const Indices& indices) &&
       requires(Derived::NestAsRef == 0) {
-          return internals::matrix_batch_selection<Derived>(std::move(static_cast<Derived&>(*this)), indices);
+          return internals::matrix_batch_selection<Derived, internals::batch_index_extent<Indices>>(
+            std::move(static_cast<Derived&>(*this)), indices);
       }
       /// @brief rejects selections that would borrow a temporary owning batch
       template <typename Indices>

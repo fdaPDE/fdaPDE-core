@@ -23,6 +23,43 @@ const auto Psi = space.prepare_evaluation(grid, execution_par);
 const auto values = Psi(field, execution_par);
 ```
 
+## Geometry and domain compatibility
+
+The common facade supports the log-Euclidean, log-Cholesky, affine-invariant,
+Bures-Wasserstein and Cheeger SPD geometries, and special orthogonal (SO)
+geometry. The target matrix order is independent of the physical domain's local
+and embedding dimensions. The following list covers every triangulation type
+implemented in the core:
+
+| Scalar discretization | Triangulation | Physical domain | Target geometries |
+| --- | --- | --- | --- |
+| P1 `FeSpace` | `Triangulation<1, 1>` | Interval | All six families |
+| P1 `FeSpace` | `Triangulation<1, 2>` | Planar linear network, including junctions | All six families |
+| P1 `FeSpace` | `Triangulation<2, 2>` | Planar triangular mesh | All six families |
+| P1 `FeSpace` | `Triangulation<2, 3>` | Triangulated surface in three dimensions | All six families |
+| P1 `FeSpace` | `Triangulation<3, 3>` | Tetrahedral volume | All six families |
+| `BsSpace` | `Triangulation<1, 1>` | Interval | All six families |
+
+`BsSpace` itself accepts only interval triangulations. Spline fields on networks,
+surfaces or volumes require a new scalar spline discretization before they can
+use this facade. Euclidean vector targets remain deferred, and product geometries
+used by optimization are not single matrix-valued field targets.
+
+The registered [compatibility tests](../tests/geometric_discretization/compatibility.cpp)
+exercise each family on all five P1 mesh types and on spline degrees 0, 1, 3 and
+5, with and without `cache_cells`. They use nonuniform knots, branching networks,
+a folded surface and adjacent tetrahedra. Values are checked against independently
+assembled geometric means; spatial derivatives are checked by centered finite
+differences. Coverage also includes vertices and spline endpoints, cold parallel
+cell preparation, all preparation/evaluation policy combinations, native output
+point/cache types, coefficient replacement and retained spatial preparations.
+Both specialized 2-by-2 and general 3-by-3 Cheeger kernels are exercised.
+
+Intrinsic SPD and SO means retain their numerical convergence and local branch
+conditions on every domain. Supporting a mesh type does not guarantee a unique,
+converged mean for arbitrary control values; inspect `result()` diagnostics or let
+materialization report the failure.
+
 The scalar space and its mesh must remain alive and unchanged while the geometric
 space, fields, prepared evaluations, expressions or derivatives depend on them.
 Temporary scalar spaces and temporary geometric spaces are rejected by the public

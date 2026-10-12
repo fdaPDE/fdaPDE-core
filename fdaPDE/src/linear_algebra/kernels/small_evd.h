@@ -24,6 +24,7 @@
 #include <stdexcept>
 
 #include "../header_check.h"
+#include "small_evd3.h"
 
 namespace fdapde {
 namespace internals {
@@ -75,9 +76,19 @@ constexpr void small_symmetric_evd(const MatrixType& matrix, Scalar* output_vect
             matrix_scale = std::max(matrix_scale, std::abs(value));
         }
     }
-    const Scalar normalization = matrix_scale == Scalar(0) ? Scalar(1) : matrix_scale;
+    if constexpr (Dimension == 3 && std::same_as<Scalar, double>) {
+        if (small_symmetric_evd3(diagonalized, matrix_scale, output_vectors, output_values)) return;
+    }
+    Scalar normalization = matrix_scale == Scalar(0) ? Scalar(1) : matrix_scale;
+    if constexpr (Dimension == 2 && std::same_as<Scalar, double>) {
+        if (matrix_scale != 0) normalization = std::scalbn(1., std::ilogb(matrix_scale));
+    }
+    Scalar original[Dimension][Dimension];
     for (int row = 0; row < Dimension; ++row) {
-        for (int col = 0; col < Dimension; ++col) diagonalized[row][col] /= normalization;
+        for (int col = 0; col < Dimension; ++col) {
+            diagonalized[row][col] /= normalization;
+            if constexpr (Dimension == 2 && std::same_as<Scalar, double>) original[row][col] = diagonalized[row][col];
+        }
         eigenvectors[row][row] = Scalar(1);
     }
     const Scalar tolerance =
@@ -97,6 +108,19 @@ constexpr void small_symmetric_evd(const MatrixType& matrix, Scalar* output_vect
                 small_jacobi_rotation<3, 0, 2>(diagonalized, eigenvectors);
             else
                 small_jacobi_rotation<3, 1, 2>(diagonalized, eigenvectors);
+        }
+    }
+    if constexpr (Dimension == 2 && std::same_as<Scalar, double>) {
+        for (int col = 0; col < 2; ++col) {
+            const std::array<double, 2> vector {eigenvectors[0][col], eigenvectors[1][col]};
+            if (std::abs(diagonalized[col][col]) < .1 * matrix_scale / normalization) {
+                diagonalized[col][col] = small_evd_rayleigh<2>(original, vector);
+            } else {
+                const double first = std::fma(original[0][0], vector[0], original[0][1] * vector[1]);
+                const double second = std::fma(original[1][0], vector[0], original[1][1] * vector[1]);
+                diagonalized[col][col] = std::fma(vector[0], first, vector[1] * second) /
+                                         std::fma(vector[0], vector[0], vector[1] * vector[1]);
+            }
         }
     }
     for (int row = 0; row < Dimension; ++row) {

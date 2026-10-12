@@ -236,3 +236,83 @@ TEST(P1Interpolation, RepeatedSpectrumSecondFrechet) {
     EXPECT_LT(error(actual, expected), 1e-14);
 }
 }   // namespace
+
+// captured noncommuting SPD3 nodes converge at the original tolerance within the original mean budget
+TEST(P1Interpolation, AffineInvariantDifficultSPD3Means) {
+    using Geometry = manifold::AffineInvariantSPDGeometry<double, 3>;
+    using Node = SPDMatrix<double, 3, Cache::Union<Cache::Sqrt, Cache::InverseSqrt, Cache::Spectral>>;
+    const Geometry geometry;
+    manifold::WeightedKarcherMeanOptions options;
+    options.solver.gradient_tolerance = 1e-10;
+    options.solver.max_iterations = 500;
+    {
+        MatrixBatch<Node> nodes(3);
+        SymmetricMatrix<double, 3> log0;
+        log0(0, 0) = 1.8338102179574158;
+        log0(0, 1) = -0.6620977263132687;
+        log0(0, 2) = -0.33089658083153334;
+        log0(1, 1) = -2.256929460859922;
+        log0(1, 2) = 1.310175861578775;
+        log0(2, 2) = -5.328608243174907;
+        nodes[0] = matrix_exp<typename Node::CachePolicy>(log0);
+        SymmetricMatrix<double, 3> log1;
+        log1(0, 0) = 1.9743091225176124;
+        log1(0, 1) = 0.7897624447679772;
+        log1(0, 2) = 0.456361521524411;
+        log1(1, 1) = -4.4247301931613086;
+        log1(1, 2) = -2.785371980044717;
+        log1(2, 2) = -2.70320200323615;
+        nodes[1] = matrix_exp<typename Node::CachePolicy>(log1);
+        SymmetricMatrix<double, 3> log2;
+        log2(0, 0) = 1.9267856569996258;
+        log2(0, 1) = 1.6611354252402595;
+        log2(0, 2) = 0.2906279493563913;
+        log2(1, 1) = -0.11485415029887762;
+        log2(1, 2) = -0.1577085455101546;
+        log2(2, 2) = -2.2489397460992677;
+        nodes[2] = matrix_exp<typename Node::CachePolicy>(log2);
+        const std::array weights {0.676767676767678, 0.12121212121212001, 0.202020202020202};
+        const auto result = manifold::weighted_karcher_mean(geometry, nodes, weights, options);
+        // the native solver certifies the captured mean without exhausting its configured budget
+        ASSERT_TRUE(result.converged());
+        // the reported residual meets the original inner stationarity threshold
+        EXPECT_LE(result.stationarity_norm, options.solver.gradient_tolerance);
+        // the analytic Hessian solve respects the original iteration limit
+        EXPECT_LE(result.iterations, options.solver.max_iterations);
+    }
+    {
+        MatrixBatch<Node> nodes(3);
+        SymmetricMatrix<double, 3> log0;
+        log0(0, 0) = 3.1862073294666273;
+        log0(0, 1) = -1.347927712723851;
+        log0(0, 2) = 1.3648340299944597;
+        log0(1, 1) = -1.8825790887545866;
+        log0(1, 2) = -1.3406833950202974;
+        log0(2, 2) = 0.9130506470984958;
+        nodes[0] = matrix_exp<typename Node::CachePolicy>(log0);
+        SymmetricMatrix<double, 3> log1;
+        log1(0, 0) = 1.9386579306002214;
+        log1(0, 1) = -0.5496711097763921;
+        log1(0, 2) = -0.1865244933550691;
+        log1(1, 1) = -2.037164665369243;
+        log1(1, 2) = -0.3246326817120616;
+        log1(2, 2) = -1.2432736555586539;
+        nodes[1] = matrix_exp<typename Node::CachePolicy>(log1);
+        SymmetricMatrix<double, 3> log2;
+        log2(0, 0) = 1.6709849956771252;
+        log2(0, 1) = 1.3690534937027228;
+        log2(0, 2) = -0.15155008947924947;
+        log2(1, 1) = -1.1253633397589868;
+        log2(1, 2) = 1.2827473794690931;
+        log2(2, 2) = -2.895267348187164;
+        nodes[2] = matrix_exp<typename Node::CachePolicy>(log2);
+        const std::array weights {0.4848484848484878, 0.31313131313131015, 0.20202020202020204};
+        const auto result = manifold::weighted_karcher_mean(geometry, nodes, weights, options);
+        // the native solver certifies the captured mean without exhausting its configured budget
+        ASSERT_TRUE(result.converged());
+        // the reported residual meets the original inner stationarity threshold
+        EXPECT_LE(result.stationarity_norm, options.solver.gradient_tolerance);
+        // the analytic Hessian solve respects the original iteration limit
+        EXPECT_LE(result.iterations, options.solver.max_iterations);
+    }
+}

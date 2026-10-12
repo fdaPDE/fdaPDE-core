@@ -23,20 +23,32 @@ template <typename S, int N, typename X> Matrix<S, N, N> cheeger_eigenframe(cons
 template <typename S, int N> class CheegerRotationDifferential {
    public:
     using Tangent = SkewSymmetricMatrix<S, N>;
-    /// @brief prepares the scalar Rodrigues coefficient or the general adjoint spectrum
+    /// @brief prepares scalar Rodrigues coefficients or the general adjoint spectrum
     explicit CheegerRotationDifferential(const Tangent& omega) : omega_(omega), squared_(cheeger_inner(omega, omega)) {
         if (omega.rows() > 3) general_.emplace(omega);
         if (omega.rows() == 3) {
-            const double theta2 = squared_ / 2;
-            const double half = std::sqrt(theta2) / 2;
-            coefficient_ = theta2 < 1e-6 ? 1 - theta2 / 12 - theta2 * theta2 / 720 - theta2 * theta2 * theta2 / 30240 :
-                                           half / std::tan(half);
+            if (squared_ < .02) {
+                radial_ = 1. / 24 +
+                          squared_ *
+                            (1. / 2880 + squared_ * (1. / 241920 + squared_ * (1. / 19353600 + squared_ / 1532805120)));
+                radial_derivative_ =
+                  1. / 2880 + squared_ * (1. / 120960 + squared_ * (1. / 6451200 + squared_ / 383201280));
+                coefficient_ = 1 - squared_ * radial_;
+                coefficient_derivative_ = -radial_ - squared_ * radial_derivative_;
+            } else {
+                const double half = std::sqrt(squared_ / 2) / 2;
+                const double sine = std::sin(half);
+                coefficient_ = half / std::tan(half);
+                radial_ = (1 - coefficient_) / squared_;
+                coefficient_derivative_ = (coefficient_ - half * half / (sine * sine)) / (2 * squared_);
+                radial_derivative_ = -(coefficient_derivative_ + radial_) / squared_;
+            }
         }
     }
     /// @brief applies the bi-invariant squared-distance Hessian in body coordinates
     Tangent hessian_action(const Tangent& direction) const {
         if (general_) return general_->hessian_action(direction);
-        const double projection = squared_ == 0 ? 0 : (1 - coefficient_) * cheeger_inner(omega_, direction) / squared_;
+        const double projection = radial_ * cheeger_inner(omega_, direction);
         return Tangent((S(coefficient_) * direction + S(projection) * omega_).template as_skew_symmetric<Lower>());
     }
     /// @brief differentiates the group logarithm along a right body perturbation
@@ -45,23 +57,43 @@ template <typename S, int N> class CheegerRotationDifferential {
         const auto h = hessian_action(direction);
         return Tangent((h + S(.5) * (omega_ * direction - direction * omega_)).template as_skew_symmetric<Lower>());
     }
+    /// @brief differentiates the Hessian action with respect to ordinary logarithm coefficients
+    Tangent hessian_action_jvp(const Tangent& direction, const Tangent& omega_direction) const {
+        fdapde_strong_assert(
+          !general_, std::logic_error, "Cheeger rotation Hessian derivative requires order at most three");
+        const double squared_direction = 2 * cheeger_inner(omega_, omega_direction);
+        const double projection = cheeger_inner(omega_, direction);
+        const double projection_direction = cheeger_inner(omega_direction, direction);
+        return Tangent(
+          (S(coefficient_derivative_ * squared_direction) * direction +
+           S(radial_derivative_ * squared_direction * projection + radial_ * projection_direction) * omega_ +
+           S(radial_ * projection) * omega_direction)
+            .template as_skew_symmetric<Lower>());
+    }
+    /// @brief differentiates the target logarithm action with respect to ordinary logarithm coefficients
+    Tangent target_action_jvp(const Tangent& direction, const Tangent& omega_direction) const {
+        const auto h = hessian_action_jvp(direction, omega_direction);
+        return Tangent((h + S(.5) * (omega_direction * direction - direction * omega_direction))
+                         .template as_skew_symmetric<Lower>());
+    }
    private:
     Tangent omega_;
-    double squared_, coefficient_ = 1;
+    double squared_, coefficient_ = 1, radial_ = 0, coefficient_derivative_ = 0, radial_derivative_ = 0;
     std::optional<SOLogDifferential<S, N>> general_;
 };
 /// @brief minimizes rotational lifts and retains their analytic Hessian for implicit differentiation
 /// @details pair searches use one fixed chart; mean searches eliminate the weighted symmetric chart
 /// @details multistart is a local search and does not certify global optimality
 // ponytail: dense lifted Hessians scale quadratically in nodes*n*(n-1)/2, use matrix-free solves for large orders
-template <typename S, int N> class CheegerLift {
+template <typename S, int N, int Nodes = Dynamic> class CheegerLift {
    public:
     using Sym = SymmetricMatrix<S, N>;
     using Skew = SkewSymmetricMatrix<S, N>;
     using Rotation = RotationMatrix<S, N, RotationCache::Log>;
     using Batch = MatrixBatch<Rotation>;
-    using Dense = Matrix<S, Dynamic, Dynamic>;
-    using Vec = Vector<S, Dynamic>;
+    static constexpr int Coordinates = N == Dynamic || Nodes == Dynamic ? Dynamic : Nodes * N * (N - 1) / 2;
+    using Dense = Matrix<S, Coordinates, Coordinates>;
+    using Vec = Vector<S, Coordinates>;
     using Eigenframe = Matrix<S, N, N>;
     /// @brief stores one evaluation's rotations, aligned charts and stationarity residual
     struct State {
@@ -73,6 +105,15 @@ template <typename S, int N> class CheegerLift {
         double cost = 0;
         std::size_t iterations = 0;
     };
+    /// @brief retains a selected lift's directional changes without repeating its rotation search
+    struct Variation {
+        std::vector<Sym> z;
+        std::vector<Skew> omega;
+        Sym mean;
+        Vec rotations;
+        Dense hessian;
+        double rho = 0;
+    };
     /// @brief binds a copied chart batch, positive weights and one local metric parameter
     CheegerLift(MatrixBatch<Sym> charts, std::vector<double> weights, double rho, std::optional<Sym> base = {}) :
         charts_(std::move(charts)),
@@ -83,6 +124,8 @@ template <typename S, int N> class CheegerLift {
         k_(n_ * (n_ - 1) / 2) {
         fdapde_assert(std::isfinite(rho_) && rho_ > 0, std::invalid_argument, "C-LE requires positive finite rho");
         fdapde_assert(charts_.size() == w_.size() && !w_.empty(), std::invalid_argument, "invalid lifted nodes");
+        fdapde_assert(
+          Nodes == Dynamic || w_.size() == Nodes, std::invalid_argument, "invalid static lifted node count");
         fdapde_strong_assert(
           std::int64_t(k_) * w_.size() <= std::sqrt(double(std::numeric_limits<int>::max())), std::length_error,
           "C-LE lifted workspace exceeds native index range");
@@ -123,6 +166,8 @@ template <typename S, int N> class CheegerLift {
     /// @brief evaluates the eliminated lift and its analytic body gradient
     State evaluate(const Batch& rotations) const {
         State f {rotations, {}, {}, zero(), Vec(int(w_.size()) * k_)};
+        f.z.reserve(w_.size());
+        f.omega.reserve(w_.size());
         for (std::size_t i = 0; i < w_.size(); ++i) {
             const Matrix<S, N, N> z(rotations[i].transpose() * charts_[i] * rotations[i]);
             f.z.emplace_back(z.template as_symmetric<Lower>());
@@ -143,9 +188,11 @@ template <typename S, int N> class CheegerLift {
     /// @brief assembles the covariant rotation Hessian including coupling through the eliminated mean
     Dense hessian(const State& f) const {
         const int size = int(w_.size()) * k_;
-        Dense h(size, size);
+        Dense h;
+        if constexpr (Coordinates == Dynamic) h.resize(size, size);
         h.set_zero();
         std::vector<CheegerRotationDifferential<S, N>> differentials;
+        differentials.reserve(w_.size());
         for (const auto& omega : f.omega) differentials.emplace_back(omega);
         for (std::size_t j = 0; j < w_.size(); ++j)
             for (int a = 0; a < k_; ++a) {
@@ -166,6 +213,78 @@ template <typename S, int N> class CheegerLift {
                 }
             }
         return h;
+    }
+    /// @brief differentiates a resolved rotation branch in nodal log coordinates and its local metric parameter
+    Variation differentiate(
+      const State& state, std::span<const Sym> direction, double rho_direction = 0,
+      std::optional<Sym> base_direction = {}, double tolerance = 1e-9) const
+        requires(N == 2 || N == 3)
+    {
+        fdapde_assert(direction.size() == w_.size(), std::invalid_argument, "lift direction count mismatch");
+        Variation result {{}, {}, base_direction.value_or(zero()), Vec(int(w_.size()) * k_), {}, rho_direction};
+        result.z.reserve(w_.size());
+        result.omega.reserve(w_.size());
+        for (std::size_t i = 0; i < w_.size(); ++i) {
+            const auto q = state.rotations[i];
+            result.z.emplace_back((q.transpose() * direction[i] * q).template as_symmetric<Lower>());
+            if (!base_) result.mean += S(w_[i]) * result.z.back();
+        }
+        Vec rhs(int(w_.size()) * k_);
+        for (std::size_t i = 0; i < w_.size(); ++i) {
+            const Matrix<S, N, N> change(
+              S(-2 * w_[i]) * (result.mean * state.z[i] - state.z[i] * result.mean + state.mean * result.z[i] -
+                               result.z[i] * state.mean + S(rho_direction) * state.omega[i]));
+            int p = int(i) * k_;
+            for (int r = 0; r < n_; ++r)
+                for (int c = r + 1; c < n_; ++c) rhs[p++] = S(std::sqrt(2.)) * change(r, c);
+        }
+        result.rotations = solve_linear(rhs, tolerance);
+        for (std::size_t i = 0; i < w_.size(); ++i) {
+            const auto body = tangent(result.rotations, i);
+            const Sym change((state.z[i] * body - body * state.z[i]).template as_symmetric<Lower>());
+            result.z[i] += change;
+            if (!base_) result.mean += S(w_[i]) * change;
+            result.omega.push_back(CheegerRotationDifferential<S, N>(state.omega[i]).target_action(body));
+        }
+        result.hessian = hessian_jvp(state, result);
+        return result;
+    }
+    /// @brief differentiates the analytic body Hessian along a resolved lift variation
+    Dense hessian_jvp(const State& state, const Variation& direction) const
+        requires(N == 2 || N == 3)
+    {
+        const int size = int(w_.size()) * k_;
+        Dense result;
+        if constexpr (Coordinates == Dynamic) result.resize(size, size);
+        result.set_zero();
+        for (std::size_t j = 0; j < w_.size(); ++j)
+            for (int a = 0; a < k_; ++a) {
+                const auto b = basis(a);
+                const Sym dz((state.z[j] * b - b * state.z[j]).template as_symmetric<Lower>());
+                const Sym ddz((direction.z[j] * b - b * direction.z[j]).template as_symmetric<Lower>());
+                const Sym dm(base_ ? zero() : Sym(S(w_[j]) * dz));
+                const Sym ddm(base_ ? zero() : Sym(S(w_[j]) * ddz));
+                for (std::size_t i = 0; i < w_.size(); ++i) {
+                    Matrix<S, N, N> change(
+                      S(2 * w_[i]) * (ddm * state.z[i] - state.z[i] * ddm + dm * direction.z[i] - direction.z[i] * dm));
+                    if (i == j) {
+                        const CheegerRotationDifferential<S, N> differential(state.omega[i]);
+                        const auto curvature = differential.hessian_action(b);
+                        const auto curvature_change = differential.hessian_action_jvp(b, direction.omega[i]);
+                        const Matrix<S, N, N> dg(
+                          S(2 * w_[i]) * (direction.mean * state.z[i] - state.z[i] * direction.mean +
+                                          state.mean * direction.z[i] - direction.z[i] * state.mean));
+                        change += S(2 * w_[i]) *
+                                    (direction.mean * dz - dz * direction.mean + state.mean * ddz - ddz * state.mean +
+                                     S(direction.rho) * curvature + S(rho_) * curvature_change) +
+                                  S(.5) * (b * dg - dg * b);
+                    }
+                    int p = int(i) * k_;
+                    for (int r = 0; r < n_; ++r)
+                        for (int c = r + 1; c < n_; ++c) result(p++, int(j) * k_ + a) = S(std::sqrt(2.)) * change(r, c);
+                }
+            }
+        return result;
     }
     /// @brief supplies the existing trust-region solver with product rotations and flat body coordinates
     struct Product {
@@ -235,6 +354,18 @@ template <typename S, int N> class CheegerLift {
     State solve(
       std::span<const Eigenframe> eigenframes, const Eigenframe* base_eigenframe, double tolerance = 1e-10,
       std::size_t iterations = 200) {
+        if constexpr (N == 3 && Nodes == Dynamic) {
+            switch (w_.size()) {
+            case 1:
+                return solve_fixed_<1>(eigenframes, base_eigenframe, tolerance, iterations);
+            case 2:
+                return solve_fixed_<2>(eigenframes, base_eigenframe, tolerance, iterations);
+            case 3:
+                return solve_fixed_<3>(eigenframes, base_eigenframe, tolerance, iterations);
+            case 4:
+                return solve_fixed_<4>(eigenframes, base_eigenframe, tolerance, iterations);
+            }
+        }
         Batch initial(w_.size(), n_, n_);
         if (!base_ && w_.size() == 1) {
             converged_ = true;
@@ -242,6 +373,7 @@ template <typename S, int N> class CheegerLift {
             return evaluate(initial);
         }
         std::vector<Batch> starts;
+        starts.reserve(1 + (base_ ? 1 : w_.size()) + 2 * k_);
         starts.push_back(initial);
         // seed whole eigenframe alignments as well as individual rotation planes
         std::vector<Eigenframe> prepared;
@@ -287,6 +419,7 @@ template <typename S, int N> class CheegerLift {
         Problem problem {this};
         Product geometry {this};
         std::vector<State> candidates;
+        candidates.reserve(starts.size());
         for (const auto& start : starts) {
             auto result = RiemannianTrustRegion(options).optimize(problem, geometry, start);
             if (std::isfinite(result.cost)) {
@@ -316,28 +449,35 @@ template <typename S, int N> class CheegerLift {
         }
         fdapde_strong_assert(!candidates.empty(), std::domain_error, "C-LE alignment has no finite candidate");
         std::sort(candidates.begin(), candidates.end(), [](const State& a, const State& b) { return a.cost < b.cost; });
-        State best = candidates.front();
-        converged_ = best.gradient.norm() <= tolerance;
+        auto best = candidates.begin();
+        // prefer a stationary candidate when its cost is indistinguishable at machine precision
+        const double cost_floor = 32 * std::numeric_limits<S>::epsilon() * std::max(1., best->cost);
+        for (auto candidate = candidates.begin(); candidate != candidates.end(); ++candidate)
+            if (
+              candidate->cost - candidates.front().cost <= cost_floor &&
+              candidate->gradient.norm() < best->gradient.norm())
+                best = candidate;
+        converged_ = best->gradient.norm() <= tolerance;
         ambiguous_ = false;
         for (const auto& c : candidates)
-            if (c.gradient.norm() <= tolerance && c.cost - best.cost <= 1e-10 * std::max(1., best.cost)) {
+            if (c.gradient.norm() <= tolerance && c.cost - best->cost <= 1e-10 * std::max(1., best->cost)) {
                 double separation = 0;
                 if (base_) {
-                    separation = (c.rotations - best.rotations).redux(0., [](double sum, const auto& difference) {
+                    separation = (c.rotations - best->rotations).redux(0., [](double sum, const auto& difference) {
                         return sum + difference.norm();
                     });
                 } else
-                    separation = Sym(c.mean - best.mean).norm();
+                    separation = Sym(c.mean - best->mean).norm();
                 if (separation > 1e-5) ambiguous_ = true;
             }
-        return best;
+        return std::move(*best);
     }
     /// @brief validates and factors one resolved positive lifted Hessian
     void prepare(const State& state) {
         h_ = hessian(state);
         if (h_->rows() == 0) return;
         const auto equilibrated = equilibrated_hessian_(*h_);
-        const SPDMatrix<S, Dynamic> positive(equilibrated);
+        const SPDMatrix<S, Coordinates> positive(equilibrated);
         lu_.emplace(equilibrated);
     }
     /// @brief solves a retained implicit system and checks its relative residual
@@ -361,6 +501,18 @@ template <typename S, int N> class CheegerLift {
     /// @brief returns the number of skew coordinates per rotation
     int skew_size() const { return k_; }
    private:
+    /// @brief runs small active lifts with inline optimizer coordinates and retains the dynamic state contract
+    template <int Count>
+    State solve_fixed_(
+      std::span<const Eigenframe> eigenframes, const Eigenframe* base_eigenframe, double tolerance,
+      std::size_t iterations) {
+        CheegerLift<S, N, Count> fixed(charts_, w_, rho_, base_);
+        auto state = fixed.solve(eigenframes, base_eigenframe, tolerance, iterations);
+        converged_ = fixed.converged();
+        ambiguous_ = fixed.ambiguous();
+        return {std::move(state.rotations), std::move(state.z), std::move(state.omega), std::move(state.mean),
+                Vec(state.gradient),        state.cost,         state.iterations};
+    }
     /// @brief removes nodal weight units by a positive diagonal congruence without changing the lifted system
     Dense equilibrated_hessian_(const Dense& h) const {
         Dense scaled(h);

@@ -53,12 +53,10 @@ template <typename XprType_> class EVD {
 
     /// @brief creates an uncomputed decomposition with no available factors
     constexpr EVD() = default;
-    /// @brief computes Jacobi eigenpairs from a finite, nonempty symmetric matrix
+    /// @brief computes native symmetric eigenpairs from finite, nonempty coefficients
     template <typename MatrixType> constexpr explicit EVD(const MatrixExpr<MatrixType>& matrix) { compute(matrix); }
 
-    // maximum-pivot Jacobi rotations with scale normalization; see Golub and
-    // van Loan, Matrix Computations, Section 8.5
-    /// @brief computes symmetric eigenpairs with scaled Jacobi rotations and throws if iteration does not converge
+    /// @brief uses certified small-order kernels with scaled Jacobi fallback for other orders or unresolved candidates
     template <typename MatrixType> constexpr void compute(const MatrixExpr<MatrixType>& matrix) {
         computed_ = false;
         fdapde_static_assert(
@@ -101,6 +99,23 @@ template <typename XprType_> class EVD {
             return;
         }
 
+        if constexpr (
+          (Rows == Dynamic || Cols == Dynamic) && (std::is_same_v<Scalar, float> || std::is_same_v<Scalar, double>)) {
+            if (n == 2 || n == 3) {
+                Matrix<Scalar, Order, Order> vectors;
+                if constexpr (Order == Dynamic) vectors.resize(n, n);
+                if constexpr (Rows == Dynamic) eigenvalues_.resize(n);
+                if (n == 2)
+                    internals::small_symmetric_evd<2>(matrix.derived(), vectors.data(), eigenvalues_.data());
+                else
+                    internals::small_symmetric_evd<3>(matrix.derived(), vectors.data(), eigenvalues_.data());
+                eigenvectors_.emplace(vectors);
+                computed_ = true;
+                return;
+            }
+        }
+
+        // maximum-pivot Jacobi rotations with scale normalization handle general orders
         Matrix<Scalar, Rows, Cols> diagonalized(matrix);
         Scalar matrix_scale = Scalar(0);
         for (int row = 0; row < n; ++row) {

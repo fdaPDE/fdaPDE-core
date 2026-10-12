@@ -102,16 +102,39 @@ throughout a linearization's lifetime.
 Weight derivatives require **interior weights**. At vertices, nodal and rho
 derivatives are exact: the active tensor is the value and rho has no effect.
 The general-order linearization removes inactive nodes and supports nodal/rho
-derivatives on open edges. The SPD(2) linearization still requires interior
-support away from vertices; the smoothing data kernel selects the active
-nodes before preparing it. Nonconverged means, detected ties and nonpositive
+derivatives on open edges. The SPD(2) linearization retains inactive coordinates
+with unit Hessian diagonals; nodal and rho actions also support open edges.
+Nonconverged means, detected ties and nonpositive
 or singular lifted Hessians reject derivative evaluation.
 
-For general orders, `nodal_log_rho_vjp(ambient_dual)` returns a pair containing
+For fixed SPD(2), SPD(3) and general orders, `nodal_log_rho_vjp(ambient_dual)` returns a pair containing
 nodal Frobenius log-coordinate covectors and the local scalar rho derivative,
 using one retained adjoint solve. The smoothing kernels scatter that local
-scalar derivative through normalized P1 weights. Mixed derivatives are not
-implemented.
+scalar derivative through normalized P1 weights.
+
+Fixed SPD(2) and SPD(3) also expose retained-branch curvature:
+
+- `nodal_log_rho_jvp(dx, drho)` returns the ambient mean direction for
+  symmetric nodal log-coordinate directions and a local scalar rho direction.
+- `nodal_log_rho_vjp_jvp(c, dc, dx, drho)` differentiates both outputs of
+  `nodal_log_rho_vjp(c)`, including the change `dc` of the ambient covector.
+  It returns nodal log covectors and the local rho covector in the same order.
+
+Weights remain fixed in these actions. For a squared Frobenius loss, use the
+mean residual as `c` and `nodal_log_rho_jvp(dx, drho)` as `dc`. The actions
+differentiate the retained rotation stationarity system and its analytic
+Hessian; they do not repeat multistart alignment searches or perturb the
+fitted tensors. They retain the configured implicit residual tolerance.
+The SPD(3) optimizer uses fixed coordinate storage for one to four active
+nodes and retains dynamic storage for arbitrary larger batches.
+
+These derivatives require an unambiguous selected stationary branch and a
+positive lifted Hessian, as first derivatives do. They describe local branch
+curvature; they do not certify global uniqueness or differentiability across
+branch switches. Weight mixed derivatives and curvature for larger or
+runtime tensor orders are not provided by this interface. The internal pair
+frame exposes matching logarithm and adjoint directional actions, sharing
+one retained forward variation when differentiating discrete tension.
 
 ## Uniqueness and the future rho optimization
 

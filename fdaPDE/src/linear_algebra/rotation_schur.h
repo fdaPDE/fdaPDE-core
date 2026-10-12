@@ -19,6 +19,7 @@
 #include <numbers>
 
 #include "header_check.h"
+#include "kernels/so3.h"
 
 namespace fdapde {
 /// @brief distinguishes resolved branches, proximity to the cut locus and nonunique or unresolved logarithms
@@ -57,6 +58,12 @@ template <typename S, int N> class rotation_schur {
         angles_.set_zero();
         const S eps = std::numeric_limits<S>::epsilon();
         const S tolerance = S(64) * n * eps;
+        if constexpr (N == 3 || N == Dynamic) {
+            if (n == 3) {
+                prepare_so3_(q, tolerance);
+                return;
+            }
+        }
         SymmetricMatrix<S, N> h;
         if constexpr (N == Dynamic) h.resize(n, n);
         for (int i = 0; i < n; ++i)
@@ -256,6 +263,53 @@ template <typename S, int N> class rotation_schur {
         return result;
     }
    private:
+    /// @brief constructs three-dimensional real rotation planes through a stable unit quaternion
+    template <typename Q> void prepare_so3_(const Q& q, S tolerance) {
+        const auto quaternion = so3_quaternion(q);
+        const S sine_half = std::hypot(quaternion[1], quaternion[2], quaternion[3]);
+        const S angle = S(2) * std::atan2(sine_half, quaternion[0]);
+        if (sine_half == S(0)) {
+            for (int i = 0; i < 3; ++i) vectors_(i, i) = S(1);
+        } else {
+            std::array<S, 3> axis, first, second;
+            int pivot = 0;
+            for (int i = 0; i < 3; ++i) {
+                axis[i] = quaternion[i + 1] / sine_half;
+                if (std::abs(axis[i]) < std::abs(axis[pivot])) pivot = i;
+            }
+            S norm = 0;
+            for (int i = 0; i < 3; ++i) {
+                first[i] = (i == pivot ? S(1) : S(0)) - axis[pivot] * axis[i];
+                norm = std::hypot(norm, first[i]);
+            }
+            for (S& coefficient : first) coefficient /= norm;
+            for (int i = 0; i < 3; ++i)
+                second[i] = axis[(i + 1) % 3] * first[(i + 2) % 3] - axis[(i + 2) % 3] * first[(i + 1) % 3];
+            for (int i = 0; i < 3; ++i) {
+                vectors_(i, 0) = first[i];
+                vectors_(i, 1) = second[i];
+                vectors_(i, 2) = axis[i];
+            }
+            angles_[0] = angle;
+            angles_[1] = -angle;
+        }
+        S sine = 0;
+        bool exact = true;
+        for (int i = 0; i < 3; ++i) {
+            const S difference = q((i + 1) % 3, (i + 2) % 3) - q((i + 2) % 3, (i + 1) % 3);
+            exact = exact && difference == S(0);
+            sine = std::hypot(sine, S(0.5) * difference);
+        }
+        update_status_(angle, sine, tolerance, exact);
+        const auto reconstructed = evaluate(S(1));
+        for (int i = 0; i < 3; ++i)
+            for (int j = 0; j < 3; ++j)
+                diagnostics_.residual =
+                  std::max(diagnostics_.residual, double(std::abs(reconstructed(i, j) - q(i, j))));
+        fdapde_strong_assert(
+          is_orthogonal(vectors_) && diagnostics_.residual <= S(8) * tolerance, std::domain_error,
+          "rotation Schur: unresolved three-dimensional rotation plane");
+    }
     /// @brief removes previously selected columns twice and normalizes a nondependent candidate
     bool normalize_(Vector<S, N>& v, int count, S tolerance) const {
         for (int pass = 0; pass < 2; ++pass)
@@ -303,7 +357,7 @@ template <typename Q> double rotation_distance_cosines(const Q& q) {
 }
 
 /// @brief exponentiates a finite skew matrix through scaling, a converged Taylor series and squaring
-template <typename Xpr> auto skew_exponential(const SkewSymmetricMatrixExpr<Xpr>& source, double step = 1) {
+template <typename Xpr> auto skew_exponential_general(const SkewSymmetricMatrixExpr<Xpr>& source, double step = 1) {
     using S = std::remove_cv_t<typename Xpr::Scalar>;
     constexpr int N = Xpr::Rows;
     const S t = static_cast<S>(step);
@@ -332,6 +386,27 @@ template <typename Xpr> auto skew_exponential(const SkewSymmetricMatrixExpr<Xpr>
     }
     for (int i = 0; i < squarings; ++i) result = result * result;
     return result;
+}
+/// @brief uses a quaternion kernel in order three and retains scaling and squaring for other orders
+template <typename Xpr> auto skew_exponential(const SkewSymmetricMatrixExpr<Xpr>& source, double step = 1) {
+    using S = std::remove_cv_t<typename Xpr::Scalar>;
+    constexpr int N = Xpr::Rows;
+    if constexpr (N == 3 || N == Dynamic) {
+        if (source.rows() == 3) {
+            const S t = static_cast<S>(step);
+            fdapde_strong_assert(std::isfinite(t), std::invalid_argument, "rotation step must be finite");
+            const std::array<S, 3> vector {
+              t * source.derived()(2, 1), t * source.derived()(0, 2), t * source.derived()(1, 0)};
+            S norm = 0;
+            for (S coefficient : vector) {
+                norm = std::hypot(norm, coefficient);
+                norm = std::hypot(norm, coefficient);
+            }
+            fdapde_strong_assert(std::isfinite(norm), std::domain_error, "rotation tangent norm overflow");
+            return Matrix<S, N, N>(so3_quaternion_matrix(so3_quaternion_exp(vector)));
+        }
+    }
+    return skew_exponential_general(source, step);
 }
 }   // namespace internals
 }   // namespace fdapde

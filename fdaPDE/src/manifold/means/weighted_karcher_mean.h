@@ -35,7 +35,8 @@ enum class BarycenterStopReason {
     line_search_failed,
     non_finite_cost,
     non_finite_gradient,
-    closed_form
+    closed_form,
+    trust_region_failed
 };
 
 /// @brief configures the iterative weighted Riemannian mean
@@ -165,6 +166,21 @@ template <GeodesicGeometry Geometry, typename Samples> class WeightedKarcherMean
             }();
             result = geometry_.linear_combination(point, 1, result, -weight, logarithm);
         }
+        return result;
+    }
+    /// @brief sums analytic squared-distance Hessian actions in the retained relative frames
+    Tangent hess(const Point& point, const Tangent& direction, Workspace& workspace) const
+        requires requires(const Geometry& geometry, const typename Geometry::RelativeFrame& frame) {
+            geometry.half_squared_distance_hessian_vector(frame, direction);
+        }
+    {
+        prepare(point, workspace);
+        Tangent result = geometry_.zero_tangent(point);
+        for (std::size_t i = 0; i < samples_.size(); ++i)
+            if (normalized_weights_[i] != 0)
+                result = geometry_.linear_combination(
+                  point, 1, result, normalized_weights_[i],
+                  geometry_.half_squared_distance_hessian_vector(*workspace.frames[i], direction));
         return result;
     }
     /// @brief shares the relative preparation between objective and gradient evaluation

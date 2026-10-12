@@ -337,4 +337,48 @@ TEST(CheegerSmoothing, GeneralNearEdgeImplicitDerivatives) {
         EXPECT_NEAR(rho_adjoint, manifold::internals::cheeger_inner(covector, rho.derivative), 1e-12);
     }
 }
+/// @brief selects a stationary equal-cost lift without removing positive near-edge support
+TEST(CheegerSmoothing, GeneralNearEdgeStationaryCandidate) {
+    using G = manifold::CheegerLogEuclideanSPDGeometry<double, 3>;
+    using P = SPDMatrix<double, 3, Cache::Log>;
+    const G geometry(std::sqrt(0.9921192411109899));
+    const std::array<std::array<double, 6>, 3> logs {
+      {{0.14234102191064646, 0.03263543744295289, 0.01358531025105853, -0.17337460056088724, -0.03413846324895967,
+        -0.2453869949586706},
+       {0.48314567619856696, -0.04052985426538416, -0.021330075941576748, -0.12355698187492933, -0.023685169436382637,
+        -0.07860466067663324},
+       {0.11248202782456268, -0.0034352635826742665, 0.010888526284229342, -0.028752587687540507, 0.0065998111121673576,
+        -0.004358925294139213}}
+    };
+    MatrixBatch<P> nodes(3);
+    for (int i = 0; i < 3; ++i) {
+        G::Tangent log;
+        log(0, 0) = logs[i][0];
+        log(0, 1) = logs[i][1];
+        log(0, 2) = logs[i][2];
+        log(1, 1) = logs[i][3];
+        log(1, 2) = logs[i][4];
+        log(2, 2) = logs[i][5];
+        nodes[i] = matrix_exp<Cache::Log>(log);
+    }
+    const std::array weights {5.551115123125783e-17, 0.7878787878787898, 0.2121212121212101};
+    manifold::WeightedKarcherMeanOptions options;
+    options.solver.gradient_tolerance = 1e-10;
+    options.solver.max_iterations = 500;
+    const auto result = gfe::p1_geodesic_value(geometry, nodes, weights, options);
+    // the captured SPD3 fixture meets the original residual tolerance with its positive boundary weight
+    ASSERT_TRUE(result.converged());
+    // the certificate measures the original lifted gradient rather than the cost comparison floor
+    EXPECT_LE(result.stationarity_norm, options.solver.gradient_tolerance);
+    // the smallest supplied positive coordinate survives the solve and normalization
+    EXPECT_GT(result.normalized_weights[0], 0);
+    // equal-cost numerical candidates must not be mistaken for separated minimizing branches
+    EXPECT_FALSE(result.detected_ambiguity);
+    const std::array edge_weights {0., weights[1], weights[2]};
+    const auto edge = gfe::p1_geodesic_value(geometry, nodes, edge_weights, options);
+    // the independent exact-edge solve supplies a stationary limiting reference
+    ASSERT_TRUE(edge.converged());
+    // the near-edge tensor approaches the two-node limit without changing its support
+    EXPECT_LT((Matrix<double, 3, 3>(result.value - edge.value).norm()), 1e-9);
+}
 }   // namespace

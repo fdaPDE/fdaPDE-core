@@ -27,7 +27,7 @@ template <typename, typename> class GeometricEvaluation;
 
 namespace fdapde::gfe {
 namespace internals {
-/// @brief clamps only out-of-range spatial roundoff using simplex containment's dimensionless tolerance
+/// @brief snaps spatial boundary roundoff using simplex containment's dimensionless tolerance
 template <typename Exception = std::domain_error> void normalize_p1_spatial_weights(std::span<double> weights) {
     const double upper_bound = 1 + (weights.size() - 1) * machine_epsilon;
     double total = 0;
@@ -35,7 +35,7 @@ template <typename Exception = std::domain_error> void normalize_p1_spatial_weig
         fdapde_strong_assert(
           std::isfinite(weight) && weight >= -machine_epsilon && weight <= upper_bound, Exception,
           "physical point lies outside the P1 cell");
-        weight = std::clamp(weight, 0., 1.);
+        weight = weight <= machine_epsilon ? 0. : std::min(weight, 1.);
         total += weight;
     }
     fdapde_strong_assert(total > 0 && std::isfinite(total), Exception, "invalid P1 weight normalization");
@@ -287,7 +287,7 @@ template <typename Domain> const auto& p1_mesh(const Domain& domain) {
     else
         return domain;
 }
-/// @brief evaluates normalized scalar P1 weights while preserving roundoff-sized boundary support
+/// @brief evaluates scalar P1 weights with boundary roundoff removed before normalization
 template <typename Space, typename Element, typename Point>
 auto p1_shape_weights(const Space& space, const Element& element, const Point& x) {
     const auto mapped = (element.invJ() * (x - element.node(0))).eval();

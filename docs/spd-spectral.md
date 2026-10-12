@@ -69,6 +69,31 @@ the final numerical positivity check on the reconstructed matrix. Exponentiation
 can therefore report a domain error after underflow or loss of numerical positive definiteness,
 even if the mathematical result would be positive definite.
 
+## Small-order implementations
+
+Fixed-order SPD(2) logarithms, exponentials and principal root factors use scalar
+Cayley–Hamilton formulas when no compatible input spectral cache or requested
+result-function cache selects the retained spectral path. Repeated eigenvalues
+use analytic limits, including sub-ulp off-diagonal exponential terms. Binary
+scaling and a compensated determinant preserve small eigenvalues in conditioned
+inputs. The same result certification and cache contracts apply to both paths.
+
+For order-three double-precision symmetric eigenproblems, the native EVD first
+tries a hybrid analytic decomposition. It obtains an isolated extreme
+eigenvector from the cubic invariant, diagonalizes its orthogonal two-dimensional
+complement and refines eigenvalues with Rayleigh quotients. Binary scaling and
+compensated accumulation protect cancellation-sensitive small eigenvalues.
+Each normalized eigenpair residual is checked before publication; a failed
+certificate returns to the existing Jacobi iteration. Other scalar types retain
+the Jacobi implementation. This is a symmetric-algebra kernel, shared by SPD
+functions, cached representations and geometric callers.
+
+Closed-form formulas are exact in exact arithmetic, but their floating-point
+evaluation can lose accuracy through cancellation or nearly repeated roots.
+The analytic specialization therefore relies on stable evaluation and numerical
+certification, rather than assuming a closed form is automatically more accurate.
+Neither implementation changes the public numerical positivity threshold.
+
 ## Functions on ordinary native matrices
 
 `logm`, `expm`, `powm(matrix, int)` and `sqrtm` accept real arithmetic native
