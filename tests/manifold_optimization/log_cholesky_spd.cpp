@@ -345,3 +345,20 @@ TEST(LogCholeskySPDGeometry, CachedFramesPreserveMapsAndMetrics) {
     // the chart-only policy computes the coordinates directly from certified coefficients
     expect_matrix(cached_geometry.chart(chart_only), plain_frame.coordinates, 0);
 }
+
+// arithmetic off-diagonals and geometric diagonals generally change shape even for proportional input tensors
+TEST(LogCholeskySPDGeometry, ProportionalInputsNeedNotPreserveShape) {
+    const Geometry2 geometry;
+    const std::array<Geometry2::Point, 2> samples {
+      Geometry2::Point(Matrix<double, 2, 2>({2., 1., 1., 2.})),
+      Geometry2::Point(Matrix<double, 2, 2>({8., 4., 4., 8.}))};
+    const std::array weights {.5, .5};
+    const auto result = weighted_karcher_mean(geometry, samples, weights);
+    const Matrix<double, 2, 2> expected({4., 1.5 * std::sqrt(2.), 1.5 * std::sqrt(2.), 4.125});
+    // multiplying the independently averaged lower factors gives this exact nonproportional tensor
+    expect_matrix(result.point, expected, 2e-13);
+    // a proportional result would have off-diagonal divided by first diagonal equal to one half
+    EXPECT_GT(std::abs(result.point(0, 1) / result.point(0, 0) - .5), .02);
+    // the determinant still equals the geometric average sqrt(3 * 48), independently of the shape change
+    EXPECT_NEAR(result.point(0, 0) * result.point(1, 1) - std::pow(result.point(0, 1), 2), 12., 2e-13);
+}

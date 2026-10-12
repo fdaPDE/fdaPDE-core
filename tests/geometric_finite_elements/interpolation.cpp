@@ -316,3 +316,80 @@ TEST(P1Interpolation, AffineInvariantDifficultSPD3Means) {
         EXPECT_LE(result.iterations, options.solver.max_iterations);
     }
 }
+
+namespace {
+/// @brief checks the exact AIRM log-volume with an independent two- or three-dimensional determinant oracle
+template <typename Geometry> void check_affine_invariant_volume(const Geometry& geometry) {
+    using Node = typename Geometry::Point;
+    using Symmetric = typename Geometry::Tangent;
+    const std::array<std::array<double, 3>, 3> captured {
+      {{1.7743936427384699, -0.536200808891104, 0.72560635726152711},
+       {1.3172859213366503, 0.74697563868567929, 1.1827140786633501},
+       {2., 1.9236706937217915e-16, .5}}
+    };
+    const std::array weights {0.56913827655310323, 0.072144288577150384, 0.35871743486974639, 0.};
+    const auto log_volume = [&](const auto& point) {
+        const long double a = point(0, 0), b = point(0, 1), c = point(1, 1);
+        if (geometry.order() == 2) return std::log(a * c - b * b);
+        const long double d = point(0, 2), e = point(1, 2), f = point(2, 2);
+        return std::log(a * (c * f - e * e) - b * (b * f - d * e) + d * (b * e - c * d));
+    };
+    manifold::WeightedKarcherMeanOptions options;
+    options.solver.gradient_tolerance = 1e-7;
+    options.solver.max_iterations = 500;
+    for (const bool varying_volume : {false, true}) {
+        MatrixBatch<Node> samples(4, geometry.order(), geometry.order());
+        for (int k = 0; k < 4; ++k) {
+            Symmetric value = manifold::internals::make_symmetric<double, Node::Rows>(geometry.order());
+            for (int i = 0; i < geometry.order(); ++i)
+                for (int j = 0; j <= i; ++j) value(i, j) = i == j ? 1. : 0.;
+            if (k < 3) {
+                value(0, 0) = captured[k][0];
+                value(1, 0) = captured[k][1];
+                value(1, 1) = captured[k][2];
+                if (geometry.order() == 3) {
+                    value(2, 0) = .04 * (k + 1);
+                    value(2, 1) = -.07 * (k + 1);
+                    value(2, 2) = 1.4;
+                }
+            }
+            samples[k] = Node(value * (varying_volume ? std::exp(.6 * k - .7) : 1.));
+        }
+        long double expected = 0, total = 0;
+        for (int i = 0; i < 4; ++i) {
+            expected += weights[i] * log_volume(samples[i]);
+            total += weights[i];
+        }
+        expected /= total;
+        for (const bool explicit_initial : {false, true}) {
+            manifold::internals::KarcherWorkspace<Geometry> retained;
+            const auto result = explicit_initial ?
+                                  manifold::weighted_karcher_mean(
+                                    geometry, samples, weights, Node(samples[0] * 1.4), options, &retained) :
+                                  manifold::weighted_karcher_mean(geometry, samples, weights, options, &retained);
+            // the original gradient tolerance still certifies both initialization paths
+            ASSERT_TRUE(result.converged());
+            // the determinant polynomial independently checks the weighted log-volume below the solver tolerance
+            EXPECT_NEAR(static_cast<double>(log_volume(result.point)), static_cast<double>(expected), 5e-13);
+            manifold::internals::WeightedKarcherMeanProblem<Geometry, decltype(samples)> problem(
+              geometry, samples, result.normalized_weights);
+            manifold::internals::KarcherWorkspace<Geometry> fresh;
+            const double residual = geometry.norm(result.point, problem.grad(result.point, fresh));
+            // a new candidate-bound evaluation checks that the reported certificate belongs to the corrected point
+            EXPECT_NEAR(result.stationarity_norm, residual, 1e-14);
+            // the fresh physical residual independently satisfies the unchanged stationarity bound
+            EXPECT_LE(residual, options.solver.gradient_tolerance);
+            // the retained relative frames must describe the corrected point rather than the trust-region candidate
+            EXPECT_NEAR(geometry.norm(result.point, problem.grad(result.point, retained)), residual, 1e-14);
+        }
+    }
+}
+}   // namespace
+
+// loose mean convergence must still preserve the exact scale component in fixed and dynamic SPD2 and SPD3
+TEST(P1Interpolation, AffineInvariantExactLogVolumeAtLooseTolerance) {
+    check_affine_invariant_volume(manifold::AffineInvariantSPDGeometry<double, 2> {});
+    check_affine_invariant_volume(manifold::AffineInvariantSPDGeometry<double, 3> {});
+    check_affine_invariant_volume(manifold::AffineInvariantSPDGeometry<double, Dynamic>(2));
+    check_affine_invariant_volume(manifold::AffineInvariantSPDGeometry<double, Dynamic>(3));
+}

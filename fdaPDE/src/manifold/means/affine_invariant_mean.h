@@ -41,8 +41,33 @@ weighted_karcher_mean(
     solver_options.max_iterations = options.solver.max_iterations;
     solver_options.gradient_tolerance = options.solver.gradient_tolerance;
     auto solved = RiemannianTrustRegion(solver_options).optimize(problem, geometry, initial);
+    // the AIRM metric splits log-volume from determinant-one shape, so solve its scalar component exactly
+    if (std::isfinite(solved.cost) && std::isfinite(solved.gradient_norm)) {
+        const auto log_volume = [&](const auto& point) {
+            const auto factor = point.cholesky_factor();
+            long double result = 0;
+            for (int i = 0; i < geometry.order(); ++i) result += 2 * std::log(static_cast<long double>(factor(i, i)));
+            return result;
+        };
+        long double target = 0, total = 0;
+        for (std::size_t i = 0; i < samples.size(); ++i) {
+            if (normalized[i] == 0) continue;
+            target += static_cast<long double>(normalized[i]) * log_volume(samples[i]);
+            total += normalized[i];
+        }
+        const long double scale = std::exp((target / total - log_volume(solved.point)) / geometry.order());
+        auto corrected = internals::make_symmetric<Scalar_, Order_>(geometry.order());
+        for (int i = 0; i < geometry.order(); ++i)
+            for (int j = 0; j <= i; ++j)
+                corrected(i, j) = static_cast<Scalar_>(static_cast<long double>(solved.point(i, j)) * scale);
+        solved.point = typename Geometry::Point(corrected);
+    }
     internals::KarcherWorkspace<Geometry> workspace;
-    problem.prepare(solved.point, workspace);
+    const auto [cost, gradient] = problem.cost_gradient(solved.point, workspace);
+    solved.cost = cost;
+    solved.gradient_norm = geometry.norm(solved.point, gradient);
+    ++solved.cost_evaluations;
+    ++solved.gradient_evaluations;
     WeightedKarcherMeanResult<typename Geometry::Point> result {
       std::move(solved.point),
       std::move(normalized),
@@ -62,6 +87,8 @@ weighted_karcher_mean(
       solved.stop_reason != TrustRegionStopReason::max_iterations)
         result.stop_reason = BarycenterStopReason::trust_region_failed;
     internals::polish_karcher_mean(geometry, samples, options, result, workspace);
+    if (result.converged() && !(result.stationarity_norm <= options.solver.gradient_tolerance))
+        result.stop_reason = BarycenterStopReason::trust_region_failed;
     if (retained) *retained = std::move(workspace);
     result.uniqueness = BarycenterUniqueness::globally_unique;
     return result;
