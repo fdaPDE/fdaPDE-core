@@ -125,7 +125,8 @@ template <typename S, int N, int Nodes = Dynamic> class CheegerLift {
         fdapde_assert(std::isfinite(rho_) && rho_ > 0, std::invalid_argument, "C-LE requires positive finite rho");
         fdapde_assert(charts_.size() == w_.size() && !w_.empty(), std::invalid_argument, "invalid lifted nodes");
         fdapde_assert(
-          Nodes == Dynamic || w_.size() == Nodes, std::invalid_argument, "invalid static lifted node count");
+          Nodes == Dynamic || w_.size() == std::size_t(Nodes), std::invalid_argument,
+          "invalid static lifted node count");
         fdapde_strong_assert(
           std::int64_t(k_) * w_.size() <= std::sqrt(double(std::numeric_limits<int>::max())), std::length_error,
           "C-LE lifted workspace exceeds native index range");
@@ -194,24 +195,28 @@ template <typename S, int N, int Nodes = Dynamic> class CheegerLift {
         std::vector<CheegerRotationDifferential<S, N>> differentials;
         differentials.reserve(w_.size());
         for (const auto& omega : f.omega) differentials.emplace_back(omega);
-        for (std::size_t j = 0; j < w_.size(); ++j)
+        for (std::size_t j = 0; j < w_.size(); ++j) {
+            const Matrix<S, N, N> g(S(2 * w_[j]) * (f.mean * f.z[j] - f.z[j] * f.mean));
             for (int a = 0; a < k_; ++a) {
                 const Skew b = basis(a);
                 const Sym dz((f.z[j] * b - b * f.z[j]).template as_symmetric<Lower>());
                 const Sym dm(base_ ? zero() : Sym(S(w_[j]) * dz));
+                const auto curvature = differentials[j].hessian_action(b);
+                const auto diagonal =
+                  S(2 * w_[j]) * (f.mean * dz - dz * f.mean + S(rho_) * curvature) + S(.5) * (b * g - g * b);
                 for (std::size_t i = 0; i < w_.size(); ++i) {
-                    Matrix<S, N, N> dg(S(2 * w_[i]) * (dm * f.z[i] - f.z[i] * dm));
-                    if (i == j) {
-                        const auto curvature = differentials[i].hessian_action(b);
-                        const Matrix<S, N, N> g(S(2 * w_[i]) * (f.mean * f.z[i] - f.z[i] * f.mean));
-                        dg +=
-                          S(2 * w_[i]) * (f.mean * dz - dz * f.mean + S(rho_) * curvature) + S(.5) * (b * g - g * b);
-                    }
+                    const auto coupling = S(2 * w_[i]) * (dm * f.z[i] - f.z[i] * dm);
+                    // only skew coordinates enter the Hessian; the other matrix entries are discarded
                     int p = int(i) * k_;
                     for (int r = 0; r < n_; ++r)
-                        for (int c = r + 1; c < n_; ++c) h(p++, int(j) * k_ + a) = S(std::sqrt(2.)) * dg(r, c);
+                        for (int c = r + 1; c < n_; ++c) {
+                            S value = coupling(r, c);
+                            if (i == j) value += diagonal(r, c);
+                            h(p++, int(j) * k_ + a) = S(std::sqrt(2.)) * value;
+                        }
                 }
             }
+        }
         return h;
     }
     /// @brief differentiates a resolved rotation branch in nodal log coordinates and its local metric parameter
