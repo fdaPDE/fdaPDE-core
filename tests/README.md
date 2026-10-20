@@ -166,3 +166,52 @@ agreement, commuting means, invalid inputs and convergence failures.
 cells, vertex ordering, prepared edge values, deferred lifetimes, diagnostic
 exceptions and concurrent evaluation through `parallel_async`.
 See `docs/spd-interpolation.md` for cache and borrowing contracts.
+
+## Finite-element enumeration regression and timing
+
+`FiniteElementEnumeration` in `geometric_discretization/finite_elements.cpp`
+checks P1 node numbering, vector component offsets, physical coordinates and
+P1 surface completeness, plus shared P2 edge coordinates and boundary flags.
+The geometric discretization target runs these cases with debug contracts
+active. Iterator end masks are prepared once per traversal in FEM enumeration,
+coordinate extraction and surface traversal.
+
+For the optional standalone timing probe, configure with
+`-DFDAPDE_BUILD_FE_BENCHMARK=ON`, build
+`fdapde_fe_enumeration_benchmark`, and run it. The CSV output separates P1
+space enumeration from coordinate extraction on three growing tetrahedral
+meshes. Each case independently compares physical coordinates with mesh nodes.
+Timing is diagnostic and has no fragile wall-clock pass/fail threshold.
+
+Known baseline limitation: on `UnitCube(3)` with scalar P2, `surface_dofs()`
+returns 98 entries while the boundary flags contain 110 degrees of freedom.
+The same discrepancy was reproduced before iterator caching. P2 surface
+completeness is outside this performance change; the scalar P1 application
+uses the verified complete nodal boundary.
+
+## Fixed symmetric sparse multigrid
+
+`fdapde_sparse_multigrid_test` (Eigen-enabled builds) checks the public
+`fdapde::SparseMultigrid` map on screened Neumann graph Laplacians: manufactured
+slow/oscillatory inverse actions, linearity, paired symmetry, positive energy,
+all eigenvalues of a small inverse, repeatability, uniform scaling and invalid
+inputs. Tests force multiple hierarchy levels so exact coarse Cholesky alone
+cannot satisfy the multilevel cases. Debug contracts stay enabled.
+
+Build `fdapde_sparse_multigrid_test` and `fdapde_linear_algebra_header_check`,
+then run the test executable. See `docs/sparse-multigrid.md` for the SPD contract
+and fixed-cycle semantics.
+
+### Objective increments and lumped stationarity
+
+`optimization/step_control.cpp` (`fdapde_step_control_test`) checks bounded
+Armijo decisions from direct energy increments, mass-dual infinity norms and
+unit changes, compensated sums, native symmetric exponential increments and
+signed P1 flat stiffness actions. See `docs/step-control.md` for API boundaries,
+commands and the locally verified scope. These tests retain debug assertions.
+
+The C-LE step-control extension adds five tests for roundoff-aware Wolfe
+acceptance, false flat-gradient progress, visible increases, expansion and
+invalid-domain bracketing. The target now has 12 tests. The 43-test geometric
+smoothing suite verifies that compensated Cheeger energy retains exact
+serial/parallel parity and unchanged derivative/ambiguity contracts.

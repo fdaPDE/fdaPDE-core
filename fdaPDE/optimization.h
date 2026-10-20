@@ -60,6 +60,7 @@ template <typename Opt> static constexpr bool is_gradient_free_opt_v = is_gradie
 // callbacks
 #include "src/optimization/callbacks.h"
 #include "src/optimization/backtracking.h"
+#include "src/optimization/step_control.h"
 #include "src/optimization/wolfe.h"
 
 // algorithms

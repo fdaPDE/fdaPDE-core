@@ -95,11 +95,13 @@ template <typename S, int N, int Nodes = Dynamic> class CheegerLift {
     using Dense = Matrix<S, Coordinates, Coordinates>;
     using Vec = Vector<S, Coordinates>;
     using Eigenframe = Matrix<S, N, N>;
+    using Charts = std::conditional_t<Nodes == Dynamic, std::vector<Sym>, std::array<Sym, std::max(0, Nodes)>>;
+    using Logarithms = std::conditional_t<Nodes == Dynamic, std::vector<Skew>, std::array<Skew, std::max(0, Nodes)>>;
     /// @brief stores one evaluation's rotations, aligned charts and stationarity residual
     struct State {
         Batch rotations;
-        std::vector<Sym> z;
-        std::vector<Skew> omega;
+        Charts z;
+        Logarithms omega;
         Sym mean;
         Vec gradient;
         double cost = 0;
@@ -164,16 +166,18 @@ template <typename S, int N, int Nodes = Dynamic> class CheegerLift {
             for (int c = 0; c <= r; ++c) x(r, c) = 0;
         return x;
     }
-    /// @brief evaluates the eliminated lift and its analytic body gradient
-    State evaluate(const Batch& rotations) const {
-        State f {rotations, {}, {}, zero(), Vec(int(w_.size()) * k_)};
-        f.z.reserve(w_.size());
-        f.omega.reserve(w_.size());
+    /// @brief evaluates the eliminated lift and body gradient, optionally retaining its rotation batch
+    State evaluate(const Batch& rotations, bool retain_rotations = true) const {
+        State f {retain_rotations ? rotations : Batch(0, n_, n_), {}, {}, zero(), Vec(int(w_.size()) * k_)};
+        if constexpr (Nodes == Dynamic) {
+            f.z.resize(w_.size());
+            f.omega.resize(w_.size());
+        }
         for (std::size_t i = 0; i < w_.size(); ++i) {
             const Matrix<S, N, N> z(rotations[i].transpose() * charts_[i] * rotations[i]);
-            f.z.emplace_back(z.template as_symmetric<Lower>());
-            f.omega.emplace_back(rotation_log(rotations[i]));
-            if (!base_) f.mean += S(w_[i]) * f.z.back();
+            f.z[i] = z.template as_symmetric<Lower>();
+            f.omega[i] = rotation_log(rotations[i]);
+            if (!base_) f.mean += S(w_[i]) * f.z[i];
         }
         if (base_) f.mean = *base_;
         for (std::size_t i = 0; i < w_.size(); ++i) {
@@ -335,18 +339,18 @@ template <typename S, int N, int Nodes = Dynamic> class CheegerLift {
         /// @brief evaluates one candidate and retains its shared data
         double cost(const Batch& p, Workspace& w) {
             try {
-                w.state = lift->evaluate(p);
+                w.state = lift->evaluate(p, false);
                 return w.state->cost;
             } catch (const std::domain_error&) { return std::numeric_limits<double>::infinity(); }
         }
         /// @brief reuses the candidate's body gradient
         Vec grad(const Batch& p, Workspace& w) {
-            if (!w.state) w.state = lift->evaluate(p);
+            if (!w.state) w.state = lift->evaluate(p, false);
             return w.state->gradient;
         }
         /// @brief reuses the analytic candidate Hessian across subproblem iterations
         Vec hess(const Batch& p, const Vec& v, Workspace& w) {
-            if (!w.state) w.state = lift->evaluate(p);
+            if (!w.state) w.state = lift->evaluate(p, false);
             if (!w.hessian) w.hessian = lift->hessian(*w.state);
             return Vec(*w.hessian * v);
         }
@@ -515,8 +519,14 @@ template <typename S, int N, int Nodes = Dynamic> class CheegerLift {
         auto state = fixed.solve(eigenframes, base_eigenframe, tolerance, iterations);
         converged_ = fixed.converged();
         ambiguous_ = fixed.ambiguous();
-        return {std::move(state.rotations), std::move(state.z), std::move(state.omega), std::move(state.mean),
-                Vec(state.gradient),        state.cost,         state.iterations};
+        return {
+          std::move(state.rotations),
+          Charts(std::make_move_iterator(state.z.begin()), std::make_move_iterator(state.z.end())),
+          Logarithms(std::make_move_iterator(state.omega.begin()), std::make_move_iterator(state.omega.end())),
+          std::move(state.mean),
+          Vec(state.gradient),
+          state.cost,
+          state.iterations};
     }
     /// @brief removes nodal weight units by a positive diagonal congruence without changing the lifted system
     Dense equilibrated_hessian_(const Dense& h) const {

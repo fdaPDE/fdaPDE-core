@@ -148,6 +148,26 @@ class PreparedP1LumpedLaplacianStencil {
     std::vector<std::vector<std::size_t>> incident_;
 };
 
+/// @brief applies one row of the P1 stiffness matrix to interleaved flat nodal coordinates
+/// @details edge differences annihilate constants before accumulation and preserve the signed assembled operator
+inline double p1_lumped_stiffness_at(
+  const PreparedP1LumpedLaplacianStencil& prepared, std::span<const double> field, std::size_t node,
+  std::size_t component = 0, std::size_t components = 1) {
+    const auto& stencil = prepared.stencil();
+    fdapde_assert(
+      components > 0 && field.size() == components * stencil.node_count() && node < stencil.node_count() &&
+        component < components,
+      std::invalid_argument, "invalid flat P1 field index");
+    CompensatedSum sum;
+    const double center = field[node * components + component];
+    for (const auto edge_id : prepared.incident_edges()[node]) {
+        const auto& edge = stencil.edges[edge_id];
+        const auto other = edge.first == node ? edge.second : edge.first;
+        sum.add(edge.stiffness * (field[other * components + component] - center));
+    }
+    return sum.value();
+}
+
 /// @brief assembles lumped masses and signed stiffness edges for the full P1 space
 template <std::size_t LocalDim, std::size_t EmbedDim, std::size_t QuadratureSize>
 P1LumpedLaplacianStencil p1_lumped_laplacian_stencil(

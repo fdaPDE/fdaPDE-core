@@ -198,14 +198,16 @@ template <int LocalDim, int EmbedDim, typename Derived> class fe_dof_handler_bas
     }
     void enforce_constraints(Eigen::SparseMatrix<double>& A) const { dof_constraints_.enforce_constraints(A); }
     void enforce_constraints(Eigen::Matrix<double, Dynamic, 1>& b) const { dof_constraints_.enforce_constraints(b); }
-    Eigen::Matrix<double, Dynamic, Dynamic> dofs_coords() const {   // computes dofs physical coordinates
+    /// @brief maps each unique degree of freedom from its reference simplex to physical coordinates
+    Eigen::Matrix<double, Dynamic, Dynamic> dofs_coords() const {
         // allocate space (just for unique dofs, i.e., without considering any dof multiplicity)
         Eigen::Matrix<double, Dynamic, Dynamic> coords;
         coords.resize(n_unique_dofs_, TriangulationType::embed_dim);
         std::unordered_set<int> visited;
         // cycle over all mesh elements
-        for (typename TriangulationType::cell_iterator cell = triangulation_->cells_begin();
-             cell != triangulation_->cells_end(); ++cell) {
+        for (typename TriangulationType::cell_iterator cell = triangulation_->cells_begin(),
+                                                       end = triangulation_->cells_end();
+             cell != end; ++cell) {
             int cell_id = cell->id();
             for (int j = 0; j < derived().n_dofs_per_cell(); ++j) {
                 int dof = dofs_(cell_id, j);
@@ -330,6 +332,7 @@ class DofHandler<2, EmbedDim, finite_element_tag> :
     DofHandler() = default;
     DofHandler(const TriangulationType& triangulation) : Base(triangulation) { }
 
+    /// @brief enumerates element degrees of freedom and propagates boundary markers
     template <typename FEType> void enumerate(FEType fe) {
         using dof_descriptor = typename FEType::template cell_dof_descriptor<TriangulationType::local_dim>;
         Base::enumerate(fe);   // enumerate dofs at nodes
@@ -341,8 +344,9 @@ class DofHandler<2, EmbedDim, finite_element_tag> :
         dof_multiplicity_ = dof_descriptor::dof_multiplicity;
         // move geometrical markers on boundary edges to dof markers on nodes.
         if constexpr (dof_descriptor::n_dofs_per_node > 0) {
-            for (typename TriangulationType::edge_iterator it = triangulation_->boundary_edges_begin();
-                 it != triangulation_->boundary_edges_end(); ++it) {
+            for (typename TriangulationType::edge_iterator it = triangulation_->boundary_edges_begin(),
+                                                           end = triangulation_->boundary_edges_end();
+                 it != end; ++it) {
                 int marker = it->marker();
                 for (int node_id : it->node_ids()) {
                     if (marker > Base::dofs_markers_[node_id]) { Base::dofs_markers_[node_id] = marker; }
@@ -356,8 +360,9 @@ class DofHandler<2, EmbedDim, finite_element_tag> :
         if constexpr (dof_descriptor::n_dofs_per_edge > 0 || dof_descriptor::n_dofs_internal > 0) {
             constexpr int n_edges_per_cell = TriangulationType::n_edges_per_cell;
 
-            for (typename TriangulationType::cell_iterator it = triangulation_->cells_begin();
-                 it != triangulation_->cells_end(); ++it) {
+            for (typename TriangulationType::cell_iterator it = triangulation_->cells_begin(),
+                                                           end = triangulation_->cells_end();
+                 it != end; ++it) {
                 int cell_id = it->id();
                 if constexpr (dof_descriptor::n_dofs_per_edge > 0) {
                     Base::template local_enumerate<dof_descriptor::dof_sharing>(
@@ -518,6 +523,7 @@ class DofHandler<3, 3, finite_element_tag> :
     DofHandler() = default;
     DofHandler(const TriangulationType& triangulation) : Base(triangulation) { }
 
+    /// @brief enumerates element degrees of freedom and propagates boundary markers
     template <typename FEType> void enumerate(FEType fe) {
         using dof_descriptor = typename FEType::template cell_dof_descriptor<TriangulationType::local_dim>;
         Base::enumerate(fe);   // enumerate dofs at nodes
@@ -531,8 +537,9 @@ class DofHandler<3, 3, finite_element_tag> :
         dof_multiplicity_ = dof_descriptor::dof_multiplicity;
         // move geometrical markers on boundary faces to dof markers on nodes. high labeled nodes have higher priority
         if constexpr (dof_descriptor::n_dofs_per_node > 0) {
-            for (typename TriangulationType::face_iterator it = triangulation_->boundary_faces_begin();
-                 it != triangulation_->boundary_faces_end(); ++it) {
+            for (typename TriangulationType::face_iterator it = triangulation_->boundary_faces_begin(),
+                                                           end = triangulation_->boundary_faces_end();
+                 it != end; ++it) {
                 int marker = it->marker();
                 for (int node_id : it->node_ids()) {
                     if (marker > Base::dofs_markers_[node_id]) { Base::dofs_markers_[node_id] = marker; }
@@ -548,8 +555,9 @@ class DofHandler<3, 3, finite_element_tag> :
             constexpr int n_edges_per_cell = TriangulationType::n_edges_per_cell;
             constexpr int n_faces_per_cell = TriangulationType::n_faces_per_cell;
 
-            for (typename TriangulationType::cell_iterator it = triangulation_->cells_begin();
-                 it != triangulation_->cells_end(); ++it) {
+            for (typename TriangulationType::cell_iterator it = triangulation_->cells_begin(),
+                                                           end = triangulation_->cells_end();
+                 it != end; ++it) {
                 int cell_id = it->id();
                 if constexpr (dof_descriptor::n_dofs_per_edge > 0) {
                     Base::template local_enumerate<dof_descriptor::dof_sharing>(
@@ -719,10 +727,11 @@ class DofHandler<3, 3, finite_element_tag> :
     int dof_multiplicity() const { return dof_multiplicity_; }
     const std::unordered_map<int, std::vector<int>>& edge_to_dofs() const { return edge_to_dofs_; }
     const std::unordered_map<int, std::vector<int>>& face_to_dofs() const { return face_to_dofs_; }
-    std::vector<int> surface_dofs() const {   // extracts all dofs at domain's surface
+    /// @brief collects unique surface degrees of freedom in boundary traversal order
+    std::vector<int> surface_dofs() const {
         std::vector<int> dofs_;
         std::unordered_set<int> visited;
-        for (boundary_face_iterator it = boundary_faces_begin(); it != boundary_faces_end(); ++it) {
+        for (boundary_face_iterator it = boundary_faces_begin(), end = boundary_faces_end(); it != end; ++it) {
             Eigen::Matrix<int, Dynamic, 1> active_dofs_ = it->dofs();
             for (int dof : active_dofs_) {
                 if (visited.find(dof) == visited.end()) {

@@ -82,12 +82,14 @@ p1_cheeger_discrete_tension_log_contribution(
     P1CheegerLogContributionResult<typename G::Tangent> out;
     out.nodal_gradient.reserve(nodes.size());
     out.rho_gradient.assign(nodes.size(), 0);
+    CompensatedSum energy;
     for (std::size_t i = 0; i < nodes.size(); ++i) {
         const double d = rho(i) + 4 * (q[i].x * q[i].x + q[i].y * q[i].y);
         const double c = q[i].x * residual[i][2] - q[i].y * residual[i][1], mass = stencil.lumped_masses[i];
-        out.value += (residual[i][0] * residual[i][0] + residual[i][1] * residual[i][1] +
-                      residual[i][2] * residual[i][2] - 4 * c * c / d) /
-                     mass;
+        energy.add(
+          (residual[i][0] * residual[i][0] + residual[i][1] * residual[i][1] + residual[i][2] * residual[i][2] -
+           4 * c * c / d) /
+          mass);
         dual[i] = {
           2 * residual[i][0] / mass, (2 * residual[i][1] + 8 * c * q[i].y / d) / mass,
           (2 * residual[i][2] - 8 * c * q[i].x / d) / mass};
@@ -95,6 +97,7 @@ p1_cheeger_discrete_tension_log_contribution(
         gradient[i][2] = (8 * c * residual[i][1] / d + 32 * c * c * q[i].y / (d * d)) / mass;
         out.rho_gradient[i] = 4 * c * c / (d * d * mass);
     }
+    out.value = energy.value();
     for (const auto& edge : edges) {
         const auto i = edge.i, j = edge.j;
         const auto z = edge.z;
@@ -168,10 +171,11 @@ p1_cheeger_discrete_tension_log_contribution(
     P1CheegerLogContributionResult<Sym> out;
     out.nodal_gradient.assign(nodes.size(), zero);
     out.rho_gradient.assign(nodes.size(), 0);
+    CompensatedSum energy;
     for (std::size_t i = 0; i < nodes.size(); ++i) {
         const auto metric = manifold::internals::cheeger_metric<S, N>(charts[i], residual[i], rho[i]);
         const double mass = stencil.lumped_masses[i];
-        out.value += .5 * manifold::internals::cheeger_inner(residual[i], metric) / mass;
+        energy.add(.5 * manifold::internals::cheeger_inner(residual[i], metric) / mass);
         dual[i] = metric / S(mass);
         const Matrix<S, N, N> commutator(charts[i] * metric - metric * charts[i]);
         out.nodal_gradient[i] =
@@ -179,6 +183,7 @@ p1_cheeger_discrete_tension_log_contribution(
         out.rho_gradient[i] =
           .5 * manifold::internals::cheeger_inner(commutator, commutator) / (mass * rho[i] * rho[i]);
     }
+    out.value = energy.value();
     for (std::size_t e = 0; e < stencil.edges.size(); ++e)
         for (int reverse = 0; reverse < 2; ++reverse) {
             const auto& edge = stencil.edges[e];
@@ -263,7 +268,9 @@ p1_cheeger_discrete_tension_log_parallel_contribution(
         gradient[i][2] = (8 * c * residual[i][1] / d + 32 * c * c * q[i].y / (d * d)) / mass;
         out.rho_gradient[i] = 4 * c * c / (d * d * mass);
     });
-    for (double value : values) out.value += value;
+    CompensatedSum energy;
+    for (double value : values) energy.add(value);
+    out.value = energy.value();
     internals::for_each_point(stencil.edges.size(), execution_par, [&](std::size_t e) {
         const auto& edge = stencil.edges[e];
         for (int reverse = 0; reverse < 2; ++reverse) {
@@ -374,7 +381,9 @@ p1_cheeger_discrete_tension_log_parallel_contribution(
         out.rho_gradient[i] =
           .5 * manifold::internals::cheeger_inner(commutator, commutator) / (mass * rho[i] * rho[i]);
     });
-    for (double value : values) out.value += value;
+    CompensatedSum energy;
+    for (double value : values) energy.add(value);
+    out.value = energy.value();
     std::vector<std::array<Sym, 4>> actions(stencil.edges.size());
     std::vector<std::array<double, 2>> rho_actions(stencil.edges.size());
     internals::for_each_point(stencil.edges.size(), execution_par, [&](std::size_t e) {

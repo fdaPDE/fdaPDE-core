@@ -74,6 +74,16 @@ if(NOT FDAPDE_NATIVE_ONLY)
   fdapde_configure_target(fdapde_linear_algebra_header_check)
   target_link_libraries(fdapde_linear_algebra_header_check PRIVATE Eigen3::Eigen)
 
+  add_executable(fdapde_step_control_test optimization/step_control.cpp)
+  fdapde_configure_target(fdapde_step_control_test)
+  target_link_libraries(fdapde_step_control_test PRIVATE GTest::gtest_main Eigen3::Eigen)
+  gtest_discover_tests(fdapde_step_control_test PROPERTIES TIMEOUT 60)
+
+  add_executable(fdapde_sparse_multigrid_test linear_algebra/sparse_multigrid.cpp)
+  fdapde_configure_target(fdapde_sparse_multigrid_test)
+  target_link_libraries(fdapde_sparse_multigrid_test PRIVATE GTest::gtest_main Eigen3::Eigen)
+  gtest_discover_tests(fdapde_sparse_multigrid_test PROPERTIES TIMEOUT 60)
+
   add_executable(fdapde_sparse_block_test linear_algebra/sparse_block_matrix.cpp)
   fdapde_configure_target(fdapde_sparse_block_test)
   target_link_libraries(fdapde_sparse_block_test PRIVATE GTest::gtest_main Eigen3::Eigen)
@@ -288,6 +298,13 @@ fdapde_reject_program(col_major_matrix_batch "MatrixBatch supports row-major sto
 fdapde_reject_program(view_matrix_batch "MatrixBatch requires owning matrix elements")
 fdapde_reject_program(dense_skew_matrix_batch "MatrixBatch skew elements require skew-symmetric expressions")
 
+option(FDAPDE_BUILD_FE_BENCHMARK "Build the standalone finite-element enumeration timing probe" OFF)
+if(FDAPDE_BUILD_FE_BENCHMARK AND NOT FDAPDE_NATIVE_ONLY)
+  add_executable(fdapde_fe_enumeration_benchmark benchmarks/fe_enumeration.cpp)
+  fdapde_configure_target(fdapde_fe_enumeration_benchmark)
+  target_link_libraries(fdapde_fe_enumeration_benchmark PRIVATE Eigen3::Eigen)
+endif()
+
 option(FDAPDE_BUILD_SPD_BENCHMARK "Build the standalone SPD allocation and timing probe" OFF)
 if(FDAPDE_BUILD_SPD_BENCHMARK)
   add_executable(fdapde_spd_cache_batch_benchmark benchmarks/spd_cache_batch.cpp)
@@ -310,7 +327,8 @@ add_library(fdapde_geometric_discretization_header_check OBJECT public_headers/g
 fdapde_configure_target(fdapde_geometric_discretization_header_check)
 if(NOT FDAPDE_NATIVE_ONLY)
   add_executable(fdapde_geometric_discretization_test
-    geometric_discretization/space.cpp geometric_discretization/compatibility.cpp)
+    geometric_discretization/space.cpp geometric_discretization/compatibility.cpp
+    geometric_discretization/finite_elements.cpp)
   fdapde_configure_target(fdapde_geometric_discretization_test)
   target_link_libraries(fdapde_geometric_discretization_test PRIVATE GTest::gtest_main Eigen3::Eigen Threads::Threads)
   gtest_discover_tests(fdapde_geometric_discretization_test PROPERTIES TIMEOUT 60)

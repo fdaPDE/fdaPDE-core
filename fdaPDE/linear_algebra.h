@@ -79,6 +79,7 @@ class is_vector_like<T> {
 #include "src/linear_algebra/lumping.h"
 #include "src/linear_algebra/sparse_block_matrix.h"
 #include "src/linear_algebra/woodbury.h"
+#include "src/linear_algebra/sparse_multigrid.h"
 // randomized linear algebra
 #include "src/linear_algebra/rsi.h"
 #include "src/linear_algebra/rbki.h"

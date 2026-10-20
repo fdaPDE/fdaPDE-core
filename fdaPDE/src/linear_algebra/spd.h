@@ -1139,6 +1139,52 @@ auto matrix_exp_frechet(
       evd, value.rows(), direction.derived(), [](auto x, auto y) { return internals::exp_divided_difference(x, y); });
 }
 
+/// @brief evaluates exp(base + increment) - exp(base) without subtracting two matrix exponentials
+/// @details the two spectral bases use exponential divided differences applied to the supplied increment
+template <typename XprType_, typename DirectionXprType_>
+auto matrix_exp_increment(
+  const SymmetricMatrixExpr<XprType_>& matrix, const SymmetricMatrixExpr<DirectionXprType_>& increment) {
+    using Scalar = std::remove_cv_t<typename XprType_::Scalar>;
+    const auto& base = matrix.derived();
+    const auto& delta = increment.derived();
+    fdapde_strong_assert(base.rows() == delta.rows(), std::invalid_argument, "exponential increment shape mismatch");
+    internals::validate_finite_symmetric(base);
+    internals::validate_finite_symmetric(delta);
+    SymmetricMatrix<Scalar, XprType_::Rows> target(base + delta);
+    const EVD<XprType_> left(base);
+    const EVD<decltype(target)> right(target);
+    internals::require_computed(left);
+    internals::require_computed(right);
+    const int n = base.rows();
+    Matrix<Scalar, XprType_::Rows, XprType_::Rows> coefficients(n, n);
+    for (int i = 0; i < n; ++i) {
+        for (int j = 0; j < n; ++j) {
+            CompensatedSum sum;
+            for (int r = 0; r < n; ++r)
+                for (int c = 0; c < n; ++c)
+                    sum.add(right.eigenvectors()(r, i) * delta(r, c) * left.eigenvectors()(c, j));
+            coefficients(i, j) =
+              sum.value() * internals::exp_divided_difference(right.eigenvalues()[i], left.eigenvalues()[j]);
+        }
+    }
+    SymmetricMatrix<Scalar, XprType_::Rows> result;
+    if constexpr (XprType_::Rows == Dynamic) result.resize(n, n);
+    for (int r = 0; r < n; ++r) {
+        for (int c = 0; c <= r; ++c) {
+            CompensatedSum sum;
+            for (int i = 0; i < n; ++i)
+                for (int j = 0; j < n; ++j)
+                    sum.add(
+                      Scalar(.5) * coefficients(i, j) *
+                      (right.eigenvectors()(r, i) * left.eigenvectors()(c, j) +
+                       right.eigenvectors()(c, i) * left.eigenvectors()(r, j)));
+            result(r, c) = sum.value();
+        }
+    }
+    internals::validate_finite_symmetric(result);
+    return result;
+}
+
 /// @brief returns the bilinear second exponential differential at a symmetric point
 template <typename XprType_, typename FirstDirectionXprType_, typename SecondDirectionXprType_>
 auto matrix_exp_second_frechet(

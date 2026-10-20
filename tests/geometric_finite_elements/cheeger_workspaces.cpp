@@ -45,6 +45,12 @@ template <int Count> void check_lift_storage() {
     static_assert(Fixed::Vec::Rows == 3 * Count);
     // a static Hessian carries the same coordinate dimension in both axes
     static_assert(Fixed::Dense::Rows == 3 * Count && Fixed::Dense::Cols == 3 * Count);
+    // fixed lift states keep aligned charts inline instead of allocating a vector at each candidate
+    static_assert(std::is_same_v<typename Fixed::Charts, std::array<Sym, Count>>);
+    // fixed lift states also retain rotation logarithms in inline storage
+    static_assert(std::is_same_v<typename Fixed::Logarithms, std::array<typename Fixed::Skew, Count>>);
+    // runtime states keep a growable container for arbitrary active counts
+    static_assert(std::is_same_v<typename Runtime::Charts, std::vector<Sym>>);
     // identical frame arithmetic retains the exact cost before optimization
     EXPECT_EQ(actual.cost, reference.cost);
     // inline gradient storage retains every body-coordinate coefficient exactly
@@ -53,6 +59,19 @@ template <int Count> void check_lift_storage() {
     const auto actual_hessian = fixed.hessian(actual);
     // static Hessian assembly preserves the dynamic arithmetic and coupling terms exactly
     EXPECT_EQ((Runtime::Dense(actual_hessian - expected_hessian).norm()), 0.);
+    typename Fixed::Problem problem {&fixed};
+    typename Fixed::Problem::Workspace workspace;
+    // inner optimizer evaluations omit a rotation copy while retaining the same scalar objective
+    EXPECT_EQ(problem.cost(rotations, workspace), actual.cost);
+    // the workspace needs charts and logarithms for derivatives but does not own the optimizer point
+    EXPECT_EQ(workspace.state->rotations.size(), 0);
+    const auto workspace_gradient = problem.grad(rotations, workspace);
+    // cached derivatives agree with a complete evaluation at the same nonstationary point
+    EXPECT_EQ((typename Fixed::Vec(workspace_gradient - actual.gradient).norm()), 0.);
+    const auto direction = actual.gradient;
+    const auto workspace_action = problem.hess(rotations, direction, workspace);
+    // the lazy Hessian action does not require the omitted rotation batch
+    EXPECT_EQ((typename Fixed::Vec(workspace_action - actual_hessian * direction).norm()), 0.);
     const auto expected = runtime.solve();
     const auto solved = fixed.solve();
     // dispatch keeps the same deterministic local starts and chosen objective
