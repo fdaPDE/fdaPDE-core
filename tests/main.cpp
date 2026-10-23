@@ -102,6 +102,8 @@ class fdapde_testing_printer : public ::testing::EmptyTestEventListener {
     }
 };
 
+#include "math/numeric.cpp"
+
 #include "linear_algebra/block.cpp"
 #include "linear_algebra/diagonal.cpp"
 #include "linear_algebra/matrix.cpp"

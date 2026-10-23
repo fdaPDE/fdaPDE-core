@@ -1,18 +1,18 @@
-// This file is part of fdaPDE, a C++ library for physics-informed
-// spatial and functional data analysis.
+// this file is part of fdapde, a c++ library for physics-informed
+// spatial and functional data analysis
 //
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
+// this program is free software: you can redistribute it and/or modify
+// it under the terms of the gnu general public license as published by
+// the free software foundation, either version 3 of the license, or
+// (at your option) any later version
 //
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
+// this program is distributed in the hope that it will be useful,
+// but without any warranty; without even the implied warranty of
+// merchantability or fitness for a particular purpose.  see the
+// gnu general public license for more details
 //
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// you should have received a copy of the gnu general public license
+// along with this program.  if not, see <http://www.gnu.org/licenses/>
 
 #ifndef __FDAPDE_NUMERIC_H__
 #define __FDAPDE_NUMERIC_H__
@@ -21,38 +21,63 @@
 
 namespace fdapde {
 
-// factorial of n
-constexpr int factorial(const int n) {
-    fdapde_assert(n >= 0);
-    int factorial_ = 1;
-    if (n == 0) return factorial_;
-    int m = n;
-    while (m > 0) {
-        factorial_ = m * factorial_;
-        m--;
+[[maybe_unused]] constexpr float  flt_tolerance = 1e-5f;
+[[maybe_unused]] constexpr double dbl_tolerance = 1e-10;
+
+namespace internals {
+
+// ieee binary32 and binary64 representation
+template <typename T>
+    requires(std::is_floating_point_v<T>)
+struct floating_point_bits {
+    using uint_t = std::conditional_t<std::is_same_v<T, float>, std::uint32_t, std::uint64_t>;
+    static_assert(std::numeric_limits<T>::is_iec559 && sizeof(T) == sizeof(uint_t));
+    static constexpr int fraction_bits    = std::numeric_limits<T>::digits - 1;
+    static constexpr int exponent_bias    = std::numeric_limits<T>::max_exponent - 1;
+    static constexpr int exponent_mask    = 2 * exponent_bias + 1;
+    static constexpr int leading_bits     = std::numeric_limits<uint_t>::digits - fraction_bits - 1;
+    static constexpr uint_t sign_mask     = uint_t(1) << (std::numeric_limits<uint_t>::digits - 1);
+    static constexpr uint_t fraction_mask = (uint_t(1) << fraction_bits) - 1;
+};
+
+// selects a tolerance in the operand type
+template <typename T>
+inline constexpr T numeric_tolerance = [] { return std::is_same_v<T, float> ? flt_tolerance : dbl_tolerance; }();
+
+}   // namespace internals
+
+// computes n factorial using unsigned 64-bit arithmetic
+constexpr std::uint64_t fact(const int n) {
+    fdapde_assert(n >= 0, std::domain_error, "factorial not defined for negative arguments");
+    std::uint64_t result = 1;
+    for (int i = n; i > 1; --i) { result *= static_cast<std::uint64_t>(i); }
+    return result;
+}
+// computes the binomial coefficient n over m assuming the result fits in uint64_t
+constexpr std::uint64_t binom(const int n, const int m) {
+    fdapde_assert(n >= 0 && m >= 0 && m <= n, std::domain_error, "binom(n, m) defined for 0 <= m <= n");
+    const int k = m < n - m ? m : n - m;
+    std::uint64_t result = 1;
+    for (int i = 1; i <= k; ++i) {
+        const std::uint64_t divisor = std::gcd(result, static_cast<std::uint64_t>(i));
+        const std::uint64_t reduced = result / divisor;
+        const std::uint64_t numerator = static_cast<std::uint64_t>(n - k + i) / (static_cast<std::uint64_t>(i) / divisor);
+        result = reduced * numerator;
     }
-    return factorial_;
+    return result;
 }
-// binomial coefficient n over m
-constexpr int binomial_coefficient(const int n, const int m) {
-    if (m == 0 || n == m) return 1;
-    return factorial(n) / (factorial(m) * factorial(n - m));
-}
-// binomial_coefficient(n, k) x k matrix of combinations of k elements from a set of n
-constexpr std::vector<int> combinations(int k, int n) {
-    std::vector<bool> bitmask(k, 1);
-    bitmask.resize(n, 0);
-    std::vector<int> result(binomial_coefficient(n, k) * k);
-    int j = 0;
+// lists the k-element combinations of n elements in a flattened row-major array
+constexpr std::vector<std::uint64_t> comb(int k, int n) {
+    fdapde_assert(n >= 0 && k >= 0 && k <= n, std::domain_error, "comb(k, n) require 0 <= k <= n");
+    std::vector<bool> bitmask(k, true);
+    bitmask.resize(n, false);
+    const auto count = static_cast<std::size_t>(binom(n, k));
+    std::vector<std::uint64_t> result(count * static_cast<std::size_t>(k));
+    std::size_t offset = 0;
     do {
-        int l = 0;
         for (int i = 0; i < n; ++i) {
-            if (bitmask[i]) {
-                result[j * k + l] = i;
-                l++;
-            }
+            if (bitmask[i]) result[offset++] = static_cast<std::uint64_t>(i);
         }
-        j++;
     } while (std::prev_permutation(bitmask.begin(), bitmask.end()));
     return result;
 }
@@ -60,246 +85,350 @@ constexpr std::vector<int> combinations(int k, int n) {
 // integer division with round up
 template <typename T1, typename T2>
     requires(internals::is_integer_v<T1> && internals::is_integer_v<T2>)
-constexpr std::common_type_t<T1, T2> int_ceil(T1 a, T2 b) {
+constexpr std::common_type_t<T1, T2> idiv_ceil(T1 a, T2 b) {
     return ((a ^ b) >= 0) ? a / b + (a % b != 0) : a / b;
 }
 // integer division with round down
 template <typename T1, typename T2>
     requires(internals::is_integer_v<T1> && internals::is_integer_v<T2>)
-constexpr std::common_type_t<T1, T2> int_floor(T1 a, T2 b) {
+constexpr std::common_type_t<T1, T2> idiv_floor(T1 a, T2 b) {
     return ((a ^ b) < 0 && a % b != 0) ? a / b - 1 : a / b;
 }
 
 // min function with common type conversion
-template <typename T1, typename T2> constexpr std::common_type_t<T1, T2> min(T1 a, T2 b) {
+template <typename T1, typename T2>
+    requires requires(T1 a, T2 b) {
+        (static_cast<std::common_type_t<T1, T2>>(a) <= static_cast<std::common_type_t<T1, T2>>(b)) ? 0 : 0;
+    }
+constexpr std::common_type_t<T1, T2> min(T1 a, T2 b) {
     using T = std::common_type_t<T1, T2>;
     return (static_cast<T>(a) <= static_cast<T>(b)) ? static_cast<T>(a) : static_cast<T>(b);
 }
 // max function with common type conversion
-template <typename T1, typename T2> constexpr std::common_type_t<T1, T2> max(T1 a, T2 b) {
+template <typename T1, typename T2>
+    requires requires(T1 a, T2 b) {
+        (static_cast<std::common_type_t<T1, T2>>(a) >= static_cast<std::common_type_t<T1, T2>>(b)) ? 0 : 0;
+    }
+constexpr std::common_type_t<T1, T2> max(T1 a, T2 b) {
     using T = std::common_type_t<T1, T2>;
     return (static_cast<T>(a) >= static_cast<T>(b)) ? static_cast<T>(a) : static_cast<T>(b);
 }
 
-// constexpr absoulte value
-template <typename T> requires(std::is_arithmetic_v<T>) constexpr T abs(T x) { return x < 0 ? -x : x; }
-template <typename T> requires(std::is_floating_point_v<T>) constexpr T fabs(T x) { return x < 0 ? -x : x; }
-  
-// test for floating point equality
-[[maybe_unused]] constexpr double double_tolerance = 1e-10;
-[[maybe_unused]] constexpr double machine_epsilon  = 50 * std::numeric_limits<double>::epsilon();   // approx 10^-14
+// computes the floating-point absolute value
+template <typename T>
+    requires(std::is_same_v<T, float> || std::is_same_v<T, double>)
+constexpr T fabs(T x) {
+    if (!std::is_constant_evaluated()) return std::fabs(x);
+    using bits_t = internals::floating_point_bits<T>;
+    using uint_t = typename bits_t::uint_t;
+    return std::bit_cast<T>(std::bit_cast<uint_t>(x) & ~bits_t::sign_mask);
+}
+
+// computes the absolute value when it is representable in the result type
+template <typename T>
+    requires(std::is_arithmetic_v<T>)
+constexpr T abs(T x) {
+    if constexpr (std::is_floating_point_v<T>) {
+        return fdapde::fabs(x);
+    } else {
+        return x < 0 ? -x : x;
+    }
+}
+
+// compares a and b using absolute and relative tolerance, including exact equality
 template <typename T>
     requires(std::is_floating_point_v<T>)
 constexpr bool almost_equal(T a, T b, T epsilon) {
-    return fdapde::fabs(a - b) < epsilon ||
-           fdapde::fabs(a - b) < ((fdapde::fabs(a) < fdapde::fabs(b) ? fdapde::fabs(b) : fdapde::fabs(a)) * epsilon);
+    fdapde_assert(epsilon >= 0, std::invalid_argument, "tolerance must be nonnegative");
+    if (a == b) return true;
+    const T aa = fdapde::fabs(a), bb = fdapde::fabs(b);
+    if (a != a || b != b || aa == std::numeric_limits<T>::infinity() || bb == std::numeric_limits<T>::infinity())
+        return false;
+    const T scale = aa > bb ? aa : bb;
+    // normalization avoids overflow when subtracting large values of opposite signs
+    if ((a < T(0)) != (b < T(0))) {
+        return (aa < epsilon && bb < epsilon - aa) || (scale != T(0) && aa / scale + bb / scale < epsilon);
+    }
+    const T difference = fdapde::fabs(a - b);
+    return difference < epsilon || (scale != T(0) && difference / scale < epsilon);
 }
-template <typename T> constexpr bool almost_equal(T a, T b) { return almost_equal(a, b, double_tolerance); }
+// compares a and b using the tolerance for their scalar type
+template <typename T>
+    requires(std::is_floating_point_v<T>)
+constexpr bool almost_equal(T a, T b) {
+    return almost_equal(a, b, internals::numeric_tolerance<T>);
+}
+// tests whether a is greater than b or equal within tolerance
 template <typename T>
     requires(std::is_floating_point_v<T>)
 constexpr bool greater_equal(T a, T b, T epsilon) {
-    return (a - b) >= ((fdapde::fabs(a) < fdapde::fabs(b) ? fdapde::fabs(b) : fdapde::fabs(a)) * epsilon);
+    fdapde_assert(epsilon >= 0, std::invalid_argument, "tolerance must be nonnegative");
+    return a > b || almost_equal(a, b, epsilon);
 }
-template <typename T> constexpr bool greater_equal(T a, T b) { return greater_equal(a, b, double_tolerance); }
+// tests whether a is greater than b or equal within the default tolerance
+template <typename T>
+    requires(std::is_floating_point_v<T>)
+constexpr bool greater_equal(T a, T b) {
+    return greater_equal(a, b, internals::numeric_tolerance<T>);
+}
+// tests whether a is less than b or equal within tolerance
 template <typename T>
     requires(std::is_floating_point_v<T>)
 constexpr bool less_equal(T a, T b, T epsilon) {
-    return (b - a) >= ((fdapde::fabs(a) < fdapde::fabs(b) ? fdapde::fabs(b) : fdapde::fabs(a)) * epsilon);
+    fdapde_assert(epsilon >= 0, std::invalid_argument, "tolerance must be nonnegative");
+    return a < b || almost_equal(a, b, epsilon);
 }
-template <typename T> constexpr bool less_equal(T a, T b) { return less_equal(a, b, double_tolerance); }
+// tests whether a is less than b or equal within the default tolerance
+template <typename T>
+    requires(std::is_floating_point_v<T>)
+constexpr bool less_equal(T a, T b) { return less_equal(a, b, internals::numeric_tolerance<T>); }
+// tests whether a exceeds b beyond the tolerance
+template <typename T>
+    requires(std::is_floating_point_v<T>)
+constexpr bool greater_than(T a, T b, T epsilon) {
+    fdapde_assert(epsilon >= T(0), std::invalid_argument, "tolerance must be nonnegative");
+    return a > b && !almost_equal(a, b, epsilon);
+}
+// tests whether a exceeds b beyond the default tolerance
+template <typename T>
+    requires(std::is_floating_point_v<T>)
+constexpr bool greater_than(T a, T b) {
+    return greater_than(a, b, internals::numeric_tolerance<T>);
+}
+// tests whether a is below b beyond the tolerance
+template <typename T>
+    requires(std::is_floating_point_v<T>)
+constexpr bool less_than(T a, T b, T epsilon) {
+    fdapde_assert(epsilon >= 0, std::invalid_argument, "tolerance must be nonnegative");
+    return a < b && !almost_equal(a, b, epsilon);
+}
+// tests whether a is below b beyond the default tolerance
+template <typename T>
+    requires(std::is_floating_point_v<T>)
+constexpr bool less_than(T a, T b) { return less_than(a, b, internals::numeric_tolerance<T>); }
+// tests whether the magnitude of a is below the tolerance, including zero
 template <typename T>
     requires(std::is_floating_point_v<T>)
 constexpr bool almost_zero(T a, T epsilon) {
-    return fdapde::fabs(a) < epsilon;
+    fdapde_assert(epsilon >= 0, std::invalid_argument, "tolerance must be nonnegative");
+    return a == T(0) || fdapde::fabs(a) < epsilon;
 }
-template <typename T> constexpr bool almost_zero(T a) { return almost_zero(a, machine_epsilon); }
+// tests whether a is near zero using a tolerance based on its scalar precision
+template <typename T>
+    requires(std::is_floating_point_v<T>)
+constexpr bool almost_zero(T a) { return almost_zero(a, 50 * std::numeric_limits<T>::epsilon()); }
 
-// constexpr square root
+// computes the square root of x
 template <typename T>
     requires(std::is_floating_point_v<T>)
 constexpr T sqrt(T x) {
-    auto heron_method = [](T x) {
-        T curr = x, prev = 0;
-        while (fdapde::abs(curr - prev) > machine_epsilon) {
-            prev = curr;
-            curr = 0.5 * (curr + x / curr);
-        }
-        return curr;
-    };
-    return x >= 0 && x < std::numeric_limits<T>::infinity() ? heron_method(x) : std::numeric_limits<T>::quiet_NaN();
+    fdapde_assert(!(x < 0), std::domain_error, "sqrt not defined for negative arguments");
+    if (!std::is_constant_evaluated()) return std::sqrt(x);
+    if (x < 0 || x != x) return std::numeric_limits<T>::quiet_NaN();
+    if (x == 0 || x == std::numeric_limits<T>::infinity()) return x;
+    // scale into [1,4) so heron's iteration is safe at both ends of the floating-point range
+    T scale = 1;
+    while (x < 1) {
+        x *= 4;
+        scale *= 0.5;
+    }
+    while (x >= 4) {
+        x *= 0.25;
+        scale *= 2;
+    }
+    T curr = x, prev = 0;
+    while (fdapde::abs(curr - prev) > std::numeric_limits<T>::epsilon() * curr) {
+        prev = curr;
+        curr = 0.5 * (curr + x / curr);
+    }
+    return curr * scale;
 }
 
-// constexpr ceil
+// rounds x toward positive infinity when its integral part fits in long
 template <typename T> constexpr std::conditional_t<std::is_floating_point_v<T>, T, double> ceil(T x) {
     long int int_part = static_cast<long int>(x);
     return (x > 0.0 && x != static_cast<T>(int_part)) ? int_part + 1.0 : int_part;
 }
-// constexpr floor
+// rounds x toward negative infinity when its integral part fits in long
 template <typename T> constexpr std::conditional_t<std::is_floating_point_v<T>, T, double> floor(T x) {
     long int int_part = static_cast<long int>(x);
     return (x < 0.0 && x != static_cast<T>(int_part)) ? int_part - 1.0 : int_part;
 }
 
-// constexpr sign function
-template <typename T> constexpr int sign(T x) { return x >= 0 ? 1 : 0; }
+// returns -1, 0, or 1 according to the sign of x
+template <typename T> constexpr int sign(T x) { return (T(0) < x) - (x < T(0)); }
 
-// constexpr pow, only integer exponent support
+// computes base raised to an integer exponent without reciprocating an overflowing positive power
 template <typename BaseT, typename ExpT>
     requires(std::is_floating_point_v<BaseT> && internals::is_integer_v<ExpT>)
 constexpr BaseT pow(BaseT base, ExpT exp) {
-    if (exp == 0) return BaseT {1};
-    unsigned int abs_exp = static_cast<unsigned int>((exp < 0) ? -exp : exp);
-    BaseT result = BaseT {1};
+    if (exp == 0) return 1;
+    using uexp_t = std::make_unsigned_t<std::remove_cvref_t<ExpT>>;
+    const uexp_t uexp = static_cast<uexp_t>(exp);
+    uexp_t abs_exp = exp < 0 ? uexp_t(0) - uexp : uexp;
+    if (exp < 0) base = BaseT(1) / base;
+    BaseT result = 1;
     while (abs_exp > 0) {
-        if (abs_exp % 2 == 1) result *= base;
-        base *= base;
-        abs_exp /= 2;
+        if (abs_exp & 1) result *= base;
+        abs_exp >>= 1;
+        if (abs_exp != 0) base *= base;
     }
-    return exp < 0 ? BaseT {1} / result : result;
+    return result;
 }
 
-// constexpr ldexp, computes num * 2^exp
-template <typename BaseT, typename ExpT>
-    requires(std::is_floating_point_v<BaseT> && internals::is_integer_v<ExpT>)
-constexpr BaseT ldexp(BaseT num, ExpT exp) {
-    if (num == 0.0) return num;  // preserve signed zero
-    if (num != num) return std::numeric_limits<double>::quiet_NaN();
-    if (num == std::numeric_limits<double>::infinity() || num == -std::numeric_limits<double>::infinity())
-        return num;
-
-    constexpr std::uint64_t SIGN_MASK = 0x8000000000000000ULL;
-    constexpr std::uint64_t EXP_MASK  = 0x7FF0000000000000ULL;
-    constexpr std::uint64_t MANT_MASK = 0x000FFFFFFFFFFFFFULL;
-
-    auto u = std::bit_cast<std::uint64_t>(num);   // recover bit representation of num
-    int exponent = static_cast<int>((u & EXP_MASK) >> 52);
-    std::uint64_t mantissa = u & MANT_MASK;
-    std::uint64_t sign = u & SIGN_MASK;
-
-    if (exponent == 0) {   // subnormal number
-        while ((mantissa & (1ULL << 52)) == 0) {
-            mantissa <<= 1;
-            exponent--;
-        }
-        mantissa &= MANT_MASK;
-        exponent++;
+// computes num * 2^exp
+template <typename T>
+    requires(std::is_floating_point_v<T>)
+constexpr T ldexp(T num, int exp) {
+    if (!std::is_constant_evaluated()) return std::ldexp(num, exp);
+    using bits_t = internals::floating_point_bits<T>;
+    using uint_t = typename bits_t::uint_t;
+    const auto representation = std::bit_cast<uint_t>(num);
+    const auto sign = representation & bits_t::sign_mask;
+    auto mantissa = representation & bits_t::fraction_mask;
+    int exponent = static_cast<int>((representation >> bits_t::fraction_bits) & bits_t::exponent_mask);
+    if (exponent == bits_t::exponent_mask || (exponent == 0 && mantissa == 0)) return num;
+    if (exponent == 0) {
+        const int shift = std::countl_zero(mantissa) - bits_t::leading_bits;
+        mantissa <<= shift;
+        exponent = 1 - shift;
+    } else {
+        mantissa |= uint_t(1) << bits_t::fraction_bits;
     }
-    if (exponent == 0x7FF) { return num; }   // NaN/inf
+    // compare before adding so even int_min and int_max exponents cannot overflow
+    if (exp > bits_t::exponent_mask - 1 - exponent)
+        return std::bit_cast<T>(sign | (uint_t(bits_t::exponent_mask) << bits_t::fraction_bits));
+    if (exp < -bits_t::fraction_bits - exponent) return std::bit_cast<T>(sign);
     exponent += exp;
-    if (exponent <= 0) { return sign ? -0.0 : 0.0; }   // underflow
-    if (exponent >= 0x7FF) {                           // overflow
-        return sign ? -std::numeric_limits<double>::infinity() : std::numeric_limits<double>::infinity();
+    if (exponent > 0) {
+        return std::bit_cast<T>(sign | (uint_t(exponent) << bits_t::fraction_bits) | (mantissa & bits_t::fraction_mask));
     }
-    // reconstruct IEEE 753 representation
-    return std::bit_cast<double>(sign | ((static_cast<std::uint64_t>(exponent) << 52) & EXP_MASK) | mantissa);
+    // shift into the subnormal range once, retaining discarded bits for correct rounding
+    const int shift = 1 - exponent;
+    const auto remainder = mantissa & ((uint_t(1) << shift) - 1);
+    const auto halfway = uint_t(1) << (shift - 1);
+    mantissa >>= shift;
+    if (remainder > halfway || (remainder == halfway && (mantissa & 1))) ++mantissa;
+    // rounding can carry into the smallest normal number, whose encoding is also valid here
+    return std::bit_cast<T>(sign | mantissa);
 }
 
-// constexpr exp
-constexpr double exp(double x) {
-    constexpr double ln2    = 0.69314718055994530941723212145817656;   // ln(2)
-    constexpr double invln2 = 1.44269504088896340735992468100189214;   // 1/ln(2)
-    // polynomial coefficients for exp(r) Taylor's expansion on [-ln2/2, ln2/2]
-    constexpr double C1 = 1.0;
-    constexpr double C2 = 1.0;                         // 1
-    constexpr double C3 = 0.5;                         // 1/2
-    constexpr double C4 = 1.66666666666666657415e-1;   // 1/6
-    constexpr double C5 = 4.16666666666666643537e-2;   // 1/24
-    constexpr double C6 = 8.33333333333333321769e-3;   // 1/120
-    constexpr double C7 = 1.38888888888888894189e-3;   // 1/720
+// computes the exponential of x
+template <typename T>
+    requires(std::is_floating_point_v<T>)
+constexpr T exp(T x) {
+    if (!std::is_constant_evaluated()) return std::exp(x);
+    if (x != x) return x;
+    constexpr T overflow_limit  = std::is_same_v<T, float> ? T( 88.72283905206835) : T( 709.782712893384);
+    constexpr T underflow_limit = std::is_same_v<T, float> ? T(-103.9720770839918) : T(-745.133219101941);
+    if (x > overflow_limit ) return std::numeric_limits<T>::infinity();
+    if (x < underflow_limit) return 0;
+    constexpr T ln2_hi = std::is_same_v<T, float> ? T(6.9313812255859375e-01) : T(6.93147180369123816490e-01);
+    constexpr T ln2_lo = std::is_same_v<T, float> ? T(9.0580006145387890e-06) : T(1.90821492927058770002e-10);
+    const int k = static_cast<int>(x * T(1.44269504088896340736) + T(sign(x)) * T(0.5));
+    const T r = (x - T(k) * ln2_hi) - T(k) * ln2_lo;
+    T result = 1, term = 1;
+    for (int i = 1; i <= 18; ++i) {
+        term *= r / T(i);
+        result += term;
+    }
+    return fdapde::ldexp(result, k);
+}
 
-    if (x != x) return std::numeric_limits<double>::quiet_NaN();
-    if (x >  709.782712893384) return std::numeric_limits<double>::infinity();
-    if (x < -745.133219101941) return 0.0;
-    // reduction
-    int k = static_cast<int>(x * invln2 + sign(x) * 0.5);
-    double r = x - k * ln2;
-    // Talyor expansion evaluation by horner
-    double R = ((((((C7 * r + C6) * r + C5) * r + C4) * r + C3) * r + C2) * r + C1);
-    return ldexp(R, k);
-};
+// computes floor(log2(|x|))
+template <typename T>
+    requires(std::is_floating_point_v<T>)
+constexpr int ilogb(T x) {
+    if (!std::is_constant_evaluated()) return std::ilogb(x);
+    using bits_t = internals::floating_point_bits<T>;
+    using uint_t = typename bits_t::uint_t;
+    const auto bits = std::bit_cast<uint_t>(x);
+    const auto mantissa = bits & bits_t::fraction_mask;
+    const int exponent = static_cast<int>((bits >> bits_t::fraction_bits) & bits_t::exponent_mask);
+    if (exponent == bits_t::exponent_mask) return mantissa == 0 ? std::numeric_limits<int>::max() : FP_ILOGBNAN;
+    if (exponent == 0) {
+        if (mantissa == 0) return FP_ILOGB0;
+        const int shift = std::countl_zero(mantissa) - bits_t::leading_bits;
+        return 1 - bits_t::exponent_bias - shift;
+    }
+    return exponent - bits_t::exponent_bias;
+}
 
-// constexpr ilogb: integer log2 of |x|: floor(\log_2(|x|))
-constexpr int ilogb(double x) {
-    if (x == 0.0) return std::numeric_limits<int>::min();   // FP_ILOGB0
-    if (x != x)   return std::numeric_limits<int>::max();   // FP_ILOGBNAN
+// decomposes num into a signed fraction and a binary exponent
+template <typename T>
+    requires(std::is_floating_point_v<T>)
+constexpr T frexp(T num, int& out) {
+    if (!std::is_constant_evaluated()) return std::frexp(num, &out);
+    using bits_t = internals::floating_point_bits<T>;
+    using uint_t = typename bits_t::uint_t;
+    const auto bits = std::bit_cast<uint_t>(num);
+    auto mantissa = bits & bits_t::fraction_mask;
+    int exponent = static_cast<int>((bits >> bits_t::fraction_bits) & bits_t::exponent_mask);
+    out = 0;
+    if (exponent == bits_t::exponent_mask || (exponent == 0 && mantissa == 0)) return num;
+    if (exponent == 0) {
+        const int shift = std::countl_zero(mantissa) - bits_t::leading_bits;
+        mantissa = (mantissa << shift) & bits_t::fraction_mask;
+        exponent = 1 - shift;
+    }
+    out = exponent - (bits_t::exponent_bias - 1);
+    return std::bit_cast<T>(
+      (bits & bits_t::sign_mask) | (uint_t(bits_t::exponent_bias - 1) << bits_t::fraction_bits) | mantissa);
+}
 
-    std::uint64_t bits = std::bit_cast<std::uint64_t>(x < 0 ? -x : x);   // recover bit expression
-    int exp = static_cast<int>((bits >> 52) & 0x7FF);
-    if (exp == 0) {   // subnormal
-        int shift = 0;
-        while ((bits & (1ULL << 52)) == 0) {
-            bits <<= 1;
-            ++shift;
+// computes the natural logarithm of x
+template <typename T>
+    requires(std::is_floating_point_v<T>)
+constexpr T log(T x) {
+    fdapde_assert(!(x < 0), std::domain_error, "logarithm not defined for negative arguments");
+    if (!std::is_constant_evaluated()) return std::log(x);
+
+    if (x < 0 || x != x) return std::numeric_limits<T>::quiet_NaN();
+    if (x == 0) return -std::numeric_limits<T>::infinity();
+    if (x == std::numeric_limits<T>::infinity()) return x;
+    int k = 0;
+    T m = fdapde::frexp(x, k);
+    if (m < T(0.70710678118654752440)) {
+        m *= T(2);
+        --k;
+    }
+    const T z = (m - T(1)) / (m + T(1)), z2 = z * z;
+    T term = z, sum = z;
+    for (int i = 3; i <= 49; i += 2) {
+        term *= z2;
+        sum += term / T(i);
+    }
+    constexpr T ln2_hi = std::is_same_v<T, float> ? T(6.9313812255859375e-01) : T(6.93147180369123816490e-01);
+    constexpr T ln2_lo = std::is_same_v<T, float> ? T(9.0580006145387890e-06) : T(1.90821492927058770002e-10);
+    return T(k) * ln2_hi + (T(2) * sum + T(k) * ln2_lo);
+}
+
+// computes the natural logarithm of 1 + x without cancellation near zero
+template <typename T>
+    requires(std::is_floating_point_v<T>)
+constexpr T log1p(T x) {
+    fdapde_assert(x >= -1, std::domain_error, "log1p(x) requires x >= -1");
+    if (!std::is_constant_evaluated()) return std::log1p(x);
+
+    if (x == 0 || x != x) return x;
+    if (fdapde::fabs(x) < std::numeric_limits<T>::epsilon()) return x;
+    if (x < -1) return std::numeric_limits<T>::quiet_NaN();
+    if (x == -1) return -std::numeric_limits<T>::infinity();
+    if (x > -0.5 && x < 0.5) {
+        const T z = x / (2 + x), z2 = z * z;
+        T term = z, sum = z;
+        for (int i = 3; i <= 69; i += 2) {
+            term *= z2;
+            sum += term / T(i);
         }
-        return -1022 - shift + 1;
+        return 2 * sum;
     }
-    return exp - 1023;   // remove IEEE bias
+    const T u = 1 + x;
+    if (u == std::numeric_limits<T>::infinity()) return u;
+    return fdapde::log(u) - ((u - 1) - x) / u;
 }
 
-// constexpr frexp: scales x's mantissa in range [0.5,1), store exponent in out such that x * 2^exp = num
-constexpr double frexp(double x, int& out) {
-    if (x == 0.0) {
-        out = 0;
-        return 0.0;
-    }
-    std::uint64_t bits = std::bit_cast<std::uint64_t>(x);   // reover bit expression
-    int exp = static_cast<int>((bits >> 52) & 0x7FF);
-    if (exp == 0) {   // subnormal
-        while ((bits & (1ULL << 52)) == 0) bits <<= 1;
-        exp = 1;
-    }
-    out = exp - 1022;  // force mantissa into [0.5,1)
-
-    // mask exponent and replace with 1022 (0x3FE)
-    return std::bit_cast<double>((bits & ((1ULL << 52) - 1)) | (0x3FEULL << 52));
-}
-
-// constexpr log (inspired from fdlibm)
-constexpr double log(double x) {
-    // constants split for accuracy
-    constexpr double ln2_hi = 6.93147180369123816490e-01;
-    constexpr double ln2_lo = 1.90821492927058770002e-10;
-    // polynomial coefficients (credits: fdlibm)
-    constexpr double Lg1 = 6.666666666666735130e-01;
-    constexpr double Lg2 = 3.999999999940941908e-01;
-    constexpr double Lg3 = 2.857142874366239149e-01;
-    constexpr double Lg4 = 2.222219843214978396e-01;
-    constexpr double Lg5 = 1.818357216161805012e-01;
-    constexpr double Lg6 = 1.531383769920937332e-01;
-    constexpr double Lg7 = 1.479819860511658591e-01;
-
-    if (x < 0.0 || x != x) { return std::numeric_limits<double>::quiet_NaN(); }
-    if (x == 0.0 || x == std::numeric_limits<double>::infinity()) { return -std::numeric_limits<double>::infinity(); }
-    // decompose
-    int k;
-    double m = fdapde::frexp(x, k);   // x = m * 2^k, m in [0.5,1)
-    // range reduction
-    double f = m - 1.0;   // in [-0.5,0)
-    double s = f / (2.0 + f);
-    double z = s * s;
-    // approximate log(1 + z) for small f, with z = s * s, s = f/(2 + f). Perform Horner evaluation of taylor expansion
-    double R = z*(Lg1 + z*(Lg2 + z*(Lg3 + z*(Lg4 + z*(Lg5 + z*(Lg6 + z*Lg7))))));
-    double hfsq = 0.5 * f * f;
-    return k * ln2_hi - ((hfsq - (s * (hfsq + R) + k * ln2_lo)) - f);
-}
-
-// constexpr log1p
-constexpr double log1p(double x) {
-    if (x == 0.0) { return 0.0; }
-    if (x == -1.0) { return -std::numeric_limits<double>::infinity(); }   // log(0)
-    if (x < -1.0) { return std::numeric_limits<double>::quiet_NaN(); }    // log of negative value
-
-    // for small x, use series expansion
-    if (x > -1e-8 && x < 1e-8) {
-        double x2 = x * x;
-        double x3 = x2 * x;
-        double x4 = x3 * x;
-        return x - 0.5 * x2 + x3 / 3.0 - x4 / 4.0;
-    }
-    return fdapde::log(1.0 + x);   // fallback to standard log
-}
-
-// numerical stable log(1 + exp(x)) computation (see "Machler, M. (2012). Accurately computing log(1-exp(-|a|))")
+// computes log(1 + exp(x)) using range-dependent approximations
 template <typename T>
     requires(std::is_floating_point_v<T>)
 constexpr T log1pexp(T x) {
@@ -309,7 +438,6 @@ constexpr T log1pexp(T x) {
     return x + fdapde::exp(-x);
 }
 
-  
 }   // namespace fdapde
 
-#endif   // __FDAPDE_NUMERIC_H__
+#endif   // __fdapde_numeric_h__
