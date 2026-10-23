@@ -25,6 +25,7 @@
 #include <memory>
 #include <mutex>
 #include <stdexcept>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -57,6 +58,22 @@ struct large_copyable_task {
     void operator()() { observations->push_back(++*local_count); }
 };
 
+struct throwing_graph_task {
+    std::shared_ptr<int> resource;
+    int* copies;
+    int* fail_at;
+    std::atomic<int>* runs;
+
+    throwing_graph_task(std::shared_ptr<int> resource_, int& copies_, int& fail_at_, std::atomic<int>& runs_) :
+        resource(std::move(resource_)), copies(&copies_), fail_at(&fail_at_), runs(&runs_) { }
+    throwing_graph_task(const throwing_graph_task& other) :
+        resource(other.resource), copies(other.copies), fail_at(other.fail_at), runs(other.runs) {
+        if (++*copies == *fail_at) { throw std::runtime_error("graph task copy failed"); }
+    }
+    throwing_graph_task(throwing_graph_task&&) = default;
+    void operator()() { runs->fetch_add(1, std::memory_order_relaxed); }
+};
+
 }   // namespace
 
 TEST(execution, task_graph) {
@@ -78,6 +95,9 @@ TEST(execution, task_graph) {
         fdapde::parallel_execute(graph);
         EXPECT_EQ(observed.load(std::memory_order_acquire), 3);
     }
+#ifndef FDAPDE_NO_DEBUG
+    // Assertion failures run in a fresh process, independently of the active worker pool.
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
     // cycle rejection
     {
         std::atomic<int> runs {0};
@@ -88,7 +108,7 @@ TEST(execution, task_graph) {
         second.precedes(first);
 
         EXPECT_TRUE(graph.has_cycles());
-        EXPECT_THROW(fdapde::parallel_execute(graph), std::invalid_argument);
+        EXPECT_DEATH(fdapde::parallel_execute(graph), "acyclic");
         EXPECT_EQ(runs.load(std::memory_order_relaxed), 0);
     }
     // cross-graph edge rejection
@@ -98,10 +118,11 @@ TEST(execution, task_graph) {
         auto left_node = left.add_node([] { });
         auto right_node = right.add_node([] { });
 
-        EXPECT_THROW(left_node.precedes(right_node), std::invalid_argument);
+        EXPECT_DEATH(left_node.precedes(right_node), "assertion");
         EXPECT_EQ(left.n_edges(), 0);
         EXPECT_EQ(right.n_edges(), 0);
     }
+#endif
     // independent copies of heap-backed tasks
     {
         auto observations = std::make_shared<std::vector<int>>();
@@ -118,6 +139,59 @@ TEST(execution, task_graph) {
 
         ASSERT_EQ(observations->size(), 3u);
         EXPECT_EQ(*observations, (std::vector<int> {1, 1, 1}));
+    }
+    // Preparation failures destroy all unpublished tasks and never run a partial graph.
+    {
+        auto resource = std::make_shared<int>(0);
+        int copies = 0;
+        int fail_at = 0;
+        std::atomic<int> runs {0};
+        fdapde::TaskGraph graph;
+        auto first = graph.add_node(throwing_graph_task(resource, copies, fail_at, runs));
+        auto second = graph.add_node(throwing_graph_task(resource, copies, fail_at, runs));
+        auto last = graph.add_node(throwing_graph_task(resource, copies, fail_at, runs));
+        last.succeeds(first, second);
+        const auto owners = resource.use_count();
+
+        auto preparation_failure = [&](int failure) {
+            copies = 0;
+            fail_at = failure;
+            try {
+                fdapde::parallel_execute(graph);
+            } catch (const std::runtime_error& error) {
+                return std::string(error.what()) == "graph task copy failed" && resource.use_count() == owners &&
+                       runs.load(std::memory_order_relaxed) == 0;
+            }
+            return false;
+        };
+        for (int failure : {1, 2, 3}) {
+            EXPECT_TRUE(preparation_failure(failure));
+            EXPECT_TRUE(fdapde::parallel_async([&] { return preparation_failure(failure); }).get());
+            fdapde::parallel_join();
+            EXPECT_EQ(resource.use_count(), owners);
+        }
+        fail_at = 0;
+        fdapde::parallel_execute(graph);
+        fdapde::parallel_join();
+        EXPECT_EQ(runs.load(std::memory_order_relaxed), 3);
+        EXPECT_EQ(resource.use_count(), owners);
+    }
+    // Independent graph submissions share the ready queue without retaining stale links.
+    {
+        std::atomic<int> runs {0};
+        std::vector<std::thread> submitters;
+        for (int i = 0; i < 4; ++i) {
+            submitters.emplace_back([&] {
+                fdapde::TaskGraph graph;
+                auto source = graph.add_node([&] { ++runs; });
+                auto sink = graph.add_node([&] { ++runs; });
+                sink.succeeds(source);
+                for (int repeat = 0; repeat < 8; ++repeat) { fdapde::parallel_execute(graph); }
+            });
+        }
+        for (auto& submitter : submitters) { submitter.join(); }
+        fdapde::parallel_join();
+        EXPECT_EQ(runs.load(), 64);
     }
     // dependent tasks release captured resources
     {

@@ -19,6 +19,7 @@
 
 #include <array>
 #include <climits>
+#include <cstdlib>
 #include <type_traits>
 
 namespace {
@@ -40,8 +41,7 @@ template <typename T> void check_numeric_scalar() {
     // absolute value clears the sign of negative values and negative zero
     static_assert(fdapde::fabs(T(-2)) == T(2));
     static_assert(std::bit_cast<uint_t>(fdapde::fabs(-T(0))) == 0);
-    // square root accepts zero and preserves positive infinity
-    static_assert(fdapde::sqrt(T(0)) == T(0));
+    // square root preserves positive infinity for valid inputs
     static_assert(fdapde::sqrt(infinity) == infinity);
     // integer powers handle negative and wide exponents, subnormal results, and zero to zero
     static_assert(fdapde::pow(T(2), -3) == T(0.125));
@@ -53,9 +53,8 @@ template <typename T> void check_numeric_scalar() {
     static_assert(fdapde::exp(T(0)) == T(1));
     static_assert(fdapde::exp(-infinity) == T(0));
     static_assert(fdapde::exp(infinity) == infinity);
-    // logarithm handles one, zero, and positive infinity during constant evaluation
+    // logarithm handles one and positive infinity during constant evaluation
     static_assert(fdapde::log(T(1)) == T(0));
-    static_assert(fdapde::log(T(0)) == -infinity);
     static_assert(fdapde::log(infinity) == infinity);
     // log1p preserves tiny inputs and returns negative infinity at its domain boundary
     static_assert(fdapde::log1p(T(-1)) == -infinity);
@@ -174,7 +173,6 @@ template <typename T> void check_numeric_scalar() {
 
     // exact equality satisfies non-strict comparisons but never strict comparisons
     static_assert(fdapde::almost_equal(T(1), T(1)));
-    static_assert(fdapde::almost_equal(T(1), T(1), T(0)));
     static_assert(fdapde::greater_equal(T(1), T(1)));
     static_assert(fdapde::less_equal(T(1), T(1)));
     static_assert(!fdapde::greater_than(T(1), T(1)));
@@ -196,7 +194,20 @@ template <typename T> void check_numeric_scalar() {
         const T expected = std::max(x, T(0)) + std::log1p(std::exp(-std::fabs(x)));
         EXPECT_NEAR(fdapde::log1pexp(x), expected, T(8) * limits::epsilon() * std::max(T(1), expected));
     }
+#ifndef FDAPDE_NO_DEBUG
+    // nonpositive square roots and logarithms, invalid log1p inputs and tolerances terminate
+    EXPECT_DEATH((void)fdapde::sqrt(T(-1)), "assertion .* failed in .*sqrt");
+    EXPECT_DEATH((void)fdapde::sqrt(T(0)), "assertion .* failed in .*sqrt");
+    EXPECT_DEATH((void)fdapde::log(T(-1)), "assertion .* failed in .*log");
+    EXPECT_DEATH((void)fdapde::log(T(0)), "assertion .* failed in .*log");
+    EXPECT_DEATH((void)fdapde::log1p(T(-2)), "assertion .* failed in .*log1p");
+    EXPECT_DEATH((void)fdapde::almost_equal(T(1), T(1), T(0)), "assertion .*tol > 0.* failed");
+    EXPECT_DEATH((void)fdapde::almost_equal(T(1), T(1), T(-1)), "assertion .*tol > 0.* failed");
+#endif
 }
+
+// assertions may be used inside noexcept functions without introducing exceptions
+void numeric_assert_noexcept() noexcept { fdapde_strong_assert(false, "noexcept failure"); }
 
 }   // namespace
 
@@ -236,4 +247,46 @@ TEST(math, numeric) {
     static_assert(fdapde::ceil(-1.25) == -1 && fdapde::floor(-1.25) == -2);
     static_assert(fdapde::ceil(1.25) == 2 && fdapde::floor(1.25) == 1);
     EXPECT_FALSE(std::signbit(fdapde::ceil(-0.25)));
+
+    // valid assertions remain usable during constant evaluation with an optional message
+    constexpr bool valid_assertions = [] {
+        fdapde_assert(true);
+        fdapde_assert(true, "valid assertion");
+        fdapde_strong_assert(true, "valid strong assertion");
+        return true;
+    }();
+    static_assert(valid_assertions);
+    // conditions are evaluated once and successful checks do not evaluate their messages
+    int condition_evaluations = 0, message_evaluations = 0;
+    fdapde_assert(++condition_evaluations == 1, (++message_evaluations, "unused message"));
+#ifdef FDAPDE_NO_DEBUG
+    EXPECT_EQ(condition_evaluations, 0);
+#else
+    EXPECT_EQ(condition_evaluations, 1);
+#endif
+    EXPECT_EQ(message_evaluations, 0);
+#ifndef FDAPDE_NO_DEBUG
+    // diagnostics capture the assertion call site, function signature and optional second line
+    EXPECT_EXIT(
+      {
+          std::set_terminate([] { std::_Exit(77); });
+          fdapde_assert(false, "optional diagnostic");
+      },
+      ::testing::ExitedWithCode(77),
+      "\\[.*numeric\\.cpp:[0-9]+\\] assertion \\(false\\) failed in [^\n]+\noptional diagnostic\n");
+    EXPECT_DEATH(fdapde_assert(false), "assertion \\(false\\) failed in ");
+    // invalid combinatorial input parameters terminate before entering their loops
+    EXPECT_DEATH((void)fdapde::fact(-1), "assertion .*n >= 0.* failed in .*fact");
+    EXPECT_DEATH((void)fdapde::binom(2, 3), "assertion .*m <= n.* failed in .*binom");
+    EXPECT_DEATH((void)fdapde::comb(3, 2), "assertion .*k <= n.* failed in .*comb");
+#endif
+    // strong assertions invoke terminate even in noexcept functions and disabled-debug builds
+    EXPECT_EXIT(
+      {
+          std::set_terminate([] { std::_Exit(77); });
+          numeric_assert_noexcept();
+      },
+      ::testing::ExitedWithCode(77),
+      "assertion \\(false\\) failed in [^\n]*numeric_assert_noexcept[^\n]*\nnoexcept failure\n");
+
 }

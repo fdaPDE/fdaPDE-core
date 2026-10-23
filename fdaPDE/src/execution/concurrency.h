@@ -23,7 +23,6 @@
 #ifdef __linux__
 
 #    include <sched.h>
-#    include <unistd.h>
 
 #endif
 
@@ -48,30 +47,21 @@ inline std::optional<std::size_t> get_env_concurrency_count(const char* envvar) 
 }   // namespace internals
 
 inline std::size_t available_concurrency() noexcept {
-    // first, check if the process is scheduler-managed
-
-    // detect the number of reserved cpus for processes running under:
-    // open Portable Batch System (openPBS)
-    if (auto PBS_NCPUS = internals::get_env_concurrency_count("NCPUS")) { return *PBS_NCPUS; }
-    // SLURM
-    if (auto SLURM_NCPUS = internals::get_env_concurrency_count("SLURM_CPUS_ON_NODE")) { return *SLURM_NCPUS; }
-    // check if OpenMP has been configured
-    if (auto OMP_NCPUS = internals::get_env_concurrency_count("OMP_NUM_THREADS")) { return *OMP_NCPUS; }
-
-    // second, check OS-specific settings
 #ifdef __linux__
-    // on Linux, job schedulers limit the number of CPUs per process by setting the process CPU affinity mask
     cpu_set_t set;
     CPU_ZERO(&set);
     if (sched_getaffinity(0, sizeof(set), &set) == 0) {
-        int ncpus = CPU_COUNT(&set);
-        const unsigned int hardware_concurrency = std::thread::hardware_concurrency();
-        if (ncpus > 0 && (hardware_concurrency == 0 || static_cast<unsigned int>(ncpus) < hardware_concurrency)) {
-            return static_cast<std::size_t>(ncpus);
-        }
+        const int ncpus = CPU_COUNT(&set);
+        if (ncpus > 0) { return static_cast<std::size_t>(ncpus); }
     }
 #endif
-    // if all of the previous failed, fallbacks to number of physical CPU cores
+
+    // without an affinity count, fall back to scheduler/OpenMP hints.
+    if (auto PBS_NCPUS   = internals::get_env_concurrency_count("NCPUS")) { return *PBS_NCPUS; }
+    if (auto SLURM_NCPUS = internals::get_env_concurrency_count("SLURM_CPUS_ON_NODE")) { return *SLURM_NCPUS; }
+    if (auto OMP_NCPUS   = internals::get_env_concurrency_count("OMP_NUM_THREADS")) { return *OMP_NCPUS; }
+
+    // fall back to the reported logical CPU count, or one if it is unknown.
     const unsigned int ncpus = std::thread::hardware_concurrency();
     return ncpus > 0 ? ncpus : 1;
 }

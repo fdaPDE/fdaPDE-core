@@ -76,8 +76,9 @@ template <typename T> struct pool_allocator {
             used_slots_ = 0;
         }
         void* storage = block_list_->data()[used_slots_].storage;
+        pointer object = ::new (storage) value_type(std::forward<Args>(args)...);
         used_slots_++;
-        return ::new (storage) value_type(std::forward<Args>(args)...);
+        return object;
     }
     // concurrently deallocate memory reserved to ptr
     void deallocate(pointer ptr) {
@@ -100,8 +101,9 @@ template <typename T> struct pool_allocator {
    private:
     template <typename... Args> pointer construct_at_free_slot_(Args&&... args) {
         slot_type* slot = free_list_;
+        pointer object = ::new (static_cast<void*>(slot->storage)) value_type(std::forward<Args>(args)...);
         free_list_ = slot->next;
-        return ::new (static_cast<void*>(slot->storage)) value_type(std::forward<Args>(args)...);
+        return object;
     }
     const size_type block_sz_;
     size_type used_slots_;     // number of used slots in last block
@@ -343,15 +345,12 @@ struct worker {
     // allows an external worker to perform a stealing attempt on this worker task_queue
     std::optional<task_pointer> try_steal() { return task_queue_.pop_back(); }
     // tries to execute a task, if any. usec in active join loops
-    template <typename Executor> void try_execute_one(Executor* e) {
+    template <typename Executor> bool try_execute_one(Executor* e) {
         std::optional<task_pointer> task = try_fetch_task_();
-        if (task) {
-            try_execute_task_(e, *task);
-        } else {
-            std::optional<task_pointer> task = e->try_steal(worker_id_);
-            if (task) { try_execute_task_(e, *task); }
-        }
-        return;
+        if (!task) { task = e->try_steal(worker_id_); }
+        if (!task) return false;
+        try_execute_task_(e, *task);
+        return true;
     }
    private:
     // fetches a task. The task is obtained either from the local task queue or from the inbound task_buffer.
@@ -376,6 +375,7 @@ struct worker {
     }
     // for a runnable task, acquires, executes and notifies its completion
     template <typename Executor> void try_execute_task_(Executor* e, task_pointer task) {
+        e->on_task_taken();
         if (!task->runnable()) {
             // a non runnable task is removed from any working queue but not from its task_pool. the task will
             // be eventually re-enqueued and executed as a result of a notification event

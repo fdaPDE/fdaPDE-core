@@ -76,14 +76,21 @@ struct threaded_executor_impl {
     // constructor
     threaded_executor_impl() : threaded_executor_impl(fdapde::available_concurrency()) { }
     explicit threaded_executor_impl(size_type size) :
-        n_workers_(validate_size_(size)),
-        init_latch_(n_workers_ + 1),
-        stealing_policy_(n_workers_),
-        scheduling_policy_(n_workers_) {
+        n_workers_(size), init_latch_(n_workers_ + 1), stealing_policy_(n_workers_), scheduling_policy_(n_workers_) {
         workers_.reserve(n_workers_);
         // start workers
         for (size_type i = 0; i < n_workers_; i++) {
-            workers_.emplace_back(std::make_unique<internals::worker>(i, this));
+            try {
+                workers_.emplace_back(std::make_unique<internals::worker>(i, this));
+            } catch (...) {
+                active_.store(false, std::memory_order_release);
+                // supply fake arrivals for workers that never started, plus the coordinator thread
+                init_latch_.count_down(n_workers_ + 1 - workers_.size());
+                for (auto& worker : workers_) {
+                    if (worker->joinable()) { worker->join(); }
+                }
+                throw;
+            }
         }
         // wait workers to be ready, avoids executor destruction before worker construction
         init_latch_.arrive_and_wait();
@@ -128,25 +135,23 @@ struct threaded_executor_impl {
     template <typename Task> task_pointer allocate_task(int worker, Task&& task) {
         return workers_[worker]->allocate_task(std::forward<Task>(task));
     }
-    // schedules a previously allocated task for execution. worker is not notified
-    void enqueue_task(task_pointer task) {
-        int worker = scheduling_policy_.pick();
-        workers_[worker]->enqueue_task(task);
-    }
-    void notify_all() { cv_.notify_all(); }
-    // reserves accounting for a group of preallocated tasks
-    void reserve_tasks(size_type task_count) {
-        std::lock_guard<std::mutex> lock(m_);
-        if (task_count > std::numeric_limits<size_type>::max() - task_count_) {
-            throw std::overflow_error("execution task counter overflow");
+    // Publish an entire prepared graph without allocating queue nodes.
+    void submit_graph(const std::vector<task_pointer>& tasks, const std::vector<int>& sources) {
+        {
+            std::lock_guard<std::mutex> lock(m_);
+            if (tasks.size() > std::numeric_limits<size_type>::max() - task_count_) {
+                throw std::overflow_error("execution task counter overflow");
+            }
+            task_count_ += tasks.size();
+            for (int source : sources) { enqueue_graph_task_(tasks[source]); }
         }
-        task_count_ += task_count;
+        cv_.notify_all();
     }
+    // Destroy a prepared task that was never submitted.
+    void deallocate_task(task_pointer task) { workers_[task->allocation_context().value()]->deallocate_task(task); }
     // blocks caller until all tasks queued in the pool have been executed
     void join() {
-        if (this_thread_id() != main_thread_id) {
-            throw std::logic_error("parallel_join cannot be called from an executor worker");
-        }
+        if (this_thread_id() != main_thread_id) return;
         std::unique_lock<std::mutex> lock(m_);
         cv_.wait(lock, [&]() { return task_count_ == 0; });
     }
@@ -158,7 +163,12 @@ struct threaded_executor_impl {
     void active_join(int worker_id, Condition&& cond) {
         while (cond()) {
             if (worker_id != main_thread_id) {
-                workers_[worker_id]->try_execute_one(this);
+                if (!workers_[worker_id]->try_execute_one(this)) {
+                    std::unique_lock<std::mutex> lock(m_);
+                    cv_.wait(lock, [&] {
+                        return queued_task_count_ != 0 || !cond() || !active_.load(std::memory_order_acquire);
+                    });
+                }
             } else {
                 std::unique_lock<std::mutex> lock(m_);
                 cv_.wait(lock, [&]() { return !cond() || !active_.load(std::memory_order_acquire); });
@@ -178,14 +188,14 @@ struct threaded_executor_impl {
     // destructor
     ~threaded_executor_impl() { stop(); }
    private:
-    static size_type validate_size_(size_type size) {
-        if (size == 0 || size > static_cast<size_type>(std::numeric_limits<int>::max())) {
-            throw std::invalid_argument("executor size must be a positive int");
-        }
-        return size;
-    }
     // woorker coordination utilities
     friend worker_type;
+    // invoked after a task has been removed from a queue, before it is executed
+    void on_task_taken() {
+        std::lock_guard<std::mutex> lock(m_);
+        fdapde_assert(queued_task_count_ > 0);
+        queued_task_count_--;
+    }
     // invoked by a worker to signal the completion of a task
     void on_task_complete(task_pointer task) {
         // decrease ref count, dispatch completed successors back for execution
@@ -196,7 +206,7 @@ struct threaded_executor_impl {
         workers_[allocation_context]->deallocate_task(task);
 
         std::lock_guard<std::mutex> lock(m_);
-        if (task_count_ == 0) { std::terminate(); }
+        fdapde_assert(task_count_ > 0);
         task_count_--;
         cv_.notify_all();
         return;
@@ -206,11 +216,20 @@ struct threaded_executor_impl {
     // invoked by a worker to decide whether to move to an idle state
     void on_worker_idle() {
         std::unique_lock<std::mutex> lock(m_);
-        cv_.wait(lock, [&]() { return (task_count_ != 0) || !active_; });
+        cv_.wait(lock, [&]() { return queued_task_count_ != 0 || !active_.load(std::memory_order_acquire); });
     }
     // invoked by a worker to perform a stealing attempt
     std::optional<task_pointer> try_steal(int thief_id) {
-        return stealing_policy_.pick(thief_id, [&](int victim) { return workers_[victim]->try_steal(); });
+        if (auto task = stealing_policy_.pick(thief_id, [&](int victim) { return workers_[victim]->try_steal(); })) {
+            return task;
+        }
+        std::lock_guard<std::mutex> lock(m_);
+        if (graph_ready_head_ == nullptr) return std::nullopt;
+        task_pointer task = graph_ready_head_;
+        graph_ready_head_ = task->next_ready_;
+        if (graph_ready_head_ == nullptr) { graph_ready_tail_ = nullptr; }
+        task->next_ready_ = nullptr;
+        return task;
     }
 
     // allocates and submits task to the pool. notifies all workers for execution
@@ -231,7 +250,7 @@ struct threaded_executor_impl {
             throw std::overflow_error("execution task counter overflow");
         }
         try {
-            workers_[w_id]->enqueue_task(task_ptr);
+            enqueue_task_(w_id, task_ptr);
         } catch (...) {
             workers_[w_id]->deallocate_task(task_ptr);
             std::lock_guard<std::mutex> lock(m_);
@@ -242,12 +261,31 @@ struct threaded_executor_impl {
         cv_.notify_all();
         return;
     }
-    // submits an already allocated task for execution.
+    // Release a prepared graph successor without allocating from a worker thread.
     void renqueue_task_(task_pointer task) {
-        int w_id = scheduling_policy_.pick();
-        workers_[w_id]->enqueue_task(task);
+        {
+            std::lock_guard<std::mutex> lock(m_);
+            enqueue_graph_task_(task);
+        }
         cv_.notify_all();
-        return;
+    }
+    // Caller holds m_; the link is part of the already allocated task.
+    void enqueue_graph_task_(task_pointer task) noexcept {
+        task->next_ready_ = nullptr;
+        if (graph_ready_tail_ != nullptr) {
+            graph_ready_tail_->next_ready_ = task;
+        } else {
+            graph_ready_head_ = task;
+        }
+        graph_ready_tail_ = task;
+        queued_task_count_++;
+    }
+
+    // submit task to execution queue, keeping track of number of queued tasks
+    void enqueue_task_(int worker, task_pointer task) {
+        std::lock_guard<std::mutex> lock(m_);
+        workers_[worker]->enqueue_task(task);
+        queued_task_count_++;
     }
 
     std::vector<worker_pointer> workers_;   // worker pool
@@ -256,7 +294,10 @@ struct threaded_executor_impl {
     stealing_policy stealing_policy_;       // stealing algorithm
     scheduling_policy scheduling_policy_;   // scheduling algorithm
     std::atomic<bool> active_ {true};       // asserted false to indicate pool deactivation
-    size_type task_count_ = 0;              // overall number of active (executed + pending) tasks
+    task_pointer graph_ready_head_ = nullptr;
+    task_pointer graph_ready_tail_ = nullptr;
+    size_type queued_task_count_ = 0;   // published tasks not yet taken by a worker
+    size_type task_count_ = 0;          // overall number of active (executed + pending) tasks
     std::mutex m_;
     std::condition_variable cv_;
 };

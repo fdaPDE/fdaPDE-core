@@ -59,27 +59,36 @@ struct task_parallel_for_each {
         std::atomic<int> local_task_count {1};
 
         iterator_type chunk_begin = begin;
-        while (chunk_begin != end) {
-            // register task in the group
-            local_task_count.fetch_add(1, std::memory_order_release);
+        bool pending_submission = false;
+        try {
+            while (chunk_begin != end) {
+                // register task in the group
+                local_task_count.fetch_add(1, std::memory_order_release);
+                pending_submission = true;
 
-            iterator_type chunk_end =
-              std::next(chunk_begin, std::min(grain_size, int(std::distance(chunk_begin, end))));
-            auto loop_body = [chunk_begin, chunk_end, &f, &local_task_count]() {
-                for (iterator_type it = chunk_begin; it != chunk_end; ++it) { f(*it); }
-                // signal task completion
-                local_task_count.fetch_sub(1, std::memory_order_release);
-            };
-            executor->execute(std::move(loop_body));
-            // advance the loop
-            chunk_begin = chunk_end;
+                iterator_type chunk_end =
+                  std::next(chunk_begin, std::min(grain_size, int(std::distance(chunk_begin, end))));
+                auto loop_body = [chunk_begin, chunk_end, &f, &local_task_count]() {
+                    for (iterator_type it = chunk_begin; it != chunk_end; ++it) { f(*it); }
+                    // signal task completion
+                    local_task_count.fetch_sub(1, std::memory_order_release);
+                };
+                executor->execute(std::move(loop_body));
+                pending_submission = false;
+                // advance the loop
+                chunk_begin = chunk_end;
+            }
+        } catch (...) {
+            // earlier chunks still reference f and local_task_count: wait before unwinding.
+            if (pending_submission) { local_task_count.fetch_sub(1, std::memory_order_release); }
+            local_task_count.fetch_sub(1, std::memory_order_release);
+            executor->active_join(
+              this_thread_id(), [&] { return local_task_count.load(std::memory_order_acquire) > 0; });
+            throw;
         }
         // task_group collaborative wait
         local_task_count.fetch_sub(1, std::memory_order_release);
-        executor->active_join(this_thread_id(), [&] {
-            // help the pool while the task group is not fully consumed
-            return local_task_count.load(std::memory_order_acquire) > 0;
-        });
+        executor->active_join(this_thread_id(), [&] { return local_task_count.load(std::memory_order_acquire) > 0; });
         return;
     }
 };

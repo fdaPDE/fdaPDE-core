@@ -162,6 +162,9 @@ class task_handle {
     } storage_ {};
     bool sb_ = false;
 
+    friend struct threaded_executor_impl;
+    task_handle* next_ready_ = nullptr;   // intrusive link, used only while queued for graph execution
+
     // task properties
     std::vector<task_handle*> inverse_deps_ {};   // stable pointers to tasks which require this task to be completed
     std::atomic<int> ref_count_ {0};              // number of not yet completed tasks required by this task

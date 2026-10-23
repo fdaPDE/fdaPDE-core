@@ -25,7 +25,7 @@ namespace internals {
 // given a static DAG shaped flow of tasks, loads and parallel executes it by threaded_executor
 struct task_graph {
     template <typename TaskGraph> void run(threaded_executor_impl* executor, TaskGraph& graph) {
-        if (graph.has_cycles()) { throw std::invalid_argument("TaskGraph must be acyclic"); }
+        fdapde_assert(!graph.has_cycles(), "task graphs must be acyclic");
         using task_pointer = typename threaded_executor_impl::task_pointer;
         const int num_nodes = graph.n_nodes();
         if (num_nodes == 0) return;
@@ -35,30 +35,32 @@ struct task_graph {
         std::vector<int> runnable_indices;
         runnable_indices.reserve(num_nodes / 2);
 
-        // load TaskGraph to stable executor memory
-        std::atomic<int> local_task_count {1};
-        for (const auto& node : graph) {
-            int w_id = node.id() % num_threads;
-            // wrap user task to enable active join logic
-            auto wrapped_task = [user_task = node.task(), &local_task_count]() mutable {
-                user_task.run();
-                local_task_count.fetch_sub(1, std::memory_order_release);
-            };
-            task_table[node.id()] = executor->allocate_task(w_id, std::move(wrapped_task));
-            if (node.in_degree() == 0) { runnable_indices.push_back(node.id()); }
-            local_task_count.fetch_add(1, std::memory_order_release);
-        }
-        // move graph connections to task dependencies
-        for (const auto& node : graph) {
-            for (auto successor_id : node.succ_ids()) {
-                task_table[node.id()]->inverse_depends_on(task_table[successor_id]);
+        std::atomic<int> local_task_count {num_nodes};
+        try {
+            // prepare every task and dependency before any task becomes visible to workers
+            for (const auto& node : graph) {
+                int w_id = node.id() % num_threads;
+		// wrap user task to enable active join logic
+                auto wrapped_task = [user_task = node.task(), &local_task_count]() mutable {
+                    user_task.run();
+                    local_task_count.fetch_sub(1, std::memory_order_release);
+                };
+                task_table[node.id()] = executor->allocate_task(w_id, std::move(wrapped_task));
+                if (node.in_degree() == 0) { runnable_indices.push_back(node.id()); }
             }
+            for (const auto& node : graph) {
+                for (auto successor_id : node.succ_ids()) {
+                    task_table[node.id()]->inverse_depends_on(task_table[successor_id]);
+                }
+            }
+	    // load graph into stable memory
+            executor->submit_graph(task_table, runnable_indices);
+        } catch (...) {
+            for (task_pointer task : task_table) {
+                if (task != nullptr) { executor->deallocate_task(task); }
+            }
+            throw;
         }
-        local_task_count.fetch_sub(1, std::memory_order_release);
-        // send runnable tasks to execution (dependent tasks will be pulled by the executor autonomously)
-        executor->reserve_tasks(static_cast<typename threaded_executor_impl::size_type>(num_nodes));
-        for (int i : runnable_indices) { executor->enqueue_task(task_table[i]); }
-        executor->notify_all();
         executor->active_join(this_thread_id(), [&] {
             // help the pool while the task group is not fully consumed
             return local_task_count.load(std::memory_order_acquire) > 0;
@@ -86,7 +88,7 @@ class TaskGraph {
     template <typename TaskGraph_> struct node_proxy {
         // constructor
         node_proxy(TaskGraph_* graph, int id) : graph_(graph), id_(id) {
-            if (id < 0 || id >= graph_->n_nodes()) { throw std::out_of_range("TaskGraph node index out of range"); }
+            fdapde_assert(id >= 0 && id < graph_->n_nodes(), "index out of range");
         }
         // observers
         const std::vector<int>& succ_ids() const { return graph_->nodes_[id_].succ; }
@@ -173,9 +175,8 @@ class TaskGraph {
         return std::make_tuple(add_node(std::forward<Tasks_>(tasks))...);
     }
     template <typename TaskGraph_> void add_edge(node_proxy<TaskGraph_> from, node_proxy<TaskGraph_> to) {
-        if (from.graph_ != this || to.graph_ != this) {
-            throw std::invalid_argument("TaskGraph edges must connect nodes from the same graph");
-        }
+        fdapde_assert(
+          from.graph_ == this && to.graph_ == this, "task graphs edges must connect nodes from the same graph");
         nodes_[from.id()].succ.push_back(to.id());
         nodes_[to.id()].pred.push_back(from.id());
         return;

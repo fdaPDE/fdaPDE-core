@@ -65,17 +65,76 @@ TEST(execution, threaded_executor) {
         EXPECT_TRUE(second_observer.expired());
         EXPECT_TRUE(asynchronous_observer.expired());
     }
-    // worker joins are rejected
+    // A worker join returns immediately without waiting for its own task.
     {
         auto result = fdapde::parallel_async([] {
-            try {
-                fdapde::parallel_join();
-            } catch (const std::logic_error&) { return true; }
-            return false;
+            fdapde::parallel_join();
+            return true;
         });
 
         EXPECT_TRUE(result.get());
         fdapde::parallel_join();
+    }
+    // Sleeping workers wake for new submissions while another worker remains blocked.
+    {
+        using namespace std::chrono_literals;
+        fdapde::internals::threaded_executor_impl executor(4);
+        std::promise<void> blocker_started;
+        std::promise<void> release_blocker;
+        auto release = release_blocker.get_future().share();
+        executor.execute([&] {
+            blocker_started.set_value();
+            release.wait();
+        });
+        const auto started = blocker_started.get_future().wait_for(2s);
+        if (started != std::future_status::ready) {
+            release_blocker.set_value();
+            executor.join();
+        }
+        ASSERT_EQ(started, std::future_status::ready);
+
+        auto result = executor.async([] { return 42; });
+        const auto ready = result.wait_for(2s);
+        release_blocker.set_value();
+        executor.join();
+        ASSERT_EQ(ready, std::future_status::ready);
+        EXPECT_EQ(result.get(), 42);
+
+        // Repeatedly cross the empty-queue boundary and exercise dependency publication.
+        for (int repeat = 0; repeat < 32; ++repeat) {
+            auto value = executor.async([repeat] { return repeat; });
+            EXPECT_EQ(value.get(), repeat);
+            executor.join();
+            std::atomic<int> completed {0};
+            fdapde::TaskGraph graph;
+            auto first = graph.add_node([&] { ++completed; });
+            auto second = graph.add_node([&] { ++completed; });
+            auto last = graph.add_node([&] { EXPECT_EQ(completed.load(), 2); });
+            last.succeeds(first, second);
+            executor.execute(fdapde::internals::task_graph(), graph);
+            executor.join();
+        }
+    }
+    // A nested join wakes when its last running child completes, even with no queued tasks.
+    {
+        using namespace std::chrono_literals;
+        fdapde::internals::threaded_executor_impl executor(2);
+        std::promise<void> child_started;
+        std::promise<void> release_child;
+        auto release = release_child.get_future().share();
+        auto parent = executor.async([&] {
+            executor.execute(fdapde::internals::task_parallel_for(), 0, 1, 1, [&](int) {
+                child_started.set_value();
+                release.wait();
+            });
+            return 42;
+        });
+        const auto started = child_started.get_future().wait_for(2s);
+        release_child.set_value();
+        ASSERT_EQ(started, std::future_status::ready);
+        ASSERT_EQ(parent.wait_for(2s), std::future_status::ready);
+        EXPECT_EQ(parent.get(), 42);
+        executor.join();
     }
     // mailbox overflow preserves all submitted tasks
     {

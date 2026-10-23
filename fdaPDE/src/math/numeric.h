@@ -1,18 +1,18 @@
-// this file is part of fdapde, a c++ library for physics-informed
-// spatial and functional data analysis
+// This file is part of fdaPDE, a C++ library for physics-informed
+// spatial and functional data analysis.
 //
-// this program is free software: you can redistribute it and/or modify
-// it under the terms of the gnu general public license as published by
-// the free software foundation, either version 3 of the license, or
-// (at your option) any later version
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
 //
-// this program is distributed in the hope that it will be useful,
-// but without any warranty; without even the implied warranty of
-// merchantability or fitness for a particular purpose.  see the
-// gnu general public license for more details
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
 //
-// you should have received a copy of the gnu general public license
-// along with this program.  if not, see <http://www.gnu.org/licenses/>
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #ifndef __FDAPDE_NUMERIC_H__
 #define __FDAPDE_NUMERIC_H__
@@ -26,10 +26,10 @@ namespace fdapde {
 
 namespace internals {
 
-// ieee binary32 and binary64 representation
+// IEEE754 32 bits and 64 bits binary unpacking
 template <typename T>
     requires(std::is_floating_point_v<T>)
-struct floating_point_bits {
+struct ieee754_bits {
     using uint_t = std::conditional_t<std::is_same_v<T, float>, std::uint32_t, std::uint64_t>;
     static_assert(std::numeric_limits<T>::is_iec559 && sizeof(T) == sizeof(uint_t));
     static constexpr int fraction_bits    = std::numeric_limits<T>::digits - 1;
@@ -47,15 +47,15 @@ inline constexpr T numeric_tolerance = [] { return std::is_same_v<T, float> ? fl
 }   // namespace internals
 
 // computes n factorial using unsigned 64-bit arithmetic
-constexpr std::uint64_t fact(const int n) {
-    fdapde_assert(n >= 0, std::domain_error, "factorial not defined for negative arguments");
+constexpr std::uint64_t fact(int n) {
+    fdapde_assert(n >= 0);
     std::uint64_t result = 1;
     for (int i = n; i > 1; --i) { result *= static_cast<std::uint64_t>(i); }
     return result;
 }
 // computes the binomial coefficient n over m assuming the result fits in uint64_t
-constexpr std::uint64_t binom(const int n, const int m) {
-    fdapde_assert(n >= 0 && m >= 0 && m <= n, std::domain_error, "binom(n, m) defined for 0 <= m <= n");
+constexpr std::uint64_t binom(int n, int m) {
+    fdapde_assert(n >= 0 && m >= 0 && m <= n);
     const int k = m < n - m ? m : n - m;
     std::uint64_t result = 1;
     for (int i = 1; i <= k; ++i) {
@@ -68,7 +68,7 @@ constexpr std::uint64_t binom(const int n, const int m) {
 }
 // lists the k-element combinations of n elements in a flattened row-major array
 constexpr std::vector<std::uint64_t> comb(int k, int n) {
-    fdapde_assert(n >= 0 && k >= 0 && k <= n, std::domain_error, "comb(k, n) require 0 <= k <= n");
+    fdapde_assert(n >= 0 && k >= 0 && k <= n);
     std::vector<bool> bitmask(k, true);
     bitmask.resize(n, false);
     const auto count = static_cast<std::size_t>(binom(n, k));
@@ -119,7 +119,7 @@ template <typename T>
     requires(std::is_same_v<T, float> || std::is_same_v<T, double>)
 constexpr T fabs(T x) {
     if (!std::is_constant_evaluated()) return std::fabs(x);
-    using bits_t = internals::floating_point_bits<T>;
+    using bits_t = internals::ieee754_bits<T>;
     using uint_t = typename bits_t::uint_t;
     return std::bit_cast<T>(std::bit_cast<uint_t>(x) & ~bits_t::sign_mask);
 }
@@ -138,8 +138,8 @@ constexpr T abs(T x) {
 // compares a and b using absolute and relative tolerance, including exact equality
 template <typename T>
     requires(std::is_floating_point_v<T>)
-constexpr bool almost_equal(T a, T b, T epsilon) {
-    fdapde_assert(epsilon >= 0, std::invalid_argument, "tolerance must be nonnegative");
+constexpr bool almost_equal(T a, T b, T tol) {
+    fdapde_assert(tol > 0);
     if (a == b) return true;
     const T aa = fdapde::fabs(a), bb = fdapde::fabs(b);
     if (a != a || b != b || aa == std::numeric_limits<T>::infinity() || bb == std::numeric_limits<T>::infinity())
@@ -147,10 +147,10 @@ constexpr bool almost_equal(T a, T b, T epsilon) {
     const T scale = aa > bb ? aa : bb;
     // normalization avoids overflow when subtracting large values of opposite signs
     if ((a < T(0)) != (b < T(0))) {
-        return (aa < epsilon && bb < epsilon - aa) || (scale != T(0) && aa / scale + bb / scale < epsilon);
+        return (aa < tol && bb < tol - aa) || (scale != T(0) && aa / scale + bb / scale < tol);
     }
     const T difference = fdapde::fabs(a - b);
-    return difference < epsilon || (scale != T(0) && difference / scale < epsilon);
+    return difference < tol || (scale != T(0) && difference / scale < tol);
 }
 // compares a and b using the tolerance for their scalar type
 template <typename T>
@@ -161,9 +161,9 @@ constexpr bool almost_equal(T a, T b) {
 // tests whether a is greater than b or equal within tolerance
 template <typename T>
     requires(std::is_floating_point_v<T>)
-constexpr bool greater_equal(T a, T b, T epsilon) {
-    fdapde_assert(epsilon >= 0, std::invalid_argument, "tolerance must be nonnegative");
-    return a > b || almost_equal(a, b, epsilon);
+constexpr bool greater_equal(T a, T b, T tol) {
+    fdapde_assert(tol > 0);
+    return a > b || almost_equal(a, b, tol);
 }
 // tests whether a is greater than b or equal within the default tolerance
 template <typename T>
@@ -174,9 +174,9 @@ constexpr bool greater_equal(T a, T b) {
 // tests whether a is less than b or equal within tolerance
 template <typename T>
     requires(std::is_floating_point_v<T>)
-constexpr bool less_equal(T a, T b, T epsilon) {
-    fdapde_assert(epsilon >= 0, std::invalid_argument, "tolerance must be nonnegative");
-    return a < b || almost_equal(a, b, epsilon);
+constexpr bool less_equal(T a, T b, T tol) {
+    fdapde_assert(tol > 0);
+    return a < b || almost_equal(a, b, tol);
 }
 // tests whether a is less than b or equal within the default tolerance
 template <typename T>
@@ -185,9 +185,9 @@ constexpr bool less_equal(T a, T b) { return less_equal(a, b, internals::numeric
 // tests whether a exceeds b beyond the tolerance
 template <typename T>
     requires(std::is_floating_point_v<T>)
-constexpr bool greater_than(T a, T b, T epsilon) {
-    fdapde_assert(epsilon >= T(0), std::invalid_argument, "tolerance must be nonnegative");
-    return a > b && !almost_equal(a, b, epsilon);
+constexpr bool greater_than(T a, T b, T tol) {
+    fdapde_assert(tol > 0);
+    return a > b && !almost_equal(a, b, tol);
 }
 // tests whether a exceeds b beyond the default tolerance
 template <typename T>
@@ -198,9 +198,9 @@ constexpr bool greater_than(T a, T b) {
 // tests whether a is below b beyond the tolerance
 template <typename T>
     requires(std::is_floating_point_v<T>)
-constexpr bool less_than(T a, T b, T epsilon) {
-    fdapde_assert(epsilon >= 0, std::invalid_argument, "tolerance must be nonnegative");
-    return a < b && !almost_equal(a, b, epsilon);
+constexpr bool less_than(T a, T b, T tol) {
+    fdapde_assert(tol > 0);
+    return a < b && !almost_equal(a, b, tol);
 }
 // tests whether a is below b beyond the default tolerance
 template <typename T>
@@ -209,9 +209,9 @@ constexpr bool less_than(T a, T b) { return less_than(a, b, internals::numeric_t
 // tests whether the magnitude of a is below the tolerance, including zero
 template <typename T>
     requires(std::is_floating_point_v<T>)
-constexpr bool almost_zero(T a, T epsilon) {
-    fdapde_assert(epsilon >= 0, std::invalid_argument, "tolerance must be nonnegative");
-    return a == T(0) || fdapde::fabs(a) < epsilon;
+constexpr bool almost_zero(T a, T tol) {
+    fdapde_assert(tol > 0);
+    return a == T(0) || fdapde::fabs(a) < tol;
 }
 // tests whether a is near zero using a tolerance based on its scalar precision
 template <typename T>
@@ -222,9 +222,8 @@ constexpr bool almost_zero(T a) { return almost_zero(a, 50 * std::numeric_limits
 template <typename T>
     requires(std::is_floating_point_v<T>)
 constexpr T sqrt(T x) {
-    fdapde_assert(!(x < 0), std::domain_error, "sqrt not defined for negative arguments");
+    fdapde_assert(x > 0 && x != std::numeric_limits<T>::quiet_NaN());
     if (!std::is_constant_evaluated()) return std::sqrt(x);
-    if (x < 0 || x != x) return std::numeric_limits<T>::quiet_NaN();
     if (x == 0 || x == std::numeric_limits<T>::infinity()) return x;
     // scale into [1,4) so heron's iteration is safe at both ends of the floating-point range
     T scale = 1;
@@ -281,7 +280,7 @@ template <typename T>
     requires(std::is_floating_point_v<T>)
 constexpr T ldexp(T num, int exp) {
     if (!std::is_constant_evaluated()) return std::ldexp(num, exp);
-    using bits_t = internals::floating_point_bits<T>;
+    using bits_t = internals::ieee754_bits<T>;
     using uint_t = typename bits_t::uint_t;
     const auto representation = std::bit_cast<uint_t>(num);
     const auto sign = representation & bits_t::sign_mask;
@@ -301,7 +300,8 @@ constexpr T ldexp(T num, int exp) {
     if (exp < -bits_t::fraction_bits - exponent) return std::bit_cast<T>(sign);
     exponent += exp;
     if (exponent > 0) {
-        return std::bit_cast<T>(sign | (uint_t(exponent) << bits_t::fraction_bits) | (mantissa & bits_t::fraction_mask));
+        return std::bit_cast<T>(
+          sign | (uint_t(exponent) << bits_t::fraction_bits) | (mantissa & bits_t::fraction_mask));
     }
     // shift into the subnormal range once, retaining discarded bits for correct rounding
     const int shift = 1 - exponent;
@@ -340,7 +340,7 @@ template <typename T>
     requires(std::is_floating_point_v<T>)
 constexpr int ilogb(T x) {
     if (!std::is_constant_evaluated()) return std::ilogb(x);
-    using bits_t = internals::floating_point_bits<T>;
+    using bits_t = internals::ieee754_bits<T>;
     using uint_t = typename bits_t::uint_t;
     const auto bits = std::bit_cast<uint_t>(x);
     const auto mantissa = bits & bits_t::fraction_mask;
@@ -359,7 +359,7 @@ template <typename T>
     requires(std::is_floating_point_v<T>)
 constexpr T frexp(T num, int& out) {
     if (!std::is_constant_evaluated()) return std::frexp(num, &out);
-    using bits_t = internals::floating_point_bits<T>;
+    using bits_t = internals::ieee754_bits<T>;
     using uint_t = typename bits_t::uint_t;
     const auto bits = std::bit_cast<uint_t>(num);
     auto mantissa = bits & bits_t::fraction_mask;
@@ -380,10 +380,9 @@ constexpr T frexp(T num, int& out) {
 template <typename T>
     requires(std::is_floating_point_v<T>)
 constexpr T log(T x) {
-    fdapde_assert(!(x < 0), std::domain_error, "logarithm not defined for negative arguments");
+    fdapde_assert(x > 0 && x != std::numeric_limits<T>::quiet_NaN());
     if (!std::is_constant_evaluated()) return std::log(x);
 
-    if (x < 0 || x != x) return std::numeric_limits<T>::quiet_NaN();
     if (x == 0) return -std::numeric_limits<T>::infinity();
     if (x == std::numeric_limits<T>::infinity()) return x;
     int k = 0;
@@ -407,12 +406,11 @@ constexpr T log(T x) {
 template <typename T>
     requires(std::is_floating_point_v<T>)
 constexpr T log1p(T x) {
-    fdapde_assert(x >= -1, std::domain_error, "log1p(x) requires x >= -1");
+    fdapde_assert(x >= -1);
     if (!std::is_constant_evaluated()) return std::log1p(x);
 
     if (x == 0 || x != x) return x;
     if (fdapde::fabs(x) < std::numeric_limits<T>::epsilon()) return x;
-    if (x < -1) return std::numeric_limits<T>::quiet_NaN();
     if (x == -1) return -std::numeric_limits<T>::infinity();
     if (x > -0.5 && x < 0.5) {
         const T z = x / (2 + x), z2 = z * z;
