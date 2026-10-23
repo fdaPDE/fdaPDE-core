@@ -22,12 +22,10 @@
 namespace fdapde {
 namespace internals {
 
-/// @brief reduces ordered chunks and applies the initial value exactly once
+// specialized parallelized reduce task
 struct task_parallel_reduce {
-    /// @brief constructs a stateless parallel task descriptor
     task_parallel_reduce() = default;
 
-    /// @brief partitions work and waits cooperatively for its task group
     template <std::forward_iterator Iterator, typename T, typename ReduxOp>
         requires(
           std::convertible_to<std::iter_reference_t<Iterator>, T> &&
@@ -40,7 +38,6 @@ struct task_parallel_reduce {
         grain_size = std::max(1, std::min(grain_size, n));
         return dispatch_(executor, begin, end, grain_size, init, std::forward<ReduxOp>(redux));
     }
-    /// @brief partitions work and waits cooperatively for its task group
     template <std::forward_iterator Iterator, typename T, typename ReduxOp>
         requires(
           std::convertible_to<std::iter_reference_t<Iterator>, T> &&
@@ -54,7 +51,6 @@ struct task_parallel_reduce {
         return dispatch_(executor, begin, end, grain_size, init, std::forward<ReduxOp>(redux));
     }
    private:
-    /// @brief submits chunks and cooperatively waits for their completion
     template <std::forward_iterator Iterator, typename T, typename ReduxOp>
     T dispatch_(
       threaded_executor_impl* executor, Iterator begin, Iterator end, int grain_size, T init, ReduxOp&& redux) {
@@ -64,30 +60,39 @@ struct task_parallel_reduce {
 
         Iterator chunk_begin = begin;
         int chunk_index = 0;
-        while (chunk_begin != end) {
-            // register task in the group
-            local_task_count.fetch_add(1, std::memory_order_release);
+        bool pending_submission = false;
+        try {
+            while (chunk_begin != end) {
+                // register task in the group
+                local_task_count.fetch_add(1, std::memory_order_release);
+                pending_submission = true;
 
-            Iterator chunk_end = std::next(chunk_begin, std::min(grain_size, int(std::distance(chunk_begin, end))));
-            auto loop_body = [chunk_begin, chunk_end, chunk_index, &redux, &local_task_count, &partials]() {
-                Iterator it = chunk_begin;
-                T local_value(*it);
-                for (++it; it != chunk_end; ++it) { local_value = std::invoke(redux, std::move(local_value), *it); }
-                partials[static_cast<std::size_t>(chunk_index)].emplace(std::move(local_value));
-                // signal task completion
-                local_task_count.fetch_sub(1, std::memory_order_release);
-            };
-            executor->execute(std::move(loop_body));
-            // advance the loop
-            chunk_begin = chunk_end;
-            chunk_index++;
+                Iterator chunk_end = std::next(chunk_begin, std::min(grain_size, int(std::distance(chunk_begin, end))));
+                auto loop_body = [chunk_begin, chunk_end, chunk_index, &redux, &local_task_count, &partials]() {
+                    Iterator it = chunk_begin;
+                    T local_value(*it);
+                    for (++it; it != chunk_end; ++it) { local_value = std::invoke(redux, std::move(local_value), *it); }
+                    partials[static_cast<std::size_t>(chunk_index)].emplace(std::move(local_value));
+                    // signal task completion
+                    local_task_count.fetch_sub(1, std::memory_order_release);
+                };
+                executor->execute(std::move(loop_body));
+                pending_submission = false;
+                // advance the loop
+                chunk_begin = chunk_end;
+                chunk_index++;
+            }
+        } catch (...) {
+            // earlier chunks still reference f and local_task_count: wait before unwinding.
+            if (pending_submission) { local_task_count.fetch_sub(1, std::memory_order_release); }
+            local_task_count.fetch_sub(1, std::memory_order_release);
+            executor->active_join(
+              this_thread_id(), [&] { return local_task_count.load(std::memory_order_acquire) > 0; });
+            throw;
         }
         // task_group collaborative wait
         local_task_count.fetch_sub(1, std::memory_order_release);
-        executor->active_join(this_thread_id(), [&] {
-            // help the pool while the task group is not fully consumed
-            return local_task_count.load(std::memory_order_acquire) > 0;
-        });
+        executor->active_join(this_thread_id(), [&] { return local_task_count.load(std::memory_order_acquire) > 0; });
 
         // perform final reduction sequentially
         T v = init;
@@ -98,7 +103,7 @@ struct task_parallel_reduce {
 
 }   // namespace internals
 
-/// @brief combines ordered chunk reductions with one initial value and waits for completion
+// general parallel reduction algorithm
 template <std::forward_iterator Iterator, typename T, typename ReduxOp>
     requires(
       std::convertible_to<std::iter_reference_t<Iterator>, T> &&
@@ -108,7 +113,6 @@ T parallel_reduce(Iterator begin, Iterator end, int grain_size, T init, ReduxOp&
     return internals::threaded_executor::instance().execute(
       internals::task_parallel_reduce(), begin, end, grain_size, init, redux);
 }
-/// @brief combines ordered chunk reductions with one initial value and waits for completion
 template <std::forward_iterator Iterator, typename T, typename ReduxOp>
     requires(
       std::convertible_to<std::iter_reference_t<Iterator>, T> &&

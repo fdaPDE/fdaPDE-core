@@ -22,12 +22,10 @@
 namespace fdapde {
 namespace internals {
 
-/// @brief partitions a container into cooperatively joined tasks
+// specialized parallelized for-range loop task
 struct task_parallel_for_each {
-    /// @brief constructs a stateless parallel task descriptor
     task_parallel_for_each() = default;
 
-    /// @brief partitions work and waits cooperatively for its task group
     template <typename Container, typename LoopBody>
         requires(std::is_invocable_v<LoopBody, typename Container::reference>)
     void run(threaded_executor_impl* executor, Container& container, int grain_size, LoopBody&& f) {
@@ -38,7 +36,6 @@ struct task_parallel_for_each {
         dispatch_(executor, container, grain_size, std::forward<LoopBody>(f));
         return;
     }
-    /// @brief partitions work and waits cooperatively for its task group
     template <typename Container, typename LoopBody>
         requires(std::is_invocable_v<LoopBody, typename Container::reference>)
     void run(threaded_executor_impl* executor, Container& container, LoopBody&& f) {
@@ -50,7 +47,6 @@ struct task_parallel_for_each {
         return;
     }
    private:
-    /// @brief submits chunks and cooperatively waits for their completion
     template <typename Container, typename LoopBody>
         requires(std::is_invocable_v<LoopBody, typename Container::reference>)
     void dispatch_(threaded_executor_impl* executor, Container& container, int grain_size, LoopBody&& f) {
@@ -63,41 +59,49 @@ struct task_parallel_for_each {
         std::atomic<int> local_task_count {1};
 
         iterator_type chunk_begin = begin;
-        while (chunk_begin != end) {
-            // register task in the group
-            local_task_count.fetch_add(1, std::memory_order_release);
+        bool pending_submission = false;
+        try {
+            while (chunk_begin != end) {
+                // register task in the group
+                local_task_count.fetch_add(1, std::memory_order_release);
+                pending_submission = true;
 
-            iterator_type chunk_end =
-              std::next(chunk_begin, std::min(grain_size, int(std::distance(chunk_begin, end))));
-            auto loop_body = [chunk_begin, chunk_end, &f, &local_task_count]() {
-                for (iterator_type it = chunk_begin; it != chunk_end; ++it) { f(*it); }
-                // signal task completion
-                local_task_count.fetch_sub(1, std::memory_order_release);
-            };
-            executor->execute(std::move(loop_body));
-            // advance the loop
-            chunk_begin = chunk_end;
+                iterator_type chunk_end =
+                  std::next(chunk_begin, std::min(grain_size, int(std::distance(chunk_begin, end))));
+                auto loop_body = [chunk_begin, chunk_end, &f, &local_task_count]() {
+                    for (iterator_type it = chunk_begin; it != chunk_end; ++it) { f(*it); }
+                    // signal task completion
+                    local_task_count.fetch_sub(1, std::memory_order_release);
+                };
+                executor->execute(std::move(loop_body));
+                pending_submission = false;
+                // advance the loop
+                chunk_begin = chunk_end;
+            }
+        } catch (...) {
+            // earlier chunks still reference f and local_task_count: wait before unwinding.
+            if (pending_submission) { local_task_count.fetch_sub(1, std::memory_order_release); }
+            local_task_count.fetch_sub(1, std::memory_order_release);
+            executor->active_join(
+              this_thread_id(), [&] { return local_task_count.load(std::memory_order_acquire) > 0; });
+            throw;
         }
         // task_group collaborative wait
         local_task_count.fetch_sub(1, std::memory_order_release);
-        executor->active_join(this_thread_id(), [&] {
-            // help the pool while the task group is not fully consumed
-            return local_task_count.load(std::memory_order_acquire) > 0;
-        });
+        executor->active_join(this_thread_id(), [&] { return local_task_count.load(std::memory_order_acquire) > 0; });
         return;
     }
 };
 
 }   // namespace internals
 
-/// @brief applies a callable to each container element and waits for completion
+// executes for(auto& value : container) { loop_body } in parallel
 template <typename Container, typename LoopBody>
     requires(std::is_invocable_v<LoopBody, typename std::decay_t<Container>::reference>)
 void parallel_for_each(Container& container, int grain_size, LoopBody&& loop_body) {
     internals::threaded_executor::instance().execute(
       internals::task_parallel_for_each(), container, grain_size, loop_body);
 }
-/// @brief applies a callable to each container element and waits for completion
 template <typename Container, typename LoopBody>
     requires(std::is_invocable_v<LoopBody, typename std::decay_t<Container>::reference>)
 void parallel_for_each(Container& container, LoopBody&& loop_body) {
