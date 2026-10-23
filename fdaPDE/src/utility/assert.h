@@ -17,33 +17,56 @@
 #ifndef __FDAPDE_ASSERT_H__
 #define __FDAPDE_ASSERT_H__
 
-#include "header_check.h"
-
-namespace fdapde {
+#include <stdexcept>
+#include <string>
+#include <string_view>
 
 #define FDAPDE_COMMA ,
-  
-namespace internals {
-  
-inline void fdapde_assert_failed_(const char* str, const char* file, int line) {
-    std::string msg_(
-      std::string(file) + ":" + std::to_string(line) + ".\nAssertion: '" + std::string(str) + "' failed.");
-    std::cerr << msg_ << "\n"; 
-    throw std::runtime_error("");
+
+namespace fdapde::internals {
+
+// formats a failed condition and appends the optional diagnostic
+inline std::string assertion_message(const char* condition, std::string_view message) {
+    std::string result = std::string("assertion (") + condition + ") failed";
+    if (!message.empty()) result += std::string(": (") + std::string(message) + ")";
+    return result;
 }
 
-}   // namespace internals
+// throws outside the macro body so legacy noexcept callers retain their existing behavior
+template <typename Exception> [[noreturn]] inline void assertion_failed(const char* condition, std::string_view message) {
+    throw Exception(assertion_message(condition, message));
+}
 
+}   // namespace fdapde::internals
+
+#define FDAPDE_ASSERT_IMPL_(condition, condition_text, exception_type, message)                                        \
+    do {                                                                                                             \
+        if (!(condition)) {                                                                                          \
+            ::fdapde::internals::assertion_failed<exception_type>(condition_text, (message));                  \
+        }                                                                                                            \
+    } while (false)
+
+// throws the requested exception on failure, including when debug checks are disabled
+#define fdapde_strong_assert(condition, exception_type, message)                                                      \
+    FDAPDE_ASSERT_IMPL_((condition), #condition, exception_type, (message))
+
+// checks a precondition in debug mode without evaluating disabled arguments
 #ifdef FDAPDE_NO_DEBUG
-#    define fdapde_assert(condition) (void)0
+#    define FDAPDE_ASSERT_DEBUG_(condition, condition_text, exception_type, message) ((void)0)
 #else
-#    define fdapde_assert(condition)                                                                                   \
-        if (!(condition)) { internals::fdapde_assert_failed_(#condition, __FILE__, __LINE__); }
-  
-#endif   // NDEBUG
+#    define FDAPDE_ASSERT_DEBUG_(condition, condition_text, exception_type, message)                                   \
+        FDAPDE_ASSERT_IMPL_((condition), condition_text, exception_type, (message))
+#endif
 
 #define fdapde_static_assert(condition, message) static_assert(condition, #message)
 
-}   // namespace fdapde
+// accepts the existing one-argument calls while exposing the typed assertion api
+#define FDAPDE_ASSERT_SELECT_(_1, _2, _3, NAME, ...) NAME
+#define FDAPDE_ASSERT_ONE_(condition)                                                                                 \
+    FDAPDE_ASSERT_DEBUG_((condition), #condition, std::runtime_error, "")
+#define FDAPDE_ASSERT_THREE_(condition, exception_type, message)                                                      \
+    FDAPDE_ASSERT_DEBUG_((condition), #condition, exception_type, (message))
+#define fdapde_assert(...)                                                                                           \
+    FDAPDE_ASSERT_SELECT_(__VA_ARGS__, FDAPDE_ASSERT_THREE_, FDAPDE_ASSERT_INVALID_, FDAPDE_ASSERT_ONE_)(__VA_ARGS__)
 
 #endif   // __FDAPDE_ASSERT_H__
