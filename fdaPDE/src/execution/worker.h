@@ -135,9 +135,8 @@ struct chase_lev_queue {
     chase_lev_queue() : chase_lev_queue(4096) { }
     explicit chase_lev_queue(size_type capacity) :
         buffer_(capacity), capacity_(capacity), mask_(capacity - 1), bottom_(0), top_(0) {
-        if (capacity == 0 || (capacity & (capacity - 1)) != 0) {
-            throw std::invalid_argument("Chase-Lev queue capacity must be a power of two");
-        }
+        fdapde_assert(
+          capacity != 0 && (capacity & (capacity - 1)) == 0, "Chase-Lev queue capacity must be a power of two");
     }
     // avoid copy/move-semantic
     chase_lev_queue(const chase_lev_queue&) = delete;
@@ -279,11 +278,21 @@ struct mpsc_queue {
     template <typename T_>
         requires(std::is_constructible_v<value_type, T_>)
     void push(T_&& value) {
-        pointer node = allocator_.allocate(std::forward<T_>(value));
+        push(allocate(std::forward<T_>(value)));
+    }
+    void push(pointer node) noexcept {
         pointer prev = tail_.exchange(node, std::memory_order_acq_rel);
         prev->next.store(node, std::memory_order_release);
         return;
     }
+    // allocate a queue node without pushing it on the queue
+    template <typename T_>
+        requires(std::is_constructible_v<value_type, T_>)
+    pointer allocate(T_&& value) {
+        return allocator_.allocate(std::forward<T_>(value));
+    }
+    // erase an allocated node, node should not be pushed yet
+    void erase(pointer node) { allocator_.deallocate(node); }
     // single consumer pop, removes an element from the front of the queue. returns nullopt if the queue is empty
     std::optional<value_type> pop() {
         pointer next = head_->next.load(std::memory_order_acquire);
@@ -315,6 +324,11 @@ struct worker {
     using task_const_pointer = typename allocator_type::const_pointer;
     using task_queue_type = chase_lev_queue<task_pointer>;
     using task_buffer_type = mpsc_queue<task_pointer>;
+    // a packaged task is a task_handle with an associated stable memory address
+    struct packaged_task {
+        task_pointer task = nullptr;
+        typename task_buffer_type::pointer entry = nullptr;
+    };
     static constexpr int task_queue_size = 8192;   // 2^13
 
     // constructor
@@ -325,26 +339,56 @@ struct worker {
     // thread coordination
     void join() { thread_.join(); }
     bool joinable() const { return thread_.joinable(); }
-    // task handling
-    // allocates and forward task into the worker task_pool
-    template <typename Task> task_pointer allocate_task(Task&& task) {
+    // reserves an unregistered task
+    template <typename Task> packaged_task allocate_task(Task&& task) {
         task_pointer task_ptr = task_pool_.allocate(std::forward<Task>(task));
         if (!task_ptr->allocation_context().has_value()) { task_ptr->set_allocation_context(worker_id_); }
-        return task_ptr;
+        try {
+            return {task_ptr, task_buffer_.allocate(task_ptr)};
+        } catch (...) {
+            deallocate_task(task_ptr);
+            throw;
+        }
     }
-    // enqueue task for execution. task must point to some stable address
-    void enqueue_task(task_pointer task) { task_buffer_.push(task); }
-    // allocates and forwards task into the worker task_pool. enqueue the task for execution
-    template <typename Task> void submit_task(Task&& task) {
-        task_pointer task_ptr = allocate_task(std::forward<Task>(task));
-        enqueue_task(task_ptr);
-        return;
+    // release task and mailbox storage before submission
+    void deallocate_task(packaged_task task) {
+        task_buffer_.erase(task.entry);
+        task_pool_.deallocate(task.task);
     }
-    // frees memory holded by task
+    // release task storage without changing registration
     void deallocate_task(task_pointer task) { task_pool_.deallocate(task); }
-    // allows an external worker to perform a stealing attempt on this worker task_queue
-    std::optional<task_pointer> try_steal() { return task_queue_.pop_back(); }
-    // tries to execute a task, if any. usec in active join loops
+    // register before publication so even an immediately stolen task is accounted for
+    void submit_task(packaged_task task) noexcept {
+        registered_tasks_.fetch_add(1, std::memory_order_relaxed);
+        queued_tasks_.fetch_add(1, std::memory_order_relaxed);
+        task_buffer_.push(task.entry);
+	return;
+    }
+    // notify task completion
+    bool delete_task(task_pointer task) {
+        deallocate_task(task);
+        return registered_tasks_.fetch_sub(1, std::memory_order_acq_rel) == 1;
+    }
+    // task accounting
+    // registered tasks are queued tasks, running tasks, and tasks stolen from this worker
+    bool has_registered_tasks() const { return registered_tasks_.load(std::memory_order_acquire) != 0; }
+    // queued tasks are task waiting in this worker’s mailbox or local deque
+    bool has_queued_tasks() const { return queued_tasks_.load(std::memory_order_acquire) != 0; }
+  
+    // tries stealing task from this worker queue
+    std::optional<task_pointer> try_steal() {
+        if (auto task = task_queue_.pop_back()) {
+            queued_tasks_.fetch_sub(1, std::memory_order_relaxed);
+            return task;
+        }
+	// if owning worker is busy in execution, try steal task from its MPSC queue
+        std::unique_lock<std::mutex> lock(task_buffer_mutex_, std::try_to_lock);
+        if (!lock.owns_lock()) return std::nullopt;
+        auto task = task_buffer_.pop();
+        if (task) queued_tasks_.fetch_sub(1, std::memory_order_relaxed);
+        return task;
+    }
+    // tries to execute a task, if any. used in active join loops
     template <typename Executor> bool try_execute_one(Executor* e) {
         std::optional<task_pointer> task = try_fetch_task_();
         if (!task) { task = e->try_steal(worker_id_); }
@@ -357,8 +401,12 @@ struct worker {
     // returns nullopt if no task is available for execution
     std::optional<task_pointer> try_fetch_task_() {
         auto&& task = task_queue_.pop_front();
-        if (task) { return std::move(task); }
+        if (task) {
+            queued_tasks_.fetch_sub(1, std::memory_order_relaxed);
+            return std::move(task);
+        }
         // check task_buffer
+        std::lock_guard<std::mutex> lock(task_buffer_mutex_);
         auto&& mail = task_buffer_.pop();
         if (mail) {
             // drain task_buffer
@@ -368,6 +416,7 @@ struct worker {
                 const bool pushed = task_queue_.push_front(std::move(*tmp));
                 if (!pushed) { std::terminate(); }
             }
+            queued_tasks_.fetch_sub(1, std::memory_order_relaxed);
             return mail;
         } else {
             return std::nullopt;
@@ -375,12 +424,6 @@ struct worker {
     }
     // for a runnable task, acquires, executes and notifies its completion
     template <typename Executor> void try_execute_task_(Executor* e, task_pointer task) {
-        e->on_task_taken();
-        if (!task->runnable()) {
-            // a non runnable task is removed from any working queue but not from its task_pool. the task will
-            // be eventually re-enqueued and executed as a result of a notification event
-            return;
-        }
         task->run();
         e->on_task_complete(task);
         return;
@@ -408,11 +451,14 @@ struct worker {
         return;
     }
 
-    const int worker_id_;            // worker identifier
-    allocator_type task_pool_;       // memory allocator for task storage
-    task_queue_type task_queue_;     // tasks pending for execution, amenable to work stealing
-    task_buffer_type task_buffer_;   // externally submitted tasks
-    std::thread thread_;             // OS managed thread
+    const int worker_id_;                                         // worker identifier
+    allocator_type task_pool_;                                    // memory allocator for task storage
+    task_queue_type task_queue_;                                  // tasks pending for execution (stealable)
+    task_buffer_type task_buffer_;                                // externally submitted tasks
+    alignas(64) std::atomic<std::size_t> registered_tasks_ {0};   // tasks allocated by this worker
+    std::atomic<std::size_t> queued_tasks_ {0};                   // mailbox plus local deque
+    std::mutex task_buffer_mutex_;
+    std::thread thread_;   // OS managed thread
 };
 
 }   // namespace internals
