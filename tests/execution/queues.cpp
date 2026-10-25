@@ -72,6 +72,25 @@ TEST(execution, chase_lev_queue) {
 }
 
 TEST(execution, mpsc_queue) {
+    // preparation keeps entries unpublished until they are submitted or discarded
+    {
+        internals::mpsc_queue<std::shared_ptr<int>> queue;
+        auto resource = std::make_shared<int>(42);
+        std::weak_ptr<int> observer = resource;
+        auto entry = queue.allocate(resource);
+        resource.reset();
+        EXPECT_FALSE(queue.pop().has_value());
+        EXPECT_FALSE(observer.expired());
+        queue.erase(entry);
+        EXPECT_TRUE(observer.expired());
+
+        auto submitted = queue.allocate(std::make_shared<int>(42));
+        queue.push(submitted);
+        auto value = queue.pop();
+        ASSERT_TRUE(value.has_value());
+        EXPECT_EQ(**value, 42);
+        EXPECT_FALSE(queue.pop().has_value());
+    }
     {
         auto queued_resource = std::make_shared<int>(0);
         std::weak_ptr<int> queued_observer = queued_resource;

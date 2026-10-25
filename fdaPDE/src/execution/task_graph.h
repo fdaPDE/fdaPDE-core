@@ -26,38 +26,46 @@ namespace internals {
 struct task_graph {
     template <typename TaskGraph> void run(threaded_executor_impl* executor, TaskGraph& graph) {
         fdapde_assert(!graph.has_cycles(), "task graphs must be acyclic");
-        using task_pointer = typename threaded_executor_impl::task_pointer;
+        using packaged_task = typename threaded_executor_impl::packaged_task;
         const int num_nodes = graph.n_nodes();
         if (num_nodes == 0) return;
         const int num_threads = executor->size();
 
-        std::vector<task_pointer> task_table(num_nodes, nullptr);
-        std::vector<int> runnable_indices;
-        runnable_indices.reserve(num_nodes / 2);
+        struct node_state {
+            std::atomic<int> pending {0};
+            packaged_task task;
+            std::vector<int> successors;
+        };
+        std::vector<node_state> task_table(num_nodes);
+        std::vector<packaged_task> sources;
+        sources.reserve(num_nodes / 2);
 
         std::atomic<int> local_task_count {num_nodes};
         try {
             // prepare every task and dependency before any task becomes visible to workers
             for (const auto& node : graph) {
-                int w_id = node.id() % num_threads;
-		// wrap user task to enable active join logic
-                auto wrapped_task = [user_task = node.task(), &local_task_count]() mutable {
+                const int node_id = node.id();
+                task_table[node_id].pending.store(node.in_degree(), std::memory_order_relaxed);
+                task_table[node_id].successors = node.succ_ids();
+                auto wrapped_task = [user_task = node.task(), &local_task_count, &task_table, executor,
+                                     node_id]() mutable {
                     user_task.run();
+                    // publish successors before completing this task so join cannot observe an empty executor
+                    for (int successor_id : task_table[node_id].successors) {
+                        auto& successor = task_table[successor_id];
+                        if (successor.pending.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+                            executor->submit_task(successor.task);
+                        }
+                    }
                     local_task_count.fetch_sub(1, std::memory_order_release);
                 };
-                task_table[node.id()] = executor->allocate_task(w_id, std::move(wrapped_task));
-                if (node.in_degree() == 0) { runnable_indices.push_back(node.id()); }
+                task_table[node_id].task = executor->allocate_task(node_id % num_threads, std::move(wrapped_task));
+                if (node.in_degree() == 0) { sources.push_back(task_table[node_id].task); }
             }
-            for (const auto& node : graph) {
-                for (auto successor_id : node.succ_ids()) {
-                    task_table[node.id()]->inverse_depends_on(task_table[successor_id]);
-                }
-            }
-	    // load graph into stable memory
-            executor->submit_graph(task_table, runnable_indices);
+            executor->submit_task(sources);
         } catch (...) {
-            for (task_pointer task : task_table) {
-                if (task != nullptr) { executor->deallocate_task(task); }
+            for (auto& state : task_table) {
+                if (state.task.task != nullptr) { executor->deallocate_task(state.task); }
             }
             throw;
         }
@@ -87,9 +95,7 @@ class TaskGraph {
     // stable proxy to graph node
     template <typename TaskGraph_> struct node_proxy {
         // constructor
-        node_proxy(TaskGraph_* graph, int id) : graph_(graph), id_(id) {
-            fdapde_assert(id >= 0 && id < graph_->n_nodes(), "index out of range");
-        }
+        node_proxy(TaskGraph_* graph, int id) : graph_(graph), id_(id) { }
         // observers
         const std::vector<int>& succ_ids() const { return graph_->nodes_[id_].succ; }
         const std::vector<int>& pred_ids() const { return graph_->nodes_[id_].pred; }

@@ -49,7 +49,7 @@ struct task_parallel_for {
             try {
                 executor->execute(std::move(loop_body));
             } catch (...) {
-                // Undo the failed task registration and release the submission sentinel.
+                // undo the failed task registration and release the submission sentinel
                 local_task_count.fetch_sub(2, std::memory_order_release);
                 executor->active_join(
                   this_thread_id(), [&] { return local_task_count.load(std::memory_order_acquire) > 0; });

@@ -51,7 +51,7 @@ namespace fdapde::internals {
     } while (false)
 
 // checks a precondition even when debug assertions are disabled
-#define fdapde_strong_assert(condition, ...)                                                                          \
+#define fdapde_strong_assert(condition, ...)                                                                           \
     FDAPDE_ASSERT_IMPL_((condition), #condition __VA_OPT__(, __VA_ARGS__))
 
 // checks a precondition in debug mode without evaluating disabled arguments

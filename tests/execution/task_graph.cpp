@@ -77,6 +77,27 @@ struct throwing_graph_task {
 }   // namespace
 
 TEST(execution, task_graph) {
+    // nested fan-out and fan-in work with one or several workers
+    for (int workers : {1, 4}) {
+        fdapde::internals::threaded_executor_impl executor(workers);
+        constexpr int width = 128;
+        std::vector<int> values(width, 0);
+        int total = 0;
+        fdapde::TaskGraph graph;
+        auto source = graph.add_node([&] { total = 1; });
+        auto sink = graph.add_node([&] { total = std::accumulate(values.begin(), values.end(), 0); });
+        for (int i = 0; i < width; ++i) {
+            auto branch = graph.add_node([&, i] { values[i] = total; });
+            branch.succeeds(source);
+            branch.precedes(sink);
+        }
+        auto result = executor.async([&] {
+            executor.execute(fdapde::internals::task_graph(), graph);
+            return total;
+        });
+        EXPECT_EQ(result.get(), width);
+        executor.join();
+    }
     // dependency ordering
     {
         std::atomic<int> inputs {0};
@@ -176,7 +197,7 @@ TEST(execution, task_graph) {
         EXPECT_EQ(runs.load(std::memory_order_relaxed), 3);
         EXPECT_EQ(resource.use_count(), owners);
     }
-    // Independent graph submissions share the ready queue without retaining stale links.
+    // independent graph submissions complete without retaining stale task links
     {
         std::atomic<int> runs {0};
         std::vector<std::thread> submitters;
