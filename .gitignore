@@ -37,3 +37,8 @@ experiments/
 
 # versioned offline replay provenance
 !tests/benchmarks/fixtures/rgcca_replay/manifest.json
+
+# versioned algebra optimization report and reproducibility evidence
+!docs/reports/linear-algebra-2026-10-27/evidence/*.json
+!docs/reports/linear-algebra-2026-10-27/evidence/*.csv
+!output/pdf/linear-algebra-optimizations-2026-10-27.pdf

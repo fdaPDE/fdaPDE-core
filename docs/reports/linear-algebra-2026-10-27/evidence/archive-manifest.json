@@ -1,0 +1,86 @@
+[
+  {
+    "archive": "native-product-apple.json.gz",
+    "source": "/Users/pietrodonelli/.codex/worktrees/develop-simd/fdaPDE-core/output/simd/native-product/fdapde-native-product-appleclang21-final-summary.json",
+    "sha256": "353df05acd11ff383c86f301aec9c93e5e5234ab15eed4e053e6fb13a32b0f17",
+    "archive_sha256": "adf05bd34b28f9e307bb01575a2fe1d11fc9fce17315843fe8316ff23285a128"
+  },
+  {
+    "archive": "native-product-clang17.json.gz",
+    "source": "/Users/pietrodonelli/.codex/worktrees/develop-simd/fdaPDE-core/output/simd/native-product/fdapde-native-product-clang17-final-summary.json",
+    "sha256": "5ed459c1a9aac09e9b1b2ad6b03767d14ac8a7f793c0e2f8bc48ebb45fdd0f53",
+    "archive_sha256": "d990fea36694581a84be16f0915a0960788df02a8577b43b2ef365d9941d2bf1"
+  },
+  {
+    "archive": "sweep-v1.json.gz",
+    "source": "/Users/pietrodonelli/.codex/worktrees/develop-simd/fdaPDE-core/output/simd/sweep/appleclang21/summary.json",
+    "sha256": "2ddd6cfad387ad2c5ba141187f177279d6d15d62b005e411b7afba154053484e",
+    "archive_sha256": "84eeb1478092e6237629d57ff484249a99829dd3a287d7bbc5004112efe815d8"
+  },
+  {
+    "archive": "sweep-v1-stops.json.gz",
+    "source": "/Users/pietrodonelli/.codex/worktrees/develop-simd/fdaPDE-core/output/simd/sweep/appleclang21/stops.json",
+    "sha256": "6c03bf52564fbc829a118a2a0113faa69548dbbad5df281dcfb87a304f7cda84",
+    "archive_sha256": "bed7170af00d45e7e7851476b0331d732bf57819042b76f23ec8ad403c6a62d9"
+  },
+  {
+    "archive": "sweep-v2.json.gz",
+    "source": "/Users/pietrodonelli/.codex/worktrees/develop-simd/fdaPDE-core/output/simd/sweep/appleclang21-v2/summary.json",
+    "sha256": "7f165e276a4ccd9b7696743908b394bb9f37fbb273d8b294b2d7c3616bbd750d",
+    "archive_sha256": "39ebec52c05473ed878d890756e18c1e4f08c5727b7476992405d6328274669d"
+  },
+  {
+    "archive": "sweep-v2-stops.json.gz",
+    "source": "/Users/pietrodonelli/.codex/worktrees/develop-simd/fdaPDE-core/output/simd/sweep/appleclang21-v2/stops.json",
+    "sha256": "bb376f61856f59c666d8dea10cee55403232c5a2b5198f34e17971ee7b5b95ac",
+    "archive_sha256": "569fcf31ea2fb93d065973fd4db9a916e3eda3eee5d84364bdae6964b4a31cb3"
+  },
+  {
+    "archive": "historical-validation.json.gz",
+    "source": "/Users/pietrodonelli/.codex/worktrees/develop-simd/fdaPDE-core/output/simd/sweep/validation/summary.json",
+    "sha256": "e1963d2c9e91f3ce374ae3568c9aed97dbda1467c2cc1261a6013625c94492af",
+    "archive_sha256": "2794880c93d673c4be3d9fade1d67c7e651b0322c6cce6cc721abbe32f769f37"
+  },
+  {
+    "archive": "eigen-comparisons.json.gz",
+    "source": "/Users/pietrodonelli/.codex/worktrees/develop-simd/fdaPDE-core/output/simd/eigen-comparison/native-preallocated-20261002/summary.json",
+    "sha256": "e4ece6c4439dcfa20bb6dd5e67230c55a33d87ffe385ba64246ae5278496471a",
+    "archive_sha256": "263278dcbd059202d32396d529ff7ebfbccc6ee6ed4edfe6ffecfe17d7921527"
+  },
+  {
+    "archive": "eigen-manifest.json.gz",
+    "source": "/Users/pietrodonelli/.codex/worktrees/develop-simd/fdaPDE-core/output/simd/eigen-comparison/native-preallocated-20261002/manifest.json",
+    "sha256": "a52624b58953798c0e1281e4d806a0d3fbc99fbd5525f45cb0e50dfbeb010473",
+    "archive_sha256": "3fda4c56e84cec40fb9d82b71c8e620c13dd7ac9f5cacc532f1eed3e2fa742d0"
+  },
+  {
+    "archive": "eigen-artifact-check.json.gz",
+    "source": "/Users/pietrodonelli/.codex/worktrees/develop-simd/fdaPDE-core/output/simd/eigen-comparison/verification/final-artifact-check.json",
+    "sha256": "b225699e6cd5065306ccb95c8a7a2be66b83989e9b11ff07488cb8eda22cd628",
+    "archive_sha256": "19078686c36cac45ba2719a990c06dd2a0bad0d3ee565f22561b4f2d55cf7f2d"
+  },
+  {
+    "archive": "hardware.json.gz",
+    "source": "/Users/pietrodonelli/.codex/worktrees/develop-simd/fdaPDE-core/output/simd/sweep/hardware.json",
+    "sha256": "81c1cd1e070bc185184f444ff58227c6d7f96053ccafe77ce5bf4fa52cd1d2bc",
+    "archive_sha256": "9d1c9242b685f5f1652016952e5807143b4d1338e0d47916e3525c950728dba0"
+  },
+  {
+    "archive": "focused-dense-historical.json.gz",
+    "source": "/Users/pietrodonelli/.codex/worktrees/develop-simd/fdaPDE-core/output/simd/eigen-comparison/verification/focused-dense/verification.json",
+    "sha256": "5048221fc100ca56561f3b66a3b29ddce1fb07b1349d6d2fb99cd3468a085678",
+    "archive_sha256": "598403187c98df68b2760a99081e2beddb19bd74b2883e2186fa9a10a2ffe2f6"
+  },
+  {
+    "archive": "sanitizers-historical.json.gz",
+    "source": "/Users/pietrodonelli/.codex/worktrees/develop-simd/fdaPDE-core/output/simd/eigen-comparison/verification/sanitizers/verification.json",
+    "sha256": "e82ff7abd883c150c6f7683141b848ed175929bc926fdfacb9df4168c9b186e3",
+    "archive_sha256": "fb8b4a6a1f50c70f90ef694552146ab72cadf684c4b60fcf2969b717b05e8ccb"
+  },
+  {
+    "archive": "historical-preallocated-verification.md",
+    "source": "/Users/pietrodonelli/.codex/worktrees/develop-simd/fdaPDE-core/output/simd/eigen-comparison/verification/README.md",
+    "sha256": "d731156a5783ae98dc961b861822c6437dd18b99e47a6af0bfd88de581fa5ee8",
+    "archive_sha256": "d731156a5783ae98dc961b861822c6437dd18b99e47a6af0bfd88de581fa5ee8"
+  }
+]

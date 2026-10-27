@@ -1,0 +1,209 @@
+{
+  "date": "2026-10-27",
+  "compiler": "AppleClang 21",
+  "build": "Release",
+  "assertions": "enabled",
+  "threads": 4,
+  "samples": 7,
+  "calls_per_sample": 3,
+  "setup": "excluded",
+  "output_allocation": "included",
+  "load_average": [
+    5.7578125,
+    7.1826171875,
+    5.57177734375
+  ],
+  "timings_ns": {
+    "batch_dynamic_fused_arithmetic": 79333.75,
+    "lu_dynamic_32": 9731.21,
+    "spd3_log_sequential_4096": 791847.0,
+    "spd3_log_parallel4_4096": 298944.33,
+    "spd3_log_sequential_65536": 13560569.67,
+    "spd3_log_parallel4_65536": 3640250.0
+  },
+  "allocations": [
+    {
+      "name": "owner_static_none_identity",
+      "count": 1,
+      "persistent": 0,
+      "temporary": 0,
+      "total": 0
+    },
+    {
+      "name": "owner_static_full_identity",
+      "count": 1,
+      "persistent": 2,
+      "temporary": 0,
+      "total": 2
+    },
+    {
+      "name": "owner_dynamic_none_identity",
+      "count": 1,
+      "persistent": 1,
+      "temporary": 1,
+      "total": 2
+    },
+    {
+      "name": "owner_dynamic_full_identity",
+      "count": 1,
+      "persistent": 3,
+      "temporary": 1,
+      "total": 4
+    },
+    {
+      "name": "batch_static_none_identity",
+      "count": 1,
+      "persistent": 1,
+      "temporary": 0,
+      "total": 1
+    },
+    {
+      "name": "batch_static_full_identity",
+      "count": 1,
+      "persistent": 4,
+      "temporary": 0,
+      "total": 4
+    },
+    {
+      "name": "batch_dynamic_none_identity",
+      "count": 1,
+      "persistent": 1,
+      "temporary": 0,
+      "total": 1
+    },
+    {
+      "name": "batch_dynamic_full_identity",
+      "count": 1,
+      "persistent": 4,
+      "temporary": 0,
+      "total": 4
+    },
+    {
+      "name": "batch_static_none_identity",
+      "count": 64,
+      "persistent": 1,
+      "temporary": 0,
+      "total": 1
+    },
+    {
+      "name": "batch_static_full_identity",
+      "count": 64,
+      "persistent": 4,
+      "temporary": 0,
+      "total": 4
+    },
+    {
+      "name": "batch_dynamic_none_identity",
+      "count": 64,
+      "persistent": 1,
+      "temporary": 0,
+      "total": 1
+    },
+    {
+      "name": "batch_dynamic_full_identity",
+      "count": 64,
+      "persistent": 4,
+      "temporary": 0,
+      "total": 4
+    },
+    {
+      "name": "batch_static_none_identity",
+      "count": 1024,
+      "persistent": 1,
+      "temporary": 0,
+      "total": 1
+    },
+    {
+      "name": "batch_static_full_identity",
+      "count": 1024,
+      "persistent": 4,
+      "temporary": 0,
+      "total": 4
+    },
+    {
+      "name": "batch_dynamic_none_identity",
+      "count": 1024,
+      "persistent": 1,
+      "temporary": 0,
+      "total": 1
+    },
+    {
+      "name": "batch_dynamic_full_identity",
+      "count": 1024,
+      "persistent": 4,
+      "temporary": 0,
+      "total": 4
+    },
+    {
+      "name": "batch_static_full_from_values",
+      "count": 64,
+      "persistent": 4,
+      "temporary": 128,
+      "total": 132
+    },
+    {
+      "name": "batch_dynamic_full_from_values",
+      "count": 64,
+      "persistent": 4,
+      "temporary": 576,
+      "total": 580
+    },
+    {
+      "name": "batch_dynamic_none_from_unverified_dense",
+      "count": 64,
+      "persistent": 1,
+      "temporary": 256,
+      "total": 257
+    },
+    {
+      "name": "batch_dynamic_full_from_unverified_dense",
+      "count": 64,
+      "persistent": 4,
+      "temporary": 576,
+      "total": 580
+    },
+    {
+      "name": "batch_dynamic_fused_arithmetic",
+      "count": 1024,
+      "persistent": 1,
+      "temporary": 2049,
+      "total": 2050
+    },
+    {
+      "name": "batch_dynamic_mapped_arithmetic",
+      "count": 1024,
+      "persistent": 1,
+      "temporary": 2049,
+      "total": 2050
+    },
+    {
+      "name": "owner_dynamic_full_from_none",
+      "count": 1,
+      "persistent": 3,
+      "temporary": 6,
+      "total": 9
+    },
+    {
+      "name": "owner_dynamic_full_from_log",
+      "count": 1,
+      "persistent": 3,
+      "temporary": 5,
+      "total": 8
+    },
+    {
+      "name": "owner_dynamic_full_from_spectral",
+      "count": 1,
+      "persistent": 3,
+      "temporary": 3,
+      "total": 6
+    },
+    {
+      "name": "owner_dynamic_full_from_spectral_log",
+      "count": 1,
+      "persistent": 3,
+      "temporary": 2,
+      "total": 5
+    }
+  ],
+  "binary_sha256": "59aac1f2ccaff5329fa026d1d142aa6ac7a4bb7c8bb68584570803d876f881bb"
+}
