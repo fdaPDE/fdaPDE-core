@@ -74,3 +74,7 @@ ctest --test-dir build/native --output-on-failure
 The default integration lane retains Eigen-dependent core callers and verifies
 both dense/full aggregate inclusion orders in linked translation units. Native
 and integration lanes both keep debug assertions enabled in ordinary tests.
+
+## Execution
+
+Execution tests check task ownership, accounting, queue bounds, nested algorithms, reduction identity and configuration validation. Configuration and saturation use separate processes. See [the execution contract](../docs/execution.md).
