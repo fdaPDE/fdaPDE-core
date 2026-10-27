@@ -271,3 +271,27 @@ sums and grouped periods are therefore exact even for `float`. Every output
 coefficient is checked against the complete allocated reference vector; its
 footprint is unchanged. This optimization only reduces **untimed verification**,
 without changing the measured public calls or the native product kernels.
+
+
+## Structured kernels, caches and parallel batches
+
+The 27 October 2026 integration ports the algebra changes from `develop-GFA`
+through `f146ddf2`, including certified small-order SPD kernels, conditional
+spectral caches, fused `MatrixBatch` arithmetic, explicit parallel transforms,
+Cholesky/rotation/quaternion APIs, LU determinant reuse, Eigen block fixes and
+fixed-cycle sparse multigrid. The execution foundation supplies the batch runtime;
+geometry, GFE and application solvers remain outside this branch update.
+
+SIMD remains opt-in. Its contiguous assignment/product paths and native sparse
+preallocated APIs are retained. Matrix materialization handles deferred
+`eval_matrix()` expressions before selecting the existing SIMD product executor.
+This preserves inverse-expression evaluation and the optimized plain product path.
+
+SIMD permits the compiler to operate on multiple coefficients per instruction;
+`execution_par` distributes independent batch entries across executor threads.
+Small SPD kernels and cache reuse reduce the amount of work per entry. These
+mechanisms compose but have separate costs and should be measured separately.
+
+See [dense algebra](dense-algebra.md), [batch operations](matrix-batch.md),
+[SPD spectral contracts](spd-spectral.md) and
+[the dated report and evidence](reports/linear-algebra-2026-10-27/README.md).

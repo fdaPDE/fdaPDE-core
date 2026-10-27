@@ -255,15 +255,15 @@ template <typename XprType_> struct DiagonalMatrixExpr : public MatrixExpr<XprTy
     }
     // matrix inverse as 1/coeff
     /// @brief returns the inverse matrix expression
-    auto inverse() const& { return internals::diagonal_cast(derived().diagonal().cwise().inv()); }
+    auto inv() const& { return internals::diagonal_cast(derived().diagonal().cwise().inv()); }
     /// @brief returns the inverse matrix expression
-    auto inverse() const&&
+    auto inv() const&&
         requires(XprType::NestAsRef == 0)
     {
         return internals::diagonal_cast(derived().diagonal().cwise().inv());
     }
     /// @brief rejects borrowing an inverse expression from a temporary owner
-    void inverse() const&&
+    void inv() const&&
         requires(XprType::NestAsRef != 0)
     = delete;
     // linear system solver Ax = b
@@ -397,6 +397,8 @@ class DiagonalMatrix : public DiagonalMatrixExpr<DiagonalMatrix<Scalar_, Rows_>>
     using Base = DiagonalMatrixExpr<DiagonalMatrix<Scalar_, Rows_>>;
    public:
     using Scalar = Scalar_;
+    using View = DiagonalMatrixView<Scalar_, Rows_>;
+    using ConstView = DiagonalMatrixView<const Scalar_, Rows_>;
     using StorageType = Vector<Scalar, Rows_>;
     static constexpr int Rows = Rows_;
     static constexpr int Cols = Rows_;

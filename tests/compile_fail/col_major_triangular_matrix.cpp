@@ -16,6 +16,6 @@
 
 #include <fdaPDE/dense_linear_algebra.h>
 
-fdapde::LowerTriangularMatrix<double, 3, 3, fdapde::ColMajor> col_major_triangular_matrix;
+fdapde::LowerTriangularMatrix<double, 3, fdapde::ColMajor> col_major_triangular_matrix;
 
 int main() { return col_major_triangular_matrix.rows(); }

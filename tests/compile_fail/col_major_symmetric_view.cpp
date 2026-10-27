@@ -17,6 +17,7 @@
 #include <fdaPDE/dense_linear_algebra.h>
 
 double col_major_symmetric_storage[6] {};
-fdapde::SymmetricMatrixView<double, 3, 3, fdapde::ColMajor> col_major_symmetric_view(col_major_symmetric_storage);
+fdapde::SymmetricMatrixView<double, 3, fdapde::Cache::None, fdapde::ColMajor>
+  col_major_symmetric_view(col_major_symmetric_storage);
 
 int main() { return col_major_symmetric_view.rows(); }

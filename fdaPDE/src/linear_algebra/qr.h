@@ -19,6 +19,7 @@
 
 #include <cmath>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
@@ -61,7 +62,8 @@ template <typename Scalar_, int Rows_, int Cols_> class HouseholderQR {
         fdapde_strong_assert(
           !(!shape_valid), std::invalid_argument, "HouseholderQR requires a nonempty matrix matching its static shape");
 
-        if constexpr (Rows == Dynamic) Q_.resize(rows, rows);
+        Matrix<Scalar, Rows, Rows> q;
+        if constexpr (Rows == Dynamic) q.resize(rows, rows);
         if constexpr (Rows == Dynamic || Cols == Dynamic) R_.resize(rows, cols);
         Scalar scale = Scalar(0);
         for (int row = 0; row < rows; ++row) {
@@ -76,8 +78,8 @@ template <typename Scalar_, int Rows_, int Cols_> class HouseholderQR {
 
         const Scalar normalization = scale == Scalar(0) ? Scalar(1) : scale;
         R_ /= normalization;
-        Q_.set_zero();
-        for (int i = 0; i < rows; ++i) Q_(i, i) = Scalar(1);
+        q.set_zero();
+        for (int i = 0; i < rows; ++i) q(i, i) = Scalar(1);
 
         const int reflectors = fdapde::min(rows, cols);
         for (int k = 0; k < reflectors; ++k) {
@@ -110,22 +112,24 @@ template <typename Scalar_, int Rows_, int Cols_> class HouseholderQR {
             // q <- Q * H. Householder reflectors are symmetric
             for (int row = 0; row < rows; ++row) {
                 Scalar dot = Scalar(0);
-                for (int i = 0; i < length; ++i) { dot += Q_(row, k + i) * reflector[static_cast<std::size_t>(i)]; }
+                for (int i = 0; i < length; ++i) { dot += q(row, k + i) * reflector[static_cast<std::size_t>(i)]; }
                 dot *= beta;
-                for (int i = 0; i < length; ++i) { Q_(row, k + i) -= dot * reflector[static_cast<std::size_t>(i)]; }
+                for (int i = 0; i < length; ++i) { q(row, k + i) -= dot * reflector[static_cast<std::size_t>(i)]; }
             }
         }
 
         const Scalar tolerance = std::numeric_limits<Scalar>::epsilon() * static_cast<Scalar>(fdapde::max(rows, cols));
-        rank_ = numerical_rank_(R_, tolerance);
+        const int rank = numerical_rank_(R_, tolerance);
         R_ *= normalization;
+        Q_.emplace(q);
+        rank_ = rank;
         computed_ = true;
     }
 
     /// @brief returns the full square orthogonal factor after a completed decomposition
-    constexpr const Matrix<Scalar, Rows, Rows>& Q() const& {
-        fdapde_assert(computed_, std::logic_error, "QR factorization has not been computed");
-        return Q_;
+    constexpr const OrthogonalMatrix<Scalar, Rows>& Q() const& {
+        fdapde_strong_assert(computed_, std::logic_error, "QR factorization has not been computed");
+        return *Q_;
     }
     /// @brief rejects access through a temporary decomposition to prevent dangling factor references
     constexpr void Q() const&& = delete;
@@ -140,6 +144,74 @@ template <typename Scalar_, int Rows_, int Cols_> class HouseholderQR {
     constexpr int rank() const { return rank_; }
     /// @brief reports whether a factorization has been computed
     constexpr bool computed() const { return computed_; }
+
+    /// @brief solves square or overdetermined full-column-rank systems for one or more finite right-hand sides
+    /// @details returns the unique least-squares solution and rejects underdetermined or numerically deficient input
+    template <typename RhsType> auto solve(const MatrixExpr<RhsType>& rhs) const {
+        fdapde_strong_assert(computed_, std::logic_error, "QR factorization has not been computed");
+        fdapde_static_assert(
+          RhsType::Rows == Dynamic || Rows == Dynamic || RhsType::Rows == Rows, INVALID_QR_RHS_STATIC_SHAPE);
+        const int rows = R_.rows(), cols = R_.cols();
+        fdapde_strong_assert(
+          rows >= cols, std::invalid_argument, "QR solve requires a square or overdetermined system");
+        fdapde_strong_assert(rank_ == cols, std::domain_error, "QR solve requires full numerical column rank");
+        fdapde_strong_assert(
+          rhs.rows() == rows && rhs.cols() > 0, std::invalid_argument,
+          "QR solve requires matching nonempty right-hand sides");
+        for (int i = 0; i < rows; ++i)
+            for (int j = 0; j < rhs.cols(); ++j)
+                fdapde_strong_assert(
+                  is_finite_(static_cast<Scalar>(rhs.derived()(i, j))), std::invalid_argument,
+                  "QR solve requires finite right-hand sides");
+        Scalar factor_scale = Scalar(0);
+        for (int i = 0; i < cols; ++i) {
+            for (int j = i; j < cols; ++j) {
+                fdapde_strong_assert(
+                  is_finite_(R_(i, j)), std::domain_error, "QR solve requires representable triangular factors");
+                factor_scale = std::max(factor_scale, std::abs(R_(i, j)));
+            }
+            fdapde_strong_assert(
+              R_(i, i) != Scalar(0), std::domain_error, "QR solve requires nonzero triangular pivots");
+        }
+
+        // normalize both factors and loads so projection and substitution do not depend on their absolute scale
+        Matrix<long double, Cols, RhsType::Cols> projected;
+        if constexpr (Cols == Dynamic || RhsType::Cols == Dynamic) projected.resize(cols, rhs.cols());
+        int factor_exponent = 0;
+        const long double factor_fraction = std::frexp(static_cast<long double>(factor_scale), &factor_exponent);
+        for (int col = 0; col < rhs.cols(); ++col) {
+            Scalar rhs_scale = Scalar(0);
+            for (int k = 0; k < rows; ++k)
+                rhs_scale = std::max(rhs_scale, std::abs(static_cast<Scalar>(rhs.derived()(k, col))));
+            const Scalar normalization = rhs_scale == Scalar(0) ? Scalar(1) : rhs_scale;
+            for (int i = 0; i < cols; ++i) {
+                long double value = 0;
+                for (int k = 0; k < rows; ++k)
+                    value += static_cast<long double>((*Q_)(k, i)) *
+                             (static_cast<long double>(static_cast<Scalar>(rhs.derived()(k, col))) / normalization);
+                projected(i, col) = value;
+            }
+            for (int i = cols - 1; i >= 0; --i) {
+                long double value = projected(i, col);
+                for (int k = i + 1; k < cols; ++k)
+                    value -= (static_cast<long double>(R_(i, k)) / factor_scale) * projected(k, col);
+                projected(i, col) = value / (static_cast<long double>(R_(i, i)) / factor_scale);
+            }
+            // combine binary exponents without overflowing the scale ratio before restoring the solution
+            int rhs_exponent = 0;
+            const long double rhs_fraction = std::frexp(static_cast<long double>(normalization), &rhs_exponent);
+            for (int i = 0; i < cols; ++i) {
+                int exponent = 0;
+                const long double fraction = std::frexp(projected(i, col), &exponent);
+                projected(i, col) =
+                  std::scalbn(fraction * rhs_fraction / factor_fraction, exponent + rhs_exponent - factor_exponent);
+                fdapde_strong_assert(
+                  is_finite_(static_cast<Scalar>(projected(i, col))), std::domain_error,
+                  "QR solution is not representable");
+            }
+        }
+        return Matrix<Scalar, Cols, RhsType::Cols>(projected);
+    }
    private:
     /// @brief returns whether the scalar is finite and not NaN
     static constexpr bool is_finite_(Scalar value) {
@@ -174,7 +246,7 @@ template <typename Scalar_, int Rows_, int Cols_> class HouseholderQR {
         return pivot_row;
     }
 
-    Matrix<Scalar, Rows, Rows> Q_;
+    std::optional<OrthogonalMatrix<Scalar, Rows>> Q_;
     Matrix<Scalar, Rows, Cols> R_;
     int rank_ = 0;
     bool computed_ = false;

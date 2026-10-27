@@ -21,6 +21,22 @@
 
 namespace fdapde {
 
+/// @brief accumulates finite summands using Neumaier compensation
+class CompensatedSum {
+    double sum_ = 0, correction_ = 0;
+   public:
+    /// @brief initializes an empty sum
+    CompensatedSum() = default;
+    /// @brief adds one finite summand while retaining lost low order bits
+    void add(double value) {
+        const double next = sum_ + value;
+        correction_ += std::abs(sum_) >= std::abs(value) ? (sum_ - next) + value : (value - next) + sum_;
+        sum_ = next;
+    }
+    /// @brief returns the corrected total
+    double value() const { return sum_ + correction_; }
+};
+
 /// @brief factorial of n
 constexpr int factorial(const int n) {
     fdapde_assert(n >= 0, std::domain_error, "factorial is undefined for negative integers");

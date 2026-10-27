@@ -40,8 +40,8 @@ template <typename MatrixType>
 concept permits_owning_rvalue_copy_assignment = requires(MatrixType& lhs, MatrixType& rhs) { std::move(lhs) = rhs; };
 
 using lifetime_matrix = Matrix<double, 3, 3>;
-using lifetime_lower = LowerTriangularMatrix<double, 3, 3>;
-using const_lower_view = LowerTriangularMatrixView<const double, 3, 3>;
+using lifetime_lower = LowerTriangularMatrix<double, 3>;
+using const_lower_view = LowerTriangularMatrixView<const double, 3>;
 
 // a temporary dense owner cannot lend a triangular block
 static_assert(!permits_temporary_triangular<lifetime_matrix>);
@@ -50,9 +50,9 @@ static_assert(permits_expression_triangular<lifetime_matrix>);
 // a temporary triangular owner cannot return a borrow through copy assignment
 static_assert(!permits_owning_rvalue_copy_assignment<lifetime_lower>);
 // a fixed nonempty triangular view requires an explicit storage binding
-static_assert(!std::is_default_constructible_v<LowerTriangularMatrixView<double, 3, 3>>);
+static_assert(!std::is_default_constructible_v<LowerTriangularMatrixView<double, 3>>);
 // a dynamic triangular view permits an initially empty binding
-static_assert(std::is_default_constructible_v<LowerTriangularMatrixView<double, Dynamic, Dynamic>>);
+static_assert(std::is_default_constructible_v<LowerTriangularMatrixView<double, Dynamic>>);
 // a const-storage triangular view advertises read-only access
 static_assert(const_lower_view::ReadOnly == 1);
 // a const-storage triangular view rejects coefficient writes
@@ -106,8 +106,8 @@ template <int StorageOrder> void check_dense_triangular_views() {
 void check_packed_triangular_contracts() {
     const double lower_data[] = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0};
     const double upper_data[] = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0};
-    LowerTriangularMatrix<double, 3, 3> lower(lower_data);
-    const UpperTriangularMatrix<double, 3, 3> upper(upper_data);
+    LowerTriangularMatrix<double, 3> lower(lower_data);
+    const UpperTriangularMatrix<double, 3> upper(upper_data);
 
     expect_matrix_near(lower, Matrix<double, 3, 3>({1.0, 0.0, 0.0, 2.0, 3.0, 0.0, 4.0, 5.0, 6.0}));
     expect_matrix_near(upper, Matrix<double, 3, 3>({1.0, 2.0, 3.0, 0.0, 4.0, 5.0, 0.0, 0.0, 6.0}));
@@ -151,27 +151,21 @@ void check_packed_triangular_contracts() {
     expect_matrix_near(lower.solve(lower_matrix_rhs), solution);
     expect_matrix_near(upper.solve(upper_matrix_rhs), solution);
 
-    LowerTriangularMatrix<double, Dynamic, Dynamic> dynamic(
+    LowerTriangularMatrix<double, Dynamic> dynamic(
       std::vector<double> {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0});
     // a dynamic triangular owner adopts the requested four-row shape
     ASSERT_EQ(dynamic.rows(), 4);
-    const auto dynamic_inverse = dynamic.inverse();
+    const auto dynamic_inverse = dynamic.inv();
     const Matrix<double, Dynamic, Dynamic> identity(dynamic * dynamic_inverse);
     Matrix<double, 4, 4> expected_identity;
     for (int i = 0; i < 4; ++i) expected_identity(i, i) = 1.0;
     expect_matrix_near(identity, expected_identity);
 
-    LowerTriangularMatrix<double, Dynamic, 3> partial(3, 3);
-    partial = lower;
-    expect_matrix_near(partial, lower);
-    const LowerTriangularMatrix<double, 3, Dynamic> partial_default;
-    // fixed columns determine the default partially dynamic owner's row count
-    EXPECT_EQ(partial_default.rows(), 3);
-    // fixed columns retain their declared extent in the default owner
-    EXPECT_EQ(partial_default.cols(), 3);
+    // one static order determines both triangular axes
+    static_assert(lifetime_lower::Order == 3 && lifetime_lower::Rows == lifetime_lower::Cols);
 
     std::array<double, 6> first_storage {};
-    LowerTriangularMatrixView<double, 3, 3> first_view(first_storage.data());
+    LowerTriangularMatrixView<double, 3> first_view(first_storage.data());
     // triangular views are stored by value in expression nodes
     static_assert(decltype(first_view)::NestAsRef == 0);
     const double* const first_address = first_view.data();
@@ -181,25 +175,25 @@ void check_packed_triangular_contracts() {
     expect_matrix_near(first_view, lower);
 
     std::array<double, 6> second_storage {};
-    LowerTriangularMatrixView<double, 3, 3> second_view(second_storage.data());
+    LowerTriangularMatrixView<double, 3> second_view(second_storage.data());
     second_view = first_view;
     // assignment into the second view preserves its external storage binding
     EXPECT_EQ(second_view.data(), second_storage.data());
     expect_matrix_near(second_view, first_view);
 
     std::array<double, 7> overlap_storage {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 0.0};
-    LowerTriangularMatrixView<double, 3, 3> overlap_source(overlap_storage.data());
-    LowerTriangularMatrixView<double, 3, 3> overlap_destination(overlap_storage.data() + 1);
+    LowerTriangularMatrixView<double, 3> overlap_source(overlap_storage.data());
+    LowerTriangularMatrixView<double, 3> overlap_destination(overlap_storage.data() + 1);
     overlap_destination = overlap_source;
     expect_matrix_near(overlap_destination, Matrix<double, 3, 3>({1.0, 0.0, 0.0, 2.0, 3.0, 0.0, 4.0, 5.0, 6.0}));
 
-    const LowerTriangularMatrixView<const double, 3, 3> const_view(first_storage.data());
+    const LowerTriangularMatrixView<const double, 3> const_view(first_storage.data());
     // a const triangular view reads the expected packed lower entry
     EXPECT_DOUBLE_EQ(static_cast<double>(const_view(2, 1)), 5.0);
-    LowerTriangularMatrixView<double, Dynamic, Dynamic> dynamic_view(first_storage.data(), 3, 3);
+    LowerTriangularMatrixView<double, Dynamic> dynamic_view(first_storage.data(), 3, 3);
     expect_matrix_near(
       dynamic_view + dynamic_view, Matrix<double, 3, 3>({2.0, 0.0, 0.0, 4.0, 6.0, 0.0, 8.0, 10.0, 12.0}));
-    LowerTriangularMatrixView<double, Dynamic, Dynamic> empty_view;
+    LowerTriangularMatrixView<double, Dynamic> empty_view;
     // an empty triangular view has zero rows
     EXPECT_EQ(empty_view.rows(), 0);
     // an empty triangular view has zero columns
@@ -215,15 +209,15 @@ void check_packed_triangular_contracts() {
 
     // construction rejects a packed length that is not a triangular number
     EXPECT_THROW(
-      static_cast<void>(LowerTriangularMatrix<double, Dynamic, Dynamic>(std::vector<double> {1.0, 2.0})),
-      std::invalid_argument);
+      static_cast<void>(LowerTriangularMatrix<double, Dynamic>(std::vector<double> {1.0, 2.0})), std::invalid_argument);
     // construction rejects a nonsquare runtime shape
-    EXPECT_THROW(static_cast<void>(LowerTriangularMatrix<double, Dynamic, Dynamic>(2, 3)), std::invalid_argument);
-    // construction rejects runtime dimensions inconsistent with the fixed column count
-    EXPECT_THROW(static_cast<void>(LowerTriangularMatrix<double, Dynamic, 3>(2, 2)), std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(LowerTriangularMatrix<double, Dynamic>(2, 3)), std::invalid_argument);
+    // construction rejects packed coefficients whose inferred order differs from the fixed order
+    EXPECT_THROW(
+      static_cast<void>(LowerTriangularMatrix<double, 3>(std::vector<double> {1.0, 2.0, 3.0})), std::invalid_argument);
     // a nonempty dynamic triangular view rejects a null storage pointer
     EXPECT_THROW(
-      static_cast<void>(LowerTriangularMatrixView<double, Dynamic, Dynamic>(static_cast<double*>(nullptr), 2, 2)),
+      static_cast<void>(LowerTriangularMatrixView<double, Dynamic>(static_cast<double*>(nullptr), 2, 2)),
       std::invalid_argument);
     // mutable owner access rejects a negative row
     EXPECT_THROW(static_cast<void>(lower(-1, 0)), std::out_of_range);
@@ -232,7 +226,7 @@ void check_packed_triangular_contracts() {
     // triangular solve rejects a right-hand side with incompatible length
     EXPECT_THROW(static_cast<void>(lower.solve(Vector<double, Dynamic>(2))), std::invalid_argument);
 
-    LowerTriangularMatrix<double, Dynamic, Dynamic> resize_target(3, 3);
+    LowerTriangularMatrix<double, Dynamic> resize_target(3, 3);
     resize_target(2, 0) = 7.0;
     // resize rejects a nonsquare target shape
     EXPECT_THROW(resize_target.resize(2, 3), std::invalid_argument);
@@ -242,7 +236,7 @@ void check_packed_triangular_contracts() {
     EXPECT_DOUBLE_EQ(static_cast<double>(resize_target(2, 0)), 7.0);
 
     std::array<double, 3> assignment_storage {1.0, 2.0, 3.0};
-    LowerTriangularMatrixView<double, Dynamic, Dynamic> assignment_target(assignment_storage.data(), 2, 2);
+    LowerTriangularMatrixView<double, Dynamic> assignment_target(assignment_storage.data(), 2, 2);
     // view assignment rejects a source with incompatible dimensions
     EXPECT_THROW(assignment_target = lower, std::invalid_argument);
     // failed view assignment preserves the destination's row count
@@ -254,7 +248,7 @@ void check_packed_triangular_contracts() {
     // triangular extraction rejects a rectangular dense matrix
     EXPECT_THROW(static_cast<void>(rectangular.template triangular_block<Lower>()), std::invalid_argument);
 
-    const UpperTriangularMatrix<int, 2, 2> integral({1, 2, 3});
+    const UpperTriangularMatrix<int, 2> integral({1, 2, 3});
     // an integral triangular determinant preserves the integral scalar type
     static_assert(std::is_same_v<decltype(integral.determinant()), int>);
     // the integral determinant equals the exact product of diagonal entries

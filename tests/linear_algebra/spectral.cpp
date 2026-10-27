@@ -1,4 +1,4 @@
-#include <fdaPDE/linear_algebra.h>
+#include <fdaPDE/dense_linear_algebra.h>
 #include <gtest/gtest.h>
 
 #include <cmath>
@@ -87,7 +87,7 @@ TEST(linear_algebra, spectral_matrix_functions_reject_invalid_inputs_and_results
     EXPECT_THROW(static_cast<void>(fdapde::expm(empty)), std::invalid_argument);
     // integer powers reject asymmetric input instead of selecting one triangle
     EXPECT_THROW(static_cast<void>(fdapde::powm(asymmetric, 2)), std::invalid_argument);
-    // NaN in the upper triangle is rejected before a symmetric view is formed
+    // a nonfinite upper-triangle entry is rejected before a symmetric view is formed
     EXPECT_THROW(static_cast<void>(fdapde::sqrtm(nonfinite)), std::invalid_argument);
     // logarithm rejects a zero eigenvalue
     EXPECT_THROW(static_cast<void>(fdapde::logm(nonpositive)), std::domain_error);

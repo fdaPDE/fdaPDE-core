@@ -84,6 +84,16 @@ template <int StorageOrder> void check_partial_piv_lu_contracts() {
     EXPECT_DOUBLE_EQ(const_view_factorization.determinant(), -7.0);
     expect_matrix_near(const_view_factorization.solve(rhs), expected);
 
+    const Matrix<double, Dynamic, 3, StorageOrder> fixed_columns(matrix);
+    const PartialPivLU fixed_order_factorization(fixed_columns);
+    // a known column count determines the single static order of all square LU factors
+    static_assert(
+      std::is_same_v<std::remove_cvref_t<decltype(fixed_order_factorization.P())>, PermutationMatrix<3>> &&
+      std::is_same_v<std::remove_cvref_t<decltype(fixed_order_factorization.L())>, LowerTriangularMatrix<double, 3>> &&
+      std::is_same_v<std::remove_cvref_t<decltype(fixed_order_factorization.U())>, UpperTriangularMatrix<double, 3>>);
+    // factors inferred from the fixed column count solve the same known system
+    expect_matrix_near(fixed_order_factorization.solve(rhs), expected);
+
     const auto retained_factorization = [] {
         const matrix_type source({0.0, 2.0, 1.0, 1.0, -2.0, -3.0, 2.0, 3.0, 1.0});
         const matrix_type zero = matrix_type::Zero();
@@ -172,14 +182,14 @@ template <int StorageOrder> void check_partial_piv_lu_scale_and_determinant() {
       {0.0, 3.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 4.0, 0.0, 0.0, 0.0, 0.0, 5.0});
     // the signed permutation and diagonal factors produce determinant minus one hundred twenty
     EXPECT_DOUBLE_EQ(matrix.determinant(), -120.0);
-    const Matrix<double, 4, 4, StorageOrder> inverse(matrix.inverse());
+    const Matrix<double, 4, 4, StorageOrder> inverse(matrix.inv());
     Matrix<double, 4, 4, StorageOrder> identity;
     identity.set_zero();
     for (int i = 0; i < 4; ++i) identity(i, i) = 1.0;
     expect_matrix_near(Matrix<double, 4, 4, StorageOrder>(matrix * inverse), identity);
 
     const Matrix<double, 4, 4, StorageOrder> shifted(matrix + identity);
-    const Matrix<double, 4, 4, StorageOrder> expression_inverse((matrix + identity).inverse());
+    const Matrix<double, 4, 4, StorageOrder> expression_inverse((matrix + identity).inv());
     expect_matrix_near(Matrix<double, 4, 4, StorageOrder>(shifted * expression_inverse), identity);
     // determinant evaluation of a lazy sum agrees with its materialized matrix
     EXPECT_DOUBLE_EQ((matrix + identity).determinant(), shifted.determinant());
@@ -187,7 +197,7 @@ template <int StorageOrder> void check_partial_piv_lu_scale_and_determinant() {
     Matrix<double, Dynamic, Dynamic, StorageOrder> dynamic(matrix);
     // dynamic storage produces the same determinant as fixed storage
     EXPECT_DOUBLE_EQ(dynamic.determinant(), -120.0);
-    const Matrix<double, Dynamic, Dynamic, StorageOrder> dynamic_inverse(dynamic.inverse());
+    const Matrix<double, Dynamic, Dynamic, StorageOrder> dynamic_inverse(dynamic.inv());
     expect_matrix_near(Matrix<double, Dynamic, Dynamic, StorageOrder>(dynamic * dynamic_inverse), identity);
 
     const Matrix<double, 4, 4, StorageOrder> mixed_exponents(
@@ -223,7 +233,29 @@ template <int StorageOrder> void check_partial_piv_lu_scale_and_determinant() {
     Matrix<double, Dynamic, Dynamic, StorageOrder> singular(4, 4);
     singular.set_zero();
     // a singular matrix cannot produce an inverse
-    EXPECT_THROW(static_cast<void>(singular.inverse()), std::domain_error);
+    EXPECT_THROW(static_cast<void>(singular.inv()), std::domain_error);
+}
+
+// usable LU pivots retain determinant sign and scale even when direct products overflow or underflow
+TEST(PartialPivLU, ReusesWellConditionedFactorsAcrossBinaryScales) {
+    const auto check = []<typename Scalar>(int extreme_exponent) {
+        const Matrix<Scalar, 4, 4> base({0., 3., 1., 0., 2., 0., 0., 0., 0., 0., 4., 1., 0., 0., 0., 5.});
+        const double tolerance = 16 * std::numeric_limits<Scalar>::epsilon();
+        for (int exponent : {-extreme_exponent, 0, extreme_exponent}) {
+            const Scalar scale = std::ldexp(Scalar(1), exponent);
+            const Matrix<Scalar, 4, 4> input(scale * base);
+            const PartialPivLU factorization(input);
+            // uniform binary scaling preserves all four usable pivots of this row-permuted triangular matrix
+            ASSERT_EQ(factorization.info(), 0);
+            // undoing four powers of the scale recovers the independently known signed diagonal product
+            EXPECT_NEAR(std::ldexp(factorization.determinant(), -4 * exponent), -120., 120 * tolerance);
+            const Matrix<Scalar, 4, 1> expected({1., -2., 3., -4.});
+            const Matrix<Scalar, 4, 1> rhs(input * expected);
+            expect_matrix_near(factorization.solve(rhs), expected, tolerance);
+        }
+    };
+    check.template operator()<double>(200);
+    check.template operator()<float>(20);
 }
 
 // checks pivoted LU solves, singular-state reporting and determinants across extreme coefficient scales

@@ -24,13 +24,13 @@ namespace fdapde {
 /// @brief provides expression operations that preserve skew symmetry
 template <typename XprType> struct SkewSymmetricMatrixExpr;
 /// @brief views external strict-upper storage as a skew-symmetric matrix
-template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_> class SkewSymmetricMatrixView;
+template <typename Scalar_, int Order_, int StorageOrder_> class SkewSymmetricMatrixView;
 
 namespace internals {
 
 /// @brief identifies a view whose scalar type permits writes
-template <typename Scalar, int Rows, int Cols, int StorageOrder>
-struct is_mutable_matrix_view<SkewSymmetricMatrixView<Scalar, Rows, Cols, StorageOrder>> :
+template <typename Scalar, int Rows, int StorageOrder>
+struct is_mutable_matrix_view<SkewSymmetricMatrixView<Scalar, Rows, StorageOrder>> :
     std::bool_constant<!std::is_const_v<Scalar>> { };
 
 }   // namespace internals
@@ -288,26 +288,27 @@ constexpr auto operator/(const SkewSymmetricMatrixExpr<XprType>& lhs, ScalarType
 }
 
 /// @brief owns a skew-symmetric matrix
-template <typename Scalar_, int Rows_, int Cols_ = Rows_, int StorageOrder_ = RowMajor>
+template <typename Scalar_, int Order_, int StorageOrder_ = RowMajor>
 class SkewSymmetricMatrix :
     public SkewSymmetricMatrixBase<
-      Scalar_, Rows_, Cols_, StorageOrder_, SkewSymmetricMatrix<Scalar_, Rows_, Cols_, StorageOrder_>> {
+      Scalar_, Order_, Order_, StorageOrder_, SkewSymmetricMatrix<Scalar_, Order_, StorageOrder_>> {
    private:
     using Base = SkewSymmetricMatrixBase<
-      Scalar_, Rows_, Cols_, StorageOrder_, SkewSymmetricMatrix<Scalar_, Rows_, Cols_, StorageOrder_>>;
-    static constexpr int StaticShape = Rows_ != Dynamic ? Rows_ : Cols_;
+      Scalar_, Order_, Order_, StorageOrder_, SkewSymmetricMatrix<Scalar_, Order_, StorageOrder_>>;
+    static constexpr int StaticShape = Order_;
     static constexpr bool HasSupportedStaticStorage =
       StaticShape == Dynamic || static_cast<std::uint64_t>(StaticShape) * static_cast<std::uint64_t>(StaticShape) <=
                                   static_cast<std::uint64_t>(std::numeric_limits<int>::max());
    public:
-    fdapde_static_assert((Rows_ == Dynamic || Rows_ > 0) && (Cols_ == Dynamic || Cols_ > 0), INVALID_MATRIX_DIMENSIONS);
-    fdapde_static_assert(
-      Rows_ == Dynamic || Cols_ == Dynamic || Rows_ == Cols_, THIS_CLASS_IS_FOR_SQUARE_MATRICES_ONLY);
+    fdapde_static_assert(Order_ == Dynamic || Order_ > 0, INVALID_MATRIX_DIMENSIONS);
     fdapde_static_assert(StorageOrder_ == RowMajor, PACKED_COL_MAJOR_STRUCTURED_STORAGE_IS_NOT_SUPPORTED);
     fdapde_static_assert(HasSupportedStaticStorage, MATRIX_SIZE_EXCEEDS_SUPPORTED_RANGE);
     using Scalar = Scalar_;
-    static constexpr int Rows = Rows_;
-    static constexpr int Cols = Cols_;
+    using View = SkewSymmetricMatrixView<Scalar_, Order_, StorageOrder_>;
+    using ConstView = SkewSymmetricMatrixView<const std::remove_const_t<Scalar_>, Order_, StorageOrder_>;
+    static constexpr int Order = Order_;
+    static constexpr int Rows = Order_;
+    static constexpr int Cols = Order_;
     static constexpr int StorageOrder = StorageOrder_;
     static constexpr int StorageSize =
       StaticShape == Dynamic || !HasSupportedStaticStorage ? Dynamic : StaticShape * (StaticShape - 1) / 2;
@@ -377,8 +378,7 @@ class SkewSymmetricMatrix :
         requires(std::is_constructible_v<Scalar_, Scalar__>)
     constexpr explicit SkewSymmetricMatrix(const Scalar__ (&data)[Size]) : Base(), data_() {
         fdapde_static_assert(
-          Rows_ != Dynamic && Cols_ != Dynamic && StorageSize == static_cast<int>(Size),
-          THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
+          Order_ != Dynamic && StorageSize == static_cast<int>(Size), THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
         for (int i = 0; i < StorageSize; ++i) data_[static_cast<std::size_t>(i)] = data[static_cast<std::size_t>(i)];
     }
     /// @brief resizes the owned storage to the requested dimensions
@@ -411,26 +411,25 @@ class SkewSymmetricMatrix :
 };
 
 /// @brief views external strict-upper storage as a skew-symmetric matrix
-template <typename Scalar_, int Rows_, int Cols_ = Rows_, int StorageOrder_ = RowMajor>
+template <typename Scalar_, int Order_, int StorageOrder_ = RowMajor>
 class SkewSymmetricMatrixView :
     public SkewSymmetricMatrixBase<
-      Scalar_, Rows_, Cols_, StorageOrder_, SkewSymmetricMatrixView<Scalar_, Rows_, Cols_, StorageOrder_>> {
+      Scalar_, Order_, Order_, StorageOrder_, SkewSymmetricMatrixView<Scalar_, Order_, StorageOrder_>> {
    private:
     using Base = SkewSymmetricMatrixBase<
-      Scalar_, Rows_, Cols_, StorageOrder_, SkewSymmetricMatrixView<Scalar_, Rows_, Cols_, StorageOrder_>>;
-    static constexpr int StaticShape = Rows_ != Dynamic ? Rows_ : Cols_;
+      Scalar_, Order_, Order_, StorageOrder_, SkewSymmetricMatrixView<Scalar_, Order_, StorageOrder_>>;
+    static constexpr int StaticShape = Order_;
     static constexpr bool HasSupportedStaticStorage =
       StaticShape == Dynamic || static_cast<std::uint64_t>(StaticShape) * static_cast<std::uint64_t>(StaticShape) <=
                                   static_cast<std::uint64_t>(std::numeric_limits<int>::max());
    public:
-    fdapde_static_assert((Rows_ == Dynamic || Rows_ > 0) && (Cols_ == Dynamic || Cols_ > 0), INVALID_MATRIX_DIMENSIONS);
-    fdapde_static_assert(
-      Rows_ == Dynamic || Cols_ == Dynamic || Rows_ == Cols_, THIS_CLASS_IS_FOR_SQUARE_MATRICES_ONLY);
+    fdapde_static_assert(Order_ == Dynamic || Order_ > 0, INVALID_MATRIX_DIMENSIONS);
     fdapde_static_assert(StorageOrder_ == RowMajor, PACKED_COL_MAJOR_STRUCTURED_STORAGE_IS_NOT_SUPPORTED);
     fdapde_static_assert(HasSupportedStaticStorage, MATRIX_SIZE_EXCEEDS_SUPPORTED_RANGE);
     using Scalar = Scalar_;
-    static constexpr int Rows = Rows_;
-    static constexpr int Cols = Cols_;
+    static constexpr int Order = Order_;
+    static constexpr int Rows = Order_;
+    static constexpr int Cols = Order_;
     static constexpr int StorageOrder = StorageOrder_;
     static constexpr int StorageSize =
       StaticShape == Dynamic || !HasSupportedStaticStorage ? Dynamic : StaticShape * (StaticShape - 1) / 2;
@@ -442,11 +441,11 @@ class SkewSymmetricMatrixView :
     constexpr SkewSymmetricMatrixView(const SkewSymmetricMatrixView&) = default;
     /// @brief creates an empty dynamic skew-symmetric view without a buffer
     constexpr SkewSymmetricMatrixView()
-        requires(Rows_ == Dynamic && Cols_ == Dynamic)
+        requires(Order_ == Dynamic)
         : Base(), data_(nullptr) { }
-    /// @brief rejects default construction when either dimension is fixed
+    /// @brief rejects default construction when the order is fixed
     constexpr SkewSymmetricMatrixView()
-        requires(Rows_ != Dynamic || Cols_ != Dynamic)
+        requires(Order_ != Dynamic)
     = delete;
     /// @brief binds fixed dimensions to external strict-upper storage, permitting null only when no coefficients are
     /// stored

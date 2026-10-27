@@ -26,6 +26,8 @@ else()
   find_package(Eigen3 3.4 REQUIRED NO_MODULE)
 endif()
 
+find_package(Threads REQUIRED)
+
 enable_testing()
 include(GoogleTest)
 
@@ -78,6 +80,9 @@ endif()
 set(dense_sources
   linear_algebra/block.cpp
   linear_algebra/bool.cpp
+  linear_algebra/cholesky.cpp
+  linear_algebra/quaternion.cpp
+  linear_algebra/symmetric_cache.cpp
   linear_algebra/contiguous_assignment.cpp
   linear_algebra/contiguous_product.cpp
   linear_algebra/preallocated_product.cpp
@@ -99,7 +104,7 @@ set(dense_sources
 )
 add_executable(fdapde_dense_test ${dense_sources})
 fdapde_configure_target(fdapde_dense_test)
-target_link_libraries(fdapde_dense_test PRIVATE GTest::gtest_main)
+target_link_libraries(fdapde_dense_test PRIVATE GTest::gtest_main Threads::Threads)
 gtest_discover_tests(fdapde_dense_test PROPERTIES TIMEOUT 60)
 
 if(NOT FDAPDE_NATIVE_ONLY)
@@ -221,7 +226,6 @@ fdapde_add_simd_sweep(fdapde_simd_sweep_assignment 1 0)
 fdapde_add_simd_sweep(fdapde_simd_sweep_product 0 1)
 fdapde_add_simd_sweep(fdapde_simd_sweep_all 1 1)
 
-find_package(Threads REQUIRED)
 add_executable(fdapde_execution_test
   execution/runtime.cpp execution/task_graph.cpp execution/parallel_algorithms.cpp execution/queues.cpp)
 add_executable(fdapde_execution_configuration_test execution/configuration.cpp)
@@ -240,23 +244,83 @@ foreach(module utility)
   add_library(fdapde_execution_${module}_composition OBJECT
     public_headers/execution_then_${module}.cpp public_headers/${module}_then_execution.cpp)
   fdapde_configure_target(fdapde_execution_${module}_composition)
-  target_link_libraries(fdapde_execution_${module}_composition PRIVATE Eigen3::Eigen Threads::Threads)
+  target_link_libraries(fdapde_execution_${module}_composition PRIVATE Threads::Threads)
 endforeach()
 
 if(NOT FDAPDE_NATIVE_ONLY)
-add_executable(fdapde_core_execution_odr
-  public_headers/core_execution_odr_a.cpp public_headers/core_execution_odr_b.cpp
-  public_headers/core_execution_odr_main.cpp)
-fdapde_configure_target(fdapde_core_execution_odr)
-target_link_libraries(fdapde_core_execution_odr PRIVATE GTest::gtest_main Eigen3::Eigen Threads::Threads)
-gtest_discover_tests(fdapde_core_execution_odr PROPERTIES TIMEOUT 30)
-endif()
+  foreach(module linear_algebra optimization core)
+    add_library(fdapde_execution_${module}_composition OBJECT
+      public_headers/execution_then_${module}.cpp public_headers/${module}_then_execution.cpp)
+    fdapde_configure_target(fdapde_execution_${module}_composition)
+    target_link_libraries(fdapde_execution_${module}_composition PRIVATE Eigen3::Eigen Threads::Threads)
+  endforeach()
 
-add_executable(fdapde_spd_test linear_algebra/spd.cpp linear_algebra/spectral.cpp)
+  add_executable(fdapde_core_execution_odr
+    public_headers/core_execution_odr_a.cpp public_headers/core_execution_odr_b.cpp
+    public_headers/core_execution_odr_main.cpp)
+  fdapde_configure_target(fdapde_core_execution_odr)
+  target_link_libraries(fdapde_core_execution_odr PRIVATE GTest::gtest_main Eigen3::Eigen Threads::Threads)
+  gtest_discover_tests(fdapde_core_execution_odr PROPERTIES TIMEOUT 30)
+endif()
+add_executable(fdapde_spd_test linear_algebra/spd.cpp linear_algebra/spectral.cpp
+  linear_algebra/small_spd_kernels.cpp linear_algebra/spd2_functions.cpp linear_algebra/small_evd3.cpp)
 fdapde_configure_target(fdapde_spd_test)
-target_link_libraries(fdapde_spd_test PRIVATE GTest::gtest_main Eigen3::Eigen)
+target_link_libraries(fdapde_spd_test PRIVATE GTest::gtest_main Threads::Threads)
 gtest_discover_tests(fdapde_spd_test PROPERTIES TIMEOUT 60)
 fdapde_reject_program(col_major_spd_matrix PACKED_COL_MAJOR_STRUCTURED_STORAGE_IS_NOT_SUPPORTED)
 fdapde_reject_program(oversized_spd_matrix SPD_DENSE_WORKSPACE_SIZE_EXCEEDS_SUPPORTED_RANGE)
-fdapde_reject_program(partial_dynamic_spd_matrix SPD_MATRICES_MUST_BE_SQUARE_AND_EITHER_FULLY_STATIC_OR_FULLY_DYNAMIC)
 fdapde_reject_program(qualified_scalar_spd_matrix SPD_MATRICES_REQUIRE_AN_UNQUALIFIED_FLOATING_POINT_SCALAR)
+
+# structured factor computation and public validation remain active when debug checks are erased
+add_executable(fdapde_orthogonal_disabled_test linear_algebra/orthogonal_disabled.cpp)
+fdapde_configure_target(fdapde_orthogonal_disabled_test)
+target_compile_definitions(fdapde_orthogonal_disabled_test PRIVATE FDAPDE_NO_DEBUG)
+if(MSVC)
+  target_compile_options(fdapde_orthogonal_disabled_test PRIVATE /wd4100 /wd4189)
+else()
+  # erasing debug preconditions leaves existing header parameters and validation temporaries unused
+  target_compile_options(fdapde_orthogonal_disabled_test PRIVATE
+    -Wno-unused-parameter -Wno-unused-variable -Wno-unused-but-set-variable)
+endif()
+target_link_libraries(fdapde_orthogonal_disabled_test PRIVATE GTest::gtest_main)
+gtest_discover_tests(fdapde_orthogonal_disabled_test PROPERTIES TIMEOUT 60)
+
+add_executable(fdapde_spd_cache_test linear_algebra/spd_cache.cpp)
+fdapde_configure_target(fdapde_spd_cache_test)
+target_link_libraries(fdapde_spd_cache_test PRIVATE GTest::gtest_main)
+gtest_discover_tests(fdapde_spd_cache_test PROPERTIES TIMEOUT 60)
+fdapde_reject_program(invalid_spd_cache_policy SPD_CACHE_POLICY_CONTAINS_UNKNOWN_FLAGS)
+
+add_executable(fdapde_matrix_batch_test linear_algebra/matrix_batch.cpp linear_algebra/matrix_batch_selection.cpp)
+fdapde_configure_target(fdapde_matrix_batch_test)
+target_link_libraries(fdapde_matrix_batch_test PRIVATE GTest::gtest_main Threads::Threads)
+gtest_discover_tests(fdapde_matrix_batch_test PROPERTIES TIMEOUT 60)
+fdapde_reject_program(col_major_matrix_batch "MatrixBatch supports row-major storage only")
+fdapde_reject_program(view_matrix_batch "MatrixBatch requires owning matrix elements")
+fdapde_reject_program(dense_skew_matrix_batch "MatrixBatch skew elements require skew-symmetric expressions")
+
+
+fdapde_reject_program(invalid_spd_matrix_order INVALID_SPD_MATRIX_ORDER)
+fdapde_reject_program(invalid_symmetric_matrix_order INVALID_MATRIX_DIMENSIONS)
+fdapde_reject_program(invalid_rotation_cache_policy "rotation cache supports Schur and Log only")
+fdapde_reject_program(invalid_symmetric_cache_policy "symmetric cache supports None and Spectral only")
+fdapde_reject_program(invalid_rotation_order "rotation order must be positive or Dynamic")
+
+if(NOT FDAPDE_NATIVE_ONLY)
+  add_executable(fdapde_sparse_multigrid_test linear_algebra/sparse_multigrid.cpp)
+  fdapde_configure_target(fdapde_sparse_multigrid_test)
+  target_link_libraries(fdapde_sparse_multigrid_test PRIVATE GTest::gtest_main Eigen3::Eigen)
+  gtest_discover_tests(fdapde_sparse_multigrid_test PROPERTIES TIMEOUT 60)
+
+  add_executable(fdapde_sparse_block_test linear_algebra/sparse_block_matrix.cpp)
+  fdapde_configure_target(fdapde_sparse_block_test)
+  target_link_libraries(fdapde_sparse_block_test PRIVATE GTest::gtest_main Eigen3::Eigen)
+  gtest_discover_tests(fdapde_sparse_block_test PROPERTIES TIMEOUT 60)
+endif()
+
+option(FDAPDE_BUILD_SPD_BENCHMARK "Build the standalone SPD allocation and timing probe" OFF)
+if(FDAPDE_BUILD_SPD_BENCHMARK)
+  add_executable(fdapde_spd_cache_batch_benchmark benchmarks/spd_cache_batch.cpp)
+  fdapde_configure_target(fdapde_spd_cache_batch_benchmark)
+  target_link_libraries(fdapde_spd_cache_batch_benchmark PRIVATE Threads::Threads)
+endif()

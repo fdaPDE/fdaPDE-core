@@ -31,6 +31,7 @@
 // clang-format off
 
 #include "utility.h"
+#include "execution.h"
 #include <iomanip>
 #include <sstream>
 
@@ -86,9 +87,14 @@ struct unchecked_t { };
 #include "src/linear_algebra/partial_piv_lu.h"
 #include "src/linear_algebra/qr.h"
 #include "src/linear_algebra/evd.h"
+#include "src/linear_algebra/cholesky.h"
 #include "src/linear_algebra/xpr.h"
 
 #include "src/linear_algebra/spd.h"
+#include "src/linear_algebra/rotation.h"
+#include "src/linear_algebra/quaternion.h"
+#include "src/linear_algebra/matrix_batch.h"
+
 #include "src/linear_algebra/spectral.h"
 
 // clang-format on

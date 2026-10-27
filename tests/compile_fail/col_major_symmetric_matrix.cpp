@@ -16,6 +16,6 @@
 
 #include <fdaPDE/dense_linear_algebra.h>
 
-fdapde::SymmetricMatrix<double, 3, 3, fdapde::ColMajor> col_major_symmetric_matrix;
+fdapde::SymmetricMatrix<double, 3, fdapde::Cache::None, fdapde::ColMajor> col_major_symmetric_matrix;
 
 int main() { return col_major_symmetric_matrix.rows(); }

@@ -31,13 +31,14 @@ struct orthogonalize_t { };
 /// @brief infers a square dimension from the coefficient count
 constexpr int checked_orthogonal_square_shape(std::size_t size) {
     const int input_size = checked_matrix_data_size(size);
-    fdapde_assert(!(input_size <= 0), std::invalid_argument, "orthogonal matrix input must be a positive square");
+    fdapde_strong_assert(
+      !(input_size <= 0), std::invalid_argument, "orthogonal matrix input must be a positive square");
     int shape = 1;
     while (static_cast<std::uint64_t>(shape) * static_cast<std::uint64_t>(shape) <
            static_cast<std::uint64_t>(input_size)) {
         ++shape;
     }
-    fdapde_assert(
+    fdapde_strong_assert(
       !(static_cast<std::uint64_t>(shape) * static_cast<std::uint64_t>(shape) !=
         static_cast<std::uint64_t>(input_size)),
       std::invalid_argument, "orthogonal matrix input must be a positive square");
@@ -74,15 +75,15 @@ template <typename XprType_> struct OrthogonalMatrixExpr : public MatrixExpr<Xpr
     using XprType = std::remove_cvref_t<XprType_>;
 
     /// @brief returns the inverse matrix expression
-    constexpr auto inverse() const& { return internals::orthogonal_cast(this->derived().transpose()); }
+    constexpr auto inv() const& { return internals::orthogonal_cast(this->derived().transpose()); }
     /// @brief returns the inverse matrix expression
-    constexpr auto inverse() const&&
+    constexpr auto inv() const&&
         requires(XprType::NestAsRef == 0)
     {
         return internals::orthogonal_cast(this->derived().transpose());
     }
     /// @brief rejects borrowing an inverse expression from a temporary owner
-    constexpr void inverse() const&&
+    constexpr void inv() const&&
         requires(XprType::NestAsRef != 0)
     = delete;
 
@@ -90,7 +91,7 @@ template <typename XprType_> struct OrthogonalMatrixExpr : public MatrixExpr<Xpr
     template <typename RhsXprType> constexpr auto solve(const RhsXprType& rhs) const {
         using RhsType = std::remove_cvref_t<RhsXprType>;
         using Scalar = promote_type_t<typename XprType::Scalar, typename RhsType::Scalar>;
-        return Matrix<Scalar, XprType::Cols, RhsType::Cols>(inverse() * rhs);
+        return Matrix<Scalar, XprType::Cols, RhsType::Cols>(inv() * rhs);
     }
 };
 
@@ -127,11 +128,10 @@ struct OrthogonalMatrixBase : public OrthogonalMatrixExpr<OrthogonalMatrixType_>
     /// @brief validates positive square dimensions against the static shape
     constexpr OrthogonalMatrixBase(int rows, int cols) :
         rows_(Rows_ == Dynamic ? rows : Rows_), cols_(Cols_ == Dynamic ? cols : Cols_) {
-        internals::validate_matrix_shape<Rows_, Cols_>(rows, cols);
+        fdapde_strong_assert(
+          rows > 0 && rows == cols && (Rows_ == Dynamic || rows == Rows_) && (Cols_ == Dynamic || cols == Cols_),
+          std::invalid_argument, "orthogonal matrices require compatible positive square dimensions");
         (void)internals::checked_matrix_size(rows_, cols_);
-        fdapde_assert(
-          !(rows_ <= 0 || rows_ != cols_), std::invalid_argument,
-          "orthogonal matrices require positive square dimensions");
     }
 
     /// @brief reads an orthogonal coefficient by value after checking its indices
@@ -171,27 +171,31 @@ struct OrthogonalMatrixBase : public OrthogonalMatrixExpr<OrthogonalMatrixType_>
     int rows_, cols_;
 };
 
+/// @brief borrows square storage whose columns satisfy the orthogonality contract
+template <typename Scalar_, int Order_, int StorageOrder_> class OrthogonalMatrixView;
+
 /// @brief stores an orthogonal matrix
-template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_ = RowMajor>
+template <typename Scalar_, int Order_, int StorageOrder_ = RowMajor>
 class OrthogonalMatrix :
     public OrthogonalMatrixBase<
-      Scalar_, Rows_, Cols_, StorageOrder_, OrthogonalMatrix<Scalar_, Rows_, Cols_, StorageOrder_>> {
+      Scalar_, Order_, Order_, StorageOrder_, OrthogonalMatrix<Scalar_, Order_, StorageOrder_>> {
    private:
-    using Base = OrthogonalMatrixBase<
-      Scalar_, Rows_, Cols_, StorageOrder_, OrthogonalMatrix<Scalar_, Rows_, Cols_, StorageOrder_>>;
-    using StorageType = Matrix<Scalar_, Rows_, Cols_, StorageOrder_>;
+    using Base =
+      OrthogonalMatrixBase<Scalar_, Order_, Order_, StorageOrder_, OrthogonalMatrix<Scalar_, Order_, StorageOrder_>>;
+    using StorageType = Matrix<Scalar_, Order_, Order_, StorageOrder_>;
    public:
-    fdapde_static_assert((Rows_ == Dynamic || Rows_ > 0) && (Cols_ == Dynamic || Cols_ > 0), INVALID_MATRIX_DIMENSIONS);
-    fdapde_static_assert(
-      Rows_ == Dynamic || Cols_ == Dynamic || Rows_ == Cols_, THIS_CLASS_IS_FOR_SQUARE_MATRICES_ONLY);
+    fdapde_static_assert(Order_ == Dynamic || Order_ > 0, INVALID_MATRIX_DIMENSIONS);
     fdapde_static_assert(std::is_floating_point_v<Scalar_>, ORTHOGONAL_MATRICES_REQUIRE_FLOATING_POINT_SCALARS);
     using Scalar = Scalar_;
-    static constexpr int Rows = Rows_;
-    static constexpr int Cols = Cols_;
+    static constexpr int Order = Order_;
+    static constexpr int Rows = Order_;
+    static constexpr int Cols = Order_;
     static constexpr int StorageOrder = StorageOrder_;
     static constexpr int ReadOnly = 1;
     static constexpr int NestAsRef = 1;
     using assignment_executor = typename StorageType::assignment_executor;
+    using View = OrthogonalMatrixView<Scalar, Rows, StorageOrder>;
+    using ConstView = OrthogonalMatrixView<const Scalar, Rows, StorageOrder>;
 
     /// @brief rejects construction without coefficients that establish orthogonality
     constexpr OrthogonalMatrix() = delete;
@@ -210,14 +214,26 @@ class OrthogonalMatrix :
     /// @brief rejects assignment to a temporary orthogonal owner
     constexpr void operator=(const OrthogonalMatrix&) && = delete;
 
-    /// @brief copies a square expression while trusting the caller to establish orthogonality
+    /// @brief copies a square expression and permanently validates its orthonormal coefficients
     template <typename RhsXprType>
-    constexpr OrthogonalMatrix(const MatrixExpr<RhsXprType>& rhs, internals::unchecked_t) :
-        Base(rhs.rows(), rhs.cols()), data_(rhs) { }
-    /// @brief copies an expression already carrying the orthogonal matrix contract
+    constexpr explicit OrthogonalMatrix(const MatrixExpr<RhsXprType>& rhs) : Base(rhs.rows(), rhs.cols()), data_(rhs) {
+        fdapde_strong_assert(
+          internals::is_orthogonal(data_), std::invalid_argument, "orthogonal input is not finite and orthogonal");
+    }
+    /// @brief validates a complete replacement before changing this owner's coefficients or dimensions
+    template <typename RhsXprType> constexpr OrthogonalMatrix& operator=(const MatrixExpr<RhsXprType>& rhs) & {
+        const OrthogonalMatrix candidate(rhs);
+        return operator=(candidate);
+    }
+
+    /// @brief copies a square expression and orthonormalizes its finite full-rank columns
     template <typename RhsXprType>
-    constexpr OrthogonalMatrix(const OrthogonalMatrixExpr<RhsXprType>& rhs) :
-        OrthogonalMatrix(rhs.derived(), unchecked) { }
+    constexpr OrthogonalMatrix(const MatrixExpr<RhsXprType>& rhs, internals::orthogonalize_t) :
+        Base(rhs.rows(), rhs.cols()), data_(rhs) {
+        const bool orthogonalized = this->orthogonalize_(data_);
+        fdapde_strong_assert(
+          orthogonalized, std::invalid_argument, "orthogonalization requires a finite full-rank square matrix");
+    }
 
     /// @brief copies row-ordered input and orthogonalizes its finite full-rank columns
     template <typename Scalar__>
@@ -228,9 +244,9 @@ class OrthogonalMatrix :
           internals::checked_orthogonal_square_shape(data.size())),
         data_() {
         load_data_(data);
-        fdapde_assert(
-          !(!this->orthogonalize_(data_)), std::invalid_argument,
-          "orthogonalization requires a finite full-rank square matrix");
+        const bool orthogonalized = this->orthogonalize_(data_);
+        fdapde_strong_assert(
+          orthogonalized, std::invalid_argument, "orthogonalization requires a finite full-rank square matrix");
     }
     /// @brief copies a fixed C array and orthogonalizes its finite full-rank columns
     template <typename Scalar__, std::size_t Size>
@@ -239,75 +255,58 @@ class OrthogonalMatrix :
         Base(internals::checked_orthogonal_square_shape(Size), internals::checked_orthogonal_square_shape(Size)),
         data_() {
         fdapde_static_assert(
-          Rows_ != Dynamic && Cols_ != Dynamic &&
-            static_cast<std::size_t>(Rows_) * static_cast<std::size_t>(Cols_) == Size,
+          Order_ != Dynamic && static_cast<std::size_t>(Order_) * static_cast<std::size_t>(Order_) == Size,
           THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
         load_data_(data);
-        fdapde_assert(
-          !(!this->orthogonalize_(data_)), std::invalid_argument,
-          "orthogonalization requires a finite full-rank square matrix");
+        const bool orthogonalized = this->orthogonalize_(data_);
+        fdapde_strong_assert(
+          orthogonalized, std::invalid_argument, "orthogonalization requires a finite full-rank square matrix");
     }
 
     /// @brief copies row-ordered input and checks that its columns are orthonormal
     template <typename Scalar__>
         requires(std::is_constructible_v<Scalar_, Scalar__>)
-    constexpr OrthogonalMatrix(const std::vector<Scalar__>& data, internals::checked_t) :
+    constexpr explicit OrthogonalMatrix(const std::vector<Scalar__>& data) :
         Base(
           internals::checked_orthogonal_square_shape(data.size()),
           internals::checked_orthogonal_square_shape(data.size())),
         data_() {
         load_data_(data);
-        fdapde_assert(
-          !(!internals::is_orthogonal(data_)), std::invalid_argument, "checked orthogonal input is not orthogonal");
+        fdapde_strong_assert(
+          internals::is_orthogonal(data_), std::invalid_argument, "orthogonal input is not finite and orthogonal");
     }
     /// @brief copies a fixed C array and checks that its columns are orthonormal
     template <typename Scalar__, std::size_t Size>
         requires(std::is_constructible_v<Scalar_, Scalar__>)
-    constexpr OrthogonalMatrix(const Scalar__ (&data)[Size], internals::checked_t) :
+    constexpr explicit OrthogonalMatrix(const Scalar__ (&data)[Size]) :
         Base(internals::checked_orthogonal_square_shape(Size), internals::checked_orthogonal_square_shape(Size)),
         data_() {
         fdapde_static_assert(
-          Rows_ != Dynamic && Cols_ != Dynamic &&
-            static_cast<std::size_t>(Rows_) * static_cast<std::size_t>(Cols_) == Size,
+          Order_ != Dynamic && static_cast<std::size_t>(Order_) * static_cast<std::size_t>(Order_) == Size,
           THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
         load_data_(data);
-        fdapde_assert(
-          !(!internals::is_orthogonal(data_)), std::invalid_argument, "checked orthogonal input is not orthogonal");
-    }
-
-    /// @brief copies row-ordered input without testing orthogonality
-    template <typename Scalar__>
-        requires(std::is_constructible_v<Scalar_, Scalar__>)
-    constexpr OrthogonalMatrix(const std::vector<Scalar__>& data, internals::unchecked_t) :
-        Base(
-          internals::checked_orthogonal_square_shape(data.size()),
-          internals::checked_orthogonal_square_shape(data.size())),
-        data_() {
-        load_data_(data);
-    }
-    /// @brief copies a fixed C array without testing orthogonality
-    template <typename Scalar__, std::size_t Size>
-        requires(std::is_constructible_v<Scalar_, Scalar__>)
-    constexpr OrthogonalMatrix(const Scalar__ (&data)[Size], internals::unchecked_t) :
-        Base(internals::checked_orthogonal_square_shape(Size), internals::checked_orthogonal_square_shape(Size)),
-        data_() {
-        fdapde_static_assert(
-          Rows_ != Dynamic && Cols_ != Dynamic &&
-            static_cast<std::size_t>(Rows_) * static_cast<std::size_t>(Cols_) == Size,
-          THIS_METHOD_IS_FOR_STATIC_SIZED_MATRICES_ONLY);
-        load_data_(data);
+        fdapde_strong_assert(
+          internals::is_orthogonal(data_), std::invalid_argument, "orthogonal input is not finite and orthogonal");
     }
 
     /// @brief returns the owned dense coefficients through a const matrix reference
     constexpr const StorageType& data() const { return data_; }
+    /// @brief borrows verified coefficients owned by this persistent matrix
+    View view() & { return View(data_.data(), this->rows(), this->cols(), typename View::verified_t {}); }
+    /// @brief borrows read-only verified coefficients owned by this persistent matrix
+    ConstView view() const& {
+        return ConstView(data_.data(), this->rows(), this->cols(), typename ConstView::verified_t {});
+    }
+    /// @brief prevents a view from borrowing a temporary owner
+    void view() const&& = delete;
    private:
     /// @brief copies the supplied coefficients into internal storage
     template <typename Data> constexpr void load_data_(const Data& data) {
         const int input_size = internals::checked_matrix_data_size(std::size(data));
         const int expected_size = internals::checked_matrix_size(this->rows_, this->cols_);
-        fdapde_assert(
+        fdapde_strong_assert(
           !(input_size != expected_size), std::invalid_argument, "orthogonal input does not match its matrix shape");
-        if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) { data_.resize(this->rows_, this->cols_); }
+        if constexpr (Order_ == Dynamic) { data_.resize(this->rows_, this->cols_); }
         for (int i = 0; i < this->rows_; ++i) {
             for (int j = 0; j < this->cols_; ++j) {
                 data_(i, j) = static_cast<Scalar>(data[static_cast<std::size_t>(i * this->cols_ + j)]);
@@ -377,23 +376,22 @@ template <internals::matrix_expression Lhs, internals::matrix_expression Rhs>
 constexpr void operator*(Lhs&&, Rhs&&) = delete;
 
 /// @brief exposes external orthogonal coefficients through a read-only matrix interface
-template <typename Scalar_, int Rows_, int Cols_, int StorageOrder_ = RowMajor>
+template <typename Scalar_, int Order_, int StorageOrder_ = RowMajor>
 class OrthogonalMatrixView :
     public OrthogonalMatrixBase<
-      Scalar_, Rows_, Cols_, StorageOrder_, OrthogonalMatrixView<Scalar_, Rows_, Cols_, StorageOrder_>> {
+      Scalar_, Order_, Order_, StorageOrder_, OrthogonalMatrixView<Scalar_, Order_, StorageOrder_>> {
    private:
     using Base = OrthogonalMatrixBase<
-      Scalar_, Rows_, Cols_, StorageOrder_, OrthogonalMatrixView<Scalar_, Rows_, Cols_, StorageOrder_>>;
-    using StorageType = MatrixView<Scalar_, Rows_, Cols_, StorageOrder_>;
+      Scalar_, Order_, Order_, StorageOrder_, OrthogonalMatrixView<Scalar_, Order_, StorageOrder_>>;
+    using StorageType = MatrixView<Scalar_, Order_, Order_, StorageOrder_>;
    public:
-    fdapde_static_assert((Rows_ == Dynamic || Rows_ > 0) && (Cols_ == Dynamic || Cols_ > 0), INVALID_MATRIX_DIMENSIONS);
-    fdapde_static_assert(
-      Rows_ == Dynamic || Cols_ == Dynamic || Rows_ == Cols_, THIS_CLASS_IS_FOR_SQUARE_MATRICES_ONLY);
+    fdapde_static_assert(Order_ == Dynamic || Order_ > 0, INVALID_MATRIX_DIMENSIONS);
     fdapde_static_assert(
       std::is_floating_point_v<std::remove_const_t<Scalar_>>, ORTHOGONAL_MATRICES_REQUIRE_FLOATING_POINT_SCALARS);
     using Scalar = std::remove_const_t<Scalar_>;
-    static constexpr int Rows = Rows_;
-    static constexpr int Cols = Cols_;
+    static constexpr int Order = Order_;
+    static constexpr int Rows = Order_;
+    static constexpr int Cols = Order_;
     static constexpr int StorageOrder = StorageOrder_;
     static constexpr int NestAsRef = 0;
     static constexpr int ReadOnly = 1;
@@ -401,59 +399,41 @@ class OrthogonalMatrixView :
 
     /// @brief copies the binding to external orthogonal coefficients
     constexpr OrthogonalMatrixView(const OrthogonalMatrixView&) = default;
-    /// @brief creates an empty dynamic orthogonal view without a buffer
-    constexpr OrthogonalMatrixView()
-        requires(Rows_ == Dynamic && Cols_ == Dynamic)
-        : Base(), data_() { }
-    /// @brief rejects default construction when either dimension is fixed
-    constexpr OrthogonalMatrixView()
-        requires(Rows_ != Dynamic || Cols_ != Dynamic)
-    = delete;
+    /// @brief rejects a view without verified storage
+    constexpr OrthogonalMatrixView() = delete;
 
     /// @brief binds fixed external storage and checks row orthonormality
     template <typename Scalar__>
         requires(std::is_convertible_v<Scalar__*, Scalar_*>)
-    constexpr OrthogonalMatrixView(Scalar__* data, internals::checked_t) : Base(Rows_, Cols_), data_(data) {
-        fdapde_static_assert(Rows_ != Dynamic && Cols_ != Dynamic, THIS_METHOD_IS_FOR_STATIC_SIZED_VIEWS_ONLY);
+    constexpr explicit OrthogonalMatrixView(Scalar__* data) : Base(Order_, Order_), data_(data) {
+        fdapde_static_assert(Order_ != Dynamic, THIS_METHOD_IS_FOR_STATIC_SIZED_VIEWS_ONLY);
         validate_storage_(data);
-        fdapde_assert(
-          !(!internals::is_orthogonal(data_)), std::invalid_argument, "checked orthogonal view is not orthogonal");
+        fdapde_strong_assert(
+          internals::is_orthogonal(data_), std::invalid_argument, "orthogonal view is not finite and orthogonal");
     }
     /// @brief validates square dimensions, binds external storage and checks row orthonormality
     template <typename Scalar__>
         requires(std::is_convertible_v<Scalar__*, Scalar_*>)
-    constexpr OrthogonalMatrixView(Scalar__* data, int rows, int cols, internals::checked_t) :
-        Base(rows, cols), data_(data, rows, cols) {
-        validate_storage_(data);
-        fdapde_assert(
-          !(!internals::is_orthogonal(data_)), std::invalid_argument, "checked orthogonal view is not orthogonal");
-    }
-    /// @brief binds fixed external storage while trusting the caller to establish orthogonality
+    constexpr OrthogonalMatrixView(Scalar__* data, int order) : OrthogonalMatrixView(data, order, order) { }
+    /// @brief accepts equal dimensions from generic view construction and validates orthonormality
     template <typename Scalar__>
         requires(std::is_convertible_v<Scalar__*, Scalar_*>)
-    constexpr OrthogonalMatrixView(Scalar__* data, internals::unchecked_t) : Base(Rows_, Cols_), data_(data) {
-        fdapde_static_assert(Rows_ != Dynamic && Cols_ != Dynamic, THIS_METHOD_IS_FOR_STATIC_SIZED_VIEWS_ONLY);
+    constexpr OrthogonalMatrixView(Scalar__* data, int rows, int cols) : Base(rows, cols), data_(data, rows, cols) {
         validate_storage_(data);
+        fdapde_strong_assert(
+          internals::is_orthogonal(data_), std::invalid_argument, "orthogonal view is not finite and orthogonal");
     }
-    /// @brief validates square dimensions and binds external storage without testing orthogonality
-    template <typename Scalar__>
-        requires(std::is_convertible_v<Scalar__*, Scalar_*>)
-    constexpr OrthogonalMatrixView(Scalar__* data, int rows, int cols, internals::unchecked_t) :
-        Base(rows, cols), data_(data, rows, cols) {
-        validate_storage_(data);
-    }
-
     /// @brief copies an orthogonal source snapshot into bound storage without rebinding the view
     constexpr OrthogonalMatrixView& operator=(const OrthogonalMatrixView& other) &
         requires(!std::is_const_v<Scalar_>)
     {
-        data_ = other.data_;
+        assign_(other);
         return *this;
     }
     /// @brief copies into a temporary orthogonal view and returns its binding by value
     constexpr OrthogonalMatrixView operator=(const OrthogonalMatrixView& other) &&
       requires(!std::is_const_v<Scalar_>) {
-          data_ = other.data_;
+          assign_(other);
           return *this;
       }
       /// @brief rejects assignment through a view of const orthogonal storage
@@ -464,19 +444,19 @@ class OrthogonalMatrixView :
     constexpr OrthogonalMatrixView operator=(const OrthogonalMatrixView&) &&
       requires(std::is_const_v<Scalar_>) = delete;
 
-    /// @brief evaluates an orthogonal expression into the view's existing storage
+    /// @brief validates a matrix expression before replacing the bound orthogonal value
     template <typename RhsXprType>
-    constexpr OrthogonalMatrixView& operator=(const OrthogonalMatrixExpr<RhsXprType>& rhs) &
+    constexpr OrthogonalMatrixView& operator=(const MatrixExpr<RhsXprType>& rhs) &
         requires(!std::is_const_v<Scalar_>)
     {
-        data_ = rhs.derived();
+        assign_(rhs);
         return *this;
     }
-    /// @brief evaluates into a temporary orthogonal view and returns its binding by value
+    /// @brief validates a replacement for a temporary orthogonal view and returns its binding
     template <typename RhsXprType>
-      constexpr OrthogonalMatrixView operator=(const OrthogonalMatrixExpr<RhsXprType>& rhs) &&
+      constexpr OrthogonalMatrixView operator=(const MatrixExpr<RhsXprType>& rhs) &&
       requires(!std::is_const_v<Scalar_>) {
-          data_ = rhs.derived();
+          assign_(rhs);
           return *this;
       }
 
@@ -485,9 +465,24 @@ class OrthogonalMatrixView :
         return data_;
     }
    private:
-    /// @brief checks storage
+    template <typename, int, int> friend class OrthogonalMatrix;
+    template <typename, int> friend class MatrixBatch;
+    /// @brief restricts direct bindings of already verified storage to owners and batches
+    struct verified_t { };
+    /// @brief binds coefficients already verified by their native owner or batch publication
+    constexpr OrthogonalMatrixView(Scalar_* data, int rows, int cols, verified_t) :
+        Base(rows, cols), data_(data, rows, cols) { }
+    /// @brief validates a complete candidate before writing into the existing storage binding
+    template <typename RhsXprType> constexpr void assign_(const MatrixExpr<RhsXprType>& rhs) {
+        fdapde_strong_assert(
+          rhs.rows() == this->rows() && rhs.cols() == this->cols(), std::invalid_argument,
+          "orthogonal view assignment cannot change the bound shape");
+        const OrthogonalMatrix<Scalar, Rows, StorageOrder> candidate(rhs);
+        data_ = candidate.data();
+    }
+    /// @brief rejects a null pointer before accessing nonempty external storage
     template <typename Scalar__> constexpr void validate_storage_(Scalar__* data) const {
-        fdapde_assert(!(data == nullptr), std::invalid_argument, "nonempty orthogonal view requires storage");
+        fdapde_strong_assert(!(data == nullptr), std::invalid_argument, "nonempty orthogonal view requires storage");
     }
 
     StorageType data_;

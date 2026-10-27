@@ -377,9 +377,13 @@ template <typename XprType_> struct MatrixExpr {
     // frobenius norm (squared L^2 norm)
     /// @brief returns the sum of squared coefficients
     constexpr auto squared_norm() const {
-        typename XprType::Scalar norm_ = 0;
+        using Scalar = std::remove_cv_t<typename XprType::Scalar>;
+        Scalar norm_ = 0;
         for (int i = 0; i < derived().rows(); ++i) {
-            for (int j = 0; j < derived().cols(); ++j) { norm_ += fdapde::pow(derived()(i, j), 2); }
+            for (int j = 0; j < derived().cols(); ++j) {
+                const Scalar value = derived()(i, j);
+                norm_ += value * value;
+            }
         }
         return norm_;
     }
@@ -1062,8 +1066,8 @@ template <typename XprType_> struct MatrixExpr {
     constexpr void skew_part() const&&
         requires(XprType::NestAsRef != 0)
     = delete;
-    /// @brief returns the inverse matrix expression
-    constexpr auto inverse() const
+    /// @brief solves against the identity with pivoted LU and returns an owning dense inverse
+    constexpr auto inv() const
         requires(std::is_floating_point_v<std::remove_cv_t<typename XprType::Scalar>>)
     {
         using Scalar = std::remove_cv_t<typename XprType::Scalar>;
@@ -1083,6 +1087,18 @@ template <typename XprType_> struct MatrixExpr {
             for (int col = 0; col < cols_; ++col) identity(row, col) = row == col ? Scalar(1) : Scalar(0);
         }
         return factorization.solve(identity);
+    }
+    /// @brief sums the diagonal of a square matrix without preparing any factorization
+    constexpr auto trace() const {
+        using Scalar = std::remove_cv_t<typename XprType::Scalar>;
+        constexpr int Rows = XprType::Rows, Cols = XprType::Cols;
+        fdapde_static_assert(
+          Rows == Dynamic || Cols == Dynamic || Rows == Cols, THIS_METHODS_IS_FOR_SQUARE_MATRICES_ONLY);
+        const XprType& matrix = derived();
+        fdapde_strong_assert(matrix.rows() == matrix.cols(), std::invalid_argument, "trace requires a square matrix");
+        Scalar result = 0;
+        for (int i = 0; i < matrix.rows(); ++i) result += matrix(i, i);
+        return result;
     }
     /// @brief returns the matrix determinant
     constexpr auto determinant() const {
@@ -1108,6 +1124,13 @@ template <typename XprType_> struct MatrixExpr {
             const Scalar a20 = m(2, 0), a21 = m(2, 1), a22 = m(2, 2);
             return a00 * (a11 * a22 - a12 * a21) + a01 * (a12 * a20 - a10 * a22) + a02 * (a10 * a21 - a11 * a20);
         }
+    }
+
+    /// @brief orthonormalizes a copy of the square input into an owning orthogonal matrix
+    constexpr auto orthogonalize() const {
+        using Scalar = std::remove_cv_t<typename XprType::Scalar>;
+        constexpr int Order = XprType::Rows == Dynamic ? XprType::Cols : XprType::Rows;
+        return OrthogonalMatrix<Scalar, Order, XprType::StorageOrder>(derived(), fdapde::orthogonalize);
     }
 
     // triangular block accessors

@@ -50,7 +50,7 @@ multidimensional arrays, structured types, and LU/QR/EVD. The caller target chec
 P1/P2 cardinality in 1D/2D/3D, exact P1 and P2 triangle assembly, mixed extent types
 GeoFrame column storage and grid-search storage order. Header checks compile each public aggregate alone.
 
-Configuration also compiles fifteen negative programs and requires each to emit
+Configuration also compiles the registered negative programs and requires each to emit
 its specific static-assert diagnostic. Logs are written beneath
 `compile_fail/` in the build directory. Debug assertions remain enabled in these
 programs; none duplicates the suite in NoDebug mode.
@@ -78,3 +78,31 @@ and integration lanes both keep debug assertions enabled in ordinary tests.
 ## Execution
 
 Execution tests check task ownership, accounting, queue bounds, nested algorithms, reduction identity and configuration validation. Configuration and saturation use separate processes. See [the execution contract](../docs/execution.md).
+
+## Optimized algebra integration (27 October 2026)
+
+The existing dense target retains the contiguous-assignment, contiguous-product and
+preallocated-product regressions and now covers Cholesky, quaternions, structured
+inverse/trace APIs and symmetric cache invalidation. The SPD target additionally
+checks specialized 2x2/3x3 kernels against dynamic EVD, independent high-precision
+reference values and finite-difference derivatives. Cache and batch suites verify
+policy reuse, deferred arithmetic, aliases, failed assignments, sequential/parallel
+ordering and exception recovery. Native sparse products and Eigen oracle suites
+remain registered.
+
+Configure the same tests with `-DCMAKE_CXX_FLAGS=-DFDAPDE_ENABLE_SIMD=1` to exercise
+the optimized dense paths. Ordinary tests keep debug assertions enabled in Release.
+The two focused disabled-assertion targets check argument erasure and mandatory
+orthogonalization, rather than duplicating the normal suites.
+
+With `-DFDAPDE_BUILD_SPD_BENCHMARK=ON`, run
+`build/integration/fdapde_spd_cache_batch_benchmark` for native allocation checks,
+LU timings and complete SPD3 logarithm batches at 4096 and 65536 entries. Batch
+timing uses four configured executor threads, seven samples of three complete calls,
+and excludes input setup; every sequential/parallel output coefficient is checked
+before timing. This module probe does not require manifold geometry. Allocation
+probes finish before worker startup. Wall-clock values are diagnostic, without
+performance pass/fail thresholds.
+
+The report and archived historical evidence are in
+[`docs/reports/linear-algebra-2026-10-27/`](../docs/reports/linear-algebra-2026-10-27/).

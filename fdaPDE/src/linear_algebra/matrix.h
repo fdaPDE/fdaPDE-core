@@ -422,6 +422,8 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
       std::conditional_t<Rows_ == Dynamic || Cols_ == Dynamic, std::vector<Scalar_>, std::array<Scalar_, StorageSize>>;
    public:
     using Scalar = Scalar_;
+    using View = MatrixView<Scalar_, Rows_, Cols_, StorageOrder_>;
+    using ConstView = MatrixView<const Scalar_, Rows_, Cols_, StorageOrder_>;
     using iterator = typename StorageType::iterator;
     using const_iterator = typename StorageType::const_iterator;
     static constexpr int NestAsRef = 1;
@@ -652,22 +654,26 @@ class Matrix : public MatrixBase<Scalar_, Rows_, Cols_, StorageOrder_, Matrix<Sc
     /// @brief returns the past-the-end iterator
     constexpr const_iterator end() const { return data_.end(); }
    private:
-    /// @brief resizes dynamic storage and materializes source coefficients into owned storage
+    /// @brief materializes deferred matrix results and contiguous products into owned storage
     template <typename RhsXprType> constexpr void clone_(const RhsXprType& rhs) {
-        if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) {
-            if constexpr (Rows_ == 1 || Cols_ == 1) {
-                resize(rhs.size());
-            } else {
-                resize(rhs.rows(), rhs.cols());
+        if constexpr (requires { rhs.eval_matrix(); }) {
+            const auto evaluated = rhs.eval_matrix();
+            clone_(evaluated);
+        } else {
+            if constexpr (Rows_ == Dynamic || Cols_ == Dynamic) {
+                if constexpr (Rows_ == 1 || Cols_ == 1) {
+                    resize(rhs.size());
+                } else {
+                    resize(rhs.rows(), rhs.cols());
+                }
             }
+            // product materialization writes independent storage before any public aliasing assignment
+            if constexpr (FDAPDE_ENABLE_SIMD_PRODUCT && requires { rhs.try_eval_to_(*this); }) {
+                if (rhs.try_eval_to_(*this)) return;
+            }
+            using assignment_executor = typename Base::assignment_executor;
+            assignment_executor::run(*this, rhs, [](auto&& l, const auto& r) { l = r; });
         }
-        // product materialization writes independent storage before any public aliasing assignment
-        if constexpr (FDAPDE_ENABLE_SIMD_PRODUCT && requires { rhs.try_eval_to_(*this); }) {
-            if (rhs.try_eval_to_(*this)) return;
-        }
-        using assignment_executor = typename Base::assignment_executor;
-        assignment_executor::run(*this, rhs, [](auto&& l, const auto& r) { l = r; });
-        return;
     }
     StorageType data_;
 };
