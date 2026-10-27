@@ -335,7 +335,7 @@ TEST(P1FieldInterpolation, InvalidBindings) {
     const auto batch = data();
     // a three-value batch cannot represent four global vertices
     EXPECT_THROW(LE {}.interpolant(mesh, batch), std::invalid_argument);
-    const Triangulation<2, 2> empty;
+    const Triangulation<2, 2> empty {};
     // an empty mesh has no searchable cell and is rejected before tree construction
     EXPECT_THROW(LE {}.interpolant(empty, batch), std::invalid_argument);
 }

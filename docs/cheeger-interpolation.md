@@ -73,6 +73,30 @@ its positive lifted Hessian once and reuses it for first derivative actions.
 The mean logarithm retains a native spectral cache for repeated exponential
 differentials.
 
+SPD(3) uses the same value, linearization and spatial APIs as the other
+geometries. General means reuse the nodal SPD eigenframe caches when present;
+the matrix logarithm has the same ordered eigenvectors. Identical deterministic
+starts are evaluated only once, without removing any distinct rotation branch.
+
+For coordered commuting SPD(3) logarithms, the identity lift minimizes the
+complete objective. Writing `X_i = log(P_i)` and `Z_i = Q_i^T X_i Q_i`,
+eliminating the mean gives
+`sum_i w_i ||X_i||^2 - ||sum_i w_i Z_i||^2 + rho sum_i w_i ||log(Q_i)||^2`.
+The spectral trace inequality bounds each `tr(Z_i Z_j)` by the inner product
+of the sorted eigenvalues of `X_i` and `X_j`. A common ordered eigenframe
+attains every bound at identity, where the positive rotation penalty is zero.
+Pairwise commutation alone is insufficient when the eigenvalue orders cross.
+
+The implementation checks commutators and saturation of those trace bounds
+after removing the scalar trace, using a roundoff threshold proportional to
+the traceless norms. It also requires the original mean stationarity tolerance
+and declines this shortcut when rho is comparable to that roundoff scale.
+The value uses the original matrices, not rounded diagonal replacements.
+Derivative requests still factor the full lifted Hessian and use the ordinary
+implicit actions, including perturbations that leave the commuting family.
+All other cases retain the general multistart search. This numerical fast path
+does not introduce a new public uniqueness claim or a geometry-specific caller API.
+
 Fixed orders use `CheegerLogEuclideanSPDGeometry<double, n>`; dynamic orders
 use `CheegerLogEuclideanSPDGeometry<double, Dynamic>(n, epsilon)` or
 `Geometry::from_rho(rho, n)`. `geometry.with_rho(rho)` preserves the order.

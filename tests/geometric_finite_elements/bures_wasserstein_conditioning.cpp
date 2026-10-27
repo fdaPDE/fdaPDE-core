@@ -137,7 +137,7 @@ Dense sylvester(const Dense& coefficient, const Dense& rhs) {
                     matrix(3 * row + column, 3 * i + j) =
                       (j == column ? coefficient(row, i) : 0.) + (i == row ? coefficient(column, j) : 0.);
         }
-    const Vector<double, 9> solution(PartialPivLU(matrix).solve(vector));
+    const Vector<double, 9> solution {PartialPivLU(matrix).solve(vector)};
     Dense result;
     for (int row = 0; row < 3; ++row)
         for (int column = 0; column < 3; ++column) result(row, column) = solution[3 * row + column];

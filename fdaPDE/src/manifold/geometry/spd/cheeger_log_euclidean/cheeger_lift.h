@@ -392,6 +392,14 @@ template <typename S, int N, int Nodes = Dynamic> class CheegerLift {
             eigenframes = prepared;
         }
         fdapde_assert(eigenframes.size() == w_.size(), std::invalid_argument, "invalid lifted eigenframe count");
+        if (n_ == 3 && !base_) {
+            auto candidate = evaluate(initial);
+            if (candidate.gradient.norm() <= tolerance && coordered_charts_(eigenframes)) {
+                converged_ = true;
+                ambiguous_ = false;
+                return candidate;
+            }
+        }
         std::span<const Eigenframe> references = eigenframes;
         std::optional<Eigenframe> prepared_base;
         if (base_) {
@@ -410,7 +418,7 @@ template <typename S, int N, int Nodes = Dynamic> class CheegerLift {
                     rotation_log(seed[i]);
                 } catch (const std::domain_error&) { regular = false; }
             }
-            if (regular) starts.push_back(std::move(seed));
+            if (regular) append_start_(starts, std::move(seed));
         }
         // pairwise plane starts retain both senses of a large rotational alignment
         for (int axis = 0; axis < k_; ++axis)
@@ -418,7 +426,7 @@ template <typename S, int N, int Nodes = Dynamic> class CheegerLift {
                 Batch seed(initial);
                 for (std::size_t i = 0; i < w_.size(); ++i)
                     seed[i] = rotation_exp(basis(axis), sign * (i % 2 ? -1. : 1.) * std::numbers::pi / std::sqrt(2.));
-                starts.push_back(std::move(seed));
+                append_start_(starts, std::move(seed));
             }
         TrustRegionOptions options;
         options.max_iterations = iterations;
@@ -510,6 +518,53 @@ template <typename S, int N, int Nodes = Dynamic> class CheegerLift {
     /// @brief returns the number of skew coordinates per rotation
     int skew_size() const { return k_; }
    private:
+    /// @brief recognizes a common ordered eigenframe by saturated spectral trace bounds at roundoff precision
+    bool coordered_charts_(std::span<const Eigenframe> frames) const {
+        std::vector<Sym> centered;
+        std::vector<std::vector<double>> spectra;
+        centered.reserve(w_.size());
+        spectra.reserve(w_.size());
+        for (std::size_t i = 0; i < w_.size(); ++i) {
+            Sym value(charts_[i]);
+            double trace = 0;
+            for (int a = 0; a < n_; ++a) trace += value(a, a);
+            for (int a = 0; a < n_; ++a) value(a, a) -= trace / n_;
+            centered.push_back(value);
+            const Eigenframe diagonal(frames[i].transpose() * value * frames[i]);
+            std::vector<double> eigenvalues(n_);
+            for (int a = 0; a < n_; ++a) eigenvalues[a] = diagonal(a, a);
+            std::sort(eigenvalues.begin(), eigenvalues.end());
+            spectra.push_back(std::move(eigenvalues));
+        }
+        for (std::size_t i = 0; i < w_.size(); ++i)
+            for (std::size_t j = 0; j < i; ++j) {
+                const double scale = centered[i].norm() * centered[j].norm();
+                const double floor = 64 * std::numeric_limits<S>::epsilon() * scale;
+                if (rho_ <= floor) return false;
+                const Eigenframe commutator(centered[i] * centered[j] - centered[j] * centered[i]);
+                if (commutator.norm() > floor) return false;
+                double upper = 0;
+                for (int a = 0; a < n_; ++a) upper += spectra[i][a] * spectra[j][a];
+                if (std::abs(upper - cheeger_inner(centered[i], centered[j])) > floor) return false;
+            }
+        // coordered charts maximize every pair trace; positive rho uniquely minimizes the remaining rotation cost
+        return true;
+    }
+    /// @brief removes only coefficient-identical deterministic starts without discarding distinct minimizing branches
+    void append_start_(std::vector<Batch>& starts, Batch seed) const {
+        for (const auto& existing : starts) {
+            bool equal = true;
+            for (std::size_t i = 0; i < seed.size() && equal; ++i)
+                for (int r = 0; r < n_ && equal; ++r)
+                    for (int c = 0; c < n_; ++c)
+                        if (seed[i](r, c) != existing[i](r, c)) {
+                            equal = false;
+                            break;
+                        }
+            if (equal) return;
+        }
+        starts.push_back(std::move(seed));
+    }
     /// @brief runs small active lifts with inline optimizer coordinates and retains the dynamic state contract
     template <int Count>
     State solve_fixed_(

@@ -345,4 +345,160 @@ TEST(CheegerInterpolation, CapturedSmoothingBranchCrossing) {
     // the same perturbation is small at the shifted rho, without making a global uniqueness claim
     EXPECT_LT(error(regular[0], regular[1]), 1e-6);
 }
+/// @brief constructs coordered SPD3 logarithms in a shared nontrivial eigenframe
+MatrixBatch<SPDMatrix<double, 3, Cache::Union<Cache::Log, Cache::Spectral>>> coordered_spd3() {
+    using Cached = SPDMatrix<double, 3, Cache::Union<Cache::Log, Cache::Spectral>>;
+    MatrixBatch<Cached> result(3);
+    SkewSymmetricMatrix<double, 3> omega;
+    omega(0, 1) = .2;
+    omega(0, 2) = -.3;
+    omega(1, 2) = .1;
+    const auto rotation = rotation_exp(omega);
+    for (int i = 0; i < 3; ++i) {
+        SymmetricMatrix<double, 3> diagonal;
+        for (int r = 0; r < 3; ++r)
+            for (int c = r; c < 3; ++c) diagonal(r, c) = r == c ? -.7 + .8 * r + .05 * (r + 1) * i : 0.;
+        const SymmetricMatrix<double, 3> log((rotation * diagonal * rotation.transpose()).as_symmetric<Lower>());
+        result[i] = matrix_exp(log);
+    }
+    return result;
+}
+// the common weighted API resolves coordered SPD3 means without iterative starts and retains implicit derivatives
+TEST(CheegerInterpolation, CoorderedSPD3ValueAndDerivatives) {
+    const auto data = coordered_spd3();
+    const manifold::CheegerLogEuclideanGeometry<SPDMatrix<double, 3, Cache::Union<Cache::Log, Cache::Spectral>>>
+      geometry(.5);
+    const std::array weights {.2, .3, .5}, dw {-.3, .1, .2};
+    auto settings = accurate();
+    settings.mean.solver.gradient_tolerance = 1e-10;
+    const auto fit = gfe::p1_geodesic_linearization(geometry, data, weights, settings);
+    const auto expected = gfe::p1_geodesic_value(manifold::LogEuclideanSPDGeometry<double, 3> {}, data, weights);
+    // the spectral trace bound makes the identity lift optimal for the ordered common eigenframe
+    ASSERT_TRUE(fit.result().converged());
+    // the resolved mean follows the LE oracle without executing any local optimizer iterations
+    EXPECT_EQ(fit.result().iterations, 0U);
+    // comparison uses the full SPD matrix rather than only its determinant or spectrum
+    EXPECT_LT((Matrix<double, 3, 3>(fit.result().value - expected.value)).norm(), 2e-12);
+    // a uniquely minimizing identity lift cannot produce competing mean branches
+    EXPECT_FALSE(fit.result().detected_ambiguity);
+    const auto derivative = fit.weight_jvp(dw);
+    // the shortcut must still prepare and certify the ordinary implicit derivative workspace
+    ASSERT_TRUE(derivative.converged());
+    constexpr double step = 1e-5;
+    auto plus = weights, minus = weights;
+    for (int i = 0; i < 3; ++i) {
+        plus[i] += step * dw[i];
+        minus[i] -= step * dw[i];
+    }
+    const auto a = gfe::p1_geodesic_value(geometry, data, plus, settings.mean);
+    const auto b = gfe::p1_geodesic_value(geometry, data, minus, settings.mean);
+    // independent refits verify weight derivatives on the same public API as every other geometry
+    EXPECT_LT((Matrix<double, 3, 3>((a.value - b.value) / (2 * step) - derivative.derivative)).norm(), 2e-8);
+    std::array<SymmetricMatrix<double, 3>, 3> direction;
+    for (int i = 0; i < 3; ++i)
+        for (int r = 0; r < 3; ++r)
+            for (int c = r; c < 3; ++c) direction[i](r, c) = .1 * std::sin(i + 2 * r + c + 1.);
+    const auto action = fit.nodal_log_jvp(direction);
+    auto perturbed = data;
+    std::array<std::remove_cvref_t<decltype(fit.result().value)>, 2> perturbed_values {
+      fit.result().value, fit.result().value};
+    for (int sign : {-1, 1}) {
+        for (int i = 0; i < 3; ++i) {
+            SymmetricMatrix<double, 3> log(matrix_log(data[i]));
+            log = log + sign * step * direction[i];
+            perturbed[i] = matrix_exp(log);
+        }
+        const auto result = gfe::p1_geodesic_value(geometry, perturbed, weights, settings.mean);
+        // noncommuting perturbations use the original branch search and must meet the same tolerance
+        ASSERT_TRUE(result.converged());
+        perturbed_values[sign < 0 ? 0 : 1] = result.value;
+    }
+    // centered off-diagonal perturbations leave the fast path and check the full nodal implicit derivative
+    EXPECT_LT((Matrix<double, 3, 3>((perturbed_values[1] - perturbed_values[0]) / (2 * step) - action)).norm(), 2e-6);
+    const auto rho = fit.rho_jvp();
+    // coordered means are independent of positive rho although their nodal derivative can depend on rho
+    ASSERT_TRUE(rho.converged());
+    // the metric parameter changes no value along this coordered family
+    EXPECT_LT(rho.derivative.norm(), 2e-12);
+}
+// commuting matrices with inconsistent eigenvalue order must retain the nonconvex branch search
+TEST(CheegerInterpolation, SPD3CrossedOrderingAndCacheInvalidation) {
+    using Cached = SPDMatrix<double, 3, Cache::Union<Cache::Log, Cache::Spectral>>;
+    using Geometry3 = manifold::CheegerLogEuclideanGeometry<Cached>;
+    MatrixBatch<Cached> crossed(3);
+    for (int i = 0; i < 3; ++i) {
+        SymmetricMatrix<double, 3> diagonal;
+        for (int r = 0; r < 3; ++r)
+            for (int c = r; c < 3; ++c) diagonal(r, c) = r == c ? 2. * ((r + i) % 3 - 1) : 0.;
+        crossed[i] = matrix_exp(diagonal);
+    }
+    auto settings = accurate();
+    settings.mean.solver.gradient_tolerance = 1e-8;
+    settings.mean.solver.max_iterations = 500;
+    const std::array weights {.2, .3, .5};
+    const auto fit = gfe::p1_geodesic_value(Geometry3(.5), crossed, weights, settings.mean);
+    const auto le = gfe::p1_geodesic_value(manifold::LogEuclideanSPDGeometry<double, 3> {}, crossed, weights);
+    // crossing spectra can favor nonidentity rotations despite exact pairwise commutation
+    ASSERT_TRUE(fit.converged());
+    // this configuration must not be accepted as the stationary but suboptimal identity lift
+    EXPECT_GT(fit.iterations, 0U);
+    // the nonconvex solution is observably different from the LE mean
+    EXPECT_GT((Matrix<double, 3, 3>(fit.value - le.value)).norm(), .1);
+    auto data = coordered_spd3();
+    const auto before = gfe::p1_geodesic_value(Geometry3(.5), data, weights, settings.mean);
+    SymmetricMatrix<double, 3> changed(matrix_log(data[0]));
+    changed(0, 1) += .05;
+    data[0] = matrix_exp(changed);
+    const auto after = gfe::p1_geodesic_value(Geometry3(.5), data, weights, settings.mean);
+    // replacing a batch entry invalidates its cached spectrum and prevents reuse of the old common-frame decision
+    ASSERT_TRUE(after.converged());
+    // the revised noncommuting field is solved rather than silently returning a cached value
+    EXPECT_GT((Matrix<double, 3, 3>(after.value - before.value)).norm(), 1e-4);
+    // the general local search remains active after the loss of coordering
+    EXPECT_GT(after.iterations, 0U);
+}
+// fixed and runtime tensor orders share the weighted APIs across permutations, repeated spectra and sparse support
+TEST(CheegerInterpolation, SPD3DynamicSelectionsAndRepeatedSpectrum) {
+    const auto data = coordered_spd3();
+    const manifold::CheegerLogEuclideanSPDGeometry<double, Dynamic> geometry(3, .5);
+    const std::array<std::size_t, 3> permutation {2, 0, 1};
+    auto settings = accurate();
+    settings.mean.solver.gradient_tolerance = 1e-10;
+    for (const auto weights : {
+           std::array {.5,    .2, .3        },
+            std::array {1e-14, .4, .6 - 1e-14},
+            std::array {0.,    .4, .6        }
+    }) {
+        const auto selected = data.select(permutation);
+        const auto fit = gfe::p1_geodesic_linearization(geometry, selected, weights, settings);
+        const auto expected =
+          gfe::p1_geodesic_value(manifold::LogEuclideanSPDGeometry<double, Dynamic>(3), selected, weights);
+        // runtime order and noncontiguous selections preserve the same coordered stationary solution
+        ASSERT_TRUE(fit.result().converged());
+        // inactive and almost inactive nodes do not force a redundant rotational search
+        EXPECT_EQ(fit.result().iterations, 0U);
+        // a dynamic LE oracle independently materializes the expected full matrix
+        EXPECT_LT((Matrix<double, Dynamic, Dynamic>(fit.result().value - expected.value)).norm(), 2e-12);
+        const auto rho = fit.rho_jvp();
+        // the retained positive active Hessian supports derivatives even on an open edge
+        ASSERT_TRUE(rho.converged());
+        // rho cannot change this coordered mean, including the positive-weight boundary limit
+        EXPECT_LT(rho.derivative.norm(), 2e-12);
+    }
+    MatrixBatch<SPDMatrix<double, 3>> repeated(3);
+    for (int i = 0; i < 3; ++i) {
+        SymmetricMatrix<double, 3> log;
+        for (int r = 0; r < 3; ++r)
+            for (int c = r; c < 3; ++c) log(r, c) = r == c ? (r == 2 ? .8 : .2) + .1 * i : 0.;
+        repeated[i] = matrix_exp(log);
+    }
+    const std::array weights {.2, .3, .5};
+    const auto fit = gfe::p1_geodesic_linearization(geometry, repeated, weights, settings);
+    // repeated eigenvalues and uncached batch owners are valid inputs to the same fast path
+    ASSERT_TRUE(fit.result().converged());
+    // positive rho fixes the rotations even when their eigenframes are not individually unique
+    EXPECT_EQ(fit.result().iterations, 0U);
+    // the derivative workspace remains nonsingular in the repeated-spectrum case
+    EXPECT_TRUE(fit.rho_jvp().converged());
+}
 }   // namespace

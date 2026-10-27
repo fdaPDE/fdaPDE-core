@@ -58,8 +58,15 @@ class P1GeodesicLinearization<manifold::CheegerLogEuclideanSPDGeometry<S, N, U, 
         std::vector<double> active_weights;
         active_weights.reserve(active_.size());
         for (std::size_t index : active_) active_weights.push_back(w_[index]);
+        std::vector<typename Lift::Eigenframe> frames;
+        if (active_.size() > 1) {
+            frames.reserve(active_.size());
+            for (std::size_t index : active_)
+                frames.push_back(manifold::internals::cheeger_eigenframe<S, N>(binding_[index]));
+        }
         lift_.emplace(std::move(charts), std::move(active_weights), geometry_.rho());
-        state_.emplace(lift_->solve(options.mean.solver.gradient_tolerance, options.mean.solver.max_iterations));
+        state_.emplace(
+          lift_->solve(frames, nullptr, options.mean.solver.gradient_tolerance, options.mean.solver.max_iterations));
         result_.emplace(
           CheegerP1ValueResult<Point> {
             {vertex ? Point(binding_[*vertex]) : Point(matrix_exp(state_->mean)), w_}

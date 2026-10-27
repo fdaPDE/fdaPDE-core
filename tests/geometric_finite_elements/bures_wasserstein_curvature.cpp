@@ -33,7 +33,7 @@ template <int N> Dense<N> sylvester(const Dense<N>& point, const Dense<N>& rhs) 
                 for (int b = 0; b < N; ++b)
                     system(i * N + j, a * N + b) = (b == j ? point(i, a) : 0.) + (i == a ? point(b, j) : 0.);
         }
-    const Vector<double, N * N> solution(PartialPivLU(system).solve(vector));
+    const Vector<double, N * N> solution {PartialPivLU(system).solve(vector)};
     Dense<N> result;
     for (int i = 0; i < N; ++i)
         for (int j = 0; j < N; ++j) result(i, j) = solution[i * N + j];
