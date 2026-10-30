@@ -24,71 +24,40 @@ namespace internals {
 
 // specialized parallelized for-range loop task
 struct task_parallel_for_each {
-    task_parallel_for_each() = default;
-
     template <typename Container, typename LoopBody>
         requires(std::is_invocable_v<LoopBody, typename Container::reference>)
-    void run(threaded_executor_impl* executor, Container& container, int grain_size, LoopBody&& f) {
+    static void run(threaded_executor_impl* executor, Container& container, int batch_size, LoopBody&& f) {
         const int n = std::distance(container.begin(), container.end());
         if (n <= 0) return;   // nothing to loop on
 
-        grain_size = std::max(1, std::min(grain_size, n));
-        dispatch_(executor, container, grain_size, std::forward<LoopBody>(f));
-        return;
-    }
-    template <typename Container, typename LoopBody>
-        requires(std::is_invocable_v<LoopBody, typename Container::reference>)
-    void run(threaded_executor_impl* executor, Container& container, LoopBody&& f) {
-        const int n = std::distance(container.begin(), container.end());
-        if (n <= 0) return;   // nothing to loop on
-
-        int grain_size = std::max(1.0, double(n) / (4 * executor->size()));   // auto-partitioning
-        dispatch_(executor, container, grain_size, std::forward<LoopBody>(f));
-        return;
-    }
-   private:
-    template <typename Container, typename LoopBody>
-        requires(std::is_invocable_v<LoopBody, typename Container::reference>)
-    void dispatch_(threaded_executor_impl* executor, Container& container, int grain_size, LoopBody&& f) {
-        using iterator_type = std::conditional_t<
-          std::is_const_v<Container>, typename std::decay_t<Container>::const_iterator,
-          typename std::decay_t<Container>::iterator>;
-        iterator_type begin = container.begin();
-        iterator_type end = container.end();
-
-        std::atomic<int> local_task_count {1};
-
-        iterator_type chunk_begin = begin;
-        bool pending_submission = false;
-        try {
-            while (chunk_begin != end) {
-                // register task in the group
-                local_task_count.fetch_add(1, std::memory_order_release);
-                pending_submission = true;
-
-                iterator_type chunk_end =
-                  std::next(chunk_begin, std::min(grain_size, int(std::distance(chunk_begin, end))));
-                auto loop_body = [chunk_begin, chunk_end, &f, &local_task_count]() {
-                    for (iterator_type it = chunk_begin; it != chunk_end; ++it) { f(*it); }
-                    // signal task completion
-                    local_task_count.fetch_sub(1, std::memory_order_release);
-                };
-                executor->execute(std::move(loop_body));
-                pending_submission = false;
-                // advance the loop
-                chunk_begin = chunk_end;
-            }
-        } catch (...) {
-            // earlier chunks still reference f and local_task_count: wait before unwinding.
-            if (pending_submission) { local_task_count.fetch_sub(1, std::memory_order_release); }
-            local_task_count.fetch_sub(1, std::memory_order_release);
-            executor->active_join(
-              this_thread_id(), [&] { return local_task_count.load(std::memory_order_acquire) > 0; });
-            throw;
+        batch_size = std::max(1, std::min(batch_size, n));
+        const int n_batches = 1 + (n - 1) / batch_size;
+        if (n_batches == 1 || executor->size() == 1) {
+            for (auto it = container.begin(), end = container.end(); it != end; ++it) { f(*it); }
+            return;
         }
-        // task_group collaborative wait
-        local_task_count.fetch_sub(1, std::memory_order_release);
-        executor->active_join(this_thread_id(), [&] { return local_task_count.load(std::memory_order_acquire) > 0; });
+        auto local_begin = container.begin();
+        int remaining = n;
+	task_batch::run(executor, n_batches, [&] {
+            const int count = std::min(batch_size, remaining);
+            auto local_end = std::next(local_begin, count);
+            auto task = [local_begin, local_end, &f] {
+                for (auto it = local_begin; it != local_end; ++it) { f(*it); }
+            };
+            local_begin = local_end;
+            remaining -= count;
+            return task;
+        });
+        return;
+    }
+    template <typename Container, typename LoopBody>
+        requires(std::is_invocable_v<LoopBody, typename Container::reference>)
+    static void run(threaded_executor_impl* executor, Container& container, LoopBody&& f) {
+        const int n = std::distance(container.begin(), container.end());
+        if (n <= 0) return;   // nothing to loop on
+        // auto-partitioning
+        int batch_size = std::max(1.0, double(n) / (4 * executor->size()));
+        run(executor, container, batch_size, std::forward<LoopBody>(f));
         return;
     }
 };
@@ -99,13 +68,14 @@ struct task_parallel_for_each {
 template <typename Container, typename LoopBody>
     requires(std::is_invocable_v<LoopBody, typename std::decay_t<Container>::reference>)
 void parallel_for_each(Container& container, int grain_size, LoopBody&& loop_body) {
-    internals::threaded_executor::instance().execute(
-      internals::task_parallel_for_each(), container, grain_size, loop_body);
+    auto* executor = std::addressof(internals::threaded_executor::instance());
+    internals::task_parallel_for_each::run(executor, container, grain_size, loop_body);
 }
 template <typename Container, typename LoopBody>
     requires(std::is_invocable_v<LoopBody, typename std::decay_t<Container>::reference>)
 void parallel_for_each(Container& container, LoopBody&& loop_body) {
-    internals::threaded_executor::instance().execute(internals::task_parallel_for_each(), container, loop_body);
+    auto* executor = std::addressof(internals::threaded_executor::instance());
+    internals::task_parallel_for_each::run(executor, container, loop_body);
 }
 
 }   // namespace fdapde

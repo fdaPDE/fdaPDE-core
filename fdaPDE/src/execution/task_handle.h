@@ -34,7 +34,7 @@ class task_handle {
         mv_(other.mv_),
         cp_(other.cp_),
         sb_(other.sb_),
-        allocation_context_(other.allocation_context_) {
+        owner_id_(other.owner_id_) {
         if (sb_) {
             if (cp_) { cp_(storage_.buff_, other.storage_.buff_); }
         } else {
@@ -54,7 +54,7 @@ class task_handle {
         mv_(std::exchange(other.mv_, nullptr)),
         cp_(std::exchange(other.cp_, nullptr)),
         sb_(std::exchange(other.sb_, 0)),
-        allocation_context_(other.allocation_context_)   // copy, as physical memory is not moved
+        owner_id_(other.owner_id_)
     {
         if (sb_) {
             if (mv_) { mv_(storage_.buff_, other.storage_.buff_); }
@@ -76,15 +76,15 @@ class task_handle {
         } else {
             storage_.data_ = std::exchange(other.storage_.data_, nullptr);
         }
-        allocation_context_ = other.allocation_context_;
+        owner_id_ = other.owner_id_;
         return *this;
     }
-    template <typename F, typename AllocationContext>
+    template <typename F, typename OwnerId>
         requires(
           !std::is_same_v<std::decay_t<F>, task_handle> && std::is_invocable_v<std::decay_t<F>&> &&
           std::is_copy_constructible_v<std::decay_t<F>> &&
-          std::is_constructible_v<std::optional<int>, AllocationContext>)
-    task_handle(F&& f, AllocationContext allocation_context) : allocation_context_(allocation_context) {
+          std::is_constructible_v<std::optional<int>, OwnerId>)
+    task_handle(F&& f, OwnerId owner_id) : owner_id_(owner_id) {
         using Fn = std::decay_t<F>;
         constexpr bool sb =
           sizeof(Fn) <= buffer_size && alignof(Fn) <= alignof(union U) && std::is_nothrow_move_constructible_v<Fn>;
@@ -119,9 +119,9 @@ class task_handle {
 
     // invoke
     void run() { fn_(sb_ ? (void*)storage_.buff_ : storage_.data_); }
-    // memory handling
-    const std::optional<int>& allocation_context() const { return allocation_context_; }
-    void set_allocation_context(int allocation_context) { allocation_context_ = allocation_context; }
+    // ownership managment
+    int owner_id() const { return owner_id_.has_value() ? owner_id_.value() : -1; }
+    void set_owner(int owner_id) { owner_id_ = owner_id; }
     // destructor (task destroyed only after completion)
     ~task_handle() {
         if (rm_) { rm_(sb_ ? (void*)storage_.buff_ : storage_.data_); }
@@ -138,7 +138,7 @@ class task_handle {
     bool sb_ = false;
 
     // task properties
-    std::optional<int> allocation_context_;   // memory pool identifier
+    std::optional<int> owner_id_;   // execution context responsible for this task's accounting
 };
 
 }   // namespace internals

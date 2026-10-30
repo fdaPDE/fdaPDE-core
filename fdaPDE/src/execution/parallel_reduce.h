@@ -24,80 +24,66 @@ namespace internals {
 
 // specialized parallelized reduce task
 struct task_parallel_reduce {
-    task_parallel_reduce() = default;
-
     template <std::forward_iterator Iterator, typename T, typename ReduxOp>
         requires(
           std::convertible_to<std::iter_reference_t<Iterator>, T> &&
           std::is_invocable_r_v<T, ReduxOp&, T, std::iter_reference_t<Iterator>> &&
           std::is_invocable_r_v<T, ReduxOp&, T, T>)
-    T run(threaded_executor_impl* executor, Iterator begin, Iterator end, int grain_size, T init, ReduxOp&& redux) {
+    static T
+    run(threaded_executor_impl* executor, Iterator begin, Iterator end, int batch_size, T init, ReduxOp&& redux) {
         const int n = std::distance(begin, end);
         if (n <= 0) return init;   // nothing to loop on
 
-        grain_size = std::max(1, std::min(grain_size, n));
-        return dispatch_(executor, begin, end, grain_size, init, std::forward<ReduxOp>(redux));
-    }
-    template <std::forward_iterator Iterator, typename T, typename ReduxOp>
-        requires(
-          std::convertible_to<std::iter_reference_t<Iterator>, T> &&
-          std::is_invocable_r_v<T, ReduxOp&, T, std::iter_reference_t<Iterator>> &&
-          std::is_invocable_r_v<T, ReduxOp&, T, T>)
-    T run(threaded_executor_impl* executor, Iterator begin, Iterator end, T init, ReduxOp&& redux) {
-        const int n = std::distance(begin, end);
-        if (n <= 0) return init;   // nothing to loop on
-
-        int grain_size = std::max(1.0, double(n) / (4 * executor->size()));
-        return dispatch_(executor, begin, end, grain_size, init, std::forward<ReduxOp>(redux));
-    }
-   private:
-    template <std::forward_iterator Iterator, typename T, typename ReduxOp>
-    T dispatch_(
-      threaded_executor_impl* executor, Iterator begin, Iterator end, int grain_size, T init, ReduxOp&& redux) {
-        const int n_chunks = (static_cast<int>(std::distance(begin, end)) + grain_size - 1) / grain_size;
-        std::vector<std::optional<T>> partials(static_cast<std::size_t>(n_chunks));
-        std::atomic<int> local_task_count {1};
-
-        Iterator chunk_begin = begin;
-        int chunk_index = 0;
-        bool pending_submission = false;
-        try {
-            while (chunk_begin != end) {
-                // register task in the group
-                local_task_count.fetch_add(1, std::memory_order_release);
-                pending_submission = true;
-
-                Iterator chunk_end = std::next(chunk_begin, std::min(grain_size, int(std::distance(chunk_begin, end))));
-                auto loop_body = [chunk_begin, chunk_end, chunk_index, &redux, &local_task_count, &partials]() {
-                    Iterator it = chunk_begin;
-                    T local_value(*it);
-                    for (++it; it != chunk_end; ++it) { local_value = std::invoke(redux, std::move(local_value), *it); }
-                    partials[static_cast<std::size_t>(chunk_index)].emplace(std::move(local_value));
-                    // signal task completion
-                    local_task_count.fetch_sub(1, std::memory_order_release);
-                };
-                executor->execute(std::move(loop_body));
-                pending_submission = false;
-                // advance the loop
-                chunk_begin = chunk_end;
-                chunk_index++;
+        batch_size = std::max(1, std::min(batch_size, n));
+        const int n_batches = 1 + (n - 1) / batch_size;
+        if (n_batches == 1 || executor->size() == 1) {
+            int remaining = n;
+            while (remaining > 0) {
+                const int count = std::min(batch_size, remaining);
+                auto local_end = std::next(begin, count);
+                T local_value(*begin);
+                for (++begin; begin != local_end; ++begin) {
+                    local_value = std::invoke(redux, std::move(local_value), *begin);
+                }
+                init = std::invoke(redux, std::move(init), std::move(local_value));
+                remaining -= count;
             }
-        } catch (...) {
-            // earlier chunks still reference f and local_task_count: wait before unwinding.
-            if (pending_submission) { local_task_count.fetch_sub(1, std::memory_order_release); }
-            local_task_count.fetch_sub(1, std::memory_order_release);
-            executor->active_join(
-              this_thread_id(), [&] { return local_task_count.load(std::memory_order_acquire) > 0; });
-            throw;
+            return init;
         }
-        // task_group collaborative wait
-        local_task_count.fetch_sub(1, std::memory_order_release);
-        executor->active_join(this_thread_id(), [&] { return local_task_count.load(std::memory_order_acquire) > 0; });
+        std::vector<std::optional<T>> partials(n_batches);
+        Iterator local_begin = begin;
+        int batch_index = 0;
+        int remaining = n;
+        task_batch::run(executor, n_batches, [&] {
+            const int count = std::min(batch_size, remaining);
+            Iterator local_end = std::next(local_begin, count);
+            auto task = [local_begin, local_end, batch_index, &redux, &partials] {
+                Iterator it = local_begin;
+                T local_value(*it);
+                for (++it; it != local_end; ++it) { local_value = std::invoke(redux, std::move(local_value), *it); }
+                partials[batch_index].emplace(std::move(local_value));
+            };
+            local_begin = local_end;
+            remaining -= count;
+            ++batch_index;
+            return task;
+        });
 
-        // perform final reduction sequentially
-        T v = init;
-        for (auto& p : partials) { v = std::invoke(redux, std::move(v), std::move(*p)); }
-        return v;
+        // combine partial results in input order, applying the seed once
+        for (auto& partial : partials) { init = std::invoke(redux, std::move(init), std::move(*partial)); }
+        return init;
+    }
+    template <std::forward_iterator Iterator, typename T, typename ReduxOp>
+        requires(
+          std::convertible_to<std::iter_reference_t<Iterator>, T> &&
+          std::is_invocable_r_v<T, ReduxOp&, T, std::iter_reference_t<Iterator>> &&
+          std::is_invocable_r_v<T, ReduxOp&, T, T>)
+    static T run(threaded_executor_impl* executor, Iterator begin, Iterator end, T init, ReduxOp&& redux) {
+        const int n = std::distance(begin, end);
+        if (n <= 0) return init;   // nothing to loop on
+        // auto-partitioning
+        int batch_size = std::max(1.0, double(n) / (4 * executor->size()));
+        return run(executor, begin, end, batch_size, init, std::forward<ReduxOp>(redux));
     }
 };
 
@@ -110,8 +96,8 @@ template <std::forward_iterator Iterator, typename T, typename ReduxOp>
       std::is_invocable_r_v<T, ReduxOp&, T, std::iter_reference_t<Iterator>> &&
       std::is_invocable_r_v<T, ReduxOp&, T, T>)
 T parallel_reduce(Iterator begin, Iterator end, int grain_size, T init, ReduxOp&& redux) {
-    return internals::threaded_executor::instance().execute(
-      internals::task_parallel_reduce(), begin, end, grain_size, init, redux);
+    auto* executor = std::addressof(internals::threaded_executor::instance());
+    return internals::task_parallel_reduce::run(executor, begin, end, grain_size, init, redux);
 }
 template <std::forward_iterator Iterator, typename T, typename ReduxOp>
     requires(
@@ -119,7 +105,8 @@ template <std::forward_iterator Iterator, typename T, typename ReduxOp>
       std::is_invocable_r_v<T, ReduxOp&, T, std::iter_reference_t<Iterator>> &&
       std::is_invocable_r_v<T, ReduxOp&, T, T>)
 T parallel_reduce(Iterator begin, Iterator end, T init, ReduxOp&& redux) {
-    return internals::threaded_executor::instance().execute(internals::task_parallel_reduce(), begin, end, init, redux);
+    auto* executor = std::addressof(internals::threaded_executor::instance());
+    return internals::task_parallel_reduce::run(executor, begin, end, init, redux);
 }
 
 }   // namespace fdapde

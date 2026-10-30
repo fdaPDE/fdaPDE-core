@@ -29,8 +29,10 @@ static constexpr execution_seq_t execution_seq;
 }   // namespace fdapde
 
 #include <algorithm>
+#include <unordered_map>
 #include <atomic>
 #include <charconv>
+#include <chrono>
 #include <cmath>
 #include <compare>
 #include <concepts>
@@ -51,6 +53,7 @@ static constexpr execution_seq_t execution_seq;
 #include <optional>
 #include <queue>
 #include <random>
+#include <ranges>
 #include <stdexcept>
 #include <string_view>
 #include <system_error>
@@ -63,11 +66,15 @@ static constexpr execution_seq_t execution_seq;
 #include "src/execution/concurrency.h"
 
 // basic threaded runtime
+#include "src/execution/pool_allocator.h"
+#include "src/execution/chase_lev_queue.h"
+#include "src/execution/mpsc_queue.h"
 #include "src/execution/task_handle.h"
-#include "src/execution/worker.h"
+#include "src/execution/execution_context.h"
 #include "src/execution/threaded_executor.h"
 
 // high-level API
+#include "src/execution/task_batch.h"
 #include "src/execution/parallel_for.h"
 #include "src/execution/parallel_for_each.h"
 #include "src/execution/parallel_reduce.h"

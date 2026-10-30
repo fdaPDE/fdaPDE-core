@@ -22,267 +22,453 @@
 namespace fdapde {
 namespace internals {
 
-// executor configuration is mutable only before the first task initializes the worker pool
-struct threaded_executor_config_t {
-    std::mutex m_;
-    bool initialized = false;
-    int num_threads = static_cast<int>(
-      std::min(fdapde::available_concurrency(), static_cast<std::size_t>(std::numeric_limits<int>::max())));
+// executor global status, mutable only before the first threaded_executor initialization
+struct threaded_executor;
+struct threaded_executor_global_state_t {
+    threaded_executor_global_state_t() = default;
+    friend threaded_executor;
+
+    // setters
+    void set_num_threads(int num_threads) {
+        std::lock_guard<std::mutex> lock(m_);
+        fdapde_assert(num_threads > 0, "number of requested threads must be positive");
+        fdapde_assert(!is_ready_     , "thread count cannot change after executor initialization");
+        num_threads_ = num_threads;
+    }
+    // getters
+    int num_threads() const { return num_threads_.load(std::memory_order_relaxed); }
+   private:
+    void set_ready_() {
+        // requires m_ to be externally acquired
+        is_ready_ = true;
+    }
+    mutable std::mutex m_;
+    bool is_ready_ = false;
+    std::atomic<int> num_threads_ = fdapde::available_concurrency();
 };
-inline threaded_executor_config_t threaded_executor_config;
+inline threaded_executor_global_state_t threaded_executor_global_state;
 
 // implementation of the random stealing algorithm
 // * "blumofe, r. d., & leiserson, c. e. (1999). scheduling multithreaded computations by work stealing. journal of the
 //    acm (jacm), 46(5), 720-748"
 struct random_stealing_policy {
-    explicit random_stealing_policy(std::size_t n, int probes = 2) :
-        probes_(probes), dist_(0, static_cast<int>(n - 1)) { }
-
+    explicit random_stealing_policy(int size) : size_(size) { }
     template <typename TryStealFunctor> std::optional<task_handle*> pick(int self, TryStealFunctor&& try_steal) {
-        for (int k = 0; k < probes_; ++k) {
-            int victim = dist_(tls_rng());
-            if (victim != self) {
-                if (auto task = try_steal(victim)) return task;
+        int victim_id = static_cast<int>(random_() % size_);
+        for (int k = 0; k < size_; ++k) {
+            if (victim_id != self) {
+                if (auto task = try_steal(victim_id)) { return task; }
             }
+            if (++victim_id == size_) victim_id = 0;   // increment-and-wrap, avoid integer division
         }
         return std::nullopt;
     }
    private:
-    static std::mt19937& tls_rng() {   // thread local rng to avoid races
-        thread_local std::mt19937 rng {std::random_device {}()};
-        return rng;
+    // a cheap per-thread random number generator
+    static std::uint64_t random_() {
+        thread_local std::uint64_t state =
+          0x9e3779b97f4a7c15ULL ^ static_cast<std::uint64_t>(std::hash<std::thread::id> {}(std::this_thread::get_id()));
+        state ^= state << 13;
+        state ^= state >> 07;
+        state ^= state << 17;
+        return state;
     }
-    int probes_;
-    std::uniform_int_distribution<int> dist_;
+    const int size_;
 };
 
 // implementation of the round-robin scheduling algorithm
 struct round_robin_scheduling_policy {
     explicit round_robin_scheduling_policy(std::size_t n) : size_(n) { }
-
-    int pick() { return static_cast<int>(curr_.fetch_add(1, std::memory_order_relaxed) % size_); }
+    int pick() {
+        auto current = curr_.load(std::memory_order_relaxed);
+        for (;;) {
+            auto next = current + 1 == size_ ? 0 : current + 1;   // increment-and-wrap, avoid integer division
+            if (curr_.compare_exchange_weak(current, next, std::memory_order_relaxed)) {
+                return static_cast<int>(current);
+            }
+        }
+    }
    private:
     std::atomic<std::size_t> curr_ {0};
     std::size_t size_;
 };
 
-// multi-threaded runtime system with randomized work-stealing load balancing
+// executor-owned task storage, execution contexts, and physical background threads
 struct threaded_executor_impl {
-    using worker_type = internals::worker;
-    using worker_pointer = std::unique_ptr<worker_type>;
-    using task_type = typename worker_type::task_type;
-    using task_pointer = typename worker_type::task_pointer;
-    using packaged_task = typename worker_type::packaged_task;
-    using size_type = std::size_t;
+   private:
+    using context_type = execution_context;
+    using context_pointer = std::unique_ptr<context_type>;
+    using allocator_type = pool_allocator<task_handle>;
     using stealing_policy = internals::random_stealing_policy;
     using scheduling_policy = internals::round_robin_scheduling_policy;
+    // spin-loop and backoff constants
+    static constexpr int min_spin_retention_us = 250;
+    static constexpr int max_spin_retention_us = 1000;
+    static constexpr int max_spin_pauses = 32;
+    static constexpr int backoff_factor = 2;
+   public:
+    using size_type = std::size_t;
 
-    // constructor
+    // an handle to submit and discard task execution
+    struct task_submission_handle {
+        task_submission_handle() = default;
+      
+        // queue task for parallel execution
+        void submit() { executor_->submit_task(*this); }
+        // discard unsubmitted tasks. task execution is not preempted, hence submitted tasks cannot be discarded
+        void discard() {
+            if (*this) executor_->deallocate_task(*this);
+        }
+        // getters
+        explicit operator bool() const { return task_ != nullptr; }
+        task_submission_handle* operator->() noexcept { return this; }
+        int context_id() const { return task_->owner_id(); }
+       private:
+        friend struct threaded_executor_impl;
+        friend struct execution_context;
+        task_submission_handle(threaded_executor_impl* executor, task_handle* task) :
+            executor_(executor), task_(task) { }
+
+        threaded_executor_impl* executor_ = nullptr;         // executor controlling this task
+        task_handle* task_ = nullptr;                        // the actual unit of work
+        context_type::task_buffer_pointer data_ = nullptr;   // memory location storing this task
+    };
+
     threaded_executor_impl() : threaded_executor_impl(fdapde::available_concurrency()) { }
     explicit threaded_executor_impl(size_type size) :
-        n_workers_(size), init_latch_(n_workers_ + 1), stealing_policy_(n_workers_), scheduling_policy_(n_workers_) {
+        stealing_policy_(size + 1),
+        scheduling_policy_(size),
+        n_workers_(size),
+        init_latch_(n_workers_ + 1),
+        active_(true),
+        idle_cnt_(0),
+        epoch_(0),
+        join_cnt_(0),
+        active_join_cnt_(0) {
+        contexts_.reserve(n_workers_ + 1);
         workers_.reserve(n_workers_);
-        // start workers
-        for (size_type i = 0; i < n_workers_; i++) {
+        for (size_type i = 0; i <= n_workers_; ++i) {
+            contexts_.push_back(std::make_unique<context_type>(static_cast<int>(i), i < n_workers_));
+        }
+        for (size_type i = 0; i < n_workers_; ++i) {
             try {
-                workers_.emplace_back(std::make_unique<internals::worker>(i, this));
+                workers_.emplace_back([this, i] { worker_loop_(static_cast<int>(i)); });
             } catch (...) {
                 active_.store(false, std::memory_order_release);
-                // supply fake arrivals for workers that never started, plus the coordinator thread
-                init_latch_.count_down(n_workers_ + 1 - workers_.size());
-                for (auto& worker : workers_) {
-                    if (worker->joinable()) { worker->join(); }
-                }
+                // release started workers when the remaining threads could not be created
+                init_latch_.count_down(n_workers_ + 1 - i);
+                for (auto& worker : workers_) worker.join();
                 throw;
             }
         }
-        // wait workers to be ready, avoids executor destruction before worker construction
         init_latch_.arrive_and_wait();
     }
-    // observers
     size_type size() const { return n_workers_; }
     bool is_active() const { return active_.load(std::memory_order_acquire); }
-    // submits f(args...) for asynchronous execution. returns a std::future holding the result
+
+    // submits f(args...) asynchronously and returns its result through a future
     template <typename F, typename... Args>
         requires(std::is_invocable_v<std::decay_t<F>&, std::decay_t<Args>&...>)
     [[nodiscard]] auto async(F&& f, Args&&... args) {
         using ret_t = std::invoke_result_t<std::decay_t<F>&, std::decay_t<Args>&...>;
-        auto bound_task = [f_ = std::forward<F>(f),
-                           args_ = std::tuple<std::decay_t<Args>...>(std::forward<Args>(args)...)]() mutable -> ret_t {
+        using args_t = std::tuple<std::decay_t<Args>...>;
+        auto task = [f_ = std::forward<F>(f), args_ = args_t(std::forward<Args>(args)...)]() mutable -> ret_t {
             return std::apply([&f_](auto&... stored_args) -> ret_t { return std::invoke(f_, stored_args...); }, args_);
         };
-        auto packaged_task = std::make_shared<std::packaged_task<ret_t()>>(std::move(bound_task));
+        auto packaged_task = std::make_shared<std::packaged_task<ret_t()>>(std::move(task));
         auto result = packaged_task->get_future();
-        dispatch_task_([packaged_task]() { (*packaged_task)(); });
+	// submit task for execution
+        auto handle = allocate_task(this_thread_id(), [packaged_task]() { (*packaged_task)(); });
+        try {
+            handle.submit();
+        } catch (...) {
+            handle.discard();
+            throw;
+        }
         return result;
     }
-    // executes a callable f(args...) asynchronously. doesn't wait for any result
+    // submits f(args...) without a result or an implicit wait
     template <typename F, typename... Args>
         requires(
           std::is_invocable_v<std::decay_t<F>&, std::decay_t<Args>&...> &&
           std::is_copy_constructible_v<std::decay_t<F>> && (std::is_copy_constructible_v<std::decay_t<Args>> && ...))
     void execute(F&& f, Args&&... args) {
-        auto bound_task = [f_ = std::forward<F>(f),
-                           args_ = std::tuple<std::decay_t<Args>...>(std::forward<Args>(args)...)]() mutable {
+        using args_t = std::tuple<std::decay_t<Args>...>;
+        auto task = [f_ = std::forward<F>(f), args_ = args_t(std::forward<Args>(args)...)]() mutable {
             std::apply([&f_](auto&... stored_args) { std::invoke(f_, stored_args...); }, args_);
         };
-        dispatch_task_(std::move(bound_task));
-    }
-    // executes a runnable task object
-    template <typename Task, typename... Args>
-        requires(requires(Task task, threaded_executor_impl* executor, Args... args) { task.run(executor, args...); })
-    auto execute(Task&& task, Args&&... args) {
-        return task.run(this, std::forward<Args>(args)...);
-    }
-    // low-level task handling
-    // reserve both task and mailbox storage before submission
-    template <typename Task> packaged_task allocate_task(int worker, Task&& task) {
-        return workers_[worker]->allocate_task(std::forward<Task>(task));
-    }
-    // destroy a packaged task that was never submitted
-    void deallocate_task(packaged_task task) {
-        workers_[task.task->allocation_context().value()]->deallocate_task(task);
-    }
-    // submit a packaged task without allocating queue storage
-    void submit_task(packaged_task task) {
-        {
-            std::lock_guard<std::mutex> lock(m_);
-            workers_[task.task->allocation_context().value()]->submit_task(task);
+	// submit task for execution
+        auto handle = allocate_task(this_thread_id(), std::move(task));
+        try {
+            handle.submit();
+        } catch (...) {
+            handle.discard();
+            throw;
         }
-        work_cv_.notify_one();
-        if (completion_waiters_.load() != 0) cv_.notify_all();
     }
-    // publish a prepared batch of tasks
-    void submit_task(const std::vector<packaged_task>& tasks) {
-        {
-            std::lock_guard<std::mutex> lock(m_);
-            for (packaged_task task : tasks) {
-                auto& owner = workers_[task.task->allocation_context().value()];
-                owner->submit_task(task);
+
+    // allocate task storage and reserve queue resources without publication
+    template <typename Task> task_submission_handle allocate_task(int context_id, Task&& task) {
+        if (context_id < 0) { context_id = scheduling_policy_.pick(); }   // external thread
+        auto* pointer = task_pool_.allocate(std::forward<Task>(task));
+        try {
+            task_submission_handle handle(this, pointer);
+            contexts_[context_id]->reserve_task(handle);
+            return handle;
+        } catch (...) {
+            task_pool_.deallocate(pointer);
+            throw;
+        }
+    }
+    // discard an unpublished task, release its reservation, and clear this handle
+    void deallocate_task(task_submission_handle& task) {
+        if (!task) return;
+        const auto discarded = std::exchange(task, {});
+        contexts_[discarded.context_id()]->cancel_task(discarded);
+        task_pool_.deallocate(discarded.task_);
+    }
+    // publish through the owning context, then notify the runtime
+    void submit_task(task_submission_handle task) {
+        contexts_[task.context_id()]->publish_task(task);
+        epoch_.fetch_add(1, std::memory_order_release);
+        notify();
+    }
+    // publish consecutive tasks for each context issuing a single notification at completed batch submission
+    void submit_task(const std::vector<task_submission_handle>& tasks) {
+        for (std::size_t first = 0; first < tasks.size();) {
+            const int context_id = tasks[first].context_id();
+            auto last = first + 1;
+            while (last < tasks.size()) {
+                if (tasks[last].context_id() != context_id) break;
+                ++last;
+            }
+            contexts_[context_id]->publish_task(tasks.begin() + first, tasks.begin() + last);
+            first = last;
+        }
+        epoch_.fetch_add(1, std::memory_order_release);
+        notify_all();
+    }
+
+   private:
+    // RAII ownership of the caller's reserved context
+    struct attachment_handle {
+        explicit attachment_handle(threaded_executor_impl* executor) noexcept : executor_(nullptr) {
+            if (tls_worker_id == external_thread && executor->contexts_.back()->try_attach()) {
+                executor_ = executor;
+                tls_worker_id = static_cast<int>(executor_->n_workers_);
             }
         }
-        work_cv_.notify_all();
-        if (completion_waiters_.load() != 0) cv_.notify_all();
-    }
-    // blocks caller until all tasks queued in the pool have been executed
+        attachment_handle(const attachment_handle&) = delete;
+        attachment_handle& operator=(const attachment_handle&) = delete;
+        ~attachment_handle() { detach(); }
+        bool attached() const noexcept { return executor_ != nullptr; }
+        explicit operator bool() const noexcept { return attached(); }
+        void detach() noexcept {
+            if (!executor_) return;
+            tls_worker_id = external_thread;
+            executor_->contexts_.back()->detach();
+            executor_ = nullptr;
+        }
+       private:
+        threaded_executor_impl* executor_;
+    };
+    struct wait_guard {
+        explicit wait_guard(std::atomic<size_type>& count) : count_(count) {
+            ++count_;
+            std::atomic_thread_fence(std::memory_order_seq_cst);
+        }
+        ~wait_guard() { --count_; }
+       private:
+        std::atomic<size_type>& count_;
+    };
+   public:
+    // called by an externally managed thread to check if it can join this executor
+    [[nodiscard]] attachment_handle try_attach() noexcept { return attachment_handle(this); }
+    // blocks external callers until all published work has completed
     void join() {
-        if (this_thread_id() != main_thread_id) return;
+        if (tls_worker_id != external_thread) return;
         std::unique_lock<std::mutex> lock(m_);
-        completion_wait registration(join_waiters_);
-        cv_.wait(lock, [&]() {
-            return std::all_of(
-              workers_.begin(), workers_.end(), [](const auto& worker) { return !worker->has_registered_tasks(); });
+        wait_guard wait_on(join_cnt_);
+        join_cv_.wait(lock, [&]() {
+            const auto epoch = epoch_.load(std::memory_order_acquire);
+            const bool empty = std::all_of(contexts_.begin(), contexts_.end(), [](const auto& context) {
+                return !context->has_unfinished_tasks();
+            });
+            return empty && epoch_.load(std::memory_order_acquire) == epoch;
         });
     }
-    // sends the calling worker back to its worker loop, until condition is not met. used in collaboartive waits
+    // attached callers execute work while cond() is true; external callers wait passively
     template <typename Condition>
         requires(requires(Condition cond) {
             { cond() } -> std::convertible_to<bool>;
         })
-    void active_join(int worker_id, Condition&& cond) {
-        while (cond()) {
-            if (worker_id != main_thread_id && workers_[worker_id]->try_execute_one(this)) continue;
+    void active_join(int context_id, Condition&& cond) {
+        if (context_id < 0) {
+            // external detatched threads are put in passive join
             std::unique_lock<std::mutex> lock(m_);
-            completion_wait registration(completion_waiters_);
-            cv_.wait(lock, [&] {
-                return !cond() || (worker_id != main_thread_id && has_queued_tasks_()) ||
-                       !active_.load(std::memory_order_acquire);
-            });
+            wait_guard wait_on(active_join_cnt_);
+            join_cv_.wait(lock, [&] { return !cond(); });
+            return;
         }
-        return;
+	// exponential backoff strategy
+        using clock = std::chrono::steady_clock;
+        auto retention = std::chrono::microseconds(min_spin_retention_us);
+        while (cond()) {
+            if (try_execute_one_(context_id)) continue;
+            const auto deadline = clock::now() + retention;
+            int pauses = 1;
+            while (cond()) {
+                for (int i = 0; i < pauses; ++i) {
+                    if (!cond()) return;
+                    cpu_yield_();   // lightweight CPU yield
+                }
+                if (!cond()) return;
+                if (try_execute_one_(context_id)) {
+                    retention = std::min(
+                      retention * backoff_factor, std::chrono::microseconds(max_spin_retention_us));
+                    break;
+                }
+                if (clock::now() >= deadline) {
+                    retention = std::max(
+                      retention / backoff_factor, std::chrono::microseconds(min_spin_retention_us));
+		    // no work found during backoff, go idle
+                    std::unique_lock<std::mutex> lock(m_);
+                    wait_guard wait_on(active_join_cnt_);
+                    join_cv_.wait(lock, [&] { return !cond() || are_ready_tasks_available_() || !is_active(); });
+                    break;
+                }
+                pauses = std::min(pauses * backoff_factor, max_spin_pauses);
+            }
+        }
     }
-    // stops all running threads. not yet completed tasks are losts
+    // stops background threads; queued tasks may remain unexecuted
     void stop() {
         std::unique_lock<std::mutex> lock(m_);
         active_.store(false, std::memory_order_release);
         lock.unlock();
-        cv_.notify_all();
-        work_cv_.notify_all();
-        for (auto& worker : workers_) { worker->join(); }
-        return;
+        join_cv_.notify_all();
+        idle_cv_.notify_all();
+        for (auto& worker : workers_) worker.join();
     }
-    // destructor
-    ~threaded_executor_impl() { stop(); }
-   private:
-    // woorker coordination utilities
-    friend worker_type;
-    // tells completing tasks that a caller in join or active_join may need waking up when they finish
-    struct completion_wait {
-        explicit completion_wait(std::atomic<size_type>& count) : count_(count) {
-            ++count_;
-            std::atomic_thread_fence(std::memory_order_seq_cst);
-        }
-        ~completion_wait() { --count_; }
-        std::atomic<size_type>& count_;
-    };
-    // invoked by a worker to signal completion of task, notify possibly waiting workers
-    void on_task_complete(task_pointer task) {
-        const bool owner_done = workers_[task->allocation_context().value()]->delete_task(task);
+    void notify() noexcept { notify_(false); }      // wakes one idle worker and all collaborative join waiters
+    void notify_all() noexcept { notify_(true); }   // wakes all idle workers and all collaborative join waiters
+    // wakes both global and collaborative join waiters
+    void notify_all_join() noexcept {
         std::atomic_thread_fence(std::memory_order_seq_cst);
-        if (completion_waiters_.load() != 0 || (owner_done && join_waiters_.load() != 0)) {
-            // handshake with predicate checks under m_ to prevent a missed completion wakeup
+        if (join_cnt_.load() != 0 || active_join_cnt_.load() != 0) {
+            // handshake with wait predicates under m_ to prevent a missed completion wakeup
             std::lock_guard<std::mutex> lock(m_);
-            cv_.notify_all();
+            join_cv_.notify_all();
         }
     }
-    // invoked by a worker to signal its readyness
-    void on_worker_ready() { init_latch_.arrive_and_wait(); }
-    // invoked by a worker to decide whether to move to an idle state
-    void on_worker_idle() {
-        std::unique_lock<std::mutex> lock(m_);
-        work_cv_.wait(lock, [&]() { return has_queued_tasks_() || !active_.load(std::memory_order_acquire); });
+    ~threaded_executor_impl() {
+        if (is_active()) stop();
     }
-    // invoked by a worker to perform a stealing attempt
-    std::optional<task_pointer> try_steal(int thief_id) {
-        if (auto task = stealing_policy_.pick(thief_id, [&](int victim) { return workers_[victim]->try_steal(); })) {
-            return task;
+   private:
+    bool try_execute_one_(int context_id) noexcept {
+        auto task = contexts_[context_id]->try_fetch_task();
+        if (!task) {
+            // no local work, try steal work from other context
+            task = stealing_policy_.pick(context_id, [&](int victim) { return contexts_[victim]->try_steal(); });
         }
-        // exhaust available victims before parking, rather than retrying the global idle lock after two misses
-        for (size_type offset = 1; offset < n_workers_; ++offset) {
-            if (auto task = workers_[(thief_id + offset) % n_workers_]->try_steal()) { return task; }
-        }
-        return std::nullopt;
+        if (!task) return false;   // no work found, return
+
+	// run assigned task and update task accounting once finished
+        (*task)->run();
+        const int owner_id = (*task)->owner_id();
+        task_pool_.deallocate(*task);
+        if (contexts_[owner_id]->complete_task()) { notify_all_join(); }
+        return true;
     }
-    // read worker-local queue counts only while coordinating parking
-    bool has_queued_tasks_() {
-        return std::any_of(
-          workers_.begin(), workers_.end(), [](const auto& worker) { return worker->has_queued_tasks(); });
-    }
-    // allocates and submits task to the pool, waking an idle worker
-    template <typename Task> void dispatch_task_(Task&& task) {
-        int w_id = scheduling_policy_.pick();
-        packaged_task prepared = allocate_task(w_id, task_type(std::forward<Task>(task), w_id));
-        try {
-            submit_task(prepared);
-        } catch (...) {
-            deallocate_task(prepared);
-            throw;
+    // loop executed by executor managed physical-threads
+    void worker_loop_(int context_id) {
+        tls_worker_id = context_id;
+        init_latch_.arrive_and_wait();
+        using clock = std::chrono::steady_clock;
+        auto retention = std::chrono::microseconds(min_spin_retention_us);
+        while (is_active()) {
+            // try fetch work, possible do a stealing attempt
+            if (try_execute_one_(context_id)) continue;
+	    // no work found, exponential backoff
+            const auto deadline = clock::now() + retention;
+            int pauses = 1;
+            while (is_active()) {
+                for (int i = 0; i < pauses; ++i) { cpu_yield_(); }   // lightweight CPU yield
+                if (try_execute_one_(context_id)) {
+                    retention = std::min(
+                      retention * backoff_factor, std::chrono::microseconds(max_spin_retention_us));
+                    break;
+                }
+                if (clock::now() >= deadline) {
+                    retention = std::max(
+                      retention / backoff_factor, std::chrono::microseconds(min_spin_retention_us));
+                    // no work found during backoff, go idle
+                    std::unique_lock<std::mutex> lock(m_);
+                    wait_guard wait_on(idle_cnt_);
+                    idle_cv_.wait(lock, [&] { return are_ready_tasks_available_() || !is_active(); });
+                    break;
+                }
+                pauses = std::min(pauses * backoff_factor, max_spin_pauses);
+            }
         }
-        return;
+    }
+    void notify_(bool notify_all) noexcept {
+        std::atomic_thread_fence(std::memory_order_seq_cst);
+        const bool idle = idle_cnt_.load() != 0;
+        const bool join = active_join_cnt_.load() != 0;
+        if (!idle && !join) return;
+        std::lock_guard<std::mutex> lock(m_);
+        if (idle) { notify_all ? idle_cv_.notify_all() : idle_cv_.notify_one(); }
+        if (join) join_cv_.notify_all();
+    }
+    // check if there is some executable work in the executor
+    bool are_ready_tasks_available_() const {
+        return std::any_of(contexts_.begin(), contexts_.end(), [](const auto& context) {
+            return context->has_ready_tasks();
+        });
+    }
+    // hints the processor to relax during spinning. emits machine-level yield/pause instructions
+    void cpu_yield_() noexcept {
+#if defined(__has_builtin)
+#    if __has_builtin(__builtin_ia32_pause)
+        __builtin_ia32_pause();
+#    elif __has_builtin(__builtin_arm_yield)
+        __builtin_arm_yield();
+#    elif defined(__riscv_zihintpause) && __has_builtin(__builtin_riscv_pause)
+        __builtin_riscv_pause();
+#    elif defined(__aarch64__) || (defined(__arm__) && defined(__ARM_ARCH) && __ARM_ARCH >= 7)
+        __asm__ __volatile__("yield");
+#    elif defined(__riscv_zihintpause)
+        __asm__ __volatile__("pause");
+#    endif
+#endif
     }
 
-    std::vector<worker_pointer> workers_;             // worker pool
-    const size_type n_workers_;                       // size of the pool
-    std::latch init_latch_;                           // workers synchronization barrier at startup
-    stealing_policy stealing_policy_;                 // stealing algorithm
-    scheduling_policy scheduling_policy_;             // scheduling algorithm
-    alignas(64) std::atomic<bool> active_ {true};     // asserted false to indicate pool deactivation
-    std::atomic<size_type> join_waiters_ {0};         // number of workers waiting for a global join predicate
-    std::atomic<size_type> completion_waiters_ {0};   // callers currently waiting in a collaborative wait
-    alignas(64) std::mutex m_;
-    std::condition_variable cv_;        // completion and collaborative waits
-    std::condition_variable work_cv_;   // idle workers
+    allocator_type task_pool_;                 // shared physical memory holding tasks
+    stealing_policy stealing_policy_;          // randomized stealing functor
+    scheduling_policy scheduling_policy_;      // round-robin scheduler
+    std::vector<context_pointer> contexts_;    // background execution contexts
+    std::vector<std::thread> workers_;         // physical threads internally managed by the executor
+    const size_type n_workers_;                // number of internal threads
+    std::latch init_latch_;                    // startup barrier
+    std::atomic<bool> active_;                 // asserted false during executor shutdown
+    std::atomic<size_type> idle_cnt_;          // background workers waiting for work
+    std::atomic<std::uint64_t> epoch_;         // publication epoch, incremented once per submission call
+    std::atomic<size_type> join_cnt_;          // external callers waiting in join()
+    std::atomic<size_type> active_join_cnt_;   // callers parked in active_join()
+    std::condition_variable idle_cv_;
+    std::condition_variable join_cv_;
+    std::mutex m_;
 };
 
 struct threaded_executor {
-    // intentionally leaked to guarantee executor teardown at program termination (avoid crashes due to active threads
-    // accessing the executor after its destruction); memory is statically allocated to satisfy leak detectors
+    // intentionally never destroyed to keep background threads from accessing destroyed executor storage
     static auto& instance() {
         static std::aligned_storage_t<sizeof(threaded_executor_impl), alignof(threaded_executor_impl)> storage;
         static threaded_executor_impl* exec = [] {
-            std::lock_guard<std::mutex> lock(threaded_executor_config.m_);
-            auto* result = new (&storage) threaded_executor_impl(threaded_executor_config.num_threads);
-            threaded_executor_config.initialized = true;
+            std::lock_guard<std::mutex> lock(threaded_executor_global_state.m_);
+            auto* result = new (&storage) threaded_executor_impl(threaded_executor_global_state.num_threads());
+            threaded_executor_global_state.set_ready_();
             return result;
         }();
         return *exec;
@@ -291,7 +477,7 @@ struct threaded_executor {
 
 }   // namespace internals
 
-// public api
+// public API
 
 template <typename Task, typename... Args> struct is_runnable_task {
     static constexpr bool value = requires(Task task, internals::threaded_executor_impl* executor, Args... args) {
@@ -303,18 +489,10 @@ static constexpr bool is_runnable_task_v = is_runnable_task<Task, Args...>::valu
 
 // set number of worker threads
 inline void parallel_set_num_threads(int num_threads) {
-    fdapde_assert(num_threads > 0, "number of requested threads must be positive");
-    std::lock_guard<std::mutex> lock(internals::threaded_executor_config.m_);
-    if (internals::threaded_executor_config.initialized) {
-        throw std::logic_error("thread count cannot change after executor initialization");
-    }
-    internals::threaded_executor_config.num_threads = num_threads;
+    internals::threaded_executor_global_state.set_num_threads(num_threads);
 }
 // get number of worker threads
-inline int parallel_get_num_threads() {
-    std::lock_guard<std::mutex> lock(internals::threaded_executor_config.m_);
-    return internals::threaded_executor_config.num_threads;
-}
+inline int parallel_get_num_threads() { return internals::threaded_executor_global_state.num_threads(); }
 // executes a callable object asynchronously
 template <typename F, typename... Args>
     requires(
@@ -334,4 +512,4 @@ inline void parallel_join() { internals::threaded_executor::instance().join(); }
 
 }   // namespace fdapde
 
-#endif   // __fdapde_execution_threaded_executor_h__
+#endif   // __FDAPDE_EXECUTION_THREADED_EXECUTOR_H__
