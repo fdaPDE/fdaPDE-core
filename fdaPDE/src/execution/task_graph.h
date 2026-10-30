@@ -22,34 +22,43 @@
 namespace fdapde {
 namespace internals {
 
-// given a static DAG shaped flow of tasks, loads and parallel executes it by threaded_executor
+// a set of tasks with DAG-type dependencies
 struct task_graph {
-    template <typename TaskGraph> void run(threaded_executor_impl* executor, TaskGraph& graph) {
+    template <typename TaskGraph> static void run(threaded_executor_impl* executor, TaskGraph& graph) {
         fdapde_assert(!graph.has_cycles(), "task graphs must be acyclic");
-        using packaged_task = typename threaded_executor_impl::packaged_task;
+        using task_submission_handle = typename threaded_executor_impl::task_submission_handle;
         const int num_nodes = graph.n_nodes();
         if (num_nodes == 0) return;
         const int num_threads = executor->size();
 
         struct node_state {
             std::atomic<int> pending {0};
-            packaged_task task;
+            task_submission_handle task;
             std::vector<int> successors;
         };
         std::vector<node_state> task_table(num_nodes);
-        std::vector<packaged_task> sources;
+        std::vector<task_submission_handle> sources;
         sources.reserve(num_nodes / 2);
+        std::atomic<int> remaining {num_nodes};
+        std::mutex error_mutex;
+        std::exception_ptr error;
+        auto attachment = executor->try_attach();
+        const int caller_id = this_thread_id();
 
-        std::atomic<int> local_task_count {num_nodes};
         try {
             // prepare every task and dependency before any task becomes visible to workers
             for (const auto& node : graph) {
                 const int node_id = node.id();
                 task_table[node_id].pending.store(node.in_degree(), std::memory_order_relaxed);
                 task_table[node_id].successors = node.succ_ids();
-                auto wrapped_task = [user_task = node.task(), &local_task_count, &task_table, executor,
-                                     node_id]() mutable {
-                    user_task.run();
+                auto wrapped_task = [user_task = std::optional {node.task()}, &task_table, &remaining, &error_mutex,
+                                     &error, executor, node_id]() mutable {
+                    try {
+                        user_task->run();
+                    } catch (...) {
+                        std::lock_guard<std::mutex> lock(error_mutex);
+                        if (!error) error = std::current_exception();
+                    }
                     // publish successors before completing this task so join cannot observe an empty executor
                     for (int successor_id : task_table[node_id].successors) {
                         auto& successor = task_table[successor_id];
@@ -57,22 +66,24 @@ struct task_graph {
                             executor->submit_task(successor.task);
                         }
                     }
-                    local_task_count.fetch_sub(1, std::memory_order_release);
+                    user_task.reset();
+                    if (remaining.fetch_sub(1, std::memory_order_acq_rel) == 1) executor->notify_all_join();
                 };
-                task_table[node_id].task = executor->allocate_task(node_id % num_threads, std::move(wrapped_task));
+                // any predecessor may publish this task, so allocate on another slot to reserve mailbox storage
+                int worker_id = node_id % num_threads;
+                if (caller_id >= 0 && worker_id >= caller_id) { ++worker_id; }
+                task_table[node_id].task = executor->allocate_task(worker_id, std::move(wrapped_task));
                 if (node.in_degree() == 0) { sources.push_back(task_table[node_id].task); }
             }
             executor->submit_task(sources);
         } catch (...) {
             for (auto& state : task_table) {
-                if (state.task.task != nullptr) { executor->deallocate_task(state.task); }
+                if (state.task) { state.task->discard(); }
             }
             throw;
         }
-        executor->active_join(this_thread_id(), [&] {
-            // help the pool while the task group is not fully consumed
-            return local_task_count.load(std::memory_order_acquire) > 0;
-        });
+        executor->active_join(this_thread_id(), [&] { return remaining.load(std::memory_order_acquire) != 0; });
+        if (error) std::rethrow_exception(error);
         return;
     }
 };
@@ -181,8 +192,7 @@ class TaskGraph {
         return std::make_tuple(add_node(std::forward<Tasks_>(tasks))...);
     }
     template <typename TaskGraph_> void add_edge(node_proxy<TaskGraph_> from, node_proxy<TaskGraph_> to) {
-        fdapde_assert(
-          from.graph_ == this && to.graph_ == this, "task graphs edges must connect nodes from the same graph");
+        fdapde_assert(from.graph_ == this && to.graph_ == this, "connecting nodes from different task graphs");
         nodes_[from.id()].succ.push_back(to.id());
         nodes_[to.id()].pred.push_back(from.id());
         return;
@@ -240,7 +250,8 @@ class TaskGraph {
 };
 
 inline void parallel_execute(TaskGraph& tg) {
-    return internals::threaded_executor::instance().execute(internals::task_graph(), tg);
+    auto& executor = internals::threaded_executor::instance();
+    return internals::task_graph::run(std::addressof(executor), tg);
 }
 
 }   // namespace fdapde

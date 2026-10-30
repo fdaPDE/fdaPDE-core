@@ -24,90 +24,63 @@ namespace internals {
 
 // specialized parallelized for loop task
 struct task_parallel_for {
-    task_parallel_for() = default;
-
-    // optimized for loop with standard ++i increment
     template <typename LoopBody>
         requires(std::is_invocable_v<LoopBody, int>)
-    void run(threaded_executor_impl* executor, int begin, int end, int grain_size, LoopBody&& f) {
-        const int size = end - begin;
-        if (size <= 0) return;   // nothing to loop on
+    static void run(threaded_executor_impl* executor, int begin, int end, int batch_size, LoopBody&& f) {
+        fdapde_assert(begin <= end && batch_size > 0);
+        const int distance = end - begin;
+        if (distance <= 0) { return; }   // nothing to loop on
 
-        grain_size = std::max(1, std::min(grain_size, size));
-        std::atomic<int> local_task_count {1};
-
-        for (int local_begin = begin; local_begin < end; local_begin += grain_size) {
-            // register task in the group
-            local_task_count.fetch_add(1, std::memory_order_release);
-
-            int local_end = ((end - local_begin) < grain_size) ? end : (local_begin + grain_size);
-            auto loop_body = [local_begin, local_end, &f, &local_task_count]() {
-                for (int it = local_begin; it < local_end; ++it) { f(it); }
-                // signal task completion
-                local_task_count.fetch_sub(1, std::memory_order_release);
-            };
-            try {
-                executor->execute(std::move(loop_body));
-            } catch (...) {
-                // undo the failed task registration and release the submission sentinel
-                local_task_count.fetch_sub(2, std::memory_order_release);
-                executor->active_join(
-                  this_thread_id(), [&] { return local_task_count.load(std::memory_order_acquire) > 0; });
-                throw;
-            }
+        batch_size = std::min<int>(batch_size, distance);
+        const int n_batches = 1 + (distance - 1) / batch_size;
+        if (n_batches == 1 || executor->size() == 1) {
+            // nothing to parallelize, let caller execute the loop serially
+            for (int i = begin; i < end; ++i) { f(i); }
+            return;
         }
-        // Release the submission sentinel and wait for this group's published tasks.
-        local_task_count.fetch_sub(1, std::memory_order_release);
-        executor->active_join(this_thread_id(), [&] { return local_task_count.load(std::memory_order_acquire) > 0; });
+        int local_begin = begin;
+        task_batch::run(executor, n_batches, [&] {
+            const int local_end = std::min<int>(end, local_begin + batch_size);
+            auto task = [local_begin, local_end, &f]() mutable {
+                for (int i = local_begin; i < local_end; ++i) { f(i); }
+            };
+            local_begin = local_end;
+            return task;
+        });
         return;
     }
-    // for loop with custom step logic
+
+    // custom steps parallel_for loop
     template <typename LoopBody, typename NextFunctor>
-        requires(std::is_invocable_v<LoopBody, int> && std::is_invocable_r_v<int, NextFunctor, int>)
-    void run(threaded_executor_impl* executor, int begin, int end, int grain_size, LoopBody&& f, NextFunctor&& next) {
+        requires(
+          std::is_invocable_v<LoopBody, int> && std::is_invocable_r_v<int, NextFunctor, int> &&
+          std::is_copy_constructible_v<std::decay_t<NextFunctor>>)
+    static void
+    run(threaded_executor_impl* executor, int begin, int end, int batch_size, LoopBody&& f, NextFunctor&& next) {
+        fdapde_assert(begin <= end && batch_size > 0);
+	// count number of hops according to next functor
         int size = 0;
-        for (int i = begin; i < end; i = next(i), size++);
-        if (size <= 0) return;   // nothing to loop on
+        for (int i = begin; i < end; i = next(i), ++size);
+        if (size <= 0) { return; }   // nothing to loop on
 
-        grain_size = std::max(1, std::min(grain_size, size));
-        std::atomic<int> local_task_count {1};
-        int n_batches = std::ceil(double(size) / grain_size);
-
-        int local_begin = begin;
-        int local_end = local_begin;
-        for (int i = 0; i < grain_size && local_end < end; ++i) { local_end = next(local_end); }
-
-        bool pending_submission = false;
-        try {
-            for (int j = 0; j < n_batches; j++) {
-                // register task in the group
-                local_task_count.fetch_add(1, std::memory_order_release);
-                pending_submission = true;
-                auto loop_body = [local_begin, local_end, next, &f, &local_task_count]() {
-                    for (int it = local_begin; it < local_end; it = next(it)) { f(it); }
-                    // signal task completion
-                    local_task_count.fetch_sub(1, std::memory_order_release);
-                };
-                executor->execute(std::move(loop_body));
-                pending_submission = false;   // batch submitted, but later next might throw
-
-                // update next task range
-                local_begin = local_end;
-                local_end = local_begin;
-                for (int i = 0; i < grain_size && local_end < end; ++i) { local_end = next(local_end); }
-            }
-        } catch (...) {
-            // earlier chunks still reference f and local_task_count: wait before unwinding.
-            if (pending_submission) { local_task_count.fetch_sub(1, std::memory_order_release); }
-            local_task_count.fetch_sub(1, std::memory_order_release);
-            executor->active_join(
-              this_thread_id(), [&] { return local_task_count.load(std::memory_order_acquire) > 0; });
-            throw;
+        batch_size = std::max(1, std::min(batch_size, size));
+        const int n_batches = 1 + (size - 1) / batch_size;
+        if (n_batches == 1 || executor->size() == 1) {
+            // nothing to parallelize, let caller execute the loop serially
+            for (int i = begin; i < end; i = next(i)) { f(i); }
+            return;
         }
-        // release the submission sentinel and wait for this group's published tasks.
-        local_task_count.fetch_sub(1, std::memory_order_release);
-        executor->active_join(this_thread_id(), [&] { return local_task_count.load(std::memory_order_acquire) > 0; });
-        return;
+        int local_begin = begin;
+	task_batch::run(executor, n_batches, [&] {
+            int local_end = local_begin;
+            for (int i = 0; i < batch_size && local_end < end; ++i) { local_end = next(local_end); }
+            auto task = [local_begin, local_end, next, &f]() mutable {
+                for (int it = local_begin; it < local_end; it = next(it)) { f(it); }
+            };
+            local_begin = local_end;
+            return task;
+        });
+	return;
     }
 };
 
@@ -117,27 +90,29 @@ struct task_parallel_for {
 template <typename LoopBody, typename NextFunctor>
     requires(std::is_invocable_v<LoopBody, int> && std::is_invocable_r_v<int, NextFunctor, int>)
 void parallel_for(int begin, int end, int grain_size, LoopBody&& loop_body, NextFunctor&& next) {
-    internals::threaded_executor::instance().execute(
-      internals::task_parallel_for(), begin, end, grain_size, loop_body, next);
+    auto* executor = std::addressof(internals::threaded_executor::instance());
+    internals::task_parallel_for::run(executor, begin, end, grain_size, loop_body, next);
 }
 template <typename LoopBody, typename NextFunctor>
     requires(std::is_invocable_v<LoopBody, int> && std::is_invocable_r_v<int, NextFunctor, int>)
 void parallel_for(int begin, int end, LoopBody&& loop_body, NextFunctor&& next) {
-    int grain_size = std::max(1.0, double(end - begin) / (4 * parallel_get_num_threads()));
-    internals::threaded_executor::instance().execute(
-      internals::task_parallel_for(), begin, end, grain_size, loop_body, next);
+    int batch_size = std::max(1.0, double(end - begin) / (4 * parallel_get_num_threads()));
+    auto* executor = std::addressof(internals::threaded_executor::instance());
+    internals::task_parallel_for::run(executor, begin, end, batch_size, loop_body, next);
 }
-// splits [begin, end) into contiguous chunks of size grain_size and submits one task per chunk
+// splits [begin, end) into contiguous chunks of size batch_size and submits one task per chunk
 template <typename LoopBody>
     requires(std::is_invocable_v<LoopBody, int>)
-void parallel_for(int begin, int end, int grain_size, LoopBody&& loop_body) {
-    internals::threaded_executor::instance().execute(internals::task_parallel_for(), begin, end, grain_size, loop_body);
+void parallel_for(int begin, int end, int batch_size, LoopBody&& loop_body) {
+    auto* executor = std::addressof(internals::threaded_executor::instance());
+    internals::task_parallel_for::run(executor, begin, end, batch_size, loop_body);
 }
 template <typename LoopBody>
     requires(std::is_invocable_v<LoopBody, int>)
 void parallel_for(int begin, int end, LoopBody&& loop_body) {
-    int grain_size = std::max(1.0, double(end - begin) / (4 * parallel_get_num_threads()));
-    internals::threaded_executor::instance().execute(internals::task_parallel_for(), begin, end, grain_size, loop_body);
+    int batch_size = std::max(1.0, double(end - begin) / (4 * parallel_get_num_threads()));
+    auto* executor = std::addressof(internals::threaded_executor::instance());
+    internals::task_parallel_for::run(executor, begin, end, batch_size, loop_body);
 }
 
 }   // namespace fdapde
