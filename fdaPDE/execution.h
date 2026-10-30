@@ -31,6 +31,7 @@ static constexpr execution_seq_t execution_seq;
 #include <algorithm>
 #include <unordered_map>
 #include <atomic>
+#include <cerrno>
 #include <charconv>
 #include <chrono>
 #include <cmath>
@@ -64,6 +65,7 @@ static constexpr execution_seq_t execution_seq;
 #include <vector>
 
 #include "src/execution/concurrency.h"
+#include "src/execution/affinity.h"
 
 // basic threaded runtime
 #include "src/execution/pool_allocator.h"
