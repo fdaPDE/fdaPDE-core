@@ -136,15 +136,23 @@ struct threaded_executor_impl {
 
     threaded_executor_impl() : threaded_executor_impl(fdapde::available_concurrency()) { }
     explicit threaded_executor_impl(size_type size) :
-        stealing_policy_(size + 1),
-        scheduling_policy_(size),
-        n_workers_(size),
+        stealing_policy_(std::max<size_type>(2, size)),
+        scheduling_policy_(std::max<size_type>(1, size - 1)),
+        size_(size),
+        n_workers_(std::max<size_type>(1, size - 1)),   // retain asynchronous progress at P=1
         init_latch_(n_workers_ + 1),
         active_(true),
         idle_cnt_(0),
         epoch_(0),
         join_cnt_(0),
         active_join_cnt_(0) {
+        // affinity is best-effort, including on unsupported systems
+        std::vector<int> cpus;
+        try {
+            if (cpu_affinity_enabled) cpus = allowed_cpus();
+        } catch (...) {
+            // no affinity capability available on the hosting OS
+        }
         contexts_.reserve(n_workers_ + 1);
         workers_.reserve(n_workers_);
         for (size_type i = 0; i <= n_workers_; ++i) {
@@ -152,7 +160,15 @@ struct threaded_executor_impl {
         }
         for (size_type i = 0; i < n_workers_; ++i) {
             try {
-                workers_.emplace_back([this, i] { worker_loop_(static_cast<int>(i)); });
+                workers_.emplace_back([this, i, &cpus] {
+                    try {
+                        // pin cpus before startup barrier
+                        if (!cpus.empty()) bind({cpus[i % cpus.size()]});
+                    } catch (...) {
+                        // retain OS scheduling on failure
+                    }
+                    worker_loop_(static_cast<int>(i));
+                });
             } catch (...) {
                 active_.store(false, std::memory_order_release);
                 // release started workers when the remaining threads could not be created
@@ -163,7 +179,7 @@ struct threaded_executor_impl {
         }
         init_latch_.arrive_and_wait();
     }
-    size_type size() const { return n_workers_; }
+    size_type size() const { return size_; }
     bool is_active() const { return active_.load(std::memory_order_acquire); }
 
     // submits f(args...) asynchronously and returns its result through a future
@@ -449,6 +465,7 @@ struct threaded_executor_impl {
     scheduling_policy scheduling_policy_;      // round-robin scheduler
     std::vector<context_pointer> contexts_;    // background execution contexts
     std::vector<std::thread> workers_;         // physical threads internally managed by the executor
+    const size_type size_;                     // configured parallelism, n_workers_ != size for size = 1
     const size_type n_workers_;                // number of internal threads
     std::latch init_latch_;                    // startup barrier
     std::atomic<bool> active_;                 // asserted false during executor shutdown
@@ -487,11 +504,11 @@ template <typename Task, typename... Args> struct is_runnable_task {
 template <typename Task, typename... Args>
 static constexpr bool is_runnable_task_v = is_runnable_task<Task, Args...>::value;
 
-// set number of worker threads
+// set total available parallelism
 inline void parallel_set_num_threads(int num_threads) {
     internals::threaded_executor_global_state.set_num_threads(num_threads);
 }
-// get number of worker threads
+// get total available parallelism
 inline int parallel_get_num_threads() { return internals::threaded_executor_global_state.num_threads(); }
 // executes a callable object asynchronously
 template <typename F, typename... Args>
