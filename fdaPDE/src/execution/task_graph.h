@@ -71,7 +71,7 @@ struct task_graph {
                 };
                 // any predecessor may publish this task, so allocate on another slot to reserve mailbox storage
                 int worker_id = node_id % num_threads;
-                if (caller_id >= 0 && worker_id >= caller_id) { ++worker_id; }
+                if (worker_id == caller_id) { worker_id = (worker_id + 1) % std::max(2, num_threads); }
                 task_table[node_id].task = executor->allocate_task(worker_id, std::move(wrapped_task));
                 if (node.in_degree() == 0) { sources.push_back(task_table[node_id].task); }
             }
