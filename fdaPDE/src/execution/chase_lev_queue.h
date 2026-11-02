@@ -27,6 +27,7 @@ namespace internals {
 //    ACM symposium on Parallelism in algorithms and architectures (pp. 21-28)."
 // * "Le, N. M., Pop, A., Cohen, A., \and Zappa, F. (2013). Correct and efficient work-stealing for weak memory
 //    models. ACM SIGPLAN Notices, 48(8), 69-80."
+/// @brief provides a bounded owner-front and thief-back work-stealing deque
 template <typename T>
     requires(std::is_trivially_copyable_v<T> && std::atomic<T>::is_always_lock_free)
 struct chase_lev_queue {
@@ -40,24 +41,31 @@ struct chase_lev_queue {
     using size_type = std::uint64_t;
     using difference_type = std::int64_t;
 
-    // constructors
+    /// @brief allocates a deque with the default power-of-two capacity
     chase_lev_queue() : chase_lev_queue(4096) { }
+    /// @brief allocates a deque and checks its power-of-two capacity
     explicit chase_lev_queue(size_type capacity) :
         buffer_(capacity), capacity_(capacity), mask_(capacity - 1), bottom_(0), top_(0) {
         fdapde_assert(
-          capacity != 0 && (capacity & (capacity - 1)) == 0, "Chase-Lev queue capacity must be a power of two");
+          capacity != 0 && (capacity & (capacity - 1)) == 0, std::invalid_argument,
+          "Chase-Lev queue capacity must be a power of two");
     }
     // avoid copy/move-semantic
+    /// @brief prevents copying owner and thief coordination state
     chase_lev_queue(const chase_lev_queue&) = delete;
+    /// @brief prevents moving owner and thief coordination state
     chase_lev_queue(chase_lev_queue&&) = delete;
+    /// @brief disables assignment of owned execution storage
     chase_lev_queue& operator=(const chase_lev_queue&) = delete;
+    /// @brief disables assignment of owned execution storage
     chase_lev_queue& operator=(chase_lev_queue&&) = delete;
 
     // returns first element of the container, nullopt if container empty. the element is removed
     // only owning thread pops from buffer's front
+    /// @brief claims the newest value from the owning thread
     std::optional<value_type> pop_front() {
         difference_type b = bottom_.load(std::memory_order_relaxed);
-        // Only the owner can push: an empty observation needs no bottom write or fence.
+        // only the owner can push: an empty observation needs no bottom write or fence
         if (b <= top_.load(std::memory_order_acquire)) return std::nullopt;
         --b;
         bottom_.store(b, std::memory_order_relaxed);
@@ -86,6 +94,7 @@ struct chase_lev_queue {
 
     // appends a copy of value to the end of the container. aborts if container full
     // only owning thread push at buffer's back
+    /// @brief publishes values at the owner end when the complete submission fits
     template <typename T_>
         requires(std::is_convertible_v<T_, value_type>)
     bool push_front(T_&& value) {
@@ -100,6 +109,7 @@ struct chase_lev_queue {
         return true;
     }
     // push a range of elements at buffer's back
+    /// @brief publishes values at the owner end when the complete submission fits
     template <typename Iterator>
         requires(std::forward_iterator<Iterator> && std::is_convertible_v<std::iter_reference_t<Iterator>, value_type>)
     bool push_front(Iterator first, Iterator last) {
@@ -117,6 +127,7 @@ struct chase_lev_queue {
     }
     // constructs a new element at the end of the container. aborts if container full
     // only owning thread push at buffer's back
+    /// @brief constructs and publishes one value at the owner end when capacity permits
     template <typename... Args>
         requires(std::is_constructible_v<value_type, Args...>)
     bool emplace_front(Args&&... args) {
@@ -134,6 +145,7 @@ struct chase_lev_queue {
     }
     // returns last element of the container, nullopt if container empty. the element is removed
     // this method is invoked as a result of a work-stealing attempt
+    /// @brief claims the oldest value through a competing thief
     std::optional<value_type> pop_back() {
         difference_type t = top_.load(std::memory_order_acquire);
         std::atomic_thread_fence(std::memory_order_seq_cst);
@@ -141,7 +153,7 @@ struct chase_lev_queue {
         // abort if queue is empty
         if (std::cmp_greater_equal(t, b)) { return std::nullopt; }
         difference_type idx = t & mask_;
-        // Read before advancing top: after a successful claim the owner may immediately reuse this circular slot.
+        // read before advancing top: after a successful claim the owner may immediately reuse this circular slot
         value_type value = buffer_[idx].load(std::memory_order_relaxed);
         // try to claim the element by incrementing top
         if (!top_.compare_exchange_strong(t, t + 1, std::memory_order_seq_cst, std::memory_order_relaxed)) {
@@ -149,16 +161,18 @@ struct chase_lev_queue {
         }
         return value;
     }
-    // observers
+    /// @brief reports whether the deque has no published values
     bool empty() const {
         difference_type t = top_.load(std::memory_order_acquire), b = bottom_.load(std::memory_order_acquire);
         return t >= b;
     }
+    /// @brief returns the observed number of published deque values
     size_type size() const {
         difference_type b = bottom_.load(std::memory_order_relaxed);
         difference_type t = top_.load(std::memory_order_acquire);
         return std::max<difference_type>(b - t, 0);
     }
+    /// @brief reports whether the usable deque capacity is exhausted
     bool full() const {
         difference_type t = top_.load(std::memory_order_acquire), b = bottom_.load(std::memory_order_relaxed);
         return std::cmp_greater_equal(b - t, capacity_ - 1);

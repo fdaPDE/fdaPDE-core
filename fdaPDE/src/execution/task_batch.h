@@ -22,8 +22,9 @@
 namespace fdapde {
 namespace internals {
 
-// executes a batch of tasks and wait for completion
+/// @brief publishes bounded task batches and drains them before propagating failures
 struct task_batch {
+    /// @brief publishes generated chunks in batches and drains published work before propagating errors
     template <typename TaskGenerator>
     static void run(threaded_executor_impl* executor, int n_batches, TaskGenerator&& generator) {
         using task_submission_handle = typename threaded_executor_impl::task_submission_handle;
@@ -31,7 +32,6 @@ struct task_batch {
         // batches are sent at slots of size slot_size to lower synchronization overhead
         const int slot_size = std::min<int>(n_batches, 4 * executor->size());
         task_group.reserve(slot_size);
-        // error handling
         std::mutex m;
         std::exception_ptr error;
         // calling worker tries task-helping. pool detachment is executed at handle destruction
@@ -46,7 +46,6 @@ struct task_batch {
                     try {
                         std::invoke(*loop_body);   // execute loop body
                     } catch (...) {
-                        // store error
                         std::lock_guard<std::mutex> lock(m);
                         if (!error) { error = std::current_exception(); }
                     }
@@ -55,7 +54,7 @@ struct task_batch {
                     if (task_group_count.fetch_sub(1, std::memory_order_acq_rel) == 1) { executor->notify_all_join(); }
                 };
                 task_group.push_back(executor->allocate_task(this_thread_id(), std::move(task)));
-		// send tasks to execution
+                // send tasks to execution
                 if (std::cmp_equal(task_group.size(), slot_size)) {
                     submitted += task_group.size();
                     executor->submit_task(task_group);
@@ -69,9 +68,8 @@ struct task_batch {
             }
             std::invoke(generator)();   // execute the final chunk directly
         } catch (...) {
-            // un-published tasks are canceled. already published tasks must drain before rethrowing.
+            // un-published tasks are canceled. already published tasks must drain before rethrowing
             for (auto& task : task_group) { task->discard(); }
-            // store error
             std::lock_guard<std::mutex> lock(m);
             if (!error) { error = std::current_exception(); }
         }
@@ -81,7 +79,7 @@ struct task_batch {
         // all published work must finish before local state dies
         executor->active_join(this_thread_id(), [&] { return task_group_count.load(std::memory_order_acquire) != 0; });
         if (error) { std::rethrow_exception(error); }
-	return;
+        return;
     }
 };
 

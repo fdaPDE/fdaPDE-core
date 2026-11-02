@@ -18,8 +18,11 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <cmath>
+#include <future>
 #include <memory>
 #include <stdexcept>
+#include <vector>
 
 namespace {
 
@@ -102,17 +105,66 @@ TEST(ExecutionRuntime, WorkerCallsToGlobalJoinAreRejected) {
     fdapde::parallel_join();
 }
 
-// verifies reservation overflow is detected before publication and the allocated callable is destroyed
-TEST(ExecutionRuntime, DebugOverflowRollsBackTaskOwnership) {
+// verifies discarding an unpublished task releases its capture without running it
+TEST(ExecutionRuntime, DiscardReleasesUnpublishedTaskOwnership) {
     fdapde::internals::threaded_executor_impl executor(1);
-    executor.reserve_tasks(std::numeric_limits<std::size_t>::max());
-    // one more reserved task exceeds the internal counter representation
-    EXPECT_THROW(executor.reserve_tasks(1), std::overflow_error);
     auto resource = std::make_shared<int>(0);
     std::weak_ptr<int> observer = resource;
-    // submission must reject overflow after allocation and destroy its copy of the large callable
-    EXPECT_THROW(executor.execute(LargeLifetimeTask {{}, resource}), std::overflow_error);
+    auto task = executor.allocate_task(0, LargeLifetimeTask {{}, resource});
     resource.reset();
-    // expiration proves the failed publication retained no resource-owning task
+    // the reserved callable retains its resource until explicit cancellation
+    EXPECT_FALSE(observer.expired());
+    task.discard();
+    // destruction of the discarded callable releases the final shared owner
     EXPECT_TRUE(observer.expired());
+    // discard clears the handle so cancellation cannot release it twice
+    EXPECT_FALSE(task);
+    task.discard();
+    executor.join();
+}
+
+// verifies two-way parallelism uses one background worker and the attached caller
+TEST(ExecutionRuntime, CallerCollaboratesWithinConfiguredParallelism) {
+    fdapde::internals::threaded_executor_impl executor(2);
+    const auto caller = std::this_thread::get_id();
+    std::atomic<bool> caller_ran {false};
+    std::atomic<bool> worker_ran {false};
+    std::atomic<bool> invalid_id {false};
+    executor.execute(fdapde::internals::task_parallel_for(), 0, 64, 1, [&](int) {
+        const int id = fdapde::this_thread_id();
+        if (id < 0 || id >= 2) invalid_id.store(true);
+        if (std::this_thread::get_id() == caller) caller_ran.store(true);
+    });
+    auto asynchronous = executor.async([&] { worker_ran.store(fdapde::this_thread_id() == 0); });
+    asynchronous.get();
+    executor.join();
+    // the final synchronous chunk always runs directly on the submitting caller
+    EXPECT_TRUE(caller_ran.load());
+    // asynchronous progress uses the only background context in a two-way pool
+    EXPECT_TRUE(worker_ran.load());
+    // every loop callback belongs to the worker or the reserved caller context
+    EXPECT_FALSE(invalid_id.load());
+    // attachment ownership is restored when the synchronous batch returns
+    EXPECT_EQ(fdapde::this_thread_id(), fdapde::internals::main_thread_id);
+}
+
+// verifies child submissions from multiple external producers are included in global completion
+TEST(ExecutionRuntime, ConcurrentPublishersRetainChildAccounting) {
+    fdapde::internals::threaded_executor_impl executor(4);
+    std::atomic<int> completed {0};
+    std::vector<std::thread> producers;
+    for (int producer = 0; producer < 4; ++producer) {
+        producers.emplace_back([&] {
+            for (int i = 0; i < 128; ++i) {
+                executor.execute([&] {
+                    ++completed;
+                    executor.execute([&] { ++completed; });
+                });
+            }
+        });
+    }
+    for (auto& producer : producers) producer.join();
+    executor.join();
+    // four producers submit 128 parents and one child per parent before global completion
+    EXPECT_EQ(completed.load(), 1024);
 }

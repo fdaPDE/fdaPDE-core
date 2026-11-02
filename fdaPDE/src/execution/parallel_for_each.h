@@ -23,7 +23,9 @@ namespace fdapde {
 namespace internals {
 
 // specialized parallelized for-range loop task
+/// @brief partitions container traversal into collaboratively joined chunks
 struct task_parallel_for_each {
+    /// @brief partitions container traversal into synchronously joined chunks
     template <typename Container, typename LoopBody>
         requires(std::is_invocable_v<LoopBody, typename Container::reference>)
     static void run(threaded_executor_impl* executor, Container& container, int batch_size, LoopBody&& f) {
@@ -38,7 +40,7 @@ struct task_parallel_for_each {
         }
         auto local_begin = container.begin();
         int remaining = n;
-	task_batch::run(executor, n_batches, [&] {
+        task_batch::run(executor, n_batches, [&] {
             const int count = std::min(batch_size, remaining);
             auto local_end = std::next(local_begin, count);
             auto task = [local_begin, local_end, &f] {
@@ -50,6 +52,7 @@ struct task_parallel_for_each {
         });
         return;
     }
+    /// @brief partitions container traversal into synchronously joined chunks
     template <typename Container, typename LoopBody>
         requires(std::is_invocable_v<LoopBody, typename Container::reference>)
     static void run(threaded_executor_impl* executor, Container& container, LoopBody&& f) {
@@ -65,12 +68,14 @@ struct task_parallel_for_each {
 }   // namespace internals
 
 // executes for(auto& value : container) { loop_body } in parallel
+/// @brief visits container elements and waits for all published chunks before returning
 template <typename Container, typename LoopBody>
     requires(std::is_invocable_v<LoopBody, typename std::decay_t<Container>::reference>)
 void parallel_for_each(Container& container, int grain_size, LoopBody&& loop_body) {
     auto* executor = std::addressof(internals::threaded_executor::instance());
     internals::task_parallel_for_each::run(executor, container, grain_size, loop_body);
 }
+/// @brief visits container elements and waits for all published chunks before returning
 template <typename Container, typename LoopBody>
     requires(std::is_invocable_v<LoopBody, typename std::decay_t<Container>::reference>)
 void parallel_for_each(Container& container, LoopBody&& loop_body) {

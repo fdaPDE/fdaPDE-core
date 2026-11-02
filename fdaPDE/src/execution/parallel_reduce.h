@@ -23,7 +23,9 @@ namespace fdapde {
 namespace internals {
 
 // specialized parallelized reduce task
+/// @brief combines ordered chunk reductions with a single application of the seed
 struct task_parallel_reduce {
+    /// @brief reduces each chunk from its first input and combines partials in input order
     template <std::forward_iterator Iterator, typename T, typename ReduxOp>
         requires(
           std::convertible_to<std::iter_reference_t<Iterator>, T> &&
@@ -73,6 +75,7 @@ struct task_parallel_reduce {
         for (auto& partial : partials) { init = std::invoke(redux, std::move(init), std::move(*partial)); }
         return init;
     }
+    /// @brief reduces each chunk from its first input and combines partials in input order
     template <std::forward_iterator Iterator, typename T, typename ReduxOp>
         requires(
           std::convertible_to<std::iter_reference_t<Iterator>, T> &&
@@ -90,6 +93,7 @@ struct task_parallel_reduce {
 }   // namespace internals
 
 // general parallel reduction algorithm
+/// @brief combines ordered chunk results and applies the seed exactly once
 template <std::forward_iterator Iterator, typename T, typename ReduxOp>
     requires(
       std::convertible_to<std::iter_reference_t<Iterator>, T> &&
@@ -99,6 +103,7 @@ T parallel_reduce(Iterator begin, Iterator end, int grain_size, T init, ReduxOp&
     auto* executor = std::addressof(internals::threaded_executor::instance());
     return internals::task_parallel_reduce::run(executor, begin, end, grain_size, init, redux);
 }
+/// @brief combines ordered chunk results and applies the seed exactly once
 template <std::forward_iterator Iterator, typename T, typename ReduxOp>
     requires(
       std::convertible_to<std::iter_reference_t<Iterator>, T> &&

@@ -27,7 +27,9 @@ namespace {
 class OneWorkerEnvironment : public ::testing::Environment {
     /// @brief selects one worker before the saturation test initializes the runtime
     void SetUp() override {
-        fdapde::parallel_set_num_threads(1);
+        fdapde::parallel_set_num_threads(4);
+        // initialization caps the first pool at one even when its mutable configuration allowed four
+        ASSERT_EQ(fdapde::parallel_initialize(1), 1);
         // checks the isolated runtime has exactly one worker before saturation
         ASSERT_EQ(fdapde::parallel_get_num_threads(), 1);
     }

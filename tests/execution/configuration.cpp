@@ -94,15 +94,49 @@ TEST(ExecutionConfiguration, StrictEnvironmentParsingAndThreadCountFreeze) {
     EXPECT_THROW(fdapde::parallel_set_num_threads(0), std::invalid_argument);
     // checks the public setter rejects negative workers
     EXPECT_THROW(fdapde::parallel_set_num_threads(-1), std::invalid_argument);
+    fdapde::parallel_set_affinity(true);
     fdapde::parallel_set_num_threads(2);
     // checks the accepted worker count is visible before initialization
     EXPECT_EQ(fdapde::parallel_get_num_threads(), 2);
+
+    // initializes within the configured cap without changing the requested two-way parallelism
+    EXPECT_EQ(fdapde::parallel_initialize(2), 2);
+    // a later phase may reuse the same pool with a larger cap without reconfiguring it
+    EXPECT_EQ(fdapde::parallel_initialize(4), 2);
+    // an existing pool cannot silently exceed a later phase's tighter resource budget
+    EXPECT_THROW(fdapde::parallel_initialize(1), std::logic_error);
+    // invalid limits are rejected before accessing an existing pool
+    EXPECT_THROW(fdapde::parallel_initialize(0), std::invalid_argument);
 
     auto initialized = fdapde::parallel_async([] { return fdapde::this_thread_id(); });
     // checks asynchronous work runs on a worker with a nonnegative logical id
     EXPECT_GE(initialized.get(), 0);
     // checks the worker count is frozen after the first asynchronous submission
     EXPECT_THROW(fdapde::parallel_set_num_threads(3), std::logic_error);
+    // affinity follows the same configuration freeze as the thread count
+    EXPECT_THROW(fdapde::parallel_set_affinity(false), std::logic_error);
     // checks the rejected update leaves the configured count unchanged
     EXPECT_EQ(fdapde::parallel_get_num_threads(), 2);
+}
+
+// verifies numerical-library settings cannot cap the independent executor and per-task reservations take precedence
+TEST(ExecutionConfiguration, SchedulerBudgetIsIndependentOfOpenMP) {
+    EnvironmentVariableGuard omp("OMP_NUM_THREADS");
+    EnvironmentVariableGuard slurm_task("SLURM_CPUS_PER_TASK");
+    EnvironmentVariableGuard slurm_node("SLURM_CPUS_ON_NODE");
+    EnvironmentVariableGuard pbs("NCPUS");
+    slurm_task.unset();
+    slurm_node.unset();
+    pbs.unset();
+    omp.unset();
+    const auto capacity = fdapde::available_concurrency();
+    omp.set("1");
+    // OpenMP controls its own runtime while the executor retains its affinity or hardware capacity
+    EXPECT_EQ(fdapde::available_concurrency(), capacity);
+    slurm_node.set("40");
+    slurm_task.set("2");
+    // a per-task reservation bounds a wider node allocation and still respects a narrower affinity mask
+    EXPECT_LE(fdapde::available_concurrency(), 2u);
+    // the available executor capacity always remains positive
+    EXPECT_GE(fdapde::available_concurrency(), 1u);
 }

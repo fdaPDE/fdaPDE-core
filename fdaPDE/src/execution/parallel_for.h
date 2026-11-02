@@ -22,14 +22,38 @@
 namespace fdapde {
 namespace internals {
 
-// specialized parallelized for loop task
+/// @brief retains loop failures until every published chunk has stopped using its captured state
+class parallel_for_task_group {
+   public:
+    /// @brief starts without a recorded chunk failure
+    parallel_for_task_group() = default;
+    /// @brief retains the active exception from the lowest failing iteration index
+    void fail(int index) {
+        const std::lock_guard lock(mutex_);
+        if (index < failure_index_) {
+            failure_index_ = index;
+            failure_ = std::current_exception();
+        }
+    }
+    /// @brief rethrows a recorded body failure after all chunks have completed
+    void rethrow_failure() const {
+        if (failure_) std::rethrow_exception(failure_);
+    }
+   private:
+    std::mutex mutex_;
+    std::exception_ptr failure_;
+    int failure_index_ = std::numeric_limits<int>::max();
+};
+
+/// @brief partitions integer ranges into collaboratively joined batches
 struct task_parallel_for {
+    /// @brief partitions integer iterations and drains chunks before rethrowing the lowest-index failure
     template <typename LoopBody>
         requires(std::is_invocable_v<LoopBody, int>)
     static void run(threaded_executor_impl* executor, int begin, int end, int batch_size, LoopBody&& f) {
-        fdapde_assert(begin <= end && batch_size > 0);
+        if (end <= begin) return;
+        batch_size = std::max(1, batch_size);
         const int distance = end - begin;
-        if (distance <= 0) { return; }   // nothing to loop on
 
         batch_size = std::min<int>(batch_size, distance);
         const int n_batches = 1 + (distance - 1) / batch_size;
@@ -38,27 +62,33 @@ struct task_parallel_for {
             for (int i = begin; i < end; ++i) { f(i); }
             return;
         }
+        parallel_for_task_group failures;
         int local_begin = begin;
         task_batch::run(executor, n_batches, [&] {
-            const int local_end = std::min<int>(end, local_begin + batch_size);
-            auto task = [local_begin, local_end, &f]() mutable {
-                for (int i = local_begin; i < local_end; ++i) { f(i); }
+            const int local_end = end - local_begin < batch_size ? end : local_begin + batch_size;
+            auto task = [local_begin, local_end, &f, &failures]() mutable {
+                int i = local_begin;
+                try {
+                    for (; i < local_end; ++i) f(i);
+                } catch (...) { failures.fail(i); }
             };
             local_begin = local_end;
             return task;
         });
+        failures.rethrow_failure();
         return;
     }
 
-    // custom steps parallel_for loop
+    /// @brief partitions integer iterations and drains chunks before rethrowing the lowest-index failure
     template <typename LoopBody, typename NextFunctor>
         requires(
           std::is_invocable_v<LoopBody, int> && std::is_invocable_r_v<int, NextFunctor, int> &&
           std::is_copy_constructible_v<std::decay_t<NextFunctor>>)
     static void
     run(threaded_executor_impl* executor, int begin, int end, int batch_size, LoopBody&& f, NextFunctor&& next) {
-        fdapde_assert(begin <= end && batch_size > 0);
-	// count number of hops according to next functor
+        if (end <= begin) return;
+        batch_size = std::max(1, batch_size);
+        // count number of hops according to next functor
         int size = 0;
         for (int i = begin; i < end; i = next(i), ++size);
         if (size <= 0) { return; }   // nothing to loop on
@@ -70,29 +100,36 @@ struct task_parallel_for {
             for (int i = begin; i < end; i = next(i)) { f(i); }
             return;
         }
+        parallel_for_task_group failures;
         int local_begin = begin;
-	task_batch::run(executor, n_batches, [&] {
+        task_batch::run(executor, n_batches, [&] {
             int local_end = local_begin;
             for (int i = 0; i < batch_size && local_end < end; ++i) { local_end = next(local_end); }
-            auto task = [local_begin, local_end, next, &f]() mutable {
-                for (int it = local_begin; it < local_end; it = next(it)) { f(it); }
+            auto task = [local_begin, local_end, next, &f, &failures]() mutable {
+                int i = local_begin;
+                try {
+                    for (; i < local_end; i = next(i)) f(i);
+                } catch (...) { failures.fail(i); }
             };
             local_begin = local_end;
             return task;
         });
-	return;
+        failures.rethrow_failure();
+        return;
     }
 };
 
 }   // namespace internals
 
 // splits [begin, end) into contiguous chunks of size grain_size and submits one task per chunk. Custom loop step logic
+/// @brief executes an integer range and reports the lowest-index failure after its chunks finish
 template <typename LoopBody, typename NextFunctor>
     requires(std::is_invocable_v<LoopBody, int> && std::is_invocable_r_v<int, NextFunctor, int>)
 void parallel_for(int begin, int end, int grain_size, LoopBody&& loop_body, NextFunctor&& next) {
     auto* executor = std::addressof(internals::threaded_executor::instance());
     internals::task_parallel_for::run(executor, begin, end, grain_size, loop_body, next);
 }
+/// @brief executes an integer range and reports the lowest-index failure after its chunks finish
 template <typename LoopBody, typename NextFunctor>
     requires(std::is_invocable_v<LoopBody, int> && std::is_invocable_r_v<int, NextFunctor, int>)
 void parallel_for(int begin, int end, LoopBody&& loop_body, NextFunctor&& next) {
@@ -101,12 +138,14 @@ void parallel_for(int begin, int end, LoopBody&& loop_body, NextFunctor&& next) 
     internals::task_parallel_for::run(executor, begin, end, batch_size, loop_body, next);
 }
 // splits [begin, end) into contiguous chunks of size batch_size and submits one task per chunk
+/// @brief executes an integer range and reports the lowest-index failure after its chunks finish
 template <typename LoopBody>
     requires(std::is_invocable_v<LoopBody, int>)
 void parallel_for(int begin, int end, int batch_size, LoopBody&& loop_body) {
     auto* executor = std::addressof(internals::threaded_executor::instance());
     internals::task_parallel_for::run(executor, begin, end, batch_size, loop_body);
 }
+/// @brief executes an integer range and reports the lowest-index failure after its chunks finish
 template <typename LoopBody>
     requires(std::is_invocable_v<LoopBody, int>)
 void parallel_for(int begin, int end, LoopBody&& loop_body) {

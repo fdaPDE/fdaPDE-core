@@ -24,7 +24,8 @@ namespace internals {
 
 // shared allocator with per-thread memory pools and atomic cross-thread returns
 // each allocating physical thread owns a memory_pool in the allocator, avoiding coordination overhead due to memory
-// sharing. memory pools are allocated on-demand.
+// sharing. memory pools are allocated on-demand
+/// @brief owns per-thread allocation pools with atomic cross-thread returns
 template <typename T> struct pool_allocator {
     using value_type = T;
     using pointer = T*;
@@ -34,23 +35,28 @@ template <typename T> struct pool_allocator {
     using size_type = std::uint64_t;
     using difference_type = std::int64_t;
    private:
+    /// @brief holds free slots and returned storage for one allocating thread
     struct memory_pool;
     // the basis addressable memory unit inside a memory_pool
+    /// @brief keeps aligned object storage and its owning pool and free-list link
     struct memory_slot {
         alignas(T) std::byte storage[sizeof(T)];   // actual stored data
         memory_pool* owner;                        // pool to which this slot belong
         memory_slot* next;                         // next slot in the pool
     };
     // per-thread reserved memory, organized in contiguous blocks of memory slots
+    /// @brief holds free slots and returned storage for one allocating thread
     struct memory_pool {
+        /// @brief initializes free slots and returned storage for one allocating thread
         explicit memory_pool(std::uint64_t thread) : owner_id(thread) { }
 
-        const std::uint64_t owner_id;       // ID of the thread owning this pool
+        const std::uint64_t owner_id;       // iD of the thread owning this pool
         memory_slot* free_list = nullptr;   // pointer to the first available thread's memory slot in this allocator
         std::atomic<memory_slot*> returned {nullptr};         // pointer to freed memory_slots
         std::vector<std::unique_ptr<memory_slot[]>> blocks;   // physical memory
     };
     // per-thread allocator ID -> memory pool mapping
+    /// @brief tracks a thread-local pool and the lifetime of its allocator
     struct pool_binding {
         std::weak_ptr<int> lifetime;   // whether the allocator still exists
         memory_pool* pool;             // pointer to physical memory
@@ -61,46 +67,52 @@ template <typename T> struct pool_allocator {
     inline static thread_local std::uint64_t tls_last_accessed_allocator_id_ =
       std::numeric_limits<std::uint64_t>::max();
     // thread unique identifier across memory pools
-    inline static std::atomic<std::uint64_t>  next_tls_thread_id_ = 0;
+    inline static std::atomic<std::uint64_t> next_tls_thread_id_ = 0;
     inline static thread_local const std::uint64_t tls_thread_id_ = next_tls_thread_id_.fetch_add(1);
 
+    /// @brief returns this thread allocation pool and removes expired allocator bindings
     memory_pool& get_tls_memory_pool_() {
         if (tls_last_accessed_allocator_id_ == this_allocator_id_) { return *tls_last_accessed_memory_pool_; }
         // check if this thread already has reserved memory in this allocator
         auto it = tls_bindings_.find(this_allocator_id_);
         if (it != tls_bindings_.end()) {
             tls_last_accessed_allocator_id_ = it->first;
-            tls_last_accessed_memory_pool_  = it->second.pool;
+            tls_last_accessed_memory_pool_ = it->second.pool;
             return *tls_last_accessed_memory_pool_;
         }
 
-	// this thread never allocated here, prepare a new memory pool
-	// clean thread's bindings
+        // this thread never allocated here, prepare a new memory pool
+        // clean thread's bindings
         for (auto old = tls_bindings_.begin(); old != tls_bindings_.end();) {
             old = old->second.lifetime.expired() ? tls_bindings_.erase(old) : std::next(old);
         }
         // create new memory pool
         auto storage = std::make_unique<memory_pool>(tls_thread_id_);
-	// transfer ownership to this allocator
+        // transfer ownership to this allocator
         auto* ptr = storage.get();
         {
             std::lock_guard<std::mutex> lock(m_);
             pools_.push_back(std::move(storage));
         }
-	// update thread bindings
+        // update thread bindings
         tls_bindings_.emplace(this_allocator_id_, pool_binding {lifetime_, ptr});
         tls_last_accessed_allocator_id_ = this_allocator_id_;
-        tls_last_accessed_memory_pool_  = ptr;
+        tls_last_accessed_memory_pool_ = ptr;
         return *ptr;
     }
    public:
+    /// @brief creates thread-owned pools with the default allocation block size
     pool_allocator() : pool_allocator(1024) { }
+    /// @brief configures the allocation block size and validates it in debug mode
     explicit pool_allocator(size_type block_size) : block_size_(block_size) {
-        fdapde_assert(block_size > 0, "allocator block size must be positive");
+        fdapde_assert(block_size > 0, std::invalid_argument, "allocator block size must be positive");
     }
+    /// @brief prevents copying thread-local pool ownership
     pool_allocator(const pool_allocator&) = delete;
+    /// @brief disables assignment of owned execution storage
     pool_allocator& operator=(const pool_allocator&) = delete;
 
+    /// @brief constructs an object in thread-owned storage with rollback on construction failure
     template <typename... Args> pointer allocate(Args&&... args) {
         auto& memory_pool = get_tls_memory_pool_();
         if (!memory_pool.free_list) {   // no free slots, try to request from returned slots
@@ -127,10 +139,11 @@ template <typename T> struct pool_allocator {
             throw;
         }
     }
+    /// @brief destroys the object and returns its slot to the allocating thread pool
     void deallocate(pointer object) {
         // free object memory
         std::destroy_at(object);
-	// update memory pool
+        // update memory pool
         auto* slot = reinterpret_cast<memory_slot*>(object);
         auto& owner = *slot->owner;
         if (owner.owner_id == tls_thread_id_) {
@@ -143,7 +156,7 @@ template <typename T> struct pool_allocator {
             } while (
               !owner.returned.compare_exchange_weak(head, slot, std::memory_order_release, std::memory_order_relaxed));
         }
-	return;
+        return;
     }
    private:
     inline static std::atomic<std::uint64_t> next_allocator_id_ {0};

@@ -30,7 +30,7 @@ concept is_char_buff =
       { c.operator[](i) } -> std::convertible_to<char>;
   } || (std::is_pointer_v<CharBuff> && std::is_same_v<std::remove_cvref_t<CharBuff>, std::add_const_t<char>*>) ||
   (std::is_array_v<std::remove_cvref_t<CharBuff>> &&
-   std::is_same_v <std::remove_cvref_t<decltype(std::declval<CharBuff>()[0])>, char>);
+   std::is_same_v<std::remove_cvref_t<decltype(std::declval<CharBuff>()[0])>, char>);
 
 // returns the position of the next occurence of c in buff, buff_sz if no occurence is found
 template <typename CharBuff>
@@ -65,7 +65,7 @@ template <typename CharT> struct token_stream {
         using value_t = std::string_view;
         using reference = std::add_lvalue_reference_t<value_t>;
         using pointer = std::add_pointer_t<value_t>;
-      
+
         line_iterator() noexcept = default;
         line_iterator(buff_t buff, size_t buff_sz, size_t begin, size_t end, char sep) :
             buff_(buff), sep_(sep), token_sz_(0), buff_sz_(buff_sz), begin_(begin), end_(end), pos_(0) {
@@ -82,7 +82,7 @@ template <typename CharT> struct token_stream {
         bool eof() const { return begin_ + pos_ >= buff_sz_; }   // true if token_ is the last of the stream
         size_t n_tokens() {
             size_t n = 0;
-	    pos_ = 0;
+            pos_ = 0;
             while (has_token()) {
                 n++;
                 fetch_token_();
@@ -90,7 +90,7 @@ template <typename CharT> struct token_stream {
             // reset status
             token_sz_ = 0;
             pos_ = 0;
-	    token_ = std::string_view{};
+            token_ = std::string_view {};
             return n;
         }
        private:
@@ -132,7 +132,7 @@ double stod(CharBuff&& str) {
     auto is_na = [](CharBuff& chr, int& i) -> bool {
         if (chr[i] == 'N') {
             i++;
-	    char c = chr[i];
+            char c = chr[i];
             if (c == 'A') {
                 i += 1;
                 return true;
@@ -141,7 +141,7 @@ double stod(CharBuff&& str) {
                 i += 2;
                 return true;
             }
-	    i--;
+            i--;
             return false;
         }
         if (chr[i] == 'n' && chr[i + 1] == 'a' && chr[i + 2] == 'n') {
@@ -164,25 +164,31 @@ double stod(CharBuff&& str) {
     // parse integer part
     while (str[i] >= '0' && str[i] <= '9') {
         val = val * 10 + (str[i] - '0');
-        i++;;
+        i++;
+        ;
     }
     bool maybe_scientific = val < 10;
     if (str[i] == '.') {   // expect the decimal point
-        i++;;
+        i++;
+        ;
         double dec = 0.1;
         while (str[i] >= '0' && str[i] <= '9') {
             val = val + (str[i] - '0') * dec;
             dec *= 0.1;
-	    i++;;
+            i++;
+            ;
         }
         if (maybe_scientific && (str[i] == 'e' || str[i] == 'E')) {   // scientific notation parsing
-            i++;;
+            i++;
+            ;
             int exp_sign = (str[i] == '-') ? -1 : +1;
-            i++;;
+            i++;
+            ;
             int exp = 0;
             while (str[i] >= '0' && str[i] <= '9') {
                 exp = exp * 10 + (str[i] - '0');
-                i++;;
+                i++;
+                ;
             }
             val *= (exp_sign > 0) ? std::pow(10, exp) : std::pow(0.1, exp);
         }
@@ -205,7 +211,8 @@ int stoi(CharBuff&& str) {
     }
     while (str[i] >= '0' && str[i] <= '9') {
         val = val * 10 + (str[i] - '0');
-        i++;;
+        i++;
+        ;
     }
     return sign * val;
 }
@@ -220,16 +227,18 @@ template <typename T> class table_reader {
         if (std::find(na_values_.begin(), na_values_.end(), token) != na_values_.end()) {
             return std::numeric_limits<T>::quiet_NaN();
         }
-	// parse token as numeric
+        // parse token as numeric
         if constexpr (std::is_same_v<T, double>) { return internals::stod(token); }
-        if constexpr (std::is_same_v<T, int   >) { return internals::stoi(token); }
+        if constexpr (std::is_same_v<T, int>) { return internals::stoi(token); }
         return T {};
     }
 
     std::string_view& skipquote_(bool skip_quote, std::string_view& token) const {
-        if (skip_quote) { [[likely]]
-            if (!token.empty() && token.front() == '"') token.remove_prefix(1);
-            if (!token.empty() && token.back()  == '"') token.remove_suffix(1);
+        if (skip_quote) {
+            [[likely]]
+            if (!token.empty() && token.front() == '"')
+                token.remove_prefix(1);
+            if (!token.empty() && token.back() == '"') token.remove_suffix(1);
         }
         return token;
     }
@@ -269,7 +278,7 @@ template <typename T> class table_reader {
             fdapde_assert(cmp == colname, std::out_of_range, "column name not found");
         }
         for (int j = 0; j < n_rows_; ++j) { col_[i] = data_[i + j * n_cols_]; }
-	return col_;
+        return col_;
     }
     // modifiers
     void set_na_values(const std::vector<std::string>& na_values) { na_values_ = na_values; }
@@ -281,14 +290,14 @@ template <typename T> class table_reader {
     void parse(
       const char* filename, bool header = true, char sep = ',', bool index_col = true, bool skip_quote = true,
       std::size_t chunksize = 4) {
-        std::string filename_ = std::filesystem::current_path().string() + "/" + filename;
+        std::string filename_ = filename;
         if (!std::filesystem::exists(filename_))
             throw std::runtime_error("file " + std::string(filename_) + " not found.");
-        auto stream = batched_istream(filename_, chunksize); 
+        auto stream = batched_istream(filename_, chunksize);
         bool header_ = header;
-	std::size_t col_id = 0;
+        std::size_t col_id = 0;
         std::string last_token;
-	std::size_t n_file_cols = 0;
+        std::size_t n_file_cols = 0;
 
         while (stream) {
             stream.read();
@@ -296,11 +305,12 @@ template <typename T> class table_reader {
             // tokenize input stream
             internals::token_stream token_stream_(buff, stream.size(), sep);
 
-	    // TODO: bug when file doesn't fit in chunksize
-	    
+            // TODO: bug when file doesn't fit in chunksize
+
             while (token_stream_) {
                 auto line = token_stream_.get_line();
-                if (header_) { [[unlikely]]   // header parsing logic
+                if (header_) {
+                    [[unlikely]]   // header parsing logic
                     header_ = false;
                     while (line.has_token()) {
                         std::string_view& token = skipquote_(skip_quote, line.get_token());
@@ -312,7 +322,7 @@ template <typename T> class table_reader {
                         n_file_cols++;
                         ++line;
                     }
-		    n_cols_ = n_file_cols - (index_col == true ? 1 : 0);
+                    n_cols_ = n_file_cols - (index_col == true ? 1 : 0);
                 } else {   // data parsing logic
                     while (line.has_token()) {
                         if (index_col == true && col_id == 0) {   // skip first column
@@ -330,7 +340,7 @@ template <typename T> class table_reader {
                                 }
                             }
                         }
-                        if (!line.eof() ) { col_id = (col_id + 1) % n_file_cols; }
+                        if (!line.eof()) { col_id = (col_id + 1) % n_file_cols; }
                         ++line;
                     }
                 }
@@ -344,7 +354,7 @@ template <typename T> class table_reader {
     }
 };
 
-}   // namespace internals  
+}   // namespace internals
 }   // namespace fdapde
 
 #endif   // __FDAPDE_PARSING_H__

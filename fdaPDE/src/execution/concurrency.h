@@ -19,7 +19,7 @@
 
 #include "header_check.h"
 
-// returns the maximum number of logical CPUs on which the current process is allowed to execute concurrently.
+// returns the maximum number of logical CPUs on which the current process is allowed to execute concurrently
 #ifdef __linux__
 
 #    include <sched.h>
@@ -29,6 +29,7 @@
 namespace fdapde {
 namespace internals {
 
+/// @brief parses a complete positive worker count within the execution index range
 inline std::optional<std::size_t> get_env_concurrency_count(const char* envvar) {
     const char* count = std::getenv(envvar);
     if (count == nullptr) return std::nullopt;
@@ -46,22 +47,28 @@ inline std::optional<std::size_t> get_env_concurrency_count(const char* envvar) 
 
 }   // namespace internals
 
+/// @brief bounds executor capacity by process affinity and scheduler reservations independently of OpenMP
 inline std::size_t available_concurrency() noexcept {
+    const auto reservation = [] {
+        if (auto count = internals::get_env_concurrency_count("SLURM_CPUS_PER_TASK")) return count;
+        if (auto count = internals::get_env_concurrency_count("NCPUS")) return count;
+        return internals::get_env_concurrency_count("SLURM_CPUS_ON_NODE");
+    }();
 #ifdef __linux__
     cpu_set_t set;
     CPU_ZERO(&set);
     if (sched_getaffinity(0, sizeof(set), &set) == 0) {
         const int ncpus = CPU_COUNT(&set);
-        if (ncpus > 0) { return static_cast<std::size_t>(ncpus); }
+        if (ncpus > 0) {
+            const auto capacity = static_cast<std::size_t>(ncpus);
+            return reservation ? std::min(capacity, *reservation) : capacity;
+        }
     }
 #endif
 
-    // without an affinity count, fall back to scheduler/OpenMP hints.
-    if (auto PBS_NCPUS   = internals::get_env_concurrency_count("NCPUS")) { return *PBS_NCPUS; }
-    if (auto SLURM_NCPUS = internals::get_env_concurrency_count("SLURM_CPUS_ON_NODE")) { return *SLURM_NCPUS; }
-    if (auto OMP_NCPUS   = internals::get_env_concurrency_count("OMP_NUM_THREADS")) { return *OMP_NCPUS; }
+    if (reservation) return *reservation;
 
-    // fall back to the reported logical CPU count, or one if it is unknown.
+    // fall back to the reported logical CPU count, or one if it is unknown
     const unsigned int ncpus = std::thread::hardware_concurrency();
     return ncpus > 0 ? ncpus : 1;
 }

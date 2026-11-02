@@ -22,46 +22,43 @@
 namespace fdapde {
 namespace internals {
 
-// type-erasing task handle with small buffer optimization
+/// @brief owns a copyable erased callable in inline or heap storage
 class task_handle {
     static constexpr int buffer_size = 64;
    public:
+    /// @brief constructs an empty task handle
     task_handle() noexcept = default;
-    // copy semantic
+    /// @brief copies the callable into independent inline or heap storage
     task_handle(const task_handle& other) :
-        fn_(other.fn_),
-        rm_(other.rm_),
-        mv_(other.mv_),
-        cp_(other.cp_),
-        sb_(other.sb_),
-        owner_id_(other.owner_id_) {
+        fn_(other.fn_), rm_(other.rm_), mv_(other.mv_), cp_(other.cp_), sb_(other.sb_), owner_id_(other.owner_id_) {
         if (sb_) {
             if (cp_) { cp_(storage_.buff_, other.storage_.buff_); }
         } else {
             if (cp_) { cp_(&storage_.data_, other.storage_.data_); }
         }
     }
+    /// @brief replaces the owned callable while preserving safe copy and move ownership
     task_handle& operator=(const task_handle& other) {
         if (this == &other) return *this;
         task_handle copy(other);
         *this = std::move(copy);
         return *this;
     }
-    // move semantic
+    /// @brief transfers callable ownership and clears the source handle
     task_handle(task_handle&& other) noexcept :
         fn_(std::exchange(other.fn_, nullptr)),
         rm_(std::exchange(other.rm_, nullptr)),
         mv_(std::exchange(other.mv_, nullptr)),
         cp_(std::exchange(other.cp_, nullptr)),
         sb_(std::exchange(other.sb_, 0)),
-        owner_id_(other.owner_id_)
-    {
+        owner_id_(other.owner_id_) {
         if (sb_) {
             if (mv_) { mv_(storage_.buff_, other.storage_.buff_); }
         } else {
             storage_.data_ = std::exchange(other.storage_.data_, nullptr);
         }
     }
+    /// @brief replaces the owned callable while preserving safe copy and move ownership
     task_handle& operator=(task_handle&& other) noexcept {
         if (this == &other) return *this;
         if (rm_) { rm_(sb_ ? (void*)storage_.buff_ : storage_.data_); }   // clean-up to prevent leaks
@@ -79,11 +76,11 @@ class task_handle {
         owner_id_ = other.owner_id_;
         return *this;
     }
+    /// @brief initializes a copyable erased callable in inline or heap storage
     template <typename F, typename OwnerId>
         requires(
           !std::is_same_v<std::decay_t<F>, task_handle> && std::is_invocable_v<std::decay_t<F>&> &&
-          std::is_copy_constructible_v<std::decay_t<F>> &&
-          std::is_constructible_v<std::optional<int>, OwnerId>)
+          std::is_copy_constructible_v<std::decay_t<F>> && std::is_constructible_v<std::optional<int>, OwnerId>)
     task_handle(F&& f, OwnerId owner_id) : owner_id_(owner_id) {
         using Fn = std::decay_t<F>;
         constexpr bool sb =
@@ -111,18 +108,20 @@ class task_handle {
             (*reinterpret_cast<Fn*>(src)).~Fn();
         };
     }
+    /// @brief initializes a copyable erased callable in inline or heap storage
     template <typename F>
         requires(
           !std::is_same_v<std::decay_t<F>, task_handle> && std::is_invocable_v<std::decay_t<F>&> &&
           std::is_copy_constructible_v<std::decay_t<F>>)
     explicit task_handle(F&& f) : task_handle(std::forward<F>(f), std::nullopt) { }
 
-    // invoke
+    /// @brief invokes the stored callable
     void run() { fn_(sb_ ? (void*)storage_.buff_ : storage_.data_); }
-    // ownership managment
+    /// @brief returns the execution context responsible for task accounting
     int owner_id() const { return owner_id_.has_value() ? owner_id_.value() : -1; }
+    /// @brief assigns the execution context responsible for task accounting
     void set_owner(int owner_id) { owner_id_ = owner_id; }
-    // destructor (task destroyed only after completion)
+    /// @brief releases the owned inline or heap callable
     ~task_handle() {
         if (rm_) { rm_(sb_ ? (void*)storage_.buff_ : storage_.data_); }
     }
@@ -131,6 +130,7 @@ class task_handle {
     void (*rm_)(void*) = nullptr;
     void (*mv_)(void*, void*) = nullptr;
     void (*cp_)(void*, const void*) = nullptr;
+    /// @brief provides aligned inline storage or a pointer to a heap callable
     union alignas(std::max_align_t) U {
         void* data_ = nullptr;
         std::byte buff_[buffer_size];   // small buffer optimization

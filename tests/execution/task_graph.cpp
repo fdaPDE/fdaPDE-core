@@ -28,6 +28,20 @@
 #include <thread>
 #include <vector>
 
+// verifies graph failures return only after successors release their stack-bound captures
+TEST(ExecutionTaskGraph, NodeFailureDrainsSuccessorsBeforeRethrowing) {
+    fdapde::TaskGraph graph;
+    std::atomic<int> completed {0};
+    auto first = graph.add_node([] { throw std::domain_error("invalid graph node"); });
+    auto last = graph.add_node([&] { ++completed; });
+    last.succeeds(first);
+    // the graph transports the node exception after its dependency schedule finishes
+    EXPECT_THROW(fdapde::parallel_execute(graph), std::domain_error);
+    // the successor runs once even when its predecessor reports a callable failure
+    EXPECT_EQ(completed.load(), 1);
+    fdapde::parallel_join();
+}
+
 namespace {
 
 /// @brief forces heap storage with a counter that must be copied independently

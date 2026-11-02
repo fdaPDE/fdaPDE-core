@@ -17,9 +17,8 @@
 #ifndef __FDAPDE_EXECUTION_AFFINITY_H__
 #define __FDAPDE_EXECUTION_AFFINITY_H__
 
-#include "header_check.h"
-
 #include "../utility/assert.h"
+#include "header_check.h"
 
 #ifdef __linux__
 
@@ -28,13 +27,18 @@
 namespace fdapde {
 namespace internals {
 
+/// @brief owns a dynamically sized Linux CPU mask
 struct affinity_mask {
+    /// @brief allocates and clears a mask covering the requested CPU range
     explicit affinity_mask(int capacity) : bytes(CPU_ALLOC_SIZE(capacity)), data(CPU_ALLOC(capacity)) {
         if (!data) throw std::bad_alloc();
         CPU_ZERO_S(bytes, data);
     }
+    /// @brief releases the allocated Linux CPU mask
     ~affinity_mask() { CPU_FREE(data); }
+    /// @brief prevents copying CPU mask ownership
     affinity_mask(const affinity_mask&) = delete;
+    /// @brief prevents assignment of CPU mask ownership
     affinity_mask& operator=(const affinity_mask&) = delete;
 
     const std::size_t bytes;
@@ -62,11 +66,11 @@ inline std::vector<int> allowed_cpus() {
 
 // binds only the calling thread; pass its previous allowed_cpus() result to restore the mask
 inline void bind(const std::vector<int>& cpus) {
-    fdapde_strong_assert(!cpus.empty(), "invalid CPU specification");
+    fdapde_strong_assert(!cpus.empty(), std::invalid_argument, "invalid CPU specification");
     fdapde_strong_assert(
       std::all_of(cpus.begin(), cpus.end(), [](int cpu) { return cpu >= 0 && cpu < std::numeric_limits<int>::max(); }),
-      "invalid CPU specification");
-    // CPU IDs can be sparse, so size the mask by the highest ID
+      std::invalid_argument, "invalid CPU specification");
+    // cPU IDs can be sparse, so size the mask by the highest ID
     affinity_mask target(*std::max_element(cpus.begin(), cpus.end()) + 1);
     for (int cpu : cpus) { CPU_SET_S(cpu, target.bytes, target.data); }
     if (sched_setaffinity(0, target.bytes, target.data) != 0) { throw std::runtime_error("affinity error"); }
@@ -100,12 +104,13 @@ inline std::vector<int> allowed_cpus() {
 
 // binds only the calling thread; pass its previous allowed_cpus() result to restore the mask
 inline void bind(const std::vector<int>& cpus) {
-    fdapde_strong_assert(!cpus.empty(), "invalid CPUs specification");
+    fdapde_strong_assert(!cpus.empty(), std::invalid_argument, "invalid CPUs specification");
     fdapde_strong_assert(
       std::all_of(cpus.begin(), cpus.end(), [](int cpu) { return cpu >= 0 && cpu < std::numeric_limits<int>::max(); }),
-      "invalid CPUs specification");
+      std::invalid_argument, "invalid CPUs specification");
     // the fixed mask cannot represent IDs beyond CPU_SETSIZE
-    fdapde_strong_assert(*std::max_element(cpus.begin(), cpus.end()) < CPU_SETSIZE, "invalid CPUs specification");
+    fdapde_strong_assert(
+      *std::max_element(cpus.begin(), cpus.end()) < CPU_SETSIZE, std::invalid_argument, "invalid CPUs specification");
     cpuset_t target;
     CPU_ZERO(&target);
     for (int cpu : cpus) { CPU_SET(cpu, &target); }
@@ -146,20 +151,21 @@ inline std::vector<int> allowed_cpus() {
 
 // binds only the calling thread; pass its previous allowed_cpus() result to restore the mask
 inline void bind(const std::vector<int>& cpus) {
-    fdapde_strong_assert(!cpus.empty(), "invalid CPUs specification");
+    fdapde_strong_assert(!cpus.empty(), std::invalid_argument, "invalid CPUs specification");
     fdapde_strong_assert(
       std::all_of(cpus.begin(), cpus.end(), [](int cpu) { return cpu >= 0 && cpu < std::numeric_limits<int>::max(); }),
-      "invalid CPUs specification");
+      std::invalid_argument, "invalid CPUs specification");
     // a thread affinity mask can address only one processor group
     const int group = cpus.front() / 64;
-    fdapde_strong_assert(group <= (std::numeric_limits<WORD>::max)(), "invalid CPUs specification");
+    fdapde_strong_assert(
+      group <= (std::numeric_limits<WORD>::max)(), std::invalid_argument, "invalid CPUs specification");
     GROUP_AFFINITY target {};
     target.Group = static_cast<WORD>(group);
     for (int cpu : cpus) {
-        fdapde_strong_assert(cpu / 64 == group, "affinity error");
+        fdapde_strong_assert(cpu / 64 == group, std::invalid_argument, "affinity error");
         // convert the encoded ID back to a bit within the group
         const int index = cpu % 64;
-        fdapde_strong_assert(index < std::numeric_limits<KAFFINITY>::digits, "affinity error");
+        fdapde_strong_assert(index < std::numeric_limits<KAFFINITY>::digits, std::invalid_argument, "affinity error");
         target.Mask |= KAFFINITY {1} << index;
     }
     if (!SetThreadGroupAffinity(GetCurrentThread(), &target, nullptr)) { throw std::runtime_error("affinity error"); }
@@ -176,8 +182,10 @@ namespace fdapde {
 namespace internals {
 
 // returns the calling thread's logical CPU IDs
+/// @brief returns logical CPU identifiers allowed for the calling thread
 inline std::vector<int> allowed_cpus() { throw std::runtime_error("affinity not supported by the OS"); }
 // binds only the calling thread; pass its previous allowed_cpus() result to restore the mask
+/// @brief binds the calling thread to the supplied logical CPU identifiers
 inline void bind([[maybe_unused]] const std::vector<int>& cpus) {
     throw std::runtime_error("affinity not supported by the OS");
 }
@@ -194,10 +202,9 @@ inline int cpu_affinity_enabled = 0;   // affinity disabled by default
 
 }   // namespace internals
 
-// public API
-
 // enable or disable CPU affinity. affinity must be set before executor initalization
-inline void parallel_set_affinity(bool cpu_affinity) { internals::cpu_affinity_enabled = cpu_affinity; }
+/// @brief sets best-effort background affinity before runtime initialization
+inline void parallel_set_affinity(bool cpu_affinity);
 
 }   // namespace fdapde
 

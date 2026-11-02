@@ -26,6 +26,7 @@ namespace internals {
 // * "Michael, M. and Scott, M. (1996). Simple, fast, and practical non-blocking and blocking concurrent queue
 //    algorithms. In Proceedings of the fifteenth annual ACM symposium on Principles of distributed computing (pp
 //    267-275)."
+/// @brief owns an unbounded mailbox with multiple producers and one serialized consumer
 template <typename T>
     requires(std::is_move_constructible_v<T> && std::is_default_constructible_v<T>)
 struct mpsc_queue {
@@ -33,13 +34,14 @@ struct mpsc_queue {
     using reference = value_type&;
     using const_reference = const value_type&;
    private:
-    // linked-list like node with single successor
+    /// @brief owns a mailbox value and its atomic successor link
     struct node_type {
+        /// @brief initializes a mailbox value and its atomic successor link
         node_type() : next(nullptr), data() { }
+        /// @brief initializes a mailbox value and its atomic successor link
         template <typename T_>
             requires(std::is_constructible_v<value_type, T_>)
         explicit node_type(T_&& data_) : next(nullptr), data(std::forward<T_>(data_)) { }
-        // observers
         std::atomic<node_type*> next;   // next queue node
         value_type data;                // stored data
     };
@@ -50,7 +52,9 @@ struct mpsc_queue {
     using size_type = std::uint64_t;
     using difference_type = std::int64_t;
 
+    /// @brief creates a mailbox with the default allocator block size
     mpsc_queue() : mpsc_queue(512) { }
+    /// @brief creates an empty sentinel mailbox with the supplied allocation block size
     explicit mpsc_queue(size_type allocator_block_sz) : head_(nullptr), tail_(nullptr), allocator_(allocator_block_sz) {
         pointer root = allocator_.allocate();
         head_ = root;
@@ -58,25 +62,30 @@ struct mpsc_queue {
     }
 
     // multi-producer push, pushes the element value to the end of the queue
+    /// @brief publishes a prepared or newly allocated mailbox node
     template <typename T_>
         requires(std::is_constructible_v<value_type, T_>)
     void push(T_&& value) {
         push(allocate(std::forward<T_>(value)));
     }
+    /// @brief publishes a prepared or newly allocated mailbox node
     void push(pointer node) noexcept {
         pointer prev = tail_.exchange(node, std::memory_order_acq_rel);
         prev->next.store(node, std::memory_order_release);
         return;
     }
     // allocate a queue node without pushing it on the queue
+    /// @brief reserves a mailbox node without publishing it
     template <typename T_>
         requires(std::is_constructible_v<value_type, T_>)
     pointer allocate(T_&& value) {
         return allocator_.allocate(std::forward<T_>(value));
     }
     // erase an allocated node, node should not be pushed yet
+    /// @brief reclaims a reserved mailbox node before it is published
     void erase(pointer node) { allocator_.deallocate(node); }
     // single-consumer pop; returns nullopt if empty or a producer has not yet linked the next node
+    /// @brief claims the next linked mailbox value and reclaims the previous sentinel
     std::optional<value_type> pop() {
         pointer next = head_->next.load(std::memory_order_acquire);
         if (next == nullptr) { return std::nullopt; }
@@ -86,6 +95,7 @@ struct mpsc_queue {
         head_ = next;
         return std::move(value);
     }
+    /// @brief reclaims the remaining sentinel and nodes after producers and consumers stop
     ~mpsc_queue() {
         while (head_ != nullptr) {
             pointer next = head_->next.load(std::memory_order_relaxed);

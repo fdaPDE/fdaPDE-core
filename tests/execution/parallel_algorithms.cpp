@@ -121,3 +121,144 @@ TEST(ExecutionParallelAlgorithms, ReductionNeedsNoDefaultConstructedIdentity) {
     // compares the result with the seed applied once to the three factors
     EXPECT_EQ(product.value, 120);
 }
+
+// verifies body failures are selected by index after all submitted chunks finish and the pool remains reusable
+TEST(ExecutionParallelAlgorithms, ParallelForRethrowsLowestIndexAfterCompletion) {
+    std::atomic<int> completed_chunks {0};
+    bool failed = false;
+    try {
+        fdapde::parallel_for(0, 64, 8, [&](int i) {
+            if (i == 5 || i == 24) throw std::runtime_error("failure " + std::to_string(i));
+            if (i % 8 == 7) completed_chunks.fetch_add(1, std::memory_order_relaxed);
+        });
+    } catch (const std::runtime_error& error) {
+        failed = true;
+        // the lower failing index wins independently of which worker reports its exception first
+        EXPECT_STREQ(error.what(), "failure 5");
+        // both failed chunks stop early while the other six finish before the exception reaches this caller
+        EXPECT_EQ(completed_chunks.load(std::memory_order_relaxed), 6);
+    }
+    // the invalid body must not be silently accepted or reported only through worker termination
+    EXPECT_TRUE(failed);
+    std::atomic<int> recovered {0};
+    fdapde::parallel_for(0, 64, [&](int) { recovered.fetch_add(1, std::memory_order_relaxed); });
+    // complete accounting lets a subsequent loop execute every iteration on the same worker pool
+    EXPECT_EQ(recovered.load(std::memory_order_relaxed), 64);
+}
+
+// verifies nested failure propagation drains both inner and outer task groups without deadlocking workers
+TEST(ExecutionParallelAlgorithms, NestedParallelForPropagatesFailuresAfterCompletion) {
+    std::atomic<int> completed_rows {0};
+    // the inner domain error must reach the external caller through the outer loop's failure handling
+    EXPECT_THROW(
+      fdapde::parallel_for(
+        0, 8, 1,
+        [&](int row) {
+            fdapde::parallel_for(0, 16, 4, [&](int column) {
+                if (row == 3 && column == 2) throw std::domain_error("invalid nested value");
+            });
+            completed_rows.fetch_add(1, std::memory_order_relaxed);
+        }),
+      std::domain_error);
+    // the seven successful inner loops finish before the failed outer group releases its captured state
+    EXPECT_EQ(completed_rows.load(std::memory_order_relaxed), 7);
+}
+
+namespace {
+/// @brief distinguishes chunk-local step copies from the original used to partition the range
+class FailChunkStep {
+   public:
+    /// @brief keeps the original step usable during range counting and partitioning
+    FailChunkStep() = default;
+    /// @brief marks each step copied into a chunk so only execution can trigger the injected failure
+    FailChunkStep(const FailChunkStep&) noexcept : in_chunk_(true) { }
+    /// @brief preserves the chunk marker while executor wrappers transfer the prepared callable
+    FailChunkStep(FailChunkStep&&) noexcept = default;
+    /// @brief fails at the selected chunk index independently of which thread executes that chunk
+    int operator()(int i) const {
+        if (in_chunk_ && i == 4) throw std::domain_error("invalid chunk step");
+        return i + 2;
+    }
+   private:
+    bool in_chunk_ = false;
+};
+}   // namespace
+
+// verifies custom-step chunks report body and step failures without escaping worker execution
+TEST(ExecutionParallelAlgorithms, SteppedParallelForRethrowsBodyAndStepFailures) {
+    std::atomic<int> visited {0};
+    bool failed = false;
+    try {
+        fdapde::parallel_for(
+          0, 32, 3,
+          [&](int i) {
+              visited.fetch_add(1, std::memory_order_relaxed);
+              if (i == 10 || i == 22) throw std::runtime_error("failure " + std::to_string(i));
+          },
+          [](int i) { return i + 2; });
+    } catch (const std::runtime_error& error) {
+        failed = true;
+        // the first failing stepped index is selected even when another chunk fails sooner in wall-clock time
+        EXPECT_STREQ(error.what(), "failure 10");
+    }
+    // the custom-step overload must expose its body error to the caller
+    EXPECT_TRUE(failed);
+    // failures occur at chunk ends, so all sixteen even indices finish before the loop returns
+    EXPECT_EQ(visited.load(std::memory_order_relaxed), 16);
+    // only chunk-local copies throw, so cooperative execution cannot hide the step failure from its chunk handler
+    EXPECT_THROW(fdapde::parallel_for(0, 12, 3, [](int) { }, FailChunkStep()), std::domain_error);
+}
+
+namespace {
+/// @brief injects callable-construction failure after one complete task batch is published
+class FailAfterBatchStepCopy {
+   public:
+    /// @brief retains a copy counter shared by the caller and chunk-local step objects
+    explicit FailAfterBatchStepCopy(std::shared_ptr<std::atomic<int>> copies) : copies_(std::move(copies)) { }
+    /// @brief lets one sixteen-task batch publish before rejecting the next chunk
+    FailAfterBatchStepCopy(const FailAfterBatchStepCopy& other) : copies_(other.copies_) {
+        if (copies_->fetch_add(1, std::memory_order_relaxed) == 16)
+            throw std::runtime_error("step copy submission failure");
+    }
+    /// @brief moves a prepared step through executor wrappers without creating another copy
+    FailAfterBatchStepCopy(FailAfterBatchStepCopy&&) noexcept = default;
+    /// @brief advances the preparation and worker loops by one index
+    int operator()(int i) const { return i + 1; }
+   private:
+    std::shared_ptr<std::atomic<int>> copies_;
+};
+}   // namespace
+
+// verifies partial submission failure drains the first chunk before releasing its stack-bound loop body
+TEST(ExecutionParallelAlgorithms, PartialSubmissionFailureDrainsPublishedChunks) {
+    auto copies = std::make_shared<std::atomic<int>>(0);
+    std::atomic<int> completed {0};
+    // copying the seventeenth chunk fails after the first sixteen-task batch is published
+    EXPECT_THROW(
+      fdapde::parallel_for(
+        0, 80, 4, [&](int) { completed.fetch_add(1, std::memory_order_relaxed); }, FailAfterBatchStepCopy(copies)),
+      std::runtime_error);
+    // seventeen construction attempts establish that failure followed one complete publication batch
+    EXPECT_EQ(copies->load(std::memory_order_relaxed), 17);
+    // every callback from the sixteen published chunks finishes before local state is released
+    EXPECT_EQ(completed.load(std::memory_order_relaxed), 64);
+    fdapde::parallel_for(0, 8, [&](int) { completed.fetch_add(1, std::memory_order_relaxed); });
+    // releasing the failed reservation leaves the runtime usable for subsequent loops
+    EXPECT_EQ(completed.load(std::memory_order_relaxed), 72);
+}
+
+// verifies synchronous container and reduction failures return to the caller after chunk completion
+TEST(ExecutionParallelAlgorithms, ContainerAndReductionFailuresLeavePoolUsable) {
+    std::vector<int> values(64, 1);
+    // a container callback failure is transported instead of escaping a background worker
+    EXPECT_THROW(
+      fdapde::parallel_for_each(values, 4, [](int&) { throw std::domain_error("invalid element"); }),
+      std::domain_error);
+    // reduction callback failures also drain their stack-bound partial results before returning
+    EXPECT_THROW(
+      fdapde::parallel_reduce(
+        values.begin(), values.end(), 4, 0, [](int, int) -> int { throw std::domain_error("invalid partial"); }),
+      std::domain_error);
+    // a later reduction certifies that both failed groups released every runtime reservation
+    EXPECT_EQ(fdapde::parallel_reduce(values.begin(), values.end(), 0, std::plus<>()), 64);
+}
