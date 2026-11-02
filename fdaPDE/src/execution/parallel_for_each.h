@@ -23,59 +23,34 @@ namespace fdapde {
 namespace internals {
 
 // specialized parallelized for-range loop task
-struct task_parallel_for_each {
-    template <typename Container, typename LoopBody>
-        requires(std::is_invocable_v<LoopBody, typename Container::reference>)
-    static void run(threaded_executor_impl* executor, Container& container, int batch_size, LoopBody&& f) {
-        const int n = std::distance(container.begin(), container.end());
-        if (n <= 0) return;   // nothing to loop on
-
-        batch_size = std::max(1, std::min(batch_size, n));
-        const int n_batches = 1 + (n - 1) / batch_size;
-        if (n_batches == 1 || executor->size() == 1) {
-            for (auto it = container.begin(), end = container.end(); it != end; ++it) { f(*it); }
-            return;
-        }
-        auto local_begin = container.begin();
-        int remaining = n;
-	task_batch::run(executor, n_batches, [&] {
-            const int count = std::min(batch_size, remaining);
-            auto local_end = std::next(local_begin, count);
-            auto task = [local_begin, local_end, &f] {
-                for (auto it = local_begin; it != local_end; ++it) { f(*it); }
-            };
-            local_begin = local_end;
-            remaining -= count;
-            return task;
-        });
-        return;
+template <std::forward_iterator Iterator, typename LoopBody> struct task_parallel_for_each {
+    task_parallel_for_each(Iterator begin, int size, LoopBody f) : begin_(begin), size_(size), f_(std::move(f)) { }
+    // return the iteration space as [0, n_iterations)
+    std::pair<int, int> range() const { return {0, size_}; }
+    // executes the given iteration range
+    void run(int local_begin, int local_end) {
+        auto it = std::next(begin_, local_begin);
+        for (int i = local_begin; i < local_end; ++i, ++it) { std::invoke(f_, *it); }
+	return;
     }
-    template <typename Container, typename LoopBody>
-        requires(std::is_invocable_v<LoopBody, typename Container::reference>)
-    static void run(threaded_executor_impl* executor, Container& container, LoopBody&& f) {
-        const int n = std::distance(container.begin(), container.end());
-        if (n <= 0) return;   // nothing to loop on
-        // auto-partitioning
-        int batch_size = std::max(1.0, double(n) / (4 * executor->size()));
-        run(executor, container, batch_size, std::forward<LoopBody>(f));
-        return;
-    }
+   private:
+    Iterator begin_;
+    const int size_;
+    LoopBody f_;
 };
-
+  
 }   // namespace internals
 
-// executes for(auto& value : container) { loop_body } in parallel
-template <typename Container, typename LoopBody>
-    requires(std::is_invocable_v<LoopBody, typename std::decay_t<Container>::reference>)
-void parallel_for_each(Container& container, int grain_size, LoopBody&& loop_body) {
-    auto* executor = std::addressof(internals::threaded_executor::instance());
-    internals::task_parallel_for_each::run(executor, container, grain_size, loop_body);
-}
-template <typename Container, typename LoopBody>
-    requires(std::is_invocable_v<LoopBody, typename std::decay_t<Container>::reference>)
-void parallel_for_each(Container& container, LoopBody&& loop_body) {
-    auto* executor = std::addressof(internals::threaded_executor::instance());
-    internals::task_parallel_for_each::run(executor, container, loop_body);
+// parallel executes for(auto& value : container) { loop_body(value); } 
+template <std::ranges::forward_range Container, typename LoopBody, typename Dispatcher>
+    requires(
+      std::is_invocable_v<std::decay_t<LoopBody>&, std::ranges::range_reference_t<Container>> &&
+      std::is_copy_constructible_v<std::decay_t<LoopBody>>)
+future<void> parallel_for_each(Container& container, LoopBody&& loop_body, Dispatcher) {
+    using task_parallel_for_each =
+      internals::task_parallel_for_each<std::ranges::iterator_t<Container>, std::decay_t<LoopBody>>;
+    const int size = std::distance(container.begin(), container.end());
+    return Dispatcher::run(task_parallel_for_each {container.begin(), size, std::forward<LoopBody>(loop_body)});
 }
 
 }   // namespace fdapde

@@ -22,7 +22,6 @@
 namespace fdapde {
 namespace internals {
 
-static constexpr int external_thread = -1;
 inline thread_local int tls_worker_id = external_thread;   // nonnegative IDs identify threads owned by the runtime
 
 // scheduling state for one background worker or the attached caller
@@ -49,9 +48,9 @@ struct execution_context {
             handle.data_ = nullptr;
             return;
         }
-	// allocate an unpublished mailbox node
+        // allocate an unpublished mailbox node
         handle.data_ = task_buffer_.allocate(handle.task_);
-	return;
+        return;
     }
     // release task capacity; local handles (data_ == nullptr) require the context's owning thread
     template <typename Handle> void cancel_task(const Handle& handle) {
@@ -60,7 +59,7 @@ struct execution_context {
         } else {
             --reserved_capacity_;
         }
-	return;
+        return;
     }
     // publish reserved tasks; local handles (data_ == nullptr) require the context's owning thread
     template <typename Handle> void publish_task(const Handle& handle) noexcept {
@@ -74,7 +73,7 @@ struct execution_context {
         unfinished_tasks_.fetch_add(count, std::memory_order_relaxed);
         ready_tasks_.fetch_add(count, std::memory_order_relaxed);
         if (mail > 0) { incoming_tasks_.fetch_add(mail, std::memory_order_relaxed); }
-	// send task for execution
+        // send task for execution
         while (first != last) {
             if ((*first).data_) {
                 // store task in buffer if reserved
@@ -82,13 +81,13 @@ struct execution_context {
                 ++first;
                 continue;
             }
-	    // search for tasks directly pushable into Chase-Lev queue
+            // search for tasks directly pushable into Chase-Lev queue
             auto end = std::next(first);
             while (end != last && !(*end).data_) { ++end; }
             reserved_capacity_ -= std::distance(first, end);
-            auto pointers = std::views::transform(
-              std::ranges::subrange(first, end), [](const auto& task) { return task.task_; });
-	    // queue tasks
+            auto pointers =
+              std::views::transform(std::ranges::subrange(first, end), [](const auto& task) { return task.task_; });
+            // queue tasks
             if (!task_queue_.push_front(pointers.begin(), pointers.end())) std::terminate();
             first = end;
         }
@@ -109,7 +108,7 @@ struct execution_context {
         if (incoming_tasks_.load(std::memory_order_relaxed) == 0) { return std::nullopt; }
         std::unique_lock<std::mutex> lock(m_, std::try_to_lock);
         // concurrent stealing attempt, bailing out
-        if (!lock.owns_lock()) { return std::nullopt; } 
+        if (!lock.owns_lock()) { return std::nullopt; }
         auto task = task_buffer_.pop();
         if (task) {   // steal succeded
             incoming_tasks_.fetch_sub(1, std::memory_order_relaxed);
@@ -140,13 +139,13 @@ struct execution_context {
         return mail;
     }
    private:
-    const int context_id_;                            // context unique identifier
-    std::atomic<bool> busy_;                          // true while a physical thread owns this context
-    std::size_t reserved_capacity_ = 0;               // number of reserved queue slots
-    task_queue_type task_queue_;                      // local queue of stealable and executable tasks
-    task_buffer_type task_buffer_;                    // mailbox accepting submissions from any thread
+    const int context_id_;                // context unique identifier
+    std::atomic<bool> busy_;              // true while a physical thread owns this context
+    std::size_t reserved_capacity_ = 0;   // number of reserved queue slots
+    task_queue_type task_queue_;          // local queue of stealable and executable tasks
+    task_buffer_type task_buffer_;        // mailbox accepting submissions from any thread
     std::mutex m_;
-  
+
     std::atomic<std::size_t> unfinished_tasks_ {0};   // submitted tasks not yet completed
     std::atomic<std::size_t> ready_tasks_ {0};        // tasks waiting in the mailbox or local deque
     std::atomic<std::size_t> incoming_tasks_ {0};     // mailbox tasks, including publication in progress

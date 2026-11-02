@@ -20,19 +20,24 @@
 #include "header_check.h"
 
 namespace fdapde {
+
+template <typename T> class future;
+template <typename Signature> class packaged_task;
+
 namespace internals {
 
 // executor global status, mutable only before the first threaded_executor initialization
 struct threaded_executor;
+inline threaded_executor* threaded_executor_instance();
 struct threaded_executor_global_state_t {
     threaded_executor_global_state_t() = default;
-    friend threaded_executor;
+    friend threaded_executor* threaded_executor_instance();
 
     // setters
     void set_num_threads(int num_threads) {
         std::lock_guard<std::mutex> lock(m_);
         fdapde_assert(num_threads > 0, "number of requested threads must be positive");
-        fdapde_assert(!is_ready_     , "thread count cannot change after executor initialization");
+        fdapde_assert(!is_ready_,      "thread count cannot change after executor initialization");
         num_threads_ = num_threads;
     }
     // getters
@@ -94,12 +99,12 @@ struct round_robin_scheduling_policy {
 };
 
 // executor-owned task storage, execution contexts, and physical background threads
-struct threaded_executor_impl {
+struct threaded_executor {
    private:
     using context_type = execution_context;
     using context_pointer = std::unique_ptr<context_type>;
     using allocator_type = pool_allocator<task_handle>;
-    using stealing_policy = internals::random_stealing_policy;
+    using stealing_policy = internals::topology_stealing_policy;
     using scheduling_policy = internals::round_robin_scheduling_policy;
     // spin-loop and backoff constants
     static constexpr int min_spin_retention_us = 250;
@@ -112,7 +117,7 @@ struct threaded_executor_impl {
     // an handle to submit and discard task execution
     struct task_submission_handle {
         task_submission_handle() = default;
-      
+
         // queue task for parallel execution
         void submit() { executor_->submit_task(*this); }
         // discard unsubmitted tasks. task execution is not preempted, hence submitted tasks cannot be discarded
@@ -124,19 +129,18 @@ struct threaded_executor_impl {
         task_submission_handle* operator->() noexcept { return this; }
         int context_id() const { return task_->owner_id(); }
        private:
-        friend struct threaded_executor_impl;
+        friend struct threaded_executor;
         friend struct execution_context;
-        task_submission_handle(threaded_executor_impl* executor, task_handle* task) :
+        task_submission_handle(threaded_executor* executor, task_handle* task) :
             executor_(executor), task_(task) { }
 
-        threaded_executor_impl* executor_ = nullptr;         // executor controlling this task
+        threaded_executor* executor_ = nullptr;         // executor controlling this task
         task_handle* task_ = nullptr;                        // the actual unit of work
         context_type::task_buffer_pointer data_ = nullptr;   // memory location storing this task
     };
 
-    threaded_executor_impl() : threaded_executor_impl(fdapde::available_concurrency()) { }
-    explicit threaded_executor_impl(size_type size) :
-        stealing_policy_(std::max<size_type>(2, size)),
+    threaded_executor() : threaded_executor(fdapde::available_concurrency()) { }
+    explicit threaded_executor(size_type size) :
         scheduling_policy_(std::max<size_type>(1, size - 1)),
         size_(size),
         n_workers_(std::max<size_type>(1, size - 1)),   // retain asynchronous progress at P=1
@@ -148,8 +152,12 @@ struct threaded_executor_impl {
         active_join_cnt_(0) {
         // affinity is best-effort, including on unsupported systems
         std::vector<int> cpus;
+        std::vector<cpu_topology> topology;
         try {
-            if (cpu_affinity_enabled) cpus = allowed_cpus();
+            if (cpu_affinity_enabled) {
+                cpus = allowed_cpus();
+                topology = discover_cpu_topology();
+            }
         } catch (...) {
             // no affinity capability available on the hosting OS
         }
@@ -158,24 +166,34 @@ struct threaded_executor_impl {
         for (size_type i = 0; i <= n_workers_; ++i) {
             contexts_.push_back(std::make_unique<context_type>(static_cast<int>(i), i < n_workers_));
         }
-        for (size_type i = 0; i < n_workers_; ++i) {
-            try {
-                workers_.emplace_back([this, i, &cpus] {
+        std::vector<int> pinned_cpus(n_workers_ + 1, -1);
+        std::latch pinned(n_workers_);
+        size_type started = 0;
+        try {
+            for (; started < n_workers_; ++started) {
+                workers_.emplace_back([this, i = started, &cpus, &pinned_cpus, &pinned] {
                     try {
                         // pin cpus before startup barrier
-                        if (!cpus.empty()) bind({cpus[i % cpus.size()]});
+                        if (!cpus.empty()) {
+                            const int cpu = cpus[i % cpus.size()];
+                            bind({cpu});
+                            pinned_cpus[i] = cpu;
+                        }
                     } catch (...) {
                         // retain OS scheduling on failure
                     }
+                    pinned.count_down();
                     worker_loop_(static_cast<int>(i));
                 });
-            } catch (...) {
-                active_.store(false, std::memory_order_release);
-                // release started workers when the remaining threads could not be created
-                init_latch_.count_down(n_workers_ + 1 - i);
-                for (auto& worker : workers_) worker.join();
-                throw;
             }
+            // workers stay at the startup barrier until all victim lists are ready
+            pinned.wait();
+            stealing_policy_ = stealing_policy(topology, pinned_cpus);
+        } catch (...) {
+            active_.store(false, std::memory_order_release);
+            init_latch_.count_down(n_workers_ + 1 - started);
+            for (auto& worker : workers_) worker.join();
+            throw;
         }
         init_latch_.arrive_and_wait();
     }
@@ -191,10 +209,10 @@ struct threaded_executor_impl {
         auto task = [f_ = std::forward<F>(f), args_ = args_t(std::forward<Args>(args)...)]() mutable -> ret_t {
             return std::apply([&f_](auto&... stored_args) -> ret_t { return std::invoke(f_, stored_args...); }, args_);
         };
-        auto packaged_task = std::make_shared<std::packaged_task<ret_t()>>(std::move(task));
-        auto result = packaged_task->get_future();
-	// submit task for execution
-        auto handle = allocate_task(this_thread_id(), [packaged_task]() { (*packaged_task)(); });
+        fdapde::packaged_task<ret_t()> packaged(std::move(task));
+        auto result = packaged.get_future();
+        // submit task for execution
+        auto handle = allocate_task(this_thread_id(), packaged.get_task());
         try {
             handle.submit();
         } catch (...) {
@@ -213,7 +231,7 @@ struct threaded_executor_impl {
         auto task = [f_ = std::forward<F>(f), args_ = args_t(std::forward<Args>(args)...)]() mutable {
             std::apply([&f_](auto&... stored_args) { std::invoke(f_, stored_args...); }, args_);
         };
-	// submit task for execution
+        // submit task for execution
         auto handle = allocate_task(this_thread_id(), std::move(task));
         try {
             handle.submit();
@@ -264,11 +282,10 @@ struct threaded_executor_impl {
         epoch_.fetch_add(1, std::memory_order_release);
         notify_all();
     }
-
    private:
     // RAII ownership of the caller's reserved context
     struct attachment_handle {
-        explicit attachment_handle(threaded_executor_impl* executor) noexcept : executor_(nullptr) {
+        explicit attachment_handle(threaded_executor* executor) noexcept : executor_(nullptr) {
             if (tls_worker_id == external_thread && executor->contexts_.back()->try_attach()) {
                 executor_ = executor;
                 tls_worker_id = static_cast<int>(executor_->n_workers_);
@@ -286,7 +303,7 @@ struct threaded_executor_impl {
             executor_ = nullptr;
         }
        private:
-        threaded_executor_impl* executor_;
+        threaded_executor* executor_;
     };
     struct wait_guard {
         explicit wait_guard(std::atomic<size_type>& count) : count_(count) {
@@ -307,9 +324,8 @@ struct threaded_executor_impl {
         wait_guard wait_on(join_cnt_);
         join_cv_.wait(lock, [&]() {
             const auto epoch = epoch_.load(std::memory_order_acquire);
-            const bool empty = std::all_of(contexts_.begin(), contexts_.end(), [](const auto& context) {
-                return !context->has_unfinished_tasks();
-            });
+            const bool empty = std::all_of(
+              contexts_.begin(), contexts_.end(), [](const auto& context) { return !context->has_unfinished_tasks(); });
             return empty && epoch_.load(std::memory_order_acquire) == epoch;
         });
     }
@@ -326,7 +342,7 @@ struct threaded_executor_impl {
             join_cv_.wait(lock, [&] { return !cond(); });
             return;
         }
-	// exponential backoff strategy
+        // exponential backoff strategy
         using clock = std::chrono::steady_clock;
         auto retention = std::chrono::microseconds(min_spin_retention_us);
         while (cond()) {
@@ -340,14 +356,12 @@ struct threaded_executor_impl {
                 }
                 if (!cond()) return;
                 if (try_execute_one_(context_id)) {
-                    retention = std::min(
-                      retention * backoff_factor, std::chrono::microseconds(max_spin_retention_us));
+                    retention = std::min(retention * backoff_factor, std::chrono::microseconds(max_spin_retention_us));
                     break;
                 }
                 if (clock::now() >= deadline) {
-                    retention = std::max(
-                      retention / backoff_factor, std::chrono::microseconds(min_spin_retention_us));
-		    // no work found during backoff, go idle
+                    retention = std::max(retention / backoff_factor, std::chrono::microseconds(min_spin_retention_us));
+                    // no work found during backoff, go idle
                     std::unique_lock<std::mutex> lock(m_);
                     wait_guard wait_on(active_join_cnt_);
                     join_cv_.wait(lock, [&] { return !cond() || are_ready_tasks_available_() || !is_active(); });
@@ -377,7 +391,7 @@ struct threaded_executor_impl {
             join_cv_.notify_all();
         }
     }
-    ~threaded_executor_impl() {
+    ~threaded_executor() {
         if (is_active()) stop();
     }
    private:
@@ -389,9 +403,9 @@ struct threaded_executor_impl {
         }
         if (!task) return false;   // no work found, return
 
-	// run assigned task and update task accounting once finished
-        (*task)->run();
+        // run assigned task and update task accounting once finished
         const int owner_id = (*task)->owner_id();
+        (*task)->run(execution_data {context_id, owner_id});
         task_pool_.deallocate(*task);
         if (contexts_[owner_id]->complete_task()) { notify_all_join(); }
         return true;
@@ -405,19 +419,17 @@ struct threaded_executor_impl {
         while (is_active()) {
             // try fetch work, possible do a stealing attempt
             if (try_execute_one_(context_id)) continue;
-	    // no work found, exponential backoff
+            // no work found, exponential backoff
             const auto deadline = clock::now() + retention;
             int pauses = 1;
             while (is_active()) {
                 for (int i = 0; i < pauses; ++i) { cpu_yield_(); }   // lightweight CPU yield
                 if (try_execute_one_(context_id)) {
-                    retention = std::min(
-                      retention * backoff_factor, std::chrono::microseconds(max_spin_retention_us));
+                    retention = std::min(retention * backoff_factor, std::chrono::microseconds(max_spin_retention_us));
                     break;
                 }
                 if (clock::now() >= deadline) {
-                    retention = std::max(
-                      retention / backoff_factor, std::chrono::microseconds(min_spin_retention_us));
+                    retention = std::max(retention / backoff_factor, std::chrono::microseconds(min_spin_retention_us));
                     // no work found during backoff, go idle
                     std::unique_lock<std::mutex> lock(m_);
                     wait_guard wait_on(idle_cnt_);
@@ -439,9 +451,8 @@ struct threaded_executor_impl {
     }
     // check if there is some executable work in the executor
     bool are_ready_tasks_available_() const {
-        return std::any_of(contexts_.begin(), contexts_.end(), [](const auto& context) {
-            return context->has_ready_tasks();
-        });
+        return std::any_of(
+          contexts_.begin(), contexts_.end(), [](const auto& context) { return context->has_ready_tasks(); });
     }
     // hints the processor to relax during spinning. emits machine-level yield/pause instructions
     void cpu_yield_() noexcept {
@@ -461,7 +472,7 @@ struct threaded_executor_impl {
     }
 
     allocator_type task_pool_;                 // shared physical memory holding tasks
-    stealing_policy stealing_policy_;          // randomized stealing functor
+    stealing_policy stealing_policy_;          // precomputed locality groups for stealing
     scheduling_policy scheduling_policy_;      // round-robin scheduler
     std::vector<context_pointer> contexts_;    // background execution contexts
     std::vector<std::thread> workers_;         // physical threads internally managed by the executor
@@ -478,27 +489,25 @@ struct threaded_executor_impl {
     std::mutex m_;
 };
 
-struct threaded_executor {
-    // intentionally never destroyed to keep background threads from accessing destroyed executor storage
-    static auto& instance() {
-        static std::aligned_storage_t<sizeof(threaded_executor_impl), alignof(threaded_executor_impl)> storage;
-        static threaded_executor_impl* exec = [] {
-            std::lock_guard<std::mutex> lock(threaded_executor_global_state.m_);
-            auto* result = new (&storage) threaded_executor_impl(threaded_executor_global_state.num_threads());
-            threaded_executor_global_state.set_ready_();
-            return result;
-        }();
-        return *exec;
-    }
-};
+// intentionally never destroyed to keep background threads from accessing destroyed executor storage
+inline threaded_executor* threaded_executor_instance() {
+    static std::aligned_storage_t<sizeof(threaded_executor), alignof(threaded_executor)> storage;
+    static threaded_executor* exec = [] {
+        std::lock_guard<std::mutex> lock(threaded_executor_global_state.m_);
+        auto* result = new (&storage) threaded_executor(threaded_executor_global_state.num_threads());
+        threaded_executor_global_state.set_ready_();
+        return result;
+    }();
+    return exec;
+}
 
 }   // namespace internals
 
 // public API
 
 template <typename Task, typename... Args> struct is_runnable_task {
-    static constexpr bool value = requires(Task task, internals::threaded_executor_impl* executor, Args... args) {
-        { task.run(executor, args...) } -> std::same_as<void>;
+    static constexpr bool value = requires(Task task, Args... args) {
+        { task.run(args...) } -> std::same_as<void>;
     };
 };
 template <typename Task, typename... Args>
@@ -516,16 +525,16 @@ template <typename F, typename... Args>
       std::is_invocable_v<std::decay_t<F>&, std::decay_t<Args>&...> && std::is_copy_constructible_v<std::decay_t<F>> &&
       (std::is_copy_constructible_v<std::decay_t<Args>> && ...))
 void parallel_execute(F&& f, Args&&... args) {
-    internals::threaded_executor::instance().execute(std::forward<F>(f), std::forward<Args>(args)...);
+    internals::threaded_executor_instance()->execute(std::forward<F>(f), std::forward<Args>(args)...);
 }
-// executes a callable object asynchronously returning a std::future object for synchronization and result retrieval
+// executes a callable object asynchronously returning an fdapde::future for synchronization and result retrieval
 template <typename F, typename... Args>
     requires(std::is_invocable_v<std::decay_t<F>&, std::decay_t<Args>&...>)
 auto parallel_async(F&& f, Args&&... args) {
-    return internals::threaded_executor::instance().async(std::forward<F>(f), std::forward<Args>(args)...);
+    return internals::threaded_executor_instance()->async(std::forward<F>(f), std::forward<Args>(args)...);
 }
 // explicitly joins the executor until all work is completed
-inline void parallel_join() { internals::threaded_executor::instance().join(); }
+inline void parallel_join() { internals::threaded_executor_instance()->join(); }
 
 }   // namespace fdapde
 

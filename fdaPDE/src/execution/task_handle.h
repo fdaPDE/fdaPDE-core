@@ -22,6 +22,28 @@
 namespace fdapde {
 namespace internals {
 
+static constexpr int external_thread = -1;
+struct execution_data {
+    int exec_context = external_thread;   // execution context where the task is executed
+    int orig_context = external_thread;   // execution context first assigned to the task
+};
+
+template <typename Callable> struct is_task_wrappable {
+    static constexpr bool value =
+      std::is_invocable_v<std::decay_t<Callable>&> ||
+      std::is_invocable_v<std::decay_t<Callable>&, const execution_data&>;
+};
+template <typename Callable> static constexpr bool is_task_wrappable_v = is_task_wrappable<Callable>::value;
+
+// invokes callable with execution_data if the callable supports it, otherwise invokes the callable with no arguments
+template <typename Callable> void invoke_task(Callable&& callable, const execution_data& data) {
+    if constexpr (std::is_invocable_v<Callable&, const execution_data&>) {
+        std::invoke(callable, data);
+    } else {
+        std::invoke(callable);
+    }
+}
+
 // type-erasing task handle with small buffer optimization
 class task_handle {
     static constexpr int buffer_size = 64;
@@ -29,12 +51,7 @@ class task_handle {
     task_handle() noexcept = default;
     // copy semantic
     task_handle(const task_handle& other) :
-        fn_(other.fn_),
-        rm_(other.rm_),
-        mv_(other.mv_),
-        cp_(other.cp_),
-        sb_(other.sb_),
-        owner_id_(other.owner_id_) {
+        fn_(other.fn_), rm_(other.rm_), mv_(other.mv_), cp_(other.cp_), sb_(other.sb_), owner_id_(other.owner_id_) {
         if (sb_) {
             if (cp_) { cp_(storage_.buff_, other.storage_.buff_); }
         } else {
@@ -54,8 +71,7 @@ class task_handle {
         mv_(std::exchange(other.mv_, nullptr)),
         cp_(std::exchange(other.cp_, nullptr)),
         sb_(std::exchange(other.sb_, 0)),
-        owner_id_(other.owner_id_)
-    {
+        owner_id_(other.owner_id_) {
         if (sb_) {
             if (mv_) { mv_(storage_.buff_, other.storage_.buff_); }
         } else {
@@ -81,9 +97,8 @@ class task_handle {
     }
     template <typename F, typename OwnerId>
         requires(
-          !std::is_same_v<std::decay_t<F>, task_handle> && std::is_invocable_v<std::decay_t<F>&> &&
-          std::is_copy_constructible_v<std::decay_t<F>> &&
-          std::is_constructible_v<std::optional<int>, OwnerId>)
+          !std::is_same_v<std::decay_t<F>, task_handle> && is_task_wrappable_v<F> &&
+          std::is_copy_constructible_v<std::decay_t<F>> && std::is_constructible_v<std::optional<int>, OwnerId>)
     task_handle(F&& f, OwnerId owner_id) : owner_id_(owner_id) {
         using Fn = std::decay_t<F>;
         constexpr bool sb =
@@ -103,8 +118,9 @@ class task_handle {
             cp_ = [](void* dst, const void* src) {
                 *reinterpret_cast<void**>(dst) = new Fn(*reinterpret_cast<const Fn*>(src));
             };
-        }   // type-erased function handlers
-        fn_ = [](void* ptr) { (*reinterpret_cast<Fn*>(ptr))(); };
+        }
+	// type-erased function handlers
+        fn_ = [](void* ptr, const execution_data& data) { invoke_task(*reinterpret_cast<Fn*>(ptr), data); };
 
         mv_ = [](void* dst, void* src) noexcept {
             new (dst) Fn(std::move(*reinterpret_cast<Fn*>(src)));
@@ -113,12 +129,12 @@ class task_handle {
     }
     template <typename F>
         requires(
-          !std::is_same_v<std::decay_t<F>, task_handle> && std::is_invocable_v<std::decay_t<F>&> &&
+          !std::is_same_v<std::decay_t<F>, task_handle> && is_task_wrappable_v<F> &&
           std::is_copy_constructible_v<std::decay_t<F>>)
     explicit task_handle(F&& f) : task_handle(std::forward<F>(f), std::nullopt) { }
 
     // invoke
-    void run() { fn_(sb_ ? (void*)storage_.buff_ : storage_.data_); }
+    void run(const execution_data& data = {}) { fn_(sb_ ? (void*)storage_.buff_ : storage_.data_, data); }
     // ownership managment
     int owner_id() const { return owner_id_.has_value() ? owner_id_.value() : -1; }
     void set_owner(int owner_id) { owner_id_ = owner_id; }
@@ -127,7 +143,7 @@ class task_handle {
         if (rm_) { rm_(sb_ ? (void*)storage_.buff_ : storage_.data_); }
     }
    private:
-    void (*fn_)(void*) = nullptr;
+    void (*fn_)(void*, const execution_data&) = nullptr;
     void (*rm_)(void*) = nullptr;
     void (*mv_)(void*, void*) = nullptr;
     void (*cp_)(void*, const void*) = nullptr;

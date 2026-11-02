@@ -66,17 +66,22 @@ static constexpr execution_seq_t execution_seq;
 
 #include "src/execution/concurrency.h"
 #include "src/execution/affinity.h"
+#include "src/execution/topology.h"
 
 // basic threaded runtime
 #include "src/execution/pool_allocator.h"
 #include "src/execution/chase_lev_queue.h"
 #include "src/execution/mpsc_queue.h"
 #include "src/execution/task_handle.h"
+#include "src/execution/topology_stealing_policy.h"
 #include "src/execution/execution_context.h"
 #include "src/execution/threaded_executor.h"
+#include "src/execution/future.h"
 
 // high-level API
 #include "src/execution/task_batch.h"
+#include "src/execution/static_dispatcher.h"
+#include "src/execution/adaptive_dispatcher.h"
 #include "src/execution/parallel_for.h"
 #include "src/execution/parallel_for_each.h"
 #include "src/execution/parallel_reduce.h"

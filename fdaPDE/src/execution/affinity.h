@@ -17,9 +17,8 @@
 #ifndef __FDAPDE_EXECUTION_AFFINITY_H__
 #define __FDAPDE_EXECUTION_AFFINITY_H__
 
-#include "header_check.h"
-
 #include "../utility/assert.h"
+#include "header_check.h"
 
 #ifdef __linux__
 

@@ -22,66 +22,53 @@
 namespace fdapde {
 namespace internals {
 
-// executes a batch of tasks and wait for completion
+// submits a batch of tasks and returns its completion future
 struct task_batch {
     template <typename TaskGenerator>
-    static void run(threaded_executor_impl* executor, int n_batches, TaskGenerator&& generator) {
-        using task_submission_handle = typename threaded_executor_impl::task_submission_handle;
+    static future<void> run(int n_batches, TaskGenerator&& generator) {
+        fdapde_assert(n_batches >= 0);
+        using task_submission_handle = typename threaded_executor::task_submission_handle;
+        threaded_executor* executor = threaded_executor_instance();
+        auto [future, handle] = make_future<void>();
         std::vector<task_submission_handle> task_group;
         // batches are sent at slots of size slot_size to lower synchronization overhead
         const int slot_size = std::min<int>(n_batches, 4 * executor->size());
-        task_group.reserve(slot_size);
-        // error handling
-        std::mutex m;
-        std::exception_ptr error;
-        // calling worker tries task-helping. pool detachment is executed at handle destruction
-        auto attachment_handle = executor->try_attach();
-
-        std::atomic<int> task_group_count {n_batches - 1};
-        std::size_t submitted = 0;
+        std::size_t published = 0;
         try {
-            for (std::int64_t i = 0; i < n_batches - 1; ++i) {
+            task_group.reserve(slot_size);
+            for (std::int64_t i = 0; i < n_batches; ++i) {
                 auto loop_body = std::invoke(generator);
-                auto task = [&, executor, loop_body = std::optional {std::move(loop_body)}]() mutable {
+                auto task = [handle, loop_body = std::move(loop_body)](const execution_data& data) mutable {
                     try {
-                        std::invoke(*loop_body);   // execute loop body
+                        invoke_task(loop_body, data);
                     } catch (...) {
-                        // store error
-                        std::lock_guard<std::mutex> lock(m);
-                        if (!error) { error = std::current_exception(); }
+                        handle->set_error(std::current_exception());
                     }
-                    loop_body.reset();   // release captures before reporting completion
-                    // signal task group completion
-                    if (task_group_count.fetch_sub(1, std::memory_order_acq_rel) == 1) { executor->notify_all_join(); }
+                    handle->complete_task();
                 };
-                task_group.push_back(executor->allocate_task(this_thread_id(), std::move(task)));
-		// send tasks to execution
-                if (std::cmp_equal(task_group.size(), slot_size)) {
-                    submitted += task_group.size();
+                // distribute tasks in round-robin order across the workers
+                task_group.push_back(executor->allocate_task(i % executor->size(), std::move(task)));
+                handle->register_task();
+                // send tasks to execution
+                if (std::cmp_equal(task_group.size(), slot_size) || i + 1 == n_batches) {
+                    // publication precedes notification, which can throw after all tasks become visible
+                    published = task_group.size();
                     executor->submit_task(task_group);
                     task_group.clear();
+                    published = 0;
                 }
             }
-            if (task_group.size() > 0) {
-                submitted += task_group.size();
-                executor->submit_task(task_group);
-                task_group.clear();
-            }
-            std::invoke(generator)();   // execute the final chunk directly
+            handle->set_value();
         } catch (...) {
-            // un-published tasks are canceled. already published tasks must drain before rethrowing.
-            for (auto& task : task_group) { task->discard(); }
-            // store error
-            std::lock_guard<std::mutex> lock(m);
-            if (!error) { error = std::current_exception(); }
+            handle->set_error(std::current_exception());
+            // cancel unpublished tasks
+            for (std::size_t i = published; i < task_group.size(); ++i) {
+                task_group[i]->discard();
+                handle->complete_task();
+            }
         }
-        if (std::cmp_not_equal(submitted, n_batches - 1)) {
-            task_group_count.fetch_sub((n_batches - 1) - submitted, std::memory_order_acq_rel);
-        }
-        // all published work must finish before local state dies
-        executor->active_join(this_thread_id(), [&] { return task_group_count.load(std::memory_order_acquire) != 0; });
-        if (error) { std::rethrow_exception(error); }
-	return;
+        handle->complete_task();   // release the producer's initial reservation
+        return std::move(future);
     }
 };
 

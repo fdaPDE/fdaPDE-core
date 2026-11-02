@@ -57,9 +57,9 @@ inline std::size_t available_concurrency() noexcept {
 #endif
 
     // without an affinity count, fall back to scheduler/OpenMP hints.
-    if (auto PBS_NCPUS   = internals::get_env_concurrency_count("NCPUS")) { return *PBS_NCPUS; }
+    if (auto PBS_NCPUS = internals::get_env_concurrency_count("NCPUS")) { return *PBS_NCPUS; }
     if (auto SLURM_NCPUS = internals::get_env_concurrency_count("SLURM_CPUS_ON_NODE")) { return *SLURM_NCPUS; }
-    if (auto OMP_NCPUS   = internals::get_env_concurrency_count("OMP_NUM_THREADS")) { return *OMP_NCPUS; }
+    if (auto OMP_NCPUS = internals::get_env_concurrency_count("OMP_NUM_THREADS")) { return *OMP_NCPUS; }
 
     // fall back to the reported logical CPU count, or one if it is unknown.
     const unsigned int ncpus = std::thread::hardware_concurrency();

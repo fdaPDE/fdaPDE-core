@@ -24,9 +24,10 @@ namespace internals {
 
 // a set of tasks with DAG-type dependencies
 struct task_graph {
-    template <typename TaskGraph> static void run(threaded_executor_impl* executor, TaskGraph& graph) {
+    template <typename TaskGraph> static void run(TaskGraph& graph) {
+        auto* executor = threaded_executor_instance();
         fdapde_assert(!graph.has_cycles(), "task graphs must be acyclic");
-        using task_submission_handle = typename threaded_executor_impl::task_submission_handle;
+        using task_submission_handle = typename threaded_executor::task_submission_handle;
         const int num_nodes = graph.n_nodes();
         if (num_nodes == 0) return;
         const int num_threads = executor->size();
@@ -51,10 +52,10 @@ struct task_graph {
                 const int node_id = node.id();
                 task_table[node_id].pending.store(node.in_degree(), std::memory_order_relaxed);
                 task_table[node_id].successors = node.succ_ids();
-                auto wrapped_task = [user_task = std::optional {node.task()}, &task_table, &remaining, &error_mutex,
+                auto wrapped_task = [user_task = node.task(), &task_table, &remaining, &error_mutex,
                                      &error, executor, node_id]() mutable {
                     try {
-                        user_task->run();
+                        user_task.run();
                     } catch (...) {
                         std::lock_guard<std::mutex> lock(error_mutex);
                         if (!error) error = std::current_exception();
@@ -66,7 +67,6 @@ struct task_graph {
                             executor->submit_task(successor.task);
                         }
                     }
-                    user_task.reset();
                     if (remaining.fetch_sub(1, std::memory_order_acq_rel) == 1) executor->notify_all_join();
                 };
                 // any predecessor may publish this task, so allocate on another slot to reserve mailbox storage
@@ -250,8 +250,7 @@ class TaskGraph {
 };
 
 inline void parallel_execute(TaskGraph& tg) {
-    auto& executor = internals::threaded_executor::instance();
-    return internals::task_graph::run(std::addressof(executor), tg);
+    return internals::task_graph::run(tg);
 }
 
 }   // namespace fdapde
