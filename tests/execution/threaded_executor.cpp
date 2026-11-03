@@ -18,6 +18,7 @@
 #include <gtest/gtest.h>
 
 #include <stdexcept>
+#include <array>
 
 TEST(execution, threaded_executor) {
     // threaded_executor: configured sizes preserve async progress and global join.
@@ -151,4 +152,76 @@ TEST(execution, threaded_executor) {
             fdapde::parallel_join();
         }
     }
+}
+
+// repeated model phases can reuse one capped executor without resetting frozen configuration
+TEST(execution, capped_executor_initialization) {
+    // invalid caps leave configuration mutable, and subsequent calls retain one pool across threads and budgets
+    EXPECT_EXIT(
+      ([] {
+          bool valid = true;
+          for (int cap : {0, -1}) {
+              bool rejected = false;
+              try {
+                  fdapde::parallel_initialize(cap);
+              } catch (const std::invalid_argument&) { rejected = true; }
+              valid = valid && rejected;
+          }
+          fdapde::parallel_set_num_threads(4);
+          valid = valid && fdapde::parallel_initialize(2) == 2;
+          valid = valid && fdapde::parallel_get_num_threads() == 2;
+          std::array<int, 4> sizes {};
+          std::vector<std::thread> callers;
+          for (int i = 0; i < 4; ++i) {
+              callers.emplace_back([&, i] { sizes[i] = fdapde::parallel_initialize(4); });
+          }
+          for (auto& caller : callers) caller.join();
+          valid = valid && std::all_of(sizes.begin(), sizes.end(), [](int size) { return size == 2; });
+          valid = valid && fdapde::parallel_initialize(2) == 2;
+          bool rejected = false;
+          try {
+              fdapde::parallel_initialize(1);
+          } catch (const std::logic_error&) { rejected = true; }
+          valid = valid && rejected;
+          bool invalid_rejected = false;
+          try {
+              fdapde::parallel_initialize(0);
+          } catch (const std::invalid_argument&) { invalid_rejected = true; }
+          valid = valid && invalid_rejected && fdapde::parallel_get_num_threads() == 2;
+          auto result = fdapde::parallel_async([] { return 42; });
+          valid = valid && result.get() == 42;
+          fdapde::parallel_join();
+          std::exit(valid ? 0 : 1);
+      }()),
+      ::testing::ExitedWithCode(0), "");
+
+    // a larger cap preserves a smaller configured pool and its existing single-worker async progress
+    EXPECT_EXIT(
+      ([] {
+          fdapde::parallel_set_num_threads(1);
+          bool valid = fdapde::parallel_initialize(4) == 1;
+          auto result = fdapde::parallel_async([] { return fdapde::parallel_async([] { return 42; }).get(); });
+          valid = valid && result.get() == 42 && fdapde::parallel_get_num_threads() == 1;
+          fdapde::parallel_join();
+          std::exit(valid ? 0 : 1);
+      }()),
+      ::testing::ExitedWithCode(0), "");
+
+    // a pool started through the existing async api remains usable after a tighter cap is rejected
+    EXPECT_EXIT(
+      ([] {
+          fdapde::parallel_set_num_threads(3);
+          auto initial = fdapde::parallel_async([] { return 42; });
+          bool valid = initial.get() == 42;
+          bool rejected = false;
+          try {
+              fdapde::parallel_initialize(2);
+          } catch (const std::logic_error&) { rejected = true; }
+          valid = valid && rejected && fdapde::parallel_initialize(4) == 3;
+          auto after = fdapde::parallel_async([] { return 43; });
+          valid = valid && after.get() == 43 && fdapde::parallel_get_num_threads() == 3;
+          fdapde::parallel_join();
+          std::exit(valid ? 0 : 1);
+      }()),
+      ::testing::ExitedWithCode(0), "");
 }
