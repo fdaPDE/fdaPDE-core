@@ -28,10 +28,12 @@ namespace internals {
 
 // executor global status, mutable only before the first threaded_executor initialization
 struct threaded_executor;
-inline threaded_executor* threaded_executor_instance();
+/// @brief constructs the shared executor once within the first caller's concurrency cap
+inline threaded_executor* threaded_executor_instance(int max_threads = std::numeric_limits<int>::max());
+/// @brief holds executor configuration until the shared pool is constructed
 struct threaded_executor_global_state_t {
     threaded_executor_global_state_t() = default;
-    friend threaded_executor* threaded_executor_instance();
+    friend threaded_executor* threaded_executor_instance(int max_threads);
 
     // setters
     void set_num_threads(int num_threads) {
@@ -482,11 +484,14 @@ struct threaded_executor {
 };
 
 // intentionally never destroyed to keep background threads from accessing destroyed executor storage
-inline threaded_executor* threaded_executor_instance() {
+/// @brief constructs or reuses the process-lifetime executor without resizing an existing pool
+inline threaded_executor* threaded_executor_instance(int max_threads) {
     static std::aligned_storage_t<sizeof(threaded_executor), alignof(threaded_executor)> storage;
-    static threaded_executor* exec = [] {
+    static threaded_executor* exec = [max_threads] {
         std::lock_guard<std::mutex> lock(threaded_executor_global_state.m_);
-        auto* result = new (&storage) threaded_executor(threaded_executor_global_state.num_threads());
+        const int threads = std::min(max_threads, threaded_executor_global_state.num_threads());
+        auto* result = new (&storage) threaded_executor(threads);
+        threaded_executor_global_state.num_threads_ = threads;
         threaded_executor_global_state.set_ready_();
         return result;
     }();
@@ -511,6 +516,20 @@ inline void parallel_set_num_threads(int num_threads) {
 }
 // get total available parallelism
 inline int parallel_get_num_threads() { return internals::threaded_executor_global_state.num_threads(); }
+/// @brief initializes or reuses a shared pool whose configured parallelism fits the requested cap
+/// @param max_threads positive upper bound for the configured pool parallelism
+/// @return the existing pool size or the smaller of the initial configuration and the requested cap
+/// @throws std::invalid_argument if max_threads is not positive
+/// @throws std::logic_error if an existing pool exceeds max_threads
+inline int parallel_initialize(int max_threads) {
+    if (max_threads <= 0) { throw std::invalid_argument("parallelism limit must be positive"); }
+    const auto threads = internals::threaded_executor_instance(max_threads)->size();
+    if (threads > static_cast<std::size_t>(max_threads)) {
+        throw std::logic_error("existing executor exceeds the requested parallelism limit");
+    }
+    return static_cast<int>(threads);
+}
+
 // executes a callable object asynchronously
 template <typename F, typename... Args>
     requires(
