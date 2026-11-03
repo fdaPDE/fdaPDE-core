@@ -17,260 +17,138 @@
 #include <fdaPDE/execution.h>
 #include <gtest/gtest.h>
 
-#include <array>
-#include <chrono>
-#include <memory>
 #include <stdexcept>
 
-namespace {
-
-struct large_lifetime_task {
-    std::array<int, 32> padding {};
-    std::shared_ptr<int> resource;
-
-    void operator()() { ++*resource; }
-};
-
-}   // namespace
-
 TEST(execution, threaded_executor) {
-    // prepared tasks can be discarded, submitted in batches and continued without a graph
+    // threaded_executor: configured sizes preserve async progress and global join.
     {
-        fdapde::internals::threaded_executor_impl executor(1);
-        auto resource = std::make_shared<int>(0);
-        std::weak_ptr<int> observer = resource;
-        auto discarded = executor.allocate_task(0, [resource] { ++*resource; });
-        resource.reset();
-        EXPECT_FALSE(observer.expired());
-        executor.deallocate_task(discarded);
-        EXPECT_TRUE(observer.expired());
-
-        std::atomic<int> runs {0};
-        auto continuation = executor.allocate_task(0, [&] { ++runs; });
-        auto first = executor.allocate_task(0, [&] {
-            ++runs;
-            executor.submit_task(continuation);
-        });
-        auto second = executor.allocate_task(0, [&] { ++runs; });
-        executor.submit_task({first, second});
-        executor.join();
-        EXPECT_EQ(runs.load(), 3);
-    }
-    // mailbox tasks remain accessible while their destination worker is blocked
-    {
-        using namespace std::chrono_literals;
-        fdapde::internals::threaded_executor_impl executor(2);
-        std::promise<int> started;
-        std::promise<void> release_blocker, prepared_done, ordinary_done;
-        auto started_worker = started.get_future();
-        auto release = release_blocker.get_future().share();
-        executor.execute([&] {
-            started.set_value(fdapde::this_thread_id());
-            release.wait();
-        });
-        const auto blocked = started_worker.wait_for(2s);
-        const int destination = blocked == std::future_status::ready ? started_worker.get() : 0;
-        auto prepared = executor.allocate_task(destination, [&] { prepared_done.set_value(); });
-        executor.submit_task(prepared);
-        const auto prepared_status = prepared_done.get_future().wait_for(2s);
-
-        if (destination == 0) {
-            executor.execute([] { });
+        for (int size : {1, 2, 4}) {
+            EXPECT_EXIT(
+              {
+                  fdapde::parallel_set_num_threads(size);
+                  bool valid = fdapde::parallel_get_num_threads() == size;
+                  auto parent = fdapde::parallel_async([] { return fdapde::parallel_async([] { return 42; }).get(); });
+                  valid = valid && parent.get() == 42;
+                  std::atomic<int> completed {0};
+                  for (int i = 0; i < 128; ++i) {
+                      fdapde::parallel_execute([&] {
+                          ++completed;
+                          fdapde::parallel_execute([&] { ++completed; });
+                      });
+                  }
+                  fdapde::parallel_join();
+                  std::exit(valid && completed.load() == 256 ? 0 : 1);
+              },
+              ::testing::ExitedWithCode(0), "");
         }
-        executor.execute([&] { ordinary_done.set_value(); });
-        const auto ordinary_status = ordinary_done.get_future().wait_for(2s);
-        release_blocker.set_value();
-        executor.join();
-        EXPECT_EQ(blocked, std::future_status::ready);
-        EXPECT_EQ(prepared_status, std::future_status::ready);
-        EXPECT_EQ(ordinary_status, std::future_status::ready);
     }
-    // future values and exceptions
+    // threaded_executor: async arguments, values and errors.
     {
-        auto result = fdapde::parallel_async([](int lhs, int rhs) { return lhs + rhs; }, 19, 23);
-        EXPECT_EQ(result.get(), 42);
+        auto value = fdapde::parallel_async([](int lhs, int rhs) { return lhs + rhs; }, 19, 23);
+        static_assert(std::is_same_v<decltype(value), fdapde::future<int>>);
+        EXPECT_EQ(value.get(), 42);
+
+        int calls = 0;
+        auto completion = fdapde::parallel_async([](int& count) { ++count; }, std::ref(calls));
+        static_assert(std::is_same_v<decltype(completion), fdapde::future<void>>);
+        completion.get();
+        EXPECT_EQ(calls, 1);
+        static_assert(std::is_void_v<decltype(fdapde::parallel_execute([] { }))>);
+
+        auto moved = fdapde::parallel_async(
+          [offset = std::make_unique<int>(2)](std::unique_ptr<int>& input) {
+              *input += *offset;
+              return std::move(input);
+          },
+          std::make_unique<int>(40));
+        EXPECT_EQ(*moved.get(), 42);
 
         auto failure = fdapde::parallel_async([]() -> int { throw std::runtime_error("expected"); });
-        EXPECT_THROW(static_cast<void>(failure.get()), std::runtime_error);
-        fdapde::parallel_join();
-    }
-    // completed tasks release captured resources
-    {
-        auto first = std::make_shared<int>(0);
-        auto second = std::make_shared<int>(0);
-        auto asynchronous = std::make_shared<int>(0);
-        std::weak_ptr<int> first_observer = first;
-        std::weak_ptr<int> second_observer = second;
-        std::weak_ptr<int> asynchronous_observer = asynchronous;
+        EXPECT_NO_THROW(failure.wait());
+        EXPECT_TRUE(failure.valid());
+        EXPECT_THROW(failure.get(), std::runtime_error);
+        EXPECT_FALSE(failure.valid());
 
-        fdapde::parallel_execute(large_lifetime_task {{}, first});
-        fdapde::parallel_execute(large_lifetime_task {{}, second});
-        auto result = fdapde::parallel_async([asynchronous] { return ++*asynchronous; });
-        first.reset();
-        second.reset();
-        asynchronous.reset();
-        EXPECT_EQ(result.get(), 1);
-        fdapde::parallel_join();
-
-        EXPECT_TRUE(first_observer.expired());
-        EXPECT_TRUE(second_observer.expired());
-        EXPECT_TRUE(asynchronous_observer.expired());
+        struct throwing_value {
+            throwing_value() = default;
+            throwing_value(throwing_value&&) { throw std::runtime_error("result construction failed"); }
+        };
+        auto construction_failure = fdapde::parallel_async([] { return throwing_value {}; });
+        EXPECT_THROW(construction_failure.get(), std::runtime_error);
     }
-    // A worker join returns immediately without waiting for its own task.
+    // threaded_executor: release captures after success and failure.
     {
-        auto result = fdapde::parallel_async([] {
+        using namespace std::chrono_literals;
+        for (bool fail : {false, true}) {
+            auto resource = std::make_shared<int>(42);
+            std::weak_ptr<int> observer = resource;
+            auto result = fdapde::parallel_async([resource = std::move(resource), fail] {
+                if (fail) { throw std::runtime_error("expected"); }
+                return *resource;
+            });
+            ASSERT_EQ(result.wait_until(std::chrono::steady_clock::now() + 2s), std::future_status::ready);
             fdapde::parallel_join();
-            return true;
+            EXPECT_TRUE(observer.expired());
+            if (fail) {
+                EXPECT_THROW(result.get(), std::runtime_error);
+            } else {
+                EXPECT_EQ(result.get(), 42);
+            }
+        }
+    }
+    // threaded_executor: discarding a future does not cancel work.
+    {
+        using namespace std::chrono_literals;
+        std::promise<void> started, release;
+        auto gate = release.get_future().share();
+        auto result = fdapde::parallel_async([&] {
+            started.set_value();
+            gate.wait();
         });
-
-        EXPECT_TRUE(result.get());
+        const auto running = started.get_future().wait_for(2s);
+        EXPECT_EQ(running, std::future_status::ready);
+        EXPECT_EQ(result.wait_for(0ms), std::future_status::timeout);
+        result = fdapde::future<void> {};
+        release.set_value();
         fdapde::parallel_join();
     }
-    // Sleeping workers wake for new submissions while another worker remains blocked.
+    // threaded_executor: nested async waits make progress.
     {
-        using namespace std::chrono_literals;
-        fdapde::internals::threaded_executor_impl executor(4);
-        std::promise<void> blocker_started;
-        std::promise<void> release_blocker;
-        auto release = release_blocker.get_future().share();
-        executor.execute([&] {
-            blocker_started.set_value();
-            release.wait();
-        });
-        const auto started = blocker_started.get_future().wait_for(2s);
-        if (started != std::future_status::ready) {
-            release_blocker.set_value();
-            executor.join();
+        std::vector<fdapde::future<int>> parents;
+        for (int i = 0; i < 16; ++i) {
+            parents.push_back(
+              fdapde::parallel_async([i] { return fdapde::parallel_async([i] { return i + 1; }).get(); }));
         }
-        ASSERT_EQ(started, std::future_status::ready);
-
-        auto result = executor.async([] { return 42; });
-        const auto ready = result.wait_for(2s);
-        release_blocker.set_value();
-        executor.join();
-        ASSERT_EQ(ready, std::future_status::ready);
-        EXPECT_EQ(result.get(), 42);
-
-        // Repeatedly cross the empty-queue boundary and exercise dependency publication.
-        for (int repeat = 0; repeat < 32; ++repeat) {
-            auto value = executor.async([repeat] { return repeat; });
-            EXPECT_EQ(value.get(), repeat);
-            executor.join();
-            std::atomic<int> completed {0};
-            fdapde::TaskGraph graph;
-            auto first = graph.add_node([&] { ++completed; });
-            auto second = graph.add_node([&] { ++completed; });
-            auto last = graph.add_node([&] { EXPECT_EQ(completed.load(), 2); });
-            last.succeeds(first, second);
-            executor.execute(fdapde::internals::task_graph(), graph);
-            executor.join();
-        }
+        for (int i = 0; i < 16; ++i) EXPECT_EQ(parents[i].get(), i + 1);
+        fdapde::parallel_join();
     }
-    // A nested join wakes when its last running child completes, even with no queued tasks.
+    // threaded_executor: join includes descendants from concurrent publishers.
     {
-        using namespace std::chrono_literals;
-        fdapde::internals::threaded_executor_impl executor(2);
-        std::promise<void> child_started;
-        std::promise<void> release_child;
-        auto release = release_child.get_future().share();
-        auto parent = executor.async([&] {
-            executor.execute(fdapde::internals::task_parallel_for(), 0, 1, 1, [&](int) {
-                child_started.set_value();
-                release.wait();
-            });
-            return 42;
-        });
-        const auto started = child_started.get_future().wait_for(2s);
-        release_child.set_value();
-        ASSERT_EQ(started, std::future_status::ready);
-        ASSERT_EQ(parent.wait_for(2s), std::future_status::ready);
-        EXPECT_EQ(parent.get(), 42);
-        executor.join();
-    }
-    // an external group wait finishes while unrelated work remains blocked
-    {
-        using namespace std::chrono_literals;
-        fdapde::internals::threaded_executor_impl executor(2);
-        std::promise<void> release_blocker, child_started, release_child;
-        auto blocker_release = release_blocker.get_future().share();
-        auto child_release = release_child.get_future().share();
-        auto blocker = executor.async([&] { blocker_release.wait(); });
-        auto group = std::async(std::launch::async, [&] {
-            executor.execute(fdapde::internals::task_parallel_for(), 0, 1, 1, [&](int) {
-                child_started.set_value();
-                child_release.wait();
-            });
-            return 42;
-        });
-        const auto started = child_started.get_future().wait_for(2s);
-        release_child.set_value();
-        const auto ready = group.wait_for(2s);
-        release_blocker.set_value();
-        executor.join();
-        ASSERT_EQ(started, std::future_status::ready);
-        ASSERT_EQ(ready, std::future_status::ready);
-        EXPECT_EQ(group.get(), 42);
-        blocker.get();
-    }
-    // mailbox overflow preserves all submitted tasks
-    {
-        using namespace std::chrono_literals;
-        fdapde::internals::threaded_executor_impl executor(1);
-
-        std::promise<void> blocker_started;
-        std::promise<void> release_blocker;
-        std::shared_future<void> release = release_blocker.get_future().share();
-        executor.execute([&] {
-            blocker_started.set_value();
-            release.wait();
-        });
-        ASSERT_EQ(blocker_started.get_future().wait_for(2s), std::future_status::ready);
-
-        constexpr int task_count = 9'000;
         std::atomic<int> completed {0};
-        for (int i = 0; i < task_count; ++i) {
-            executor.execute([&] { completed.fetch_add(1, std::memory_order_relaxed); });
+        std::vector<std::thread> publishers;
+        for (int producer = 0; producer < 4; ++producer) {
+            publishers.emplace_back([&] {
+                for (int i = 0; i < 512; ++i) {
+                    fdapde::parallel_execute([&] {
+                        ++completed;
+                        fdapde::parallel_execute([&] { ++completed; });
+                    });
+                }
+            });
         }
-
-        release_blocker.set_value();
-        executor.join();
-        EXPECT_EQ(completed.load(std::memory_order_relaxed), task_count);
+        for (auto& publisher : publishers) publisher.join();
+        fdapde::parallel_join();
+        EXPECT_EQ(completed.load(), 4096);
     }
-    // completion accounting across allocation owners and concurrent submissions
+    // threaded_executor: idle workers resume for repeated bursts.
     {
-        fdapde::internals::threaded_executor_impl executor(4);
-        // continuations cross allocation owners; join must wait for the entire chain
-        for (int repeat = 0; repeat < 32; ++repeat) {
-            constexpr int count = 256;
-            std::vector<fdapde::internals::worker::packaged_task> tasks(count);
-            std::vector<int> output(count, 0);
-            for (int i = 0; i < count; ++i) {
-                tasks[i] = executor.allocate_task(3 - i % 4, [&, i] {
-                    output[i] = i + 1;
-                    if (i + 1 < count) executor.submit_task(tasks[i + 1]);
-                });
-            }
-            executor.submit_task(tasks.front());
-            executor.join();
-            for (int i = 0; i < count; ++i) EXPECT_EQ(output[i], i + 1);
-        }
-        // join includes child tasks submitted by concurrent publishers
-        for (int repeat = 0; repeat < 16; ++repeat) {
-            std::atomic<int> completed {0};
-            std::vector<std::thread> publishers;
-            for (int producer = 0; producer < 4; ++producer) {
-                publishers.emplace_back([&] {
-                    for (int i = 0; i < 128; ++i) {
-                        executor.execute([&] {
-                            ++completed;
-                            executor.execute([&] { ++completed; });
-                        });
-                    }
-                });
-            }
-            for (auto& publisher : publishers) publisher.join();
-            executor.join();
-            EXPECT_EQ(completed.load(), 1024);
+        using namespace std::chrono_literals;
+        for (int round = 0; round < 16; ++round) {
+            std::this_thread::sleep_for(1ms);
+            auto result = fdapde::parallel_async([round] { return round; });
+            EXPECT_EQ(result.wait_for(2s), std::future_status::ready);
+            EXPECT_EQ(result.get(), round);
+            fdapde::parallel_join();
         }
     }
 }

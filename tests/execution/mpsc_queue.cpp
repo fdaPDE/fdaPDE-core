@@ -15,64 +15,15 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <fdaPDE/execution.h>
-#include <gtest/gtest.h>   // testing framework
+#include <gtest/gtest.h>
 
 #include <memory>
 #include <set>
+
 using namespace fdapde;
 
-TEST(execution, chase_lev_queue) {
-    const int num_elements = 100000;
-    const int num_thieves = 2;
-
-    internals::chase_lev_queue<int> queue(1024);   // force repeated circular-slot reuse
-
-    std::atomic<bool> start_signal {false};
-    std::atomic<bool> owner_done {false};
-
-    // spawn consumer threads
-    std::vector<std::vector<int>> thief_results(num_thieves);
-    for (auto& v : thief_results) v.reserve(num_elements / num_thieves);
-    std::vector<std::thread> thieves;
-    for (int i = 0; i < num_thieves; ++i) {
-        thieves.emplace_back([&, i]() {
-            // spin until owner starts pushing to maximize immediate contention
-            while (!start_signal.load(std::memory_order_acquire));
-            // start stealing
-            while (!owner_done.load(std::memory_order_acquire) || !queue.empty()) {
-                auto val = queue.pop_back();
-                if (val) { thief_results[i].push_back(*val); }
-            }
-        });
-    }
-    // producer thread
-    std::vector<int> owner_results;
-    owner_results.reserve(num_elements);
-    start_signal.store(true, std::memory_order_release);
-    for (int i = 1; i <= num_elements; ++i) {
-        // push
-        while (!queue.push_front(i)) { std::this_thread::yield(); }
-        // simulate real work-stealing patterns: producer occasionally pops their own work
-        if (i % 5 == 0) {
-            auto val = queue.pop_front();
-            if (val) { owner_results.push_back(*val); }
-        }
-    }
-    owner_done.store(true, std::memory_order_release);
-    // wait stealers to finish
-    for (auto& t : thieves) { t.join(); }
-
-    // check that every element 1, ..., n  found exactly once
-    std::vector<int> registry(num_elements + 1, 0);
-    for (int val : owner_results) { registry[val]++; }
-    for (const auto& tr : thief_results) {
-        for (int val : tr) { registry[val]++; }
-    }
-    for (int i = 1; i <= num_elements; ++i) { EXPECT_EQ(registry[i], 1); }   // each element found exactly once
-}
-
 TEST(execution, mpsc_queue) {
-    // preparation keeps entries unpublished until they are submitted or discarded
+    // mpsc_queue: preparation stays unpublished until submission or discard.
     {
         internals::mpsc_queue<std::shared_ptr<int>> queue;
         auto resource = std::make_shared<int>(42);
@@ -91,6 +42,7 @@ TEST(execution, mpsc_queue) {
         EXPECT_EQ(**value, 42);
         EXPECT_FALSE(queue.pop().has_value());
     }
+    // mpsc_queue: destruction releases queued resources.
     {
         auto queued_resource = std::make_shared<int>(0);
         std::weak_ptr<int> queued_observer = queued_resource;
@@ -102,24 +54,25 @@ TEST(execution, mpsc_queue) {
         }
         EXPECT_TRUE(queued_observer.expired());
     }
-    // single-thread correctness
-    internals::mpsc_queue<int> queue;
-    queue.push(10);
-    queue.push(20);
-    auto v1 = queue.pop();
-    auto v2 = queue.pop();
-    auto v3 = queue.pop();   // expected empty
-    EXPECT_TRUE(v1.has_value());
-    EXPECT_EQ(v1.value(), 10);
-    EXPECT_TRUE(v2.has_value());
-    EXPECT_EQ(v2.value(), 20);
-    EXPECT_FALSE(v3.has_value());
-
-    // multi-threaded test
+    // mpsc_queue: single-thread FIFO ordering and empty pops.
+    {
+        internals::mpsc_queue<int> queue;
+        queue.push(10);
+        queue.push(20);
+        auto v1 = queue.pop();
+        auto v2 = queue.pop();
+        auto v3 = queue.pop();   // expected empty
+        ASSERT_TRUE(v1.has_value());
+        EXPECT_EQ(v1.value(), 10);
+        ASSERT_TRUE(v2.has_value());
+        EXPECT_EQ(v2.value(), 20);
+        EXPECT_FALSE(v3.has_value());
+    }
+    // mpsc_queue: many mailboxes exchange every message exactly once.
     // P2P: simulate the exchange of messages from multiple threads, each owning a private mpsc queue, emulating a
     // nested parallelism burst, where tasks start to inject tasks to other workers
     {
-        const int num_threads = std::thread::hardware_concurrency();
+        const int num_threads = 4;
         const int messages_per_thread = 20000;
         const int total_messages = num_threads * messages_per_thread;
 
@@ -172,11 +125,11 @@ TEST(execution, mpsc_queue) {
         EXPECT_EQ(unique_vals.size(), total_messages);
     }
 
-    // multithreaded test
+    // mpsc_queue: contending producers deliver unique messages to one consumer.
     // test the high contention of a single mpsc queue
     {
         internals::mpsc_queue<int> queue;
-        const int num_producers = std::thread::hardware_concurrency() - 1;
+        const int num_producers = 4;
         const int items_per_producer = 10000;
 
         std::vector<std::thread> producers;
@@ -205,20 +158,5 @@ TEST(execution, mpsc_queue) {
         EXPECT_EQ(results.size(), num_producers * items_per_producer);
         std::set<int> unique_vals(results.begin(), results.end());
         EXPECT_EQ(unique_vals.size(), num_producers * items_per_producer);
-    }
-}
-
-TEST(execution, pool_allocator) {
-    {
-        auto pooled_resource = std::make_shared<int>(0);
-        std::weak_ptr<int> pooled_observer = pooled_resource;
-        {
-            fdapde::internals::pool_allocator<std::shared_ptr<int>> allocator(1);
-            auto* object = allocator.allocate(pooled_resource);
-            pooled_resource.reset();
-            EXPECT_FALSE(pooled_observer.expired());
-            allocator.deallocate(object);
-            EXPECT_TRUE(pooled_observer.expired());
-        }
     }
 }

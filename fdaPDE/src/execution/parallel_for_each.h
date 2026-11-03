@@ -49,8 +49,8 @@ template <std::ranges::forward_range Container, typename LoopBody, typename Disp
 future<void> parallel_for_each(Container& container, LoopBody&& loop_body, Dispatcher) {
     using task_parallel_for_each =
       internals::task_parallel_for_each<std::ranges::iterator_t<Container>, std::decay_t<LoopBody>>;
-    const int size = std::distance(container.begin(), container.end());
-    return Dispatcher::run(task_parallel_for_each {container.begin(), size, std::forward<LoopBody>(loop_body)});
+    const int size = std::ranges::distance(container);
+    return Dispatcher::run(task_parallel_for_each {std::ranges::begin(container), size, std::forward<LoopBody>(loop_body)});
 }
 
 }   // namespace fdapde

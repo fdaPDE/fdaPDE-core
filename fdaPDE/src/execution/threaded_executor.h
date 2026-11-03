@@ -104,7 +104,7 @@ struct threaded_executor {
     using context_type = execution_context;
     using context_pointer = std::unique_ptr<context_type>;
     using allocator_type = pool_allocator<task_handle>;
-    using stealing_policy = internals::topology_stealing_policy;
+    using stealing_policy = internals::random_stealing_policy;
     using scheduling_policy = internals::round_robin_scheduling_policy;
     // spin-loop and backoff constants
     static constexpr int min_spin_retention_us = 250;
@@ -141,6 +141,7 @@ struct threaded_executor {
 
     threaded_executor() : threaded_executor(fdapde::available_concurrency()) { }
     explicit threaded_executor(size_type size) :
+        stealing_policy_(std::max<size_type>(1, size - 1) + 1),
         scheduling_policy_(std::max<size_type>(1, size - 1)),
         size_(size),
         n_workers_(std::max<size_type>(1, size - 1)),   // retain asynchronous progress at P=1
@@ -152,11 +153,9 @@ struct threaded_executor {
         active_join_cnt_(0) {
         // affinity is best-effort, including on unsupported systems
         std::vector<int> cpus;
-        std::vector<cpu_topology> topology;
         try {
             if (cpu_affinity_enabled) {
                 cpus = allowed_cpus();
-                topology = discover_cpu_topology();
             }
         } catch (...) {
             // no affinity capability available on the hosting OS
@@ -166,29 +165,22 @@ struct threaded_executor {
         for (size_type i = 0; i <= n_workers_; ++i) {
             contexts_.push_back(std::make_unique<context_type>(static_cast<int>(i), i < n_workers_));
         }
-        std::vector<int> pinned_cpus(n_workers_ + 1, -1);
-        std::latch pinned(n_workers_);
         size_type started = 0;
         try {
             for (; started < n_workers_; ++started) {
-                workers_.emplace_back([this, i = started, &cpus, &pinned_cpus, &pinned] {
+                workers_.emplace_back([this, i = started, &cpus] {
                     try {
                         // pin cpus before startup barrier
                         if (!cpus.empty()) {
                             const int cpu = cpus[i % cpus.size()];
                             bind({cpu});
-                            pinned_cpus[i] = cpu;
                         }
                     } catch (...) {
                         // retain OS scheduling on failure
                     }
-                    pinned.count_down();
                     worker_loop_(static_cast<int>(i));
                 });
             }
-            // workers stay at the startup barrier until all victim lists are ready
-            pinned.wait();
-            stealing_policy_ = stealing_policy(topology, pinned_cpus);
         } catch (...) {
             active_.store(false, std::memory_order_release);
             init_latch_.count_down(n_workers_ + 1 - started);
@@ -472,7 +464,7 @@ struct threaded_executor {
     }
 
     allocator_type task_pool_;                 // shared physical memory holding tasks
-    stealing_policy stealing_policy_;          // precomputed locality groups for stealing
+    stealing_policy stealing_policy_;         // random victim selection for stealing
     scheduling_policy scheduling_policy_;      // round-robin scheduler
     std::vector<context_pointer> contexts_;    // background execution contexts
     std::vector<std::thread> workers_;         // physical threads internally managed by the executor

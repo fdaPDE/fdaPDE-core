@@ -18,16 +18,8 @@
 #include <gtest/gtest.h>
 
 #include <array>
-#include <atomic>
-#include <chrono>
-#include <condition_variable>
-#include <future>
-#include <memory>
-#include <mutex>
 #include <stdexcept>
 #include <string>
-#include <thread>
-#include <vector>
 
 namespace {
 
@@ -77,9 +69,8 @@ struct throwing_graph_task {
 }   // namespace
 
 TEST(execution, task_graph) {
-    // nested fan-out and fan-in work with one or several workers
-    for (int workers : {1, 4}) {
-        fdapde::internals::threaded_executor_impl executor(workers);
+    // TaskGraph: nested fan-out and fan-in work with one or several workers
+    {
         constexpr int width = 128;
         std::vector<int> values(width, 0);
         int total = 0;
@@ -91,14 +82,14 @@ TEST(execution, task_graph) {
             branch.succeeds(source);
             branch.precedes(sink);
         }
-        auto result = executor.async([&] {
-            executor.execute(fdapde::internals::task_graph(), graph);
+        auto result = fdapde::parallel_async([&] {
+            fdapde::parallel_execute(graph);
             return total;
         });
         EXPECT_EQ(result.get(), width);
-        executor.join();
+        fdapde::parallel_join();
     }
-    // dependency ordering
+    // TaskGraph: dependency ordering
     {
         std::atomic<int> inputs {0};
         std::atomic<int> observed {-1};
@@ -119,7 +110,7 @@ TEST(execution, task_graph) {
 #ifndef FDAPDE_NO_DEBUG
     // Assertion failures run in a fresh process, independently of the active worker pool.
     ::testing::FLAGS_gtest_death_test_style = "threadsafe";
-    // cycle rejection
+    // TaskGraph: cycle rejection
     {
         std::atomic<int> runs {0};
         fdapde::TaskGraph graph;
@@ -132,7 +123,7 @@ TEST(execution, task_graph) {
         EXPECT_DEATH(fdapde::parallel_execute(graph), "acyclic");
         EXPECT_EQ(runs.load(std::memory_order_relaxed), 0);
     }
-    // cross-graph edge rejection
+    // TaskGraph: cross-graph edge rejection
     {
         fdapde::TaskGraph left;
         fdapde::TaskGraph right;
@@ -144,7 +135,7 @@ TEST(execution, task_graph) {
         EXPECT_EQ(right.n_edges(), 0);
     }
 #endif
-    // independent copies of heap-backed tasks
+    // TaskGraph: independent copies of heap-backed tasks
     {
         auto observations = std::make_shared<std::vector<int>>();
         fdapde::TaskGraph original;
@@ -161,7 +152,7 @@ TEST(execution, task_graph) {
         ASSERT_EQ(observations->size(), 3u);
         EXPECT_EQ(*observations, (std::vector<int> {1, 1, 1}));
     }
-    // Preparation failures destroy all unpublished tasks and never run a partial graph.
+    // TaskGraph: preparation failures destroy all unpublished tasks and never run a partial graph.
     {
         auto resource = std::make_shared<int>(0);
         int copies = 0;
@@ -197,7 +188,7 @@ TEST(execution, task_graph) {
         EXPECT_EQ(runs.load(std::memory_order_relaxed), 3);
         EXPECT_EQ(resource.use_count(), owners);
     }
-    // independent graph submissions complete without retaining stale task links
+    // TaskGraph: independent graph submissions complete without retaining stale task links
     {
         std::atomic<int> runs {0};
         std::vector<std::thread> submitters;
@@ -214,7 +205,7 @@ TEST(execution, task_graph) {
         fdapde::parallel_join();
         EXPECT_EQ(runs.load(), 64);
     }
-    // dependent tasks release captured resources
+    // TaskGraph: dependent tasks release captured resources
     {
         auto source_resource = std::make_shared<int>(0);
         auto sink_resource = std::make_shared<int>(0);
@@ -234,7 +225,7 @@ TEST(execution, task_graph) {
         EXPECT_TRUE(source_observer.expired());
         EXPECT_TRUE(sink_observer.expired());
     }
-    // graph waits exclude unrelated tasks
+    // TaskGraph: graph waits exclude unrelated tasks
     {
         using namespace std::chrono_literals;
 
@@ -273,13 +264,15 @@ TEST(execution, task_graph) {
         EXPECT_TRUE(returned_before_release);
         EXPECT_EQ(graph_runs.load(std::memory_order_relaxed), 1);
     }
-    // nested parallel algorithms
+    // TaskGraph: nested parallel algorithms
     {
         std::vector<int> values(128, 0);
         fdapde::TaskGraph graph;
         graph.add_node([&] {
             fdapde::parallel_for(
-              0, static_cast<int>(values.size()), [&](int i) { values[static_cast<std::size_t>(i)] = i + 1; });
+              0, static_cast<int>(values.size()), [&](int i) { values[static_cast<std::size_t>(i)] = i + 1; },
+              fdapde::static_dispatch)
+              .get();
         });
 
         fdapde::parallel_execute(graph);
@@ -287,5 +280,44 @@ TEST(execution, task_graph) {
         for (int i = 0; i < static_cast<int>(values.size()); ++i) {
             EXPECT_EQ(values[static_cast<std::size_t>(i)], i + 1);
         }
+    }
+    // TaskGraph: dependent tasks finish before exceptions propagate.
+    {
+        fdapde::TaskGraph graph;
+        std::atomic<int> completed {0};
+        auto source = graph.add_node([] { throw std::runtime_error("graph failed"); });
+        auto sink = graph.add_node([&] { ++completed; });
+        source.precedes(sink);
+        EXPECT_THROW(fdapde::parallel_execute(graph), std::runtime_error);
+        EXPECT_EQ(completed.load(), 1);
+        EXPECT_EQ(fdapde::this_thread_id(), -1);
+        fdapde::parallel_join();
+    }
+    // TaskGraph: empty graphs and stable node observers.
+    {
+        fdapde::TaskGraph graph;
+        EXPECT_EQ(graph.n_nodes(), 0);
+        EXPECT_EQ(graph.n_edges(), 0);
+        EXPECT_FALSE(graph.has_cycles());
+        EXPECT_NO_THROW(fdapde::parallel_execute(graph));
+        auto first = graph.add_node([] { });
+        for (int i = 0; i < 128; ++i) graph.add_node([] { });
+        auto last = graph.node(128);
+        graph.add_edge(first, last);
+        EXPECT_EQ(first.id(), 0);
+        EXPECT_TRUE(first.is_source());
+        EXPECT_FALSE(first.is_sink());
+        EXPECT_EQ(first.out_degree(), 1);
+        EXPECT_EQ(last.in_degree(), 1);
+        EXPECT_TRUE(last.is_sink());
+        EXPECT_EQ(first.succ_ids(), (std::vector<int> {128}));
+        EXPECT_EQ(last.pred_ids(), (std::vector<int> {0}));
+        const auto& observed = graph;
+        EXPECT_EQ(observed[128].id(), 128);
+        EXPECT_EQ(observed.node(0).out_degree(), 1);
+        int nodes = 0;
+        for (auto node : observed) { EXPECT_EQ(node.id(), nodes++); }
+        EXPECT_EQ(nodes, 129);
+        fdapde::parallel_execute(graph);
     }
 }

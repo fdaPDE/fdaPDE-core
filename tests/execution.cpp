@@ -17,14 +17,22 @@
 #include <fdaPDE/execution.h>
 #include <gtest/gtest.h>
 
-#include "execution/concurrency.cpp"
-#include "execution/parallel_algorithms.cpp"
-#include "execution/queues.cpp"
+#include "execution/adaptive_dispatcher.cpp"
+#include "execution/chase_lev_queue.cpp"
+#include "execution/future.cpp"
+#include "execution/mpsc_queue.cpp"
+#include "execution/parallel_for.cpp"
+#include "execution/parallel_for_each.cpp"
+#include "execution/parallel_reduce.cpp"
+#include "execution/static_dispatcher.cpp"
+#include "execution/task_batch.cpp"
 #include "execution/task_graph.cpp"
+#include "execution/task_handle.cpp"
 #include "execution/threaded_executor.cpp"
 
 int main(int argc, char** argv) {
     fdapde::parallel_set_num_threads(4);
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
     testing::InitGoogleTest(&argc, argv);
     const int result = RUN_ALL_TESTS();
     fdapde::parallel_join();
