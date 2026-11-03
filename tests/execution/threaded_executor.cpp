@@ -152,3 +152,54 @@ TEST(execution, threaded_executor) {
         }
     }
 }
+
+// scheduler budgets are independent of nested numerical-library thread settings
+TEST(execution, scheduler_concurrency_budget) {
+    // each subprocess compares detection with its real affinity bound and explicit scheduler reservation
+    EXPECT_EXIT(
+      {
+          unsetenv("SLURM_CPUS_PER_TASK");
+          unsetenv("SLURM_CPUS_ON_NODE");
+          unsetenv("NCPUS");
+          unsetenv("OMP_NUM_THREADS");
+          const auto unrestricted = fdapde::available_concurrency();
+          setenv("OMP_NUM_THREADS", "1", 1);
+          bool valid = fdapde::available_concurrency() == unrestricted;
+          setenv("NCPUS", "20", 1);
+          valid = valid && fdapde::available_concurrency() == std::min<std::size_t>(20, unrestricted);
+          setenv("SLURM_CPUS_ON_NODE", "16", 1);
+          setenv("SLURM_CPUS_PER_TASK", "3", 1);
+          valid = valid && fdapde::available_concurrency() == std::min<std::size_t>(3, unrestricted);
+          setenv("SLURM_CPUS_PER_TASK", "invalid", 1);
+          valid = valid && fdapde::available_concurrency() == std::min<std::size_t>(20, unrestricted);
+          unsetenv("NCPUS");
+          valid = valid && fdapde::available_concurrency() == std::min<std::size_t>(16, unrestricted);
+          unsetenv("SLURM_CPUS_ON_NODE");
+          for (const char* invalid : {"", "0", "-1", " 2", "2x", "9999999999999999999999"}) {
+              setenv("NCPUS", invalid, 1);
+              valid = valid && fdapde::available_concurrency() == unrestricted;
+          }
+          std::_Exit(valid ? 0 : 1);
+      },
+      ::testing::ExitedWithCode(0), "");
+#ifdef __linux__
+    // affinity remains an upper bound even when a scheduler advertises more CPUs
+    EXPECT_EXIT(
+      {
+          unsetenv("SLURM_CPUS_PER_TASK");
+          unsetenv("SLURM_CPUS_ON_NODE");
+          setenv("NCPUS", "20", 1);
+          cpu_set_t allowed;
+          bool valid = sched_getaffinity(0, sizeof(allowed), &allowed) == 0;
+          int cpu = 0;
+          while (cpu < CPU_SETSIZE && !CPU_ISSET(cpu, &allowed)) ++cpu;
+          cpu_set_t selected;
+          CPU_ZERO(&selected);
+          if (cpu < CPU_SETSIZE) CPU_SET(cpu, &selected);
+          valid = valid && sched_setaffinity(0, sizeof(selected), &selected) == 0;
+          valid = valid && fdapde::available_concurrency() == 1;
+          std::_Exit(valid ? 0 : 1);
+      },
+      ::testing::ExitedWithCode(0), "");
+#endif
+}
