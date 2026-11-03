@@ -153,30 +153,44 @@ TEST(execution, threaded_executor) {
     }
 }
 
+namespace {
+/// @brief changes only the subprocess test environment using the hosting platform's api
+void set_concurrency_test_environment(const char* name, const char* value) {
+#ifdef _WIN32
+    _putenv_s(name, value ? value : "");
+#else
+    if (value)
+        setenv(name, value, 1);
+    else
+        unsetenv(name);
+#endif
+}
+}   // namespace
+
 // scheduler budgets are independent of nested numerical-library thread settings
 TEST(execution, scheduler_concurrency_budget) {
     // each subprocess compares detection with its real affinity bound and explicit scheduler reservation
     EXPECT_EXIT(
       {
-          unsetenv("SLURM_CPUS_PER_TASK");
-          unsetenv("SLURM_CPUS_ON_NODE");
-          unsetenv("NCPUS");
-          unsetenv("OMP_NUM_THREADS");
+          set_concurrency_test_environment("SLURM_CPUS_PER_TASK", nullptr);
+          set_concurrency_test_environment("SLURM_CPUS_ON_NODE", nullptr);
+          set_concurrency_test_environment("NCPUS", nullptr);
+          set_concurrency_test_environment("OMP_NUM_THREADS", nullptr);
           const auto unrestricted = fdapde::available_concurrency();
-          setenv("OMP_NUM_THREADS", "1", 1);
+          set_concurrency_test_environment("OMP_NUM_THREADS", "1");
           bool valid = fdapde::available_concurrency() == unrestricted;
-          setenv("NCPUS", "20", 1);
+          set_concurrency_test_environment("NCPUS", "20");
           valid = valid && fdapde::available_concurrency() == std::min<std::size_t>(20, unrestricted);
-          setenv("SLURM_CPUS_ON_NODE", "16", 1);
-          setenv("SLURM_CPUS_PER_TASK", "3", 1);
+          set_concurrency_test_environment("SLURM_CPUS_ON_NODE", "16");
+          set_concurrency_test_environment("SLURM_CPUS_PER_TASK", "3");
           valid = valid && fdapde::available_concurrency() == std::min<std::size_t>(3, unrestricted);
-          setenv("SLURM_CPUS_PER_TASK", "invalid", 1);
+          set_concurrency_test_environment("SLURM_CPUS_PER_TASK", "invalid");
           valid = valid && fdapde::available_concurrency() == std::min<std::size_t>(20, unrestricted);
-          unsetenv("NCPUS");
+          set_concurrency_test_environment("NCPUS", nullptr);
           valid = valid && fdapde::available_concurrency() == std::min<std::size_t>(16, unrestricted);
-          unsetenv("SLURM_CPUS_ON_NODE");
+          set_concurrency_test_environment("SLURM_CPUS_ON_NODE", nullptr);
           for (const char* invalid : {"", "0", "-1", " 2", "2x", "9999999999999999999999"}) {
-              setenv("NCPUS", invalid, 1);
+              set_concurrency_test_environment("NCPUS", invalid);
               valid = valid && fdapde::available_concurrency() == unrestricted;
           }
           std::_Exit(valid ? 0 : 1);
@@ -186,9 +200,9 @@ TEST(execution, scheduler_concurrency_budget) {
     // affinity remains an upper bound even when a scheduler advertises more CPUs
     EXPECT_EXIT(
       {
-          unsetenv("SLURM_CPUS_PER_TASK");
-          unsetenv("SLURM_CPUS_ON_NODE");
-          setenv("NCPUS", "20", 1);
+          set_concurrency_test_environment("SLURM_CPUS_PER_TASK", nullptr);
+          set_concurrency_test_environment("SLURM_CPUS_ON_NODE", nullptr);
+          set_concurrency_test_environment("NCPUS", "20");
           cpu_set_t allowed;
           bool valid = sched_getaffinity(0, sizeof(allowed), &allowed) == 0;
           int cpu = 0;
